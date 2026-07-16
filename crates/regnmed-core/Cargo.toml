@@ -1,0 +1,13 @@
+[package]
+name = "regnmed-core"
+description = "Domain model for the regnmed ledger: money, vouchers, double-entry validation and chain hashing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "regnmed-db"
+description = "PostgreSQL persistence for the regnmed ledger: migrations, posting and chain verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+regnmed-core.workspace = true
+
+anyhow.workspace = true
+chrono.workspace = true
+sqlx.workspace = true
+uuid.workspace = true

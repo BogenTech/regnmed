@@ -1,0 +1,16 @@
+[package]
+name = "regnmed-api"
+description = "HTTP API for regnmed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+regnmed-core.workspace = true
+regnmed-db.workspace = true
+
+anyhow.workspace = true
+axum.workspace = true
+dotenvy.workspace = true
+tokio.workspace = true

@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:18-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: regnmed
+      POSTGRES_PASSWORD: regnmed
+      POSTGRES_DB: regnmed
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

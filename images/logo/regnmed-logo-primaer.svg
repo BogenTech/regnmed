@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- regnmed – primærikon: dråpe med sumtegn -->
+  <path d="M80 8
+           C 80 8, 30 70, 30 104
+           a 50 50 0 0 0 100 0
+           C 130 70, 80 8, 80 8 Z"
+        fill="#2E7DA6"/>
+  <path d="M98 74 H 62 L 88 100 L 62 126 H 98"
+        fill="none" stroke="#FFFFFF" stroke-width="11"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
