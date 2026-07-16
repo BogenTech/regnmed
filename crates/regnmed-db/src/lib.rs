@@ -5,8 +5,10 @@
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
 pub mod ledger;
+pub mod tenancy;
 
 pub use ledger::*;
+pub use tenancy::*;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;

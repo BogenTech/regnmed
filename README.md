@@ -27,7 +27,10 @@ Workspace layout:
   double-entry validation, canonical chain hashing. No I/O.
 - `crates/regnmed-db` — PostgreSQL persistence: migrations (sqlx), posting
   transaction, chain verification.
-- `crates/regnmed-api` — HTTP API (axum), skeleton for now.
+- `crates/regnmed-api` — HTTP API (axum) with OIDC relying-party auth:
+  tokens are validated against a configured issuer (JWKS), identity only —
+  authorization (person → firm → engagement → company) is resolved from the
+  database. `GET /me` lists the companies the caller may act for.
 - `crates/regnmed-cli` — `regnmed` admin binary: `migrate`, `verify-ledger`,
   `demo`.
 

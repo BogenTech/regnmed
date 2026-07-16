@@ -179,6 +179,27 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
         "chain verified from genesis: {} vouchers OK",
         report.vouchers_checked
     );
+
+    // Marketplace tenancy: an accountant reaches the client company through
+    // her firm's engagement, never directly.
+    let kari = regnmed_db::ensure_person(
+        pool,
+        "demo|kari",
+        Some("Kari Regnskapsfører"),
+        Some("kari@tallogorden.no"),
+    )
+    .await?;
+    let firm = regnmed_db::ensure_firm(pool, "998877665", "Tall & Orden Regnskap AS", "regnskap").await?;
+    regnmed_db::ensure_firm_member(pool, firm, kari, "ansatt").await?;
+    regnmed_db::ensure_engagement(pool, firm, company, "regnskap").await?;
+
+    for access in regnmed_db::company_access_for_person(pool, kari).await? {
+        println!(
+            "kari may act for {} ({}) with access '{}' via {}",
+            access.name, access.orgnr, access.access, access.via
+        );
+    }
+
     println!("demo company id: {company}");
     Ok(())
 }

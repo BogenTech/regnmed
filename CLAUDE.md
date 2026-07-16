@@ -57,7 +57,12 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
   the hash must stay deterministic forever.
 - `crates/regnmed-db` — Postgres persistence: migrations
   (`crates/regnmed-db/migrations/`), posting transaction, chain verification.
-- `crates/regnmed-api` — HTTP API (axum). Skeleton so far.
+- `crates/regnmed-api` — HTTP API (axum). Library + thin binary. OIDC RP
+  layer in `src/auth.rs` (`Verifier` + `AuthPerson` extractor — add
+  `AuthPerson` as a handler argument to protect a route); `/me` resolves
+  token → companies + access. Config: `OIDC_ISSUER`, optional
+  `OIDC_AUDIENCE`, `OIDC_JWKS_FILE` (dev/tests: static JWKS, signatures
+  still validated), `BIND_ADDR`.
 - `crates/regnmed-cli` — `regnmed` binary: `migrate`, `verify-ledger`, `demo`.
 
 ## Development
@@ -78,10 +83,13 @@ kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 ## Roadmap (agreed order)
 
 1. ✅ Ledger core: append-only hash-chained vouchers, verified end-to-end.
-2. **Next:** auth + tenancy — engagement schema (person/firm/engagement
-   migration) + OIDC RP middleware in regnmed-api resolving token →
-   "companies I may act for, and as what".
-3. SAF-T Financial export (validates the data model; mandatory on request
-   since 2020). Then MVA codes end-to-end, EHF/Peppol, bank reconciliation.
-4. Portal UI, then marketplace features. Payroll (a-melding) deliberately
-   deferred for years.
+2. ✅ Auth + tenancy: engagement schema (migration 0005: person, firm,
+   firm_member, company_member, engagement) + OIDC RP middleware; `/me`
+   resolves token → "companies I may act for, and as what". Integration
+   tests sign real RS256 tokens against a generated JWKS.
+3. **Next:** SAF-T Financial export (validates the data model; mandatory on
+   request since 2020). Then MVA codes end-to-end, EHF/Peppol, bank
+   reconciliation.
+4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
+   autorisasjon checks, accountant directory). Payroll (a-melding)
+   deliberately deferred for years.
