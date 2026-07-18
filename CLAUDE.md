@@ -38,7 +38,12 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
   refuses to run if an applied file changed. Never edit an applied migration.
 - **Identity: OIDC relying party only.** The IdP is
   [networco-id](https://github.com/networco/networco-id) (our own C#/ASP.NET
-  OIDC provider, MIT) — reused as-is, deliberately *not* rewritten in Rust.
+  OIDC provider, MIT) — kept as its own repo, checked out as a **sibling
+  directory** (`../networco-id`) so both can be worked on in one session.
+  Do not vendor it into this repo (separate product, separate license,
+  separate release cycle). A Rust port is feasible (the OIDC layer is
+  hand-rolled, no OpenIddict) but deliberately deferred until after SAF-T;
+  it would live behind the same OIDC contract.
   regnmed validates tokens against a configured issuer/JWKS and must never
   bake in IdP specifics; the token proves identity only.
 - **Authorization lives in regnmed's DB, not in tokens.** Model:
