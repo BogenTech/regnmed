@@ -36,16 +36,16 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
   locked in the posting transaction (sequences can leave gaps).
 - **Migrations are append-only in git.** sqlx checksums applied migrations and
   refuses to run if an applied file changed. Never edit an applied migration.
-- **Identity: OIDC relying party only.** The IdP is
-  [networco-id](https://github.com/networco/networco-id) (our own C#/ASP.NET
-  OIDC provider, MIT) — kept as its own repo, checked out as a **sibling
-  directory** (`../networco-id`) so both can be worked on in one session.
-  Do not vendor it into this repo (separate product, separate license,
-  separate release cycle). A Rust port is feasible (the OIDC layer is
-  hand-rolled, no OpenIddict) but deliberately deferred until after SAF-T;
-  it would live behind the same OIDC contract.
-  regnmed validates tokens against a configured issuer/JWKS and must never
-  bake in IdP specifics; the token proves identity only.
+- **Identity: OIDC relying party only.** The IdP is **regnid** (sibling
+  repo `../regnid`) — our Rust port of
+  [networco-id](https://github.com/networco/networco-id) (C#, sibling
+  `../networco-id`, stays the behavioral reference and keeps serving until
+  regnid passes the OIDC conformance suite; see regnid's CLAUDE.md for
+  parity/hardening checklists). Keep IdPs in their own repos — never vendor
+  into this one. regnmed validates tokens against a configured issuer/JWKS
+  and must never bake in IdP specifics; the token proves identity only.
+  Cross-service SSO verified 2026-07-16: regnid-issued token → regnmed
+  `/me`.
 - **Authorization lives in regnmed's DB, not in tokens.** Model:
   person → firm membership → **engagement (oppdrag)** → company. Engagements
   (regnskapsfører/revisor ↔ client company, with scope and validity) are
