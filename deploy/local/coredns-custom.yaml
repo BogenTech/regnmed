@@ -1,0 +1,15 @@
+# Pods must resolve the public hostnames to Traefik, not to their own
+# loopback (the browser resolves *.localhost to 127.0.0.1; a pod doing the
+# same would talk to itself). k3s CoreDNS imports /etc/coredns/custom/
+# *.override into the main server block, so these rewrites make the OIDC
+# issuer URL work identically inside and outside the cluster — which is
+# the whole point: ONE issuer string everywhere.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  regnmed.override: |
+    rewrite name id.regnmed.localhost traefik.kube-system.svc.cluster.local
+    rewrite name api.regnmed.localhost traefik.kube-system.svc.cluster.local

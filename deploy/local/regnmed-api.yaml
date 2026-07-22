@@ -1,0 +1,64 @@
+# The accounting API. Migrations run as an init container (same image
+# carries the regnmed CLI). OIDC points at regnid through the SAME public
+# issuer URL the browser uses — the CoreDNS rewrite makes that resolve to
+# Traefik inside the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regnmed-api
+  template:
+    metadata:
+      labels:
+        app: regnmed-api
+    spec:
+      initContainers:
+        - name: migrate
+          image: regnmed:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/app/regnmed", "migrate"]
+          env:
+            - name: DATABASE_URL
+              value: postgres://regnmed:regnmed@postgres:5432/regnmed
+      containers:
+        - name: api
+          image: regnmed:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://regnmed:regnmed@postgres:5432/regnmed
+            - name: OIDC_ISSUER
+              value: http://id.regnmed.localhost
+            - name: OIDC_AUDIENCE
+              value: regnmed
+            - name: BIND_ADDR
+              value: 0.0.0.0:8080
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+spec:
+  selector:
+    app: regnmed-api
+  ports:
+    - port: 8080

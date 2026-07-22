@@ -1,0 +1,33 @@
+# Mail delivery worker: consumes the JetStream work queue. log transport
+# locally — delivered mail shows up in `kubectl logs deploy/regnid-mail-
+# worker`. Scale replicas up to watch work-queue semantics distribute.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnid-mail-worker
+  namespace: regnmed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regnid-mail-worker
+  template:
+    metadata:
+      labels:
+        app: regnid-mail-worker
+    spec:
+      containers:
+        - name: worker
+          image: regnid:dev
+          imagePullPolicy: IfNotPresent
+          args: ["mail-worker"]
+          env:
+            - name: NATS_URL
+              value: nats://nats:4222
+            - name: MAIL_TRANSPORT
+              value: log
+          resources:
+            requests:
+              memory: 16Mi
+            limits:
+              memory: 32Mi

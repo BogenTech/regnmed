@@ -1,0 +1,74 @@
+# Single-instance Postgres 18 for the local cluster. Dev-grade on
+# purpose (plain deployment, trivially recreatable). The regnid database
+# is created by regnid itself at startup (ensure_database); POSTGRES_DB
+# covers regnmed.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: regnmed
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: regnmed
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          env:
+            - name: POSTGRES_USER
+              value: regnmed
+            - name: POSTGRES_PASSWORD
+              value: regnmed
+            - name: POSTGRES_DB
+              value: regnmed
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 400Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "regnmed"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: regnmed
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432

@@ -1,0 +1,60 @@
+# Single-node NATS with JetStream (file store) — the mail work queue.
+# One replica locally; the concepts under test (durable consumers,
+# work-queue retention, publish dedup) are identical on a 3-node cluster.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-data
+  namespace: regnmed
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  namespace: regnmed
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nats
+  template:
+    metadata:
+      labels:
+        app: nats
+    spec:
+      containers:
+        - name: nats
+          image: nats:alpine
+          args: ["-js", "-sd", "/data"]
+          ports:
+            - containerPort: 4222
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nats-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: regnmed
+spec:
+  selector:
+    app: nats
+  ports:
+    - port: 4222

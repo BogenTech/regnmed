@@ -1,0 +1,40 @@
+# Host-based routing through k3s's bundled Traefik. Browsers resolve
+# *.localhost to 127.0.0.1; k3d publishes the cluster's port 80 on the
+# host, so http://id.regnmed.localhost just works. (curl needs
+# --resolve id.regnmed.localhost:80:127.0.0.1 — macOS's resolver does
+# not do the *.localhost convention, browsers do.)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnid
+  namespace: regnmed
+spec:
+  rules:
+    - host: id.regnmed.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnid
+                port:
+                  number: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+spec:
+  rules:
+    - host: api.regnmed.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080
