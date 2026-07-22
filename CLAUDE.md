@@ -88,7 +88,8 @@ kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 ### Local production-like cluster (on demand, 8 GB-friendly)
 
 `scripts/dev-cluster.sh up` gives the full topology in a local k3s
-cluster (k3d inside a 2 cpu/3 GB colima VM): Postgres 18, NATS
+cluster (k3d inside a 2 cpu/2 GB colima VM — the tight budget is a
+product principle, see ROADMAP.md): Postgres 18, NATS
 JetStream, regnid + mail worker, regnmed-api, Traefik ingress. One
 issuer URL everywhere — `http://id.regnmed.localhost` works from the
 browser (\*.localhost → 127.0.0.1) and inside pods (CoreDNS rewrite to
@@ -102,6 +103,12 @@ cargo. Manifests: `deploy/local/` (kustomize). Not yet: TLS (mkcert),
 multi-node, operators — add when a concept needs them.
 
 ## Roadmap (agreed order)
+
+The full phased plan (M1 lovpålagt kjerne → M6 tillit og skala, with the
+Norwegian-ecosystem integration strategy: Altinn/Maskinporten,
+Skatteetaten, BRREG, EHF/Peppol, bank, and migration from
+Tripletex/Fiken/Visma/Conta via SAF-T) lives in **ROADMAP.md**; each item
+is a GitHub issue under milestones M1–M6. Summary of agreed order:
 
 1. ✅ Ledger core: append-only hash-chained vouchers, verified end-to-end.
 2. ✅ Auth + tenancy: engagement schema (migration 0005: person, firm,

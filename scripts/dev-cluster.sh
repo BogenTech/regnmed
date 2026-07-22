@@ -1,6 +1,6 @@
 #!/bin/sh
 # Local production-like cluster: k3d (k3s) inside a small colima VM,
-# sized for an 8 GB Mac (2 CPUs / 3 GB). One command each way:
+# sized for an 8 GB Mac (2 CPUs / 2 GB). One command each way:
 #
 #   scripts/dev-cluster.sh up       build images, start VM+cluster, deploy, seed
 #   scripts/dev-cluster.sh stop     free ALL RAM (state survives; up resumes)
@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 CLUSTER=regnmed
 VM_CPU=2
-VM_MEM=3
+VM_MEM=2
 
 urls() {
     echo

@@ -33,6 +33,12 @@ spec:
       containers:
         - name: postgres
           image: postgres:18-alpine
+          # Frugal by design: the whole cluster lives in a 2 GB VM.
+          args:
+            - -c
+            - shared_buffers=32MB
+            - -c
+            - max_connections=50
           env:
             - name: POSTGRES_USER
               value: regnmed
@@ -49,9 +55,9 @@ spec:
               mountPath: /var/lib/postgresql/data
           resources:
             requests:
-              memory: 128Mi
+              memory: 96Mi
             limits:
-              memory: 400Mi
+              memory: 256Mi
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "regnmed"]
