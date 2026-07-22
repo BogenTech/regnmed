@@ -1,0 +1,18 @@
+/* Portal stylesheet source. Build with scripts/build-css.sh; the
+   generated crates/regnmed-api/portal/app.css is checked in so the Rust
+   build never needs Node.
+
+   Theme contract with regnid: ui/themes.css is a COPY of the canonical
+   ../regnid/ui/themes.css (same theme names and blocks, so a user's
+   theme feels identical on both sites). Update both together. The
+   preference itself is stored per site (localStorage), never synced
+   through the IdP. */
+
+@import "tailwindcss";
+@source "../crates/regnmed-api/portal";
+
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, nord, corporate, business, dim, sunset;
+}
+
+@import "./themes.css";

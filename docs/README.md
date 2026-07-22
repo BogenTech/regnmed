@@ -14,6 +14,7 @@ CLAUDE.md).
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
+| [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |

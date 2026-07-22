@@ -201,8 +201,16 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    check + DB trigger both enforce; attachments append-only with content
    SHA-256 verified on download and by `verify-ledger` (attachment-set
    chain binding deferred to M6 anchoring — docs/perioder.md).
-   **Next:** portal UI (M5 — every feature has web endpoints waiting), or
-   EHF (#14, awaits access-point decision) / Maskinporten registration.
+11. ✅ Portal UI (docs/portal.md): no-framework SPA embedded in
+   regnmed-api (include_str!, same origin, no CORS), OIDC code+PKCE
+   against regnid with the token exchange proxied via `/auth/token`.
+   Theme contract honored: ui/themes.css is a copy of regnid's canonical
+   file (update together); CSS built by scripts/build-css.sh, generated
+   portal/app.css checked in. Sections: oversikt, faktura, reskontro,
+   mva (+ eksport), bank, bilag, periode. Browser-verified end to end.
+   **Next:** marketplace (BRREG onboarding #9, Finanstilsynet #10,
+   directory #23), EHF (#14, access-point decision), Maskinporten
+   registration, or the M2 tail (skattemelding, årsregnskap).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

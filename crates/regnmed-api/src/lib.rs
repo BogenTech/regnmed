@@ -6,6 +6,7 @@ pub mod bank;
 pub mod invoice;
 pub mod ocr;
 pub mod period;
+pub mod portal;
 pub mod reports;
 pub mod reskontro;
 
@@ -24,6 +25,13 @@ pub struct AppState {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(portal::index))
+        .route("/callback", get(portal::index))
+        .route("/app.js", get(portal::app_js))
+        .route("/theme.js", get(portal::theme_js))
+        .route("/app.css", get(portal::app_css))
+        .route("/portal-config", get(portal::portal_config))
+        .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/health", get(health))
         .route("/me", get(me))
         .route(

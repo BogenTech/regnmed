@@ -57,8 +57,8 @@ seed() {
         --name "Demo Admin" --admin >/dev/null 2>&1 || true
     kubectl -n regnmed exec deploy/regnid -- /app/regnid add-client \
         --client-id regnmed-portal --name "regnmed portal" \
-        --redirect-uri http://localhost:3000/callback \
-        --post-logout-redirect-uri http://localhost:3000/logged-out \
+        --redirect-uri http://api.regnmed.localhost/callback \
+        --post-logout-redirect-uri http://api.regnmed.localhost/ \
         --audience regnmed >/dev/null 2>&1 || true
 }
 

@@ -1,0 +1,14 @@
+{
+  "name": "regnid-ui",
+  "private": true,
+  "description": "CSS build for regnid: Tailwind v4 + daisyUI themes. Output (static/app.css) is checked in, so Node is only needed when changing styles/themes.",
+  "scripts": {
+    "build": "tailwindcss -i input.css -o ../static/app.css --minify",
+    "watch": "tailwindcss -i input.css -o ../static/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4",
+    "daisyui": "^5",
+    "tailwindcss": "^4"
+  }
+}
