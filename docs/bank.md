@@ -56,6 +56,31 @@ on day one with zero agreements.
     match/unmatch; cross-company and cross-account pairings are rejected
     in the database layer.
 
+## OCR giro (KID-innbetalinger)
+
+OCR files from Mastercard Payment Services (tidligere Nets/BBS) carry
+KID-tagged incoming payments — the detail behind the lump-sum "OCR
+innbetaling" line on the bank statement.
+
+- **Parser** (`regnmed-core::ocr`, pure): the official fixed-width
+  80-character record format (service 09), layouts verified against the
+  published systemspesifikasjon and the netsgiro reference
+  implementation. Control records are enforced (transaction count and
+  sum must match, so truncated or tampered files are rejected);
+  reversal signs are honored; **invalid KIDs are flagged, never
+  rejected** — the bank accepted the payment, so it must be recorded.
+- **KID check digits** (`regnmed-core::kid`): MOD10 and MOD11
+  validation, plus check-digit generation for faktura (issue #13).
+- **Storage** (migration 0008): batches insert-only and idempotent per
+  (forsendelse, oppdrag) — a re-uploaded file errors instead of
+  duplicating payments.
+- **Web API**: `POST /companies/{id}/ocr/files?account=1920` (file
+  body), `GET /companies/{id}/ocr/payments?from=&to=`. Same access
+  rules as bank reconciliation.
+- With **reskontro** (issue #3), payments auto-apply to open invoices by
+  KID; until then the payment list is the working view, and OCR batch
+  sums reconcile against the statement's lump-sum line.
+
 ## Where it is tested
 
 - `regnmed-core/src/camt053.rs` — parsing (balances, signs, pending

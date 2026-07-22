@@ -177,7 +177,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    web endpoints under `/companies/{id}/bank/…` (revisor reads,
    bokforing matches). PSD2/aggregator and CSV tiers documented in
    docs/bank.md as later steps.
-   **Next:** EHF/Peppol (needs access-point provider decision), OCR-giro.
+7. ✅ OCR-giro: fixed-width record parser (`regnmed-core::ocr`, offsets
+   verified against the official spec + netsgiro; control records
+   enforced, invalid KIDs flagged not rejected) + MOD10/MOD11 in
+   `regnmed-core::kid` (reused by faktura later) + migration 0008
+   (idempotent per oppdrag) + `/companies/{id}/ocr/…` endpoints.
+   **Next:** EHF/Peppol (awaits access-point provider decision), or
+   reskontro (#3) which unlocks KID→invoice auto-application.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod bank;
+pub mod ocr;
 pub mod reports;
 
 use std::sync::Arc;
@@ -49,6 +50,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/bank/matches/{bank_transaction_id}",
             axum::routing::delete(bank::delete_match),
+        )
+        .route(
+            "/companies/{company_id}/ocr/files",
+            axum::routing::post(ocr::import_file),
+        )
+        .route(
+            "/companies/{company_id}/ocr/payments",
+            get(ocr::list_payments),
         )
         .with_state(state)
 }
