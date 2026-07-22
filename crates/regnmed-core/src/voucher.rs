@@ -12,6 +12,10 @@ pub struct EntryDraft {
     /// SAF-T standard VAT code, e.g. "3" for utgående mva alminnelig sats.
     pub vat_code: Option<String>,
     pub description: Option<String>,
+    /// Reskontro party (kundenummer/leverandørnummer). Required on
+    /// accounts flagged with a reskontro kind, rejected elsewhere —
+    /// enforced at posting, where the account registry is available.
+    pub party_no: Option<String>,
 }
 
 /// A voucher (bilag) as submitted for posting, before it is assigned a
@@ -43,6 +47,9 @@ impl VoucherDraft {
             if entry.vat_code.as_deref() == Some("") {
                 return Err(LedgerError::EmptyVatCode(i + 1));
             }
+            if entry.party_no.as_deref() == Some("") {
+                return Err(LedgerError::EmptyPartyNo(i + 1));
+            }
             sum = sum
                 .checked_add(entry.amount)
                 .ok_or(LedgerError::AmountOverflow)?;
@@ -64,6 +71,7 @@ mod tests {
             amount: Ore(amount),
             vat_code: None,
             description: None,
+            party_no: None,
         }
     }
 

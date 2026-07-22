@@ -31,8 +31,22 @@ pub struct SaftInput {
     pub start: NaiveDate,
     pub end: NaiveDate,
     pub accounts: Vec<SaftAccount>,
+    pub customers: Vec<SaftParty>,
+    pub suppliers: Vec<SaftParty>,
     pub tax_codes: Vec<SaftTaxCode>,
     pub journals: Vec<SaftJournal>,
+}
+
+/// A reskontro party (kunde/leverandør) with its subledger balances.
+#[derive(Debug)]
+pub struct SaftParty {
+    pub party_no: String,
+    pub name: String,
+    pub orgnr: Option<String>,
+    /// The reskontro account the party posts to (1500/2400), when known.
+    pub balance_account: Option<String>,
+    pub opening_ore: i64,
+    pub closing_ore: i64,
 }
 
 #[derive(Debug)]
@@ -85,6 +99,9 @@ pub struct SaftLine {
     /// against the dated `vat_rate` table when loading, so historical
     /// vouchers export with the rate that actually applied.
     pub tax_percent_bp: Option<i64>,
+    /// Reskontro party on the line (kundenummer or leverandørnummer).
+    pub customer_id: Option<String>,
+    pub supplier_id: Option<String>,
 }
 
 /// An account's mapping onto Skatteetaten's grouping code list.
@@ -218,6 +235,9 @@ fn master_files(x: &mut Xml, input: &SaftInput) {
         x.close("GeneralLedgerAccounts");
     }
 
+    render_parties(x, "Customers", "Customer", "CustomerID", &input.customers);
+    render_parties(x, "Suppliers", "Supplier", "SupplierID", &input.suppliers);
+
     if !input.tax_codes.is_empty() {
         x.open("TaxTable");
         x.open("TaxTableEntry");
@@ -239,6 +259,32 @@ fn master_files(x: &mut Xml, input: &SaftInput) {
     }
 
     x.close("MasterFiles");
+}
+
+/// Kunde-/leverandørspesifikasjon in the audit file: minimal mandatory
+/// fields plus the subledger balances the schema supports.
+fn render_parties(x: &mut Xml, outer: &str, item: &str, id_tag: &str, parties: &[SaftParty]) {
+    if parties.is_empty() {
+        return;
+    }
+    x.open(outer);
+    for party in parties {
+        x.open(item);
+        if let Some(orgnr) = &party.orgnr {
+            x.leaf("RegistrationNumber", orgnr);
+        }
+        x.leaf("Name", &trunc(&party.name, 256));
+        x.leaf(id_tag, &party.party_no);
+        if let Some(account) = &party.balance_account {
+            x.open("BalanceAccount");
+            x.leaf("AccountID", account);
+            balance(x, "Opening", party.opening_ore);
+            balance(x, "Closing", party.closing_ore);
+            x.close("BalanceAccount");
+        }
+        x.close(item);
+    }
+    x.close(outer);
 }
 
 fn entries(x: &mut Xml, input: &SaftInput) {
@@ -284,6 +330,12 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 x.open("Line");
                 x.leaf("RecordID", &line.line_no.to_string());
                 x.leaf("AccountID", &line.account_number);
+                if let Some(customer) = &line.customer_id {
+                    x.leaf("CustomerID", customer);
+                }
+                if let Some(supplier) = &line.supplier_id {
+                    x.leaf("SupplierID", supplier);
+                }
                 let description = line.description.as_deref().unwrap_or(&tx.description);
                 x.leaf("Description", &trunc(description, 256));
                 let side = if line.amount_ore >= 0 {
@@ -402,6 +454,15 @@ mod tests {
                     closing_ore: -250_000,
                 },
             ],
+            customers: vec![SaftParty {
+                party_no: "10001".into(),
+                name: "Kunde & Co AS".into(),
+                orgnr: Some("911111111".into()),
+                balance_account: Some("1500".into()),
+                opening_ore: 0,
+                closing_ore: 1_250_000,
+            }],
+            suppliers: vec![],
             tax_codes: vec![SaftTaxCode {
                 code: "3".into(),
                 description: "Utgående mva, alminnelig sats".into(),
@@ -426,6 +487,8 @@ mod tests {
                             amount_ore: 1_250_000,
                             vat_code: None,
                             tax_percent_bp: None,
+                            customer_id: Some("10001".into()),
+                            supplier_id: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -434,6 +497,8 @@ mod tests {
                             amount_ore: -1_000_000,
                             vat_code: Some("3".into()),
                             tax_percent_bp: Some(2500),
+                            customer_id: None,
+                            supplier_id: None,
                         },
                         SaftLine {
                             line_no: 3,
@@ -442,6 +507,8 @@ mod tests {
                             amount_ore: -250_000,
                             vat_code: None,
                             tax_percent_bp: None,
+                            customer_id: None,
+                            supplier_id: None,
                         },
                     ],
                 }],
@@ -468,6 +535,8 @@ mod tests {
             "<CreditAmount>",
             "<TaxCode>3</TaxCode>",
             "<TaxPercentage>25</TaxPercentage>",
+            "<CustomerID>10001</CustomerID>",
+            "<Name>Kunde &amp; Co AS</Name>",
             "<SystemEntryTime>2026-03-05T12:30:45</SystemEntryTime>",
         ] {
             assert!(xml.contains(expected), "missing {expected} in:\n{xml}");

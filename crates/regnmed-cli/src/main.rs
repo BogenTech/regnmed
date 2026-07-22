@@ -435,18 +435,21 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 amount: Ore(12_500_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
                 amount: Ore(-10_000_00),
                 vat_code: Some("3".into()),
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
                 amount: Ore(-2_500_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
     };
@@ -470,12 +473,14 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 amount: Ore(150_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
                 amount: Ore(-150_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
     };
@@ -502,18 +507,21 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 amount: Ore(8_000_00),
                 vat_code: Some("1".into()),
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "2710".into(),
                 amount: Ore(2_000_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
                 amount: Ore(-10_000_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
     };
@@ -534,12 +542,14 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 amount: Ore(100_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
                 amount: Ore(-99_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
         ..sale.clone()

@@ -11,6 +11,7 @@ CLAUDE.md).
 | [ledger.md](ledger.md) | The append-only, hash-chained ledger: the three immutability layers, verification, and the trust model |
 | [mva.md](mva.md) | VAT: standard codes, dated rates, beregning rules, mva-spesifikasjon, mva-melding |
 | [saft/README.md](saft/README.md) | SAF-T Financial export and the vendored official artifacts |
+| [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |

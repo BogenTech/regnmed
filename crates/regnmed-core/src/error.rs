@@ -11,6 +11,9 @@ pub enum LedgerError {
     #[error("entry line {0} has an empty VAT code — use None for no code")]
     EmptyVatCode(usize),
 
+    #[error("entry line {0} has an empty party number — use None for no party")]
+    EmptyPartyNo(usize),
+
     #[error("voucher does not balance: entries sum to {0} øre, expected 0")]
     Unbalanced(i64),
 

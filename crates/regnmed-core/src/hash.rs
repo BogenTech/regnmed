@@ -9,6 +9,20 @@
 //! breaks the link of every later voucher — detectable by re-walking the
 //! chain (`regnmed verify-ledger`). Anchoring the chain head outside the
 //! database extends that protection to adversaries with full DB access.
+//!
+//! # Format versions
+//!
+//! The serialization is frozen per version; every voucher stores which
+//! version hashed it, and mixed-version chains verify fine:
+//!
+//! - **v1** (original): no party field. History posted before reskontro.
+//! - **v2**: starts with a `"v2"` marker field and adds the entry's
+//!   party number (kundenummer/leverandørnummer, empty when none) after
+//!   the description — so reassigning a receivable to another customer
+//!   breaks the chain like any other tampering.
+//!
+//! A version is never edited, only superseded; the golden tests pin one
+//! digest per version.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use sha2::{Digest, Sha256};
@@ -19,9 +33,14 @@ use crate::Ore;
 /// The hash a company's chain starts from (all zeroes).
 pub const GENESIS_HASH: [u8; 32] = [0u8; 32];
 
+/// Current format for new postings.
+pub const HASH_VERSION_CURRENT: i16 = 2;
+
 /// The full business content of a voucher, as covered by its chain hash.
 #[derive(Debug, Clone)]
 pub struct VoucherHashInput {
+    /// Which frozen serialization hashed this voucher (1 or 2).
+    pub hash_version: i16,
     pub company_id: Uuid,
     pub chain_seq: i64,
     pub journal_code: String,
@@ -45,12 +64,21 @@ pub struct EntryHashInput {
     pub vat_code: Option<String>,
     /// Empty strings are normalized to `None` before hashing and storing.
     pub description: Option<String>,
+    /// Reskontro party number — v2 only; v1 vouchers have none.
+    pub party_no: Option<String>,
 }
 
-/// `hash = SHA-256(prev_hash || canonical(voucher))`.
+/// `hash = SHA-256(prev_hash || canonical(voucher))`, per the voucher's
+/// stored format version.
 pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
     let mut buf = Vec::with_capacity(512);
     push_field(&mut buf, prev_hash);
+    if v.hash_version >= 2 {
+        // Version marker: v2 streams can never collide with v1 streams,
+        // whose first field is always a 32-byte prev-hash... which this
+        // marker field's length prefix ("2:") already differs from.
+        push_field(&mut buf, b"v2");
+    }
     push_field(&mut buf, v.company_id.as_bytes());
     push_field(&mut buf, v.chain_seq.to_string().as_bytes());
     push_field(&mut buf, v.journal_code.as_bytes());
@@ -71,6 +99,9 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
         push_field(&mut buf, e.amount.0.to_string().as_bytes());
         push_field(&mut buf, e.vat_code.as_deref().unwrap_or("").as_bytes());
         push_field(&mut buf, e.description.as_deref().unwrap_or("").as_bytes());
+        if v.hash_version >= 2 {
+            push_field(&mut buf, e.party_no.as_deref().unwrap_or("").as_bytes());
+        }
     }
     Sha256::digest(&buf).into()
 }
@@ -104,6 +135,7 @@ mod tests {
 
     fn sample() -> VoucherHashInput {
         VoucherHashInput {
+            hash_version: 1,
             company_id: Uuid::from_u128(1),
             chain_seq: 1,
             journal_code: "GL".into(),
@@ -123,6 +155,7 @@ mod tests {
                     amount: Ore(12_500_00),
                     vat_code: None,
                     description: None,
+                    party_no: None,
                 },
                 EntryHashInput {
                     line_no: 2,
@@ -130,9 +163,18 @@ mod tests {
                     amount: Ore(-12_500_00),
                     vat_code: Some("3".into()),
                     description: None,
+                    party_no: None,
                 },
             ],
         }
+    }
+
+    fn sample_v2() -> VoucherHashInput {
+        let mut v = sample();
+        v.hash_version = 2;
+        v.entries[0].account_number = "1500".into();
+        v.entries[0].party_no = Some("10001".into());
+        v
     }
 
     #[test]
@@ -158,15 +200,42 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    /// Locks the canonical serialization forever. If this test fails, the
-    /// change breaks chain verification of every ledger already in
-    /// production — the format cannot be "improved", only versioned.
+    /// Locks each frozen serialization forever. If either digest changes,
+    /// the change breaks chain verification of ledgers already in
+    /// production — a format cannot be "improved", only superseded by the
+    /// next version.
     #[test]
-    fn golden_hash_never_changes() {
-        let hash = chain_hash(&GENESIS_HASH, &sample());
+    fn golden_hashes_never_change() {
+        let v1 = chain_hash(&GENESIS_HASH, &sample());
         assert_eq!(
-            hash.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            v1.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             "1001ebbe2aad6c76a9978f972056ad5d7be922828acb8e5ef55c35d6a16ebc8b"
+        );
+        let v2 = chain_hash(&GENESIS_HASH, &sample_v2());
+        assert_eq!(
+            v2.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "ff271302ffd635d1d229e461d8200001781fcf67287407fa03487190b3e664d7"
+        );
+    }
+
+    /// The party binding is inside the v2 hash: moving a receivable to a
+    /// different customer is tampering like any other.
+    #[test]
+    fn v2_hashes_the_party_and_differs_from_v1() {
+        let original = chain_hash(&GENESIS_HASH, &sample_v2());
+        let mut reassigned = sample_v2();
+        reassigned.entries[0].party_no = Some("10002".into());
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &reassigned));
+
+        // Same content hashed as v1 vs v2 must differ (version marker).
+        let mut as_v1 = sample_v2();
+        as_v1.hash_version = 1;
+        as_v1.entries[0].party_no = None;
+        let mut as_v2_no_party = sample_v2();
+        as_v2_no_party.entries[0].party_no = None;
+        assert_ne!(
+            chain_hash(&GENESIS_HASH, &as_v1),
+            chain_hash(&GENESIS_HASH, &as_v2_no_party)
         );
     }
 

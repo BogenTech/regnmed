@@ -5,6 +5,7 @@ pub mod auth;
 pub mod bank;
 pub mod ocr;
 pub mod reports;
+pub mod reskontro;
 
 use std::sync::Arc;
 
@@ -58,6 +59,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/ocr/payments",
             get(ocr::list_payments),
+        )
+        .route(
+            "/companies/{company_id}/parties",
+            get(reskontro::list_parties).post(reskontro::create_party),
+        )
+        .route(
+            "/companies/{company_id}/parties/{party_id}/items",
+            get(reskontro::party_items),
+        )
+        .route(
+            "/companies/{company_id}/reskontro/matches",
+            axum::routing::post(reskontro::create_match),
+        )
+        .route(
+            "/companies/{company_id}/reskontro/matches/{match_id}",
+            axum::routing::delete(reskontro::delete_match),
+        )
+        .route(
+            "/companies/{company_id}/accounts/{account_number}/reskontro",
+            axum::routing::put(reskontro::set_account_reskontro),
         )
         .with_state(state)
 }

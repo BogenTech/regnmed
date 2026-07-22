@@ -120,18 +120,21 @@ async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid
                 amount: Ore(12_500_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
                 amount: Ore(-10_000_00),
                 vat_code: Some("3".into()),
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
                 amount: Ore(-2_500_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
     };
@@ -224,12 +227,14 @@ async fn import_auto_match_manual_match_and_permissions() {
                 amount: Ore(-150_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
                 amount: Ore(150_00),
                 vat_code: None,
                 description: None,
+                party_no: None,
             },
         ],
     };

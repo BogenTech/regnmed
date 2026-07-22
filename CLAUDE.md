@@ -182,8 +182,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    enforced, invalid KIDs flagged not rejected) + MOD10/MOD11 in
    `regnmed-core::kid` (reused by faktura later) + migration 0008
    (idempotent per oppdrag) + `/companies/{id}/ocr/…` endpoints.
-   **Next:** EHF/Peppol (awaits access-point provider decision), or
-   reskontro (#3) which unlocks KID→invoice auto-application.
+8. ✅ Reskontro: party master data + party binding on entries via **hash
+   format v2** (version per voucher; v1 history verifies forever; golden
+   tests pin both formats — docs/reskontro.md). Reskontro-flagged
+   accounts require a party of matching kind, others reject parties
+   (enforced in post_voucher). Åpne poster matching with computed
+   remainders; SAF-T exports Customers/Suppliers + line party ids;
+   `/companies/{id}/parties…` + `/reskontro/matches` endpoints.
+   **Next:** faktura (#13, KID + OCR auto-application), or EHF/Peppol
+   (awaits access-point provider decision).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

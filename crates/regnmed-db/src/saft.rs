@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use regnmed_core::saft::{
-    SaftAccount, SaftInput, SaftJournal, SaftLine, SaftTaxCode, SaftTransaction,
+    SaftAccount, SaftInput, SaftJournal, SaftLine, SaftParty, SaftTaxCode, SaftTransaction,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -56,6 +56,41 @@ pub async fn load_saft_input(
 
     // TaxTable rate: the rate in force at the end of the selection period;
     // per-line TaxInformation carries the rate at each voucher's date.
+    let party_rows = sqlx::query(
+        "select p.party_no, p.kind, p.name, p.orgnr,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date < $2), 0)::bigint as opening_ore,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $3), 0)::bigint as closing_ore,
+                min(a.number) as balance_account
+         from party p
+         left join entry e on e.party_id = p.id
+         left join voucher v on v.id = e.voucher_id
+         left join account a on a.id = e.account_id
+         where p.company_id = $1
+         group by p.id
+         order by p.party_no",
+    )
+    .bind(company_id)
+    .bind(start)
+    .bind(end)
+    .fetch_all(pool)
+    .await?;
+    let (mut customers, mut suppliers) = (Vec::new(), Vec::new());
+    for row in &party_rows {
+        let party = SaftParty {
+            party_no: row.get("party_no"),
+            name: row.get("name"),
+            orgnr: row.get("orgnr"),
+            balance_account: row.get("balance_account"),
+            opening_ore: row.get("opening_ore"),
+            closing_ore: row.get("closing_ore"),
+        };
+        if row.get::<String, _>("kind") == "kunde" {
+            customers.push(party);
+        } else {
+            suppliers.push(party);
+        }
+    }
+
     let tax_codes = sqlx::query(
         "select distinct vc.code, vc.description,
                 coalesce(r.rate_bp, (vc.rate_percent * 100)::integer)::bigint as percent_bp
@@ -102,10 +137,12 @@ pub async fn load_saft_input(
 
     let line_rows = sqlx::query(
         "select e.voucher_id, e.line_no, a.number as account_number,
-                e.amount_ore, e.vat_code, e.description, r.rate_bp
+                e.amount_ore, e.vat_code, e.description, r.rate_bp,
+                p.party_no, p.kind as party_kind
          from entry e
          join voucher v on v.id = e.voucher_id
          join account a on a.id = e.account_id
+         left join party p on p.id = e.party_id
          left join vat_code vc on vc.code = e.vat_code
          left join lateral (
              select rate_bp from vat_rate
@@ -134,6 +171,14 @@ pub async fn load_saft_input(
                 amount_ore: row.get("amount_ore"),
                 vat_code: row.get("vat_code"),
                 tax_percent_bp: row.get::<Option<i32>, _>("rate_bp").map(i64::from),
+                customer_id: match row.get::<Option<String>, _>("party_kind").as_deref() {
+                    Some("kunde") => row.get("party_no"),
+                    _ => None,
+                },
+                supplier_id: match row.get::<Option<String>, _>("party_kind").as_deref() {
+                    Some("leverandor") => row.get("party_no"),
+                    _ => None,
+                },
             });
     }
 
@@ -181,6 +226,8 @@ pub async fn load_saft_input(
         start,
         end,
         accounts,
+        customers,
+        suppliers,
         tax_codes,
         journals,
     })

@@ -38,10 +38,14 @@ all.
 - Timestamps are truncated to microseconds before hashing **and** before
   storage, because Postgres `timestamptz` stores microseconds — the
   stored row must re-hash identically forever.
-- The serialization is **frozen**. A golden test pins the exact digest
-  (`golden_hash_never_changes`); if it fails, the change would break
-  verification of every deployed ledger. The format can be versioned,
-  never edited.
+- The serialization is **frozen per format version**, and every voucher
+  stores which version hashed it (`hash_version`). v1 is the original;
+  v2 (introduced with reskontro) adds a version marker and the entry's
+  party number, so reassigning a receivable between customers is
+  tamper-evident too. Golden tests pin one digest per version
+  (`golden_hashes_never_change`); if either fails, the change would
+  break verification of deployed ledgers — a format is never edited,
+  only superseded. Mixed-version chains verify from genesis.
 - Posting locks the company's `chain_head` row FOR UPDATE, which
   serializes postings per company — required by both the chain and
   gap-free numbering. The chain head is a mutable *pointer*, not history;

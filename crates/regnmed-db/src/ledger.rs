@@ -158,25 +158,65 @@ pub async fn post_voucher(
     .await?
     .get("last_number");
 
-    // Resolve account numbers up front so a typo fails the whole voucher
-    // with a clear message instead of a foreign-key error.
-    let mut account_ids = Vec::with_capacity(draft.entries.len());
+    // Resolve account numbers and reskontro parties up front so a typo
+    // fails the whole voucher with a clear message instead of a
+    // foreign-key error. Reskontro rule: accounts flagged with a
+    // reskontro kind require a party of that kind; other accounts refuse
+    // parties.
+    let mut account_ids: Vec<Uuid> = Vec::with_capacity(draft.entries.len());
+    let mut party_ids: Vec<Option<Uuid>> = Vec::with_capacity(draft.entries.len());
     for (i, entry) in draft.entries.iter().enumerate() {
-        let id: Uuid =
-            sqlx::query("select id from account where company_id = $1 and number = $2 and active")
+        let account = sqlx::query(
+            "select id, reskontro_kind from account
+             where company_id = $1 and number = $2 and active",
+        )
+        .bind(company_id)
+        .bind(&entry.account_number)
+        .fetch_optional(&mut *tx)
+        .await?
+        .with_context(|| {
+            format!(
+                "entry line {}: no active account {} for this company",
+                i + 1,
+                entry.account_number
+            )
+        })?;
+        account_ids.push(account.get("id"));
+
+        let reskontro_kind: Option<String> = account.get("reskontro_kind");
+        let party_id = match (&reskontro_kind, &entry.party_no) {
+            (Some(kind), Some(party_no)) => {
+                let party = sqlx::query(
+                    "select id, kind from party where company_id = $1 and party_no = $2",
+                )
                 .bind(company_id)
-                .bind(&entry.account_number)
+                .bind(party_no)
                 .fetch_optional(&mut *tx)
                 .await?
-                .with_context(|| {
-                    format!(
-                        "entry line {}: no active account {} for this company",
+                .with_context(|| format!("entry line {}: no party {party_no}", i + 1))?;
+                let party_kind: String = party.get("kind");
+                if &party_kind != kind {
+                    bail!(
+                        "entry line {}: party {party_no} is a {party_kind}, but account {} is a {kind}-reskontro account",
                         i + 1,
                         entry.account_number
-                    )
-                })?
-                .get("id");
-        account_ids.push(id);
+                    );
+                }
+                Some(party.get("id"))
+            }
+            (Some(kind), None) => bail!(
+                "entry line {}: account {} is a {kind}-reskontro account and requires a party",
+                i + 1,
+                entry.account_number
+            ),
+            (None, Some(_)) => bail!(
+                "entry line {}: account {} is not a reskontro account — remove the party",
+                i + 1,
+                entry.account_number
+            ),
+            (None, None) => None,
+        };
+        party_ids.push(party_id);
     }
 
     let chain_seq = last_seq + 1;
@@ -184,6 +224,7 @@ pub async fn post_voucher(
     let voucher_id = Uuid::now_v7();
 
     let hash_input = VoucherHashInput {
+        hash_version: regnmed_core::hash::HASH_VERSION_CURRENT,
         company_id,
         chain_seq,
         journal_code: draft.journal_code.clone(),
@@ -204,6 +245,7 @@ pub async fn post_voucher(
                 amount: e.amount,
                 vat_code: none_if_empty(&e.vat_code),
                 description: none_if_empty(&e.description),
+                party_no: none_if_empty(&e.party_no),
             })
             .collect(),
     };
@@ -212,8 +254,8 @@ pub async fn post_voucher(
     sqlx::query(
         "insert into voucher (id, company_id, journal_id, fiscal_year, voucher_number,
                               voucher_date, description, reverses_voucher_id, created_by,
-                              created_at, chain_seq, prev_hash, hash)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                              created_at, chain_seq, prev_hash, hash, hash_version)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(voucher_id)
     .bind(company_id)
@@ -228,13 +270,21 @@ pub async fn post_voucher(
     .bind(chain_seq)
     .bind(prev_hash.as_slice())
     .bind(hash.as_slice())
+    .bind(regnmed_core::hash::HASH_VERSION_CURRENT)
     .execute(&mut *tx)
     .await?;
 
-    for (i, (entry, account_id)) in draft.entries.iter().zip(&account_ids).enumerate() {
+    for (i, ((entry, account_id), party_id)) in draft
+        .entries
+        .iter()
+        .zip(&account_ids)
+        .zip(&party_ids)
+        .enumerate()
+    {
         sqlx::query(
-            "insert into entry (id, voucher_id, line_no, account_id, amount_ore, vat_code, description)
-             values ($1, $2, $3, $4, $5, $6, $7)",
+            "insert into entry (id, voucher_id, line_no, account_id, amount_ore, vat_code,
+                                description, party_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(Uuid::now_v7())
         .bind(voucher_id)
@@ -243,6 +293,7 @@ pub async fn post_voucher(
         .bind(entry.amount.0)
         .bind(none_if_empty(&entry.vat_code))
         .bind(none_if_empty(&entry.description))
+        .bind(party_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -273,7 +324,7 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
     let vouchers = sqlx::query(
         "select v.id, v.chain_seq, v.fiscal_year, v.voucher_number, v.voucher_date,
                 v.description, v.reverses_voucher_id, v.created_by, v.created_at,
-                v.prev_hash, v.hash, j.code as journal_code
+                v.prev_hash, v.hash, v.hash_version, j.code as journal_code
          from voucher v
          join journal j on j.id = v.journal_id
          where v.company_id = $1
@@ -298,9 +349,11 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
         }
 
         let entry_rows = sqlx::query(
-            "select e.line_no, a.number as account_number, e.amount_ore, e.vat_code, e.description
+            "select e.line_no, a.number as account_number, e.amount_ore, e.vat_code,
+                    e.description, p.party_no
              from entry e
              join account a on a.id = e.account_id
+             left join party p on p.id = e.party_id
              where e.voucher_id = $1
              order by e.line_no",
         )
@@ -309,6 +362,7 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
         .await?;
 
         let input = VoucherHashInput {
+            hash_version: row.get("hash_version"),
             company_id,
             chain_seq,
             journal_code: row.get("journal_code"),
@@ -327,6 +381,7 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
                     amount: Ore(e.get("amount_ore")),
                     vat_code: e.get("vat_code"),
                     description: e.get("description"),
+                    party_no: e.get("party_no"),
                 })
                 .collect(),
         };

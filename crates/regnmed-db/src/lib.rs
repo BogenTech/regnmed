@@ -8,6 +8,7 @@ pub mod bank;
 pub mod ledger;
 pub mod mva;
 pub mod ocr;
+pub mod reskontro;
 pub mod saft;
 pub mod tenancy;
 
@@ -15,6 +16,7 @@ pub use bank::*;
 pub use ledger::*;
 pub use mva::*;
 pub use ocr::*;
+pub use reskontro::*;
 pub use saft::*;
 pub use tenancy::*;
 
