@@ -50,6 +50,35 @@ enum Command {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
+    /// Mva-spesifikasjon: grunnlag og beregnet avgift per standardkode
+    MvaReport {
+        /// Company id (or use --orgnr)
+        #[arg(long, conflicts_with = "orgnr")]
+        company: Option<Uuid>,
+        /// Organization number of the company
+        #[arg(long)]
+        orgnr: Option<String>,
+        /// Year to report
+        #[arg(long)]
+        year: i32,
+        /// Termin 1-6 (two-month period); whole year when omitted
+        #[arg(long)]
+        termin: Option<u8>,
+    },
+}
+
+async fn resolve_company(
+    pool: &sqlx::PgPool,
+    company: Option<Uuid>,
+    orgnr: Option<&str>,
+) -> Result<Uuid> {
+    match (company, orgnr) {
+        (Some(id), _) => Ok(id),
+        (None, Some(orgnr)) => regnmed_db::find_company_by_orgnr(pool, orgnr)
+            .await?
+            .with_context(|| format!("no company with orgnr {orgnr}")),
+        (None, None) => anyhow::bail!("pass --company or --orgnr"),
+    }
 }
 
 #[tokio::main]
@@ -94,8 +123,102 @@ async fn main() -> Result<()> {
             contact,
             out,
         } => saft_export(&pool, company, orgnr, year, from, to, &contact, out).await?,
+        Command::MvaReport {
+            company,
+            orgnr,
+            year,
+            termin,
+        } => mva_report(&pool, company, orgnr, year, termin).await?,
     }
     Ok(())
+}
+
+async fn mva_report(
+    pool: &sqlx::PgPool,
+    company: Option<Uuid>,
+    orgnr: Option<String>,
+    year: i32,
+    termin: Option<u8>,
+) -> Result<()> {
+    use regnmed_core::mva::{Direction, Termin, direction};
+
+    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let (start, end, label) = match termin {
+        Some(n) => {
+            let t = Termin::new(year, n).context("--termin must be 1-6")?;
+            (t.start(), t.end(), t.to_string())
+        }
+        None => (
+            chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,
+            chrono::NaiveDate::from_ymd_opt(year, 12, 31).context("invalid year")?,
+            format!("hele {year}"),
+        ),
+    };
+
+    let lines = regnmed_db::mva_spesifikasjon(pool, company_id, start, end).await?;
+    if lines.is_empty() {
+        println!("ingen mva-posteringer i perioden {start} – {end}");
+        return Ok(());
+    }
+
+    println!("Mva-spesifikasjon, {label} ({start} – {end})");
+    println!("beløp i kroner, ledger-fortegn: debet positivt\n");
+    println!(
+        "{:<5} {:>15} {:>15} {:>8}  beskrivelse",
+        "kode", "grunnlag", "beregnet avgift", "sats"
+    );
+    for line in &lines {
+        println!(
+            "{:<5} {:>15} {:>15} {:>7}%  {}",
+            line.code,
+            Ore(line.grunnlag_ore).to_string(),
+            Ore(line.avgift_ore).to_string(),
+            fmt_bp(line.rate_bp),
+            line.description
+        );
+    }
+
+    // Sales bases post as credits (negative), so payable output VAT is the
+    // negated sum; deductible input VAT posts as debits (positive).
+    let utgaende: i64 = lines
+        .iter()
+        .filter(|l| direction(&l.code) == Direction::Utgaende)
+        .map(|l| -l.avgift_ore)
+        .sum();
+    let inngaende: i64 = lines
+        .iter()
+        .filter(|l| direction(&l.code) == Direction::Inngaende)
+        .map(|l| l.avgift_ore)
+        .sum();
+    let netto = utgaende - inngaende;
+
+    println!();
+    println!("Utgående avgift:  {:>15}", Ore(utgaende).to_string());
+    println!("Inngående avgift: {:>15}", Ore(inngaende).to_string());
+    if netto >= 0 {
+        println!("Å betale:         {:>15}", Ore(netto).to_string());
+    } else {
+        println!("Til gode:         {:>15}", Ore(-netto).to_string());
+    }
+
+    if lines
+        .iter()
+        .any(|l| direction(&l.code) == Direction::OmvendtAvgiftsplikt)
+    {
+        println!(
+            "\nmerk: koder med omvendt avgiftsplikt/innførsel er listet, men\n\
+             tosidig behandling skjer i mva-meldingen."
+        );
+    }
+    Ok(())
+}
+
+/// Basis points as a display percentage: 2500 → "25", 1111 → "11,11".
+fn fmt_bp(bp: i64) -> String {
+    match (bp / 100, bp % 100) {
+        (whole, 0) => format!("{whole}"),
+        (whole, frac) => format!("{whole},{frac:02}"),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -111,13 +234,7 @@ async fn saft_export(
 ) -> Result<()> {
     use chrono::NaiveDate;
 
-    let company_id = match (company, &orgnr) {
-        (Some(id), _) => id,
-        (None, Some(orgnr)) => regnmed_db::find_company_by_orgnr(pool, orgnr)
-            .await?
-            .with_context(|| format!("no company with orgnr {orgnr}"))?,
-        (None, None) => anyhow::bail!("pass --company or --orgnr"),
-    };
+    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
 
     let (start, end) = match (year, from, to) {
         (Some(y), _, _) => (
@@ -263,6 +380,44 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
         posted2.voucher_number,
         posted2.chain_seq,
         hex::encode(posted2.hash)
+    );
+
+    // A purchase with deductible input VAT, so mva-report has both sides.
+    regnmed_db::ensure_account(pool, company, "4300", "Innkjøp av varer for videresalg").await?;
+    regnmed_db::ensure_account(pool, company, "2710", "Inngående merverdiavgift").await?;
+    let purchase = VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: today,
+        description: "Varekjøp".into(),
+        reverses: None,
+        entries: vec![
+            EntryDraft {
+                account_number: "4300".into(),
+                amount: Ore(8_000_00),
+                vat_code: Some("1".into()),
+                description: None,
+            },
+            EntryDraft {
+                account_number: "2710".into(),
+                amount: Ore(2_000_00),
+                vat_code: None,
+                description: None,
+            },
+            EntryDraft {
+                account_number: "1920".into(),
+                amount: Ore(-10_000_00),
+                vat_code: None,
+                description: None,
+            },
+        ],
+    };
+    let posted3 = regnmed_db::post_voucher(pool, company, &purchase, "demo").await?;
+    println!(
+        "posted voucher {}-{} (seq {}, hash {})",
+        posted3.fiscal_year,
+        posted3.voucher_number,
+        posted3.chain_seq,
+        hex::encode(posted3.hash)
     );
 
     // An unbalanced voucher must be rejected before it reaches the database.

@@ -5,10 +5,12 @@
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
 pub mod ledger;
+pub mod mva;
 pub mod saft;
 pub mod tenancy;
 
 pub use ledger::*;
+pub use mva::*;
 pub use saft::*;
 pub use tenancy::*;
 

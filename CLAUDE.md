@@ -141,7 +141,14 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `regnmed-db::saft`, `regnmed saft-export` CLI. Output validated
    against Skatteetaten's XSD (vendored in `docs/saft/`) in unit tests
    and CI (`.github/workflows/ci.yml` installs xmllint).
-   **Next:** MVA codes end-to-end (then EHF/Peppol, bank reconciliation).
+4. ✅ MVA codes end-to-end: complete standard code list + dated rates
+   (`vat_rate`, basis points, history incl. the covid lav-sats cut) in
+   migration 0006; pure termin/beregning logic in `regnmed-core::mva`
+   (integer øre only); `regnmed mva-report` prints the mva-spesifikasjon
+   per termin with utgående/inngående/netto. SAF-T lines carry the rate
+   valid on each voucher's date, not the current rate.
+   **Next:** EHF/Peppol, bank reconciliation — or mva-melding (M2) once
+   Maskinporten foundation exists.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

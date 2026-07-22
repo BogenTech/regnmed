@@ -54,11 +54,19 @@ pub async fn load_saft_input(
     })
     .collect();
 
+    // TaxTable rate: the rate in force at the end of the selection period;
+    // per-line TaxInformation carries the rate at each voucher's date.
     let tax_codes = sqlx::query(
-        "select distinct vc.code, vc.description, (vc.rate_percent * 100)::bigint as percent_bp
+        "select distinct vc.code, vc.description,
+                coalesce(r.rate_bp, (vc.rate_percent * 100)::integer)::bigint as percent_bp
          from entry e
          join voucher v on v.id = e.voucher_id
          join vat_code vc on vc.code = e.vat_code
+         left join lateral (
+             select rate_bp from vat_rate
+             where rate_class = vc.rate_class and valid_from <= $3
+             order by valid_from desc limit 1
+         ) r on true
          where v.company_id = $1 and v.voucher_date between $2 and $3
          order by vc.code",
     )
@@ -94,10 +102,16 @@ pub async fn load_saft_input(
 
     let line_rows = sqlx::query(
         "select e.voucher_id, e.line_no, a.number as account_number,
-                e.amount_ore, e.vat_code, e.description
+                e.amount_ore, e.vat_code, e.description, r.rate_bp
          from entry e
          join voucher v on v.id = e.voucher_id
          join account a on a.id = e.account_id
+         left join vat_code vc on vc.code = e.vat_code
+         left join lateral (
+             select rate_bp from vat_rate
+             where rate_class = vc.rate_class and valid_from <= v.voucher_date
+             order by valid_from desc limit 1
+         ) r on true
          where v.company_id = $1 and v.voucher_date between $2 and $3
          order by e.voucher_id, e.line_no",
     )
@@ -119,6 +133,7 @@ pub async fn load_saft_input(
                 description: row.get("description"),
                 amount_ore: row.get("amount_ore"),
                 vat_code: row.get("vat_code"),
+                tax_percent_bp: row.get::<Option<i32>, _>("rate_bp").map(i64::from),
             });
     }
 

@@ -79,6 +79,10 @@ pub struct SaftLine {
     pub description: Option<String>,
     pub amount_ore: i64,
     pub vat_code: Option<String>,
+    /// The rate valid on the voucher date, in basis points — resolved
+    /// against the dated `vat_rate` table when loading, so historical
+    /// vouchers export with the rate that actually applied.
+    pub tax_percent_bp: Option<i64>,
 }
 
 /// An account's mapping onto Skatteetaten's grouping code list.
@@ -251,12 +255,6 @@ fn entries(x: &mut Xml, input: &SaftInput) {
     let total_debit: i64 = all_lines().map(|l| l.amount_ore.max(0)).sum();
     let total_credit: i64 = all_lines().map(|l| (-l.amount_ore).max(0)).sum();
 
-    let rates: std::collections::HashMap<&str, i64> = input
-        .tax_codes
-        .iter()
-        .map(|t| (t.code.as_str(), t.percent_bp))
-        .collect();
-
     x.open("GeneralLedgerEntries");
     x.leaf("NumberOfEntries", &transactions.to_string());
     x.leaf("TotalDebit", &amount(total_debit));
@@ -295,7 +293,7 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 x.leaf("Amount", &amount(line.amount_ore));
                 x.close(side);
                 if let Some(code) = &line.vat_code
-                    && let Some(&bp) = rates.get(code.as_str())
+                    && let Some(bp) = line.tax_percent_bp
                 {
                     x.open("TaxInformation");
                     x.leaf("TaxType", "MVA");
@@ -307,7 +305,10 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                         "CreditTaxAmount"
                     };
                     x.open(tax_side);
-                    x.leaf("Amount", &amount(tax_ore(line.amount_ore, bp)));
+                    x.leaf(
+                        "Amount",
+                        &amount(crate::mva::vat_of_base(line.amount_ore, bp)),
+                    );
                     x.close(tax_side);
                     x.close("TaxInformation");
                 }
@@ -343,13 +344,6 @@ fn balance(x: &mut Xml, prefix: &str, ore: i64) {
 fn amount(ore: i64) -> String {
     let abs = ore.unsigned_abs();
     format!("{}.{:02}", abs / 100, abs % 100)
-}
-
-/// Tax in øre from a base in øre and a rate in basis points, rounded half
-/// away from zero. Result is signed like the base.
-fn tax_ore(base_ore: i64, percent_bp: i64) -> i64 {
-    let tax = (i128::from(base_ore.unsigned_abs()) * i128::from(percent_bp) + 5_000) / 10_000;
-    i64::try_from(tax).expect("tax amount fits in i64") * base_ore.signum()
 }
 
 /// Basis points as a decimal percentage: 2500 → "25", 1550 → "15.5".
@@ -488,6 +482,7 @@ mod tests {
                             description: None,
                             amount_ore: 1_250_000,
                             vat_code: None,
+                            tax_percent_bp: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -495,6 +490,7 @@ mod tests {
                             description: Some("Konsulentbistand".into()),
                             amount_ore: -1_000_000,
                             vat_code: Some("3".into()),
+                            tax_percent_bp: Some(2500),
                         },
                         SaftLine {
                             line_no: 3,
@@ -502,6 +498,7 @@ mod tests {
                             description: None,
                             amount_ore: -250_000,
                             vat_code: None,
+                            tax_percent_bp: None,
                         },
                     ],
                 }],
@@ -537,17 +534,12 @@ mod tests {
     }
 
     #[test]
-    fn tax_amount_follows_line_side_and_rounds() {
+    fn tax_amount_follows_line_side() {
         let xml = render(&fixture());
         // 10000.00 credit at 25 % → 2500.00 CreditTaxAmount.
         assert!(xml.contains("<CreditTaxAmount>"));
+        assert!(xml.contains("<Amount>2500.00</Amount>"));
         assert!(!xml.contains("<DebitTaxAmount>"));
-        assert_eq!(tax_ore(-1_000_000, 2500), -250_000);
-        // 0,01 kr at 25 % = 0,0025 kr → rounds half away from zero to 0,00? No:
-        // 1 øre * 2500 bp = 2500; +5000 = 7500; /10000 = 0 (integer). Verify.
-        assert_eq!(tax_ore(1, 2500), 0);
-        assert_eq!(tax_ore(2, 2500), 1); // 0,5 øre rounds up
-        assert_eq!(tax_ore(-2, 2500), -1);
     }
 
     #[test]
