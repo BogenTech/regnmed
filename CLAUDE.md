@@ -85,6 +85,26 @@ cargo test                                 # unit tests, no DB needed
 Norwegian domain terms are used deliberately (bilag, hovedbok, oppdrag,
 kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 
+### Testing policy (agreed 2026-07-22)
+
+Every important change ships with tests in the same commit — not tests
+for everything, tests for what must not break: domain invariants (money,
+hashing, double-entry), ledger immutability, auth boundaries, and export
+formats. Patterns in use:
+
+- Pure logic: unit tests next to the code (regnmed-core).
+- **The golden hash test in `regnmed-core::hash` pins the exact digest of
+  the canonical serialization. If it fails, the change breaks chain
+  verification of every deployed ledger — the format can only be
+  versioned, never edited.**
+- DB behavior (posting transaction, append-only triggers, deferred
+  balance check, tamper detection, SAF-T loader): integration tests in
+  `crates/regnmed-db/tests/` and `crates/regnmed-api/tests/` that skip
+  politely when DATABASE_URL is unset, and run for real in CI against a
+  postgres:18 service (locally: `scripts/dev-db.sh` + `regnmed migrate`).
+- SAF-T output is validated against Skatteetaten's official XSD
+  (vendored in `docs/saft/`) with xmllint, in unit tests and CI.
+
 ### Local production-like cluster (on demand, 8 GB-friendly)
 
 `scripts/dev-cluster.sh up` gives the full topology in a local k3s

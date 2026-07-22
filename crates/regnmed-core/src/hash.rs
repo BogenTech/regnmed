@@ -158,6 +158,50 @@ mod tests {
         assert_ne!(a, b);
     }
 
+    /// Locks the canonical serialization forever. If this test fails, the
+    /// change breaks chain verification of every ledger already in
+    /// production — the format cannot be "improved", only versioned.
+    #[test]
+    fn golden_hash_never_changes() {
+        let hash = chain_hash(&GENESIS_HASH, &sample());
+        assert_eq!(
+            hash.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "1001ebbe2aad6c76a9978f972056ad5d7be922828acb8e5ef55c35d6a16ebc8b"
+        );
+    }
+
+    /// The netstring framing must keep field boundaries unambiguous:
+    /// moving a character between adjacent fields must change the hash.
+    #[test]
+    fn field_boundaries_cannot_collide() {
+        let a = {
+            let mut v = sample();
+            v.journal_code = "GLX".into();
+            v.description = "Salg".into();
+            v
+        };
+        let b = {
+            let mut v = sample();
+            v.journal_code = "GL".into();
+            v.description = "XSalg".into();
+            v
+        };
+        assert_ne!(chain_hash(&GENESIS_HASH, &a), chain_hash(&GENESIS_HASH, &b));
+
+        // None and Some("") on an entry field must also differ via the
+        // count/normalization contract upstream; here the serialization at
+        // least distinguishes an empty description from a missing entry.
+        let c = {
+            let mut v = sample();
+            v.entries[0].description = Some("x".into());
+            v
+        };
+        assert_ne!(
+            chain_hash(&GENESIS_HASH, &sample()),
+            chain_hash(&GENESIS_HASH, &c)
+        );
+    }
+
     #[test]
     fn timestamp_truncation_is_stable() {
         let ts = DateTime::from_timestamp(1_800_000_000, 123_456_789).unwrap();

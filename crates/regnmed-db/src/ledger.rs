@@ -17,6 +17,7 @@ pub struct PostedVoucher {
     pub hash: [u8; 32],
 }
 
+#[derive(Debug)]
 pub struct ChainReport {
     pub vouchers_checked: i64,
 }

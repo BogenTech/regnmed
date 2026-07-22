@@ -1,7 +1,8 @@
-# Frugal CI: format check + unit tests. No database — unit tests are
-# DB-free by design. libxml2-utils provides xmllint so the SAF-T export
-# is validated against Skatteetaten's official XSD on every push (the
-# test skips politely when xmllint is missing locally, but here it runs).
+# Frugal CI, one job: format check + the full test suite against a real
+# Postgres 18 service, so the DB-backed integration tests (ledger
+# immutability, auth boundary, SAF-T loader) run for real instead of
+# skipping. libxml2-utils provides xmllint so every run also validates the
+# SAF-T export against Skatteetaten's official XSD.
 name: ci
 on:
   push:
@@ -11,6 +12,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: regnmed
+          POSTGRES_PASSWORD: regnmed
+          POSTGRES_DB: regnmed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U regnmed"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
     steps:
       - uses: actions/checkout@v4
       - name: Install xmllint (SAF-T XSD validation)
