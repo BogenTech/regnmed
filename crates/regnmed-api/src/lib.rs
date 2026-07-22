@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod bank;
+pub mod invoice;
 pub mod ocr;
 pub mod reports;
 pub mod reskontro;
@@ -79,6 +80,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/accounts/{account_number}/reskontro",
             axum::routing::put(reskontro::set_account_reskontro),
+        )
+        .route(
+            "/companies/{company_id}/invoices",
+            get(invoice::list_invoices).post(invoice::create_invoice),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/credit-note",
+            axum::routing::post(invoice::credit_note),
         )
         .with_state(state)
 }

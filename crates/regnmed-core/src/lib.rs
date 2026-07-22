@@ -10,6 +10,7 @@ pub mod bank;
 pub mod camt053;
 pub mod error;
 pub mod hash;
+pub mod invoice;
 pub mod kid;
 pub mod money;
 pub mod mva;

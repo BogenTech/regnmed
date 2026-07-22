@@ -5,6 +5,7 @@
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
 pub mod bank;
+pub mod invoice;
 pub mod ledger;
 pub mod mva;
 pub mod ocr;
@@ -13,6 +14,7 @@ pub mod saft;
 pub mod tenancy;
 
 pub use bank::*;
+pub use invoice::*;
 pub use ledger::*;
 pub use mva::*;
 pub use ocr::*;

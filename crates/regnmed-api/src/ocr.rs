@@ -89,6 +89,7 @@ pub async fn list_payments(
             "transaction_type": p.transaction_type,
             "bank_reference": p.bank_reference,
             "account": p.account_number,
+            "invoice_no": p.invoice_no,
         })).collect::<Vec<_>>(),
         "sum_ore": payments.iter().map(|p| p.amount_ore).sum::<i64>(),
     })))

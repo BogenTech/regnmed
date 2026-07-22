@@ -123,14 +123,27 @@ pub async fn post_voucher(
     draft: &VoucherDraft,
     created_by: &str,
 ) -> Result<PostedVoucher> {
-    draft.validate()?;
-
     let mut tx = pool.begin().await?;
+    let posted = post_voucher_in(&mut tx, company_id, draft, created_by).await?;
+    tx.commit().await?;
+    Ok(posted)
+}
+
+/// Transaction-taking variant, so callers (e.g. invoice issuing) can make
+/// the posting atomic with their own writes — gap-free counters on both
+/// sides survive a rollback together.
+pub async fn post_voucher_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    draft: &VoucherDraft,
+    created_by: &str,
+) -> Result<PostedVoucher> {
+    draft.validate()?;
 
     let head =
         sqlx::query("select last_seq, last_hash from chain_head where company_id = $1 for update")
             .bind(company_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?
             .context("company has no chain head — was it created with create_company?")?;
     let last_seq: i64 = head.get("last_seq");
@@ -140,7 +153,7 @@ pub async fn post_voucher(
         sqlx::query("select id from journal where company_id = $1 and code = $2")
             .bind(company_id)
             .bind(&draft.journal_code)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?
             .with_context(|| format!("unknown journal '{}' for this company", draft.journal_code))?
             .get("id");
@@ -154,7 +167,7 @@ pub async fn post_voucher(
     )
     .bind(journal_id)
     .bind(fiscal_year)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?
     .get("last_number");
 
@@ -172,7 +185,7 @@ pub async fn post_voucher(
         )
         .bind(company_id)
         .bind(&entry.account_number)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?
         .with_context(|| {
             format!(
@@ -191,7 +204,7 @@ pub async fn post_voucher(
                 )
                 .bind(company_id)
                 .bind(party_no)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut **tx)
                 .await?
                 .with_context(|| format!("entry line {}: no party {party_no}", i + 1))?;
                 let party_kind: String = party.get("kind");
@@ -271,7 +284,7 @@ pub async fn post_voucher(
     .bind(prev_hash.as_slice())
     .bind(hash.as_slice())
     .bind(regnmed_core::hash::HASH_VERSION_CURRENT)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     for (i, ((entry, account_id), party_id)) in draft
@@ -294,7 +307,7 @@ pub async fn post_voucher(
         .bind(none_if_empty(&entry.vat_code))
         .bind(none_if_empty(&entry.description))
         .bind(party_id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -302,10 +315,8 @@ pub async fn post_voucher(
         .bind(company_id)
         .bind(chain_seq)
         .bind(hash.as_slice())
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-
-    tx.commit().await?;
 
     Ok(PostedVoucher {
         id: voucher_id,

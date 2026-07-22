@@ -65,11 +65,20 @@ pub async fn import_ocr_file(
         );
 
         for payment in &assignment.payments {
+            // The KID identifies the invoice being paid (invoice KIDs are
+            // unique per company) — recorded so the payment list shows
+            // which invoice each innbetaling settles.
+            let invoice_id: Option<Uuid> =
+                sqlx::query_scalar("select id from invoice where company_id = $1 and kid = $2")
+                    .bind(company_id)
+                    .bind(&payment.kid)
+                    .fetch_optional(&mut *tx)
+                    .await?;
             sqlx::query(
                 "insert into ocr_payment (id, batch_id, transaction_number, payment_date,
                                           amount_ore, kid, kid_valid, transaction_type,
-                                          bank_reference, debit_account)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                                          bank_reference, debit_account, invoice_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             )
             .bind(Uuid::now_v7())
             .bind(batch_id)
@@ -81,6 +90,7 @@ pub async fn import_ocr_file(
             .bind(&payment.transaction_type)
             .bind(&payment.bank_reference)
             .bind(&payment.debit_account)
+            .bind(invoice_id)
             .execute(&mut *tx)
             .await?;
             summary.payments += 1;
@@ -105,6 +115,8 @@ pub struct OcrPaymentRow {
     pub transaction_type: String,
     pub bank_reference: Option<String>,
     pub account_number: String,
+    /// Invoice the KID identifies, when it matches one.
+    pub invoice_no: Option<i64>,
 }
 
 pub async fn list_ocr_payments(
@@ -115,10 +127,12 @@ pub async fn list_ocr_payments(
 ) -> Result<Vec<OcrPaymentRow>> {
     let rows = sqlx::query(
         "select p.id, p.payment_date, p.amount_ore, p.kid, p.kid_valid,
-                p.transaction_type, p.bank_reference, a.number as account_number
+                p.transaction_type, p.bank_reference, a.number as account_number,
+                i.invoice_no
          from ocr_payment p
          join ocr_batch b on b.id = p.batch_id
          join account a on a.id = b.account_id
+         left join invoice i on i.id = p.invoice_id
          where b.company_id = $1
            and ($2::date is null or p.payment_date >= $2)
            and ($3::date is null or p.payment_date <= $3)
@@ -140,6 +154,7 @@ pub async fn list_ocr_payments(
             transaction_type: r.get("transaction_type"),
             bank_reference: r.get("bank_reference"),
             account_number: r.get("account_number"),
+            invoice_no: r.get("invoice_no"),
         })
         .collect())
 }

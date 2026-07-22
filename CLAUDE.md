@@ -189,8 +189,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (enforced in post_voucher). Åpne poster matching with computed
    remainders; SAF-T exports Customers/Suppliers + line party ids;
    `/companies/{id}/parties…` + `/reskontro/matches` endpoints.
-   **Next:** faktura (#13, KID + OCR auto-application), or EHF/Peppol
-   (awaits access-point provider decision).
+9. ✅ Faktura: gap-free invoice numbers atomic with the ledger posting
+   (`post_voucher_in` takes the caller's transaction), KID from invoice
+   number (MOD10), automatic posting (receivable w/ party, revenue lines
+   w/ VAT codes, dated-rate VAT), kreditnota with auto reskontro-match,
+   OCR payments resolve their invoice by KID at import. Invoices
+   immutable once issued. `/companies/{id}/invoices…` endpoints.
+   PDF/EHF rendering arrives with portal + access point (docs/faktura.md).
+   **Next:** periodelåsing (#5) + bilagsvedlegg (#6) complete M1; EHF
+   (#14) awaits the access-point decision.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
