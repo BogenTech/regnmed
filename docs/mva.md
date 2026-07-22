@@ -74,6 +74,18 @@ test environment.
 Validation and submission against Skatteetaten's APIs: see
 [gov.md](gov.md).
 
+## Web API (the product surface)
+
+The web is the product; the CLI wraps the same crate functions for
+ops/admin. Authenticated, engagement-guarded endpoints (see
+[auth.md](auth.md)):
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /companies/{id}/reports/mva?year=&termin=` | spesifikasjon as JSON (øre integers; the UI formats) |
+| `GET /companies/{id}/reports/mva-melding?year=&termin=` | `mvaMeldingDto` XML download |
+| `GET /companies/{id}/reports/saft?year=` (or `from=&to=`) | SAF-T XML download; header contact defaults to the authenticated person's name |
+
 ## Where it is tested
 
 - `crates/regnmed-core/src/mva.rs` — termin boundaries (incl. leap

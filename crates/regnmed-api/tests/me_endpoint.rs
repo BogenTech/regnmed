@@ -4,92 +4,17 @@
 //! malformed tokens must be rejected. Requires DATABASE_URL (skips
 //! otherwise) — `scripts/dev-db.sh` + `regnmed migrate` provides it.
 
-use std::sync::Arc;
+mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use rsa::RsaPrivateKey;
-use rsa::pkcs1::EncodeRsaPrivateKey;
-use rsa::traits::PublicKeyParts;
+use common::{AUDIENCE, ISSUER, KID, TestIdp, test_state, unique_orgnr};
+use jsonwebtoken::{Algorithm, Header, encode};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use regnmed_api::auth::Verifier;
 use regnmed_api::{AppState, router};
-
-const ISSUER: &str = "https://id.test.invalid";
-const AUDIENCE: &str = "regnmed";
-const KID: &str = "test-key-1";
-
-struct TestIdp {
-    encoding_key: EncodingKey,
-    jwks: JwkSet,
-}
-
-impl TestIdp {
-    fn new() -> Self {
-        let private = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).expect("generate RSA key");
-        let pem = private
-            .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
-            .expect("encode PEM");
-        let encoding_key = EncodingKey::from_rsa_pem(pem.as_bytes()).expect("load PEM");
-
-        let jwks: JwkSet = serde_json::from_value(json!({
-            "keys": [{
-                "kty": "RSA",
-                "use": "sig",
-                "alg": "RS256",
-                "kid": KID,
-                "n": URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),
-                "e": URL_SAFE_NO_PAD.encode(private.e().to_bytes_be()),
-            }]
-        }))
-        .expect("build JWKS");
-
-        Self { encoding_key, jwks }
-    }
-
-    fn token(&self, sub: &str, name: &str) -> String {
-        let mut header = Header::new(Algorithm::RS256);
-        header.kid = Some(KID.to_string());
-        let exp = chrono::Utc::now().timestamp() + 3600;
-        let claims = json!({
-            "iss": ISSUER,
-            "aud": AUDIENCE,
-            "sub": sub,
-            "name": name,
-            "email": format!("{}@test.invalid", sub.replace('|', ".")),
-            "exp": exp,
-        });
-        encode(&header, &claims, &self.encoding_key).expect("sign token")
-    }
-}
-
-async fn test_state(idp: &TestIdp) -> Option<AppState> {
-    dotenvy::dotenv().ok();
-    let Ok(url) = std::env::var("DATABASE_URL") else {
-        eprintln!("skipping: DATABASE_URL not set");
-        return None;
-    };
-    let pool = regnmed_db::connect(&url).await.expect("connect to dev db");
-    regnmed_db::MIGRATOR.run(&pool).await.expect("migrate");
-
-    let verifier = Verifier::from_jwks(ISSUER, Some(AUDIENCE.into()), idp.jwks.clone());
-    Some(AppState {
-        pool,
-        verifier: Arc::new(verifier),
-    })
-}
-
-fn unique_orgnr() -> String {
-    let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
-    format!("{:09}", u64::from(n) % 1_000_000_000)
-}
 
 async fn get_me(state: &AppState, bearer: Option<&str>) -> (StatusCode, Value) {
     let mut request = Request::builder().uri("/me");

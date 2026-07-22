@@ -42,6 +42,16 @@ person ──── company_member ───────────────
 - This mirrors Altinn's delegation model (see gov.md), which will let
   government-side delegation and regnmed-side engagements stay aligned.
 
+## Per-company guard on API routes
+
+Every company-scoped endpoint resolves the caller's access with
+`regnmed_db::company_access(person, company)` before touching data. No
+path to the company yields **404, not 403** — a caller without access
+must not learn that the company exists. All access levels (admin /
+bokforing / les — revisor included) may read reports, since reports
+never mutate the ledger; mutating endpoints will require the appropriate
+level when they arrive.
+
 ## Where it is tested
 
 `crates/regnmed-api/tests/me_endpoint.rs` (real Postgres, also CI): a

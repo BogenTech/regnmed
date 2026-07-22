@@ -7,10 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+regnmed-core.workspace = true
 regnmed-db.workspace = true
 
 anyhow.workspace = true
 axum.workspace = true
+chrono.workspace = true
 dotenvy.workspace = true
 jsonwebtoken.workspace = true
 reqwest.workspace = true

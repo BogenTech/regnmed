@@ -2,6 +2,7 @@
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
 pub mod auth;
+pub mod reports;
 
 use std::sync::Arc;
 
@@ -20,6 +21,18 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/me", get(me))
+        .route(
+            "/companies/{company_id}/reports/mva",
+            get(reports::mva_report),
+        )
+        .route(
+            "/companies/{company_id}/reports/mva-melding",
+            get(reports::mva_melding),
+        )
+        .route(
+            "/companies/{company_id}/reports/saft",
+            get(reports::saft_export),
+        )
         .with_state(state)
 }
 

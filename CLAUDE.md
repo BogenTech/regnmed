@@ -65,9 +65,15 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
 - `crates/regnmed-api` — HTTP API (axum). Library + thin binary. OIDC RP
   layer in `src/auth.rs` (`Verifier` + `AuthPerson` extractor — add
   `AuthPerson` as a handler argument to protect a route); `/me` resolves
-  token → companies + access. Config: `OIDC_ISSUER`, optional
+  token → companies + access. Report endpoints in `src/reports.rs`,
+  guarded per company via `regnmed_db::company_access` (no access → 404,
+  never 403 — don't leak existence). Config: `OIDC_ISSUER`, optional
   `OIDC_AUDIENCE`, `OIDC_JWKS_FILE` (dev/tests: static JWKS, signatures
   still validated), `BIND_ADDR`.
+  **API-first principle: the web is the product.** Every user-facing
+  capability (reports, exports, later posting and workflows) must be an
+  authenticated API endpoint; the CLI wraps the same crate functions for
+  ops/admin only and is never the only trigger.
 - `crates/regnmed-cli` — `regnmed` binary: `migrate`, `verify-ledger`, `demo`.
 
 ## Development

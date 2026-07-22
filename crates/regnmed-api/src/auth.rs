@@ -227,6 +227,10 @@ impl FromRequestParts<AppState> for AuthPerson {
 
 pub enum ApiError {
     Unauthorized(&'static str),
+    /// Also covers "exists but you have no access" — a caller without
+    /// access must not learn whether the company exists.
+    NotFound,
+    BadRequest(String),
     Internal(anyhow::Error),
 }
 
@@ -241,6 +245,12 @@ impl IntoResponse for ApiError {
         match self {
             ApiError::Unauthorized(msg) => {
                 (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response()
+            }
+            ApiError::NotFound => {
+                (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" }))).into_response()
+            }
+            ApiError::BadRequest(msg) => {
+                (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()
             }
             ApiError::Internal(err) => {
                 // Log the detail server-side; never leak it to the client.

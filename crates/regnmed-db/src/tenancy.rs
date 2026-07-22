@@ -120,6 +120,27 @@ pub async fn ensure_engagement(
     Ok(())
 }
 
+/// The person's access to one specific company ('admin', 'bokforing' or
+/// 'les'), or `None` — resolved through the same paths as
+/// [`company_access_for_person`]. The API's per-company guard.
+pub async fn company_access(
+    pool: &PgPool,
+    person_id: Uuid,
+    company_id: Uuid,
+) -> Result<Option<String>> {
+    let access = company_access_for_person(pool, person_id)
+        .await?
+        .into_iter()
+        .filter(|a| a.company_id == company_id)
+        // 'admin' > 'bokforing' > 'les'; pick the strongest path.
+        .max_by_key(|a| match a.access.as_str() {
+            "admin" => 3,
+            "bokforing" => 2,
+            _ => 1,
+        });
+    Ok(access.map(|a| a.access))
+}
+
 /// Every company the person may act for: direct memberships, plus firm
 /// memberships routed through engagements that are active today. An
 /// engagement of kind 'regnskap' grants 'bokforing'; 'revisjon' grants
