@@ -5,6 +5,7 @@ pub mod auth;
 pub mod bank;
 pub mod invoice;
 pub mod ocr;
+pub mod period;
 pub mod reports;
 pub mod reskontro;
 
@@ -89,6 +90,24 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/invoices/{invoice_id}/credit-note",
             axum::routing::post(invoice::credit_note),
         )
+        .route(
+            "/companies/{company_id}/period-lock",
+            get(period::get_period_lock).put(period::set_period_lock),
+        )
+        .route(
+            "/companies/{company_id}/vouchers",
+            get(period::list_vouchers),
+        )
+        .route(
+            "/companies/{company_id}/vouchers/{voucher_id}/attachments",
+            get(period::list_voucher_attachments).post(period::upload_attachment),
+        )
+        .route(
+            "/companies/{company_id}/attachments/{attachment_id}",
+            get(period::download_attachment),
+        )
+        // Attachments and statement uploads need more than axum's 2 MB default.
+        .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
         .with_state(state)
 }
 

@@ -30,6 +30,11 @@ use uuid::Uuid;
 
 use crate::Ore;
 
+/// SHA-256 of arbitrary bytes — used for attachment content hashes.
+pub fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
 /// The hash a company's chain starts from (all zeroes).
 pub const GENESIS_HASH: [u8; 32] = [0u8; 32];
 

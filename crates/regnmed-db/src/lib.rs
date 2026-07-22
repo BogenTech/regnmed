@@ -4,20 +4,24 @@
 //! live database. Once the dev database is a fixture of CI, migrate hot
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
+pub mod attachment;
 pub mod bank;
 pub mod invoice;
 pub mod ledger;
 pub mod mva;
 pub mod ocr;
+pub mod period;
 pub mod reskontro;
 pub mod saft;
 pub mod tenancy;
 
+pub use attachment::*;
 pub use bank::*;
 pub use invoice::*;
 pub use ledger::*;
 pub use mva::*;
 pub use ocr::*;
+pub use period::*;
 pub use reskontro::*;
 pub use saft::*;
 pub use tenancy::*;

@@ -140,6 +140,23 @@ pub async fn post_voucher_in(
 ) -> Result<PostedVoucher> {
     draft.validate()?;
 
+    // Ajourhold: locked periods reject postings — corrections go in an
+    // open period as reversing vouchers. The database trigger re-checks
+    // this at insert, independently.
+    let lock: Option<chrono::NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    if let Some(lock) = lock
+        && draft.voucher_date <= lock
+    {
+        bail!(
+            "period is locked through {lock}: voucher dated {} cannot be posted — \
+             correct in an open period",
+            draft.voucher_date
+        );
+    }
+
     let head =
         sqlx::query("select last_seq, last_hash from chain_head where company_id = $1 for update")
             .bind(company_id)

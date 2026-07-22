@@ -196,8 +196,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    OCR payments resolve their invoice by KID at import. Invoices
    immutable once issued. `/companies/{id}/invoices…` endpoints.
    PDF/EHF rendering arrives with portal + access point (docs/faktura.md).
-   **Next:** periodelåsing (#5) + bilagsvedlegg (#6) complete M1; EHF
-   (#14) awaits the access-point decision.
+10. ✅ Periodelåsing + bilagsvedlegg — **M1 (lovpålagt kjerne) complete.**
+   Insert-only lock history (reopening = admin-only, audited); posting
+   check + DB trigger both enforce; attachments append-only with content
+   SHA-256 verified on download and by `verify-ledger` (attachment-set
+   chain binding deferred to M6 anchoring — docs/perioder.md).
+   **Next:** portal UI (M5 — every feature has web endpoints waiting), or
+   EHF (#14, awaits access-point decision) / Maskinporten registration.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

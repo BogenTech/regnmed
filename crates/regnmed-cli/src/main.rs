@@ -129,9 +129,10 @@ async fn main() -> Result<()> {
             }
             for id in companies {
                 let report = regnmed_db::verify_chain(&pool, id).await?;
+                let attachments = regnmed_db::verify_attachments(&pool, id).await?;
                 println!(
-                    "company {id}: chain OK ({} vouchers verified)",
-                    report.vouchers_checked
+                    "company {id}: chain OK ({} vouchers, {} attachments verified)",
+                    report.vouchers_checked, attachments
                 );
             }
         }
