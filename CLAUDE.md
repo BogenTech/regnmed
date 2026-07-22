@@ -98,3 +98,10 @@ kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
+   **UI stack decision (2026-07-22): Tailwind v4 + daisyUI 5 across both
+   sites.** Themes are daisyUI themes (user-selectable, third-party
+   authorable as single CSS blocks); the theme contract and canonical
+   theme definitions live in `../regnid/ui/themes.css` — the portal UI
+   must reuse the same theme names/blocks so a user's theme feels
+   identical on both sites, but store its own per-user preference (never
+   sync UI preferences through the IdP or tokens).
