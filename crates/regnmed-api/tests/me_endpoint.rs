@@ -12,9 +12,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use rsa::RsaPrivateKey;
 use rsa::pkcs1::EncodeRsaPrivateKey;
 use rsa::traits::PublicKeyParts;
-use rsa::RsaPrivateKey;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -111,7 +111,9 @@ async fn get_me(state: &AppState, bearer: Option<&str>) -> (StatusCode, Value) {
 #[tokio::test]
 async fn valid_token_resolves_engagement_access() {
     let idp = TestIdp::new();
-    let Some(state) = test_state(&idp).await else { return };
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
 
     // Seed: an accountant employed by a firm with an active engagement for
     // a client company, plus a direct admin membership in another company.
@@ -165,7 +167,9 @@ async fn valid_token_resolves_engagement_access() {
 #[tokio::test]
 async fn forged_and_malformed_tokens_are_rejected() {
     let idp = TestIdp::new();
-    let Some(state) = test_state(&idp).await else { return };
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
 
     // No Authorization header.
     let (status, _) = get_me(&state, None).await;

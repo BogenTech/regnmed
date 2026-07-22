@@ -155,7 +155,8 @@ impl Verifier {
 
     async fn decoding_key(&self, kid: &str) -> Option<DecodingKey> {
         let jwks = self.jwks.read().await;
-        jwks.find(kid).and_then(|jwk| DecodingKey::from_jwk(jwk).ok())
+        jwks.find(kid)
+            .and_then(|jwk| DecodingKey::from_jwk(jwk).ok())
     }
 
     async fn refresh_jwks(&self) -> Result<()> {
@@ -188,7 +189,10 @@ pub struct AuthPerson {
 impl FromRequestParts<AppState> for AuthPerson {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let header_value = parts
             .headers
             .get(header::AUTHORIZATION)
