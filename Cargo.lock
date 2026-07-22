@@ -1259,6 +1259,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.37.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1414,6 +1423,7 @@ dependencies = [
  "dotenvy",
  "jsonwebtoken",
  "rand 0.8.7",
+ "regnmed-core",
  "regnmed-db",
  "reqwest",
  "rsa",
@@ -1447,6 +1457,7 @@ name = "regnmed-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "quick-xml",
  "sha2",
  "thiserror",
  "uuid",

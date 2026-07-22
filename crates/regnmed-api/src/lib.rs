@@ -2,6 +2,7 @@
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
 pub mod auth;
+pub mod bank;
 pub mod reports;
 
 use std::sync::Arc;
@@ -32,6 +33,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/reports/saft",
             get(reports::saft_export),
+        )
+        .route(
+            "/companies/{company_id}/bank/statements",
+            axum::routing::post(bank::import_statement),
+        )
+        .route(
+            "/companies/{company_id}/bank/reconciliation",
+            get(bank::reconciliation),
+        )
+        .route(
+            "/companies/{company_id}/bank/matches",
+            axum::routing::post(bank::create_match),
+        )
+        .route(
+            "/companies/{company_id}/bank/matches/{bank_transaction_id}",
+            axum::routing::delete(bank::delete_match),
         )
         .with_state(state)
 }

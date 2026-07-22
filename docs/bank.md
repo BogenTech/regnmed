@@ -1,0 +1,68 @@
+# Bank reconciliation
+
+Reconciliation proves that the ledger's bank account and the bank's own
+records agree — bokføringsforskriften expects bankavstemming as part of
+ajourhold, and unexplained differences are the classic audit finding.
+
+## Connectivity tiers (how statements reach regnmed)
+
+| Tier | Mechanism | Status |
+| --- | --- | --- |
+| 1. File upload | **camt.053** (ISO 20022) exported from any Norwegian nettbank — no bank agreement needed | **Implemented** |
+| 1b. CSV upload | Bank-specific CSV exports (formats vary per bank) | Planned (per-bank mappings) |
+| 2. PSD2 / open banking | Live account feeds via an AISP — requires a Finanstilsynet AISP license or a commercial aggregator (Neonomics, Tink, Mastercard/Aiia) | Later — commercial/licensing decision |
+| 3. Direct filutveksling | SFTP/ISO 20022 agreements per bank or via Mastercard Payment Services (also OCR-giro, issue #16) | Later — per-customer onboarding |
+
+All tiers feed the **same** reconciliation engine; only the transport
+differs. Building file-first was deliberate: it works for every customer
+on day one with zero agreements.
+
+## Data model (migration 0007)
+
+- `bank_statement` — one imported statement per ledger bank account.
+  Statements are dokumentasjon: insert-only for the app role, and
+  re-import of the same bank statement id (`Stmt/Id`) is rejected —
+  imports are idempotent.
+- `bank_transaction` — statement lines. Amounts are stored in **ledger
+  sign for the bank account**: money in (CRDT) = debit = positive, so a
+  bank transaction equals its ledger entry exactly.
+- `bank_match` — links one bank transaction to one ledger entry
+  (`method` auto/manual, who, when). Unique on both sides.
+  **"Unmatched" is always computed as the absence of a match row** —
+  never stored mutable state, same philosophy as balances.
+
+## The pieces
+
+- **camt.053 parser** (`regnmed-core::camt053`, pure): tolerant,
+  version-agnostic (`camt.053.001.0x`), reads only what reconciliation
+  needs (statement id, IBAN, OPBD/CLBD balances, booked entries with
+  date/amount/direction/reference/description). Pending (`PDNG`) entries
+  are skipped. Amounts parse to integer øre.
+- **Matching engine** (`regnmed-core::bank`, pure, deterministic):
+  equal amount + same day first, then equal amount within a ±5-day
+  window. Each side is used at most once. **Ties are never guessed** —
+  two equally close candidates fall to manual review. KID/reference
+  matching arrives with reskontro (entries don't carry payment
+  references yet).
+- **Web API** (engagement-guarded; revisor 'les' may read, importing and
+  matching require bokforing/admin):
+  - `POST /companies/{id}/bank/statements?account=1920` — camt.053 XML
+    body; imports and auto-matches, returns counts.
+  - `GET /companies/{id}/bank/reconciliation?account=1920` — ledger
+    balance vs latest statement closing balance, matched count, and both
+    unmatched lists.
+  - `POST /companies/{id}/bank/matches` + `DELETE
+    /companies/{id}/bank/matches/{bank_transaction_id}` — manual
+    match/unmatch; cross-company and cross-account pairings are rejected
+    in the database layer.
+
+## Where it is tested
+
+- `regnmed-core/src/camt053.rs` — parsing (balances, signs, pending
+  skipped, entities, øre), malformed input.
+- `regnmed-core/src/bank.rs` — matching rules, window, no-reuse,
+  ambiguity-goes-to-manual.
+- `regnmed-api/tests/bank.rs` (real Postgres, also CI) — the whole flow
+  over HTTP: revisor 403 on import, import + auto-match, duplicate
+  import rejected, revisor reads reconciliation, manual match to full
+  reconciliation, unmatch, stranger 404.

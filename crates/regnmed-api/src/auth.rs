@@ -230,6 +230,9 @@ pub enum ApiError {
     /// Also covers "exists but you have no access" — a caller without
     /// access must not learn whether the company exists.
     NotFound,
+    /// Known company, insufficient access level (e.g. revisor 'les'
+    /// calling a mutating endpoint).
+    Forbidden(&'static str),
     BadRequest(String),
     Internal(anyhow::Error),
 }
@@ -248,6 +251,9 @@ impl IntoResponse for ApiError {
             }
             ApiError::NotFound => {
                 (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" }))).into_response()
+            }
+            ApiError::Forbidden(msg) => {
+                (StatusCode::FORBIDDEN, Json(json!({ "error": msg }))).into_response()
             }
             ApiError::BadRequest(msg) => {
                 (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()

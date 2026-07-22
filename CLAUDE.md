@@ -169,7 +169,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    in `docs/mva-melding/`); `regnmed mva-melding --validate` runs the
    whole chain. Live validation/submission awaits Maskinporten client
    registration (docs/gov.md, issue #8).
-   **Next:** EHF/Peppol, bank reconciliation (M3).
+6. ✅ Bank reconciliation (file tier): camt.053 parser
+   (`regnmed-core::camt053`, quick-xml — parsing only, our XML output
+   stays hand-rolled) + deterministic matching engine
+   (`regnmed-core::bank`, ties go to manual, never guessed) + migration
+   0007 (statements insert-only; "unmatched" computed, never stored) +
+   web endpoints under `/companies/{id}/bank/…` (revisor reads,
+   bokforing matches). PSD2/aggregator and CSV tiers documented in
+   docs/bank.md as later steps.
+   **Next:** EHF/Peppol (needs access-point provider decision), OCR-giro.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
