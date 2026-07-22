@@ -55,7 +55,12 @@ pub async fn all_company_ids(pool: &PgPool) -> Result<Vec<Uuid>> {
     Ok(rows.iter().map(|r| r.get("id")).collect())
 }
 
-pub async fn ensure_journal(pool: &PgPool, company_id: Uuid, code: &str, name: &str) -> Result<Uuid> {
+pub async fn ensure_journal(
+    pool: &PgPool,
+    company_id: Uuid,
+    code: &str,
+    name: &str,
+) -> Result<Uuid> {
     sqlx::query(
         "insert into journal (id, company_id, code, name) values ($1, $2, $3, $4)
          on conflict (company_id, code) do nothing",
@@ -74,7 +79,12 @@ pub async fn ensure_journal(pool: &PgPool, company_id: Uuid, code: &str, name: &
     Ok(row.get("id"))
 }
 
-pub async fn ensure_account(pool: &PgPool, company_id: Uuid, number: &str, name: &str) -> Result<Uuid> {
+pub async fn ensure_account(
+    pool: &PgPool,
+    company_id: Uuid,
+    number: &str,
+    name: &str,
+) -> Result<Uuid> {
     sqlx::query(
         "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
          on conflict (company_id, number) do nothing",
@@ -116,21 +126,23 @@ pub async fn post_voucher(
 
     let mut tx = pool.begin().await?;
 
-    let head = sqlx::query("select last_seq, last_hash from chain_head where company_id = $1 for update")
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .context("company has no chain head — was it created with create_company?")?;
+    let head =
+        sqlx::query("select last_seq, last_hash from chain_head where company_id = $1 for update")
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .context("company has no chain head — was it created with create_company?")?;
     let last_seq: i64 = head.get("last_seq");
     let prev_hash = to_hash32(head.get("last_hash"))?;
 
-    let journal_id: Uuid = sqlx::query("select id from journal where company_id = $1 and code = $2")
-        .bind(company_id)
-        .bind(&draft.journal_code)
-        .fetch_optional(&mut *tx)
-        .await?
-        .with_context(|| format!("unknown journal '{}' for this company", draft.journal_code))?
-        .get("id");
+    let journal_id: Uuid =
+        sqlx::query("select id from journal where company_id = $1 and code = $2")
+            .bind(company_id)
+            .bind(&draft.journal_code)
+            .fetch_optional(&mut *tx)
+            .await?
+            .with_context(|| format!("unknown journal '{}' for this company", draft.journal_code))?
+            .get("id");
 
     let fiscal_year = draft.voucher_date.year();
     let voucher_number: i64 = sqlx::query(
@@ -149,19 +161,20 @@ pub async fn post_voucher(
     // with a clear message instead of a foreign-key error.
     let mut account_ids = Vec::with_capacity(draft.entries.len());
     for (i, entry) in draft.entries.iter().enumerate() {
-        let id: Uuid = sqlx::query("select id from account where company_id = $1 and number = $2 and active")
-            .bind(company_id)
-            .bind(&entry.account_number)
-            .fetch_optional(&mut *tx)
-            .await?
-            .with_context(|| {
-                format!(
-                    "entry line {}: no active account {} for this company",
-                    i + 1,
-                    entry.account_number
-                )
-            })?
-            .get("id");
+        let id: Uuid =
+            sqlx::query("select id from account where company_id = $1 and number = $2 and active")
+                .bind(company_id)
+                .bind(&entry.account_number)
+                .fetch_optional(&mut *tx)
+                .await?
+                .with_context(|| {
+                    format!(
+                        "entry line {}: no active account {} for this company",
+                        i + 1,
+                        entry.account_number
+                    )
+                })?
+                .get("id");
         account_ids.push(id);
     }
 
@@ -350,7 +363,10 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
 }
 
 fn none_if_empty(value: &Option<String>) -> Option<String> {
-    value.as_deref().filter(|s| !s.is_empty()).map(str::to_owned)
+    value
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 fn to_hash32(bytes: Vec<u8>) -> Result<[u8; 32]> {

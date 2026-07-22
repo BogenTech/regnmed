@@ -63,7 +63,12 @@ pub async fn ensure_firm(pool: &PgPool, orgnr: &str, name: &str, kind: &str) -> 
     Ok(row.get("id"))
 }
 
-pub async fn ensure_firm_member(pool: &PgPool, firm_id: Uuid, person_id: Uuid, role: &str) -> Result<()> {
+pub async fn ensure_firm_member(
+    pool: &PgPool,
+    firm_id: Uuid,
+    person_id: Uuid,
+    role: &str,
+) -> Result<()> {
     sqlx::query(
         "insert into firm_member (firm_id, person_id, role) values ($1, $2, $3)
          on conflict (firm_id, person_id) do nothing",
@@ -76,7 +81,12 @@ pub async fn ensure_firm_member(pool: &PgPool, firm_id: Uuid, person_id: Uuid, r
     Ok(())
 }
 
-pub async fn ensure_company_member(pool: &PgPool, company_id: Uuid, person_id: Uuid, role: &str) -> Result<()> {
+pub async fn ensure_company_member(
+    pool: &PgPool,
+    company_id: Uuid,
+    person_id: Uuid,
+    role: &str,
+) -> Result<()> {
     sqlx::query(
         "insert into company_member (company_id, person_id, role) values ($1, $2, $3)
          on conflict (company_id, person_id) do nothing",
@@ -91,7 +101,12 @@ pub async fn ensure_company_member(pool: &PgPool, company_id: Uuid, person_id: U
 
 /// Opens an engagement unless one is already open for the same
 /// firm/company/kind (enforced by the partial unique index).
-pub async fn ensure_engagement(pool: &PgPool, firm_id: Uuid, company_id: Uuid, kind: &str) -> Result<()> {
+pub async fn ensure_engagement(
+    pool: &PgPool,
+    firm_id: Uuid,
+    company_id: Uuid,
+    kind: &str,
+) -> Result<()> {
     sqlx::query(
         "insert into engagement (id, firm_id, company_id, kind) values ($1, $2, $3, $4)
          on conflict (firm_id, company_id, kind) where valid_to is null do nothing",
@@ -110,7 +125,10 @@ pub async fn ensure_engagement(pool: &PgPool, firm_id: Uuid, company_id: Uuid, k
 /// engagement of kind 'regnskap' grants 'bokforing'; 'revisjon' grants
 /// 'les'. A person can appear once per access path — the caller (or UI)
 /// decides how to merge.
-pub async fn company_access_for_person(pool: &PgPool, person_id: Uuid) -> Result<Vec<CompanyAccess>> {
+pub async fn company_access_for_person(
+    pool: &PgPool,
+    person_id: Uuid,
+) -> Result<Vec<CompanyAccess>> {
     let rows = sqlx::query(
         "select c.id as company_id, c.orgnr, c.name, cm.role as access, 'direkte' as via
          from company_member cm

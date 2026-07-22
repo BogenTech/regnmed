@@ -9,6 +9,7 @@
 pub mod error;
 pub mod hash;
 pub mod money;
+pub mod saft;
 pub mod voucher;
 
 pub use error::LedgerError;

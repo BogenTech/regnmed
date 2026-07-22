@@ -115,9 +115,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    firm_member, company_member, engagement) + OIDC RP middleware; `/me`
    resolves token → "companies I may act for, and as what". Integration
    tests sign real RS256 tokens against a generated JWKS.
-3. **Next:** SAF-T Financial export (validates the data model; mandatory on
-   request since 2020). Then MVA codes end-to-end, EHF/Peppol, bank
-   reconciliation.
+3. ✅ SAF-T Financial v1.30 export: pure renderer in
+   `regnmed-core::saft` (official grouping code list embedded; no XML
+   library — hand-rolled deterministic writer), loader in
+   `regnmed-db::saft`, `regnmed saft-export` CLI. Output validated
+   against Skatteetaten's XSD (vendored in `docs/saft/`) in unit tests
+   and CI (`.github/workflows/ci.yml` installs xmllint).
+   **Next:** MVA codes end-to-end (then EHF/Peppol, bank reconciliation).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

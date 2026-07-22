@@ -24,6 +24,32 @@ enum Command {
     },
     /// Create a demo company, post vouchers, attempt tampering, verify (dev only)
     Demo,
+    /// Export Norwegian SAF-T Financial v1.30 XML for a company
+    SaftExport {
+        /// Company id (or use --orgnr)
+        #[arg(long, conflicts_with = "orgnr")]
+        company: Option<Uuid>,
+        /// Organization number of the company to export
+        #[arg(long)]
+        orgnr: Option<String>,
+        /// Fiscal year to export (whole calendar year)
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        year: Option<i32>,
+        /// Start date (YYYY-MM-DD); requires --to
+        #[arg(long, requires = "to")]
+        from: Option<chrono::NaiveDate>,
+        /// End date (YYYY-MM-DD); requires --from
+        #[arg(long, requires = "from")]
+        to: Option<chrono::NaiveDate>,
+        /// Contact person, "Fornavn Etternavn" — the Norwegian SAF-T header
+        /// requires one
+        #[arg(long)]
+        contact: String,
+        /// Output file; "-" writes to stdout. Defaults to Skatteetaten's
+        /// naming convention: "SAF-T Financial_<orgnr>_<timestamp>.xml"
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -33,7 +59,9 @@ async fn main() -> Result<()> {
 
     let url = std::env::var("DATABASE_URL")
         .context("DATABASE_URL is not set — copy .env.example to .env")?;
-    let pool = regnmed_db::connect(&url).await.context("connecting to database")?;
+    let pool = regnmed_db::connect(&url)
+        .await
+        .context("connecting to database")?;
 
     match cli.command {
         Command::Migrate => {
@@ -57,6 +85,100 @@ async fn main() -> Result<()> {
             }
         }
         Command::Demo => demo(&pool).await?,
+        Command::SaftExport {
+            company,
+            orgnr,
+            year,
+            from,
+            to,
+            contact,
+            out,
+        } => saft_export(&pool, company, orgnr, year, from, to, &contact, out).await?,
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn saft_export(
+    pool: &sqlx::PgPool,
+    company: Option<Uuid>,
+    orgnr: Option<String>,
+    year: Option<i32>,
+    from: Option<chrono::NaiveDate>,
+    to: Option<chrono::NaiveDate>,
+    contact: &str,
+    out: Option<std::path::PathBuf>,
+) -> Result<()> {
+    use chrono::NaiveDate;
+
+    let company_id = match (company, &orgnr) {
+        (Some(id), _) => id,
+        (None, Some(orgnr)) => regnmed_db::find_company_by_orgnr(pool, orgnr)
+            .await?
+            .with_context(|| format!("no company with orgnr {orgnr}"))?,
+        (None, None) => anyhow::bail!("pass --company or --orgnr"),
+    };
+
+    let (start, end) = match (year, from, to) {
+        (Some(y), _, _) => (
+            NaiveDate::from_ymd_opt(y, 1, 1).context("invalid year")?,
+            NaiveDate::from_ymd_opt(y, 12, 31).context("invalid year")?,
+        ),
+        (None, Some(from), Some(to)) => (from, to),
+        _ => anyhow::bail!("pass --year, or --from and --to"),
+    };
+    anyhow::ensure!(start <= end, "--from must not be after --to");
+
+    let (first_name, last_name) = contact
+        .trim()
+        .rsplit_once(' ')
+        .context("--contact must be \"Fornavn Etternavn\"")?;
+
+    let input =
+        regnmed_db::load_saft_input(pool, company_id, start, end, first_name, last_name).await?;
+
+    // Accounts the grouping code list has no exact standard account for are
+    // legal to export (nearest is used) but worth a review.
+    for account in &input.accounts {
+        match regnmed_core::saft::grouping_for(&account.number) {
+            Some(g) if !g.exact => eprintln!(
+                "note: account {} ({}) is not a standard account; grouped as {} ({})",
+                account.number, account.name, g.code, g.category
+            ),
+            None => anyhow::bail!(
+                "account {} cannot be mapped to a grouping code",
+                account.number
+            ),
+            _ => {}
+        }
+    }
+
+    let xml = regnmed_core::saft::render(&input);
+    let transactions: usize = input.journals.iter().map(|j| j.transactions.len()).sum();
+
+    match out.as_deref() {
+        Some(path) if path == std::path::Path::new("-") => {
+            use std::io::Write;
+            std::io::stdout().write_all(xml.as_bytes())?;
+        }
+        maybe_path => {
+            let path = maybe_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                format!(
+                    "SAF-T Financial_{}_{}.xml",
+                    input.orgnr,
+                    Utc::now().format("%Y%m%d%H%M%S")
+                )
+                .into()
+            });
+            std::fs::write(&path, &xml)?;
+            println!(
+                "wrote {} ({} accounts, {} transactions, {} bytes)",
+                path.display(),
+                input.accounts.len(),
+                transactions,
+                xml.len()
+            );
+        }
     }
     Ok(())
 }
@@ -189,7 +311,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
         Some("kari@tallogorden.no"),
     )
     .await?;
-    let firm = regnmed_db::ensure_firm(pool, "998877665", "Tall & Orden Regnskap AS", "regnskap").await?;
+    let firm =
+        regnmed_db::ensure_firm(pool, "998877665", "Tall & Orden Regnskap AS", "regnskap").await?;
     regnmed_db::ensure_firm_member(pool, firm, kari, "ansatt").await?;
     regnmed_db::ensure_engagement(pool, firm, company, "regnskap").await?;
 

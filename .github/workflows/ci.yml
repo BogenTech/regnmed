@@ -1,0 +1,21 @@
+# Frugal CI: format check + unit tests. No database — unit tests are
+# DB-free by design. libxml2-utils provides xmllint so the SAF-T export
+# is validated against Skatteetaten's official XSD on every push (the
+# test skips politely when xmllint is missing locally, but here it runs).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xmllint (SAF-T XSD validation)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace
