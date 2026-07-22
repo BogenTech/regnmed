@@ -5,6 +5,7 @@ members = [
     "crates/regnmed-db",
     "crates/regnmed-api",
     "crates/regnmed-cli",
+    "crates/regnmed-gov",
 ]
 
 [workspace.package]

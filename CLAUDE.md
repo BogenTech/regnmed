@@ -85,6 +85,15 @@ cargo test                                 # unit tests, no DB needed
 Norwegian domain terms are used deliberately (bilag, hovedbok, oppdrag,
 kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 
+### Documentation policy (agreed 2026-07-22)
+
+`docs/` is the audit-facing documentation — what the system guarantees,
+where each guarantee is enforced, where it is tested — written for
+revisorer, certification processes and new developers (index:
+docs/README.md). Every milestone updates the relevant document **in the
+same change**, like tests. Vendored authority artifacts (XSDs, code
+lists) live under docs/ next to the document that explains them.
+
 ### Testing policy (agreed 2026-07-22)
 
 Every important change ships with tests in the same commit — not tests
@@ -147,8 +156,14 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (integer øre only); `regnmed mva-report` prints the mva-spesifikasjon
    per termin with utgående/inngående/netto. SAF-T lines carry the rate
    valid on each voucher's date, not the current rate.
-   **Next:** EHF/Peppol, bank reconciliation — or mva-melding (M2) once
-   Maskinporten foundation exists.
+5. ✅ Maskinporten foundation + mva-melding: `crates/regnmed-gov`
+   (JWT-grant token provider with cache; validation-API client);
+   `regnmed-core::mvamelding` builds schema-valid `mvaMeldingDto` XML
+   (whole kroner, payable-positive signs, code 0 excluded; XSD vendored
+   in `docs/mva-melding/`); `regnmed mva-melding --validate` runs the
+   whole chain. Live validation/submission awaits Maskinporten client
+   registration (docs/gov.md, issue #8).
+   **Next:** EHF/Peppol, bank reconciliation (M3).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

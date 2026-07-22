@@ -13,6 +13,8 @@
 
 use std::sync::OnceLock;
 
+use crate::xml::Xml;
+
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 
 /// Everything needed to render one audit file. Assembled by the caller
@@ -359,65 +361,6 @@ fn percent(bp: i64) -> String {
 /// characters, not bytes).
 fn trunc(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
-}
-
-struct Xml {
-    out: String,
-    depth: usize,
-}
-
-impl Xml {
-    fn new() -> Self {
-        Xml {
-            out: String::new(),
-            depth: 0,
-        }
-    }
-
-    fn raw(&mut self, line: &str) {
-        self.out.push_str(line);
-        self.out.push('\n');
-    }
-
-    fn indent(&mut self) {
-        for _ in 0..self.depth {
-            self.out.push_str("  ");
-        }
-    }
-
-    fn open(&mut self, tag: &str) {
-        self.indent();
-        self.out.push('<');
-        self.out.push_str(tag);
-        self.out.push_str(">\n");
-        self.depth += 1;
-    }
-
-    fn close(&mut self, tag: &str) {
-        self.depth -= 1;
-        self.indent();
-        self.out.push_str("</");
-        self.out.push_str(tag);
-        self.out.push_str(">\n");
-    }
-
-    fn leaf(&mut self, tag: &str, value: &str) {
-        self.indent();
-        self.out.push('<');
-        self.out.push_str(tag);
-        self.out.push('>');
-        for c in value.chars() {
-            match c {
-                '&' => self.out.push_str("&amp;"),
-                '<' => self.out.push_str("&lt;"),
-                '>' => self.out.push_str("&gt;"),
-                _ => self.out.push(c),
-            }
-        }
-        self.out.push_str("</");
-        self.out.push_str(tag);
-        self.out.push_str(">\n");
-    }
 }
 
 #[cfg(test)]

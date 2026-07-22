@@ -8,22 +8,9 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::mva::{RatePeriod, vat_of_base};
+use regnmed_core::mva::{RatePeriod, SpesLine, vat_of_base};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-
-#[derive(Debug)]
-pub struct MvaLine {
-    pub code: String,
-    pub description: String,
-    pub rate_bp: i64,
-    /// Sum of entry amounts carrying the code, ledger sign (positive =
-    /// debit): sales bases are negative, purchase bases positive.
-    pub grunnlag_ore: i64,
-    /// `vat_of_base(grunnlag, rate)` — beregnet, not posted; comparing it
-    /// against the posted VAT accounts is the accountant's control.
-    pub avgift_ore: i64,
-}
 
 /// The full dated rate table, for `regnmed_core::mva::rate_on`.
 pub async fn load_vat_rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
@@ -46,7 +33,7 @@ pub async fn mva_spesifikasjon(
     company_id: Uuid,
     start: NaiveDate,
     end: NaiveDate,
-) -> Result<Vec<MvaLine>> {
+) -> Result<Vec<SpesLine>> {
     let rows = sqlx::query(
         "select e.vat_code as code, vc.description, r.rate_bp,
                 sum(e.amount_ore)::bigint as grunnlag_ore
@@ -81,7 +68,7 @@ pub async fn mva_spesifikasjon(
                 })?;
             let grunnlag_ore: i64 = row.get("grunnlag_ore");
             ensure!(!code.is_empty(), "empty vat code in ledger");
-            Ok(MvaLine {
+            Ok(SpesLine {
                 code,
                 description: row.get("description"),
                 rate_bp,

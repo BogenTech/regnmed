@@ -65,6 +65,28 @@ enum Command {
         #[arg(long)]
         termin: Option<u8>,
     },
+    /// Generate the mva-melding XML for a termin; optionally validate it
+    /// against Skatteetaten's API (requires Maskinporten env, see docs/gov.md)
+    MvaMelding {
+        /// Company id (or use --orgnr)
+        #[arg(long, conflicts_with = "orgnr")]
+        company: Option<Uuid>,
+        /// Organization number of the company
+        #[arg(long)]
+        orgnr: Option<String>,
+        /// Year of the termin
+        #[arg(long)]
+        year: i32,
+        /// Termin 1-6 (two-month period)
+        #[arg(long)]
+        termin: u8,
+        /// Output file; "-" writes to stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Also validate against Skatteetaten's validation API
+        #[arg(long)]
+        validate: bool,
+    },
 }
 
 async fn resolve_company(
@@ -129,6 +151,90 @@ async fn main() -> Result<()> {
             year,
             termin,
         } => mva_report(&pool, company, orgnr, year, termin).await?,
+        Command::MvaMelding {
+            company,
+            orgnr,
+            year,
+            termin,
+            out,
+            validate,
+        } => mva_melding(&pool, company, orgnr, year, termin, out, validate).await?,
+    }
+    Ok(())
+}
+
+async fn mva_melding(
+    pool: &sqlx::PgPool,
+    company: Option<Uuid>,
+    orgnr: Option<String>,
+    year: i32,
+    termin: u8,
+    out: Option<std::path::PathBuf>,
+    validate: bool,
+) -> Result<()> {
+    use regnmed_core::mva::Termin;
+
+    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let termin = Termin::new(year, termin).context("--termin must be 1-6")?;
+
+    let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await?;
+    let spes =
+        regnmed_db::mva_spesifikasjon(pool, company_id, termin.start(), termin.end()).await?;
+    anyhow::ensure!(
+        !spes.is_empty(),
+        "no VAT postings in {termin} — nothing to report"
+    );
+
+    let referanse = format!("regnmed-{}-{}-{}", orgnr, termin.year, termin.number);
+    let melding = regnmed_core::mvamelding::build(
+        &orgnr,
+        termin,
+        &referanse,
+        env!("CARGO_PKG_VERSION"),
+        &spes,
+    );
+    let xml = regnmed_core::mvamelding::render(&melding);
+
+    match out.as_deref() {
+        Some(path) if path == std::path::Path::new("-") => {
+            use std::io::Write;
+            std::io::stdout().write_all(xml.as_bytes())?;
+        }
+        maybe_path => {
+            let path = maybe_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                format!(
+                    "mva-melding_{}_{}-termin{}.xml",
+                    orgnr, termin.year, termin.number
+                )
+                .into()
+            });
+            std::fs::write(&path, &xml)?;
+            println!(
+                "wrote {} ({} linjer, fastsatt merverdiavgift {} kr)",
+                path.display(),
+                melding.lines.len(),
+                melding.fastsatt_kr
+            );
+        }
+    }
+
+    if validate {
+        let config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+        let tokens = regnmed_gov::maskinporten::TokenProvider::new(config);
+        let client = regnmed_gov::mvamelding::MvaMeldingClient::from_env();
+        let outcome = client.validate(&tokens, &xml).await?;
+        if outcome.valid {
+            println!("Skatteetaten: melding validert uten avvik");
+        } else {
+            println!("Skatteetaten fant avvik:");
+            for finding in &outcome.findings {
+                println!("  - {finding}");
+            }
+            anyhow::bail!("mva-melding did not validate");
+        }
     }
     Ok(())
 }

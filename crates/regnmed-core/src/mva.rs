@@ -86,6 +86,21 @@ pub fn split_gross(gross_ore: i64, rate_bp: i64) -> (i64, i64) {
     (base, gross_ore - base)
 }
 
+/// One line of the mva-spesifikasjon: grunnlag and beregnet avgift for a
+/// standard code at one rate, in ledger signs (positive = debit). Built
+/// by regnmed-db from the ledger; consumed by reports and the
+/// mva-melding builder.
+#[derive(Debug, Clone)]
+pub struct SpesLine {
+    pub code: String,
+    pub description: String,
+    pub rate_bp: i64,
+    pub grunnlag_ore: i64,
+    /// `vat_of_base(grunnlag, rate)` — beregnet, not posted; comparing it
+    /// against the posted VAT accounts is the accountant's control.
+    pub avgift_ore: i64,
+}
+
 /// How a standard code participates in the mva-oppgjør.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
