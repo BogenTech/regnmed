@@ -24,6 +24,10 @@ enum Command {
     },
     /// Create a demo company, post vouchers, attempt tampering, verify (dev only)
     Demo,
+    /// Snapshot every company's chain head under one Merkle root and, when
+    /// ANCHOR_TSA_URL is set, witness the root with an RFC 3161 timestamp
+    /// (docs/anchoring.md). Run periodically (cron/CronJob).
+    Anchor,
     /// Export Norwegian SAF-T Financial v1.30 XML for a company
     SaftExport {
         /// Company id (or use --orgnr)
@@ -130,13 +134,22 @@ async fn main() -> Result<()> {
             for id in companies {
                 let report = regnmed_db::verify_chain(&pool, id).await?;
                 let attachments = regnmed_db::verify_attachments(&pool, id).await?;
+                let anchors = regnmed_db::verify_company_anchors(&pool, id).await?;
+                for problem in &anchors.problems {
+                    eprintln!("company {id}: ANCHOR MISMATCH — {problem}");
+                }
                 println!(
-                    "company {id}: chain OK ({} vouchers, {} attachments verified)",
-                    report.vouchers_checked, attachments
+                    "company {id}: chain OK ({} vouchers, {} attachments, {} anchors verified)",
+                    report.vouchers_checked, attachments, anchors.snapshots_checked
+                );
+                anyhow::ensure!(
+                    anchors.problems.is_empty(),
+                    "anchored history no longer matches the live chain"
                 );
             }
         }
         Command::Demo => demo(&pool).await?,
+        Command::Anchor => anchor(&pool).await?,
         Command::SaftExport {
             company,
             orgnr,
@@ -160,6 +173,37 @@ async fn main() -> Result<()> {
             out,
             validate,
         } => mva_melding(&pool, company, orgnr, year, termin, out, validate).await?,
+    }
+    Ok(())
+}
+
+/// Ops entry point for anchoring: one snapshot per run, witnessed
+/// externally when a TSA is configured. The root printed here (and served
+/// on the public /anchors endpoint) is what a revisor records — with it,
+/// no rewrite of anchored history can go unnoticed.
+async fn anchor(pool: &sqlx::PgPool) -> Result<()> {
+    let Some(snapshot) = regnmed_db::create_anchor_snapshot(pool).await? else {
+        println!("no vouchers posted yet — nothing to anchor");
+        return Ok(());
+    };
+    println!(
+        "anchor snapshot {} at {}: root {} over {} companies",
+        snapshot.id,
+        snapshot.created_at.to_rfc3339(),
+        hex::encode(snapshot.root_hash),
+        snapshot.leaf_count
+    );
+    match regnmed_gov::tsa::TsaClient::from_env() {
+        Some(tsa) => {
+            let token = tsa.timestamp(&snapshot.root_hash).await?;
+            regnmed_db::add_anchor_witness(pool, snapshot.id, "rfc3161", tsa.url(), &token).await?;
+            println!(
+                "witnessed by RFC 3161 TSA {} ({} byte token stored)",
+                tsa.url(),
+                token.len()
+            );
+        }
+        None => println!("ANCHOR_TSA_URL not set — root recorded locally and on /anchors only"),
     }
     Ok(())
 }

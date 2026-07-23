@@ -122,8 +122,10 @@ existing portfolio.
 
 ## M6 — Tillit og skala
 
-- **External anchoring** of chain heads (public timestamping) so even
-  DBA-level tampering is provable.
+- ✅ **External anchoring** of chain heads so even DBA-level tampering is
+  provable: nightly Merkle snapshots, public `/anchors` root feed,
+  RFC 3161 witness tokens, per-company inclusion proofs
+  (docs/anchoring.md). Follow-up: attachment-set binding (leaf v2).
 - **regnid production-ready:** OpenID conformance suite, then **ID-porten
   federation** so businesses log in with what they already have.
 - **Production deploy:** k8s overlays on top of `deploy/local`, TLS,

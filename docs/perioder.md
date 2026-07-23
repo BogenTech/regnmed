@@ -37,9 +37,9 @@ Attachments (PDF/images) bind dokumentasjon to vouchers:
   bypassed at the DBA level.
 - **Deliberate limitation** (documented, not hidden): the attachment
   *set* of a voucher is not yet inside the voucher hash chain, because
-  documentation legitimately arrives after posting. Chain-level
-  protection of attachment sets rides with external anchoring (M6,
-  issue #25).
+  documentation legitimately arrives after posting. Anchoring now
+  exists ([anchoring.md](anchoring.md)); binding attachment *sets* into
+  the anchor is the planned leaf-format v2 follow-up described there.
 - Storage is in Postgres (bytea) — right for SMB volumes and the
   frugality budget; object storage is a swap-in later if sizes demand it.
 

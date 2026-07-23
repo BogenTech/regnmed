@@ -13,6 +13,7 @@ regnmed-gov = { path = "../regnmed-gov" }
 
 anyhow.workspace = true
 axum.workspace = true
+hex.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
 jsonwebtoken.workspace = true

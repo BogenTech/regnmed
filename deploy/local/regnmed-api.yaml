@@ -62,3 +62,34 @@ spec:
     app: regnmed-api
   ports:
     - port: 8080
+---
+# Anchoring is a system workflow, not a user action: nightly, every
+# company's chain head is frozen under one Merkle root, published on the
+# public /anchors endpoint (and witnessed by an RFC 3161 TSA when
+# ANCHOR_TSA_URL is set — deliberately unset in the local cluster).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-anchor
+  namespace: regnmed
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: anchor
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              command: ["/app/regnmed", "anchor"]
+              env:
+                - name: DATABASE_URL
+                  value: postgres://regnmed:regnmed@postgres:5432/regnmed
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi

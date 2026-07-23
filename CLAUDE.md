@@ -30,8 +30,11 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
   3. Crypto: every voucher stores `hash = SHA-256(prev_hash || canonical content)`
      (canonical netstring serialization in `regnmed-core::hash`; timestamps
      truncated to microseconds so they round-trip through Postgres).
-     `regnmed verify-ledger` re-walks chains from genesis. Planned: external
-     anchoring of chain heads so even DBA-level tampering is provable.
+     `regnmed verify-ledger` re-walks chains from genesis. External
+     anchoring (docs/anchoring.md): nightly Merkle snapshots of all chain
+     heads, root published on the public `/anchors` endpoint and optionally
+     witnessed via RFC 3161 (`ANCHOR_TSA_URL`) — DBA-level rewrites become
+     provable, not just suspectable.
 - **Gap-free voucher numbering** per journal + fiscal year via a counter row
   locked in the posting transaction (sequences can leave gaps).
 - **Migrations are append-only in git.** sqlx checksums applied migrations and
@@ -226,6 +229,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    post_voucher_in into an IMP journal, opening balances must sum to
    zero, conservative reskontro flagging, warnings surfaced. Portal
    offers it on empty companies. `POST /companies/{id}/import/saft`.
+15. ✅ External anchoring (docs/anchoring.md): Merkle snapshot format v1
+   in `regnmed-core::anchor` (golden root pinned; leaves sorted by
+   company id, CT-style odd promotion), append-only anchor tables
+   (migration 0014), RFC 3161 witness client with hand-rolled DER in
+   `regnmed-gov::tsa`, public `GET /anchors` feed + per-company
+   inclusion proofs + `/anchors/verify`, `regnmed anchor` CLI + nightly
+   CronJob in deploy/local, portal Forankring card. `verify-ledger`
+   fails on anchor mismatches. Attachment-set binding deferred (leaf v2,
+   sketched in docs/anchoring.md).
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

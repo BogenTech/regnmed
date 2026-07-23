@@ -22,7 +22,7 @@ use chrono::Days;
 use regnmed_core::Ore;
 use regnmed_core::saft_import::SaftFile;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 

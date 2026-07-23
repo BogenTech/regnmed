@@ -293,9 +293,35 @@
           "kontoplan, kunder/leverandører og hele historikken importeres i én operasjon.</p>" +
           '<input type="file" id="saft-file" class="file-input file-input-bordered" accept=".xml">')
       : "";
+    var anchors = (await api("/companies/" + id + "/anchors").catch(function () { return { anchors: [] }; })).anchors;
+    var latest = anchors[0];
+    var anchorBody = latest
+      ? '<p class="text-sm opacity-70 mb-2">Sist forankret ' + esc(latest.created_at.slice(0, 16).replace("T", " ")) +
+        " (bilag t.o.m. sekvens " + latest.last_seq + (latest.witnesses.length ? ", bevitnet eksternt" : "") + ").</p>" +
+        '<p class="text-xs font-mono opacity-50 mb-2 break-all">rot ' + esc(latest.root_hash) + "</p>"
+      : '<p class="text-sm opacity-70 mb-2">Ikke forankret ennå — kjøres periodisk av systemet.</p>';
+    var anchorCard = card("Forankring",
+      anchorBody +
+      '<p class="text-sm opacity-70 mb-2">Hovedbokens hash-kjede forankres under en offentlig rot utenfor databasen — ' +
+      "omskrevet historikk kan derfor bevises, ikke bare mistenkes.</p>" +
+      '<button id="anchor-verify" class="btn btn-sm btn-outline">Verifiser kjeden mot forankringen</button>' +
+      '<div id="anchor-result" class="mt-2"></div>');
     shell(id, "oversikt", stats + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
-      "<tbody>" + recent + "</tbody></table>"));
+      "<tbody>" + recent + "</tbody></table>") + anchorCard);
+    document.getElementById("anchor-verify").onclick = async function () {
+      var result = document.getElementById("anchor-result");
+      result.innerHTML = '<span class="loading loading-spinner loading-sm"></span>';
+      try {
+        var check = await api("/companies/" + id + "/anchors/verify");
+        result.innerHTML = check.ok
+          ? '<div class="alert alert-success text-sm py-2">Kjeden verifisert fra genesis: ' +
+            check.vouchers_checked + " bilag, " + check.attachments_checked + " vedlegg, " +
+            check.anchors_checked + " forankringer stemmer.</div>"
+          : '<div class="alert alert-error text-sm py-2">' +
+            check.problems.map(esc).join("<br>") + "</div>";
+      } catch (error) { result.innerHTML = '<div class="alert alert-error text-sm py-2">' + esc(error.message) + "</div>"; }
+    };
     var saftInput = document.getElementById("saft-file");
     if (saftInput) saftInput.onchange = async function (event) {
       var file = event.target.files[0];

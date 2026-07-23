@@ -93,7 +93,7 @@ pub fn parse(xml: &str) -> Result<SaftFile, SaftImportError> {
     };
     let mut line_amount = (0i64, true); // magnitude, debit
 
-    let mut line_no = 1usize;
+    let mut line_no; // XML source line, for error messages only
     loop {
         let event = reader
             .read_event()

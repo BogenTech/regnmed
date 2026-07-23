@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "regnmed-api",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-lc", "exec cargo run -q -p regnmed-api"],
+      "port": 8080
+    },
+    {
+      "name": "regnid",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-lc", "cd ../regnid && exec cargo run -q -- serve"],
+      "port": 8081
+    }
+  ]
+}

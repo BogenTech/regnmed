@@ -69,11 +69,13 @@ there is one writer. Instead:
 
 - Everyone below full-database control is stopped by the database layer.
 - An adversary with full DB control *could* rewrite the entire chain and
-  recompute all hashes — which is why **external anchoring of chain
-  heads** (roadmap M6, issue #25) closes the gap: once a chain head is
-  published outside the database (timestamping service, or simply sent to
-  the revisor), a rewrite is provable because the recomputed head no
-  longer matches the anchored one.
+  recompute all hashes — which is why chain heads are **anchored
+  externally**: every company's head becomes a leaf of a Merkle tree
+  whose single root is published outside the database (public `/anchors`
+  endpoint, RFC 3161 timestamp tokens). Once a root exists outside the
+  adversary's control, a rewrite of anchored history is provable, not
+  just suspectable. Design, formats and verification procedure:
+  [anchoring.md](anchoring.md).
 - The revisor running `verify-ledger` against an anchored head plays the
   role consensus plays in Bitcoin — third-party verifiability without the
   energy cost, which is the right trade-off for accounting.

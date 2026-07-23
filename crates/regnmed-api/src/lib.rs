@@ -1,6 +1,7 @@
 //! HTTP API for regnmed. Library crate so integration tests can build the
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
+pub mod anchor;
 pub mod auth;
 pub mod bank;
 pub mod engagement;
@@ -36,6 +37,17 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/health", get(health))
         .route("/me", get(me))
+        // Public by design: root hashes only — every independent copy of
+        // a root is one more witness a database rewrite cannot reach.
+        .route("/anchors", get(anchor::list_anchors))
+        .route(
+            "/companies/{company_id}/anchors",
+            get(anchor::company_anchors),
+        )
+        .route(
+            "/companies/{company_id}/anchors/verify",
+            get(anchor::verify_anchors),
+        )
         .route(
             "/registry/enheter/{orgnr}",
             get(marketplace::registry_preview),
