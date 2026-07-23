@@ -182,6 +182,14 @@ M7 (#37–#48) for new ground:
 requires product certification; out of scope until a customer segment
 demands it and the effort is priced.
 
+**Regelverk over tid** (docs/regelverk.md): rules are data with
+validity periods — dated satser (vat_rate is the reference pattern),
+versioned vendored authority artifacts, frozen evidence formats. Gaps
+tracked: satsregister m/ staleness-kontroll i revisjonsrapporten (#49),
+per-inntektsår artefakter (#50), mva-terminordninger (#51), avvikende
+regnskapsår som bevisst avgrensning (#52). Yearly regelverksrevisjon is
+a checklist in the doc, verifiable via #49.
+
 ---
 
 ## Rekkefølge / dependencies
