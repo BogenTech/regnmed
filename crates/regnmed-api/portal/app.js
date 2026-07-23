@@ -747,9 +747,10 @@
         '<button class="btn btn-xs" data-match="' + t.bank_transaction_id + '">Koble</button></td></tr>';
     }).join("") : "";
     shell(id, "bank",
-      card("Kontoutskrift (camt.053)",
-        '<input type="file" id="camt-file" class="file-input file-input-bordered" accept=".xml">' +
-        '<p class="text-sm opacity-70 mt-2">Last ned fra nettbanken og last opp her — konto ' + account + ".</p>") +
+      card("Kontoutskrift (camt.053 eller CSV)",
+        '<input type="file" id="camt-file" class="file-input file-input-bordered" accept=".xml,.csv,.txt">' +
+        '<p class="text-sm opacity-70 mt-2">Last ned fra nettbanken (camt.053-XML eller CSV-eksport med ' +
+        "kolonneoverskrifter) og last opp her — konto " + account + ".</p>") +
       (recon
         ? card("Avstemming " + esc(recon.account),
             '<div class="stats bg-base-200 mb-4"><div class="stat"><div class="stat-title">Hovedbok</div>' +

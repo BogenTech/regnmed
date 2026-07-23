@@ -276,8 +276,16 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (VmHWM, budget 64 MB = the k8s container limit; measured 11/8/11 MB
    2026-07-23). Separate `frugality` CI job; budget raises must be
    conscious commits touching script + deploy limit together.
-   **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
-   access-point decision), Maskinporten registration, M2 tail.
+21. ✅ Bank CSV tier (docs/bank.md, closed #15): `regnmed-core::bankcsv`
+   detects layout from headers (delimiter; dato — never rentedato;
+   signed beløp or inn/ut pair; norsk tallformat; KID/referanse);
+   unknown layouts fail loudly listing the headers seen. Same endpoint
+   (XML vs CSV by content), same engine; statement ref = content hash
+   (idempotent re-import), balances absent not zero (fixed a latent
+   nullable decode in reconciliation_status).
+   **Next:** native importers (#19), EHF (#14, access-point decision),
+   Maskinporten registration (in progress, docs/gov.md), M2 tail,
+   production overlays (#27).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

@@ -1,6 +1,6 @@
 //! Bank reconciliation endpoints (web-first, engagement-guarded):
 //!
-//! - POST   /companies/{id}/bank/statements?account=1920   camt.053 XML body
+//! - POST   /companies/{id}/bank/statements?account=1920   camt.053 XML or bank CSV body
 //! - GET    /companies/{id}/bank/reconciliation?account=1920
 //! - POST   /companies/{id}/bank/matches                    {bank_transaction_id, entry_id}
 //! - DELETE /companies/{id}/bank/matches/{bank_transaction_id}
@@ -48,8 +48,20 @@ pub async fn import_statement(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
 
-    let statement = regnmed_core::camt053::parse(&body)
-        .map_err(|e| ApiError::BadRequest(format!("camt.053: {e}")))?;
+    // Both file tiers land here: XML is camt.053, anything else goes
+    // through the header-detecting CSV parser — same statement shape,
+    // same engine (docs/bank.md).
+    let statement = if body
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with('<')
+    {
+        regnmed_core::camt053::parse(&body)
+            .map_err(|e| ApiError::BadRequest(format!("camt.053: {e}")))?
+    } else {
+        regnmed_core::bankcsv::parse(&body)
+            .map_err(|e| ApiError::BadRequest(format!("CSV: {e}")))?
+    };
     let imported_by = person.name.as_deref().unwrap_or(&person.sub);
     let summary = regnmed_db::import_statement(
         &state.pool,

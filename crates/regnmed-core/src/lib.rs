@@ -8,6 +8,7 @@
 
 pub mod anchor;
 pub mod bank;
+pub mod bankcsv;
 pub mod camt053;
 pub mod error;
 pub mod hash;

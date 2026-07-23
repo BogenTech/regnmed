@@ -9,7 +9,7 @@ ajourhold, and unexplained differences are the classic audit finding.
 | Tier | Mechanism | Status |
 | --- | --- | --- |
 | 1. File upload | **camt.053** (ISO 20022) exported from any Norwegian nettbank — no bank agreement needed | **Implemented** |
-| 1b. CSV upload | Bank-specific CSV exports (formats vary per bank) | Planned (per-bank mappings) |
+| 1b. CSV upload | Bank CSV exports, layout auto-detected from headers | **Implemented** |
 | 2. PSD2 / open banking | Live account feeds via an AISP — requires a Finanstilsynet AISP license or a commercial aggregator (Neonomics, Tink, Mastercard/Aiia) | Later — commercial/licensing decision |
 | 3. Direct filutveksling | SFTP/ISO 20022 agreements per bank or via Mastercard Payment Services (also OCR-giro, issue #16) | Later — per-customer onboarding |
 
@@ -38,6 +38,18 @@ on day one with zero agreements.
   needs (statement id, IBAN, OPBD/CLBD balances, booked entries with
   date/amount/direction/reference/description). Pending (`PDNG`) entries
   are skipped. Amounts parse to integer øre.
+- **CSV parser** (`regnmed-core::bankcsv`, pure): tier 1b. Detects the
+  layout from the header row instead of maintaining per-bank profiles —
+  delimiter (`;`/tab/`,`), date column ("dato"/"bokføringsdato"/…,
+  never "rentedato"), one signed beløp column or separate inn/ut
+  columns, Norwegian number formats ("1 234,56"), optional
+  KID/referanse. A file it cannot understand fails loudly with the
+  headers it saw — never a silent half-import. Output is the same
+  statement shape as camt.053, so storage, matching and reconciliation
+  are one engine; the statement ref is the file's content hash, so
+  re-import stays idempotent, and balances are absent (a CSV has none —
+  shown as absent, never zero). Same endpoint: the import
+  distinguishes XML from CSV by content.
 - **Matching engine** (`regnmed-core::bank`, pure, deterministic):
   equal amount + same day first, then equal amount within a ±5-day
   window. Each side is used at most once. **Ties are never guessed** —

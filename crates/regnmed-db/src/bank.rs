@@ -336,8 +336,9 @@ pub async fn reconciliation_status(
     Ok(ReconciliationStatus {
         account_number: account_number.to_string(),
         ledger_balance_ore,
-        statement_closing_ore: latest.as_ref().map(|r| r.get("closing_ore")),
-        statement_to_date: latest.as_ref().map(|r| r.get("to_date")),
+        // CSV statements carry no balances — absent, never zero.
+        statement_closing_ore: latest.as_ref().and_then(|r| r.get("closing_ore")),
+        statement_to_date: latest.as_ref().and_then(|r| r.get("to_date")),
         matched_count,
         unmatched_bank: unmatched_bank_rows(pool, company_id, Some(account_id)).await?,
         unmatched_entries,

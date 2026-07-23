@@ -316,3 +316,80 @@ async fn import_auto_match_manual_match_and_permissions() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// Tier 1b: a bank CSV export goes through the SAME import endpoint and
+/// engine — auto-matching, idempotent re-import (content-hash ref) and
+/// loud rejection of unknown layouts.
+#[tokio::test]
+async fn csv_export_imports_through_the_same_engine() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let accountant_sub = format!("test|{}", Uuid::new_v4());
+    let revisor_sub = format!("test|{}", Uuid::new_v4());
+    let company = seed(&state, &accountant_sub, &revisor_sub).await;
+    let accountant = idp.token(&accountant_sub, "Kari Bokfører");
+
+    // A DNB-style export: the 12 500 kr inflow matches the seeded sale.
+    let csv = "Dato;Forklaring;Rentedato;Ut fra konto;Inn på konto\n\
+               20.01.2026;Innbetaling faktura;20.01.2026;;12 500,00\n\
+               27.01.2026;Gebyr;27.01.2026;150,00;\n";
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=1920"),
+        &accountant,
+        Some(csv.to_string()),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(body["transactions"], 2);
+    assert_eq!(body["auto_matched"], 1);
+
+    // Same file again: the content-hash statement ref makes it a
+    // duplicate, exactly like a camt.053 re-import.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=1920"),
+        &accountant,
+        Some(csv.to_string()),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The reconciliation view carries the CSV lines (no closing balance
+    // in a CSV — the view treats it as absent, not zero).
+    let (status, recon) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/bank/reconciliation?account=1920"),
+        &accountant,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(recon["matched_count"], 1);
+    assert_eq!(recon["unmatched_bank"][0]["amount_ore"], -150_00);
+    assert!(recon["statement_closing_ore"].is_null());
+
+    // A spreadsheet without recognizable columns fails loudly.
+    let (status, error) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=1920"),
+        &accountant,
+        Some("Kolonne A;Kolonne B\n1;2\n".to_string()),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        error["error"].as_str().unwrap().contains("kolonne"),
+        "{error}"
+    );
+}

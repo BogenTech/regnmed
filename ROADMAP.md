@@ -85,8 +85,9 @@ Money in, money out — the daily-driver features.
 - **EHF / Peppol** send and receive through an access point (evaluate
   provider vs. certifying our own AP later; provider first — frugal).
   Mandatory for B2G, expected in B2B.
-- **Bankavstemming.** Import camt.053 (ISO 20022) and CSV; matching engine
-  against reskontro and KID/OCR references.
+- ✅ **Bankavstemming.** camt.053 (ISO 20022) and header-detected bank CSV
+  through one import endpoint and one matching engine; idempotent
+  re-import in both tiers (docs/bank.md).
 - **OCR-giro innbetalinger** (Mastercard Payment Services/Nets file feed) for
   automatic KID matching.
 - Later: pain.001 remittering (payments out), PSD2/open banking live feeds.
