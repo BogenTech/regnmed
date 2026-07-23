@@ -182,7 +182,8 @@ pub async fn saft_export(
         input.orgnr,
         chrono::Utc::now().format("%Y%m%d%H%M%S")
     );
-    Ok(xml_download(regnmed_core::saft::render(&input), &filename))
+    let xml = regnmed_core::saft::render(&input).map_err(ApiError::BadRequest)?;
+    Ok(xml_download(xml, &filename))
 }
 
 fn xml_download(xml: String, filename: &str) -> Response {

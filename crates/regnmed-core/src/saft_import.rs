@@ -335,7 +335,7 @@ mod tests {
                 }],
             }],
         };
-        let xml = crate::saft::render(&input);
+        let xml = crate::saft::render(&input).unwrap();
         let parsed = parse(&xml).unwrap();
 
         assert_eq!(parsed.selection_start.unwrap().to_string(), "2026-01-01");

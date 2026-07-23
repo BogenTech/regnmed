@@ -28,7 +28,7 @@ data with validity periods — never code branches on a year**:
 | Forsinkelsesrente, standardkompensasjon, inkassosats, purregebyr, statens km-satser, terskelverdier | **satsregisteret**: dated table w/ kilde per row, staleness-overvåket i revisjonsrapporten | migration 0016 `sats`, `regnmed-core::sats` |
 | Mva-koder | standard SAF-T code list | migration 0006 `vat_code` |
 | Terminer (2-mnd) | pure logic | `regnmed-core::mva::Termin` |
-| Næringsspesifikasjon grouping | vendored CSV, **pinned inntektsår 2025-2026** | `crates/regnmed-core/src/saft/…csv` + docs/saft/ |
+| Næringsspesifikasjon grouping | vendored CSV **per inntektsår**, selected by the exported year, loud failure outside coverage | `regnmed-core::saft` ARGANGER + docs/saft/ |
 | SAF-T Financial schema | vendored XSD (v1.30) | docs/saft/ |
 | Mva-melding schema | vendored XSD | docs/mva-melding/ |
 | Kontonavn NS 4102 | same vendored CSV | (as grouping) |
@@ -64,8 +64,13 @@ og regnskapsloven.
   `rate_on`; the revisjonsrapport's "Regelverkssatser" kontroll flags
   any monitored domain older than its change cadence. Consumers: #29,
   #40, #42, #46.
-- #50 per-inntektsår authority artifacts (grouping list chosen by the
-  exported year, not by what happens to be vendored).
+- ✅ #50 per-inntektsår authority artifacts: shipped — the
+  næringsspesifikasjon code list is a registry of vendored vintages
+  selected by the inntektsår being exported (2025-2026 today); a year
+  without a covering list fails loudly naming what is vendored (test-
+  pinned), the CLI reports which vintage governed an export, and the
+  kontoplan wizard suggests from the newest vintage. Adding a year =
+  vendor the CSV + one registry entry (the December checklist step).
 - #51 mva-terminordninger beyond 2-mnd (årstermin, primærnæring).
 - #52 avvikende regnskapsår (non-calendar fiscal years) — conscious
   scope decision documented there.

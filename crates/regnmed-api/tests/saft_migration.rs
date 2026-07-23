@@ -137,7 +137,7 @@ fn foreign_saft() -> String {
             ],
         }],
     };
-    regnmed_core::saft::render(&input)
+    regnmed_core::saft::render(&input).unwrap()
 }
 
 async fn request(

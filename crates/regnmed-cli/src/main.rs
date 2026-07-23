@@ -405,10 +405,19 @@ async fn saft_export(
     let input =
         regnmed_db::load_saft_input(pool, company_id, start, end, first_name, last_name).await?;
 
-    // Accounts the grouping code list has no exact standard account for are
-    // legal to export (nearest is used) but worth a review.
+    // The code list is per inntektsår (docs/regelverk.md): report which
+    // vintage governs this export, and flag accounts the list has no
+    // exact standard account for (legal — nearest is used — but worth a
+    // review).
+    use chrono::Datelike;
+    let inntektsaar = start.year();
+    let argang =
+        regnmed_core::saft::kodeliste_argang(inntektsaar).map_err(|e| anyhow::anyhow!("{e}"))?;
+    eprintln!("næringsspesifikasjon kodeliste-årgang: {argang}");
     for account in &input.accounts {
-        match regnmed_core::saft::grouping_for(&account.number) {
+        match regnmed_core::saft::grouping_for(&account.number, inntektsaar)
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+        {
             Some(g) if !g.exact => eprintln!(
                 "note: account {} ({}) is not a standard account; grouped as {} ({})",
                 account.number, account.name, g.code, g.category
@@ -421,7 +430,7 @@ async fn saft_export(
         }
     }
 
-    let xml = regnmed_core::saft::render(&input);
+    let xml = regnmed_core::saft::render(&input).map_err(|e| anyhow::anyhow!("{e}"))?;
     let transactions: usize = input.journals.iter().map(|j| j.transactions.len()).sum();
 
     match out.as_deref() {

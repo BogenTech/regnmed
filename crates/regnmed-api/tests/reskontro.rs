@@ -293,6 +293,6 @@ async fn full_reskontro_flow_with_hash_v2() {
     assert_eq!(input.customers.len(), 1);
     assert_eq!(input.customers[0].party_no, "10000");
     assert_eq!(input.customers[0].closing_ore, 2_500_00);
-    let xml = regnmed_core::saft::render(&input);
+    let xml = regnmed_core::saft::render(&input).unwrap();
     assert!(xml.contains("<CustomerID>10000</CustomerID>"));
 }

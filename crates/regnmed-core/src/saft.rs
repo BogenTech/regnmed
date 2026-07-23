@@ -114,98 +114,158 @@ pub struct Grouping {
     pub exact: bool,
 }
 
-// Skatteetaten's official mapping from standard accounts (næringsspesifikasjonen,
-// 2025–2026 code list) to grouping categories. Source: the SAF-T GitHub repo,
-// vendored under docs/saft/ — replace the CSV when Skatteetaten publishes a
-// new inntektsår.
-const GROUPING_CSV: &str = include_str!("saft/naeringsspesifikasjon_2025-2026.csv");
-
-static GROUPING: OnceLock<Vec<(u32, &'static str, &'static str)>> = OnceLock::new();
-
-fn grouping_table() -> &'static [(u32, &'static str, &'static str)] {
-    GROUPING.get_or_init(|| {
-        let mut rows: Vec<(u32, &str, &str)> = GROUPING_CSV
-            .trim_start_matches('\u{feff}')
-            .lines()
-            .skip(1)
-            .filter_map(|line| {
-                let mut fields = line.split(';');
-                let category = fields.next()?;
-                let code = fields.nth(2)?;
-                Some((code.parse().ok()?, category, code))
-            })
-            .collect();
-        rows.sort_by_key(|r| r.0);
-        rows
-    })
+// Skatteetaten owns the næringsspesifikasjon code list and publishes it
+// per inntektsår; each vintage is vendored side by side (source: the
+// SAF-T GitHub repo, mirrored under docs/saft/) and SELECTED BY THE
+// YEAR BEING EXPORTED — exporting 2025 in 2028 must use the list that
+// governed 2025, regardless of what is newest. A year no vendored list
+// covers fails loudly (docs/regelverk.md, yearly regelverksrevisjon:
+// vendor the new list, extend ARGANGER — one reviewed commit).
+struct KodelisteArgang {
+    label: &'static str,
+    first: i32,
+    last: i32,
+    csv: &'static str,
+    grouping: OnceLock<Vec<(u32, &'static str, &'static str)>>,
+    names: OnceLock<Vec<(u32, &'static str)>>,
 }
 
-static STANDARD_NAMES: OnceLock<Vec<(u32, &'static str)>> = OnceLock::new();
+static ARGANGER: [KodelisteArgang; 1] = [KodelisteArgang {
+    label: "2025-2026",
+    first: 2025,
+    last: 2026,
+    csv: include_str!("saft/naeringsspesifikasjon_2025-2026.csv"),
+    grouping: OnceLock::new(),
+    names: OnceLock::new(),
+}];
 
-/// The standard accounts (code + Norwegian description) from the same
-/// vendored code list — the vocabulary the kontoplan mapping wizard
-/// suggests from (`crate::kontoplan`).
-pub fn standard_accounts() -> &'static [(u32, &'static str)] {
-    STANDARD_NAMES.get_or_init(|| {
-        let mut rows: Vec<(u32, &str)> = GROUPING_CSV
-            .trim_start_matches('\u{feff}')
-            .lines()
-            .skip(1)
-            .filter_map(|line| {
-                let mut fields = line.split(';');
-                let code = fields.nth(3)?;
-                let name = fields.next()?;
-                Some((code.parse().ok()?, name))
-            })
-            .collect();
-        rows.sort_by_key(|r| r.0);
-        rows.dedup_by_key(|r| r.0);
-        rows
-    })
+fn argang_for(inntektsaar: i32) -> Result<&'static KodelisteArgang, String> {
+    ARGANGER
+        .iter()
+        .find(|a| (a.first..=a.last).contains(&inntektsaar))
+        .ok_or_else(|| {
+            format!(
+                "ingen næringsspesifikasjonsliste dekker inntektsår {inntektsaar} \
+                 (vendored: {}) — vendor Skatteetatens liste for året og utvid \
+                 registeret (docs/regelverk.md)",
+                ARGANGER
+                    .iter()
+                    .map(|a| a.label)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
 }
 
-/// Maps an account number onto the grouping code list: exact match when the
-/// account is itself a standard account (NS 4102 numbers usually are),
-/// otherwise the nearest standard account by number (ties go down).
-pub fn grouping_for(account_number: &str) -> Option<Grouping> {
-    let number: u32 = account_number.parse().ok()?;
-    let table = grouping_table();
-    let make = |i: usize, exact| Grouping {
-        category: table[i].1,
-        code: table[i].2,
-        exact,
-    };
-    match table.binary_search_by_key(&number, |r| r.0) {
-        Ok(i) => Some(make(i, true)),
-        Err(i) => {
-            let below = i.checked_sub(1);
-            let above = (i < table.len()).then_some(i);
-            match (below, above) {
-                (Some(b), Some(a)) if number - table[b].0 <= table[a].0 - number => {
-                    Some(make(b, false))
+impl KodelisteArgang {
+    fn grouping_table(&self) -> &[(u32, &'static str, &'static str)] {
+        self.grouping.get_or_init(|| {
+            let mut rows: Vec<(u32, &str, &str)> = self
+                .csv
+                .trim_start_matches('\u{feff}')
+                .lines()
+                .skip(1)
+                .filter_map(|line| {
+                    let mut fields = line.split(';');
+                    let category = fields.next()?;
+                    let code = fields.nth(2)?;
+                    Some((code.parse().ok()?, category, code))
+                })
+                .collect();
+            rows.sort_by_key(|r| r.0);
+            rows
+        })
+    }
+
+    fn names(&self) -> &[(u32, &'static str)] {
+        self.names.get_or_init(|| {
+            let mut rows: Vec<(u32, &str)> = self
+                .csv
+                .trim_start_matches('\u{feff}')
+                .lines()
+                .skip(1)
+                .filter_map(|line| {
+                    let mut fields = line.split(';');
+                    let code = fields.nth(3)?;
+                    let name = fields.next()?;
+                    Some((code.parse().ok()?, name))
+                })
+                .collect();
+            rows.sort_by_key(|r| r.0);
+            rows.dedup_by_key(|r| r.0);
+            rows
+        })
+    }
+
+    fn grouping_for(&self, account_number: &str) -> Option<Grouping> {
+        let number: u32 = account_number.parse().ok()?;
+        let table = self.grouping_table();
+        let make = |i: usize, exact| Grouping {
+            category: table[i].1,
+            code: table[i].2,
+            exact,
+        };
+        match table.binary_search_by_key(&number, |r| r.0) {
+            Ok(i) => Some(make(i, true)),
+            Err(i) => {
+                let below = i.checked_sub(1);
+                let above = (i < table.len()).then_some(i);
+                match (below, above) {
+                    (Some(b), Some(a)) if number - table[b].0 <= table[a].0 - number => {
+                        Some(make(b, false))
+                    }
+                    (_, Some(a)) => Some(make(a, false)),
+                    (Some(b), None) => Some(make(b, false)),
+                    (None, None) => None,
                 }
-                (_, Some(a)) => Some(make(a, false)),
-                (Some(b), None) => Some(make(b, false)),
-                (None, None) => None,
             }
         }
     }
 }
 
-/// Renders the complete audit file as UTF-8 XML.
-pub fn render(input: &SaftInput) -> String {
+/// The label of the code-list vintage governing an inntektsår, or a
+/// loud error naming what is vendored.
+pub fn kodeliste_argang(inntektsaar: i32) -> Result<&'static str, String> {
+    argang_for(inntektsaar).map(|a| a.label)
+}
+
+/// The standard accounts (code + Norwegian description) from the NEWEST
+/// vendored list — the vocabulary the kontoplan mapping wizard suggests
+/// from (`crate::kontoplan`); migration mapping happens "now", so the
+/// newest vintage is the right one.
+pub fn standard_accounts() -> &'static [(u32, &'static str)] {
+    ARGANGER
+        .iter()
+        .max_by_key(|a| a.last)
+        .expect("at least one vendored list")
+        .names()
+}
+
+/// Maps an account number onto the grouping code list GOVERNING THE
+/// GIVEN INNTEKTSÅR: exact match when the account is itself a standard
+/// account, otherwise the nearest standard account by number (ties go
+/// down). Errs when no vendored list covers the year.
+pub fn grouping_for(account_number: &str, inntektsaar: i32) -> Result<Option<Grouping>, String> {
+    Ok(argang_for(inntektsaar)?.grouping_for(account_number))
+}
+
+/// Renders the complete audit file as UTF-8 XML. Fails loudly when no
+/// vendored code list covers the exported inntektsår (the year of the
+/// selection start date).
+pub fn render(input: &SaftInput) -> Result<String, String> {
+    let argang = argang_for(input.start.year())?;
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(r#"<AuditFile xmlns="urn:StandardAuditFile-Taxation-Financial:NO">"#);
     x.depth = 1;
 
     header(&mut x, input);
-    master_files(&mut x, input);
+    master_files(&mut x, input, argang);
     entries(&mut x, input);
 
     x.depth = 0;
     x.raw("</AuditFile>");
-    x.out
+    Ok(x.out)
 }
 
 fn header(x: &mut Xml, input: &SaftInput) {
@@ -235,7 +295,7 @@ fn header(x: &mut Xml, input: &SaftInput) {
     x.close("Header");
 }
 
-fn master_files(x: &mut Xml, input: &SaftInput) {
+fn master_files(x: &mut Xml, input: &SaftInput, argang: &KodelisteArgang) {
     x.open("MasterFiles");
 
     if !input.accounts.is_empty() {
@@ -246,7 +306,8 @@ fn master_files(x: &mut Xml, input: &SaftInput) {
             x.leaf("AccountDescription", &trunc(&account.name, 256));
             // The schema makes the grouping mandatory; an unmappable account
             // number would be a data error caught long before export.
-            let grouping = grouping_for(&account.number)
+            let grouping = argang
+                .grouping_for(&account.number)
                 .expect("account number is numeric and the grouping table is non-empty");
             x.leaf("GroupingCategory", grouping.category);
             x.leaf("GroupingCode", grouping.code);
@@ -542,7 +603,7 @@ mod tests {
 
     #[test]
     fn renders_expected_structure() {
-        let xml = render(&fixture());
+        let xml = render(&fixture()).unwrap();
         for expected in [
             "<AuditFileVersion>1.30</AuditFileVersion>",
             "<RegistrationNumber>999888777</RegistrationNumber>",
@@ -566,12 +627,12 @@ mod tests {
             assert!(xml.contains(expected), "missing {expected} in:\n{xml}");
         }
         // Deterministic: rendering twice is byte-identical.
-        assert_eq!(xml, render(&fixture()));
+        assert_eq!(xml, render(&fixture()).unwrap());
     }
 
     #[test]
     fn tax_amount_follows_line_side() {
-        let xml = render(&fixture());
+        let xml = render(&fixture()).unwrap();
         // 10000.00 credit at 25 % → 2500.00 CreditTaxAmount.
         assert!(xml.contains("<CreditTaxAmount>"));
         assert!(xml.contains("<Amount>2500.00</Amount>"));
@@ -580,17 +641,17 @@ mod tests {
 
     #[test]
     fn grouping_prefers_exact_then_nearest() {
-        let exact = grouping_for("1920").unwrap();
+        let exact = grouping_for("1920", 2026).unwrap().unwrap();
         assert!(exact.exact);
         assert_eq!(exact.code, "1920");
         assert_eq!(exact.category, "balanseverdiForOmloepsmiddel");
 
         // 1921 is not a standard account; nearest is 1920.
-        let near = grouping_for("1921").unwrap();
+        let near = grouping_for("1921", 2026).unwrap().unwrap();
         assert!(!near.exact);
         assert_eq!(near.code, "1920");
 
-        assert!(grouping_for("abcd").is_none());
+        assert!(grouping_for("abcd", 2026).unwrap().is_none());
     }
 
     #[test]
@@ -614,7 +675,7 @@ mod tests {
         let dir = std::env::temp_dir().join("regnmed-saft-test");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("audit.xml");
-        std::fs::write(&file, render(&fixture())).unwrap();
+        std::fs::write(&file, render(&fixture()).unwrap()).unwrap();
 
         let output = match std::process::Command::new("xmllint")
             .args(["--noout", "--schema", xsd])
@@ -632,5 +693,24 @@ mod tests {
             "XSD validation failed:\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// The code list is selected by the inntektsår being exported —
+    /// and a year no vendored list covers fails loudly, never silently
+    /// using the nearest vintage (docs/regelverk.md, issue #50).
+    #[test]
+    fn code_list_is_selected_per_inntektsaar() {
+        assert_eq!(kodeliste_argang(2025).unwrap(), "2025-2026");
+        assert_eq!(kodeliste_argang(2026).unwrap(), "2025-2026");
+        for uncovered in [2024, 2027] {
+            let err = kodeliste_argang(uncovered).unwrap_err();
+            assert!(err.contains("2025-2026"), "{err}");
+            assert!(grouping_for("1920", uncovered).is_err());
+        }
+        let mut input = fixture();
+        input.start = NaiveDate::from_ymd_opt(2027, 1, 1).unwrap();
+        input.end = NaiveDate::from_ymd_opt(2027, 12, 31).unwrap();
+        let err = render(&input).unwrap_err();
+        assert!(err.contains("2027"), "{err}");
     }
 }

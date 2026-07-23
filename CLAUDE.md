@@ -304,10 +304,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `regnmed-core::sats` (cadence table; thresholds exempt); the
    revisjonsrapport gained kontroll 7 "Regelverkssatser" so the yearly
    regelverksrevisjon is machine-verified. Consumers: #29/#40/#42/#46.
+24. ✅ Per-inntektsår kodelister (docs/regelverk.md, closed #50):
+   `regnmed-core::saft` ARGANGER registry — the næringsspesifikasjon
+   list is selected by the exported year (2025-2026 vendored);
+   `render`/`grouping_for` are year-aware and FAIL LOUDLY outside
+   coverage (test-pinned); wizard suggests from the newest vintage;
+   CLI prints the governing årgang. New year = vendor CSV + registry
+   entry.
    **Next:** M7 funksjonsbredde (#29–#48 unblocked; #37 dimensjoner or
-   #29 purring first), #50 per-inntektsår artefakter, native importers
-   (#19), EHF (#14, access-point decision), Maskinporten registration
-   (in progress, docs/gov.md), M2 tail.
+   #29 purring first), native importers (#19), EHF (#14, access-point
+   decision), Maskinporten registration (in progress, docs/gov.md),
+   M2 tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

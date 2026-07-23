@@ -332,7 +332,7 @@ async fn saft_input_splits_balances_at_the_period_boundary() {
     );
 
     // The rendered file for this input must satisfy the official schema.
-    let xml = regnmed_core::saft::render(&input);
+    let xml = regnmed_core::saft::render(&input).unwrap();
     assert!(xml.contains("<OpeningDebitBalance>100.00</OpeningDebitBalance>"));
     assert!(xml.contains("<ClosingDebitBalance>150.00</ClosingDebitBalance>"));
 }

@@ -80,7 +80,7 @@ fn foreign_saft_5digit() -> String {
             }],
         }],
     };
-    regnmed_core::saft::render(&input)
+    regnmed_core::saft::render(&input).unwrap()
 }
 
 async fn request(
