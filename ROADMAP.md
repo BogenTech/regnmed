@@ -150,6 +150,40 @@ existing portfolio.
 
 ---
 
+## M7 — Funksjonsbredde: daglig drift
+
+The capabilities an SMB expects of a complete accounting system beyond
+the compliance core — mapped as issues 2026-07-23 after a systematic
+gap review of the Norwegian SMB market, each written from user need +
+Norwegian regulation and regnmed's principles (immutability, API-first,
+frugality). Filed under M2/M3/M5 where they extend existing themes,
+M7 (#37–#48) for new ground:
+
+- Betalingsoppfølging: purring m/ gebyr og forsinkelsesrente (#29),
+  repeterende faktura (#30), tilbud → ordre → faktura (#31), faktura-PDF
+  + e-postutsendelse (#32) — M3.
+- Penger ut: betalingsliste + pain.001-remittering (#33), utlegg og
+  kjøregodtgjørelse (#42), attestering/four-eyes (#47).
+- Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn
+  (#35) — M5.
+- Innsikt: nøkkeltall/likviditet (#36), budsjett m/ fastsatte versjoner
+  (#41) — pure queries as always.
+- Struktur: dimensjoner prosjekt/avdeling — hash format v3 (#37),
+  timeføring (#38), produktregister + enkelt varelager (#39),
+  anleggsregister m/ regnskaps- og skattemessige avskrivninger (#40),
+  flervaluta m/ agio (#44).
+- Plattform: maskin-tilgang til API-et via regnid client_credentials +
+  grants (#45), PWA m/ kvitteringsfoto (#48) — M5.
+- Offentlig: aksjonærregisteroppgaven + aksjebok som hendelseslogg
+  (#43) — M2. Lønn + a-melding som ærlig kartlagt paraply (#46) — still
+  deliberately last.
+
+**Deliberately not planned:** kassasystem/kontantsalg — kassasystemlova
+requires product certification; out of scope until a customer segment
+demands it and the effort is priced.
+
+---
+
 ## Rekkefølge / dependencies
 
 ```
