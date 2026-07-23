@@ -1,8 +1,13 @@
-# Frugal CI, one job: format check + the full test suite against a real
-# Postgres 18 service, so the DB-backed integration tests (ledger
-# immutability, auth boundary, SAF-T loader) run for real instead of
-# skipping. libxml2-utils provides xmllint so every run also validates the
-# SAF-T export against Skatteetaten's official XSD.
+# Frugal CI, two jobs:
+# - test: format check + the full test suite against a real Postgres 18
+#   service, so the DB-backed integration tests (ledger immutability,
+#   auth boundary, SAF-T loader) run for real instead of skipping.
+#   libxml2-utils provides xmllint so every run also validates the SAF-T
+#   export against Skatteetaten's official XSD.
+# - frugality: release binary sizes + regnmed-api peak RSS under load
+#   against hard budgets (scripts/frugality.sh) — competing on the least
+#   resources is a product principle, so a service that grows fat fails
+#   the build (ROADMAP M6, docs/frugality.md).
 name: ci
 on:
   push:
@@ -36,3 +41,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo test --workspace
+
+  frugality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: regnmed
+          POSTGRES_PASSWORD: regnmed
+          POSTGRES_DB: regnmed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U regnmed"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frugality-release
+      - name: Frugality gate
+        run: scripts/frugality.sh | tee -a "$GITHUB_STEP_SUMMARY"

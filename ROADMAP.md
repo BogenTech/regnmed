@@ -136,8 +136,11 @@ existing portfolio.
 - **regnid production-ready:** OpenID conformance suite, then **ID-porten
   federation** so businesses log in with what they already have.
 - **Production deploy:** k8s overlays on top of `deploy/local`, TLS,
-  backups/PITR, observability — all within the frugality budget (measure
-  per-service RSS in CI; a service that grows fat fails the build).
+  backups/PITR, observability — all within the frugality budget.
+- ✅ **Frugality budget in CI:** release binary sizes + regnmed-api peak
+  RSS under load, gated against hard budgets in every build; the RSS
+  budget equals the k8s container limit (scripts/frugality.sh,
+  docs/frugality.md — today: 11 MB binary, 11 MB peak RSS).
 
 ---
 

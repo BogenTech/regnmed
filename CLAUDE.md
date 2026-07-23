@@ -270,6 +270,12 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    Åpningsbalanse (zero-sum, empty ledger only, reskontro flags
    deferred w/ warning). Portal: mapping table + åpningsbalanse card on
    empty companies.
+20. ✅ Frugality gate in CI (docs/frugality.md, closed #28):
+   `scripts/frugality.sh` builds release, checks binary budgets
+   (api 24 MB, cli 20 MB) and regnmed-api **peak RSS under real load**
+   (VmHWM, budget 64 MB = the k8s container limit; measured 11/8/11 MB
+   2026-07-23). Separate `frugality` CI job; budget raises must be
+   conscious commits touching script + deploy limit together.
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

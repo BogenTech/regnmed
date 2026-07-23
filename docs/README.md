@@ -24,6 +24,7 @@ CLAUDE.md).
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
+| [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |
 
 Conventions used everywhere:
 
