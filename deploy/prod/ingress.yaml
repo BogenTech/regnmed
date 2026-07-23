@@ -1,0 +1,48 @@
+# Production ingress: EDIT THE HOSTS to your real domains (they must
+# also match the OIDC_ISSUER/ISSUER patches). TLS is issued by
+# cert-manager via the ClusterIssuer in cert-issuer.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnid
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  tls:
+    - hosts: [id.regnmed.example]
+      secretName: regnid-tls
+  rules:
+    - host: id.regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnid
+                port:
+                  number: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  tls:
+    - hosts: [api.regnmed.example]
+      secretName: regnmed-api-tls
+  rules:
+    - host: api.regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080

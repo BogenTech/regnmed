@@ -1,0 +1,35 @@
+# Production overlay (docs/deploy.md). What it adds over the base:
+#
+# - Real hostnames + TLS: edit the two hosts in ingress.yaml, install
+#   cert-manager, and cert-issuer.yaml (Let's Encrypt HTTP-01 through
+#   Traefik) does the rest.
+# - Secrets out of git: create the `db-credentials` secret out-of-band
+#   BEFORE applying (docs/deploy.md has the exact command); the patches
+#   below point every DATABASE_URL/POSTGRES_PASSWORD at it. Nothing in
+#   this repo contains a production credential.
+# - Backups with restore-verification (backup.yaml): nightly pg_dump,
+#   weekly restore into a scratch database + `regnmed verify-ledger`
+#   over the restored copy — a backup that has never been restored is a
+#   hope, not a backup.
+# - External anchoring witness: ANCHOR_TSA_URL on the nightly anchor
+#   CronJob, so every root gets an RFC 3161 token (docs/anchoring.md).
+# - Pinned images: never :dev in production — set the tags below to the
+#   release you are deploying (scripts/build-images.sh output, pushed
+#   to your registry).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - ingress.yaml
+  - cert-issuer.yaml
+  - backup.yaml
+images:
+  - name: regnmed
+    newTag: pin-me-to-a-release
+  - name: regnid
+    newTag: pin-me-to-a-release
+patches:
+  - path: patches/postgres.yaml
+  - path: patches/regnid.yaml
+  - path: patches/regnmed-api.yaml
+  - path: patches/anchor-cronjob.yaml

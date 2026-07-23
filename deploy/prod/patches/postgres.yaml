@@ -1,0 +1,35 @@
+# Prod postgres: password from the out-of-band secret, room to breathe
+# (still frugal — raise consciously, with docs/frugality.md in mind).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: regnmed
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          args:
+            - -c
+            - shared_buffers=128MB
+            - -c
+            - max_connections=100
+          env:
+            - name: POSTGRES_USER
+              value: regnmed
+            - name: POSTGRES_PASSWORD
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            - name: POSTGRES_DB
+              value: regnmed
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi

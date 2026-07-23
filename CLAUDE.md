@@ -137,8 +137,10 @@ and only static binaries enter the ~tiny distroless images — the VM
 never compiles. `stop` frees all RAM (state survives), `deploy` rebuilds
 + rolls out after code changes, `status` shows pods and URLs. This is
 the integration proving ground; daily coding stays on dev-db.sh +
-cargo. Manifests: `deploy/local/` (kustomize). Not yet: TLS (mkcert),
-multi-node, operators — add when a concept needs them.
+cargo. Manifests: `deploy/base/` + overlays `deploy/local/` and
+`deploy/prod/` (kustomize; prod adds TLS, secrets, verified backups —
+docs/deploy.md). Not yet: multi-node, operators — add when a concept
+needs them.
 
 ## Roadmap (agreed order)
 
@@ -283,6 +285,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (XML vs CSV by content), same engine; statement ref = content hash
    (idempotent re-import), balances absent not zero (fixed a latent
    nullable decode in reconciliation_status).
+22. ✅ Production deploy scaffolding (docs/deploy.md, closed #27):
+   deploy/ restructured to base + local/prod overlays (local render
+   proven byte-identical — dev-cluster.sh untouched); prod overlay:
+   cert-manager TLS, `db-credentials` secret out-of-band (no credential
+   in any rendered manifest), pinned image tags, ANCHOR_TSA_URL on the
+   anchor CronJob, nightly pg_dump + **weekly restore-verification**
+   (restore into scratch DB + verify-ledger over the restored copy —
+   also runnable anywhere via scripts/backup-verify.sh, exercised both
+   ways: clean passes, forged anchors fail). PITR via CloudNativePG
+   documented as growth path. Beware: strategic-merge env patches need
+   `value: null` to remove the base's plaintext value.
    **Next:** native importers (#19), EHF (#14, access-point decision),
    Maskinporten registration (in progress, docs/gov.md), M2 tail,
    production overlays (#27).

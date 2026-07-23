@@ -1,0 +1,32 @@
+# Prod regnmed-api: two stateless replicas, credentials from the
+# secret, issuer over TLS. The migrate init container needs the same
+# DATABASE_URL.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+spec:
+  replicas: 2
+  template:
+    spec:
+      initContainers:
+        - name: migrate
+          env:
+            - name: DATABASE_URL
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+      containers:
+        - name: api
+          env:
+            - name: DATABASE_URL
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+            - name: OIDC_ISSUER
+              value: https://id.regnmed.example

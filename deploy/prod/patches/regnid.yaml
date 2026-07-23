@@ -1,0 +1,21 @@
+# Prod regnid: real issuer URL (must match ingress host + browser URL),
+# credentials from the secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnid
+  namespace: regnmed
+spec:
+  template:
+    spec:
+      containers:
+        - name: regnid
+          env:
+            - name: DATABASE_URL
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnid-url
+            - name: ISSUER
+              value: https://id.regnmed.example

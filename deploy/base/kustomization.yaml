@@ -1,0 +1,15 @@
+# Shared topology for every environment: Postgres 18, NATS JetStream,
+# regnid (+ mail worker), regnmed-api with its migrate init container
+# and the nightly anchor CronJob. Environments are overlays:
+#   deploy/local — k3d in colima, *.localhost, no TLS (dev-cluster.sh)
+#   deploy/prod  — real domains, cert-manager TLS, secrets out of git,
+#                  backups with restore-verification (docs/deploy.md)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - nats.yaml
+  - regnid.yaml
+  - regnid-mail-worker.yaml
+  - regnmed-api.yaml

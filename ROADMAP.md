@@ -136,8 +136,13 @@ existing portfolio.
   (docs/anchoring.md). Follow-up: attachment-set binding (leaf v2).
 - **regnid production-ready:** OpenID conformance suite, then **ID-porten
   federation** so businesses log in with what they already have.
-- **Production deploy:** k8s overlays on top of `deploy/local`, TLS,
-  backups/PITR, observability — all within the frugality budget.
+- ✅ **Production deploy scaffolding:** base + overlays (local render
+  byte-identical), prod overlay with cert-manager TLS, secrets
+  out-of-band, pinned images, TSA-witnessed anchoring, and backups with
+  a weekly unattended restore-verification that re-walks the restored
+  ledger's hash chains (docs/deploy.md). PITR via CloudNativePG is the
+  documented growth path; first real cluster still pending (domain,
+  registry, hosting decision).
 - ✅ **Frugality budget in CI:** release binary sizes + regnmed-api peak
   RSS under load, gated against hard budgets in every build; the RSS
   budget equals the k8s container limit (scripts/frugality.sh,

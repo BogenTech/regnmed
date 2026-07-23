@@ -1,15 +1,12 @@
 # Local "production-like" cluster (k3d/k3s in colima). Apply with
 # `kubectl apply -k deploy/local` — or just run scripts/dev-cluster.sh up.
-# Sized for an 8 GB Mac: single replicas, small memory limits, no TLS yet
-# (HTTP through Traefik; mkcert TLS is a later step).
+# Sized for an 8 GB Mac: single replicas, small memory limits, no TLS
+# (HTTP through Traefik; the prod overlay is where TLS lives). The
+# CoreDNS rewrite makes *.localhost resolve to Traefik inside pods, so
+# the browser and the cluster share one issuer URL.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
+  - ../base
   - coredns-custom.yaml
-  - postgres.yaml
-  - nats.yaml
-  - regnid.yaml
-  - regnid-mail-worker.yaml
-  - regnmed-api.yaml
   - ingress.yaml

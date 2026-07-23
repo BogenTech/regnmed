@@ -1,0 +1,129 @@
+# Backups with restore-verification (docs/deploy.md).
+#
+# Nightly: pg_dump custom-format dumps of both databases (regnmed,
+# regnid) onto their own PVC, pruned after 14 days.
+#
+# Weekly: the newest regnmed dump is restored into a scratch database
+# and `regnmed verify-ledger` re-walks every hash chain in the restored
+# copy — proving both that the backup restores AND that the restored
+# ledger is untampered. A backup that has never been restored is a
+# hope, not a backup; here the restore drill is unattended and weekly.
+# Point-in-time recovery (WAL archiving via CloudNativePG) is the
+# documented growth path when RPO minutes matter — docs/deploy.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-data
+  namespace: regnmed
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: regnmed
+spec:
+  schedule: "30 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dump
+              image: postgres:18-alpine
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  stamp=$(date +%Y%m%d-%H%M%S)
+                  for db in regnmed regnid; do
+                    pg_dump -h postgres -U regnmed -Fc -f "/backup/$db-$stamp.dump" "$db"
+                  done
+                  find /backup -name '*.dump' -mtime +14 -delete
+                  ls -lh /backup | tail -5
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: password
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests:
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: backup-data
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verify
+  namespace: regnmed
+spec:
+  schedule: "0 4 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: restore
+              image: postgres:18-alpine
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  latest=$(ls -t /backup/regnmed-*.dump | head -1)
+                  echo "restoring $latest into regnmed_restore_check"
+                  dropdb   -h postgres -U regnmed --if-exists regnmed_restore_check
+                  createdb -h postgres -U regnmed regnmed_restore_check
+                  pg_restore -h postgres -U regnmed -d regnmed_restore_check \
+                             --no-owner "$latest"
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: password
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests:
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+          containers:
+            - name: verify
+              image: regnmed:dev
+              command: ["/app/regnmed", "verify-ledger"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: restore-check-url
+              resources:
+                requests:
+                  memory: 16Mi
+                limits:
+                  memory: 64Mi
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: backup-data

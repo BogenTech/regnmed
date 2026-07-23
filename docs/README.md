@@ -25,6 +25,7 @@ CLAUDE.md).
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
 | [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |
+| [deploy.md](deploy.md) | Base + overlays, production checklist, verified backups, TLS |
 
 Conventions used everywhere:
 

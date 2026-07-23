@@ -1,0 +1,25 @@
+# Prod anchoring: credentials from the secret, and every nightly root
+# witnessed by an RFC 3161 TSA (docs/anchoring.md). Pick the TSA
+# consciously — freetsa.org for pilot, a qualified EU/NO TSA when the
+# certification story wants one.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-anchor
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: anchor
+              env:
+                - name: DATABASE_URL
+                  value: null
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
+                - name: ANCHOR_TSA_URL
+                  value: https://freetsa.org/tsr

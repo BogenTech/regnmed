@@ -1,0 +1,17 @@
+# Let's Encrypt via HTTP-01 through Traefik. Requires cert-manager
+# installed in the cluster (helm install cert-manager ... or the static
+# manifest — docs/deploy.md). EDIT the e-mail.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: drift@regnmed.example
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
