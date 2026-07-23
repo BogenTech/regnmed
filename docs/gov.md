@@ -29,6 +29,11 @@ ever** — keys live outside git and outside container images.
 
 ### Operational setup (one-time, per environment)
 
+**Status:** informasjonsskjema submitted to Digdir 2026-07-23 (step 1
+below done) — awaiting Samarbeidsportalen access. Next actions when the
+invitation arrives are steps 2–4; the Skatteetaten scope request runs
+as a separate queue.
+
 1. Get access to Digdir's **Samarbeidsportalen** (requires the
    organization's Altinn roles).
 2. Create a Maskinporten client in the test environment; register a
