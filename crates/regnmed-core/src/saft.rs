@@ -140,6 +140,30 @@ fn grouping_table() -> &'static [(u32, &'static str, &'static str)] {
     })
 }
 
+static STANDARD_NAMES: OnceLock<Vec<(u32, &'static str)>> = OnceLock::new();
+
+/// The standard accounts (code + Norwegian description) from the same
+/// vendored code list — the vocabulary the kontoplan mapping wizard
+/// suggests from (`crate::kontoplan`).
+pub fn standard_accounts() -> &'static [(u32, &'static str)] {
+    STANDARD_NAMES.get_or_init(|| {
+        let mut rows: Vec<(u32, &str)> = GROUPING_CSV
+            .trim_start_matches('\u{feff}')
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let mut fields = line.split(';');
+                let code = fields.nth(3)?;
+                let name = fields.next()?;
+                Some((code.parse().ok()?, name))
+            })
+            .collect();
+        rows.sort_by_key(|r| r.0);
+        rows.dedup_by_key(|r| r.0);
+        rows
+    })
+}
+
 /// Maps an account number onto the grouping code list: exact match when the
 /// account is itself a standard account (NS 4102 numbers usually are),
 /// otherwise the nearest standard account by number (ties go down).

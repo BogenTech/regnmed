@@ -13,6 +13,7 @@ pub mod error;
 pub mod hash;
 pub mod invoice;
 pub mod kid;
+pub mod kontoplan;
 pub mod money;
 pub mod mva;
 pub mod mvamelding;

@@ -62,6 +62,14 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/import/saft",
             axum::routing::post(marketplace::import_saft),
         )
+        .route(
+            "/companies/{company_id}/import/saft/analyze",
+            axum::routing::post(marketplace::analyze_saft),
+        )
+        .route(
+            "/companies/{company_id}/opening-balance",
+            axum::routing::post(marketplace::opening_balance),
+        )
         .route("/directory/firms", get(engagement::directory))
         .route("/firms/mine", get(engagement::my_firms))
         .route("/firms/{firm_id}/requests", get(engagement::firm_requests))

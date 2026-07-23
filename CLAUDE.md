@@ -260,6 +260,16 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    leaves the document undecided); avvis requires a note. Endpoints
    under `/companies/{id}/inbox…`; portal Bilag section opens with the
    inbox (upload, inline bokfør form, avvis).
+19. ✅ Kontoplan wizard + manuell åpningsbalanse (docs/migration.md,
+   closed #18): `regnmed-core::kontoplan` suggests NS 4102 mappings
+   (identity/truncate/pad/name-match against the vendored standard
+   names — heuristics only, the admin decides);
+   `POST …/import/saft/analyze` previews, import accepts a JSON
+   envelope `{file, mapping}` (apply_mapping rewrites + merges, 4-digit
+   targets enforced). `POST …/opening-balance` posts a manual
+   Åpningsbalanse (zero-sum, empty ledger only, reskontro flags
+   deferred w/ warning). Portal: mapping table + åpningsbalanse card on
+   empty companies.
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

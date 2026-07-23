@@ -101,8 +101,11 @@ existing portfolio.
   Conta, PowerOffice, Unimicro at once: kontoplan, åpningsbalanse,
   customers/suppliers, historical vouchers (imported as a sealed
   opening-history journal so our chain starts clean).
-- **Kontoplan-mapping + åpningsbalanse wizard.** Interactive mapping of
-  their accounts onto NS 4102, validated debit=credit before sealing.
+- ✅ **Kontoplan-mapping + åpningsbalanse wizard.** Analyze-first import
+  suggests NS 4102 mappings (heuristics; the admin decides), merges
+  same-target accounts, enforces 4-digit results; manual åpningsbalanse
+  endpoint for systems without SAF-T, zero-sum enforced
+  (docs/migration.md).
 - **Native API importers** for what SAF-T lacks: open reskontro items,
   attachments/bilagsbilder, recurring invoices, contacts. Priority order by
   market share of the accountant segment: **Tripletex, Fiken, Visma

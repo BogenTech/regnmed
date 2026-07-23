@@ -29,7 +29,41 @@ an empty company's dashboard ("Kom fra et annet system?").
   reported. Full reskontro migration polish is the mapping wizard (#18).
 - **Unknown VAT codes are dropped with a warning** (regnmed's codes are
   the SAF-T standard codes, so conforming files map 1:1); non-4-digit
-  account ids are refused pending the kontoplan wizard (#18).
+  account ids are refused unless the import carries a kontoplan mapping
+  (below).
+
+## Kontoplan wizard (non-NS 4102 charts)
+
+Files from systems with other numbering (5-digit charts, custom ranges,
+alphanumeric ids) go through a two-step wizard:
+
+1. `POST /companies/{id}/import/saft/analyze` parses the file (nothing
+   is written) and returns every account with a **suggested** NS 4102
+   mapping: 4-digit numbers map to themselves; longer digit strings are
+   truncated when the first four digits form a plausible account
+   (1000–8999); shorter ones are zero-padded; otherwise the account
+   *name* is matched against the standard names in the vendored
+   næringsspesifikasjon list. Suggestions are heuristics — the
+   administrator reviews, corrects and completes them in the portal;
+   the human decision is what gets imported.
+2. `POST /companies/{id}/import/saft` with a JSON envelope
+   `{"file": "<xml>", "mapping": {"15000": "1500", …}}` applies the
+   mapping (`regnmed-core::kontoplan::apply_mapping`): line and account
+   ids are rewritten, and foreign accounts mapped onto the same NS 4102
+   number are **merged** with openings summed. The import's own 4-digit
+   validation still guards the result — a half-finished mapping fails
+   loudly instead of importing garbage.
+
+## Manual åpningsbalanse (no SAF-T at all)
+
+`POST /companies/{id}/opening-balance` (`{date, lines: [{account,
+amount_ore}]}`, admin only) posts one `Åpningsbalanse` voucher through
+the normal path, for companies whose old system cannot export SAF-T.
+Same honesty rules as the import: empty ledger only, the lines must sum
+to zero (refused with the discrepancy named), and reskontro flags on
+touched accounts are deferred with a warning — an opening total has no
+party breakdown. The portal offers it next to the SAF-T card on empty
+companies.
 
 ## Where it is tested
 
@@ -42,3 +76,12 @@ an empty company's dashboard ("Kom fra et annet system?").
   verifies from genesis; the trial balance equals the foreign system's
   closing balances konto for konto; customer numbers survive; deferred
   reskontro flags are warned; non-admins and re-imports are refused.
+- `regnmed-core/src/kontoplan.rs` — suggestion heuristics (identity,
+  truncation, padding, name match, no-suggestion) and mapping
+  application (rewrite, merge with summed openings, 4-digit target
+  validation).
+- `regnmed-api/tests/kontoplan.rs` (real Postgres, also CI): a 5-digit
+  chart is refused raw, analyzed with correct suggestions, imported
+  with a reviewed mapping including a two-onto-one merge — balances
+  land merged and the chain verifies; the manual åpningsbalanse
+  refuses unbalanced lines, posts once, and refuses a second time.

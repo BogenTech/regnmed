@@ -290,8 +290,20 @@
     var importCard = vouchers.length === 0
       ? card("Kom fra et annet system?",
           '<p class="text-sm opacity-70 mb-2">Last opp en SAF-T-eksport (alle norske systemer kan lage en) — ' +
-          "kontoplan, kunder/leverandører og hele historikken importeres i én operasjon.</p>" +
-          '<input type="file" id="saft-file" class="file-input file-input-bordered" accept=".xml">')
+          "kontoplan, kunder/leverandører og hele historikken importeres i én operasjon. " +
+          "Har det gamle systemet en annen kontoplan, foreslår vi mapping til NS 4102 som du godkjenner først.</p>" +
+          '<input type="file" id="saft-file" class="file-input file-input-bordered" accept=".xml">' +
+          '<div id="mapping-step" class="mt-3"></div>') +
+        card("Ingen SAF-T? Legg inn åpningsbalansen manuelt",
+          '<p class="text-sm opacity-70 mb-2">Saldo per konto på overgangsdagen — må gå i null.</p>' +
+          '<div class="flex gap-2 mb-2"><input id="ob-date" type="date" class="input input-sm input-bordered"></div>' +
+          '<div id="ob-lines">' +
+          '<div class="flex gap-2 mb-1 ob-line"><input class="input input-sm input-bordered w-24" placeholder="Konto" data-f="account">' +
+          '<input class="input input-sm input-bordered w-36" placeholder="Beløp (debet +)" data-f="amount"></div>' +
+          '<div class="flex gap-2 mb-1 ob-line"><input class="input input-sm input-bordered w-24" placeholder="Konto" data-f="account">' +
+          '<input class="input input-sm input-bordered w-36" placeholder="Beløp (kredit −)" data-f="amount"></div></div>' +
+          '<button id="ob-add" class="btn btn-xs btn-ghost">+ linje</button> ' +
+          '<button id="ob-post" class="btn btn-sm btn-primary">Legg inn åpningsbalanse</button>')
       : "";
     var anchors = (await api("/companies/" + id + "/anchors").catch(function () { return { anchors: [] }; })).anchors;
     var latest = anchors[0];
@@ -322,19 +334,86 @@
             check.problems.map(esc).join("<br>") + "</div>";
       } catch (error) { result.innerHTML = '<div class="alert alert-error text-sm py-2">' + esc(error.message) + "</div>"; }
     };
+    function importDone(result) {
+      toast(result.vouchers + " bilag, " + result.accounts + " kontoer importert" +
+        (result.warnings.length ? " (" + result.warnings.length + " merknader)" : ""), true);
+      renderOversikt(id);
+    }
     var saftInput = document.getElementById("saft-file");
     if (saftInput) saftInput.onchange = async function (event) {
       var file = event.target.files[0];
       if (!file) return;
+      var xml = await file.text();
       try {
-        var result = await api("/companies/" + id + "/import/saft", {
-          method: "POST", body: await file.text(),
+        var analysis = await api("/companies/" + id + "/import/saft/analyze", {
+          method: "POST", body: xml,
         });
-        toast(result.vouchers + " bilag, " + result.accounts + " kontoer importert" +
-          (result.warnings.length ? " (" + result.warnings.length + " merknader)" : ""), true);
-        renderOversikt(id);
+        if (!analysis.needs_mapping) {
+          importDone(await api("/companies/" + id + "/import/saft", { method: "POST", body: xml }));
+          return;
+        }
+        // Kontoplan wizard: review and complete the suggested mapping.
+        var step = document.getElementById("mapping-step");
+        step.innerHTML = '<div class="border border-base-300 rounded-lg p-3">' +
+          '<p class="text-sm font-semibold mb-1">Kontoplanen må mappes til NS 4102</p>' +
+          '<p class="text-xs opacity-70 mb-2">' + analysis.transactions + " transaksjoner, " +
+          analysis.customers + " kunder, " + analysis.suppliers + " leverandører. " +
+          "Forslagene under er heuristikk — du bestemmer.</p>" +
+          '<table class="table table-xs"><thead><tr><th>Konto i filen</th><th>Navn</th>' +
+          "<th>NS 4102</th><th>Forslag</th></tr></thead><tbody>" +
+          analysis.accounts.map(function (a) {
+            return "<tr><td>" + esc(a.account_id) + "</td><td>" + esc(a.name) + "</td>" +
+              '<td><input class="input input-xs input-bordered w-20" data-map="' + esc(a.account_id) +
+              '" value="' + esc(a.suggested || "") + '"></td>' +
+              '<td class="text-xs opacity-60">' + esc(a.reason) +
+              (a.standard_name ? " → " + esc(a.standard_name) : "") + "</td></tr>";
+          }).join("") + "</tbody></table>" +
+          '<button id="import-mapped" class="btn btn-sm btn-primary mt-2">Importer med denne mappingen</button></div>';
+        document.getElementById("import-mapped").onclick = async function () {
+          var mapping = {};
+          var missing = false;
+          step.querySelectorAll("[data-map]").forEach(function (input) {
+            var value = input.value.trim();
+            if (!value) { missing = true; input.classList.add("input-error"); return; }
+            input.classList.remove("input-error");
+            if (value !== input.dataset.map) mapping[input.dataset.map] = value;
+          });
+          if (missing) { toast("alle kontoer må ha et NS 4102-nummer", false); return; }
+          try {
+            importDone(await api("/companies/" + id + "/import/saft", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ file: xml, mapping: mapping }),
+            }));
+          } catch (error) { toast(error.message, false); }
+        };
       } catch (error) { toast(error.message, false); }
     };
+    var obPost = document.getElementById("ob-post");
+    if (obPost) {
+      document.getElementById("ob-date").value = new Date().getFullYear() + "-01-01";
+      document.getElementById("ob-add").onclick = function () {
+        document.getElementById("ob-lines").insertAdjacentHTML("beforeend",
+          '<div class="flex gap-2 mb-1 ob-line"><input class="input input-sm input-bordered w-24" placeholder="Konto" data-f="account">' +
+          '<input class="input input-sm input-bordered w-36" placeholder="Beløp" data-f="amount"></div>');
+      };
+      obPost.onclick = async function () {
+        var lines = [];
+        document.querySelectorAll(".ob-line").forEach(function (row) {
+          var account = row.querySelector('[data-f="account"]').value.trim();
+          var amount = row.querySelector('[data-f="amount"]').value.trim().replace(/\s/g, "");
+          if (!account || !amount) return;
+          lines.push({ account: account, amount_ore: Math.round(Number(amount.replace(",", ".")) * 100) });
+        });
+        try {
+          var result = await post("/companies/" + id + "/opening-balance", {
+            date: document.getElementById("ob-date").value, lines: lines,
+          });
+          toast("Åpningsbalanse bokført som bilag " + result.voucher, true);
+          renderOversikt(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    }
   }
 
   async function renderFaktura(id) {
