@@ -207,9 +207,42 @@
       '<main class="p-6 max-w-3xl mx-auto">' +
       '<h1 class="text-lg mb-4">Hei, ' + esc(me.name || me.email || "") + " — velg selskap:</h1>" +
       '<div class="grid gap-4 sm:grid-cols-2">' +
-      (rows || '<p class="opacity-70">Ingen selskaper ennå — be om tilgang eller et oppdrag.</p>') +
-      "</div></main>";
+      (rows || '<p class="opacity-70">Ingen selskaper ennå — be om tilgang, et oppdrag, eller start under.</p>') +
+      "</div>" +
+      '<div class="card bg-base-100 shadow-sm mt-8"><div class="card-body">' +
+      '<h2 class="card-title">Nytt selskap fra Enhetsregisteret</h2>' +
+      '<div class="flex gap-2"><input id="onboard-orgnr" class="input input-bordered" ' +
+      'placeholder="Organisasjonsnummer" maxlength="9">' +
+      '<button id="onboard-lookup" class="btn">Slå opp</button></div>' +
+      '<div id="onboard-preview"></div></div></div></main>';
     wireChrome();
+    document.getElementById("onboard-lookup").onclick = async function () {
+      var orgnr = document.getElementById("onboard-orgnr").value.trim();
+      var target = document.getElementById("onboard-preview");
+      try {
+        var facts = await api("/registry/enheter/" + encodeURIComponent(orgnr));
+        target.innerHTML =
+          '<div class="mt-4 p-4 bg-base-200 rounded-box">' +
+          '<p class="font-semibold">' + esc(facts.navn) + " (" + esc(facts.organisasjonsform || "") + ")</p>" +
+          '<p class="text-sm opacity-70">' + esc(facts.naeringskode || "") + "</p>" +
+          '<div class="flex gap-2 mt-2">' +
+          (facts.mva_registrert ? '<span class="badge badge-ghost">MVA-registrert</span>' : "") +
+          (facts.autorisasjon.regnskap ? '<span class="badge badge-success">Autorisert regnskapsførerselskap</span>' : "") +
+          (facts.autorisasjon.revisjon ? '<span class="badge badge-success">Autorisert revisjonsselskap</span>' : "") +
+          (facts.konkurs ? '<span class="badge badge-error">Konkurs</span>' : "") +
+          "</div>" +
+          '<button id="onboard-create" class="btn btn-primary btn-sm mt-4">Opprett selskap</button>' +
+          "</div>";
+        document.getElementById("onboard-create").onclick = async function () {
+          try {
+            var created = await post("/companies", { orgnr: orgnr });
+            toast(created.navn + " opprettet med " + created.seeded_accounts + " kontoer", true);
+            companies = [];
+            renderCompanies();
+          } catch (error) { toast(error.message, false); }
+        };
+      } catch (error) { toast(error.message, false); }
+    };
   }
 
   async function renderOversikt(id) {

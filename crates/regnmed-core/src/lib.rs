@@ -16,6 +16,7 @@ pub mod money;
 pub mod mva;
 pub mod mvamelding;
 pub mod ocr;
+pub mod orgnr;
 pub mod saft;
 pub mod voucher;
 pub(crate) mod xml;

@@ -1425,6 +1425,7 @@ dependencies = [
  "rand 0.8.7",
  "regnmed-core",
  "regnmed-db",
+ "regnmed-gov",
  "reqwest",
  "rsa",
  "serde",

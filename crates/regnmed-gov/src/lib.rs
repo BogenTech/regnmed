@@ -10,5 +10,7 @@
 //! Nothing here touches the ledger: regnmed-core builds the documents,
 //! this crate moves them.
 
+pub mod brreg;
+pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod mvamelding;

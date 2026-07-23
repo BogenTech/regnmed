@@ -4,6 +4,7 @@
 pub mod auth;
 pub mod bank;
 pub mod invoice;
+pub mod marketplace;
 pub mod ocr;
 pub mod period;
 pub mod portal;
@@ -34,6 +35,15 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/health", get(health))
         .route("/me", get(me))
+        .route(
+            "/registry/enheter/{orgnr}",
+            get(marketplace::registry_preview),
+        )
+        .route(
+            "/companies",
+            axum::routing::post(marketplace::onboard_company),
+        )
+        .route("/firms", axum::routing::post(marketplace::create_firm))
         .route(
             "/companies/{company_id}/reports/mva",
             get(reports::mva_report),

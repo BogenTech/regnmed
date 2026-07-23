@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 regnmed-core.workspace = true
 regnmed-db.workspace = true
+regnmed-gov = { path = "../regnmed-gov" }
 
 anyhow.workspace = true
 axum.workspace = true

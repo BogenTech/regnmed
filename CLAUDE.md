@@ -208,9 +208,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    file (update together); CSS built by scripts/build-css.sh, generated
    portal/app.css checked in. Sections: oversikt, faktura, reskontro,
    mva (+ eksport), bank, bilag, periode. Browser-verified end to end.
-   **Next:** marketplace (BRREG onboarding #9, Finanstilsynet #10,
-   directory #23), EHF (#14, access-point decision), Maskinporten
-   registration, or the M2 tail (skattemelding, årsregnskap).
+12. ✅ Marketplace onboarding (docs/marketplace.md): orgnr MOD11 in
+   core; BRREG client + fail-closed Finanstilsynet adapter in
+   regnmed-gov (both URL-configurable; FT endpoint pinned during pilot);
+   `POST /companies` onboards from Enhetsregisteret (registry name,
+   creator becomes admin, starter kontoplan seeded, slettet/konkurs
+   refused), `POST /firms` gated on verified autorisasjon (moment +
+   source recorded). Portal onboarding card, verified against live BRREG.
+   **Next:** accountant directory + engagement flow (#23), EHF (#14,
+   access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
