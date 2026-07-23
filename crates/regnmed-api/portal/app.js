@@ -145,6 +145,7 @@
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["bank", "Bank"], ["bilag", "Bilag"], ["periode", "Periode"],
+      ["oppdrag", "Oppdrag"],
     ].map(function (item) {
       return '<li><a href="#/c/' + companyId + "/" + item[0] + '" class="' +
         (section === item[0] ? "active" : "") + '">' + item[1] + "</a></li>";
@@ -214,8 +215,21 @@
       '<div class="flex gap-2"><input id="onboard-orgnr" class="input input-bordered" ' +
       'placeholder="Organisasjonsnummer" maxlength="9">' +
       '<button id="onboard-lookup" class="btn">Slå opp</button></div>' +
-      '<div id="onboard-preview"></div></div></div></main>';
+      '<div id="onboard-preview"></div></div></div>' +
+      '<div id="my-firms"></div></main>';
     wireChrome();
+    api("/firms/mine").then(function (mine) {
+      if (!mine.firms.length) return;
+      document.getElementById("my-firms").innerHTML =
+        '<h2 class="text-lg mt-8 mb-4">Mine byråer</h2><div class="grid gap-4 sm:grid-cols-2">' +
+        mine.firms.map(function (f) {
+          return '<a href="#/byra/' + f.firm_id + '" class="card bg-base-100 shadow-sm hover:shadow-md">' +
+            '<div class="card-body"><h2 class="card-title">' + esc(f.name) +
+            (f.pending_requests > 0 ? ' <span class="badge badge-primary">' + f.pending_requests + " nye</span>" : "") +
+            "</h2><p class='text-sm opacity-70'>" + esc(f.kind) +
+            (f.verified ? " · autorisert" : "") + "</p></div></a>";
+        }).join("") + "</div>";
+    }).catch(function () { /* section is optional */ });
     document.getElementById("onboard-lookup").onclick = async function () {
       var orgnr = document.getElementById("onboard-orgnr").value.trim();
       var target = document.getElementById("onboard-preview");
@@ -605,6 +619,107 @@
     };
   }
 
+  async function renderOppdrag(id) {
+    var results = await Promise.all([
+      api("/companies/" + id + "/engagements"),
+      api("/directory/firms"),
+    ]);
+    var engagements = results[0].engagements;
+    var firms = results[1].firms;
+    var active = engagements.filter(function (e) { return !e.valid_to; });
+    var rows = engagements.map(function (e) {
+      var action = !e.valid_to
+        ? '<button class="btn btn-xs btn-outline" data-end="' + e.engagement_id + '">Avslutt</button>'
+        : '<span class="opacity-60 text-sm">avsluttet ' + esc(e.valid_to) + "</span>";
+      return "<tr><td>" + esc(e.firm) + "</td><td>" + esc(e.kind) + "</td><td>" +
+        esc(e.valid_from) + "</td><td>" + action + "</td></tr>";
+    }).join("");
+    var directory = firms.map(function (f) {
+      var has = active.some(function (e) { return e.firm_id === f.firm_id; });
+      return "<tr><td>" + esc(f.name) + "</td><td>" + esc(f.orgnr) + "</td><td>" +
+        esc(f.kind) + "</td><td>" + f.client_count + "</td><td>" +
+        (has ? '<span class="badge badge-ghost">aktivt oppdrag</span>'
+             : '<button class="btn btn-xs btn-primary" data-request="' + f.firm_id + '">Be om oppdrag</button>') +
+        "</td></tr>";
+    }).join("");
+    shell(id, "oppdrag",
+      card("Oppdrag",
+        engagements.length
+          ? '<table class="table table-sm"><thead><tr><th>Byrå</th><th>Type</th><th>Fra</th><th></th></tr></thead><tbody>' +
+            rows + "</tbody></table>"
+          : '<p class="opacity-70">Ingen oppdrag ennå — finn et autorisert byrå under.</p>') +
+      card("Autoriserte byråer (Finanstilsynet-verifisert)",
+        '<table class="table table-sm"><thead><tr><th>Navn</th><th>Orgnr</th><th>Type</th>' +
+        "<th>Klienter</th><th></th></tr></thead><tbody>" + directory + "</tbody></table>"));
+    app.querySelectorAll("[data-request]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/companies/" + id + "/engagement-requests", { firm_id: button.dataset.request });
+          toast("Forespørsel sendt", true);
+          renderOppdrag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-end]").forEach(function (button) {
+      button.onclick = async function () {
+        if (!confirm("Avslutte oppdraget?")) return;
+        try {
+          await post("/companies/" + id + "/engagements/" + button.dataset.end + "/end", {});
+          toast("Oppdrag avsluttet", true);
+          renderOppdrag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+  }
+
+  async function renderByra(firmId) {
+    var results = await Promise.all([
+      api("/firms/" + firmId + "/requests"),
+      api("/firms/" + firmId + "/clients"),
+      api("/firms/mine"),
+    ]);
+    var firm = results[2].firms.find(function (f) { return f.firm_id === firmId; });
+    var pending = results[0].requests.filter(function (r) { return r.status === "pending"; });
+    var requestRows = pending.map(function (r) {
+      return "<tr><td>" + esc(r.company) + " (" + esc(r.orgnr) + ")</td><td>" + esc(r.kind) +
+        "</td><td>" + esc(r.message || "") + "</td>" +
+        '<td class="flex gap-1"><button class="btn btn-xs btn-primary" data-decide="' + r.request_id +
+        '" data-accept="1">Godta</button><button class="btn btn-xs" data-decide="' + r.request_id +
+        '" data-accept="">Avslå</button></td></tr>';
+    }).join("");
+    var clientRows = results[1].clients.map(function (e) {
+      return "<tr><td>" + esc(e.company) + "</td><td>" + esc(e.kind) + "</td><td>" +
+        esc(e.valid_from) + "</td><td>" + (e.valid_to ? "avsluttet " + esc(e.valid_to) : "aktivt") + "</td></tr>";
+    }).join("");
+    app.innerHTML =
+      '<div class="navbar bg-base-100 shadow-sm">' +
+      '<div class="flex-1 gap-2 items-baseline"><a href="#/" class="btn btn-ghost text-xl">regnmed</a>' +
+      '<span class="text-sm opacity-70">' + esc(firm ? firm.name : "") + "</span></div>" +
+      '<div class="flex-none gap-2">' + themeControls() +
+      '<button id="logout" class="btn btn-ghost btn-sm">Logg ut</button></div></div>' +
+      '<main class="p-6 max-w-4xl mx-auto">' +
+      card("Innkommende forespørsler",
+        pending.length
+          ? '<table class="table table-sm"><thead><tr><th>Selskap</th><th>Type</th><th>Melding</th><th></th></tr></thead><tbody>' +
+            requestRows + "</tbody></table>"
+          : '<p class="opacity-70">Ingen ventende forespørsler.</p>') +
+      card("Klienter",
+        '<table class="table table-sm"><thead><tr><th>Selskap</th><th>Type</th><th>Fra</th><th>Status</th></tr></thead><tbody>' +
+        clientRows + "</tbody></table>") +
+      "</main>";
+    wireChrome();
+    app.querySelectorAll("[data-decide]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/firms/" + firmId + "/requests/" + button.dataset.decide + "/decision",
+            { accept: !!button.dataset.accept });
+          toast(button.dataset.accept ? "Oppdrag godtatt" : "Avslått", true);
+          renderByra(firmId);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+  }
+
   // ---------- router ----------
 
   async function route() {
@@ -612,6 +727,7 @@
     try {
       if (!companies.length) { me = await api("/me"); companies = me.companies; }
       var parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
+      if (parts[0] === "byra" && parts[1]) return await renderByra(parts[1]);
       if (parts[0] === "c" && parts[1]) {
         var id = parts[1];
         var section = parts[2] || "oversikt";
@@ -622,6 +738,7 @@
         if (section === "bank") return await renderBank(id);
         if (section === "bilag") return await renderBilag(id);
         if (section === "periode") return await renderPeriode(id);
+        if (section === "oppdrag") return await renderOppdrag(id);
       }
       return await renderCompanies();
     } catch (error) {

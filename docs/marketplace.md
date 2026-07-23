@@ -41,14 +41,40 @@ its API endpoint is not stably documented, so
 `GET {base}/virksomheter/{orgnr}` → `{"autorisasjoner":[{"kode","aktiv"}]}`.
 The URL and field mapping get pinned against the live register during
 pilot onboarding; the enforcement point, flow and tests are real today
-and only the adapter may move. Re-verification cadence (licenses can be
-revoked) is decided together with the directory work.
+and only the adapter may move. Re-verification cadence (licenses can be revoked) is a pilot decision.
+
+## The engagement flow (oppdrag)
+
+The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
++ Byrå view):
+
+1. **Directory** (`GET /directory/firms`): only firms with verified
+   autorisasjon are listed, with an honest size signal (active client
+   count).
+2. **Request** (`POST /companies/{id}/engagement-requests`): requires
+   company **admin**; one pending request per firm/company/kind (unique
+   partial index); refused when an active engagement already exists. The
+   kind is the firm's kind — requests are an audit trail, never edited
+   beyond their one decision.
+3. **Decision** (`POST /firms/{fid}/requests/{rid}/decision`): firm
+   members only. Accepting opens the engagement in the same transaction
+   as the status flip — the accountant's access exists on their next
+   request, no re-login (the authorization model resolves engagements
+   live).
+4. **End** (`POST /companies/{id}/engagements/{eid}/end`): company admin
+   sets `valid_to` = today. **`valid_to` is exclusive in access
+   resolution**: ending an oppdrag revokes the firm's access
+   immediately, and the history row stays forever.
 
 ## Where it is tested
 
 - `regnmed-core/src/orgnr.rs` — MOD11 checksum on real orgnrs.
 - `regnmed-gov` — registry response parsing (tolerant to extra fields),
   license matching incl. inactive licenses not counting.
+- `regnmed-api/tests/engagement.rs` (real Postgres, also CI): the whole
+  loop — directory listing, non-admin refused, request + duplicate
+  rejection, firm-member-only visibility and decision, access appearing
+  via `/me` after accept and disappearing immediately after end.
 - `regnmed-api/tests/marketplace.rs` (real Postgres, mocked registries
   via env URLs, also CI): preview, checksum rejection, onboarding with
   seeded reskontro-flagged kontoplan and creator-as-admin, double

@@ -6,6 +6,7 @@
 
 pub mod attachment;
 pub mod bank;
+pub mod engagement;
 pub mod invoice;
 pub mod ledger;
 pub mod marketplace;
@@ -18,6 +19,7 @@ pub mod tenancy;
 
 pub use attachment::*;
 pub use bank::*;
+pub use engagement::*;
 pub use invoice::*;
 pub use ledger::*;
 pub use marketplace::*;

@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod bank;
+pub mod engagement;
 pub mod invoice;
 pub mod marketplace;
 pub mod ocr;
@@ -44,6 +45,26 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(marketplace::onboard_company),
         )
         .route("/firms", axum::routing::post(marketplace::create_firm))
+        .route("/directory/firms", get(engagement::directory))
+        .route("/firms/mine", get(engagement::my_firms))
+        .route("/firms/{firm_id}/requests", get(engagement::firm_requests))
+        .route(
+            "/firms/{firm_id}/requests/{request_id}/decision",
+            axum::routing::post(engagement::decide_request),
+        )
+        .route("/firms/{firm_id}/clients", get(engagement::firm_clients))
+        .route(
+            "/companies/{company_id}/engagements",
+            get(engagement::company_engagements),
+        )
+        .route(
+            "/companies/{company_id}/engagement-requests",
+            axum::routing::post(engagement::request_engagement),
+        )
+        .route(
+            "/companies/{company_id}/engagements/{engagement_id}/end",
+            axum::routing::post(engagement::end_engagement),
+        )
         .route(
             "/companies/{company_id}/reports/mva",
             get(reports::mva_report),

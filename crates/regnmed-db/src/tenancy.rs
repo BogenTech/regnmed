@@ -167,7 +167,9 @@ pub async fn company_access_for_person(
          join company c on c.id = e.company_id
          where fm.person_id = $1 and fm.active
            and e.valid_from <= current_date
-           and (e.valid_to is null or e.valid_to >= current_date)
+           -- valid_to is the date the oppdrag ended (exclusive): ending an
+           -- engagement revokes access immediately, on the same day.
+           and (e.valid_to is null or e.valid_to > current_date)
 
          order by name, via",
     )

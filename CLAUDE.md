@@ -215,8 +215,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    creator becomes admin, starter kontoplan seeded, slettet/konkurs
    refused), `POST /firms` gated on verified autorisasjon (moment +
    source recorded). Portal onboarding card, verified against live BRREG.
-   **Next:** accountant directory + engagement flow (#23), EHF (#14,
-   access-point decision), Maskinporten registration, M2 tail.
+13. ✅ Directory + engagement flow (docs/marketplace.md): verified-only
+   directory, request→decide→engagement in one tx (access live via /me,
+   no re-login), end sets valid_to (EXCLUSIVE in access resolution —
+   revocation is immediate; changed in tenancy.rs). Portal: Oppdrag
+   section per company + Byrå view (requests, clients) for firm members.
+   **Next:** EHF (#14, access-point decision), Maskinporten
+   registration, M2 tail (skattemelding, årsregnskap), M4 migration.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
