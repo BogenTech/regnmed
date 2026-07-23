@@ -710,16 +710,127 @@
   }
 
   async function renderBilag(id) {
-    var vouchers = (await api("/companies/" + id + "/vouchers")).vouchers;
+    var results = await Promise.all([
+      api("/companies/" + id + "/vouchers"),
+      api("/companies/" + id + "/inbox"),
+    ]);
+    var vouchers = results[0].vouchers;
+    var inbox = results[1].documents;
+    var open = inbox.filter(function (d) { return d.status === "ny"; });
+    var decided = inbox.filter(function (d) { return d.status !== "ny"; });
+    var inboxRows = open.map(function (d) {
+      return "<tr><td><a class='link' href='#' data-dl-doc='" + d.document_id + "' data-name='" +
+        esc(d.filename) + "'>" + esc(d.filename) + "</a></td><td>" +
+        esc(d.uploaded_at.slice(0, 10)) + "</td><td>" + esc(d.uploaded_by) + "</td><td>" +
+        '<button class="btn btn-xs btn-primary" data-bokfor="' + d.document_id + '">Bokfør</button> ' +
+        '<button class="btn btn-xs btn-ghost" data-avvis="' + d.document_id + '">Avvis</button></td></tr>';
+    }).join("");
+    var decidedRows = decided.slice(0, 6).map(function (d) {
+      return '<div class="text-xs opacity-60 py-0.5">' + esc(d.filename) + " — " + esc(d.status) +
+        (d.note ? " (" + esc(d.note) + ")" : "") + " · " + esc(d.decided_by || "") + "</div>";
+    }).join("");
+    var inboxCard = card("Innboks — dokumentasjon som venter på bokføring",
+      '<label class="btn btn-sm btn-outline mb-3">Last opp bilag' +
+      '<input type="file" id="inbox-upload" class="hidden"></label>' +
+      (open.length
+        ? '<table class="table table-sm"><thead><tr><th>Dokument</th><th>Mottatt</th><th>Fra</th><th></th></tr></thead>' +
+          "<tbody>" + inboxRows + "</tbody></table>"
+        : '<p class="text-sm opacity-70">Ingen dokumenter venter.</p>') +
+      '<div id="bokfor-form" class="mt-3"></div>' + decidedRows);
     var rows = vouchers.map(function (v) {
       return "<tr><td>" + esc(v.voucher) + "</td><td>" + esc(v.date) + "</td><td>" +
         esc(v.description) + '</td><td><label class="btn btn-xs btn-outline">Vedlegg' +
         '<input type="file" class="hidden" data-attach="' + v.voucher_id + '"></label> ' +
         '<button class="btn btn-xs btn-ghost" data-list="' + v.voucher_id + '">Vis</button></td></tr>';
     }).join("");
-    shell(id, "bilag", card("Bilag",
+    shell(id, "bilag", inboxCard + card("Bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th><th></th></tr></thead>' +
       "<tbody>" + rows + "</tbody></table><div id='attachment-list' class='mt-4'></div>"));
+    var inboxUpload = document.getElementById("inbox-upload");
+    if (inboxUpload) inboxUpload.onchange = async function () {
+      var file = inboxUpload.files[0];
+      if (!file) return;
+      try {
+        await api("/companies/" + id + "/inbox?filename=" + encodeURIComponent(file.name), {
+          method: "POST",
+          headers: { "content-type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        toast("Dokument mottatt i innboksen", true);
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-dl-doc]").forEach(function (link) {
+      link.onclick = async function (event) {
+        event.preventDefault();
+        try {
+          var response = await api("/companies/" + id + "/inbox/" + link.dataset.dlDoc + "/content");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = link.dataset.name;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-avvis]").forEach(function (button) {
+      button.onclick = async function () {
+        var note = prompt("Hvorfor avvises dokumentet?");
+        if (!note) return;
+        try {
+          await post("/companies/" + id + "/inbox/" + button.dataset.avvis + "/avvis", { note: note });
+          toast("Avvist", true);
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-bokfor]").forEach(function (button) {
+      button.onclick = function () {
+        var docId = button.dataset.bokfor;
+        var target = document.getElementById("bokfor-form");
+        function lineHtml() {
+          return '<div class="flex gap-2 mb-1 bokfor-line">' +
+            '<input class="input input-sm input-bordered w-24" placeholder="Konto" data-f="account">' +
+            '<input class="input input-sm input-bordered w-32" placeholder="Beløp (f.eks. -125,50)" data-f="amount">' +
+            '<input class="input input-sm input-bordered w-16" placeholder="Mva" data-f="vat">' +
+            "</div>";
+        }
+        target.innerHTML = '<div class="border border-base-300 rounded-lg p-3">' +
+          '<p class="text-sm font-semibold mb-2">Bokfør dokument</p>' +
+          '<div class="flex gap-2 mb-2">' +
+          '<input id="bf-date" type="date" class="input input-sm input-bordered">' +
+          '<input id="bf-desc" class="input input-sm input-bordered flex-1" placeholder="Tekst">' +
+          "</div><div id='bf-lines'>" + lineHtml() + lineHtml() + "</div>" +
+          '<button id="bf-add" class="btn btn-xs btn-ghost">+ linje</button> ' +
+          '<button id="bf-post" class="btn btn-sm btn-primary">Bokfør</button></div>';
+        document.getElementById("bf-date").value = new Date().toISOString().slice(0, 10);
+        document.getElementById("bf-add").onclick = function () {
+          document.getElementById("bf-lines").insertAdjacentHTML("beforeend", lineHtml());
+        };
+        document.getElementById("bf-post").onclick = async function () {
+          var lines = [];
+          target.querySelectorAll(".bokfor-line").forEach(function (row) {
+            var account = row.querySelector('[data-f="account"]').value.trim();
+            var amount = row.querySelector('[data-f="amount"]').value.trim().replace(/\s/g, "");
+            if (!account || !amount) return;
+            var ore = Math.round(Number(amount.replace(",", ".")) * 100);
+            var vat = row.querySelector('[data-f="vat"]').value.trim();
+            lines.push({ account: account, amount_ore: ore, vat_code: vat || null });
+          });
+          try {
+            var posted = await post("/companies/" + id + "/inbox/" + docId + "/bokfor", {
+              journal_code: "GL",
+              date: document.getElementById("bf-date").value,
+              description: document.getElementById("bf-desc").value || "Bokført fra innboks",
+              lines: lines,
+            });
+            toast("Bokført som bilag " + posted.voucher, true);
+            renderBilag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      };
+    });
     app.querySelectorAll("[data-attach]").forEach(function (input) {
       input.onchange = async function () {
         var file = input.files[0];

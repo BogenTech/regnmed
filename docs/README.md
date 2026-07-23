@@ -16,6 +16,7 @@ CLAUDE.md).
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
+| [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |

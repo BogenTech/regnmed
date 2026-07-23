@@ -252,6 +252,14 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    hidden errors; `?format=tekst` downloads the deterministic rendering
    (`regnmed-core::revisjon`) ending with the independent
    re-verification procedure. Portal: Rapporter → Revisjon tab.
+18. ✅ Bilagsinnboks (docs/bilagsinnboks.md, closed #21 — **M5
+   complete**): migration 0015 (content immutable via column grants +
+   trigger, decisions one-way ny→bokfort/avvist, nothing deletable);
+   `bokfor_inbox_document` posts voucher + copies document into
+   `attachment` + marks status in ONE transaction (failed posting
+   leaves the document undecided); avvis requires a note. Endpoints
+   under `/companies/{id}/inbox…`; portal Bilag section opens with the
+   inbox (upload, inline bokfør form, avvis).
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

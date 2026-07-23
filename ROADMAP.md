@@ -112,8 +112,10 @@ existing portfolio.
 
 - **Portal UI** — Tailwind v4 + daisyUI 5, shared theme contract with regnid
   (`../regnid/ui/themes.css`); bilagsregistrering, reports, reskontro views.
-- **Bilagsinnboks** — upload/e-mail-in of documentation, accountant workflow
-  (klient laster opp, regnskapsfører posterer).
+- ✅ **Bilagsinnboks** — klient laster opp (immutable fra ankomst),
+  regnskapsfører bokfører: bilag + vedlegg + status i én transaksjon, eller
+  avviser med notat (docs/bilagsinnboks.md). E-mail-in/OCR is a later
+  enhancement on the same endpoint.
 - **Engagement management UI** — oppdrag lifecycle (scope, validity,
   takeover/opphør), firm membership admin.
 - **Accountant directory** — verified autorisasjon badges, businesses find

@@ -5,6 +5,7 @@ pub mod anchor;
 pub mod auth;
 pub mod bank;
 pub mod engagement;
+pub mod innboks;
 pub mod invoice;
 pub mod marketplace;
 pub mod ocr;
@@ -168,6 +169,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/credit-note",
             axum::routing::post(invoice::credit_note),
+        )
+        .route(
+            "/companies/{company_id}/inbox",
+            get(innboks::list).post(innboks::upload),
+        )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/content",
+            get(innboks::download),
+        )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/bokfor",
+            axum::routing::post(innboks::bokfor),
+        )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/avvis",
+            axum::routing::post(innboks::avvis),
         )
         .route(
             "/companies/{company_id}/period-lock",
