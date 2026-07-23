@@ -30,6 +30,7 @@ it is never an error that hides the document.
 | Reskontro mot hovedbok | every posting on a reskontro-flagged account carries a party — subledger equals hovedbok by construction |
 | Balansekontroll | all postings sum to exactly zero øre |
 | Periodelåsing | current lock and the size of the insert-only lock history (informational) |
+| Regelverkssatser | no monitored sats domain in the satsregister is older than its known change cadence ([regelverk.md](regelverk.md)) — outdated satser would silently produce unlawful gebyrer/renter |
 
 The report also lists every external anchor covering the company
 (timestamp, sequence, root hash, witnesses) and the chain head at

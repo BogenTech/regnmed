@@ -24,6 +24,7 @@ pub mod regnskap;
 pub mod revisjon;
 pub mod saft;
 pub mod saft_import;
+pub mod sats;
 pub mod voucher;
 pub(crate) mod xml;
 

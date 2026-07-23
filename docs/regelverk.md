@@ -25,6 +25,7 @@ data with validity periods — never code branches on a year**:
 | Rule | Mechanism | Location |
 | --- | --- | --- |
 | Mva-satser (alle klasser) | dated table | migration 0006 `vat_rate` |
+| Forsinkelsesrente, standardkompensasjon, inkassosats, purregebyr, statens km-satser, terskelverdier | **satsregisteret**: dated table w/ kilde per row, staleness-overvåket i revisjonsrapporten | migration 0016 `sats`, `regnmed-core::sats` |
 | Mva-koder | standard SAF-T code list | migration 0006 `vat_code` |
 | Terminer (2-mnd) | pure logic | `regnmed-core::mva::Termin` |
 | Næringsspesifikasjon grouping | vendored CSV, **pinned inntektsår 2025-2026** | `crates/regnmed-core/src/saft/…csv` + docs/saft/ |
@@ -56,8 +57,13 @@ og regnskapsloven.
 
 ## Open gaps (tracked)
 
-- #49 satsregister: one generalized dated-rate mechanism + staleness
-  warning in the revisjonsrapport.
+- ✅ #49 satsregister: shipped — dated `sats` table seeded with
+  verified values (forsinkelsesrente H1-2025→H2-2026,
+  standardkompensasjon, inkassosats/purregebyr, km-satser, terskler),
+  each row carrying its legal kilde; `sats_on` lookup mirrors
+  `rate_on`; the revisjonsrapport's "Regelverkssatser" kontroll flags
+  any monitored domain older than its change cadence. Consumers: #29,
+  #40, #42, #46.
 - #50 per-inntektsår authority artifacts (grouping list chosen by the
   exported year, not by what happens to be vendored).
 - #51 mva-terminordninger beyond 2-mnd (årstermin, primærnæring).

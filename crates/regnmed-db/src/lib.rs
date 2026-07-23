@@ -21,6 +21,7 @@ pub mod reskontro;
 pub mod revisjon;
 pub mod saft;
 pub mod saft_import;
+pub mod sats;
 pub mod tenancy;
 
 pub use anchor::*;
@@ -40,6 +41,7 @@ pub use reskontro::*;
 pub use revisjon::*;
 pub use saft::*;
 pub use saft_import::*;
+pub use sats::*;
 pub use tenancy::*;
 
 use sqlx::PgPool;

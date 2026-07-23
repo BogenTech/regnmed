@@ -13,6 +13,9 @@
 //!    check proves the invariant actually holds in the data.
 //! 5. Balansekontroll: all entries sum to zero.
 //! 6. Periodelåsing status (informational: current lock and history).
+//! 7. Regelverkssatser: no monitored sats domain is older than its
+//!    known change cadence — the machine's side of the yearly
+//!    regelverksrevisjon (docs/regelverk.md).
 
 use anyhow::Result;
 use regnmed_core::revisjon::{AnkerInfo, Kontroll, RevisjonInput};
@@ -158,6 +161,33 @@ pub async fn build_revisjon_report(
                 "låst til og med {date}; {lock_rows} hendelser i den ureviderbare låshistorikken"
             ),
             None => "ingen periode er låst ennå".into(),
+        },
+    });
+
+    // 7. Regelverkssatser (docs/regelverk.md): outdated satser would
+    // silently produce unlawful gebyrer/renter — surfaced here so the
+    // yearly regelverksrevisjon is verified, not remembered.
+    let satser = crate::load_satser(pool).await?;
+    let foreldede = regnmed_core::sats::foreldede_domener(&satser, chrono::Utc::now().date_naive());
+    kontroller.push(Kontroll {
+        navn: "Regelverkssatser".into(),
+        ok: foreldede.is_empty(),
+        detalj: if foreldede.is_empty() {
+            let domener: std::collections::HashSet<_> =
+                satser.iter().map(|s| s.domene.as_str()).collect();
+            format!(
+                "{} satsdomener i registeret; ingen overvåket sats er eldre enn sin kadens",
+                domener.len()
+            )
+        } else {
+            foreldede
+                .iter()
+                .map(|f| match f.siste {
+                    Some(date) => format!("{} sist oppdatert {date}", f.domene),
+                    None => format!("{} mangler i satsregisteret", f.domene),
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
         },
     });
 

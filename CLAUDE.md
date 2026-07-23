@@ -296,9 +296,18 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    ways: clean passes, forged anchors fail). PITR via CloudNativePG
    documented as growth path. Beware: strategic-merge env patches need
    `value: null` to remove the base's plaintext value.
-   **Next:** native importers (#19), EHF (#14, access-point decision),
-   Maskinporten registration (in progress, docs/gov.md), M2 tail,
-   production overlays (#27).
+23. ✅ Satsregisteret (docs/regelverk.md, closed #49): migration 0016
+   `sats` — dated, append-only, every row carries its legal kilde;
+   seeded w/ verified 2025–2026 values (forsinkelsesrente,
+   standardkompensasjon, inkassosats, purregebyr 1/20, statens
+   km-satser, terskler). Pure `sats_on` + `foreldede_domener` in
+   `regnmed-core::sats` (cadence table; thresholds exempt); the
+   revisjonsrapport gained kontroll 7 "Regelverkssatser" so the yearly
+   regelverksrevisjon is machine-verified. Consumers: #29/#40/#42/#46.
+   **Next:** M7 funksjonsbredde (#29–#48 unblocked; #37 dimensjoner or
+   #29 purring first), #50 per-inntektsår artefakter, native importers
+   (#19), EHF (#14, access-point decision), Maskinporten registration
+   (in progress, docs/gov.md), M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
