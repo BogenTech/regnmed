@@ -118,8 +118,9 @@ existing portfolio.
   takeover/opphør), firm membership admin.
 - **Accountant directory** — verified autorisasjon badges, businesses find
   and engage accountants; the marketplace itself.
-- **Revisorrolle** — read-only engagement + one-click chain verification
-  report (the trust story productized).
+- ✅ **Revisorrolle** — read-only engagement + one-click verification
+  report: six kontroller (chain, attachments, anchors, reskontro tie-out,
+  balance, period locks) + deterministic text download (docs/revisjon.md).
 
 ## M6 — Tillit og skala
 

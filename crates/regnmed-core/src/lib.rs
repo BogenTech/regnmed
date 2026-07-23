@@ -19,6 +19,7 @@ pub mod mvamelding;
 pub mod ocr;
 pub mod orgnr;
 pub mod regnskap;
+pub mod revisjon;
 pub mod saft;
 pub mod saft_import;
 pub mod voucher;

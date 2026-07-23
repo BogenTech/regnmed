@@ -348,3 +348,72 @@ pub async fn balanse(
         "differanse_ore": b.differanse_ore(),
     })))
 }
+
+// ---- Revisorens verifikasjonsrapport (issue #24) ----
+
+#[derive(Deserialize)]
+pub struct RevisjonQuery {
+    format: Option<String>,
+}
+
+/// Every guarantee checked against the live ledger, in one document.
+/// Any access level may generate it — the revisor (engagement 'revisjon'
+/// → 'les') is exactly who it is for. `?format=tekst` downloads the
+/// deterministic plain-text rendering for the revisor's own archive.
+pub async fn revisjon(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<RevisjonQuery>,
+) -> Result<Response, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    let generated_by = person.name.as_deref().unwrap_or(&person.sub);
+    let report = regnmed_db::build_revisjon_report(
+        &state.pool,
+        company_id,
+        generated_by,
+        env!("CARGO_PKG_VERSION"),
+    )
+    .await?;
+
+    if query.format.as_deref() == Some("tekst") {
+        let filename = format!("verifikasjonsrapport_{}.txt", report.orgnr);
+        return Ok((
+            [
+                (
+                    header::CONTENT_TYPE,
+                    "text/plain; charset=utf-8".to_string(),
+                ),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{filename}\""),
+                ),
+            ],
+            regnmed_core::revisjon::render_text(&report),
+        )
+            .into_response());
+    }
+
+    Ok(Json(json!({
+        "orgnr": report.orgnr,
+        "selskap": report.selskap,
+        "generert": report.generert,
+        "generert_av": report.generert_av,
+        "programversjon": report.programversjon,
+        "kjede_sekvens": report.kjede_sekvens,
+        "kjede_hode": report.kjede_hode_hex,
+        "alle_ok": report.alle_ok(),
+        "kontroller": report.kontroller.iter().map(|k| json!({
+            "navn": k.navn,
+            "ok": k.ok,
+            "detalj": k.detalj,
+        })).collect::<Vec<_>>(),
+        "ankere": report.ankere.iter().map(|a| json!({
+            "tidspunkt": a.tidspunkt,
+            "root": a.root_hex,
+            "siste_sekvens": a.siste_sekvens,
+            "vitner": a.vitner,
+        })).collect::<Vec<_>>(),
+    }))
+    .into_response())
+}

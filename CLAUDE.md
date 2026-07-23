@@ -245,6 +245,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    per NS 4102 in `regnmed-core::regnskap` (presentation signs,
    udisponert resultat keeps balansen at zero differanse). Five
    `/reports/*` endpoints + portal Rapporter section.
+17. ✅ Revisorens verifikasjonsrapport (docs/revisjon.md, closed #24):
+   `GET /companies/{id}/reports/revisjon` runs six kontroller (chain
+   re-walk, attachment hashes, anchor consistency, reskontro tie-out,
+   balance, period-lock status) — failures become AVVIK lines, never
+   hidden errors; `?format=tekst` downloads the deterministic rendering
+   (`regnmed-core::revisjon`) ending with the independent
+   re-verification procedure. Portal: Rapporter → Revisjon tab.
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

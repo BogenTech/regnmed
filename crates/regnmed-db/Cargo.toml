@@ -10,6 +10,7 @@ repository.workspace = true
 regnmed-core.workspace = true
 
 anyhow.workspace = true
+hex.workspace = true
 chrono.workspace = true
 sqlx.workspace = true
 uuid.workspace = true

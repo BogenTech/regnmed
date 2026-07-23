@@ -535,6 +535,7 @@
     var tabs = [
       ["saldobalanse", "Saldobalanse"], ["resultat", "Resultat"], ["balanse", "Balanse"],
       ["kontospesifikasjon", "Kontospesifikasjon"], ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
+      ["revisjon", "Revisjon"],
     ].map(function (t) {
       return '<a class="join-item btn btn-sm ' + (t[0] === rapport ? "btn-primary" : "") +
         '" href="#/c/' + id + "/rapporter?rapport=" + t[0] + "&year=" + year + '">' + t[1] + "</a>";
@@ -594,6 +595,32 @@
             "</td><td class='text-right'>" + kr(p.amount_ore) +
             "</td><td class='text-right'>" + kr(p.saldo_ore) + "</td></tr>";
         }).join("") + "</tbody></table>";
+    } else if (rapport === "revisjon") {
+      title = "Verifikasjonsrapport";
+      var rr = await api("/companies/" + id + "/reports/revisjon");
+      body = '<div class="alert ' + (rr.alle_ok ? "alert-success" : "alert-error") + ' mb-4">' +
+        (rr.alle_ok ? "Alle kontroller OK" : "Avvik funnet — se kontrollene under") +
+        ' <span class="text-xs font-mono opacity-70">kjedehode: sekvens ' + rr.kjede_sekvens + "</span></div>" +
+        '<table class="table table-sm mb-4"><tbody>' +
+        rr.kontroller.map(function (k) {
+          return "<tr><td>" + (k.ok ? "✓" : "✗") + "</td><td class='font-semibold'>" + esc(k.navn) +
+            "</td><td>" + esc(k.detalj) + "</td></tr>";
+        }).join("") + "</tbody></table>" +
+        (rr.ankere.length
+          ? '<p class="text-sm font-semibold mb-1">Eksterne forankringer</p>' +
+            '<table class="table table-sm mb-4"><tbody>' +
+            rr.ankere.map(function (a) {
+              return "<tr><td>" + esc(a.tidspunkt.slice(0, 16).replace("T", " ")) +
+                "</td><td>sekvens " + a.siste_sekvens +
+                "</td><td class='font-mono text-xs break-all'>" + esc(a.root) +
+                (a.vitner.length ? "<br><span class='opacity-60'>" + a.vitner.map(esc).join("<br>") + "</span>" : "") +
+                "</td></tr>";
+            }).join("") + "</tbody></table>"
+          : '<p class="text-sm opacity-70 mb-4">Ingen forankringer omfatter selskapet ennå.</p>') +
+        '<button id="dl-revisjon" class="btn btn-outline btn-sm">Last ned rapport (tekst)</button>' +
+        '<p class="text-xs opacity-60 mt-2">Rapporten kan etterprøves uavhengig av regnmed: ' +
+        "kjeden re-beregnes fra genesis, røttene sammenlignes med den offentlige /anchors-strømmen, " +
+        "og RFC 3161-vitner verifiseres frakoblet.</p>";
     } else {
       title = "Bokføringsspesifikasjon " + year;
       var bs = await api("/companies/" + id + "/reports/bokforingsspesifikasjon?from=" + from + "&to=" + to);
@@ -610,6 +637,18 @@
     }
     shell(id, "rapporter", card(title,
       '<div class="flex gap-2 flex-wrap mb-4"><div class="join">' + tabs + "</div>" + yearNav + "</div>" + body));
+    var dlRevisjon = document.getElementById("dl-revisjon");
+    if (dlRevisjon) dlRevisjon.onclick = async function () {
+      try {
+        var response = await api("/companies/" + id + "/reports/revisjon?format=tekst");
+        var blob = await response.blob();
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "verifikasjonsrapport.txt";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (error) { toast(error.message, false); }
+    };
   }
 
   async function renderBank(id) {

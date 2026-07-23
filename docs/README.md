@@ -18,6 +18,7 @@ CLAUDE.md).
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
+| [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |
 | [migration.md](migration.md) | SAF-T import: the universal migration path |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
