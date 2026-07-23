@@ -145,3 +145,33 @@ pub async fn create_firm(
         "autorisasjon_verified": true,
     })))
 }
+
+/// SAF-T migration import: XML body, admin only, empty ledger only —
+/// the whole file lands in one transaction or not at all.
+pub async fn import_saft(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<uuid::Uuid>,
+    body: String,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let access = regnmed_db::company_access(&state.pool, person.person_id, company_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if access != "admin" {
+        return Err(ApiError::Forbidden("SAF-T-import krever admin-tilgang"));
+    }
+    let file = regnmed_core::saft_import::parse(&body)
+        .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
+    let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    let report = regnmed_db::import_saft(&state.pool, company_id, &file, created_by)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({
+        "accounts": report.accounts,
+        "customers": report.customers,
+        "suppliers": report.suppliers,
+        "vouchers": report.vouchers,
+        "opening_posted": report.opening_posted,
+        "warnings": report.warnings,
+    })))
+}

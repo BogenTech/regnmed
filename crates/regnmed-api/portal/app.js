@@ -287,9 +287,28 @@
       return "<tr><td>" + esc(v.voucher) + "</td><td>" + esc(v.date) + "</td><td>" +
         esc(v.description) + "</td></tr>";
     }).join("");
-    shell(id, "oversikt", stats + card("Siste bilag",
+    var importCard = vouchers.length === 0
+      ? card("Kom fra et annet system?",
+          '<p class="text-sm opacity-70 mb-2">Last opp en SAF-T-eksport (alle norske systemer kan lage en) — ' +
+          "kontoplan, kunder/leverandører og hele historikken importeres i én operasjon.</p>" +
+          '<input type="file" id="saft-file" class="file-input file-input-bordered" accept=".xml">')
+      : "";
+    shell(id, "oversikt", stats + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
       "<tbody>" + recent + "</tbody></table>"));
+    var saftInput = document.getElementById("saft-file");
+    if (saftInput) saftInput.onchange = async function (event) {
+      var file = event.target.files[0];
+      if (!file) return;
+      try {
+        var result = await api("/companies/" + id + "/import/saft", {
+          method: "POST", body: await file.text(),
+        });
+        toast(result.vouchers + " bilag, " + result.accounts + " kontoer importert" +
+          (result.warnings.length ? " (" + result.warnings.length + " merknader)" : ""), true);
+        renderOversikt(id);
+      } catch (error) { toast(error.message, false); }
+    };
   }
 
   async function renderFaktura(id) {

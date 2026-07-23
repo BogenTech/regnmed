@@ -54,7 +54,7 @@ pub struct Camt053Transaction {
 
 /// "12500.00" → 1_250_000 øre. camt amounts are unsigned; direction
 /// comes from CdtDbtInd.
-fn parse_amount(text: &str) -> Result<i64, CamtError> {
+pub(crate) fn parse_amount(text: &str) -> Result<i64, CamtError> {
     let bad = || CamtError::BadAmount(text.to_string());
     let (whole, frac) = match text.split_once('.') {
         Some((w, f)) => (w, f),

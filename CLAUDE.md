@@ -220,8 +220,14 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    no re-login), end sets valid_to (EXCLUSIVE in access resolution —
    revocation is immediate; changed in tenancy.rs). Portal: Oppdrag
    section per company + Byrå view (requests, clients) for firm members.
-   **Next:** EHF (#14, access-point decision), Maskinporten
-   registration, M2 tail (skattemelding, årsregnskap), M4 migration.
+14. ✅ SAF-T migration import (docs/migration.md): tolerant parser in
+   core (round-trip tested against our own exporter), all-or-nothing
+   import into an EMPTY ledger only — history chain-posted through
+   post_voucher_in into an IMP journal, opening balances must sum to
+   zero, conservative reskontro flagging, warnings surfaced. Portal
+   offers it on empty companies. `POST /companies/{id}/import/saft`.
+   **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
+   access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

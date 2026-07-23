@@ -15,6 +15,7 @@ pub mod ocr;
 pub mod period;
 pub mod reskontro;
 pub mod saft;
+pub mod saft_import;
 pub mod tenancy;
 
 pub use attachment::*;
@@ -28,6 +29,7 @@ pub use ocr::*;
 pub use period::*;
 pub use reskontro::*;
 pub use saft::*;
+pub use saft_import::*;
 pub use tenancy::*;
 
 use sqlx::PgPool;

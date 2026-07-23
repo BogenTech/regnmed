@@ -18,6 +18,7 @@ pub mod mvamelding;
 pub mod ocr;
 pub mod orgnr;
 pub mod saft;
+pub mod saft_import;
 pub mod voucher;
 pub(crate) mod xml;
 
