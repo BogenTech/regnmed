@@ -201,3 +201,150 @@ fn xml_download(xml: String, filename: &str) -> Response {
     )
         .into_response()
 }
+
+// ---- Lovpålagte spesifikasjoner (bokføringsforskriften §3-1) ----
+
+#[derive(Deserialize)]
+pub struct PeriodQuery {
+    from: NaiveDate,
+    to: NaiveDate,
+    account: Option<String>,
+}
+
+fn check_period(from: NaiveDate, to: NaiveDate) -> Result<(), ApiError> {
+    if from > to {
+        return Err(ApiError::BadRequest("from must not be after to".into()));
+    }
+    Ok(())
+}
+
+pub async fn saldobalanse(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    check_period(query.from, query.to)?;
+    let rows = regnmed_db::saldobalanse(&state.pool, company_id, query.from, query.to).await?;
+    Ok(Json(json!({
+        "accounts": rows.iter().map(|r| json!({
+            "number": r.number,
+            "name": r.name,
+            "inngaende_ore": r.inngaende_ore,
+            "debet_ore": r.debet_ore,
+            "kredit_ore": r.kredit_ore,
+            "utgaende_ore": r.utgaende_ore,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+pub async fn kontospesifikasjon(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    check_period(query.from, query.to)?;
+    let posts = regnmed_db::kontospesifikasjon(
+        &state.pool,
+        company_id,
+        query.account.as_deref(),
+        query.from,
+        query.to,
+    )
+    .await?;
+    Ok(Json(json!({
+        "posts": posts.iter().map(|p| json!({
+            "account": p.number,
+            "account_name": p.account_name,
+            "bilag": format!("{}-{}-{}", p.journal_code, p.fiscal_year, p.voucher_number),
+            "date": p.voucher_date.to_string(),
+            "description": p.description,
+            "amount_ore": p.amount_ore,
+            "saldo_ore": p.saldo_ore,
+            "party_no": p.party_no,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+pub async fn bokforingsspesifikasjon(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    check_period(query.from, query.to)?;
+    let vouchers =
+        regnmed_db::bokforingsspesifikasjon(&state.pool, company_id, query.from, query.to).await?;
+    Ok(Json(json!({
+        "vouchers": vouchers.iter().map(|v| json!({
+            "bilag": format!("{}-{}-{}", v.journal_code, v.fiscal_year, v.voucher_number),
+            "date": v.voucher_date.to_string(),
+            "description": v.description,
+            "lines": v.lines.iter().map(|l| json!({
+                "line_no": l.line_no,
+                "account": l.account_number,
+                "account_name": l.account_name,
+                "amount_ore": l.amount_ore,
+                "vat_code": l.vat_code,
+                "description": l.description,
+                "party_no": l.party_no,
+            })).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+fn seksjon_json(s: &regnmed_core::regnskap::Seksjon) -> serde_json::Value {
+    json!({
+        "heading": s.heading,
+        "sum_ore": s.sum_ore,
+        "lines": s.lines.iter().map(|l| json!({
+            "number": l.number,
+            "name": l.name,
+            "saldo_ore": l.saldo_ore,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+pub async fn resultat(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    check_period(query.from, query.to)?;
+    let lines =
+        regnmed_db::saldo_lines(&state.pool, company_id, Some(query.from), query.to).await?;
+    let r = regnmed_core::regnskap::resultat(&lines);
+    Ok(Json(json!({
+        "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
+        "driftsresultat_ore": r.driftsresultat_ore,
+        "arsresultat_ore": r.arsresultat_ore,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct DateQuery {
+    date: NaiveDate,
+}
+
+pub async fn balanse(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<DateQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    let lines = regnmed_db::saldo_lines(&state.pool, company_id, None, query.date).await?;
+    let b = regnmed_core::regnskap::balanse(&lines);
+    Ok(Json(json!({
+        "eiendeler": seksjon_json(&b.eiendeler),
+        "egenkapital_gjeld": seksjon_json(&b.egenkapital_gjeld),
+        "udisponert_resultat_ore": b.udisponert_resultat_ore,
+        "differanse_ore": b.differanse_ore(),
+    })))
+}

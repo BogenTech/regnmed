@@ -39,9 +39,10 @@ voucher numbers) is done; these build on it.
   mva-spesifikasjon per termin.
 - **Reskontro** — kunde- og leverandørspesifikasjon (subledgers), required by
   bokføringsforskriften §3-1. Open-item matching (åpne poster).
-- **Lovpålagte spesifikasjoner og rapporter:** bokføringsspesifikasjon,
+- ✅ **Lovpålagte spesifikasjoner og rapporter:** bokføringsspesifikasjon,
   kontospesifikasjon (hovedbok), saldobalanse, resultatregnskap og balanse
-  grouped per NS 4102.
+  grouped per NS 4102 — pure SUM queries, `/reports/*` endpoints, portal
+  Rapporter section (docs/rapporter.md).
 - **Periodelåsing.** Posting periods with ajourholdsfrister; closed periods
   reject postings (corrections go in open periods as reversing vouchers,
   which the ledger already enforces).

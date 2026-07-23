@@ -94,6 +94,26 @@ pub fn router(state: AppState) -> Router {
             get(reports::saft_export),
         )
         .route(
+            "/companies/{company_id}/reports/saldobalanse",
+            get(reports::saldobalanse),
+        )
+        .route(
+            "/companies/{company_id}/reports/kontospesifikasjon",
+            get(reports::kontospesifikasjon),
+        )
+        .route(
+            "/companies/{company_id}/reports/bokforingsspesifikasjon",
+            get(reports::bokforingsspesifikasjon),
+        )
+        .route(
+            "/companies/{company_id}/reports/resultat",
+            get(reports::resultat),
+        )
+        .route(
+            "/companies/{company_id}/reports/balanse",
+            get(reports::balanse),
+        )
+        .route(
             "/companies/{company_id}/bank/statements",
             axum::routing::post(bank::import_statement),
         )

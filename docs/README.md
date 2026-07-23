@@ -11,6 +11,7 @@ CLAUDE.md).
 | [ledger.md](ledger.md) | The append-only, hash-chained ledger: the three immutability layers, verification, and the trust model |
 | [anchoring.md](anchoring.md) | External anchoring: Merkle snapshots of chain heads, the public root feed, RFC 3161 witnesses |
 | [mva.md](mva.md) | VAT: standard codes, dated rates, beregning rules, mva-spesifikasjon, mva-melding |
+| [rapporter.md](rapporter.md) | Lovpålagte spesifikasjoner: bokførings-/kontospesifikasjon, saldobalanse, resultat og balanse |
 | [saft/README.md](saft/README.md) | SAF-T Financial export and the vendored official artifacts |
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |

@@ -144,8 +144,8 @@
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["reskontro", "Reskontro"],
-      ["mva", "Mva"], ["bank", "Bank"], ["bilag", "Bilag"], ["periode", "Periode"],
-      ["oppdrag", "Oppdrag"],
+      ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
+      ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
       return '<li><a href="#/c/' + companyId + "/" + item[0] + '" class="' +
         (section === item[0] ? "active" : "") + '">' + item[1] + "</a></li>";
@@ -520,6 +520,98 @@
       download("/companies/" + id + "/reports/saft?year=" + year, "saf-t-" + year + ".xml");
   }
 
+  // Lovpålagte spesifikasjoner (bokføringsforskriften §3-1): rene
+  // SUM-spørringer mot hovedboken, aldri lagret tilstand.
+  async function renderRapporter(id) {
+    var year = new Date().getFullYear();
+    var rapport = "saldobalanse";
+    var hash = location.hash.split("?")[1];
+    if (hash) {
+      var params = new URLSearchParams(hash);
+      year = Number(params.get("year") || year);
+      rapport = params.get("rapport") || rapport;
+    }
+    var from = year + "-01-01", to = year + "-12-31";
+    var tabs = [
+      ["saldobalanse", "Saldobalanse"], ["resultat", "Resultat"], ["balanse", "Balanse"],
+      ["kontospesifikasjon", "Kontospesifikasjon"], ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
+    ].map(function (t) {
+      return '<a class="join-item btn btn-sm ' + (t[0] === rapport ? "btn-primary" : "") +
+        '" href="#/c/' + id + "/rapporter?rapport=" + t[0] + "&year=" + year + '">' + t[1] + "</a>";
+    }).join("");
+    var yearNav = '<div class="join">' +
+      '<a class="join-item btn btn-sm" href="#/c/' + id + "/rapporter?rapport=" + rapport + "&year=" + (year - 1) + '">«</a>' +
+      '<span class="join-item btn btn-sm btn-disabled">' + year + "</span>" +
+      '<a class="join-item btn btn-sm" href="#/c/' + id + "/rapporter?rapport=" + rapport + "&year=" + (year + 1) + '">»</a></div>';
+    var body = "", title = "";
+    function seksjonRows(s) {
+      return s.lines.map(function (l) {
+        return "<tr><td>" + esc(l.number) + "</td><td>" + esc(l.name) +
+          "</td><td class='text-right'>" + kr(l.saldo_ore) + "</td></tr>";
+      }).join("") +
+      "<tr class='font-semibold'><td></td><td>Sum " + esc(s.heading.toLowerCase()) +
+      "</td><td class='text-right'>" + kr(s.sum_ore) + "</td></tr>";
+    }
+    if (rapport === "saldobalanse") {
+      title = "Saldobalanse " + year;
+      var sb = await api("/companies/" + id + "/reports/saldobalanse?from=" + from + "&to=" + to);
+      body = '<table class="table table-sm"><thead><tr><th>Konto</th><th>Navn</th>' +
+        "<th class='text-right'>Inngående</th><th class='text-right'>Debet</th>" +
+        "<th class='text-right'>Kredit</th><th class='text-right'>Utgående</th></tr></thead><tbody>" +
+        sb.accounts.map(function (a) {
+          return "<tr><td>" + esc(a.number) + "</td><td>" + esc(a.name) +
+            "</td><td class='text-right'>" + kr(a.inngaende_ore) +
+            "</td><td class='text-right'>" + kr(a.debet_ore) +
+            "</td><td class='text-right'>" + kr(a.kredit_ore) +
+            "</td><td class='text-right'>" + kr(a.utgaende_ore) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    } else if (rapport === "resultat") {
+      title = "Resultatregnskap " + year;
+      var r = await api("/companies/" + id + "/reports/resultat?from=" + from + "&to=" + to);
+      body = '<table class="table table-sm"><tbody>' +
+        r.seksjoner.map(seksjonRows).join("") +
+        "<tr class='font-bold'><td></td><td>Driftsresultat</td><td class='text-right'>" +
+        kr(r.driftsresultat_ore) + "</td></tr>" +
+        "<tr class='font-bold'><td></td><td>Årsresultat</td><td class='text-right'>" +
+        kr(r.arsresultat_ore) + "</td></tr></tbody></table>";
+    } else if (rapport === "balanse") {
+      title = "Balanse per " + to;
+      var b = await api("/companies/" + id + "/reports/balanse?date=" + to);
+      body = '<table class="table table-sm"><tbody>' +
+        seksjonRows(b.eiendeler) + seksjonRows(b.egenkapital_gjeld) +
+        "<tr><td></td><td>Udisponert resultat</td><td class='text-right'>" +
+        kr(b.udisponert_resultat_ore) + "</td></tr>" +
+        "<tr class='font-bold'><td></td><td>Differanse (skal være 0)</td><td class='text-right'>" +
+        kr(b.differanse_ore) + "</td></tr></tbody></table>";
+    } else if (rapport === "kontospesifikasjon") {
+      title = "Kontospesifikasjon " + year;
+      var ks = await api("/companies/" + id + "/reports/kontospesifikasjon?from=" + from + "&to=" + to);
+      body = '<table class="table table-sm"><thead><tr><th>Konto</th><th>Bilag</th><th>Dato</th>' +
+        "<th>Tekst</th><th class='text-right'>Beløp</th><th class='text-right'>Saldo</th></tr></thead><tbody>" +
+        ks.posts.map(function (p) {
+          return "<tr><td>" + esc(p.account) + "</td><td>" + esc(p.bilag) + "</td><td>" + esc(p.date) +
+            "</td><td>" + esc(p.description) + (p.party_no ? ' <span class="opacity-60">(' + esc(p.party_no) + ")</span>" : "") +
+            "</td><td class='text-right'>" + kr(p.amount_ore) +
+            "</td><td class='text-right'>" + kr(p.saldo_ore) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    } else {
+      title = "Bokføringsspesifikasjon " + year;
+      var bs = await api("/companies/" + id + "/reports/bokforingsspesifikasjon?from=" + from + "&to=" + to);
+      body = bs.vouchers.map(function (v) {
+        return '<div class="mb-3"><span class="font-semibold">' + esc(v.bilag) + "</span> " +
+          esc(v.date) + " — " + esc(v.description) +
+          '<table class="table table-sm"><tbody>' +
+          v.lines.map(function (l) {
+            return "<tr><td>" + esc(l.account) + " " + esc(l.account_name) +
+              "</td><td>" + (l.vat_code ? "mva " + esc(l.vat_code) : "") +
+              "</td><td class='text-right'>" + kr(l.amount_ore) + "</td></tr>";
+          }).join("") + "</tbody></table></div>";
+      }).join("") || '<p class="opacity-70">Ingen bilag i perioden.</p>';
+    }
+    shell(id, "rapporter", card(title,
+      '<div class="flex gap-2 flex-wrap mb-4"><div class="join">' + tabs + "</div>" + yearNav + "</div>" + body));
+  }
+
   async function renderBank(id) {
     var account = "1920";
     var recon = null;
@@ -780,6 +872,7 @@
         if (section === "faktura") return await renderFaktura(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);
         if (section === "mva") return await renderMva(id);
+        if (section === "rapporter") return await renderRapporter(id);
         if (section === "bank") return await renderBank(id);
         if (section === "bilag") return await renderBilag(id);
         if (section === "periode") return await renderPeriode(id);

@@ -238,6 +238,13 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    CronJob in deploy/local, portal Forankring card. `verify-ledger`
    fails on anchor mismatches. Attachment-set binding deferred (leaf v2,
    sketched in docs/anchoring.md).
+16. ✅ Lovpålagte spesifikasjoner (docs/rapporter.md, closed the last M1
+   issue #4): saldobalanse, kontospesifikasjon (running saldo +
+   bilagshenvisning), bokføringsspesifikasjon in chain order —
+   `regnmed-db::regnskap`, pure SUM queries; resultat/balanse grouped
+   per NS 4102 in `regnmed-core::regnskap` (presentation signs,
+   udisponert resultat keeps balansen at zero differanse). Five
+   `/reports/*` endpoints + portal Rapporter section.
    **Next:** kontoplan wizard (#18), native importers (#19), EHF (#14,
    access-point decision), Maskinporten registration, M2 tail.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
