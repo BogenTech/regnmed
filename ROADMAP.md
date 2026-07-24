@@ -190,7 +190,11 @@ M7 (#37–#48) for new ground:
   linjene ved utstedelse, insert-only lagerbevegelser m/ automatisk
   salg/retur fra fakturaflyten, gjennomsnittskost som ren funksjon,
   varetelling m/ bilag mot bokført saldo; docs/produkter.md),
-  anleggsregister m/ regnskaps- og skattemessige avskrivninger (#40),
+  ✅ anleggsregister m/ avskrivninger (#40 — registeret som bevis
+  (insert + enveis avhending), lineære månedsbilag via månedlig
+  CronJob m/ insert-only logg, skattemessig saldo per gruppe a–j fra
+  satsregisteret m/ midlertidige forskjeller, avhending m/
+  gevinst/tap; docs/anlegg.md),
   flervaluta m/ agio (#44).
 - Plattform: maskin-tilgang til API-et via regnid client_credentials +
   grants (#45), PWA m/ kvitteringsfoto (#48) — M5.

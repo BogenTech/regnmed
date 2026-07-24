@@ -31,6 +31,9 @@ enum Command {
     /// Generate every due repeterende faktura across all companies
     /// (docs/faktura.md, #30). Run daily (cron/CronJob).
     GenerateInvoices,
+    /// Post every due monthly avskrivning across all companies
+    /// (docs/anlegg.md, #40). Run monthly (cron/CronJob).
+    Depreciate,
     /// Export Norwegian SAF-T Financial v1.30 XML for a company
     SaftExport {
         /// Company id (or use --orgnr)
@@ -178,6 +181,37 @@ async fn main() -> Result<()> {
             }
             if outcomes.iter().any(|o| o.invoice_no.is_none()) {
                 anyhow::bail!("one or more templates failed to generate");
+            }
+        }
+        Command::Depreciate => {
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let outcomes = regnmed_db::depreciate_all(&pool, today).await?;
+            if outcomes.is_empty() {
+                println!("no depreciations due");
+            }
+            for outcome in &outcomes {
+                match (&outcome.voucher, &outcome.detail) {
+                    (Some((year, no)), _) => println!(
+                        "{}: avskrivning {}-{:02} bokført som bilag {}-{} ({} øre)",
+                        outcome.navn,
+                        outcome.period.format("%Y"),
+                        chrono::Datelike::month(&outcome.period),
+                        year,
+                        no,
+                        outcome.amount_ore
+                    ),
+                    (None, detail) => println!(
+                        "{}: FEIL for {} — {}",
+                        outcome.navn,
+                        outcome.period,
+                        detail.as_deref().unwrap_or("ukjent")
+                    ),
+                }
+            }
+            if outcomes.iter().any(|o| o.voucher.is_none()) {
+                anyhow::bail!("one or more depreciations failed");
             }
         }
         Command::SaftExport {

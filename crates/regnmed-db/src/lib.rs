@@ -5,6 +5,7 @@
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
 pub mod anchor;
+pub mod asset;
 pub mod attachment;
 pub mod bank;
 pub mod dimension;
@@ -33,6 +34,7 @@ pub mod timesheet;
 pub mod utsendelse;
 
 pub use anchor::*;
+pub use asset::*;
 pub use attachment::*;
 pub use bank::*;
 pub use dimension::*;

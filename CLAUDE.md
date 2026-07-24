@@ -429,8 +429,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    bokført lagersaldo (1460/4390 defaults). `/products` +
    `/inventory` endpoints; portal Produkter section + produkt-pickers
    på faktura/tilbud.
-   **Next:** M7 breadth (#40 anleggsregister, #42 utlegg og
-   kjøregodtgjørelse), native importers (#19), EHF (#14), Maskinporten
+33. ✅ Anleggsregister og avskrivninger (docs/anlegg.md, closed #40):
+   migration 0025 `asset` — INSERT + the one-way avhending transition
+   only (trigger + column grants; bokført verdi ALDRI stored:
+   kostpris − SUM(logged avskrivninger)). Lineære avskrivninger as
+   ordinary vouchers via the repeterende-faktura pattern: one tx per
+   asset-month (voucher dated month-end + run row), partial unique
+   index forbids double depreciation, failures logged w/ detail;
+   `regnmed depreciate` CLI + monthly CronJob (also fixed the missed
+   prod DATABASE_URL patch on the generate-invoices CronJob).
+   Skattemessig: saldogruppesatser a–j seeded in satsregisteret
+   (sktl. §14-43, kadens-exempt); `saldo_rapport` computes per gruppe
+   from scratch (grunnlag/avskrivning/utgående + midlertidige
+   forskjeller vs bokført), fails loudly outside rate coverage;
+   negativ saldo/§14-45/§14-47 deliberately manual (documented).
+   Avhending: gevinst (3880) / tap (7880) + one-way close in one tx;
+   aktiveringsgrense warning (never refusal) at registration. Core
+   `regnmed-core::anlegg` (manedsbelop sums EXACTLY, saldo_ar).
+   `/companies/{id}/assets…` endpoints; portal Anlegg section.
+   **Next:** M7 breadth (#42 utlegg og kjøregodtgjørelse, #44
+   flervaluta), native importers (#19), EHF (#14), Maskinporten
    (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
    terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

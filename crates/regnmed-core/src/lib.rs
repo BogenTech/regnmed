@@ -7,6 +7,7 @@
 //! on any machine, or chain verification breaks.
 
 pub mod anchor;
+pub mod anlegg;
 pub mod bank;
 pub mod bankcsv;
 pub mod camt053;

@@ -33,3 +33,5 @@ patches:
   - path: patches/regnid.yaml
   - path: patches/regnmed-api.yaml
   - path: patches/anchor-cronjob.yaml
+  - path: patches/generate-invoices-cronjob.yaml
+  - path: patches/depreciate-cronjob.yaml

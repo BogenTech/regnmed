@@ -2,6 +2,7 @@
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
 pub mod anchor;
+pub mod asset;
 pub mod auth;
 pub mod bank;
 pub mod dimension;
@@ -213,6 +214,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/assets",
+            get(asset::list).post(asset::create),
+        )
+        .route(
+            "/companies/{company_id}/assets/depreciate",
+            axum::routing::post(asset::depreciate),
+        )
+        .route(
+            "/companies/{company_id}/assets/saldo",
+            get(asset::saldo),
+        )
+        .route(
+            "/companies/{company_id}/assets/{asset_id}/dispose",
+            axum::routing::post(asset::dispose),
+        )
+        .route(
+            "/companies/{company_id}/assets/{asset_id}/runs",
+            get(asset::runs),
         )
         .route(
             "/companies/{company_id}/products",

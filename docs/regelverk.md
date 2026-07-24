@@ -26,6 +26,7 @@ data with validity periods — never code branches on a year**:
 | --- | --- | --- |
 | Mva-satser (alle klasser) | dated table | migration 0006 `vat_rate` |
 | Forsinkelsesrente, standardkompensasjon, inkassosats, purregebyr, statens km-satser, terskelverdier | **satsregisteret**: dated table w/ kilde per row, staleness-overvåket i revisjonsrapporten | migration 0016 `sats`, `regnmed-core::sats` |
+| Saldogruppesatser a–j (sktl. §14-43) | satsregisteret (`saldogruppe_*`, bp) — lovfestet, endres sjelden, unntatt kadens som tersklene | migration 0025, consumed by `regnmed-db::asset::saldo_rapport` |
 | Mva-koder | standard SAF-T code list | migration 0006 `vat_code` |
 | Terminer (2-mnd) | pure logic | `regnmed-core::mva::Termin` |
 | Næringsspesifikasjon grouping | vendored CSV **per inntektsår**, selected by the exported year, loud failure outside coverage | `regnmed-core::saft` ARGANGER + docs/saft/ |
@@ -35,10 +36,11 @@ data with validity periods — never code branches on a year**:
 
 Live consumers: purring (#29, shipped — forsinkelsesrente segmented
 per satsperiode, purregebyr-/standardkompensasjonstak per sending
-date; docs/purring.md). Planned rules follow the same doctrine (their
-issues say so): statens km-sats (#42), avskrivningssaldogrupper (#40),
-feriepenge- og aga-satser (#46), valutakurser (#44 — dated, from
-Norges Bank).
+date; docs/purring.md); anleggsregisteret (#40, shipped —
+saldogruppesatser per år + aktiveringsgrensen ved registrering;
+docs/anlegg.md). Planned rules follow the same doctrine (their
+issues say so): statens km-sats (#42), feriepenge- og aga-satser
+(#46), valutakurser (#44 — dated, from Norges Bank).
 
 ## Årlig regelverksrevisjon (before each nyttår)
 

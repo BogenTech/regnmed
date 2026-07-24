@@ -152,7 +152,7 @@
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
-      ["timer", "Timer"], ["reskontro", "Reskontro"],
+      ["timer", "Timer"], ["anlegg", "Anlegg"], ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
@@ -1116,6 +1116,156 @@
     });
   }
 
+  var SALDOGRUPPER = [
+    ["a", "Kontormaskiner o.l. (30 %)"], ["b", "Forretningsverdi (20 %)"],
+    ["c", "Vogntog, lastebiler, busser (24 %)"], ["d", "Personbiler, maskiner, inventar (20 %)"],
+    ["e", "Skip, fartøyer (14 %)"], ["f", "Fly, helikopter (12 %)"],
+    ["g", "Kraftanlegg (5 %)"], ["h", "Bygg og anlegg (4 %)"],
+    ["i", "Forretningsbygg (2 %)"], ["j", "Teknisk installasjon i bygg (10 %)"],
+  ];
+
+  async function renderAnlegg(id) {
+    var year = new Date().getFullYear();
+    var results = await Promise.all([
+      api("/companies/" + id + "/assets"),
+      api("/companies/" + id + "/assets/saldo?year=" + year)
+        .catch(function () { return null; }),
+    ]);
+    var assets = results[0].assets;
+    var saldo = results[1];
+    var gruppeOptions = SALDOGRUPPER.map(function (g) {
+      return '<option value="' + g[0] + '">' + g[0] + " — " + g[1] + "</option>";
+    }).join("");
+    var assetRows = assets.map(function (a) {
+      var status = a.avhendet_dato
+        ? '<span class="badge badge-ghost badge-sm">avhendet ' + esc(a.avhendet_dato) + "</span>"
+        : kr(a.bokfort_ore);
+      var actions = '<button class="btn btn-xs btn-ghost" data-a-runs="' + a.asset_id +
+        '" data-navn="' + esc(a.navn) + '">Historikk</button>';
+      if (!a.avhendet_dato) {
+        actions += ' <button class="btn btn-xs btn-outline" data-a-dispose="' + a.asset_id + '">Avhend</button>';
+      }
+      return "<tr" + (a.avhendet_dato ? ' class="opacity-60"' : "") + "><td>" + esc(a.navn) +
+        "</td><td>" + esc(a.saldogruppe) + "</td><td>" + esc(a.anskaffelsesdato) +
+        "</td><td class='text-right'>" + kr(a.kostpris_ore) +
+        "</td><td class='text-right'>" + kr(a.akkumulert_ore) +
+        "</td><td class='text-right'>" + status + "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var newForm = '<div class="grid gap-2 max-w-md" id="new-asset">' +
+      '<input data-f="navn" class="input input-sm input-bordered" placeholder="Navn (f.eks. Varebil)">' +
+      '<div class="grid grid-cols-3 gap-2">' +
+      '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="kostpris" class="input input-sm input-bordered" placeholder="Kostpris (kr)">' +
+      '<input data-f="restverdi" class="input input-sm input-bordered" placeholder="Restverdi (kr)">' +
+      "</div>" +
+      '<div class="grid grid-cols-3 gap-2">' +
+      '<input data-f="levetid" class="input input-sm input-bordered" placeholder="Levetid (mnd)">' +
+      '<input data-f="balanse" class="input input-sm input-bordered" value="1250" title="Balansekonto">' +
+      '<input data-f="avskr" class="input input-sm input-bordered" value="6000" title="Avskrivningskonto">' +
+      "</div>" +
+      '<select data-f="gruppe" class="select select-sm select-bordered">' + gruppeOptions + "</select>" +
+      '<button id="asset-create" class="btn btn-sm">Registrer driftsmiddel</button></div>';
+    var registerCard = card("Anleggsregister",
+      '<p class="text-sm opacity-70 mb-2">Registeret er bevis: driftsmidler registreres og avhendes, aldri ' +
+      "redigeres eller slettes. Bokført verdi = kostpris − bokførte avskrivninger, alltid beregnet. " +
+      "Lineære avskrivninger bokføres månedlig som ordinære bilag (automatisk hver måned, eller med knappen).</p>" +
+      '<div class="mb-3"><button id="asset-depreciate" class="btn btn-sm btn-outline">Generer avskrivninger til i dag</button></div>' +
+      (assetRows
+        ? '<table class="table table-sm mb-4"><thead><tr><th>Navn</th><th>Gr.</th><th>Anskaffet</th>' +
+          "<th class='text-right'>Kostpris</th><th class='text-right'>Avskrevet</th>" +
+          "<th class='text-right'>Bokført</th><th></th></tr></thead><tbody>" + assetRows + "</tbody></table>"
+        : "") +
+      '<div id="runs-list" class="mb-3"></div>' +
+      "<h3 class='font-semibold mb-1'>Nytt driftsmiddel</h3>" + newForm);
+    var saldoCard = "";
+    if (saldo && saldo.grupper.length) {
+      var saldoRows = saldo.grupper.map(function (g) {
+        return "<tr><td>" + esc(g.gruppe) + " <span class='opacity-60 text-xs'>" + esc(g.beskrivelse) +
+          "</span></td><td class='text-right'>" + kr(g.inngaende_ore) +
+          "</td><td class='text-right'>" + kr(g.tilgang_ore) +
+          "</td><td class='text-right'>" + kr(g.vederlag_ore) +
+          "</td><td class='text-right'>" + kr(g.grunnlag_ore) +
+          "</td><td class='text-right'>" + (g.sats_bp / 100) + " %" +
+          "</td><td class='text-right'>" + kr(g.avskrivning_ore) +
+          "</td><td class='text-right'>" + kr(g.utgaende_ore) + "</td></tr>";
+      }).join("");
+      saldoCard = card("Saldoavskrivning " + saldo.year + " (skattemessig)",
+        '<p class="text-sm opacity-70 mb-2">Grunnlaget for næringsspesifikasjonen: saldo per gruppe etter ' +
+        "skatteloven §14-43, beregnet fra registeret med satsene i satsregisteret. Negativ saldo avskrives " +
+        "ikke — den er inntektsføringskandidat og håndteres manuelt.</p>" +
+        '<table class="table table-sm"><thead><tr><th>Gruppe</th><th class="text-right">Inngående</th>' +
+        '<th class="text-right">Tilgang</th><th class="text-right">Vederlag</th>' +
+        '<th class="text-right">Grunnlag</th><th class="text-right">Sats</th>' +
+        '<th class="text-right">Avskrivning</th><th class="text-right">Utgående</th></tr></thead>' +
+        "<tbody>" + saldoRows + "</tbody></table>" +
+        '<div class="text-sm mt-2">Bokført verdi ' + saldo.year + ": <b>" + kr(saldo.bokfort_ore) +
+        "</b> · Skattemessig saldo: <b>" + kr(saldo.skattemessig_ore) +
+        "</b> · Midlertidig forskjell: <b>" + kr(saldo.forskjell_ore) + "</b></div>");
+    }
+    shell(id, "anlegg", registerCard + saldoCard);
+
+    var create = document.getElementById("asset-create");
+    if (create) create.onclick = async function () {
+      var box = document.getElementById("new-asset");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        var made = await post("/companies/" + id + "/assets", {
+          navn: value("navn").trim(),
+          anskaffelsesdato: value("dato"),
+          kostpris_ore: parseKr(value("kostpris")),
+          restverdi_ore: value("restverdi").trim() ? parseKr(value("restverdi")) : 0,
+          levetid_maneder: parseInt(value("levetid"), 10),
+          balansekonto: value("balanse").trim(),
+          avskrivningskonto: value("avskr").trim(),
+          saldogruppe: value("gruppe"),
+        });
+        toast(made.warning ? "Registrert — " + made.warning : "Driftsmiddel registrert", true);
+        renderAnlegg(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    var depBtn = document.getElementById("asset-depreciate");
+    if (depBtn) depBtn.onclick = async function () {
+      try {
+        var result = await post("/companies/" + id + "/assets/depreciate", {});
+        toast(result.generated + " avskrivning(er) bokført" +
+          (result.failed ? ", " + result.failed + " feilet" : ""), result.failed === 0);
+        renderAnlegg(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-a-dispose]").forEach(function (button) {
+      button.onclick = async function () {
+        var dato = prompt("Avhendingsdato (ÅÅÅÅ-MM-DD):", today());
+        if (!dato) return;
+        var vederlag = prompt("Vederlag (kr, 0 ved utrangering):", "0");
+        if (vederlag === null) return;
+        try {
+          var result = await post("/companies/" + id + "/assets/" + button.dataset.aDispose + "/dispose", {
+            dato: dato.trim(), vederlag_ore: parseKr(vederlag),
+          });
+          var g = result.gevinst_ore;
+          toast("Avhendet — " + (g > 0 ? "gevinst " + kr(g) : g < 0 ? "tap " + kr(-g) : "ingen gevinst/tap"), true);
+          renderAnlegg(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-a-runs]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var data = await api("/companies/" + id + "/assets/" + button.dataset.aRuns + "/runs");
+          var rows = data.runs.map(function (r) {
+            return "<tr><td>" + esc(r.period.slice(0, 7)) + "</td><td class='text-right'>" + kr(r.amount_ore) +
+              "</td><td>" + (r.voucher ? "bilag " + esc(r.voucher) : "<span class='text-error'>" + esc(r.detail || "feilet") + "</span>") +
+              "</td></tr>";
+          }).join("");
+          document.getElementById("runs-list").innerHTML =
+            "<h3 class='font-semibold mb-1'>Avskrivninger — " + esc(button.dataset.navn) + "</h3>" +
+            '<table class="table table-xs max-w-md"><thead><tr><th>Måned</th>' +
+            "<th class='text-right'>Beløp</th><th>Bilag</th></tr></thead><tbody>" + rows + "</tbody></table>";
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+  }
+
   async function renderTimer(id) {
     var params = new URLSearchParams(location.hash.split("?")[1] || "");
     var mandag = params.get("uke");
@@ -1974,6 +2124,7 @@
         if (section === "oversikt") return await renderOversikt(id);
         if (section === "faktura") return await renderFaktura(id);
         if (section === "produkter") return await renderProdukter(id);
+        if (section === "anlegg") return await renderAnlegg(id);
         if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);
         if (section === "mva") return await renderMva(id);

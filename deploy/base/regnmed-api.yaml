@@ -98,6 +98,37 @@ spec:
                 limits:
                   memory: 32Mi
 ---
+# Monthly avskrivninger: ordinary vouchers for every asset-month due;
+# the insert-only run log carries the trace and a partial unique index
+# forbids double depreciation (docs/anlegg.md, #40). Runs on the 1st
+# and posts the just-ended month.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-depreciate
+  namespace: regnmed
+spec:
+  schedule: "0 6 1 * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: depreciate
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              command: ["/app/regnmed", "depreciate"]
+              env:
+                - name: DATABASE_URL
+                  value: postgres://regnmed:regnmed@postgres:5432/regnmed
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi
+---
 # ANCHOR_TSA_URL is set — deliberately unset in the local cluster).
 apiVersion: batch/v1
 kind: CronJob
