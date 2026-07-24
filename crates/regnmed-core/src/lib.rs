@@ -20,6 +20,7 @@ pub mod mva;
 pub mod mvamelding;
 pub mod ocr;
 pub mod orgnr;
+pub mod purring;
 pub mod regnskap;
 pub mod revisjon;
 pub mod saft;

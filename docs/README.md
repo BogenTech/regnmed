@@ -15,6 +15,7 @@ CLAUDE.md).
 | [saft/README.md](saft/README.md) | SAF-T Financial export and the vendored official artifacts |
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
+| [purring.md](purring.md) | Betalingsoppfølging: aldersfordeling, purregebyr/forsinkelsesrente som bilag, inkassovarsel |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |

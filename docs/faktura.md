@@ -34,8 +34,8 @@ reversing-voucher rule.
 - Document rendering (PDF/print) and **EHF dispatch** arrive with the
   portal UI and the Peppol access point (issue #14) — the invoice *data*
   is complete and audit-ready now.
-- Purring/renter: queries over åpne poster + due_date, planned with the
-  portal.
+
+Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
 ## Web API (mutations require bokforing)
 

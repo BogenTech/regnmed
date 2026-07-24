@@ -11,6 +11,7 @@ pub mod marketplace;
 pub mod ocr;
 pub mod period;
 pub mod portal;
+pub mod purring;
 pub mod reports;
 pub mod reskontro;
 
@@ -177,6 +178,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/credit-note",
             axum::routing::post(invoice::credit_note),
+        )
+        .route(
+            "/companies/{company_id}/invoices/overdue",
+            get(purring::overdue),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/reminders",
+            get(purring::list_reminders).post(purring::create_reminder),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}",
+            get(purring::reminder_document),
         )
         .route(
             "/companies/{company_id}/inbox",

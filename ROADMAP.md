@@ -159,7 +159,10 @@ Norwegian regulation and regnmed's principles (immutability, API-first,
 frugality). Filed under M2/M3/M5 where they extend existing themes,
 M7 (#37–#48) for new ground:
 
-- Betalingsoppfølging: purring m/ gebyr og forsinkelsesrente (#29),
+- Betalingsoppfølging: ✅ purring m/ gebyr og forsinkelsesrente (#29 —
+  aldersfordelte forfalte, gebyr/rente som ordinære bilag fra
+  satsregisteret, inkassovarsel m/ 14-dagers frist, insert-only
+  historikk m/ lagret dokument; docs/purring.md),
   repeterende faktura (#30), tilbud → ordre → faktura (#31), faktura-PDF
   + e-postutsendelse (#32) — M3.
 - Penger ut: betalingsliste + pain.001-remittering (#33), utlegg og

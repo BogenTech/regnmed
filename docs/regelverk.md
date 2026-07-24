@@ -33,10 +33,12 @@ data with validity periods — never code branches on a year**:
 | Mva-melding schema | vendored XSD | docs/mva-melding/ |
 | Kontonavn NS 4102 | same vendored CSV | (as grouping) |
 
-Planned rules follow the same doctrine (their issues say so):
-forsinkelsesrente og purregebyr (#29), statens km-sats (#42),
-avskrivningssaldogrupper (#40), feriepenge- og aga-satser (#46),
-valutakurser (#44 — dated, from Norges Bank).
+Live consumers: purring (#29, shipped — forsinkelsesrente segmented
+per satsperiode, purregebyr-/standardkompensasjonstak per sending
+date; docs/purring.md). Planned rules follow the same doctrine (their
+issues say so): statens km-sats (#42), avskrivningssaldogrupper (#40),
+feriepenge- og aga-satser (#46), valutakurser (#44 — dated, from
+Norges Bank).
 
 ## Årlig regelverksrevisjon (before each nyttår)
 

@@ -311,10 +311,28 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    coverage (test-pinned); wizard suggests from the newest vintage;
    CLI prints the governing årgang. New year = vendor CSV + registry
    entry.
-   **Next:** M7 funksjonsbredde (#29–#48 unblocked; #37 dimensjoner or
-   #29 purring first), native importers (#19), EHF (#14, access-point
-   decision), Maskinporten registration (in progress, docs/gov.md),
-   M2 tail (#51 terminordninger).
+25. ✅ Purring og betalingsoppfølging (docs/purring.md, closed #29):
+   pure regelverk in `regnmed-core::purring` — forsinkelsesrente
+   segmented across the halvårlige satser (dagen etter forfall, /365,
+   per-period rounding so the spesifikasjon sums exactly), stegregler
+   (gebyr tidligst 14 dager etter forfall, tak fra satsregisteret per
+   sendedato — purregebyr_maks eller standardkompensasjon for
+   næringsdrivende, maks to gebyrbelagte skritt, enveis trapp,
+   inkassovarsel minst 14 dagers frist + lovtekst; inkasso selv
+   overlates til bevillingshavere). Gebyr/rente bokføres som ordinært
+   bilag (debet 1500 m/ kunde — nytt åpent krav på samme reskontro,
+   KID uendret) i samme tx som skrittet; migration 0017
+   `invoice_reminder` insert-only med **lagret rendret dokument**
+   (gjenutstedbart for alltid). "Forfalt" alltid beregnet, buckets
+   1-14/15-30/30+. `…/invoices/overdue` + `…/invoices/{iid}/reminders`
+   (POST `?preview=true` = forhåndsvisning); portal: Forfalt-stat,
+   forfalte-kort m/ purreskjema (foreslått neste steg, forhåndsvis →
+   registrer), historikk m/ tekstnedlasting. Browser-verified
+   (tests/seed_browser.rs seeds a demo w/ static JWKS for that).
+   **Next:** M7 funksjonsbredde (#37 dimensjoner/hash v3 next, then
+   #30–#32 completing betalingsoppfølging), native importers (#19),
+   EHF (#14, access-point decision), Maskinporten registration (in
+   progress, docs/gov.md), M2 tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

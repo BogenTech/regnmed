@@ -267,17 +267,27 @@
       api("/companies/" + id + "/reports/mva?year=" + year + "&termin=" + termin).catch(function () { return null; }),
       api("/companies/" + id + "/period-lock"),
       api("/companies/" + id + "/vouchers"),
+      api("/companies/" + id + "/invoices/overdue").catch(function () { return null; }),
     ]);
     var open = results[0].invoices;
     var mva = results[1];
     var lock = results[2];
     var vouchers = results[3].vouchers;
+    var overdue = results[4];
+    var overdueSum = overdue
+      ? overdue.invoices.reduce(function (sum, i) { return sum + i.remaining_ore; }, 0)
+      : 0;
     var openSum = open.reduce(function (sum, i) { return sum + i.remaining_ore; }, 0);
     var stats =
       '<div class="stats shadow-sm bg-base-100 w-full mb-6">' +
       '<div class="stat"><div class="stat-title">Utestående fakturaer</div>' +
       '<div class="stat-value text-2xl">' + kr(openSum) + '</div>' +
       '<div class="stat-desc">' + open.length + " åpne</div></div>" +
+      '<div class="stat"><div class="stat-title">Forfalt</div>' +
+      '<div class="stat-value text-2xl' + (overdueSum > 0 ? " text-error" : "") + '">' + kr(overdueSum) + "</div>" +
+      '<div class="stat-desc">' + (overdue && overdue.invoices.length
+        ? '<a class="link" href="#/c/' + id + '/faktura">' + overdue.invoices.length + " til oppfølging</a>"
+        : "ingenting forfalt") + "</div></div>" +
       '<div class="stat"><div class="stat-title">Mva ' + termin + ". termin</div>" +
       '<div class="stat-value text-2xl">' + (mva ? kr(mva.netto_ore) : "–") + "</div>" +
       '<div class="stat-desc">' + (mva && mva.netto_ore >= 0 ? "å betale" : "til gode") + "</div></div>" +
@@ -420,9 +430,11 @@
     var results = await Promise.all([
       api("/companies/" + id + "/invoices"),
       api("/companies/" + id + "/parties?kind=kunde"),
+      api("/companies/" + id + "/invoices/overdue").catch(function () { return { invoices: [], buckets: {} }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
+    var overdue = results[2];
     var rows = invoices.map(function (i) {
       var action = !i.is_credit_note && i.remaining_ore !== 0
         ? '<button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>'
@@ -453,7 +465,30 @@
         '<option value="33">33 — 12 %</option><option value="5">5 — fritatt</option>' +
         '<option value="6">6 — utenfor</option></select></div>' +
         '<button class="btn btn-primary">Opprett faktura</button></form>';
+    var stegNavn = { paminnelse: "påminnelse", purring: "purring", inkassovarsel: "inkassovarsel" };
+    var nesteSteg = { paminnelse: "purring", purring: "inkassovarsel", inkassovarsel: "inkassovarsel" };
+    var overdueRows = overdue.invoices.map(function (i) {
+      var badge = i.bucket === "30+" ? "badge-error" : i.bucket === "15-30" ? "badge-warning" : "badge-ghost";
+      return "<tr><td>" + i.invoice_no + "</td><td>" + esc(i.party_name) + "</td><td>" + esc(i.due_date) +
+        '</td><td><span class="badge badge-sm ' + badge + '">' + i.days_overdue + " dager</span></td>" +
+        "<td class='text-right'>" + kr(i.remaining_ore) + "</td>" +
+        "<td class='text-xs opacity-70'>" + (i.last_steg ? esc(stegNavn[i.last_steg]) + " " + esc(i.last_sent) : "–") + "</td>" +
+        '<td><button class="btn btn-xs btn-outline" data-purr="' + i.invoice_id +
+        '" data-steg="' + (i.last_steg ? nesteSteg[i.last_steg] : "paminnelse") + '">Purring</button></td></tr>';
+    }).join("");
+    var overdueCard = overdue.invoices.length === 0 ? "" :
+      card("Forfalte fakturaer",
+        '<div class="flex gap-2 mb-2 text-sm">' +
+        ["1-14", "15-30", "30+"].map(function (b) {
+          var sum = overdue.buckets[b] || 0;
+          return '<span class="badge badge-ghost">' + b + " dager: " + kr(sum) + "</span>";
+        }).join("") + "</div>" +
+        '<table class="table table-sm"><thead><tr><th>Nr</th><th>Kunde</th><th>Forfall</th>' +
+        "<th>Alder</th><th class='text-right'>Utestående</th><th>Siste skritt</th><th></th></tr></thead>" +
+        "<tbody>" + overdueRows + "</tbody></table>" +
+        '<div id="purring-form"></div>');
     shell(id, "faktura",
+      overdueCard +
       card("Ny faktura", form) +
       card("Fakturaer",
         '<table class="table table-sm"><thead><tr><th>Nr</th><th>Kunde</th><th>Dato</th>' +
@@ -490,6 +525,96 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+    app.querySelectorAll("[data-purr]").forEach(function (button) {
+      button.onclick = function () { openPurringForm(id, button.dataset.purr, button.dataset.steg); };
+    });
+  }
+
+  // Purring: alltid en eksplisitt menneskelig handling — forhåndsvis
+  // kravet (gebyrtak og rente hentes fra satsregisteret), så registrer.
+  async function openPurringForm(id, invoiceId, suggestedSteg) {
+    var target = document.getElementById("purring-form");
+    var base = "/companies/" + id + "/invoices/" + invoiceId + "/reminders";
+    var history = (await api(base).catch(function () { return { reminders: [] }; })).reminders;
+    var historyRows = history.map(function (r) {
+      return "<tr><td>" + esc(r.steg) + "</td><td>" + esc(r.sent_date) + "</td><td>" + esc(r.frist_date) +
+        "</td><td class='text-right'>" + kr(r.gebyr_ore + r.rente_ore) + "</td>" +
+        "<td>" + (r.voucher ? esc(r.voucher) : "–") + "</td>" +
+        '<td><button class="link text-xs" data-purr-doc="' + r.reminder_id + '">tekst</button></td></tr>';
+    }).join("");
+    var frist = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+    target.innerHTML =
+      '<div class="border border-base-300 rounded-lg p-3 mt-3">' +
+      (history.length
+        ? '<p class="text-sm font-semibold mb-1">Purrehistorikk</p>' +
+          '<table class="table table-xs mb-3"><thead><tr><th>Skritt</th><th>Sendt</th><th>Frist</th>' +
+          "<th class='text-right'>Gebyr+rente</th><th>Bilag</th><th></th></tr></thead><tbody>" +
+          historyRows + "</tbody></table>"
+        : "") +
+      '<div class="grid gap-2 max-w-md">' +
+      '<label class="form-control"><span class="label-text">Skritt</span>' +
+      '<select id="purr-steg" class="select select-sm select-bordered">' +
+      '<option value="paminnelse">Betalingspåminnelse (gebyrfri)</option>' +
+      '<option value="purring">Purring</option>' +
+      '<option value="inkassovarsel">Inkassovarsel (14 dagers frist)</option></select></label>' +
+      '<label class="form-control"><span class="label-text">Betalingsfrist</span>' +
+      '<input id="purr-frist" type="date" class="input input-sm input-bordered" value="' + frist + '"></label>' +
+      '<label class="label cursor-pointer justify-start gap-2"><input id="purr-gebyr" type="checkbox" class="checkbox checkbox-sm">' +
+      '<span class="label-text">Purregebyr (maks-sats)</span></label>' +
+      '<label class="label cursor-pointer justify-start gap-2"><input id="purr-rente" type="checkbox" class="checkbox checkbox-sm">' +
+      '<span class="label-text">Krev forsinkelsesrente</span></label>' +
+      '<label class="label cursor-pointer justify-start gap-2"><input id="purr-naering" type="checkbox" class="checkbox checkbox-sm">' +
+      '<span class="label-text">Næringsdrivende skyldner (standardkompensasjon)</span></label>' +
+      '<div class="flex gap-2"><button id="purr-preview" class="btn btn-sm">Forhåndsvis</button>' +
+      '<button id="purr-send" class="btn btn-sm btn-primary" disabled>Registrer</button></div>' +
+      '<div id="purr-result"></div></div></div>';
+    document.getElementById("purr-steg").value = suggestedSteg;
+    target.querySelectorAll("[data-purr-doc]").forEach(function (link) {
+      link.onclick = async function () {
+        try {
+          var response = await api(base + "/" + link.dataset.purrDoc + "?format=tekst");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "purring.txt";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    function body(gebyrOre) {
+      return {
+        steg: document.getElementById("purr-steg").value,
+        frist_date: document.getElementById("purr-frist").value,
+        gebyr_ore: document.getElementById("purr-gebyr").checked ? gebyrOre : 0,
+        med_rente: document.getElementById("purr-rente").checked,
+        naeringsdrivende: document.getElementById("purr-naering").checked,
+      };
+    }
+    var previewed = null;
+    document.getElementById("purr-preview").onclick = async function () {
+      var result = document.getElementById("purr-result");
+      try {
+        // First pass resolves the current maks-sats, second previews with it.
+        var probe = await post(base + "?preview=true", body(0));
+        previewed = await post(base + "?preview=true", body(probe.maks_gebyr_ore));
+        result.innerHTML =
+          '<p class="text-sm mt-2">Å betale: <b>' + kr(previewed.total_ore) + "</b>" +
+          (previewed.gebyr_ore ? " (gebyr " + kr(previewed.gebyr_ore) : "") +
+          (previewed.rente_ore ? (previewed.gebyr_ore ? ", " : " (") + "rente " + kr(previewed.rente_ore) : "") +
+          (previewed.gebyr_ore || previewed.rente_ore ? ")" : "") + "</p>" +
+          '<pre class="bg-base-200 rounded p-2 text-xs overflow-x-auto mt-2">' + esc(previewed.document) + "</pre>";
+        document.getElementById("purr-send").disabled = false;
+      } catch (error) { previewed = null; result.innerHTML = ""; toast(error.message, false); }
+    };
+    document.getElementById("purr-send").onclick = async function () {
+      if (!previewed) return;
+      try {
+        var created = await post(base, body(previewed.gebyr_ore));
+        toast(created.steg + " registrert" + (created.voucher ? " (bilag " + created.voucher + ")" : ""), true);
+        renderFaktura(id);
+      } catch (error) { toast(error.message, false); }
+    };
   }
 
   async function renderReskontro(id, partyId) {
