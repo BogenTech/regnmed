@@ -52,10 +52,29 @@ reversing-voucher rule.
 - Purringer/inkassovarsler render their stored text deterministically
   to PDF on demand (`?format=pdf`, docs/purring.md).
 
+## E-postutsendelse (#32)
+
+- **One rail for all outbound mail**: regnmed publishes to the same
+  JetStream stream regnid's mail workers consume (`REGNID_MAIL` /
+  `regnid.mail.send` — a wire contract; regnid's `OutboundMail` gained
+  serde-defaulted `reply_to` + base64 `attachments` for it). SMTP/Brevo
+  stay configured in exactly one place, the worker.
+- **Sending is an explicit human action** (portal Send buttons, or
+  `POST …/invoices/{iid}/send` / `POST …/reminders/{rid}/send`, both
+  bokforing+). Recipient defaults to the party's stored e-mail,
+  overridable per send; **reply-to is the company's own address**
+  (settings), never regnmed's.
+- **Insert-only utsendelseslogg** (migration 0020): who sent what to
+  whom, when. The log id doubles as the queue's `Nats-Msg-Id`, so a
+  retried publish deduplicates in the stream — the log row and the
+  queue message are the same event. `GET …/invoices/{iid}/utsendelser`.
+- The attached PDF is the stored salgsdokument (hash-checked on read) —
+  the mail carries byte-exactly what oppbevaringen holds.
+- Unconfigured rail (no `NATS_URL`) → the endpoints answer with a clear
+  message instead of pretending.
+
 ## Not yet (deliberate)
 
-- **E-postutsendelse** (the second half of #32): through regnid's mail
-  worker, pending an attachment-capable OutboundMail there.
 - **EHF dispatch** arrives with the Peppol access point (issue #14).
 
 Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
@@ -88,3 +107,9 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   moment the invoice does, served with the kontaktinfo, kreditnota
   document, purring `?format=pdf`, settings PUT rejected for
   non-admins.
+- `regnmed-api/tests/utsendelse.rs` (real Postgres + a spawned
+  `nats-server`, skips without either) — the send endpoint puts a real
+  JetStream message on the rail in regnid's wire format (attachment
+  base64-decodes back to the stored PDF, reply-to = company),
+  the log records it, and an unconfigured rail answers clearly.
+  regnid's own suite pins the wire format's backward compatibility.

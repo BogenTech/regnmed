@@ -359,11 +359,28 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `PUT …/parties/{pid}/contact`, `GET …/invoices/{iid}/pdf`. Portal:
    Firmaopplysninger card (Oversikt), Kontaktinfo (party page), PDF
    buttons (Faktura, purrehistorikk). PDF visually verified.
-   **Next:** #32 second half — e-postutsendelse via regnid's mail
-   worker (needs attachment-capable OutboundMail in regnid + insert-only
-   delivery log here); then M7 breadth (#30/#31, #38, #40), native
-   importers (#19), EHF (#14), Maskinporten (awaiting Skatteetaten
-   scope grant, docs/gov.md), M2 tail (#51 terminordninger).
+28. ✅ E-postutsendelse (docs/faktura.md, closed #32): ONE rail for all
+   outbound mail — regnid's `OutboundMail` gained serde-defaulted
+   `reply_to` + base64 `attachments` (wire format pinned by test in
+   regnid; SMTP multipart + Brevo attachment support in its
+   transports), and regnmed publishes to the same JetStream stream
+   (`REGNID_MAIL`/`regnid.mail.send`, mirrored constants in
+   `regnmed-api::mailq` — a documented wire contract, regnid is never
+   vendored). Sending is explicit human action:
+   `POST …/invoices/{iid}/send`, `POST …/reminders/{rid}/send`
+   (recipient = party e-mail, overridable; reply-to = company e-mail);
+   migration 0020 `utsendelse` insert-only log whose id doubles as
+   Nats-Msg-Id (log row ≡ queue message, dedup for free) + company
+   email column. AppState carries Option<jetstream::Context> — no
+   NATS_URL → clear error, not pretence. NATS_URL added to
+   regnmed-api's base deployment (NATS already in the cluster).
+   Integration test spawns a real nats-server (skips without) and
+   base64-decodes the stored PDF back off the stream.
+   **Next:** M7 breadth (#30 repeterende faktura / #31 tilbud→ordre
+   completing betalingsoppfølging; #38 timeføring, #40
+   anleggsregister), native importers (#19), EHF (#14), Maskinporten
+   (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
+   terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

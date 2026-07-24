@@ -26,6 +26,7 @@ pub mod saft_import;
 pub mod sats;
 pub mod settings;
 pub mod tenancy;
+pub mod utsendelse;
 
 pub use anchor::*;
 pub use attachment::*;
@@ -49,6 +50,7 @@ pub use saft_import::*;
 pub use sats::*;
 pub use settings::*;
 pub use tenancy::*;
+pub use utsendelse::*;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;

@@ -77,9 +77,12 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
     regnmed_db::MIGRATOR.run(&pool).await.expect("migrate");
 
     let verifier = Verifier::from_jwks(ISSUER, Some(AUDIENCE.into()), idp.jwks.clone());
+    // The mail rail is exercised by tests that spawn their own
+    // nats-server and rebuild the state with a connected context.
     Some(AppState {
         pool,
         verifier: Arc::new(verifier),
+        mailq: None,
     })
 }
 

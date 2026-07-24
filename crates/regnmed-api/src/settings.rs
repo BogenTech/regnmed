@@ -50,6 +50,7 @@ pub async fn get_settings(
         "address": s.address,
         "bank_account": s.bank_account,
         "orgform": s.orgform,
+        "email": s.email,
     })))
 }
 
@@ -58,6 +59,7 @@ pub struct UpdateSettingsRequest {
     address: Option<String>,
     bank_account: Option<String>,
     orgform: Option<String>,
+    email: Option<String>,
 }
 
 pub async fn update_settings(
@@ -73,6 +75,7 @@ pub async fn update_settings(
         request.address.as_deref(),
         request.bank_account.as_deref(),
         request.orgform.as_deref(),
+        request.email.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

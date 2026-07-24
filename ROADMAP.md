@@ -163,8 +163,11 @@ M7 (#37–#48) for new ground:
   aldersfordelte forfalte, gebyr/rente som ordinære bilag fra
   satsregisteret, inkassovarsel m/ 14-dagers frist, insert-only
   historikk m/ lagret dokument; docs/purring.md),
-  repeterende faktura (#30), tilbud → ordre → faktura (#31), faktura-PDF
-  + e-postutsendelse (#32) — M3.
+  repeterende faktura (#30), tilbud → ordre → faktura (#31),
+  ✅ faktura-PDF + e-postutsendelse (#32 — deterministisk hand-rolled
+  PDF lagret på bilaget ved utstedelse, e-post med vedlegg over
+  regnids mail-rail m/ insert-only utsendelseslogg; docs/faktura.md)
+  — M3.
 - Penger ut: betalingsliste + pain.001-remittering (#33), utlegg og
   kjøregodtgjørelse (#42), attestering/four-eyes (#47).
 - Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn

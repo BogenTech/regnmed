@@ -334,6 +334,7 @@
       "(«Foretaksregisteret» påføres for AS/ASA).</p>" +
       '<div class="grid gap-2 max-w-md">' +
       '<input id="set-address" class="input input-sm input-bordered" placeholder="Adresse" value="' + esc(settings.address || "") + '">' +
+      '<input id="set-email" class="input input-sm input-bordered" placeholder="E-post (svaradresse på utsendelser)" value="' + esc(settings.email || "") + '">' +
       '<div class="flex gap-2">' +
       '<input id="set-bank" class="input input-sm input-bordered flex-1" placeholder="Kontonummer" value="' + esc(settings.bank_account || "") + '">' +
       '<select id="set-orgform" class="select select-sm select-bordered">' +
@@ -355,6 +356,7 @@
             address: document.getElementById("set-address").value,
             bank_account: document.getElementById("set-bank").value,
             orgform: document.getElementById("set-orgform").value,
+            email: document.getElementById("set-email").value,
           }),
         });
         toast("Firmaopplysninger lagret", true);
@@ -468,7 +470,8 @@
     var dims = results[3].dimensions;
     var rows = invoices.map(function (i) {
       var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
-        '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>';
+        '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>' +
+        ' <button class="btn btn-xs btn-ghost" data-send="' + i.invoice_id + '">Send</button>';
       if (!i.is_credit_note && i.remaining_ore !== 0) {
         action += ' <button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>';
       }
@@ -574,6 +577,9 @@
     app.querySelectorAll("[data-purr]").forEach(function (button) {
       button.onclick = function () { openPurringForm(id, button.dataset.purr, button.dataset.steg); };
     });
+    app.querySelectorAll("[data-send]").forEach(function (button) {
+      button.onclick = function () { sendDocument(id, "/companies/" + id + "/invoices/" + button.dataset.send + "/send"); };
+    });
     app.querySelectorAll("[data-pdf]").forEach(function (button) {
       button.onclick = async function () {
         try {
@@ -589,6 +595,27 @@
     });
   }
 
+  // Utsendelse: POST to the send endpoint; if the party has no stored
+  // e-mail, ask for one and retry with it.
+  async function sendDocument(companyId, path) {
+    async function attempt(email) {
+      return post(path, email ? { email: email } : {});
+    }
+    try {
+      var sent = await attempt(null);
+      toast("Sendt til " + sent.to, true);
+    } catch (error) {
+      if (String(error.message).indexOf("e-postadresse") !== -1) {
+        var email = prompt("Kundens e-postadresse:");
+        if (!email) return;
+        try {
+          var retried = await attempt(email);
+          toast("Sendt til " + retried.to, true);
+        } catch (retryError) { toast(retryError.message, false); }
+      } else { toast(error.message, false); }
+    }
+  }
+
   // Purring: alltid en eksplisitt menneskelig handling — forhåndsvis
   // kravet (gebyrtak og rente hentes fra satsregisteret), så registrer.
   async function openPurringForm(id, invoiceId, suggestedSteg) {
@@ -600,7 +627,8 @@
         "</td><td class='text-right'>" + kr(r.gebyr_ore + r.rente_ore) + "</td>" +
         "<td>" + (r.voucher ? esc(r.voucher) : "–") + "</td>" +
         '<td><button class="link text-xs" data-purr-doc="' + r.reminder_id + '" data-fmt="tekst">tekst</button> ' +
-        '<button class="link text-xs" data-purr-doc="' + r.reminder_id + '" data-fmt="pdf">pdf</button></td></tr>';
+        '<button class="link text-xs" data-purr-doc="' + r.reminder_id + '" data-fmt="pdf">pdf</button> ' +
+        '<button class="link text-xs" data-purr-send="' + r.reminder_id + '">send</button></td></tr>';
     }).join("");
     var frist = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
     target.innerHTML =
@@ -629,6 +657,9 @@
       '<button id="purr-send" class="btn btn-sm btn-primary" disabled>Registrer</button></div>' +
       '<div id="purr-result"></div></div></div>';
     document.getElementById("purr-steg").value = suggestedSteg;
+    target.querySelectorAll("[data-purr-send]").forEach(function (link) {
+      link.onclick = function () { sendDocument(id, base + "/" + link.dataset.purrSend + "/send"); };
+    });
     target.querySelectorAll("[data-purr-doc]").forEach(function (link) {
       link.onclick = async function () {
         var fmt = link.dataset.fmt || "tekst";

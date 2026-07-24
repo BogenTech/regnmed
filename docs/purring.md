@@ -63,10 +63,13 @@ Oversikt.
 | `GET /companies/{id}/invoices/{iid}/reminders/{rid}?format=tekst` | the stored document |
 | `…?format=pdf` | the stored document rendered deterministically to PDF (Courier, docs/faktura.md) |
 
-## Not yet (deliberate)
+## Utsendelse
 
-- No automatic sending — delivery (PDF/e-post, #32) will still require
-  a human click per the issue.
+Purringer og inkassovarsler sendes per e-post som PDF over the shared
+mail rail (`POST …/reminders/{rid}/send`, portal "send" i historikken)
+— same recipient/reply-to/logg rules as invoices (docs/faktura.md).
+
+## Not yet (deliberate)
 - Rentenota on payment date (rente accrued after the last skritt) —
   today rente is crystallized per skritt when demanded.
 

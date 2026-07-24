@@ -12,7 +12,9 @@ regnmed-db.workspace = true
 regnmed-gov = { path = "../regnmed-gov" }
 
 anyhow.workspace = true
+async-nats.workspace = true
 axum.workspace = true
+base64.workspace = true
 hex.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
@@ -25,8 +27,8 @@ tokio.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 chrono.workspace = true
+futures-util.workspace = true
 rand.workspace = true
 rsa.workspace = true
 tower.workspace = true

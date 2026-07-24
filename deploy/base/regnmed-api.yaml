@@ -36,6 +36,8 @@ spec:
               value: http://id.regnmed.localhost
             - name: OIDC_AUDIENCE
               value: regnmed
+            - name: NATS_URL
+              value: nats://nats:4222
             - name: BIND_ADDR
               value: 0.0.0.0:8080
           ports:

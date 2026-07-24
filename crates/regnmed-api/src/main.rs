@@ -13,7 +13,18 @@ async fn main() -> Result<()> {
         .context("connecting to database")?;
 
     let verifier = Arc::new(Verifier::from_env().await?);
-    let app = router(AppState { pool, verifier });
+    let mailq = regnmed_api::mailq::connect_from_env()
+        .await
+        .context("connecting to the mail queue")?;
+    match &mailq {
+        Some(_) => println!("mail rail connected (NATS)"),
+        None => println!("mail rail not configured (NATS_URL unset) — utsendelse disabled"),
+    }
+    let app = router(AppState {
+        pool,
+        verifier,
+        mailq,
+    });
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;

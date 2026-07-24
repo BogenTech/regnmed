@@ -8,6 +8,7 @@ pub mod dimension;
 pub mod engagement;
 pub mod innboks;
 pub mod invoice;
+pub mod mailq;
 pub mod marketplace;
 pub mod ocr;
 pub mod period;
@@ -16,6 +17,7 @@ pub mod purring;
 pub mod reports;
 pub mod reskontro;
 pub mod settings;
+pub mod utsendelse;
 
 use std::sync::Arc;
 
@@ -28,6 +30,9 @@ use auth::{ApiError, AuthPerson, Verifier};
 pub struct AppState {
     pub pool: sqlx::PgPool,
     pub verifier: Arc<Verifier>,
+    /// The outbound-mail rail (regnid's JetStream stream); None when
+    /// NATS_URL is not configured — send endpoints then say so.
+    pub mailq: Option<async_nats::jetstream::Context>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -192,6 +197,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/pdf",
             get(invoice::invoice_pdf),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/send",
+            axum::routing::post(utsendelse::send_invoice),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}/send",
+            axum::routing::post(utsendelse::send_reminder),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
+            get(utsendelse::list_utsendelser),
         )
         .route(
             "/companies/{company_id}/settings",
