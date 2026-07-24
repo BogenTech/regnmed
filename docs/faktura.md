@@ -29,11 +29,34 @@ reversing-voucher rule.
   receivable entries are auto-matched in reskontro for whatever remained
   open. Double-crediting is rejected.
 
+## Salgsdokumentet som PDF (#32)
+
+- **Deterministic, hand-rolled renderer** (`regnmed-core::pdf` +
+  `fakturapdf`): the three standard PDF fonts (no embedding),
+  WinAnsi/CP1252 for æøå og typografi, ~3 KB per invoice, no rendering
+  engine (frugality). Same input → byte-identical output forever.
+- **Stored at issue time, in the issuing transaction**, as an
+  attachment on the invoice's voucher — the document the customer
+  receives is part of oppbevaringen from the moment the invoice exists,
+  hash-checked on every download like all dokumentasjon. Serving is a
+  DB read; nothing renders on the request path.
+- Contents per bokføringsforskriften §5-1-1: nummer/dato, selger med
+  orgnr ("MVA" when the document carries VAT, "Foretaksregisteret" for
+  AS/ASA), kjøper, linjer, mva spesifisert i NOK per sats, forfall,
+  KID og kontonummer.
+- **Kontaktinfo** (migration 0019, editable master data, never hashed):
+  company address/kontonummer/selskapsform via
+  `GET/PUT /companies/{id}/settings` (PUT is admin-only); party
+  address/e-mail via `PUT …/parties/{pid}/contact`. Portal:
+  Firmaopplysninger card on Oversikt, Kontaktinfo on the party page.
+- Purringer/inkassovarsler render their stored text deterministically
+  to PDF on demand (`?format=pdf`, docs/purring.md).
+
 ## Not yet (deliberate)
 
-- Document rendering (PDF/print) and **EHF dispatch** arrive with the
-  portal UI and the Peppol access point (issue #14) — the invoice *data*
-  is complete and audit-ready now.
+- **E-postutsendelse** (the second half of #32): through regnid's mail
+  worker, pending an attachment-capable OutboundMail there.
+- **EHF dispatch** arrives with the Peppol access point (issue #14).
 
 Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
@@ -44,6 +67,9 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 | `POST /companies/{id}/invoices` | issue (party_no, dates, lines; defaults: journal GL, receivable 1500, VAT 2700, account 3000, quantity 1) |
 | `GET /companies/{id}/invoices?open=true` | list with reskontro remaining per invoice |
 | `POST /companies/{id}/invoices/{iid}/credit-note` | full kreditnota |
+| `GET /companies/{id}/invoices/{iid}/pdf` | the stored salgsdokument (hash-checked) |
+| `GET/PUT /companies/{id}/settings` | firmaopplysninger for the PDF (PUT admin-only) |
+| `PUT /companies/{id}/parties/{pid}/contact` | party address/e-mail |
 
 ## Where it is tested
 
@@ -53,3 +79,12 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   loop over HTTP: issue (12 500 kr, valid KID), failed attempt burns no
   number, chain verifies, OCR payment resolves the invoice by KID,
   kreditnota auto-settles, double-credit rejected.
+- `regnmed-core/src/pdf.rs` + `fakturapdf.rs` — valid xref structure,
+  WinAnsi encoding incl. CP1252 typografi, escaping, width-based right
+  alignment, determinism, lovpålagt innhold, kreditnota variant,
+  pagination.
+- `regnmed-api/tests/faktura_pdf.rs` (real Postgres, also CI) —
+  settings over the API, the PDF exists as a verified attachment the
+  moment the invoice does, served with the kontaktinfo, kreditnota
+  document, purring `?format=pdf`, settings PUT rejected for
+  non-admins.

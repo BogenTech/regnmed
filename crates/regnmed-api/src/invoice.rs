@@ -9,6 +9,8 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -148,4 +150,32 @@ pub async fn credit_note(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(issued_json(&credit)))
+}
+
+/// The salgsdokument stored at issue time — served hash-checked, so the
+/// customer-facing document can never silently diverge from the
+/// oppbevarte original.
+pub async fn invoice_pdf(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let attachment_id = regnmed_db::invoice_pdf_attachment_id(&state.pool, company_id, invoice_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let (meta, content) = regnmed_db::get_attachment(&state.pool, company_id, attachment_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{}\"", meta.filename),
+            ),
+        ],
+        content,
+    )
+        .into_response())
 }

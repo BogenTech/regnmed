@@ -24,6 +24,7 @@ pub mod revisjon;
 pub mod saft;
 pub mod saft_import;
 pub mod sats;
+pub mod settings;
 pub mod tenancy;
 
 pub use anchor::*;
@@ -46,6 +47,7 @@ pub use revisjon::*;
 pub use saft::*;
 pub use saft_import::*;
 pub use sats::*;
+pub use settings::*;
 pub use tenancy::*;
 
 use sqlx::PgPool;

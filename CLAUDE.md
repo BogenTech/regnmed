@@ -344,11 +344,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    XSD-validated. `GET/POST …/dimensions`, `PUT …/dimensions/{kind}/{code}`;
    dims accepted on innboks-bokfør and faktura lines. Portal: registry
    card (Bilag), pickers in bokfør + faktura forms, resultat filter.
-   **Next:** M7 funksjonsbredde (#38 timeføring and #40 anleggsregister
-   now unblocked by dimensjoner; or #30–#32 completing
-   betalingsoppfølging), native importers (#19), EHF (#14, access-point
-   decision), Maskinporten registration (in progress, docs/gov.md),
-   M2 tail (#51 terminordninger).
+27. ✅ Faktura-PDF (docs/faktura.md, first half of #32):
+   `regnmed-core::pdf` — hand-rolled deterministic PDF writer (standard
+   fonts, WinAnsi/CP1252, width-based right alignment, ~3 KB per
+   document, no engine; xref structure test-verified) + `fakturapdf`
+   layouts per bokføringsforskriften §5-1-1 (mva spesifisert per sats,
+   "MVA"/"Foretaksregisteret", KID/kontonummer; kreditnota variant;
+   pagination). **Stored as a voucher attachment in the issuing
+   transaction** — serving is a hash-checked DB read, nothing renders
+   on the request path. Purringer render stored text → PDF on demand
+   (`?format=pdf`, Courier). Migration 0019 kontaktinfo (company
+   address/bank_account/orgform, party address/email — editable, never
+   hashed) + `GET/PUT …/settings` (PUT admin-only),
+   `PUT …/parties/{pid}/contact`, `GET …/invoices/{iid}/pdf`. Portal:
+   Firmaopplysninger card (Oversikt), Kontaktinfo (party page), PDF
+   buttons (Faktura, purrehistorikk). PDF visually verified.
+   **Next:** #32 second half — e-postutsendelse via regnid's mail
+   worker (needs attachment-capable OutboundMail in regnid + insert-only
+   delivery log here); then M7 breadth (#30/#31, #38, #40), native
+   importers (#19), EHF (#14), Maskinporten (awaiting Skatteetaten
+   scope grant, docs/gov.md), M2 tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

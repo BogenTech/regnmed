@@ -188,6 +188,21 @@ pub async fn reminder_document(
     let document = regnmed_db::reminder_document(&state.pool, company_id, invoice_id, reminder_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    // `?format=pdf`: the stored text rendered deterministically to PDF.
+    if query.format.as_deref() == Some("pdf") {
+        let pdf = regnmed_core::fakturapdf::render_tekst_pdf(&document);
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "application/pdf".to_string()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("inline; filename=\"purring_{reminder_id}.pdf\""),
+                ),
+            ],
+            pdf,
+        )
+            .into_response());
+    }
     if query.format.as_deref() == Some("tekst") {
         let filename = format!("purring_{reminder_id}.txt");
         return Ok((

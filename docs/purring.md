@@ -61,6 +61,7 @@ Oversikt.
 | `GET /companies/{id}/invoices/{iid}/reminders` | insert-only history |
 | `POST /companies/{id}/invoices/{iid}/reminders` | register a skritt (steg, frist_date, gebyr_ore?, med_rente?, naeringsdrivende?; accounts overridable). `?preview=true` computes gebyrtak, rente and document without writing |
 | `GET /companies/{id}/invoices/{iid}/reminders/{rid}?format=tekst` | the stored document |
+| `…?format=pdf` | the stored document rendered deterministically to PDF (Courier, docs/faktura.md) |
 
 ## Not yet (deliberate)
 

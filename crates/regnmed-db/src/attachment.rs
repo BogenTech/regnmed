@@ -29,13 +29,39 @@ pub async fn add_attachment(
     content: &[u8],
     uploaded_by: &str,
 ) -> Result<AttachmentMeta> {
+    let mut tx = pool.begin().await?;
+    let meta = add_attachment_in(
+        &mut tx,
+        company_id,
+        voucher_id,
+        filename,
+        content_type,
+        content,
+        uploaded_by,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(meta)
+}
+
+/// Transaction-taking variant, so document-generating flows (invoice
+/// PDF at issue time) can make the attachment atomic with the posting.
+pub async fn add_attachment_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    voucher_id: Uuid,
+    filename: &str,
+    content_type: &str,
+    content: &[u8],
+    uploaded_by: &str,
+) -> Result<AttachmentMeta> {
     ensure!(!content.is_empty(), "attachment is empty");
     let belongs: bool = sqlx::query_scalar(
         "select exists (select 1 from voucher where id = $1 and company_id = $2)",
     )
     .bind(voucher_id)
     .bind(company_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
     ensure!(belongs, "no such voucher in this company");
 
@@ -55,7 +81,7 @@ pub async fn add_attachment(
     .bind(digest.as_slice())
     .bind(content)
     .bind(uploaded_by)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(AttachmentMeta {
         id,

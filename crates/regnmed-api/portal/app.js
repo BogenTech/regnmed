@@ -328,9 +328,38 @@
       "omskrevet historikk kan derfor bevises, ikke bare mistenkes.</p>" +
       '<button id="anchor-verify" class="btn btn-sm btn-outline">Verifiser kjeden mot forankringen</button>' +
       '<div id="anchor-result" class="mt-2"></div>');
+    var settings = await api("/companies/" + id + "/settings").catch(function () { return null; });
+    var settingsCard = !settings ? "" : card("Firmaopplysninger — på salgsdokumentene",
+      '<p class="text-sm opacity-70 mb-2">Adresse, kontonummer og selskapsform trykkes på faktura-PDF-en ' +
+      "(«Foretaksregisteret» påføres for AS/ASA).</p>" +
+      '<div class="grid gap-2 max-w-md">' +
+      '<input id="set-address" class="input input-sm input-bordered" placeholder="Adresse" value="' + esc(settings.address || "") + '">' +
+      '<div class="flex gap-2">' +
+      '<input id="set-bank" class="input input-sm input-bordered flex-1" placeholder="Kontonummer" value="' + esc(settings.bank_account || "") + '">' +
+      '<select id="set-orgform" class="select select-sm select-bordered">' +
+      ["", "AS", "ASA", "ENK", "ANS", "DA"].map(function (f) {
+        return '<option value="' + f + '"' + ((settings.orgform || "") === f ? " selected" : "") + ">" +
+          (f || "(selskapsform)") + "</option>";
+      }).join("") + "</select></div>" +
+      '<button id="set-save" class="btn btn-sm">Lagre</button></div>');
     shell(id, "oversikt", stats + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
-      "<tbody>" + recent + "</tbody></table>") + anchorCard);
+      "<tbody>" + recent + "</tbody></table>") + settingsCard + anchorCard);
+    var setSave = document.getElementById("set-save");
+    if (setSave) setSave.onclick = async function () {
+      try {
+        await api("/companies/" + id + "/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            address: document.getElementById("set-address").value,
+            bank_account: document.getElementById("set-bank").value,
+            orgform: document.getElementById("set-orgform").value,
+          }),
+        });
+        toast("Firmaopplysninger lagret", true);
+      } catch (error) { toast(error.message, false); }
+    };
     document.getElementById("anchor-verify").onclick = async function () {
       var result = document.getElementById("anchor-result");
       result.innerHTML = '<span class="loading loading-spinner loading-sm"></span>';
@@ -438,9 +467,11 @@
     var overdue = results[2];
     var dims = results[3].dimensions;
     var rows = invoices.map(function (i) {
-      var action = !i.is_credit_note && i.remaining_ore !== 0
-        ? '<button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>'
-        : "";
+      var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
+        '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>';
+      if (!i.is_credit_note && i.remaining_ore !== 0) {
+        action += ' <button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>';
+      }
       return "<tr><td>" + i.invoice_no + "</td><td>" + esc(i.party_name) + "</td><td>" +
         esc(i.invoice_date) + "</td><td class='font-mono'>" + esc(i.kid) + "</td>" +
         "<td class='text-right'>" + kr(i.gross_ore) + "</td>" +
@@ -543,6 +574,19 @@
     app.querySelectorAll("[data-purr]").forEach(function (button) {
       button.onclick = function () { openPurringForm(id, button.dataset.purr, button.dataset.steg); };
     });
+    app.querySelectorAll("[data-pdf]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var response = await api("/companies/" + id + "/invoices/" + button.dataset.pdf + "/pdf");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = button.dataset.name;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
   }
 
   // Purring: alltid en eksplisitt menneskelig handling — forhåndsvis
@@ -555,7 +599,8 @@
       return "<tr><td>" + esc(r.steg) + "</td><td>" + esc(r.sent_date) + "</td><td>" + esc(r.frist_date) +
         "</td><td class='text-right'>" + kr(r.gebyr_ore + r.rente_ore) + "</td>" +
         "<td>" + (r.voucher ? esc(r.voucher) : "–") + "</td>" +
-        '<td><button class="link text-xs" data-purr-doc="' + r.reminder_id + '">tekst</button></td></tr>';
+        '<td><button class="link text-xs" data-purr-doc="' + r.reminder_id + '" data-fmt="tekst">tekst</button> ' +
+        '<button class="link text-xs" data-purr-doc="' + r.reminder_id + '" data-fmt="pdf">pdf</button></td></tr>';
     }).join("");
     var frist = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
     target.innerHTML =
@@ -586,12 +631,13 @@
     document.getElementById("purr-steg").value = suggestedSteg;
     target.querySelectorAll("[data-purr-doc]").forEach(function (link) {
       link.onclick = async function () {
+        var fmt = link.dataset.fmt || "tekst";
         try {
-          var response = await api(base + "/" + link.dataset.purrDoc + "?format=tekst");
+          var response = await api(base + "/" + link.dataset.purrDoc + "?format=" + fmt);
           var blob = await response.blob();
           var a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = "purring.txt";
+          a.download = fmt === "pdf" ? "purring.pdf" : "purring.txt";
           a.click();
           URL.revokeObjectURL(a.href);
         } catch (error) { toast(error.message, false); }
@@ -642,11 +688,32 @@
           esc(i.description || "") + "</td><td class='text-right'>" + kr(i.amount_ore) +
           "</td><td class='text-right'>" + kr(i.remaining_ore) + "</td></tr>";
       }).join("");
+      var contactCard = !party ? "" : card("Kontaktinfo",
+        '<div class="grid gap-2 max-w-md">' +
+        '<input id="party-address" class="input input-sm input-bordered" placeholder="Adresse (på fakturaen)" value="' +
+        esc(party.address || "") + '">' +
+        '<input id="party-email" class="input input-sm input-bordered" placeholder="E-post (for utsendelse)" value="' +
+        esc(party.email || "") + '">' +
+        '<button id="party-save" class="btn btn-sm">Lagre</button></div>');
       shell(id, "reskontro", card(esc(party ? party.name : "") +
         ' <a href="#/c/' + id + '/reskontro" class="btn btn-ghost btn-xs">tilbake</a>',
         '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th>' +
         "<th class='text-right'>Beløp</th><th class='text-right'>Åpent</th></tr></thead>" +
-        "<tbody>" + rows + "</tbody></table>"));
+        "<tbody>" + rows + "</tbody></table>") + contactCard);
+      var partySave = document.getElementById("party-save");
+      if (partySave) partySave.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/parties/" + partyId + "/contact", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              address: document.getElementById("party-address").value,
+              email: document.getElementById("party-email").value,
+            }),
+          });
+          toast("Kontaktinfo lagret", true);
+        } catch (error) { toast(error.message, false); }
+      };
       return;
     }
     var rows = parties.map(function (p) {

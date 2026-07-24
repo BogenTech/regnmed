@@ -56,6 +56,8 @@ pub async fn list_parties(
             "kind": p.kind,
             "name": p.name,
             "orgnr": p.orgnr,
+            "address": p.address,
+            "email": p.email,
             "saldo_ore": p.saldo_ore,
         })).collect::<Vec<_>>(),
     })))

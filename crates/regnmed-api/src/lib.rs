@@ -15,6 +15,7 @@ pub mod portal;
 pub mod purring;
 pub mod reports;
 pub mod reskontro;
+pub mod settings;
 
 use std::sync::Arc;
 
@@ -187,6 +188,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/credit-note",
             axum::routing::post(invoice::credit_note),
+        )
+        .route(
+            "/companies/{company_id}/invoices/{invoice_id}/pdf",
+            get(invoice::invoice_pdf),
+        )
+        .route(
+            "/companies/{company_id}/settings",
+            get(settings::get_settings).put(settings::update_settings),
+        )
+        .route(
+            "/companies/{company_id}/parties/{party_id}/contact",
+            axum::routing::put(settings::update_party_contact),
         )
         .route(
             "/companies/{company_id}/invoices/overdue",

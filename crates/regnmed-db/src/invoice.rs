@@ -3,11 +3,13 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
+use regnmed_core::fakturapdf::{FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::{InvoiceLineInput, build_voucher, compute, invoice_kid};
 use regnmed_core::mva::rate_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use crate::attachment::add_attachment_in;
 use crate::ledger::post_voucher_in;
 use crate::mva::load_vat_rates;
 
@@ -102,18 +104,36 @@ pub async fn create_invoice(
         !draft.lines.is_empty(),
         "an invoice needs at least one line"
     );
-    let party = sqlx::query("select id, kind from party where company_id = $1 and party_no = $2")
-        .bind(company_id)
-        .bind(&draft.party_no)
-        .fetch_optional(pool)
-        .await?
-        .with_context(|| format!("no party {}", draft.party_no))?;
+    let party = sqlx::query(
+        "select id, kind, name, orgnr, address from party
+         where company_id = $1 and party_no = $2",
+    )
+    .bind(company_id)
+    .bind(&draft.party_no)
+    .fetch_optional(pool)
+    .await?
+    .with_context(|| format!("no party {}", draft.party_no))?;
     let party_id: Uuid = party.get("id");
     ensure!(
         party.get::<String, _>("kind") == "kunde",
         "party {} is not a kunde",
         draft.party_no
     );
+    let company = sqlx::query(
+        "select name, orgnr, address, bank_account, orgform from company where id = $1",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    let credited_invoice_no: Option<i64> = match credits_invoice_id {
+        Some(id) => {
+            sqlx::query_scalar("select invoice_no from invoice where id = $1")
+                .bind(id)
+                .fetch_optional(pool)
+                .await?
+        }
+        None => None,
+    };
 
     let lines = resolve_lines(pool, draft.invoice_date, &draft.lines).await?;
     let computed = compute(&lines);
@@ -196,6 +216,59 @@ pub async fn create_invoice(
         .execute(&mut *tx)
         .await?;
     }
+
+    // The salgsdokument itself: rendered deterministically and stored
+    // as an attachment on the voucher IN THE SAME TRANSACTION — what
+    // the customer receives is part of oppbevaringen from the moment
+    // the invoice exists (bokføringsforskriften §5-1, issue #32).
+    let orgform: Option<String> = company.get("orgform");
+    let pdf = render_faktura_pdf(&FakturaPdfInput {
+        kreditnota: credits_invoice_id.is_some(),
+        krediterer_nr: credited_invoice_no,
+        selger_navn: company.get("name"),
+        selger_orgnr: company.get("orgnr"),
+        selger_adresse: company.get("address"),
+        // Charging VAT on the document is what makes the "MVA" suffix
+        // apply; registration status itself is not stored master data.
+        selger_mva_registrert: computed.vat_ore != 0,
+        selger_foretaksregistrert: matches!(orgform.as_deref(), Some("AS") | Some("ASA")),
+        selger_kontonummer: company.get("bank_account"),
+        kjoper_navn: party.get("name"),
+        kjoper_nr: draft.party_no.clone(),
+        kjoper_orgnr: party.get("orgnr"),
+        kjoper_adresse: party.get("address"),
+        fakturanr: invoice_no,
+        fakturadato: draft.invoice_date,
+        forfallsdato: draft.due_date,
+        kid: kid.clone(),
+        linjer: lines
+            .iter()
+            .zip(&computed.lines)
+            .map(|(line, amounts)| PdfLinje {
+                beskrivelse: line.description.clone(),
+                antall_milli: line.quantity_milli,
+                enhetspris_ore: line.unit_price_ore,
+                mva_sats_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
+                netto_ore: amounts.net_ore,
+                mva_ore: amounts.vat_ore,
+            })
+            .collect(),
+    });
+    let dokument = if credits_invoice_id.is_some() {
+        "kreditnota"
+    } else {
+        "faktura"
+    };
+    add_attachment_in(
+        &mut tx,
+        company_id,
+        posted.id,
+        &format!("{dokument}-{invoice_no}.pdf"),
+        "application/pdf",
+        &pdf,
+        created_by,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(IssuedInvoice {
