@@ -76,6 +76,8 @@ async fn seed_browser_demo() {
                     quantity_milli: 1000,
                     unit_price_ore: price,
                     vat_code: Some("3".into()),
+                    avdeling: None,
+                    prosjekt: None,
                 }],
             },
             "Demo Bruker",

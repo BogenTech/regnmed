@@ -4,6 +4,7 @@
 pub mod anchor;
 pub mod auth;
 pub mod bank;
+pub mod dimension;
 pub mod engagement;
 pub mod innboks;
 pub mod invoice;
@@ -150,6 +151,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/ocr/payments",
             get(ocr::list_payments),
+        )
+        .route(
+            "/companies/{company_id}/dimensions",
+            get(dimension::list).post(dimension::create),
+        )
+        .route(
+            "/companies/{company_id}/dimensions/{kind}/{code}",
+            axum::routing::put(dimension::update),
         )
         .route(
             "/companies/{company_id}/parties",

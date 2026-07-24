@@ -329,10 +329,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    forfalte-kort m/ purreskjema (foreslått neste steg, forhåndsvis →
    registrer), historikk m/ tekstnedlasting. Browser-verified
    (tests/seed_browser.rs seeds a demo w/ static JWKS for that).
-   **Next:** M7 funksjonsbredde (#37 dimensjoner/hash v3 next, then
-   #30–#32 completing betalingsoppfølging), native importers (#19),
-   EHF (#14, access-point decision), Maskinporten registration (in
-   progress, docs/gov.md), M2 tail (#51 terminordninger).
+26. ✅ Dimensjoner (docs/dimensjoner.md, closed #37): avdeling/prosjekt
+   as first-class, hash-covered line data — **hash format v3** (marker
+   + per-line avdeling/prosjekt codes; v1/v2 verify forever, golden
+   tests pin all three digests). Migration 0018: `dimension` registry
+   (insert + rename + open/close ONLY — the code is permanent because
+   it is hashed; trigger + column grants enforce), nullable
+   avdeling_id/prosjekt_id on entry (+ codes on invoice_line so
+   kreditnota mirrors). Posting resolves and validates dims up front;
+   avsluttet rejects new postings like a locked period. Resultat takes
+   `avdeling=`/`prosjekt=` filters (balanse deliberately not);
+   kontospesifikasjon carries the codes; SAF-T exports
+   AnalysisTypeTable ("AVD"/"PRO") + per-line Analysis with amounts,
+   XSD-validated. `GET/POST …/dimensions`, `PUT …/dimensions/{kind}/{code}`;
+   dims accepted on innboks-bokfør and faktura lines. Portal: registry
+   card (Bilag), pickers in bokfør + faktura forms, resultat filter.
+   **Next:** M7 funksjonsbredde (#38 timeføring and #40 anleggsregister
+   now unblocked by dimensjoner; or #30–#32 completing
+   betalingsoppfølging), native importers (#19), EHF (#14, access-point
+   decision), Maskinporten registration (in progress, docs/gov.md),
+   M2 tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

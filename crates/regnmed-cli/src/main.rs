@@ -490,6 +490,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -497,6 +499,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: Some("3".into()),
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
@@ -504,6 +508,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };
@@ -528,6 +534,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
@@ -535,6 +543,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };
@@ -562,6 +572,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: Some("1".into()),
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "2710".into(),
@@ -569,6 +581,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
@@ -576,6 +590,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };
@@ -597,6 +613,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -604,6 +622,8 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
         ..sale.clone()

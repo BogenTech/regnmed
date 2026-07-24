@@ -36,6 +36,8 @@ fn entry(account: &str, ore: i64, vat_code: Option<&str>) -> EntryDraft {
         vat_code: vat_code.map(str::to_owned),
         description: None,
         party_no: None,
+        avdeling: None,
+        prosjekt: None,
     }
 }
 

@@ -7,6 +7,7 @@
 pub mod anchor;
 pub mod attachment;
 pub mod bank;
+pub mod dimension;
 pub mod engagement;
 pub mod innboks;
 pub mod invoice;
@@ -28,6 +29,7 @@ pub mod tenancy;
 pub use anchor::*;
 pub use attachment::*;
 pub use bank::*;
+pub use dimension::*;
 pub use engagement::*;
 pub use innboks::*;
 pub use invoice::*;

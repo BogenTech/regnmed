@@ -129,6 +129,9 @@ pub struct BokforLine {
     vat_code: Option<String>,
     party_no: Option<String>,
     description: Option<String>,
+    /// Dimension codes (docs/dimensjoner.md).
+    avdeling: Option<String>,
+    prosjekt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +163,8 @@ pub async fn bokfor(
                 vat_code: l.vat_code.clone(),
                 description: l.description.clone(),
                 party_no: l.party_no.clone(),
+                avdeling: l.avdeling.clone(),
+                prosjekt: l.prosjekt.clone(),
             })
             .collect(),
     };

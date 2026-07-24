@@ -171,7 +171,10 @@ M7 (#37–#48) for new ground:
   (#35) — M5.
 - Innsikt: nøkkeltall/likviditet (#36), budsjett m/ fastsatte versjoner
   (#41) — pure queries as always.
-- Struktur: dimensjoner prosjekt/avdeling — hash format v3 (#37),
+- Struktur: ✅ dimensjoner prosjekt/avdeling — hash format v3 (#37 —
+  registry insert/rename/open-close only, koder hash-dekket, avsluttet
+  avviser posteringer, resultat per dimensjon, SAF-T Analysis;
+  docs/dimensjoner.md),
   timeføring (#38), produktregister + enkelt varelager (#39),
   anleggsregister m/ regnskaps- og skattemessige avskrivninger (#40),
   flervaluta m/ agio (#44).

@@ -50,6 +50,8 @@ async fn post_simple_voucher(pool: &sqlx::PgPool, company: Uuid, ore: i64) {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -57,6 +59,8 @@ async fn post_simple_voucher(pool: &sqlx::PgPool, company: Uuid, ore: i64) {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };

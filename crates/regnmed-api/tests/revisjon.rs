@@ -105,6 +105,8 @@ async fn revisor_generates_the_verification_report() {
                 vat_code: None,
                 description: None,
                 party_no: Some(party_no),
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -112,6 +114,8 @@ async fn revisor_generates_the_verification_report() {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };

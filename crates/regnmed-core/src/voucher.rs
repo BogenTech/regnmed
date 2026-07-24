@@ -16,6 +16,11 @@ pub struct EntryDraft {
     /// accounts flagged with a reskontro kind, rejected elsewhere —
     /// enforced at posting, where the account registry is available.
     pub party_no: Option<String>,
+    /// Dimension codes (docs/dimensjoner.md). Optional; must reference
+    /// an ACTIVE dimension of the right kind — enforced at posting,
+    /// where the dimension registry is available.
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 /// A voucher (bilag) as submitted for posting, before it is assigned a
@@ -50,6 +55,9 @@ impl VoucherDraft {
             if entry.party_no.as_deref() == Some("") {
                 return Err(LedgerError::EmptyPartyNo(i + 1));
             }
+            if entry.avdeling.as_deref() == Some("") || entry.prosjekt.as_deref() == Some("") {
+                return Err(LedgerError::EmptyDimension(i + 1));
+            }
             sum = sum
                 .checked_add(entry.amount)
                 .ok_or(LedgerError::AmountOverflow)?;
@@ -72,6 +80,8 @@ mod tests {
             vat_code: None,
             description: None,
             party_no: None,
+            avdeling: None,
+            prosjekt: None,
         }
     }
 

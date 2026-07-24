@@ -19,6 +19,8 @@ pub struct InvoiceLineDraft {
     pub quantity_milli: i64,
     pub unit_price_ore: i64,
     pub vat_code: Option<String>,
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 #[derive(Debug)]
@@ -79,6 +81,8 @@ async fn resolve_lines(
             unit_price_ore: line.unit_price_ore,
             vat_code: line.vat_code.clone(),
             rate_bp,
+            avdeling: line.avdeling.clone(),
+            prosjekt: line.prosjekt.clone(),
         });
     }
     Ok(resolved)
@@ -173,8 +177,9 @@ pub async fn create_invoice(
     for (i, (line, amounts)) in lines.iter().zip(&computed.lines).enumerate() {
         sqlx::query(
             "insert into invoice_line (id, invoice_id, line_no, description, account_number,
-                                       quantity_milli, unit_price_ore, net_ore, vat_code, vat_ore)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                                       quantity_milli, unit_price_ore, net_ore, vat_code, vat_ore,
+                                       avdeling, prosjekt)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
         .bind(Uuid::now_v7())
         .bind(invoice_id)
@@ -186,6 +191,8 @@ pub async fn create_invoice(
         .bind(amounts.net_ore)
         .bind(&line.vat_code)
         .bind(amounts.vat_ore)
+        .bind(&line.avdeling)
+        .bind(&line.prosjekt)
         .execute(&mut *tx)
         .await?;
     }
@@ -232,6 +239,7 @@ pub async fn credit_invoice(
 
     let line_rows = sqlx::query(
         "select l.description, l.account_number, l.quantity_milli, l.unit_price_ore, l.vat_code,
+                l.avdeling, l.prosjekt,
                 v.voucher_date, i.due_date, j.code as journal_code,
                 (select a.number from entry e join account a on a.id = e.account_id
                  where e.id = i.receivable_entry_id) as receivable_account
@@ -265,6 +273,8 @@ pub async fn credit_invoice(
                 quantity_milli: -r.get::<i64, _>("quantity_milli"),
                 unit_price_ore: r.get("unit_price_ore"),
                 vat_code: r.get("vat_code"),
+                avdeling: r.get("avdeling"),
+                prosjekt: r.get("prosjekt"),
             })
             .collect(),
     };

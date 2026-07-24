@@ -210,6 +210,9 @@ pub struct PeriodQuery {
     from: NaiveDate,
     to: NaiveDate,
     account: Option<String>,
+    /// Dimension filters (resultat per avdeling/prosjekt).
+    avdeling: Option<String>,
+    prosjekt: Option<String>,
 }
 
 fn check_period(from: NaiveDate, to: NaiveDate) -> Result<(), ApiError> {
@@ -266,6 +269,8 @@ pub async fn kontospesifikasjon(
             "amount_ore": p.amount_ore,
             "saldo_ore": p.saldo_ore,
             "party_no": p.party_no,
+            "avdeling": p.avdeling,
+            "prosjekt": p.prosjekt,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -318,13 +323,22 @@ pub async fn resultat(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id).await?;
     check_period(query.from, query.to)?;
-    let lines =
-        regnmed_db::saldo_lines(&state.pool, company_id, Some(query.from), query.to).await?;
+    let lines = regnmed_db::saldo_lines(
+        &state.pool,
+        company_id,
+        Some(query.from),
+        query.to,
+        query.avdeling.as_deref(),
+        query.prosjekt.as_deref(),
+    )
+    .await?;
     let r = regnmed_core::regnskap::resultat(&lines);
     Ok(Json(json!({
         "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
         "driftsresultat_ore": r.driftsresultat_ore,
         "arsresultat_ore": r.arsresultat_ore,
+        "avdeling": query.avdeling,
+        "prosjekt": query.prosjekt,
     })))
 }
 
@@ -340,7 +354,8 @@ pub async fn balanse(
     Query(query): Query<DateQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id).await?;
-    let lines = regnmed_db::saldo_lines(&state.pool, company_id, None, query.date).await?;
+    let lines =
+        regnmed_db::saldo_lines(&state.pool, company_id, None, query.date, None, None).await?;
     let b = regnmed_core::regnskap::balanse(&lines);
     Ok(Json(json!({
         "eiendeler": seksjon_json(&b.eiendeler),

@@ -73,6 +73,8 @@ async fn seed(state: &AppState, sub: &str) -> Uuid {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -80,6 +82,8 @@ async fn seed(state: &AppState, sub: &str) -> Uuid {
                 vat_code: Some("3".into()),
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
@@ -87,6 +91,8 @@ async fn seed(state: &AppState, sub: &str) -> Uuid {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     };

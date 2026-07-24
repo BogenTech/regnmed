@@ -34,7 +34,21 @@ pub struct SaftInput {
     pub customers: Vec<SaftParty>,
     pub suppliers: Vec<SaftParty>,
     pub tax_codes: Vec<SaftTaxCode>,
+    /// Dimension registry (avdeling/prosjekt) → AnalysisTypeTable.
+    pub analysis_types: Vec<SaftAnalysisType>,
     pub journals: Vec<SaftJournal>,
+}
+
+/// One dimension registry entry. `analysis_type` is the SAF-T type
+/// code shared by all entries of a kind (regnmed uses "AVD" for
+/// avdeling, "PRO" for prosjekt).
+#[derive(Debug)]
+pub struct SaftAnalysisType {
+    pub analysis_type: String,
+    pub type_description: String,
+    pub id: String,
+    pub id_description: String,
+    pub active: bool,
 }
 
 /// A reskontro party (kunde/leverandør) with its subledger balances.
@@ -102,6 +116,9 @@ pub struct SaftLine {
     /// Reskontro party on the line (kundenummer or leverandørnummer).
     pub customer_id: Option<String>,
     pub supplier_id: Option<String>,
+    /// Dimension codes on the line → Analysis elements ("AVD"/"PRO").
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 /// An account's mapping onto Skatteetaten's grouping code list.
@@ -343,7 +360,39 @@ fn master_files(x: &mut Xml, input: &SaftInput, argang: &KodelisteArgang) {
         x.close("TaxTable");
     }
 
+    // Schema order: AnalysisTypeTable follows TaxTable (and UOMTable).
+    if !input.analysis_types.is_empty() {
+        x.open("AnalysisTypeTable");
+        for at in &input.analysis_types {
+            x.open("AnalysisTypeTableEntry");
+            x.leaf("AnalysisType", &trunc(&at.analysis_type, 9));
+            x.leaf("AnalysisTypeDescription", &trunc(&at.type_description, 256));
+            x.leaf("AnalysisID", &trunc(&at.id, 35));
+            x.leaf("AnalysisIDDescription", &trunc(&at.id_description, 256));
+            x.leaf("Status", if at.active { "Active" } else { "Closed" });
+            x.close("AnalysisTypeTableEntry");
+        }
+        x.close("AnalysisTypeTable");
+    }
+
     x.close("MasterFiles");
+}
+
+/// One Analysis element on a line, with the amount on the line's side —
+/// so per-dimension sums can be read straight from the audit file.
+fn render_analysis(x: &mut Xml, analysis_type: &str, id: &str, amount_ore: i64) {
+    x.open("Analysis");
+    x.leaf("AnalysisType", analysis_type);
+    x.leaf("AnalysisID", &trunc(id, 256));
+    let side = if amount_ore >= 0 {
+        "DebitAnalysisAmount"
+    } else {
+        "CreditAnalysisAmount"
+    };
+    x.open(side);
+    x.leaf("Amount", &amount(amount_ore));
+    x.close(side);
+    x.close("Analysis");
 }
 
 /// Kunde-/leverandørspesifikasjon in the audit file: minimal mandatory
@@ -415,6 +464,13 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 x.open("Line");
                 x.leaf("RecordID", &line.line_no.to_string());
                 x.leaf("AccountID", &line.account_number);
+                // Schema order: Analysis directly after AccountID.
+                if let Some(avdeling) = &line.avdeling {
+                    render_analysis(x, "AVD", avdeling, line.amount_ore);
+                }
+                if let Some(prosjekt) = &line.prosjekt {
+                    render_analysis(x, "PRO", prosjekt, line.amount_ore);
+                }
                 if let Some(customer) = &line.customer_id {
                     x.leaf("CustomerID", customer);
                 }
@@ -553,6 +609,22 @@ mod tests {
                 description: "Utgående mva, alminnelig sats".into(),
                 percent_bp: 2500,
             }],
+            analysis_types: vec![
+                SaftAnalysisType {
+                    analysis_type: "AVD".into(),
+                    type_description: "Avdeling".into(),
+                    id: "100".into(),
+                    id_description: "Oslo".into(),
+                    active: true,
+                },
+                SaftAnalysisType {
+                    analysis_type: "PRO".into(),
+                    type_description: "Prosjekt".into(),
+                    id: "P42".into(),
+                    id_description: "Nybygg".into(),
+                    active: false,
+                },
+            ],
             journals: vec![SaftJournal {
                 code: "GL".into(),
                 name: "Hovedbok".into(),
@@ -574,6 +646,8 @@ mod tests {
                             tax_percent_bp: None,
                             customer_id: Some("10001".into()),
                             supplier_id: None,
+                            avdeling: None,
+                            prosjekt: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -584,6 +658,8 @@ mod tests {
                             tax_percent_bp: Some(2500),
                             customer_id: None,
                             supplier_id: None,
+                            avdeling: Some("100".into()),
+                            prosjekt: Some("P42".into()),
                         },
                         SaftLine {
                             line_no: 3,
@@ -594,6 +670,8 @@ mod tests {
                             tax_percent_bp: None,
                             customer_id: None,
                             supplier_id: None,
+                            avdeling: None,
+                            prosjekt: None,
                         },
                     ],
                 }],

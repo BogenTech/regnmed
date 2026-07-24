@@ -41,6 +41,8 @@ fn foreign_saft_5digit() -> String {
         tax_percent_bp: None,
         customer_id: None,
         supplier_id: None,
+        avdeling: None,
+        prosjekt: None,
     };
     let input = SaftInput {
         orgnr: "923609016".into(),
@@ -61,6 +63,7 @@ fn foreign_saft_5digit() -> String {
         customers: vec![],
         suppliers: vec![],
         tax_codes: vec![],
+        analysis_types: vec![],
         journals: vec![SaftJournal {
             code: "S".into(),
             name: "Salg".into(),

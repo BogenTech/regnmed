@@ -299,6 +299,7 @@ mod tests {
                 description: "Utgående mva".into(),
                 percent_bp: 2500,
             }],
+            analysis_types: vec![],
             journals: vec![SaftJournal {
                 code: "GL".into(),
                 name: "Hovedbok".into(),
@@ -320,6 +321,8 @@ mod tests {
                             tax_percent_bp: None,
                             customer_id: Some("10000".into()),
                             supplier_id: None,
+                            avdeling: None,
+                            prosjekt: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -330,6 +333,8 @@ mod tests {
                             tax_percent_bp: Some(2500),
                             customer_id: None,
                             supplier_id: None,
+                            avdeling: None,
+                            prosjekt: None,
                         },
                     ],
                 }],

@@ -192,10 +192,17 @@ pub async fn post_voucher_in(
     // fails the whole voucher with a clear message instead of a
     // foreign-key error. Reskontro rule: accounts flagged with a
     // reskontro kind require a party of that kind; other accounts refuse
-    // parties.
+    // parties. Dimension rule: a referenced dimension must exist and be
+    // ACTIVE — an avsluttet prosjekt rejects new postings like a locked
+    // period (corrections go via open projects).
     let mut account_ids: Vec<Uuid> = Vec::with_capacity(draft.entries.len());
     let mut party_ids: Vec<Option<Uuid>> = Vec::with_capacity(draft.entries.len());
+    let mut dimension_ids: Vec<(Option<Uuid>, Option<Uuid>)> =
+        Vec::with_capacity(draft.entries.len());
     for (i, entry) in draft.entries.iter().enumerate() {
+        let avdeling_id = resolve_dimension(tx, company_id, i, "avdeling", &entry.avdeling).await?;
+        let prosjekt_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.prosjekt).await?;
+        dimension_ids.push((avdeling_id, prosjekt_id));
         let account = sqlx::query(
             "select id, reskontro_kind from account
              where company_id = $1 and number = $2 and active",
@@ -276,6 +283,8 @@ pub async fn post_voucher_in(
                 vat_code: none_if_empty(&e.vat_code),
                 description: none_if_empty(&e.description),
                 party_no: none_if_empty(&e.party_no),
+                avdeling: none_if_empty(&e.avdeling),
+                prosjekt: none_if_empty(&e.prosjekt),
             })
             .collect(),
     };
@@ -304,17 +313,18 @@ pub async fn post_voucher_in(
     .execute(&mut **tx)
     .await?;
 
-    for (i, ((entry, account_id), party_id)) in draft
+    for (i, (((entry, account_id), party_id), dims)) in draft
         .entries
         .iter()
         .zip(&account_ids)
         .zip(&party_ids)
+        .zip(&dimension_ids)
         .enumerate()
     {
         sqlx::query(
             "insert into entry (id, voucher_id, line_no, account_id, amount_ore, vat_code,
-                                description, party_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)",
+                                description, party_id, avdeling_id, prosjekt_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .bind(Uuid::now_v7())
         .bind(voucher_id)
@@ -324,6 +334,8 @@ pub async fn post_voucher_in(
         .bind(none_if_empty(&entry.vat_code))
         .bind(none_if_empty(&entry.description))
         .bind(party_id)
+        .bind(dims.0)
+        .bind(dims.1)
         .execute(&mut **tx)
         .await?;
     }
@@ -378,10 +390,13 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
 
         let entry_rows = sqlx::query(
             "select e.line_no, a.number as account_number, e.amount_ore, e.vat_code,
-                    e.description, p.party_no
+                    e.description, p.party_no,
+                    da.code as avdeling, dp.code as prosjekt
              from entry e
              join account a on a.id = e.account_id
              left join party p on p.id = e.party_id
+             left join dimension da on da.id = e.avdeling_id
+             left join dimension dp on dp.id = e.prosjekt_id
              where e.voucher_id = $1
              order by e.line_no",
         )
@@ -410,6 +425,8 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
                     vat_code: e.get("vat_code"),
                     description: e.get("description"),
                     party_no: e.get("party_no"),
+                    avdeling: e.get("avdeling"),
+                    prosjekt: e.get("prosjekt"),
                 })
                 .collect(),
         };
@@ -444,6 +461,36 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
     Ok(ChainReport {
         vouchers_checked: vouchers.len() as i64,
     })
+}
+
+/// A referenced dimension must exist and be ACTIVE — an avsluttet
+/// prosjekt/avdeling rejects new postings like a locked period.
+async fn resolve_dimension(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    line_index: usize,
+    kind: &str,
+    code: &Option<String>,
+) -> Result<Option<Uuid>> {
+    let Some(code) = code else {
+        return Ok(None);
+    };
+    let row = sqlx::query(
+        "select id, active from dimension where company_id = $1 and kind = $2 and code = $3",
+    )
+    .bind(company_id)
+    .bind(kind)
+    .bind(code)
+    .fetch_optional(&mut **tx)
+    .await?
+    .with_context(|| format!("entry line {}: no {kind} with code {code}", line_index + 1))?;
+    if !row.get::<bool, _>("active") {
+        bail!(
+            "entry line {}: {kind} {code} is avsluttet — post on an open {kind}",
+            line_index + 1
+        );
+    }
+    Ok(Some(row.get("id")))
 }
 
 fn none_if_empty(value: &Option<String>) -> Option<String> {

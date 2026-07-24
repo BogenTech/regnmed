@@ -24,6 +24,9 @@ pub struct InvoiceLineInput {
     /// Rate valid on the invoice date, resolved by the caller from the
     /// dated rate table. 0 for zero-rate/no-VAT codes.
     pub rate_bp: i64,
+    /// Dimensions for the revenue line (docs/dimensjoner.md).
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 #[derive(Debug)]
@@ -98,6 +101,8 @@ pub fn build_voucher(
         vat_code: None,
         description: None,
         party_no: Some(party_no.to_string()),
+        avdeling: None,
+        prosjekt: None,
     }];
     for (line, amounts) in lines.iter().zip(&computed.lines) {
         entries.push(EntryDraft {
@@ -106,6 +111,8 @@ pub fn build_voucher(
             vat_code: line.vat_code.clone(),
             description: Some(line.description.clone()),
             party_no: None,
+            avdeling: line.avdeling.clone(),
+            prosjekt: line.prosjekt.clone(),
         });
     }
     if computed.vat_ore != 0 {
@@ -115,6 +122,8 @@ pub fn build_voucher(
             vat_code: None,
             description: None,
             party_no: None,
+            avdeling: None,
+            prosjekt: None,
         });
     }
     let draft = VoucherDraft {
@@ -141,6 +150,8 @@ mod tests {
                 unit_price_ore: 4_000_00,
                 vat_code: Some("3".into()),
                 rate_bp: 2500,
+                avdeling: Some("100".into()),
+                prosjekt: Some("P42".into()),
             },
             InvoiceLineInput {
                 description: "Bøker".into(),
@@ -149,6 +160,8 @@ mod tests {
                 unit_price_ore: 500_00,
                 vat_code: Some("5".into()),
                 rate_bp: 0,
+                avdeling: None,
+                prosjekt: None,
             },
         ]
     }

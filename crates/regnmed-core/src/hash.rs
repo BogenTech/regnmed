@@ -20,6 +20,10 @@
 //!   party number (kundenummer/leverandørnummer, empty when none) after
 //!   the description — so reassigning a receivable to another customer
 //!   breaks the chain like any other tampering.
+//! - **v3**: `"v3"` marker; each entry additionally carries its
+//!   avdeling and prosjekt dimension codes (empty when none) after the
+//!   party number — so moving a cost to another prosjekt breaks the
+//!   chain like any other tampering.
 //!
 //! A version is never edited, only superseded; the golden tests pin one
 //! digest per version.
@@ -39,12 +43,12 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
 pub const GENESIS_HASH: [u8; 32] = [0u8; 32];
 
 /// Current format for new postings.
-pub const HASH_VERSION_CURRENT: i16 = 2;
+pub const HASH_VERSION_CURRENT: i16 = 3;
 
 /// The full business content of a voucher, as covered by its chain hash.
 #[derive(Debug, Clone)]
 pub struct VoucherHashInput {
-    /// Which frozen serialization hashed this voucher (1 or 2).
+    /// Which frozen serialization hashed this voucher (1, 2 or 3).
     pub hash_version: i16,
     pub company_id: Uuid,
     pub chain_seq: i64,
@@ -69,8 +73,11 @@ pub struct EntryHashInput {
     pub vat_code: Option<String>,
     /// Empty strings are normalized to `None` before hashing and storing.
     pub description: Option<String>,
-    /// Reskontro party number — v2 only; v1 vouchers have none.
+    /// Reskontro party number — v2+; v1 vouchers have none.
     pub party_no: Option<String>,
+    /// Dimension codes — v3 only; earlier vouchers have none.
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 /// `hash = SHA-256(prev_hash || canonical(voucher))`, per the voucher's
@@ -79,10 +86,11 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
     let mut buf = Vec::with_capacity(512);
     push_field(&mut buf, prev_hash);
     if v.hash_version >= 2 {
-        // Version marker: v2 streams can never collide with v1 streams,
-        // whose first field is always a 32-byte prev-hash... which this
-        // marker field's length prefix ("2:") already differs from.
-        push_field(&mut buf, b"v2");
+        // Version marker: v2/v3 streams can never collide with v1
+        // streams, whose first field is always a 32-byte prev-hash...
+        // which this marker field's length prefix ("2:") already
+        // differs from.
+        push_field(&mut buf, if v.hash_version >= 3 { b"v3" } else { b"v2" });
     }
     push_field(&mut buf, v.company_id.as_bytes());
     push_field(&mut buf, v.chain_seq.to_string().as_bytes());
@@ -106,6 +114,10 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
         push_field(&mut buf, e.description.as_deref().unwrap_or("").as_bytes());
         if v.hash_version >= 2 {
             push_field(&mut buf, e.party_no.as_deref().unwrap_or("").as_bytes());
+        }
+        if v.hash_version >= 3 {
+            push_field(&mut buf, e.avdeling.as_deref().unwrap_or("").as_bytes());
+            push_field(&mut buf, e.prosjekt.as_deref().unwrap_or("").as_bytes());
         }
     }
     Sha256::digest(&buf).into()
@@ -161,6 +173,8 @@ mod tests {
                     vat_code: None,
                     description: None,
                     party_no: None,
+                    avdeling: None,
+                    prosjekt: None,
                 },
                 EntryHashInput {
                     line_no: 2,
@@ -169,6 +183,8 @@ mod tests {
                     vat_code: Some("3".into()),
                     description: None,
                     party_no: None,
+                    avdeling: None,
+                    prosjekt: None,
                 },
             ],
         }
@@ -179,6 +195,14 @@ mod tests {
         v.hash_version = 2;
         v.entries[0].account_number = "1500".into();
         v.entries[0].party_no = Some("10001".into());
+        v
+    }
+
+    fn sample_v3() -> VoucherHashInput {
+        let mut v = sample_v2();
+        v.hash_version = 3;
+        v.entries[1].avdeling = Some("100".into());
+        v.entries[1].prosjekt = Some("P42".into());
         v
     }
 
@@ -220,6 +244,43 @@ mod tests {
         assert_eq!(
             v2.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             "ff271302ffd635d1d229e461d8200001781fcf67287407fa03487190b3e664d7"
+        );
+        let v3 = chain_hash(&GENESIS_HASH, &sample_v3());
+        assert_eq!(
+            v3.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "bed11f106ab66b048b08b8ded36dab5c38b5c944c2273e551f462eee63740a43"
+        );
+    }
+
+    /// Dimension bindings are inside the v3 hash: moving a cost line to
+    /// another prosjekt or avdeling is tampering like any other. And the
+    /// same content hashed as v2 vs v3 must differ (version marker).
+    #[test]
+    fn v3_hashes_the_dimensions_and_differs_from_v2() {
+        let original = chain_hash(&GENESIS_HASH, &sample_v3());
+        let mut moved = sample_v3();
+        moved.entries[1].prosjekt = Some("P43".into());
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &moved));
+        let mut moved = sample_v3();
+        moved.entries[1].avdeling = Some("200".into());
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &moved));
+        // avdeling and prosjekt are separate fields — swapping which one
+        // carries the code must change the hash (netstring framing).
+        let mut swapped = sample_v3();
+        swapped.entries[1].avdeling = Some("P42".into());
+        swapped.entries[1].prosjekt = Some("100".into());
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &swapped));
+
+        let mut as_v2 = sample_v3();
+        as_v2.hash_version = 2;
+        as_v2.entries[1].avdeling = None;
+        as_v2.entries[1].prosjekt = None;
+        let mut as_v3_no_dims = sample_v3();
+        as_v3_no_dims.entries[1].avdeling = None;
+        as_v3_no_dims.entries[1].prosjekt = None;
+        assert_ne!(
+            chain_hash(&GENESIS_HASH, &as_v2),
+            chain_hash(&GENESIS_HASH, &as_v3_no_dims)
         );
     }
 

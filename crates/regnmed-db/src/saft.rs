@@ -6,7 +6,8 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use regnmed_core::saft::{
-    SaftAccount, SaftInput, SaftJournal, SaftLine, SaftParty, SaftTaxCode, SaftTransaction,
+    SaftAccount, SaftAnalysisType, SaftInput, SaftJournal, SaftLine, SaftParty, SaftTaxCode,
+    SaftTransaction,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -118,6 +119,33 @@ pub async fn load_saft_input(
     })
     .collect();
 
+    // Dimension registry → AnalysisTypeTable ("AVD"/"PRO" type codes,
+    // docs/dimensjoner.md).
+    let analysis_types = sqlx::query(
+        "select kind, code, name, active from dimension
+         where company_id = $1 order by kind, code",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|row| {
+        let kind: String = row.get("kind");
+        let (analysis_type, type_description) = if kind == "avdeling" {
+            ("AVD", "Avdeling")
+        } else {
+            ("PRO", "Prosjekt")
+        };
+        SaftAnalysisType {
+            analysis_type: analysis_type.into(),
+            type_description: type_description.into(),
+            id: row.get("code"),
+            id_description: row.get("name"),
+            active: row.get("active"),
+        }
+    })
+    .collect();
+
     let voucher_rows = sqlx::query(
         "select j.code as journal_code, j.name as journal_name,
                 v.id, v.fiscal_year, v.voucher_number, v.voucher_date, v.description,
@@ -138,11 +166,14 @@ pub async fn load_saft_input(
     let line_rows = sqlx::query(
         "select e.voucher_id, e.line_no, a.number as account_number,
                 e.amount_ore, e.vat_code, e.description, r.rate_bp,
-                p.party_no, p.kind as party_kind
+                p.party_no, p.kind as party_kind,
+                da.code as avdeling, dp.code as prosjekt
          from entry e
          join voucher v on v.id = e.voucher_id
          join account a on a.id = e.account_id
          left join party p on p.id = e.party_id
+         left join dimension da on da.id = e.avdeling_id
+         left join dimension dp on dp.id = e.prosjekt_id
          left join vat_code vc on vc.code = e.vat_code
          left join lateral (
              select rate_bp from vat_rate
@@ -179,6 +210,8 @@ pub async fn load_saft_input(
                     Some("leverandor") => row.get("party_no"),
                     _ => None,
                 },
+                avdeling: row.get("avdeling"),
+                prosjekt: row.get("prosjekt"),
             });
     }
 
@@ -229,6 +262,7 @@ pub async fn load_saft_input(
         customers,
         suppliers,
         tax_codes,
+        analysis_types,
         journals,
     })
 }

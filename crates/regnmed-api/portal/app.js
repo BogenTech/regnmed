@@ -431,10 +431,12 @@
       api("/companies/" + id + "/invoices"),
       api("/companies/" + id + "/parties?kind=kunde"),
       api("/companies/" + id + "/invoices/overdue").catch(function () { return { invoices: [], buckets: {} }; }),
+      api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
     var overdue = results[2];
+    var dims = results[3].dimensions;
     var rows = invoices.map(function (i) {
       var action = !i.is_credit_note && i.remaining_ore !== 0
         ? '<button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>'
@@ -464,6 +466,11 @@
         '<option value="3">3 — 25 %</option><option value="31">31 — 15 %</option>' +
         '<option value="33">33 — 12 %</option><option value="5">5 — fritatt</option>' +
         '<option value="6">6 — utenfor</option></select></div>' +
+        (dims.length
+          ? '<div class="flex gap-2" id="invoice-dims">' +
+            dimSelect(dims, "avdeling", "select select-bordered flex-1", "avdeling") +
+            dimSelect(dims, "prosjekt", "select select-bordered flex-1", "prosjekt") + "</div>"
+          : "") +
         '<button class="btn btn-primary">Opprett faktura</button></form>';
     var stegNavn = { paminnelse: "påminnelse", purring: "purring", inkassovarsel: "inkassovarsel" };
     var nesteSteg = { paminnelse: "purring", purring: "inkassovarsel", inkassovarsel: "inkassovarsel" };
@@ -509,6 +516,14 @@
             quantity_milli: Math.round(Number(String(d.get("quantity")).replace(",", ".")) * 1000),
             unit_price_ore: parseKr(d.get("unit_price")),
             vat_code: d.get("vat_code"),
+            avdeling: (function () {
+              var s = form_.querySelector('#invoice-dims [data-f="avdeling"]');
+              return s && s.value ? s.value : null;
+            })(),
+            prosjekt: (function () {
+              var s = form_.querySelector('#invoice-dims [data-f="prosjekt"]');
+              return s && s.value ? s.value : null;
+            })(),
           }],
         });
         toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);
@@ -729,11 +744,14 @@
   async function renderRapporter(id) {
     var year = new Date().getFullYear();
     var rapport = "saldobalanse";
+    var dimFilter = { avdeling: "", prosjekt: "" };
     var hash = location.hash.split("?")[1];
     if (hash) {
       var params = new URLSearchParams(hash);
       year = Number(params.get("year") || year);
       rapport = params.get("rapport") || rapport;
+      dimFilter.avdeling = params.get("avdeling") || "";
+      dimFilter.prosjekt = params.get("prosjekt") || "";
     }
     var from = year + "-01-01", to = year + "-12-31";
     var tabs = [
@@ -772,8 +790,29 @@
         }).join("") + "</tbody></table>";
     } else if (rapport === "resultat") {
       title = "Resultatregnskap " + year;
-      var r = await api("/companies/" + id + "/reports/resultat?from=" + from + "&to=" + to);
-      body = '<table class="table table-sm"><tbody>' +
+      var filterQuery = (dimFilter.avdeling ? "&avdeling=" + encodeURIComponent(dimFilter.avdeling) : "") +
+        (dimFilter.prosjekt ? "&prosjekt=" + encodeURIComponent(dimFilter.prosjekt) : "");
+      var resultatData = await Promise.all([
+        api("/companies/" + id + "/reports/resultat?from=" + from + "&to=" + to + filterQuery),
+        api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
+      ]);
+      var r = resultatData[0];
+      var rDims = resultatData[1].dimensions;
+      var dimPicker = function (kind) {
+        var all = rDims.filter(function (d) { return d.kind === kind; });
+        if (!all.length) return "";
+        return '<select class="select select-sm select-bordered" data-resultat-dim="' + kind + '">' +
+          '<option value="">Alle ' + (kind === "avdeling" ? "avdelinger" : "prosjekter") + "</option>" +
+          all.map(function (d) {
+            return '<option value="' + esc(d.code) + '"' +
+              (dimFilter[kind] === d.code ? " selected" : "") + ">" +
+              esc(d.code) + " " + esc(d.name) + (d.active ? "" : " (avsluttet)") + "</option>";
+          }).join("") + "</select>";
+      };
+      body = (rDims.length
+          ? '<div class="flex gap-2 mb-3">' + dimPicker("avdeling") + dimPicker("prosjekt") + "</div>"
+          : "") +
+        '<table class="table table-sm"><tbody>' +
         r.seksjoner.map(seksjonRows).join("") +
         "<tr class='font-bold'><td></td><td>Driftsresultat</td><td class='text-right'>" +
         kr(r.driftsresultat_ore) + "</td></tr>" +
@@ -794,8 +833,11 @@
       body = '<table class="table table-sm"><thead><tr><th>Konto</th><th>Bilag</th><th>Dato</th>' +
         "<th>Tekst</th><th class='text-right'>Beløp</th><th class='text-right'>Saldo</th></tr></thead><tbody>" +
         ks.posts.map(function (p) {
+          var badges = (p.party_no ? ' <span class="opacity-60">(' + esc(p.party_no) + ")</span>" : "") +
+            (p.avdeling ? ' <span class="badge badge-ghost badge-xs">' + esc(p.avdeling) + "</span>" : "") +
+            (p.prosjekt ? ' <span class="badge badge-ghost badge-xs">' + esc(p.prosjekt) + "</span>" : "");
           return "<tr><td>" + esc(p.account) + "</td><td>" + esc(p.bilag) + "</td><td>" + esc(p.date) +
-            "</td><td>" + esc(p.description) + (p.party_no ? ' <span class="opacity-60">(' + esc(p.party_no) + ")</span>" : "") +
+            "</td><td>" + esc(p.description) + badges +
             "</td><td class='text-right'>" + kr(p.amount_ore) +
             "</td><td class='text-right'>" + kr(p.saldo_ore) + "</td></tr>";
         }).join("") + "</tbody></table>";
@@ -841,6 +883,15 @@
     }
     shell(id, "rapporter", card(title,
       '<div class="flex gap-2 flex-wrap mb-4"><div class="join">' + tabs + "</div>" + yearNav + "</div>" + body));
+    app.querySelectorAll("[data-resultat-dim]").forEach(function (select) {
+      select.onchange = function () {
+        dimFilter[select.dataset.resultatDim] = select.value;
+        var query = "rapport=resultat&year=" + year +
+          (dimFilter.avdeling ? "&avdeling=" + encodeURIComponent(dimFilter.avdeling) : "") +
+          (dimFilter.prosjekt ? "&prosjekt=" + encodeURIComponent(dimFilter.prosjekt) : "");
+        location.hash = "#/c/" + id + "/rapporter?" + query;
+      };
+    });
     var dlRevisjon = document.getElementById("dl-revisjon");
     if (dlRevisjon) dlRevisjon.onclick = async function () {
       try {
@@ -914,13 +965,26 @@
     });
   }
 
+  // Active dimensions as <select> options; empty string = no dimension.
+  function dimSelect(dims, kind, cls, dataF) {
+    var active = dims.filter(function (d) { return d.kind === kind && d.active; });
+    if (!active.length) return "";
+    return '<select class="' + cls + '" data-f="' + dataF + '" title="' + kind + '">' +
+      '<option value="">(' + kind + ")</option>" +
+      active.map(function (d) {
+        return '<option value="' + esc(d.code) + '">' + esc(d.code) + " " + esc(d.name) + "</option>";
+      }).join("") + "</select>";
+  }
+
   async function renderBilag(id) {
     var results = await Promise.all([
       api("/companies/" + id + "/vouchers"),
       api("/companies/" + id + "/inbox"),
+      api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
     ]);
     var vouchers = results[0].vouchers;
     var inbox = results[1].documents;
+    var dims = results[2].dimensions;
     var open = inbox.filter(function (d) { return d.status === "ny"; });
     var decided = inbox.filter(function (d) { return d.status !== "ny"; });
     var inboxRows = open.map(function (d) {
@@ -948,9 +1012,52 @@
         '<input type="file" class="hidden" data-attach="' + v.voucher_id + '"></label> ' +
         '<button class="btn btn-xs btn-ghost" data-list="' + v.voucher_id + '">Vis</button></td></tr>';
     }).join("");
+    var dimRows = dims.map(function (d) {
+      return "<tr" + (d.active ? "" : ' class="opacity-50"') + "><td>" + esc(d.kind) + "</td><td>" +
+        esc(d.code) + "</td><td>" + esc(d.name) + "</td><td>" +
+        '<button class="btn btn-xs btn-ghost" data-dim-toggle="' + esc(d.kind) + ":" + esc(d.code) +
+        '" data-active="' + d.active + '">' + (d.active ? "Avslutt" : "Gjenåpne") + "</button></td></tr>";
+    }).join("");
+    var dimCard = card("Dimensjoner — avdeling og prosjekt",
+      '<p class="text-sm opacity-70 mb-2">Koden er permanent (den inngår i bilagshashen); navnet kan endres, ' +
+      "og avsluttede dimensjoner avviser nye posteringer.</p>" +
+      (dims.length
+        ? '<table class="table table-xs mb-2"><thead><tr><th>Type</th><th>Kode</th><th>Navn</th><th></th></tr></thead>' +
+          "<tbody>" + dimRows + "</tbody></table>"
+        : "") +
+      '<div class="flex gap-2">' +
+      '<select id="dim-kind" class="select select-sm select-bordered">' +
+      '<option value="avdeling">avdeling</option><option value="prosjekt">prosjekt</option></select>' +
+      '<input id="dim-code" class="input input-sm input-bordered w-24" placeholder="Kode">' +
+      '<input id="dim-name" class="input input-sm input-bordered" placeholder="Navn">' +
+      '<button id="dim-create" class="btn btn-sm">Opprett</button></div>');
     shell(id, "bilag", inboxCard + card("Bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th><th></th></tr></thead>' +
-      "<tbody>" + rows + "</tbody></table><div id='attachment-list' class='mt-4'></div>"));
+      "<tbody>" + rows + "</tbody></table><div id='attachment-list' class='mt-4'></div>") + dimCard);
+    document.getElementById("dim-create").onclick = async function () {
+      try {
+        await post("/companies/" + id + "/dimensions", {
+          kind: document.getElementById("dim-kind").value,
+          code: document.getElementById("dim-code").value.trim(),
+          name: document.getElementById("dim-name").value.trim(),
+        });
+        toast("Dimensjon opprettet", true);
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-dim-toggle]").forEach(function (button) {
+      button.onclick = async function () {
+        var parts = button.dataset.dimToggle.split(":");
+        try {
+          await api("/companies/" + id + "/dimensions/" + parts[0] + "/" + encodeURIComponent(parts[1]), {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ active: button.dataset.active !== "true" }),
+          });
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
     var inboxUpload = document.getElementById("inbox-upload");
     if (inboxUpload) inboxUpload.onchange = async function () {
       var file = inboxUpload.files[0];
@@ -999,6 +1106,8 @@
             '<input class="input input-sm input-bordered w-24" placeholder="Konto" data-f="account">' +
             '<input class="input input-sm input-bordered w-32" placeholder="Beløp (f.eks. -125,50)" data-f="amount">' +
             '<input class="input input-sm input-bordered w-16" placeholder="Mva" data-f="vat">' +
+            dimSelect(dims, "avdeling", "select select-sm select-bordered w-28", "avdeling") +
+            dimSelect(dims, "prosjekt", "select select-sm select-bordered w-28", "prosjekt") +
             "</div>";
         }
         target.innerHTML = '<div class="border border-base-300 rounded-lg p-3">' +
@@ -1021,7 +1130,14 @@
             if (!account || !amount) return;
             var ore = Math.round(Number(amount.replace(",", ".")) * 100);
             var vat = row.querySelector('[data-f="vat"]').value.trim();
-            lines.push({ account: account, amount_ore: ore, vat_code: vat || null });
+            var dimValue = function (name) {
+              var select = row.querySelector('[data-f="' + name + '"]');
+              return select && select.value ? select.value : null;
+            };
+            lines.push({
+              account: account, amount_ore: ore, vat_code: vat || null,
+              avdeling: dimValue("avdeling"), prosjekt: dimValue("prosjekt"),
+            });
           });
           try {
             var posted = await post("/companies/" + id + "/inbox/" + docId + "/bokfor", {

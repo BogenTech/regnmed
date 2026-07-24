@@ -62,6 +62,8 @@ fn sale(date: NaiveDate, ore: i64, vat_code: Option<&str>) -> VoucherDraft {
                 vat_code: None,
                 description: None,
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -69,6 +71,8 @@ fn sale(date: NaiveDate, ore: i64, vat_code: Option<&str>) -> VoucherDraft {
                 vat_code: vat_code.map(str::to_owned),
                 description: Some("Salg".into()),
                 party_no: None,
+                avdeling: None,
+                prosjekt: None,
             },
         ],
     }

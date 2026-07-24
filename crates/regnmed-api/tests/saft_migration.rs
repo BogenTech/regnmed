@@ -35,6 +35,8 @@ fn foreign_saft() -> String {
             tax_percent_bp: vat.map(|_| 2500),
             customer_id: customer.map(str::to_owned),
             supplier_id: None,
+            avdeling: None,
+            prosjekt: None,
         };
     let input = SaftInput {
         orgnr: "923609016".into(),
@@ -103,6 +105,7 @@ fn foreign_saft() -> String {
             description: "Utgående mva".into(),
             percent_bp: 2500,
         }],
+        analysis_types: vec![],
         journals: vec![SaftJournal {
             code: "SALG".into(),
             name: "Salgsjournal".into(),

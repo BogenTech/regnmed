@@ -18,7 +18,7 @@ The specifications and where they live:
 | Kunde-/leverandørspesifikasjon | `GET …/parties/{pid}/items` | reskontro ([reskontro.md](reskontro.md)) |
 | Mva-spesifikasjon | `GET …/reports/mva?year=&termin=` | dated rates ([mva.md](mva.md)) |
 | Saldobalanse | `GET …/reports/saldobalanse?from=&to=` | per account: inngående, debet, kredit, utgående |
-| Resultatregnskap | `GET …/reports/resultat?from=&to=` | NS 4102 classes 3–8 |
+| Resultatregnskap | `GET …/reports/resultat?from=&to=` (optional `avdeling=`/`prosjekt=` — resultat per dimensjon, docs/dimensjoner.md) | NS 4102 classes 3–8 |
 | Balanse | `GET …/reports/balanse?date=` | NS 4102 classes 1–2 + udisponert resultat |
 
 All endpoints follow the standard guard: any access level may read

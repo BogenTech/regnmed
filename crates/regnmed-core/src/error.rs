@@ -14,6 +14,9 @@ pub enum LedgerError {
     #[error("entry line {0} has an empty party number — use None for no party")]
     EmptyPartyNo(usize),
 
+    #[error("entry line {0} has an empty dimension code — use None for no dimension")]
+    EmptyDimension(usize),
+
     #[error("voucher does not balance: entries sum to {0} øre, expected 0")]
     Unbalanced(i64),
 

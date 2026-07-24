@@ -42,6 +42,9 @@ pub struct InvoiceLineRequest {
     quantity_milli: Option<i64>,
     unit_price_ore: i64,
     vat_code: Option<String>,
+    /// Dimension codes (docs/dimensjoner.md) for the revenue line.
+    avdeling: Option<String>,
+    prosjekt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +95,8 @@ pub async fn create_invoice(
                 quantity_milli: line.quantity_milli.unwrap_or(1000),
                 unit_price_ore: line.unit_price_ore,
                 vat_code: line.vat_code,
+                avdeling: line.avdeling,
+                prosjekt: line.prosjekt,
             })
             .collect(),
     };

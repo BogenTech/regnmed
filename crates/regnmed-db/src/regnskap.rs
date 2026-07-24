@@ -67,25 +67,35 @@ pub async fn saldobalanse(
 
 /// Saldo per account from day one through `to` (ledger sign) — the input
 /// to resultat/balanse. For resultat, pass the period's `from` too.
+/// Optional dimension filters restrict to entries carrying that
+/// avdeling/prosjekt code — resultat per dimensjon, same pure SUM.
 pub async fn saldo_lines(
     pool: &PgPool,
     company_id: Uuid,
     from: Option<NaiveDate>,
     to: NaiveDate,
+    avdeling: Option<&str>,
+    prosjekt: Option<&str>,
 ) -> Result<Vec<SaldoLine>> {
     let rows = sqlx::query(
         "select a.number, a.name, sum(e.amount_ore)::bigint as saldo
          from account a
          join entry e on e.account_id = a.id
          join voucher v on v.id = e.voucher_id
+         left join dimension da on da.id = e.avdeling_id
+         left join dimension dp on dp.id = e.prosjekt_id
          where a.company_id = $1 and v.voucher_date <= $3
            and ($2::date is null or v.voucher_date >= $2)
+           and ($4::text is null or da.code = $4)
+           and ($5::text is null or dp.code = $5)
          group by a.number, a.name
          order by a.number",
     )
     .bind(company_id)
     .bind(from)
     .bind(to)
+    .bind(avdeling)
+    .bind(prosjekt)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -114,6 +124,8 @@ pub struct KontoPost {
     /// period's inngående saldo.
     pub saldo_ore: i64,
     pub party_no: Option<String>,
+    pub avdeling: Option<String>,
+    pub prosjekt: Option<String>,
 }
 
 /// Kontospesifikasjon: every posting per account in date/bilag order,
@@ -131,6 +143,7 @@ pub async fn kontospesifikasjon(
                 v.fiscal_year, v.voucher_number, v.voucher_date,
                 coalesce(e.description, v.description) as description,
                 e.amount_ore, p.party_no,
+                da.code as avdeling, dp.code as prosjekt,
                 ib.saldo as inngaende,
                 sum(e.amount_ore) over (partition by a.number
                     order by v.voucher_date, v.chain_seq, e.line_no)::bigint as bevegelse
@@ -139,6 +152,8 @@ pub async fn kontospesifikasjon(
          join journal j on j.id = v.journal_id
          join account a on a.id = e.account_id
          left join party p on p.id = e.party_id
+         left join dimension da on da.id = e.avdeling_id
+         left join dimension dp on dp.id = e.prosjekt_id
          left join lateral (
              select coalesce(sum(e2.amount_ore), 0)::bigint as saldo
              from entry e2 join voucher v2 on v2.id = e2.voucher_id
@@ -168,6 +183,8 @@ pub async fn kontospesifikasjon(
             amount_ore: r.get("amount_ore"),
             saldo_ore: r.get::<i64, _>("inngaende") + r.get::<i64, _>("bevegelse"),
             party_no: r.get("party_no"),
+            avdeling: r.get("avdeling"),
+            prosjekt: r.get("prosjekt"),
         })
         .collect())
 }
