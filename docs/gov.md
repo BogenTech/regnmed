@@ -29,10 +29,10 @@ ever** — keys live outside git and outside container images.
 
 ### Operational setup (one-time, per environment)
 
-**Status:** informasjonsskjema submitted to Digdir 2026-07-23 (step 1
-below done) — awaiting Samarbeidsportalen access. Next actions when the
-invitation arrives are steps 2–4; the Skatteetaten scope request runs
-as a separate queue.
+**Status:** Samarbeidsportalen access obtained 2026-07-24 (step 1 below
+done). Next actions are steps 2–4: create the test client + key,
+request the Skatteetaten scope (separate queue, can run in parallel),
+then run the live validation round-trip.
 
 1. Get access to Digdir's **Samarbeidsportalen** (requires the
    organization's Altinn roles).
