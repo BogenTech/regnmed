@@ -8,6 +8,7 @@ pub mod dimension;
 pub mod engagement;
 pub mod innboks;
 pub mod invoice;
+pub mod invoice_template;
 pub mod mailq;
 pub mod marketplace;
 pub mod ocr;
@@ -217,6 +218,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/parties/{party_id}/contact",
             axum::routing::put(settings::update_party_contact),
+        )
+        .route(
+            "/companies/{company_id}/invoice-templates",
+            get(invoice_template::list).post(invoice_template::create),
+        )
+        .route(
+            "/companies/{company_id}/invoice-templates/{template_id}",
+            axum::routing::put(invoice_template::update),
+        )
+        .route(
+            "/companies/{company_id}/invoice-templates/{template_id}/generate",
+            axum::routing::post(invoice_template::generate),
+        )
+        .route(
+            "/companies/{company_id}/invoice-templates/{template_id}/runs",
+            get(invoice_template::runs),
         )
         .route(
             "/companies/{company_id}/invoices/overdue",

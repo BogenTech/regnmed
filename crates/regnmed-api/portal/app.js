@@ -463,15 +463,19 @@
       api("/companies/" + id + "/parties?kind=kunde"),
       api("/companies/" + id + "/invoices/overdue").catch(function () { return { invoices: [], buckets: {} }; }),
       api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
+      api("/companies/" + id + "/invoice-templates").catch(function () { return { templates: [] }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
     var overdue = results[2];
     var dims = results[3].dimensions;
+    var templates = results[4].templates;
     var rows = invoices.map(function (i) {
       var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
         '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>' +
-        ' <button class="btn btn-xs btn-ghost" data-send="' + i.invoice_id + '">Send</button>';
+        ' <button class="btn btn-xs btn-ghost" data-send="' + i.invoice_id + '">Send</button>' +
+        (i.is_credit_note ? "" : ' <button class="btn btn-xs btn-ghost" data-repeat="' + i.invoice_id +
+          '" title="Opprett repeterende mal fra denne">Gjenta</button>');
       if (!i.is_credit_note && i.remaining_ore !== 0) {
         action += ' <button class="btn btn-xs btn-outline" data-credit="' + i.invoice_id + '">Kreditnota</button>';
       }
@@ -528,8 +532,27 @@
         "<th>Alder</th><th class='text-right'>Utestående</th><th>Siste skritt</th><th></th></tr></thead>" +
         "<tbody>" + overdueRows + "</tbody></table>" +
         '<div id="purring-form"></div>');
+    var intervallNavn = { manedlig: "månedlig", kvartalsvis: "kvartalsvis", arlig: "årlig" };
+    var templateRows = templates.map(function (t) {
+      return "<tr" + (t.active ? "" : ' class="opacity-50"') + "><td>" + esc(t.party_name) + "</td><td>" +
+        esc(intervallNavn[t.intervall] || t.intervall) + "</td><td>" + esc(t.neste_dato) +
+        (t.slutt_dato ? " <span class='opacity-60'>(til " + esc(t.slutt_dato) + ")</span>" : "") +
+        "</td><td class='text-right'>" + kr(t.sum_netto_ore) + "</td><td>" + t.runs +
+        (t.merk_utsendelse ? ' <span class="badge badge-ghost badge-xs">utsendelse</span>' : "") + "</td><td>" +
+        '<button class="btn btn-xs btn-outline" data-tpl-generate="' + t.template_id + '">Generer nå</button> ' +
+        '<button class="btn btn-xs btn-ghost" data-tpl-toggle="' + t.template_id + '" data-active="' + t.active + '">' +
+        (t.active ? "Stopp" : "Start") + "</button></td></tr>";
+    }).join("");
+    var templateCard = templates.length === 0 ? "" :
+      card("Repeterende fakturaer",
+        '<p class="text-sm opacity-70 mb-2">Genereres automatisk hver natt når neste dato passeres — som ordinære ' +
+        "fakturaer med løpenummer, KID og PDF. Bruk {måned} og {år} i linjeteksten for periodetekst.</p>" +
+        '<table class="table table-sm"><thead><tr><th>Kunde</th><th>Intervall</th><th>Neste</th>' +
+        "<th class='text-right'>Netto</th><th>Kjøringer</th><th></th></tr></thead>" +
+        "<tbody>" + templateRows + "</tbody></table>");
     shell(id, "faktura",
       overdueCard +
+      templateCard +
       card("Ny faktura", form) +
       card("Fakturaer",
         '<table class="table table-sm"><thead><tr><th>Nr</th><th>Kunde</th><th>Dato</th>' +
@@ -579,6 +602,43 @@
     });
     app.querySelectorAll("[data-send]").forEach(function (button) {
       button.onclick = function () { sendDocument(id, "/companies/" + id + "/invoices/" + button.dataset.send + "/send"); };
+    });
+    app.querySelectorAll("[data-repeat]").forEach(function (button) {
+      button.onclick = async function () {
+        var intervall = prompt("Intervall (manedlig, kvartalsvis, arlig):", "manedlig");
+        if (!intervall) return;
+        var neste = prompt("Første genereringsdato (ÅÅÅÅ-MM-DD):", today());
+        if (!neste) return;
+        try {
+          await post("/companies/" + id + "/invoice-templates", {
+            from_invoice_id: button.dataset.repeat, intervall: intervall.trim(), neste_dato: neste.trim(),
+          });
+          toast("Repeterende mal opprettet", true);
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-tpl-generate]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var result = await post("/companies/" + id + "/invoice-templates/" + button.dataset.tplGenerate + "/generate", {});
+          var count = result.generated.length;
+          toast(count ? count + " faktura(er) generert" : "Ingen forfalte perioder", true);
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-tpl-toggle]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/invoice-templates/" + button.dataset.tplToggle, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ active: button.dataset.active !== "true" }),
+          });
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
     });
     app.querySelectorAll("[data-pdf]").forEach(function (button) {
       button.onclick = async function () {

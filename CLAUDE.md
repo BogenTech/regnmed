@@ -376,11 +376,22 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    regnmed-api's base deployment (NATS already in the cluster).
    Integration test spawns a real nats-server (skips without) and
    base64-decodes the stored PDF back off the stream.
-   **Next:** M7 breadth (#30 repeterende faktura / #31 tilbud→ordre
-   completing betalingsoppfølging; #38 timeføring, #40
-   anleggsregister), native importers (#19), EHF (#14), Maskinporten
-   (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
-   terminordninger).
+29. ✅ Repeterende faktura (docs/faktura.md, closed #30): editable
+   templates (party + lines + intervall + neste/slutt, migration
+   0021), generation issues ORDINARY invoices via the refactored
+   `create_invoice_in` — template lock + invoice + insert-only run row
+   + neste_dato advance in ONE tx, partial unique index makes a period
+   ungenerable twice; failures log + retry, behind templates catch
+   up; `{måned}`/`{år}` periodetekst (pure helpers in core, month
+   clamping documented). Daily CronJob `regnmed generate-invoices`
+   (deploy/base, anchor pattern); `merk_utsendelse` only MARKS in the
+   run log — sending stays human. `…/invoice-templates` CRUD +
+   `/generate` + `/runs`; `from_invoice_id` = "gjenta denne". Portal:
+   Repeterende card (generer nå, stopp/start), Gjenta on invoice rows.
+   **Next:** M7 breadth (#31 tilbud→ordre→faktura completing
+   betalingsoppfølging; #38 timeføring, #40 anleggsregister), native
+   importers (#19), EHF (#14), Maskinporten (awaiting Skatteetaten
+   scope grant, docs/gov.md), M2 tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

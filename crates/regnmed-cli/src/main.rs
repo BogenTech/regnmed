@@ -28,6 +28,9 @@ enum Command {
     /// ANCHOR_TSA_URL is set, witness the root with an RFC 3161 timestamp
     /// (docs/anchoring.md). Run periodically (cron/CronJob).
     Anchor,
+    /// Generate every due repeterende faktura across all companies
+    /// (docs/faktura.md, #30). Run daily (cron/CronJob).
+    GenerateInvoices,
     /// Export Norwegian SAF-T Financial v1.30 XML for a company
     SaftExport {
         /// Company id (or use --orgnr)
@@ -150,6 +153,33 @@ async fn main() -> Result<()> {
         }
         Command::Demo => demo(&pool).await?,
         Command::Anchor => anchor(&pool).await?,
+        Command::GenerateInvoices => {
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let outcomes = regnmed_db::generate_due(&pool, today).await?;
+            if outcomes.is_empty() {
+                println!("no templates due");
+            }
+            for outcome in &outcomes {
+                match (&outcome.invoice_no, &outcome.detail) {
+                    (Some(no), _) => println!(
+                        "company {} template {}: faktura {} generert for {}",
+                        outcome.company_id, outcome.template_id, no, outcome.generated_for
+                    ),
+                    (None, detail) => println!(
+                        "company {} template {}: FEIL for {} — {}",
+                        outcome.company_id,
+                        outcome.template_id,
+                        outcome.generated_for,
+                        detail.as_deref().unwrap_or("ukjent")
+                    ),
+                }
+            }
+            if outcomes.iter().any(|o| o.invoice_no.is_none()) {
+                anyhow::bail!("one or more templates failed to generate");
+            }
+        }
         Command::SaftExport {
             company,
             orgnr,

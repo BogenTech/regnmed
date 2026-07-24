@@ -163,7 +163,10 @@ M7 (#37–#48) for new ground:
   aldersfordelte forfalte, gebyr/rente som ordinære bilag fra
   satsregisteret, inkassovarsel m/ 14-dagers frist, insert-only
   historikk m/ lagret dokument; docs/purring.md),
-  repeterende faktura (#30), tilbud → ordre → faktura (#31),
+  ✅ repeterende faktura (#30 — editable maler, generering som
+  ordinære fakturaer m/ periodetekst via daglig CronJob, insert-only
+  kjøringslogg, «merk for utsendelse» — mennesket sender;
+  docs/faktura.md), tilbud → ordre → faktura (#31),
   ✅ faktura-PDF + e-postutsendelse (#32 — deterministisk hand-rolled
   PDF lagret på bilaget ved utstedelse, e-post med vedlegg over
   regnids mail-rail m/ insert-only utsendelseslogg; docs/faktura.md)

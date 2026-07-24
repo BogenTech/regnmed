@@ -73,9 +73,40 @@ reversing-voucher rule.
 - Unconfigured rail (no `NATS_URL`) → the endpoints answer with a clear
   message instead of pretending.
 
+## Repeterende faktura (#30)
+
+- **A template is a plan, not evidence**: customer + lines + intervall
+  (månedlig/kvartalsvis/årlig) + neste/slutt-dato, ordinary editable
+  data. Nothing regnskapsmessig exists until generation.
+- **Generation adds no posting semantics**: it issues a NORMAL invoice
+  through the existing path — gap-free number, KID, posting, PDF, all
+  in one transaction — with `{måned}`/`{år}` in line texts interpolated
+  to the generated period ("Husleie august 2026"). Month arithmetic
+  clamps into shorter months (31. jan + 1 mnd = 28. feb).
+- **Idempotent and atomic**: the template row is locked, the invoice +
+  run-log row + neste_dato advance commit together, and a partial
+  unique index makes a period impossible to generate twice — even
+  under concurrent runs. Failures roll back, log a failure row
+  (insert-only log), and leave neste_dato untouched for retry. A
+  template several periods behind catches up.
+- **Driven by the daily CronJob** (`regnmed generate-invoices`,
+  deploy/base — same pattern as anchoring); the portal's "Generer nå"
+  is the same code path. `merk_utsendelse` MARKS the generated invoice
+  for sending in the run log — the send itself stays a human click.
+- Templates are deactivated, never deleted, once they have runs (FK
+  enforces it).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET/POST /companies/{id}/invoice-templates` | list / create (`from_invoice_id` = "gjenta denne") |
+| `PUT …/invoice-templates/{tid}` | edit incl. lines and aktiv |
+| `POST …/invoice-templates/{tid}/generate` | generate every due period now |
+| `GET …/invoice-templates/{tid}/runs` | the insert-only generation log |
+
 ## Not yet (deliberate)
 
 - **EHF dispatch** arrives with the Peppol access point (issue #14).
+- Proration and seat-based metering — templates are fixed lines first.
 
 Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
@@ -107,6 +138,11 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   moment the invoice does, served with the kontaktinfo, kreditnota
   document, purring `?format=pdf`, settings PUT rejected for
   non-admins.
+- `regnmed-api/tests/invoice_template.rs` (real Postgres, also CI) —
+  template over the API, catch-up generation with periodetekst through
+  the gap-free path (chain + attachments verify), idempotence, run log
+  append-only and marked til utsendelse, deactivation respected,
+  "gjenta denne" copies customer + lines.
 - `regnmed-api/tests/utsendelse.rs` (real Postgres + a spawned
   `nats-server`, skips without either) — the send endpoint puts a real
   JetStream message on the rail in regnid's wire format (attachment

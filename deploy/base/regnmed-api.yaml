@@ -68,6 +68,36 @@ spec:
 # Anchoring is a system workflow, not a user action: nightly, every
 # company's chain head is frozen under one Merkle root, published on the
 # public /anchors endpoint (and witnessed by an RFC 3161 TSA when
+# Repeterende faktura: daily generation of due templates — ordinary
+# invoices through the gap-free path; the run log carries the trace
+# (docs/faktura.md, #30).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-generate-invoices
+  namespace: regnmed
+spec:
+  schedule: "30 5 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: generate
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              command: ["/app/regnmed", "generate-invoices"]
+              env:
+                - name: DATABASE_URL
+                  value: postgres://regnmed:regnmed@postgres:5432/regnmed
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi
+---
 # ANCHOR_TSA_URL is set — deliberately unset in the local cluster).
 apiVersion: batch/v1
 kind: CronJob

@@ -71,6 +71,48 @@ pub fn compute(lines: &[InvoiceLineInput]) -> ComputedInvoice {
     }
 }
 
+/// Norwegian month name (lowercase, as it appears in running text).
+fn maanedsnavn(month: u32) -> &'static str {
+    [
+        "januar",
+        "februar",
+        "mars",
+        "april",
+        "mai",
+        "juni",
+        "juli",
+        "august",
+        "september",
+        "oktober",
+        "november",
+        "desember",
+    ][(month as usize) - 1]
+}
+
+/// Period interpolation for repeterende faktura (#30): `{måned}` and
+/// `{år}` in a template line's description become the generated
+/// period's month name and year — "Husleie {måned} {år}" → "Husleie
+/// august 2026".
+pub fn interpoler_periodetekst(tekst: &str, dato: NaiveDate) -> String {
+    use chrono::Datelike;
+    tekst
+        .replace("{måned}", maanedsnavn(dato.month()))
+        .replace("{år}", &dato.year().to_string())
+}
+
+/// The next generation date for a template interval. Month arithmetic
+/// clamps into shorter months (31. jan + 1 måned = 28. feb) — chrono's
+/// checked_add_months semantics, documented in docs/faktura.md.
+pub fn neste_intervall_dato(dato: NaiveDate, intervall: &str) -> Option<NaiveDate> {
+    let months = match intervall {
+        "manedlig" => 1,
+        "kvartalsvis" => 3,
+        "arlig" => 12,
+        _ => return None,
+    };
+    dato.checked_add_months(chrono::Months::new(months))
+}
+
 /// KID for an invoice: the number zero-padded to 8 digits plus a MOD10
 /// check digit — 9 digits, unique per company since invoice numbers are.
 pub fn invoice_kid(invoice_no: i64) -> String {
@@ -182,6 +224,43 @@ mod tests {
         assert_eq!(line_net_ore(333, 100), 33, "0,333 × 1 kr → 33 øre");
         assert_eq!(line_net_ore(335, 100), 34, "33,5 øre rounds up");
         assert_eq!(line_net_ore(-335, 100), -34);
+    }
+
+    #[test]
+    fn periodetekst_interpolates_norwegian_months() {
+        let august = NaiveDate::from_ymd_opt(2026, 8, 1).unwrap();
+        assert_eq!(
+            interpoler_periodetekst("Husleie {måned} {år}", august),
+            "Husleie august 2026"
+        );
+        assert_eq!(
+            interpoler_periodetekst("Serviceavtale", august),
+            "Serviceavtale",
+            "no placeholders, no change"
+        );
+        let januar = NaiveDate::from_ymd_opt(2027, 1, 15).unwrap();
+        assert_eq!(
+            interpoler_periodetekst("{måned}/{måned} {år}", januar),
+            "januar/januar 2027"
+        );
+    }
+
+    #[test]
+    fn intervall_advance_clamps_into_short_months() {
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(
+            neste_intervall_dato(date(2026, 1, 31), "manedlig"),
+            Some(date(2026, 2, 28))
+        );
+        assert_eq!(
+            neste_intervall_dato(date(2026, 11, 30), "kvartalsvis"),
+            Some(date(2027, 2, 28))
+        );
+        assert_eq!(
+            neste_intervall_dato(date(2026, 7, 1), "arlig"),
+            Some(date(2027, 7, 1))
+        );
+        assert_eq!(neste_intervall_dato(date(2026, 1, 1), "ukentlig"), None);
     }
 
     #[test]

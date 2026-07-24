@@ -91,10 +91,36 @@ async fn resolve_lines(
 }
 
 /// Issues an invoice: one transaction covering the gap-free invoice
-/// number, the ledger posting (voucher counter, hash chain) and the
-/// invoice rows — everything rolls back together.
+/// number, the ledger posting (voucher counter, hash chain), the
+/// invoice rows and the salgsdokument-PDF — everything rolls back
+/// together.
 pub async fn create_invoice(
     pool: &PgPool,
+    company_id: Uuid,
+    draft: &InvoiceDraft,
+    created_by: &str,
+    credits_invoice_id: Option<Uuid>,
+) -> Result<IssuedInvoice> {
+    let mut tx = pool.begin().await?;
+    let issued = create_invoice_in(
+        pool,
+        &mut tx,
+        company_id,
+        draft,
+        created_by,
+        credits_invoice_id,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(issued)
+}
+
+/// Transaction-taking variant, so callers (repeterende faktura) can
+/// make the issue atomic with their own writes. Master-data pre-reads
+/// go to the pool; every write goes to the caller's transaction.
+pub async fn create_invoice_in(
+    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     draft: &InvoiceDraft,
     created_by: &str,
@@ -141,7 +167,6 @@ pub async fn create_invoice(
         bail!("invoice total must be positive (use a kreditnota to credit)");
     }
 
-    let mut tx = pool.begin().await?;
     let invoice_no: i64 = sqlx::query(
         "insert into invoice_counter (company_id, last_number) values ($1, 1)
          on conflict (company_id)
@@ -149,7 +174,7 @@ pub async fn create_invoice(
          returning last_number",
     )
     .bind(company_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?
     .get("last_number");
     let kid = invoice_kid(invoice_no);
@@ -165,13 +190,13 @@ pub async fn create_invoice(
         &lines,
         &computed,
     )?;
-    let posted = post_voucher_in(&mut tx, company_id, &voucher, created_by).await?;
+    let posted = post_voucher_in(tx, company_id, &voucher, created_by).await?;
 
     let receivable_entry_id: Uuid =
         sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id = $2")
             .bind(posted.id)
             .bind(party_id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
 
     let invoice_id = Uuid::now_v7();
@@ -191,7 +216,7 @@ pub async fn create_invoice(
     .bind(posted.id)
     .bind(receivable_entry_id)
     .bind(created_by)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     for (i, (line, amounts)) in lines.iter().zip(&computed.lines).enumerate() {
@@ -213,7 +238,7 @@ pub async fn create_invoice(
         .bind(amounts.vat_ore)
         .bind(&line.avdeling)
         .bind(&line.prosjekt)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -260,7 +285,7 @@ pub async fn create_invoice(
         "faktura"
     };
     add_attachment_in(
-        &mut tx,
+        tx,
         company_id,
         posted.id,
         &format!("{dokument}-{invoice_no}.pdf"),
@@ -269,7 +294,6 @@ pub async fn create_invoice(
         created_by,
     )
     .await?;
-    tx.commit().await?;
 
     Ok(IssuedInvoice {
         invoice_id,
