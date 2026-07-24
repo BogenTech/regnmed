@@ -17,16 +17,9 @@ use uuid::Uuid;
 
 use crate::invoice::{InvoiceDraft, InvoiceLineDraft, create_invoice_in};
 
-#[derive(Debug, Clone)]
-pub struct TemplateLineDraft {
-    pub description: String,
-    pub account_number: String,
-    pub quantity_milli: i64,
-    pub unit_price_ore: i64,
-    pub vat_code: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
-}
+/// Template lines are the same shape as invoice lines — one draft type
+/// everywhere (product references included) since #39.
+pub use crate::invoice::InvoiceLineDraft as TemplateLineDraft;
 
 #[derive(Debug)]
 pub struct TemplateDraft {
@@ -99,8 +92,8 @@ async fn insert_lines(
         sqlx::query(
             "insert into invoice_template_line
                  (id, template_id, line_no, description, account_number,
-                  quantity_milli, unit_price_ore, vat_code, avdeling, prosjekt)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                  quantity_milli, unit_price_ore, vat_code, avdeling, prosjekt, product_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(Uuid::now_v7())
         .bind(template_id)
@@ -112,6 +105,7 @@ async fn insert_lines(
         .bind(&line.vat_code)
         .bind(&line.avdeling)
         .bind(&line.prosjekt)
+        .bind(line.product_id)
         .execute(&mut **tx)
         .await?;
     }
@@ -142,7 +136,7 @@ pub async fn create_template_from_invoice(
     .context("no such invoice (or it is a kreditnota)")?;
     let lines = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
-                vat_code, avdeling, prosjekt
+                vat_code, avdeling, prosjekt, product_id
          from invoice_line where invoice_id = $1 order by line_no",
     )
     .bind(invoice_id)
@@ -157,6 +151,7 @@ pub async fn create_template_from_invoice(
         vat_code: r.get("vat_code"),
         avdeling: r.get("avdeling"),
         prosjekt: r.get("prosjekt"),
+        product_id: r.get("product_id"),
     })
     .collect();
     create_template(
@@ -377,7 +372,7 @@ pub async fn generate_one(
 
     let line_rows = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
-                vat_code, avdeling, prosjekt
+                vat_code, avdeling, prosjekt, product_id
          from invoice_template_line where template_id = $1 order by line_no",
     )
     .bind(template_id)
@@ -402,6 +397,7 @@ pub async fn generate_one(
                 vat_code: r.get("vat_code"),
                 avdeling: r.get("avdeling"),
                 prosjekt: r.get("prosjekt"),
+                product_id: r.get("product_id"),
             })
             .collect(),
     };

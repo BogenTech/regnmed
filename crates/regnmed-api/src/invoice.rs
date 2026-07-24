@@ -35,19 +35,7 @@ async fn require_access(
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct InvoiceLineRequest {
-    description: String,
-    /// Revenue account; defaults to 3000.
-    account: Option<String>,
-    /// Thousandths (2,5 stk = 2500); defaults to 1000.
-    quantity_milli: Option<i64>,
-    unit_price_ore: i64,
-    vat_code: Option<String>,
-    /// Dimension codes (docs/dimensjoner.md) for the revenue line.
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
-}
+use crate::product::{DocLineRequest, resolve_lines};
 
 #[derive(Deserialize)]
 pub struct CreateInvoiceRequest {
@@ -58,7 +46,7 @@ pub struct CreateInvoiceRequest {
     journal: Option<String>,
     receivable_account: Option<String>,
     vat_account: Option<String>,
-    lines: Vec<InvoiceLineRequest>,
+    lines: Vec<DocLineRequest>,
 }
 
 fn issued_json(issued: &regnmed_db::IssuedInvoice) -> serde_json::Value {
@@ -88,19 +76,7 @@ pub async fn create_invoice(
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
-        lines: request
-            .lines
-            .into_iter()
-            .map(|line| regnmed_db::InvoiceLineDraft {
-                description: line.description,
-                account_number: line.account.unwrap_or_else(|| "3000".into()),
-                quantity_milli: line.quantity_milli.unwrap_or(1000),
-                unit_price_ore: line.unit_price_ore,
-                vat_code: line.vat_code,
-                avdeling: line.avdeling,
-                prosjekt: line.prosjekt,
-            })
-            .collect(),
+        lines: resolve_lines(&state, company_id, request.lines).await?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let issued = regnmed_db::create_invoice(&state.pool, company_id, &draft, created_by, None)

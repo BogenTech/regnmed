@@ -413,9 +413,25 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    same tx. /companies/{id}/timesheet endpoints (own entries; admin
    corrects all; lock admin-only); portal Timer section (min uke,
    per-prosjekt, ufakturert → Lag faktura).
-   **Next:** M7 breadth (#40 anleggsregister, #39 produktregister),
-   native importers (#19), EHF (#14), Maskinporten (awaiting
-   Skatteetaten scope grant, docs/gov.md), M2 tail (#51
+32. ✅ Produktregister + enkelt varelager (docs/produkter.md, closed
+   #39): register editable EXCEPT nummer (permanent, trigger) and
+   never deletable — document lines COPY the values at issue
+   (`resolve_product_line`; one shared DocLineRequest for
+   faktura/tilbud/maler, `TemplateLineDraft` unified into
+   `InvoiceLineDraft` w/ product_id) so register edits never touch
+   issued documents. Migration 0024: insert-only `inventory_movement`
+   (kjop m/ kostpris per enhet; salg AUTO-inserted inside
+   create_invoice_in — kreditnota returns stock; justering krever
+   notat). Beholdning = SUM(antall_milli); verdi =
+   gjennomsnittsmetoden as a pure fold in `regnmed-core::lager`
+   (milli-units × øre, half-away rounding; negativ beholdning synlig,
+   aldri skjult). Varetelling i én tx: justeringer + verdibilag mot
+   bokført lagersaldo (1460/4390 defaults). `/products` +
+   `/inventory` endpoints; portal Produkter section + produkt-pickers
+   på faktura/tilbud.
+   **Next:** M7 breadth (#40 anleggsregister, #42 utlegg og
+   kjøregodtgjørelse), native importers (#19), EHF (#14), Maskinporten
+   (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
    terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)

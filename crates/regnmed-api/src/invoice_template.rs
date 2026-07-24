@@ -35,31 +35,7 @@ async fn require_access(
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct TemplateLineRequest {
-    description: String,
-    account: Option<String>,
-    quantity_milli: Option<i64>,
-    unit_price_ore: i64,
-    vat_code: Option<String>,
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
-}
-
-fn line_drafts(lines: Vec<TemplateLineRequest>) -> Vec<regnmed_db::TemplateLineDraft> {
-    lines
-        .into_iter()
-        .map(|line| regnmed_db::TemplateLineDraft {
-            description: line.description,
-            account_number: line.account.unwrap_or_else(|| "3000".into()),
-            quantity_milli: line.quantity_milli.unwrap_or(1000),
-            unit_price_ore: line.unit_price_ore,
-            vat_code: line.vat_code,
-            avdeling: line.avdeling,
-            prosjekt: line.prosjekt,
-        })
-        .collect()
-}
+use crate::product::{DocLineRequest, resolve_lines};
 
 #[derive(Deserialize)]
 pub struct CreateTemplateRequest {
@@ -77,7 +53,7 @@ pub struct CreateTemplateRequest {
     #[serde(default)]
     merk_utsendelse: bool,
     #[serde(default)]
-    lines: Vec<TemplateLineRequest>,
+    lines: Vec<DocLineRequest>,
 }
 
 pub async fn create(
@@ -116,7 +92,7 @@ pub async fn create(
                     slutt_dato: request.slutt_dato,
                     forfall_dager: request.forfall_dager.unwrap_or(14),
                     merk_utsendelse: request.merk_utsendelse,
-                    lines: line_drafts(request.lines),
+                    lines: resolve_lines(&state, company_id, request.lines).await?,
                 },
                 created_by,
             )
@@ -161,7 +137,7 @@ pub struct UpdateTemplateRequest {
     forfall_dager: Option<i32>,
     merk_utsendelse: Option<bool>,
     active: Option<bool>,
-    lines: Option<Vec<TemplateLineRequest>>,
+    lines: Option<Vec<DocLineRequest>>,
 }
 
 /// serde helper: distinguishes an absent field from an explicit null.
@@ -184,7 +160,10 @@ pub async fn update(
     Json(request): Json<UpdateTemplateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
-    let lines = request.lines.map(line_drafts);
+    let lines = match request.lines {
+        Some(lines) => Some(resolve_lines(&state, company_id, lines).await?),
+        None => None,
+    };
     regnmed_db::update_template(
         &state.pool,
         company_id,

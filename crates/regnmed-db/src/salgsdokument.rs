@@ -49,8 +49,8 @@ async fn insert_lines(
         sqlx::query(
             "insert into salgsdokument_line
                  (id, dokument_id, line_no, description, account_number,
-                  quantity_milli, unit_price_ore, vat_code, avdeling, prosjekt)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                  quantity_milli, unit_price_ore, vat_code, avdeling, prosjekt, product_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(Uuid::now_v7())
         .bind(dokument_id)
@@ -62,6 +62,7 @@ async fn insert_lines(
         .bind(&line.vat_code)
         .bind(&line.avdeling)
         .bind(&line.prosjekt)
+        .bind(line.product_id)
         .execute(&mut **tx)
         .await?;
     }
@@ -249,9 +250,9 @@ pub async fn tilbud_to_ordre(
     sqlx::query(
         "insert into salgsdokument_line
              (id, dokument_id, line_no, description, account_number, quantity_milli,
-              unit_price_ore, vat_code, avdeling, prosjekt)
+              unit_price_ore, vat_code, avdeling, prosjekt, product_id)
          select gen_random_uuid(), $2, line_no, description, account_number, quantity_milli,
-                unit_price_ore, vat_code, avdeling, prosjekt
+                unit_price_ore, vat_code, avdeling, prosjekt, product_id
          from salgsdokument_line where dokument_id = $1",
     )
     .bind(tilbud_id)
@@ -307,6 +308,7 @@ pub async fn ordre_to_invoice(
                 vat_code: l.vat_code.clone(),
                 avdeling: l.avdeling.clone(),
                 prosjekt: l.prosjekt.clone(),
+                product_id: l.product_id,
             })
             .collect(),
     };
@@ -327,7 +329,7 @@ pub async fn ordre_to_invoice(
 async fn load_lines(pool: &PgPool, dokument_id: Uuid) -> Result<Vec<SalgsLineDraft>> {
     let rows = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
-                vat_code, avdeling, prosjekt
+                vat_code, avdeling, prosjekt, product_id
          from salgsdokument_line where dokument_id = $1 order by line_no",
     )
     .bind(dokument_id)
@@ -344,6 +346,7 @@ async fn load_lines(pool: &PgPool, dokument_id: Uuid) -> Result<Vec<SalgsLineDra
             vat_code: r.get("vat_code"),
             avdeling: r.get("avdeling"),
             prosjekt: r.get("prosjekt"),
+            product_id: r.get("product_id"),
         })
         .collect())
 }

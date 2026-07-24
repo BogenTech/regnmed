@@ -39,37 +39,13 @@ async fn require_access(
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct LineRequest {
-    description: String,
-    account: Option<String>,
-    quantity_milli: Option<i64>,
-    unit_price_ore: i64,
-    vat_code: Option<String>,
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
-}
-
-fn line_drafts(lines: Vec<LineRequest>) -> Vec<regnmed_db::SalgsLineDraft> {
-    lines
-        .into_iter()
-        .map(|line| regnmed_db::SalgsLineDraft {
-            description: line.description,
-            account_number: line.account.unwrap_or_else(|| "3000".into()),
-            quantity_milli: line.quantity_milli.unwrap_or(1000),
-            unit_price_ore: line.unit_price_ore,
-            vat_code: line.vat_code,
-            avdeling: line.avdeling,
-            prosjekt: line.prosjekt,
-        })
-        .collect()
-}
+use crate::product::{DocLineRequest, resolve_lines};
 
 #[derive(Deserialize)]
 pub struct CreateRequest {
     party_no: String,
     doc_date: Option<chrono::NaiveDate>,
-    lines: Vec<LineRequest>,
+    lines: Vec<DocLineRequest>,
 }
 
 async fn create_kind(
@@ -88,13 +64,14 @@ async fn create_kind(
             .map_err(anyhow::Error::from)?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    let lines = resolve_lines(state, company_id, request.lines).await?;
     let (id, doc_no) = regnmed_db::create_salgsdokument(
         &state.pool,
         company_id,
         kind,
         &request.party_no,
         doc_date,
-        &line_drafts(request.lines),
+        &lines,
         created_by,
     )
     .await
@@ -162,7 +139,7 @@ pub async fn list_orders(
 #[derive(Deserialize)]
 pub struct UpdateQuoteRequest {
     doc_date: Option<chrono::NaiveDate>,
-    lines: Option<Vec<LineRequest>>,
+    lines: Option<Vec<DocLineRequest>>,
 }
 
 pub async fn update_quote(
@@ -172,7 +149,10 @@ pub async fn update_quote(
     Json(request): Json<UpdateQuoteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
-    let lines = request.lines.map(line_drafts);
+    let lines = match request.lines {
+        Some(lines) => Some(resolve_lines(&state, company_id, lines).await?),
+        None => None,
+    };
     regnmed_db::update_tilbud(
         &state.pool,
         company_id,

@@ -33,6 +33,14 @@
   function today() {
     return new Date().toISOString().slice(0, 10);
   }
+  function antallStr(milli) {
+    return String(milli / 1000).replace(".", ",");
+  }
+  function parseAntall(text) {
+    var value = Number(String(text).replace(/\s/g, "").replace(",", "."));
+    if (!isFinite(value)) throw new Error("ugyldig antall: " + text);
+    return Math.round(value * 1000);
+  }
   function toast(message, ok) {
     var el = document.createElement("div");
     el.className = "toast toast-top toast-end z-50";
@@ -143,7 +151,8 @@
   function shell(companyId, section, content) {
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
-      ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["timer", "Timer"], ["reskontro", "Reskontro"],
+      ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
+      ["timer", "Timer"], ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
@@ -466,6 +475,7 @@
       api("/companies/" + id + "/invoice-templates").catch(function () { return { templates: [] }; }),
       api("/companies/" + id + "/quotes").catch(function () { return { documents: [] }; }),
       api("/companies/" + id + "/orders").catch(function () { return { documents: [] }; }),
+      api("/companies/" + id + "/products").catch(function () { return { products: [] }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
@@ -474,6 +484,11 @@
     var templates = results[4].templates;
     var quotes = results[5].documents;
     var orders = results[6].documents;
+    var products = results[7].products.filter(function (p) { return p.aktiv; });
+    var produktOptions = '<option value="">— fritekst —</option>' + products.map(function (p) {
+      return '<option value="' + esc(p.nummer) + '">' + esc(p.nummer) + " " + esc(p.navn) +
+        " (" + kr(p.salgspris_ore) + ")</option>";
+    }).join("");
     var rows = invoices.map(function (i) {
       var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
         '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>' +
@@ -500,12 +515,16 @@
         '<input name="invoice_date" type="date" class="input input-bordered" value="' + today() + '"></label>' +
         '<label class="form-control"><span class="label-text">Forfall</span>' +
         '<input name="due_date" type="date" class="input input-bordered" value="' + today() + '"></label></div>' +
-        '<input name="description" class="input input-bordered" placeholder="Beskrivelse" required>' +
+        (products.length
+          ? '<select name="produkt" class="select select-bordered">' + produktOptions + "</select>"
+          : "") +
+        '<input name="description" class="input input-bordered" placeholder="Beskrivelse">' +
         '<div class="grid grid-cols-3 gap-2">' +
         '<input name="quantity" class="input input-bordered" value="1" title="Antall">' +
-        '<input name="unit_price" class="input input-bordered" placeholder="Pris (kr)" required>' +
+        '<input name="unit_price" class="input input-bordered" placeholder="Pris (kr)">' +
         '<select name="vat_code" class="select select-bordered">' +
-        '<option value="3">3 — 25 %</option><option value="31">31 — 15 %</option>' +
+        (products.length ? '<option value="">mva fra produkt</option>' : "") +
+        '<option value="3" selected>3 — 25 %</option><option value="31">31 — 15 %</option>' +
         '<option value="33">33 — 12 %</option><option value="5">5 — fritatt</option>' +
         '<option value="6">6 — utenfor</option></select></div>' +
         (dims.length
@@ -592,9 +611,14 @@
         (parties.length
           ? '<div class="flex flex-wrap gap-2 mb-3 items-end" id="new-quote">' +
             '<select data-f="party" class="select select-sm select-bordered">' + partyOptions + "</select>" +
+            (products.length
+              ? '<select data-f="produkt" class="select select-sm select-bordered">' + produktOptions + "</select>"
+              : "") +
             '<input data-f="desc" class="input input-sm input-bordered" placeholder="Beskrivelse">' +
             '<input data-f="price" class="input input-sm input-bordered w-28" placeholder="Pris (kr)">' +
-            '<select data-f="vat" class="select select-sm select-bordered"><option value="3">3 — 25 %</option>' +
+            '<select data-f="vat" class="select select-sm select-bordered">' +
+            (products.length ? '<option value="">mva fra produkt</option>' : "") +
+            '<option value="3" selected>3 — 25 %</option>' +
             '<option value="31">31 — 15 %</option><option value="33">33 — 12 %</option>' +
             '<option value="5">5 — fritatt</option><option value="6">6 — utenfor</option></select>' +
             '<button id="quote-create" class="btn btn-sm">Nytt tilbud</button></div>'
@@ -618,28 +642,44 @@
         "<tbody>" + rows + "</tbody></table>"));
 
     var form_ = document.getElementById("new-invoice");
+    if (form_) {
+      var produktSelect = form_.querySelector('[name="produkt"]');
+      if (produktSelect) produktSelect.onchange = function () {
+        // A chosen product supplies price and VAT unless overridden.
+        form_.querySelector('[name="vat_code"]').value = produktSelect.value ? "" : "3";
+        form_.querySelector('[name="unit_price"]').placeholder =
+          produktSelect.value ? "Pris fra produkt" : "Pris (kr)";
+      };
+    }
     if (form_) form_.onsubmit = async function (event) {
       event.preventDefault();
       var d = new FormData(form_);
       try {
+        var produkt = d.get("produkt") || null;
+        var priceRaw = String(d.get("unit_price") || "").trim();
+        if (!produkt && (!String(d.get("description") || "").trim() || !priceRaw)) {
+          throw new Error("velg produkt, eller skriv beskrivelse og pris");
+        }
+        var line = {
+          produkt: produkt,
+          description: String(d.get("description") || "").trim() || null,
+          quantity_milli: Math.round(Number(String(d.get("quantity")).replace(",", ".")) * 1000),
+          vat_code: d.get("vat_code") || null,
+          avdeling: (function () {
+            var s = form_.querySelector('#invoice-dims [data-f="avdeling"]');
+            return s && s.value ? s.value : null;
+          })(),
+          prosjekt: (function () {
+            var s = form_.querySelector('#invoice-dims [data-f="prosjekt"]');
+            return s && s.value ? s.value : null;
+          })(),
+        };
+        if (priceRaw) line.unit_price_ore = parseKr(priceRaw);
         var issued = await post("/companies/" + id + "/invoices", {
           party_no: d.get("party_no"),
           invoice_date: d.get("invoice_date"),
           due_date: d.get("due_date"),
-          lines: [{
-            description: d.get("description"),
-            quantity_milli: Math.round(Number(String(d.get("quantity")).replace(",", ".")) * 1000),
-            unit_price_ore: parseKr(d.get("unit_price")),
-            vat_code: d.get("vat_code"),
-            avdeling: (function () {
-              var s = form_.querySelector('#invoice-dims [data-f="avdeling"]');
-              return s && s.value ? s.value : null;
-            })(),
-            prosjekt: (function () {
-              var s = form_.querySelector('#invoice-dims [data-f="prosjekt"]');
-              return s && s.value ? s.value : null;
-            })(),
-          }],
+          lines: [line],
         });
         toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);
         renderFaktura(id);
@@ -689,11 +729,24 @@
     var quoteCreate = document.getElementById("quote-create");
     if (quoteCreate) quoteCreate.onclick = async function () {
       var box = document.getElementById("new-quote");
-      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      var value = function (name) {
+        var el = box.querySelector('[data-f="' + name + '"]');
+        return el ? el.value : "";
+      };
       try {
+        var qProdukt = value("produkt") || null;
+        if (!qProdukt && (!value("desc").trim() || !value("price").trim())) {
+          throw new Error("velg produkt, eller skriv beskrivelse og pris");
+        }
+        var qLine = {
+          produkt: qProdukt,
+          description: value("desc").trim() || null,
+          vat_code: value("vat") || null,
+        };
+        if (value("price").trim()) qLine.unit_price_ore = parseKr(value("price"));
         var made = await post("/companies/" + id + "/quotes", {
           party_no: value("party"),
-          lines: [{ description: value("desc"), unit_price_ore: parseKr(value("price")), vat_code: value("vat") }],
+          lines: [qLine],
         });
         toast("Tilbud T-" + made.doc_no + " opprettet", true);
         renderFaktura(id);
@@ -885,6 +938,182 @@
   // måneden låses eller timene faktureres.
   function minutterTilTimer(min) {
     return (min / 60).toFixed(2).replace(".", ",").replace(/,?0+$/, "") || "0";
+  }
+
+  var VAT_OPTIONS = '<option value="3">3 — 25 %</option><option value="31">31 — 15 %</option>' +
+    '<option value="33">33 — 12 %</option><option value="5">5 — fritatt</option>' +
+    '<option value="6">6 — utenfor</option>';
+
+  async function renderProdukter(id) {
+    var results = await Promise.all([
+      api("/companies/" + id + "/products"),
+      api("/companies/" + id + "/inventory"),
+    ]);
+    var products = results[0].products;
+    var inventory = results[1].inventory;
+    var productRows = products.map(function (p) {
+      return "<tr" + (p.aktiv ? "" : ' class="opacity-50"') + "><td class='font-mono'>" + esc(p.nummer) +
+        "</td><td>" + esc(p.navn) + "</td><td class='text-right'>" + kr(p.salgspris_ore) +
+        "</td><td>" + esc(p.vat_code || "–") + "</td><td>" + esc(p.konto) +
+        "</td><td>" + (p.lagerfort ? "✓" : "") + "</td><td>" +
+        '<button class="btn btn-xs btn-ghost" data-p-pris="' + esc(p.nummer) + '">Pris</button> ' +
+        '<button class="btn btn-xs btn-ghost" data-p-toggle="' + esc(p.nummer) + '" data-aktiv="' + p.aktiv + '">' +
+        (p.aktiv ? "Deaktiver" : "Aktiver") + "</button></td></tr>";
+    }).join("");
+    var newForm = '<div class="flex flex-wrap gap-2 items-end" id="new-product">' +
+      '<input data-f="nummer" class="input input-sm input-bordered w-24" placeholder="Nummer">' +
+      '<input data-f="navn" class="input input-sm input-bordered" placeholder="Navn">' +
+      '<input data-f="pris" class="input input-sm input-bordered w-28" placeholder="Pris (kr)">' +
+      '<select data-f="vat" class="select select-sm select-bordered">' + VAT_OPTIONS + "</select>" +
+      '<input data-f="konto" class="input input-sm input-bordered w-20" value="3000" title="Inntektskonto">' +
+      '<label class="label cursor-pointer gap-1"><span class="label-text text-sm">Lager</span>' +
+      '<input data-f="lager" type="checkbox" class="checkbox checkbox-sm"></label>' +
+      '<button id="product-create" class="btn btn-sm">Nytt produkt</button></div>';
+    var registerCard = card("Produktregister",
+      '<p class="text-sm opacity-70 mb-2">Linjer på faktura og tilbud kopierer produktverdiene ved utstedelse — ' +
+      "endringer her rører aldri utstedte dokumenter. Nummer er permanent; produkter deaktiveres, slettes aldri.</p>" +
+      newForm +
+      (productRows
+        ? '<table class="table table-sm mt-3"><thead><tr><th>Nr</th><th>Navn</th>' +
+          "<th class='text-right'>Pris</th><th>Mva</th><th>Konto</th><th>Lager</th><th></th></tr></thead>" +
+          "<tbody>" + productRows + "</tbody></table>"
+        : ""));
+    var lagerRows = inventory.map(function (r) {
+      return "<tr><td class='font-mono'>" + esc(r.nummer) + "</td><td>" + esc(r.navn) +
+        "</td><td class='text-right'>" + antallStr(r.antall_milli) + "</td><td class='text-right'>" +
+        (r.gjennomsnitt_ore == null ? "–" : kr(r.gjennomsnitt_ore)) +
+        "</td><td class='text-right'>" + kr(r.verdi_ore) + "</td>" +
+        '<td><input data-talt="' + esc(r.nummer) + '" class="input input-xs input-bordered w-20" placeholder="Talt"></td>' +
+        '<td><button class="btn btn-xs btn-ghost" data-mov="' + esc(r.nummer) + '">Bevegelser</button></td></tr>';
+    }).join("");
+    var lagerforte = products.filter(function (p) { return p.lagerfort; });
+    var movementOptions = lagerforte.map(function (p) {
+      return '<option value="' + esc(p.nummer) + '">' + esc(p.nummer) + " " + esc(p.navn) + "</option>";
+    }).join("");
+    var lagerCard = lagerforte.length === 0 ? "" :
+      card("Varelager",
+        '<p class="text-sm opacity-70 mb-2">Beholdning og verdi beregnes alltid fra bevegelsene ' +
+        "(gjennomsnittskost) — salg trekkes automatisk når faktura utstedes, kreditnota legger tilbake. " +
+        "Varetelling justerer beholdningen og bokfører verdiendringen mot 1460/4390.</p>" +
+        '<div class="flex flex-wrap gap-2 items-end mb-3" id="new-movement">' +
+        '<select data-f="produkt" class="select select-sm select-bordered">' + movementOptions + "</select>" +
+        '<select data-f="kind" class="select select-sm select-bordered">' +
+        '<option value="kjop">Varekjøp</option><option value="justering">Justering</option></select>' +
+        '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+        '<input data-f="antall" class="input input-sm input-bordered w-20" placeholder="Antall">' +
+        '<input data-f="kost" class="input input-sm input-bordered w-28" placeholder="Kost/stk (kr)">' +
+        '<input data-f="note" class="input input-sm input-bordered" placeholder="Notat (justering)">' +
+        '<button id="movement-create" class="btn btn-sm">Registrer</button></div>' +
+        '<table class="table table-sm"><thead><tr><th>Nr</th><th>Navn</th>' +
+        "<th class='text-right'>Beholdning</th><th class='text-right'>Snittkost</th>" +
+        "<th class='text-right'>Verdi</th><th>Varetelling</th><th></th></tr></thead>" +
+        "<tbody>" + lagerRows + "</tbody></table>" +
+        '<div class="flex gap-2 items-end mt-2">' +
+        '<input id="count-date" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+        '<button id="count-post" class="btn btn-sm btn-outline">Registrer telling og bokfør</button>' +
+        '<span class="text-sm opacity-70">Sum verdi: ' + kr(results[1].verdi_ore) + "</span></div>" +
+        '<div id="mov-list" class="mt-3"></div>');
+    shell(id, "produkter", registerCard + lagerCard);
+
+    var create = document.getElementById("product-create");
+    if (create) create.onclick = async function () {
+      var box = document.getElementById("new-product");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        await post("/companies/" + id + "/products", {
+          nummer: value("nummer").trim(),
+          navn: value("navn").trim(),
+          salgspris_ore: parseKr(value("pris")),
+          vat_code: value("vat"),
+          konto: value("konto").trim() || null,
+          lagerfort: box.querySelector('[data-f="lager"]').checked,
+        });
+        toast("Produkt opprettet", true);
+        renderProdukter(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-p-pris]").forEach(function (button) {
+      button.onclick = async function () {
+        var pris = prompt("Ny salgspris (kr):");
+        if (!pris) return;
+        try {
+          await api("/companies/" + id + "/products/" + encodeURIComponent(button.dataset.pPris), {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ salgspris_ore: parseKr(pris) }),
+          });
+          renderProdukter(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-p-toggle]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/products/" + encodeURIComponent(button.dataset.pToggle), {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ aktiv: button.dataset.aktiv !== "true" }),
+          });
+          renderProdukter(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    var movementCreate = document.getElementById("movement-create");
+    if (movementCreate) movementCreate.onclick = async function () {
+      var box = document.getElementById("new-movement");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        var kind = value("kind");
+        var body = {
+          produkt: value("produkt"),
+          dato: value("dato"),
+          kind: kind,
+          antall_milli: parseAntall(value("antall")),
+          note: value("note").trim() || null,
+        };
+        if (value("kost").trim()) body.kostpris_ore = parseKr(value("kost"));
+        await post("/companies/" + id + "/inventory/movements", body);
+        toast("Bevegelse registrert", true);
+        renderProdukter(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    var countPost = document.getElementById("count-post");
+    if (countPost) countPost.onclick = async function () {
+      var linjer = [];
+      app.querySelectorAll("[data-talt]").forEach(function (input) {
+        if (input.value.trim() !== "") {
+          linjer.push({ produkt: input.dataset.talt, talt_milli: parseAntall(input.value) });
+        }
+      });
+      if (linjer.length === 0) { toast("Fyll inn talt antall for minst ett produkt", false); return; }
+      try {
+        var result = await post("/companies/" + id + "/inventory/count", {
+          dato: document.getElementById("count-date").value, linjer: linjer,
+        });
+        toast("Telling registrert" + (result.voucher ? " — bilag " + result.voucher : " (ingen verdiendring)"), true);
+        renderProdukter(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-mov]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var data = await api("/companies/" + id + "/inventory/movements?produkt=" +
+            encodeURIComponent(button.dataset.mov));
+          var kindNavn = { kjop: "varekjøp", salg: "salg", justering: "justering" };
+          var rows = data.movements.map(function (m) {
+            return "<tr><td>" + esc(m.dato) + "</td><td>" + esc(kindNavn[m.kind] || m.kind) +
+              (m.invoice_no ? " <span class='opacity-60'>(faktura " + m.invoice_no + ")</span>" : "") +
+              "</td><td class='text-right'>" + antallStr(m.antall_milli) + "</td><td class='text-right'>" +
+              (m.kostpris_ore == null ? "–" : kr(m.kostpris_ore)) + "</td><td>" + esc(m.note || "") + "</td></tr>";
+          }).join("");
+          document.getElementById("mov-list").innerHTML =
+            "<h3 class='font-semibold mb-1'>Bevegelser — " + esc(button.dataset.mov) + "</h3>" +
+            '<table class="table table-xs"><thead><tr><th>Dato</th><th>Type</th>' +
+            "<th class='text-right'>Antall</th><th class='text-right'>Kost/stk</th><th>Notat</th></tr></thead>" +
+            "<tbody>" + rows + "</tbody></table>";
+        } catch (error) { toast(error.message, false); }
+      };
+    });
   }
 
   async function renderTimer(id) {
@@ -1744,6 +1973,7 @@
         var section = parts[2] || "oversikt";
         if (section === "oversikt") return await renderOversikt(id);
         if (section === "faktura") return await renderFaktura(id);
+        if (section === "produkter") return await renderProdukter(id);
         if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);
         if (section === "mva") return await renderMva(id);

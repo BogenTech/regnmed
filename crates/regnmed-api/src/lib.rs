@@ -14,6 +14,7 @@ pub mod marketplace;
 pub mod ocr;
 pub mod period;
 pub mod portal;
+pub mod product;
 pub mod purring;
 pub mod reports;
 pub mod reskontro;
@@ -212,6 +213,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/products",
+            get(product::list).post(product::create),
+        )
+        .route(
+            "/companies/{company_id}/products/{nummer}",
+            axum::routing::put(product::update),
+        )
+        .route(
+            "/companies/{company_id}/inventory",
+            get(product::inventory),
+        )
+        .route(
+            "/companies/{company_id}/inventory/movements",
+            get(product::movements).post(product::register_movement),
+        )
+        .route(
+            "/companies/{company_id}/inventory/count",
+            axum::routing::post(product::count),
         )
         .route(
             "/companies/{company_id}/timesheet",

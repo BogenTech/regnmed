@@ -365,6 +365,7 @@ pub async fn bill_hours(
             vat_code: Some(vat_code.unwrap_or("3").to_string()),
             avdeling: None,
             prosjekt: g.prosjekt.clone(),
+            product_id: None,
         })
         .collect();
     let draft = InvoiceDraft {

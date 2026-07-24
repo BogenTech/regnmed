@@ -35,6 +35,8 @@ async fn seed_browser_demo() {
         ("2700", "Utgående mva"),
         ("3950", "Annen driftsrelatert inntekt"),
         ("8050", "Annen renteinntekt"),
+        ("1460", "Varelager"),
+        ("4390", "Beholdningsendring"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -78,6 +80,7 @@ async fn seed_browser_demo() {
                     vat_code: Some("3".into()),
                     avdeling: None,
                     prosjekt: None,
+                    product_id: None,
                 }],
             },
             "Demo Bruker",
@@ -86,6 +89,34 @@ async fn seed_browser_demo() {
         .await
         .unwrap();
     }
+    // A lagerført product with stock so the Produkter section has data.
+    regnmed_db::create_product(
+        &state.pool,
+        company,
+        &regnmed_db::ProductDraft {
+            nummer: "V1".into(),
+            navn: "Kaffekopp".into(),
+            salgspris_ore: 149_00,
+            vat_code: Some("3".into()),
+            konto: "3000".into(),
+            lagerfort: true,
+        },
+    )
+    .await
+    .unwrap();
+    regnmed_db::register_movement(
+        &state.pool,
+        company,
+        "V1",
+        today - chrono::Days::new(30),
+        "kjop",
+        50_000,
+        Some(60_00),
+        None,
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
     std::fs::write(
         format!("{out_dir}/jwks.json"),
         serde_json::to_string(&idp.jwks).unwrap(),

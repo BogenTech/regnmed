@@ -23,6 +23,9 @@ pub struct InvoiceLineDraft {
     pub vat_code: Option<String>,
     pub avdeling: Option<String>,
     pub prosjekt: Option<String>,
+    /// Product reference (docs/produkter.md) — for lager and
+    /// traceability only; every value above is a copy taken at issue.
+    pub product_id: Option<Uuid>,
 }
 
 #[derive(Debug)]
@@ -223,8 +226,8 @@ pub async fn create_invoice_in(
         sqlx::query(
             "insert into invoice_line (id, invoice_id, line_no, description, account_number,
                                        quantity_milli, unit_price_ore, net_ore, vat_code, vat_ore,
-                                       avdeling, prosjekt)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                                       avdeling, prosjekt, product_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(Uuid::now_v7())
         .bind(invoice_id)
@@ -238,9 +241,22 @@ pub async fn create_invoice_in(
         .bind(amounts.vat_ore)
         .bind(&line.avdeling)
         .bind(&line.prosjekt)
+        .bind(draft.lines[i].product_id)
         .execute(&mut **tx)
         .await?;
     }
+
+    // Lagerførte products move stock in the same transaction as the
+    // posting (kreditnota lines return it) — docs/produkter.md.
+    crate::product::record_sales_in(
+        tx,
+        company_id,
+        invoice_id,
+        draft.invoice_date,
+        &draft.lines,
+        created_by,
+    )
+    .await?;
 
     // The salgsdokument itself: rendered deterministically and stored
     // as an attachment on the voucher IN THE SAME TRANSACTION — what
@@ -340,7 +356,7 @@ pub async fn credit_invoice(
 
     let line_rows = sqlx::query(
         "select l.description, l.account_number, l.quantity_milli, l.unit_price_ore, l.vat_code,
-                l.avdeling, l.prosjekt,
+                l.avdeling, l.prosjekt, l.product_id,
                 v.voucher_date, i.due_date, j.code as journal_code,
                 (select a.number from entry e join account a on a.id = e.account_id
                  where e.id = i.receivable_entry_id) as receivable_account
@@ -376,6 +392,7 @@ pub async fn credit_invoice(
                 vat_code: r.get("vat_code"),
                 avdeling: r.get("avdeling"),
                 prosjekt: r.get("prosjekt"),
+                product_id: r.get("product_id"),
             })
             .collect(),
     };
