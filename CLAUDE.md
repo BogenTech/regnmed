@@ -388,10 +388,22 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    run log — sending stays human. `…/invoice-templates` CRUD +
    `/generate` + `/runs`; `from_invoice_id` = "gjenta denne". Portal:
    Repeterende card (generer nå, stopp/start), Gjenta on invoice rows.
-   **Next:** M7 breadth (#31 tilbud→ordre→faktura completing
-   betalingsoppfølging; #38 timeføring, #40 anleggsregister), native
-   importers (#19), EHF (#14), Maskinporten (awaiting Skatteetaten
-   scope grant, docs/gov.md), M2 tail (#51 terminordninger).
+30. ✅ Tilbud→ordre→faktura (docs/faktura.md, closed #31 — M3
+   betalingsoppfølging track complete): salgsdokument outside the
+   ledger (migration 0022) — tilbud freely editable until
+   akseptert/avslått, ordre frozen; own gap-free series per kind
+   (rejected tilbud = history, not a hole); one-way statuses; at most
+   one ordre per tilbud (unique index); ordre→faktura runs
+   create_invoice_in with status flip + invoice link in ONE tx (one
+   ordre → one faktura); chain tilbud→ordre→invoice in listings.
+   `fakturapdf` gained a Dokumenttype enum — TILBUD/ORDREBEKREFTELSE
+   render on demand, no KID/betalingsinfo. `/quotes` + `/orders`
+   endpoints; portal Tilbud og ordre card (statusknapper, → Ordre,
+   → Faktura, PDF).
+   **Next:** M7 breadth (#38 timeføring, #40 anleggsregister on the
+   dimensjoner foundation), native importers (#19), EHF (#14),
+   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md), M2
+   tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

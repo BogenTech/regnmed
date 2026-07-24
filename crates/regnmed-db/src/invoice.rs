@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::fakturapdf::{FakturaPdfInput, PdfLinje, render_faktura_pdf};
+use regnmed_core::fakturapdf::{Dokumenttype, FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::{InvoiceLineInput, build_voucher, compute, invoice_kid};
 use regnmed_core::mva::rate_on;
 use sqlx::{PgPool, Row};
@@ -248,7 +248,11 @@ pub async fn create_invoice_in(
     // the invoice exists (bokføringsforskriften §5-1, issue #32).
     let orgform: Option<String> = company.get("orgform");
     let pdf = render_faktura_pdf(&FakturaPdfInput {
-        kreditnota: credits_invoice_id.is_some(),
+        dokumenttype: if credits_invoice_id.is_some() {
+            Dokumenttype::Kreditnota
+        } else {
+            Dokumenttype::Faktura
+        },
         krediterer_nr: credited_invoice_no,
         selger_navn: company.get("name"),
         selger_orgnr: company.get("orgnr"),

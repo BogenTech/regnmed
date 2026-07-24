@@ -464,12 +464,16 @@
       api("/companies/" + id + "/invoices/overdue").catch(function () { return { invoices: [], buckets: {} }; }),
       api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
       api("/companies/" + id + "/invoice-templates").catch(function () { return { templates: [] }; }),
+      api("/companies/" + id + "/quotes").catch(function () { return { documents: [] }; }),
+      api("/companies/" + id + "/orders").catch(function () { return { documents: [] }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
     var overdue = results[2];
     var dims = results[3].dimensions;
     var templates = results[4].templates;
+    var quotes = results[5].documents;
+    var orders = results[6].documents;
     var rows = invoices.map(function (i) {
       var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
         '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>' +
@@ -550,8 +554,62 @@
         '<table class="table table-sm"><thead><tr><th>Kunde</th><th>Intervall</th><th>Neste</th>' +
         "<th class='text-right'>Netto</th><th>Kjøringer</th><th></th></tr></thead>" +
         "<tbody>" + templateRows + "</tbody></table>");
+    var statusNavn = { utkast: "utkast", sendt: "sendt", akseptert: "akseptert", avslatt: "avslått",
+      bekreftet: "bekreftet", fakturert: "fakturert" };
+    var quoteRows = quotes.map(function (q) {
+      var actions = '<button class="btn btn-xs btn-ghost" data-sd-pdf="quotes:' + q.id +
+        '" data-name="tilbud-' + q.doc_no + '.pdf">PDF</button>';
+      if (q.status === "utkast") {
+        actions += ' <button class="btn btn-xs btn-ghost" data-q-status="' + q.id + ':sendt">Merk sendt</button>';
+      }
+      if (q.status === "utkast" || q.status === "sendt") {
+        actions += ' <button class="btn btn-xs btn-outline" data-q-status="' + q.id + ':akseptert">Akseptert</button>' +
+          ' <button class="btn btn-xs btn-ghost" data-q-status="' + q.id + ':avslatt">Avslått</button>';
+      }
+      if (q.status === "akseptert") {
+        actions += ' <button class="btn btn-xs btn-primary" data-q-order="' + q.id + '">→ Ordre</button>';
+      }
+      return "<tr><td>T-" + q.doc_no + "</td><td>" + esc(q.party_name) + "</td><td>" + esc(q.doc_date) +
+        "</td><td>" + esc(statusNavn[q.status] || q.status) + "</td><td class='text-right'>" + kr(q.netto_ore) +
+        "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var orderRows = orders.map(function (o) {
+      var actions = '<button class="btn btn-xs btn-ghost" data-sd-pdf="orders:' + o.id +
+        '" data-name="ordre-' + o.doc_no + '.pdf">PDF</button>';
+      if (o.status === "bekreftet") {
+        actions += ' <button class="btn btn-xs btn-primary" data-o-invoice="' + o.id + '">→ Faktura</button>';
+      }
+      return "<tr><td>O-" + o.doc_no + (o.tilbud_no ? " <span class='opacity-60'>(T-" + o.tilbud_no + ")</span>" : "") +
+        "</td><td>" + esc(o.party_name) + "</td><td>" + esc(o.doc_date) +
+        "</td><td>" + esc(statusNavn[o.status] || o.status) +
+        (o.invoice_no ? " <span class='opacity-60'>(faktura " + o.invoice_no + ")</span>" : "") +
+        "</td><td class='text-right'>" + kr(o.netto_ore) + "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var salgsdokCard = (quotes.length === 0 && orders.length === 0 && parties.length === 0) ? "" :
+      card("Tilbud og ordre",
+        '<p class="text-sm opacity-70 mb-2">Kjeden før fakturaen — utenfor hovedboken, redigerbar til den er ' +
+        "akseptert. Akseptert tilbud blir ordre; ordre faktureres gjennom den ordinære fakturaflyten.</p>" +
+        (parties.length
+          ? '<div class="flex flex-wrap gap-2 mb-3 items-end" id="new-quote">' +
+            '<select data-f="party" class="select select-sm select-bordered">' + partyOptions + "</select>" +
+            '<input data-f="desc" class="input input-sm input-bordered" placeholder="Beskrivelse">' +
+            '<input data-f="price" class="input input-sm input-bordered w-28" placeholder="Pris (kr)">' +
+            '<select data-f="vat" class="select select-sm select-bordered"><option value="3">3 — 25 %</option>' +
+            '<option value="31">31 — 15 %</option><option value="33">33 — 12 %</option>' +
+            '<option value="5">5 — fritatt</option><option value="6">6 — utenfor</option></select>' +
+            '<button id="quote-create" class="btn btn-sm">Nytt tilbud</button></div>'
+          : "") +
+        (quoteRows
+          ? '<table class="table table-sm mb-3"><thead><tr><th>Nr</th><th>Kunde</th><th>Dato</th>' +
+            "<th>Status</th><th class='text-right'>Netto</th><th></th></tr></thead><tbody>" + quoteRows + "</tbody></table>"
+          : "") +
+        (orderRows
+          ? '<table class="table table-sm"><thead><tr><th>Ordre</th><th>Kunde</th><th>Dato</th>' +
+            "<th>Status</th><th class='text-right'>Netto</th><th></th></tr></thead><tbody>" + orderRows + "</tbody></table>"
+          : ""));
     shell(id, "faktura",
       overdueCard +
+      salgsdokCard +
       templateCard +
       card("Ny faktura", form) +
       card("Fakturaer",
@@ -625,6 +683,60 @@
           var count = result.generated.length;
           toast(count ? count + " faktura(er) generert" : "Ingen forfalte perioder", true);
           renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    var quoteCreate = document.getElementById("quote-create");
+    if (quoteCreate) quoteCreate.onclick = async function () {
+      var box = document.getElementById("new-quote");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        var made = await post("/companies/" + id + "/quotes", {
+          party_no: value("party"),
+          lines: [{ description: value("desc"), unit_price_ore: parseKr(value("price")), vat_code: value("vat") }],
+        });
+        toast("Tilbud T-" + made.doc_no + " opprettet", true);
+        renderFaktura(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-q-status]").forEach(function (button) {
+      button.onclick = async function () {
+        var parts = button.dataset.qStatus.split(":");
+        try {
+          await post("/companies/" + id + "/quotes/" + parts[0] + "/status", { status: parts[1] });
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-q-order]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var made = await post("/companies/" + id + "/quotes/" + button.dataset.qOrder + "/order", {});
+          toast("Ordre O-" + made.doc_no + " opprettet", true);
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-o-invoice]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var issued = await post("/companies/" + id + "/orders/" + button.dataset.oInvoice + "/invoice", {});
+          toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);
+          renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-sd-pdf]").forEach(function (button) {
+      button.onclick = async function () {
+        var parts = button.dataset.sdPdf.split(":");
+        try {
+          var response = await api("/companies/" + id + "/" + parts[0] + "/" + parts[1] + "/pdf");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = button.dataset.name;
+          a.click();
+          URL.revokeObjectURL(a.href);
         } catch (error) { toast(error.message, false); }
       };
     });

@@ -17,6 +17,7 @@ pub mod portal;
 pub mod purring;
 pub mod reports;
 pub mod reskontro;
+pub mod salgsdokument;
 pub mod settings;
 pub mod utsendelse;
 
@@ -218,6 +219,38 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/parties/{party_id}/contact",
             axum::routing::put(settings::update_party_contact),
+        )
+        .route(
+            "/companies/{company_id}/quotes",
+            get(salgsdokument::list_quotes).post(salgsdokument::create_quote),
+        )
+        .route(
+            "/companies/{company_id}/quotes/{quote_id}",
+            axum::routing::put(salgsdokument::update_quote),
+        )
+        .route(
+            "/companies/{company_id}/quotes/{quote_id}/status",
+            axum::routing::post(salgsdokument::quote_status),
+        )
+        .route(
+            "/companies/{company_id}/quotes/{quote_id}/order",
+            axum::routing::post(salgsdokument::quote_to_order),
+        )
+        .route(
+            "/companies/{company_id}/quotes/{quote_id}/pdf",
+            get(salgsdokument::pdf),
+        )
+        .route(
+            "/companies/{company_id}/orders",
+            get(salgsdokument::list_orders).post(salgsdokument::create_order),
+        )
+        .route(
+            "/companies/{company_id}/orders/{order_id}/invoice",
+            axum::routing::post(salgsdokument::order_to_invoice),
+        )
+        .route(
+            "/companies/{company_id}/orders/{order_id}/pdf",
+            get(salgsdokument::pdf),
         )
         .route(
             "/companies/{company_id}/invoice-templates",

@@ -28,9 +28,42 @@ pub struct PdfLinje {
     pub mva_ore: i64,
 }
 
+/// The document kinds this layout renders. Faktura and Kreditnota are
+/// regnskapsdokumenter (issued, stored, hash-verified); Tilbud and
+/// Ordrebekreftelse are the commercial chain BEFORE the invoice (#31) —
+/// no KID, no betalingsinformasjon, rendered on demand from editable
+/// data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dokumenttype {
+    Faktura,
+    Kreditnota,
+    Tilbud,
+    Ordrebekreftelse,
+}
+
+impl Dokumenttype {
+    fn tittel(self) -> &'static str {
+        match self {
+            Dokumenttype::Faktura => "FAKTURA",
+            Dokumenttype::Kreditnota => "KREDITNOTA",
+            Dokumenttype::Tilbud => "TILBUD",
+            Dokumenttype::Ordrebekreftelse => "ORDREBEKREFTELSE",
+        }
+    }
+
+    fn nummerord(self) -> &'static str {
+        match self {
+            Dokumenttype::Faktura => "Fakturanr",
+            Dokumenttype::Kreditnota => "Kreditnotanr",
+            Dokumenttype::Tilbud => "Tilbudsnr",
+            Dokumenttype::Ordrebekreftelse => "Ordrenr",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FakturaPdfInput {
-    pub kreditnota: bool,
+    pub dokumenttype: Dokumenttype,
     /// Fakturanummeret til fakturaen denne krediterer.
     pub krediterer_nr: Option<i64>,
 
@@ -104,11 +137,8 @@ fn orgnr_display(orgnr: &str) -> String {
 
 pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
-    let tittel = if input.kreditnota {
-        "KREDITNOTA"
-    } else {
-        "FAKTURA"
-    };
+    let tittel = input.dokumenttype.tittel();
+    let kreditnota = input.dokumenttype == Dokumenttype::Kreditnota;
 
     // Seller block, top left.
     pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.selger_navn);
@@ -128,16 +158,14 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
 
     // Title + document facts, top right.
     pdf.text_right(RIGHT, 60.0, 16.0, Font::Bold, tittel);
-    let nummerord = if input.kreditnota {
-        "Kreditnotanr"
-    } else {
-        "Fakturanr"
-    };
     let mut fakta: Vec<(String, String)> = vec![
-        (nummerord.into(), input.fakturanr.to_string()),
+        (
+            input.dokumenttype.nummerord().into(),
+            input.fakturanr.to_string(),
+        ),
         ("Dato".into(), input.fakturadato.to_string()),
     ];
-    if !input.kreditnota {
+    if input.dokumenttype == Dokumenttype::Faktura {
         fakta.push(("Forfall".into(), input.forfallsdato.to_string()));
     }
     if let Some(nr) = input.krediterer_nr {
@@ -252,7 +280,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     }
     pdf.rule(RIGHT - 220.0, RIGHT, ly - 4.0, 0.7);
     ly += 6.0;
-    let betales = if input.kreditnota {
+    let betales = if kreditnota {
         "Å godskrive"
     } else {
         "Å betale"
@@ -261,7 +289,9 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     pdf.text_right(RIGHT, ly, 11.0, Font::Bold, &kr(brutto));
 
     // Payment block at a fixed distance below the totals.
-    if !input.kreditnota {
+    // Betalingsinformasjon only on an actual faktura — tilbud/ordre are
+    // not payable and kreditnotaer are settlements.
+    if input.dokumenttype == Dokumenttype::Faktura {
         ly += 30.0;
         pdf.rule(MARGIN, RIGHT, ly, 0.7);
         ly += 16.0;
@@ -324,7 +354,7 @@ mod tests {
 
     fn input() -> FakturaPdfInput {
         FakturaPdfInput {
-            kreditnota: false,
+            dokumenttype: Dokumenttype::Faktura,
             krediterer_nr: None,
             selger_navn: "Demo & Sønn AS".into(),
             selger_orgnr: "999888777".into(),
@@ -394,7 +424,7 @@ mod tests {
     #[test]
     fn kreditnota_flips_title_and_drops_payment_block() {
         let mut i = input();
-        i.kreditnota = true;
+        i.dokumenttype = Dokumenttype::Kreditnota;
         i.krediterer_nr = Some(7);
         for linje in &mut i.linjer {
             linje.antall_milli = -linje.antall_milli;

@@ -166,7 +166,9 @@ M7 (#37–#48) for new ground:
   ✅ repeterende faktura (#30 — editable maler, generering som
   ordinære fakturaer m/ periodetekst via daglig CronJob, insert-only
   kjøringslogg, «merk for utsendelse» — mennesket sender;
-  docs/faktura.md), tilbud → ordre → faktura (#31),
+  docs/faktura.md), ✅ tilbud → ordre → faktura (#31 — kjeden utenfor
+  hovedboken m/ egne nummerserier, enveis statuser, tapsfri
+  konvertering og ordinær fakturering; docs/faktura.md),
   ✅ faktura-PDF + e-postutsendelse (#32 — deterministisk hand-rolled
   PDF lagret på bilaget ved utstedelse, e-post med vedlegg over
   regnids mail-rail m/ insert-only utsendelseslogg; docs/faktura.md)

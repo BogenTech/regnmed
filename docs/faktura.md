@@ -103,10 +103,39 @@ reversing-voucher rule.
 | `POST …/invoice-templates/{tid}/generate` | generate every due period now |
 | `GET …/invoice-templates/{tid}/runs` | the insert-only generation log |
 
+## Tilbud → ordre → faktura (#31)
+
+- The commercial chain BEFORE the invoice lives **outside the ledger**:
+  nothing posts, tilbud are freely editable until akseptert/avslått, an
+  ordre is a frozen confirmation. Both reuse the invoice line model, so
+  conversion is lossless.
+- **Own gap-free number series per kind** (same counter pattern as
+  invoices) — a rejected tilbud is history, not a hole.
+- **One-way statuses**: tilbud utkast → sendt → akseptert | avslått
+  (accepting straight from utkast is allowed); ordre bekreftet →
+  fakturert. At most one ordre per tilbud (unique index); converting an
+  ordre runs the NORMAL atomic invoice path (number, KID, posting,
+  stored PDF) and links the chain tilbud → ordre → invoice — the ordre
+  status flip and the invoice commit together. One ordre → one faktura.
+- **PDF on demand**: TILBUD/ORDREBEKREFTELSE rendered from current
+  state with the same layout (no KID, no betalingsinformasjon — not
+  payable); the stored, hash-verified document arrives with the
+  invoice.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET/POST /companies/{id}/quotes`, `PUT …/{qid}` | tilbud; edit while utkast/sendt |
+| `POST …/quotes/{qid}/status` | sendt \| akseptert \| avslatt |
+| `POST …/quotes/{qid}/order` | akseptert tilbud → ordre (lines copied) |
+| `GET/POST /companies/{id}/orders` | ordrer (direct creation allowed) |
+| `POST …/orders/{oid}/invoice` | ordre → faktura (ordinary path) |
+| `GET …/quotes/{qid}/pdf`, `…/orders/{oid}/pdf` | on-demand documents |
+
 ## Not yet (deliberate)
 
 - **EHF dispatch** arrives with the Peppol access point (issue #14).
 - Proration and seat-based metering — templates are fixed lines first.
+- Delleveranser/delfakturering — one ordre → one faktura in v1.
 
 Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
@@ -138,6 +167,12 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   moment the invoice does, served with the kontaktinfo, kreditnota
   document, purring `?format=pdf`, settings PUT rejected for
   non-admins.
+- `regnmed-api/tests/salgsdokument.rs` (real Postgres, also CI) — the
+  whole chain over HTTP: tilbud edited while utkast, PDF without
+  KID/betalingsinfo, one-way trapp, ordre copied losslessly (one per
+  tilbud), fakturering through the ordinary path (chain + stored PDF
+  verify, links carried), avslått path keeps the number series
+  gap-free, direct ordre.
 - `regnmed-api/tests/invoice_template.rs` (real Postgres, also CI) —
   template over the API, catch-up generation with periodetekst through
   the gap-free path (chain + attachments verify), idempotence, run log
