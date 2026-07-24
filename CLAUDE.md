@@ -400,10 +400,23 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    render on demand, no KID/betalingsinfo. `/quotes` + `/orders`
    endpoints; portal Tilbud og ordre card (statusknapper, → Ordre,
    → Faktura, PDF).
-   **Next:** M7 breadth (#38 timeføring, #40 anleggsregister on the
-   dimensjoner foundation), native importers (#19), EHF (#14),
-   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md), M2
-   tail (#51 terminordninger).
+31. ✅ Timeføring (docs/timer.md, closed #38): time_entry with INTEGER
+   minutes (1..=1440), prosjekt from the dimension registry (active
+   required), fakturerbar + timesats_ore (migration 0023). Editable
+   until (a) månedslås — insert-only timesheet_lock exactly like
+   period_lock — or (b) fakturert (one-way invoice link); BOTH
+   enforced by a DB trigger whose single exception is the pure
+   billing-marker update (lock for lønn, then bill).
+   Fakturagrunnlag: unbilled billable hours grouped per (prosjekt,
+   sats) → milli-hour invoice lines carrying the prosjekt DIMENSION,
+   issued via create_invoice_in with entries marked fakturert in the
+   same tx. /companies/{id}/timesheet endpoints (own entries; admin
+   corrects all; lock admin-only); portal Timer section (min uke,
+   per-prosjekt, ufakturert → Lag faktura).
+   **Next:** M7 breadth (#40 anleggsregister, #39 produktregister),
+   native importers (#19), EHF (#14), Maskinporten (awaiting
+   Skatteetaten scope grant, docs/gov.md), M2 tail (#51
+   terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

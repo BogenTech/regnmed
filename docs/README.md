@@ -15,6 +15,7 @@ CLAUDE.md).
 | [saft/README.md](saft/README.md) | SAF-T Financial export and the vendored official artifacts |
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [dimensjoner.md](dimensjoner.md) | Avdeling/prosjekt på posteringene, hash format v3, resultat per dimensjon |
+| [timer.md](timer.md) | Timeføring: heltallsminutter, månedslås, fakturagrunnlag gjennom fakturaflyten |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
 | [purring.md](purring.md) | Betalingsoppfølging: aldersfordeling, purregebyr/forsinkelsesrente som bilag, inkassovarsel |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |

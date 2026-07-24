@@ -28,6 +28,7 @@ pub mod salgsdokument;
 pub mod sats;
 pub mod settings;
 pub mod tenancy;
+pub mod timesheet;
 pub mod utsendelse;
 
 pub use anchor::*;
@@ -54,6 +55,7 @@ pub use salgsdokument::*;
 pub use sats::*;
 pub use settings::*;
 pub use tenancy::*;
+pub use timesheet::*;
 pub use utsendelse::*;
 
 use sqlx::PgPool;

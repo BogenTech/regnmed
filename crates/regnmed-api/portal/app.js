@@ -143,7 +143,7 @@
   function shell(companyId, section, content) {
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
-      ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["reskontro", "Reskontro"],
+      ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["timer", "Timer"], ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
@@ -881,6 +881,139 @@
     };
   }
 
+  // Timeføring (docs/timer.md): minutter som heltall, redigerbart til
+  // måneden låses eller timene faktureres.
+  function minutterTilTimer(min) {
+    return (min / 60).toFixed(2).replace(".", ",").replace(/,?0+$/, "") || "0";
+  }
+
+  async function renderTimer(id) {
+    var params = new URLSearchParams(location.hash.split("?")[1] || "");
+    var mandag = params.get("uke");
+    if (!mandag) {
+      var now = new Date();
+      var day = (now.getDay() + 6) % 7;
+      now.setDate(now.getDate() - day);
+      mandag = now.toISOString().slice(0, 10);
+    }
+    var start = new Date(mandag + "T00:00:00Z");
+    var slutt = new Date(start); slutt.setUTCDate(slutt.getUTCDate() + 6);
+    var from = start.toISOString().slice(0, 10), to = slutt.toISOString().slice(0, 10);
+    var forrige = new Date(start); forrige.setUTCDate(forrige.getUTCDate() - 7);
+    var neste = new Date(start); neste.setUTCDate(neste.getUTCDate() + 7);
+
+    var results = await Promise.all([
+      api("/companies/" + id + "/timesheet?from=" + from + "&to=" + to),
+      api("/companies/" + id + "/timesheet/summary?from=" + from + "&to=" + to),
+      api("/companies/" + id + "/timesheet/unbilled").catch(function () { return { groups: [] }; }),
+      api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
+      api("/companies/" + id + "/parties?kind=kunde").catch(function () { return { parties: [] }; }),
+    ]);
+    var uke = results[0];
+    var summary = results[1].prosjekter;
+    var unbilled = results[2].groups;
+    var dims = results[3].dimensions;
+    var kunder = results[4].parties;
+
+    var ukeTotal = 0;
+    var rows = uke.entries.map(function (e) {
+      ukeTotal += e.minutter;
+      var actions = e.own && !e.invoice_no
+        ? '<button class="btn btn-xs btn-ghost" data-t-del="' + e.entry_id + '">Slett</button>'
+        : (e.invoice_no ? '<span class="badge badge-ghost badge-xs">faktura ' + e.invoice_no + "</span>" : "");
+      return "<tr><td>" + esc(e.dato) + "</td><td>" + esc(e.person) + "</td><td>" + esc(e.beskrivelse) +
+        "</td><td>" + (e.prosjekt ? esc(e.prosjekt) : "–") + "</td><td class='text-right'>" +
+        minutterTilTimer(e.minutter) + " t</td><td>" +
+        (e.fakturerbar ? kr(e.timesats_ore) + "/t" : "–") + "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var summaryRows = summary.map(function (s2) {
+      return "<tr><td>" + (s2.prosjekt ? esc(s2.prosjekt) : "(uten prosjekt)") + "</td>" +
+        "<td class='text-right'>" + minutterTilTimer(s2.minutter) + " t</td>" +
+        "<td class='text-right'>" + minutterTilTimer(s2.fakturerbare_minutter) + " t</td>" +
+        "<td class='text-right'>" + kr(s2.ufakturert_ore) + "</td></tr>";
+    }).join("");
+    var unbilledSum = unbilled.reduce(function (sum, g) {
+      return sum + Math.round(g.minutter * g.timesats_ore / 60);
+    }, 0);
+    var kundeOptions = kunder.map(function (p) {
+      return '<option value="' + esc(p.party_no) + '">' + esc(p.party_no) + " " + esc(p.name) + "</option>";
+    }).join("");
+
+    shell(id, "timer",
+      card("Min uke " + from + " – " + to +
+        ' <a class="btn btn-ghost btn-xs" href="#/c/' + id + '/timer?uke=' + forrige.toISOString().slice(0, 10) + '">«</a>' +
+        ' <a class="btn btn-ghost btn-xs" href="#/c/' + id + '/timer?uke=' + neste.toISOString().slice(0, 10) + '">»</a>',
+        (uke.locked_through ? '<p class="text-xs opacity-70 mb-2">Låst t.o.m. ' + esc(uke.locked_through) + "</p>" : "") +
+        '<div class="flex flex-wrap gap-2 mb-3 items-end" id="new-time">' +
+        '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+        '<input data-f="timer" class="input input-sm input-bordered w-20" placeholder="Timer">' +
+        '<input data-f="desc" class="input input-sm input-bordered flex-1" placeholder="Hva jobbet du med?">' +
+        (dims.some(function (d) { return d.kind === "prosjekt" && d.active; })
+          ? dimSelect(dims, "prosjekt", "select select-sm select-bordered", "prosjekt") : "") +
+        '<label class="label cursor-pointer gap-1"><input data-f="fakturerbar" type="checkbox" class="checkbox checkbox-xs">' +
+        '<span class="label-text text-xs">Fakturerbar</span></label>' +
+        '<input data-f="sats" class="input input-sm input-bordered w-24" placeholder="Sats (kr/t)">' +
+        '<button id="time-add" class="btn btn-sm btn-primary">Før timer</button></div>' +
+        '<table class="table table-sm"><thead><tr><th>Dato</th><th>Hvem</th><th>Beskrivelse</th>' +
+        "<th>Prosjekt</th><th class='text-right'>Timer</th><th>Sats</th><th></th></tr></thead>" +
+        "<tbody>" + rows + "</tbody></table>" +
+        '<p class="text-sm mt-2">Sum uke: <b>' + minutterTilTimer(ukeTotal) + " t</b></p>") +
+      card("Per prosjekt (denne uken)",
+        '<table class="table table-sm"><thead><tr><th>Prosjekt</th><th class="text-right">Timer</th>' +
+        '<th class="text-right">Fakturerbart</th><th class="text-right">Ufakturert</th></tr></thead>' +
+        "<tbody>" + (summaryRows || "") + "</tbody></table>") +
+      (unbilled.length === 0 ? "" :
+        card("Ufakturerte timer — " + kr(unbilledSum) + " kr",
+          '<table class="table table-sm mb-2"><thead><tr><th>Prosjekt</th><th class="text-right">Timer</th>' +
+          '<th class="text-right">Sats</th></tr></thead><tbody>' +
+          unbilled.map(function (g) {
+            return "<tr><td>" + (g.prosjekt ? esc(g.prosjekt) : "(uten prosjekt)") + "</td>" +
+              "<td class='text-right'>" + minutterTilTimer(g.minutter) + " t</td>" +
+              "<td class='text-right'>" + kr(g.timesats_ore) + "/t</td></tr>";
+          }).join("") + "</tbody></table>" +
+          (kundeOptions
+            ? '<div class="flex gap-2"><select id="bill-party" class="select select-sm select-bordered">' +
+              kundeOptions + "</select>" +
+              '<button id="bill-hours" class="btn btn-sm btn-primary">Lag faktura</button></div>'
+            : ""))));
+
+    document.getElementById("time-add").onclick = async function () {
+      var box = document.getElementById("new-time");
+      var value = function (n) { var el = box.querySelector('[data-f="' + n + '"]'); return el ? el.value : ""; };
+      var timer = Number(String(value("timer")).replace(",", "."));
+      var fakturerbar = box.querySelector('[data-f="fakturerbar"]').checked;
+      try {
+        await post("/companies/" + id + "/timesheet", {
+          dato: value("dato"),
+          minutter: Math.round(timer * 60),
+          beskrivelse: value("desc"),
+          prosjekt: value("prosjekt") || null,
+          fakturerbar: fakturerbar,
+          timesats_ore: fakturerbar ? parseKr(value("sats")) : null,
+        });
+        renderTimer(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-t-del]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/timesheet/" + button.dataset.tDel, { method: "DELETE" });
+          renderTimer(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    var billButton = document.getElementById("bill-hours");
+    if (billButton) billButton.onclick = async function () {
+      try {
+        var issued = await post("/companies/" + id + "/timesheet/invoice", {
+          party_no: document.getElementById("bill-party").value,
+        });
+        toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);
+        renderTimer(id);
+      } catch (error) { toast(error.message, false); }
+    };
+  }
+
   async function renderReskontro(id, partyId) {
     var parties = (await api("/companies/" + id + "/parties")).parties;
     if (partyId) {
@@ -1611,6 +1744,7 @@
         var section = parts[2] || "oversikt";
         if (section === "oversikt") return await renderOversikt(id);
         if (section === "faktura") return await renderFaktura(id);
+        if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);
         if (section === "mva") return await renderMva(id);
         if (section === "rapporter") return await renderRapporter(id);

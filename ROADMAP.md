@@ -183,7 +183,10 @@ M7 (#37–#48) for new ground:
   registry insert/rename/open-close only, koder hash-dekket, avsluttet
   avviser posteringer, resultat per dimensjon, SAF-T Analysis;
   docs/dimensjoner.md),
-  timeføring (#38), produktregister + enkelt varelager (#39),
+  ✅ timeføring (#38 — heltallsminutter, månedslås som bevisgrense
+  håndhevet i databasen, fakturagrunnlag per prosjekt gjennom den
+  ordinære fakturaflyten m/ prosjektdimensjon; docs/timer.md),
+  produktregister + enkelt varelager (#39),
   anleggsregister m/ regnskaps- og skattemessige avskrivninger (#40),
   flervaluta m/ agio (#44).
 - Plattform: maskin-tilgang til API-et via regnid client_credentials +

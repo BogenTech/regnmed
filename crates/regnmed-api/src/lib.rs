@@ -19,6 +19,7 @@ pub mod reports;
 pub mod reskontro;
 pub mod salgsdokument;
 pub mod settings;
+pub mod timesheet;
 pub mod utsendelse;
 
 use std::sync::Arc;
@@ -211,6 +212,30 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/timesheet",
+            get(timesheet::list).post(timesheet::create),
+        )
+        .route(
+            "/companies/{company_id}/timesheet/summary",
+            get(timesheet::summary),
+        )
+        .route(
+            "/companies/{company_id}/timesheet/unbilled",
+            get(timesheet::unbilled),
+        )
+        .route(
+            "/companies/{company_id}/timesheet/invoice",
+            axum::routing::post(timesheet::bill),
+        )
+        .route(
+            "/companies/{company_id}/timesheet/lock",
+            get(timesheet::get_lock).put(timesheet::set_lock),
+        )
+        .route(
+            "/companies/{company_id}/timesheet/{entry_id}",
+            axum::routing::put(timesheet::update).delete(timesheet::delete),
         )
         .route(
             "/companies/{company_id}/settings",
