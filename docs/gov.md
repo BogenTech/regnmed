@@ -38,9 +38,13 @@ then run the live validation round-trip.
    organization's Altinn roles).
 2. Create a Maskinporten client in the test environment; register a
    public key (or virksomhetssertifikat) on it.
-3. Request the Skatteetaten scopes (`skatteetaten:mvameldingvalidering`,
-   later `skatteetaten:mvamelding` for submission). Skatteetaten grants
-   them to the org.
+3. Request the Skatteetaten scopes (`skatteetaten:mvameldingvalidering`
+   for validation, `skatteetaten:mvameldinginnsending` for submission).
+   They do NOT appear in Samarbeidsportalen's scope picker until
+   granted: order them via skatteetaten.no/kontakt/skriv/ stating the
+   orgnr and both scope names (same procedure for test and prod); once
+   granted they show under "Tildelt meg" and can be added to the
+   client.
 4. Point the env variables above at the test environment and run
    `regnmed mva-melding … --validate`.
 
