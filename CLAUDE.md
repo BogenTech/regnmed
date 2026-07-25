@@ -561,8 +561,29 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    fjoråret ±X %» (basispunkter, half-away, ingen flyttall).
    `/companies/{id}/budgets…` + `GET …/reports/avvik`; portal:
    Budsjett-fane under Rapporter m/ redigerbart konto×måned-rutenett.
-   **Next:** native importers (#19), EHF (#14), Maskinporten
-   (awaiting Skatteetaten scope grant, docs/gov.md).
+41. ✅ Migrering: kontakter og åpne poster, filtier (docs/migration.md,
+   closed #19): SAF-T flytter hovedboken, dette flytter resten. CSV
+   fra ethvert norsk system, layout lest av OVERSKRIFTENE (ingen
+   profil per leverandør) — bankcsv-mønsteret, med de delte
+   primitivene løftet ut i `regnmed-core::csvutil` (bankcsv bruker nå
+   samme kode; testene beviste at oppførselen står). Nytt:
+   `regnmed-core::migreringcsv` (kontakter + åpne poster;
+   `find_column_ranked` = prioritert kolonnevalg, så **restbeløp
+   vinner over fakturabeløp** — bruttoimport ville blåst opp
+   reskontroen i stillhet). Retningen bestemmes av parts-typen (kunde
+   debet / leverandør kredit), aldri av filens fortegn; kreditnota
+   beholder sitt eget. `regnmed-db::migrering`: kontakter idempotent
+   (orgnr → numerisk nummer → navn; kundenr 10001 forblir
+   partsnummer), åpne poster som ETT bilag med partslinjer mot
+   motkonto (2050) i én tx — krever NULL saldo på reskontrokontoen og
+   sier fra med tallet ellers (postene ERSTATTER samlelinjen), og
+   setter reskontro-flagget tilbake som åpningsbalansen utsatte.
+   `POST …/import/contacts` + `…/import/open-items?preview=true`
+   (admin); portal: «Importer fra et annet system» i Reskontro med
+   forhåndsvisning før bokføring. API-tieren per leverandør krever
+   nøkler og er dokumentert som neste steg, ikke lovet.
+   **Next:** EHF (#14), Maskinporten (awaiting Skatteetaten scope
+   grant, docs/gov.md), API-tier per leverandør (#19-oppfølger).
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

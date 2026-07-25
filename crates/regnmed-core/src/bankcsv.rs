@@ -15,9 +15,10 @@
 //! idempotent), and balances are `None` — the reconciliation view
 //! already treats them as optional.
 
-use chrono::NaiveDate;
-
 use crate::camt053::{Camt053Statement, Camt053Transaction};
+use crate::csvutil::{
+    find_column, parse_amount as csv_amount, parse_date as csv_date, read_header,
+};
 use crate::hash::sha256;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -46,136 +47,10 @@ impl std::fmt::Display for BankCsvError {
 
 impl std::error::Error for BankCsvError {}
 
-/// Splits one CSV record, honoring double quotes (`"a;b"` is one field,
-/// `""` inside quotes is an escaped quote).
-fn split_record(line: &str, delimiter: char) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut field = String::new();
-    let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if in_quotes {
-            if c == '"' {
-                if chars.peek() == Some(&'"') {
-                    chars.next();
-                    field.push('"');
-                } else {
-                    in_quotes = false;
-                }
-            } else {
-                field.push(c);
-            }
-        } else if c == '"' {
-            in_quotes = true;
-        } else if c == delimiter {
-            fields.push(std::mem::take(&mut field));
-        } else {
-            field.push(c);
-        }
-    }
-    fields.push(field);
-    fields
-}
-
-fn detect_delimiter(header: &str) -> char {
-    for candidate in [';', '\t', ','] {
-        if header.contains(candidate) {
-            return candidate;
-        }
-    }
-    ';'
-}
-
-fn norm(header: &str) -> String {
-    header
-        .to_lowercase()
-        .replace('ø', "o")
-        .replace('æ', "ae")
-        .replace('å', "a")
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == ' ')
-        .collect::<String>()
-        .trim()
-        .to_string()
-}
-
-fn find_column(headers: &[String], candidates: &[&str], avoid: &[&str]) -> Option<usize> {
-    // Exact name first, then containment — and never an avoided word
-    // (e.g. "rentedato" must not win the date column).
-    for stage in 0..2 {
-        for (i, header) in headers.iter().enumerate() {
-            if avoid.iter().any(|a| header.contains(a)) {
-                continue;
-            }
-            let hit = candidates.iter().any(|c| {
-                if stage == 0 {
-                    header == c
-                } else {
-                    header.contains(c)
-                }
-            });
-            if hit {
-                return Some(i);
-            }
-        }
-    }
-    None
-}
-
-/// "1 234,56" / "1.234,56" / "-450,00" / "1234.56" → øre. If a comma is
-/// present it is the decimal separator (Norwegian exports); otherwise a
-/// dot is.
-fn parse_amount(raw: &str) -> Result<i64, BankCsvError> {
-    let cleaned: String = raw
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '\u{a0}')
-        .collect();
-    if cleaned.is_empty() {
-        return Ok(0);
-    }
-    let bad = || BankCsvError::BadAmount(raw.to_string());
-    let normalized = if cleaned.contains(',') {
-        cleaned.replace('.', "").replace(',', ".")
-    } else {
-        cleaned
-    };
-    let (whole, frac) = match normalized.split_once('.') {
-        Some((w, f)) => (w, f),
-        None => (normalized.as_str(), ""),
-    };
-    if frac.len() > 2 || !frac.chars().all(|c| c.is_ascii_digit()) {
-        return Err(bad());
-    }
-    let negative = whole.starts_with('-');
-    let whole_digits = whole.trim_start_matches(['-', '+']);
-    if whole_digits.is_empty() || !whole_digits.chars().all(|c| c.is_ascii_digit()) {
-        return Err(bad());
-    }
-    let whole: i64 = whole_digits.parse().map_err(|_| bad())?;
-    let frac: i64 = format!("{frac:0<2}").parse().map_err(|_| bad())?;
-    let ore = whole * 100 + frac;
-    Ok(if negative { -ore } else { ore })
-}
-
-fn parse_date(raw: &str) -> Result<NaiveDate, BankCsvError> {
-    let raw = raw.trim();
-    for format in ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%d.%m.%y"] {
-        if let Ok(date) = NaiveDate::parse_from_str(raw, format) {
-            return Ok(date);
-        }
-    }
-    Err(BankCsvError::BadDate(raw.to_string()))
-}
-
 pub fn parse(text: &str) -> Result<Camt053Statement, BankCsvError> {
-    let text = text.trim_start_matches('\u{feff}');
-    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    let header_line = lines.next().ok_or(BankCsvError::Empty)?;
-    let delimiter = detect_delimiter(header_line);
-    let headers: Vec<String> = split_record(header_line, delimiter)
-        .iter()
-        .map(|h| norm(h))
-        .collect();
+    let (header, lines) = read_header(text).ok_or(BankCsvError::Empty)?;
+    let (delimiter, headers) = (header.delimiter, header.headers);
+    let lines = lines.filter(|l| !l.trim().is_empty());
 
     let date_col = find_column(
         &headers,
@@ -221,7 +96,7 @@ pub fn parse(text: &str) -> Result<Camt053Statement, BankCsvError> {
 
     let mut transactions = Vec::new();
     for line in lines {
-        let fields = split_record(line, delimiter);
+        let fields = crate::csvutil::split_record(line, delimiter);
         let get = |i: Option<usize>| {
             i.and_then(|i| fields.get(i))
                 .map(|s| s.trim())
@@ -232,10 +107,15 @@ pub fn parse(text: &str) -> Result<Camt053Statement, BankCsvError> {
             // Reserved/not-yet-booked rows come without a booking date.
             continue;
         }
-        let booking_date = parse_date(date_raw)?;
+        let booking_date = csv_date(date_raw).map_err(BankCsvError::BadDate)?;
         let amount_ore = match amount_col {
-            Some(i) => parse_amount(get(Some(i)))?,
-            None => parse_amount(get(in_col))? - parse_amount(get(out_col))?.abs(),
+            Some(i) => csv_amount(get(Some(i))).map_err(BankCsvError::BadAmount)?,
+            None => {
+                csv_amount(get(in_col)).map_err(BankCsvError::BadAmount)?
+                    - csv_amount(get(out_col))
+                        .map_err(BankCsvError::BadAmount)?
+                        .abs()
+            }
         };
         if amount_ore == 0 {
             continue;
@@ -270,6 +150,8 @@ pub fn parse(text: &str) -> Result<Camt053Statement, BankCsvError> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::NaiveDate;
+
     use super::*;
 
     #[test]

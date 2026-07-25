@@ -107,10 +107,18 @@ existing portfolio.
   same-target accounts, enforces 4-digit results; manual åpningsbalanse
   endpoint for systems without SAF-T, zero-sum enforced
   (docs/migration.md).
-- **Native API importers** for what SAF-T lacks: open reskontro items,
-  attachments/bilagsbilder, recurring invoices, contacts. Priority order by
-  market share of the accountant segment: **Tripletex, Fiken, Visma
-  eAccounting, PowerOffice, Conta** (all have public APIs).
+- ✅ **Kontakter og åpne poster — filtieren** (#19): CSV-eksporter fra
+  ethvert av systemene, layout lest av kolonneoverskriftene (samme grep
+  som bank-CSV, delt `csvutil`), restbeløp prioritert over fakturabeløp,
+  retning bestemt av parts-typen. Åpne poster blir ETT bilag med én
+  partslinje per post mot en motkonto, i én transaksjon, og krever at
+  reskontrokontoen står i null — de ERSTATTER samlelinjen, og saldoen
+  blir lik summen av postene fordi det er de samme radene
+  (docs/migration.md).
+- **Native API-importere** for resten (bilagsvedlegg/bilagsbilder,
+  repeterende fakturamaler): krever avtale og nøkler per leverandør —
+  **Tripletex, Fiken, Visma eAccounting, PowerOffice, Conta** — og
+  kommer som en egen sak per system, slik PSD2 er neste tier for bank.
 
 ## M5 — Portal og marketplace
 

@@ -65,6 +65,56 @@ touched accounts are deferred with a warning — an opening total has no
 party breakdown. The portal offers it next to the SAF-T card on empty
 companies.
 
+## Kontakter og åpne poster (filtier, #19)
+
+SAF-T flytter hovedboken, men bærer ikke alt et byrå trenger for å
+slutte å bruke det gamle systemet: **kontaktopplysninger** (adresse,
+e-post, kontonummer) og **åpne reskontroposter** står igjen. Alle de
+norske systemene kan eksportere begge deler som CSV i dag, uten
+API-nøkler — så filtieren kommer først, akkurat som for bank
+(docs/bank.md). API-tieren (Tripletex, Fiken, Visma eAccounting,
+PowerOffice, Conta) krever avtale og nøkler per leverandør og er
+dokumentert som neste steg, ikke lovet her.
+
+Layouten leses av **kolonneoverskriftene**, ikke av en profil per
+leverandør (`regnmed-core::migreringcsv`, samme grep som bank-CSV):
+overskriftsvokabularet endrer seg langsommere enn produktnavnene, og
+en fil vi ikke forstår feiler høyt med kolonnene vi faktisk så.
+
+| Endepunkt | Hva |
+| --- | --- |
+| `POST …/import/contacts?kind=kunde\|leverandor` | Kontaktliste. Idempotent: match på orgnr → nummer → navn. Et numerisk kundenr blir partsnummeret (10001 forblir 10001). |
+| `POST …/import/open-items?kind=&konto=&motkonto=&dato=&preview=` | Åpne poster. `preview=true` leser filen, slår opp partene og sjekker saldoen uten å bokføre noe. |
+
+To detaljer som er lette å ta feil av, og som derfor er testet:
+
+- **Restbeløp vinner over fakturabeløp.** Eksporter har ofte begge;
+  å importere bruttobeløpet ville blåst opp reskontroen i stillhet.
+  Kolonnelisten er en prioritetsrekkefølge, ikke et sett.
+- **Retningen bestemmes av parts-typen, ikke av filen.** Kunde =
+  debet, leverandør = kredit. Eksportene er uenige med hverandre om
+  fortegn, men aldri om hvem som skylder hvem. En kreditnota beholder
+  sitt eget negative fortegn gjennom regelen.
+
+### Åpne poster ERSTATTER samlelinjen
+
+Postene blir ETT bilag med én partslinje per post, balansert mot en
+motkonto (2050 som standard) — i én transaksjon. Derfor krever
+importen at reskontrokontoen står i **null** først, og sier fra med
+den faktiske saldoen hvis ikke. Rekkefølgen ved migrering er:
+
+1. Kontakter — så postene har noen å peke på.
+2. Åpningsbalanse **uten** 1500/2400 (docs/migration.md over).
+3. Åpne poster.
+
+Etterpå er reskontrosaldoen lik summen av de åpne postene fordi det
+er de samme radene — ikke fordi noe ble avstemt i etterkant. Importen
+setter også reskontro-flagget på kontoen tilbake; åpningsbalansen
+utsetter det med vilje, og dette er stedet det kommer igjen.
+
+Portal: Reskontro → «Importer fra et annet system» (forhåndsvisning,
+så bokfør).
+
 ## Where it is tested
 
 - `regnmed-core/src/saft_import.rs` — the **round-trip test**: a file
@@ -80,6 +130,20 @@ companies.
   truncation, padding, name match, no-suggestion) and mapping
   application (rewrite, merge with summed openings, 4-digit target
   validation).
+- `regnmed-core/src/migreringcsv.rs` — per-layout parser tests
+  (Tripletex-style semicolon export with quoted delimiters, English
+  export where a type column beats the caller's default, restbeløp
+  winning over beløp, credit notes keeping their sign, settled items
+  skipped, forfallsdato not stealing the fakturadato column, unknown
+  layouts naming the headers).
+- `regnmed-api/tests/migrering.rs` (real Postgres, also CI): contacts
+  import twice (created, then updated — idempotent), kundenr surviving
+  as party_no, MOD11-validated kontonummer, open-items preview with
+  the unknown party listed and nothing posted, the import making the
+  1500 balance equal the sum of the items, invoice numbers on the
+  entries, a second run refused with the balance in the message,
+  supplier items landing on the credit side, and an unreadable file
+  naming its columns.
 - `regnmed-api/tests/kontoplan.rs` (real Postgres, also CI): a 5-digit
   chart is refused raw, analyzed with correct suggestions, imported
   with a reviewed mapping including a two-onto-one merge — balances

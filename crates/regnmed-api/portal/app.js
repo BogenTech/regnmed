@@ -1683,7 +1683,23 @@
         '<button class="btn btn-primary">Opprett</button></form>') +
       card("Kunde- og leverandørspesifikasjon",
         '<table class="table table-sm"><thead><tr><th>Nr</th><th>Navn</th><th>Type</th>' +
-        "<th class='text-right'>Saldo</th></tr></thead><tbody>" + rows + "</tbody></table>"));
+        "<th class='text-right'>Saldo</th></tr></thead><tbody>" + rows + "</tbody></table>") +
+      card("Importer fra et annet system",
+        '<p class="text-sm opacity-70 mb-2">SAF-T flytter hovedboken, men ikke kontaktopplysninger ' +
+        "og åpne poster. Eksporter kunde-/leverandørlisten og de åpne postene som CSV fra det gamle " +
+        "systemet — kolonnene leses av overskriftene, og en fil vi ikke forstår sier hvilke " +
+        "kolonner den fant.</p>" +
+        '<div class="flex gap-2 items-center flex-wrap mb-2">' +
+        '<select id="imp-kind" class="select select-sm select-bordered">' +
+        '<option value="kunde">kunder</option><option value="leverandor">leverandører</option></select>' +
+        '<label class="btn btn-sm btn-outline">Kontaktliste (CSV)' +
+        '<input type="file" id="imp-kontakter" class="hidden" accept=".csv,.txt"></label>' +
+        '<label class="btn btn-sm btn-outline">Åpne poster (CSV)' +
+        '<input type="file" id="imp-poster" class="hidden" accept=".csv,.txt"></label></div>' +
+        '<p class="text-xs opacity-60">Åpne poster ERSTATTER samlelinjen på reskontrokontoen: ' +
+        "utelat 1500/2400 fra åpningsbalansen, så blir saldoen lik summen av postene. " +
+        "Du får en forhåndsvisning før noe bokføres.</p>" +
+        '<div id="imp-result" class="mt-3"></div>'));
     document.getElementById("new-party").onsubmit = async function (event) {
       event.preventDefault();
       var d = new FormData(event.target);
@@ -1695,6 +1711,68 @@
         toast("Part " + created.party_no + " opprettet", true);
         renderReskontro(id);
       } catch (error) { toast(error.message, false); }
+    };
+    async function importCsv(path, file, done) {
+      var result = document.getElementById("imp-result");
+      result.innerHTML = '<span class="loading loading-spinner loading-sm"></span>';
+      try {
+        var body = await file.text();
+        var kind = document.getElementById("imp-kind").value;
+        done(await api("/companies/" + id + "/import/" + path + "&kind=" + kind, {
+          method: "POST",
+          headers: { "content-type": "text/csv" },
+          body: body,
+        }), body, kind);
+      } catch (error) {
+        result.innerHTML = '<div class="alert alert-error text-sm py-2">' + esc(error.message) + "</div>";
+      }
+    }
+    var impKontakter = document.getElementById("imp-kontakter");
+    if (impKontakter) impKontakter.onchange = function () {
+      var file = impKontakter.files[0];
+      if (!file) return;
+      importCsv("contacts?", file, function (r) {
+        document.getElementById("imp-result").innerHTML =
+          '<div class="alert alert-success text-sm py-2">' + r.lest + " rader lest: " +
+          r.opprettet + " opprettet, " + r.oppdatert + " oppdatert." +
+          (r.warnings.length ? "<br>" + r.warnings.map(esc).join("<br>") : "") + "</div>";
+        renderReskontro(id);
+      });
+    };
+    var impPoster = document.getElementById("imp-poster");
+    if (impPoster) impPoster.onchange = function () {
+      var file = impPoster.files[0];
+      if (!file) return;
+      importCsv("open-items?preview=true&", file, function (p, body, kind) {
+        var result = document.getElementById("imp-result");
+        if (!p.kan_importeres) {
+          result.innerHTML = '<div class="alert alert-warning text-sm py-2">Konto ' + esc(p.konto) +
+            " har allerede saldo " + kr(p.konto_saldo_ore) +
+            " — åpne poster erstatter samlelinjen. Utelat kontoen fra åpningsbalansen først.</div>";
+          return;
+        }
+        result.innerHTML = '<div class="border border-base-300 rounded-lg p-3">' +
+          "<p class='text-sm font-semibold mb-1'>" + p.antall + " åpne poster, sum " +
+          kr(p.sum_ore) + " på konto " + esc(p.konto) + "</p>" +
+          (p.nye_parter.length
+            ? "<p class='text-xs opacity-70 mb-2'>Opprettes ved import: " +
+              p.nye_parter.map(esc).join(", ") + "</p>"
+            : "") +
+          (p.warnings.length ? "<p class='text-xs opacity-70 mb-2'>" +
+            p.warnings.map(esc).join("<br>") + "</p>" : "") +
+          '<button id="imp-bekreft" class="btn btn-sm btn-primary">Bokfør de åpne postene</button></div>';
+        document.getElementById("imp-bekreft").onclick = async function () {
+          try {
+            var posted = await api("/companies/" + id + "/import/open-items?kind=" + kind, {
+              method: "POST",
+              headers: { "content-type": "text/csv" },
+              body: body,
+            });
+            toast(posted.antall + " åpne poster bokført som bilag " + posted.voucher, true);
+            renderReskontro(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
     };
   }
 

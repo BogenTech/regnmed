@@ -16,6 +16,7 @@ pub mod invoice;
 pub mod invoice_template;
 pub mod mailq;
 pub mod marketplace;
+pub mod migrering;
 pub mod ocr;
 pub mod payments;
 pub mod period;
@@ -83,6 +84,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/import/saft/analyze",
             axum::routing::post(marketplace::analyze_saft),
+        )
+        .route(
+            "/companies/{company_id}/import/contacts",
+            axum::routing::post(migrering::import_contacts),
+        )
+        .route(
+            "/companies/{company_id}/import/open-items",
+            axum::routing::post(migrering::import_open_items),
         )
         .route(
             "/companies/{company_id}/opening-balance",
