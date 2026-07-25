@@ -603,9 +603,27 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (forretningsreglene kjøres av aksesspunktet); E/AE-kategorier
    utledes ikke. Transporten (SMP-oppslag + AS4) er egen tier som
    krever leverandøravtale.
+43. ✅ Bilagstolkning (docs/bilagstolkning.md, closed #34): forslag,
+   aldri bokføring — det finnes INGEN automatisk bokføringsvei, heller
+   ikke «over beløpsgrense X». `GET …/inbox/{doc}/forslag` svarer for
+   ethvert dokument og sier `kilde`: ehf (eksakt) → pdf-tekst /
+   tekst (heuristikk) → ingen (skann uten tekstlag foreslår
+   INGENTING og sier fra). Nytt: `regnmed-core::pdftekst` (PDF-ens
+   egne innholdsstrømmer, rå + Flate via ny dep flate2/rust_backend,
+   Tj/TJ-strenger, WinAnsi; returnerer None på mojibake — testet med
+   søppel-PDF) og `regnmed-core::bilagstolk` (heuristikk avgjort av
+   KONTROLLSIFRENE vi allerede validerer: orgnr-MOD11, KID-MOD10/11,
+   kontonummer-MOD11; «å betale» slår «sum»; en linje MED tall holder
+   seg til sin egen linje — ellers leses totalen under «mva» som
+   mva). Hvert felt bærer sin begrunnelse, vist i UI-et.
+   Kontoforslaget = kontoen samme leverandør sist ble bokført på (ren
+   spørring over egen historikk). Portal: Forslag-knapp på alle
+   innboksdokumenter + tydelig «Forslag»-banner m/ kilde og
+   begrunnelser over skjemaet. OCR = valgfri sidecar senere, samme
+   endepunkt.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md), EHF-transport via aksesspunkt, API-tier per
-   leverandør (#19-oppfølger), #34 bilagstolkning, #35 e-post-inn.
+   leverandør (#19-oppfølger), #35 e-post-inn.
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

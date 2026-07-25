@@ -469,6 +469,10 @@ pub fn router(state: AppState) -> Router {
             get(innboks::ehf_forslag),
         )
         .route(
+            "/companies/{company_id}/inbox/{document_id}/forslag",
+            get(innboks::forslag),
+        )
+        .route(
             "/companies/{company_id}/inbox/{document_id}/attester",
             axum::routing::post(attestering::attester),
         )

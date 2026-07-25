@@ -232,6 +232,215 @@ pub async fn inbox_ehf_forslag(
     })
 }
 
+/// The general suggestion for ANY inbox document (docs/bilagstolkning.md,
+/// #34). EHF is the exact case; a PDF with a text layer is the
+/// heuristic one; a scan without text yields nothing at all — and says
+/// so, rather than inventing numbers.
+#[derive(Debug)]
+pub struct Bokforingsforslag {
+    /// "ehf" | "pdf-tekst" | "tekst" | "ingen"
+    pub kilde: &'static str,
+    pub selger_navn: Option<String>,
+    pub orgnr: Option<String>,
+    pub fakturanr: Option<String>,
+    pub dato: Option<chrono::NaiveDate>,
+    pub forfall: Option<chrono::NaiveDate>,
+    pub kid: Option<String>,
+    pub kontonummer: Option<String>,
+    pub netto_ore: Option<i64>,
+    pub mva_ore: Option<i64>,
+    pub brutto_ore: Option<i64>,
+    pub leverandor_no: Option<String>,
+    pub leverandor_navn: Option<String>,
+    /// The account this supplier was posted to last time — the single
+    /// most useful suggestion we can make, and it comes from the
+    /// company's own history, not from a model.
+    pub konto: Option<String>,
+    pub konto_begrunnelse: Option<String>,
+    /// Per-field provenance, shown next to the value in the UI.
+    pub begrunnelser: Vec<(String, String)>,
+    pub advarsler: Vec<String>,
+}
+
+pub async fn inbox_forslag(
+    pool: &PgPool,
+    company_id: Uuid,
+    document_id: Uuid,
+) -> Result<Bokforingsforslag> {
+    let (_, content_type, content) =
+        crate::innboks::get_inbox_document(pool, company_id, document_id).await?;
+
+    let mut forslag = Bokforingsforslag {
+        kilde: "ingen",
+        selger_navn: None,
+        orgnr: None,
+        fakturanr: None,
+        dato: None,
+        forfall: None,
+        kid: None,
+        kontonummer: None,
+        netto_ore: None,
+        mva_ore: None,
+        brutto_ore: None,
+        leverandor_no: None,
+        leverandor_navn: None,
+        konto: None,
+        konto_begrunnelse: None,
+        begrunnelser: Vec::new(),
+        advarsler: Vec::new(),
+    };
+
+    // 1. EHF — the structured case, where nothing is guessed.
+    let text = String::from_utf8(content.clone()).ok();
+    if let Some(xml) = text
+        .as_deref()
+        .filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
+        && let Ok(m) = regnmed_core::ehf_import::parse(xml)
+    {
+        forslag.kilde = "ehf";
+        forslag.selger_navn = Some(m.selger_navn.clone());
+        forslag.orgnr = m.selger_orgnr.clone();
+        forslag.fakturanr = Some(m.fakturanr.clone());
+        forslag.dato = m.fakturadato;
+        forslag.forfall = m.forfallsdato;
+        forslag.kid = m.kid.clone();
+        forslag.kontonummer = m.kontonummer.clone();
+        forslag.netto_ore = Some(m.netto_ore);
+        forslag.mva_ore = Some(m.mva_ore);
+        forslag.brutto_ore = Some(m.brutto_ore);
+        forslag
+            .begrunnelser
+            .push(("alle".into(), "lest direkte fra EHF-dokumentet".into()));
+        if m.valuta != "NOK" {
+            forslag
+                .advarsler
+                .push(format!("fakturaen er i {} — bokfør med valuta", m.valuta));
+        }
+    } else {
+        // 2. A PDF text layer, or a plain-text document.
+        let tekst = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
+            regnmed_core::pdftekst::extract(&content).inspect(|_| forslag.kilde = "pdf-tekst")
+        } else {
+            text.filter(|t| t.len() > 20)
+                .inspect(|_| forslag.kilde = "tekst")
+        };
+        match tekst {
+            None => {
+                forslag.advarsler.push(
+                    "fant ingen lesbar tekst i dokumentet — et skannet bilde må bokføres manuelt \
+                     (OCR er ikke en del av kjernen)"
+                        .into(),
+                );
+                return Ok(forslag);
+            }
+            Some(tekst) => {
+                let t = regnmed_core::bilagstolk::tolk(&tekst);
+                let mut note = |felt: &str, begrunnelse: &str| {
+                    forslag
+                        .begrunnelser
+                        .push((felt.to_string(), begrunnelse.to_string()));
+                };
+                if let Some(f) = &t.orgnr {
+                    forslag.orgnr = Some(f.verdi.clone());
+                    note("orgnr", &f.begrunnelse);
+                }
+                if let Some(f) = &t.fakturanr {
+                    forslag.fakturanr = Some(f.verdi.clone());
+                    note("fakturanr", &f.begrunnelse);
+                }
+                if let Some(f) = &t.kid {
+                    forslag.kid = Some(f.verdi.clone());
+                    note("kid", &f.begrunnelse);
+                }
+                if let Some(f) = &t.kontonummer {
+                    forslag.kontonummer = Some(f.verdi.clone());
+                    note("kontonummer", &f.begrunnelse);
+                }
+                if let Some(f) = &t.dato {
+                    forslag.dato = Some(f.verdi);
+                    note("dato", &f.begrunnelse);
+                }
+                if let Some(f) = &t.forfall {
+                    forslag.forfall = Some(f.verdi);
+                    note("forfall", &f.begrunnelse);
+                }
+                if let Some(f) = &t.belop_ore {
+                    forslag.brutto_ore = Some(f.verdi);
+                    note("brutto", &f.begrunnelse);
+                }
+                if let Some(f) = &t.mva_ore {
+                    forslag.mva_ore = Some(f.verdi);
+                    note("mva", &f.begrunnelse);
+                }
+                if let (Some(brutto), Some(mva)) = (forslag.brutto_ore, forslag.mva_ore) {
+                    forslag.netto_ore = Some(brutto - mva);
+                }
+            }
+        }
+    }
+
+    // 3. The supplier, and what we posted for them last time.
+    if let Some(orgnr) = &forslag.orgnr {
+        let row = sqlx::query(
+            "select party_no, name from party
+             where company_id = $1 and kind = 'leverandor' and orgnr = $2 limit 1",
+        )
+        .bind(company_id)
+        .bind(orgnr)
+        .fetch_optional(pool)
+        .await?;
+        match row {
+            Some(r) => {
+                let party_no: String = r.get("party_no");
+                forslag.leverandor_navn = Some(r.get("name"));
+                if let Some((konto, dato)) =
+                    siste_kostnadskonto(pool, company_id, &party_no).await?
+                {
+                    forslag.konto_begrunnelse = Some(format!(
+                        "samme leverandør ble sist bokført på {konto} ({dato})"
+                    ));
+                    forslag.konto = Some(konto);
+                }
+                forslag.leverandor_no = Some(party_no);
+            }
+            None => forslag.advarsler.push(format!(
+                "orgnr {orgnr} finnes ikke i leverandørreskontroen — opprett parten først"
+            )),
+        }
+    }
+    Ok(forslag)
+}
+
+/// The cost account most recently used on a voucher that also touched
+/// this supplier. Pure query over the company's own history.
+async fn siste_kostnadskonto(
+    pool: &PgPool,
+    company_id: Uuid,
+    party_no: &str,
+) -> Result<Option<(String, chrono::NaiveDate)>> {
+    let row = sqlx::query(
+        "select a.number, v.voucher_date
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         join account a on a.id = e.account_id
+         where v.company_id = $1
+           and a.number >= '4000'
+           and e.amount_ore > 0
+           and exists (
+               select 1 from entry pe join party p on p.id = pe.party_id
+               where pe.voucher_id = v.id and p.party_no = $2 and p.company_id = $1
+                 and p.kind = 'leverandor'
+           )
+         order by v.voucher_date desc, v.voucher_number desc
+         limit 1",
+    )
+    .bind(company_id)
+    .bind(party_no)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| (r.get("number"), r.get("voucher_date"))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::split_adresse;

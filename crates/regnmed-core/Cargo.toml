@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 chrono.workspace = true
+flate2.workspace = true
 # XML *parsing* only (camt.053 bank statements) — pure, no I/O. Our own
 # XML output stays hand-rolled (src/xml.rs).
 quick-xml.workspace = true

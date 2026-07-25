@@ -2466,10 +2466,8 @@
         esc(d.filename) + "'>" + esc(d.filename) + "</a></td><td>" +
         esc(d.uploaded_at.slice(0, 10)) + "</td><td>" + esc(d.uploaded_by) + "</td><td>" +
         attesteringLabel(d) + "</td><td>" +
-        (/xml/i.test(d.content_type) || /\.xml$/i.test(d.filename)
-          ? '<button class="btn btn-xs btn-outline" data-ehf-doc="' + d.document_id +
-            '" title="Les EHF og fyll ut bokføringen">EHF</button> '
-          : "") +
+        '<button class="btn btn-xs btn-outline" data-forslag="' + d.document_id +
+        '" title="Les dokumentet og fyll ut bokføringen">Forslag</button> ' +
         '<button class="btn btn-xs btn-primary" data-bokfor="' + d.document_id + '">Bokfør</button> ' +
         '<button class="btn btn-xs btn-ghost" data-avvis="' + d.document_id + '">Avvis</button></td></tr>';
     }).join("");
@@ -2652,36 +2650,49 @@
         } catch (error) { toast(error.message, false); }
       };
     });
-    app.querySelectorAll("[data-ehf-doc]").forEach(function (button) {
+    app.querySelectorAll("[data-forslag]").forEach(function (button) {
       button.onclick = async function () {
-        var docId = button.dataset.ehfDoc;
+        var docId = button.dataset.forslag;
         try {
-          var f = await api("/companies/" + id + "/inbox/" + docId + "/ehf");
+          var f = await api("/companies/" + id + "/inbox/" + docId + "/forslag");
+          if (f.kilde === "ingen") {
+            toast(f.warnings.join(" · ") || "fant ingenting å foreslå", false);
+            return;
+          }
           var row = button.closest("tr");
           row.querySelector("[data-bokfor]").click();
-          document.getElementById("bf-date").value = f.fakturadato || today();
+          document.getElementById("bf-date").value = f.dato || today();
           document.getElementById("bf-desc").value =
-            f.selger_navn + " faktura " + f.fakturanr;
-          var lines = document.querySelectorAll(".bokfor-line");
-          // Kostnad (netto), inngående mva, og leverandørgjelden med parten.
-          var fill = function (row, konto, belop, mva, part) {
-            row.querySelector('[data-f="account"]').value = konto;
-            // kr() bruker typografisk minus; skjemaets parser vil ha ASCII.
-            row.querySelector('[data-f="amount"]').value = kr(belop).replace("\u2212", "-");
-            if (mva) row.querySelector('[data-f="vat"]').value = mva;
-            if (part) row.dataset.party = part;
+            (f.selger_navn || f.leverandor_navn || "Bilag") +
+            (f.fakturanr ? " faktura " + f.fakturanr : "");
+          // kr() bruker typografisk minus; skjemaets parser vil ha ASCII.
+          var belop = function (ore) { return kr(ore).replace("\u2212", "-"); };
+          var fill = function (line, konto, ore, mva, part) {
+            line.querySelector('[data-f="account"]').value = konto;
+            line.querySelector('[data-f="amount"]').value = belop(ore);
+            if (mva) line.querySelector('[data-f="vat"]').value = mva;
+            if (part) line.dataset.party = part;
           };
-          fill(lines[0], "4300", f.netto_ore, f.mva_ore ? "1" : "");
-          if (f.mva_ore) {
-            document.getElementById("bf-add").click();
-          }
+          var netto = f.netto_ore !== null ? f.netto_ore : f.brutto_ore;
+          var lines = document.querySelectorAll(".bokfor-line");
+          fill(lines[0], f.konto || "4300", netto, f.mva_ore ? "1" : "");
+          if (f.mva_ore) document.getElementById("bf-add").click();
           var all = document.querySelectorAll(".bokfor-line");
           if (f.mva_ore) fill(all[1], "2710", f.mva_ore, "");
-          var last = all[all.length - 1];
-          fill(last, "2400", -f.brutto_ore, "", f.leverandor_no);
-          var beskjed = f.warnings.length ? f.warnings.join(" · ") : "";
-          toast("EHF lest: " + f.selger_navn + " " + kr(f.brutto_ore) +
-            (beskjed ? " — " + beskjed : ""), !f.warnings.length);
+          fill(all[all.length - 1], "2400", -f.brutto_ore, "", f.leverandor_no);
+          // Forslaget skal SES som et forslag: kilden og begrunnelsene
+          // står over skjemaet, og ingenting er bokført ennå.
+          var kilde = { ehf: "lest fra EHF", "pdf-tekst": "tolket fra PDF-teksten",
+            tekst: "tolket fra teksten" }[f.kilde] || f.kilde;
+          var hvorfor = (f.begrunnelser || []).map(function (b) {
+            return b.felt + ": " + b.hvorfor;
+          }).concat(f.konto_begrunnelse ? ["konto: " + f.konto_begrunnelse] : [])
+            .concat(f.warnings || []);
+          document.getElementById("bokfor-form").insertAdjacentHTML("afterbegin",
+            '<div class="alert alert-info text-sm py-2 mb-2"><div><strong>Forslag</strong> (' +
+            esc(kilde) + ") — kontroller tallene før du bokfører." +
+            (hvorfor.length ? '<br><span class="text-xs opacity-80">' +
+              hvorfor.map(esc).join("<br>") + "</span>" : "") + "</div></div>");
         } catch (error) { toast(error.message, false); }
       };
     });

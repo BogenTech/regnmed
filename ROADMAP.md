@@ -201,8 +201,12 @@ M7 (#37–#48) for new ground:
   nyeste beslutning gjelder, bokføring/betalingsgodkjenning/
   utleggsgodkjenning nektet for samme person — håndhevet inne i
   transaksjonene, ikke i portalen; docs/attestering.md).
-- Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn
-  (#35) — M5.
+- Innboks-produktivitet: ✅ bilagstolkning som forslag (#34 —
+  PDF-tekstlag lest i kjernen, heuristikk avgjort av kontrollsifrene vi
+  allerede validerer, kontoforslag fra selskapets egen historikk, hvert
+  felt med begrunnelse, skann uten tekstlag foreslår INGENTING; ingen
+  automatisk bokføringsvei finnes; docs/bilagstolkning.md),
+  e-post-inn (#35) — M5.
 - Innsikt: ✅ nøkkeltall/likviditet (#36 — resultat hittil mot samme
   periode i fjor, månedskolonner som rene CSS-søyler, likviditetsbilde
   m/ beregnet mva-netto, kommende frister etter terminordningen;

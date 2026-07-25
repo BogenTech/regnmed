@@ -25,6 +25,9 @@ axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
+# Pure-Rust inflate, for reading the text layer out of Flate-compressed
+# PDF content streams (docs/bilagstolkning.md). No C, no image codecs.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 hex = "0.4"
 jsonwebtoken = "9"
 quick-xml = "0.37"

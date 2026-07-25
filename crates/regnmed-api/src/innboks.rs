@@ -250,3 +250,40 @@ pub async fn ehf_forslag(
         "warnings": forslag.advarsler,
     })))
 }
+
+/// «Hva skal dette bilaget bli?» for ETHVERT dokument
+/// (docs/bilagstolkning.md, #34): EHF leses eksakt, en PDF med
+/// tekstlag tolkes heuristisk, et skannet bilde gir ingenting — og
+/// sier fra. Hvert felt har en begrunnelse, og ingenting bokføres:
+/// forslaget fyller skjemaet, mennesket bestemmer.
+pub async fn forslag(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, document_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let f = regnmed_db::inbox_forslag(&state.pool, company_id, document_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({
+        "kilde": f.kilde,
+        "selger_navn": f.selger_navn,
+        "orgnr": f.orgnr,
+        "fakturanr": f.fakturanr,
+        "dato": f.dato.map(|d| d.to_string()),
+        "forfall": f.forfall.map(|d| d.to_string()),
+        "kid": f.kid,
+        "kontonummer": f.kontonummer,
+        "netto_ore": f.netto_ore,
+        "mva_ore": f.mva_ore,
+        "brutto_ore": f.brutto_ore,
+        "leverandor_no": f.leverandor_no,
+        "leverandor_navn": f.leverandor_navn,
+        "konto": f.konto,
+        "konto_begrunnelse": f.konto_begrunnelse,
+        "begrunnelser": f.begrunnelser.iter().map(|(felt, hvorfor)| json!({
+            "felt": felt, "hvorfor": hvorfor,
+        })).collect::<Vec<_>>(),
+        "warnings": f.advarsler,
+    })))
+}
