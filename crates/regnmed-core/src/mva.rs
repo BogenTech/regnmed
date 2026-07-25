@@ -50,6 +50,104 @@ impl std::fmt::Display for Termin {
     }
 }
 
+/// The company's mva-terminordning (docs/mva.md, #51). To-måneder is
+/// the default; årstermin (omsetning under grensen, etter søknad) and
+/// primærnæring are yearly with their own frister. The ordning
+/// Skatteetaten has GRANTED is recorded per company with valid_from —
+/// eligibility is never auto-detected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Terminordning {
+    ToManeder,
+    Arlig,
+    Primaernaering,
+}
+
+impl Terminordning {
+    pub fn parse(s: &str) -> Option<Terminordning> {
+        match s {
+            "to-maneder" => Some(Terminordning::ToManeder),
+            "arlig" => Some(Terminordning::Arlig),
+            "primaernaering" => Some(Terminordning::Primaernaering),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Terminordning::ToManeder => "to-maneder",
+            Terminordning::Arlig => "arlig",
+            Terminordning::Primaernaering => "primaernaering",
+        }
+    }
+
+    /// Perioder per år: 6 to-månedersterminer, ellers én årstermin.
+    pub fn antall_perioder(self) -> u8 {
+        match self {
+            Terminordning::ToManeder => 6,
+            _ => 1,
+        }
+    }
+
+    pub fn periode_of(self, date: NaiveDate) -> Termin {
+        match self {
+            Terminordning::ToManeder => Termin::of(date),
+            _ => Termin {
+                year: date.year(),
+                number: 1,
+            },
+        }
+    }
+
+    pub fn ny_periode(self, year: i32, number: u8) -> Option<Termin> {
+        (1..=self.antall_perioder())
+            .contains(&number)
+            .then_some(Termin { year, number })
+    }
+
+    pub fn start(self, t: Termin) -> NaiveDate {
+        match self {
+            Terminordning::ToManeder => t.start(),
+            _ => NaiveDate::from_ymd_opt(t.year, 1, 1).expect("valid date"),
+        }
+    }
+
+    pub fn end(self, t: Termin) -> NaiveDate {
+        match self {
+            Terminordning::ToManeder => t.end(),
+            _ => NaiveDate::from_ymd_opt(t.year, 12, 31).expect("valid date"),
+        }
+    }
+
+    /// Leveringsfristen for perioden (skatteforvaltningsforskriften
+    /// §8-3): to-måneder = 1 måned og 10 dager etter terminslutt, med
+    /// særregelen 31. august for 3. termin; årstermin = 10. mars året
+    /// etter; primærnæring = 10. april året etter.
+    pub fn frist(self, t: Termin) -> NaiveDate {
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).expect("valid frist");
+        match self {
+            Terminordning::ToManeder => match t.number {
+                1 => date(t.year, 4, 10),
+                2 => date(t.year, 6, 10),
+                3 => date(t.year, 8, 31),
+                4 => date(t.year, 10, 10),
+                5 => date(t.year, 12, 10),
+                _ => date(t.year + 1, 2, 10),
+            },
+            Terminordning::Arlig => date(t.year + 1, 3, 10),
+            Terminordning::Primaernaering => date(t.year + 1, 4, 10),
+        }
+    }
+
+    /// Human label for the periode under this ordning.
+    pub fn label(self, t: Termin) -> String {
+        match self {
+            Terminordning::ToManeder => t.to_string(),
+            Terminordning::Arlig => format!("Årstermin {}", t.year),
+            Terminordning::Primaernaering => format!("Årstermin {} (primærnæring)", t.year),
+        }
+    }
+}
+
 /// One row of the dated rate table: `rate_class` charges `rate_bp`
 /// (basis points, 25 % = 2500) from `valid_from` until superseded.
 #[derive(Debug, Clone)]
@@ -208,5 +306,37 @@ mod tests {
         assert_eq!(direction("86"), Direction::OmvendtAvgiftsplikt);
         assert_eq!(direction("5"), Direction::Ingen);
         assert_eq!(direction("0"), Direction::Ingen);
+    }
+
+    #[test]
+    fn terminordning_perioder_og_frister() {
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        let to = Terminordning::ToManeder;
+        assert_eq!(to.antall_perioder(), 6);
+        assert_eq!(to.periode_of(date(2026, 7, 25)).number, 4);
+        assert_eq!(to.frist(Termin { year: 2026, number: 1 }), date(2026, 4, 10));
+        assert_eq!(
+            to.frist(Termin { year: 2026, number: 3 }),
+            date(2026, 8, 31),
+            "saerregelen for 3. termin"
+        );
+        assert_eq!(to.frist(Termin { year: 2026, number: 6 }), date(2027, 2, 10));
+
+        let ar = Terminordning::Arlig;
+        assert_eq!(ar.antall_perioder(), 1);
+        let periode = ar.periode_of(date(2026, 11, 3));
+        assert_eq!(periode.number, 1);
+        assert_eq!(ar.start(periode), date(2026, 1, 1));
+        assert_eq!(ar.end(periode), date(2026, 12, 31));
+        assert_eq!(ar.frist(periode), date(2027, 3, 10));
+        assert_eq!(ar.label(periode), "\u{c5}rstermin 2026");
+        assert!(ar.ny_periode(2026, 2).is_none(), "aarstermin har ingen 2. periode");
+
+        let pn = Terminordning::Primaernaering;
+        assert_eq!(pn.frist(pn.periode_of(date(2026, 5, 1))), date(2027, 4, 10));
+
+        assert_eq!(Terminordning::parse("arlig"), Some(Terminordning::Arlig));
+        assert_eq!(Terminordning::parse("kvartal"), None);
+        assert_eq!(Terminordning::Primaernaering.as_str(), "primaernaering");
     }
 }

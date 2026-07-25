@@ -79,6 +79,10 @@ og regnskapsloven.
   pinned), the CLI reports which vintage governed an export, and the
   kontoplan wizard suggests from the newest vintage. Adding a year =
   vendor the CSV + one registry entry (the December checklist step).
-- #51 mva-terminordninger beyond 2-mnd (årstermin, primærnæring).
+- ✅ #51 mva-terminordninger: shipped — dated `mva_terminordning` per
+  company (granted by Skatteetaten, recorded with vedtaksreferanse,
+  never inferred); spesifikasjon, melding
+  (skattleggingsperiodeAar) and frister follow the ordning
+  (docs/mva.md).
 - #52 avvikende regnskapsår (non-calendar fiscal years) — conscious
   scope decision documented there.

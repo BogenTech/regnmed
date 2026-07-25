@@ -78,3 +78,81 @@ pub async fn mva_spesifikasjon(
         })
         .collect()
 }
+
+/// The company's terminordning valid on `dato` (docs/mva.md, #51):
+/// the newest registered row on or before the date; to-måneder when
+/// none is registered — the lawful default needs no row.
+pub async fn terminordning_on(
+    pool: &PgPool,
+    company_id: uuid::Uuid,
+    dato: chrono::NaiveDate,
+) -> Result<regnmed_core::mva::Terminordning> {
+    let row: Option<String> = sqlx::query_scalar(
+        "select ordning from mva_terminordning
+         where company_id = $1 and valid_from <= $2
+         order by valid_from desc limit 1",
+    )
+    .bind(company_id)
+    .bind(dato)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row
+        .as_deref()
+        .and_then(regnmed_core::mva::Terminordning::parse)
+        .unwrap_or(regnmed_core::mva::Terminordning::ToManeder))
+}
+
+#[derive(Debug)]
+pub struct TerminordningRow {
+    pub valid_from: chrono::NaiveDate,
+    pub ordning: String,
+    pub note: Option<String>,
+    pub created_by: String,
+}
+
+pub async fn list_terminordninger(
+    pool: &PgPool,
+    company_id: uuid::Uuid,
+) -> Result<Vec<TerminordningRow>> {
+    let rows = sqlx::query(
+        "select valid_from, ordning, note, created_by from mva_terminordning
+         where company_id = $1 order by valid_from desc",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| TerminordningRow {
+            valid_from: r.get("valid_from"),
+            ordning: r.get("ordning"),
+            note: r.get("note"),
+            created_by: r.get("created_by"),
+        })
+        .collect())
+}
+
+/// Records the ordning Skatteetaten has granted, effective from a
+/// date. Append-only: a change back is a new row.
+pub async fn set_terminordning(
+    pool: &PgPool,
+    company_id: uuid::Uuid,
+    valid_from: chrono::NaiveDate,
+    ordning: regnmed_core::mva::Terminordning,
+    note: Option<&str>,
+    created_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into mva_terminordning (company_id, valid_from, ordning, note, created_by)
+         values ($1, $2, $3, $4, $5)",
+    )
+    .bind(company_id)
+    .bind(valid_from)
+    .bind(ordning.as_str())
+    .bind(note)
+    .bind(created_by)
+    .execute(pool)
+    .await
+    .map_err(|e| anyhow::anyhow!("kunne ikke registrere terminordning: {e}"))?;
+    Ok(())
+}

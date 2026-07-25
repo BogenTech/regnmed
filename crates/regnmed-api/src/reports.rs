@@ -34,8 +34,25 @@ async fn require_access(
         .ok_or(ApiError::NotFound)
 }
 
-fn termin_of(year: i32, termin: u8) -> Result<Termin, ApiError> {
-    Termin::new(year, termin).ok_or_else(|| ApiError::BadRequest("termin must be 1-6".into()))
+/// Resolves the company's ordning for the year and validates the
+/// periode number against it (docs/mva.md, #51).
+async fn ordning_termin(
+    state: &AppState,
+    company_id: Uuid,
+    year: i32,
+    termin: u8,
+) -> Result<(regnmed_core::mva::Terminordning, Termin), ApiError> {
+    let jan1 = NaiveDate::from_ymd_opt(year, 1, 1)
+        .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?;
+    let ordning = regnmed_db::terminordning_on(&state.pool, company_id, jan1).await?;
+    let termin = ordning.ny_periode(year, termin).ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "termin must be 1-{} under ordningen {}",
+            ordning.antall_perioder(),
+            ordning.as_str()
+        ))
+    })?;
+    Ok((ordning, termin))
 }
 
 #[derive(Deserialize)]
@@ -51,11 +68,15 @@ pub async fn mva_report(
     Query(query): Query<TerminQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id).await?;
-    let termin = termin_of(query.year, query.termin)?;
+    let (ordning, termin) = ordning_termin(&state, company_id, query.year, query.termin).await?;
 
-    let lines =
-        regnmed_db::mva_spesifikasjon(&state.pool, company_id, termin.start(), termin.end())
-            .await?;
+    let lines = regnmed_db::mva_spesifikasjon(
+        &state.pool,
+        company_id,
+        ordning.start(termin),
+        ordning.end(termin),
+    )
+    .await?;
 
     let utgaende: i64 = lines
         .iter()
@@ -71,8 +92,12 @@ pub async fn mva_report(
     Ok(Json(json!({
         "year": termin.year,
         "termin": termin.number,
-        "start": termin.start().to_string(),
-        "end": termin.end().to_string(),
+        "ordning": ordning.as_str(),
+        "antall_perioder": ordning.antall_perioder(),
+        "label": ordning.label(termin),
+        "frist": ordning.frist(termin).to_string(),
+        "start": ordning.start(termin).to_string(),
+        "end": ordning.end(termin).to_string(),
         "lines": lines.iter().map(|l| json!({
             "code": l.code,
             "description": l.description,
@@ -93,18 +118,24 @@ pub async fn mva_melding(
     Query(query): Query<TerminQuery>,
 ) -> Result<Response, ApiError> {
     require_access(&state, person.person_id, company_id).await?;
-    let termin = termin_of(query.year, query.termin)?;
+    let (ordning, termin) = ordning_termin(&state, company_id, query.year, query.termin).await?;
 
     let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let spes = regnmed_db::mva_spesifikasjon(&state.pool, company_id, termin.start(), termin.end())
-        .await?;
+    let spes = regnmed_db::mva_spesifikasjon(
+        &state.pool,
+        company_id,
+        ordning.start(termin),
+        ordning.end(termin),
+    )
+    .await?;
     if spes.is_empty() {
         return Err(ApiError::BadRequest(format!(
-            "no VAT postings in {termin} — nothing to report"
+            "no VAT postings in {} — nothing to report",
+            ordning.label(termin)
         )));
     }
 
@@ -112,6 +143,7 @@ pub async fn mva_melding(
     let melding = regnmed_core::mvamelding::build(
         &orgnr,
         termin,
+        ordning,
         &referanse,
         env!("CARGO_PKG_VERSION"),
         &spes,
@@ -432,4 +464,83 @@ pub async fn revisjon(
         })).collect::<Vec<_>>(),
     }))
     .into_response())
+}
+
+/// The company's mva-terminordning (docs/mva.md, #51): current
+/// ordning, this year's perioder with frister, and the registered
+/// history. To-måneder is the default and needs no row.
+pub async fn terminordning(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    let today: NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let ordning = regnmed_db::terminordning_on(&state.pool, company_id, today).await?;
+    let year = chrono::Datelike::year(&today);
+    let perioder: Vec<serde_json::Value> = (1..=ordning.antall_perioder())
+        .filter_map(|n| ordning.ny_periode(year, n))
+        .map(|t| {
+            json!({
+                "termin": t.number,
+                "label": ordning.label(t),
+                "start": ordning.start(t).to_string(),
+                "end": ordning.end(t).to_string(),
+                "frist": ordning.frist(t).to_string(),
+            })
+        })
+        .collect();
+    let history = regnmed_db::list_terminordninger(&state.pool, company_id).await?;
+    Ok(Json(json!({
+        "ordning": ordning.as_str(),
+        "antall_perioder": ordning.antall_perioder(),
+        "year": year,
+        "perioder": perioder,
+        "history": history.iter().map(|h| json!({
+            "valid_from": h.valid_from.to_string(),
+            "ordning": h.ordning,
+            "note": h.note,
+            "created_by": h.created_by,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct SetOrdningRequest {
+    /// to-maneder | arlig | primaernaering
+    ordning: String,
+    valid_from: NaiveDate,
+    /// Reference to Skatteetatens vedtak — the ordning is GRANTED,
+    /// never inferred.
+    note: Option<String>,
+}
+
+pub async fn set_terminordning(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<SetOrdningRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let access = require_access(&state, person.person_id, company_id).await?;
+    if access != "admin" {
+        return Err(ApiError::Forbidden("terminordning requires admin"));
+    }
+    let ordning = regnmed_core::mva::Terminordning::parse(&request.ordning).ok_or_else(|| {
+        ApiError::BadRequest("ordning must be to-maneder, arlig or primaernaering".into())
+    })?;
+    let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    regnmed_db::set_terminordning(
+        &state.pool,
+        company_id,
+        request.valid_from,
+        ordning,
+        request.note.as_deref(),
+        created_by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "ordning": ordning.as_str(), "valid_from": request.valid_from.to_string() })))
 }

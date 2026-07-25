@@ -110,6 +110,10 @@ pub fn router(state: AppState) -> Router {
             get(reports::mva_report),
         )
         .route(
+            "/companies/{company_id}/mva/terminordning",
+            get(reports::terminordning).post(reports::set_terminordning),
+        )
+        .route(
             "/companies/{company_id}/reports/mva-melding",
             get(reports::mva_melding),
         )

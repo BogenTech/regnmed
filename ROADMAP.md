@@ -220,7 +220,10 @@ demands it and the effort is priced.
 validity periods — dated satser (vat_rate is the reference pattern),
 versioned vendored authority artifacts, frozen evidence formats. Gaps
 tracked: satsregister m/ staleness-kontroll i revisjonsrapporten (#49),
-per-inntektsår artefakter (#50), mva-terminordninger (#51), avvikende
+per-inntektsår artefakter (#50), ✅ mva-terminordninger (#51 — datert
+ordning per selskap m/ vedtaksreferanse, årstermin/primærnæring m/
+egne frister, skattleggingsperiodeAar i meldingen; docs/mva.md),
+avvikende
 regnskapsår som bevisst avgrensning (#52). Yearly regelverksrevisjon is
 a checklist in the doc, verifiable via #49.
 

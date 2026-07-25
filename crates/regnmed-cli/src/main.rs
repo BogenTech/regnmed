@@ -318,26 +318,43 @@ async fn mva_melding(
     out: Option<std::path::PathBuf>,
     validate: bool,
 ) -> Result<()> {
-    use regnmed_core::mva::Termin;
-
     let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
-    let termin = Termin::new(year, termin).context("--termin must be 1-6")?;
+    let ordning = regnmed_db::terminordning_on(
+        pool,
+        company_id,
+        chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("valid year")?,
+    )
+    .await?;
+    let termin = ordning.ny_periode(year, termin).with_context(|| {
+        format!(
+            "--termin must be 1-{} under ordningen {}",
+            ordning.antall_perioder(),
+            ordning.as_str()
+        )
+    })?;
 
     let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_one(pool)
         .await?;
-    let spes =
-        regnmed_db::mva_spesifikasjon(pool, company_id, termin.start(), termin.end()).await?;
+    let spes = regnmed_db::mva_spesifikasjon(
+        pool,
+        company_id,
+        ordning.start(termin),
+        ordning.end(termin),
+    )
+    .await?;
     anyhow::ensure!(
         !spes.is_empty(),
-        "no VAT postings in {termin} — nothing to report"
+        "no VAT postings in {} — nothing to report",
+        ordning.label(termin)
     );
 
     let referanse = format!("regnmed-{}-{}-{}", orgnr, termin.year, termin.number);
     let melding = regnmed_core::mvamelding::build(
         &orgnr,
         termin,
+        ordning,
         &referanse,
         env!("CARGO_PKG_VERSION"),
         &spes,
@@ -392,13 +409,25 @@ async fn mva_report(
     year: i32,
     termin: Option<u8>,
 ) -> Result<()> {
-    use regnmed_core::mva::{Direction, Termin, direction};
+    use regnmed_core::mva::{Direction, direction};
 
     let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let ordning = regnmed_db::terminordning_on(
+        pool,
+        company_id,
+        chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,
+    )
+    .await?;
     let (start, end, label) = match termin {
         Some(n) => {
-            let t = Termin::new(year, n).context("--termin must be 1-6")?;
-            (t.start(), t.end(), t.to_string())
+            let t = ordning.ny_periode(year, n).with_context(|| {
+                format!(
+                    "--termin must be 1-{} under ordningen {}",
+                    ordning.antall_perioder(),
+                    ordning.as_str()
+                )
+            })?;
+            (ordning.start(t), ordning.end(t), ordning.label(t))
         }
         None => (
             chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,

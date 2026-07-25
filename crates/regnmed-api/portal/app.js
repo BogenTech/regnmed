@@ -1662,13 +1662,16 @@
   }
 
   async function renderMva(id) {
+    var ordningInfo = await api("/companies/" + id + "/mva/terminordning")
+      .catch(function () { return { ordning: "to-maneder", antall_perioder: 6, perioder: [], history: [] }; });
+    var yearly = ordningInfo.antall_perioder === 1;
     var year = new Date().getFullYear();
-    var termin = Math.floor(new Date().getMonth() / 2) + 1;
+    var termin = yearly ? 1 : Math.floor(new Date().getMonth() / 2) + 1;
     var hash = location.hash.split("?")[1];
     if (hash) {
       var params = new URLSearchParams(hash);
       year = Number(params.get("year") || year);
-      termin = Number(params.get("termin") || termin);
+      termin = yearly ? 1 : Number(params.get("termin") || termin);
     }
     var report = null;
     try { report = await api("/companies/" + id + "/reports/mva?year=" + year + "&termin=" + termin); }
@@ -1678,13 +1681,44 @@
         "</td><td class='text-right'>" + kr(l.grunnlag_ore) + "</td><td class='text-right'>" +
         kr(l.avgift_ore) + "</td></tr>";
     }).join("") : "";
-    var terminButtons = [1, 2, 3, 4, 5, 6].map(function (t) {
-      return '<a class="join-item btn btn-sm ' + (t === termin ? "btn-primary" : "") +
-        '" href="#/c/' + id + "/mva?year=" + year + "&termin=" + t + '">' + t + "</a>";
+    var terminButtons = yearly
+      ? [year - 1, year, year + 1].map(function (y) {
+          return '<a class="join-item btn btn-sm ' + (y === year ? "btn-primary" : "") +
+            '" href="#/c/' + id + "/mva?year=" + y + '">' + y + "</a>";
+        }).join("")
+      : [1, 2, 3, 4, 5, 6].map(function (t) {
+          return '<a class="join-item btn btn-sm ' + (t === termin ? "btn-primary" : "") +
+            '" href="#/c/' + id + "/mva?year=" + year + "&termin=" + t + '">' + t + "</a>";
+        }).join("");
+    var ordningNavn = {
+      "to-maneder": "to-månedersterminer", "arlig": "årstermin",
+      "primaernaering": "årstermin (primærnæring)",
+    };
+    var historyRows = ordningInfo.history.map(function (h) {
+      return "<tr><td>" + esc(h.valid_from) + "</td><td>" + esc(ordningNavn[h.ordning] || h.ordning) +
+        "</td><td class='text-xs opacity-70'>" + esc(h.note || "") + "</td></tr>";
     }).join("");
+    var ordningCard = card("Terminordning",
+      '<p class="text-sm opacity-70 mb-2">Gjeldende ordning: <b>' +
+      esc(ordningNavn[ordningInfo.ordning] || ordningInfo.ordning) + "</b>. " +
+      "Ordningen Skatteetaten har innvilget registreres med virkning fra en dato — " +
+      "spesifikasjon, melding og frister følger den. Systemet vurderer aldri berettigelse.</p>" +
+      '<div class="flex flex-wrap gap-2 items-end mb-2" id="ordning-form">' +
+      '<select data-f="ordning" class="select select-sm select-bordered">' +
+      '<option value="to-maneder">to-månedersterminer</option>' +
+      '<option value="arlig">årstermin</option>' +
+      '<option value="primaernaering">årstermin (primærnæring)</option></select>' +
+      '<input data-f="fra" type="date" class="input input-sm input-bordered" value="' + year + '-01-01">' +
+      '<input data-f="note" class="input input-sm input-bordered" placeholder="Vedtaksreferanse">' +
+      '<button id="ordning-set" class="btn btn-sm">Registrer</button></div>' +
+      (historyRows
+        ? '<table class="table table-xs max-w-md"><thead><tr><th>Fra</th><th>Ordning</th><th>Notat</th></tr></thead>' +
+          "<tbody>" + historyRows + "</tbody></table>"
+        : ""));
     shell(id, "mva",
-      card("Mva-spesifikasjon " + termin + ". termin " + year,
-        '<div class="join mb-4">' + terminButtons + "</div>" +
+      card("Mva-spesifikasjon " + (report ? esc(report.label) : (yearly ? "Årstermin " + year : termin + ". termin " + year)),
+        '<div class="join mb-2">' + terminButtons + "</div>" +
+        (report ? '<p class="text-sm opacity-70 mb-2">Leveringsfrist ' + esc(report.frist) + "</p>" : "") +
         (report
           ? '<table class="table table-sm"><thead><tr><th>Kode</th><th>Beskrivelse</th>' +
             "<th class='text-right'>Grunnlag</th><th class='text-right'>Avgift</th></tr></thead>" +
@@ -1700,7 +1734,21 @@
         '<div class="flex gap-2 flex-wrap">' +
         '<a class="btn btn-outline" id="dl-melding">Mva-melding (XML)</a>' +
         '<a class="btn btn-outline" id="dl-saft">SAF-T ' + year + " (XML)</a></div>" +
-        '<p class="text-sm opacity-70 mt-2">Filene genereres direkte fra hovedboken og validerer mot Skatteetatens skjema.</p>'));
+        '<p class="text-sm opacity-70 mt-2">Filene genereres direkte fra hovedboken og validerer mot Skatteetatens skjema.</p>') +
+      ordningCard);
+    var ordningSet = document.getElementById("ordning-set");
+    if (ordningSet) ordningSet.onclick = async function () {
+      var box = document.getElementById("ordning-form");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        await post("/companies/" + id + "/mva/terminordning", {
+          ordning: value("ordning"), valid_from: value("fra"),
+          note: value("note").trim() || null,
+        });
+        toast("Terminordning registrert", true);
+        renderMva(id);
+      } catch (error) { toast(error.message, false); }
+    };
     function download(path, filename) {
       return async function () {
         try {

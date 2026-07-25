@@ -21,7 +21,7 @@
 //! two-sided treatment is documented as a limitation until real
 //! submissions begin.
 
-use crate::mva::{Direction, SpesLine, Termin, direction};
+use crate::mva::{Direction, SpesLine, Termin, Terminordning, direction};
 use crate::xml::Xml;
 
 pub const NAMESPACE: &str =
@@ -31,6 +31,9 @@ pub const NAMESPACE: &str =
 pub struct MvaMelding {
     pub orgnr: String,
     pub termin: Termin,
+    /// The company's terminordning (docs/mva.md, #51): decides which
+    /// skattleggingsperiode element the XML carries.
+    pub ordning: Terminordning,
     /// Reference into our own system, echoed back in feedback
     /// (regnskapssystemsreferanse).
     pub referanse: String,
@@ -59,6 +62,7 @@ fn kroner(ore: i64) -> i64 {
 pub fn build(
     orgnr: &str,
     termin: Termin,
+    ordning: Terminordning,
     referanse: &str,
     system_version: &str,
     spes: &[SpesLine],
@@ -91,6 +95,7 @@ pub fn build(
     MvaMelding {
         orgnr: orgnr.to_string(),
         termin,
+        ordning,
         referanse: referanse.to_string(),
         system_version: system_version.to_string(),
         lines,
@@ -136,10 +141,18 @@ pub fn render(melding: &MvaMelding) -> String {
     x.open("skattegrunnlagOgBeregnetSkatt");
     x.open("skattleggingsperiode");
     x.open("periode");
-    x.leaf(
-        "skattleggingsperiodeToMaaneder",
-        periode_name(melding.termin),
-    );
+    match melding.ordning {
+        Terminordning::ToManeder => x.leaf(
+            "skattleggingsperiodeToMaaneder",
+            periode_name(melding.termin),
+        ),
+        // Both yearly ordninger are skattleggingsperiodeAar in the
+        // schema; primærnæring is a registration matter, not a
+        // structural one (docs/mva.md).
+        Terminordning::Arlig | Terminordning::Primaernaering => {
+            x.leaf("skattleggingsperiodeAar", "aarlig")
+        }
+    }
     x.close("periode");
     x.leaf("aar", &melding.termin.year.to_string());
     x.close("skattleggingsperiode");
@@ -204,6 +217,7 @@ mod tests {
         build(
             "999888777",
             Termin::new(2026, 1).unwrap(),
+            Terminordning::ToManeder,
             "regnmed-2026-1",
             "0.1.0",
             &spes(),
@@ -291,5 +305,38 @@ mod tests {
             "XSD validation failed:\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// Årstermin (and primærnæring) render skattleggingsperiodeAar —
+    /// and the result stays schema-valid. Skips without xmllint.
+    #[test]
+    fn aarstermin_renders_skattleggingsperiode_aar() {
+        let mut melding = melding();
+        melding.ordning = Terminordning::Arlig;
+        melding.termin = Termin { year: 2026, number: 1 };
+        let xml = render(&melding);
+        assert!(xml.contains("<skattleggingsperiodeAar>aarlig</skattleggingsperiodeAar>"));
+        assert!(!xml.contains("skattleggingsperiodeToMaaneder"));
+
+        let dir = std::env::temp_dir().join("regnmed-mvamelding-aar-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("melding.xml");
+        std::fs::write(&file, &xml).unwrap();
+        let xsd = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/mva-melding/skattemeldingformerverdiavgift.v1.0.xsd"
+        );
+        match std::process::Command::new("xmllint")
+            .args(["--noout", "--schema", xsd])
+            .arg(&file)
+            .output()
+        {
+            Ok(output) => assert!(
+                output.status.success(),
+                "XSD validation failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            Err(_) => eprintln!("xmllint not installed — skipping XSD validation"),
+        }
     }
 }

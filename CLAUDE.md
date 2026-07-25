@@ -486,10 +486,20 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    NOT idempotent (documented). SAF-T CurrencyCode/CurrencyAmount/
    ExchangeRate, XSD-validated. Valutakontoer i bank + sikring
    deliberately out (NOK bank first).
+36. ✅ Mva-terminordninger (docs/mva.md, closed #51 — M2 tail):
+   `Terminordning` in core (to-maneder/arlig/primaernaering) owns
+   ordning-aware perioder + LEVERINGSFRISTER (sktfvf. §8-3 incl.
+   særregelen 31. aug for 3. termin; årstermin 10. mars; primærnæring
+   10. april). Migration 0028 `mva_terminordning`: dated per company,
+   append-only, note = vedtaksreferanse — the ordning Skatteetaten
+   GRANTED is recorded, never inferred. Spesifikasjon, mva-melding
+   (skattleggingsperiodeAar for yearly — XSD's own distinction, both
+   yearly ordninger render identically) and portal picker follow the
+   ordning; periode numbers outside it refused everywhere (API + CLI).
+   `GET/POST /companies/{id}/mva/terminordning` (POST admin).
    **Next:** M7/M3 (#33 betalingsliste/remittering — completes the
    utlegg/faktura payment loop), native importers (#19), EHF (#14),
-   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md), M2
-   tail (#51 terminordninger).
+   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

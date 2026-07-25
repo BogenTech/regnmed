@@ -33,6 +33,19 @@ In `regnmed-core::mva` (pure, no I/O):
   that `base + vat == gross` exactly (vat is the remainder).
 - Terminer are the standard two-month periods (1 = januar–februar … 6 =
   november–desember); `Termin::of/start/end` own the boundary math.
+- **Terminordninger** (#51): to-måneder is the default; **årstermin**
+  (omsetning under grensen, etter søknad) and **primærnæring** are
+  yearly. The ordning Skatteetaten has GRANTED is recorded per company
+  with `valid_from` (migration 0028, append-only history with the
+  vedtaksreferanse) — eligibility is never auto-detected. `Terminordning`
+  owns the ordning-aware periode math and the **leveringsfrister**
+  (skatteforvaltningsforskriften §8-3: 1 måned og 10 dager, med
+  særregelen 31. august for 3. termin; årstermin 10. mars; primærnæring
+  10. april). Spesifikasjonen, mva-meldingen (skattleggingsperiodeAar
+  for the yearly ordninger — the schema's own distinction) and the
+  portal picker all follow the company's ordning; a periode number
+  outside it is refused. Kortere terminer ved restanse are pålagt
+  individually and deliberately out of scope until asked.
 
 Ledger sign convention throughout: positive = debit. Sales bases are
 credits (negative), purchase bases debits (positive).
