@@ -582,8 +582,30 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (admin); portal: «Importer fra et annet system» i Reskontro med
    forhåndsvisning før bokføring. API-tieren per leverandør krever
    nøkler og er dokumentert som neste steg, ikke lovet.
-   **Next:** EHF (#14), Maskinporten (awaiting Skatteetaten scope
-   grant, docs/gov.md), API-tier per leverandør (#19-oppfølger).
+42. ✅ EHF/PEPPOL — dokumenttieren (docs/ehf.md, closed #14): de to
+   endene vi kan stå inne for uten aksesspunkt. UT:
+   `regnmed-core::ehf` rendrer PEPPOL BIS Billing 3.0 (UBL 2.1)
+   hand-rolled og deterministisk fra fakturaens LÅSTE rader —
+   `GET …/invoices/{iid}/ehf`, ikke lagret som vedlegg (PDF-en ER
+   salgsdokumentet; EHF-en er en transportkonvolutt av samme tall).
+   ICD 0192 som deltakerid, mva-sats fra fakturadatoen (samme daterte
+   oppslag som posteringen), ett TaxSubtotal per sats, linje uten
+   mva-kode blir Z (ikke utelatt), kreditnota m/ 381 +
+   BillingReference. Offisiell UBL 2.1 XSD vendored i docs/ehf/ og
+   kjørt med xmllint i tester OG CI. INN: `regnmed-core::ehf_import`
+   (tolerant, camt053-stil) leser mottatt EHF i innboksen til et
+   BOKFØRINGSFORSLAG — `GET …/inbox/{doc}/ehf`, utledet av originalen
+   hver gang, aldri lagret (bedre forslag gjelder også gamle
+   dokumenter); leverandør matchet på orgnr, advarsler følger med i
+   stedet for å stoppe. Portal: EHF-knapp på fakturalinjer + EHF-knapp
+   på XML i innboksen som fyller bokføringsskjemaet.
+   ÆRLIG BEGRENSNING dokumentert: XSD ≠ PEPPOL Schematron
+   (forretningsreglene kjøres av aksesspunktet); E/AE-kategorier
+   utledes ikke. Transporten (SMP-oppslag + AS4) er egen tier som
+   krever leverandøravtale.
+   **Next:** Maskinporten (awaiting Skatteetaten scope grant,
+   docs/gov.md), EHF-transport via aksesspunkt, API-tier per
+   leverandør (#19-oppfølger), #34 bilagstolkning, #35 e-post-inn.
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

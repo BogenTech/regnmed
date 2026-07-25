@@ -30,6 +30,7 @@ CLAUDE.md).
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |
 | [migration.md](migration.md) | SAF-T import: the universal migration path |
+| [ehf.md](ehf.md) | EHF/PEPPOL ut og inn: dokumentet vi sender og leser, transporten som egen tier |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [betaling.md](betaling.md) | Betalingsliste og remittering: pain.001, enveis kjøringer, oppgjør som lukker reskontroen |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |

@@ -82,9 +82,14 @@ Money in, money out — the daily-driver features.
 
 - **Utgående faktura** with KID (MOD10/MOD11), credit notes, purring.
   Posting straight to the ledger + reskontro.
-- **EHF / Peppol** send and receive through an access point (evaluate
-  provider vs. certifying our own AP later; provider first — frugal).
-  Mandatory for B2G, expected in B2B.
+- ✅ **EHF / Peppol — dokumenttieren** (#14): utgående faktura og
+  kreditnota rendret som PEPPOL BIS Billing 3.0 (UBL 2.1, hand-rolled
+  deterministisk, XSD-validert i tester og CI mot OASIS' eget skjema),
+  og mottatt EHF lest i bilagsinnboksen til et bokføringsforslag som
+  regnes ut av originalen hver gang (docs/ehf.md). **Transporten**
+  (Peppol SMP-oppslag + AS4 gjennom aksesspunkt) krever avtale med en
+  leverandør og er egen tier — egen AP-sertifisering fortsatt bevisst
+  utenfor. Mandatory for B2G, expected in B2B.
 - ✅ **Bankavstemming.** camt.053 (ISO 20022) and header-detected bank CSV
   through one import endpoint and one matching engine; idempotent
   re-import in both tiers (docs/bank.md).

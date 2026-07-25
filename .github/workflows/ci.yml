@@ -2,8 +2,9 @@
 # - test: format check + the full test suite against a real Postgres 18
 #   service, so the DB-backed integration tests (ledger immutability,
 #   auth boundary, SAF-T loader) run for real instead of skipping.
-#   libxml2-utils provides xmllint so every run also validates the SAF-T
-#   export against Skatteetaten's official XSD.
+#   libxml2-utils provides xmllint so every run also validates our
+#   generated XML against the official schemas: SAF-T (Skatteetaten),
+#   pain.001 (ISO 20022) and EHF/UBL 2.1 (OASIS).
 # - frugality: release binary sizes + regnmed-api peak RSS under load
 #   against hard budgets (scripts/frugality.sh) — competing on the least
 #   resources is a product principle, so a service that grows fat fails
@@ -35,7 +36,7 @@ jobs:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
     steps:
       - uses: actions/checkout@v4
-      - name: Install xmllint (SAF-T XSD validation)
+      - name: Install xmllint (SAF-T, pain.001 and EHF/UBL XSD validation)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

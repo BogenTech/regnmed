@@ -161,3 +161,31 @@ pub async fn invoice_pdf(
     )
         .into_response())
 }
+
+/// EHF (PEPPOL BIS Billing 3.0) for an issued invoice — rendered from
+/// the invoice's own locked rows on request. Unlike the PDF this is not
+/// stored: the PDF *is* the salgsdokument (oppbevaringsplikt), while the
+/// EHF is a transport envelope derived from the same immutable numbers.
+/// What an access point actually transmits is what gets logged, when
+/// that tier arrives (docs/ehf.md).
+pub async fn invoice_ehf(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let xml = regnmed_db::invoice_ehf(&state.pool, company_id, invoice_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/xml".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"ehf-{invoice_id}.xml\""),
+            ),
+        ],
+        xml,
+    )
+        .into_response())
+}

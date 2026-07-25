@@ -213,3 +213,40 @@ pub async fn avvis(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "avvist": true })))
 }
+
+/// The posting suggestion derived from a stored EHF document — computed
+/// on every read, never stored (docs/ehf.md). When the document is not
+/// EHF the endpoint says so; the human then posts it by hand as before.
+pub async fn ehf_forslag(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, document_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let forslag = regnmed_db::inbox_ehf_forslag(&state.pool, company_id, document_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let m = &forslag.mottatt;
+    Ok(Json(json!({
+        "er_kreditnota": m.er_kreditnota,
+        "fakturanr": m.fakturanr,
+        "fakturadato": m.fakturadato.map(|d| d.to_string()),
+        "forfallsdato": m.forfallsdato.map(|d| d.to_string()),
+        "valuta": m.valuta,
+        "selger_navn": m.selger_navn,
+        "selger_orgnr": m.selger_orgnr,
+        "kid": m.kid,
+        "kontonummer": m.kontonummer,
+        "netto_ore": m.netto_ore,
+        "mva_ore": m.mva_ore,
+        "brutto_ore": m.brutto_ore,
+        "linjer": m.linjer.iter().map(|l| json!({
+            "beskrivelse": l.beskrivelse,
+            "netto_ore": l.netto_ore,
+            "mva_sats_bp": l.mva_sats_bp,
+        })).collect::<Vec<_>>(),
+        "leverandor_no": forslag.leverandor_no,
+        "leverandor_navn": forslag.leverandor_navn,
+        "warnings": forslag.advarsler,
+    })))
+}

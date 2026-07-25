@@ -246,6 +246,10 @@ pub fn router(state: AppState) -> Router {
             get(invoice::invoice_pdf),
         )
         .route(
+            "/companies/{company_id}/invoices/{invoice_id}/ehf",
+            get(invoice::invoice_ehf),
+        )
+        .route(
             "/companies/{company_id}/invoices/{invoice_id}/send",
             axum::routing::post(utsendelse::send_invoice),
         )
@@ -459,6 +463,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/inbox/{document_id}/avvis",
             axum::routing::post(innboks::avvis),
+        )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/ehf",
+            get(innboks::ehf_forslag),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/attester",

@@ -571,6 +571,8 @@
     var rows = invoices.map(function (i) {
       var action = '<button class="btn btn-xs btn-ghost" data-pdf="' + i.invoice_id +
         '" data-name="' + (i.is_credit_note ? "kreditnota" : "faktura") + "-" + i.invoice_no + '.pdf">PDF</button>' +
+        ' <button class="btn btn-xs btn-ghost" data-ehf="' + i.invoice_id +
+        '" data-name="ehf-' + i.invoice_no + '.xml" title="EHF (PEPPOL BIS Billing 3.0)">EHF</button>' +
         ' <button class="btn btn-xs btn-ghost" data-send="' + i.invoice_id + '">Send</button>' +
         (i.is_credit_note ? "" : ' <button class="btn btn-xs btn-ghost" data-repeat="' + i.invoice_id +
           '" title="Opprett repeterende mal fra denne">Gjenta</button>');
@@ -888,6 +890,19 @@
             body: JSON.stringify({ active: button.dataset.active !== "true" }),
           });
           renderFaktura(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-ehf]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var response = await api("/companies/" + id + "/invoices/" + button.dataset.ehf + "/ehf");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = button.dataset.name;
+          a.click();
+          URL.revokeObjectURL(a.href);
         } catch (error) { toast(error.message, false); }
       };
     });
@@ -2451,6 +2466,10 @@
         esc(d.filename) + "'>" + esc(d.filename) + "</a></td><td>" +
         esc(d.uploaded_at.slice(0, 10)) + "</td><td>" + esc(d.uploaded_by) + "</td><td>" +
         attesteringLabel(d) + "</td><td>" +
+        (/xml/i.test(d.content_type) || /\.xml$/i.test(d.filename)
+          ? '<button class="btn btn-xs btn-outline" data-ehf-doc="' + d.document_id +
+            '" title="Les EHF og fyll ut bokføringen">EHF</button> '
+          : "") +
         '<button class="btn btn-xs btn-primary" data-bokfor="' + d.document_id + '">Bokfør</button> ' +
         '<button class="btn btn-xs btn-ghost" data-avvis="' + d.document_id + '">Avvis</button></td></tr>';
     }).join("");
@@ -2633,6 +2652,39 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+    app.querySelectorAll("[data-ehf-doc]").forEach(function (button) {
+      button.onclick = async function () {
+        var docId = button.dataset.ehfDoc;
+        try {
+          var f = await api("/companies/" + id + "/inbox/" + docId + "/ehf");
+          var row = button.closest("tr");
+          row.querySelector("[data-bokfor]").click();
+          document.getElementById("bf-date").value = f.fakturadato || today();
+          document.getElementById("bf-desc").value =
+            f.selger_navn + " faktura " + f.fakturanr;
+          var lines = document.querySelectorAll(".bokfor-line");
+          // Kostnad (netto), inngående mva, og leverandørgjelden med parten.
+          var fill = function (row, konto, belop, mva, part) {
+            row.querySelector('[data-f="account"]').value = konto;
+            // kr() bruker typografisk minus; skjemaets parser vil ha ASCII.
+            row.querySelector('[data-f="amount"]').value = kr(belop).replace("\u2212", "-");
+            if (mva) row.querySelector('[data-f="vat"]').value = mva;
+            if (part) row.dataset.party = part;
+          };
+          fill(lines[0], "4300", f.netto_ore, f.mva_ore ? "1" : "");
+          if (f.mva_ore) {
+            document.getElementById("bf-add").click();
+          }
+          var all = document.querySelectorAll(".bokfor-line");
+          if (f.mva_ore) fill(all[1], "2710", f.mva_ore, "");
+          var last = all[all.length - 1];
+          fill(last, "2400", -f.brutto_ore, "", f.leverandor_no);
+          var beskjed = f.warnings.length ? f.warnings.join(" · ") : "";
+          toast("EHF lest: " + f.selger_navn + " " + kr(f.brutto_ore) +
+            (beskjed ? " — " + beskjed : ""), !f.warnings.length);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
     app.querySelectorAll("[data-bokfor]").forEach(function (button) {
       button.onclick = function () {
         var docId = button.dataset.bokfor;
@@ -2662,7 +2714,8 @@
           var lines = [];
           target.querySelectorAll(".bokfor-line").forEach(function (row) {
             var account = row.querySelector('[data-f="account"]').value.trim();
-            var amount = row.querySelector('[data-f="amount"]').value.trim().replace(/\s/g, "");
+            var amount = row.querySelector('[data-f="amount"]').value.trim()
+              .replace(/\s/g, "").replace("\u2212", "-");
             if (!account || !amount) return;
             var ore = Math.round(Number(amount.replace(",", ".")) * 100);
             var vat = row.querySelector('[data-f="vat"]').value.trim();
@@ -2672,6 +2725,7 @@
             };
             lines.push({
               account: account, amount_ore: ore, vat_code: vat || null,
+              party_no: row.dataset.party || null,
               avdeling: dimValue("avdeling"), prosjekt: dimValue("prosjekt"),
             });
           });
