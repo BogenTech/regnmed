@@ -173,8 +173,13 @@ M7 (#37–#48) for new ground:
   PDF lagret på bilaget ved utstedelse, e-post med vedlegg over
   regnids mail-rail m/ insert-only utsendelseslogg; docs/faktura.md)
   — M3.
-- Penger ut: betalingsliste + pain.001-remittering (#33), utlegg og
-  kjøregodtgjørelse (#42), attestering/four-eyes (#47).
+- Penger ut: betalingsliste + pain.001-remittering (#33),
+  ✅ utlegg og kjøregodtgjørelse (#42 — uforanderlige krav m/
+  hash-sjekket kvittering som følger bilaget, enveis
+  innsendt→godkjent/avvist→utbetalt, km × statens sats fra
+  satsregisteret m/ trekkpliktig del som tydelig varsel, mva-splitt
+  ved godkjenning, utbetaling mot mellomregning; docs/utlegg.md),
+  attestering/four-eyes (#47).
 - Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn
   (#35) — M5.
 - Innsikt: nøkkeltall/likviditet (#36), budsjett m/ fastsatte versjoner

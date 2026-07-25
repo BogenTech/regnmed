@@ -447,8 +447,24 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    aktiveringsgrense warning (never refusal) at registration. Core
    `regnmed-core::anlegg` (manedsbelop sums EXACTLY, saldo_ar).
    `/companies/{id}/assets…` endpoints; portal Anlegg section.
-   **Next:** M7 breadth (#42 utlegg og kjøregodtgjørelse, #44
-   flervaluta), native importers (#19), EHF (#14), Maskinporten
+34. ✅ Utlegg og kjøregodtgjørelse (docs/utlegg.md, closed #42):
+   migration 0026 `expense` — the innboks discipline on refusjonskrav:
+   content immutable from submission (receipt bytea + SHA-256, trigger
+   + column grants), one-way innsendt→godkjent/avvist→utbetalt
+   (avvisning krever begrunnelse; transitions enforced by trigger).
+   Godkjenning in ONE tx: kostnad + inngående mva (split_gross,
+   dato-riktig sats) mot mellomregning (2910 default), **kvitteringen
+   kopiert inn som vedlegg på bilaget** (oppbevaringsplikt).
+   Kjøregodtgjørelse: km × statens sats PÅ KJØREDATOEN fra
+   satsregisteret, satser LAGRET på kravet ved innsending (evidence);
+   trekkfri/trekkpliktig split i `regnmed-core::utlegg`; trekkpliktig
+   del = tydelig varsel (a-melding #46 ikke bygget) — aldri skjult.
+   Utbetaling: mellomregning→bank (1920) one-way; remittering (#33)
+   overtar steget senere. Selvgodkjenning tillatt i v1 (#47
+   attestering legger seg oppå). `/companies/{id}/expenses…`
+   endpoints; portal Utlegg section.
+   **Next:** M7 breadth (#44 flervaluta, #33 betalingsliste/
+   remittering), native importers (#19), EHF (#14), Maskinporten
    (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
    terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet

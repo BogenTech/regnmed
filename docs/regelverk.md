@@ -38,9 +38,11 @@ Live consumers: purring (#29, shipped — forsinkelsesrente segmented
 per satsperiode, purregebyr-/standardkompensasjonstak per sending
 date; docs/purring.md); anleggsregisteret (#40, shipped —
 saldogruppesatser per år + aktiveringsgrensen ved registrering;
-docs/anlegg.md). Planned rules follow the same doctrine (their
-issues say so): statens km-sats (#42), feriepenge- og aga-satser
-(#46), valutakurser (#44 — dated, from Norges Bank).
+docs/anlegg.md); kjøregodtgjørelse (#42, shipped — statens sats og
+trekkfri sats på kjøredatoen, lagret på kravet ved innsending;
+docs/utlegg.md). Planned rules follow the same doctrine (their
+issues say so): feriepenge- og aga-satser (#46), valutakurser
+(#44 — dated, from Norges Bank).
 
 ## Årlig regelverksrevisjon (before each nyttår)
 

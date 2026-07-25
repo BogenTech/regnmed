@@ -7,6 +7,7 @@ pub mod auth;
 pub mod bank;
 pub mod dimension;
 pub mod engagement;
+pub mod expenses;
 pub mod innboks;
 pub mod invoice;
 pub mod invoice_template;
@@ -214,6 +215,34 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/expenses",
+            get(expenses::list),
+        )
+        .route(
+            "/companies/{company_id}/expenses/utlegg",
+            axum::routing::post(expenses::create_utlegg),
+        )
+        .route(
+            "/companies/{company_id}/expenses/kjoring",
+            axum::routing::post(expenses::create_kjoring),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/receipt",
+            get(expenses::receipt),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/approve",
+            axum::routing::post(expenses::approve),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/reject",
+            axum::routing::post(expenses::reject),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/pay",
+            axum::routing::post(expenses::pay),
         )
         .route(
             "/companies/{company_id}/assets",

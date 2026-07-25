@@ -19,6 +19,7 @@ CLAUDE.md).
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
 | [produkter.md](produkter.md) | Produktregister (kopiert ved utstedelse) og enkelt varelager: insert-only bevegelser, gjennomsnittskost, varetelling |
 | [anlegg.md](anlegg.md) | Anleggsregister: lineære avskrivninger som ordinære bilag, skattemessig saldo per gruppe, avhending m/ gevinst/tap |
+| [utlegg.md](utlegg.md) | Utlegg og kjøregodtgjørelse: uforanderlige krav, enveis beslutninger, statens satser fra satsregisteret |
 | [purring.md](purring.md) | Betalingsoppfølging: aldersfordeling, purregebyr/forsinkelsesrente som bilag, inkassovarsel |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |

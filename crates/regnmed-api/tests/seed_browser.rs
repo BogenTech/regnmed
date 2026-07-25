@@ -42,6 +42,10 @@ async fn seed_browser_demo() {
         ("1920", "Bank"),
         ("3880", "Gevinst ved avgang"),
         ("7880", "Tap ved avgang"),
+        ("7790", "Annen kostnad"),
+        ("7100", "Bilgodtgjørelse"),
+        ("2710", "Inngående mva"),
+        ("2910", "Gjeld til ansatte"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await

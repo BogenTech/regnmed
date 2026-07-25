@@ -152,7 +152,7 @@
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
-      ["timer", "Timer"], ["anlegg", "Anlegg"], ["reskontro", "Reskontro"],
+      ["timer", "Timer"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"], ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
@@ -1111,6 +1111,154 @@
             '<table class="table table-xs"><thead><tr><th>Dato</th><th>Type</th>' +
             "<th class='text-right'>Antall</th><th class='text-right'>Kost/stk</th><th>Notat</th></tr></thead>" +
             "<tbody>" + rows + "</tbody></table>";
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+  }
+
+  async function renderUtlegg(id) {
+    var data = await api("/companies/" + id + "/expenses");
+    var statusBadge = {
+      innsendt: "badge-warning", godkjent: "badge-info",
+      avvist: "badge-error", utbetalt: "badge-success",
+    };
+    var rows = data.expenses.map(function (e) {
+      var detalj = e.kind === "kjoring"
+        ? e.km + " km à " + kr(e.sats_ore_per_km) +
+          (e.trekkpliktig_ore > 0 ? ' <span class="badge badge-warning badge-xs" title="Skal lønnsinnberettes — a-melding er ikke støttet ennå">trekkpliktig ' + kr(e.trekkpliktig_ore) + "</span>" : "")
+        : (e.receipt_filename
+          ? '<a href="#" class="link" data-receipt="' + e.expense_id + '" data-name="' + esc(e.receipt_filename) + '">' + esc(e.receipt_filename) + "</a>"
+          : "");
+      var actions = "";
+      if (e.status === "innsendt") {
+        actions = '<button class="btn btn-xs btn-outline" data-e-approve="' + e.expense_id +
+          '" data-kind="' + e.kind + '">Godkjenn</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-e-reject="' + e.expense_id + '">Avvis</button>';
+      } else if (e.status === "godkjent") {
+        actions = '<button class="btn btn-xs btn-outline" data-e-pay="' + e.expense_id + '">Utbetal</button>';
+      } else if (e.status === "avvist" && e.avvist_note) {
+        actions = '<span class="text-xs opacity-70" title="' + esc(e.avvist_note) + '">' + esc(e.avvist_note) + "</span>";
+      }
+      return "<tr><td>" + esc(e.dato) + "</td><td>" + esc(e.person) + "</td><td>" +
+        (e.kind === "kjoring" ? "kjøring" : "utlegg") + "</td><td>" + esc(e.beskrivelse) +
+        " <span class='opacity-70'>" + detalj + "</span></td>" +
+        "<td class='text-right'>" + kr(e.belop_ore) + "</td>" +
+        '<td><span class="badge badge-sm ' + (statusBadge[e.status] || "badge-ghost") + '">' + esc(e.status) + "</span>" +
+        (e.voucher ? " <span class='text-xs opacity-60'>" + esc(e.voucher) + "</span>" : "") +
+        "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var utleggForm = '<div class="flex flex-wrap gap-2 items-end" id="new-utlegg">' +
+      '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="belop" class="input input-sm input-bordered w-28" placeholder="Beløp (kr)">' +
+      '<input data-f="formal" class="input input-sm input-bordered" placeholder="Formål">' +
+      '<label class="btn btn-sm">Velg kvittering og send inn' +
+      '<input type="file" id="utlegg-file" class="hidden"></label></div>';
+    var kjoringForm = '<div class="flex flex-wrap gap-2 items-end" id="new-kjoring">' +
+      '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="km" class="input input-sm input-bordered w-24" placeholder="Km">' +
+      '<input data-f="formal" class="input input-sm input-bordered" placeholder="Strekning og formål">' +
+      '<button id="kjoring-send" class="btn btn-sm">Registrer kjøring</button></div>';
+    shell(id, "utlegg",
+      card("Nytt utlegg",
+        '<p class="text-sm opacity-70 mb-2">Kvitteringen er uforanderlig fra innsending og følger kravet ' +
+        "inn på bilaget ved godkjenning (oppbevaringsplikt). Avvisning krever begrunnelse.</p>" +
+        utleggForm) +
+      card("Kjøregodtgjørelse",
+        '<p class="text-sm opacity-70 mb-2">Beløpet beregnes med statens sats på kjøredatoen fra ' +
+        "satsregisteret; den trekkfrie delen skilles fra den trekkpliktige, som varsles tydelig " +
+        "(lønnsinnberetning kommer med a-melding).</p>" +
+        kjoringForm) +
+      card("Krav",
+        rows
+          ? '<table class="table table-sm"><thead><tr><th>Dato</th><th>Hvem</th><th>Type</th>' +
+            "<th>Beskrivelse</th><th class='text-right'>Beløp</th><th>Status</th><th></th></tr></thead>" +
+            "<tbody>" + rows + "</tbody></table>"
+          : '<p class="opacity-70">Ingen krav ennå.</p>'));
+
+    var utleggFile = document.getElementById("utlegg-file");
+    if (utleggFile) utleggFile.onchange = async function () {
+      var file = utleggFile.files[0];
+      if (!file) return;
+      var box = document.getElementById("new-utlegg");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        if (!value("belop").trim() || !value("formal").trim()) {
+          throw new Error("fyll inn beløp og formål før du velger kvittering");
+        }
+        await api("/companies/" + id + "/expenses/utlegg?filename=" + encodeURIComponent(file.name) +
+          "&dato=" + value("dato") + "&belop_ore=" + parseKr(value("belop")) +
+          "&beskrivelse=" + encodeURIComponent(value("formal")), {
+          method: "POST",
+          headers: { "content-type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        toast("Utlegg sendt inn", true);
+        renderUtlegg(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    var kjoringSend = document.getElementById("kjoring-send");
+    if (kjoringSend) kjoringSend.onclick = async function () {
+      var box = document.getElementById("new-kjoring");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        var made = await post("/companies/" + id + "/expenses/kjoring", {
+          dato: value("dato"),
+          km: parseInt(value("km"), 10),
+          beskrivelse: value("formal").trim(),
+        });
+        toast("Kjøring registrert — " + kr(made.belop_ore) + " kr" +
+          (made.trekkpliktig_ore > 0 ? " (trekkpliktig del " + kr(made.trekkpliktig_ore) + ")" : ""), true);
+        renderUtlegg(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-receipt]").forEach(function (link) {
+      link.onclick = async function (event) {
+        event.preventDefault();
+        try {
+          var response = await api("/companies/" + id + "/expenses/" + link.dataset.receipt + "/receipt");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = link.dataset.name;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-e-approve]").forEach(function (button) {
+      button.onclick = async function () {
+        var isKjoring = button.dataset.kind === "kjoring";
+        var konto = prompt("Kostnadskonto:", isKjoring ? "7100" : "7790");
+        if (!konto) return;
+        var body = { konto: konto.trim() };
+        if (!isKjoring) {
+          var mva = prompt("Mva-kode for inngående mva (tom = ingen):", "");
+          if (mva === null) return;
+          if (mva.trim()) body.mva_kode = mva.trim();
+        }
+        try {
+          var result = await post("/companies/" + id + "/expenses/" + button.dataset.eApprove + "/approve", body);
+          toast("Godkjent — bilag " + result.voucher + (result.warning ? " — " + result.warning : ""), true);
+          renderUtlegg(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-e-reject]").forEach(function (button) {
+      button.onclick = async function () {
+        var note = prompt("Begrunnelse for avvisning (påkrevd):");
+        if (!note) return;
+        try {
+          await post("/companies/" + id + "/expenses/" + button.dataset.eReject + "/reject", { note: note.trim() });
+          renderUtlegg(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-e-pay]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var result = await post("/companies/" + id + "/expenses/" + button.dataset.ePay + "/pay", {});
+          toast("Utbetalt — bilag " + result.voucher, true);
+          renderUtlegg(id);
         } catch (error) { toast(error.message, false); }
       };
     });
@@ -2125,6 +2273,7 @@
         if (section === "faktura") return await renderFaktura(id);
         if (section === "produkter") return await renderProdukter(id);
         if (section === "anlegg") return await renderAnlegg(id);
+        if (section === "utlegg") return await renderUtlegg(id);
         if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);
         if (section === "mva") return await renderMva(id);
