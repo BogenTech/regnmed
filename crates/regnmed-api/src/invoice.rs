@@ -46,6 +46,9 @@ pub struct CreateInvoiceRequest {
     journal: Option<String>,
     receivable_account: Option<String>,
     vat_account: Option<String>,
+    /// Document currency (docs/valuta.md); line amounts in its minor
+    /// unit. None = NOK. Requires a kurs in the valutakurs table.
+    valuta: Option<String>,
     lines: Vec<DocLineRequest>,
 }
 
@@ -57,6 +60,7 @@ fn issued_json(issued: &regnmed_db::IssuedInvoice) -> serde_json::Value {
         "net_ore": issued.net_ore,
         "vat_ore": issued.vat_ore,
         "gross_ore": issued.gross_ore,
+        "gross_nok_ore": issued.gross_nok_ore,
         "voucher": format!("{}-{}", issued.fiscal_year, issued.voucher_number),
     })
 }
@@ -76,6 +80,8 @@ pub async fn create_invoice(
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
+        valuta: request.valuta.map(|v| v.to_uppercase()),
+        valuta_kurs_micro: None,
         lines: resolve_lines(&state, company_id, request.lines).await?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);

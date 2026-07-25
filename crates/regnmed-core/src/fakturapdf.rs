@@ -86,6 +86,13 @@ pub struct FakturaPdfInput {
     pub forfallsdato: NaiveDate,
     pub kid: String,
 
+    /// Dokumentvaluta (docs/valuta.md). None = NOK. When set, every
+    /// beløp on the document is in this currency and the totals block
+    /// states it together with the NOK motverdi.
+    pub valuta: Option<String>,
+    /// NOK gross actually posted, shown as motverdi on valuta invoices.
+    pub motverdi_nok_ore: Option<i64>,
+
     pub linjer: Vec<PdfLinje>,
 }
 
@@ -287,6 +294,14 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     };
     pdf.text_right(RIGHT - 110.0, ly, 11.0, Font::Bold, betales);
     pdf.text_right(RIGHT, ly, 11.0, Font::Bold, &kr(brutto));
+    if let Some(valuta) = &input.valuta {
+        ly += 14.0;
+        let note = match input.motverdi_nok_ore {
+            Some(nok) => format!("Alle beløp i {valuta}. Motverdi NOK {}", kr(nok)),
+            None => format!("Alle beløp i {valuta}"),
+        };
+        pdf.text_right(RIGHT, ly, 8.0, Font::Regular, &note);
+    }
 
     // Payment block at a fixed distance below the totals.
     // Betalingsinformasjon only on an actual faktura — tilbud/ordre are
@@ -388,6 +403,8 @@ mod tests {
                     mva_ore: 0,
                 },
             ],
+            valuta: None,
+            motverdi_nok_ore: None,
         }
     }
 

@@ -44,7 +44,11 @@ all.
   party number, so reassigning a receivable between customers is
   tamper-evident too; v3 (introduced with dimensjoner,
   docs/dimensjoner.md) adds each entry's avdeling and prosjekt codes,
-  so moving a cost between prosjekter is tamper-evident too. Golden
+  so moving a cost between prosjekter is tamper-evident too; v4
+  (introduced with flervaluta, docs/valuta.md) adds each entry's
+  valutainformasjon (ISO code, valutabeløp, bokført kurs), so
+  rewriting what a transaction lød på or the rate it was booked at is
+  tamper-evident too. Golden
   tests pin one digest per version (`golden_hashes_never_change`); if
   any fails, the change would break verification of deployed ledgers —
   a format is never edited, only superseded. Mixed-version chains

@@ -57,6 +57,7 @@ fn entry(account: &str, ore: i64, party_no: Option<&str>) -> EntryDraft {
         party_no: party_no.map(str::to_owned),
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     }
 }
 

@@ -200,6 +200,24 @@ pub async fn post_voucher_in(
     let mut dimension_ids: Vec<(Option<Uuid>, Option<Uuid>)> =
         Vec::with_capacity(draft.entries.len());
     for (i, entry) in draft.entries.iter().enumerate() {
+        // Valuta sanity: the NOK amount is authoritative, but it must
+        // agree with cent × kurs within 1 kr — anything larger is a
+        // unit mistake (kurs off by a power of ten), not rounding.
+        if let Some(valuta) = &entry.valuta {
+            let expected = regnmed_core::valuta::nok_ore(valuta.belop_cent, valuta.kurs_micro);
+            if (entry.amount.0 - expected).abs() > 1_00 {
+                bail!(
+                    "entry line {}: {} {} à kurs {} tilsier {} øre, men beløpet er {} øre — \
+                     sjekk enhetene (cent / mikro-NOK)",
+                    i + 1,
+                    valuta.belop_cent,
+                    valuta.valuta,
+                    regnmed_core::valuta::kurs_str(valuta.kurs_micro),
+                    expected,
+                    entry.amount.0
+                );
+            }
+        }
         let avdeling_id = resolve_dimension(tx, company_id, i, "avdeling", &entry.avdeling).await?;
         let prosjekt_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.prosjekt).await?;
         dimension_ids.push((avdeling_id, prosjekt_id));
@@ -285,6 +303,7 @@ pub async fn post_voucher_in(
                 party_no: none_if_empty(&e.party_no),
                 avdeling: none_if_empty(&e.avdeling),
                 prosjekt: none_if_empty(&e.prosjekt),
+                valuta: e.valuta.clone(),
             })
             .collect(),
     };
@@ -323,8 +342,9 @@ pub async fn post_voucher_in(
     {
         sqlx::query(
             "insert into entry (id, voucher_id, line_no, account_id, amount_ore, vat_code,
-                                description, party_id, avdeling_id, prosjekt_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                                description, party_id, avdeling_id, prosjekt_id,
+                                valuta, valutabelop_cent, kurs_micro)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(Uuid::now_v7())
         .bind(voucher_id)
@@ -336,6 +356,9 @@ pub async fn post_voucher_in(
         .bind(party_id)
         .bind(dims.0)
         .bind(dims.1)
+        .bind(entry.valuta.as_ref().map(|v| v.valuta.clone()))
+        .bind(entry.valuta.as_ref().map(|v| v.belop_cent))
+        .bind(entry.valuta.as_ref().map(|v| v.kurs_micro))
         .execute(&mut **tx)
         .await?;
     }
@@ -391,7 +414,8 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
         let entry_rows = sqlx::query(
             "select e.line_no, a.number as account_number, e.amount_ore, e.vat_code,
                     e.description, p.party_no,
-                    da.code as avdeling, dp.code as prosjekt
+                    da.code as avdeling, dp.code as prosjekt,
+                    e.valuta, e.valutabelop_cent, e.kurs_micro
              from entry e
              join account a on a.id = e.account_id
              left join party p on p.id = e.party_id
@@ -427,6 +451,13 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
                     party_no: e.get("party_no"),
                     avdeling: e.get("avdeling"),
                     prosjekt: e.get("prosjekt"),
+                    valuta: e.get::<Option<String>, _>("valuta").map(|valuta| {
+                        regnmed_core::valuta::Valuta {
+                            valuta,
+                            belop_cent: e.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0),
+                            kurs_micro: e.get::<Option<i64>, _>("kurs_micro").unwrap_or(0),
+                        }
+                    }),
                 })
                 .collect(),
         };

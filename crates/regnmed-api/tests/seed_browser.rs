@@ -46,6 +46,9 @@ async fn seed_browser_demo() {
         ("7100", "Bilgodtgjørelse"),
         ("2710", "Inngående mva"),
         ("2910", "Gjeld til ansatte"),
+        ("8060", "Valutagevinst"),
+        ("8160", "Valutatap"),
+        ("1508", "Urealisert kursregulering"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -81,6 +84,8 @@ async fn seed_browser_demo() {
                 journal_code: "GL".into(),
                 receivable_account: "1500".into(),
                 vat_account: "2700".into(),
+                valuta: None,
+                valuta_kurs_micro: None,
                 lines: vec![regnmed_db::InvoiceLineDraft {
                     description: "Konsulentbistand".into(),
                     account_number: "3000".into(),

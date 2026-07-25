@@ -277,12 +277,14 @@
       api("/companies/" + id + "/period-lock"),
       api("/companies/" + id + "/vouchers"),
       api("/companies/" + id + "/invoices/overdue").catch(function () { return null; }),
+      api("/companies/" + id + "/currency/rates").catch(function () { return { rates: [] }; }),
     ]);
     var open = results[0].invoices;
     var mva = results[1];
     var lock = results[2];
     var vouchers = results[3].vouchers;
     var overdue = results[4];
+    var rates = results[5].rates;
     var overdueSum = overdue
       ? overdue.invoices.reduce(function (sum, i) { return sum + i.remaining_ore; }, 0)
       : 0;
@@ -352,9 +354,50 @@
           (f || "(selskapsform)") + "</option>";
       }).join("") + "</select></div>" +
       '<button id="set-save" class="btn btn-sm">Lagre</button></div>');
+    var rateRows = rates.map(function (r) {
+      return "<tr><td class='font-mono'>" + esc(r.valuta) + "</td><td class='text-right font-mono'>" +
+        esc(r.kurs) + "</td><td>" + esc(r.dato) + "</td><td class='text-xs opacity-70'>" + esc(r.kilde) + "</td></tr>";
+    }).join("");
+    var kurserCard = card("Valutakurser",
+      '<p class="text-sm opacity-70 mb-2">Dagskurser fra Norges Bank (eller manuelt, med kilde). ' +
+      "Fakturaer i valuta bokføres i NOK til kursen på fakturadatoen; kursinformasjonen er del av bilagsbeviset.</p>" +
+      '<div class="flex flex-wrap gap-2 items-end mb-2" id="rate-forms">' +
+      '<button id="rates-fetch" class="btn btn-sm btn-outline">Hent fra Norges Bank</button>' +
+      '<input data-f="valuta" class="input input-sm input-bordered w-20" placeholder="EUR">' +
+      '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="kurs" class="input input-sm input-bordered w-28" placeholder="Kurs (11,6543)">' +
+      '<button id="rate-add" class="btn btn-sm">Registrer manuelt</button></div>' +
+      (rateRows
+        ? '<table class="table table-sm"><thead><tr><th>Valuta</th><th class="text-right">Kurs</th>' +
+          "<th>Dato</th><th>Kilde</th></tr></thead><tbody>" + rateRows + "</tbody></table>"
+        : '<p class="opacity-70 text-sm">Ingen kurser ennå.</p>'));
     shell(id, "oversikt", stats + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
-      "<tbody>" + recent + "</tbody></table>") + settingsCard + anchorCard);
+      "<tbody>" + recent + "</tbody></table>") + kurserCard + settingsCard + anchorCard);
+    var ratesFetch = document.getElementById("rates-fetch");
+    if (ratesFetch) ratesFetch.onclick = async function () {
+      var valutaer = prompt("Valutaer (kommaseparert):", "EUR,USD,SEK");
+      if (!valutaer) return;
+      try {
+        var result = await post("/companies/" + id + "/currency/rates/fetch", {
+          valutaer: valutaer.split(",").map(function (v) { return v.trim(); }),
+        });
+        toast(result.fetched + " noteringer hentet", true);
+        renderOversikt(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    var rateAdd = document.getElementById("rate-add");
+    if (rateAdd) rateAdd.onclick = async function () {
+      var box = document.getElementById("rate-forms");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value; };
+      try {
+        await post("/companies/" + id + "/currency/rates", {
+          valuta: value("valuta").trim(), dato: value("dato"), kurs: value("kurs").trim(),
+        });
+        toast("Kurs registrert", true);
+        renderOversikt(id);
+      } catch (error) { toast(error.message, false); }
+    };
     var setSave = document.getElementById("set-save");
     if (setSave) setSave.onclick = async function () {
       try {
@@ -476,6 +519,7 @@
       api("/companies/" + id + "/quotes").catch(function () { return { documents: [] }; }),
       api("/companies/" + id + "/orders").catch(function () { return { documents: [] }; }),
       api("/companies/" + id + "/products").catch(function () { return { products: [] }; }),
+      api("/companies/" + id + "/currency/rates").catch(function () { return { rates: [] }; }),
     ]);
     var invoices = results[0].invoices;
     var parties = results[1].parties;
@@ -485,6 +529,7 @@
     var quotes = results[5].documents;
     var orders = results[6].documents;
     var products = results[7].products.filter(function (p) { return p.aktiv; });
+    var currencies = results[8].rates.map(function (r) { return r.valuta; });
     var produktOptions = '<option value="">— fritekst —</option>' + products.map(function (p) {
       return '<option value="' + esc(p.nummer) + '">' + esc(p.nummer) + " " + esc(p.navn) +
         " (" + kr(p.salgspris_ore) + ")</option>";
@@ -517,6 +562,12 @@
         '<input name="due_date" type="date" class="input input-bordered" value="' + today() + '"></label></div>' +
         (products.length
           ? '<select name="produkt" class="select select-bordered">' + produktOptions + "</select>"
+          : "") +
+        (currencies.length
+          ? '<select name="valuta" class="select select-bordered" title="Fakturavaluta">' +
+            '<option value="">NOK</option>' + currencies.map(function (c) {
+              return '<option value="' + esc(c) + '">' + esc(c) + "</option>";
+            }).join("") + "</select>"
           : "") +
         '<input name="description" class="input input-bordered" placeholder="Beskrivelse">' +
         '<div class="grid grid-cols-3 gap-2">' +
@@ -679,6 +730,7 @@
           party_no: d.get("party_no"),
           invoice_date: d.get("invoice_date"),
           due_date: d.get("due_date"),
+          valuta: d.get("valuta") || null,
           lines: [line],
         });
         toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);

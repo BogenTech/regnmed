@@ -275,6 +275,7 @@ pub async fn approve_expense(
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             });
             if mva != 0 {
                 entries.push(EntryDraft {
@@ -285,6 +286,7 @@ pub async fn approve_expense(
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 });
             }
         }
@@ -304,6 +306,7 @@ pub async fn approve_expense(
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             });
             let trekkpliktig: i64 = expense
                 .get::<Option<i64>, _>("trekkpliktig_ore")
@@ -325,6 +328,7 @@ pub async fn approve_expense(
         party_no: None,
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     });
 
     let label = if kind == "utlegg" {
@@ -452,6 +456,7 @@ pub async fn pay_expense(
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: bank_konto.to_string(),
@@ -461,6 +466,7 @@ pub async fn pay_expense(
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };

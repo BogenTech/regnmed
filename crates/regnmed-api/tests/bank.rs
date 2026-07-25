@@ -123,6 +123,7 @@ async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -132,6 +133,7 @@ async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
@@ -141,6 +143,7 @@ async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };
@@ -236,6 +239,7 @@ async fn import_auto_match_manual_match_and_permissions() {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -245,6 +249,7 @@ async fn import_auto_match_manual_match_and_permissions() {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };

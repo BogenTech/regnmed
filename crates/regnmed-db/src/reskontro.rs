@@ -280,3 +280,297 @@ pub async fn set_account_reskontro(
     ensure!(updated.rows_affected() == 1, "no account {account_number}");
     Ok(())
 }
+
+/// Matches two entries of the SAME valuta by valutabeløp and posts the
+/// realized agio/disagio as an ordinary voucher IN THE SAME
+/// TRANSACTION as the match rows (docs/valuta.md):
+///
+/// - the NOK each side consumes for `valuta_cent` is proportional to
+///   its own booked relation (amount / valutabeløp), so no external
+///   kurs enters the settlement;
+/// - the difference posts against gevinstkonto (8060) / tapskonto
+///   (8160) with a party-carrying transfer entry on the reskontro
+///   account, and a second match row closes that transfer — both
+///   sides' NOK remainders reach exactly zero, never drift.
+#[allow(clippy::too_many_arguments)]
+pub async fn match_valuta(
+    pool: &PgPool,
+    company_id: Uuid,
+    entry_a: Uuid,
+    entry_b: Uuid,
+    valuta_cent: i64,
+    gevinstkonto: &str,
+    tapskonto: &str,
+    matched_by: &str,
+) -> Result<i64> {
+    ensure!(valuta_cent > 0, "valutabeløpet må være positivt");
+    let pair = sqlx::query(
+        "select a.amount_ore as amount_a, a.valuta as valuta_a,
+                a.valutabelop_cent as belop_a,
+                b.amount_ore as amount_b, b.valuta as valuta_b,
+                b.valutabelop_cent as belop_b,
+                p.party_no, acc.number as account_number, va.voucher_date
+         from entry a
+         join voucher va on va.id = a.voucher_id and va.company_id = $1
+         join entry b on b.id = $3
+         join voucher vb on vb.id = b.voucher_id and vb.company_id = $1
+         join party p on p.id = a.party_id
+         join account acc on acc.id = a.account_id
+         where a.id = $2
+           and a.party_id is not null and a.party_id = b.party_id
+           and a.account_id = b.account_id",
+    )
+    .bind(company_id)
+    .bind(entry_a)
+    .bind(entry_b)
+    .fetch_optional(pool)
+    .await?
+    .context("entries must belong to the same company, party and reskontro account")?;
+    let valuta_a: Option<String> = pair.get("valuta_a");
+    let valuta_b: Option<String> = pair.get("valuta_b");
+    ensure!(
+        valuta_a.is_some() && valuta_a == valuta_b,
+        "begge posteringene må være i samme valuta"
+    );
+    let belop_a: i64 = pair
+        .get::<Option<i64>, _>("belop_a")
+        .context("entry_a mangler valutabeløp")?;
+    let belop_b: i64 = pair
+        .get::<Option<i64>, _>("belop_b")
+        .context("entry_b mangler valutabeløp")?;
+    let amount_a: i64 = pair.get("amount_a");
+    let amount_b: i64 = pair.get("amount_b");
+    ensure!(
+        belop_a > 0 && belop_b < 0,
+        "entry_a må være debetsiden (positivt valutabeløp), entry_b kreditsiden"
+    );
+
+    // Open remainders in valuta on both sides.
+    let matched_cent = |entry: Uuid, as_a: bool| async move {
+        let sum: i64 = sqlx::query_scalar(if as_a {
+            "select coalesce(sum(valuta_cent), 0)::bigint from reskontro_match where entry_a = $1"
+        } else {
+            "select coalesce(sum(valuta_cent), 0)::bigint from reskontro_match where entry_b = $1"
+        })
+        .bind(entry)
+        .fetch_one(pool)
+        .await?;
+        anyhow::Ok(sum)
+    };
+    let rest_a = belop_a - matched_cent(entry_a, true).await?;
+    let rest_b = -belop_b - matched_cent(entry_b, false).await?;
+    ensure!(
+        valuta_cent <= rest_a && valuta_cent <= rest_b,
+        "åpent valutabeløp er {rest_a} / {rest_b} cent — kan ikke matche {valuta_cent}"
+    );
+
+    // NOK consumed per side, proportional to each entry's own booking.
+    let andel = |amount: i64, belop: i64| -> i64 {
+        let product = i128::from(valuta_cent) * i128::from(amount.abs());
+        let belop = i128::from(belop.abs());
+        i64::try_from((product + belop / 2) / belop).expect("NOK share fits in i64")
+    };
+    let nok_a = andel(amount_a, belop_a);
+    let nok_b = andel(amount_b, belop_b);
+    let agio = nok_b - nok_a; // > 0: settlement brought more NOK → gevinst
+    let felles = nok_a.min(nok_b);
+
+    let mut tx = pool.begin().await?;
+    if felles > 0 {
+        sqlx::query(
+            "insert into reskontro_match (id, entry_a, entry_b, amount_ore, valuta_cent, matched_by)
+             values ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(entry_a)
+        .bind(entry_b)
+        .bind(felles)
+        .bind(valuta_cent)
+        .bind(matched_by)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if agio != 0 {
+        use regnmed_core::Ore;
+        use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+        let party_no: String = pair.get("party_no");
+        let account: String = pair.get("account_number");
+        let today: NaiveDate = sqlx::query_scalar("select current_date")
+            .fetch_one(&mut *tx)
+            .await?;
+        let (resultatkonto, resultat_amount, party_amount) = if agio > 0 {
+            (gevinstkonto, -agio, agio)
+        } else {
+            (tapskonto, -agio, agio)
+        };
+        let draft = VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: today,
+            description: format!(
+                "Realisert {} valuta ({})",
+                if agio > 0 { "agio" } else { "disagio" },
+                valuta_a.as_deref().unwrap_or("")
+            ),
+            reverses: None,
+            entries: vec![
+                EntryDraft {
+                    account_number: account,
+                    amount: Ore(party_amount),
+                    vat_code: None,
+                    description: Some("Kursdifferanse ved oppgjør".into()),
+                    party_no: Some(party_no),
+                    avdeling: None,
+                    prosjekt: None,
+                    valuta: None,
+                },
+                EntryDraft {
+                    account_number: resultatkonto.to_string(),
+                    amount: Ore(resultat_amount),
+                    vat_code: None,
+                    description: None,
+                    party_no: None,
+                    avdeling: None,
+                    prosjekt: None,
+                    valuta: None,
+                },
+            ],
+        };
+        draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let posted = crate::ledger::post_voucher_in(&mut tx, company_id, &draft, matched_by).await?;
+        let agio_entry: Uuid = sqlx::query_scalar(
+            "select id from entry where voucher_id = $1 and party_id is not null",
+        )
+        .bind(posted.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        // Close the leftover with the transfer entry: gevinst leaves a
+        // credit rest on b (transfer is debit); tap leaves a debit rest
+        // on a (transfer is credit).
+        let (ma, mb) = if agio > 0 {
+            (agio_entry, entry_b)
+        } else {
+            (entry_a, agio_entry)
+        };
+        sqlx::query(
+            "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+             values ($1, $2, $3, $4, $5)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(ma)
+        .bind(mb)
+        .bind(agio.abs())
+        .bind(matched_by)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(agio)
+}
+
+/// Urealisert kursregulering (docs/valuta.md): every open valuta item
+/// revalued at the newest kurs on `per_dato`; the net difference posts
+/// as one voucher on `per_dato` (balansekonto mot gevinst-/tapskonto)
+/// and its REVERSAL the day after — generated and self-cleaning, so
+/// the realized agio at oppgjør stays untouched. Returns None when
+/// there is nothing to regulate.
+#[allow(clippy::too_many_arguments)]
+pub async fn kursregulering(
+    pool: &PgPool,
+    company_id: Uuid,
+    per_dato: NaiveDate,
+    balansekonto: &str,
+    gevinstkonto: &str,
+    tapskonto: &str,
+    created_by: &str,
+) -> Result<Option<(i64, (i32, i64), (i32, i64))>> {
+    let rows = sqlx::query(
+        "select e.id, e.amount_ore, e.valuta, e.valutabelop_cent,
+                coalesce((select sum(m.amount_ore) from reskontro_match m
+                          where m.entry_a = e.id), 0)::bigint
+              + coalesce((select sum(-m.amount_ore) from reskontro_match m
+                          where m.entry_b = e.id), 0)::bigint as matched_nok,
+                coalesce((select sum(m.valuta_cent) from reskontro_match m
+                          where m.entry_a = e.id), 0)::bigint
+              + coalesce((select sum(m.valuta_cent) from reskontro_match m
+                          where m.entry_b = e.id), 0)::bigint as matched_cent
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         where v.company_id = $1 and e.valuta is not null and e.party_id is not null
+           and v.voucher_date <= $2",
+    )
+    .bind(company_id)
+    .bind(per_dato)
+    .fetch_all(pool)
+    .await?;
+
+    let mut diff_total = 0i64;
+    for row in &rows {
+        let amount: i64 = row.get("amount_ore");
+        let matched_nok: i64 = row.get("matched_nok");
+        let rest_nok = amount - matched_nok;
+        if rest_nok == 0 {
+            continue;
+        }
+        let belop: i64 = row.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0);
+        let matched_cent: i64 = row.get("matched_cent");
+        let rest_cent = if belop >= 0 {
+            belop - matched_cent
+        } else {
+            belop + matched_cent
+        };
+        let valuta: String = row.get("valuta");
+        let (_, kurs) = crate::valuta::require_kurs(pool, &valuta, per_dato).await?;
+        diff_total += regnmed_core::valuta::nok_ore(rest_cent, kurs) - rest_nok;
+    }
+    if diff_total == 0 {
+        return Ok(None);
+    }
+
+    use regnmed_core::Ore;
+    use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+    let entry = |konto: &str, amount: i64, desc: &str| EntryDraft {
+        account_number: konto.to_string(),
+        amount: Ore(amount),
+        vat_code: None,
+        description: Some(desc.to_string()),
+        party_no: None,
+        avdeling: None,
+        prosjekt: None,
+        valuta: None,
+    };
+    let resultatkonto = if diff_total > 0 { gevinstkonto } else { tapskonto };
+    let mut tx = pool.begin().await?;
+    let regulering = VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: per_dato,
+        description: format!("Urealisert kursregulering per {per_dato}"),
+        reverses: None,
+        entries: vec![
+            entry(balansekonto, diff_total, "Kursregulering åpne valutaposter"),
+            entry(resultatkonto, -diff_total, "Urealisert kursdifferanse"),
+        ],
+    };
+    regulering.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let posted = crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
+    let neste_dag = per_dato
+        .succ_opt()
+        .context("per_dato has no following day")?;
+    let reversal = VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: neste_dag,
+        description: format!("Reversering kursregulering per {per_dato}"),
+        reverses: Some(posted.id),
+        entries: vec![
+            entry(balansekonto, -diff_total, "Reversering kursregulering"),
+            entry(resultatkonto, diff_total, "Reversering kursregulering"),
+        ],
+    };
+    reversal.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let reversed = crate::ledger::post_voucher_in(&mut tx, company_id, &reversal, created_by).await?;
+    tx.commit().await?;
+    Ok(Some((
+        diff_total,
+        (posted.fiscal_year, posted.voucher_number),
+        (reversed.fiscal_year, reversed.voucher_number),
+    )))
+}

@@ -30,6 +30,7 @@ fn entry(account: &str, ore: i64) -> EntryDraft {
         party_no: None,
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     }
 }
 

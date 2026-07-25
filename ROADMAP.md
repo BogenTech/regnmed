@@ -200,7 +200,12 @@ M7 (#37–#48) for new ground:
   CronJob m/ insert-only logg, skattemessig saldo per gruppe a–j fra
   satsregisteret m/ midlertidige forskjeller, avhending m/
   gevinst/tap; docs/anlegg.md),
-  flervaluta m/ agio (#44).
+  ✅ flervaluta (#44 — hash format v4: valutabeløp og bokført kurs på
+  linjene som bevis; daterte kurser fra Norges Banks åpne API m/
+  UNIT_MULT-håndtering og kilde per rad; faktura i valuta bokført i
+  NOK til dagskurs; realisert agio i SAMME transaksjon som
+  valutamatchen; urealisert årsslutt-regulering m/ reversal; SAF-T
+  CurrencyCode/CurrencyAmount/ExchangeRate; docs/valuta.md).
 - Plattform: maskin-tilgang til API-et via regnid client_credentials +
   grants (#45), PWA m/ kvitteringsfoto (#48) — M5.
 - Offentlig: aksjonærregisteroppgaven + aksjebok som hendelseslogg

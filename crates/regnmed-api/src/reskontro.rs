@@ -122,7 +122,14 @@ pub async fn party_items(
 pub struct MatchRequest {
     entry_a: Uuid,
     entry_b: Uuid,
-    amount_ore: i64,
+    /// NOK matching. Ignored when valuta_cent is given.
+    amount_ore: Option<i64>,
+    /// Valuta matching (docs/valuta.md): both entries must carry the
+    /// same valuta; realized agio posts in the same transaction.
+    valuta_cent: Option<i64>,
+    /// Agio accounts; defaults 8060 (gevinst) / 8160 (tap).
+    gevinstkonto: Option<String>,
+    tapskonto: Option<String>,
 }
 
 pub async fn create_match(
@@ -133,12 +140,30 @@ pub async fn create_match(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
     let matched_by = person.name.as_deref().unwrap_or(&person.sub);
+    if let Some(valuta_cent) = request.valuta_cent {
+        let agio_ore = regnmed_db::match_valuta(
+            &state.pool,
+            company_id,
+            request.entry_a,
+            request.entry_b,
+            valuta_cent,
+            request.gevinstkonto.as_deref().unwrap_or("8060"),
+            request.tapskonto.as_deref().unwrap_or("8160"),
+            matched_by,
+        )
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        return Ok(Json(json!({ "matched": true, "agio_ore": agio_ore })));
+    }
+    let amount_ore = request
+        .amount_ore
+        .ok_or_else(|| ApiError::BadRequest("amount_ore or valuta_cent required".into()))?;
     let match_id = regnmed_db::match_items(
         &state.pool,
         company_id,
         request.entry_a,
         request.entry_b,
-        request.amount_ore,
+        amount_ore,
         matched_by,
     )
     .await

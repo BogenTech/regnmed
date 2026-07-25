@@ -62,6 +62,7 @@ fn sale(date: NaiveDate, ore: i64) -> VoucherDraft {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -71,6 +72,7 @@ fn sale(date: NaiveDate, ore: i64) -> VoucherDraft {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     }

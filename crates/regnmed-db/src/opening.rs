@@ -95,6 +95,7 @@ pub async fn post_opening_balance(
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             })
             .collect(),
     };

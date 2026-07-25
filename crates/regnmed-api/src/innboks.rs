@@ -165,6 +165,7 @@ pub async fn bokfor(
                 party_no: l.party_no.clone(),
                 avdeling: l.avdeling.clone(),
                 prosjekt: l.prosjekt.clone(),
+                valuta: None,
             })
             .collect(),
     };

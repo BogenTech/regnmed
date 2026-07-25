@@ -1,0 +1,66 @@
+{
+  "header": {
+    "id": "sample",
+    "prepared": "2026-07-24T16:05:00",
+    "sender": { "id": "Norges Bank" }
+  },
+  "data": {
+    "dataSets": [
+      {
+        "series": {
+          "0:0:0:0": {
+            "attributes": [0, 0, 0],
+            "observations": {
+              "0": ["11.6485"],
+              "1": ["11.6543"]
+            }
+          },
+          "0:1:0:0": {
+            "attributes": [0, 0, 1],
+            "observations": {
+              "0": ["94.28"],
+              "1": ["94.35"]
+            }
+          }
+        }
+      }
+    ],
+    "structure": {
+      "name": "Exchange Rates",
+      "dimensions": {
+        "series": [
+          { "id": "FREQ", "values": [{ "id": "B", "name": "Business" }] },
+          {
+            "id": "BASE_CUR",
+            "values": [
+              { "id": "EUR", "name": "Euro" },
+              { "id": "SEK", "name": "Svenske kroner" }
+            ]
+          },
+          { "id": "QUOTE_CUR", "values": [{ "id": "NOK", "name": "Norske kroner" }] },
+          { "id": "TENOR", "values": [{ "id": "SP", "name": "Spot" }] }
+        ],
+        "observation": [
+          {
+            "id": "TIME_PERIOD",
+            "values": [
+              { "id": "2026-07-23", "name": "2026-07-23" },
+              { "id": "2026-07-24", "name": "2026-07-24" }
+            ]
+          }
+        ]
+      },
+      "attributes": {
+        "series": [
+          { "id": "DECIMALS", "values": [{ "id": "4" }] },
+          { "id": "CALCULATED", "values": [{ "id": "false" }] },
+          {
+            "id": "UNIT_MULT",
+            "values": [{ "id": "0", "name": "Units" }, { "id": "2", "name": "Hundreds" }]
+          }
+        ],
+        "observation": []
+      }
+    }
+  }
+}

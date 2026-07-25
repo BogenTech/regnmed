@@ -38,6 +38,7 @@ fn entry(account: &str, ore: i64, vat_code: Option<&str>) -> EntryDraft {
         party_no: None,
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     }
 }
 

@@ -328,6 +328,7 @@ async fn depreciate_next(
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 },
                 EntryDraft {
                     account_number: asset.get("balansekonto"),
@@ -337,6 +338,7 @@ async fn depreciate_next(
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 },
             ],
         };
@@ -464,6 +466,7 @@ pub async fn dispose_asset(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
     if bokfort != 0 {
@@ -475,6 +478,7 @@ pub async fn dispose_asset(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
     if gevinst != 0 {
@@ -492,6 +496,7 @@ pub async fn dispose_asset(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
 

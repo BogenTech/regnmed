@@ -31,6 +31,7 @@ pub mod saft;
 pub mod saft_import;
 pub mod sats;
 pub mod utlegg;
+pub mod valuta;
 pub mod voucher;
 pub(crate) mod xml;
 

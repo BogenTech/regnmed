@@ -119,6 +119,11 @@ pub struct SaftLine {
     /// Dimension codes on the line → Analysis elements ("AVD"/"PRO").
     pub avdeling: Option<String>,
     pub prosjekt: Option<String>,
+    /// Valutainformasjon (docs/valuta.md) → CurrencyCode /
+    /// CurrencyAmount / ExchangeRate inside the amount structure.
+    pub valuta: Option<String>,
+    pub valutabelop_cent: Option<i64>,
+    pub kurs_micro: Option<i64>,
 }
 
 /// An account's mapping onto Skatteetaten's grouping code list.
@@ -486,6 +491,16 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 };
                 x.open(side);
                 x.leaf("Amount", &amount(line.amount_ore));
+                if let (Some(code), Some(cent)) = (&line.valuta, line.valutabelop_cent) {
+                    x.leaf("CurrencyCode", code);
+                    x.leaf("CurrencyAmount", &amount(cent));
+                    if let Some(kurs) = line.kurs_micro {
+                        x.leaf(
+                            "ExchangeRate",
+                            &format!("{}.{:06}", kurs / 1_000_000, kurs % 1_000_000),
+                        );
+                    }
+                }
                 x.close(side);
                 if let Some(code) = &line.vat_code
                     && let Some(bp) = line.tax_percent_bp
@@ -648,6 +663,9 @@ mod tests {
                             supplier_id: None,
                             avdeling: None,
                             prosjekt: None,
+                            valuta: None,
+                            valutabelop_cent: None,
+                            kurs_micro: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -660,6 +678,9 @@ mod tests {
                             supplier_id: None,
                             avdeling: Some("100".into()),
                             prosjekt: Some("P42".into()),
+                            valuta: None,
+                            valutabelop_cent: None,
+                            kurs_micro: None,
                         },
                         SaftLine {
                             line_no: 3,
@@ -672,6 +693,9 @@ mod tests {
                             supplier_id: None,
                             avdeling: None,
                             prosjekt: None,
+                            valuta: None,
+                            valutabelop_cent: None,
+                            kurs_micro: None,
                         },
                     ],
                 }],

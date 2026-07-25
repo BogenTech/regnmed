@@ -293,6 +293,7 @@ pub fn build_krav_voucher(
         party_no: Some(party_no.to_string()),
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     }];
     if gebyr_ore > 0 {
         entries.push(EntryDraft {
@@ -303,6 +304,7 @@ pub fn build_krav_voucher(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
     if rente_ore > 0 {
@@ -314,6 +316,7 @@ pub fn build_krav_voucher(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
     let draft = VoucherDraft {

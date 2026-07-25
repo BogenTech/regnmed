@@ -5,6 +5,7 @@ pub mod anchor;
 pub mod asset;
 pub mod auth;
 pub mod bank;
+pub mod currency;
 pub mod dimension;
 pub mod engagement;
 pub mod expenses;
@@ -215,6 +216,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/currency/rates",
+            get(currency::list_rates).post(currency::add_rate),
+        )
+        .route(
+            "/companies/{company_id}/currency/rates/fetch",
+            axum::routing::post(currency::fetch_rates),
+        )
+        .route(
+            "/companies/{company_id}/currency/regulate",
+            axum::routing::post(currency::regulate),
         )
         .route(
             "/companies/{company_id}/expenses",

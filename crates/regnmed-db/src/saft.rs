@@ -167,7 +167,8 @@ pub async fn load_saft_input(
         "select e.voucher_id, e.line_no, a.number as account_number,
                 e.amount_ore, e.vat_code, e.description, r.rate_bp,
                 p.party_no, p.kind as party_kind,
-                da.code as avdeling, dp.code as prosjekt
+                da.code as avdeling, dp.code as prosjekt,
+                e.valuta, e.valutabelop_cent, e.kurs_micro
          from entry e
          join voucher v on v.id = e.voucher_id
          join account a on a.id = e.account_id
@@ -212,6 +213,9 @@ pub async fn load_saft_input(
                 },
                 avdeling: row.get("avdeling"),
                 prosjekt: row.get("prosjekt"),
+                valuta: row.get("valuta"),
+                valutabelop_cent: row.get("valutabelop_cent"),
+                kurs_micro: row.get("kurs_micro"),
             });
     }
 

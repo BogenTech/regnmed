@@ -33,6 +33,7 @@ pub mod tenancy;
 pub mod timesheet;
 pub mod utlegg;
 pub mod utsendelse;
+pub mod valuta;
 
 pub use anchor::*;
 pub use asset::*;
@@ -63,6 +64,7 @@ pub use tenancy::*;
 pub use timesheet::*;
 pub use utlegg::*;
 pub use utsendelse::*;
+pub use valuta::*;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;

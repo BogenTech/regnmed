@@ -34,6 +34,17 @@ enum Command {
     /// Post every due monthly avskrivning across all companies
     /// (docs/anlegg.md, #40). Run monthly (cron/CronJob).
     Depreciate,
+    /// Fetch dagskurser from Norges Banks åpne API into the valutakurs
+    /// table (docs/valuta.md, #44). Manual rates can always be added
+    /// via the API; every row records its kilde.
+    FetchRates {
+        /// Comma-separated ISO codes, e.g. EUR,USD,SEK
+        #[arg(long)]
+        currencies: String,
+        /// How many recent noteringer to fetch per currency
+        #[arg(long, default_value_t = 10)]
+        days: u32,
+    },
     /// Export Norwegian SAF-T Financial v1.30 XML for a company
     SaftExport {
         /// Company id (or use --orgnr)
@@ -213,6 +224,32 @@ async fn main() -> Result<()> {
             if outcomes.iter().any(|o| o.voucher.is_none()) {
                 anyhow::bail!("one or more depreciations failed");
             }
+        }
+        Command::FetchRates { currencies, days } => {
+            let valutaer: Vec<String> = currencies
+                .split(',')
+                .map(|c| c.trim().to_uppercase())
+                .filter(|c| !c.is_empty())
+                .collect();
+            let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
+            let noteringer = client.hent_kurser(&valutaer, days).await?;
+            for n in &noteringer {
+                regnmed_db::insert_kurs(
+                    &pool,
+                    &n.valuta,
+                    n.dato,
+                    n.kurs_micro,
+                    "Norges Bank EXR",
+                )
+                .await?;
+                println!(
+                    "{} {}: {}",
+                    n.valuta,
+                    n.dato,
+                    regnmed_core::valuta::kurs_str(n.kurs_micro)
+                );
+            }
+            println!("{} noteringer lagret", noteringer.len());
         }
         Command::SaftExport {
             company,
@@ -556,6 +593,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -565,6 +603,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "2700".into(),
@@ -574,6 +613,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };
@@ -600,6 +640,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
@@ -609,6 +650,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };
@@ -638,6 +680,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "2710".into(),
@@ -647,6 +690,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "1920".into(),
@@ -656,6 +700,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };
@@ -679,6 +724,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -688,6 +734,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
         ..sale.clone()

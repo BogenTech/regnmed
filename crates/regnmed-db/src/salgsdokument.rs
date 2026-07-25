@@ -298,6 +298,8 @@ pub async fn ordre_to_invoice(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
+        valuta: None,
+        valuta_kurs_micro: None,
         lines: lines
             .iter()
             .map(|l| InvoiceLineDraft {
@@ -493,6 +495,8 @@ pub async fn salgsdokument_pdf(
         fakturadato: doc_date,
         forfallsdato: doc_date,
         kid: String::new(),
+        valuta: None,
+        motverdi_nok_ore: None,
         linjer: pdf_linjer,
     });
     let filename = format!("{kind}-{}.pdf", doc.get::<i64, _>("doc_no"));

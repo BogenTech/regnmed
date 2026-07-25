@@ -24,6 +24,11 @@
 //!   avdeling and prosjekt dimension codes (empty when none) after the
 //!   party number — so moving a cost to another prosjekt breaks the
 //!   chain like any other tampering.
+//! - **v4**: `"v4"` marker; each entry additionally carries its
+//!   valutainformasjon (ISO code, beløp i cent, kurs i mikro-NOK —
+//!   all empty when the entry is plain NOK) after the dimensions — so
+//!   rewriting what a transaction lød på, or the rate it was booked
+//!   at, breaks the chain like any other tampering (docs/valuta.md).
 //!
 //! A version is never edited, only superseded; the golden tests pin one
 //! digest per version.
@@ -33,6 +38,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::Ore;
+use crate::valuta::Valuta;
 
 /// SHA-256 of arbitrary bytes — used for attachment content hashes.
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -43,12 +49,12 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
 pub const GENESIS_HASH: [u8; 32] = [0u8; 32];
 
 /// Current format for new postings.
-pub const HASH_VERSION_CURRENT: i16 = 3;
+pub const HASH_VERSION_CURRENT: i16 = 4;
 
 /// The full business content of a voucher, as covered by its chain hash.
 #[derive(Debug, Clone)]
 pub struct VoucherHashInput {
-    /// Which frozen serialization hashed this voucher (1, 2 or 3).
+    /// Which frozen serialization hashed this voucher (1, 2, 3 or 4).
     pub hash_version: i16,
     pub company_id: Uuid,
     pub chain_seq: i64,
@@ -75,9 +81,11 @@ pub struct EntryHashInput {
     pub description: Option<String>,
     /// Reskontro party number — v2+; v1 vouchers have none.
     pub party_no: Option<String>,
-    /// Dimension codes — v3 only; earlier vouchers have none.
+    /// Dimension codes — v3+; earlier vouchers have none.
     pub avdeling: Option<String>,
     pub prosjekt: Option<String>,
+    /// Valutainformasjon — v4 only; earlier vouchers have none.
+    pub valuta: Option<Valuta>,
 }
 
 /// `hash = SHA-256(prev_hash || canonical(voucher))`, per the voucher's
@@ -86,11 +94,18 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
     let mut buf = Vec::with_capacity(512);
     push_field(&mut buf, prev_hash);
     if v.hash_version >= 2 {
-        // Version marker: v2/v3 streams can never collide with v1
+        // Version marker: v2+ streams can never collide with v1
         // streams, whose first field is always a 32-byte prev-hash...
         // which this marker field's length prefix ("2:") already
         // differs from.
-        push_field(&mut buf, if v.hash_version >= 3 { b"v3" } else { b"v2" });
+        push_field(
+            &mut buf,
+            match v.hash_version {
+                2 => b"v2".as_slice(),
+                3 => b"v3",
+                _ => b"v4",
+            },
+        );
     }
     push_field(&mut buf, v.company_id.as_bytes());
     push_field(&mut buf, v.chain_seq.to_string().as_bytes());
@@ -118,6 +133,20 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
         if v.hash_version >= 3 {
             push_field(&mut buf, e.avdeling.as_deref().unwrap_or("").as_bytes());
             push_field(&mut buf, e.prosjekt.as_deref().unwrap_or("").as_bytes());
+        }
+        if v.hash_version >= 4 {
+            match &e.valuta {
+                Some(valuta) => {
+                    push_field(&mut buf, valuta.valuta.as_bytes());
+                    push_field(&mut buf, valuta.belop_cent.to_string().as_bytes());
+                    push_field(&mut buf, valuta.kurs_micro.to_string().as_bytes());
+                }
+                None => {
+                    push_field(&mut buf, b"");
+                    push_field(&mut buf, b"");
+                    push_field(&mut buf, b"");
+                }
+            }
         }
     }
     Sha256::digest(&buf).into()
@@ -175,6 +204,7 @@ mod tests {
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 },
                 EntryHashInput {
                     line_no: 2,
@@ -185,6 +215,7 @@ mod tests {
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 },
             ],
         }
@@ -203,6 +234,17 @@ mod tests {
         v.hash_version = 3;
         v.entries[1].avdeling = Some("100".into());
         v.entries[1].prosjekt = Some("P42".into());
+        v
+    }
+
+    fn sample_v4() -> VoucherHashInput {
+        let mut v = sample_v3();
+        v.hash_version = 4;
+        v.entries[0].valuta = Some(Valuta {
+            valuta: "EUR".into(),
+            belop_cent: 107_251,
+            kurs_micro: 11_654_300,
+        });
         v
     }
 
@@ -249,6 +291,38 @@ mod tests {
         assert_eq!(
             v3.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             "bed11f106ab66b048b08b8ded36dab5c38b5c944c2273e551f462eee63740a43"
+        );
+        let v4 = chain_hash(&GENESIS_HASH, &sample_v4());
+        assert_eq!(
+            v4.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "6816fe51da1015fbba9e151ae6d9e8c7bde54ff93c35323d9faedd14da127e25"
+        );
+    }
+
+    /// Valutainformasjonen is inside the v4 hash: rewriting the
+    /// transaction currency, the valutabeløp or the booked rate is
+    /// tampering like any other. Same content as v3 vs v4 must differ.
+    #[test]
+    fn v4_hashes_the_valuta_and_differs_from_v3() {
+        let original = chain_hash(&GENESIS_HASH, &sample_v4());
+        let mut endret = sample_v4();
+        endret.entries[0].valuta.as_mut().unwrap().kurs_micro = 11_654_301;
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
+        let mut endret = sample_v4();
+        endret.entries[0].valuta.as_mut().unwrap().belop_cent = 107_252;
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
+        let mut endret = sample_v4();
+        endret.entries[0].valuta.as_mut().unwrap().valuta = "USD".into();
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
+
+        let mut as_v3 = sample_v4();
+        as_v3.hash_version = 3;
+        as_v3.entries[0].valuta = None;
+        let mut as_v4_no_valuta = sample_v4();
+        as_v4_no_valuta.entries[0].valuta = None;
+        assert_ne!(
+            chain_hash(&GENESIS_HASH, &as_v3),
+            chain_hash(&GENESIS_HASH, &as_v4_no_valuta)
         );
     }
 

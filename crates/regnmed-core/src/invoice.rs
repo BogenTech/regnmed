@@ -145,6 +145,7 @@ pub fn build_voucher(
         party_no: Some(party_no.to_string()),
         avdeling: None,
         prosjekt: None,
+        valuta: None,
     }];
     for (line, amounts) in lines.iter().zip(&computed.lines) {
         entries.push(EntryDraft {
@@ -155,6 +156,7 @@ pub fn build_voucher(
             party_no: None,
             avdeling: line.avdeling.clone(),
             prosjekt: line.prosjekt.clone(),
+            valuta: None,
         });
     }
     if computed.vat_ore != 0 {
@@ -166,6 +168,7 @@ pub fn build_voucher(
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         });
     }
     let draft = VoucherDraft {

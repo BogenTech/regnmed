@@ -107,6 +107,7 @@ async fn revisor_generates_the_verification_report() {
                 party_no: Some(party_no),
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
             EntryDraft {
                 account_number: "3000".into(),
@@ -116,6 +117,7 @@ async fn revisor_generates_the_verification_report() {
                 party_no: None,
                 avdeling: None,
                 prosjekt: None,
+                valuta: None,
             },
         ],
     };

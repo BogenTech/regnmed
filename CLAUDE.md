@@ -463,10 +463,33 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    overtar steget senere. Selvgodkjenning tillatt i v1 (#47
    attestering legger seg oppå). `/companies/{id}/expenses…`
    endpoints; portal Utlegg section.
-   **Next:** M7 breadth (#44 flervaluta, #33 betalingsliste/
-   remittering), native importers (#19), EHF (#14), Maskinporten
-   (awaiting Skatteetaten scope grant, docs/gov.md), M2 tail (#51
-   terminordninger).
+35. ✅ Flervaluta (docs/valuta.md, closed #44): **hash format v4** —
+   per-entry valutainformasjon (ISO code, valutabeløp i cent, kurs i
+   mikro-NOK) as ONE `Option<Valuta>` field on EntryDraft, covered by
+   the canonical serialization ("v4" marker; v1–v3 verify forever,
+   golden tests pin all four digests). NOK is authoritative; posting
+   sanity-checks cent × kurs within 1 kr (catches unit mistakes).
+   Migration 0027: global dated `valutakurs` (append-only, kilde per
+   row; lookup = newest notering ≤ dato), entry columns,
+   reskontro_match.valuta_cent, invoice.valuta.
+   `regnmed-gov::norgesbank`: SDMX-JSON client for Norges Banks åpne
+   API (UNIT_MULT per-100 quotes handled; decimal-string parsing, no
+   floats; vendored sample in docs/valuta/); `regnmed fetch-rates`
+   CLI + portal fetch button (live-verified). Faktura i valuta:
+   line amounts in cent, per-line NOK conversion at dagskurs
+   (receivable = exact sum of parts), PDF motverdi note, kreditnota
+   reverses at ORIGINAL kurs. `match_valuta`: agio (8060/8160) +
+   party-carrying transfer entry posted in the SAME tx as the match
+   rows — both NOK remainders reach exactly zero (proportional to
+   each entry's own booked relation, no external kurs). Urealisert
+   kursregulering: voucher + reversal (reverses-linked) in one tx,
+   NOT idempotent (documented). SAF-T CurrencyCode/CurrencyAmount/
+   ExchangeRate, XSD-validated. Valutakontoer i bank + sikring
+   deliberately out (NOK bank first).
+   **Next:** M7/M3 (#33 betalingsliste/remittering — completes the
+   utlegg/faktura payment loop), native importers (#19), EHF (#14),
+   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md), M2
+   tail (#51 terminordninger).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

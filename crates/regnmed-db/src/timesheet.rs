@@ -375,6 +375,8 @@ pub async fn bill_hours(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
+        valuta: None,
+        valuta_kurs_micro: None,
         lines,
     };
 

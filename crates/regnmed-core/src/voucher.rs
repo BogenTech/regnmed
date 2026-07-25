@@ -1,6 +1,7 @@
 use chrono::NaiveDate;
 use uuid::Uuid;
 
+use crate::valuta::{Valuta, gyldig_valutakode};
 use crate::{LedgerError, Ore};
 
 /// One line of a voucher. Positive amounts are debits, negative are credits.
@@ -21,6 +22,11 @@ pub struct EntryDraft {
     /// where the dimension registry is available.
     pub avdeling: Option<String>,
     pub prosjekt: Option<String>,
+    /// Valutainformasjon (docs/valuta.md): what the transaction lød på
+    /// and the rate it was booked at. Hash-covered (format v4). The
+    /// NOK `amount` is authoritative; posting sanity-checks the
+    /// conversion against it.
+    pub valuta: Option<Valuta>,
 }
 
 /// A voucher (bilag) as submitted for posting, before it is assigned a
@@ -58,6 +64,26 @@ impl VoucherDraft {
             if entry.avdeling.as_deref() == Some("") || entry.prosjekt.as_deref() == Some("") {
                 return Err(LedgerError::EmptyDimension(i + 1));
             }
+            if let Some(valuta) = &entry.valuta {
+                if !gyldig_valutakode(&valuta.valuta) {
+                    return Err(LedgerError::InvalidValuta(
+                        i + 1,
+                        format!("ugyldig valutakode {:?}", valuta.valuta),
+                    ));
+                }
+                if valuta.kurs_micro <= 0 {
+                    return Err(LedgerError::InvalidValuta(
+                        i + 1,
+                        "kursen må være positiv".into(),
+                    ));
+                }
+                if valuta.belop_cent == 0 || valuta.belop_cent.signum() != entry.amount.0.signum() {
+                    return Err(LedgerError::InvalidValuta(
+                        i + 1,
+                        "valutabeløpet må ha samme fortegn som NOK-beløpet".into(),
+                    ));
+                }
+            }
             sum = sum
                 .checked_add(entry.amount)
                 .ok_or(LedgerError::AmountOverflow)?;
@@ -82,6 +108,7 @@ mod tests {
             party_no: None,
             avdeling: None,
             prosjekt: None,
+            valuta: None,
         }
     }
 

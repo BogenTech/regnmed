@@ -225,6 +225,7 @@ pub async fn import_saft(
                     party_no: None,
                     avdeling: None,
                     prosjekt: None,
+                    valuta: None,
                 })
                 .collect(),
         };
@@ -302,6 +303,7 @@ pub async fn import_saft(
                         party_no,
                         avdeling: None,
                         prosjekt: None,
+                        valuta: None,
                     }
                 })
                 .collect(),

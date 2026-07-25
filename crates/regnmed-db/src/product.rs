@@ -537,6 +537,7 @@ pub async fn varetelling(
                         party_no: None,
                         avdeling: None,
                         prosjekt: None,
+                        valuta: None,
                     },
                     EntryDraft {
                         account_number: konti.endring_konto.clone(),
@@ -546,6 +547,7 @@ pub async fn varetelling(
                         party_no: None,
                         avdeling: None,
                         prosjekt: None,
+                        valuta: None,
                     },
                 ],
             };

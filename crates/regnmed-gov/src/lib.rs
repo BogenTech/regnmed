@@ -16,4 +16,5 @@ pub mod brreg;
 pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod mvamelding;
+pub mod norgesbank;
 pub mod tsa;
