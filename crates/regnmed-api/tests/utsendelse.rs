@@ -160,6 +160,7 @@ async fn invoice_mail_rides_the_shared_rail() {
         party_id,
         None,
         Some("kunde@example.test"),
+        None,
     )
     .await
     .unwrap();

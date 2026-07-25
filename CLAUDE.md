@@ -497,9 +497,27 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    yearly ordninger render identically) and portal picker follow the
    ordning; periode numbers outside it refused everywhere (API + CLI).
    `GET/POST /companies/{id}/mva/terminordning` (POST admin).
-   **Next:** M7/M3 (#33 betalingsliste/remittering — completes the
-   utlegg/faktura payment loop), native importers (#19), EHF (#14),
-   Maskinporten (awaiting Skatteetaten scope grant, docs/gov.md).
+37. ✅ Betalingsliste og remittering (docs/betaling.md, closed #33):
+   `regnmed-core::pain001` — hand-rolled deterministic
+   pain.001.001.03 (official XSD vendored in docs/pain001/,
+   validated in tests/CI; KID as SCOR structured reference,
+   EndToEndId = run-item id, integer-øre CtrlSum) + norsk
+   kontonummer MOD11 (same cyclic weights as KID mod11;
+   normalisering av punktum/mellomrom). Migration 0029:
+   party.bank_account (validated before storage via
+   update_party_contact); `payment_run`/`payment_run_item` — one-way
+   utkast→godkjent→utbetalt (+utkast→annullert), trigger-enforced;
+   items SNAPSHOT creditor data; create and approve are SEPARATE
+   audited actions (four-eyes friendly, enforcement = #47); approval
+   renders + stores the file w/ SHA-256 (download hash-checked);
+   settle posts ONE utbetalingsbilag + reskontro match per item in
+   one tx — bank import then matches that voucher via the ordinary
+   engine. v1 = domestic NOK/BBAN; IBAN/BIC + filutveksling/PSD2
+   later. `/companies/{id}/payments…` endpoints; portal
+   Betalingsliste card under Bank + kontonummer on party page.
+   **Next:** native importers (#19), EHF (#14), #36 nøkkeltall (mva-
+   frister now available), Maskinporten (awaiting Skatteetaten scope
+   grant, docs/gov.md).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

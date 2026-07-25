@@ -15,6 +15,7 @@ pub mod invoice_template;
 pub mod mailq;
 pub mod marketplace;
 pub mod ocr;
+pub mod payments;
 pub mod period;
 pub mod portal;
 pub mod product;
@@ -220,6 +221,30 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(utsendelse::list_utsendelser),
+        )
+        .route(
+            "/companies/{company_id}/payments/payable",
+            get(payments::payable),
+        )
+        .route(
+            "/companies/{company_id}/payments/runs",
+            get(payments::list_runs).post(payments::create_run),
+        )
+        .route(
+            "/companies/{company_id}/payments/runs/{run_id}/approve",
+            axum::routing::post(payments::approve),
+        )
+        .route(
+            "/companies/{company_id}/payments/runs/{run_id}/file",
+            get(payments::file),
+        )
+        .route(
+            "/companies/{company_id}/payments/runs/{run_id}/settle",
+            axum::routing::post(payments::settle),
+        )
+        .route(
+            "/companies/{company_id}/payments/runs/{run_id}/cancel",
+            axum::routing::post(payments::cancel),
         )
         .route(
             "/companies/{company_id}/currency/rates",

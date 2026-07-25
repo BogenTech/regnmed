@@ -173,7 +173,11 @@ M7 (#37–#48) for new ground:
   PDF lagret på bilaget ved utstedelse, e-post med vedlegg over
   regnids mail-rail m/ insert-only utsendelseslogg; docs/faktura.md)
   — M3.
-- Penger ut: betalingsliste + pain.001-remittering (#33),
+- Penger ut: ✅ betalingsliste + pain.001-remittering (#33 —
+  enveis kjøringer m/ separat opprettelse og godkjenning, kreditordata
+  kopiert på radene, XSD-validert pain.001 lagret m/ hash, oppgjør
+  som bokfører og lukker reskontroen i én transaksjon,
+  MOD11-validerte kontonumre; docs/betaling.md),
   ✅ utlegg og kjøregodtgjørelse (#42 — uforanderlige krav m/
   hash-sjekket kvittering som følger bilaget, enveis
   innsendt→godkjent/avvist→utbetalt, km × statens sats fra

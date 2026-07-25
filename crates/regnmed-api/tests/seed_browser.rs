@@ -49,6 +49,8 @@ async fn seed_browser_demo() {
         ("8060", "Valutagevinst"),
         ("8160", "Valutatap"),
         ("1508", "Urealisert kursregulering"),
+        ("2400", "Leverandørgjeld"),
+        ("4300", "Varekostnad"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await

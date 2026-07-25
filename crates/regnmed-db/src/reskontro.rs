@@ -77,6 +77,7 @@ pub struct PartyRow {
     pub orgnr: Option<String>,
     pub address: Option<String>,
     pub email: Option<String>,
+    pub bank_account: Option<String>,
     /// SUM(amount_ore) over the party's entries — the reskontro saldo.
     pub saldo_ore: i64,
 }
@@ -88,7 +89,7 @@ pub async fn list_parties(
     kind: Option<&str>,
 ) -> Result<Vec<PartyRow>> {
     let rows = sqlx::query(
-        "select p.id, p.party_no, p.kind, p.name, p.orgnr, p.address, p.email,
+        "select p.id, p.party_no, p.kind, p.name, p.orgnr, p.address, p.email, p.bank_account,
                 coalesce(sum(e.amount_ore), 0)::bigint as saldo_ore
          from party p
          left join entry e on e.party_id = p.id
@@ -110,6 +111,7 @@ pub async fn list_parties(
             orgnr: r.get("orgnr"),
             address: r.get("address"),
             email: r.get("email"),
+            bank_account: r.get("bank_account"),
             saldo_ore: r.get("saldo_ore"),
         })
         .collect())

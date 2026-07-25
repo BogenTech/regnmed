@@ -1609,6 +1609,8 @@
         esc(party.address || "") + '">' +
         '<input id="party-email" class="input input-sm input-bordered" placeholder="E-post (for utsendelse)" value="' +
         esc(party.email || "") + '">' +
+        '<input id="party-konto" class="input input-sm input-bordered" placeholder="Kontonummer (for remittering)" value="' +
+        esc(party.bank_account || "") + '">' +
         '<button id="party-save" class="btn btn-sm">Lagre</button></div>');
       shell(id, "reskontro", card(esc(party ? party.name : "") +
         ' <a href="#/c/' + id + '/reskontro" class="btn btn-ghost btn-xs">tilbake</a>',
@@ -1624,6 +1626,7 @@
             body: JSON.stringify({
               address: document.getElementById("party-address").value,
               email: document.getElementById("party-email").value,
+              bank_account: document.getElementById("party-konto").value,
             }),
           });
           toast("Kontaktinfo lagret", true);
@@ -1941,6 +1944,10 @@
     var recon = null;
     try { recon = await api("/companies/" + id + "/bank/reconciliation?account=" + account); }
     catch (e) { /* no statements yet */ }
+    var payable = await api("/companies/" + id + "/payments/payable")
+      .catch(function () { return { items: [] }; });
+    var runs = await api("/companies/" + id + "/payments/runs")
+      .catch(function () { return { runs: [] }; });
     var entryOptions = recon ? recon.unmatched_entries.map(function (e) {
       return '<option value="' + e.entry_id + '">' + esc(e.voucher) + " " + esc(e.date) +
         " " + kr(e.amount_ore) + "</option>";
@@ -1952,7 +1959,51 @@
         t.bank_transaction_id + '">' + entryOptions + "</select>" +
         '<button class="btn btn-xs" data-match="' + t.bank_transaction_id + '">Koble</button></td></tr>';
     }).join("") : "";
+    var payableRows = payable.items.map(function (p) {
+      return "<tr" + (p.i_kjoring ? ' class="opacity-50"' : "") + "><td>" + esc(p.voucher) +
+        "</td><td>" + esc(p.date) + "</td><td>" + esc(p.party_name) +
+        (p.bank_account ? "" : ' <span class="badge badge-warning badge-xs" title="Mangler kontonummer — sett det på leverandørsiden under Reskontro">mangler konto</span>') +
+        "</td><td>" + esc(p.description || "") + "</td><td class='text-right'>" + kr(p.belop_ore) +
+        "</td><td>" + (p.i_kjoring ? '<span class="badge badge-ghost badge-xs">i kjøring</span>' : "") + "</td></tr>";
+    }).join("");
+    var statusBadge = { utkast: "badge-warning", godkjent: "badge-info", utbetalt: "badge-success", annullert: "badge-ghost" };
+    var runRows = runs.runs.map(function (r) {
+      var actions = "";
+      if (r.status === "utkast") {
+        actions = '<button class="btn btn-xs btn-outline" data-r-approve="' + r.run_id + '">Godkjenn</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-r-cancel="' + r.run_id + '">Annuller</button>';
+      } else if (r.status === "godkjent") {
+        actions = '<button class="btn btn-xs btn-ghost" data-r-file="' + r.run_id + '">pain.001</button> ' +
+          '<button class="btn btn-xs btn-outline" data-r-settle="' + r.run_id + '">Registrer utbetalt</button>';
+      } else if (r.status === "utbetalt") {
+        actions = '<button class="btn btn-xs btn-ghost" data-r-file="' + r.run_id + '">pain.001</button>' +
+          (r.settled_voucher ? ' <span class="text-xs opacity-60">bilag ' + esc(r.settled_voucher) + "</span>" : "");
+      }
+      return "<tr><td>" + esc(r.execution_date) + "</td><td class='text-right'>" + r.antall +
+        "</td><td class='text-right'>" + kr(r.sum_ore) +
+        '</td><td><span class="badge badge-sm ' + (statusBadge[r.status] || "badge-ghost") + '">' + esc(r.status) +
+        "</span></td><td class='text-xs opacity-70'>" + esc(r.created_by) +
+        (r.approved_by ? " / " + esc(r.approved_by) : "") + "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    var betalingCard = (payable.items.length === 0 && runs.runs.length === 0) ? "" :
+      card("Betalingsliste og remittering",
+        '<p class="text-sm opacity-70 mb-2">Åpne leverandørposter samles i en betalingsliste; godkjenning er en ' +
+        "egen handling som lager pain.001-filen (lastes opp i nettbanken). «Registrer utbetalt» bokfører " +
+        "utbetalingen og lukker postene i reskontroen — bankimporten kobler seg mot det bilaget.</p>" +
+        (payableRows
+          ? "<h3 class='font-semibold mb-1'>Åpne leverandørposter</h3>" +
+            '<table class="table table-sm mb-2"><thead><tr><th>Bilag</th><th>Dato</th><th>Leverandør</th>' +
+            "<th>Tekst</th><th class='text-right'>Beløp</th><th></th></tr></thead><tbody>" + payableRows + "</tbody></table>" +
+            '<button id="run-create" class="btn btn-sm btn-outline mb-3">Lag betalingsliste av betalbare poster</button>'
+          : '<p class="opacity-70 text-sm mb-2">Ingen åpne leverandørposter.</p>') +
+        (runRows
+          ? "<h3 class='font-semibold mb-1'>Kjøringer</h3>" +
+            '<table class="table table-sm"><thead><tr><th>Utførelse</th><th class="text-right">Poster</th>' +
+            '<th class="text-right">Sum</th><th>Status</th><th>Laget / godkjent av</th><th></th></tr></thead>' +
+            "<tbody>" + runRows + "</tbody></table>"
+          : ""));
     shell(id, "bank",
+      betalingCard +
       card("Kontoutskrift (camt.053 eller CSV)",
         '<input type="file" id="camt-file" class="file-input file-input-bordered" accept=".xml,.csv,.txt">' +
         '<p class="text-sm opacity-70 mt-2">Last ned fra nettbanken (camt.053-XML eller CSV-eksport med ' +
@@ -1989,6 +2040,57 @@
             bank_transaction_id: button.dataset.match, entry_id: select.value,
           });
           toast("Koblet", true);
+          renderBank(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    var runCreate = document.getElementById("run-create");
+    if (runCreate) runCreate.onclick = async function () {
+      var betalbare = payable.items.filter(function (p) { return !p.i_kjoring && p.bank_account; });
+      if (!betalbare.length) { toast("Ingen betalbare poster (mangler kontonummer?)", false); return; }
+      try {
+        await post("/companies/" + id + "/payments/runs", {
+          items: betalbare.map(function (p) { return { entry_id: p.entry_id }; }),
+        });
+        toast("Betalingsliste laget (" + betalbare.length + " poster)", true);
+        renderBank(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-r-approve]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/companies/" + id + "/payments/runs/" + button.dataset.rApprove + "/approve", {});
+          toast("Godkjent — pain.001 klar for nedlasting", true);
+          renderBank(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-r-cancel]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/companies/" + id + "/payments/runs/" + button.dataset.rCancel + "/cancel", {});
+          renderBank(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-r-file]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var response = await api("/companies/" + id + "/payments/runs/" + button.dataset.rFile + "/file");
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "pain001-" + button.dataset.rFile + ".xml";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-r-settle]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          var result = await post("/companies/" + id + "/payments/runs/" + button.dataset.rSettle + "/settle", {});
+          toast("Utbetaling bokført som bilag " + result.voucher, true);
           renderBank(id);
         } catch (error) { toast(error.message, false); }
       };

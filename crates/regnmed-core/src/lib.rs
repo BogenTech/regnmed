@@ -23,6 +23,7 @@ pub mod mva;
 pub mod mvamelding;
 pub mod ocr;
 pub mod orgnr;
+pub mod pain001;
 pub mod pdf;
 pub mod purring;
 pub mod regnskap;

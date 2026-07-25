@@ -86,6 +86,8 @@ pub async fn update_settings(
 pub struct PartyContactRequest {
     address: Option<String>,
     email: Option<String>,
+    /// Kontonummer for remittering (11 siffer, MOD11-validert).
+    bank_account: Option<String>,
 }
 
 pub async fn update_party_contact(
@@ -101,6 +103,7 @@ pub async fn update_party_contact(
         party_id,
         request.address.as_deref(),
         request.email.as_deref(),
+        request.bank_account.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

@@ -77,13 +77,15 @@ pub async fn update_company_settings(
     Ok(())
 }
 
-/// Party kontaktinfo (address for the PDF, e-mail for utsendelse).
+/// Party kontaktinfo (address for the PDF, e-mail for utsendelse,
+/// kontonummer for remittering — validated MOD11 before storage).
 pub async fn update_party_contact(
     pool: &PgPool,
     company_id: Uuid,
     party_id: Uuid,
     address: Option<&str>,
     email: Option<&str>,
+    bank_account: Option<&str>,
 ) -> Result<()> {
     if let Some(email) = email {
         let email = email.trim();
@@ -95,10 +97,22 @@ pub async fn update_party_contact(
     fn clear(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|s| !s.is_empty())
     }
+    let normalized_konto = match clear(bank_account) {
+        Some(konto) => {
+            let normalized = regnmed_core::pain001::normaliser_kontonummer(konto);
+            ensure!(
+                regnmed_core::pain001::gyldig_kontonummer(&normalized),
+                "ugyldig kontonummer (11 siffer, MOD11)"
+            );
+            Some(normalized)
+        }
+        None => None,
+    };
     let updated = sqlx::query(
         "update party set
              address = case when $3 then $4 else address end,
-             email = case when $5 then $6 else email end
+             email = case when $5 then $6 else email end,
+             bank_account = case when $7 then $8 else bank_account end
          where id = $1 and company_id = $2",
     )
     .bind(party_id)
@@ -107,6 +121,8 @@ pub async fn update_party_contact(
     .bind(clear(address))
     .bind(email.is_some())
     .bind(clear(email))
+    .bind(bank_account.is_some())
+    .bind(normalized_konto)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no such party");
