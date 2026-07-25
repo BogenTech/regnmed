@@ -37,6 +37,7 @@ async fn main() -> Result<()> {
         pool,
         verifier,
         mailq,
+        rate: Default::default(),
     });
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());

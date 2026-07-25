@@ -241,8 +241,14 @@ M7 (#37–#48) for new ground:
   NOK til dagskurs; realisert agio i SAMME transaksjon som
   valutamatchen; urealisert årsslutt-regulering m/ reversal; SAF-T
   CurrencyCode/CurrencyAmount/ExchangeRate; docs/valuta.md).
-- Plattform: maskin-tilgang til API-et via regnid client_credentials +
-  grants (#45), PWA m/ kvitteringsfoto (#48) — M5.
+- Plattform: ✅ maskin-tilgang til API-et (#45 — en integrasjon er en
+  prinsipal som alle andre: identiteten kommer som client_credentials
+  fra IdP-en (regnmed utsteder ingen egne nøkler), tilgangen er et
+  grant en admin gir per selskap m/ eksklusiv valid_to, bilaget
+  navngir roboten i created_by, ratebegrensning per integrasjon og
+  aktivitetslogg; offentlig API-referanse i docs/api.md.
+  **Krever at client_credentials legges til i regnid** — regnmed-siden
+  er ferdig; docs/integrations.md), PWA m/ kvitteringsfoto (#48) — M5.
 - Offentlig: aksjonærregisteroppgaven + aksjebok som hendelseslogg
   (#43) — M2. Lønn + a-melding som ærlig kartlagt paraply (#46) — still
   deliberately last.

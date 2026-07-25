@@ -640,9 +640,33 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    avsenderadressen. `/companies/{id}/inbox/settings…` + `…/inbox/mail`
    + release/reject (admin); portal: E-post-inn-kort i Bilag.
    Integrasjonstesten kjører mot ekte nats-server.
+45. ✅ Maskin-tilgang til API-et (docs/integrations.md + docs/api.md,
+   closed #45): «tokenet beviser identitet, regnmed avgjør hva den får
+   gjøre» — samme setning som for mennesker, og derfor INGEN ny
+   autorisasjonsvei. En integrasjon er en `person` med
+   kind='integrasjon' (migration 0033), så tilgangsoppslag,
+   attribusjon og revisjonsspor er identiske for robot og menneske.
+   Identiteten kommer som client_credentials fra IdP-en; regnmed
+   utsteder aldri egne API-nøkler. **Krever at client_credentials
+   legges til i regnid** (som i dag har authorization_code +
+   refresh_token) — regnmed-siden virker med et hvilket som helst
+   token fra issueren der sub = client_id. `integration_grant` er
+   modellert som oppdrag (valid_to EKSKLUSIV → tilbakekalling virker
+   straks); admin er bevisst ikke grantbart til en maskin; en
+   klient-id som tilhører et menneske MED tilgang kan ikke kapres
+   (tomt person-skall kan konverteres). created_by = integrasjonens
+   navn, satt ved registrering — tokenet kan ikke døpe om roboten.
+   Rate limit: token-bucket per prosess i AuthPerson-ekstraktoren (ett
+   seam, ingen endepunkter kan glemme det), 429 m/ tydelig melding;
+   per replika, dokumentert som bevisst avveining. Logg: endrende kall
+   i sin helhet + dagsteller for alle kall.
+   `/companies/{id}/integrations…`; portal: Integrasjoner-kort under
+   Oppdrag. NYTT: docs/api.md er den offentlige endepunktreferansen
+   (generert fra rutetabellen).
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
-   docs/gov.md), EHF-transport via aksesspunkt, API-tier per
-   leverandør (#19-oppfølger), OCR-sidecar (#34-oppfølger).
+   docs/gov.md), client_credentials i regnid (#45-forutsetning),
+   EHF-transport via aksesspunkt, API-tier per leverandør
+   (#19-oppfølger), OCR-sidecar (#34-oppfølger).
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

@@ -83,6 +83,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         pool,
         verifier: Arc::new(verifier),
         mailq: None,
+        rate: Default::default(),
     })
 }
 

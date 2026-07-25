@@ -13,6 +13,7 @@ pub mod engagement;
 pub mod epost;
 pub mod expenses;
 pub mod innboks;
+pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
 pub mod mailq;
@@ -46,6 +47,8 @@ pub struct AppState {
     /// The outbound-mail rail (regnid's JetStream stream); None when
     /// NATS_URL is not configured — send endpoints then say so.
     pub mailq: Option<async_nats::jetstream::Context>,
+    /// Per-integration rate limiting (docs/integrations.md, #45).
+    pub rate: Arc<auth::RateLimiter>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -98,6 +101,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/opening-balance",
             axum::routing::post(marketplace::opening_balance),
+        )
+        .route(
+            "/companies/{company_id}/integrations",
+            get(integrasjon::list).post(integrasjon::grant),
+        )
+        .route(
+            "/companies/{company_id}/integrations/log",
+            get(integrasjon::log),
+        )
+        .route(
+            "/companies/{company_id}/integrations/{integration_id}/revoke",
+            axum::routing::post(integrasjon::revoke),
         )
         .route("/directory/firms", get(engagement::directory))
         .route("/firms/mine", get(engagement::my_firms))

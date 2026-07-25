@@ -171,6 +171,19 @@ pub async fn company_access_for_person(
            -- engagement revokes access immediately, on the same day.
            and (e.valid_to is null or e.valid_to > current_date)
 
+         union all
+
+         -- Maskin-tilgang (docs/integrations.md, #45): en integrasjon er
+         -- en prinsipal som alle andre, og tilgangen er et grant med
+         -- samme eksklusive valid_to — tilbakekalling virker straks.
+         select c.id as company_id, c.orgnr, c.name, g.access, 'integrasjon' as via
+         from integration i
+         join integration_grant g on g.integration_id = i.id
+         join company c on c.id = g.company_id
+         where i.person_id = $1
+           and g.valid_from <= current_date
+           and (g.valid_to is null or g.valid_to > current_date)
+
          order by name, via",
     )
     .bind(person_id)

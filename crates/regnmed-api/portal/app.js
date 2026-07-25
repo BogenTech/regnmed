@@ -2937,9 +2937,13 @@
     var results = await Promise.all([
       api("/companies/" + id + "/engagements"),
       api("/directory/firms"),
+      api("/companies/" + id + "/integrations").catch(function () { return { integrasjoner: [] }; }),
+      api("/companies/" + id + "/integrations/log").catch(function () { return { kall: [] }; }),
     ]);
     var engagements = results[0].engagements;
     var firms = results[1].firms;
+    var integrasjoner = results[2].integrasjoner;
+    var integrasjonskall = results[3].kall;
     var active = engagements.filter(function (e) { return !e.valid_to; });
     var rows = engagements.map(function (e) {
       var action = !e.valid_to
@@ -2956,6 +2960,39 @@
              : '<button class="btn btn-xs btn-primary" data-request="' + f.firm_id + '">Be om oppdrag</button>') +
         "</td></tr>";
     }).join("");
+    var integrasjonsrader = integrasjoner.map(function (i) {
+      return "<tr" + (i.aktiv ? "" : ' class="opacity-50"') + "><td>" + esc(i.navn) +
+        '<br><span class="text-xs opacity-60 font-mono">' + esc(i.client_id) + "</span></td><td>" +
+        esc(i.access) + "</td><td>" + (i.aktiv
+          ? '<span class="badge badge-success badge-sm">aktiv</span>'
+          : '<span class="badge badge-ghost badge-sm">trukket ' + esc(i.valid_to || "") + "</span>") +
+        "</td><td class='text-right'>" + i.kall_i_dag + " / " + i.rate_limit_min + "/min</td><td>" +
+        (i.aktiv
+          ? '<button class="btn btn-xs btn-ghost" data-int-revoke="' + i.integration_id +
+            '">Trekk tilbake</button>'
+          : esc(i.revoked_by || "")) + "</td></tr>";
+    }).join("");
+    var kallrader = integrasjonskall.slice(0, 10).map(function (k) {
+      return '<div class="text-xs opacity-70 py-0.5">' + esc(k.tidspunkt.slice(0, 16).replace("T", " ")) +
+        " · " + esc(k.navn) + " · " + esc(k.method) + " " + esc(k.path) + "</div>";
+    }).join("");
+    var integrasjonskort = card("Integrasjoner (maskin-tilgang)",
+      '<p class="text-sm opacity-70 mb-2">Et kassasystem eller en nettbutikk kan kalle API-et med ' +
+      "sin egen identitet fra påloggingstjenesten. Du gir tilgangen, på det nivået du vil, og kan " +
+      "trekke den tilbake når som helst — den slutter å virke i samme øyeblikk. Alt roboten " +
+      "bokfører bærer navnet dens.</p>" +
+      (integrasjonsrader
+        ? '<table class="table table-sm mb-3"><thead><tr><th>Integrasjon</th><th>Nivå</th>' +
+          "<th>Status</th><th class='text-right'>Kall i dag</th><th></th></tr></thead><tbody>" +
+          integrasjonsrader + "</tbody></table>"
+        : '<p class="text-sm opacity-70 mb-3">Ingen integrasjoner ennå.</p>') +
+      '<div class="flex gap-2 items-center flex-wrap">' +
+      '<input id="int-client" class="input input-sm input-bordered w-56" placeholder="client_id fra regnid">' +
+      '<input id="int-navn" class="input input-sm input-bordered w-40" placeholder="Navn">' +
+      '<select id="int-access" class="select select-sm select-bordered">' +
+      '<option value="les">les</option><option value="bokforing">bokføring</option></select>' +
+      '<button id="int-gi" class="btn btn-sm">Gi tilgang</button></div>' +
+      (kallrader ? "<h3 class='font-semibold text-sm mt-3 mb-1'>Siste endringer</h3>" + kallrader : ""));
     shell(id, "oppdrag",
       card("Oppdrag",
         engagements.length
@@ -2964,7 +3001,29 @@
           : '<p class="opacity-70">Ingen oppdrag ennå — finn et autorisert byrå under.</p>') +
       card("Autoriserte byråer (Finanstilsynet-verifisert)",
         '<table class="table table-sm"><thead><tr><th>Navn</th><th>Orgnr</th><th>Type</th>' +
-        "<th>Klienter</th><th></th></tr></thead><tbody>" + directory + "</tbody></table>"));
+        "<th>Klienter</th><th></th></tr></thead><tbody>" + directory + "</tbody></table>") +
+      integrasjonskort);
+    document.getElementById("int-gi").onclick = async function () {
+      try {
+        await post("/companies/" + id + "/integrations", {
+          client_id: document.getElementById("int-client").value.trim(),
+          navn: document.getElementById("int-navn").value.trim(),
+          access: document.getElementById("int-access").value,
+        });
+        toast("Integrasjonen har fått tilgang", true);
+        renderOppdrag(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-int-revoke]").forEach(function (button) {
+      button.onclick = async function () {
+        if (!confirm("Trekke tilbake tilgangen? Den slutter å virke med én gang.")) return;
+        try {
+          await post("/companies/" + id + "/integrations/" + button.dataset.intRevoke + "/revoke", {});
+          toast("Tilgangen er trukket tilbake", true);
+          renderOppdrag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
     app.querySelectorAll("[data-request]").forEach(function (button) {
       button.onclick = async function () {
         try {

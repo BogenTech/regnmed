@@ -176,14 +176,40 @@ impl Verifier {
     }
 }
 
-/// The authenticated person, provisioned just-in-time on first sight of a
-/// new OIDC subject. Add this as a handler argument to protect a route.
+/// The authenticated principal, provisioned just-in-time on first sight
+/// of a new OIDC subject. Add this as a handler argument to protect a
+/// route.
+///
+/// A machine client (docs/integrations.md, #45) arrives the same way —
+/// the token proves identity, and whether that identity is a human or a
+/// robot is something OUR database knows, not the token. When it is a
+/// robot, this extractor is also where the rate limit is enforced and
+/// the call is logged: one seam, so no endpoint can forget.
 #[derive(Debug)]
 pub struct AuthPerson {
     pub person_id: Uuid,
     pub sub: String,
     pub name: Option<String>,
     pub email: Option<String>,
+    /// Set when the caller is a registered integration.
+    pub integration: Option<IntegrationCaller>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IntegrationCaller {
+    pub id: Uuid,
+    pub navn: String,
+}
+
+impl AuthPerson {
+    /// What `created_by` should say. For a robot the audit trail names
+    /// the robot — that is the whole point of giving it an identity.
+    pub fn display(&self) -> &str {
+        match &self.integration {
+            Some(i) => &i.navn,
+            None => self.name.as_deref().unwrap_or(&self.sub),
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for AuthPerson {
@@ -208,25 +234,64 @@ impl FromRequestParts<AppState> for AuthPerson {
             .await
             .map_err(|_| ApiError::Unauthorized("invalid token"))?;
 
-        let person_id = regnmed_db::ensure_person(
-            &state.pool,
-            &claims.sub,
-            claims.name.as_deref(),
-            claims.email.as_deref(),
-        )
-        .await?;
+        // A registered machine client never gets its name and e-mail
+        // from the token: those belong to the registration an admin
+        // made, and a token must not be able to rename the robot.
+        let integration = regnmed_db::integration_by_sub(&state.pool, &claims.sub).await?;
+        let person_id = match &integration {
+            Some(i) => i.person_id,
+            None => {
+                regnmed_db::ensure_person(
+                    &state.pool,
+                    &claims.sub,
+                    claims.name.as_deref(),
+                    claims.email.as_deref(),
+                )
+                .await?
+            }
+        };
+
+        if let Some(i) = &integration {
+            // Frugality is a product principle, so a runaway integration
+            // must not be able to spend the whole memory budget
+            // (docs/frugality.md). The limiter is per process and says
+            // so in the docs — with several replicas the effective
+            // ceiling is per replica.
+            if !state.rate.allow(i.id, i.rate_limit_min) {
+                return Err(ApiError::TooManyRequests);
+            }
+            let company_id = company_id_from_path(&parts.uri.path());
+            let pool = state.pool.clone();
+            let (id, method, path) = (i.id, parts.method.to_string(), parts.uri.path().to_string());
+            // Logged as accepted; a handler that rejects the call later
+            // still leaves the attempt visible, which is the point.
+            tokio::spawn(async move {
+                if let Err(e) =
+                    regnmed_db::log_integration_call(&pool, id, company_id, &method, &path, 200)
+                        .await
+                {
+                    eprintln!("integrasjonslogg feilet: {e:#}");
+                }
+            });
+        }
 
         Ok(AuthPerson {
             person_id,
             sub: claims.sub,
-            name: claims.name,
+            name: integration.as_ref().map(|i| i.navn.clone()).or(claims.name),
             email: claims.email,
+            integration: integration.map(|i| IntegrationCaller {
+                id: i.id,
+                navn: i.navn,
+            }),
         })
     }
 }
 
 pub enum ApiError {
     Unauthorized(&'static str),
+    /// The integration spent its per-minute budget.
+    TooManyRequests,
     /// Also covers "exists but you have no access" — a caller without
     /// access must not learn whether the company exists.
     NotFound,
@@ -246,6 +311,11 @@ impl From<anyhow::Error> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         match self {
+            ApiError::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({ "error": "for mange kall — vent litt" })),
+            )
+                .into_response(),
             ApiError::Unauthorized(msg) => {
                 (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response()
             }
@@ -268,5 +338,66 @@ impl IntoResponse for ApiError {
                     .into_response()
             }
         }
+    }
+}
+
+/// Pulls the company id out of `/companies/{id}/…` so a logged call
+/// says which client it touched. Paths without one log as global.
+fn company_id_from_path(path: &str) -> Option<Uuid> {
+    let mut parts = path.trim_start_matches('/').split('/');
+    (parts.next()? == "companies")
+        .then(|| parts.next())
+        .flatten()
+        .and_then(|id| Uuid::parse_str(id).ok())
+}
+
+/// A per-process token bucket per integration: refills continuously,
+/// holds at most one minute's worth. Deliberately in memory — a rate
+/// limiter that needs its own datastore would cost more than the budget
+/// it protects (docs/frugality.md).
+#[derive(Default)]
+pub struct RateLimiter {
+    buckets: std::sync::Mutex<std::collections::HashMap<Uuid, (f64, std::time::Instant)>>,
+}
+
+impl RateLimiter {
+    pub fn allow(&self, integration_id: Uuid, per_minute: i32) -> bool {
+        let capacity = per_minute.max(1) as f64;
+        let now = std::time::Instant::now();
+        let mut buckets = match self.buckets.lock() {
+            Ok(b) => b,
+            // A poisoned lock must not lock everyone out of the API.
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let entry = buckets.entry(integration_id).or_insert((capacity, now));
+        let elapsed = now.duration_since(entry.1).as_secs_f64();
+        entry.0 = (entry.0 + elapsed * capacity / 60.0).min(capacity);
+        entry.1 = now;
+        if entry.0 >= 1.0 {
+            entry.0 -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+
+    #[test]
+    fn bucket_lets_the_budget_through_and_then_stops() {
+        let limiter = RateLimiter::default();
+        let id = Uuid::now_v7();
+        for i in 0..5 {
+            assert!(limiter.allow(id, 5), "kall {i} skal slippe gjennom");
+        }
+        assert!(
+            !limiter.allow(id, 5),
+            "det sjette kallet i minuttet stoppes"
+        );
+        // Another integration has its own budget.
+        assert!(limiter.allow(Uuid::now_v7(), 5));
     }
 }

@@ -1,0 +1,120 @@
+# Maskin-tilgang til API-et
+
+Issue #45. Nettbutikken, kassasystemet og selskapets egne script skal
+kunne kalle API-et uten at et menneske logger inn — uten at det åpner
+en ny vei inn i bøkene som ikke er like godt bevoktet som den gamle.
+
+Den offentlige endepunktoversikten står i [api.md](api.md).
+
+## Modellen: samme prinsipal, samme regler
+
+> **Tokenet beviser identitet. regnmed avgjør hva identiteten får gjøre.**
+
+Det er nøyaktig samme setning som for mennesker (docs/auth.md), og det
+er derfor maskin-tilgang ikke krevde en ny autorisasjonsvei:
+
+- **Identiteten** kommer fra vår IdP som `client_credentials` — regnmed
+  utsteder aldri egne API-nøkler. Én type legitimasjon i plattformen,
+  ett sted å trekke den tilbake.
+- **Tilgangen** er en rad i regnmeds base: en admin gir integrasjonen
+  tilgang til sitt selskap på et nivå. Uten grant får den ingenting,
+  uansett hvor gyldig tokenet er (testet).
+
+Teknisk er en integrasjon en `person` med `kind = 'integrasjon'`. Det
+høres ut som en snarvei, men er det motsatte: tilgangsoppslaget,
+attribusjonen og revisjonssporet blir de samme for en robot som for et
+menneske, og da finnes det ingen egen maskinvei som kan utvikle sine
+egne hull.
+
+### Avhengighet vi ikke skjuler
+
+regnid støtter i dag `authorization_code` og `refresh_token`.
+**`client_credentials` må legges til der** før en integrasjon kan hente
+et token i produksjon. regnmed-siden er ferdig og virker med et hvilket
+som helst token fra den konfigurerte issueren der `sub` er
+integrasjonens `client_id` — det er alt kontrakten krever. Til det er
+på plass er maskin-tilgang registrerbar, men ingen kan logge på med
+den.
+
+## Tilgangen
+
+| Nivå | Kan |
+| --- | --- |
+| `les` | Alt en revisor kan lese: rapporter, reskontro, bilag |
+| `bokforing` | I tillegg: bokføre, fakturere, laste opp i innboksen |
+
+`admin` er bevisst ikke mulig å gi en maskin. Å endre hvem som har
+tilgang er en menneskelig beslutning.
+
+Grantet er modellert som et oppdrag (docs/auth.md): `valid_to` er
+**eksklusiv**, så en tilbakekalling virker i samme øyeblikk — ikke ved
+midnatt. Raden blir stående med hvem som ga og hvem som trakk tilbake;
+tilganger slettes ikke.
+
+En klient-id som allerede tilhører et menneske med tilgang kan ikke
+registreres som integrasjon — en robot skal aldri arve et menneskes
+tilgang ved å bli registrert under subjectet deres.
+
+## Attribusjon: sporet navngir roboten
+
+Alt en integrasjon bokfører får `created_by` = integrasjonens navn.
+Ikke «system», ikke en uuid: «Nettbutikken». Navnet settes ved
+registrering og kan ikke overstyres av tokenet — ellers kunne en klient
+døpt om seg selv i revisjonssporet.
+
+## Ratebegrensning
+
+Hver integrasjon har en grense per minutt (standard 120, justerbar per
+integrasjon). Over grensen svarer API-et `429` med en tydelig melding.
+
+Grensen er en token-bucket **per prosess**, med vilje: en ratebegrenser
+som trenger sin egen datastore ville kostet mer enn budsjettet den
+beskytter (docs/frugality.md). Med flere replikaer er den effektive
+grensen per replika — det er en bevisst avveining, ikke en forglemmelse.
+
+## Aktivitetslogg
+
+- `integration_call` — hver **endrende** forespørsel (metode, sti,
+  status). Det er disse en admin og en revisor vil se.
+- `integration_usage` — en teller per integrasjon, selskap og dag som
+  dekker alle kall, også lesingene. Å lagre hver lesing ville vært
+  volum uten verdi.
+
+Begge er synlige i portalen (Oppdrag → Integrasjoner) for alle med
+tilgang til selskapet.
+
+## Endpoints
+
+- `GET  /companies/{id}/integrations` — tilganger, status, kall i dag
+- `POST /companies/{id}/integrations` — `{client_id, navn, kontakt?, access}` (admin)
+- `POST /companies/{id}/integrations/{iid}/revoke` (admin)
+- `GET  /companies/{id}/integrations/log` — de endrende kallene
+
+## Slik kommer en integrasjon i gang
+
+1. Integrasjonen registreres som klient i regnid og får `client_id` +
+   `client_secret` (regnids sak).
+2. Selskapets admin gir tilgang i portalen: lim inn `client_id`, gi den
+   et navn, velg nivå.
+3. Integrasjonen henter token med `client_credentials` og kaller API-et
+   med `Authorization: Bearer …` — samme endepunkter som portalen
+   bruker.
+
+## Tester
+
+`regnmed-api/tests/integrasjon.rs` (ekte Postgres, også CI): et gyldig
+maskintoken uten grant får `404` (ikke `403` — en fremmed skal ikke
+lære at selskapet finnes); admin gir tilgang; roboten laster opp og
+bokfører; `created_by` på bilaget er «Nettbutikken»; de endrende
+kallene ligger i loggen og lesingene i telleren; en integrasjon med
+bokføringstilgang kan ikke gi seg selv eller andre tilgang;
+tilbakekalling virker samme dag, og historikken navngir den som trakk
+den tilbake. En egen test tømmer ratebudsjettet og får `429`, mens
+mennesket ved siden av merker ingenting.
+
+`regnmed-api/src/auth.rs` har enhetstesten for token-bucketen.
+
+## Bevisst utenfor
+
+En marketplace/app-store for integrasjoner (grant-by-client-id først),
+og webhooks — pull holder til noen viser at det ikke gjør det.
