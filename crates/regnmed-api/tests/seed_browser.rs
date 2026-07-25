@@ -146,6 +146,7 @@ async fn seed_browser_demo() {
             "application/pdf",
             body.as_bytes(),
             "Demo Bruker",
+            None,
         )
         .await
         .unwrap();

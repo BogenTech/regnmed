@@ -39,6 +39,9 @@ async fn require_access(
 #[derive(Deserialize)]
 pub struct UploadQuery {
     filename: String,
+    /// What the client hashed before sending (the mobile offline queue
+    /// does — docs/portal.md, #48).
+    sha256: Option<String>,
 }
 
 pub async fn upload(
@@ -63,6 +66,7 @@ pub async fn upload(
         &content_type,
         &body,
         uploaded_by,
+        query.sha256.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

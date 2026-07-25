@@ -44,9 +44,70 @@ Authorization is entirely server-side — the portal is a *view*; a
 revisor's read-only access or a stranger's 404 comes from the API, never
 from hidden buttons.
 
+## PWA: kvitteringsfoto og attestering på farten (#48)
+
+De to tingene folk faktisk gjør på telefon er å ta bilde av en
+kvittering i det den finnes, og å godkjenne noe mens de er ute.
+Begge deler er den samme portalen — ingen app-butikk, ingen andre
+kodebase.
+
+**Installerbar**: `/manifest.webmanifest` (standalone, norsk, ikoner
+192 og 512 — den siste `maskable`, fordi Android beskjærer) og
+`/sw.js`, servert fra binæren som alt annet. Ikonene genereres av
+`scripts/build-icons.py` (hand-rolled PNG, ingen bildebibliotek i
+treet) og sjekkes inn ferdig, akkurat som `app.css`.
+
+**Service workeren cacher app-skallet — og bare det.**
+
+> Hovedboken caches aldri. Et regnskap som viser gamle tall offline er
+> verre enn et som sier at det ikke har kontakt.
+
+Skallet hentes nett-først (en oppdatert app vinner alltid), og cachen
+trår bare til uten dekning. Endrende forespørsler går aldri gjennom
+arbeideren.
+
+**Kvitteringsfoto**: knappen bruker
+`<input type="file" accept="image/*" capture="environment">` — kamera
+på telefon, vanlig filvelger på maskin — og laster opp til det samme
+innboks-endepunktet som før. API-et er uendret.
+
+**Offline-kø, bare for opplastinger.** Uten dekning legges bildet i
+IndexedDB og sendes automatisk når nettet er tilbake (ved `online` og
+ved oppstart). Bildet hashes i telefonen og sendes med `?sha256=`, og
+serveren:
+
+- avviser innhold den **allerede har** («nøyaktig dette dokumentet
+  ligger allerede i innboksen som …»), så en kø som prøver igjen fordi
+  svaret aldri kom fram ikke gjør ett bilag til to, og
+- avviser en hash som ikke stemmer med bytene den mottok, som betyr at
+  bildet ble skadet underveis.
+
+Køen fjerner et bilde når serveren avviser det (det blir ikke bedre av
+å prøve igjen) og lar det ligge når det er nettet som svikter.
+
+**Responsivt**: menyen legger seg vannrett over innholdet under `sm`
+og er sidestilt fra `sm` og opp; kortkroppene ruller sine egne brede
+tabeller i stedet for å dytte siden sidelengs. Temakontrakten er
+urørt — samme daisyUI-temaer som på skrivebordet.
+
+Bevisst utenfor: native apper, push-varsler (e-post dekker frister),
+og offline bokføring — aldri.
+
 ## Verified
 
 Full browser round-trip against the dev servers: SSO login via regnid →
 company picker from `/me` → dashboard with live ledger numbers → customer
 created → invoice issued (KID shown) → mva-spesifikasjon reflecting the
 new invoice → theme switch (corporate) applied instantly.
+
+PWA-en er verifisert i mobilviewport (375×812): service workeren
+registrert og aktiv med rot-scope, manifestet lest, kameraknappen med
+`capture="environment"`, menyen vannrett, ingen vannrett overflyt — og
+et «kamerabilde» lastet opp gjennom den ekte veien, der den samme
+filen sendt en gang til ble avvist av serveren.
+
+`regnmed-api/tests/pwa.rs` dekker det som må stå: manifest og ikoner
+serveres med riktig content-type (og er ekte PNG-er i riktig
+størrelse), arbeideren nevner ikke hovedboken, `index.html` peker på
+manifestet, og den samme kvitteringen to ganger blir ett bilag mens en
+gal hash avvises.

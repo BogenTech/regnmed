@@ -21,6 +21,12 @@ const INDEX_HTML: &str = include_str!("../portal/index.html");
 const APP_JS: &str = include_str!("../portal/app.js");
 const THEME_JS: &str = include_str!("../portal/theme.js");
 const APP_CSS: &str = include_str!("../portal/app.css");
+// PWA (docs/portal.md, #48): the shell is installable, and the service
+// worker caches ONLY these files — never anything from the ledger.
+const MANIFEST: &str = include_str!("../portal/manifest.webmanifest");
+const SERVICE_WORKER: &str = include_str!("../portal/sw.js");
+const ICON_192: &[u8] = include_bytes!("../portal/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../portal/icon-512.png");
 
 pub async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
@@ -44,6 +50,36 @@ pub async fn theme_js() -> Response {
 
 pub async fn app_css() -> Response {
     ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS).into_response()
+}
+
+pub async fn manifest() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/manifest+json")],
+        MANIFEST,
+    )
+        .into_response()
+}
+
+pub async fn service_worker() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            // The worker controls the whole origin, so it must be
+            // served from the root with no long-lived cache: a stale
+            // worker is a stale app nobody can update.
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        SERVICE_WORKER,
+    )
+        .into_response()
+}
+
+pub async fn icon_192() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], ICON_192).into_response()
+}
+
+pub async fn icon_512() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], ICON_512).into_response()
 }
 
 /// What the SPA needs to start the OIDC flow. The client id defaults to

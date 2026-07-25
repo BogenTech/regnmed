@@ -248,7 +248,11 @@ M7 (#37–#48) for new ground:
   navngir roboten i created_by, ratebegrensning per integrasjon og
   aktivitetslogg; offentlig API-referanse i docs/api.md.
   **Krever at client_credentials legges til i regnid** — regnmed-siden
-  er ferdig; docs/integrations.md), PWA m/ kvitteringsfoto (#48) — M5.
+  er ferdig; docs/integrations.md), ✅ PWA m/ kvitteringsfoto
+  (#48 — installerbart skall, service worker som cacher app-skallet og
+  ALDRI hovedboken, kamerafangst rett til innboksen, offline-kø for
+  opplastinger m/ klientside-hash som serveren bruker til å avvise
+  duplikater, responsiv meny og tabeller; docs/portal.md) — M5.
 - Offentlig: aksjonærregisteroppgaven + aksjebok som hendelseslogg
   (#43) — M2. Lønn + a-melding som ærlig kartlagt paraply (#46) — still
   deliberately last.

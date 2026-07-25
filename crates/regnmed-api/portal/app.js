@@ -137,6 +137,124 @@
     });
   }
 
+
+  // ---------- kvitteringsfoto og offline-kø (#48) ----------
+  //
+  // Bare OPPLASTINGER køes. Hovedboken lagres aldri lokalt: et regnskap
+  // som viser gamle tall uten dekning er verre enn et som sier fra.
+  // Bildet hashes i telefonen, så serveren kan kjenne igjen det samme
+  // bildet sendt to ganger — nettverk gjentar seg, og et bilag skal
+  // ikke bli to.
+
+  var KO_DB = "regnmed-ko";
+
+  function koApne() {
+    return new Promise(function (ok, feil) {
+      var req = indexedDB.open(KO_DB, 1);
+      req.onupgradeneeded = function () {
+        req.result.createObjectStore("bilder", { keyPath: "id", autoIncrement: true });
+      };
+      req.onsuccess = function () { ok(req.result); };
+      req.onerror = function () { feil(req.error); };
+    });
+  }
+
+  function koLegg(rad) {
+    return koApne().then(function (db) {
+      return new Promise(function (ok, feil) {
+        var tx = db.transaction("bilder", "readwrite");
+        tx.objectStore("bilder").add(rad);
+        tx.oncomplete = function () { ok(); };
+        tx.onerror = function () { feil(tx.error); };
+      });
+    });
+  }
+
+  function koLes() {
+    return koApne().then(function (db) {
+      return new Promise(function (ok, feil) {
+        var req = db.transaction("bilder").objectStore("bilder").getAll();
+        req.onsuccess = function () { ok(req.result); };
+        req.onerror = function () { feil(req.error); };
+      });
+    });
+  }
+
+  function koFjern(id) {
+    return koApne().then(function (db) {
+      return new Promise(function (ok) {
+        var tx = db.transaction("bilder", "readwrite");
+        tx.objectStore("bilder").delete(id);
+        tx.oncomplete = function () { ok(); };
+      });
+    });
+  }
+
+  async function filHash(buffer) {
+    if (!crypto.subtle) return null;
+    var digest = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest))
+      .map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+  }
+
+  /// Sender ett bilde. Returnerer false når det er nettet som svikter —
+  /// da hører bildet hjemme i køen, ikke i en feilmelding.
+  async function sendBilde(companyId, filnavn, type, buffer, sha256) {
+    try {
+      await api("/companies/" + companyId + "/inbox?filename=" + encodeURIComponent(filnavn) +
+        (sha256 ? "&sha256=" + sha256 : ""), {
+        method: "POST",
+        headers: { "content-type": type || "application/octet-stream" },
+        body: buffer,
+      });
+      return true;
+    } catch (error) {
+      if (!navigator.onLine || /nettverk|network|failed|fetch/i.test(error.message)) return false;
+      throw error;
+    }
+  }
+
+  /// Tømmer køen når nettet er tilbake. Kalles ved oppstart, når
+  /// browseren sier «online», og etter hver ny opplasting.
+  async function koSend() {
+    if (!navigator.onLine) return 0;
+    var rader;
+    try { rader = await koLes(); } catch (e) { return 0; }
+    var sendt = 0;
+    for (var i = 0; i < rader.length; i++) {
+      var rad = rader[i];
+      try {
+        if (await sendBilde(rad.company, rad.filnavn, rad.type, rad.buffer, rad.sha256)) {
+          await koFjern(rad.id);
+          sendt++;
+        } else {
+          break; // fortsatt uten dekning; resten venter
+        }
+      } catch (error) {
+        // Serveren avviste bildet (f.eks. duplikat). Da hører det ikke
+        // hjemme i køen lenger — det blir aldri bedre av å prøve igjen.
+        await koFjern(rad.id);
+      }
+    }
+    if (sendt) toast(sendt + " kvittering(er) sendt fra køen", true);
+    return sendt;
+  }
+
+  /// Kvitteringsfoto: tar bildet, sender det, eller legger det i kø.
+  async function lastOppKvittering(companyId, file) {
+    var buffer = await file.arrayBuffer();
+    var sha256 = await filHash(buffer);
+    var filnavn = file.name && file.name !== "image.jpg"
+      ? file.name
+      : "kvittering-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "") + ".jpg";
+    var sendtNa = await sendBilde(companyId, filnavn, file.type, buffer, sha256);
+    if (sendtNa) return "sendt";
+    await koLegg({
+      company: companyId, filnavn: filnavn, type: file.type, buffer: buffer, sha256: sha256,
+    });
+    return "kø";
+  }
+
   // ---------- layout ----------
 
   function themeControls() {
@@ -165,8 +283,12 @@
       '<span class="text-sm opacity-70">' + esc(company ? company.name : "") + "</span></div>" +
       '<div class="flex-none gap-2">' + themeControls() +
       '<button id="logout" class="btn btn-ghost btn-sm">Logg ut</button></div></div>' +
-      '<div class="flex"><ul class="menu bg-base-100 w-44 min-h-full">' + items + "</ul>" +
-      '<main class="flex-1 p-6 max-w-5xl">' + content + "</main></div>";
+      // Mobil: menyen legger seg vannrett over innholdet i stedet for
+      // å spise halve skjermen; fra sm og opp er den sidestilt som før.
+      '<div class="flex flex-col sm:flex-row">' +
+      '<ul class="menu menu-horizontal sm:menu-vertical bg-base-100 w-full sm:w-44 ' +
+      'sm:min-h-full flex-nowrap overflow-x-auto sm:overflow-visible">' + items + "</ul>" +
+      '<main class="flex-1 p-4 sm:p-6 max-w-5xl w-full min-w-0">' + content + "</main></div>";
     wireChrome();
   }
 
@@ -181,7 +303,9 @@
   }
 
   function card(title, body) {
-    return '<div class="card bg-base-100 shadow-sm mb-6"><div class="card-body">' +
+    // overflow-x-auto på kortkroppen: brede tabeller ruller i sitt eget
+    // felt i stedet for å dytte hele siden sidelengs på en telefon.
+    return '<div class="card bg-base-100 shadow-sm mb-6"><div class="card-body overflow-x-auto">' +
       '<h2 class="card-title">' + title + "</h2>" + body + "</div></div>";
   }
 
@@ -2480,8 +2604,15 @@
         (d.note ? " (" + esc(d.note) + ")" : "") + " · " + esc(d.decided_by || "") + "</div>";
     }).join("");
     var inboxCard = card("Innboks — dokumentasjon som venter på bokføring",
-      '<label class="btn btn-sm btn-outline mb-3">Last opp bilag' +
-      '<input type="file" id="inbox-upload" class="hidden"></label>' +
+      '<div class="flex gap-2 flex-wrap mb-3">' +
+      // capture="environment" åpner kameraet direkte på telefon; på
+      // desktop blir det en helt vanlig filvelger.
+      '<label class="btn btn-sm btn-primary">Ta bilde av kvittering' +
+      '<input type="file" id="inbox-camera" class="hidden" accept="image/*" capture="environment">' +
+      "</label>" +
+      '<label class="btn btn-sm btn-outline">Last opp bilag' +
+      '<input type="file" id="inbox-upload" class="hidden"></label></div>' +
+      '<div id="ko-status" class="text-xs opacity-70 mb-2"></div>' +
       (open.length
         ? '<table class="table table-sm"><thead><tr><th>Dokument</th><th>Mottatt</th><th>Fra</th>' +
           "<th>Attestering</th><th></th></tr></thead>" +
@@ -2716,6 +2847,30 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+    async function visKo() {
+      var boks = document.getElementById("ko-status");
+      if (!boks) return;
+      try {
+        var rader = await koLes();
+        boks.innerHTML = rader.length
+          ? '<span class="badge badge-warning badge-sm">' + rader.length +
+            " i kø</span> venter på dekning — sendes automatisk når nettet er tilbake"
+          : "";
+      } catch (e) { boks.innerHTML = ""; }
+    }
+    visKo();
+    var inboxCamera = document.getElementById("inbox-camera");
+    if (inboxCamera) inboxCamera.onchange = async function () {
+      var file = inboxCamera.files[0];
+      if (!file) return;
+      try {
+        var utfall = await lastOppKvittering(id, file);
+        toast(utfall === "sendt"
+          ? "Kvitteringen ligger i innboksen"
+          : "Uten dekning — kvitteringen er lagret og sendes automatisk", utfall === "sendt");
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
     var inboxUpload = document.getElementById("inbox-upload");
     if (inboxUpload) inboxUpload.onchange = async function () {
       var file = inboxUpload.files[0];
@@ -3137,6 +3292,14 @@
         return;
       }
     }
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(function () {
+        // Uten arbeider er alt som før — appen virker, den er bare
+        // ikke installerbar eller offline-klar.
+      });
+    }
+    window.addEventListener("online", koSend);
+    koSend();
     window.addEventListener("hashchange", route);
     route();
   })();

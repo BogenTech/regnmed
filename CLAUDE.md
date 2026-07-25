@@ -663,6 +663,22 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `/companies/{id}/integrations…`; portal: Integrasjoner-kort under
    Oppdrag. NYTT: docs/api.md er den offentlige endepunktreferansen
    (generert fra rutetabellen).
+46. ✅ Mobil-PWA (docs/portal.md, closed #48): samme portal, ingen
+   app-butikk. `/manifest.webmanifest` + `/sw.js` + genererte ikoner
+   (scripts/build-icons.py — hand-rolled PNG m/ zlib, sjekkes inn som
+   app.css) servert fra binæren. REGELEN i service workeren:
+   **hovedboken caches ALDRI** — bare app-skallet, nett-først, og
+   endrende forespørsler går aldri gjennom cachen (testet ved at sw.js
+   ikke nevner /companies/). Kvitteringsfoto = `capture="environment"`
+   rett til det uendrede innboks-endepunktet. Offline-kø BARE for
+   opplastinger (IndexedDB): bildet hashes i telefonen, sendes med
+   `?sha256=`, og serveren avviser (a) innhold den allerede har — så
+   en kø-retry ikke gjør ett bilag til to — og (b) hash som ikke
+   stemmer med bytene (skadet underveis). Køen dropper et bilde
+   serveren avviste, beholder det når nettet svikter. Responsivt:
+   menyen vannrett under sm, kortkropper ruller egne tabeller;
+   temakontrakten urørt (app.css rebygget m/ scripts/build-css.sh).
+   Verifisert i 375×812-viewport.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md), client_credentials i regnid (#45-forutsetning),
    EHF-transport via aksesspunkt, API-tier per leverandør

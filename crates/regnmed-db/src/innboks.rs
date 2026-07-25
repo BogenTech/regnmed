@@ -34,6 +34,14 @@ pub struct InboxRow {
     pub attestert_av: Option<String>,
 }
 
+/// Stores an uploaded document. `expected_sha256` is what the client
+/// computed before sending (the mobile queue does — docs/portal.md,
+/// #48): a mismatch means the bytes changed on the way, and we say so
+/// rather than storing a damaged receipt.
+///
+/// The same content twice is refused BY CONTENT. Retries on a flaky
+/// mobile connection are normal, and a bilag must not become two
+/// because the phone was unsure whether the first attempt arrived.
 pub async fn upload_inbox_document(
     pool: &PgPool,
     company_id: Uuid,
@@ -41,9 +49,26 @@ pub async fn upload_inbox_document(
     content_type: &str,
     content: &[u8],
     uploaded_by: &str,
+    expected_sha256: Option<&str>,
 ) -> Result<Uuid> {
     ensure!(!content.is_empty(), "document is empty");
     let digest = sha256(content);
+    if let Some(expected) = expected_sha256 {
+        ensure!(
+            expected.eq_ignore_ascii_case(&hex::encode(digest)),
+            "dokumentet ble skadet underveis — last opp på nytt"
+        );
+    }
+    let duplicate: Option<String> = sqlx::query_scalar(
+        "select filename from inbox_document where company_id = $1 and sha256 = $2 limit 1",
+    )
+    .bind(company_id)
+    .bind(digest.as_slice())
+    .fetch_optional(pool)
+    .await?;
+    if let Some(filename) = duplicate {
+        bail!("nøyaktig dette dokumentet ligger allerede i innboksen som «{filename}»");
+    }
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into inbox_document (id, company_id, filename, content_type, byte_size,
