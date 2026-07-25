@@ -7,6 +7,7 @@
 pub mod anchor;
 pub mod asset;
 pub mod attachment;
+pub mod attestering;
 pub mod bank;
 pub mod betaling;
 pub mod dimension;
@@ -39,6 +40,7 @@ pub mod valuta;
 pub use anchor::*;
 pub use asset::*;
 pub use attachment::*;
+pub use attestering::*;
 pub use bank::*;
 pub use betaling::*;
 pub use dimension::*;

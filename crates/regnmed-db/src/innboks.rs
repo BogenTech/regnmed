@@ -29,6 +29,9 @@ pub struct InboxRow {
     pub voucher_id: Option<Uuid>,
     pub decided_by: Option<String>,
     pub note: Option<String>,
+    /// The governing attestation decision (newest row), if any.
+    pub attestering: Option<String>,
+    pub attestert_av: Option<String>,
 }
 
 pub async fn upload_inbox_document(
@@ -66,11 +69,18 @@ pub async fn list_inbox(
     status: Option<&str>,
 ) -> Result<Vec<InboxRow>> {
     let rows = sqlx::query(
-        "select id, filename, content_type, byte_size, sha256, uploaded_by, created_at,
-                status, voucher_id, decided_by, note
-         from inbox_document
-         where company_id = $1 and ($2::text is null or status = $2)
-         order by created_at desc",
+        "select d.id, d.filename, d.content_type, d.byte_size, d.sha256, d.uploaded_by,
+                d.created_at, d.status, d.voucher_id, d.decided_by, d.note,
+                att.decision as attestering, att.decided_by as attestert_av
+         from inbox_document d
+         left join lateral (
+             select a.decision, a.decided_by from attestation a
+             where a.company_id = d.company_id
+               and a.target_kind = 'inbox_document' and a.target_id = d.id
+             order by a.created_at desc, a.id desc limit 1
+         ) att on true
+         where d.company_id = $1 and ($2::text is null or d.status = $2)
+         order by d.created_at desc",
     )
     .bind(company_id)
     .bind(status)
@@ -90,6 +100,8 @@ pub async fn list_inbox(
             voucher_id: r.get("voucher_id"),
             decided_by: r.get("decided_by"),
             note: r.get("note"),
+            attestering: r.get("attestering"),
+            attestert_av: r.get("attestert_av"),
         })
         .collect())
 }
@@ -118,13 +130,18 @@ pub async fn get_inbox_document(
 }
 
 /// Post the voucher, attach the document to it, mark the entry bokført —
-/// one transaction, all or nothing.
+/// one transaction, all or nothing. When the attestering policy is
+/// active (docs/attestering.md, #47), a voucher at or over the
+/// beløpsgrense requires a governing 'godkjent' attestation decided by
+/// SOMEONE ELSE than the bokfører — checked here, inside the
+/// transaction, never just in UI.
 pub async fn bokfor_inbox_document(
     pool: &PgPool,
     company_id: Uuid,
     document_id: Uuid,
     draft: &VoucherDraft,
     decided_by: &str,
+    decided_by_person: Uuid,
 ) -> Result<PostedVoucher> {
     let mut tx = pool.begin().await?;
 
@@ -139,6 +156,36 @@ pub async fn bokfor_inbox_document(
     .context("no such inbox document")?;
     let status: String = document.get("status");
     ensure!(status == "ny", "document is already decided ({status})");
+
+    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+        && policy.aktiv
+    {
+        let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
+        if policy
+            .belopsgrense_ore
+            .is_none_or(|grense| debetsum >= grense)
+        {
+            let state = crate::attestering::attestation_state(
+                &mut *tx,
+                company_id,
+                "inbox_document",
+                document_id,
+            )
+            .await?;
+            match state {
+                None => bail!("bilaget krever attestering før bokføring (policy aktiv)"),
+                Some(a) if a.decision == "avvist" => bail!(
+                    "bilaget er avvist i attestering av {}: {}",
+                    a.decided_by,
+                    a.note.as_deref().unwrap_or("")
+                ),
+                Some(a) if a.decided_by_person == decided_by_person => bail!(
+                    "attestert og bokført av samme person — bokføringen må gjøres av en annen (fire øyne)"
+                ),
+                Some(_) => {}
+            }
+        }
+    }
 
     let posted = post_voucher_in(&mut tx, company_id, draft, decided_by).await?;
 

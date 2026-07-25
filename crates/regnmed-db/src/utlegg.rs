@@ -227,11 +227,12 @@ pub async fn approve_expense(
     mva_konto: &str,
     motkonto: &str,
     decided_by: &str,
+    decided_by_person: Uuid,
 ) -> Result<ApprovedExpense> {
     let mut tx = pool.begin().await?;
     let expense = sqlx::query(
         "select kind, dato, beskrivelse, belop_ore, km, sats_ore_per_km, trekkpliktig_ore,
-                receipt_filename, receipt_content_type, receipt_content, status,
+                receipt_filename, receipt_content_type, receipt_content, status, person_id,
                 coalesce((select p.name from person p where p.id = expense.person_id), '') as navn
          from expense where id = $1 and company_id = $2 for update",
     )
@@ -242,6 +243,19 @@ pub async fn approve_expense(
     .context("no such expense")?;
     let status: String = expense.get("status");
     ensure!(status == "innsendt", "kravet er allerede {status}");
+
+    // Selvgodkjenning var tillatt i v1 (#42); med aktiv attestering
+    // (docs/attestering.md, #47) må godkjenneren være en annen enn den
+    // som sendte inn kravet.
+    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+        && policy.aktiv
+    {
+        let innsender: Uuid = expense.get("person_id");
+        ensure!(
+            innsender != decided_by_person,
+            "utleggskrav kan ikke godkjennes av den som sendte det inn (fire øyne)"
+        );
+    }
     let kind: String = expense.get("kind");
     let dato: NaiveDate = expense.get("dato");
     let belop: i64 = expense.get("belop_ore");

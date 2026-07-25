@@ -95,6 +95,8 @@ pub async fn list(
             "voucher_id": d.voucher_id,
             "decided_by": d.decided_by,
             "note": d.note,
+            "attestering": d.attestering,
+            "attestert_av": d.attestert_av,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -170,10 +172,16 @@ pub async fn bokfor(
             .collect(),
     };
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
-    let posted =
-        regnmed_db::bokfor_inbox_document(&state.pool, company_id, document_id, &draft, decided_by)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let posted = regnmed_db::bokfor_inbox_document(
+        &state.pool,
+        company_id,
+        document_id,
+        &draft,
+        decided_by,
+        person.person_id,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "voucher_id": posted.id,
         "voucher": format!("{}-{}", posted.fiscal_year, posted.voucher_number),

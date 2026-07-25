@@ -2023,7 +2023,8 @@
       card("Betalingsliste og remittering",
         '<p class="text-sm opacity-70 mb-2">Åpne leverandørposter samles i en betalingsliste; godkjenning er en ' +
         "egen handling som lager pain.001-filen (lastes opp i nettbanken). «Registrer utbetalt» bokfører " +
-        "utbetalingen og lukker postene i reskontroen — bankimporten kobler seg mot det bilaget.</p>" +
+        "utbetalingen og lukker postene i reskontroen — bankimporten kobler seg mot det bilaget. " +
+        "Med attestering aktiv må godkjenneren være en annen enn den som laget listen.</p>" +
         (payableRows
           ? "<h3 class='font-semibold mb-1'>Åpne leverandørposter</h3>" +
             '<table class="table table-sm mb-2"><thead><tr><th>Bilag</th><th>Dato</th><th>Leverandør</th>' +
@@ -2147,16 +2148,33 @@
       api("/companies/" + id + "/vouchers"),
       api("/companies/" + id + "/inbox"),
       api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
+      api("/companies/" + id + "/attestering/policy").catch(function () { return { policy: null }; }),
+      api("/companies/" + id + "/members").catch(function () { return { members: [] }; }),
     ]);
     var vouchers = results[0].vouchers;
     var inbox = results[1].documents;
     var dims = results[2].dimensions;
+    var policy = results[3].policy;
+    var members = results[4].members;
+    var attesteringOn = !!(policy && policy.aktiv);
     var open = inbox.filter(function (d) { return d.status === "ny"; });
     var decided = inbox.filter(function (d) { return d.status !== "ny"; });
+    function attesteringLabel(d) {
+      if (d.attestering === "godkjent") {
+        return '<span class="badge badge-success badge-sm">attestert</span> ' +
+          '<span class="text-xs opacity-60">' + esc(d.attestert_av || "") + "</span>";
+      }
+      if (d.attestering === "avvist") {
+        return '<span class="badge badge-error badge-sm">avvist</span> ' +
+          '<span class="text-xs opacity-60">' + esc(d.attestert_av || "") + "</span>";
+      }
+      return attesteringOn ? '<span class="badge badge-warning badge-sm">venter</span>' : "—";
+    }
     var inboxRows = open.map(function (d) {
       return "<tr><td><a class='link' href='#' data-dl-doc='" + d.document_id + "' data-name='" +
         esc(d.filename) + "'>" + esc(d.filename) + "</a></td><td>" +
         esc(d.uploaded_at.slice(0, 10)) + "</td><td>" + esc(d.uploaded_by) + "</td><td>" +
+        attesteringLabel(d) + "</td><td>" +
         '<button class="btn btn-xs btn-primary" data-bokfor="' + d.document_id + '">Bokfør</button> ' +
         '<button class="btn btn-xs btn-ghost" data-avvis="' + d.document_id + '">Avvis</button></td></tr>';
     }).join("");
@@ -2168,10 +2186,51 @@
       '<label class="btn btn-sm btn-outline mb-3">Last opp bilag' +
       '<input type="file" id="inbox-upload" class="hidden"></label>' +
       (open.length
-        ? '<table class="table table-sm"><thead><tr><th>Dokument</th><th>Mottatt</th><th>Fra</th><th></th></tr></thead>' +
+        ? '<table class="table table-sm"><thead><tr><th>Dokument</th><th>Mottatt</th><th>Fra</th>' +
+          "<th>Attestering</th><th></th></tr></thead>" +
           "<tbody>" + inboxRows + "</tbody></table>"
         : '<p class="text-sm opacity-70">Ingen dokumenter venter.</p>') +
       '<div id="bokfor-form" class="mt-3"></div>' + decidedRows);
+
+    // Til attestering: bilag som venter på en godkjenning (#47).
+    var venter = open.filter(function (d) { return d.attestering !== "godkjent"; });
+    var venterRows = venter.map(function (d) {
+      return "<tr><td>" + esc(d.filename) + "</td><td>" + esc(d.uploaded_at.slice(0, 10)) +
+        "</td><td>" + esc(d.uploaded_by) + "</td><td>" + attesteringLabel(d) + "</td><td>" +
+        '<button class="btn btn-xs btn-success" data-att-ok="' + d.document_id + '">Godkjenn</button> ' +
+        '<button class="btn btn-xs btn-ghost" data-att-nei="' + d.document_id + '">Avvis</button></td></tr>';
+    }).join("");
+    var grenseKr = policy && policy.belopsgrense_ore !== null && policy.belopsgrense_ore !== undefined
+      ? kr(policy.belopsgrense_ore) : "";
+    var attestantOptions = '<option value="">Alle med bokføringstilgang</option>' +
+      members.map(function (m) {
+        return '<option value="' + m.person_id + '"' +
+          (policy && policy.attestant_person_id === m.person_id ? " selected" : "") + ">" +
+          esc(m.name) + "</option>";
+      }).join("");
+    var attesteringCard = card("Til attestering" +
+      (attesteringOn ? ' <span class="badge badge-primary badge-sm">policy aktiv</span>' : ""),
+      '<p class="text-sm opacity-70 mb-2">Den som godkjenner en kostnad skal ikke være den som ' +
+      "bokfører eller betaler den. Med aktiv policy krever bilag over beløpsgrensen en godkjent " +
+      "attestering av en <em>annen</em> person før bokføring; betalingslister må godkjennes av en " +
+      "annen enn oppretteren, og utleggskrav kan ikke godkjennes av innsenderen. Beslutningene er " +
+      "et spor som aldri slettes.</p>" +
+      (venter.length
+        ? '<table class="table table-sm mb-3"><thead><tr><th>Dokument</th><th>Mottatt</th><th>Fra</th>' +
+          "<th>Status</th><th></th></tr></thead><tbody>" + venterRows + "</tbody></table>"
+        : '<p class="text-sm opacity-70 mb-3">Ingen bilag venter på attestering.</p>') +
+      '<div class="flex gap-2 items-center flex-wrap">' +
+      '<label class="label cursor-pointer gap-2"><input id="att-aktiv" type="checkbox" ' +
+      'class="checkbox checkbox-sm"' + (attesteringOn ? " checked" : "") +
+      '><span class="label-text">Krev attestering</span></label>' +
+      '<input id="att-grense" class="input input-sm input-bordered w-36" ' +
+      'placeholder="Beløpsgrense (kr)" value="' + esc(grenseKr) + '">' +
+      '<select id="att-person" class="select select-sm select-bordered">' + attestantOptions + "</select>" +
+      '<button id="att-lagre" class="btn btn-sm">Lagre policy</button></div>' +
+      (policy
+        ? '<p class="text-xs opacity-60 mt-2">Gjeldende policy satt av ' + esc(policy.created_by) +
+          " " + esc(policy.created_at.slice(0, 10)) + ".</p>"
+        : '<p class="text-xs opacity-60 mt-2">Ingen policy registrert — attestering er frivillig.</p>'));
     var rows = vouchers.map(function (v) {
       return "<tr><td>" + esc(v.voucher) + "</td><td>" + esc(v.date) + "</td><td>" +
         esc(v.description) + '</td><td><label class="btn btn-xs btn-outline">Vedlegg' +
@@ -2197,7 +2256,7 @@
       '<input id="dim-code" class="input input-sm input-bordered w-24" placeholder="Kode">' +
       '<input id="dim-name" class="input input-sm input-bordered" placeholder="Navn">' +
       '<button id="dim-create" class="btn btn-sm">Opprett</button></div>');
-    shell(id, "bilag", inboxCard + card("Bilag",
+    shell(id, "bilag", attesteringCard + inboxCard + card("Bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th><th></th></tr></thead>' +
       "<tbody>" + rows + "</tbody></table><div id='attachment-list' class='mt-4'></div>") + dimCard);
     document.getElementById("dim-create").onclick = async function () {
@@ -2224,6 +2283,41 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+    app.querySelectorAll("[data-att-ok]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/companies/" + id + "/inbox/" + button.dataset.attOk + "/attester",
+            { godkjent: true });
+          toast("Attestert", true);
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-att-nei]").forEach(function (button) {
+      button.onclick = async function () {
+        var note = prompt("Hvorfor avvises bilaget i attesteringen?");
+        if (!note) return;
+        try {
+          await post("/companies/" + id + "/inbox/" + button.dataset.attNei + "/attester",
+            { godkjent: false, note: note });
+          toast("Avvist i attestering", true);
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    document.getElementById("att-lagre").onclick = async function () {
+      var raw = document.getElementById("att-grense").value.trim();
+      var person = document.getElementById("att-person").value;
+      try {
+        await post("/companies/" + id + "/attestering/policy", {
+          aktiv: document.getElementById("att-aktiv").checked,
+          belopsgrense_ore: raw ? parseKr(raw) : null,
+          attestant_person_id: person || null,
+        });
+        toast("Policy lagret", true);
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
     var inboxUpload = document.getElementById("inbox-upload");
     if (inboxUpload) inboxUpload.onchange = async function () {
       var file = inboxUpload.files[0];

@@ -11,8 +11,10 @@ utbetalingen bokføres med reskontro-lukking i én transaksjon.
 
 - **utkast → godkjent**: å lage listen og å godkjenne den for eksport
   er SEPARATE handlinger med hver sin audit-linje (created_by /
-  approved_by — four-eyes-vennlig; håndheving kommer med attestering,
-  #47). Godkjenningen renderer pain.001-filen, lagrer den med SHA-256
+  approved_by). Med attestering aktiv (docs/attestering.md, #47) MÅ
+  godkjenneren være en annen person enn oppretteren — kjøringen bærer
+  `created_by_person` for nettopp det.
+  Godkjenningen renderer pain.001-filen, lagrer den med SHA-256
   og fryser den — nedlastingen er alltid integritetssjekket.
 - **godkjent → utbetalt**: «Registrer utbetalt» posterer ETT
   utbetalingsbilag (debet hver leverandørpost's konto med parten,

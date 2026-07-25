@@ -207,6 +207,7 @@ pub async fn approve(
         request.mva_konto.as_deref().unwrap_or("2710"),
         request.motkonto.as_deref().unwrap_or("2910"),
         decided_by,
+        person.person_id,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

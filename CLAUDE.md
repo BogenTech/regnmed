@@ -525,9 +525,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    likviditet + frister are always NOW. Portal: Nøkkeltall card on
    Oversikt with CSS-only month bars (no chart library — frugality).
    Prognoser/budsjettavvik deliberately left to #41.
+39. ✅ Attestering (docs/attestering.md, closed #47): intern kontroll
+   som flyt, OPT-IN — uten policy er alt som før. Migration 0030:
+   `attestation_policy` append-only (nyeste rad gjelder; aktiv,
+   beløpsgrense, utpekt attestant), `attestation` insert-only
+   beslutningsspor (nyeste beslutning gjelder, avvisning krever notat
+   — DB-sjekk), `payment_run.created_by_person` (identitet, ikke
+   visningsnavn; 0029-vakten utvidet). Håndhevingen ligger INNE i
+   transaksjonene, aldri i portalen: `bokfor_inbox_document` krever
+   godkjent attestering når debetsummen ≥ grensen og nekter samme
+   person å både attestere og bokføre; `approve_run` krever annen
+   godkjenner enn oppretter (fire øyne på penger ut); `approve_expense`
+   nekter selvgodkjenning (#42 v1-oppførselen bevart uten policy).
+   `/companies/{id}/attestering/policy` (POST admin), `…/members`,
+   `…/inbox/{doc}/attester`, `…/inbox/{doc}/attestering` (revisor
+   leser sporet); innboks-listingen bærer attesteringsstatus. Portal:
+   Til attestering-kort øverst i Bilag (kø + policyskjema) + kolonne i
+   innboksen. Flertrinns kjeder/beløpsmatriser bevisst utenfor v1;
+   `target_kind` gjør utvidelse til en migrasjon.
    **Next:** native importers (#19), EHF (#14), Maskinporten
-   (awaiting Skatteetaten scope grant, docs/gov.md), #41 budsjett,
-   #47 attestering.
+   (awaiting Skatteetaten scope grant, docs/gov.md), #41 budsjett.
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

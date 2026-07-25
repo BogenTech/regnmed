@@ -3,6 +3,7 @@
 
 pub mod anchor;
 pub mod asset;
+pub mod attestering;
 pub mod auth;
 pub mod bank;
 pub mod currency;
@@ -429,6 +430,19 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/inbox/{document_id}/avvis",
             axum::routing::post(innboks::avvis),
         )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/attester",
+            axum::routing::post(attestering::attester),
+        )
+        .route(
+            "/companies/{company_id}/inbox/{document_id}/attestering",
+            get(attestering::trail),
+        )
+        .route(
+            "/companies/{company_id}/attestering/policy",
+            get(attestering::get_policy).post(attestering::set_policy),
+        )
+        .route("/companies/{company_id}/members", get(attestering::members))
         .route(
             "/companies/{company_id}/period-lock",
             get(period::get_period_lock).put(period::set_period_lock),

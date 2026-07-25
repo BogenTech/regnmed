@@ -61,9 +61,10 @@ betalingslisten i stedet for et manuelt klikk; bankavstemmingen
 matcher utbetalingsbilaget mot kontoutskriften som ethvert annet
 bilag.
 
-Selvgodkjenning er tillatt i v1 — et enkeltpersonforetak må kunne
-gjøre alt. Attestering/four-eyes er egen sak (#47) og legger seg
-oppå denne flyten.
+Selvgodkjenning er tillatt som standard — et enkeltpersonforetak må
+kunne gjøre alt. Slår selskapet på attestering (docs/attestering.md,
+#47), kan innsenderen ikke lenger godkjenne sitt eget krav; regelen
+håndheves i `approve_expense`, ikke i portalen.
 
 ## Endpoints
 

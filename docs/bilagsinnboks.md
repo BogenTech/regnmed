@@ -29,6 +29,12 @@ stays `ny`, no voucher, no attachment. The integration test proves
 both directions, and that the attachment carries the exact uploaded
 bytes (same SHA-256).
 
+With attestering active ([attestering.md](attestering.md), #47) the
+same transaction first demands a governing `godkjent` decision on the
+document — and refuses when the bokfører is the person who attested
+it. The check lives inside the transaction, so it cannot be bypassed
+by calling the API directly.
+
 ## Endpoints
 
 | Endpoint | Access |
@@ -38,10 +44,12 @@ bytes (same SHA-256).
 | `GET /companies/{id}/inbox/{doc}/content` | any, hash-checked |
 | `POST /companies/{id}/inbox/{doc}/bokfor` (voucher draft) | admin/bokforing |
 | `POST /companies/{id}/inbox/{doc}/avvis` (`{note}`) | admin/bokforing |
+| `POST /companies/{id}/inbox/{doc}/attester` (`{godkjent, note?}`) | admin/bokforing |
+| `GET /companies/{id}/inbox/{doc}/attestering` | any (revisor reads) |
 
-Portal: the Bilag section opens with the inbox — upload, pending list
-with Bokfør (inline voucher form) and Avvis, and the recent decisions
-under it.
+Portal: the Bilag section opens with Til attestering (the queue and the
+policy form), then the inbox — upload, pending list with Bokfør
+(inline voucher form) and Avvis, and the recent decisions under it.
 
 ## Deliberately not yet
 

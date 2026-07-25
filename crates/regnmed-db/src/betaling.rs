@@ -99,6 +99,7 @@ pub async fn create_run(
     debitor_konto: Option<&str>,
     execution_date: NaiveDate,
     created_by: &str,
+    created_by_person: Uuid,
 ) -> Result<Uuid> {
     ensure!(!items.is_empty(), "betalingslisten er tom");
     let debitor = match debitor_konto {
@@ -123,14 +124,16 @@ pub async fn create_run(
     let mut tx = pool.begin().await?;
     let run_id = Uuid::now_v7();
     sqlx::query(
-        "insert into payment_run (id, company_id, debitor_konto, execution_date, created_by)
-         values ($1, $2, $3, $4, $5)",
+        "insert into payment_run (id, company_id, debitor_konto, execution_date,
+                                  created_by, created_by_person)
+         values ($1, $2, $3, $4, $5, $6)",
     )
     .bind(run_id)
     .bind(company_id)
     .bind(&debitor)
     .bind(execution_date)
     .bind(created_by)
+    .bind(created_by_person)
     .execute(&mut *tx)
     .await?;
     for (i, item) in items.iter().enumerate() {
@@ -191,17 +194,21 @@ pub async fn create_run(
 
 /// Approves the list for export: renders the pain.001 file, stores it
 /// with its SHA-256 and flips utkast → godkjent, in one transaction.
-/// The approver is recorded separately from the creator (four-eyes
-/// friendly; enforcement is #47 attestering).
+/// The approver is recorded separately from the creator; when the
+/// attestering policy is active (docs/attestering.md, #47) the
+/// approver MUST be a different person than the creator — four eyes on
+/// money out, enforced here inside the transaction.
 pub async fn approve_run(
     pool: &PgPool,
     company_id: Uuid,
     run_id: Uuid,
     approved_by: &str,
+    approved_by_person: Uuid,
 ) -> Result<[u8; 32]> {
     let mut tx = pool.begin().await?;
     let run = sqlx::query(
-        "select r.status, r.debitor_konto, r.execution_date, c.name as company_name
+        "select r.status, r.debitor_konto, r.execution_date, r.created_by_person,
+                c.name as company_name
          from payment_run r join company c on c.id = r.company_id
          where r.id = $1 and r.company_id = $2 for update of r",
     )
@@ -212,6 +219,22 @@ pub async fn approve_run(
     .context("no such payment run")?;
     let status: String = run.get("status");
     ensure!(status == "utkast", "kjøringen er {status}");
+
+    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+        && policy.aktiv
+    {
+        let creator: Option<Uuid> = run.get("created_by_person");
+        match creator {
+            None => bail!(
+                "kjøringen er opprettet uten registrert person og kan ikke godkjennes \
+                 under aktiv attestering — lag betalingslisten på nytt"
+            ),
+            Some(person) if person == approved_by_person => bail!(
+                "betalingslisten må godkjennes av en annen enn den som opprettet den (fire øyne)"
+            ),
+            Some(_) => {}
+        }
+    }
 
     let items = run_items(&mut tx, run_id).await?;
     ensure!(!items.is_empty(), "kjøringen har ingen linjer");

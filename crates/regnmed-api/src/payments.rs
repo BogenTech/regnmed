@@ -111,6 +111,7 @@ pub async fn create_run(
         request.debitor_konto.as_deref(),
         execution_date,
         created_by,
+        person.person_id,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -145,9 +146,15 @@ pub async fn approve(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
     let approved_by = person.name.as_deref().unwrap_or(&person.sub);
-    let digest = regnmed_db::approve_run(&state.pool, company_id, run_id, approved_by)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let digest = regnmed_db::approve_run(
+        &state.pool,
+        company_id,
+        run_id,
+        approved_by,
+        person.person_id,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "status": "godkjent",
         "file_sha256": hex::encode(digest),

@@ -24,6 +24,7 @@ CLAUDE.md).
 | [purring.md](purring.md) | Betalingsoppfølging: aldersfordeling, purregebyr/forsinkelsesrente som bilag, inkassovarsel |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |
+| [attestering.md](attestering.md) | Godkjenningsflyt før bokføring og betaling: valgfri policy, insert-only beslutningsspor, fire øyne håndhevet i transaksjonen |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |

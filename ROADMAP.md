@@ -183,7 +183,11 @@ M7 (#37–#48) for new ground:
   innsendt→godkjent/avvist→utbetalt, km × statens sats fra
   satsregisteret m/ trekkpliktig del som tydelig varsel, mva-splitt
   ved godkjenning, utbetaling mot mellomregning; docs/utlegg.md),
-  attestering/four-eyes (#47).
+  ✅ attestering/four-eyes (#47 — valgfri datert policy m/
+  beløpsgrense og utpekt attestant, insert-only beslutningsspor der
+  nyeste beslutning gjelder, bokføring/betalingsgodkjenning/
+  utleggsgodkjenning nektet for samme person — håndhevet inne i
+  transaksjonene, ikke i portalen; docs/attestering.md).
 - Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn
   (#35) — M5.
 - Innsikt: ✅ nøkkeltall/likviditet (#36 — resultat hittil mot samme

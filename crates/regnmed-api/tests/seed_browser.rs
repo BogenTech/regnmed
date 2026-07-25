@@ -133,6 +133,23 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
+    // Inbox documents so the attestering queue (#47) has something to
+    // decide in the browser.
+    for (filename, body) in [
+        ("stort-innkjop.pdf", "kvittering: serverutstyr 40 000"),
+        ("smatt-innkjop.pdf", "kvittering: kontorrekvisita 450"),
+    ] {
+        regnmed_db::upload_inbox_document(
+            &state.pool,
+            company,
+            filename,
+            "application/pdf",
+            body.as_bytes(),
+            "Demo Bruker",
+        )
+        .await
+        .unwrap();
+    }
     std::fs::write(
         format!("{out_dir}/jwks.json"),
         serde_json::to_string(&idp.jwks).unwrap(),
