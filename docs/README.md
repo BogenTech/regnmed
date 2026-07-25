@@ -25,6 +25,7 @@ CLAUDE.md).
 | [budsjett.md](budsjett.md) | Budsjett og avviksrapport: arbeidsdokument til det fastsettes, versjoner en rapport kan navngi |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |
+| [epost-inn.md](epost-inn.md) | E-post-inn til innboksen: adressen som kapabilitet, ukjent avsender i karantene, én mail-rail |
 | [bilagstolkning.md](bilagstolkning.md) | Forslag fra dokumentets egen tekst: PDF-tekstlag, kontrollsiffer-heuristikk, kontoforslag fra historikken — aldri automatisk bokføring |
 | [attestering.md](attestering.md) | Godkjenningsflyt før bokføring og betaling: valgfri policy, insert-only beslutningsspor, fire øyne håndhevet i transaksjonen |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |

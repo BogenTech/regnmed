@@ -10,11 +10,13 @@ pub mod budsjett;
 pub mod currency;
 pub mod dimension;
 pub mod engagement;
+pub mod epost;
 pub mod expenses;
 pub mod innboks;
 pub mod invoice;
 pub mod invoice_template;
 pub mod mailq;
+pub mod mailq_in;
 pub mod marketplace;
 pub mod migrering;
 pub mod ocr;
@@ -451,6 +453,31 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/inbox",
             get(innboks::list).post(innboks::upload),
+        )
+        .route(
+            "/companies/{company_id}/inbox/settings",
+            get(epost::settings),
+        )
+        .route(
+            "/companies/{company_id}/inbox/settings/address",
+            axum::routing::post(epost::rotate_address),
+        )
+        .route(
+            "/companies/{company_id}/inbox/settings/senders",
+            axum::routing::post(epost::add_sender),
+        )
+        .route(
+            "/companies/{company_id}/inbox/settings/senders/{sender_id}",
+            axum::routing::delete(epost::remove_sender),
+        )
+        .route("/companies/{company_id}/inbox/mail", get(epost::list_mail))
+        .route(
+            "/companies/{company_id}/inbox/mail/{mail_id}/release",
+            axum::routing::post(epost::release),
+        )
+        .route(
+            "/companies/{company_id}/inbox/mail/{mail_id}/reject",
+            axum::routing::post(epost::reject),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/content",

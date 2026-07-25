@@ -2441,12 +2441,16 @@
       api("/companies/" + id + "/dimensions").catch(function () { return { dimensions: [] }; }),
       api("/companies/" + id + "/attestering/policy").catch(function () { return { policy: null }; }),
       api("/companies/" + id + "/members").catch(function () { return { members: [] }; }),
+      api("/companies/" + id + "/inbox/settings").catch(function () { return null; }),
+      api("/companies/" + id + "/inbox/mail").catch(function () { return { mail: [] }; }),
     ]);
     var vouchers = results[0].vouchers;
     var inbox = results[1].documents;
     var dims = results[2].dimensions;
     var policy = results[3].policy;
     var members = results[4].members;
+    var mailSettings = results[5];
+    var mailLog = results[6].mail;
     var attesteringOn = !!(policy && policy.aktiv);
     var open = inbox.filter(function (d) { return d.status === "ny"; });
     var decided = inbox.filter(function (d) { return d.status !== "ny"; });
@@ -2484,6 +2488,55 @@
           "<tbody>" + inboxRows + "</tbody></table>"
         : '<p class="text-sm opacity-70">Ingen dokumenter venter.</p>') +
       '<div id="bokfor-form" class="mt-3"></div>' + decidedRows);
+
+    // E-post-inn (#35): adressen, avsenderlisten og karantenen.
+    var epostKort = !mailSettings ? "" : (function () {
+      var karantene = mailLog.filter(function (m) { return m.status === "karantene"; });
+      var karantenerader = karantene.map(function (m) {
+        return "<tr><td>" + esc(m.fra) + "</td><td>" + esc(m.emne || "") + "</td><td>" +
+          m.antall_vedlegg + "</td><td>" + esc(m.mottatt.slice(0, 16).replace("T", " ")) + "</td><td>" +
+          '<button class="btn btn-xs btn-success" data-mail-slipp="' + m.mail_id + '">Slipp inn</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-mail-avvis="' + m.mail_id + '">Avvis</button></td></tr>';
+      }).join("");
+      var loggrader = mailLog.slice(0, 8).map(function (m) {
+        var badge = { mottatt: "badge-success", karantene: "badge-warning", avvist: "badge-ghost" }[m.status];
+        return '<div class="text-xs opacity-70 py-0.5"><span class="badge badge-xs ' + badge + '">' +
+          esc(m.status) + "</span> " + esc(m.fra) + " — " + esc(m.emne || "(uten emne)") +
+          " (" + m.antall_vedlegg + " vedlegg)" + (m.note ? " · " + esc(m.note) : "") + "</div>";
+      }).join("");
+      var avsenderrader = mailSettings.avsendere.map(function (a) {
+        return '<span class="badge badge-outline gap-1">' + esc(a.sender) +
+          '<button class="btn btn-xs btn-ghost px-1" data-mail-fjern="' + a.id + '">×</button></span>';
+      }).join(" ");
+      return card("E-post-inn" +
+        (karantene.length ? ' <span class="badge badge-warning badge-sm">' + karantene.length +
+          " i karantene</span>" : ""),
+        '<p class="text-sm opacity-70 mb-2">Leverandører kan sende bilag rett til innboksen. ' +
+        "Vedlegg fra en avsender på listen blir dokumenter med én gang; alle andre havner i " +
+        "karantene til noen bestemmer — aldri stille importert, aldri stille forkastet.</p>" +
+        (mailSettings.adresse
+          ? '<div class="flex gap-2 items-center flex-wrap mb-2">' +
+            '<code class="text-sm bg-base-200 px-2 py-1 rounded">' + esc(mailSettings.adresse) + "</code>" +
+            '<button id="mail-roter" class="btn btn-xs btn-ghost">Ny adresse</button></div>'
+          : mailSettings.local_part
+            ? '<p class="text-sm mb-2"><code>' + esc(mailSettings.local_part) +
+              "</code> — mottaksdomenet er ikke satt opp ennå (MAIL_IN_DOMAIN).</p>"
+            : '<button id="mail-opprett" class="btn btn-sm btn-outline mb-2">Opprett mottaksadresse</button>') +
+        (mailSettings.aktiv ? "" :
+          '<p class="text-xs opacity-60 mb-2">Mail-railen er ikke konfigurert i dette miljøet — ' +
+          "adressen tar ikke imot noe før den er det.</p>") +
+        (karantenerader
+          ? "<h3 class='font-semibold text-sm mt-3 mb-1'>Venter på avgjørelse</h3>" +
+            '<table class="table table-xs mb-2"><thead><tr><th>Fra</th><th>Emne</th><th>Vedlegg</th>' +
+            "<th>Mottatt</th><th></th></tr></thead><tbody>" + karantenerader + "</tbody></table>"
+          : "") +
+        '<div class="flex gap-2 items-center flex-wrap mt-2">' +
+        '<input id="mail-avsender" class="input input-sm input-bordered w-56" ' +
+        'placeholder="post@leverandor.no eller @leverandor.no">' +
+        '<button id="mail-legg-til" class="btn btn-sm btn-ghost">+ avsender</button>' +
+        (avsenderrader ? '<div class="flex gap-1 flex-wrap">' + avsenderrader + "</div>" : "") +
+        "</div>" + (loggrader ? '<div class="mt-3">' + loggrader + "</div>" : ""));
+    })();
 
     // Til attestering: bilag som venter på en godkjenning (#47).
     var venter = open.filter(function (d) { return d.attestering !== "godkjent"; });
@@ -2549,7 +2602,7 @@
       '<input id="dim-code" class="input input-sm input-bordered w-24" placeholder="Kode">' +
       '<input id="dim-name" class="input input-sm input-bordered" placeholder="Navn">' +
       '<button id="dim-create" class="btn btn-sm">Opprett</button></div>');
-    shell(id, "bilag", attesteringCard + inboxCard + card("Bilag",
+    shell(id, "bilag", attesteringCard + inboxCard + epostKort + card("Bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th><th></th></tr></thead>' +
       "<tbody>" + rows + "</tbody></table><div id='attachment-list' class='mt-4'></div>") + dimCard);
     document.getElementById("dim-create").onclick = async function () {
@@ -2611,6 +2664,58 @@
         renderBilag(id);
       } catch (error) { toast(error.message, false); }
     };
+    var mailOpprett = document.getElementById("mail-opprett") || document.getElementById("mail-roter");
+    if (mailOpprett) mailOpprett.onclick = async function () {
+      if (mailOpprett.id === "mail-roter" &&
+          !confirm("Ny adresse gjør den gamle ubrukelig med én gang. Fortsette?")) return;
+      try {
+        var r = await post("/companies/" + id + "/inbox/settings/address", {});
+        toast("Mottaksadresse: " + (r.adresse || r.local_part), true);
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    var mailLeggTil = document.getElementById("mail-legg-til");
+    if (mailLeggTil) mailLeggTil.onclick = async function () {
+      var sender = document.getElementById("mail-avsender").value.trim();
+      if (!sender) return;
+      try {
+        await post("/companies/" + id + "/inbox/settings/senders", { sender: sender });
+        toast("Avsender lagt til", true);
+        renderBilag(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-mail-fjern]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/inbox/settings/senders/" + button.dataset.mailFjern,
+            { method: "DELETE" });
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-mail-slipp]").forEach(function (button) {
+      button.onclick = async function () {
+        var tillat = confirm("Slippe inn? OK legger også avsenderen til på listen.");
+        try {
+          var r = await post("/companies/" + id + "/inbox/mail/" + button.dataset.mailSlipp + "/release",
+            { tillat_avsender: tillat });
+          toast(r.dokumenter + " dokument(er) lagt i innboksen", true);
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-mail-avvis]").forEach(function (button) {
+      button.onclick = async function () {
+        var note = prompt("Hvorfor avvises e-posten?");
+        if (!note) return;
+        try {
+          await post("/companies/" + id + "/inbox/mail/" + button.dataset.mailAvvis + "/reject",
+            { note: note });
+          toast("Avvist — e-posten står igjen i loggen", true);
+          renderBilag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
     var inboxUpload = document.getElementById("inbox-upload");
     if (inboxUpload) inboxUpload.onchange = async function () {
       var file = inboxUpload.files[0];

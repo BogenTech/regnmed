@@ -621,9 +621,28 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    innboksdokumenter + tydelig «Forslag»-banner m/ kilde og
    begrunnelser over skjemaet. OCR = valgfri sidecar senere, samme
    endepunkt.
+44. ✅ E-post-inn (docs/epost-inn.md, closed #35 — **M5-sporet tomt**):
+   plattformen har ÉN mail-rail — utgående `regnid.mail.send`,
+   innkommende `regnid.mail.received` (wire-kontrakt speilet i
+   `regnmed-api::mailq_in`; MX-en bor i regnid, aldri vendored). Uten
+   NATS_URL finnes ingen konsument og e-post-inn er av; portalen sier
+   det. Migration 0032: `company_mail_inbox` (adressen er en
+   KAPABILITET — `bilag-<navn>-<tilfeldig>`, lesbar men ikke gjettbar,
+   roterbar, og en tilbakekalt adresse kan ikke gjenoppstå),
+   `mail_sender_allow` (full adresse eller helt domene — ingen
+   jokertegn), `inbox_mail` insert-only logg m/ brødtekst + rå melding,
+   `inbox_mail_attachment` (dekodet én gang, SHA-256 — derfor kan
+   karantene slippes gjennom uten at avsender sender på nytt),
+   `inbox_document.inbox_mail_id` (0015-vakten utvidet: grants OG
+   trigger). UKJENT AVSENDER → KARANTENE, aldri stille import (hvem som
+   helst kunne fylt innboksen) og aldri stille forkasting (et bilag
+   noen sendte forsvinner). Dedup på Message-Id; `uploaded_by` =
+   avsenderadressen. `/companies/{id}/inbox/settings…` + `…/inbox/mail`
+   + release/reject (admin); portal: E-post-inn-kort i Bilag.
+   Integrasjonstesten kjører mot ekte nats-server.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md), EHF-transport via aksesspunkt, API-tier per
-   leverandør (#19-oppfølger), #35 e-post-inn.
+   leverandør (#19-oppfølger), OCR-sidecar (#34-oppfølger).
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

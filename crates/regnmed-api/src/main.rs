@@ -20,6 +20,19 @@ async fn main() -> Result<()> {
         Some(_) => println!("mail rail connected (NATS)"),
         None => println!("mail rail not configured (NATS_URL unset) — utsendelse disabled"),
     }
+    // E-post-inn (docs/epost-inn.md, #35) rides the same rail: with a
+    // mail queue configured we consume received mail into the innboks
+    // in the background; without one, reception simply does not exist.
+    if let Some(js) = mailq.clone() {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = regnmed_api::mailq_in::run(js, pool).await {
+                eprintln!("e-post-inn stoppet: {e:#}");
+            }
+        });
+        println!("e-post-inn lytter på {}", regnmed_api::mailq_in::SUBJECT);
+    }
+
     let app = router(AppState {
         pool,
         verifier,

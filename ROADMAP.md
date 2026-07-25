@@ -206,7 +206,11 @@ M7 (#37–#48) for new ground:
   allerede validerer, kontoforslag fra selskapets egen historikk, hvert
   felt med begrunnelse, skann uten tekstlag foreslår INGENTING; ingen
   automatisk bokføringsvei finnes; docs/bilagstolkning.md),
-  e-post-inn (#35) — M5.
+  ✅ e-post-inn (#35 — per selskap en uforutsigbar, roterbar
+  mottaksadresse på plattformens ENE mail-rail; vedlegg fra kjent
+  avsender blir dokumenter, ukjent avsender havner i karantene til en
+  admin avgjør, og ingenting forsvinner i stillhet;
+  docs/epost-inn.md) — M5.
 - Innsikt: ✅ nøkkeltall/likviditet (#36 — resultat hittil mot samme
   periode i fjor, månedskolonner som rene CSS-søyler, likviditetsbilde
   m/ beregnet mva-netto, kommende frister etter terminordningen;

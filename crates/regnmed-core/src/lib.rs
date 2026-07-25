@@ -16,6 +16,7 @@ pub mod camt053;
 pub(crate) mod csvutil;
 pub mod ehf;
 pub mod ehf_import;
+pub mod epost;
 pub mod error;
 pub mod fakturapdf;
 pub mod hash;

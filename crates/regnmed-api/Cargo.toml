@@ -18,6 +18,7 @@ base64.workspace = true
 hex.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
+futures-util.workspace = true
 jsonwebtoken.workspace = true
 reqwest.workspace = true
 serde.workspace = true
