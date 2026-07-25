@@ -186,7 +186,10 @@ M7 (#37–#48) for new ground:
   attestering/four-eyes (#47).
 - Innboks-produktivitet: bilagstolkning som forslag (#34), e-post-inn
   (#35) — M5.
-- Innsikt: nøkkeltall/likviditet (#36), budsjett m/ fastsatte versjoner
+- Innsikt: ✅ nøkkeltall/likviditet (#36 — resultat hittil mot samme
+  periode i fjor, månedskolonner som rene CSS-søyler, likviditetsbilde
+  m/ beregnet mva-netto, kommende frister etter terminordningen;
+  docs/rapporter.md), budsjett m/ fastsatte versjoner
   (#41) — pure queries as always.
 - Struktur: ✅ dimensjoner prosjekt/avdeling — hash format v3 (#37 —
   registry insert/rename/open-close only, koder hash-dekket, avsluttet

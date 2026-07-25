@@ -64,3 +64,30 @@ same saldo queries.
   bokføringsspesifikasjon in posting order with every voucher balancing;
   resultat/balanse reconcile to the øre; 404 for outsiders, 400 for an
   inverted period.
+
+## Nøkkeltall og likviditet (#36)
+
+`GET /companies/{id}/reports/nokkeltall?year=` — oversiktens svar på
+«hvordan går det», utelukkende fra tall som allerede finnes, som rene
+SUM-spørringer (aldri lagret tilstand):
+
+- **Resultat hittil i år** (resultatkontoene 3xxx–8xxx,
+  presentasjonsfortegn) mot **samme periode i fjor** — fjoråret måles
+  til samme dato, så sammenlikningen er ærlig midt i året.
+- **Månedskolonner**: resultat per måned for året — portalen tegner
+  dem som rene CSS-søyler (ingen grafbibliotek; frugality).
+- **Likviditetsbildet**: bank og kontanter (19xx-saldoene) +
+  utestående kundefordringer − leverandørgjeld − beregnet mva-netto
+  for inneværende periode = «disponibelt om alt gjøres opp».
+- **Kommende frister**: de neste mva-fristene etter selskapets
+  terminordning (docs/mva.md) — fristbevissthet uten varsler, som
+  første steg.
+
+Året styrer «hittil»-tallene og månedskolonnene; likviditet og
+frister er alltid nå. Prognoser og budsjettavvik hører til
+budsjett-saken (#41), ikke her.
+
+Testet i `crates/regnmed-api/tests/nokkeltall.rs`: resultat mot
+håndregnede tall (fjorårets poster ETTER cutoff teller ikke),
+månedskolonner med kostnadsmåned, likviditetsbildet fra reskontro og
+bank, og at fristene aldri ligger i fortiden.

@@ -267,3 +267,133 @@ pub async fn bokforingsspesifikasjon(
     }
     Ok(vouchers)
 }
+
+/// Nøkkeltall for oversikten (docs/rapporter.md, #36): resultat hittil
+/// i år mot samme periode i fjor, resultat per måned, og
+/// likviditetsbildet — alt rene SUM-spørringer over hovedboken og
+/// reskontroen, aldri lagret tilstand.
+#[derive(Debug)]
+pub struct Nokkeltall {
+    pub year: i32,
+    /// Presentasjonsfortegn: overskudd positivt.
+    pub resultat_hittil_ore: i64,
+    pub resultat_fjor_ore: i64,
+    /// Index 0 = januar; presentasjonsfortegn.
+    pub maaneder: [i64; 12],
+    /// Bank og kontanter (19xx-kontoene), nå.
+    pub bank_ore: i64,
+    /// Utestående kundefordringer (kundereskontroens saldo), nå.
+    pub kundefordringer_ore: i64,
+    /// Skyldig til leverandører (positivt beløp), nå.
+    pub leverandorgjeld_ore: i64,
+}
+
+pub async fn nokkeltall(
+    pool: &sqlx::PgPool,
+    company_id: uuid::Uuid,
+    year: i32,
+    today: chrono::NaiveDate,
+) -> anyhow::Result<Nokkeltall> {
+    use chrono::Datelike;
+    // Resultatkontoene er 3xxx–8xxx; presentasjonen snur fortegnet
+    // (inntekter er kredit i hovedboken).
+    let month_rows = sqlx::query(
+        "select extract(month from v.voucher_date)::int as maned,
+                coalesce(-sum(e.amount_ore), 0)::bigint as resultat
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         join account a on a.id = e.account_id
+         where v.company_id = $1 and a.number >= '3000'
+           and v.voucher_date between $2 and $3
+         group by 1",
+    )
+    .bind(company_id)
+    .bind(chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap())
+    .bind(chrono::NaiveDate::from_ymd_opt(year, 12, 31).unwrap())
+    .fetch_all(pool)
+    .await?;
+    let mut maaneder = [0i64; 12];
+    for row in &month_rows {
+        let maned: i32 = row.get("maned");
+        if (1..=12).contains(&maned) {
+            maaneder[(maned - 1) as usize] = row.get("resultat");
+        }
+    }
+
+    // "Hittil": til og med dagens dato i rapportåret; fjoråret måles
+    // til samme dato året før (29. februar faller tilbake til 28.).
+    let cutoff = if today.year() == year {
+        today
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, 12, 31).unwrap()
+    };
+    let fjor_cutoff = cutoff
+        .with_year(cutoff.year() - 1)
+        .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(cutoff.year() - 1, 2, 28).unwrap());
+    let resultat_between = |from: chrono::NaiveDate, to: chrono::NaiveDate| {
+        let pool = pool.clone();
+        async move {
+            let sum: i64 = sqlx::query_scalar(
+                "select coalesce(-sum(e.amount_ore), 0)::bigint
+                 from entry e
+                 join voucher v on v.id = e.voucher_id
+                 join account a on a.id = e.account_id
+                 where v.company_id = $1 and a.number >= '3000'
+                   and v.voucher_date between $2 and $3",
+            )
+            .bind(company_id)
+            .bind(from)
+            .bind(to)
+            .fetch_one(&pool)
+            .await?;
+            anyhow::Ok(sum)
+        }
+    };
+    let resultat_hittil =
+        resultat_between(chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap(), cutoff).await?;
+    let resultat_fjor = resultat_between(
+        chrono::NaiveDate::from_ymd_opt(year - 1, 1, 1).unwrap(),
+        fjor_cutoff,
+    )
+    .await?;
+
+    let bank: i64 = sqlx::query_scalar(
+        "select coalesce(sum(e.amount_ore), 0)::bigint
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         join account a on a.id = e.account_id
+         where v.company_id = $1 and a.number like '19%'",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    let party_saldo = |kind: &'static str| {
+        let pool = pool.clone();
+        async move {
+            let sum: i64 = sqlx::query_scalar(
+                "select coalesce(sum(e.amount_ore), 0)::bigint
+                 from entry e
+                 join party p on p.id = e.party_id
+                 join voucher v on v.id = e.voucher_id
+                 where v.company_id = $1 and p.kind = $2",
+            )
+            .bind(company_id)
+            .bind(kind)
+            .fetch_one(&pool)
+            .await?;
+            anyhow::Ok(sum)
+        }
+    };
+    let kundefordringer = party_saldo("kunde").await?;
+    let leverandorgjeld = -party_saldo("leverandor").await?;
+
+    Ok(Nokkeltall {
+        year,
+        resultat_hittil_ore: resultat_hittil,
+        resultat_fjor_ore: resultat_fjor,
+        maaneder,
+        bank_ore: bank,
+        kundefordringer_ore: kundefordringer,
+        leverandorgjeld_ore: leverandorgjeld,
+    })
+}

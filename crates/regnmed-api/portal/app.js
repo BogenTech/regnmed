@@ -278,6 +278,7 @@
       api("/companies/" + id + "/vouchers"),
       api("/companies/" + id + "/invoices/overdue").catch(function () { return null; }),
       api("/companies/" + id + "/currency/rates").catch(function () { return { rates: [] }; }),
+      api("/companies/" + id + "/reports/nokkeltall").catch(function () { return null; }),
     ]);
     var open = results[0].invoices;
     var mva = results[1];
@@ -285,6 +286,7 @@
     var vouchers = results[3].vouchers;
     var overdue = results[4];
     var rates = results[5].rates;
+    var tall = results[6];
     var overdueSum = overdue
       ? overdue.invoices.reduce(function (sum, i) { return sum + i.remaining_ore; }, 0)
       : 0;
@@ -354,6 +356,38 @@
           (f || "(selskapsform)") + "</option>";
       }).join("") + "</select></div>" +
       '<button id="set-save" class="btn btn-sm">Lagre</button></div>');
+    var nokkeltallCard = "";
+    if (tall) {
+      var maxAbs = Math.max.apply(null, tall.maaneder.map(Math.abs).concat([1]));
+      var mndNavn = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
+      var bars = tall.maaneder.map(function (v, i) {
+        var h = Math.round(Math.abs(v) / maxAbs * 48);
+        var bar = '<div style="height:' + (h || 1) + 'px" class="w-4 rounded-t ' +
+          (v >= 0 ? "bg-primary" : "bg-error") + '" title="' + mndNavn[i] + ": " + kr(v) + '"></div>';
+        return '<div class="flex flex-col items-center justify-end gap-1" style="height:64px">' + bar +
+          '<span class="text-[10px] opacity-60">' + mndNavn[i] + "</span></div>";
+      }).join("");
+      var likv = tall.likviditet;
+      var fristTekst = tall.frister.length
+        ? tall.frister.map(function (f) { return esc(f.label) + " — " + esc(f.frist); }).join(" · ")
+        : "ingen kommende frister";
+      var diff = tall.resultat_hittil_ore - tall.resultat_fjor_ore;
+      nokkeltallCard = card("Nøkkeltall " + tall.year,
+        '<div class="stats bg-base-200 w-full mb-3"><div class="stat">' +
+        '<div class="stat-title">Resultat hittil i år</div>' +
+        '<div class="stat-value text-xl">' + kr(tall.resultat_hittil_ore) + "</div>" +
+        '<div class="stat-desc">' + (diff >= 0 ? "+" : "−") + kr(Math.abs(diff)) + " mot i fjor (" +
+        kr(tall.resultat_fjor_ore) + ")</div></div>" +
+        '<div class="stat"><div class="stat-title">Disponibelt om alt gjøres opp</div>' +
+        '<div class="stat-value text-xl' + (likv.disponibelt_ore < 0 ? " text-error" : "") + '">' +
+        kr(likv.disponibelt_ore) + "</div>" +
+        '<div class="stat-desc">bank ' + kr(likv.bank_ore) + " + kunder " + kr(likv.kundefordringer_ore) +
+        " − leverandører " + kr(likv.leverandorgjeld_ore) + " − mva " + kr(likv.mva_netto_ore) + "</div></div>" +
+        '<div class="stat"><div class="stat-title">Kommende frister</div>' +
+        '<div class="stat-value text-base">' + fristTekst + "</div>" +
+        '<div class="stat-desc">mva-melding etter selskapets terminordning</div></div></div>' +
+        '<div class="flex gap-2 items-end">' + bars + "</div>");
+    }
     var rateRows = rates.map(function (r) {
       return "<tr><td class='font-mono'>" + esc(r.valuta) + "</td><td class='text-right font-mono'>" +
         esc(r.kurs) + "</td><td>" + esc(r.dato) + "</td><td class='text-xs opacity-70'>" + esc(r.kilde) + "</td></tr>";
@@ -371,7 +405,7 @@
         ? '<table class="table table-sm"><thead><tr><th>Valuta</th><th class="text-right">Kurs</th>' +
           "<th>Dato</th><th>Kilde</th></tr></thead><tbody>" + rateRows + "</tbody></table>"
         : '<p class="opacity-70 text-sm">Ingen kurser ennå.</p>'));
-    shell(id, "oversikt", stats + importCard + card("Siste bilag",
+    shell(id, "oversikt", stats + nokkeltallCard + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
       "<tbody>" + recent + "</tbody></table>") + kurserCard + settingsCard + anchorCard);
     var ratesFetch = document.getElementById("rates-fetch");

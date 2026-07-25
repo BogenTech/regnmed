@@ -546,3 +546,87 @@ pub async fn set_terminordning(
         json!({ "ordning": ordning.as_str(), "valid_from": request.valid_from.to_string() }),
     ))
 }
+
+#[derive(Deserialize, Default)]
+pub struct NokkeltallQuery {
+    /// Månedskolonnene og «hittil»-tallene gjelder dette året; default
+    /// inneværende. Likviditet og frister er alltid NÅ.
+    year: Option<i32>,
+}
+
+/// Nøkkeltall for oversikten (docs/rapporter.md, #36): rene spørringer
+/// over tall vi allerede har — resultat, likviditetsbilde og kommende
+/// mva-frister etter selskapets terminordning.
+pub async fn nokkeltall(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<NokkeltallQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id).await?;
+    let today: NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let year = query.year.unwrap_or(chrono::Datelike::year(&today));
+    let tall = regnmed_db::nokkeltall(&state.pool, company_id, year, today).await?;
+
+    // Skyldig mva for inneværende periode (beregnet netto så langt) og
+    // de neste fristene, etter selskapets ordning.
+    let ordning = regnmed_db::terminordning_on(&state.pool, company_id, today).await?;
+    let naa = ordning.periode_of(today);
+    let spes = regnmed_db::mva_spesifikasjon(
+        &state.pool,
+        company_id,
+        ordning.start(naa),
+        ordning.end(naa).min(today),
+    )
+    .await?;
+    let utgaende: i64 = spes
+        .iter()
+        .filter(|l| regnmed_core::mva::direction(&l.code) == regnmed_core::mva::Direction::Utgaende)
+        .map(|l| -l.avgift_ore)
+        .sum();
+    let inngaende: i64 = spes
+        .iter()
+        .filter(|l| {
+            regnmed_core::mva::direction(&l.code) == regnmed_core::mva::Direction::Inngaende
+        })
+        .map(|l| l.avgift_ore)
+        .sum();
+    let mva_netto = utgaende - inngaende;
+
+    let this_year = chrono::Datelike::year(&today);
+    let mut frister = Vec::new();
+    for y in [this_year, this_year + 1] {
+        for n in 1..=ordning.antall_perioder() {
+            if let Some(periode) = ordning.ny_periode(y, n) {
+                let frist = ordning.frist(periode);
+                if frist >= today && frister.len() < 2 {
+                    frister.push(serde_json::json!({
+                        "type": "mva",
+                        "label": ordning.label(periode),
+                        "frist": frist.to_string(),
+                    }));
+                }
+            }
+        }
+    }
+
+    let disponibelt =
+        tall.bank_ore + tall.kundefordringer_ore - tall.leverandorgjeld_ore - mva_netto.max(0);
+    Ok(Json(json!({
+        "year": tall.year,
+        "resultat_hittil_ore": tall.resultat_hittil_ore,
+        "resultat_fjor_ore": tall.resultat_fjor_ore,
+        "maaneder": tall.maaneder,
+        "likviditet": {
+            "bank_ore": tall.bank_ore,
+            "kundefordringer_ore": tall.kundefordringer_ore,
+            "leverandorgjeld_ore": tall.leverandorgjeld_ore,
+            "mva_netto_ore": mva_netto,
+            "disponibelt_ore": disponibelt,
+        },
+        "frister": frister,
+    })))
+}

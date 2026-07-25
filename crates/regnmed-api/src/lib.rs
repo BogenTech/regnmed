@@ -147,6 +147,10 @@ pub fn router(state: AppState) -> Router {
             get(reports::revisjon),
         )
         .route(
+            "/companies/{company_id}/reports/nokkeltall",
+            get(reports::nokkeltall),
+        )
+        .route(
             "/companies/{company_id}/bank/statements",
             axum::routing::post(bank::import_statement),
         )

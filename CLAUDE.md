@@ -515,9 +515,22 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    engine. v1 = domestic NOK/BBAN; IBAN/BIC + filutveksling/PSD2
    later. `/companies/{id}/payments…` endpoints; portal
    Betalingsliste card under Bank + kontonummer on party page.
-   **Next:** native importers (#19), EHF (#14), #36 nøkkeltall (mva-
-   frister now available), Maskinporten (awaiting Skatteetaten scope
-   grant, docs/gov.md).
+38. ✅ Nøkkeltall og likviditet (docs/rapporter.md, closed #36): one
+   endpoint `GET …/reports/nokkeltall?year=` — pure SUM queries only:
+   resultat hittil i år vs SAMME DATO i fjor (3xxx–8xxx,
+   presentasjonsfortegn), månedskolonner, likviditetsbilde (19xx +
+   kundereskontro − leverandørreskontro − beregnet mva-netto for
+   inneværende periode = disponibelt), and the next two mva-frister
+   from the company's Terminordning. Year steers hittil/månedene;
+   likviditet + frister are always NOW. Portal: Nøkkeltall card on
+   Oversikt with CSS-only month bars (no chart library — frugality).
+   Prognoser/budsjettavvik deliberately left to #41.
+   **Next:** native importers (#19), EHF (#14), Maskinporten
+   (awaiting Skatteetaten scope grant, docs/gov.md), #41 budsjett,
+   #47 attestering.
+   NOTE: run `cargo fmt --all` before every commit — CI gates on
+   `cargo fmt --all --check` (learned 2026-07-25 after three red
+   runs).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
