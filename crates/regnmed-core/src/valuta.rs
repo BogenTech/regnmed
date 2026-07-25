@@ -46,8 +46,16 @@ pub fn parse_kurs(s: &str) -> Option<i64> {
     if !frac.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let whole: i64 = if whole.is_empty() { 0 } else { whole.parse().ok()? };
-    let mut frac_val: i64 = if frac.is_empty() { 0 } else { frac.parse().ok()? };
+    let whole: i64 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().ok()?
+    };
+    let mut frac_val: i64 = if frac.is_empty() {
+        0
+    } else {
+        frac.parse().ok()?
+    };
     for _ in frac.len()..6 {
         frac_val *= 10;
     }

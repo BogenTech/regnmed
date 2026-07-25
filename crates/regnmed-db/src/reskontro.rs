@@ -438,7 +438,8 @@ pub async fn match_valuta(
             ],
         };
         draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let posted = crate::ledger::post_voucher_in(&mut tx, company_id, &draft, matched_by).await?;
+        let posted =
+            crate::ledger::post_voucher_in(&mut tx, company_id, &draft, matched_by).await?;
         let agio_entry: Uuid = sqlx::query_scalar(
             "select id from entry where voucher_id = $1 and party_id is not null",
         )
@@ -540,7 +541,11 @@ pub async fn kursregulering(
         prosjekt: None,
         valuta: None,
     };
-    let resultatkonto = if diff_total > 0 { gevinstkonto } else { tapskonto };
+    let resultatkonto = if diff_total > 0 {
+        gevinstkonto
+    } else {
+        tapskonto
+    };
     let mut tx = pool.begin().await?;
     let regulering = VoucherDraft {
         journal_code: "GL".into(),
@@ -553,7 +558,8 @@ pub async fn kursregulering(
         ],
     };
     regulering.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let posted = crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
+    let posted =
+        crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
     let neste_dag = per_dato
         .succ_opt()
         .context("per_dato has no following day")?;
@@ -568,7 +574,8 @@ pub async fn kursregulering(
         ],
     };
     reversal.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let reversed = crate::ledger::post_voucher_in(&mut tx, company_id, &reversal, created_by).await?;
+    let reversed =
+        crate::ledger::post_voucher_in(&mut tx, company_id, &reversal, created_by).await?;
     tx.commit().await?;
     Ok(Some((
         diff_total,

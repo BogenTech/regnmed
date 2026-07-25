@@ -314,13 +314,28 @@ mod tests {
         let to = Terminordning::ToManeder;
         assert_eq!(to.antall_perioder(), 6);
         assert_eq!(to.periode_of(date(2026, 7, 25)).number, 4);
-        assert_eq!(to.frist(Termin { year: 2026, number: 1 }), date(2026, 4, 10));
         assert_eq!(
-            to.frist(Termin { year: 2026, number: 3 }),
+            to.frist(Termin {
+                year: 2026,
+                number: 1
+            }),
+            date(2026, 4, 10)
+        );
+        assert_eq!(
+            to.frist(Termin {
+                year: 2026,
+                number: 3
+            }),
             date(2026, 8, 31),
             "saerregelen for 3. termin"
         );
-        assert_eq!(to.frist(Termin { year: 2026, number: 6 }), date(2027, 2, 10));
+        assert_eq!(
+            to.frist(Termin {
+                year: 2026,
+                number: 6
+            }),
+            date(2027, 2, 10)
+        );
 
         let ar = Terminordning::Arlig;
         assert_eq!(ar.antall_perioder(), 1);
@@ -330,7 +345,10 @@ mod tests {
         assert_eq!(ar.end(periode), date(2026, 12, 31));
         assert_eq!(ar.frist(periode), date(2027, 3, 10));
         assert_eq!(ar.label(periode), "\u{c5}rstermin 2026");
-        assert!(ar.ny_periode(2026, 2).is_none(), "aarstermin har ingen 2. periode");
+        assert!(
+            ar.ny_periode(2026, 2).is_none(),
+            "aarstermin har ingen 2. periode"
+        );
 
         let pn = Terminordning::Primaernaering;
         assert_eq!(pn.frist(pn.periode_of(date(2026, 5, 1))), date(2027, 4, 10));

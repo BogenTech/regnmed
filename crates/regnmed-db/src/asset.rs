@@ -84,7 +84,10 @@ pub async fn create_asset(
         .bind(konto)
         .fetch_optional(pool)
         .await?;
-        ensure!(exists.is_some(), "no active account {konto} for this company");
+        ensure!(
+            exists.is_some(),
+            "no active account {konto} for this company"
+        );
     }
     if let Some(voucher_id) = draft.anskaffelse_voucher_id {
         let ok: Option<i32> =
@@ -107,9 +110,7 @@ pub async fn create_asset(
             grense / 100
         ));
     } else if draft.levetid_maneder < 36 {
-        warning = Some(
-            "levetid under 3 år — driftsmidlet kan kostnadsføres direkte".to_string(),
-        );
+        warning = Some("levetid under 3 år — driftsmidlet kan kostnadsføres direkte".to_string());
     }
 
     let id = Uuid::now_v7();
@@ -298,9 +299,7 @@ async fn depreciate_next(
     let nr = maned_nr(anskaffelsesdato, period);
     let voucher_date = month_end(period);
     // Due: month ended, plan not exhausted, asset still owned that month.
-    if voucher_date > through
-        || nr > levetid
-        || avhendet.is_some_and(|d| month_start(d) <= period)
+    if voucher_date > through || nr > levetid || avhendet.is_some_and(|d| month_start(d) <= period)
     {
         return Ok(None);
     }
@@ -405,9 +404,7 @@ pub async fn depreciate_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Dep
             .await?;
     let mut outcomes = Vec::new();
     for company_id in companies {
-        outcomes.extend(
-            depreciate_due(pool, company_id, through, "system (avskrivning)").await?,
-        );
+        outcomes.extend(depreciate_due(pool, company_id, through, "system (avskrivning)").await?);
     }
     Ok(outcomes)
 }
@@ -491,7 +488,12 @@ pub async fn dispose_asset(
             amount: Ore(-gevinst),
             vat_code: None,
             description: Some(
-                if gevinst > 0 { "Gevinst ved avgang" } else { "Tap ved avgang" }.into(),
+                if gevinst > 0 {
+                    "Gevinst ved avgang"
+                } else {
+                    "Tap ved avgang"
+                }
+                .into(),
             ),
             party_no: None,
             avdeling: None,

@@ -33,11 +33,7 @@ pub struct ProductDraft {
     pub lagerfort: bool,
 }
 
-pub async fn create_product(
-    pool: &PgPool,
-    company_id: Uuid,
-    draft: &ProductDraft,
-) -> Result<Uuid> {
+pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraft) -> Result<Uuid> {
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into product (id, company_id, nummer, navn, salgspris_ore, vat_code,
@@ -54,7 +50,12 @@ pub async fn create_product(
     .bind(draft.lagerfort)
     .execute(pool)
     .await
-    .with_context(|| format!("could not create product {} (duplicate nummer?)", draft.nummer))?;
+    .with_context(|| {
+        format!(
+            "could not create product {} (duplicate nummer?)",
+            draft.nummer
+        )
+    })?;
     Ok(id)
 }
 
@@ -273,14 +274,13 @@ pub async fn register_movement(
         matches!(kind, "kjop" | "justering"),
         "kind must be kjop or justering (salg comes from invoicing)"
     );
-    let product = sqlx::query(
-        "select id, lagerfort from product where company_id = $1 and nummer = $2",
-    )
-    .bind(company_id)
-    .bind(nummer)
-    .fetch_optional(pool)
-    .await?
-    .with_context(|| format!("no product {nummer}"))?;
+    let product =
+        sqlx::query("select id, lagerfort from product where company_id = $1 and nummer = $2")
+            .bind(company_id)
+            .bind(nummer)
+            .fetch_optional(pool)
+            .await?
+            .with_context(|| format!("no product {nummer}"))?;
     ensure!(
         product.get::<bool, _>("lagerfort"),
         "product {nummer} is not lagerført"

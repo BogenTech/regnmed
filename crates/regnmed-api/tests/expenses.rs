@@ -259,12 +259,10 @@ async fn expenses_flow() {
     assert_eq!(status, StatusCode::OK);
 
     // Illegal transition straight in the database: trigger says no.
-    let tamper = sqlx::query(
-        "update expense set status = 'utbetalt' where id = $1",
-    )
-    .bind(Uuid::parse_str(&privat_id).unwrap())
-    .execute(&state.pool)
-    .await;
+    let tamper = sqlx::query("update expense set status = 'utbetalt' where id = $1")
+        .bind(Uuid::parse_str(&privat_id).unwrap())
+        .execute(&state.pool)
+        .await;
     assert!(tamper.is_err(), "avvist → utbetalt is not a transition");
 
     // Utbetaling: mellomregning → bank, one-way; pay of innsendt fails.
@@ -277,7 +275,11 @@ async fn expenses_flow() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {paid}");
-    assert_eq!(saldo(&state, company, "2910").await, -636_00, "kjøringen står igjen");
+    assert_eq!(
+        saldo(&state, company, "2910").await,
+        -636_00,
+        "kjøringen står igjen"
+    );
     assert_eq!(saldo(&state, company, "1920").await, -625_00);
     let (status, _) = request(
         &state,

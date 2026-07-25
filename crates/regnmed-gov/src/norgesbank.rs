@@ -64,7 +64,10 @@ impl NorgesBankClient {
         if !response.status().is_success() {
             bail!("Norges Bank svarte {} på {url}", response.status());
         }
-        let body: Value = response.json().await.context("ugyldig JSON fra Norges Bank")?;
+        let body: Value = response
+            .json()
+            .await
+            .context("ugyldig JSON fra Norges Bank")?;
         parse_sdmx(&body)
     }
 }
@@ -154,8 +157,8 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Notering>> {
                 Value::Number(n) => n.to_string(),
                 other => bail!("uventet observasjonsverdi {other}"),
             };
-            let kurs = parse_kurs(&raw)
-                .with_context(|| format!("uparselig kurs {raw:?} for {valuta}"))?;
+            let kurs =
+                parse_kurs(&raw).with_context(|| format!("uparselig kurs {raw:?} for {valuta}"))?;
             noteringer.push(Notering {
                 valuta: valuta.clone(),
                 dato,

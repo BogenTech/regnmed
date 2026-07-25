@@ -51,10 +51,14 @@ pub async fn kurs_for(
 }
 
 /// Convenience with a clear error for the posting paths.
-pub async fn require_kurs(pool: &PgPool, valuta: &str, dato: NaiveDate) -> Result<(NaiveDate, i64)> {
-    kurs_for(pool, valuta, dato)
-        .await?
-        .with_context(|| format!("ingen {valuta}-kurs på eller før {dato} — hent eller registrer kurser"))
+pub async fn require_kurs(
+    pool: &PgPool,
+    valuta: &str,
+    dato: NaiveDate,
+) -> Result<(NaiveDate, i64)> {
+    kurs_for(pool, valuta, dato).await?.with_context(|| {
+        format!("ingen {valuta}-kurs på eller før {dato} — hent eller registrer kurser")
+    })
 }
 
 #[derive(Debug)]

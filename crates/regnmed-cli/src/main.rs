@@ -234,14 +234,8 @@ async fn main() -> Result<()> {
             let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
             let noteringer = client.hent_kurser(&valutaer, days).await?;
             for n in &noteringer {
-                regnmed_db::insert_kurs(
-                    &pool,
-                    &n.valuta,
-                    n.dato,
-                    n.kurs_micro,
-                    "Norges Bank EXR",
-                )
-                .await?;
+                regnmed_db::insert_kurs(&pool, &n.valuta, n.dato, n.kurs_micro, "Norges Bank EXR")
+                    .await?;
                 println!(
                     "{} {}: {}",
                     n.valuta,
@@ -337,13 +331,9 @@ async fn mva_melding(
         .bind(company_id)
         .fetch_one(pool)
         .await?;
-    let spes = regnmed_db::mva_spesifikasjon(
-        pool,
-        company_id,
-        ordning.start(termin),
-        ordning.end(termin),
-    )
-    .await?;
+    let spes =
+        regnmed_db::mva_spesifikasjon(pool, company_id, ordning.start(termin), ordning.end(termin))
+            .await?;
     anyhow::ensure!(
         !spes.is_empty(),
         "no VAT postings in {} — nothing to report",

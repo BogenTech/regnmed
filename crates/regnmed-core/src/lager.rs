@@ -34,7 +34,10 @@ impl LagerStatus {
     /// Løpende gjennomsnittskost per unit, when there is stock to price.
     pub fn gjennomsnitt_ore(&self) -> Option<i64> {
         if self.antall_milli > 0 {
-            Some(div_round(self.verdi_ore as i128 * 1000, self.antall_milli as i128))
+            Some(div_round(
+                self.verdi_ore as i128 * 1000,
+                self.antall_milli as i128,
+            ))
         } else {
             None
         }

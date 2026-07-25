@@ -122,7 +122,10 @@ async fn assets_depreciate_and_dispose() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        made["warning"].as_str().unwrap().contains("aktiveringsgrensen"),
+        made["warning"]
+            .as_str()
+            .unwrap()
+            .contains("aktiveringsgrensen"),
         "under 30 000 kr → warning: {made}"
     );
     let kontormaskin = made["asset_id"].as_str().unwrap().to_string();
@@ -160,7 +163,10 @@ async fn assets_depreciate_and_dispose() {
     assert_eq!(dep["generated"], 0, "a period never depreciates twice");
 
     let (_, listed) = request(&state, "GET", &base, &token, None).await;
-    assert_eq!(asset_row(&listed, "Fresemaskin")["akkumulert_ore"], 4_000_00);
+    assert_eq!(
+        asset_row(&listed, "Fresemaskin")["akkumulert_ore"],
+        4_000_00
+    );
     assert_eq!(asset_row(&listed, "Fresemaskin")["bokfort_ore"], 32_000_00);
     assert_eq!(asset_row(&listed, "Kontormaskin")["akkumulert_ore"], 99_999);
     let (_, runs) = request(
@@ -172,7 +178,13 @@ async fn assets_depreciate_and_dispose() {
     )
     .await;
     assert_eq!(runs["runs"].as_array().unwrap().len(), 4);
-    assert!(runs["runs"].as_array().unwrap().iter().all(|r| r["voucher"].is_string()));
+    assert!(
+        runs["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["voucher"].is_string())
+    );
 
     // Evidence at the DB layer: no edits, no deletes, run log frozen.
     for tamper in [

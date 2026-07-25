@@ -113,7 +113,10 @@ async fn products_stock_and_count() {
         "POST",
         &format!("{base}/products"),
         &token,
-        Some(serde_json::json!({ "nummer": "V1", "navn": "Dublett", "salgspris_ore": 1 }).to_string()),
+        Some(
+            serde_json::json!({ "nummer": "V1", "navn": "Dublett", "salgspris_ore": 1 })
+                .to_string(),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "duplicate nummer");
@@ -276,10 +279,11 @@ async fn products_stock_and_count() {
     assert_eq!(inventory_row(&inv, "V1")["verdi_ore"], 2_000_00);
 
     // Movement log and product identity are immutable at the DB layer.
-    let tamper = sqlx::query("update inventory_movement set antall_milli = 1 where company_id = $1")
-        .bind(company)
-        .execute(&state.pool)
-        .await;
+    let tamper =
+        sqlx::query("update inventory_movement set antall_milli = 1 where company_id = $1")
+            .bind(company)
+            .execute(&state.pool)
+            .await;
     assert!(tamper.is_err(), "movements are append-only");
     let tamper = sqlx::query("delete from inventory_movement where company_id = $1")
         .bind(company)

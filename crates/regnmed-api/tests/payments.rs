@@ -220,10 +220,7 @@ async fn betalingsliste_pain001_and_settlement() {
     let items = payable["items"].as_array().unwrap();
     assert_eq!(items.len(), 3);
     let entry_of = |belop: i64| {
-        items
-            .iter()
-            .find(|i| i["belop_ore"] == belop)
-            .unwrap()["entry_id"]
+        items.iter().find(|i| i["belop_ore"] == belop).unwrap()["entry_id"]
             .as_str()
             .unwrap()
             .to_string()
@@ -301,7 +298,10 @@ async fn betalingsliste_pain001_and_settlement() {
     assert!(xml.contains("<CtrlSum>13300.00</CtrlSum>"));
     assert!(xml.contains("<Ref>000000018</Ref>"), "KID som SCOR");
     assert!(xml.contains("<Ustrd>Faktura 99</Ustrd>"));
-    assert!(xml.contains("<Id>86011117947</Id>"), "normalisert kontonummer");
+    assert!(
+        xml.contains("<Id>86011117947</Id>"),
+        "normalisert kontonummer"
+    );
 
     // Run history is evidence at the DB layer.
     let tamper = sqlx::query("update payment_run set execution_date = '2027-01-01' where id = $1")
@@ -369,7 +369,11 @@ async fn betalingsliste_pain001_and_settlement() {
         Some("{}".to_string()),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "utbetalt kan ikke annulleres");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "utbetalt kan ikke annulleres"
+    );
 
     // The chain verifies over the lot: 3 inngående + utbetalingen.
     let report = regnmed_db::verify_chain(&state.pool, company)

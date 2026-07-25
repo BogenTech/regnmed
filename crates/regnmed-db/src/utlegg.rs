@@ -293,7 +293,9 @@ pub async fn approve_expense(
         _ => {
             ensure!(mva_kode.is_none(), "kjøregodtgjørelse har ingen mva");
             let km: i64 = expense.get::<Option<i64>, _>("km").unwrap_or(0);
-            let sats: i64 = expense.get::<Option<i64>, _>("sats_ore_per_km").unwrap_or(0);
+            let sats: i64 = expense
+                .get::<Option<i64>, _>("sats_ore_per_km")
+                .unwrap_or(0);
             entries.push(EntryDraft {
                 account_number: konto.to_string(),
                 amount: Ore(belop),
@@ -437,9 +439,14 @@ pub async fn pay_expense(
     .await?
     .context("no such expense")?;
     let status: String = expense.get("status");
-    ensure!(status == "godkjent", "bare godkjente krav kan utbetales (kravet er {status})");
+    ensure!(
+        status == "godkjent",
+        "bare godkjente krav kan utbetales (kravet er {status})"
+    );
     let belop: i64 = expense.get("belop_ore");
-    let motkonto: String = expense.get::<Option<String>, _>("motkonto").unwrap_or_default();
+    let motkonto: String = expense
+        .get::<Option<String>, _>("motkonto")
+        .unwrap_or_default();
     let navn: String = expense.get("navn");
 
     let draft = VoucherDraft {

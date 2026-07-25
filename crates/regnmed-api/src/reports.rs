@@ -542,5 +542,7 @@ pub async fn set_terminordning(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(Json(json!({ "ordning": ordning.as_str(), "valid_from": request.valid_from.to_string() })))
+    Ok(Json(
+        json!({ "ordning": ordning.as_str(), "valid_from": request.valid_from.to_string() }),
+    ))
 }

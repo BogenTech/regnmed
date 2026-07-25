@@ -24,7 +24,10 @@ pub const SALDOGRUPPER: &[(&str, &str)] = &[
     ("d", "Personbiler, maskiner, inventar mv."),
     ("e", "Skip, fartøyer, rigger mv."),
     ("f", "Fly, helikopter"),
-    ("g", "Anlegg for overføring og distribusjon av elektrisk kraft mv."),
+    (
+        "g",
+        "Anlegg for overføring og distribusjon av elektrisk kraft mv.",
+    ),
     ("h", "Bygg og anlegg, hoteller mv."),
     ("i", "Forretningsbygg"),
     ("j", "Fast teknisk installasjon i bygninger"),

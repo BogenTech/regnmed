@@ -113,8 +113,14 @@ pub async fn fetch_rates(
         .await
         .map_err(|e| ApiError::BadRequest(format!("Norges Bank: {e:#}")))?;
     for n in &noteringer {
-        regnmed_db::insert_kurs(&state.pool, &n.valuta, n.dato, n.kurs_micro, "Norges Bank EXR")
-            .await?;
+        regnmed_db::insert_kurs(
+            &state.pool,
+            &n.valuta,
+            n.dato,
+            n.kurs_micro,
+            "Norges Bank EXR",
+        )
+        .await?;
     }
     Ok(Json(json!({ "fetched": noteringer.len() })))
 }

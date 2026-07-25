@@ -229,9 +229,15 @@ pub async fn reject(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_access(&state, person.person_id, company_id, true).await?;
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::reject_expense(&state.pool, company_id, expense_id, &request.note, decided_by)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    regnmed_db::reject_expense(
+        &state.pool,
+        company_id,
+        expense_id,
+        &request.note,
+        decided_by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "status": "avvist" })))
 }
 

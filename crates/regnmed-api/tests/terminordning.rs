@@ -125,11 +125,21 @@ async fn terminordning_styrer_perioder_og_melding() {
     let base = format!("/companies/{company}");
 
     // Default: to-måneder, 6 perioder, frister incl. særregelen.
-    let (status, info) = request(&state, "GET", &format!("{base}/mva/terminordning"), &token, None).await;
+    let (status, info) = request(
+        &state,
+        "GET",
+        &format!("{base}/mva/terminordning"),
+        &token,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "body: {info}");
     assert_eq!(info["ordning"], "to-maneder");
     assert_eq!(info["antall_perioder"], 6);
-    assert_eq!(info["perioder"][2]["frist"], "2026-08-31", "3. termin: 31. august");
+    assert_eq!(
+        info["perioder"][2]["frist"], "2026-08-31",
+        "3. termin: 31. august"
+    );
     let (_, report) = request(
         &state,
         "GET",
@@ -176,7 +186,14 @@ async fn terminordning_styrer_perioder_og_melding() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "ukjent ordning avvises");
 
-    let (_, info) = request(&state, "GET", &format!("{base}/mva/terminordning"), &token, None).await;
+    let (_, info) = request(
+        &state,
+        "GET",
+        &format!("{base}/mva/terminordning"),
+        &token,
+        None,
+    )
+    .await;
     assert_eq!(info["ordning"], "arlig");
     assert_eq!(info["antall_perioder"], 1);
     assert_eq!(info["perioder"][0]["frist"], "2027-03-10");
@@ -218,9 +235,10 @@ async fn terminordning_styrer_perioder_og_melding() {
     assert!(!xml.contains("skattleggingsperiodeToMaaneder"));
 
     // The ordning history is append-only at the DB layer.
-    let tamper = sqlx::query("update mva_terminordning set ordning = 'to-maneder' where company_id = $1")
-        .bind(company)
-        .execute(&state.pool)
-        .await;
+    let tamper =
+        sqlx::query("update mva_terminordning set ordning = 'to-maneder' where company_id = $1")
+            .bind(company)
+            .execute(&state.pool)
+            .await;
     assert!(tamper.is_err(), "ordning history is evidence");
 }

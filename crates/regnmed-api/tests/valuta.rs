@@ -132,11 +132,20 @@ async fn valuta_invoice_agio_and_regulation() {
         "POST",
         &format!("{base}/currency/rates"),
         &token,
-        Some(serde_json::json!({ "valuta": "CHF", "dato": "2026-07-01", "kurs": "abc" }).to_string()),
+        Some(
+            serde_json::json!({ "valuta": "CHF", "dato": "2026-07-01", "kurs": "abc" }).to_string(),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (_, rates) = request(&state, "GET", &format!("{base}/currency/rates"), &token, None).await;
+    let (_, rates) = request(
+        &state,
+        "GET",
+        &format!("{base}/currency/rates"),
+        &token,
+        None,
+    )
+    .await;
     let chf = rates["rates"]
         .as_array()
         .unwrap()
@@ -242,13 +251,12 @@ async fn valuta_invoice_agio_and_regulation() {
     let posted = regnmed_db::post_voucher(&state.pool, company, &payment, "test")
         .await
         .unwrap();
-    let payment_entry: Uuid = sqlx::query_scalar(
-        "select id from entry where voucher_id = $1 and party_id is not null",
-    )
-    .bind(posted.id)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap();
+    let payment_entry: Uuid =
+        sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
+            .bind(posted.id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
 
     // Valuta match: agio posts in the SAME transaction; both sides
     // close to exactly zero and the gevinst lands on 8060.
@@ -319,9 +327,7 @@ async fn valuta_invoice_agio_and_regulation() {
         "POST",
         &format!("{base}/currency/regulate"),
         &token,
-        Some(
-            serde_json::json!({ "dato": "2026-12-31", "balansekonto": "1508" }).to_string(),
-        ),
+        Some(serde_json::json!({ "dato": "2026-12-31", "balansekonto": "1508" }).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {regulering}");

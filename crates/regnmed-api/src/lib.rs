@@ -258,10 +258,7 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/currency/regulate",
             axum::routing::post(currency::regulate),
         )
-        .route(
-            "/companies/{company_id}/expenses",
-            get(expenses::list),
-        )
+        .route("/companies/{company_id}/expenses", get(expenses::list))
         .route(
             "/companies/{company_id}/expenses/utlegg",
             axum::routing::post(expenses::create_utlegg),
@@ -294,10 +291,7 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/assets/depreciate",
             axum::routing::post(asset::depreciate),
         )
-        .route(
-            "/companies/{company_id}/assets/saldo",
-            get(asset::saldo),
-        )
+        .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
         .route(
             "/companies/{company_id}/assets/{asset_id}/dispose",
             axum::routing::post(asset::dispose),
@@ -314,10 +308,7 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/products/{nummer}",
             axum::routing::put(product::update),
         )
-        .route(
-            "/companies/{company_id}/inventory",
-            get(product::inventory),
-        )
+        .route("/companies/{company_id}/inventory", get(product::inventory))
         .route(
             "/companies/{company_id}/inventory/movements",
             get(product::movements).post(product::register_movement),

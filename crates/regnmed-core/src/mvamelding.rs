@@ -313,7 +313,10 @@ mod tests {
     fn aarstermin_renders_skattleggingsperiode_aar() {
         let mut melding = melding();
         melding.ordning = Terminordning::Arlig;
-        melding.termin = Termin { year: 2026, number: 1 };
+        melding.termin = Termin {
+            year: 2026,
+            number: 1,
+        };
         let xml = render(&melding);
         assert!(xml.contains("<skattleggingsperiodeAar>aarlig</skattleggingsperiodeAar>"));
         assert!(!xml.contains("skattleggingsperiodeToMaaneder"));
