@@ -219,6 +219,12 @@ M7 (#37–#48) for new ground:
   avviksrapporten alltid navngir planen den måler mot, avvik per konto
   og NS 4102-seksjon fra de samme rene summene, «fra fjoråret ±X %»
   som startpunkt; docs/budsjett.md) — pure queries as always.
+- Antakelser: 📌 avvikende regnskapsår (#52) er BEVISST utsatt —
+  målgruppen er kalenderår, og antakelsen er nå samlet i én navngitt
+  funksjon (`regnmed-core::regnskapsar`) med enhetstest, mens
+  kostnaden ved å endre den er kartlagt med fil og linje i
+  docs/regelverk.md. Mva-terminer og skattemessig saldo forblir
+  kalender-/inntektsårsforankret uansett.
 - Struktur: ✅ dimensjoner prosjekt/avdeling — hash format v3 (#37 —
   registry insert/rename/open-close only, koder hash-dekket, avsluttet
   avviser posteringer, resultat per dimensjon, SAF-T Analysis;

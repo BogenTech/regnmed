@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{DateTime, Utc};
 use regnmed_core::Ore;
 use regnmed_core::hash::{
     EntryHashInput, GENESIS_HASH, VoucherHashInput, chain_hash, truncate_to_micros,
@@ -175,7 +175,9 @@ pub async fn post_voucher_in(
             .with_context(|| format!("unknown journal '{}' for this company", draft.journal_code))?
             .get("id");
 
-    let fiscal_year = draft.voucher_date.year();
+    // Hvilket regnskapsår bilaget hører til — antakelsen (kalenderår)
+    // bor ett sted, se regnmed-core::regnskapsar og docs/regelverk.md.
+    let fiscal_year = regnmed_core::regnskapsar::regnskapsar(draft.voucher_date);
     let voucher_number: i64 = sqlx::query(
         "insert into voucher_counter (journal_id, fiscal_year, last_number) values ($1, $2, 1)
          on conflict (journal_id, fiscal_year)

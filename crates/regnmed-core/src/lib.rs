@@ -35,6 +35,7 @@ pub mod pdf;
 pub mod pdftekst;
 pub mod purring;
 pub mod regnskap;
+pub mod regnskapsar;
 pub mod revisjon;
 pub mod saft;
 pub mod saft_import;

@@ -679,6 +679,21 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    menyen vannrett under sm, kortkropper ruller egne tabeller;
    temakontrakten urørt (app.css rebygget m/ scripts/build-css.sh).
    Verifisert i 375×812-viewport.
+47. 📌 Avvikende regnskapsår (#52) — BEVISST IKKE BYGGET. Saken sier
+   det selv: målgruppen er kalenderår, dette er et sporet
+   omfangsvalg, og leveransen er at antakelsen skal være eksplisitt.
+   Gjort: `regnmed-core::regnskapsar` navngir antakelsen
+   (`regnskapsar(dato)` = kalenderår i dag, `regnskapsar_periode`) med
+   enhetstest som fester den, og posteringens `fiscal_year`
+   (bilagsnummerserien) + SAF-T-ens `year=` går gjennom sømmen — et
+   spredt `.year()` er en antakelse ingen finner igjen.
+   docs/regelverk.md har hjemmelen (rskl. §1-7) og et VERIFISERT
+   kostnadskart m/ fil og linje for det som gjenstår (budsjett- og
+   nokkeltall-SQL bruker `extract(year …)`, asset saldo_rapport,
+   årvelgerne i portalen) + kravet om en datert regnskapsårsdefinisjon
+   per selskap (mva_terminordning-mønsteret). MÅ IKKE følge etter:
+   mva-terminer (mval. §15-1) og skattemessig saldo (sktl. §14-40 flg.)
+   er kalender-/inntektsårsforankret uansett.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md), client_credentials i regnid (#45-forutsetning),
    EHF-transport via aksesspunkt, API-tier per leverandør

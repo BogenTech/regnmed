@@ -178,12 +178,10 @@ pub async fn saft_export(
     require_access(&state, person.person_id, company_id).await?;
 
     let (start, end) = match (query.year, query.from, query.to) {
-        (Some(year), None, None) => (
-            NaiveDate::from_ymd_opt(year, 1, 1)
-                .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?,
-            NaiveDate::from_ymd_opt(year, 12, 31)
-                .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?,
-        ),
+        // year= betyr regnskapsåret; definisjonen ligger i
+        // regnmed-core::regnskapsar (docs/regelverk.md, #52).
+        (Some(year), None, None) => regnmed_core::regnskapsar::regnskapsar_periode(year)
+            .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?,
         (None, Some(from), Some(to)) if from <= to => (from, to),
         _ => {
             return Err(ApiError::BadRequest(

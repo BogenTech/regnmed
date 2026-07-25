@@ -84,5 +84,62 @@ og regnskapsloven.
   never inferred); spesifikasjon, melding
   (skattleggingsperiodeAar) and frister follow the ordning
   (docs/mva.md).
-- #52 avvikende regnskapsår (non-calendar fiscal years) — conscious
-  scope decision documented there.
+- 📌 #52 avvikende regnskapsår: **bevisst utsatt, ikke oversett** — se
+  seksjonen under. Antakelsen er samlet i én navngitt funksjon, og
+  kostnaden ved å endre den er kartlagt med fil og linje.
+
+## Regnskapsåret er kalenderåret (#52)
+
+Dette er den ene regelverksantakelsen regnmed gjør uten å spørre, og
+den fortjener å stå skrevet:
+
+> **regnmed antar at regnskapsåret er kalenderåret.** Onboarding spør
+> ikke, og det finnes ingen innstilling.
+
+Hjemmelen for hovedregelen er regnskapsloven §1-7: regnskapsåret er
+kalenderåret. Loven åpner for **avvikende regnskapsår** i definerte
+tilfeller — sesongvirksomhet og konsern med utenlandsk morselskap er
+de vanlige. Målgruppen (norsk SMB) er overveldende kalenderår, så
+støtten er ikke prioritert. Men en antakelse ingen kan finne igjen er
+en felle, så den er behandlet slik:
+
+**Definisjonen bor ett sted.** `regnmed-core::regnskapsar` har
+`regnskapsar(dato)` og `regnskapsar_periode(år)` med enhetstester som
+fester dagens oppførsel. Posteringen (bilagsnummerserien) og SAF-T-ens
+`year=`-form går gjennom den. Testen
+`regnskapsaret_er_kalenderaret` er der for at en endring skal være en
+beslutning, ikke et uhell.
+
+### Hva som må endres den dagen en kunde har avvikende år
+
+Kartet er verifisert mot koden slik den står i dag:
+
+| Sted | Hva | Status |
+| --- | --- | --- |
+| `regnmed-core/src/regnskapsar.rs` | Selve definisjonen + periodegrensene | **sømstedet** |
+| `regnmed-db/src/ledger.rs` (post_voucher_in) | `fiscal_year` på bilaget = nummerserien per journal+år | går gjennom sømmen |
+| `regnmed-api/src/reports.rs` (saft_export) | `year=` → periode | går gjennom sømmen |
+| `regnmed-db/src/budsjett.rs` | `extract(year from voucher_date) = $2` i to spørringer (avvik + «fra fjoråret») | gjenstår — SQL-side |
+| `regnmed-db/src/regnskap.rs` (nokkeltall) | Årets måneder + «samme dato i fjor» | gjenstår — SQL-side |
+| `regnmed-db/src/asset.rs` (saldo_rapport) | Skattemessig saldo per år | gjenstår, men se under |
+| Portalen | Årvelgerne viser «2026» | gjenstår — visning |
+
+I tillegg må et selskap med avvikende år få **en datert
+regnskapsårsdefinisjon** (start-måned, endres bare på en årsgrense) —
+samme mønster som `mva_terminordning` (#51): registrert, ikke utledet.
+
+### Hva som IKKE skal følge etter
+
+To ting er kalenderforankret uansett hva regnskapsåret er, og å la dem
+følge et avvikende år ville vært feil:
+
+- **Mva-terminene** (mval. §15-1 jf. sktfvf. §8-3). De følger
+  kalenderåret for alle. `regnmed-core::mva` henter aldri perioden sin
+  fra regnskapsåret, og skal ikke begynne med det.
+- **Skattemessige saldoavskrivninger** følger inntektsåret (sktl.
+  §14-40 flg.). For selskaper med avvikende regnskapsår er inntektsåret
+  det regnskapsåret som avsluttes i kalenderåret — en egen regel, ikke
+  den samme variabelen.
+
+Periodelåsing, avskrivningsbilag og bankavstemming er
+måneds- eller datobaserte og berøres ikke.
