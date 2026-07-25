@@ -50,8 +50,19 @@ pub struct Balanse {
     pub udisponert_resultat_ore: i64,
 }
 
-fn class_of(number: &str) -> Option<u32> {
+pub fn class_of(number: &str) -> Option<u32> {
     number.chars().next()?.to_digit(10)
+}
+
+/// The presentation sign rule in ONE place: inntekter (class 3) and
+/// egenkapital/gjeld (class 2) read positive when negated; everything
+/// else is shown as booked. Used by the sections below and by budsjett
+/// (docs/budsjett.md), which stores what the reader sees.
+pub fn presentasjon_ore(number: &str, ledger_ore: i64) -> i64 {
+    match class_of(number) {
+        Some(2) | Some(3) => -ledger_ore,
+        _ => ledger_ore,
+    }
 }
 
 fn section(lines: &[SaldoLine], classes: &[u32], heading: &'static str, negate: bool) -> Seksjon {

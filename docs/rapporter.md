@@ -84,8 +84,10 @@ SUM-spørringer (aldri lagret tilstand):
   første steg.
 
 Året styrer «hittil»-tallene og månedskolonnene; likviditet og
-frister er alltid nå. Prognoser og budsjettavvik hører til
-budsjett-saken (#41), ikke her.
+frister er alltid nå. Budsjettavvik hører til
+[budsjett.md](budsjett.md) (#41), ikke her — der ligger også
+avviksrapporten som måler de samme resultattallene mot en navngitt,
+fastsatt plan.
 
 Testet i `crates/regnmed-api/tests/nokkeltall.rs`: resultat mot
 håndregnede tall (fjorårets poster ETTER cutoff teller ikke),

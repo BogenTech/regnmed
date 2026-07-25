@@ -10,6 +10,7 @@ pub mod anchor;
 pub mod anlegg;
 pub mod bank;
 pub mod bankcsv;
+pub mod budsjett;
 pub mod camt053;
 pub mod error;
 pub mod fakturapdf;

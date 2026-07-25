@@ -22,6 +22,7 @@ CLAUDE.md).
 | [utlegg.md](utlegg.md) | Utlegg og kjøregodtgjørelse: uforanderlige krav, enveis beslutninger, statens satser fra satsregisteret |
 | [valuta.md](valuta.md) | Flervaluta: hash format v4, daterte kurser fra Norges Bank, realisert agio i samme transaksjon som matchen |
 | [purring.md](purring.md) | Betalingsoppfølging: aldersfordeling, purregebyr/forsinkelsesrente som bilag, inkassovarsel |
+| [budsjett.md](budsjett.md) | Budsjett og avviksrapport: arbeidsdokument til det fastsettes, versjoner en rapport kan navngi |
 | [perioder.md](perioder.md) | Periodelåsing (ajourhold) and bilagsvedlegg (oppbevaringsplikt) |
 | [bilagsinnboks.md](bilagsinnboks.md) | The client→accountant inbox: immutable uploads, atomic bokføring |
 | [attestering.md](attestering.md) | Godkjenningsflyt før bokføring og betaling: valgfri policy, insert-only beslutningsspor, fire øyne håndhevet i transaksjonen |

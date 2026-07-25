@@ -193,8 +193,11 @@ M7 (#37–#48) for new ground:
 - Innsikt: ✅ nøkkeltall/likviditet (#36 — resultat hittil mot samme
   periode i fjor, månedskolonner som rene CSS-søyler, likviditetsbilde
   m/ beregnet mva-netto, kommende frister etter terminordningen;
-  docs/rapporter.md), budsjett m/ fastsatte versjoner
-  (#41) — pure queries as always.
+  docs/rapporter.md), ✅ budsjett m/ fastsatte versjoner (#41 —
+  arbeidsdokument til det fastsettes, revisjon = ny versjon så
+  avviksrapporten alltid navngir planen den måler mot, avvik per konto
+  og NS 4102-seksjon fra de samme rene summene, «fra fjoråret ±X %»
+  som startpunkt; docs/budsjett.md) — pure queries as always.
 - Struktur: ✅ dimensjoner prosjekt/avdeling — hash format v3 (#37 —
   registry insert/rename/open-close only, koder hash-dekket, avsluttet
   avviser posteringer, resultat per dimensjon, SAF-T Analysis;

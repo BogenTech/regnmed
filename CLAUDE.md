@@ -543,8 +543,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    Til attestering-kort øverst i Bilag (kø + policyskjema) + kolonne i
    innboksen. Flertrinns kjeder/beløpsmatriser bevisst utenfor v1;
    `target_kind` gjør utvidelse til en migrasjon.
+40. ✅ Budsjett og avviksrapport (docs/budsjett.md, closed #41): the
+   only number in the system that is an OPINION, treated as such.
+   Migration 0031: `budget` (per company/år, versjonert; utkast fritt
+   redigerbart, fastsett = enveis frys av rad OG linjer via trigger;
+   utkast kan forkastes, fastsatte aldri) + `budget_line` (konto ×
+   måned, unik). En revisjon er en NY VERSJON — derfor kan
+   avviksrapporten alltid navngi planen den måler mot (nyeste
+   fastsatte som standard, ellers nyeste utkast, status alltid i
+   svaret). Linjer lagres i PRESENTASJONSFORTEGN (inntekt positiv,
+   kostnad positiv — budsjettet skrives slik det leses); faktiske tall
+   konverteres med `regnskap::presentasjon_ore` (regelen ett sted) før
+   sammenligning. Bare resultatkontoer (klasse 3–8);
+   likviditetsbudsjett bevisst utenfor. `regnmed-core::budsjett`:
+   ren avvik-fold (NS 4102-seksjoner, hittil t.o.m. valgt måned,
+   konto som bare finnes på én side blir MED) + `juster_ore` for «fra
+   fjoråret ±X %» (basispunkter, half-away, ingen flyttall).
+   `/companies/{id}/budgets…` + `GET …/reports/avvik`; portal:
+   Budsjett-fane under Rapporter m/ redigerbart konto×måned-rutenett.
    **Next:** native importers (#19), EHF (#14), Maskinporten
-   (awaiting Skatteetaten scope grant, docs/gov.md), #41 budsjett.
+   (awaiting Skatteetaten scope grant, docs/gov.md).
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).

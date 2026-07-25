@@ -1812,6 +1812,7 @@
     var year = new Date().getFullYear();
     var rapport = "saldobalanse";
     var dimFilter = { avdeling: "", prosjekt: "" };
+    var valgtBudsjett = "";
     var hash = location.hash.split("?")[1];
     if (hash) {
       var params = new URLSearchParams(hash);
@@ -1819,10 +1820,12 @@
       rapport = params.get("rapport") || rapport;
       dimFilter.avdeling = params.get("avdeling") || "";
       dimFilter.prosjekt = params.get("prosjekt") || "";
+      valgtBudsjett = params.get("budsjett") || "";
     }
     var from = year + "-01-01", to = year + "-12-31";
     var tabs = [
       ["saldobalanse", "Saldobalanse"], ["resultat", "Resultat"], ["balanse", "Balanse"],
+      ["budsjett", "Budsjett"],
       ["kontospesifikasjon", "Kontospesifikasjon"], ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
       ["revisjon", "Revisjon"],
     ].map(function (t) {
@@ -1894,6 +1897,116 @@
         kr(b.udisponert_resultat_ore) + "</td></tr>" +
         "<tr class='font-bold'><td></td><td>Differanse (skal være 0)</td><td class='text-right'>" +
         kr(b.differanse_ore) + "</td></tr></tbody></table>";
+    } else if (rapport === "budsjett") {
+      title = "Budsjett og avvik " + year;
+      var budsjettData = await Promise.all([
+        api("/companies/" + id + "/budgets?year=" + year),
+        api("/companies/" + id + "/reports/avvik?year=" + year +
+          (valgtBudsjett ? "&budget_id=" + valgtBudsjett : "")),
+      ]);
+      var budsjetter = budsjettData[0].budgets;
+      var av = budsjettData[1];
+      var aktivt = valgtBudsjett
+        ? budsjetter.find(function (b) { return b.budget_id === valgtBudsjett; })
+        : (av.budsjett ? budsjetter.find(function (b) { return b.budget_id === av.budsjett.budget_id; }) : null);
+      var budsjettRows = budsjetter.map(function (b) {
+        var valgt = aktivt && b.budget_id === aktivt.budget_id;
+        return "<tr" + (valgt ? ' class="bg-base-200"' : "") + "><td>v" + b.versjon + "</td><td>" +
+          esc(b.navn) + '</td><td><span class="badge badge-sm ' +
+          (b.status === "fastsatt" ? "badge-success" : "badge-warning") + '">' + esc(b.status) +
+          "</span></td><td class='text-right'>" + kr(b.sum_ore) + "</td><td class='text-xs opacity-70'>" +
+          esc(b.created_by) + (b.fastsatt_by ? " → " + esc(b.fastsatt_by) : "") + "</td><td>" +
+          '<a class="btn btn-xs btn-ghost" href="#/c/' + id + "/rapporter?rapport=budsjett&year=" + year +
+          "&budsjett=" + b.budget_id + '">Velg</a> ' +
+          (b.status === "utkast"
+            ? '<button class="btn btn-xs btn-outline" data-b-fastsett="' + b.budget_id + '">Fastsett</button> ' +
+              '<button class="btn btn-xs btn-ghost" data-b-slett="' + b.budget_id + '">Forkast</button>'
+            : "") + "</td></tr>";
+      }).join("");
+      var listeKort =
+        '<p class="text-sm opacity-70 mb-2">Et budsjett er et arbeidsdokument mens det er utkast. ' +
+        "Fastsettelse fryser versjonen — en revisjon blir en ny versjon, slik at avviksrapporten " +
+        "alltid kan navngi hva den sammenligner mot.</p>" +
+        (budsjetter.length
+          ? '<table class="table table-sm mb-3"><thead><tr><th>Versjon</th><th>Navn</th><th>Status</th>' +
+            "<th class='text-right'>Sum</th><th>Laget / fastsatt av</th><th></th></tr></thead><tbody>" +
+            budsjettRows + "</tbody></table>"
+          : '<p class="text-sm opacity-70 mb-3">Ingen budsjetter for ' + year + " ennå.</p>") +
+        '<div class="flex gap-2 items-center flex-wrap">' +
+        '<input id="b-navn" class="input input-sm input-bordered w-48" placeholder="Navn (valgfritt)">' +
+        '<label class="label cursor-pointer gap-2"><input id="b-fra-fjor" type="checkbox" class="checkbox checkbox-sm">' +
+        '<span class="label-text">Fra ' + (year - 1) + "</span></label>" +
+        '<input id="b-prosent" class="input input-sm input-bordered w-24" placeholder="± %" value="0">' +
+        '<button id="b-nytt" class="btn btn-sm">Nytt budsjett ' + year + "</button></div>";
+
+      // Redigerbart rutenett for utkast: konto × 12 måneder.
+      var grid = "";
+      if (aktivt && aktivt.status === "utkast") {
+        var detalj = await api("/companies/" + id + "/budgets/" + aktivt.budget_id);
+        var perKonto = {};
+        detalj.lines.forEach(function (l) {
+          if (!perKonto[l.account]) perKonto[l.account] = { name: l.account_name, m: new Array(12).fill(0) };
+          perKonto[l.account].m[l.maned - 1] = l.belop_ore;
+        });
+        var maanedHeads = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"]
+          .map(function (m) { return "<th class='text-right'>" + m + "</th>"; }).join("");
+        var gridRows = Object.keys(perKonto).sort().map(function (konto) {
+          var row = perKonto[konto];
+          return '<tr data-b-row="' + esc(konto) + '"><td class="whitespace-nowrap">' + esc(konto) +
+            ' <span class="opacity-60 text-xs">' + esc(row.name) + "</span></td>" +
+            row.m.map(function (v) {
+              return '<td><input class="input input-xs input-bordered w-20 text-right" data-b-cell ' +
+                'value="' + (v ? esc(kr(v)) : "") + '"></td>';
+            }).join("") + '<td><button class="btn btn-xs btn-ghost" data-b-fjern="' + esc(konto) +
+            '">×</button></td></tr>';
+        }).join("");
+        grid = '<h3 class="font-semibold mt-6 mb-1">Rediger ' + esc(aktivt.navn) +
+          " (v" + aktivt.versjon + ")</h3>" +
+          ('<p class="text-sm opacity-70 mb-2">Beløpene skrives slik de leses: inntekt positiv, ' +
+          "kostnad positiv. Tomme celler er null.</p>" +
+          '<div class="overflow-x-auto"><table class="table table-xs"><thead><tr><th>Konto</th>' +
+          maanedHeads + "<th></th></tr></thead><tbody id='b-grid'>" + gridRows + "</tbody></table></div>" +
+          '<div class="flex gap-2 items-center flex-wrap mt-3">' +
+          '<input id="b-konto" class="input input-sm input-bordered w-24" placeholder="Konto">' +
+          '<input id="b-belop" class="input input-sm input-bordered w-32" placeholder="Per måned">' +
+          '<button id="b-legg-til" class="btn btn-sm btn-ghost">+ konto</button>' +
+          '<button id="b-lagre" class="btn btn-sm btn-primary" data-budsjett="' +
+          esc(aktivt.budget_id) + '">Lagre linjer</button></div>');
+      }
+
+      var avvikRows = av.seksjoner.map(function (s) {
+        if (!s.linjer.length) return "";
+        return s.linjer.map(function (l) {
+          return "<tr><td>" + esc(l.account) + "</td><td>" + esc(l.name) +
+            "</td><td class='text-right'>" + kr(l.budsjett_hittil_ore) +
+            "</td><td class='text-right'>" + kr(l.faktisk_hittil_ore) +
+            "</td><td class='text-right " + (l.avvik_hittil_ore < 0 ? "text-error" : "") + "'>" +
+            kr(l.avvik_hittil_ore) + "</td><td class='text-right opacity-60'>" +
+            kr(l.budsjett_ar_ore) + "</td></tr>";
+        }).join("") +
+        "<tr class='font-semibold'><td></td><td>Sum " + esc(s.heading.toLowerCase()) +
+        "</td><td class='text-right'>" + kr(s.budsjett_hittil_ore) +
+        "</td><td class='text-right'>" + kr(s.faktisk_hittil_ore) +
+        "</td><td class='text-right'>" + kr(s.avvik_hittil_ore) +
+        "</td><td class='text-right opacity-60'>" + kr(s.budsjett_ar_ore) + "</td></tr>";
+      }).join("");
+      var avvikKort = '<h3 class="font-semibold mt-6 mb-1">Avvik hittil (t.o.m. måned ' +
+        av.t_o_m_maned + ")</h3>" +
+        ('<p class="text-sm mb-2">' +
+        (av.budsjett
+          ? "Sammenlignet mot <strong>" + esc(av.budsjett.navn) + " v" + av.budsjett.versjon +
+            "</strong> (" + esc(av.budsjett.status) + ")."
+          : "Ingen budsjett for " + year + " — alt budsjettert leses som null.") + "</p>" +
+        '<table class="table table-sm"><thead><tr><th>Konto</th><th>Navn</th>' +
+        "<th class='text-right'>Budsjett</th><th class='text-right'>Faktisk</th>" +
+        "<th class='text-right'>Avvik</th><th class='text-right'>Budsjett år</th></tr></thead><tbody>" +
+        avvikRows +
+        "<tr class='font-bold'><td></td><td>Resultat</td><td class='text-right'>" +
+        kr(av.resultat_budsjett_hittil_ore) + "</td><td class='text-right'>" +
+        kr(av.resultat_faktisk_hittil_ore) + "</td><td class='text-right'>" +
+        kr(av.resultat_avvik_hittil_ore) + "</td><td class='text-right opacity-60'>" +
+        kr(av.resultat_budsjett_ar_ore) + "</td></tr></tbody></table>");
+      body = listeKort + grid + avvikKort;
     } else if (rapport === "kontospesifikasjon") {
       title = "Kontospesifikasjon " + year;
       var ks = await api("/companies/" + id + "/reports/kontospesifikasjon?from=" + from + "&to=" + to);
@@ -1959,6 +2072,91 @@
         location.hash = "#/c/" + id + "/rapporter?" + query;
       };
     });
+    var budsjettUrl = "#/c/" + id + "/rapporter?rapport=budsjett&year=" + year;
+    var nyttBudsjett = document.getElementById("b-nytt");
+    if (nyttBudsjett) nyttBudsjett.onclick = async function () {
+      var fraFjor = document.getElementById("b-fra-fjor").checked;
+      var prosent = Number(document.getElementById("b-prosent").value.replace(",", ".") || 0);
+      try {
+        var created = await post("/companies/" + id + "/budgets", {
+          year: year,
+          navn: document.getElementById("b-navn").value.trim() || null,
+          fra_ar: fraFjor ? year - 1 : null,
+          justering_bp: Math.round(prosent * 100),
+        });
+        toast("Budsjett opprettet", true);
+        location.hash = budsjettUrl + "&budsjett=" + created.budget_id;
+        renderRapporter(id);
+      } catch (error) { toast(error.message, false); }
+    };
+    app.querySelectorAll("[data-b-fastsett]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await post("/companies/" + id + "/budgets/" + button.dataset.bFastsett + "/fastsett", {});
+          toast("Budsjettet er fastsatt", true);
+          renderRapporter(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-b-slett]").forEach(function (button) {
+      button.onclick = async function () {
+        try {
+          await api("/companies/" + id + "/budgets/" + button.dataset.bSlett, { method: "DELETE" });
+          toast("Utkastet er forkastet", true);
+          location.hash = budsjettUrl;
+          renderRapporter(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+    app.querySelectorAll("[data-b-fjern]").forEach(function (button) {
+      button.onclick = function () {
+        button.closest("tr").remove();
+      };
+    });
+    var leggTil = document.getElementById("b-legg-til");
+    if (leggTil) leggTil.onclick = function () {
+      var konto = document.getElementById("b-konto").value.trim();
+      if (!konto) return;
+      var perManed = document.getElementById("b-belop").value.trim();
+      var visning = perManed ? kr(parseKr(perManed)) : "";
+      var cells = "";
+      for (var m = 0; m < 12; m++) {
+        cells += '<td><input class="input input-xs input-bordered w-20 text-right" data-b-cell ' +
+          'value="' + esc(visning) + '"></td>';
+      }
+      document.getElementById("b-grid").insertAdjacentHTML("beforeend",
+        '<tr data-b-row="' + esc(konto) + '"><td class="whitespace-nowrap">' + esc(konto) + "</td>" +
+        cells + '<td><button class="btn btn-xs btn-ghost" data-b-fjern-ny>×</button></td></tr>');
+      document.getElementById("b-konto").value = "";
+      document.getElementById("b-belop").value = "";
+      app.querySelectorAll("[data-b-fjern-ny]").forEach(function (b) {
+        b.onclick = function () { b.closest("tr").remove(); };
+      });
+    };
+    var lagreLinjer = document.getElementById("b-lagre");
+    if (lagreLinjer) lagreLinjer.onclick = async function () {
+      var lines = [];
+      var feil = null;
+      app.querySelectorAll("[data-b-row]").forEach(function (row) {
+        row.querySelectorAll("[data-b-cell]").forEach(function (cell, index) {
+          var raw = cell.value.trim();
+          if (!raw) return;
+          try {
+            lines.push({ account: row.dataset.bRow, maned: index + 1, belop_ore: parseKr(raw) });
+          } catch (error) { feil = error.message; }
+        });
+      });
+      if (feil) { toast(feil, false); return; }
+      try {
+        await api("/companies/" + id + "/budgets/" + lagreLinjer.dataset.budsjett + "/lines", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ lines: lines }),
+        });
+        toast(lines.length + " budsjettlinjer lagret", true);
+        renderRapporter(id);
+      } catch (error) { toast(error.message, false); }
+    };
     var dlRevisjon = document.getElementById("dl-revisjon");
     if (dlRevisjon) dlRevisjon.onclick = async function () {
       try {

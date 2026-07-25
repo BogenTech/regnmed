@@ -6,6 +6,7 @@ pub mod asset;
 pub mod attestering;
 pub mod auth;
 pub mod bank;
+pub mod budsjett;
 pub mod currency;
 pub mod dimension;
 pub mod engagement;
@@ -150,6 +151,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/reports/nokkeltall",
             get(reports::nokkeltall),
+        )
+        .route(
+            "/companies/{company_id}/reports/avvik",
+            get(budsjett::avvik),
+        )
+        .route(
+            "/companies/{company_id}/budgets",
+            get(budsjett::list_budgets).post(budsjett::create_budget),
+        )
+        .route(
+            "/companies/{company_id}/budgets/{budget_id}",
+            get(budsjett::get_budget).delete(budsjett::delete_budget),
+        )
+        .route(
+            "/companies/{company_id}/budgets/{budget_id}/lines",
+            axum::routing::put(budsjett::set_lines),
+        )
+        .route(
+            "/companies/{company_id}/budgets/{budget_id}/fastsett",
+            axum::routing::post(budsjett::fastsett),
         )
         .route(
             "/companies/{company_id}/bank/statements",
