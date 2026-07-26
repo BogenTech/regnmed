@@ -94,6 +94,24 @@ cargo test                                 # unit tests, no DB needed
 Norwegian domain terms are used deliberately (bilag, hovedbok, oppdrag,
 kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
 
+### Secrets policy (agreed 2026-07-26, docs/secrets.md)
+
+Three tiers, handled differently on purpose:
+
+1. **Not secret** (localhost dev config) — plaintext in `.env.example`.
+2. **Dev secrets** — SOPS + age, `secrets/dev.enc.env` committed,
+   `secrets/dev.env` gitignored. Recipients are **per machine** (each
+   machine's own age key; the private key never travels). Helper:
+   `scripts/secrets.sh`.
+3. **Test and production** — never in this repo in any form. Created
+   in the cluster (docs/deploy.md); the Maskinporten key stays outside
+   git and outside images (docs/gov.md).
+
+Tier 2 is a deliberate, narrow carve-out to gov.md's "no secrets in the
+repo, ever" — documented rather than silently eroded. A tier-3 secret
+appearing under `secrets/` means the tiering is being violated, not
+that it needs a stronger cipher.
+
 ### Documentation policy (agreed 2026-07-22)
 
 `docs/` is the audit-facing documentation — what the system guarantees,

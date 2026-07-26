@@ -38,6 +38,7 @@ CLAUDE.md).
 | [ehf.md](ehf.md) | EHF/PEPPOL ut og inn: dokumentet vi sender og leser, transporten som egen tier |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [betaling.md](betaling.md) | Betalingsliste og remittering: pain.001, enveis kjøringer, oppgjør som lukker reskontroen |
+| [secrets.md](secrets.md) | Secrets i tre nivåer: ikke-hemmelig dev-config i git, dev-secrets SOPS-kryptert i git, test/prod aldri i repoet |
 | [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
 | [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |

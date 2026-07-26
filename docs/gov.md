@@ -25,7 +25,10 @@ Configuration (environment):
 | `MASKINPORTEN_SCOPES` | `skatteetaten:mvameldingvalidering` |
 
 Production uses `https://maskinporten.no`. **No secrets in the repo,
-ever** — keys live outside git and outside container images.
+ever** — keys live outside git and outside container images. That rule
+is absolute for this key, in test as well as production; the one narrow
+carve-out (SOPS-encrypted *dev* secrets) is scoped and justified in
+docs/secrets.md, and the Maskinporten key is explicitly outside it.
 
 ### Operational setup (one-time, per environment)
 
