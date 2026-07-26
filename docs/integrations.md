@@ -26,15 +26,20 @@ attribusjonen og revisjonssporet blir de samme for en robot som for et
 menneske, og da finnes det ingen egen maskinvei som kan utvikle sine
 egne hull.
 
-### Avhengighet vi ikke skjuler
+### Avhengigheten, og hva som gjenstår
 
-regnid støtter i dag `authorization_code` og `refresh_token`.
-**`client_credentials` må legges til der** før en integrasjon kan hente
-et token i produksjon. regnmed-siden er ferdig og virker med et hvilket
-som helst token fra den konfigurerte issueren der `sub` er
-integrasjonens `client_id` — det er alt kontrakten krever. Til det er
-på plass er maskin-tilgang registrerbar, men ingen kan logge på med
-den.
+regnid støtter `client_credentials` (regnids migrasjon 0007). regnmed
+virker med et hvilket som helst token fra den konfigurerte issueren der
+`sub` er integrasjonens `client_id` — det er alt kontrakten krever, og
+den siden har vært ferdig hele tiden.
+
+Grantet er **av som standard per klient**: en admin må registrere
+integrasjonen som konfidensiell klient i regnid og slå på
+maskin-til-maskin (`regnid add-client … --client-credentials`, eller
+avkrysningsboksen på klientsiden). En offentlig klient får aldri et
+token uten bruker, uansett hva raden sier.
+
+Gjenstår før dette virker i produksjon: regnid må rulles ut med 0007.
 
 ## Tilgangen
 
