@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: regnmed
       POSTGRES_DB: regnmed
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18+ stores data in a major-version subdirectory and refuses
+      # to start if the mount sits at the old /var/lib/postgresql/data path.
+      - pgdata:/var/lib/postgresql
 
 volumes:
   pgdata:
