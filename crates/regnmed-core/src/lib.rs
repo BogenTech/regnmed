@@ -6,6 +6,8 @@
 //! deterministic — the same voucher content must hash identically forever,
 //! on any machine, or chain verification breaks.
 
+pub mod aksjebok;
+pub mod aksjonaeroppgave;
 pub mod anchor;
 pub mod anlegg;
 pub mod bank;
@@ -19,6 +21,7 @@ pub mod ehf_import;
 pub mod epost;
 pub mod error;
 pub mod fakturapdf;
+pub mod fnr;
 pub mod hash;
 pub mod invoice;
 pub mod kid;

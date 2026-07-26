@@ -694,8 +694,42 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    per selskap (mva_terminordning-mønsteret). MÅ IKKE følge etter:
    mva-terminer (mval. §15-1) og skattemessig saldo (sktl. §14-40 flg.)
    er kalender-/inntektsårsforankret uansett.
+48. ✅ Aksjeeierbok og aksjonærregisteroppgaven (docs/aksjonaer.md,
+   closed #43): to ting som ofte blandes, holdt fra hverandre.
+   AKSJEEIERBOKEN er lovpålagt i seg selv (aksjeloven §4-5) og
+   modellert som hovedboken: migration 0034 gir `shareholder`
+   (identiteten PERMANENT — trigger + kolonnerettigheter; kontaktinfo
+   redigerbar; ingen slettes), `share_event` (insert-only; `antall`
+   alltid POSITIVT, retningen ligger i typen, så en rad kan ikke motsi
+   seg selv; en overdragelse = to rader i én tx m/ motpart begge veier)
+   og `dividend` (ETT vedtak, ikke ett beløp per eier — den enkeltes
+   utbytte er beholdning på beslutningsdatoen × per aksje, så delene
+   kan ikke avvike fra helheten; bokføres 2050→2800 i samme tx).
+   Eierandelen LAGRES ALDRI. PERSONVERN som designvalg: §4-5 krever
+   FØDSELSDATO, RF-1086 krever FØDSELSNUMMER — `Aksjonaer` (portal +
+   API) bærer bare datoen, utledet av nye `regnmed-core::fnr` (MOD11 ×2,
+   D-nummer dag+40, H-nummer mnd+40 og **syntetisk mnd+80** som er
+   Skatteetatens Tenor-konvensjon og står i deres eget RF-1086-eksempel;
+   århundret fra individnummeret). Nummeret leses ÉTT sted — når
+   oppgaven bygges — og integrasjonstesten fester begge sider.
+   OPPGAVEN: `regnmed-core::aksjonaeroppgave` rendrer hovedskjema
+   (RF-1086) + ett underskjema per aksjonær (RF-1086-U) hand-rolled i
+   Altinns Skjema-dialekt (gruppeid/orid, XSD-ens sekvens), validert mot
+   Skatteetatens offisielle XSD-er (vendored docs/aksjonaer/) i
+   enhetstester, integrasjonstest OG CI. HASTER: **fra juni 2026 er
+   sluttbrukersystem eneste leveringsvei** — Altinn.no og papir er
+   avviklet. ÆRLIG BEGRENSNING: transaksjonstypekodene er IKKE publisert
+   (begge felt er ubundet Tekst35, rettledningen navngir uten koder,
+   listen går til SBS-kanalen). Vi leverer bare `N` (stiftelse/
+   nyemisjon, fra etatens eget eksempel) og NEKTER HØYLYTT for resten —
+   en feil transaksjonstype flyter inn i aksjonærens RF-1088 og endrer
+   inngangsverdi/skjermingsgrunnlag. Forhåndsvisningen dør ikke av det:
+   den viser tallene + `leverbar:false` + hindringene. Innsending
+   venter på scope `skatteetaten:innrapporteringaksjonaerregisteroppgave`
+   OG Altinn systembruker (docs/gov.md). Portal: Aksjonærer-seksjon.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md), client_credentials i regnid (#45-forutsetning),
+   RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),
    EHF-transport via aksesspunkt, API-tier per leverandør
    (#19-oppfølger), OCR-sidecar (#34-oppfølger).
    NOTE: run `cargo fmt --all` before every commit — CI gates on

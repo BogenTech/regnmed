@@ -59,6 +59,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/assets/{asset_id}/dispose` | POST |
 | `/companies/{company_id}/assets/{asset_id}/runs` | GET |
 | `/companies/{company_id}/attachments/{attachment_id}` | GET |
+| `/companies/{company_id}/dividends` | GET POST |
 | `/companies/{company_id}/bank/matches` | POST |
 | `/companies/{company_id}/bank/matches/{bank_transaction_id}` | DELETE |
 | `/companies/{company_id}/bank/reconciliation` | GET |
@@ -142,6 +143,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/quotes/{quote_id}/order` | POST |
 | `/companies/{company_id}/quotes/{quote_id}/pdf` | GET |
 | `/companies/{company_id}/quotes/{quote_id}/status` | POST |
+| `/companies/{company_id}/reports/aksjonaeroppgave` | GET |
 | `/companies/{company_id}/reports/avvik` | GET |
 | `/companies/{company_id}/reports/balanse` | GET |
 | `/companies/{company_id}/reports/bokforingsspesifikasjon` | GET |
@@ -156,6 +158,10 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/reskontro/matches` | POST |
 | `/companies/{company_id}/reskontro/matches/{match_id}` | DELETE |
 | `/companies/{company_id}/settings` | GET |
+| `/companies/{company_id}/share-events` | GET POST |
+| `/companies/{company_id}/shareholders` | GET POST |
+| `/companies/{company_id}/shareholders/transaction-types` | GET |
+| `/companies/{company_id}/shareholders/{shareholder_id}/contact` | PUT |
 | `/companies/{company_id}/timesheet` | GET POST |
 | `/companies/{company_id}/timesheet/invoice` | POST |
 | `/companies/{company_id}/timesheet/lock` | GET |

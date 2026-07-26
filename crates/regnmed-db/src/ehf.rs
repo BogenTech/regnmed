@@ -24,7 +24,9 @@ use uuid::Uuid;
 /// Addresses are free text in our master data; EHF wants them apart.
 /// A shape we do not recognize goes out whole as the street line —
 /// better a complete address in one field than a wrong split.
-fn split_adresse(adresse: Option<String>) -> (Option<String>, Option<String>, Option<String>) {
+pub(crate) fn split_adresse(
+    adresse: Option<String>,
+) -> (Option<String>, Option<String>, Option<String>) {
     let Some(adresse) = adresse
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())

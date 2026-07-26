@@ -270,7 +270,8 @@
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
-      ["timer", "Timer"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"], ["reskontro", "Reskontro"],
+      ["timer", "Timer"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"], ["aksjonarer", "Aksjonærer"],
+      ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
     ].map(function (item) {
@@ -1339,6 +1340,302 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+  }
+
+  async function renderAksjonaerer(id) {
+    var year = new Date().getFullYear();
+    var results = await Promise.all([
+      api("/companies/" + id + "/shareholders"),
+      api("/companies/" + id + "/share-events"),
+      api("/companies/" + id + "/dividends"),
+      api("/companies/" + id + "/shareholders/transaction-types"),
+      api("/companies/" + id + "/reports/aksjonaeroppgave?year=" + year)
+        .catch(function () { return null; }),
+    ]);
+    var bok = results[0];
+    var hendelser = results[1].hendelser;
+    var utbytte = results[2].utbytte;
+    var typer = results[3].typer;
+    var oppgave = results[4];
+
+    var bokRows = bok.aksjonarer.map(function (a) {
+      // Aksjeloven §4-5 ber om fødselsdato — ikke fødselsnummer.
+      var ident = a.orgnr
+        ? "org.nr " + esc(a.orgnr)
+        : a.utenlandsk_id
+          ? esc(a.utenlandsk_id)
+          : a.fodselsdato ? "f. " + esc(a.fodselsdato) : "";
+      var adresse = [a.adresse, [a.postnummer, a.poststed].filter(Boolean).join(" ")]
+        .filter(Boolean).join(", ");
+      return "<tr" + (a.antall_aksjer === 0 ? ' class="opacity-50"' : "") + "><td>" + esc(a.navn) +
+        "</td><td class='text-xs opacity-70'>" + ident +
+        "</td><td class='text-xs opacity-70'>" + esc(adresse) +
+        "</td><td class='text-right'>" + a.antall_aksjer +
+        "</td><td class='text-right'>" + (a.andel_bp / 100).toFixed(2) + " %</td>" +
+        '<td><button class="btn btn-xs btn-ghost" data-sh-edit="' + a.id +
+        '" data-navn="' + esc(a.navn) + '">Endre adresse</button></td></tr>';
+    }).join("");
+
+    var bokCard = card("Aksjeeierbok",
+      '<p class="text-sm opacity-70 mb-2">Lovpålagt register (aksjeloven §4-5): styret skal føre ' +
+      "aksjeeierboken, og enhver har innsynsrett. Eierandelen lagres aldri — den er summen av " +
+      "hendelsene fram til datoen, akkurat som en saldo er summen av bilag. Boken viser <b>fødselsdato</b>, " +
+      "som er det loven ber om; fødselsnummeret brukes bare i innsendingen til Skatteetaten.</p>" +
+      '<div class="flex gap-2 items-end mb-3 flex-wrap">' +
+      '<label class="text-sm">Per dato ' +
+      '<input id="bok-dato" type="date" class="input input-sm input-bordered" value="' +
+      esc(bok.dato) + '"></label>' +
+      '<span class="text-sm opacity-70">Totalt <b>' + bok.totalt_antall_aksjer + "</b> aksjer</span></div>" +
+      (bokRows
+        ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Navn</th>' +
+          "<th>Identitet</th><th>Adresse</th><th class='text-right'>Aksjer</th>" +
+          "<th class='text-right'>Andel</th><th></th></tr></thead><tbody>" + bokRows + "</tbody></table></div>"
+        : '<p class="text-sm opacity-70 mb-3">Ingen aksjonærer registrert.</p>') +
+      "<h3 class='font-semibold mb-1'>Ny aksjonær</h3>" +
+      '<div class="grid gap-2 max-w-md" id="new-sh">' +
+      '<select data-f="kind" class="select select-sm select-bordered">' +
+      '<option value="person">Person (fødselsnummer)</option>' +
+      '<option value="selskap">Selskap (organisasjonsnummer)</option>' +
+      '<option value="utenlandsk">Utenlandsk (UTL-id)</option></select>' +
+      '<input data-f="navn" class="input input-sm input-bordered" placeholder="Navn">' +
+      '<input data-f="ident" class="input input-sm input-bordered" placeholder="Fødselsnummer (11 siffer)">' +
+      '<input data-f="adresse" class="input input-sm input-bordered" placeholder="Adresse">' +
+      '<div class="grid grid-cols-3 gap-2">' +
+      '<input data-f="postnummer" class="input input-sm input-bordered" placeholder="Postnr">' +
+      '<input data-f="poststed" class="input input-sm input-bordered" placeholder="Poststed">' +
+      '<input data-f="landkode" class="input input-sm input-bordered" placeholder="Land (SE)">' +
+      "</div>" +
+      '<button id="sh-create" class="btn btn-sm">Registrer aksjonær</button></div>');
+
+    var holderOptions = bok.aksjonarer.map(function (a) {
+      return '<option value="' + a.id + '">' + esc(a.navn) + " (" + a.antall_aksjer + ")</option>";
+    }).join("");
+    var typeOptions = typer.map(function (t) {
+      return '<option value="' + t.slug + '">' + esc(t.navn) +
+        (t.leverbar ? "" : " ⚠") + "</option>";
+    }).join("");
+    var hendelseRows = hendelser.map(function (h) {
+      return "<tr><td>" + esc(h.dato) + "</td><td>" + esc(h.aksjonar) +
+        "</td><td>" + esc(h.type_navn) + "</td><td class='text-right'>" + h.antall +
+        "</td><td class='text-right'>" + (h.belop_ore == null ? "" : kr(h.belop_ore)) +
+        "</td><td class='text-xs opacity-70'>" + esc(h.motpart || "") + "</td></tr>";
+    }).join("");
+
+    var hendelseCard = card("Hendelser",
+      '<p class="text-sm opacity-70 mb-2">Hendelser er innsettings-bare, som bilag: en feilføring rettes ' +
+      "med en motsatt hendelse, aldri ved å endre historien. En overdragelse registreres én gang — " +
+      "avgang hos selger og tilgang hos kjøper skrives i samme transaksjon. " +
+      "⚠ merker typer vi ennå ikke kan levere til Skatteetaten (se Oppgaven under).</p>" +
+      (hendelseRows
+        ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Dato</th>' +
+          "<th>Aksjonær</th><th>Type</th><th class='text-right'>Antall</th>" +
+          "<th class='text-right'>Beløp</th><th>Motpart</th></tr></thead><tbody>" +
+          hendelseRows + "</tbody></table></div>"
+        : "") +
+      (holderOptions
+        ? "<h3 class='font-semibold mb-1'>Ny hendelse</h3>" +
+          '<div class="grid gap-2 max-w-md" id="new-ev">' +
+          '<select data-f="holder" class="select select-sm select-bordered">' + holderOptions + "</select>" +
+          '<select data-f="type" class="select select-sm select-bordered">' + typeOptions + "</select>" +
+          '<div class="grid grid-cols-3 gap-2">' +
+          '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+          '<input data-f="antall" class="input input-sm input-bordered" placeholder="Antall aksjer">' +
+          '<input data-f="belop" class="input input-sm input-bordered" placeholder="Beløp (kr)">' +
+          "</div>" +
+          '<select data-f="motpart" class="select select-sm select-bordered">' +
+          '<option value="">Ingen motpart</option>' + holderOptions + "</select>" +
+          '<button id="ev-create" class="btn btn-sm">Registrer hendelse</button></div>'
+        : ""));
+
+    var utbytteRows = utbytte.map(function (u) {
+      return "<tr><td>" + esc(u.besluttet_dato) + "</td><td class='text-right'>" +
+        kr(u.per_aksje_ore) + "</td><td class='text-right'>" + kr(u.totalt_ore) +
+        "</td><td class='text-xs opacity-70'>" + esc(u.created_by) + "</td></tr>";
+    }).join("");
+    var utbytteCard = card("Utbytte",
+      '<p class="text-sm opacity-70 mb-2">Ett vedtak, ikke ett beløp per eier: beløpet den enkelte får ' +
+      "er antall aksjer på beslutningsdatoen ganger utbytte per aksje, så delene kan aldri avvike fra " +
+      "helheten. Vedtaket bokføres (2050 → 2800) i samme transaksjon som det registreres.</p>" +
+      (utbytteRows
+        ? '<table class="table table-sm mb-4"><thead><tr><th>Besluttet</th>' +
+          "<th class='text-right'>Per aksje</th><th class='text-right'>Totalt</th>" +
+          "<th>Registrert av</th></tr></thead><tbody>" + utbytteRows + "</tbody></table>"
+        : "") +
+      '<div class="grid gap-2 max-w-md" id="new-div">' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="peraksje" class="input input-sm input-bordered" placeholder="Utbytte per aksje (kr)">' +
+      "</div>" +
+      '<button id="div-create" class="btn btn-sm">Registrer utbyttevedtak</button></div>');
+
+    var oppgaveCard = "";
+    if (oppgave) {
+      var hindringer = (oppgave.hindringer || []).map(function (h) {
+        return "<li>" + esc(h) + "</li>";
+      }).join("");
+      oppgaveCard = card("Aksjonærregisteroppgaven " + year,
+        '<p class="text-sm opacity-70 mb-2">Alle norske AS må levere RF-1086 innen <b>31. januar</b>. ' +
+        "Fra juni 2026 er Altinn.no og papir avviklet — et sluttbrukersystem er eneste vei. " +
+        "Tallene under er hentet fra aksjeeierboken, ikke tastet inn på nytt.</p>" +
+        '<div class="text-sm mb-2">Aksjonærer: <b>' + oppgave.antall_aksjonarer +
+        "</b> · Aksjer: <b>" + oppgave.antall_aksjer + "</b> (i fjor " + oppgave.antall_aksjer_fjoraret +
+        ") · Pålydende: <b>" + kr(oppgave.palydende_ore) +
+        "</b> · Aksjekapital: <b>" + kr(oppgave.aksjekapital_ore) + "</b></div>" +
+        (oppgave.leverbar
+          ? '<div class="alert alert-success text-sm mb-2">Oppgaven kan rendres for ' + year + ".</div>"
+          : '<div class="alert alert-warning text-sm mb-2"><div><b>Kan ikke leveres ennå.</b>' +
+            "<ul class='list-disc ml-4 mt-1'>" + hindringer + "</ul></div></div>") +
+        '<button id="oppgave-xml" class="btn btn-sm btn-outline"' +
+        (oppgave.leverbar ? "" : " disabled") + ">Last ned RF-1086 (XML)</button>" +
+        '<p class="text-xs opacity-60 mt-2">Innsending krever Maskinporten-scope og Altinn systembruker ' +
+        "(docs/gov.md). Filene kan lastes ned og leveres via et system som har det.</p>");
+    }
+
+    shell(id, "aksjonarer", bokCard + hendelseCard + utbytteCard + oppgaveCard);
+
+    var datoInput = document.getElementById("bok-dato");
+    if (datoInput) datoInput.onchange = async function () {
+      try {
+        var data = await api("/companies/" + id + "/shareholders?dato=" + datoInput.value);
+        var body = datoInput.closest(".card-body");
+        var tbody = body.querySelector("tbody");
+        if (tbody) {
+          tbody.innerHTML = data.aksjonarer.map(function (a) {
+            var ident = a.orgnr ? "org.nr " + esc(a.orgnr)
+              : a.utenlandsk_id ? esc(a.utenlandsk_id)
+                : a.fodselsdato ? "f. " + esc(a.fodselsdato) : "";
+            var adresse = [a.adresse, [a.postnummer, a.poststed].filter(Boolean).join(" ")]
+              .filter(Boolean).join(", ");
+            return "<tr" + (a.antall_aksjer === 0 ? ' class="opacity-50"' : "") + "><td>" +
+              esc(a.navn) + "</td><td class='text-xs opacity-70'>" + ident +
+              "</td><td class='text-xs opacity-70'>" + esc(adresse) +
+              "</td><td class='text-right'>" + a.antall_aksjer +
+              "</td><td class='text-right'>" + (a.andel_bp / 100).toFixed(2) + " %</td><td></td></tr>";
+          }).join("");
+        }
+      } catch (error) { toast(error.message, false); }
+    };
+
+    var kindSelect = document.querySelector('#new-sh [data-f="kind"]');
+    if (kindSelect) kindSelect.onchange = function () {
+      var ident = document.querySelector('#new-sh [data-f="ident"]');
+      ident.placeholder = kindSelect.value === "person" ? "Fødselsnummer (11 siffer)"
+        : kindSelect.value === "selskap" ? "Organisasjonsnummer (9 siffer)"
+          : "Aksjonær-ID (UTL000000000)";
+    };
+
+    var shCreate = document.getElementById("sh-create");
+    if (shCreate) shCreate.onclick = async function () {
+      var box = document.getElementById("new-sh");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value.trim(); };
+      var kind = value("kind");
+      var body = {
+        kind: kind,
+        navn: value("navn"),
+        adresse: value("adresse") || null,
+        postnummer: value("postnummer") || null,
+        poststed: value("poststed") || null,
+        landkode: value("landkode").toUpperCase() || null,
+      };
+      if (kind === "person") body.fodselsnummer = value("ident");
+      else if (kind === "selskap") body.orgnr = value("ident");
+      else body.utenlandsk_id = value("ident");
+      try {
+        await post("/companies/" + id + "/shareholders", body);
+        toast("Aksjonær registrert", true);
+        renderAksjonaerer(id);
+      } catch (error) { toast(error.message, false); }
+    };
+
+    document.querySelectorAll("[data-sh-edit]").forEach(function (button) {
+      button.onclick = async function () {
+        var navn = prompt("Navn", button.getAttribute("data-navn"));
+        if (navn === null) return;
+        var adresse = prompt("Adresse", "");
+        if (adresse === null) return;
+        var postnummer = prompt("Postnummer", "");
+        if (postnummer === null) return;
+        var poststed = prompt("Poststed", "");
+        if (poststed === null) return;
+        try {
+          await api("/companies/" + id + "/shareholders/" +
+            button.getAttribute("data-sh-edit") + "/contact", {
+            method: "PUT",
+            body: JSON.stringify({
+              navn: navn,
+              adresse: adresse || null,
+              postnummer: postnummer || null,
+              poststed: poststed || null,
+              landkode: null,
+            }),
+          });
+          toast("Kontaktopplysninger oppdatert", true);
+          renderAksjonaerer(id);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
+
+    var evCreate = document.getElementById("ev-create");
+    if (evCreate) evCreate.onclick = async function () {
+      var box = document.getElementById("new-ev");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value.trim(); };
+      var type = value("type");
+      var motpart = value("motpart");
+      var typeInfo = typer.find(function (t) { return t.slug === type; });
+      var body = {
+        shareholder_id: value("holder"),
+        type: type,
+        dato: value("dato"),
+        antall: parseInt(value("antall"), 10),
+        belop_ore: value("belop") ? parseKr(value("belop")) : null,
+      };
+      if (motpart) {
+        body.motpart_id = motpart;
+        // Motparten går motsatt vei av hovedhendelsen.
+        body.motpart_type = typeInfo && typeInfo.tilgang ? "salg" : "kjop";
+      }
+      try {
+        await post("/companies/" + id + "/share-events", body);
+        toast("Hendelse registrert", true);
+        renderAksjonaerer(id);
+      } catch (error) { toast(error.message, false); }
+    };
+
+    var divCreate = document.getElementById("div-create");
+    if (divCreate) divCreate.onclick = async function () {
+      var box = document.getElementById("new-div");
+      var value = function (name) { return box.querySelector('[data-f="' + name + '"]').value.trim(); };
+      try {
+        var made = await post("/companies/" + id + "/dividends", {
+          besluttet_dato: value("dato"),
+          per_aksje_ore: parseKr(value("peraksje")),
+        });
+        toast("Utbytte registrert og bokført: " + kr(made.totalt_ore), true);
+        renderAksjonaerer(id);
+      } catch (error) { toast(error.message, false); }
+    };
+
+    var xmlBtn = document.getElementById("oppgave-xml");
+    if (xmlBtn) xmlBtn.onclick = async function () {
+      try {
+        var data = await api("/companies/" + id +
+          "/reports/aksjonaeroppgave?year=" + year + "&format=xml");
+        saveText(data.hovedskjema, "RF-1086-" + year + ".xml");
+        data.underskjemaer.forEach(function (u, index) {
+          saveText(u.xml, "RF-1086-U-" + year + "-" + (index + 1) + ".xml");
+        });
+        toast("Lastet ned hovedskjema og " + data.underskjemaer.length + " underskjema", true);
+      } catch (error) { toast(error.message, false); }
+    };
+  }
+
+  function saveText(text, filename) {
+    var url = URL.createObjectURL(new Blob([text], { type: "application/xml" }));
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function renderUtlegg(id) {
@@ -3263,6 +3560,7 @@
         if (section === "faktura") return await renderFaktura(id);
         if (section === "produkter") return await renderProdukter(id);
         if (section === "anlegg") return await renderAnlegg(id);
+        if (section === "aksjonarer") return await renderAksjonaerer(id);
         if (section === "utlegg") return await renderUtlegg(id);
         if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);

@@ -259,9 +259,15 @@ M7 (#37–#48) for new ground:
   ALDRI hovedboken, kamerafangst rett til innboksen, offline-kø for
   opplastinger m/ klientside-hash som serveren bruker til å avvise
   duplikater, responsiv meny og tabeller; docs/portal.md) — M5.
-- Offentlig: aksjonærregisteroppgaven + aksjebok som hendelseslogg
-  (#43) — M2. Lønn + a-melding som ærlig kartlagt paraply (#46) — still
-  deliberately last.
+- Offentlig: ✅ aksjonærregisteroppgaven + aksjebok som hendelseslogg
+  (#43 — aksjeeierbok etter aksjeloven §4-5 som insert-only
+  hendelsesspor, RF-1086 hoved- og underskjema rendret mot
+  Skatteetatens egne XSD-er; **fra juni 2026 er sluttbrukersystem
+  eneste leveringsvei**. Innsending venter på Maskinporten-scope +
+  Altinn systembruker, og transaksjonstypekodene er ikke publisert —
+  vi nekter framfor å gjette; docs/aksjonaer.md) — M2. Lønn +
+  a-melding som ærlig kartlagt paraply (#46) — still deliberately
+  last.
 
 **Deliberately not planned:** kassasystem/kontantsalg — kassasystemlova
 requires product certification; out of scope until a customer segment

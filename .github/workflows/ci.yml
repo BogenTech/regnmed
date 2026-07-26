@@ -36,7 +36,7 @@ jobs:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
     steps:
       - uses: actions/checkout@v4
-      - name: Install xmllint (SAF-T, pain.001 and EHF/UBL XSD validation)
+      - name: Install xmllint (SAF-T, pain.001, EHF/UBL and RF-1086 XSD validation)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

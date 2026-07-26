@@ -51,6 +51,8 @@ async fn seed_browser_demo() {
         ("1508", "Urealisert kursregulering"),
         ("2400", "Leverandørgjeld"),
         ("4300", "Varekostnad"),
+        ("2050", "Annen egenkapital"),
+        ("2800", "Avsatt utbytte"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -151,6 +153,88 @@ async fn seed_browser_demo() {
         .await
         .unwrap();
     }
+    // Aksjeeierbok (#43): to eiere, en stiftelse, en overdragelse og et
+    // utbyttevedtak — nok til å se boken, hendelsene og oppgaven.
+    let kari = regnmed_db::aksjebok::create_aksjonaer(
+        &state.pool,
+        company,
+        &regnmed_db::aksjebok::NyAksjonaer {
+            kind: "person".into(),
+            navn: "Kari Nordmann".into(),
+            fodselsnummer: Some("26829398612".into()),
+            orgnr: None,
+            utenlandsk_id: None,
+            adresse: Some("Haråsveien 13E".into()),
+            postnummer: Some("0283".into()),
+            poststed: Some("OSLO".into()),
+            landkode: None,
+            note: None,
+        },
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    let investor = regnmed_db::aksjebok::create_aksjonaer(
+        &state.pool,
+        company,
+        &regnmed_db::aksjebok::NyAksjonaer {
+            kind: "selskap".into(),
+            navn: "Investor AS".into(),
+            fodselsnummer: None,
+            orgnr: Some("923609016".into()),
+            utenlandsk_id: None,
+            adresse: None,
+            postnummer: None,
+            poststed: None,
+            landkode: None,
+            note: None,
+        },
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    let dato = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    regnmed_db::aksjebok::record_hendelse(
+        &state.pool,
+        company,
+        kari,
+        "stiftelse",
+        dato(2025, 1, 2),
+        100,
+        Some(10_000_000),
+        None,
+        None,
+        Some("Stiftelse"),
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    regnmed_db::aksjebok::record_hendelse(
+        &state.pool,
+        company,
+        kari,
+        "salg",
+        dato(2026, 6, 1),
+        40,
+        Some(6_000_000),
+        Some(investor),
+        Some("kjop"),
+        Some("Overdragelse"),
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    regnmed_db::aksjebok::create_utbytte(
+        &state.pool,
+        company,
+        dato(2026, 5, 20),
+        50_000,
+        Some("Ordinær generalforsamling"),
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+
     std::fs::write(
         format!("{out_dir}/jwks.json"),
         serde_json::to_string(&idp.jwks).unwrap(),

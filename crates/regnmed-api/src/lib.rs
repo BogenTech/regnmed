@@ -1,6 +1,7 @@
 //! HTTP API for regnmed. Library crate so integration tests can build the
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
+pub mod aksjebok;
 pub mod anchor;
 pub mod asset;
 pub mod attestering;
@@ -342,6 +343,30 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/expenses/{expense_id}/pay",
             axum::routing::post(expenses::pay),
+        )
+        .route(
+            "/companies/{company_id}/shareholders",
+            get(aksjebok::list_shareholders).post(aksjebok::create_shareholder),
+        )
+        .route(
+            "/companies/{company_id}/shareholders/transaction-types",
+            get(aksjebok::transaction_types),
+        )
+        .route(
+            "/companies/{company_id}/shareholders/{shareholder_id}/contact",
+            axum::routing::put(aksjebok::update_contact),
+        )
+        .route(
+            "/companies/{company_id}/share-events",
+            get(aksjebok::list_events).post(aksjebok::create_event),
+        )
+        .route(
+            "/companies/{company_id}/dividends",
+            get(aksjebok::list_dividends).post(aksjebok::create_dividend),
+        )
+        .route(
+            "/companies/{company_id}/reports/aksjonaeroppgave",
+            get(aksjebok::oppgave),
         )
         .route(
             "/companies/{company_id}/assets",

@@ -31,6 +31,7 @@ data with validity periods — never code branches on a year**:
 | Mva-koder | standard SAF-T code list | migration 0006 `vat_code` |
 | Terminer (2-mnd) | pure logic | `regnmed-core::mva::Termin` |
 | Næringsspesifikasjon grouping | vendored CSV **per inntektsår**, selected by the exported year, loud failure outside coverage | `regnmed-core::saft` ARGANGER + docs/saft/ |
+| Aksjonærregisteroppgaven RF-1086 | vendored XSD (hoved + under); **transaksjonstypekodene er IKKE publisert** og gjettes ikke | docs/aksjonaer/, `regnmed-core::aksjebok::Transaksjonstype::kode` |
 | SAF-T Financial schema | vendored XSD (v1.30) | docs/saft/ |
 | Mva-melding schema | vendored XSD | docs/mva-melding/ |
 | Kontonavn NS 4102 | same vendored CSV | (as grouping) |
@@ -58,6 +59,8 @@ A recurring checklist, done as one reviewed commit in December:
 4. Alle dated tables: newest `valid_from` still correct for the new
    year? (The satsregister, #49, will surface this automatically.)
 5. Frister (mva-terminer, a-melding when relevant) unchanged?
+6. RF-1086: ny årgang av skjema eller kodelister? (Skatteetatens
+   SBS-nyheter melder endringer i kodelister separat fra skjemaet.)
 
 Sources to watch: Skatteetatens API-dokumentasjon og SAF-T-sider,
 statsbudsjettet (regjeringen.no), lovdata endringslover for bokførings-
@@ -84,6 +87,15 @@ og regnskapsloven.
   never inferred); spesifikasjon, melding
   (skattleggingsperiodeAar) and frister follow the ordning
   (docs/mva.md).
+- ⚠️ **RF-1086 transaksjonstypekoder** (#43, docs/aksjonaer.md): den
+  eneste kodelisten vi trenger og ikke har. Feltene er ubundet `Tekst35`
+  i XSD-en, rettledningen navngir typene uten koder, og listen
+  distribueres til sluttbrukersystemer gjennom SBS-kanalen. Vi leverer
+  bare koder vi kan belegge (`N` for stiftelse/nyemisjon, fra etatens
+  eget eksempel) og nekter høylytt for resten — en feil transaksjonstype
+  flyter inn i aksjonærens RF-1088 og endrer inngangsverdien. Lukkes når
+  Maskinporten-scopet er tildelt og kodene kan verifiseres mot
+  testmiljøet.
 - 📌 #52 avvikende regnskapsår: **bevisst utsatt, ikke oversett** — se
   seksjonen under. Antakelsen er samlet i én navngitt funksjon, og
   kostnaden ved å endre den er kartlagt med fil og linje.

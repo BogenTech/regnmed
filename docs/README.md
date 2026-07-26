@@ -32,6 +32,7 @@ CLAUDE.md).
 | [attestering.md](attestering.md) | Godkjenningsflyt før bokføring og betaling: valgfri policy, insert-only beslutningsspor, fire øyne håndhevet i transaksjonen |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
+| [aksjonaer.md](aksjonaer.md) | Aksjeeierbok (aksjeloven §4-5) og aksjonærregisteroppgaven RF-1086: eierandelen beregnet fra hendelser, fødselsdato i boken og fødselsnummer bare i innsendingen, og kodene vi ikke gjetter |
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |
 | [migration.md](migration.md) | SAF-T import: the universal migration path |
 | [ehf.md](ehf.md) | EHF/PEPPOL ut og inn: dokumentet vi sender og leser, transporten som egen tier |

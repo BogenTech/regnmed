@@ -68,6 +68,28 @@ firm→client relationship, expressed in the government's registry.
   developed against the actual test environment instead of guessed.
   Tracked in issue #8.
 
+## Aksjonærregisteroppgaven (crates/regnmed-core::aksjonaeroppgave)
+
+RF-1086 rides the same rail, and is the most urgent of them:
+**from June 2026 an end-user system is the only way to file** — Altinn.no
+and paper are gone (docs/aksjonaer.md).
+
+- **Rendering** (implemented): hovedskjema + one underskjema per
+  shareholder, validated against Skatteetatens official XSDs (vendored
+  in `docs/aksjonaer/`) in unit tests, the integration test and CI.
+- **Submission** (pending, same posture as the mva-melding): scope
+  `skatteetaten:innrapporteringaksjonaerregisteroppgave` must be ordered
+  from Skatteetaten, and the API additionally requires an **Altinn
+  systembruker** with an access package
+  (`regnskapsforer-med-signeringsrettighet`, `ansvarlig-revisor`, …) —
+  a newer Digdir mechanism we have not set up. The flow is POST
+  hovedskjema → POST underskjema (×N) → POST bekreft, each call carrying
+  a unique `idempotencyKey`.
+
+Not implemented until we can run it against the real test environment,
+for the same reason as #8: a client written against an API we cannot
+execute is guesswork in another layer.
+
 ## Status & verification
 
 - Implemented and locked by tests (no credentials needed): grant-JWT
