@@ -5,7 +5,7 @@
       "name": "regnmed-api",
       "runtimeExecutable": "zsh",
       "runtimeArgs": ["-lc", "exec cargo run -q -p regnmed-api"],
-      "port": 8080
+      "port": 8082
     },
     {
       "name": "regnid",

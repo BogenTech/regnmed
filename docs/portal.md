@@ -18,8 +18,17 @@ Logout goes through regnid's `end_session` with `id_token_hint`
 
 The public client `regnmed-portal` must have the portal's origin
 registered: `{origin}/callback` as redirect URI and `{origin}/` as
-post-logout URI (dev: 127.0.0.1:8080 and localhost:8080; cluster:
-api.regnmed.localhost — seeded by `scripts/dev-cluster.sh`).
+post-logout URI. The portal derives both from `location.origin`, so the
+**port is part of the registration** — moving the dev server means
+re-registering the client.
+
+- Cluster: `api.regnmed.localhost`, seeded by `scripts/dev-cluster.sh`.
+- Two-process dev (no cluster): `scripts/dev-sso.sh` registers the
+  client and a dev admin against a local regnid, defaulting to
+  regnmed-api on **8082** and regnid on 8081. 8080 is avoided because
+  colima/k3s port forwards commonly hold it. Start regnid first —
+  regnmed-api resolves OIDC discovery at startup and exits if the
+  issuer is unreachable.
 
 ## Theming (the cross-site contract)
 

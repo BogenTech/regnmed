@@ -40,7 +40,12 @@ async fn main() -> Result<()> {
         rate: Default::default(),
     });
 
-    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
+    // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the
+    // fallback for dev harnesses that assign a free port.
+    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| {
+        let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
+        format!("127.0.0.1:{port}")
+    });
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("regnmed-api listening on http://{addr}");
     axum::serve(listener, app).await?;
