@@ -92,6 +92,28 @@ unrecoverable by design.
   manifest (docs/deploy.md).
 - Anything belonging to another system's production environment.
 
+### Where the tier-3 secrets actually are
+
+A secret correctly kept out of the repo is a secret nobody can find.
+Recording the *location* is not recording the secret, so:
+
+| Secret | Location | Notes |
+| --- | --- | --- |
+| Maskinporten **test** key | `~/.config/regnmed/maskinporten-test.pem` (+ `.pub.pem`), mode 600 | RSA 2048, generated 2026-07-24 with the Samarbeidsportalen setup. Nothing in the repo references it — `MASKINPORTEN_KEY_FILE` is set in the environment when needed. |
+| Maskinporten prod key | does not exist yet | Blocked on the scope grant (docs/gov.md). |
+
+**Per machine, not copied.** Maskinporten accepts several keys per
+client, which is what `MASKINPORTEN_KID` selects. A second development
+machine should generate its **own** keypair and register that public key
+on the same client — the same principle as the age recipients above, and
+for the same reason: a private key that never moves cannot be
+intercepted in transit or forgotten in a sync folder.
+
+If a copy must exist as a backup, encrypt it to the target machine's age
+key (`age -r age1... -o maskinporten-test.pem.age maskinporten-test.pem`)
+or put it in a password manager. Never in `secrets/`, never plaintext in
+a synced folder.
+
 ## Known limitation
 
 SOPS encrypts comments in dotenv files as well as values, so the
