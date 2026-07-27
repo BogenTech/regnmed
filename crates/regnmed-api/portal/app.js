@@ -270,7 +270,8 @@
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
-      ["timer", "Timer"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"], ["aksjonarer", "Aksjonærer"],
+      ["timer", "Timer"], ["lonn", "Lønn"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"],
+      ["aksjonarer", "Aksjonærer"],
       ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
@@ -1340,6 +1341,195 @@
         } catch (error) { toast(error.message, false); }
       };
     });
+  }
+
+  var AGA_SONER = [
+    ["I", "I — 14,1 %"], ["II", "II — 10,6 %"], ["III", "III — 6,4 %"],
+    ["IV", "IV — 5,1 %"], ["IVa", "IVa — 7,9 %"], ["V", "V — 0 %"],
+  ];
+  var MANEDER = [
+    "januar", "februar", "mars", "april", "mai", "juni",
+    "juli", "august", "september", "oktober", "november", "desember",
+  ];
+
+  async function renderLonn(id) {
+    var now = new Date();
+    var year = now.getFullYear();
+    var results = await Promise.all([
+      api("/companies/" + id + "/employees"),
+      api("/companies/" + id + "/payroll"),
+    ]);
+    var ansatte = results[0].ansatte;
+    var kjoringer = results[1].kjoringer;
+
+    var trekkTekst = function (a) {
+      if (a.trekk_type === "prosent") {
+        return (a.trekk_prosent_bp / 100).toFixed(1) + " %";
+      }
+      if (a.trekk_type === "tabell") {
+        return '<span class="text-warning">tabell ' + esc(String(a.trekk_tabell)) +
+          " ⚠</span>";
+      }
+      return "frikort";
+    };
+
+    var ansattRows = ansatte.map(function (a) {
+      var sluttet = a.ansatt_til && a.ansatt_til < today();
+      return "<tr" + (sluttet ? ' class="opacity-50"' : "") + "><td>" + esc(a.navn) +
+        "</td><td class='text-xs opacity-70'>" + esc(a.stilling || "") +
+        // Ferieloven krever ikke fnr her; datoen er nok for å kjenne igjen.
+        "</td><td class='text-xs opacity-70'>" + esc(a.fodselsdato || "") +
+        "</td><td class='text-right'>" + (a.manedslonn_ore == null ? "" : kr(a.manedslonn_ore)) +
+        "</td><td class='text-right'>" + trekkTekst(a) +
+        "</td><td class='text-right'>" + (a.feriepenger_bp / 100).toFixed(1) + " %" +
+        "</td></tr>";
+    }).join("");
+
+    var ansattCard = card("Ansatte",
+      '<p class="text-sm opacity-70 mb-2">Ansattregisteret. Identiteten (fødselsnummeret) er ' +
+      "permanent og vises ikke her — listen viser <b>fødselsdato</b>, som er nok til å kjenne " +
+      "igjen en ansatt. Feriepengesatsen står per ansatt fordi den er et faktum om " +
+      "arbeidsforholdet: 10,2 % etter ferieloven §10, 12,5 % fra året man fyller 60, " +
+      "høyere på tariff.</p>" +
+      (ansattRows
+        ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Navn</th>' +
+          "<th>Stilling</th><th>Født</th><th class='text-right'>Månedslønn</th>" +
+          "<th class='text-right'>Trekk</th><th class='text-right'>Feriepenger</th>" +
+          "</tr></thead><tbody>" + ansattRows + "</tbody></table></div>"
+        : '<p class="text-sm opacity-70 mb-3">Ingen ansatte registrert.</p>') +
+      "<h3 class='font-semibold mb-1'>Ny ansatt</h3>" +
+      '<div class="grid gap-2 max-w-md" id="new-emp">' +
+      '<input data-f="navn" class="input input-sm input-bordered" placeholder="Navn">' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<input data-f="fnr" class="input input-sm input-bordered" placeholder="Fødselsnummer (11 siffer)">' +
+      '<input data-f="stilling" class="input input-sm input-bordered" placeholder="Stilling">' +
+      "</div>" +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<input data-f="fra" type="date" class="input input-sm input-bordered" value="' + today() + '">' +
+      '<input data-f="lonn" class="input input-sm input-bordered" placeholder="Månedslønn (kr)">' +
+      "</div>" +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<input data-f="trekk" class="input input-sm input-bordered" placeholder="Trekkprosent (f.eks. 35)">' +
+      '<input data-f="fp" class="input input-sm input-bordered" value="10.2" title="Feriepengesats i prosent">' +
+      "</div>" +
+      '<button id="emp-create" class="btn btn-sm">Registrer ansatt</button></div>');
+
+    var kjortIAr = {};
+    kjoringer.forEach(function (k) { if (k.ar === year) kjortIAr[k.maned] = true; });
+    var manedOptions = MANEDER.map(function (navn, i) {
+      var m = i + 1;
+      return '<option value="' + m + '"' + (kjortIAr[m] ? " disabled" : "") + ">" +
+        navn + (kjortIAr[m] ? " (kjørt)" : "") + "</option>";
+    }).join("");
+    var soneOptions = AGA_SONER.map(function (s) {
+      return '<option value="' + s[0] + '">Sone ' + s[1] + "</option>";
+    }).join("");
+
+    var aktive = ansatte.filter(function (a) {
+      return !a.ansatt_til || a.ansatt_til >= today();
+    });
+    var linjeRows = aktive.map(function (a) {
+      return '<tr data-emp="' + a.id + '"><td>' + esc(a.navn) +
+        '</td><td><input data-l="brutto" class="input input-xs input-bordered w-32" value="' +
+        (a.manedslonn_ore == null ? "" : (a.manedslonn_ore / 100).toFixed(2)) +
+        '" placeholder="Brutto"></td>' +
+        '<td><input data-l="fp" class="input input-xs input-bordered w-32" placeholder="Feriepenger"></td>' +
+        '<td><label class="cursor-pointer"><input data-l="med" type="checkbox" class="checkbox checkbox-xs" checked> ' +
+        "med</label></td></tr>";
+    }).join("");
+
+    var kjoringRows = kjoringer.map(function (k) {
+      return "<tr><td>" + esc(MANEDER[k.maned - 1]) + " " + k.ar +
+        "</td><td class='text-xs opacity-70'>sone " + esc(k.sone) +
+        "</td><td class='text-right'>" + kr(k.brutto_ore) +
+        "</td><td class='text-right'>" + kr(k.forskuddstrekk_ore) +
+        "</td><td class='text-right'>" + kr(k.netto_ore) +
+        "</td><td class='text-right'>" + kr(k.feriepengeavsetning_ore) +
+        "</td><td class='text-right'>" + kr(k.aga_ore) + "</td></tr>";
+    }).join("");
+
+    var kjoringCard = card("Lønnskjøring",
+      '<p class="text-sm opacity-70 mb-2">En kjøring blir <b>ett bilag</b>: lønn, forskuddstrekk, ' +
+      "netto til utbetaling, feriepengeavsetning og arbeidsgiveravgift i én transaksjon. " +
+      "Netto føres mot <b>2930 Skyldig lønn</b> — selve utbetalingen gjøres i betalingslisten, " +
+      "så kjøring og utbetaling er to atskilte handlinger. En måned kan bare kjøres én gang; " +
+      "en retting er et reverserende bilag og en ny kjøring.</p>" +
+      '<div class="alert alert-warning text-sm mb-3"><div><b>A-melding leveres ikke herfra.</b> ' +
+      "Denne kjøringen er regnskapsføring, ikke rapportering — a-meldingen må fortsatt leveres " +
+      "på annen måte (frist den 5.). Se docs/lonn.md.</div></div>" +
+      (kjoringRows
+        ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Måned</th>' +
+          "<th>Sone</th><th class='text-right'>Brutto</th><th class='text-right'>Trekk</th>" +
+          "<th class='text-right'>Netto</th><th class='text-right'>Feriepenger avsatt</th>" +
+          "<th class='text-right'>Aga</th></tr></thead><tbody>" + kjoringRows + "</tbody></table></div>"
+        : "") +
+      (aktive.length
+        ? "<h3 class='font-semibold mb-1'>Kjør lønn</h3>" +
+          '<div class="grid gap-2 mb-2 max-w-lg" id="run-head">' +
+          '<div class="grid grid-cols-3 gap-2">' +
+          '<select data-f="maned" class="select select-sm select-bordered">' + manedOptions + "</select>" +
+          '<input data-f="dato" type="date" class="input input-sm input-bordered" value="' + today() +
+          '" title="Utbetalingsdato — styrer hvilke satser som gjelder">' +
+          '<select data-f="sone" class="select select-sm select-bordered">' + soneOptions + "</select>" +
+          "</div></div>" +
+          '<div class="overflow-x-auto"><table class="table table-sm mb-2" id="run-lines"><thead><tr>' +
+          "<th>Ansatt</th><th>Brutto (kr)</th><th>Feriepenger (kr)</th><th></th>" +
+          "</tr></thead><tbody>" + linjeRows + "</tbody></table></div>" +
+          '<button id="run-payroll" class="btn btn-sm">Kjør lønn og bokfør</button>'
+        : '<p class="text-sm opacity-70">Registrer minst én ansatt for å kjøre lønn.</p>'));
+
+    shell(id, "lonn", ansattCard + kjoringCard);
+
+    var empCreate = document.getElementById("emp-create");
+    if (empCreate) empCreate.onclick = async function () {
+      var box = document.getElementById("new-emp");
+      var value = function (n) { return box.querySelector('[data-f="' + n + '"]').value.trim(); };
+      try {
+        await post("/companies/" + id + "/employees", {
+          navn: value("navn"),
+          fodselsnummer: value("fnr"),
+          stilling: value("stilling") || null,
+          ansatt_fra: value("fra"),
+          manedslonn_ore: value("lonn") ? parseKr(value("lonn")) : null,
+          trekk_type: value("trekk") ? "prosent" : "ingen",
+          trekk_prosent_bp: value("trekk")
+            ? Math.round(parseFloat(value("trekk").replace(",", ".")) * 100)
+            : null,
+          feriepenger_bp: Math.round(parseFloat(value("fp").replace(",", ".")) * 100),
+        });
+        toast("Ansatt registrert", true);
+        renderLonn(id);
+      } catch (error) { toast(error.message, false); }
+    };
+
+    var runBtn = document.getElementById("run-payroll");
+    if (runBtn) runBtn.onclick = async function () {
+      var head = document.getElementById("run-head");
+      var value = function (n) { return head.querySelector('[data-f="' + n + '"]').value; };
+      var linjer = [];
+      document.querySelectorAll("#run-lines tbody tr").forEach(function (row) {
+        if (!row.querySelector('[data-l="med"]').checked) return;
+        var brutto = row.querySelector('[data-l="brutto"]').value.trim();
+        var fp = row.querySelector('[data-l="fp"]').value.trim();
+        linjer.push({
+          employee_id: row.getAttribute("data-emp"),
+          brutto_ore: brutto ? parseKr(brutto) : null,
+          feriepenger_ore: fp ? parseKr(fp) : 0,
+        });
+      });
+      if (!linjer.length) { toast("Ingen ansatte er med i kjøringen", false); return; }
+      try {
+        var laget = await post("/companies/" + id + "/payroll", {
+          ar: year,
+          maned: parseInt(value("maned"), 10),
+          utbetalt_dato: value("dato"),
+          sone: value("sone"),
+          linjer: linjer,
+        });
+        toast("Lønn bokført — netto " + kr(laget.kjoring.netto_ore), true);
+        renderLonn(id);
+      } catch (error) { toast(error.message, false); }
+    };
   }
 
   async function renderAksjonaerer(id) {
@@ -3561,6 +3751,7 @@
         if (section === "produkter") return await renderProdukter(id);
         if (section === "anlegg") return await renderAnlegg(id);
         if (section === "aksjonarer") return await renderAksjonaerer(id);
+        if (section === "lonn") return await renderLonn(id);
         if (section === "utlegg") return await renderUtlegg(id);
         if (section === "timer") return await renderTimer(id);
         if (section === "reskontro") return await renderReskontro(id, parts[3] || null);

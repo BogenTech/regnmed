@@ -140,7 +140,20 @@ Rekkefølgen er omtrent den de bør tas i.
    timeføringen (docs/timer.md) ennå.
 7. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
-8. **Portal-seksjon.** Endepunktene finnes; UI-et kommer i neste del.
+
+## Portal
+
+Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og
+**Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
+der brutto kan overstyres og feriepenger legges inn per person).
+
+Måneder som allerede er kjørt er **deaktivert** i månedsvelgeren, så den
+vanligste feilen ikke engang kan forsøkes. Advarselen om at a-meldingen
+ikke leveres herfra står i selve kortet, ikke bare i denne filen.
+
+Verifisert i nettleser: registeret viser fødselsdato og ikke
+fødselsnummer, juni (allerede kjørt) er deaktivert, og en kjøring
+utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
 

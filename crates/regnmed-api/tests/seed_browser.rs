@@ -53,6 +53,13 @@ async fn seed_browser_demo() {
         ("4300", "Varekostnad"),
         ("2050", "Annen egenkapital"),
         ("2800", "Avsatt utbytte"),
+        ("5000", "Lønn til ansatte"),
+        ("5090", "Feriepenger"),
+        ("5400", "Arbeidsgiveravgift"),
+        ("2600", "Forskuddstrekk"),
+        ("2770", "Skyldig arbeidsgiveravgift"),
+        ("2930", "Skyldig lønn"),
+        ("2940", "Skyldige feriepenger"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -230,6 +237,71 @@ async fn seed_browser_demo() {
         dato(2026, 5, 20),
         50_000,
         Some("Ordinær generalforsamling"),
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+
+    // Ansatte + en kjørt måned, så Lønn-seksjonen har noe å vise.
+    for (fnr, navn, stilling, lonn, trekk_bp, fp_bp) in [
+        (
+            "26829398612",
+            "Kari Utvikler",
+            "Utvikler",
+            5_500_000i64,
+            3500i32,
+            1020i32,
+        ),
+        (
+            "08888797336",
+            "Ola Senior",
+            "Fagansvarlig",
+            6_200_000,
+            3800,
+            1250,
+        ),
+    ] {
+        regnmed_db::lonn::create_ansatt(
+            &state.pool,
+            company,
+            &regnmed_db::lonn::NyAnsatt {
+                fodselsnummer: fnr.into(),
+                navn: navn.into(),
+                stilling: Some(stilling.into()),
+                ansatt_fra: dato(2025, 1, 1),
+                manedslonn_ore: Some(lonn),
+                timelonn_ore: None,
+                trekk_type: "prosent".into(),
+                trekk_prosent_bp: Some(trekk_bp),
+                trekk_tabell: None,
+                feriepenger_bp: fp_bp,
+                bank_account: None,
+                note: None,
+            },
+            "Demo Bruker",
+        )
+        .await
+        .unwrap();
+    }
+    let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company)
+        .await
+        .unwrap();
+    regnmed_db::lonn::kjor_lonn(
+        &state.pool,
+        company,
+        2026,
+        6,
+        dato(2026, 6, 20),
+        "I",
+        &ansatte
+            .iter()
+            .map(|a| regnmed_db::lonn::Lonnspost {
+                employee_id: a.id,
+                brutto_ore: None,
+                // Juni: feriepenger utbetales, og de er trekkfrie.
+                feriepenger_ore: 4_500_000,
+            })
+            .collect::<Vec<_>>(),
         "Demo Bruker",
     )
     .await
