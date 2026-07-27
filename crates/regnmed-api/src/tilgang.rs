@@ -105,20 +105,26 @@ pub enum Rett {
     // Timer — omfang gjelder her i dag
     TimerLesEgne,
     TimerLesAlle,
+    /// Selskapsvide timeoversikter (per prosjekt, ufakturert). Skilt fra
+    /// `TimerLesAlle`, som er admins rett til å se og rette andres
+    /// enkelttimer: en leser skal se totalene uten å kunne rette noe.
+    TimerRapportLes,
     TimerSkrivEgne,
     TimerSkrivAlle,
     TimerFakturer,
     TimerLaas,
 
     // Utlegg
-    UtleggLes,
+    UtleggLesEgne,
+    UtleggLesAlle,
     UtleggSkrivEgne,
     UtleggGodkjenn,
     UtleggUtbetal,
 
     // Lønn
     LonnLes,
-    LonnsslippLes,
+    LonnsslippLesEgen,
+    LonnsslippLesAlle,
     LonnSkriv,
     LonnKjor,
 
@@ -200,16 +206,19 @@ impl Rett {
             AnleggSkriv => "ANLEGG_SKRIV",
             TimerLesEgne => "TIMER_LES_EGNE",
             TimerLesAlle => "TIMER_LES_ALLE",
+            TimerRapportLes => "TIMER_RAPPORT_LES",
             TimerSkrivEgne => "TIMER_SKRIV_EGNE",
             TimerSkrivAlle => "TIMER_SKRIV_ALLE",
             TimerFakturer => "TIMER_FAKTURER",
             TimerLaas => "TIMER_LAAS",
-            UtleggLes => "UTLEGG_LES",
+            UtleggLesEgne => "UTLEGG_LES_EGNE",
+            UtleggLesAlle => "UTLEGG_LES_ALLE",
             UtleggSkrivEgne => "UTLEGG_SKRIV_EGNE",
             UtleggGodkjenn => "UTLEGG_GODKJENN",
             UtleggUtbetal => "UTLEGG_UTBETAL",
             LonnLes => "LONN_LES",
-            LonnsslippLes => "LONNSSLIPP_LES",
+            LonnsslippLesEgen => "LONNSSLIPP_LES_EGEN",
+            LonnsslippLesAlle => "LONNSSLIPP_LES_ALLE",
             LonnSkriv => "LONN_SKRIV",
             LonnKjor => "LONN_KJOR",
             BudsjettLes => "BUDSJETT_LES",
@@ -243,6 +252,8 @@ impl Rett {
         match self {
             Rett::TimerLesAlle => &[Rett::TimerLesEgne],
             Rett::TimerSkrivAlle => &[Rett::TimerSkrivEgne, Rett::TimerLesEgne],
+            Rett::UtleggLesAlle => &[Rett::UtleggLesEgne],
+            Rett::LonnsslippLesAlle => &[Rett::LonnsslippLesEgen],
             _ => &[],
         }
     }
@@ -255,10 +266,51 @@ impl Rett {
 /// vakten er de samme, så den endringen rører ikke endepunktene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rolle {
+    /// En rolleverdi denne binæren ikke kjenner. Gir INGEN rettigheter.
+    ///
+    /// Dette er ikke teoretisk: under en rullerende utrulling kan
+    /// databasen ha en rolle den gamle binæren aldri har hørt om. Å
+    /// falle tilbake til `Les` ville da gjort en ansatt om til en som
+    /// leser hele hovedboken — en oppgradering, ikke en degradering.
+    /// Etter at `Ansatt` kom til finnes det heller ingen «svakeste»
+    /// rolle å falle til: `Ansatt` og `Les` er ikke sammenlignbare.
+    Ukjent,
+    /// Selvbetjening: egne timer, egne utlegg, egen lønnsslipp. Ikke
+    /// et trinn under `Les` — se [`ANSATT_BUNT`].
+    Ansatt,
     Les,
     Bokforing,
     Admin,
 }
+
+/// Den ansattes selvbetjening (#54).
+///
+/// **Dette er ikke «lesing minus noe».** En ansatt får SKRIVE noen få
+/// ting — sine egne timer, sitt eget utlegg, et bilde av en kvittering
+/// — og LESE nesten ingenting. Det er nettopp den formen en rangstige
+/// ikke kunne uttrykke, og grunnen til at rettighetsmodellen (#59) måtte
+/// komme først.
+///
+/// Bunten er positivt avgrenset: den lister hva en ansatt får, ikke hva
+/// hun er nektet. Hovedbok, rapporter, faktura, bank, reskontro,
+/// ansattlisten og alles timer, utlegg og lønn er ikke med, og blir det
+/// ikke ved et uhell heller — en ny rettighet må skrives inn her for å
+/// gjelde.
+pub const ANSATT_BUNT: &[Rett] = &[
+    // Føre og se sine egne timer. Prosjektregisteret må være lesbart,
+    // ellers finnes det ingenting å føre timene på.
+    Rett::TimerLesEgne,
+    Rett::TimerSkrivEgne,
+    Rett::DimensjonLes,
+    // Sende inn og følge sitt eget refusjonskrav.
+    Rett::UtleggLesEgne,
+    Rett::UtleggSkrivEgne,
+    // Sin egen lønnsslipp — ikke kollegenes.
+    Rett::LonnsslippLesEgen,
+    // Kvitteringsfoto fra mobilen (#48). Å laste opp er ikke å bokføre:
+    // dokumentet havner i innboksen og venter på noen med BILAG_BOKFOR.
+    Rett::BilagLastOpp,
+];
 
 /// Det enhver med tilgang til selskapet får. Revisor lever her: lesing
 /// av alt, endring av ingenting.
@@ -278,12 +330,13 @@ const LES_BUNT: &[Rett] = &[
     Rett::LagerLes,
     Rett::AnleggLes,
     Rett::TimerLesEgne,
-    Rett::UtleggLes,
+    Rett::TimerRapportLes,
+    Rett::UtleggLesAlle,
     Rett::LonnLes,
     // MERK: lønnsslippen er lesbar for enhver med tilgang, også i dag.
     // Det er en kjent svakhet (#55) — den står her fordi #59 ikke skal
     // endre oppførsel, ikke fordi den hører hjemme i lesebunten.
-    Rett::LonnsslippLes,
+    Rett::LonnsslippLesAlle,
     Rett::BudsjettLes,
     Rett::DimensjonLes,
     Rett::AksjebokLes,
@@ -348,17 +401,14 @@ const ADMIN_BUNT: &[Rett] = &[
 ];
 
 impl Rolle {
-    /// Ukjente verdier blir den svakeste rollen, ikke en feil.
-    ///
-    /// Databasen har en check-constraint på lovlige roller, så dette
-    /// skal ikke kunne skje — men skulle det skje, er «minst tilgang»
-    /// det trygge svaret. Å feile åpent her ville gjort en datafeil om
-    /// til en tilgangseskalering.
+    /// Ukjente verdier gir INGEN rettigheter — se [`Rolle::Ukjent`].
     pub fn fra_db(s: &str) -> Self {
         match s {
             "admin" => Self::Admin,
             "bokforing" => Self::Bokforing,
-            _ => Self::Les,
+            "ansatt" => Self::Ansatt,
+            "les" => Self::Les,
+            _ => Self::Ukjent,
         }
     }
 
@@ -367,6 +417,8 @@ impl Rolle {
             Self::Admin => "admin",
             Self::Bokforing => "bokforing",
             Self::Les => "les",
+            Self::Ansatt => "ansatt",
+            Self::Ukjent => "ukjent",
         }
     }
 
@@ -381,6 +433,10 @@ impl Rolle {
     /// tatt.
     fn bunter(self) -> &'static [&'static [Rett]] {
         match self {
+            Self::Ukjent => &[],
+            // Ansatt er IKKE nøstet under de tre andre — den er sin egen
+            // sammensetning, og det er hele poenget med modellen.
+            Self::Ansatt => &[ANSATT_BUNT],
             Self::Les => &[LES_BUNT],
             Self::Bokforing => &[LES_BUNT, BOKFORING_BUNT],
             Self::Admin => &[LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT],
@@ -456,14 +512,18 @@ fn manglende(rett: Rett) -> &'static str {
 mod tests {
     use super::*;
 
-    /// Hele vokabularet, som fasit for de andre testene. Legges en
-    /// rettighet til uten å havne i en bunt, faller den ut her.
+    /// Hele vokabularet, som fasit for de andre testene.
+    ///
+    /// Buntene PLUSS det de medfører: `UTLEGG_LES_EGNE` står ikke i noen
+    /// bunt, den kommer av `UTLEGG_LES_ALLE`. Uten den utvidelsen ville
+    /// «hele vokabularet» utelatt nettopp de rettighetene omfanget
+    /// handler om.
     fn alle_rettigheter() -> Vec<Rett> {
         let mut v: Vec<Rett> = LES_BUNT
             .iter()
             .chain(BOKFORING_BUNT)
             .chain(ADMIN_BUNT)
-            .copied()
+            .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied()))
             .collect();
         v.sort();
         v.dedup();
@@ -480,6 +540,60 @@ mod tests {
             for r in bunt {
                 assert!(sett.insert(*r), "{} er i mer enn én bunt", r.slug());
             }
+        }
+    }
+
+    /// ANSATT_BUNT er med vilje IKKE en av de tre nivåbuntene — den
+    /// gjenbruker rettigheter fra dem, og skal gjøre det. Kravet her er
+    /// et annet: hver rettighet den nevner må finnes i vokabularet, så
+    /// bunten ikke kan love noe ingen håndhever.
+    #[test]
+    fn ansattbunten_bruker_bare_kjente_rettigheter() {
+        let kjente: std::collections::BTreeSet<_> = alle_rettigheter().into_iter().collect();
+        for r in ANSATT_BUNT {
+            assert!(
+                kjente.contains(r),
+                "{} finnes ikke i noen nivåbunt",
+                r.slug()
+            );
+        }
+    }
+
+    /// Det viktigste ved ansattrollen er hva den IKKE gir.
+    #[test]
+    fn ansatt_kommer_ikke_til_hovedboken() {
+        let a = Rolle::Ansatt;
+        for nektet in [
+            Rett::BilagLes,
+            Rett::BilagBokfor,
+            Rett::RapportLes,
+            Rett::FakturaLes,
+            Rett::FakturaSkriv,
+            Rett::BankLes,
+            Rett::ReskontroLes,
+            Rett::BetalingLes,
+            Rett::LonnLes,
+            Rett::LonnsslippLesAlle,
+            Rett::TimerLesAlle,
+            Rett::TimerRapportLes,
+            Rett::UtleggLesAlle,
+            Rett::UtleggGodkjenn,
+            Rett::SelskapLes,
+            Rett::MedlemAdmin,
+        ] {
+            assert!(!a.har(nektet), "ansatt skulle ikke hatt {}", nektet.slug());
+        }
+        // Og det den SKAL ha.
+        for gitt in [
+            Rett::TimerLesEgne,
+            Rett::TimerSkrivEgne,
+            Rett::UtleggSkrivEgne,
+            Rett::UtleggLesEgne,
+            Rett::LonnsslippLesEgen,
+            Rett::BilagLastOpp,
+            Rett::DimensjonLes,
+        ] {
+            assert!(a.har(gitt), "ansatt mangler {}", gitt.slug());
         }
     }
 
@@ -556,18 +670,24 @@ mod tests {
 
     #[test]
     fn rollen_er_rundtur_mot_databasens_verdier() {
-        for slug in ["admin", "bokforing", "les"] {
+        for slug in ["admin", "bokforing", "les", "ansatt"] {
             assert_eq!(Rolle::fra_db(slug).slug(), slug);
         }
     }
 
-    /// En rolleverdi vi ikke kjenner igjen skal gi MINST tilgang.
-    /// Feiler dette, blir en datafeil til en tilgangseskalering.
+    /// En rolleverdi vi ikke kjenner igjen gir INGEN rettigheter.
+    ///
+    /// Før ansattrollen falt ukjent til `Les`, som da var svakest. Nå
+    /// er `Ansatt` og `Les` ikke sammenlignbare, og under en rullerende
+    /// utrulling kan en gammel binær møte en rolle den ikke kjenner —
+    /// å tolke «ansatt» som «les» ville vært en oppgradering.
     #[test]
-    fn ukjent_rolle_faller_til_svakeste() {
-        assert_eq!(Rolle::fra_db("superbruker"), Rolle::Les);
-        assert_eq!(Rolle::fra_db(""), Rolle::Les);
-        assert!(!Rolle::fra_db("superbruker").har(Rett::BilagBokfor));
+    fn ukjent_rolle_gir_ingen_rettigheter() {
+        for ukjent in ["superbruker", "", "Ansatt", "LES"] {
+            let r = Rolle::fra_db(ukjent);
+            assert_eq!(r, Rolle::Ukjent, "«{ukjent}»");
+            assert!(r.rettigheter().is_empty(), "«{ukjent}» ga rettigheter");
+        }
     }
 
     /// Rettighetslisten portalen viser skal være komplett og sortert

@@ -871,6 +871,24 @@ pub async fn lonnsslipp(
     })
 }
 
+/// The portal user an employee record is linked to, if any.
+///
+/// The link is optional (migration 0036): an employee who never logs in
+/// has none, and then nobody can claim to be them.
+pub async fn ansatt_person(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+) -> Result<Option<Uuid>> {
+    let p: Option<Option<Uuid>> =
+        sqlx::query_scalar("select person_id from employee where id = $1 and company_id = $2")
+            .bind(employee_id)
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(p.flatten())
+}
+
 /// Hours logged by an employee in one month, and what they come to.
 #[derive(Debug, Clone, Copy)]
 pub struct Timegrunnlag {

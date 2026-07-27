@@ -105,8 +105,13 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggLes).await?;
-    let expenses = regnmed_db::list_expenses(&state.pool, company_id, person.person_id).await?;
+    // En ansatt ser sine egne krav; alle andre ser selskapets. Omfanget
+    // avgjøres av rettigheten, ikke av rollen — da flytter det seg av
+    // seg selv når roller settes sammen på nytt (#60).
+    let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
+    let bare_egne = !rolle.har(Rett::UtleggLesAlle);
+    let expenses =
+        regnmed_db::list_expenses(&state.pool, company_id, person.person_id, bare_egne).await?;
     Ok(Json(json!({
         "expenses": expenses.iter().map(|e| json!({
             "expense_id": e.id,
@@ -132,7 +137,18 @@ pub async fn receipt(
     person: AuthPerson,
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggLes).await?;
+    let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
+    if !rolle.har(Rett::UtleggLesAlle) {
+        // Kvitteringen er et bilde av noe privat. Uten UTLEGG_LES_ALLE
+        // får man bare sin egen — og et krav som tilhører en annen skal
+        // svare som om det ikke finnes.
+        let eier = regnmed_db::expense_owner(&state.pool, company_id, expense_id)
+            .await
+            .map_err(|_| ApiError::NotFound)?;
+        if eier != person.person_id {
+            return Err(ApiError::NotFound);
+        }
+    }
     let (filename, content_type, content) =
         regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
             .await

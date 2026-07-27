@@ -236,7 +236,23 @@ pub async fn payslip_pdf(
     person: AuthPerson,
     Path((company_id, run_id, employee_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnsslippLes).await?;
+    // Sin egen slipp får man alltid; andres krever LONNSSLIPP_LES_ALLE.
+    // Merk at det ikke er #55: den saken skal ta LONNSSLIPP_LES_ALLE UT
+    // av lesebunten. Her legges bare omfanget inn, uten å endre hvem som
+    // har hva.
+    let rolle = krev(
+        &state,
+        person.person_id,
+        company_id,
+        Rett::LonnsslippLesEgen,
+    )
+    .await?;
+    if !rolle.har(Rett::LonnsslippLesAlle) {
+        let eier = regnmed_db::lonn::ansatt_person(&state.pool, company_id, employee_id).await?;
+        if eier != Some(person.person_id) {
+            return Err(ApiError::NotFound);
+        }
+    }
     let input = regnmed_db::lonn::lonnsslipp(&state.pool, company_id, run_id, employee_id)
         .await
         .map_err(|_| ApiError::NotFound)?;

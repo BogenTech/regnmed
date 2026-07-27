@@ -153,7 +153,7 @@ pub async fn summary(
     Path(company_id): Path<Uuid>,
     Query(range): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
+    krev(&state, person.person_id, company_id, Rett::TimerRapportLes).await?;
     let rows = regnmed_db::timesheet_summary(&state.pool, company_id, range.from, range.to).await?;
     Ok(Json(json!({
         "prosjekter": rows.iter().map(|r| json!({
@@ -177,7 +177,7 @@ pub async fn unbilled(
     Path(company_id): Path<Uuid>,
     Query(query): Query<UnbilledQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
+    krev(&state, person.person_id, company_id, Rett::TimerRapportLes).await?;
     let groups = regnmed_db::unbilled_groups(
         &state.pool,
         company_id,

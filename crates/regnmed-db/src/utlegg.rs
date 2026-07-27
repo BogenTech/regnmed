@@ -123,10 +123,14 @@ pub struct ExpenseRow {
     pub utbetalt_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// `bare_egne` scopes the list to the viewer's own claims — what an
+/// ansatt gets. For everyone else the flag is false and the list is the
+/// whole company's, with `own` marking the viewer's own rows.
 pub async fn list_expenses(
     pool: &PgPool,
     company_id: Uuid,
     viewer: Uuid,
+    bare_egne: bool,
 ) -> Result<Vec<ExpenseRow>> {
     let rows = sqlx::query(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
@@ -137,12 +141,13 @@ pub async fn list_expenses(
          from expense e
          join person p on p.id = e.person_id
          left join voucher v on v.id = e.voucher_id
-         where e.company_id = $1
+         where e.company_id = $1 and ($3 = false or e.person_id = $2)
          order by e.created_at desc
          limit 200",
     )
     .bind(company_id)
     .bind(viewer)
+    .bind(bare_egne)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -176,6 +181,17 @@ pub async fn list_expenses(
 /// The receipt, integrity-checked against the stored SHA-256 on every
 /// read — a claim whose documentation cannot be verified is an error,
 /// never silently served.
+/// Who submitted a claim — the caller needs it to decide whether a
+/// viewer with only `UTLEGG_LES_EGNE` may see it.
+pub async fn expense_owner(pool: &PgPool, company_id: Uuid, expense_id: Uuid) -> Result<Uuid> {
+    sqlx::query_scalar("select person_id from expense where id = $1 and company_id = $2")
+        .bind(expense_id)
+        .bind(company_id)
+        .fetch_optional(pool)
+        .await?
+        .context("no such utlegg")
+}
+
 pub async fn expense_receipt(
     pool: &PgPool,
     company_id: Uuid,

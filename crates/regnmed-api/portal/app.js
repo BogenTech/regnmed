@@ -275,8 +275,14 @@
       '<button id="theme-toggle" class="btn btn-ghost btn-sm text-lg"></button>';
   }
 
+  // Det en ansatt får se (#54). Portalen SKJULER bare — serveren nekter,
+  // og det er der sannheten ligger. Menyen finnes for at man ikke skal
+  // klikke seg inn i en feilmelding, ikke som en sperre.
+  var ANSATT_MENY = ["timer", "utlegg", "bilag"];
+
   function shell(companyId, section, content) {
     var company = companies.find(function (c) { return c.company_id === companyId; });
+    var bareEgne = company && company.access === "ansatt";
     var items = [
       ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
       ["timer", "Timer"], ["lonn", "Lønn"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"],
@@ -284,7 +290,9 @@
       ["reskontro", "Reskontro"],
       ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
       ["periode", "Periode"], ["oppdrag", "Oppdrag"],
-    ].map(function (item) {
+    ].filter(function (item) {
+      return !bareEgne || ANSATT_MENY.indexOf(item[0]) >= 0;
+    }).map(function (item) {
       return '<li><a href="#/c/' + companyId + "/" + item[0] + '" class="' +
         (section === item[0] ? "active" : "") + '">' + item[1] + "</a></li>";
     }).join("");
@@ -3100,6 +3108,32 @@
   }
 
   async function renderBilag(id) {
+    // En ansatt kan LASTE OPP en kvittering, men ikke lese innboksen,
+    // bilagslisten eller attesteringskøen. Da får hun sin egen lille
+    // side i stedet for den vanlige, som ville feilet på første kall.
+    var meg = companies.find(function (c) { return c.company_id === id; });
+    if (meg && meg.access === "ansatt") {
+      shell(id, "bilag", card("Send inn kvittering",
+        '<p class="text-sm opacity-70 mb-3">Ta bilde av en kvittering, så havner den i ' +
+        "selskapets innboks. Den som fører regnskapet tar den derfra — du bokfører ingenting selv. " +
+        "Gjelder det et utlegg du skal ha igjen penger for, bruk <b>Utlegg</b> i stedet.</p>" +
+        '<label class="btn btn-sm btn-primary">Ta bilde av kvittering' +
+        '<input type="file" id="inbox-camera" class="hidden" accept="image/*" capture="environment">' +
+        "</label>" +
+        '<div id="ko-status" class="text-xs opacity-70 mt-2"></div>'));
+      var kamera = document.getElementById("inbox-camera");
+      kamera.onchange = async function () {
+        var fil = kamera.files[0];
+        if (!fil) return;
+        try {
+          var utfall = await lastOppKvittering(id, fil);
+          toast(utfall === "sendt"
+            ? "Kvitteringen ligger i innboksen"
+            : "Uten dekning — kvitteringen er lagret og sendes automatisk", utfall === "sendt");
+        } catch (error) { toast(error.message, false); }
+      };
+      return;
+    }
     var results = await Promise.all([
       api("/companies/" + id + "/vouchers"),
       api("/companies/" + id + "/inbox"),
@@ -3705,7 +3739,7 @@
           : !m.aktiv
             ? '<button class="btn btn-xs btn-outline" data-restore="' + m.person_id + '">Gi tilgang igjen</button>'
             : '<select class="select select-xs select-bordered w-28 mr-1" data-rolle="' + m.person_id + '">' +
-              ["admin", "bokforing", "les"].map(function (r) {
+              ["admin", "bokforing", "les", "ansatt"].map(function (r) {
                 return '<option value="' + r + '"' + (m.rolle === r ? " selected" : "") + ">" + r + "</option>";
               }).join("") +
               '</select><button class="btn btn-xs btn-outline" data-revoke="' + m.person_id + '">Fjern</button>';
@@ -3728,6 +3762,7 @@
         '<div class="flex gap-2 items-center flex-wrap mb-3">' +
         '<input id="inv-epost" class="input input-sm input-bordered w-64" placeholder="e-postadresse">' +
         '<select id="inv-rolle" class="select select-sm select-bordered">' +
+        '<option value="ansatt">ansatt (egne timer, utlegg, lønnsslipp)</option>' +
         '<option value="les">les</option><option value="bokforing">bokføring</option>' +
         '<option value="admin">admin</option></select>' +
         '<button id="inv-send" class="btn btn-sm">Inviter</button></div>' +

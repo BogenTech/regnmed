@@ -10,7 +10,10 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-pub const ROLLER: [&str; 3] = ["admin", "bokforing", "les"];
+/// Rollene som kan tildeles. `ansatt` er selvbetjening (#54) og ikke et
+/// trinn under `les` — den får skrive noen få egne ting og lese nesten
+/// ingenting.
+pub const ROLLER: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
 /// E-post normalisert som vi sammenligner den: trimmet, små bokstaver.
 ///
