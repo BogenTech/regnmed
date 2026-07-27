@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 async fn require_firm_member(
     state: &AppState,
@@ -127,7 +127,7 @@ pub async fn company_engagements(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::OppdragLes).await?;
     let engagements = regnmed_db::company_engagements(&state.pool, company_id).await?;
     Ok(Json(
         json!({ "engagements": engagement_rows(&engagements) }),
@@ -163,7 +163,7 @@ pub async fn request_engagement(
     Path(company_id): Path<Uuid>,
     Json(request): Json<EngagementRequestBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::OppdragAdmin).await?;
     let request_id = regnmed_db::request_engagement(
         &state.pool,
         company_id,
@@ -181,7 +181,7 @@ pub async fn end_engagement(
     person: AuthPerson,
     Path((company_id, engagement_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::OppdragAdmin).await?;
     regnmed_db::end_engagement(&state.pool, engagement_id, Some(company_id), None)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

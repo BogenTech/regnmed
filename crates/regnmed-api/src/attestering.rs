@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 fn policy_json(p: &regnmed_db::AttestationPolicy) -> serde_json::Value {
     json!({
@@ -36,7 +36,7 @@ pub async fn get_policy(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::AttesteringLes).await?;
     let history = regnmed_db::policy_history(&state.pool, company_id).await?;
     Ok(Json(json!({
         "policy": history.first().map(policy_json),
@@ -57,7 +57,7 @@ pub async fn set_policy(
     Path(company_id): Path<Uuid>,
     Json(request): Json<PolicyRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::AttesteringAdmin).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_policy(
         &state.pool,
@@ -77,7 +77,7 @@ pub async fn members(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::AttesteringAdmin).await?;
     let members = regnmed_db::company_members(&state.pool, company_id).await?;
     Ok(Json(json!({
         "members": members.iter().map(|m| json!({
@@ -100,7 +100,7 @@ pub async fn attester(
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<AttesterRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::AttesteringUtfor).await?;
     let display = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::attester_inbox_document(
         &state.pool,
@@ -123,7 +123,7 @@ pub async fn trail(
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::AttesteringLes).await?;
     let rows =
         regnmed_db::attestation_trail(&state.pool, company_id, "inbox_document", document_id)
             .await?;

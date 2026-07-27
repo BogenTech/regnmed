@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 /// The domain inbound addresses live under. Without it configured we
 /// say so instead of printing an address that cannot receive anything.
@@ -43,7 +43,7 @@ pub async fn settings(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnLes).await?;
     let local = regnmed_db::mail_address(&state.pool, company_id).await?;
     let senders = regnmed_db::list_allowed_senders(&state.pool, company_id).await?;
     Ok(Json(json!({
@@ -67,7 +67,7 @@ pub async fn rotate_address(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnAdmin).await?;
     let by = person.name.as_deref().unwrap_or(&person.sub);
     let local = regnmed_db::rotate_mail_address(&state.pool, company_id, by)
         .await
@@ -90,7 +90,7 @@ pub async fn add_sender(
     Path(company_id): Path<Uuid>,
     Json(request): Json<SenderRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnAdmin).await?;
     let by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::allow_sender(
         &state.pool,
@@ -109,7 +109,7 @@ pub async fn remove_sender(
     person: AuthPerson,
     Path((company_id, sender_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnAdmin).await?;
     regnmed_db::revoke_sender(&state.pool, company_id, sender_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -127,7 +127,7 @@ pub async fn list_mail(
     Path(company_id): Path<Uuid>,
     Query(query): Query<MailQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnLes).await?;
     let rows = regnmed_db::list_mail(&state.pool, company_id, query.status.as_deref()).await?;
     Ok(Json(json!({
         "mail": rows.iter().map(|m| json!({
@@ -158,7 +158,7 @@ pub async fn release(
     Path((company_id, mail_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<ReleaseRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnAdmin).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let by = person.name.as_deref().unwrap_or(&person.sub);
     let antall = regnmed_db::release_mail(
@@ -184,7 +184,7 @@ pub async fn reject(
     Path((company_id, mail_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RejectRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::EpostInnAdmin).await?;
     let by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::reject_mail(&state.pool, company_id, mail_id, &request.note, by)
         .await

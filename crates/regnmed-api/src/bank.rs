@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -30,7 +30,7 @@ pub async fn import_statement(
     Query(query): Query<AccountQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::BankAvstem).await?;
 
     // Both file tiers land here: XML is camt.053, anything else goes
     // through the header-detecting CSV parser — same statement shape,
@@ -71,7 +71,7 @@ pub async fn reconciliation(
     Path(company_id): Path<Uuid>,
     Query(query): Query<AccountQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::BankLes).await?;
 
     let status = regnmed_db::reconciliation_status(&state.pool, company_id, &query.account)
         .await
@@ -112,7 +112,7 @@ pub async fn create_match(
     Path(company_id): Path<Uuid>,
     Json(request): Json<MatchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::BankAvstem).await?;
     let matched_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::manual_match(
         &state.pool,
@@ -131,7 +131,7 @@ pub async fn delete_match(
     person: AuthPerson,
     Path((company_id, bank_transaction_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::BankAvstem).await?;
     regnmed_db::unmatch(&state.pool, company_id, bank_transaction_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

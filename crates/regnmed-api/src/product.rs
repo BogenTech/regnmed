@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 /// One document line: free text (description + unit_price_ore) or a
 /// product reference (`produkt`) whose register values fill whatever
@@ -85,7 +85,7 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateProductRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::ProduktSkriv).await?;
     let id = regnmed_db::create_product(
         &state.pool,
         company_id,
@@ -108,7 +108,7 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::ProduktLes).await?;
     let products = regnmed_db::list_products(&state.pool, company_id).await?;
     Ok(Json(json!({
         "products": products.iter().map(|p| json!({
@@ -149,7 +149,7 @@ pub async fn update(
     Path((company_id, nummer)): Path<(Uuid, String)>,
     Json(request): Json<UpdateProductRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::ProduktSkriv).await?;
     regnmed_db::update_product(
         &state.pool,
         company_id,
@@ -171,7 +171,7 @@ pub async fn inventory(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::LagerLes).await?;
     let rows = regnmed_db::inventory_status(&state.pool, company_id).await?;
     Ok(Json(json!({
         "inventory": rows.iter().map(|r| json!({
@@ -196,7 +196,7 @@ pub async fn movements(
     Path(company_id): Path<Uuid>,
     Query(query): Query<MovementsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::LagerLes).await?;
     let rows = regnmed_db::list_movements(&state.pool, company_id, &query.produkt).await?;
     Ok(Json(json!({
         "movements": rows.iter().map(|m| json!({
@@ -229,7 +229,7 @@ pub async fn register_movement(
     Path(company_id): Path<Uuid>,
     Json(request): Json<MovementRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::LagerSkriv).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::register_movement(
         &state.pool,
@@ -271,7 +271,7 @@ pub async fn count(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CountRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::LagerSkriv).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let konti = regnmed_db::TellingKonti {
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),

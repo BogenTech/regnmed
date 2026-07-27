@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct UploadQuery {
@@ -42,7 +42,7 @@ pub async fn create_utlegg(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggSkrivEgne).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -80,7 +80,7 @@ pub async fn create_kjoring(
     Path(company_id): Path<Uuid>,
     Json(request): Json<KjoringRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggSkrivEgne).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let (id, belop_ore, trekkpliktig_ore) = regnmed_db::create_kjoring(
         &state.pool,
@@ -105,7 +105,7 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggLes).await?;
     let expenses = regnmed_db::list_expenses(&state.pool, company_id, person.person_id).await?;
     Ok(Json(json!({
         "expenses": expenses.iter().map(|e| json!({
@@ -132,7 +132,7 @@ pub async fn receipt(
     person: AuthPerson,
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggLes).await?;
     let (filename, content_type, content) =
         regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
             .await
@@ -168,7 +168,7 @@ pub async fn approve(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<ApproveRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggGodkjenn).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let kind: Option<String> =
         sqlx::query_scalar("select kind from expense where id = $1 and company_id = $2")
@@ -212,7 +212,7 @@ pub async fn reject(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RejectRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggGodkjenn).await?;
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::reject_expense(
         &state.pool,
@@ -239,7 +239,7 @@ pub async fn pay(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<PayRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::UtleggUtbetal).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let dato = match request.dato {
         Some(d) => d,

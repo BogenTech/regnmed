@@ -15,14 +15,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Krav, krev};
+use crate::tilgang::{Rett, krev};
 
 pub async fn get_settings(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Les).await?;
+    krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
     Ok(Json(json!({
         "name": s.name,
@@ -48,7 +48,7 @@ pub async fn update_settings(
     Path(company_id): Path<Uuid>,
     Json(request): Json<UpdateSettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Admin).await?;
+    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
     regnmed_db::update_company_settings(
         &state.pool,
         company_id,
@@ -76,7 +76,7 @@ pub async fn update_party_contact(
     Path((company_id, party_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<PartyContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
+    krev(&state, person.person_id, company_id, Rett::KontaktSkriv).await?;
     regnmed_db::update_party_contact(
         &state.pool,
         company_id,

@@ -49,19 +49,65 @@ Every company-scoped endpoint goes through **one** guard,
 `regnmed_db::company_access`. No path to the company yields **404, not
 403**: a caller without access must not learn that the company exists.
 
-Endepunktet sier hva handlingen **krever**, ikke hvem som får gjøre
-den:
+Endepunktet sier hvilken **rettighet** handlingen krever, ikke hvem som
+får gjøre den. Rettigheten hører til handlingen og endrer seg ikke når
+vi legger til en rolle:
 
-| Krav | Betyr | admin | bokforing | les |
-| --- | --- | --- | --- | --- |
-| `Krav::Les` | lese bøker og rapporter | ✅ | ✅ | ✅ |
-| `Krav::Bokfor` | endre hovedboken, eller noe som ender der | ✅ | ✅ | ❌ |
-| `Krav::Admin` | innstillinger, låser, integrasjoner, oppdrag | ✅ | ❌ | ❌ |
+```rust
+krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
+```
 
-Rollen avgjør om kravet er oppfylt, og den avgjørelsen finnes ett sted.
 `krev` returnerer rollen, så en handler som trenger mer enn ja/nei
 slipper et nytt oppslag — periodelåsen bruker det: å låse krever
-bokføring, å **åpne igjen** krever admin.
+`PERIODE_LAAS`, å **åpne igjen** krever admin.
+
+## Rettigheter og roller
+
+**En rolle er et sett rettigheter, ikke et trinn på en stige.** Fram
+til #59 var tilgang tre nivåer (`admin` > `bokforing` > `les`), lett å
+forstå og umulig å bøye: enten så du hele hovedboken, eller ingenting.
+Et selskap som vil ha «en som bare fakturerer» eller «en controller som
+ser alt bortsett fra lønn» hadde ingen vei.
+
+Vokabularet er en **enum i koden** (`regnmed_api::tilgang::Rett`), ikke
+fritekst i databasen: et endepunkt kan ikke kreve en rettighet som ikke
+finnes, og kompilatoren finner alle stedene når en rettighet endrer
+navn. Navnene er norske, som resten av domenet — `FAKTURA_LES`, ikke
+`INVOICE_READ`.
+
+**Rettigheter er additive, aldri subtraktive.** Det finnes ingen «alt
+unntatt X»; den regelen er umulig å resonnere om når roller settes
+sammen.
+
+De tre innebygde rollene er faste bunter:
+
+| Bunt | Innhold |
+| --- | --- |
+| `les` | `*_LES` for bilag, rapporter, faktura, reskontro, bank, betaling, produkter, lager, anlegg, budsjett, dimensjoner, aksjebok, utlegg, lønn, forankring, oppdrag, integrasjoner |
+| `bokforing` | `les` + alt som endrer hovedboken: `BILAG_BOKFOR`, `FAKTURA_SKRIV`, `BANK_AVSTEM`, `BETALING_OPPRETT`/`_GODKJENN`/`_OPPGJOR`, `LONN_KJOR`, `PERIODE_LAAS` … |
+| `admin` | `bokforing` + `SELSKAP_ADMIN`, `MEDLEM_ADMIN`-slekten, `INTEGRASJON_ADMIN`, `OPPDRAG_ADMIN`, `TIMER_LAAS`, `TIMER_*_ALLE`, `MIGRERING_ADMIN`, `MVA_ORDNING_ADMIN` |
+
+At de er nøstet er en egenskap ved **disse tre**, ikke ved modellen. En
+egendefinert rolle (#60) trenger ikke være nøstet i det hele tatt.
+
+### Omfang: egne data mot alles
+
+Noen rettigheter finnes i par, `_EGNE`/`_ALLE`. En ansatt skal føre sine
+egne timer uten å se kollegenes; en leder skal se begge deler.
+
+- **`_ALLE` medfører `_EGNE`.** Ellers måtte hver bunt huske begge, og
+  en bunt som glemte `_EGNE` ville stengt folk ute fra deres egne data.
+- Et endepunkt som allerede filtrerer på personen krever `_EGNE`; et
+  som viser eller endrer andres krever `_ALLE`.
+
+Dimensjonen ble bestemt i #59, ikke utsatt, nettopp fordi den er dyr i
+ettertid: hver «egen»-variant ville blitt et nytt navn, og lagrede
+roller måtte migreres. Timeføringen bruker den allerede — listen er
+egne timer, admin retter alles.
+
+**Kjent svakhet:** `LONNSSLIPP_LES` ligger i `les`-bunten, så enhver med
+tilgang kan laste ned andres lønnsslipp. Det er dagens oppførsel, ikke
+en ny beslutning — #59 skulle ikke endre atferd. #55 retter det.
 
 **Hvorfor én vakt.** Fram til #56 hadde hver modul sin egen
 `require_access` — 22 kopier i tre ulike former (`write: bool`,
@@ -81,6 +127,12 @@ datafeil skal ikke kunne bli en tilgangseskalering.
   firm-with-engagement plus a direct membership resolve to exactly the
   expected company list; the forged/expired/wrong-audience matrix is
   rejected.
+- `regnmed_api::tilgang` sine enhetstester — at buntene ikke
+  overlapper, at slug-ene er unike, at `_ALLE` medfører `_EGNE`, og at
+  en ukjent rolleverdi faller til svakeste rolle. **De kan ikke fange
+  at en rettighet ligger i feil bunt** — de utleder fasiten fra
+  buntene. Prøvd med vilje: flyttet `PRODUKT_SKRIV` til lesebunten, og
+  alle åtte besto. Det er matrisetesten under som er sperren der.
 - `crates/regnmed-api/tests/tilgang.rs` — tilgangsmatrisen, skrevet som
   **nektelser**: at `les` ikke får endre noe, at `bokforing` ikke får
   administrere, og at en utenforstående får 404 og ikke 403 på hvert
