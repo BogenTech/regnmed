@@ -104,10 +104,12 @@ up with `cp .env.example .env` + `docker compose up -d`.
 
 The one real secret is the Maskinporten test key, in
 `~/.config/regnmed/` (paths listed in docs/secrets.md — the location is
-recorded, the secret is not). Backup and transport go through the
-password manager. A second machine generates its **own** keypair and
-registers that public key on the same client rather than copying the
-private key; `MASKINPORTEN_KID` selects between them.
+recorded, the secret is not). It is deliberately **not** backed up: a
+second machine runs `scripts/maskinporten-key.sh` to generate its **own**
+keypair and registers that public key on the same client
+(`MASKINPORTEN_KID` selects between them), and a lost machine is handled
+by deleting its key in Samarbeidsportalen. Note that Maskinporten keys
+**expire** — the date is on the December regelverksrevisjon checklist.
 
 ### Documentation policy (agreed 2026-07-22)
 
@@ -662,10 +664,15 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    kind='integrasjon' (migration 0033), så tilgangsoppslag,
    attribusjon og revisjonsspor er identiske for robot og menneske.
    Identiteten kommer som client_credentials fra IdP-en; regnmed
-   utsteder aldri egne API-nøkler. **Krever at client_credentials
-   legges til i regnid** (som i dag har authorization_code +
-   refresh_token) — regnmed-siden virker med et hvilket som helst
-   token fra issueren der sub = client_id. `integration_grant` er
+   utsteder aldri egne API-nøkler. **client_credentials finnes nå i
+   regnid** (dens migrasjon 0007): grantet er av som standard per klient
+   og gis uttrykkelig med `add-client --grant-type client_credentials
+   --confidential`, slik at en vanlig konfidensiell webklient ikke
+   stilltiende blir en maskinaktør. Verifisert på tvers 2026-07-27 —
+   ekte regnid-token → regnmed `/me` svarer 200 med sub = client_id og
+   companies: []. Gjenstår bare utrulling av regnid med 0007.
+   regnmed-siden virker med et hvilket som helst token fra issueren der
+   sub = client_id. `integration_grant` er
    modellert som oppdrag (valid_to EKSKLUSIV → tilbakekalling virker
    straks); admin er bevisst ikke grantbart til en maskin; en
    klient-id som tilhører et menneske MED tilgang kan ikke kapres
@@ -743,7 +750,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    venter på scope `skatteetaten:innrapporteringaksjonaerregisteroppgave`
    OG Altinn systembruker (docs/gov.md). Portal: Aksjonærer-seksjon.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
-   docs/gov.md), client_credentials i regnid (#45-forutsetning),
+   docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),
    EHF-transport via aksesspunkt, API-tier per leverandør
    (#19-oppfølger), OCR-sidecar (#34-oppfølger).

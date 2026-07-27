@@ -34,12 +34,28 @@ virker med et hvilket som helst token fra den konfigurerte issueren der
 den siden har vært ferdig hele tiden.
 
 Grantet er **av som standard per klient**: en admin må registrere
-integrasjonen som konfidensiell klient i regnid og slå på
-maskin-til-maskin (`regnid add-client … --client-credentials`, eller
-avkrysningsboksen på klientsiden). En offentlig klient får aldri et
-token uten bruker, uansett hva raden sier.
+integrasjonen som konfidensiell klient i regnid og gi den grantet
+uttrykkelig:
 
-Gjenstår før dette virker i produksjon: regnid må rulles ut med 0007.
+```sh
+regnid add-client --client-id <robot> --name '<navn>' \
+    --grant-type client_credentials --confidential --audience regnmed
+```
+
+Hemmeligheten skrives ut én gang; regnid lagrer bare hashen. En
+offentlig klient får aldri et token uten bruker, uansett hva raden sier,
+og en vanlig konfidensiell webklient har ikke grantet med mindre noen
+har gitt det.
+
+**Verifisert på tvers 2026-07-27:** ekte regnid → ekte regnmed-api.
+`/me` svarer 200 med `sub` = klientens id og `companies: []` — altså
+identiteten bevist og ingen tilgang før noen gir den, som er hele
+poenget med modellen. Et ugyldig token gir 401.
+
+Gjenstår før dette virker i produksjon: regnid må rulles ut med sin
+migrasjon 0007. Klientadministrasjonen i regnids admin-UI oppretter
+fortsatt bare innloggingsklienter — maskinklienter registreres med
+CLI-en, bevisst en mer overveid handling.
 
 ## Tilgangen
 

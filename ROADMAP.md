@@ -253,8 +253,9 @@ M7 (#37–#48) for new ground:
   grant en admin gir per selskap m/ eksklusiv valid_to, bilaget
   navngir roboten i created_by, ratebegrensning per integrasjon og
   aktivitetslogg; offentlig API-referanse i docs/api.md.
-  **Krever at client_credentials legges til i regnid** — regnmed-siden
-  er ferdig; docs/integrations.md), ✅ PWA m/ kvitteringsfoto
+  client_credentials finnes nå i regnid (dens migrasjon 0007, grantet av
+  som standard per klient); verifisert på tvers 2026-07-27, gjenstår
+  bare utrulling; docs/integrations.md), ✅ PWA m/ kvitteringsfoto
   (#48 — installerbart skall, service worker som cacher app-skallet og
   ALDRI hovedboken, kamerafangst rett til innboksen, offline-kø for
   opplastinger m/ klientside-hash som serveren bruker til å avvise
