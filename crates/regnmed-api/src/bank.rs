@@ -16,23 +16,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — importing and matching require bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -46,7 +30,7 @@ pub async fn import_statement(
     Query(query): Query<AccountQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
 
     // Both file tiers land here: XML is camt.053, anything else goes
     // through the header-detecting CSV parser — same statement shape,
@@ -87,7 +71,7 @@ pub async fn reconciliation(
     Path(company_id): Path<Uuid>,
     Query(query): Query<AccountQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
 
     let status = regnmed_db::reconciliation_status(&state.pool, company_id, &query.account)
         .await
@@ -128,7 +112,7 @@ pub async fn create_match(
     Path(company_id): Path<Uuid>,
     Json(request): Json<MatchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let matched_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::manual_match(
         &state.pool,
@@ -147,7 +131,7 @@ pub async fn delete_match(
     person: AuthPerson,
     Path((company_id, bank_transaction_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::unmatch(&state.pool, company_id, bank_transaction_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

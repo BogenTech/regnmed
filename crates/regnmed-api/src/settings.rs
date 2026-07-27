@@ -15,34 +15,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_level(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    admin: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if admin && access != "admin" {
-        return Err(ApiError::Forbidden("company settings require admin"));
-    }
-    if !admin && access == "les" {
-        return Err(ApiError::Forbidden("read-only access"));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 pub async fn get_settings(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person.person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let _ = access;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
     Ok(Json(json!({
         "name": s.name,
@@ -68,7 +48,7 @@ pub async fn update_settings(
     Path(company_id): Path<Uuid>,
     Json(request): Json<UpdateSettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_level(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     regnmed_db::update_company_settings(
         &state.pool,
         company_id,
@@ -96,7 +76,7 @@ pub async fn update_party_contact(
     Path((company_id, party_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<PartyContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_level(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::update_party_contact(
         &state.pool,
         company_id,

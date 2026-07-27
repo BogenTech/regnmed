@@ -21,23 +21,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — salgsdokumenter require bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 use crate::product::{DocLineRequest, resolve_lines};
 
@@ -55,7 +39,7 @@ async fn create_kind(
     kind: &str,
     request: CreateRequest,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(state, person.person_id, company_id, true).await?;
+    krev(state, person.person_id, company_id, Krav::Bokfor).await?;
     let doc_date = match request.doc_date {
         Some(d) => d,
         None => sqlx::query_scalar("select current_date")
@@ -103,7 +87,7 @@ async fn list_kind(
     company_id: Uuid,
     kind: &str,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(state, person.person_id, company_id, false).await?;
+    krev(state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_salgsdokumenter(&state.pool, company_id, Some(kind)).await?;
     Ok(Json(json!({
         "documents": rows.iter().map(|d| json!({
@@ -148,7 +132,7 @@ pub async fn update_quote(
     Path((company_id, quote_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<UpdateQuoteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let lines = match request.lines {
         Some(lines) => Some(resolve_lines(&state, company_id, lines).await?),
         None => None,
@@ -176,7 +160,7 @@ pub async fn quote_status(
     Path((company_id, quote_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<StatusRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::set_tilbud_status(&state.pool, company_id, quote_id, &request.status)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -194,7 +178,7 @@ pub async fn quote_to_order(
     Path((company_id, quote_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<ToOrderRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let doc_date = match request.doc_date {
         Some(d) => d,
@@ -223,7 +207,7 @@ pub async fn order_to_invoice(
     Path((company_id, order_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<ToInvoiceRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
@@ -260,7 +244,7 @@ pub async fn pdf(
     person: AuthPerson,
     Path((company_id, dokument_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (filename, pdf) = regnmed_db::salgsdokument_pdf(&state.pool, company_id, dokument_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

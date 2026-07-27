@@ -21,30 +21,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — purring requires bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 pub async fn overdue(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -83,7 +67,7 @@ pub async fn list_reminders(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_reminders(&state.pool, company_id, invoice_id).await?;
     Ok(Json(json!({
         "reminders": rows.iter().map(|r| json!({
@@ -151,7 +135,7 @@ pub async fn create_reminder(
     Query(query): Query<CreateQuery>,
     Json(request): Json<CreateReminderRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let draft = regnmed_db::ReminderDraft {
         steg: request.steg,
         sent_date: request.sent_date,
@@ -184,7 +168,7 @@ pub async fn reminder_document(
     Path((company_id, invoice_id, reminder_id)): Path<(Uuid, Uuid, Uuid)>,
     Query(query): Query<DocumentQuery>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let document = regnmed_db::reminder_document(&state.pool, company_id, invoice_id, reminder_id)
         .await
         .map_err(|_| ApiError::NotFound)?;

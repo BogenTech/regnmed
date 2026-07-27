@@ -18,22 +18,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::mailq::{OutboundMail, publish};
-
-async fn require_write(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — utsendelse requires bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 #[derive(Deserialize, Default)]
 pub struct SendRequest {
@@ -82,7 +67,7 @@ pub async fn send_invoice(
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<SendRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_write(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let payload = regnmed_db::invoice_email_payload(
         &state.pool,
@@ -101,7 +86,7 @@ pub async fn send_reminder(
     Path((company_id, invoice_id, reminder_id)): Path<(Uuid, Uuid, Uuid)>,
     body: Option<Json<SendRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_write(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let payload = regnmed_db::reminder_email_payload(
         &state.pool,
@@ -120,10 +105,7 @@ pub async fn list_utsendelser(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person.person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let _ = access;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_utsendelser(&state.pool, company_id, invoice_id).await?;
     Ok(Json(json!({
         "utsendelser": rows.iter().map(|u| json!({

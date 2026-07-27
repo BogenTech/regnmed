@@ -20,21 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden("krever bokføringstilgang"));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 #[derive(Deserialize)]
 pub struct UploadQuery {
@@ -52,7 +38,7 @@ pub async fn upload(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -84,7 +70,7 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_inbox(&state.pool, company_id, query.status.as_deref()).await?;
     Ok(Json(json!({
         "documents": rows.iter().map(|d| json!({
@@ -110,7 +96,7 @@ pub async fn download(
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (filename, content_type, content) =
         regnmed_db::get_inbox_document(&state.pool, company_id, document_id)
             .await
@@ -154,7 +140,7 @@ pub async fn bokfor(
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<BokforRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let draft = VoucherDraft {
         journal_code: request.journal_code,
         voucher_date: request.date,
@@ -204,7 +190,7 @@ pub async fn avvis(
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<AvvisRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::avvis_inbox_document(
         &state.pool,
@@ -226,7 +212,7 @@ pub async fn ehf_forslag(
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let forslag = regnmed_db::inbox_ehf_forslag(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
@@ -265,7 +251,7 @@ pub async fn forslag(
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let f = regnmed_db::inbox_forslag(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

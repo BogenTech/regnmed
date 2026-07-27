@@ -18,30 +18,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    admin: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if admin && access != "admin" {
-        return Err(ApiError::Forbidden(
-            "å slippe en integrasjon til krever admin",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 pub async fn list(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_integrations(&state.pool, company_id).await?;
     Ok(Json(json!({
         "integrasjoner": rows.iter().map(|g| json!({
@@ -78,7 +62,7 @@ pub async fn grant(
     Path(company_id): Path<Uuid>,
     Json(request): Json<GrantRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     let by = person.display().to_string();
     let id = regnmed_db::grant_integration(
         &state.pool,
@@ -99,7 +83,7 @@ pub async fn revoke(
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     let by = person.display().to_string();
     regnmed_db::revoke_integration(&state.pool, company_id, integration_id, &by)
         .await
@@ -112,7 +96,7 @@ pub async fn log(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::integration_calls(&state.pool, company_id).await?;
     Ok(Json(json!({
         "kall": rows.iter().map(|c| json!({

@@ -14,23 +14,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — importing requires bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -44,7 +28,7 @@ pub async fn import_file(
     Query(query): Query<AccountQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
 
     let file = regnmed_core::ocr::parse(&body)
         .map_err(|e| ApiError::BadRequest(format!("OCR file: {e}")))?;
@@ -75,7 +59,7 @@ pub async fn list_payments(
     Path(company_id): Path<Uuid>,
     Query(query): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
 
     let payments =
         regnmed_db::list_ocr_payments(&state.pool, company_id, query.from, query.to).await?;

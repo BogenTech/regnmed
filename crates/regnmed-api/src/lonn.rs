@@ -20,23 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — lønn requires bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
     json!({
@@ -63,7 +47,7 @@ pub async fn list_employees(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company_id).await?;
     Ok(Json(json!({
         "ansatte": ansatte.iter().map(ansatt_json).collect::<Vec<_>>()
@@ -103,7 +87,7 @@ pub async fn create_employee(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let id = regnmed_db::lonn::create_ansatt(
         &state.pool,
         company_id,
@@ -161,7 +145,7 @@ pub async fn list_payroll(
     Path(company_id): Path<Uuid>,
     Query(q): Query<YearQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let runs = regnmed_db::lonn::list_kjoringer(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "kjoringer": runs.iter().map(kjoring_json).collect::<Vec<_>>()
@@ -199,7 +183,7 @@ pub async fn run_payroll(
     Path(company_id): Path<Uuid>,
     Json(request): Json<RunPayrollRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let poster: Vec<_> = request
         .linjer
         .iter()
@@ -252,7 +236,7 @@ pub async fn payslip_pdf(
     person: AuthPerson,
     Path((company_id, run_id, employee_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let input = regnmed_db::lonn::lonnsslipp(&state.pool, company_id, run_id, employee_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
@@ -286,7 +270,7 @@ pub async fn payroll_hours(
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<HoursQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let g = regnmed_db::lonn::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.maned)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

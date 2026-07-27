@@ -17,23 +17,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — invoicing requires bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 use crate::product::{DocLineRequest, resolve_lines};
 
@@ -71,7 +55,7 @@ pub async fn create_invoice(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
 
     let draft = regnmed_db::InvoiceDraft {
         party_no: request.party_no,
@@ -103,7 +87,7 @@ pub async fn list_invoices(
     Path(company_id): Path<Uuid>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let invoices = regnmed_db::list_invoices(&state.pool, company_id, query.open).await?;
     Ok(Json(json!({
         "invoices": invoices.iter().map(|i| json!({
@@ -126,7 +110,7 @@ pub async fn credit_note(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let credit = regnmed_db::credit_invoice(&state.pool, company_id, invoice_id, created_by)
         .await
@@ -142,7 +126,7 @@ pub async fn invoice_pdf(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let attachment_id = regnmed_db::invoice_pdf_attachment_id(&state.pool, company_id, invoice_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -173,7 +157,7 @@ pub async fn invoice_ehf(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let xml = regnmed_db::invoice_ehf(&state.pool, company_id, invoice_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

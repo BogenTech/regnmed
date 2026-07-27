@@ -18,23 +18,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — reskontro changes require bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 #[derive(Deserialize)]
 pub struct KindQuery {
@@ -47,7 +31,7 @@ pub async fn list_parties(
     Path(company_id): Path<Uuid>,
     Query(query): Query<KindQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let parties = regnmed_db::list_parties(&state.pool, company_id, query.kind.as_deref()).await?;
     Ok(Json(json!({
         "parties": parties.iter().map(|p| json!({
@@ -78,7 +62,7 @@ pub async fn create_party(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreatePartyRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let (party_id, party_no) = regnmed_db::create_party(
         &state.pool,
         company_id,
@@ -104,7 +88,7 @@ pub async fn party_items(
     Path((company_id, party_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<ItemsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let items = regnmed_db::party_items(&state.pool, company_id, party_id, query.open).await?;
     Ok(Json(json!({
         "items": items.iter().map(|i| json!({
@@ -139,7 +123,7 @@ pub async fn create_match(
     Path(company_id): Path<Uuid>,
     Json(request): Json<MatchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let matched_by = person.name.as_deref().unwrap_or(&person.sub);
     if let Some(valuta_cent) = request.valuta_cent {
         let agio_ore = regnmed_db::match_valuta(
@@ -177,7 +161,7 @@ pub async fn delete_match(
     person: AuthPerson,
     Path((company_id, match_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::unmatch_items(&state.pool, company_id, match_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -196,7 +180,7 @@ pub async fn set_account_reskontro(
     Path((company_id, account_number)): Path<(Uuid, String)>,
     Json(request): Json<ReskontroFlagRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::set_account_reskontro(
         &state.pool,
         company_id,

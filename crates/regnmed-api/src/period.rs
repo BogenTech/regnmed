@@ -20,23 +20,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn access_level(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-) -> Result<String, ApiError> {
-    regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)
-}
+use crate::tilgang::{Krav, krev};
 
 pub async fn get_period_lock(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    access_level(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let current = regnmed_db::current_period_lock(&state.pool, company_id).await?;
     let history = regnmed_db::period_lock_history(&state.pool, company_id).await?;
     Ok(Json(json!({
@@ -60,17 +51,16 @@ pub async fn set_period_lock(
     Path(company_id): Path<Uuid>,
     Json(request): Json<SetLockRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let access = access_level(&state, person.person_id, company_id).await?;
-    if access == "les" {
-        return Err(ApiError::Forbidden("locking periods requires bokforing"));
-    }
+    // Å låse krever bokføring; å ÅPNE IGJEN krever admin, og det
+    // avgjøres inne i set_period_lock — derfor følger rollen med.
+    let rolle = krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let set_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_period_lock(
         &state.pool,
         company_id,
         request.locked_through,
         set_by,
-        access == "admin",
+        rolle.er_admin(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -84,7 +74,7 @@ pub async fn list_vouchers(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    access_level(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = sqlx::query_as::<_, (Uuid, i32, i64, chrono::NaiveDate, String)>(
         "select v.id, v.fiscal_year, v.voucher_number, v.voucher_date, v.description
          from voucher v join journal j on j.id = v.journal_id
@@ -118,12 +108,7 @@ pub async fn upload_attachment(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let access = access_level(&state, person.person_id, company_id).await?;
-    if access == "les" {
-        return Err(ApiError::Forbidden(
-            "uploading dokumentasjon requires bokforing",
-        ));
-    }
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -153,7 +138,7 @@ pub async fn list_voucher_attachments(
     person: AuthPerson,
     Path((company_id, voucher_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    access_level(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let attachments = regnmed_db::list_attachments(&state.pool, company_id, voucher_id).await?;
     Ok(Json(json!({
         "attachments": attachments.iter().map(|a| json!({
@@ -172,7 +157,7 @@ pub async fn download_attachment(
     person: AuthPerson,
     Path((company_id, attachment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    access_level(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (meta, content) = regnmed_db::get_attachment(&state.pool, company_id, attachment_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

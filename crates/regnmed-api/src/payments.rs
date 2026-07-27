@@ -22,30 +22,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — betalinger require bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 pub async fn payable(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let items = regnmed_db::payable_items(&state.pool, company_id).await?;
     Ok(Json(json!({
         "items": items.iter().map(|i| json!({
@@ -85,7 +69,7 @@ pub async fn create_run(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateRunRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let execution_date = match request.execution_date {
         Some(d) => d,
         None => sqlx::query_scalar("select current_date")
@@ -123,7 +107,7 @@ pub async fn list_runs(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let runs = regnmed_db::list_payment_runs(&state.pool, company_id).await?;
     Ok(Json(json!({
         "runs": runs.iter().map(|r| json!({
@@ -144,7 +128,7 @@ pub async fn approve(
     person: AuthPerson,
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let approved_by = person.name.as_deref().unwrap_or(&person.sub);
     let digest = regnmed_db::approve_run(
         &state.pool,
@@ -166,7 +150,7 @@ pub async fn file(
     person: AuthPerson,
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (filename, content) = regnmed_db::run_file(&state.pool, company_id, run_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -196,7 +180,7 @@ pub async fn settle(
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<SettleRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let dato = match request.dato {
         Some(d) => d,
@@ -226,7 +210,7 @@ pub async fn cancel(
     person: AuthPerson,
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let cancelled_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::cancel_run(&state.pool, company_id, run_id, cancelled_by)
         .await

@@ -32,6 +32,7 @@ pub mod reports;
 pub mod reskontro;
 pub mod salgsdokument;
 pub mod settings;
+pub mod tilgang;
 pub mod timesheet;
 pub mod utsendelse;
 

@@ -22,16 +22,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-) -> Result<String, ApiError> {
-    regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)
-}
+use crate::tilgang::{Krav, krev};
 
 fn witness_json(witnesses: &[regnmed_db::WitnessRow]) -> Vec<serde_json::Value> {
     witnesses
@@ -67,7 +58,7 @@ pub async fn company_anchors(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let anchors = regnmed_db::company_anchors(&state.pool, company_id).await?;
     Ok(Json(json!({
         "anchors": anchors.iter().map(|a| json!({
@@ -93,7 +84,7 @@ pub async fn verify_anchors(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let chain = regnmed_db::verify_chain(&state.pool, company_id).await;
     let attachments = regnmed_db::verify_attachments(&state.pool, company_id).await;
     let anchors = regnmed_db::verify_company_anchors(&state.pool, company_id).await?;

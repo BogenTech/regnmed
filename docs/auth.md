@@ -44,18 +44,52 @@ person ──── company_member ───────────────
 
 ## Per-company guard on API routes
 
-Every company-scoped endpoint resolves the caller's access with
-`regnmed_db::company_access(person, company)` before touching data. No
-path to the company yields **404, not 403** — a caller without access
-must not learn that the company exists. All access levels (admin /
-bokforing / les — revisor included) may read reports, since reports
-never mutate the ledger; mutating endpoints will require the appropriate
-level when they arrive.
+Every company-scoped endpoint goes through **one** guard,
+`regnmed_api::tilgang::krev` — the only place in the API that calls
+`regnmed_db::company_access`. No path to the company yields **404, not
+403**: a caller without access must not learn that the company exists.
+
+Endepunktet sier hva handlingen **krever**, ikke hvem som får gjøre
+den:
+
+| Krav | Betyr | admin | bokforing | les |
+| --- | --- | --- | --- | --- |
+| `Krav::Les` | lese bøker og rapporter | ✅ | ✅ | ✅ |
+| `Krav::Bokfor` | endre hovedboken, eller noe som ender der | ✅ | ✅ | ❌ |
+| `Krav::Admin` | innstillinger, låser, integrasjoner, oppdrag | ✅ | ❌ | ❌ |
+
+Rollen avgjør om kravet er oppfylt, og den avgjørelsen finnes ett sted.
+`krev` returnerer rollen, så en handler som trenger mer enn ja/nei
+slipper et nytt oppslag — periodelåsen bruker det: å låse krever
+bokføring, å **åpne igjen** krever admin.
+
+**Hvorfor én vakt.** Fram til #56 hadde hver modul sin egen
+`require_access` — 22 kopier i tre ulike former (`write: bool`,
+`admin: bool`, et nivå som streng, og noen uten parameter i det hele
+tatt). Så lenge regelen var «les eller skriv» gikk det bra, men hver
+kopi var et sted å ta feil, og en fjerde rolle ville måttet skrives inn
+22 ganger. Samme begrunnelse som ratebegrensningen for integrasjoner:
+én søm ingen kan glemme.
+
+En ukjent rolleverdi faller til **svakeste** rolle, ikke til en feil. En
+datafeil skal ikke kunne bli en tilgangseskalering.
 
 ## Where it is tested
 
-`crates/regnmed-api/tests/me_endpoint.rs` (real Postgres, also CI): a
-locally generated JWKS signs real RS256 tokens; a seeded
-firm-with-engagement plus a direct membership resolve to exactly the
-expected company list; the forged/expired/wrong-audience matrix is
-rejected.
+- `crates/regnmed-api/tests/me_endpoint.rs` (real Postgres, also CI): a
+  locally generated JWKS signs real RS256 tokens; a seeded
+  firm-with-engagement plus a direct membership resolve to exactly the
+  expected company list; the forged/expired/wrong-audience matrix is
+  rejected.
+- `crates/regnmed-api/tests/tilgang.rs` — tilgangsmatrisen, skrevet som
+  **nektelser**: at `les` ikke får endre noe, at `bokforing` ikke får
+  administrere, og at en utenforstående får 404 og ikke 403 på hvert
+  eneste endepunkt i utvalget. At en admin slipper til er dekket
+  overalt ellers; at en leser ikke slipper til er det ingenting annet
+  som fanger. Testen ble kontrollert ved å ødelegge én vakt med vilje —
+  den slo ut.
+
+  Merk at kroppene i testen må være **gyldige JSON for endepunktet**:
+  axum kjører `Json<T>`-uttrekket før handleren, så en tom kropp gir
+  422 og vakten blir aldri spurt. En matrise med `{}` ville bestått
+  uten å bevise noe.

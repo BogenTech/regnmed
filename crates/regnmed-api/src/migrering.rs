@@ -18,20 +18,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_admin(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if access != "admin" {
-        return Err(ApiError::Forbidden("migrering krever admin-tilgang"));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 fn kind_from(raw: Option<&str>) -> Result<PartKind, ApiError> {
     match raw.map(str::trim) {
@@ -55,7 +42,7 @@ pub async fn import_contacts(
     Query(query): Query<ContactsQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_admin(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     let kind = kind_from(query.kind.as_deref())?;
     let rader = parse_kontakter(&body, kind).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if rader.is_empty() {
@@ -91,7 +78,7 @@ pub async fn import_open_items(
     Query(query): Query<OpenItemsQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_admin(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     let kind = kind_from(query.kind.as_deref())?;
     let konto = query.konto.unwrap_or_else(|| {
         match kind {

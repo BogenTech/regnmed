@@ -17,23 +17,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden(
-            "read-only access — templates require bokforing",
-        ));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 use crate::product::{DocLineRequest, resolve_lines};
 
@@ -62,7 +46,7 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateTemplateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let result = match request.from_invoice_id {
         Some(invoice_id) => {
@@ -108,7 +92,7 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let templates = regnmed_db::list_templates(&state.pool, company_id).await?;
     Ok(Json(json!({
         "templates": templates.iter().map(|t| json!({
@@ -159,7 +143,7 @@ pub async fn update(
     Path((company_id, template_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<UpdateTemplateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let lines = match request.lines {
         Some(lines) => Some(resolve_lines(&state, company_id, lines).await?),
         None => None,
@@ -188,7 +172,7 @@ pub async fn generate(
     person: AuthPerson,
     Path((company_id, template_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -224,7 +208,7 @@ pub async fn runs(
     person: AuthPerson,
     Path((company_id, template_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let rows = regnmed_db::list_runs(&state.pool, company_id, template_id).await?;
     Ok(Json(json!({
         "runs": rows.iter().map(|r| json!({

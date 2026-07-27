@@ -21,18 +21,10 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::tilgang::{Krav, krev};
 
 /// 404 (not 403) when the person has no path to the company: a caller
 /// without access must not learn that the company exists.
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-) -> Result<String, ApiError> {
-    regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)
-}
 
 /// Resolves the company's ordning for the year and validates the
 /// periode number against it (docs/mva.md, #51).
@@ -67,7 +59,7 @@ pub async fn mva_report(
     Path(company_id): Path<Uuid>,
     Query(query): Query<TerminQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (ordning, termin) = ordning_termin(&state, company_id, query.year, query.termin).await?;
 
     let lines = regnmed_db::mva_spesifikasjon(
@@ -117,7 +109,7 @@ pub async fn mva_melding(
     Path(company_id): Path<Uuid>,
     Query(query): Query<TerminQuery>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let (ordning, termin) = ordning_termin(&state, company_id, query.year, query.termin).await?;
 
     let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
@@ -175,7 +167,7 @@ pub async fn saft_export(
     Path(company_id): Path<Uuid>,
     Query(query): Query<SaftQuery>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
 
     let (start, end) = match (query.year, query.from, query.to) {
         // year= betyr regnskapsåret; definisjonen ligger i
@@ -258,7 +250,7 @@ pub async fn saldobalanse(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     check_period(query.from, query.to)?;
     let rows = regnmed_db::saldobalanse(&state.pool, company_id, query.from, query.to).await?;
     Ok(Json(json!({
@@ -279,7 +271,7 @@ pub async fn kontospesifikasjon(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     check_period(query.from, query.to)?;
     let posts = regnmed_db::kontospesifikasjon(
         &state.pool,
@@ -311,7 +303,7 @@ pub async fn bokforingsspesifikasjon(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     check_period(query.from, query.to)?;
     let vouchers =
         regnmed_db::bokforingsspesifikasjon(&state.pool, company_id, query.from, query.to).await?;
@@ -351,7 +343,7 @@ pub async fn resultat(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     check_period(query.from, query.to)?;
     let lines = regnmed_db::saldo_lines(
         &state.pool,
@@ -383,7 +375,7 @@ pub async fn balanse(
     Path(company_id): Path<Uuid>,
     Query(query): Query<DateQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let lines =
         regnmed_db::saldo_lines(&state.pool, company_id, None, query.date, None, None).await?;
     let b = regnmed_core::regnskap::balanse(&lines);
@@ -412,7 +404,7 @@ pub async fn revisjon(
     Path(company_id): Path<Uuid>,
     Query(query): Query<RevisjonQuery>,
 ) -> Result<Response, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let generated_by = person.name.as_deref().unwrap_or(&person.sub);
     let report = regnmed_db::build_revisjon_report(
         &state.pool,
@@ -472,7 +464,7 @@ pub async fn terminordning(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -522,10 +514,7 @@ pub async fn set_terminordning(
     Path(company_id): Path<Uuid>,
     Json(request): Json<SetOrdningRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let access = require_access(&state, person.person_id, company_id).await?;
-    if access != "admin" {
-        return Err(ApiError::Forbidden("terminordning requires admin"));
-    }
+    krev(&state, person.person_id, company_id, Krav::Admin).await?;
     let ordning = regnmed_core::mva::Terminordning::parse(&request.ordning).ok_or_else(|| {
         ApiError::BadRequest("ordning must be to-maneder, arlig or primaernaering".into())
     })?;
@@ -561,7 +550,7 @@ pub async fn nokkeltall(
     Path(company_id): Path<Uuid>,
     Query(query): Query<NokkeltallQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await

@@ -21,21 +21,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-
-async fn require_access(
-    state: &AppState,
-    person_id: Uuid,
-    company_id: Uuid,
-    write: bool,
-) -> Result<(), ApiError> {
-    let access = regnmed_db::company_access(&state.pool, person_id, company_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if write && access == "les" {
-        return Err(ApiError::Forbidden("krever bokføringstilgang"));
-    }
-    Ok(())
-}
+use crate::tilgang::{Krav, krev};
 
 fn budget_json(b: &regnmed_db::BudgetRow) -> serde_json::Value {
     json!({
@@ -64,7 +50,7 @@ pub async fn list_budgets(
     Path(company_id): Path<Uuid>,
     Query(query): Query<YearQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let budgets = regnmed_db::list_budgets(&state.pool, company_id, query.year).await?;
     Ok(Json(json!({
         "budgets": budgets.iter().map(budget_json).collect::<Vec<_>>(),
@@ -88,7 +74,7 @@ pub async fn create_budget(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateBudgetRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let navn = request
         .navn
@@ -114,7 +100,7 @@ pub async fn get_budget(
     person: AuthPerson,
     Path((company_id, budget_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let budget = regnmed_db::get_budget(&state.pool, company_id, budget_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
@@ -148,7 +134,7 @@ pub async fn set_lines(
     Path((company_id, budget_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<SetLinesRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let lines: Vec<regnmed_db::BudgetLineDraft> = request
         .lines
         .into_iter()
@@ -169,7 +155,7 @@ pub async fn fastsett(
     person: AuthPerson,
     Path((company_id, budget_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     let by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::fastsett_budget(&state.pool, company_id, budget_id, by)
         .await
@@ -182,7 +168,7 @@ pub async fn delete_budget(
     person: AuthPerson,
     Path((company_id, budget_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, true).await?;
+    krev(&state, person.person_id, company_id, Krav::Bokfor).await?;
     regnmed_db::delete_budget(&state.pool, company_id, budget_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -204,7 +190,7 @@ pub async fn avvik(
     Path(company_id): Path<Uuid>,
     Query(query): Query<AvvikQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_access(&state, person.person_id, company_id, false).await?;
+    krev(&state, person.person_id, company_id, Krav::Les).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
