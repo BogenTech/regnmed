@@ -77,6 +77,48 @@ systembruker, see below.
 
    Oppgi alltid **organisasjonsnummer**, **miljø** (test/prod) og
    **klient-id**, og bestill test og produksjon hver for seg.
+
+### Hele scope-behovet, ikke bare det neste
+
+Kartlagt 2026-07-27 ved å gå gjennom Skatteetatens API-dokumentasjon i
+sin helhet (99 API-sider), fordi å bestille ett scope om gangen er den
+dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
+
+**Bestilles nå — dekker kode som finnes eller er neste steg:**
+
+| Scope | Til | Status |
+| --- | --- | --- |
+| `skatteetaten:mvameldingvalidering` | mva-melding, validering (#8) | koden finnes |
+| `skatteetaten:innrapporteringamelding` | a-melding **og** avstemmingsrapporten (#46) | koden mangler |
+| `skatteetaten:skattekorttilarbeidsgiver` | skattekort → forskuddstrekk (#46) | koden mangler |
+| `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
+| `skatteetaten:mvaregisteravgiftssubjekt` | er selskapet mva-registrert? | i dag et manuelt flagg i firmaopplysningene (docs/faktura.md) — dette er den autoritative kilden |
+| `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning |
+
+**Vent til saken er planlagt** — ikke bestill tilgang til opplysninger
+uten et sted å bruke dem; det er både dataminimering og noe
+Skatteetaten spør om:
+
+| Scope | Til |
+| --- | --- |
+| `skatteetaten:skattemeldingupersonlig`, `skatteetaten:naeringsspesifikasjon` | skattemelding m/ næringsspesifikasjon (#11, «later») |
+| `skatteetaten:formueinntekt/skattemelding` | innsending av skattemelding (#11) |
+
+**Ikke aktuelt for regnmed:** primærnæringsscopene (med mindre et
+kundesegment krever det), oppdragsregisteret (bygg/anlegg),
+innkrevings- og utleggsscopene (inkasso overlates bevillingshavere,
+docs/purring.md), og tredjepartsrapporteringen for bank/forsikring.
+
+### Det som IKKE er Skatteetaten-scope
+
+Den fellen som kostet en runde: to av behovene løses ikke med et
+`skatteetaten:`-scope i det hele tatt, og må søkes hos Digdir/Altinn
+**parallelt**, ikke etterpå.
+
+| Behov | Krever |
+| --- | --- |
+| Mva-melding, **innsending** | Altinn3-instansflyten med `altinn:instances.read` / `altinn:instances.write` |
+| Aksjonærregisteroppgaven | **Altinn systembruker** med tilgangspakke, i tillegg til scopet |
    They do NOT appear in Samarbeidsportalen's scope picker until
    granted: order them via skatteetaten.no/kontakt/skriv/ stating the
    orgnr and both scope names (same procedure for test and prod); once
