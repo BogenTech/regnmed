@@ -150,8 +150,58 @@ De innebygde rollene er faste bunter:
 | `admin` | `bokforing` + `SELSKAP_ADMIN`, `MEDLEM_ADMIN`, `INTEGRASJON_ADMIN`, `OPPDRAG_ADMIN`, `TIMER_LAAS`, `TIMER_*_ALLE`, `MIGRERING_ADMIN`, `MVA_ORDNING_ADMIN` |
 
 `les` ⊂ `revisor` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **disse
-fire**, ikke ved modellen. En egendefinert rolle (#60) trenger ikke være
-nøstet i det hele tatt — og `ansatt` er det ikke.
+fire**, ikke ved modellen. En egendefinert rolle er ikke nøstet i det
+hele tatt — og `ansatt` er det ikke.
+
+### Egendefinerte roller (#60)
+
+Et selskap setter sammen sine egne roller av rettighetene som finnes:
+«Fakturaansvarlig», «Controller uten lønn», «Lagermedarbeider».
+`company_role` + `company_role_right`, per selskap, og
+`company_member.role` peker på navnet.
+
+**De innebygde rollene ligger IKKE i databasen.** De er definert i
+`regnmed-api::tilgang` og blir der. To definisjoner av det samme er to
+steder å drive fra hverandre, og et regnskapssystem har ikke råd til at
+tilgang betyr én ting i koden og en annen i basen. Tabellen holder bare
+det selskapet har funnet på selv; portalen får de innebygde beskrevet
+fra koden via `GET …/roles`.
+
+**Rollenavnet er permanent**, som en dimensjonskode og av samme grunn:
+det er nøkkelen medlemskapene peker på. Kunne det endres, ville de pekt
+på en rolle som ikke finnes lenger. Vil man ha et annet navn, lager man
+en ny rolle. De innebygde navnene er reservert, ellers ville en
+selskapsdefinert «admin» skygget for den ekte.
+
+**Rettigheter som styrer hvem som har tilgang kan ikke delegeres.**
+`MEDLEM_ADMIN`, `SELSKAP_ADMIN`, `OPPDRAG_ADMIN` og
+`INTEGRASJON_ADMIN` er utenfor rekkevidde for en egendefinert rolle
+([`Rett::kan_delegeres`]) — en rolle som kan endre tilganger kan gi seg
+selv alt annet, og da er resten av avgrensningen bare pynt. De blir
+værende hos `admin`, som er en rolle et selskap ikke kan skrive om.
+Avvist når rollen lages, ikke bare ignorert ved oppslag.
+
+**Ukjente rettighetsnavn oppfører seg forskjellig i de to retningene**,
+og det er med vilje: når et *menneske* skriver en rolle, avvises et
+ukjent navn høylytt (en rolle som stilltiende mangler halve innholdet er
+verre enn en feilmelding); ved *oppslag* ignoreres det (der er det en
+gammel database eller en tilbakerullet versjon, ikke en skrivefeil).
+Databasen kjenner ikke vokabularet, så en rolle kan aldri love en
+rettighet ingen håndhever.
+
+En rolle **slettes aldri**, den deaktiveres — og en deaktivert rolle gir
+ingenting. Medlemskapet står, så historikken om hvem som hadde hvilken
+tilgang er intakt. Endringene ligger i `company_role_change`.
+
+Migrasjon 0039 fjernet check-constraint-en på `company_member.role`,
+siden listen ikke lenger er kjent for databasen. Det svekker ikke
+vernet: oppslaget er **fail-closed** — et rollenavn koden ikke kjenner
+igjen gir ingen rettigheter, så en ugyldig verdi stenger ute i stedet
+for å slippe inn.
+
+Integrasjoner (#45) går gjennom samme oppslag, så en maskin kan få en
+egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
+At `admin` ikke er grantbart til en maskin står fortsatt.
 
 ### Lønn er ikke allmenn lesning
 

@@ -34,6 +34,7 @@ pub mod purring;
 pub mod regnskap;
 pub mod reskontro;
 pub mod revisjon;
+pub mod roller;
 pub mod saft;
 pub mod saft_import;
 pub mod salgsdokument;

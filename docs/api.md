@@ -49,6 +49,11 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/access/{person_id}/restore` | POST |
 | `/companies/{company_id}/invitations` | GET POST |
 | `/companies/{company_id}/invitations/{invitation_id}` | DELETE |
+| `/companies/{company_id}/roles` | GET POST |
+| `/companies/{company_id}/roles/history` | GET |
+| `/companies/{company_id}/roles/{role_id}` | PUT |
+| `/companies/{company_id}/roles/{role_id}/deactivate` | POST |
+| `/companies/{company_id}/roles/{role_id}/restore` | POST |
 | `/me` | GET |
 
 ### Selskap og onboarding

@@ -24,7 +24,9 @@ fn krev_tildelbar(rolle: &str) -> Result<()> {
              (docs/marketplace.md)"
         );
     }
-    ensure!(ROLLER.contains(&rolle), "ukjent rolle «{rolle}»");
+    // Egendefinerte roller (#60) slipper gjennom her; at navnet faktisk
+    // finnes i selskapet kontrolleres av API-laget, som kjenner
+    // selskapet. Et navn som ikke finnes gir uansett ingen rettigheter.
     Ok(())
 }
 

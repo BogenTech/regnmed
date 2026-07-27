@@ -164,6 +164,81 @@ pub enum Rett {
     MigreringAdmin,
 }
 
+static ALLE_RETTIGHETER: [Rett; 72] = [
+    Rett::BilagLes,
+    Rett::VedleggSkriv,
+    Rett::BilagLastOpp,
+    Rett::BilagBokfor,
+    Rett::PeriodeLaas,
+    Rett::RapportLes,
+    Rett::MvaOrdningAdmin,
+    Rett::FakturaLes,
+    Rett::FakturaSkriv,
+    Rett::FakturaSend,
+    Rett::FakturamalLes,
+    Rett::FakturamalSkriv,
+    Rett::TilbudLes,
+    Rett::TilbudSkriv,
+    Rett::PurringLes,
+    Rett::PurringSkriv,
+    Rett::ReskontroLes,
+    Rett::ReskontroSkriv,
+    Rett::BankLes,
+    Rett::BankAvstem,
+    Rett::OcrLes,
+    Rett::OcrImport,
+    Rett::BetalingLes,
+    Rett::BetalingOpprett,
+    Rett::BetalingGodkjenn,
+    Rett::BetalingOppgjor,
+    Rett::ValutaLes,
+    Rett::ValutaSkriv,
+    Rett::ProduktLes,
+    Rett::ProduktSkriv,
+    Rett::LagerLes,
+    Rett::LagerSkriv,
+    Rett::AnleggLes,
+    Rett::AnleggSkriv,
+    Rett::TimerLesEgne,
+    Rett::TimerLesAlle,
+    Rett::TimerRapportLes,
+    Rett::TimerSkrivEgne,
+    Rett::TimerSkrivAlle,
+    Rett::TimerFakturer,
+    Rett::TimerLaas,
+    Rett::UtleggLesEgne,
+    Rett::UtleggLesAlle,
+    Rett::UtleggSkrivEgne,
+    Rett::UtleggGodkjenn,
+    Rett::UtleggUtbetal,
+    Rett::LonnLes,
+    Rett::LonnsslippLesEgen,
+    Rett::LonnsslippLesAlle,
+    Rett::LonnSkriv,
+    Rett::LonnKjor,
+    Rett::BudsjettLes,
+    Rett::BudsjettSkriv,
+    Rett::DimensjonLes,
+    Rett::DimensjonSkriv,
+    Rett::AksjebokLes,
+    Rett::AksjebokSkriv,
+    Rett::AttesteringLes,
+    Rett::AttesteringUtfor,
+    Rett::AttesteringAdmin,
+    Rett::EpostInnLes,
+    Rett::EpostInnAdmin,
+    Rett::ForankringLes,
+    Rett::SelskapLes,
+    Rett::SelskapAdmin,
+    Rett::MedlemAdmin,
+    Rett::KontaktSkriv,
+    Rett::OppdragLes,
+    Rett::OppdragAdmin,
+    Rett::IntegrasjonLes,
+    Rett::IntegrasjonAdmin,
+    Rett::MigreringAdmin,
+];
+
 impl Rett {
     /// Det kanoniske navnet. Dette er strengen #60 lagrer i
     /// `role_right`, så den kan ikke endres uten en migrasjon.
@@ -243,6 +318,33 @@ impl Rett {
             IntegrasjonAdmin => "INTEGRASJON_ADMIN",
             MigreringAdmin => "MIGRERING_ADMIN",
         }
+    }
+
+    /// Hele vokabularet, i den rekkefølgen enumet er skrevet.
+    pub const ALLE: &'static [Rett] = &ALLE_RETTIGHETER;
+
+    /// Slår et lagret navn tilbake til en rettighet.
+    ///
+    /// Ukjente navn gir `None` og blir **ignorert** der de brukes (#60):
+    /// databasen kjenner ikke vokabularet, så en rolle kan ikke love en
+    /// rettighet ingen håndhever. Rulles en versjon tilbake som ikke
+    /// kjenner en ny rettighet, forsvinner den — den blir ikke til noe
+    /// annet.
+    pub fn fra_slug(s: &str) -> Option<Rett> {
+        Rett::ALLE.iter().copied().find(|r| r.slug() == s)
+    }
+
+    /// Om rettigheten kan legges i en **egendefinert** rolle (#60).
+    ///
+    /// Nei for alt som styrer HVEM SOM HAR TILGANG. En rolle som kan
+    /// endre tilganger kan gi seg selv alt annet, og da er resten av
+    /// avgrensningen bare pynt. De rettighetene blir værende hos admin,
+    /// som er en rolle et selskap ikke kan skrive om.
+    pub fn kan_delegeres(self) -> bool {
+        !matches!(
+            self,
+            Rett::MedlemAdmin | Rett::OppdragAdmin | Rett::IntegrasjonAdmin | Rett::SelskapAdmin
+        )
     }
 
     /// Hva denne rettigheten også gir. `_ALLE` gir `_EGNE`: den som ser
@@ -492,11 +594,14 @@ impl Rolle {
 #[derive(Debug, Clone)]
 pub struct Tilgang {
     roller: Vec<Rolle>,
+    /// Rettigheter fra selskapets EGNE roller (#60), allerede filtrert
+    /// mot vokabularet og mot [`Rett::kan_delegeres`].
+    egendefinerte: Vec<Rett>,
 }
 
 impl Tilgang {
     pub fn har(&self, rett: Rett) -> bool {
-        self.roller.iter().any(|r| r.har(rett))
+        self.roller.iter().any(|r| r.har(rett)) || self.egendefinerte.contains(&rett)
     }
 
     pub fn er_admin(&self) -> bool {
@@ -521,15 +626,39 @@ pub async fn krev(
     company_id: Uuid,
     rett: Rett,
 ) -> Result<Tilgang, ApiError> {
-    let roller: Vec<Rolle> = regnmed_db::company_roles(&state.pool, person_id, company_id)
-        .await?
-        .iter()
-        .map(|s| Rolle::fra_db(s))
-        .collect();
-    if roller.is_empty() {
+    let navn = regnmed_db::company_roles(&state.pool, person_id, company_id).await?;
+    if navn.is_empty() {
         return Err(ApiError::NotFound);
     }
-    let tilgang = Tilgang { roller };
+    let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
+
+    // Navn som ikke er innebygde kan være selskapets egne roller. Bare
+    // da koster det et oppslag — de aller fleste kall gjør det ikke.
+    let ukjente: Vec<String> = navn
+        .iter()
+        .zip(&roller)
+        .filter(|(_, r)| **r == Rolle::Ukjent)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let egendefinerte = if ukjente.is_empty() {
+        Vec::new()
+    } else {
+        regnmed_db::roller::rettigheter_for(&state.pool, company_id, &ukjente)
+            .await?
+            .iter()
+            // Et navn databasen bærer, men koden ikke kjenner, gir
+            // ingenting — og en rettighet som ikke kan delegeres blir
+            // liggende uvirksom selv om den skulle ha kommet inn i
+            // tabellen på et vis.
+            .filter_map(|s| Rett::fra_slug(s))
+            .filter(|r| r.kan_delegeres())
+            .collect()
+    };
+
+    let tilgang = Tilgang {
+        roller,
+        egendefinerte,
+    };
     if !tilgang.har(rett) {
         return Err(ApiError::Forbidden(manglende(rett)));
     }

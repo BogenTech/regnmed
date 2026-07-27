@@ -31,6 +31,7 @@ pub mod product;
 pub mod purring;
 pub mod reports;
 pub mod reskontro;
+pub mod roller;
 pub mod salgsdokument;
 pub mod settings;
 pub mod tilgang;
@@ -598,6 +599,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invitations/{invitation_id}",
             axum::routing::delete(medlemmer::revoke_invitation),
+        )
+        .route(
+            "/companies/{company_id}/roles",
+            get(roller::list_roles).post(roller::create_role),
+        )
+        .route(
+            "/companies/{company_id}/roles/history",
+            get(roller::history),
+        )
+        .route(
+            "/companies/{company_id}/roles/{role_id}",
+            axum::routing::put(roller::set_rights),
+        )
+        .route(
+            "/companies/{company_id}/roles/{role_id}/deactivate",
+            axum::routing::post(roller::deactivate),
+        )
+        .route(
+            "/companies/{company_id}/roles/{role_id}/restore",
+            axum::routing::post(roller::restore),
         )
         .route(
             "/companies/{company_id}/period-lock",

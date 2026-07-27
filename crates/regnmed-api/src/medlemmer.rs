@@ -50,6 +50,21 @@ pub struct RolleRequest {
     rolle: String,
 }
 
+/// Rollen må enten være innebygd eller en aktiv egendefinert rolle i
+/// DETTE selskapet. Uten sjekken ville en skrivefeil gitt et medlemskap
+/// uten rettigheter — trygt, men helt uforståelig for den det gjelder.
+async fn krev_kjent_rolle(state: &AppState, company_id: Uuid, rolle: &str) -> Result<(), ApiError> {
+    if regnmed_db::medlemmer::ROLLER.contains(&rolle) {
+        return Ok(());
+    }
+    if regnmed_db::roller::finnes(&state.pool, company_id, rolle).await? {
+        return Ok(());
+    }
+    Err(ApiError::BadRequest(format!(
+        "«{rolle}» er verken en innebygd rolle eller en aktiv rolle i dette selskapet"
+    )))
+}
+
 pub async fn set_role(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -57,6 +72,7 @@ pub async fn set_role(
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    krev_kjent_rolle(&state, company_id, &request.rolle).await?;
     regnmed_db::medlemmer::sett_rolle(
         &state.pool,
         company_id,
@@ -149,6 +165,7 @@ pub async fn invite(
     Json(request): Json<InviteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    krev_kjent_rolle(&state, company_id, &request.rolle).await?;
     let id = regnmed_db::medlemmer::inviter(
         &state.pool,
         company_id,

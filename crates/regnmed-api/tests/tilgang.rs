@@ -26,6 +26,37 @@ use uuid::Uuid;
 
 use regnmed_api::{AppState, router};
 
+/// Som [`status`], men med svarkroppen — for endepunkter der
+/// feilmeldingen er halve poenget.
+async fn json_call(
+    state: &AppState,
+    method: &str,
+    uri: &str,
+    bearer: &str,
+    body: &str,
+) -> (StatusCode, serde_json::Value) {
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("authorization", format!("Bearer {bearer}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let kode = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    (
+        kode,
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+    )
+}
+
 async fn status(state: &AppState, method: &str, uri: &str, bearer: &str, body: &str) -> StatusCode {
     let response = router(state.clone())
         .oneshot(
@@ -591,4 +622,189 @@ async fn lonn_er_ikke_allmenn_lesning() {
         StatusCode::FORBIDDEN,
         "revisor skulle ikke fått registrere ansatte"
     );
+}
+
+// ---------------------------------------------------------------------
+// Egendefinerte roller (#60).
+// ---------------------------------------------------------------------
+
+/// «En som bare fakturerer» — en rolle vi aldri har tenkt på, satt
+/// sammen av selskapet selv, og den virker.
+#[tokio::test]
+async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        r#"{"navn":"Fakturaansvarlig",
+            "rettigheter":["FAKTURA_LES","FAKTURA_SKRIV","RESKONTRO_LES"]}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+
+    // Gi rollen til noen.
+    let sub = format!("faktura|{}", Uuid::new_v4());
+    let p = regnmed_db::ensure_person(&state.pool, &sub, Some("Fakturafolk"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, p, "Fakturaansvarlig")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Fakturafolk");
+
+    // Det rollen gir.
+    for uri in ["/companies/{c}/invoices", "/companies/{c}/parties"] {
+        let uri = uri.replace("{c}", &company.to_string());
+        assert_ne!(
+            status(&state, "GET", &uri, &token, "").await,
+            StatusCode::FORBIDDEN,
+            "rollen skulle gitt {uri}"
+        );
+    }
+    // Og alt den ikke gir — inkludert nabofunksjoner det er lett å anta
+    // følger med.
+    for uri in [
+        "/companies/{c}/vouchers",
+        "/companies/{c}/reports/saldobalanse?from=2026-01-01&to=2026-12-31",
+        "/companies/{c}/products",
+        "/companies/{c}/payroll",
+        "/companies/{c}/bank/reconciliation?account=1920",
+        "/companies/{c}/access",
+    ] {
+        let uri = uri.replace("{c}", &company.to_string());
+        assert_eq!(
+            status(&state, "GET", &uri, &token, "").await,
+            StatusCode::FORBIDDEN,
+            "rollen skulle IKKE gitt {uri}"
+        );
+    }
+}
+
+/// En rolle som kan endre tilganger kan gi seg selv alt annet. Derfor
+/// kan de rettighetene ikke legges i en egendefinert rolle i det hele
+/// tatt — avvist når rollen lages, ikke bare ignorert ved oppslag.
+#[tokio::test]
+async fn tilgangsstyrende_rettigheter_kan_ikke_delegeres() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    for farlig in [
+        "MEDLEM_ADMIN",
+        "SELSKAP_ADMIN",
+        "OPPDRAG_ADMIN",
+        "INTEGRASJON_ADMIN",
+    ] {
+        let (kode, svar) = json_call(
+            &state,
+            "POST",
+            &format!("/companies/{company}/roles"),
+            &admin,
+            &format!(r#"{{"navn":"Farlig {farlig}","rettigheter":["{farlig}"]}}"#),
+        )
+        .await;
+        assert_eq!(kode, StatusCode::BAD_REQUEST, "{farlig}: {svar}");
+        assert!(
+            svar["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("hvem som har tilgang"),
+            "{svar}"
+        );
+    }
+
+    // Og et navn som ikke finnes i vokabularet avvises høylytt her —
+    // et menneske skriver, og en rolle som stilltiende mangler halve
+    // innholdet er verre enn en feilmelding.
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        r#"{"navn":"Tullerolle","rettigheter":["FAKTURA_ALT"]}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::BAD_REQUEST, "{svar}");
+    assert!(
+        svar["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("ukjent rettighet"),
+        "{svar}"
+    );
+}
+
+/// En deaktivert rolle gir ingenting — det er slik en rolle «fjernes»
+/// uten at historikken om hvem som hadde den forsvinner.
+#[tokio::test]
+async fn deaktivert_rolle_gir_ingen_tilgang() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let (_, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        r#"{"navn":"Midlertidig","rettigheter":["FAKTURA_LES"]}"#,
+    )
+    .await;
+    let role_id = svar["role_id"].as_str().unwrap().to_string();
+
+    let sub = format!("midl|{}", Uuid::new_v4());
+    let p = regnmed_db::ensure_person(&state.pool, &sub, Some("Midl"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, p, "Midlertidig")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Midl");
+    let uri = format!("/companies/{company}/invoices");
+    assert_ne!(
+        status(&state, "GET", &uri, &token, "").await,
+        StatusCode::FORBIDDEN
+    );
+
+    let (kode, _) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles/{role_id}/deactivate"),
+        &admin,
+        "{}",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+
+    // Medlemskapet står, men rollen gir ingenting lenger. Merk 404, ikke
+    // 403: uten en eneste rettighet er personen ikke lenger noen som
+    // «har tilgang, men ikke nok».
+    assert_ne!(
+        status(&state, "GET", &uri, &token, "").await,
+        StatusCode::OK,
+        "en deaktivert rolle skal ikke gi tilgang"
+    );
+}
+
+/// Innebygde navn kan ikke kapres — en egendefinert «admin» ville
+/// skygget for den ekte.
+#[tokio::test]
+async fn innebygde_rollenavn_er_reservert() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    for navn in ["admin", "les", "bokforing", "ansatt", "revisor"] {
+        let (kode, svar) = json_call(
+            &state,
+            "POST",
+            &format!("/companies/{company}/roles"),
+            &admin,
+            &format!(r#"{{"navn":"{navn}","rettigheter":["FAKTURA_LES"]}}"#),
+        )
+        .await;
+        assert_eq!(kode, StatusCode::BAD_REQUEST, "{navn}: {svar}");
+    }
 }
