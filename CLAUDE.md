@@ -784,6 +784,23 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    bilagsvalideringen — linjene utelates nå når de er null).
    **IKKE bygget, i prioritert rekkefølge: a-meldingen (selskapet må
    fortsatt levere den selv), skattekort-API, tabelltrekk.**
+50. 📌 Skattemelding og næringsspesifikasjon (#11) — KARTLAGT, IKKE
+   BYGGET (docs/skattemelding.md). To funn endrer saken. (a) Innsending
+   går ikke på maskinporten-skinnen: Skatteetaten sier selv
+   «Validering og innsending må fortsatt gjøres med ID-porten», og
+   Maskinporten gir bare lesetilgang for inntektsår 2025 — altså er
+   **#11 nedstrøms #26** (ID-porten-føderering), noe ROADMAP-en ikke
+   fanget. (b) XSD-er, kodelister og eksempler ligger åpent i
+   Skatteetaten/skattemeldingen (aktivt vedlikeholdt), og strukturen
+   passer uvanlig godt — `resultatregnskap` og `balanseregnskap` er
+   VALGFRIE elementer vi kan fylle helt ut fra
+   `regnmed-core::regnskap` i dag, og grupperingskodelisten er den
+   samme vi alt bruker i SAF-T. MEN: versjon-per-inntektsår er
+   verifisert bare til og med 2024 (2021→v2, 2022→v3, 2024→v5 fra
+   etatens egne eksempelfiler). v6/v7 finnes, regelen
+   `versjon = år − 2019` treffer alle punktene, men det er en
+   slutning og ikke en kilde — å skrive årgangsregisteret på den ville
+   brutt #50. Ett spørsmål til brukerstøtte lukker det.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

@@ -113,6 +113,14 @@ Skatteetaten spør om:
 | `skatteetaten:skattemeldingupersonlig`, `skatteetaten:naeringsspesifikasjon` | skattemelding m/ næringsspesifikasjon (#11, «later») |
 | `skatteetaten:formueinntekt/skattemelding` | innsending av skattemelding (#11) |
 
+⚠️ **Men innsending av skattemelding går ikke på denne skinnen i det
+hele tatt.** Skatteetaten skriver selv, om overgangen til Altinn 3:
+*«Validering og innsending må fortsatt gjøres med ID-porten»*. For
+inntektsår 2025 gir Maskinporten bare **lesetilgang** — hente gjeldende
+skattemelding og PDF av den fastsatte. Å bestille scopene over gir
+altså ikke en innsendingsvei; den krever en innlogget person.
+Konsekvensene for #11 står i docs/skattemelding.md.
+
 **Ikke aktuelt for regnmed:** primærnæringsscopene (med mindre et
 kundesegment krever det), oppdragsregisteret (bygg/anlegg),
 innkrevings- og utleggsscopene (inkasso overlates bevillingshavere,

@@ -72,6 +72,15 @@ which maps 1:1 onto our engagement model).
   næringsspesifikasjon** (annual tax return as sluttbrukersystem),
   **årsregnskap til Regnskapsregisteret**. **A-melding (payroll) stays
   deliberately deferred for years.**
+  ⚠️ Mapped 2026-07-28 (docs/skattemelding.md): skattemelding
+  **submission does not ride this rail** — Skatteetaten states
+  *«Validering og innsending må fortsatt gjøres med ID-porten»*, and
+  Maskinporten gives read access only. That puts **#11 downstream of
+  #26** (ID-porten federation), which the ordering above did not
+  reflect. The document itself is buildable now — XSDs and code lists
+  are published openly, and resultat/balanse already exist — but the
+  XSD-version-per-inntektsår is not published for 2025/2026, so the
+  årgang registry cannot be written from a verified source yet.
 - **Lovdata:** no public free API; we link to regulations (kontohjelp-style
   references from mva-koder and reports) rather than integrate. Revisit only
   if a licensed need appears.
@@ -149,6 +158,10 @@ existing portfolio.
   (docs/anchoring.md). Follow-up: attachment-set binding (leaf v2).
 - **regnid production-ready:** OpenID conformance suite, then **ID-porten
   federation** so businesses log in with what they already have.
+  Worth more than it looks: ID-porten is also the **only** way to
+  validate and submit skattemelding/næringsspesifikasjon (#11) — see
+  docs/skattemelding.md — so this is on the critical path for an M2
+  deliverable, not just a login convenience.
 - ✅ **Production deploy scaffolding:** base + overlays (local render
   byte-identical), prod overlay with cert-manager TLS, secrets
   out-of-band, pinned images, TSA-witnessed anchoring, and backups with
