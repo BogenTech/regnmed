@@ -56,3 +56,18 @@ and no access yields 404, as everywhere.
   period lock and anchor present); a planted anchor mismatch flips
   `alle_ok` and marks Ekstern forankring AVVIK; the text download
   renders with the verdict; outsiders get 404.
+
+## Hva revisor ser av lønn
+
+Et `revisjon`-oppdrag gir rollen **`revisor`**: lesing som en intern
+leser, pluss `LONN_LES` og `LONNSSLIPP_LES_ALLE` (#55, docs/auth.md).
+
+Det er et uttrykkelig valg, ikke en bieffekt. Lønn er revisjonspliktig —
+en vesentlig kostnad, med forskuddstrekk og arbeidsgiveravgift som
+lovpålagte størrelser — så revisor må kunne kontrollere både
+ansattregisteret og den enkelte lønnsslippen. Fram til #55 fulgte det
+bare av at revisor og en intern leser var samme rolle; nå er de to
+skilt, og det er den interne leseren som har mistet tilgangen.
+
+Revisor er fortsatt skrivebeskyttet. Lønnstilgangen er lesing, ikke en
+oppgradering — det har sin egen test.

@@ -132,19 +132,51 @@ pub async fn company_access(
         .await?
         .into_iter()
         .filter(|a| a.company_id == company_id)
-        // 'admin' > 'bokforing' > 'les'; pick the strongest path.
+        // 'admin' > 'bokforing' > 'revisor' > 'les' > 'ansatt'.
+        //
+        // MERK: dette er en heuristikk som bare virker mens rollene er
+        // en stige, og `ansatt` er den ikke — den kan skrive ting `les`
+        // ikke kan. Bruk [`company_roles`] når svaret skal avgjøre
+        // tilgang; denne finnes for visning og for kall som virkelig
+        // vil ha ett navn.
         .max_by_key(|a| match a.access.as_str() {
-            "admin" => 3,
-            "bokforing" => 2,
-            _ => 1,
+            "admin" => 4,
+            "bokforing" => 3,
+            "revisor" => 2,
+            "les" => 1,
+            _ => 0,
         });
     Ok(access.map(|a| a.access))
+}
+
+/// **Alle** rollene en person har i ett selskap, én per vei inn.
+///
+/// Tilgangsvakten unionerer rettighetene fra disse i stedet for å velge
+/// den «sterkeste» rollen: etter at `ansatt` kom til (#54) er rollene
+/// ikke lenger en stige, og en som er ansatt i selskapet OG kommer inn
+/// via et oppdrag ville mistet retten til å føre sine egne timer hvis vi
+/// bare valgte én.
+pub async fn company_roles(
+    pool: &PgPool,
+    person_id: Uuid,
+    company_id: Uuid,
+) -> Result<Vec<String>> {
+    let mut roller: Vec<String> = company_access_for_person(pool, person_id)
+        .await?
+        .into_iter()
+        .filter(|a| a.company_id == company_id)
+        .map(|a| a.access)
+        .collect();
+    roller.sort();
+    roller.dedup();
+    Ok(roller)
 }
 
 /// Every company the person may act for: direct memberships, plus firm
 /// memberships routed through engagements that are active today. An
 /// engagement of kind 'regnskap' grants 'bokforing'; 'revisjon' grants
-/// 'les'. A person can appear once per access path — the caller (or UI)
+/// 'revisor' — read-only like 'les', but with the payroll access the
+/// audit needs (#55). A person can appear once per access path — the caller (or UI)
 /// decides how to merge.
 pub async fn company_access_for_person(
     pool: &PgPool,
@@ -159,7 +191,7 @@ pub async fn company_access_for_person(
          union all
 
          select c.id as company_id, c.orgnr, c.name,
-                case e.kind when 'regnskap' then 'bokforing' else 'les' end as access,
+                case e.kind when 'regnskap' then 'bokforing' else 'revisor' end as access,
                 f.name as via
          from firm_member fm
          join firm f on f.id = fm.firm_id

@@ -80,9 +80,12 @@ pub async fn set_policy(
         ensure!(grense >= 0, "beløpsgrensen kan ikke være negativ");
     }
     if let Some(attestant) = attestant_person_id {
-        let access = crate::tenancy::company_access(pool, attestant, company_id).await?;
+        // Positiv liste, ikke «alt som ikke er les». Da rollene var tre
+        // betydde de to formene det samme; etter at 'revisor' og
+        // 'ansatt' kom til ville nektelsen sluppet begge gjennom.
+        let roller = crate::tenancy::company_roles(pool, attestant, company_id).await?;
         ensure!(
-            access.as_deref().is_some_and(|a| a != "les"),
+            roller.iter().any(|r| r == "admin" || r == "bokforing"),
             "attestanten må ha bokføringstilgang til selskapet"
         );
     }

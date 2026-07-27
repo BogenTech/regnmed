@@ -109,9 +109,17 @@ vi legger til en rolle:
 krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
 ```
 
-`krev` returnerer rollen, så en handler som trenger mer enn ja/nei
-slipper et nytt oppslag — periodelåsen bruker det: å låse krever
-`PERIODE_LAAS`, å **åpne igjen** krever admin.
+`krev` returnerer personens samlede tilgang, så en handler som trenger
+mer enn ja/nei slipper et nytt oppslag — periodelåsen bruker det: å låse
+krever `PERIODE_LAAS`, å **åpne igjen** krever admin.
+
+**Rettighetene unioneres over alle veier inn.** En person kan være
+direkte medlem *og* komme inn via et oppdrag. Så lenge rollene var en
+stige holdt det å velge den sterkeste; etter `ansatt` (#54) er de ikke
+det, og en ansatt som også kom inn gjennom et byrå ville mistet retten
+til å føre sine egne timer hvis vi valgte én. `company_access` finnes
+fortsatt, men bare til visning — tilgang avgjøres av `company_roles` og
+unionen.
 
 ## Rettigheter og roller
 
@@ -136,13 +144,39 @@ De innebygde rollene er faste bunter:
 | Bunt | Innhold |
 | --- | --- |
 | `ansatt` | **Selvbetjening** (#54): `TIMER_LES_EGNE`, `TIMER_SKRIV_EGNE`, `UTLEGG_LES_EGNE`, `UTLEGG_SKRIV_EGNE`, `LONNSSLIPP_LES_EGEN`, `BILAG_LAST_OPP`, `DIMENSJON_LES` |
-| `les` | `*_LES` for bilag, rapporter, faktura, reskontro, bank, betaling, produkter, lager, anlegg, budsjett, dimensjoner, aksjebok, utlegg, lønn, forankring, oppdrag, integrasjoner |
-| `bokforing` | `les` + alt som endrer hovedboken: `BILAG_BOKFOR`, `FAKTURA_SKRIV`, `BANK_AVSTEM`, `BETALING_OPPRETT`/`_GODKJENN`/`_OPPGJOR`, `LONN_KJOR`, `PERIODE_LAAS` … |
+| `les` | `*_LES` for bilag, rapporter, faktura, reskontro, bank, betaling, produkter, lager, anlegg, budsjett, dimensjoner, aksjebok, utlegg, forankring, oppdrag, integrasjoner — **ikke lønn** |
+| `revisor` | `les` + `LONN_LES` og `LONNSSLIPP_LES_ALLE` (#55). Kommer bare fra et revisjonsoppdrag; kan ikke tildeles direkte |
+| `bokforing` | `les` + alt som endrer hovedboken: `BILAG_BOKFOR`, `FAKTURA_SKRIV`, `BANK_AVSTEM`, `BETALING_OPPRETT`/`_GODKJENN`/`_OPPGJOR`, `LONN_KJOR`, `PERIODE_LAAS` … + lønnslesingen |
 | `admin` | `bokforing` + `SELSKAP_ADMIN`, `MEDLEM_ADMIN`, `INTEGRASJON_ADMIN`, `OPPDRAG_ADMIN`, `TIMER_LAAS`, `TIMER_*_ALLE`, `MIGRERING_ADMIN`, `MVA_ORDNING_ADMIN` |
 
-`les` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **de tre**, ikke ved
-modellen. En egendefinert rolle (#60) trenger ikke være nøstet i det
-hele tatt — og `ansatt` er det ikke.
+`les` ⊂ `revisor` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **disse
+fire**, ikke ved modellen. En egendefinert rolle (#60) trenger ikke være
+nøstet i det hele tatt — og `ansatt` er det ikke.
+
+### Lønn er ikke allmenn lesning
+
+Fram til #55 lå `LONNSSLIPP_LES_ALLE` og `LONN_LES` i lesebunten, så
+**enhver med lesetilgang kunne laste ned hvem som helst sin
+lønnsslipp** — bruttolønn, forskuddstrekk, feriepenger og fødselsdato —
+og se ansattlisten med månedslønn og trekkprosent. Det var ikke en
+beslutning; lønn kom sist og gjenbrukte den generelle lesetilgangen.
+
+Rettingen tvang fram et skille som uansett var riktig: **`revisor` og en
+intern leser er ikke det samme.** Begge er skrivebeskyttet, men bare den
+ene har en revisjonsplikt som krever lønnsopplysningene — lønn er en
+vesentlig kostnad, og forskuddstrekk og arbeidsgiveravgift er lovpålagte
+størrelser som skal kunne kontrolleres. Før #55 var de samme streng:
+et `revisjon`-oppdrag ga `les`. Nå gir det `revisor`.
+
+Svaret på «hvor mye ser en revisor?» er altså fortsatt «lønn også», men
+det er nå et **uttrykkelig ja** i stedet for en bieffekt. En intern
+leser — et styremedlem, en controller — ser det ikke lenger.
+
+**Ingen egen `lonn`-rolle.** Vurdert og valgt bort: den som fører
+regnskapet må uansett se lønn for å bokføre den, så en rolle som skiller
+dem ville bare hatt mening sammen med egendefinerte roller (#60). Der
+kan et selskap lage «controller uten lønn» selv, av rettighetene som nå
+finnes.
 
 ### Ansattrollen er ikke «lesing minus noe»
 

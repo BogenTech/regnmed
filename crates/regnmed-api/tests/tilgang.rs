@@ -63,8 +63,6 @@ const LESING: &[&str] = &[
     "/companies/{c}/dimensions",
     "/companies/{c}/parties",
     "/companies/{c}/period-lock",
-    "/companies/{c}/employees",
-    "/companies/{c}/payroll",
     "/companies/{c}/reports/saldobalanse?from=2026-01-01&to=2026-12-31",
     "/companies/{c}/settings",
 ];
@@ -523,5 +521,74 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
         )
         .await,
         StatusCode::OK
+    );
+}
+
+/// Lønn er ikke allmenn lesning (#55).
+///
+/// Før dette kunne enhver med lesetilgang laste ned hvem som helst sin
+/// lønnsslipp og se ansattlisten med fødselsdato, månedslønn og
+/// trekkprosent. Nå skiller vi: en **revisor** ser lønn, fordi det er
+/// revisjonspliktig, mens en **intern leser** ikke gjør det.
+#[tokio::test]
+async fn lonn_er_ikke_allmenn_lesning() {
+    let Some((state, idp, company, admin, bokforing, les)) = oppsett().await else {
+        return;
+    };
+
+    // En revisor kommer inn gjennom et oppdrag, ikke som medlem.
+    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon AS", "revisjon")
+        .await
+        .unwrap();
+    let sub = format!("revisor|{}", Uuid::new_v4());
+    let rp = regnmed_db::ensure_person(&state.pool, &sub, Some("Revisor"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_firm_member(&state.pool, firm, rp, "ansatt")
+        .await
+        .unwrap();
+    regnmed_db::ensure_engagement(&state.pool, firm, company, "revisjon")
+        .await
+        .unwrap();
+    let revisor = idp.token(&sub, "Revisor");
+    let ansatt = person_med_rolle(&state, &idp, company, "ansatt").await;
+
+    for uri in ["/companies/{c}/employees", "/companies/{c}/payroll"] {
+        let uri = uri.replace("{c}", &company.to_string());
+        // Nektet: intern leser og ansatt.
+        for (navn, token) in [("les", &les), ("ansatt", &ansatt)] {
+            assert_eq!(
+                status(&state, "GET", &uri, token, "").await,
+                StatusCode::FORBIDDEN,
+                "{navn} skulle vært nektet {uri}"
+            );
+        }
+        // Tillatt: revisor (revisjonsplikt), bokføring og admin.
+        for (navn, token) in [
+            ("revisor", &revisor),
+            ("bokforing", &bokforing),
+            ("admin", &admin),
+        ] {
+            assert_ne!(
+                status(&state, "GET", &uri, token, "").await,
+                StatusCode::FORBIDDEN,
+                "{navn} skulle nådd {uri}"
+            );
+        }
+    }
+
+    // Revisoren er fortsatt skrivebeskyttet — tilgangen til lønn er
+    // lesing, ikke en oppgradering.
+    assert_eq!(
+        status(
+            &state,
+            "POST",
+            &format!("/companies/{company}/employees"),
+            &revisor,
+            r#"{"fodselsnummer":"03048810003","navn":"X","ansatt_fra":"2026-01-01"}"#,
+        )
+        .await,
+        StatusCode::FORBIDDEN,
+        "revisor skulle ikke fått registrere ansatte"
     );
 }

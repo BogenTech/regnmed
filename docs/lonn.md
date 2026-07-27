@@ -251,6 +251,18 @@ står nederst.
 Fødselsdato, ikke fødselsnummer — også på et dokument som sendes til
 den ansatte selv.
 
+**Hvem får se den (#55).** Sin egen slipp får enhver ansatt
+(`LONNSSLIPP_LES_EGEN`). Andres krever `LONNSSLIPP_LES_ALLE`, som
+`bokforing`, `admin` og **revisor** har — men ikke en intern leser.
+Fram til #55 lå den i lesebunten, så enhver med lesetilgang kunne laste
+ned hvem som helst sin; det var ikke et valg, men en arv fra at lønn kom
+sist og gjenbrukte den generelle lesetilgangen. Ber man om en annens
+slipp uten retten, svarer endepunktet **404** og ikke 403: den som ikke
+får se noe skal heller ikke få vite at det finnes.
+
+Det samme gjelder ansattregisteret (`LONN_LES`): fødselsdato,
+månedslønn og trekkprosent er ikke allmenn lesning.
+
 ## Portal
 
 Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og

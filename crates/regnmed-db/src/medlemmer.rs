@@ -15,6 +15,19 @@ use uuid::Uuid;
 /// ingenting.
 pub const ROLLER: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
+fn krev_tildelbar(rolle: &str) -> Result<()> {
+    if rolle == "revisor" {
+        // Ikke en skrivefeil å avvise stille: 'revisor' er en ekte rolle
+        // i systemet, den kommer bare et annet sted fra.
+        bail!(
+            "«revisor» tildeles ikke her — den følger av et revisjonsoppdrag \
+             (docs/marketplace.md)"
+        );
+    }
+    ensure!(ROLLER.contains(&rolle), "ukjent rolle «{rolle}»");
+    Ok(())
+}
+
 /// E-post normalisert som vi sammenligner den: trimmet, små bokstaver.
 ///
 /// Adressen er nøkkelen en invitasjon løses inn på, så «Ola@Firma.no»
@@ -59,7 +72,7 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
          union all
 
          select p.id, coalesce(p.name, p.oidc_sub), p.email,
-                case e.kind when 'regnskap' then 'bokforing' else 'les' end,
+                case e.kind when 'regnskap' then 'bokforing' else 'revisor' end,
                 true,
                 f.name,
                 false
@@ -160,7 +173,7 @@ pub async fn sett_rolle(
     ny_rolle: &str,
     utfort_av: Uuid,
 ) -> Result<()> {
-    ensure!(ROLLER.contains(&ny_rolle), "ukjent rolle «{ny_rolle}»");
+    krev_tildelbar(ny_rolle)?;
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, company_id).await?;
 
@@ -274,7 +287,7 @@ pub async fn inviter(
     rolle: &str,
     invited_by: Uuid,
 ) -> Result<Uuid> {
-    ensure!(ROLLER.contains(&rolle), "ukjent rolle «{rolle}»");
+    krev_tildelbar(rolle)?;
     let epost = normaliser_epost(epost);
     ensure!(
         epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),

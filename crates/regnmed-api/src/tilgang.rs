@@ -279,6 +279,10 @@ pub enum Rolle {
     /// et trinn under `Les` — se [`ANSATT_BUNT`].
     Ansatt,
     Les,
+    /// Lesing som `Les`, pluss lønnsopplysningene revisjonen trenger.
+    /// Kommer bare fra et oppdrag av typen `revisjon` — den kan ikke
+    /// tildeles direkte.
+    Revisor,
     Bokforing,
     Admin,
 }
@@ -332,11 +336,6 @@ const LES_BUNT: &[Rett] = &[
     Rett::TimerLesEgne,
     Rett::TimerRapportLes,
     Rett::UtleggLesAlle,
-    Rett::LonnLes,
-    // MERK: lønnsslippen er lesbar for enhver med tilgang, også i dag.
-    // Det er en kjent svakhet (#55) — den står her fordi #59 ikke skal
-    // endre oppførsel, ikke fordi den hører hjemme i lesebunten.
-    Rett::LonnsslippLesAlle,
     Rett::BudsjettLes,
     Rett::DimensjonLes,
     Rett::AksjebokLes,
@@ -347,6 +346,15 @@ const LES_BUNT: &[Rett] = &[
     Rett::OppdragLes,
     Rett::IntegrasjonLes,
 ];
+
+/// Det revisor legger til lesingen: lønnsopplysningene (#55).
+///
+/// Lønn er revisjonspliktig — den er en vesentlig kostnad, og
+/// forskuddstrekk og arbeidsgiveravgift er lovpålagte størrelser en
+/// revisor må kunne kontrollere. Så svaret er «ja, revisor ser lønn»,
+/// men nå er det et **uttrykkelig ja** i stedet for en bieffekt av at
+/// revisor og en intern leser var samme rolle.
+pub const REVISOR_BUNT: &[Rett] = &[Rett::LonnLes, Rett::LonnsslippLesAlle];
 
 /// Det bokføring legger til: alt som endrer hovedboken eller ender der.
 const BOKFORING_BUNT: &[Rett] = &[
@@ -374,6 +382,8 @@ const BOKFORING_BUNT: &[Rett] = &[
     Rett::UtleggSkrivEgne,
     Rett::UtleggGodkjenn,
     Rett::UtleggUtbetal,
+    Rett::LonnLes,
+    Rett::LonnsslippLesAlle,
     Rett::LonnSkriv,
     Rett::LonnKjor,
     Rett::BudsjettSkriv,
@@ -408,6 +418,7 @@ impl Rolle {
             "bokforing" => Self::Bokforing,
             "ansatt" => Self::Ansatt,
             "les" => Self::Les,
+            "revisor" => Self::Revisor,
             _ => Self::Ukjent,
         }
     }
@@ -418,6 +429,7 @@ impl Rolle {
             Self::Bokforing => "bokforing",
             Self::Les => "les",
             Self::Ansatt => "ansatt",
+            Self::Revisor => "revisor",
             Self::Ukjent => "ukjent",
         }
     }
@@ -438,6 +450,7 @@ impl Rolle {
             // sammensetning, og det er hele poenget med modellen.
             Self::Ansatt => &[ANSATT_BUNT],
             Self::Les => &[LES_BUNT],
+            Self::Revisor => &[LES_BUNT, REVISOR_BUNT],
             Self::Bokforing => &[LES_BUNT, BOKFORING_BUNT],
             Self::Admin => &[LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT],
         }
@@ -467,9 +480,37 @@ impl Rolle {
     }
 }
 
-/// Slår opp personens rolle i selskapet og krever at den har `rett`.
-/// Returnerer rollen, så en handler som trenger å vite mer (typisk:
-/// «er dette en admin?») slipper et nytt oppslag.
+/// Alle rettighetene en person har i ett selskap, unionert over hver vei
+/// inn.
+///
+/// **Unionen er ikke pynt.** Så lenge rollene var en stige holdt det å
+/// velge den sterkeste, men `ansatt` er ikke et trinn — den kan skrive
+/// ting `les` ikke kan. En som er ansatt i selskapet OG kommer inn via
+/// et oppdrag ville mistet retten til å føre sine egne timer hvis vi
+/// bare valgte én rolle. Når roller blir egendefinerte (#60) er unionen
+/// dessuten den eneste regelen som fortsatt gir mening.
+#[derive(Debug, Clone)]
+pub struct Tilgang {
+    roller: Vec<Rolle>,
+}
+
+impl Tilgang {
+    pub fn har(&self, rett: Rett) -> bool {
+        self.roller.iter().any(|r| r.har(rett))
+    }
+
+    pub fn er_admin(&self) -> bool {
+        self.roller.iter().any(|r| r.er_admin())
+    }
+
+    /// Rollenavnene, sterkeste først — til visning og logging, aldri
+    /// til å avgjøre tilgang.
+    pub fn roller(&self) -> Vec<&'static str> {
+        self.roller.iter().map(|r| r.slug()).collect()
+    }
+}
+
+/// Slår opp personens tilgang til selskapet og krever `rett`.
 ///
 /// **Ukjent selskap og manglende tilgang gir begge 404.** En som ikke
 /// har tilgang skal ikke få vite om selskapet finnes; det er samme
@@ -479,15 +520,20 @@ pub async fn krev(
     person_id: Uuid,
     company_id: Uuid,
     rett: Rett,
-) -> Result<Rolle, ApiError> {
-    let rolle = regnmed_db::company_access(&state.pool, person_id, company_id)
+) -> Result<Tilgang, ApiError> {
+    let roller: Vec<Rolle> = regnmed_db::company_roles(&state.pool, person_id, company_id)
         .await?
-        .map(|s| Rolle::fra_db(&s))
-        .ok_or(ApiError::NotFound)?;
-    if !rolle.har(rett) {
+        .iter()
+        .map(|s| Rolle::fra_db(s))
+        .collect();
+    if roller.is_empty() {
+        return Err(ApiError::NotFound);
+    }
+    let tilgang = Tilgang { roller };
+    if !tilgang.har(rett) {
         return Err(ApiError::Forbidden(manglende(rett)));
     }
-    Ok(rolle)
+    Ok(tilgang)
 }
 
 /// Feilmeldingen navngir rettigheten som mangler. Den som får 403 skal
@@ -521,6 +567,7 @@ mod tests {
     fn alle_rettigheter() -> Vec<Rett> {
         let mut v: Vec<Rett> = LES_BUNT
             .iter()
+            .chain(REVISOR_BUNT)
             .chain(BOKFORING_BUNT)
             .chain(ADMIN_BUNT)
             .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied()))
@@ -616,6 +663,10 @@ mod tests {
     fn de_innebygde_rollene_er_nostet() {
         for r in alle_rettigheter() {
             if Rolle::Les.har(r) {
+                assert!(Rolle::Revisor.har(r), "revisor mangler {}", r.slug());
+                assert!(Rolle::Bokforing.har(r), "bokforing mangler {}", r.slug());
+            }
+            if Rolle::Revisor.har(r) {
                 assert!(Rolle::Bokforing.har(r), "bokforing mangler {}", r.slug());
             }
             if Rolle::Bokforing.har(r) {
@@ -670,7 +721,7 @@ mod tests {
 
     #[test]
     fn rollen_er_rundtur_mot_databasens_verdier() {
-        for slug in ["admin", "bokforing", "les", "ansatt"] {
+        for slug in ["admin", "bokforing", "les", "ansatt", "revisor"] {
             assert_eq!(Rolle::fra_db(slug).slug(), slug);
         }
     }
@@ -688,6 +739,38 @@ mod tests {
             assert_eq!(r, Rolle::Ukjent, "«{ukjent}»");
             assert!(r.rettigheter().is_empty(), "«{ukjent}» ga rettigheter");
         }
+    }
+
+    /// Revisor ser lønn, en intern leser gjør det ikke (#55). Det er
+    /// hele poenget med at de to ble skilt: begge er skrivebeskyttet,
+    /// men bare den ene har en revisjonsplikt som krever
+    /// lønnsopplysningene.
+    #[test]
+    fn revisor_ser_lonn_men_en_intern_leser_gjor_det_ikke() {
+        for rett in [Rett::LonnLes, Rett::LonnsslippLesAlle] {
+            assert!(Rolle::Revisor.har(rett), "revisor mangler {}", rett.slug());
+            assert!(
+                !Rolle::Les.har(rett),
+                "les skulle ikke hatt {}",
+                rett.slug()
+            );
+            assert!(
+                !Rolle::Ansatt.har(rett),
+                "ansatt skulle ikke hatt {}",
+                rett.slug()
+            );
+            assert!(
+                Rolle::Bokforing.har(rett),
+                "bokforing mangler {}",
+                rett.slug()
+            );
+        }
+        // Revisor er ellers akkurat en leser — og skriver ingenting.
+        assert!(Rolle::Revisor.har(Rett::RapportLes));
+        assert!(!Rolle::Revisor.har(Rett::BilagBokfor));
+        assert!(!Rolle::Revisor.har(Rett::LonnKjor));
+        // Sin egen slipp har enhver ansatt, uavhengig av dette.
+        assert!(Rolle::Ansatt.har(Rett::LonnsslippLesEgen));
     }
 
     /// Rettighetslisten portalen viser skal være komplett og sortert
