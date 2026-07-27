@@ -137,6 +137,15 @@
     });
   }
 
+  // PUT og DELETE — samme som post, men med metoden oppgitt.
+  function send(method, path, body) {
+    return api(path, {
+      method: method,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+  }
+
 
   // ---------- kvitteringsfoto og offline-kø (#48) ----------
   //
@@ -3626,11 +3635,17 @@
       api("/directory/firms"),
       api("/companies/" + id + "/integrations").catch(function () { return { integrasjoner: [] }; }),
       api("/companies/" + id + "/integrations/log").catch(function () { return { kall: [] }; }),
+      // Tilgangsstyring krever MEDLEM_ADMIN. En bokfører får 403 her, og
+      // da skal kortet være borte — ikke vise en knapp som ikke virker.
+      api("/companies/" + id + "/access").catch(function () { return null; }),
+      api("/companies/" + id + "/invitations").catch(function () { return { invitasjoner: [] }; }),
     ]);
     var engagements = results[0].engagements;
     var firms = results[1].firms;
     var integrasjoner = results[2].integrasjoner;
     var integrasjonskall = results[3].kall;
+    var tilgang = results[4];
+    var invitasjoner = results[5].invitasjoner;
     var active = engagements.filter(function (e) { return !e.valid_to; });
     var rows = engagements.map(function (e) {
       var action = !e.valid_to
@@ -3680,6 +3695,48 @@
       '<option value="les">les</option><option value="bokforing">bokføring</option></select>' +
       '<button id="int-gi" class="btn btn-sm">Gi tilgang</button></div>' +
       (kallrader ? "<h3 class='font-semibold text-sm mt-3 mb-1'>Siste endringer</h3>" + kallrader : ""));
+    var tilgangskort = "";
+    if (tilgang) {
+      var medlemsrader = tilgang.medlemmer.map(function (m) {
+        var handling = !m.kan_endres
+          // Tilgang gjennom et oppdrag styres av engasjementet. Si det,
+          // ikke tilby en knapp som ikke virker.
+          ? '<span class="opacity-60 text-xs">via oppdrag</span>'
+          : !m.aktiv
+            ? '<button class="btn btn-xs btn-outline" data-restore="' + m.person_id + '">Gi tilgang igjen</button>'
+            : '<select class="select select-xs select-bordered w-28 mr-1" data-rolle="' + m.person_id + '">' +
+              ["admin", "bokforing", "les"].map(function (r) {
+                return '<option value="' + r + '"' + (m.rolle === r ? " selected" : "") + ">" + r + "</option>";
+              }).join("") +
+              '</select><button class="btn btn-xs btn-outline" data-revoke="' + m.person_id + '">Fjern</button>';
+        return "<tr" + (m.aktiv ? "" : ' class="opacity-50"') + "><td>" + esc(m.navn) + "</td><td>" +
+          esc(m.epost || "") + "</td><td>" + esc(m.rolle) + "</td><td>" + esc(m.via) + "</td><td>" +
+          handling + "</td></tr>";
+      }).join("");
+      var invitasjonsrader = invitasjoner.map(function (i) {
+        return "<tr><td>" + esc(i.epost) + "</td><td>" + esc(i.rolle) + "</td><td>" +
+          esc(i.invitert_av) + "</td><td>" +
+          '<button class="btn btn-xs btn-outline" data-inv-revoke="' + i.id + '">Tilbakekall</button>' +
+          "</td></tr>";
+      }).join("");
+      tilgangskort = card("Tilgang",
+        '<p class="text-sm opacity-70 mb-2">Hvem som kommer til i dette selskapet. Inviter med ' +
+        "e-postadressen personen bruker for å logge inn — tilgangen blir til når hun logger inn " +
+        "neste gang. Den som har fått tilgang gjennom et oppdrag styres av oppdraget, ikke herfra.</p>" +
+        '<table class="table table-sm mb-3"><thead><tr><th>Navn</th><th>E-post</th><th>Rolle</th>' +
+        "<th>Via</th><th></th></tr></thead><tbody>" + medlemsrader + "</tbody></table>" +
+        '<div class="flex gap-2 items-center flex-wrap mb-3">' +
+        '<input id="inv-epost" class="input input-sm input-bordered w-64" placeholder="e-postadresse">' +
+        '<select id="inv-rolle" class="select select-sm select-bordered">' +
+        '<option value="les">les</option><option value="bokforing">bokføring</option>' +
+        '<option value="admin">admin</option></select>' +
+        '<button id="inv-send" class="btn btn-sm">Inviter</button></div>' +
+        (invitasjonsrader
+          ? "<h3 class='font-semibold text-sm mb-1'>Venter på innlogging</h3>" +
+            '<table class="table table-sm"><thead><tr><th>E-post</th><th>Rolle</th>' +
+            "<th>Invitert av</th><th></th></tr></thead><tbody>" + invitasjonsrader + "</tbody></table>"
+          : ""));
+    }
     shell(id, "oppdrag",
       card("Oppdrag",
         engagements.length
@@ -3689,7 +3746,57 @@
       card("Autoriserte byråer (Finanstilsynet-verifisert)",
         '<table class="table table-sm"><thead><tr><th>Navn</th><th>Orgnr</th><th>Type</th>' +
         "<th>Klienter</th><th></th></tr></thead><tbody>" + directory + "</tbody></table>") +
-      integrasjonskort);
+      tilgangskort + integrasjonskort);
+    if (tilgang) {
+      document.getElementById("inv-send").onclick = async function () {
+        try {
+          await post("/companies/" + id + "/invitations", {
+            epost: document.getElementById("inv-epost").value.trim(),
+            rolle: document.getElementById("inv-rolle").value,
+          });
+          toast("Invitasjonen er registrert", true);
+          renderOppdrag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+      app.querySelectorAll("[data-rolle]").forEach(function (select) {
+        select.onchange = async function () {
+          try {
+            await send("PUT", "/companies/" + id + "/access/" + select.dataset.rolle,
+              { rolle: select.value });
+            toast("Rollen er endret", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); renderOppdrag(id); }
+        };
+      });
+      app.querySelectorAll("[data-revoke]").forEach(function (button) {
+        button.onclick = async function () {
+          if (!confirm("Fjerne tilgangen? Den slutter å virke med én gang.")) return;
+          try {
+            await send("DELETE", "/companies/" + id + "/access/" + button.dataset.revoke);
+            toast("Tilgangen er fjernet", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+      app.querySelectorAll("[data-restore]").forEach(function (button) {
+        button.onclick = async function () {
+          try {
+            await post("/companies/" + id + "/access/" + button.dataset.restore + "/restore", {});
+            toast("Tilgangen er gjenopprettet", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+      app.querySelectorAll("[data-inv-revoke]").forEach(function (button) {
+        button.onclick = async function () {
+          try {
+            await send("DELETE", "/companies/" + id + "/invitations/" + button.dataset.invRevoke);
+            toast("Invitasjonen er tilbakekalt", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+    }
     document.getElementById("int-gi").onclick = async function () {
       try {
         await post("/companies/" + id + "/integrations", {

@@ -43,6 +43,12 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/integrations/log` | GET |
 | `/companies/{company_id}/integrations/{integration_id}/revoke` | POST |
 | `/companies/{company_id}/members` | GET |
+| `/companies/{company_id}/access` | GET |
+| `/companies/{company_id}/access/history` | GET |
+| `/companies/{company_id}/access/{person_id}` | PUT DELETE |
+| `/companies/{company_id}/access/{person_id}/restore` | POST |
+| `/companies/{company_id}/invitations` | GET POST |
+| `/companies/{company_id}/invitations/{invitation_id}` | DELETE |
 | `/me` | GET |
 
 ### Selskap og onboarding

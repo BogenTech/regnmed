@@ -42,6 +42,58 @@ person ──── company_member ───────────────
 - This mirrors Altinn's delegation model (see gov.md), which will let
   government-side delegation and regnmed-side engagements stay aligned.
 
+## Medlemsadministrasjon (#53)
+
+Fram til migrasjon 0037 kunne **ingen gi noen tilgang**. De to veiene inn
+var å opprette selskapet selv (og bli admin) eller å få et oppdrag fra
+et byrå — et selskap kunne altså ikke ta inn sin egen interne
+regnskapsfører eller en ansatt.
+
+Nå: `MEDLEM_ADMIN` gir rett til å invitere, endre rolle og fjerne
+tilgang, under `/companies/{id}/access…` og `/companies/{id}/invitations…`.
+
+### Invitasjonen er stilet til en adresse, ikke til en person
+
+`person` opprettes just-in-time fra tokenets `sub`, så en som aldri har
+brukt regnmed **finnes ikke å slå opp**. En invitasjon peker derfor på en
+e-postadresse og blir til et medlemskap når adressen logger inn. Det
+løses inn i `/me`, altså når portalen starter en økt — samme mønster som
+oppdrag, der tilgangen blir synlig uten ny innlogging. Å legge oppslaget
+i `AuthPerson`-ekstraktoren ville kostet en spørring på *hver*
+forespørsel for noe som skjer én gang.
+
+**Adressen må være den IdP-en oppgir.** `ensure_person` skriver
+`person.email` fra hver innlogging, så en invitasjon til en privat
+adresse blir aldri løst inn om tokenet bærer jobbadressen.
+Normaliseringen (trimming og små bokstaver) skjer ett sted,
+`medlemmer::normaliser_epost`, og det er den normaliserte formen som
+lagres.
+
+**Svaret røper ikke om adressen alt har en bruker hos oss.** Et oppslag
+«finnes denne e-posten» ville gjort enhver selskapsadmin i stand til å
+kartlegge hvem som er bruker på plattformen, ett forsøk om gangen. Både
+det kjente og det ukjente tilfellet gir samme svar, og det har sin egen
+test.
+
+### Det som ikke kan skje
+
+- **Et selskap kan ikke bli stående uten administrator.** Den siste kan
+  verken degradere eller fjerne seg selv. Kontrollen kjører inne i
+  transaksjonen, etter endringen, med `for update` på selskapets
+  medlemsrader først — uten låsen kunne to samtidige degraderinger begge
+  se «det finnes en annen admin».
+- **Tilgang gjennom et oppdrag kan ikke endres her.** Den følger
+  engasjementet. Listen viser vedkommende, merket `kan_endres: false`, og
+  et forsøk avvises med en forklaring i stedet for å se ut som om det
+  virket.
+- **Medlemskap slettes aldri**, det deaktiveres — det er historikken over
+  hvem som hadde tilgang.
+
+Hver endring havner i `company_member_change`, som er innsettings-bar:
+hvem fikk hva, når, og hvem som ga det. En innløst invitasjon har ingen
+utfører (personen løste den inn selv); hvem som inviterte står på
+invitasjonen.
+
 ## Per-company guard on API routes
 
 Every company-scoped endpoint goes through **one** guard,
@@ -133,6 +185,11 @@ datafeil skal ikke kunne bli en tilgangseskalering.
   at en rettighet ligger i feil bunt** — de utleder fasiten fra
   buntene. Prøvd med vilje: flyttet `PRODUKT_SKRIV` til lesebunten, og
   alle åtte besto. Det er matrisetesten under som er sperren der.
+- `crates/regnmed-api/tests/medlemmer.rs` — hele livsløpet: invitasjon →
+  innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at
+  siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan
+  endres herfra, at en bokfører ikke kan slippe noen inn, og at sporet
+  navngir hvem som ga hvem tilgang.
 - `crates/regnmed-api/tests/tilgang.rs` — tilgangsmatrisen, skrevet som
   **nektelser**: at `les` ikke får endre noe, at `bokforing` ikke får
   administrere, og at en utenforstående får 404 og ikke 403 på hvert

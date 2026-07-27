@@ -149,6 +149,7 @@ pub enum Rett {
     // Selskap, oppdrag, integrasjoner, migrering
     SelskapLes,
     SelskapAdmin,
+    MedlemAdmin,
     KontaktSkriv,
     OppdragLes,
     OppdragAdmin,
@@ -225,6 +226,7 @@ impl Rett {
             ForankringLes => "FORANKRING_LES",
             SelskapLes => "SELSKAP_LES",
             SelskapAdmin => "SELSKAP_ADMIN",
+            MedlemAdmin => "MEDLEM_ADMIN",
             KontaktSkriv => "KONTAKT_SKRIV",
             OppdragLes => "OPPDRAG_LES",
             OppdragAdmin => "OPPDRAG_ADMIN",
@@ -337,6 +339,9 @@ const ADMIN_BUNT: &[Rett] = &[
     Rett::AttesteringAdmin,
     Rett::EpostInnAdmin,
     Rett::SelskapAdmin,
+    // Å styre hvem som slipper inn. Den som har denne kan gi seg
+    // selv alt annet, så den hører hjemme hos admin og ingen andre.
+    Rett::MedlemAdmin,
     Rett::OppdragAdmin,
     Rett::IntegrasjonAdmin,
     Rett::MigreringAdmin,

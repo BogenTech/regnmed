@@ -21,6 +21,7 @@ pub mod lonn;
 pub mod mailq;
 pub mod mailq_in;
 pub mod marketplace;
+pub mod medlemmer;
 pub mod migrering;
 pub mod ocr;
 pub mod payments;
@@ -575,6 +576,30 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/companies/{company_id}/members", get(attestering::members))
         .route(
+            "/companies/{company_id}/access",
+            get(medlemmer::list_access),
+        )
+        .route(
+            "/companies/{company_id}/access/history",
+            get(medlemmer::access_history),
+        )
+        .route(
+            "/companies/{company_id}/access/{person_id}",
+            axum::routing::put(medlemmer::set_role).delete(medlemmer::revoke_access),
+        )
+        .route(
+            "/companies/{company_id}/access/{person_id}/restore",
+            axum::routing::post(medlemmer::restore_access),
+        )
+        .route(
+            "/companies/{company_id}/invitations",
+            get(medlemmer::list_invitations).post(medlemmer::invite),
+        )
+        .route(
+            "/companies/{company_id}/invitations/{invitation_id}",
+            axum::routing::delete(medlemmer::revoke_invitation),
+        )
+        .route(
             "/companies/{company_id}/period-lock",
             get(period::get_period_lock).put(period::set_period_lock),
         )
@@ -605,9 +630,21 @@ async fn me(
     State(state): State<AppState>,
     person: AuthPerson,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // Invitasjoner løses inn her, når vi vet hvem som spør og hvilken
+    // e-postadresse tokenet bærer. En invitasjon er stilet til en
+    // ADRESSE, ikke til en person — personen finnes ikke å slå opp før
+    // hun har logget inn (#53, docs/auth.md).
+    //
+    // Samme mønster som oppdrag: tilgangen blir synlig uten ny
+    // innlogging, fordi portalen kaller /me når økten starter. Å legge
+    // oppslaget i AuthPerson-ekstraktoren i stedet ville kostet en
+    // spørring på HVER forespørsel for noe som skjer én gang.
+    let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
+
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
     Ok(Json(json!({
         "person_id": person.person_id,
+        "nye_tilganger": nye,
         "sub": person.sub,
         "name": person.name,
         "email": person.email,

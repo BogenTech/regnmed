@@ -23,6 +23,7 @@ pub mod invoice_template;
 pub mod ledger;
 pub mod lonn;
 pub mod marketplace;
+pub mod medlemmer;
 pub mod migrering;
 pub mod mva;
 pub mod ocr;
