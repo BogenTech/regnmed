@@ -749,6 +749,29 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    den viser tallene + `leverbar:false` + hindringene. Innsending
    venter på scope `skatteetaten:innrapporteringaksjonaerregisteroppgave`
    OG Altinn systembruker (docs/gov.md). Portal: Aksjonærer-seksjon.
+49. 🔨 Lønn, FØRSTE DEL (docs/lonn.md, #46 — resten står åpen):
+   fastlønn, prosenttrekk fra skattekortet, arbeidsgiveravgift per sone
+   og feriepengeavsetning, bokført som ETT bilag i én transaksjon
+   (5000/2600/2930 + 5090/2940 + 5400/2770; netto til 2930, ikke bank —
+   utbetaling er betalingslistens jobb). Migration 0035: `employee`
+   (identitet permanent), `payroll_run`/`payroll_line` innsettings-bare,
+   én kjøring per måned. Satsene er DATA i satsregisteret m/ kilde
+   (aga I 14,1 → V 0 %, ferieloven §10 10,2/12,5 %); den ekstra
+   aga-en over 750 000 finnes ikke fordi den ble fjernet i 2025.
+   Utbetalte feriepenger trekker ned GJELDEN, de er ingen ny kostnad
+   (egen test — ellers kostnadsføres de to ganger). Trekkreglene:
+   feriepenger trekkfrie, halv skatt i desember — begge er tidfesting,
+   ikke gaver, fordi skattekortprosenten er beregnet over 10,5 måneder.
+   NEKTER HØYLYTT: tabelltrekk (trekktabellene er Skatteetatens
+   datafiler, en tilnærming blir den ansattes restskatt) og sone Ia
+   (fribeløpet på 850 000 er bagatellmessig støtte som også forbrukes
+   utenfor regnmed — avvises FØR satsoppslaget, ellers ville
+   feilmeldingen bedt om å legge inn satsen, som er selve feilen).
+   Ansattlisten viser fødselsdato, ikke fødselsnummer.
+   **IKKE bygget, i prioritert rekkefølge: a-meldingen (selskapet må
+   fortsatt levere den selv), skattekort-API, tabelltrekk, lønnsslipp,
+   aga-avsetning på ikke-utbetalte feriepenger, timelønn fra
+   timeføringen, portal-seksjon.**
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

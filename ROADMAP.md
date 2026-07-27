@@ -266,9 +266,14 @@ M7 (#37–#48) for new ground:
   Skatteetatens egne XSD-er; **fra juni 2026 er sluttbrukersystem
   eneste leveringsvei**. Innsending venter på Maskinporten-scope +
   Altinn systembruker, og transaksjonstypekodene er ikke publisert —
-  vi nekter framfor å gjette; docs/aksjonaer.md) — M2. Lønn +
-  a-melding som ærlig kartlagt paraply (#46) — still deliberately
-  last.
+  vi nekter framfor å gjette; docs/aksjonaer.md) — M2.
+- 🔨 Lønn (#46) er PÅBEGYNT med en første del: fastlønn, prosenttrekk
+  fra skattekortet, arbeidsgiveravgift per sone og feriepengeavsetning,
+  bokført som ETT bilag; satsene som data i satsregisteret. Tabelltrekk
+  og sone Ia nektes høylytt framfor å tilnærmes. **A-meldingen — delen
+  som gjør dette til rapportering og ikke bare internt regnskap — står
+  igjen og venter på Maskinporten; selskapet må fortsatt levere den
+  selv.** Full liste over det som mangler: docs/lonn.md.
 
 **Deliberately not planned:** kassasystem/kontantsalg — kassasystemlova
 requires product certification; out of scope until a customer segment

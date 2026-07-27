@@ -27,6 +27,7 @@ pub mod invoice;
 pub mod kid;
 pub mod kontoplan;
 pub mod lager;
+pub mod lonn;
 pub mod migreringcsv;
 pub mod money;
 pub mod mva;

@@ -17,6 +17,7 @@ pub mod innboks;
 pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
+pub mod lonn;
 pub mod mailq;
 pub mod mailq_in;
 pub mod marketplace;
@@ -343,6 +344,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/expenses/{expense_id}/pay",
             axum::routing::post(expenses::pay),
+        )
+        .route(
+            "/companies/{company_id}/employees",
+            get(lonn::list_employees).post(lonn::create_employee),
+        )
+        .route(
+            "/companies/{company_id}/payroll",
+            get(lonn::list_payroll).post(lonn::run_payroll),
         )
         .route(
             "/companies/{company_id}/shareholders",

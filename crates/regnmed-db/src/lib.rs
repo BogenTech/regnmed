@@ -21,6 +21,7 @@ pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
 pub mod ledger;
+pub mod lonn;
 pub mod marketplace;
 pub mod migrering;
 pub mod mva;

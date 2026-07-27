@@ -1,0 +1,446 @@
+//! Lønnskjøring mot ekte Postgres (#46, docs/lonn.md).
+//!
+//! Det som må stemme: bilaget balanserer, forskuddstrekket følger
+//! reglene (feriepenger trekkfrie, halv skatt i desember),
+//! arbeidsgiveravgiften kommer fra satsregisteret, utbetalte feriepenger
+//! trekker ned GJELDEN i stedet for å bli en ny kostnad, samme måned kan
+//! ikke kjøres to ganger, og en kjøring kan ikke endres i ettertid.
+//!
+//! Krever DATABASE_URL; hopper over ellers.
+
+use chrono::NaiveDate;
+use regnmed_db::lonn::{self, Lonnspost, NyAnsatt};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+async fn pool() -> Option<PgPool> {
+    dotenvy::dotenv().ok();
+    let Ok(url) = std::env::var("DATABASE_URL") else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return None;
+    };
+    let pool = regnmed_db::connect(&url).await.expect("connect to dev db");
+    regnmed_db::MIGRATOR.run(&pool).await.expect("migrate");
+    Some(pool)
+}
+
+fn unique_orgnr() -> String {
+    let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
+    format!("{:09}", u64::from(n) % 1_000_000_000)
+}
+
+fn dato(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+async fn selskap(pool: &PgPool) -> Uuid {
+    let company = regnmed_db::create_company(pool, &unique_orgnr(), "Lønnstest AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [
+        ("5000", "Lønn til ansatte"),
+        ("5090", "Feriepenger"),
+        ("5400", "Arbeidsgiveravgift"),
+        ("2600", "Forskuddstrekk"),
+        ("2770", "Skyldig arbeidsgiveravgift"),
+        ("2930", "Skyldig lønn"),
+        ("2940", "Skyldige feriepenger"),
+        ("1920", "Bankinnskudd"),
+    ] {
+        regnmed_db::ensure_account(pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    company
+}
+
+async fn ansatt(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) -> Uuid {
+    lonn::create_ansatt(
+        pool,
+        company,
+        &NyAnsatt {
+            fodselsnummer: fnr.into(),
+            navn: navn.into(),
+            stilling: Some("Utvikler".into()),
+            ansatt_fra: dato(2025, 1, 1),
+            manedslonn_ore: Some(lonn),
+            timelonn_ore: None,
+            trekk_type: "prosent".into(),
+            trekk_prosent_bp: Some(3500),
+            trekk_tabell: None,
+            feriepenger_bp: 1020,
+            bank_account: None,
+            note: None,
+        },
+        "Test",
+    )
+    .await
+    .unwrap()
+}
+
+/// Sum of a voucher's entries — must be exactly zero, always.
+async fn voucher_sum(pool: &PgPool, voucher_id: Uuid) -> i64 {
+    sqlx::query_scalar(
+        "select coalesce(sum(amount_ore), 0)::bigint from entry where voucher_id = $1",
+    )
+    .bind(voucher_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn konto_belop(pool: &PgPool, voucher_id: Uuid, konto: &str) -> i64 {
+    sqlx::query_scalar(
+        "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
+         join account a on a.id = e.account_id
+         where e.voucher_id = $1 and a.number = $2",
+    )
+    .bind(voucher_id)
+    .bind(konto)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn lonnskjoring_bokfores_som_ett_balansert_bilag() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    // 50 000 kr, 35 % trekk, sone I (14,1 %).
+    let a = ansatt(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+
+    let kjoring = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        3,
+        dato(2026, 3, 25),
+        "I",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(kjoring.sum.brutto_ore, 5_000_000);
+    assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_750_000);
+    assert_eq!(kjoring.sum.netto_ore, 3_250_000);
+    // 10,2 % feriepengeavsetning av bruttolønnen.
+    assert_eq!(kjoring.sum.feriepengeavsetning_ore, 510_000);
+    // 14,1 % arbeidsgiveravgift, fra satsregisteret — ikke fra koden.
+    assert_eq!(kjoring.sum.aga_ore, 705_000);
+
+    // Bilaget balanserer. Alt annet er uinteressant hvis dette svikter.
+    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "5000").await,
+        5_000_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "2600").await,
+        -1_750_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "2930").await,
+        -3_250_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "5090").await,
+        510_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "2940").await,
+        -510_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "5400").await,
+        705_000
+    );
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "2770").await,
+        -705_000
+    );
+}
+
+/// Utbetalte feriepenger er ikke en ny kostnad — de trekker ned gjelden
+/// som ble avsatt i opptjeningsåret. Blir dette feil, kostnadsføres
+/// feriepenger to ganger og resultatet er systematisk for lavt.
+#[tokio::test]
+async fn utbetalte_feriepenger_reduserer_gjeld_og_er_trekkfrie() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
+
+    let kjoring = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        6,
+        dato(2026, 6, 20),
+        "I",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 4_000_000,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    // Trekk bare av ordinær lønn: 35 % av 30 000, ikke av 70 000.
+    assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_050_000);
+    assert_eq!(kjoring.sum.netto_ore, 3_000_000 + 4_000_000 - 1_050_000);
+    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+
+    // 5000 bærer BARE ordinær lønn — feriepengene er ingen ny kostnad.
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "5000").await,
+        3_000_000
+    );
+    // 2940 debiteres 4 000 000 (uttak) og krediteres 306 000 (ny avsetning).
+    assert_eq!(
+        konto_belop(&pool, kjoring.voucher_id, "2940").await,
+        4_000_000 - 306_000
+    );
+    // Avgift faller på alt som faktisk utbetales, feriepengene inkludert.
+    assert_eq!(kjoring.sum.aga_ore, 987_000); // 14,1 % av 70 000
+}
+
+#[tokio::test]
+async fn desember_gir_halvt_forskuddstrekk() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
+
+    let kjoring = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        12,
+        dato(2026, 12, 15),
+        "I",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        kjoring.sum.forskuddstrekk_ore, 875_000,
+        "halv skatt i desember"
+    );
+    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+}
+
+#[tokio::test]
+async fn sone_v_er_nullsats_og_sone_ia_nektes() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "26829398612", "Finnmarking", 4_000_000).await;
+
+    let kjoring = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        4,
+        dato(2026, 4, 25),
+        "V",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(kjoring.sum.aga_ore, 0, "sone V er nullsats");
+    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+
+    // Sone Ia nektes: fribeløpet kan ikke leses ut av én sats.
+    let feil = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        5,
+        dato(2026, 5, 25),
+        "Ia",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(feil.to_string().contains("fribeløpet"), "{feil}");
+}
+
+#[tokio::test]
+async fn tabelltrekk_stopper_kjoringen_i_stedet_for_a_gjette() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = lonn::create_ansatt(
+        &pool,
+        company,
+        &NyAnsatt {
+            fodselsnummer: "08888797336".into(),
+            navn: "Tabell Trekksen".into(),
+            stilling: None,
+            ansatt_fra: dato(2025, 1, 1),
+            manedslonn_ore: Some(5_000_000),
+            timelonn_ore: None,
+            trekk_type: "tabell".into(),
+            trekk_prosent_bp: None,
+            trekk_tabell: Some(7100),
+            feriepenger_bp: 1020,
+            bank_account: None,
+            note: None,
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    let feil = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        3,
+        dato(2026, 3, 25),
+        "I",
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(feil.to_string().contains("tabelltrekk"), "{feil}");
+    assert!(feil.to_string().contains("tilnærmer dem ikke"), "{feil}");
+}
+
+#[tokio::test]
+async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "26829398612", "Kari", 4_000_000).await;
+    let post = || {
+        vec![Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+        }]
+    };
+
+    let forste = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        7,
+        dato(2026, 7, 25),
+        "I",
+        &post(),
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert!(lonn::kjort_maned(&pool, company, 2026, 7).await.unwrap());
+
+    let feil = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        7,
+        dato(2026, 7, 25),
+        "I",
+        &post(),
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(feil.to_string().contains("allerede kjørt"), "{feil}");
+
+    // Databasen selv nekter å endre eller slette en kjøring.
+    let err = sqlx::query("update payroll_run set brutto_ore = 1 where id = $1")
+        .bind(forste.id)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("innsettings-bare"), "{err}");
+
+    let err = sqlx::query("delete from payroll_line where run_id = $1")
+        .bind(forste.id)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("innsettings-bare"), "{err}");
+
+    // Den ansattes identitet er heller ikke redigerbar.
+    let err = sqlx::query("update employee set fodselsnummer = '08888797336' where id = $1")
+        .bind(a)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("uforanderlig"), "{err}");
+}
+
+/// Listen viser fødselsdato, ikke fødselsnummer — samme personvernvalg
+/// som i aksjeeierboken.
+#[tokio::test]
+async fn ansattlisten_viser_fodselsdato_ikke_fodselsnummer() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    ansatt(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+
+    let ansatte = lonn::list_ansatte(&pool, company).await.unwrap();
+    assert_eq!(ansatte.len(), 1);
+    assert_eq!(ansatte[0].fodselsdato, Some(dato(1993, 2, 26)));
+    assert!(
+        !format!("{:?}", ansatte[0]).contains("26829398612"),
+        "fødselsnummeret skal ikke ligge i ansattlisten"
+    );
+}
+
+#[tokio::test]
+async fn ugyldig_fodselsnummer_avvises_ved_registrering() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let feil = lonn::create_ansatt(
+        &pool,
+        company,
+        &NyAnsatt {
+            fodselsnummer: "26829398613".into(),
+            navn: "Feil Nummer".into(),
+            stilling: None,
+            ansatt_fra: dato(2025, 1, 1),
+            manedslonn_ore: Some(1),
+            timelonn_ore: None,
+            trekk_type: "ingen".into(),
+            trekk_prosent_bp: None,
+            trekk_tabell: None,
+            feriepenger_bp: 1020,
+            bank_account: None,
+            note: None,
+        },
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(feil.to_string().contains("fødselsnummer"), "{feil}");
+}
