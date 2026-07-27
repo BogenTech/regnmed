@@ -64,6 +64,19 @@ systembruker, see below.
    Merk at `skatteetaten:mvamelding` er et ANNET API — det *leverer
    fastsatte* mva-meldinger (leser inn), ikke innsending. Navnelikheten
    er en felle.
+
+   **Bestillingsveien er ikke én dør.** Verifisert 2026-07-27 fra hvert
+   API-s egen side; alle krever innlogging som virksomheten:
+
+   | Scope | Bestilles via |
+   | --- | --- |
+   | `skatteetaten:mvameldingvalidering` | [mva-melding-sbs → «trenger du hjelp»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/mva-melding-sbs/#trenger-du-hjelp) |
+   | `skatteetaten:skattekorttilarbeidsgiver` | [Brukerstøttetjenesten (eksternjira)](https://eksternjira.sits.no/servicedesk/customer/user/login?destination=plugins/servlet/desk/site/global) |
+   | `skatteetaten:innrapporteringamelding` | [A-meldingen for sluttbrukersystemer → «trenger du hjelp»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/a-meldingen-sbs/) |
+   | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | [aksjonarregisteroppgaven-sbs → «bestill tilgang»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/aksjonarregisteroppgaven-sbs/) |
+
+   Oppgi alltid **organisasjonsnummer**, **miljø** (test/prod) og
+   **klient-id**, og bestill test og produksjon hver for seg.
    They do NOT appear in Samarbeidsportalen's scope picker until
    granted: order them via skatteetaten.no/kontakt/skriv/ stating the
    orgnr and both scope names (same procedure for test and prod); once
