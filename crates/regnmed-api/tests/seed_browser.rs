@@ -308,6 +308,63 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
 
+    // En timelønnet, koblet til demo-brukeren som fører timer, med
+    // juli-timer og måneden LÅST — så «fra timer» faktisk kan brukes.
+    let timo = regnmed_db::lonn::create_ansatt(
+        &state.pool,
+        company,
+        &regnmed_db::lonn::NyAnsatt {
+            fodselsnummer: "25927898821".into(),
+            navn: "Timo Timeansatt".into(),
+            stilling: Some("Konsulent".into()),
+            ansatt_fra: dato(2025, 1, 1),
+            manedslonn_ore: None,
+            timelonn_ore: Some(45_000),
+            trekk_type: "prosent".into(),
+            trekk_prosent_bp: Some(3000),
+            trekk_tabell: None,
+            feriepenger_bp: 1020,
+            bank_account: None,
+            note: None,
+        },
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    sqlx::query("update employee set person_id = $2 where id = $1")
+        .bind(timo)
+        .bind(person)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    for (dag, minutter) in [(1u32, 450i32), (2, 480), (3, 390), (6, 480), (7, 420)] {
+        regnmed_db::timesheet::create_time_entry(
+            &state.pool,
+            company,
+            person,
+            &regnmed_db::timesheet::TimeEntryDraft {
+                dato: dato(2026, 7, dag),
+                minutter,
+                beskrivelse: "Konsulentarbeid".into(),
+                prosjekt: None,
+                fakturerbar: true,
+                timesats_ore: Some(120_000),
+            },
+            "Demo Bruker",
+        )
+        .await
+        .unwrap();
+    }
+    regnmed_db::timesheet::set_timesheet_lock(
+        &state.pool,
+        company,
+        dato(2026, 7, 31),
+        "Demo Bruker",
+        Some("Låst for lønn"),
+    )
+    .await
+    .unwrap();
+
     std::fs::write(
         format!("{out_dir}/jwks.json"),
         serde_json::to_string(&idp.jwks).unwrap(),

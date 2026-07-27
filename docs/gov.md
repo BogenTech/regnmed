@@ -49,8 +49,21 @@ systembruker, see below.
    organization's Altinn roles).
 2. Create a Maskinporten client in the test environment; register a
    public key (or virksomhetssertifikat) on it.
-3. Request the Skatteetaten scopes (`skatteetaten:mvameldingvalidering`
-   for validation, `skatteetaten:mvameldinginnsending` for submission).
+3. Request the Skatteetaten scopes. **Verified against Skatteetatens
+   own API-dokumentasjon 2026-07-27** — the earlier note here was partly
+   wrong, so check the API's own page before ordering:
+
+   | Trenger | Scope |
+   | --- | --- |
+   | Mva-melding, validering | `skatteetaten:mvameldingvalidering` |
+   | Mva-melding, **innsending** | ingen `skatteetaten:`-scope — går via Altinn3 med `altinn:instances.read` / `altinn:instances.write` |
+   | A-melding (#46) | `skatteetaten:innrapporteringamelding` |
+   | Skattekort (#46) | `skatteetaten:skattekorttilarbeidsgiver` |
+   | Aksjonærregisteroppgaven (#43) | `skatteetaten:innrapporteringaksjonaerregisteroppgave` |
+
+   Merk at `skatteetaten:mvamelding` er et ANNET API — det *leverer
+   fastsatte* mva-meldinger (leser inn), ikke innsending. Navnelikheten
+   er en felle.
    They do NOT appear in Samarbeidsportalen's scope picker until
    granted: order them via skatteetaten.no/kontakt/skriv/ stating the
    orgnr and both scope names (same procedure for test and prod); once
@@ -99,6 +112,31 @@ and paper are gone (docs/aksjonaer.md).
 Not implemented until we can run it against the real test environment,
 for the same reason as #8: a client written against an API we cannot
 execute is guesswork in another layer.
+
+## Er scopet faktisk tilgjengelig? Spør Maskinporten
+
+Samarbeidsportalen viser en **katalog** over alle registrerte scope —
+ikke en liste over hva virksomheten har fått tildelt. At et scope er
+synlig betyr altså ikke at det kan brukes. (Katalogen inneholder blant
+annet Skatteetatens egne skrape-scope som `skatteetaten:frodetest657`
+«frode tester create» og `skatteetaten:kjetiltest` «kun for test» —
+ingen har delegert dem til noen.)
+
+`scripts/maskinporten-scope-test.py <scope>` gjør spørsmålet empirisk,
+og skiller de tre tilstandene som ellers blandes sammen:
+
+| Svar | Betyr |
+| --- | --- |
+| `GRANTED` | virker, scopet er på klienten |
+| `invalid_scope` | klienten autentiserer, men scopet er ikke lagt til |
+| `invalid_grant` | nøkkel, kid eller klient-id stemmer ikke |
+
+**Status 2026-07-27:** klient og nøkkel autentiserer (kid
+`6e9b86f2-…`, satt i `~/.config/regnmed/maskinporten-test.env`), men
+ingen av de fire scopene over er knyttet til testklienten ennå — alle
+svarer `invalid_scope`. Neste steg er å forsøke å legge dem til på
+klienten i Samarbeidsportalen; går det, kjør skriptet igjen og
+bekreft.
 
 ## Status & verification
 

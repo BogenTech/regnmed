@@ -25,10 +25,13 @@ again. Recording the *location* is not recording the secret:
 ```
 ~/.config/regnmed/maskinporten-test.pem       RSA 2048 private key, mode 600
 ~/.config/regnmed/maskinporten-test.pub.pem   public half (registered in Samarbeidsportalen)
-~/.config/regnmed/maskinporten-test.env       MASKINPORTEN_* config incl. client id
+~/.config/regnmed/maskinporten-test.env       MASKINPORTEN_* config incl. client id og kid
 ```
 
-Generated 2026-07-24 alongside the Samarbeidsportalen setup. Nothing in
+Generated 2026-07-24 alongside the Samarbeidsportalen setup. `MASKINPORTEN_KID`
+er UUID-en Samarbeidsportalen tildelte nøkkelen — uten den svarer
+Maskinporten «No key identifier (kid) provided», og det ser ut som en
+nøkkelfeil framfor en manglende innstilling. Nothing in
 the repo references these paths — `regnmed-gov` reads
 `MASKINPORTEN_KEY_FILE` and friends from the environment, so you source
 the env file when you need them:
