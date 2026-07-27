@@ -49,6 +49,23 @@ cluster_up() {
     fi
 }
 
+# Roll out the freshly imported images.
+#
+# The images always carry the same `:dev` tag, so re-importing one does
+# NOT change the Deployment spec — and with imagePullPolicy: IfNotPresent
+# Kubernetes then has no reason to recreate the pod. Without an explicit
+# restart, `up` on an existing cluster reports success while every pod
+# keeps running the previous build: a deploy that silently did nothing.
+# (Found the hard way — a four-day-old regnid pod "successfully rolled
+# out" without the new migration.)
+roll_apps() {
+    echo "==> rolling out regnid, regnmed-api and the mail worker"
+    kubectl -n regnmed rollout restart deploy/regnid deploy/regnmed-api \
+        deploy/regnid-mail-worker
+    kubectl -n regnmed rollout status deploy/regnid deploy/regnmed-api \
+        deploy/regnid-mail-worker --timeout=180s
+}
+
 seed() {
     # Idempotent: duplicates just fail quietly.
     echo "==> seeding demo admin + OIDC client"
@@ -64,8 +81,12 @@ seed() {
 
 case "${1:-}" in
 up)
-    ./scripts/build-images.sh
+    # The VM first: build-images.sh ends in `docker build`, and the
+    # Docker daemon lives in colima. Building before starting it works
+    # only when the VM happens to be running already, so a cold start
+    # failed after paying for two release cross-compiles.
     colima_up
+    ./scripts/build-images.sh
     cluster_up
     echo "==> importing images"
     k3d image import regnid:dev regnmed:dev -c "$CLUSTER"
@@ -73,21 +94,18 @@ up)
     kubectl apply -k deploy/local
     echo "==> restarting coredns to pick up host rewrites"
     kubectl -n kube-system rollout restart deploy/coredns >/dev/null
-    echo "==> waiting for rollout"
+    echo "==> waiting for postgres and nats"
     kubectl -n regnmed rollout status deploy/postgres deploy/nats --timeout=180s
-    kubectl -n regnmed rollout status deploy/regnid deploy/regnmed-api \
-        deploy/regnid-mail-worker --timeout=180s
+    roll_apps
     seed
     echo "==> cluster is up"
     urls
     ;;
 deploy)
+    colima_up
     ./scripts/build-images.sh
     k3d image import regnid:dev regnmed:dev -c "$CLUSTER"
-    kubectl -n regnmed rollout restart deploy/regnid deploy/regnmed-api \
-        deploy/regnid-mail-worker
-    kubectl -n regnmed rollout status deploy/regnid deploy/regnmed-api \
-        deploy/regnid-mail-worker --timeout=180s
+    roll_apps
     ;;
 stop)
     colima stop
