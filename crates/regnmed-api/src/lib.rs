@@ -358,6 +358,10 @@ pub fn router(state: AppState) -> Router {
             get(lonn::payslip_pdf),
         )
         .route(
+            "/companies/{company_id}/payroll/hours/{employee_id}",
+            get(lonn::payroll_hours),
+        )
+        .route(
             "/companies/{company_id}/shareholders",
             get(aksjebok::list_shareholders).post(aksjebok::create_shareholder),
         )

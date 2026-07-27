@@ -123,6 +123,7 @@ async fn lonnskjoring_bokfores_som_ett_balansert_bilag() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -190,6 +191,7 @@ async fn utbetalte_feriepenger_reduserer_gjeld_og_er_trekkfrie() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 4_000_000,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -232,6 +234,7 @@ async fn desember_gir_halvt_forskuddstrekk() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -261,6 +264,7 @@ async fn sone_v_er_nullsats_og_sone_ia_nektes() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -281,6 +285,7 @@ async fn sone_v_er_nullsats_og_sone_ia_nektes() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -326,6 +331,7 @@ async fn tabelltrekk_stopper_kjoringen_i_stedet_for_a_gjette() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }],
         "Test",
     )
@@ -345,6 +351,7 @@ async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: 0,
+            fra_timer: false,
         }]
     };
 
@@ -458,6 +465,7 @@ async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
             employee_id: a,
             brutto_ore: None,
             feriepenger_ore: fp,
+            fra_timer: false,
         }]
     };
 
@@ -520,4 +528,139 @@ async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
         .await
         .unwrap();
     assert_eq!(mai.hittil_brutto_ore, 5_000_000);
+}
+
+/// Timelønn fra timeføringen. Det viktigste her er NEKTELSEN: timer som
+/// fortsatt kan endres skal ikke kunne betales, fordi lønnskjøringen er
+/// innsettings-bar og de to da spriker for alltid.
+#[tokio::test]
+async fn timelonn_krever_at_maneden_er_last() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+
+    let person = regnmed_db::ensure_person(
+        &pool,
+        &format!("test|{}", Uuid::new_v4()),
+        Some("Timelønnet"),
+        None,
+    )
+    .await
+    .unwrap();
+    let a = lonn::create_ansatt(
+        &pool,
+        company,
+        &NyAnsatt {
+            fodselsnummer: "25927898821".into(),
+            navn: "Timelønnet".into(),
+            stilling: None,
+            ansatt_fra: dato(2025, 1, 1),
+            manedslonn_ore: None,
+            timelonn_ore: Some(45_000), // 450 kr/t
+            trekk_type: "prosent".into(),
+            trekk_prosent_bp: Some(3000),
+            trekk_tabell: None,
+            feriepenger_bp: 1020,
+            bank_account: None,
+            note: None,
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    sqlx::query("update employee set person_id = $2 where id = $1")
+        .bind(a)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // 20 timer i mars.
+    for dag in [2u32, 3, 4] {
+        regnmed_db::timesheet::create_time_entry(
+            &pool,
+            company,
+            person,
+            &regnmed_db::timesheet::TimeEntryDraft {
+                dato: dato(2026, 3, dag),
+                minutter: 400,
+                beskrivelse: "Arbeid".into(),
+                prosjekt: None,
+                fakturerbar: false,
+                timesats_ore: None,
+            },
+            "Test",
+        )
+        .await
+        .unwrap();
+    }
+
+    let g = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+        .await
+        .unwrap();
+    assert_eq!(g.minutter, 1200, "20 timer");
+    assert_eq!(g.belop_ore, 900_000, "20 t x 450 kr = 9 000 kr");
+    assert!(!g.laast, "ikke låst ennå");
+
+    let post = || {
+        vec![Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: 0,
+            fra_timer: true,
+        }]
+    };
+
+    // Ulåst: nektes.
+    let feil = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        3,
+        dato(2026, 3, 25),
+        "I",
+        &post(),
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(feil.to_string().contains("ikke låst"), "{feil}");
+
+    // Lås måneden, og kjøringen går.
+    regnmed_db::timesheet::set_timesheet_lock(&pool, company, dato(2026, 3, 31), "Test", None)
+        .await
+        .unwrap();
+    let g = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+        .await
+        .unwrap();
+    assert!(g.laast);
+
+    let kjoring = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        3,
+        dato(2026, 3, 25),
+        "I",
+        &post(),
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(kjoring.sum.brutto_ore, 900_000, "timene, ikke månedslønn");
+    assert_eq!(kjoring.sum.forskuddstrekk_ore, 270_000, "30 % av 9 000 kr");
+    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+}
+
+/// Uten kobling til en portalbruker vet timeføringen ikke hvem den
+/// ansatte er — og da sier vi det, i stedet for å betale null.
+#[tokio::test]
+async fn ansatt_uten_portalbruker_gir_tydelig_feil() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
+
+    let feil = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+        .await
+        .unwrap_err();
+    assert!(feil.to_string().contains("portalbruker"), "{feil}");
 }

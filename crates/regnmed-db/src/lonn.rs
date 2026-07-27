@@ -167,10 +167,14 @@ impl Fodselsdato for &str {
 #[derive(Debug, Clone)]
 pub struct Lonnspost {
     pub employee_id: Uuid,
-    /// Ordinary pay. None uses the employee's månedslønn.
+    /// Ordinary pay. None uses the employee's månedslønn, unless
+    /// `fra_timer` asks for the timesheet instead.
     pub brutto_ore: Option<i64>,
     /// Feriepenger paid out this month (drawn from the liability).
     pub feriepenger_ore: i64,
+    /// Compute pay from hours logged this month × the employee's
+    /// timelønn. Requires the timesheet month to be locked.
+    pub fra_timer: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -263,9 +267,28 @@ pub async fn kjor_lonn(
             "{} var ikke ansatt i {maned}/{ar}",
             ansatt.navn
         );
-        let brutto = post.brutto_ore.or(ansatt.manedslonn_ore).with_context(|| {
-            format!("{} har verken månedslønn eller oppgitt beløp", ansatt.navn)
-        })?;
+        let brutto = if post.fra_timer {
+            let grunnlag = timegrunnlag(pool, company_id, ansatt.id, ar, maned).await?;
+            // Timene må være LÅST før de betales. En lønnskjøring er
+            // innsettings-bar; endres timene etterpå, spriker de to for
+            // alltid uten noen måte å avstemme dem på.
+            ensure!(
+                grunnlag.laast,
+                "timelisten for {maned:02}/{ar} er ikke låst — lås måneden før timelønn \
+                 utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
+                ansatt.navn
+            );
+            ensure!(
+                grunnlag.minutter > 0,
+                "{} har ingen førte timer i {maned:02}/{ar}",
+                ansatt.navn
+            );
+            grunnlag.belop_ore
+        } else {
+            post.brutto_ore.or(ansatt.manedslonn_ore).with_context(|| {
+                format!("{} har verken månedslønn eller oppgitt beløp", ansatt.navn)
+            })?
+        };
         ensure!(brutto >= 0, "brutto kan ikke være negativ");
 
         let beregning = lonn::beregn(
@@ -646,5 +669,79 @@ pub async fn lonnsslipp(
         hittil_brutto_ore: hittil.get("brutto"),
         hittil_trekk_ore: hittil.get("trekk"),
         hittil_feriepenger_ore: hittil.get("feriepenger"),
+    })
+}
+
+/// Hours logged by an employee in one month, and what they come to.
+#[derive(Debug, Clone, Copy)]
+pub struct Timegrunnlag {
+    pub minutter: i64,
+    pub timesats_ore: i64,
+    pub belop_ore: i64,
+    /// The timesheet is locked through the end of this month.
+    pub laast: bool,
+}
+
+/// What an employee's logged hours amount to for one month.
+///
+/// **Every** entry counts, billable or not: the employer owes pay for
+/// work done regardless of whether a client is invoiced for it.
+///
+/// `laast` reports whether the timesheet month is closed. Running
+/// payroll from unlocked hours is refused by [`kjor_lonn`] — a payroll
+/// run is insert-only, so if hours change afterwards the two disagree
+/// forever with no way to reconcile. The månedslås exists for exactly
+/// this order of operations (docs/timer.md: lock for lønn, then bill).
+pub async fn timegrunnlag(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    ar: i32,
+    maned: u32,
+) -> Result<Timegrunnlag> {
+    let start = NaiveDate::from_ymd_opt(ar, maned, 1).context("ugyldig måned")?;
+    let slutt = start
+        .checked_add_months(chrono::Months::new(1))
+        .and_then(|d| d.pred_opt())
+        .context("ugyldig måned")?;
+
+    let ansatt = sqlx::query(
+        "select person_id, timelonn_ore, navn from employee where id = $1 and company_id = $2",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("no such ansatt")?;
+    let person_id: Option<Uuid> = ansatt.get("person_id");
+    let navn: String = ansatt.get("navn");
+    let person_id = person_id.with_context(|| {
+        format!("{navn} er ikke koblet til en portalbruker — timeføringen vet ikke hvem det er")
+    })?;
+    let timesats: i64 = ansatt
+        .get::<Option<i64>, _>("timelonn_ore")
+        .with_context(|| format!("{navn} har ingen timelønn"))?;
+
+    let minutter: Option<i64> = sqlx::query_scalar(
+        "select sum(minutter)::bigint from time_entry
+         where company_id = $1 and person_id = $2 and dato between $3 and $4",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .bind(start)
+    .bind(slutt)
+    .fetch_one(pool)
+    .await?;
+    let minutter = minutter.unwrap_or(0);
+
+    let laast = crate::timesheet::timesheet_lock(pool, company_id)
+        .await?
+        .is_some_and(|through| through >= slutt);
+
+    Ok(Timegrunnlag {
+        minutter,
+        timesats_ore: timesats,
+        belop_ore: regnmed_core::lonn::timelonn(minutter, timesats),
+        laast,
     })
 }

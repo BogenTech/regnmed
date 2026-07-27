@@ -194,6 +194,19 @@ pub fn arbeidsgiveravgift(grunnlag_ore: i64, sone: Sone, sats_bp: i64) -> Result
     Ok(bp_av(grunnlag_ore, sats_bp))
 }
 
+/// Pay for logged hours: minutes at an hourly rate, in øre.
+///
+/// Minutes rather than hours because that is how the timesheet stores
+/// them (docs/timer.md) — converting to fractional hours first would
+/// introduce a rounding step that serves no one. One division, rounded
+/// half away from zero, and the result is exact for whole hours.
+pub fn timelonn(minutter: i64, timesats_ore: i64) -> i64 {
+    let n = minutter as i128 * timesats_ore as i128;
+    let d = 60i128;
+    let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
+    (sign * ((n.abs() + d / 2) / d)) as i64
+}
+
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
 ///
 /// The rate is data: 10,2 % by law, 12,5 % from the year the employee
@@ -319,6 +332,20 @@ mod tests {
         assert_eq!(feriepengeavsetning(50_000_000, 1250), 6_250_000);
         // Tariff, fem uker.
         assert_eq!(feriepengeavsetning(50_000_000, 1200), 6_000_000);
+    }
+
+    #[test]
+    fn timelonn_regnes_fra_minutter() {
+        // 160 timer à 450 kr.
+        assert_eq!(timelonn(160 * 60, 45_000), 7_200_000);
+        // Halvtimer er eksakte.
+        assert_eq!(timelonn(30, 45_000), 22_500);
+        // Et skjevt minuttall runder halvt vekk fra null, én gang.
+        // 7 min à 450 kr = 52,50 kr = 5250 øre.
+        assert_eq!(timelonn(7, 45_000), 5_250);
+        // 1 min à 100,01 kr → 166,68333… øre → 167.
+        assert_eq!(timelonn(1, 10_001), 167);
+        assert_eq!(timelonn(0, 45_000), 0);
     }
 
     #[test]

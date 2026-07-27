@@ -174,6 +174,10 @@ pub struct PayrollLine {
     brutto_ore: Option<i64>,
     #[serde(default)]
     feriepenger_ore: i64,
+    /// Pay from hours logged this month instead. The timesheet month
+    /// must be locked first (docs/lonn.md).
+    #[serde(default)]
+    fra_timer: bool,
 }
 
 #[derive(Deserialize)]
@@ -202,6 +206,7 @@ pub async fn run_payroll(
             employee_id: l.employee_id,
             brutto_ore: l.brutto_ore,
             feriepenger_ore: l.feriepenger_ore,
+            fra_timer: l.fra_timer,
         })
         .collect();
     let kjoring = regnmed_db::lonn::kjor_lonn(
@@ -261,4 +266,31 @@ pub async fn payslip_pdf(
         pdf,
     )
         .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct HoursQuery {
+    ar: i32,
+    maned: u32,
+}
+
+/// What an employee's logged hours come to for a month, and whether the
+/// timesheet is locked — so the portal can offer hours-based pay only
+/// when it is actually safe to run.
+pub async fn payroll_hours(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Query(q): Query<HoursQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let g = regnmed_db::lonn::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.maned)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({
+        "minutter": g.minutter,
+        "timesats_ore": g.timesats_ore,
+        "belop_ore": g.belop_ore,
+        "laast": g.laast,
+    })))
 }

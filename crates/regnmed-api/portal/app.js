@@ -1434,6 +1434,10 @@
         (a.manedslonn_ore == null ? "" : (a.manedslonn_ore / 100).toFixed(2)) +
         '" placeholder="Brutto"></td>' +
         '<td><input data-l="fp" class="input input-xs input-bordered w-32" placeholder="Feriepenger"></td>' +
+        '<td>' + (a.timelonn_ore
+          ? '<label class="cursor-pointer text-xs"><input data-l="timer" type="checkbox" ' +
+            'class="checkbox checkbox-xs"> fra timer</label>'
+          : '<span class="opacity-40 text-xs">ingen timesats</span>') + "</td>" +
         '<td><label class="cursor-pointer"><input data-l="med" type="checkbox" class="checkbox checkbox-xs" checked> ' +
         "med</label></td></tr>";
     }).join("");
@@ -1458,6 +1462,9 @@
       "Netto føres mot <b>2930 Skyldig lønn</b> — selve utbetalingen gjøres i betalingslisten, " +
       "så kjøring og utbetaling er to atskilte handlinger. En måned kan bare kjøres én gang; " +
       "en retting er et reverserende bilag og en ny kjøring.</p>" +
+      '<p class="text-sm opacity-70 mb-2">Timelønn hentes fra timeføringen — men bare når ' +
+      "<b>måneden er låst</b> i Timer-seksjonen. Ulåste timer kan endres etter at lønnen er " +
+      "bokført, og da spriker de to for alltid.</p>" +
       '<div class="alert alert-warning text-sm mb-3"><div><b>A-melding leveres ikke herfra.</b> ' +
       "Denne kjøringen er regnskapsføring, ikke rapportering — a-meldingen må fortsatt leveres " +
       "på annen måte (frist den 5.). Se docs/lonn.md.</div></div>" +
@@ -1477,7 +1484,7 @@
           '<select data-f="sone" class="select select-sm select-bordered">' + soneOptions + "</select>" +
           "</div></div>" +
           '<div class="overflow-x-auto"><table class="table table-sm mb-2" id="run-lines"><thead><tr>' +
-          "<th>Ansatt</th><th>Brutto (kr)</th><th>Feriepenger (kr)</th><th></th>" +
+          "<th>Ansatt</th><th>Brutto (kr)</th><th>Feriepenger (kr)</th><th>Timelønn</th><th></th>" +
           "</tr></thead><tbody>" + linjeRows + "</tbody></table></div>" +
           '<button id="run-payroll" class="btn btn-sm">Kjør lønn og bokfør</button>'
         : '<p class="text-sm opacity-70">Registrer minst én ansatt for å kjøre lønn.</p>'));
@@ -1532,10 +1539,15 @@
         if (!row.querySelector('[data-l="med"]').checked) return;
         var brutto = row.querySelector('[data-l="brutto"]').value.trim();
         var fp = row.querySelector('[data-l="fp"]').value.trim();
+        var timerBox = row.querySelector('[data-l="timer"]');
+        var fraTimer = !!(timerBox && timerBox.checked);
         linjer.push({
           employee_id: row.getAttribute("data-emp"),
-          brutto_ore: brutto ? parseKr(brutto) : null,
+          // Timelønn overstyrer et eventuelt bruttobeløp: serveren
+          // regner det fra de låste timene.
+          brutto_ore: fraTimer ? null : (brutto ? parseKr(brutto) : null),
           feriepenger_ore: fp ? parseKr(fp) : 0,
+          fra_timer: fraTimer,
         });
       });
       if (!linjer.length) { toast("Ingen ansatte er med i kjøringen", false); return; }

@@ -300,6 +300,7 @@ async fn seed_browser_demo() {
                 brutto_ore: None,
                 // Juni: feriepenger utbetales, og de er trekkfrie.
                 feriepenger_ore: 4_500_000,
+                fra_timer: false,
             })
             .collect::<Vec<_>>(),
         "Demo Bruker",

@@ -114,6 +114,7 @@ listingen.
 | GET/POST | `/companies/{id}/employees` |
 | GET/POST | `/companies/{id}/payroll` |
 | GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
+| GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
 
 Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 `admin`.
@@ -134,11 +135,50 @@ Rekkefølgen er omtrent den de bør tas i.
    regnskapsmessige avsetningen på avsatte feriepenger krever en
    matchende nedtrekk ved utbetaling; en halvbygd avsetning er verre enn
    ingen, så feltet finnes og står på null.
-5. **Timelønn i kjøringen.** Feltet finnes på den ansatte, men en kjøring
-   tar beløp per linje — timer × sats regnes ikke automatisk fra
-   timeføringen (docs/timer.md) ennå.
-6. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+5. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
+
+## Timelønn fra timeføringen
+
+En lønnslinje kan hente beløpet fra timeføringen i stedet for å bruke
+månedslønn: minutter ført i måneden × den ansattes timesats. **Alle**
+førte timer teller, fakturerbare eller ikke — arbeidsgiver skylder lønn
+for utført arbeid uansett om en kunde faktureres for det.
+
+Regnestykket ligger i `regnmed-core::lonn::timelonn` og går fra minutter
+direkte, uten et mellomsteg om desimaltimer som bare ville lagt til en
+avrunding. Én divisjon, halvt vekk fra null.
+
+### Måneden må være låst
+
+Dette er den viktigste regelen her, og den er en hard forutsetning i
+`kjor_lonn`, ikke bare et råd i portalen:
+
+> timelisten for 03/2026 er ikke låst — lås måneden før timelønn
+> utbetales, ellers kan timene endres etter at lønnen er bokført
+
+En lønnskjøring er innsettings-bar. Endres timene etterpå, spriker
+timelisten og lønnen for alltid, uten noen måte å avstemme dem på.
+Månedslåsen i docs/timer.md finnes nettopp for denne rekkefølgen: lås
+for lønn, så fakturer.
+
+### Ansatt og portalbruker er to ting
+
+`time_entry` føres av en **person** (en som logger inn), mens `employee`
+er lønnsmottakeren identifisert ved fødselsnummer, fordi det er slik
+a-meldingen rapporterer. De skal fortsette å være atskilte: en ansatt
+trenger ikke portaltilgang, og en portalbruker er ikke nødvendigvis
+ansatt.
+
+Migration 0036 legger derfor til en **valgfri, eksplisitt** kobling
+(`employee.person_id`), satt av en admin. Den gjettes ikke ut fra navn —
+det ville koblet feil person til feil lønn første gang to ansatte het
+det samme. Mangler koblingen, sier `timegrunnlag` fra i stedet for å
+returnere null timer.
+
+`GET /companies/{id}/payroll/hours/{employee}?ar=&maned=` gir minutter,
+sats, beløp og `laast`, så portalen bare tilbyr timelønn når det faktisk
+er trygt å kjøre.
 
 ## Lønnsslipp
 
@@ -169,6 +209,8 @@ Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og
 **Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
 der brutto kan overstyres og feriepenger legges inn per person).
 Hver kjørt måned har en knapp per ansatt som laster ned lønnsslippen.
+Ansatte med timesats har en «fra timer»-avkrysning i kjøreskjemaet;
+serveren nekter hvis måneden ikke er låst.
 
 Måneder som allerede er kjørt er **deaktivert** i månedsvelgeren, så den
 vanligste feilen ikke engang kan forsøkes. Advarselen om at a-meldingen
@@ -189,6 +231,9 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   at samme måned ikke kan kjøres to ganger, at kjøringer og identitet
   ikke kan endres i ettertid, og at listen viser fødselsdato og ikke
   fødselsnummer.
+- Timelønn: at beløpet regnes fra minutter, at en ULÅST måned nektes,
+  at kjøringen går etter låsing og gir riktig brutto og trekk, og at en
+  ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.
 - `regnmed-core::lonnsslipp` — velformet og deterministisk PDF, at
   slippen forklarer trekkgrunnlaget, feriepengenes trekkfrihet og
   desembers halve trekk, at frikort sier frikort, og at
