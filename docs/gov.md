@@ -65,15 +65,24 @@ systembruker, see below.
    fastsatte* mva-meldinger (leser inn), ikke innsending. Navnelikheten
    er en felle.
 
-   **Bestillingsveien er ikke én dør.** Verifisert 2026-07-27 fra hvert
-   API-s egen side; alle krever innlogging som virksomheten:
+   **Alle Skatteetaten-scopene bestilles ett sted.** Verifisert
+   2026-07-28: hver SBS-side («mva-melding», «a-meldingen»,
+   «aksjonarregisteroppgaven») lenker under «trenger du hjelp» til den
+   SAMME brukerstøttetjenesten, med samme setning — *«Send oss en
+   henvendelse her hvis du har spørsmål knyttet til en tjeneste, skal
+   bestille tilgang til en ny tjeneste eller vil melde inn
+   endringsønsker»*:
 
-   | Scope | Bestilles via |
-   | --- | --- |
-   | `skatteetaten:mvameldingvalidering` | [mva-melding-sbs → «trenger du hjelp»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/mva-melding-sbs/#trenger-du-hjelp) |
-   | `skatteetaten:skattekorttilarbeidsgiver` | [Brukerstøttetjenesten (eksternjira)](https://eksternjira.sits.no/servicedesk/customer/user/login?destination=plugins/servlet/desk/site/global) |
-   | `skatteetaten:innrapporteringamelding` | [A-meldingen for sluttbrukersystemer → «trenger du hjelp»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/a-meldingen-sbs/) |
-   | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | [aksjonarregisteroppgaven-sbs → «bestill tilgang»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/aksjonarregisteroppgaven-sbs/) |
+   <https://eksternjira.sits.no/plugins/servlet/desk/site/global>
+
+   Én henvendelse kan altså be om alle scopene samtidig. En tidligere
+   utgave av dette dokumentet listet én rad per scope med lenke til
+   API-ets egen side; det var å notere hvilken side man går *fra*, ikke
+   hvor den fører — og fikk bestillingen til å se ut som fire søknader.
+
+   Tjenesten krever egen brukerkonto (ikke ID-porten): virksomheten må
+   først opprette en brukeradministrator som lager kontoene. Førstegangs
+   pålogging går via «Har du glemt passordet ditt?».
 
    Oppgi alltid **organisasjonsnummer**, **miljø** (test/prod) og
    **klient-id**, og bestill test og produksjon hver for seg.
@@ -119,11 +128,20 @@ Den fellen som kostet en runde: to av behovene løses ikke med et
 | --- | --- |
 | Mva-melding, **innsending** | Altinn3-instansflyten med `altinn:instances.read` / `altinn:instances.write` |
 | Aksjonærregisteroppgaven | **Altinn systembruker** med tilgangspakke, i tillegg til scopet |
-   They do NOT appear in Samarbeidsportalen's scope picker until
-   granted: order them via skatteetaten.no/kontakt/skriv/ stating the
-   orgnr and both scope names (same procedure for test and prod); once
-   granted they show under "Tildelt meg" and can be added to the
-   client.
+
+`altinn:instances.read` / `altinn:instances.write` er synlige i
+Samarbeidsportalens scope-velger og kan hukes av — men det gir ingen
+tilgang, akkurat som for Skatteetaten-scopene (verifisert 2026-07-28:
+klienten fikk dem lagt til, og portalen svarte «Det er lagt til scopes
+på klienten som virksomheten din ikke har tilgang til»).
+
+Altinns egen dokumentasjon beskriver bare hvordan **tjenesteeiere** får
+disse scopene delegert, ikke hvordan et sluttbrukersystem får dem. Vi
+har altså **ingen verifisert bestillingsvei** for dem ennå — ikke skriv
+en inn her før den er prøvd. Det praktiske første forsøket er å spørre i
+samme henvendelse til Skatteetatens brukerstøtte: innsendingsflyten er
+deres, så de vet hvilken delegering den krever.
+
 4. Point the env variables above at the test environment and run
    `regnmed mva-melding … --validate`.
 
