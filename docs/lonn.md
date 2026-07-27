@@ -113,6 +113,7 @@ listingen.
 | --- | --- |
 | GET/POST | `/companies/{id}/employees` |
 | GET/POST | `/companies/{id}/payroll` |
+| GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
 
 Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 `admin`.
@@ -128,24 +129,46 @@ Rekkefølgen er omtrent den de bør tas i.
 2. **Skattekort fra Skatteetatens API.** I dag registreres trekket
    manuelt. Samme Maskinporten-avhengighet.
 3. **Tabelltrekk** (se over).
-4. **Lønnsslipp** som dokument til den ansatte. Linjene ligger klare;
-   det mangler en `regnmed-core::pdf`-layout, som faktura har.
-5. **Aga-avsetning på ikke-utbetalte feriepenger.** Avgiften beregnes i
+4. **Aga-avsetning på ikke-utbetalte feriepenger.** Avgiften beregnes i
    dag på det som faktisk utbetales — som er når den forfaller. Den
    regnskapsmessige avsetningen på avsatte feriepenger krever en
    matchende nedtrekk ved utbetaling; en halvbygd avsetning er verre enn
    ingen, så feltet finnes og står på null.
-6. **Timelønn i kjøringen.** Feltet finnes på den ansatte, men en kjøring
+5. **Timelønn i kjøringen.** Feltet finnes på den ansatte, men en kjøring
    tar beløp per linje — timer × sats regnes ikke automatisk fra
    timeføringen (docs/timer.md) ennå.
-7. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+6. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
+
+## Lønnsslipp
+
+`regnmed-core::lonnsslipp` rendrer slippen med den samme hand-rolled
+PDF-skriveren som fakturaen — samme begrunnelse: et dokument vi står
+ansvarlig for, uten en motor med skjult oppførsel.
+
+**Slippen lagres ikke.** Til forskjell fra fakturaen, der PDF-en *er*
+salgsdokumentet og derfor bokføres som vedlegg, er lønnsslippen utledet
+av lønnslinjen — og linjene er innsettings-bare. Samme linje gir samme
+bytes for alltid, så den rendres på forespørsel i stedet for å lagre
+enda en kopi av personopplysninger.
+
+Slippen **forklarer** trekket i stedet for bare å oppgi det: grunnlaget
+står i parentes («Forskuddstrekk (35 % av 55 000,00)»), og både
+feriepengenes trekkfrihet og desembers halve trekk får sin egen linje
+når de gjelder. Feriepenger opptjent denne måneden står under en egen
+overskrift, tydelig utenfor «Til utbetaling», og hittil-i-år-tallene
+står nederst.
+
+`GET /companies/{id}/payroll/{run}/slip/{employee}` → `application/pdf`.
+Fødselsdato, ikke fødselsnummer — også på et dokument som sendes til
+den ansatte selv.
 
 ## Portal
 
 Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og
 **Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
 der brutto kan overstyres og feriepenger legges inn per person).
+Hver kjørt måned har en knapp per ansatt som laster ned lønnsslippen.
 
 Måneder som allerede er kjørt er **deaktivert** i månedsvelgeren, så den
 vanligste feilen ikke engang kan forsøkes. Advarselen om at a-meldingen
@@ -166,3 +189,10 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   at samme måned ikke kan kjøres to ganger, at kjøringer og identitet
   ikke kan endres i ettertid, og at listen viser fødselsdato og ikke
   fødselsnummer.
+- `regnmed-core::lonnsslipp` — velformet og deterministisk PDF, at
+  slippen forklarer trekkgrunnlaget, feriepengenes trekkfrihet og
+  desembers halve trekk, at frikort sier frikort, og at
+  fødselsnummeret ikke er i dokumentet.
+- Lønnsslippen bygget fra en ekte kjøring, med hittil-i-år summert over
+  flere måneder — og hentet som `application/pdf` fra en kjørende
+  server (2,8 kB, uten fødselsnummer).

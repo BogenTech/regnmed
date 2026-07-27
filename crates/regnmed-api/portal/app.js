@@ -1445,7 +1445,11 @@
         "</td><td class='text-right'>" + kr(k.forskuddstrekk_ore) +
         "</td><td class='text-right'>" + kr(k.netto_ore) +
         "</td><td class='text-right'>" + kr(k.feriepengeavsetning_ore) +
-        "</td><td class='text-right'>" + kr(k.aga_ore) + "</td></tr>";
+        "</td><td class='text-right'>" + kr(k.aga_ore) +
+        "</td><td>" + (k.ansatte || []).map(function (a) {
+          return '<button class="btn btn-xs btn-ghost" data-slip="' + k.id +
+            '" data-emp="' + a.employee_id + '">' + esc(a.navn.split(" ")[0]) + "</button>";
+        }).join(" ") + "</td></tr>";
     }).join("");
 
     var kjoringCard = card("Lønnskjøring",
@@ -1461,7 +1465,7 @@
         ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Måned</th>' +
           "<th>Sone</th><th class='text-right'>Brutto</th><th class='text-right'>Trekk</th>" +
           "<th class='text-right'>Netto</th><th class='text-right'>Feriepenger avsatt</th>" +
-          "<th class='text-right'>Aga</th></tr></thead><tbody>" + kjoringRows + "</tbody></table></div>"
+          "<th class='text-right'>Aga</th><th>Lønnsslipp</th></tr></thead><tbody>" + kjoringRows + "</tbody></table></div>"
         : "") +
       (aktive.length
         ? "<h3 class='font-semibold mb-1'>Kjør lønn</h3>" +
@@ -1501,6 +1505,23 @@
         renderLonn(id);
       } catch (error) { toast(error.message, false); }
     };
+
+    document.querySelectorAll("[data-slip]").forEach(function (button) {
+      button.onclick = async function () {
+        // Endepunktet krever bearer-token, så en vanlig lenke eller
+        // window.open ville fått 401. Hent gjennom api() og last ned.
+        try {
+          var response = await api("/companies/" + id + "/payroll/" +
+            button.getAttribute("data-slip") + "/slip/" + button.getAttribute("data-emp"));
+          var blob = await response.blob();
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "lonnsslipp.pdf";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (error) { toast(error.message, false); }
+      };
+    });
 
     var runBtn = document.getElementById("run-payroll");
     if (runBtn) runBtn.onclick = async function () {

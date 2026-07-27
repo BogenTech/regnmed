@@ -2,6 +2,7 @@
 //!
 //! - GET/POST /companies/{id}/employees          ansattregister
 //! - GET/POST /companies/{id}/payroll            lønnskjøringer
+//! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  lønnsslipp (PDF)
 //! - GET      /companies/{id}/payroll/preview    beregning uten bokføring
 //!
 //! Lesing krever tilgang; å registrere ansatte og kjøre lønn krever
@@ -11,6 +12,8 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -145,6 +148,9 @@ fn kjoring_json(k: &regnmed_db::lonn::Lonnskjoring) -> serde_json::Value {
         "aga_ore": k.sum.aga_ore,
         "lonnskostnad_ore": k.sum.lonnskostnad_ore(),
         "voucher_id": k.voucher_id,
+        "ansatte": k.ansatte.iter().map(|(id, navn)| json!({
+            "employee_id": id, "navn": navn,
+        })).collect::<Vec<_>>(),
     })
 }
 
@@ -224,4 +230,35 @@ pub async fn run_payroll(
             "halv_trekk": b.halv_trekk,
         })).collect::<Vec<_>>(),
     })))
+}
+
+/// The payslip for one employee in one run, as PDF.
+///
+/// Rendered on demand rather than stored: the payroll line is
+/// insert-only, so the same line yields the same bytes forever — and
+/// not storing it means one fewer copy of personal data to guard. That
+/// is the opposite choice from the faktura PDF, where the document *is*
+/// the salgsdokument and must be kept exactly as issued.
+pub async fn payslip_pdf(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, run_id, employee_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
+    require_access(&state, person.person_id, company_id, false).await?;
+    let input = regnmed_db::lonn::lonnsslipp(&state.pool, company_id, run_id, employee_id)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    let filnavn = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.maned);
+    let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&input);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{filnavn}\""),
+            ),
+        ],
+        pdf,
+    )
+        .into_response())
 }

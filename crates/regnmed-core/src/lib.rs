@@ -28,6 +28,7 @@ pub mod kid;
 pub mod kontoplan;
 pub mod lager;
 pub mod lonn;
+pub mod lonnsslipp;
 pub mod migreringcsv;
 pub mod money;
 pub mod mva;

@@ -444,3 +444,80 @@ async fn ugyldig_fodselsnummer_avvises_ved_registrering() {
     .unwrap_err();
     assert!(feil.to_string().contains("fødselsnummer"), "{feil}");
 }
+
+/// Lønnsslippen bygges av den innsettings-bare lønnslinjen, så den kan
+/// gjenskapes for alltid — og den skal forklare trekket, ikke bare
+/// oppgi det.
+#[tokio::test]
+async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    let post = |fp: i64| {
+        vec![Lonnspost {
+            employee_id: a,
+            brutto_ore: None,
+            feriepenger_ore: fp,
+        }]
+    };
+
+    lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        5,
+        dato(2026, 5, 25),
+        "I",
+        &post(0),
+        "Test",
+    )
+    .await
+    .unwrap();
+    let juni = lonn::kjor_lonn(
+        &pool,
+        company,
+        2026,
+        6,
+        dato(2026, 6, 20),
+        "I",
+        &post(4_000_000),
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    let slipp = lonn::lonnsslipp(&pool, company, juni.id, a).await.unwrap();
+    assert_eq!(slipp.ansatt_navn, "Kari Utvikler");
+    // Fødselsdato, ikke fødselsnummer — også på slippen.
+    assert_eq!(slipp.ansatt_fodselsdato, Some(dato(1993, 2, 26)));
+    // Brutto på slippen er ALT som utbetales; trekkgrunnlaget er mindre.
+    assert_eq!(slipp.brutto_ore, 9_000_000);
+    assert_eq!(slipp.trekkgrunnlag_ore, 5_000_000);
+    assert_eq!(slipp.forskuddstrekk_ore, 1_750_000);
+    assert_eq!(slipp.netto_ore, 7_250_000);
+    assert_eq!(slipp.trekk_prosent_bp, Some(3500));
+    // Hittil i år t.o.m. juni: to måneder lønn + juni-feriepengene.
+    assert_eq!(slipp.hittil_brutto_ore, 5_000_000 + 9_000_000);
+    assert_eq!(slipp.hittil_trekk_ore, 3_500_000);
+    assert_eq!(slipp.hittil_feriepenger_ore, 1_020_000);
+
+    // Og den rendrer til en PDF som forklarer trekkfriheten.
+    let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&slipp);
+    assert!(pdf.starts_with(b"%PDF-1.4"));
+    let tekst = String::from_utf8_lossy(&pdf).to_string();
+    assert!(tekst.contains("uten forskuddstrekk"), "{tekst}");
+    assert!(!tekst.contains("26829398612"), "fnr skal ikke i slippen");
+
+    // Mai-slippen ser bare mai i hittil-tallene.
+    let mai_id = lonn::list_kjoringer(&pool, company, Some(2026))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|k| k.maned == 5)
+        .unwrap();
+    assert_eq!(mai_id.ansatte.len(), 1, "listingen kjenner deltakerne");
+    let mai = lonn::lonnsslipp(&pool, company, mai_id.id, a)
+        .await
+        .unwrap();
+    assert_eq!(mai.hittil_brutto_ore, 5_000_000);
+}

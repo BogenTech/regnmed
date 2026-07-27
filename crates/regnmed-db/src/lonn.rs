@@ -183,6 +183,9 @@ pub struct Lonnskjoring {
     pub sum: Lonnssum,
     pub voucher_id: Uuid,
     pub linjer: Vec<(Uuid, String, Lonnsberegning, i64)>,
+    /// (employee_id, navn) for the run's lines — enough for the portal
+    /// to offer a payslip per person without asking again.
+    pub ansatte: Vec<(Uuid, String)>,
 }
 
 async fn satser(pool: &PgPool) -> Result<Vec<SatsPeriode>> {
@@ -464,6 +467,10 @@ pub async fn kjor_lonn(
         sone: sone_slug.to_string(),
         sum,
         voucher_id: posted.id,
+        ansatte: linjer
+            .iter()
+            .map(|(id, navn, _, _)| (*id, navn.clone()))
+            .collect(),
         linjer,
     })
 }
@@ -485,7 +492,7 @@ pub async fn list_kjoringer(
     .bind(ar)
     .fetch_all(pool)
     .await?;
-    Ok(rows
+    let mut out = rows
         .iter()
         .map(|r| Lonnskjoring {
             id: r.get("id"),
@@ -504,8 +511,27 @@ pub async fn list_kjoringer(
             },
             voucher_id: r.get("voucher_id"),
             linjer: Vec::new(),
+            ansatte: Vec::new(),
         })
-        .collect())
+        .collect::<Vec<_>>();
+
+    // Hvem som var med i hver kjøring, så portalen kan tilby lønnsslipp
+    // per person uten et nytt kall.
+    for kjoring in &mut out {
+        let linjer = sqlx::query(
+            "select l.employee_id, e.navn from payroll_line l
+             join employee e on e.id = l.employee_id
+             where l.run_id = $1 order by e.navn",
+        )
+        .bind(kjoring.id)
+        .fetch_all(pool)
+        .await?;
+        kjoring.ansatte = linjer
+            .iter()
+            .map(|r| (r.get("employee_id"), r.get("navn")))
+            .collect();
+    }
+    Ok(out)
 }
 
 /// Guard used by the API before offering a run: which months already ran.
@@ -522,4 +548,103 @@ pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, ar: i32, maned: u32) -
         bail!("flere kjøringer for samme måned — dette skal være umulig");
     }
     Ok(n == 1)
+}
+
+/// Builds the payslip for one employee in one run.
+///
+/// Rendered on demand rather than stored: the payroll line is
+/// insert-only, so the same line yields the same slip forever — and not
+/// storing it means one fewer copy of personal data to protect.
+pub async fn lonnsslipp(
+    pool: &PgPool,
+    company_id: Uuid,
+    run_id: Uuid,
+    employee_id: Uuid,
+) -> Result<regnmed_core::lonnsslipp::LonnsslippInput> {
+    use regnmed_core::lonnsslipp::{LonnsslippInput, Slipplinje};
+
+    let row = sqlx::query(
+        "select r.ar, r.maned, r.utbetalt_dato,
+                l.brutto_ore, l.feriepenger_ore, l.trekkgrunnlag_ore,
+                l.forskuddstrekk_ore, l.netto_ore, l.feriepengeavsetning_ore,
+                l.halv_trekk,
+                e.navn, e.stilling, e.fodselsnummer, e.trekk_type,
+                e.trekk_prosent_bp, e.feriepenger_bp,
+                c.name as selskap, c.orgnr, c.address
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         join employee e on e.id = l.employee_id
+         join company c on c.id = r.company_id
+         where r.id = $1 and l.employee_id = $2 and r.company_id = $3",
+    )
+    .bind(run_id)
+    .bind(employee_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("no such lønnslinje")?;
+
+    let ar: i32 = row.get("ar");
+    let brutto: i64 = row.get("brutto_ore");
+    let feriepenger: i64 = row.get("feriepenger_ore");
+
+    // Hittil i år, til og med denne kjøringen.
+    let hittil = sqlx::query(
+        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint as brutto,
+                coalesce(sum(l.forskuddstrekk_ore), 0)::bigint as trekk,
+                coalesce(sum(l.feriepengeavsetning_ore), 0)::bigint as feriepenger
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         where r.company_id = $1 and r.ar = $2 and l.employee_id = $3
+           and r.maned <= (select maned from payroll_run where id = $4)",
+    )
+    .bind(company_id)
+    .bind(ar)
+    .bind(employee_id)
+    .bind(run_id)
+    .fetch_one(pool)
+    .await?;
+
+    let mut linjer = vec![Slipplinje {
+        tekst: "Fastlønn".into(),
+        belop_ore: brutto,
+    }];
+    if feriepenger != 0 {
+        linjer.push(Slipplinje {
+            tekst: "Feriepenger".into(),
+            belop_ore: feriepenger,
+        });
+    }
+
+    let trekk_type: String = row.get("trekk_type");
+    Ok(LonnsslippInput {
+        arbeidsgiver_navn: row.get("selskap"),
+        arbeidsgiver_orgnr: row.get("orgnr"),
+        arbeidsgiver_adresse: row.get("address"),
+        ansatt_navn: row.get("navn"),
+        ansatt_stilling: row.get("stilling"),
+        // Fødselsdato, ikke fødselsnummer — også på et dokument som
+        // sendes til den ansatte selv.
+        ansatt_fodselsdato: row
+            .get::<String, _>("fodselsnummer")
+            .as_str()
+            .pipe_fodselsdato(),
+        ar,
+        maned: row.get::<i32, _>("maned") as u32,
+        utbetalt_dato: row.get("utbetalt_dato"),
+        linjer,
+        brutto_ore: brutto + feriepenger,
+        trekkgrunnlag_ore: row.get("trekkgrunnlag_ore"),
+        forskuddstrekk_ore: row.get("forskuddstrekk_ore"),
+        trekk_prosent_bp: (trekk_type == "prosent")
+            .then(|| row.get::<Option<i32>, _>("trekk_prosent_bp").map(i64::from))
+            .flatten(),
+        halv_trekk: row.get("halv_trekk"),
+        netto_ore: row.get("netto_ore"),
+        feriepengeavsetning_ore: row.get("feriepengeavsetning_ore"),
+        feriepenger_bp: row.get::<i32, _>("feriepenger_bp") as i64,
+        hittil_brutto_ore: hittil.get("brutto"),
+        hittil_trekk_ore: hittil.get("trekk"),
+        hittil_feriepenger_ore: hittil.get("feriepenger"),
+    })
 }
