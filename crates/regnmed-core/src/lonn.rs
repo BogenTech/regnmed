@@ -207,6 +207,33 @@ pub fn timelonn(minutter: i64, timesats_ore: i64) -> i64 {
     (sign * ((n.abs() + d / 2) / d)) as i64
 }
 
+/// What påløpt arbeidsgiveravgift on unpaid feriepenger *should* be.
+///
+/// Feriepenger earned this year are paid next year, and the aga on them
+/// falls due then — but the obligation arises with the earning, so the
+/// cost belongs in the year it was earned.
+///
+/// This returns the **target balance**, not a movement: the accrual is
+/// always `sats × skyldige feriepenger`, and a payroll run books the
+/// difference between that and what is already accrued. Modelling it as
+/// a target rather than a stream of increments is what makes it
+/// self-correcting — a rate change, a payout, or feriepenger that
+/// entered through an opening balance all resolve on the next run
+/// instead of leaving a residue nobody can explain.
+///
+/// The rate is the current one, deliberately: the employer will pay the
+/// avgift at the rate in force when the feriepenger are paid out, so the
+/// current rate is the best estimate of the obligation, not an
+/// approximation of an older one.
+/// A negative skyldig — more feriepenger paid out than the payroll
+/// history ever set aside, which happens when the liability came from an
+/// opening balance — accrues **nothing** rather than a negative avgift.
+/// There is no such thing as owing negative arbeidsgiveravgift, and
+/// booking one would turn a bookkeeping gap into income.
+pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, sats_bp: i64) -> i64 {
+    bp_av(skyldige_feriepenger_ore.max(0), sats_bp)
+}
+
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
 ///
 /// The rate is data: 10,2 % by law, 12,5 % from the year the employee
@@ -227,7 +254,9 @@ pub struct Lonnssum {
     pub feriepengeavsetning_ore: i64,
     /// aga on this month's pay.
     pub aga_ore: i64,
-    /// aga accrued on the feriepenger set aside, due when they are paid.
+    /// Change in the accrued aga on unpaid feriepenger — what this run
+    /// posted to reach [`aga_avsetning_mal`]. Negative when feriepenger
+    /// were paid out and the accrual is drawn back down.
     pub aga_feriepenger_ore: i64,
 }
 
@@ -236,9 +265,15 @@ impl Lonnssum {
         self.aga_ore + self.aga_feriepenger_ore
     }
 
-    /// What the employer books as cost: pay plus the accruals.
+    /// What the run costs the employer.
+    ///
+    /// **Feriepenger paid out are not part of it.** They were expensed
+    /// when they were earned and now only draw down the liability;
+    /// counting them here would expense them twice. What the month
+    /// genuinely costs is the ordinary pay plus everything accrued on
+    /// it — the new feriepenger obligation and both avgifter.
     pub fn lonnskostnad_ore(&self) -> i64 {
-        self.brutto_ore + self.feriepenger_utbetalt_ore
+        self.brutto_ore + self.feriepengeavsetning_ore + self.total_aga_ore()
     }
 }
 
@@ -388,7 +423,70 @@ mod tests {
             aga_ore: 705_000,
             aga_feriepenger_ore: 71_910,
         };
-        assert_eq!(sum.lonnskostnad_ore(), 6_000_000);
         assert_eq!(sum.total_aga_ore(), 776_910);
+        // Kostnaden er ordinær lønn + det som påløper på den. De
+        // utbetalte feriepengene er IKKE med: de ble kostnadsført i
+        // opptjeningsåret, og å telle dem her ville kostnadsført dem
+        // to ganger.
+        assert_eq!(
+            sum.lonnskostnad_ore(),
+            5_000_000 + 510_000 + 705_000 + 71_910
+        );
+    }
+
+    /// Avsetningen er et MÅL, ikke en strøm av tillegg — derfor kan den
+    /// ikke drive fra hverandre.
+    #[test]
+    fn aga_avsetning_er_sats_av_skyldige_feriepenger() {
+        // 51 000 kr skyldige feriepenger, sone I 14,1 %.
+        assert_eq!(aga_avsetning_mal(5_100_000, 1410), 719_100);
+        // Ingen gjeld, ingen avsetning.
+        assert_eq!(aga_avsetning_mal(0, 1410), 0);
+        // Sone V er nullsats hele veien.
+        assert_eq!(aga_avsetning_mal(5_100_000, 0), 0);
+    }
+
+    /// Betales det ut mer feriepenger enn lønnshistorikken har avsatt,
+    /// stammer gjelden et annet sted fra — og da avsettes ingenting.
+    /// Negativ avgift finnes ikke, og å bokføre den ville gjort et hull
+    /// i regnskapet om til en inntekt.
+    #[test]
+    fn negativ_gjeld_gir_ingen_avsetning_ikke_negativ_avgift() {
+        assert_eq!(aga_avsetning_mal(-3_694_000, 1410), 0);
+    }
+
+    /// Livsløpet til én feriepengekrone: avsettes, ligger, utbetales.
+    /// Differansen hver kjøring bokfører er målet minus det som alt står
+    /// — og summen over livsløpet er null.
+    #[test]
+    fn avsetningen_bygges_opp_og_trekkes_ned_til_null() {
+        let sats = 1410;
+        // År 1: 51 000 kr feriepenger opptjenes, ingenting avsatt før.
+        let mal1 = aga_avsetning_mal(5_100_000, sats);
+        let delta1 = mal1 - 0;
+        assert_eq!(delta1, 719_100);
+
+        // År 2, halvparten utbetales: gjelden er nå 25 500 kr.
+        let mal2 = aga_avsetning_mal(2_550_000, sats);
+        let delta2 = mal2 - mal1;
+        assert!(delta2 < 0, "utbetaling trekker avsetningen ned");
+
+        // Resten utbetales: gjelden er null, og det samme er avsetningen.
+        let mal3 = aga_avsetning_mal(0, sats);
+        let delta3 = mal3 - mal2;
+        assert_eq!(mal3, 0);
+        assert_eq!(delta1 + delta2 + delta3, 0, "livsløpet summerer til null");
+    }
+
+    /// En satsendring mellom opptjening og utbetaling korrigerer seg
+    /// selv ved neste kjøring i stedet for å bli liggende som en rest.
+    #[test]
+    fn satsendring_korrigeres_ved_neste_kjoring() {
+        let avsatt = aga_avsetning_mal(5_100_000, 1410);
+        // Satsen settes ned året etter; gjelden er den samme.
+        let mal = aga_avsetning_mal(5_100_000, 1400);
+        let delta = mal - avsatt;
+        assert_eq!(delta, -5_100, "differansen er nøyaktig satsendringen");
+        assert_eq!(avsatt + delta, mal, "og etterpå står avsetningen riktig");
     }
 }

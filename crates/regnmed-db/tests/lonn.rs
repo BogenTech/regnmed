@@ -664,3 +664,245 @@ async fn ansatt_uten_portalbruker_gir_tydelig_feil() {
         .unwrap_err();
     assert!(feil.to_string().contains("portalbruker"), "{feil}");
 }
+
+// ---------------------------------------------------------------------
+// Arbeidsgiveravgift på feriepenger som er avsatt, men ikke utbetalt.
+//
+// Avgiften forfaller først når feriepengene utbetales, men forpliktelsen
+// oppstår med opptjeningen. Modellen er et MÅL, ikke en strøm av
+// tillegg: etter hver kjøring skal konto 2780 være satsen av det som
+// faktisk skyldes, og kjøringen bokfører differansen.
+// ---------------------------------------------------------------------
+
+/// Saldoen på en konto for HELE selskapet, ikke bare ett bilag.
+async fn konto_saldo(pool: &PgPool, company: Uuid, konto: &str) -> i64 {
+    sqlx::query_scalar(
+        "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
+         join account a on a.id = e.account_id
+         where a.company_id = $1 and a.number = $2",
+    )
+    .bind(company)
+    .bind(konto)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn kjor(
+    pool: &PgPool,
+    company: Uuid,
+    a: Uuid,
+    maned: u32,
+    sone: &str,
+    brutto: Option<i64>,
+    feriepenger: i64,
+) -> lonn::Lonnskjoring {
+    lonn::kjor_lonn(
+        pool,
+        company,
+        2026,
+        maned,
+        dato(2026, maned, 20),
+        sone,
+        &[Lonnspost {
+            employee_id: a,
+            brutto_ore: brutto,
+            feriepenger_ore: feriepenger,
+            fra_timer: false,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn avsetning_pa_ikke_utbetalte_feriepenger_bokfores() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
+
+    let k = kjor(&pool, company, a, 3, "I", None, 0).await;
+
+    // 10,2 % av 50 000 = 5 100 kr feriepenger skyldes; 14,1 % av det er
+    // 719,10 kr i avgift som påløper nå og forfaller ved utbetaling.
+    assert_eq!(k.sum.feriepengeavsetning_ore, 510_000);
+    assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
+    assert_eq!(voucher_sum(&pool, k.voucher_id).await, 0);
+    assert_eq!(konto_belop(&pool, k.voucher_id, "5405").await, 71_910);
+    assert_eq!(konto_belop(&pool, k.voucher_id, "2780").await, -71_910);
+    assert!(k.advarsler.is_empty(), "{:?}", k.advarsler);
+}
+
+/// Livsløpet: avgiften avsettes ved opptjening og føres tilbake ved
+/// utbetaling — for da er den ordinære aga-linjen den som bærer den.
+/// Går dette galt, blir avgiften enten kostnadsført to ganger eller
+/// stående som en gjeld som aldri forsvinner.
+#[tokio::test]
+async fn avsetningen_fores_tilbake_nar_feriepengene_utbetales() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
+
+    let opptjening = kjor(&pool, company, a, 3, "I", None, 0).await;
+    assert_eq!(opptjening.sum.aga_feriepenger_ore, 71_910);
+
+    // Ferieavvikling: ingen ordinær lønn, feriepengene utbetales.
+    let utbetaling = kjor(&pool, company, a, 4, "I", Some(0), 510_000).await;
+
+    assert_eq!(
+        utbetaling.sum.aga_feriepenger_ore, -71_910,
+        "avsetningen føres tilbake i sin helhet"
+    );
+    assert_eq!(voucher_sum(&pool, utbetaling.voucher_id).await, 0);
+    // Avgiften på det utbetalte ligger nå i den ordinære aga-linjen.
+    assert_eq!(utbetaling.sum.aga_ore, 71_910);
+
+    // Og etterpå står begge kontoene på null: ingen gjeld igjen, ingen
+    // avsetning igjen.
+    assert_eq!(konto_saldo(&pool, company, "2940").await, 0);
+    assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
+}
+
+/// Feriepengegjeld som ikke bærer avsetning — fordi den ble opptjent før
+/// funksjonen fantes, eller i en sone uten avgift — tas igjen ved neste
+/// kjøring. Det er hele poenget med å sikte mot en saldo i stedet for å
+/// legge til et beløp.
+#[tokio::test]
+async fn gjeld_uten_avsetning_tas_igjen_ved_neste_kjoring() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
+
+    // Sone V er nullsats: feriepenger opptjenes, ingen avgift avsettes.
+    let uten = kjor(&pool, company, a, 3, "V", None, 0).await;
+    assert_eq!(uten.sum.aga_feriepenger_ore, 0);
+    assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
+
+    // Virksomheten flytter til sone I. Nå skylder den avgift på ALT som
+    // står ubetalt, ikke bare på månedens opptjening.
+    let med = kjor(&pool, company, a, 4, "I", None, 0).await;
+    let skyldig = 510_000 + 510_000;
+    assert_eq!(
+        med.sum.aga_feriepenger_ore,
+        skyldig * 1410 / 10_000,
+        "hele gjelden får avsetning, ikke bare den nye måneden"
+    );
+    assert_eq!(konto_saldo(&pool, company, "2780").await, -143_820);
+}
+
+/// Invarianten som gjør at avsetningen ikke kan drive: etter enhver
+/// kjøring er saldoen på 2780 nøyaktig satsen av saldoen på 2940.
+#[tokio::test]
+async fn avsetningen_er_alltid_satsen_av_feriepengegjelden() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
+    let b = ansatt(&pool, company, "03048810194", "Per Invariant", 2_777_700).await;
+
+    for (maned, feriepenger) in [(3u32, 0i64), (4, 0), (5, 130_000), (6, 250_000)] {
+        lonn::kjor_lonn(
+            &pool,
+            company,
+            2026,
+            maned,
+            dato(2026, maned, 20),
+            "I",
+            &[
+                Lonnspost {
+                    employee_id: a,
+                    brutto_ore: None,
+                    feriepenger_ore: feriepenger,
+                    fra_timer: false,
+                },
+                Lonnspost {
+                    employee_id: b,
+                    brutto_ore: None,
+                    feriepenger_ore: feriepenger,
+                    fra_timer: false,
+                },
+            ],
+            "Test",
+        )
+        .await
+        .unwrap();
+
+        // Avrundingen skjer PER ANSATT, så fasiten må bygges per ansatt
+        // — 14,1 % av totalen ville bommet med et øre eller to og gjort
+        // testen til en tilnærming i stedet for en invariant.
+        let per_ansatt: Vec<i64> = sqlx::query_scalar(
+            "select coalesce(sum(l.feriepengeavsetning_ore - l.feriepenger_ore), 0)::bigint
+             from payroll_line l join payroll_run r on r.id = l.run_id
+             where r.company_id = $1 group by l.employee_id",
+        )
+        .bind(company)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let ventet: i64 = per_ansatt
+            .iter()
+            .map(|s| regnmed_core::lonn::aga_avsetning_mal(*s, 1410))
+            .sum();
+
+        assert_eq!(
+            per_ansatt.iter().sum::<i64>(),
+            -konto_saldo(&pool, company, "2940").await,
+            "etter {maned:02}/2026: lønnshistorikken skal forklare hele 2940"
+        );
+        assert_eq!(
+            -konto_saldo(&pool, company, "2780").await,
+            ventet,
+            "etter {maned:02}/2026: 2780 skal være 14,1 % av hver ansatts gjeld"
+        );
+    }
+}
+
+/// Feriepengegjeld som ikke stammer fra lønnskjøringene — en
+/// åpningsbalanse, en manuell avsetning — kan ikke knyttes til noen
+/// ansatt, og får derfor ingen avgiftsavsetning. Det er en reell
+/// begrensning, og kjøringen sier fra om den i stedet for å late som.
+#[tokio::test]
+async fn ufordelt_feriepengegjeld_gir_advarsel_ikke_stillhet() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap(&pool).await;
+    let a = ansatt(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;
+
+    // Regnskapsføreren avsetter feriepenger manuelt, uten ansattkobling.
+    use regnmed_core::Ore;
+    use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+    let linje = |konto: &str, belop: i64| EntryDraft {
+        account_number: konto.into(),
+        amount: Ore(belop),
+        vat_code: None,
+        description: Some("Overtatt feriepengegjeld".into()),
+        party_no: None,
+        avdeling: None,
+        prosjekt: None,
+        valuta: None,
+    };
+    regnmed_db::post_voucher(
+        &pool,
+        company,
+        &VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: dato(2026, 1, 1),
+            description: "Åpningsbalanse feriepenger".into(),
+            reverses: None,
+            entries: vec![linje("5090", 1_000_000), linje("2940", -1_000_000)],
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    let k = kjor(&pool, company, a, 3, "I", None, 0).await;
+
+    // Avsetningen dekker bare det lønnskjøringen selv har opptjent.
+    assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
+    let advarsel = k.advarsler.join(" ");
+    assert!(
+        advarsel.contains("10000,00"),
+        "differansen skal navngis: {advarsel}"
+    );
+    assert!(advarsel.contains("2780"), "{advarsel}");
+}

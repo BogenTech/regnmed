@@ -5,9 +5,10 @@ var det.** #46 er den største bevisst utsatte delen av ROADMAP, og denne
 leveransen tar bare det som kan gjøres riktig i dag. Hva som mangler står
 lenger ned, uten pynt.
 
-Det som virker: fastlønn, prosenttrekk fra skattekortet,
-arbeidsgiveravgift per sone, feriepengeavsetning — bokført som ett
-ordinært bilag i én transaksjon.
+Det som virker: fastlønn, timelønn fra timeføringen, prosenttrekk fra
+skattekortet, arbeidsgiveravgift per sone, feriepengeavsetning med
+avgiften på den, og lønnsslipp — bokført som ett ordinært bilag i én
+transaksjon.
 
 ## En lønnskjøring er ett bilag
 
@@ -24,6 +25,13 @@ a-melding, men tallene i hovedboken *er* bilaget.
 | 2940 Skyldige feriepenger | kredit | månedens avsetning |
 | 5400 Arbeidsgiveravgift | debet | aga |
 | 2770 Skyldig arbeidsgiveravgift | kredit | aga |
+| 5405 Aga av påløpne feriepenger | debet | endring i avsetningen |
+| 2780 Påløpt aga av feriepenger | kredit | endring i avsetningen |
+
+Hver linje utelates når den er null. En måned med bare ferieavvikling —
+feriepenger utbetales, ingen ordinær lønn — har verken lønnskostnad
+eller forskuddstrekk, og bilagsvalideringen avviser nullinjer. Uten
+utelatelsen kunne den måneden ikke kjøres i det hele tatt.
 
 Netto går til **2930**, ikke til bank: selve utbetalingen er
 betalingslistens jobb (docs/betaling.md), så lønnskjøring og utbetaling
@@ -33,6 +41,51 @@ er to atskilte, sporbare handlinger.
 som ble avsatt i opptjeningsåret. Bommer man på dette, kostnadsføres
 feriepenger to ganger og resultatet blir systematisk for lavt — derfor
 har det sin egen test.
+
+## Avgiften på feriepenger man ennå ikke har betalt
+
+Feriepenger opptjent i år utbetales neste år, og arbeidsgiveravgiften på
+dem forfaller da. Men *forpliktelsen* oppstår med opptjeningen, så
+kostnaden hører hjemme i året den ble opptjent.
+
+Avsetningen er modellert som et **mål, ikke en strøm av tillegg**: etter
+enhver kjøring skal påløpt aga være satsen av det som faktisk skyldes, og
+kjøringen bokfører differansen. Det er hele forskjellen mellom en
+avsetning som holder seg og en som driver:
+
+- **Utbetaling** trekker avsetningen ned av seg selv — gjelden synker, og
+  avgiften på det utbetalte ligger allerede i den ordinære aga-linjen.
+- **Satsendring** mellom opptjening og utbetaling korrigeres ved neste
+  kjøring i stedet for å bli liggende som en uforklarlig rest. Satsen som
+  brukes er den gjeldende, med vilje: avgiften skal betales med satsen
+  som gjelder når feriepengene utbetales.
+- **Gjeld uten avsetning** — opptjent før denne funksjonen fantes, eller
+  i en sone uten avgift — tas igjen ved første kjøring, i stedet for å
+  bli stående udekket for alltid.
+
+Både skyldige feriepenger og allerede avsatt avgift **utledes per
+ansatt** av de innsettings-bare lønnslinjene. Ingenting lagres som en
+egen sannhet, så de kan ikke komme i utakt med det som er bokført.
+
+**Negativ gjeld gir ingen avsetning.** Betales det ut mer enn
+lønnshistorikken har avsatt, stammer gjelden et annet sted fra; negativ
+arbeidsgiveravgift finnes ikke, og å bokføre den ville gjort et hull i
+regnskapet om til en inntekt.
+
+**Kontonumrene er valgt, ikke funnet.** Skatteetatens kodeliste navngir
+5400 og 2770; nærmeste-nabo-oppslaget i SAF-T-eksporten legger 5405 på
+5400 (Arbeidsgiveravgift) og 2780 på 2770 (Skyldig arbeidsgiveravgift).
+2785 ville havnet på 2790 «Andre offentlige avgifter» i stedet — derfor
+2780.
+
+### Den ærlige begrensningen
+
+Feriepengegjeld som **ikke** stammer fra lønnskjøringene — en
+åpningsbalanse, en SAF-T-import, et manuelt bilag — kan ikke knyttes til
+noen ansatt, og får derfor ingen avgiftsavsetning. Kjøringen sammenligner
+saldoen på 2940 med det lønnshistorikken forklarer og **sier fra med
+beløpet** når de spriker, i stedet for å tie eller å finne på en
+fordeling. Den delen må i så fall avsettes manuelt.
 
 Kjøringer og ansattregister er innsettings-bare (trigger + kolonne-
 rettigheter). Samme måned kan ikke kjøres to ganger; en korreksjon er et
@@ -130,12 +183,7 @@ Rekkefølgen er omtrent den de bør tas i.
 2. **Skattekort fra Skatteetatens API.** I dag registreres trekket
    manuelt. Samme Maskinporten-avhengighet.
 3. **Tabelltrekk** (se over).
-4. **Aga-avsetning på ikke-utbetalte feriepenger.** Avgiften beregnes i
-   dag på det som faktisk utbetales — som er når den forfaller. Den
-   regnskapsmessige avsetningen på avsatte feriepenger krever en
-   matchende nedtrekk ved utbetaling; en halvbygd avsetning er verre enn
-   ingen, så feltet finnes og står på null.
-5. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
 ## Timelønn fra timeføringen
@@ -225,6 +273,17 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 - `regnmed-core::lonn` — prosenttrekk, trekkfrie feriepenger, halv skatt
   i desember, frikort, avrunding halvt vekk fra null, og at tabelltrekk
   og sone Ia nektes med begrunnelse.
+- Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
+  (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
+  korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir
+  null avsetning framfor negativ avgift.
+- Mot ekte Postgres: at avsetningen bokføres på 5405/2780 og bilaget
+  fortsatt balanserer, at den føres tilbake i sin helhet ved
+  ferieutbetaling og etterlater begge kontoene på null, at gjeld
+  opptjent uten avsetning tas igjen ved neste kjøring, at saldoen på
+  2780 etter hver kjøring er satsen av **hver ansatts** gjeld (fasiten
+  bygges per ansatt — avrundingen skjer der), og at feriepengegjeld
+  lønnshistorikken ikke forklarer gir en advarsel med beløpet i.
 - `regnmed-db/tests/lonn.rs` — mot ekte Postgres: at bilaget balanserer
   eksakt, at hver konto får riktig beløp, at utbetalte feriepenger
   reduserer gjelden i stedet for å bli kostnad, at sone V er nullsats,

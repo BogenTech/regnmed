@@ -1450,6 +1450,7 @@
         "</td><td class='text-right'>" + kr(k.netto_ore) +
         "</td><td class='text-right'>" + kr(k.feriepengeavsetning_ore) +
         "</td><td class='text-right'>" + kr(k.aga_ore) +
+        "</td><td class='text-right'>" + kr(k.aga_feriepenger_ore) +
         "</td><td>" + (k.ansatte || []).map(function (a) {
           return '<button class="btn btn-xs btn-ghost" data-slip="' + k.id +
             '" data-emp="' + a.employee_id + '">' + esc(a.navn.split(" ")[0]) + "</button>";
@@ -1462,6 +1463,12 @@
       "Netto føres mot <b>2930 Skyldig lønn</b> — selve utbetalingen gjøres i betalingslisten, " +
       "så kjøring og utbetaling er to atskilte handlinger. En måned kan bare kjøres én gang; " +
       "en retting er et reverserende bilag og en ny kjøring.</p>" +
+      '<p class="text-sm opacity-70 mb-2">Arbeidsgiveravgift på feriepenger som er <b>avsatt, ' +
+      "men ikke utbetalt</b>, kostnadsføres samtidig som feriepengene opptjenes " +
+      "(<b>5405</b> mot <b>2780</b>) og føres tilbake når de utbetales. Kolonnen viser " +
+      "endringen: beløpet er alltid satsen av det som faktisk skyldes, så en utbetaling, " +
+      "en satsendring eller en gjeld som ikke bar avsetning fra før retter seg selv " +
+      "ved neste kjøring.</p>" +
       '<p class="text-sm opacity-70 mb-2">Timelønn hentes fra timeføringen — men bare når ' +
       "<b>måneden er låst</b> i Timer-seksjonen. Ulåste timer kan endres etter at lønnen er " +
       "bokført, og da spriker de to for alltid.</p>" +
@@ -1472,7 +1479,9 @@
         ? '<div class="overflow-x-auto"><table class="table table-sm mb-4"><thead><tr><th>Måned</th>' +
           "<th>Sone</th><th class='text-right'>Brutto</th><th class='text-right'>Trekk</th>" +
           "<th class='text-right'>Netto</th><th class='text-right'>Feriepenger avsatt</th>" +
-          "<th class='text-right'>Aga</th><th>Lønnsslipp</th></tr></thead><tbody>" + kjoringRows + "</tbody></table></div>"
+          "<th class='text-right'>Aga</th>" +
+          "<th class='text-right' title='Endring i avsetningen på feriepenger som ennå ikke er utbetalt'>" +
+          "Aga feriepenger</th><th>Lønnsslipp</th></tr></thead><tbody>" + kjoringRows + "</tbody></table></div>"
         : "") +
       (aktive.length
         ? "<h3 class='font-semibold mb-1'>Kjør lønn</h3>" +
@@ -1560,6 +1569,9 @@
           linjer: linjer,
         });
         toast("Lønn bokført — netto " + kr(laget.kjoring.netto_ore), true);
+        // Advarsler er ikke feil, men de skal ikke forsvinne i en toast
+        // som blinker forbi — de handler om tall som ikke går opp.
+        (laget.advarsler || []).forEach(function (a) { toast(a, false); });
         renderLonn(id);
       } catch (error) { toast(error.message, false); }
     };

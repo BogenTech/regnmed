@@ -23,6 +23,13 @@ pub const KONTO_FORSKUDDSTREKK: &str = "2600";
 pub const KONTO_SKYLDIG_FERIEPENGER: &str = "2940";
 pub const KONTO_SKYLDIG_AGA: &str = "2770";
 pub const KONTO_SKYLDIG_LONN: &str = "2930";
+/// Aga på feriepenger som er avsatt men ikke utbetalt. Kontonumrene er
+/// valgt slik at SAF-T-grupperingen treffer riktig: kodelisten navngir
+/// 5400 og 2770, og nærmeste-nabo-oppslaget legger 5405 på 5400
+/// (Arbeidsgiveravgift) og 2780 på 2770 (Skyldig arbeidsgiveravgift).
+/// 2785 ville havnet på 2790 «Andre offentlige avgifter» i stedet.
+pub const KONTO_AGA_FERIEPENGER_KOSTNAD: &str = "5405";
+pub const KONTO_PAALOPT_AGA_FERIEPENGER: &str = "2780";
 
 #[derive(Debug, Clone)]
 pub struct NyAnsatt {
@@ -186,10 +193,78 @@ pub struct Lonnskjoring {
     pub sone: String,
     pub sum: Lonnssum,
     pub voucher_id: Uuid,
-    pub linjer: Vec<(Uuid, String, Lonnsberegning, i64)>,
+    pub linjer: Vec<Lonnslinje>,
     /// (employee_id, navn) for the run's lines — enough for the portal
     /// to offer a payslip per person without asking again.
     pub ansatte: Vec<(Uuid, String)>,
+    /// Things worth saying out loud about the run. Never fatal — a
+    /// payroll run that balances is still a valid payroll run.
+    pub advarsler: Vec<String>,
+}
+
+/// One employee's line in a run.
+#[derive(Debug, Clone)]
+pub struct Lonnslinje {
+    pub employee_id: Uuid,
+    pub navn: String,
+    pub beregning: Lonnsberegning,
+    pub feriepengeavsetning_ore: i64,
+    /// This run's change to the accrued aga on the employee's unpaid
+    /// feriepenger — positive when new feriepenger were earned, negative
+    /// when they were paid out.
+    pub aga_feriepenger_ore: i64,
+}
+
+/// Feriepenger owed and aga already accrued for one employee, derived
+/// from the payroll history. Neither is stored: both are folds over
+/// insert-only lines, so they cannot drift from what was booked.
+#[derive(Debug, Clone, Copy, Default)]
+struct Feriepengehistorikk {
+    skyldig_ore: i64,
+    avsatt_aga_ore: i64,
+}
+
+async fn feriepengehistorikk(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, Feriepengehistorikk>> {
+    let rows = sqlx::query(
+        "select l.employee_id,
+                coalesce(sum(l.feriepengeavsetning_ore - l.feriepenger_ore), 0)::bigint as skyldig,
+                coalesce(sum(l.aga_feriepenger_ore), 0)::bigint as avsatt
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         where r.company_id = $1
+         group by l.employee_id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get("employee_id"),
+                Feriepengehistorikk {
+                    skyldig_ore: r.get("skyldig"),
+                    avsatt_aga_ore: r.get("avsatt"),
+                },
+            )
+        })
+        .collect())
+}
+
+async fn konto_saldo(pool: &PgPool, company_id: Uuid, konto: &str) -> Result<i64> {
+    let saldo: i64 = sqlx::query_scalar(
+        "select coalesce(sum(e.amount_ore), 0)::bigint
+         from entry e join account a on a.id = e.account_id
+         where a.company_id = $1 and a.number = $2",
+    )
+    .bind(company_id)
+    .bind(konto)
+    .fetch_one(pool)
+    .await?;
+    Ok(saldo)
 }
 
 async fn satser(pool: &PgPool) -> Result<Vec<SatsPeriode>> {
@@ -211,10 +286,16 @@ async fn satser(pool: &PgPool) -> Result<Vec<SatsPeriode>> {
 ///
 /// **Arbeidsgiveravgift is computed on what is actually paid out** —
 /// ordinary pay plus any feriepenger paid this month — because that is
-/// when the avgift falls due. Accruing aga on feriepenger not yet paid
-/// is ordinary practice but needs a matching drawdown when they are;
-/// a half-built accrual is worse than none, so v1 leaves it out and
-/// says so (docs/lonn.md).
+/// when the avgift falls due.
+///
+/// On top of that, the run trues up the **accrual** on feriepenger that
+/// are owed but not yet paid: the obligation arises with the earning
+/// even though the payment is next year. Per employee, `skyldige
+/// feriepenger` and `already accrued` are folded out of the insert-only
+/// payroll lines, and the run books the difference needed to reach
+/// `sats × skyldig`. Because it targets a balance rather than adding
+/// increments, a payout, a rate change or a first run on an existing
+/// liability all settle themselves rather than leaving a residue.
 #[allow(clippy::too_many_arguments)]
 pub async fn kjor_lonn(
     pool: &PgPool,
@@ -253,6 +334,8 @@ pub async fn kjor_lonn(
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
+
+    let historikk = feriepengehistorikk(pool, company_id).await?;
 
     let mut sum = Lonnssum::default();
     let mut linjer = Vec::new();
@@ -312,14 +395,37 @@ pub async fn kjor_lonn(
         sum.feriepenger_utbetalt_ore += beregning.feriepenger_ore;
         sum.forskuddstrekk_ore += beregning.forskuddstrekk_ore;
         sum.netto_ore += beregning.netto_ore;
+        // Avsetningen på ikke-utbetalte feriepenger er et MÅL, ikke et
+        // tillegg: etter kjøringen skal den ansattes påløpte aga være
+        // satsen av det vedkommende faktisk har til gode. Differansen er
+        // det kjøringen bokfører — som også er grunnen til at en
+        // feriepengegjeld opptjent før denne funksjonen fantes blir tatt
+        // igjen ved første kjøring i stedet for å bli stående udekket.
+        let hist = historikk.get(&ansatt.id).copied().unwrap_or_default();
+        let skyldig_etter = hist.skyldig_ore + avsetning - post.feriepenger_ore;
+        let aga_feriepenger = lonn::aga_avsetning_mal(skyldig_etter, aga_bp) - hist.avsatt_aga_ore;
+
         sum.feriepengeavsetning_ore += avsetning;
         sum.aga_ore += aga;
+        sum.aga_feriepenger_ore += aga_feriepenger;
 
-        linjer.push((ansatt.id, ansatt.navn.clone(), beregning, avsetning));
+        linjer.push(Lonnslinje {
+            employee_id: ansatt.id,
+            navn: ansatt.navn.clone(),
+            beregning,
+            feriepengeavsetning_ore: avsetning,
+            aga_feriepenger_ore: aga_feriepenger,
+        });
     }
 
-    let mut entries = vec![
-        EntryDraft {
+    // Hver linje utelates når den er null. En måned med bare
+    // ferieavvikling — feriepenger utbetales, ingen ordinær lønn — har
+    // verken lønnskostnad eller forskuddstrekk, og en nullinje avvises av
+    // bilagsvalideringen. Uten dette kunne den måneden ikke kjøres i det
+    // hele tatt.
+    let mut entries = Vec::new();
+    if sum.brutto_ore != 0 {
+        entries.push(EntryDraft {
             account_number: KONTO_LONN.into(),
             amount: Ore(sum.brutto_ore),
             vat_code: None,
@@ -328,8 +434,10 @@ pub async fn kjor_lonn(
             avdeling: None,
             prosjekt: None,
             valuta: None,
-        },
-        EntryDraft {
+        });
+    }
+    if sum.forskuddstrekk_ore != 0 {
+        entries.push(EntryDraft {
             account_number: KONTO_FORSKUDDSTREKK.into(),
             amount: Ore(-sum.forskuddstrekk_ore),
             vat_code: None,
@@ -338,8 +446,10 @@ pub async fn kjor_lonn(
             avdeling: None,
             prosjekt: None,
             valuta: None,
-        },
-        EntryDraft {
+        });
+    }
+    if sum.netto_ore != 0 {
+        entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_LONN.into(),
             amount: Ore(-sum.netto_ore),
             vat_code: None,
@@ -348,8 +458,8 @@ pub async fn kjor_lonn(
             avdeling: None,
             prosjekt: None,
             valuta: None,
-        },
-    ];
+        });
+    }
 
     // Utbetalte feriepenger er IKKE en ny kostnad — de trekker ned
     // gjelden som ble avsatt i opptjeningsåret.
@@ -410,6 +520,34 @@ pub async fn kjor_lonn(
         });
     }
 
+    // Avgiften på feriepenger som ennå ikke er utbetalt. Beløpet er en
+    // differanse og kan gå begge veier: er feriepenger utbetalt denne
+    // måneden, føres avsetningen tilbake — kostnaden ble tatt i
+    // opptjeningsåret, og avgiften på det utbetalte ligger allerede i
+    // aga-linjen over.
+    if sum.aga_feriepenger_ore != 0 {
+        entries.push(EntryDraft {
+            account_number: KONTO_AGA_FERIEPENGER_KOSTNAD.into(),
+            amount: Ore(sum.aga_feriepenger_ore),
+            vat_code: None,
+            description: Some("Arbeidsgiveravgift av påløpne feriepenger".into()),
+            party_no: None,
+            avdeling: None,
+            prosjekt: None,
+            valuta: None,
+        });
+        entries.push(EntryDraft {
+            account_number: KONTO_PAALOPT_AGA_FERIEPENGER.into(),
+            amount: Ore(-sum.aga_feriepenger_ore),
+            vat_code: None,
+            description: Some("Påløpt arbeidsgiveravgift av feriepenger".into()),
+            party_no: None,
+            avdeling: None,
+            prosjekt: None,
+            valuta: None,
+        });
+    }
+
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: utbetalt_dato,
@@ -418,6 +556,27 @@ pub async fn kjor_lonn(
         entries,
     };
     draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    // Kontoene for feriepengeavgiften er nye i denne funksjonen, så et
+    // selskap som har kjørt lønn før har dem ikke. De opprettes ved
+    // behov — å la kjøringen feile på «ukjent konto» ville vært en
+    // regresjon for hvert eneste selskap som allerede bruker lønn.
+    if sum.aga_feriepenger_ore != 0 {
+        crate::ledger::ensure_account(
+            pool,
+            company_id,
+            KONTO_AGA_FERIEPENGER_KOSTNAD,
+            "Arbeidsgiveravgift av påløpne feriepenger",
+        )
+        .await?;
+        crate::ledger::ensure_account(
+            pool,
+            company_id,
+            KONTO_PAALOPT_AGA_FERIEPENGER,
+            "Påløpt arbeidsgiveravgift av feriepenger",
+        )
+        .await?;
+    }
 
     let mut tx = pool.begin().await?;
     let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
@@ -457,7 +616,8 @@ pub async fn kjor_lonn(
         }
     })?;
 
-    for (employee_id, _, b, avsetning) in &linjer {
+    for l in &linjer {
+        let b = &l.beregning;
         sqlx::query(
             "insert into payroll_line
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
@@ -467,15 +627,15 @@ pub async fn kjor_lonn(
         )
         .bind(Uuid::new_v4())
         .bind(run_id)
-        .bind(employee_id)
+        .bind(l.employee_id)
         .bind(b.brutto_ore)
         .bind(b.feriepenger_ore)
         .bind(b.trekkgrunnlag_ore)
         .bind(b.forskuddstrekk_ore)
         .bind(b.netto_ore)
-        .bind(avsetning)
+        .bind(l.feriepengeavsetning_ore)
         .bind(lonn::arbeidsgiveravgift(b.brutto_ore + b.feriepenger_ore, sone, aga_bp).unwrap_or(0))
-        .bind(0i64)
+        .bind(l.aga_feriepenger_ore)
         .bind(b.halv_trekk)
         .execute(&mut *tx)
         .await?;
@@ -492,10 +652,48 @@ pub async fn kjor_lonn(
         voucher_id: posted.id,
         ansatte: linjer
             .iter()
-            .map(|(id, navn, _, _)| (*id, navn.clone()))
+            .map(|l| (l.employee_id, l.navn.clone()))
             .collect(),
         linjer,
+        advarsler: feriepengeavvik(pool, company_id)
+            .await?
+            .into_iter()
+            .collect(),
     })
+}
+
+/// Says so when the ledger's feriepengegjeld is larger than what the
+/// payroll history accounts for.
+///
+/// The accrual is derived per employee from payroll lines, so
+/// feriepenger that reached 2940 some other way — an opening balance, a
+/// SAF-T import, a manual voucher — carry no accrual and never will.
+/// That is a real gap, and the honest handling is to name it rather than
+/// either ignoring it or inventing an accrual for a liability we cannot
+/// attribute to anyone.
+async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<String>> {
+    let i_hovedboken = -konto_saldo(pool, company_id, KONTO_SKYLDIG_FERIEPENGER).await?;
+    let fra_lonn: i64 = feriepengehistorikk(pool, company_id)
+        .await?
+        .values()
+        .map(|h| h.skyldig_ore)
+        .sum();
+    if i_hovedboken == fra_lonn {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "Konto {KONTO_SKYLDIG_FERIEPENGER} viser {} kr skyldige feriepenger, men \
+         lønnshistorikken forklarer {} kr. Differansen på {} kr har ingen ansatt å \
+         knyttes til, så det er ikke beregnet arbeidsgiveravgift på den — \
+         avsetningen på konto {KONTO_PAALOPT_AGA_FERIEPENGER} må i så fall føres manuelt.",
+        kroner(i_hovedboken),
+        kroner(fra_lonn),
+        kroner(i_hovedboken - fra_lonn),
+    )))
+}
+
+fn kroner(ore: i64) -> String {
+    format!("{},{:02}", ore / 100, (ore % 100).abs())
 }
 
 pub async fn list_kjoringer(
@@ -535,6 +733,7 @@ pub async fn list_kjoringer(
             voucher_id: r.get("voucher_id"),
             linjer: Vec::new(),
             ansatte: Vec::new(),
+            advarsler: Vec::new(),
         })
         .collect::<Vec<_>>();
 

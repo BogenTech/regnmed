@@ -286,6 +286,28 @@ async fn seed_browser_demo() {
     let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company)
         .await
         .unwrap();
+    // Mai: vanlig måned. Feriepenger avsettes, og avgiften på dem
+    // påløper — så juni faktisk har noe å trekke ned.
+    regnmed_db::lonn::kjor_lonn(
+        &state.pool,
+        company,
+        2026,
+        5,
+        dato(2026, 5, 20),
+        "I",
+        &ansatte
+            .iter()
+            .map(|a| regnmed_db::lonn::Lonnspost {
+                employee_id: a.id,
+                brutto_ore: None,
+                feriepenger_ore: 0,
+                fra_timer: false,
+            })
+            .collect::<Vec<_>>(),
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
     regnmed_db::lonn::kjor_lonn(
         &state.pool,
         company,

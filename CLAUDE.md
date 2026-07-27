@@ -768,10 +768,22 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    utenfor regnmed — avvises FØR satsoppslaget, ellers ville
    feilmeldingen bedt om å legge inn satsen, som er selve feilen).
    Ansattlisten viser fødselsdato, ikke fødselsnummer.
+   Siden bygget: portal-seksjon, lønnsslipp som PDF, timelønn fra
+   låste timer, og **aga-avsetning på ikke-utbetalte feriepenger**
+   (5405/2780) — modellert som et MÅL, ikke en strøm av tillegg: etter
+   hver kjøring er påløpt aga satsen av det som faktisk skyldes, og
+   kjøringen bokfører differansen, så utbetaling, satsendring og gjeld
+   uten avsetning retter seg selv. Skyldig og allerede avsatt utledes
+   per ansatt av de innsettings-bare lønnslinjene; negativ gjeld gir
+   null avsetning, aldri negativ avgift; feriepengegjeld
+   lønnshistorikken ikke forklarer (åpningsbalanse, import) gir en
+   ADVARSEL med beløpet framfor en oppdiktet fordeling. Fant og fikset
+   underveis: `lonnskostnad_ore` telte utbetalte feriepenger som
+   kostnad og utelot avgiftene, og en måned med bare ferieavvikling
+   kunne ikke kjøres i det hele tatt (nullinjer avvises av
+   bilagsvalideringen — linjene utelates nå når de er null).
    **IKKE bygget, i prioritert rekkefølge: a-meldingen (selskapet må
-   fortsatt levere den selv), skattekort-API, tabelltrekk, lønnsslipp,
-   aga-avsetning på ikke-utbetalte feriepenger, timelønn fra
-   timeføringen, portal-seksjon.**
+   fortsatt levere den selv), skattekort-API, tabelltrekk.**
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

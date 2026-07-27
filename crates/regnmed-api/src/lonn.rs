@@ -146,6 +146,7 @@ fn kjoring_json(k: &regnmed_db::lonn::Lonnskjoring) -> serde_json::Value {
         "netto_ore": k.sum.netto_ore,
         "feriepengeavsetning_ore": k.sum.feriepengeavsetning_ore,
         "aga_ore": k.sum.aga_ore,
+        "aga_feriepenger_ore": k.sum.aga_feriepenger_ore,
         "lonnskostnad_ore": k.sum.lonnskostnad_ore(),
         "voucher_id": k.voucher_id,
         "ansatte": k.ansatte.iter().map(|(id, navn)| json!({
@@ -224,16 +225,18 @@ pub async fn run_payroll(
 
     Ok(Json(json!({
         "kjoring": kjoring_json(&kjoring),
-        "linjer": kjoring.linjer.iter().map(|(id, navn, b, avsetning)| json!({
-            "employee_id": id,
-            "navn": navn,
-            "brutto_ore": b.brutto_ore,
-            "feriepenger_ore": b.feriepenger_ore,
-            "forskuddstrekk_ore": b.forskuddstrekk_ore,
-            "netto_ore": b.netto_ore,
-            "feriepengeavsetning_ore": avsetning,
-            "halv_trekk": b.halv_trekk,
+        "linjer": kjoring.linjer.iter().map(|l| json!({
+            "employee_id": l.employee_id,
+            "navn": l.navn,
+            "brutto_ore": l.beregning.brutto_ore,
+            "feriepenger_ore": l.beregning.feriepenger_ore,
+            "forskuddstrekk_ore": l.beregning.forskuddstrekk_ore,
+            "netto_ore": l.beregning.netto_ore,
+            "feriepengeavsetning_ore": l.feriepengeavsetning_ore,
+            "aga_feriepenger_ore": l.aga_feriepenger_ore,
+            "halv_trekk": l.beregning.halv_trekk,
         })).collect::<Vec<_>>(),
+        "advarsler": kjoring.advarsler,
     })))
 }
 
