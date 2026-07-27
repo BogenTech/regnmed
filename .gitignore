@@ -6,10 +6,6 @@ target
 # Local environment (contains DATABASE_URL)
 .env
 
-# Dev secrets (docs/secrets.md): the SOPS-encrypted twin is committed,
-# the decrypted plaintext never is.
-secrets/*.env
-!secrets/*.enc.env
 
 # Local dev database (scripts/dev-db.sh)
 .dev/

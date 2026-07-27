@@ -26,17 +26,24 @@ Configuration (environment):
 
 Production uses `https://maskinporten.no`. **No secrets in the repo,
 ever** — keys live outside git and outside container images. That rule
-is absolute for this key, in test as well as production; the one narrow
-carve-out (SOPS-encrypted *dev* secrets) is scoped and justified in
-docs/secrets.md, and the Maskinporten key is explicitly outside it.
+is absolute, in test as well as production — there is no encrypted-secrets
+carve-out. Where the keys actually live is recorded in docs/secrets.md.
 
 ### Operational setup (one-time, per environment)
 
 **Status:** Samarbeidsportalen access obtained and scope bestilling
 sent to Skatteetaten (skriv-til-oss, both scopes, orgnr stated)
-2026-07-24 — awaiting their grant. When it lands: add the scopes to
-the test client in Samarbeidsportalen, then run the live validation
-round-trip (step 4).
+2026-07-24 — awaiting their grant. The **test client exists** with an
+RS256 keypair registered on it; its id and the rest of the
+`MASKINPORTEN_*` configuration live outside git in
+`~/.config/regnmed/maskinporten-test.env` (docs/secrets.md). When the
+grant lands: add the scopes to the test client in Samarbeidsportalen,
+then run the live validation round-trip (step 4).
+
+A third scope is now also pending, for the aksjonærregisteroppgave:
+`skatteetaten:innrapporteringaksjonaerregisteroppgave` (#43,
+docs/aksjonaer.md) — and that one additionally needs an Altinn
+systembruker, see below.
 
 1. Get access to Digdir's **Samarbeidsportalen** (requires the
    organization's Altinn roles).

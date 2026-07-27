@@ -167,6 +167,27 @@ mod tests {
         (config, decoding)
     }
 
+    /// The key Samarbeidsportalen/openssl actually hands you is PKCS#8
+    /// (`BEGIN PRIVATE KEY`), not PKCS#1 (`BEGIN RSA PRIVATE KEY`) which
+    /// the other tests here generate. Both must load, or the first live
+    /// token request fails on a format nobody thought to check.
+    #[test]
+    fn accepts_both_pkcs1_and_pkcs8_private_keys() {
+        use rsa::pkcs8::EncodePrivateKey;
+        let private = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+
+        let pkcs1 = private.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
+        assert!(pkcs1.contains("BEGIN RSA PRIVATE KEY"));
+        assert!(EncodingKey::from_rsa_pem(pkcs1.as_bytes()).is_ok());
+
+        let pkcs8 = private.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap();
+        assert!(pkcs8.contains("BEGIN PRIVATE KEY"));
+        assert!(
+            EncodingKey::from_rsa_pem(pkcs8.as_bytes()).is_ok(),
+            "PKCS#8 is the format the real Maskinporten key is stored in"
+        );
+    }
+
     #[test]
     fn grant_assertion_has_the_required_claims() {
         let (config, decoding) = test_config("http://unused.invalid/token");
