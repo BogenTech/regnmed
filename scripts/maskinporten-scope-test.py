@@ -3,16 +3,19 @@
 
     scripts/maskinporten-scope-test.py skatteetaten:innrapporteringamelding
 
-Svaret skiller mellom tre tilstander, og det er hele poenget:
+Svaret skiller mellom tilstandene som ellers blandes sammen:
 
-  GRANTED         scopet er knyttet til klienten og virker
-  invalid_scope   klienten autentiserer, men scopet er ikke lagt til
-                  på den (eller er ikke tildelt virksomheten)
-  invalid_grant   nøkkel, kid eller klient-id stemmer ikke
+  GRANTED           scopet virker
+  IKKE TILDELT      «Consumer has not been granted access» — Skatteetaten
+                    har ikke gitt virksomheten tilgang. Å huke det av i
+                    Samarbeidsportalen hjelper ikke; det må BESTILLES.
+  IKKE PÅ KLIENTEN  «invalid scopes for client» — scopet er ukjent for
+                    klienten
+  OPPSETTFEIL       invalid_grant: nøkkel, kid eller klient-id
 
-Forskjellen på de to siste er verdt en test: den ene betyr «legg det
-til i Samarbeidsportalen», den andre «oppsettet er galt». Å gjette
-mellom dem har kostet dager før.
+Skillet mellom «ikke tildelt» og «ikke på klienten» er hele grunnen til
+at skriptet finnes: det ene løses i portalen, det andre bare av
+Skatteetaten.
 
 Leser ~/.config/regnmed/maskinporten-test.env (docs/secrets.md). Ingen
 avhengigheter utover openssl.
@@ -55,7 +58,15 @@ try:
         body = json.load(r)
         print(f"  {scope}\n    GRANTED (token, expires_in={body.get('expires_in')})")
 except urllib.error.HTTPError as e:
-    detail = e.read().decode()[:220]
-    print(f"  {scope}\n    HTTP {e.code}: {detail}")
+    detail = e.read().decode()
+    if "has not been granted access" in detail:
+        verdict = "IKKE TILDELT — Skatteetaten må gi virksomheten tilgang (bestilles)"
+    elif "invalid scopes for client" in detail:
+        verdict = "IKKE PÅ KLIENTEN — legg scopet til på klienten i Samarbeidsportalen"
+    elif "invalid_grant" in detail:
+        verdict = "OPPSETTFEIL — sjekk nøkkel, MASKINPORTEN_KID og klient-id"
+    else:
+        verdict = detail[:200]
+    print(f"  {scope}\n    {verdict}")
 except Exception as e:
     print(f"  {scope}\n    ERROR: {e}")

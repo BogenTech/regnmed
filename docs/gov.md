@@ -127,16 +127,24 @@ og skiller de tre tilstandene som ellers blandes sammen:
 
 | Svar | Betyr |
 | --- | --- |
-| `GRANTED` | virker, scopet er på klienten |
-| `invalid_scope` | klienten autentiserer, men scopet er ikke lagt til |
-| `invalid_grant` | nøkkel, kid eller klient-id stemmer ikke |
+| `GRANTED` | virker |
+| `IKKE TILDELT` | «Consumer has not been granted access» — Skatteetaten har ikke gitt virksomheten tilgang. **Må bestilles.** |
+| `IKKE PÅ KLIENTEN` | «invalid scopes for client» — scopet er ukjent for klienten |
+| `OPPSETTFEIL` | `invalid_grant`: nøkkel, kid eller klient-id |
 
-**Status 2026-07-27:** klient og nøkkel autentiserer (kid
-`6e9b86f2-…`, satt i `~/.config/regnmed/maskinporten-test.env`), men
-ingen av de fire scopene over er knyttet til testklienten ennå — alle
-svarer `invalid_scope`. Neste steg er å forsøke å legge dem til på
-klienten i Samarbeidsportalen; går det, kjør skriptet igjen og
-bekreft.
+**Å huke av et scope i Samarbeidsportalen gir ingen tilgang.** Det er
+den viktigste lærdommen her, og den er testet: da a-melding-scopet ble
+lagt til på klienten, endret svaret seg fra «invalid scopes for client»
+til «Consumer has not been granted access» — altså fra én blokkering til
+en annen. Katalogen viser hva som *finnes*, tildelingen avgjør hva som
+kan *brukes*, og bare Skatteetaten kan gjøre det siste.
+
+**Status 2026-07-27:** klient og nøkkel autentiserer (kid `6e9b86f2-…`,
+satt i `~/.config/regnmed/maskinporten-test.env`) — hele JWT-grant-kjeden
+virker. `skatteetaten:innrapporteringamelding` og
+`skatteetaten:skattekorttilarbeidsgiver` svarer **IKKE TILDELT**, altså
+ligger bestillingen hos Skatteetaten. Bestill med de verifiserte
+navnene i tabellen over, ikke fra hukommelsen.
 
 ## Status & verification
 
