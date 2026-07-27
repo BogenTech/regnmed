@@ -203,6 +203,29 @@ Integrasjoner (#45) går gjennom samme oppslag, så en maskin kan få en
 egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
 At `admin` ikke er grantbart til en maskin står fortsatt.
 
+### I portalen (#61)
+
+Under **Oppdrag** ligger tre kort: Tilgang (hvem som kommer til), Roller
+og Integrasjoner. Rollekortet viser de innebygde rollene som de er —
+uendrelige, men leselige, så en admin ser hva de faktisk betyr uten å
+måtte lese koden — og et rutenett for selskapets egne.
+
+Rutenettet viser **hva rettigheten lar deg gjøre**, ikke slug-en: «Se
+alles timer», ikke `TIMER_LES_ALLE`. Teksten og grupperingen kommer fra
+`Rett::beskrivelse()` og `Rett::gruppe()` og serveres av API-et, så det
+finnes bare én liste — portalen har ingen egen kopi, og en ny rettighet
+kan ikke bli stående uten forklaring (egen test).
+
+De fire rettighetene som ikke kan delegeres vises som avkryssede bokser
+i grå, med begrunnelsen ved siden av: *«kan bare gis av admin, siden den
+styrer hvem som har tilgang»*. Konsekvensen står der valget tas, ikke i
+en hjelpetekst.
+
+Gruppene er `<details>` og ikke en bred tabell — det er formen som tåler
+375 px uten å rulle sidelengs. **Portalen skjuler, serveren nekter:**
+rutenettet er en visning av det som allerede håndheves, og en meny uten
+et valg er en bekvemmelighet, ikke en sperre.
+
 ### Lønn er ikke allmenn lesning
 
 Fram til #55 lå `LONNSSLIPP_LES_ALLE` og `LONN_LES` i lesebunten, så

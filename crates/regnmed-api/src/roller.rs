@@ -21,7 +21,12 @@ use crate::tilgang::{Rett, Rolle, krev};
 
 /// Rettighetene, med det navnet portalen viser dem under.
 fn rett_json(r: Rett) -> serde_json::Value {
-    json!({ "rett": r.slug(), "kan_delegeres": r.kan_delegeres() })
+    json!({
+        "rett": r.slug(),
+        "gruppe": r.gruppe(),
+        "beskrivelse": r.beskrivelse(),
+        "kan_delegeres": r.kan_delegeres(),
+    })
 }
 
 pub async fn list_roles(

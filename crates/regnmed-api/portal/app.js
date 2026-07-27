@@ -3673,6 +3673,7 @@
       // da skal kortet være borte — ikke vise en knapp som ikke virker.
       api("/companies/" + id + "/access").catch(function () { return null; }),
       api("/companies/" + id + "/invitations").catch(function () { return { invitasjoner: [] }; }),
+      api("/companies/" + id + "/roles").catch(function () { return null; }),
     ]);
     var engagements = results[0].engagements;
     var firms = results[1].firms;
@@ -3680,6 +3681,7 @@
     var integrasjonskall = results[3].kall;
     var tilgang = results[4];
     var invitasjoner = results[5].invitasjoner;
+    var roller = results[6];
     var active = engagements.filter(function (e) { return !e.valid_to; });
     var rows = engagements.map(function (e) {
       var action = !e.valid_to
@@ -3729,6 +3731,84 @@
       '<option value="les">les</option><option value="bokforing">bokføring</option></select>' +
       '<button id="int-gi" class="btn btn-sm">Gi tilgang</button></div>' +
       (kallrader ? "<h3 class='font-semibold text-sm mt-3 mb-1'>Siste endringer</h3>" + kallrader : ""));
+    // Rollene som kan tildeles: de innebygde (unntatt 'revisor', som
+    // følger av et oppdrag) pluss selskapets egne, aktive.
+    function rollevalg(r) {
+      var innebygde = ["ansatt", "les", "bokforing", "admin"];
+      if (!r) return innebygde;
+      return innebygde.concat(r.egne.filter(function (e) { return e.aktiv; })
+        .map(function (e) { return e.navn; }));
+    }
+
+    var rollekort = "";
+    if (roller) {
+      // Rettighetene gruppert som portalen selv er gruppert. Slug-en
+      // står i tittelen for den som trenger den; teksten er det man
+      // leser.
+      var grupper = {};
+      roller.vokabular.forEach(function (v) {
+        (grupper[v.gruppe] = grupper[v.gruppe] || []).push(v);
+      });
+      function rutenett(prefix, valgte) {
+        return Object.keys(grupper).sort().map(function (g) {
+          var bokser = grupper[g].map(function (v) {
+            var av = !v.kan_delegeres;
+            return '<label class="flex items-start gap-2 py-0.5 ' +
+              (av ? "opacity-50" : "") + '" title="' + esc(v.rett) + '">' +
+              '<input type="checkbox" class="checkbox checkbox-xs mt-0.5" data-rett="' +
+              prefix + "|" + esc(v.rett) + '"' +
+              (valgte.indexOf(v.rett) >= 0 ? " checked" : "") + (av ? " disabled" : "") +
+              "><span class='text-sm'>" + esc(v.beskrivelse) +
+              (av ? ' <span class="opacity-70">— kan bare gis av admin, siden den styrer hvem som har tilgang</span>' : "") +
+              "</span></label>";
+          }).join("");
+          // details/summary i stedet for en bred tabell: det er det som
+          // tåler 375 px uten å måtte rulle sidelengs.
+          return "<details class='mb-1'><summary class='cursor-pointer text-sm font-semibold py-1'>" +
+            esc(g) + "</summary><div class='pl-2'>" + bokser + "</div></details>";
+        }).join("");
+      }
+
+      var egnerader = roller.egne.map(function (r) {
+        return "<details class='border border-base-300 rounded p-2 mb-2" +
+          (r.aktiv ? "" : " opacity-50") + "'>" +
+          "<summary class='cursor-pointer font-semibold'>" + esc(r.navn) +
+          '<span class="opacity-70 text-sm font-normal"> — ' + r.rettigheter.length +
+          " rettigheter, " + r.i_bruk + " med rollen" + (r.aktiv ? "" : ", deaktivert") +
+          "</span></summary>" +
+          "<div class='mt-2'>" + rutenett(r.id, r.rettigheter) + "</div>" +
+          '<div class="flex gap-2 mt-2"><button class="btn btn-xs" data-lagre-rolle="' + r.id +
+          '">Lagre</button>' +
+          (r.aktiv
+            ? '<button class="btn btn-xs btn-outline" data-av-rolle="' + r.id + '">Deaktiver</button>'
+            : '<button class="btn btn-xs btn-outline" data-paa-rolle="' + r.id + '">Aktiver igjen</button>') +
+          "</div></details>";
+      }).join("");
+
+      var innebygderader = roller.innebygde.map(function (r) {
+        return "<details class='mb-1'><summary class='cursor-pointer text-sm'>" + esc(r.navn) +
+          '<span class="opacity-70"> — ' + r.rettigheter.length + " rettigheter</span></summary>" +
+          "<p class='text-xs opacity-70 pl-3'>" +
+          r.rettigheter.map(function (x) {
+            var v = roller.vokabular.find(function (o) { return o.rett === x; });
+            return esc(v ? v.beskrivelse : x);
+          }).join(" · ") + "</p></details>";
+      }).join("");
+
+      rollekort = card("Roller",
+        '<p class="text-sm opacity-70 mb-3">De innebygde rollene dekker de vanlige tilfellene. ' +
+        "Trenger dere noe annet — «en som bare fakturerer», «en controller uten lønn» — kan dere " +
+        "sette det sammen selv av rettighetene under.</p>" +
+        "<h3 class='font-semibold text-sm mb-1'>Innebygde</h3>" +
+        "<div class='mb-3'>" + innebygderader + "</div>" +
+        "<h3 class='font-semibold text-sm mb-1'>Egne roller</h3>" +
+        (egnerader || '<p class="text-sm opacity-70 mb-2">Ingen egne roller ennå.</p>') +
+        "<details class='mt-2'><summary class='cursor-pointer text-sm font-semibold'>Ny rolle</summary>" +
+        '<input id="ny-rolle-navn" class="input input-sm input-bordered w-64 my-2" placeholder="Navn på rollen">' +
+        rutenett("ny", []) +
+        '<button id="ny-rolle" class="btn btn-sm mt-2">Opprett</button></details>');
+    }
+
     var tilgangskort = "";
     if (tilgang) {
       var medlemsrader = tilgang.medlemmer.map(function (m) {
@@ -3739,8 +3819,9 @@
           : !m.aktiv
             ? '<button class="btn btn-xs btn-outline" data-restore="' + m.person_id + '">Gi tilgang igjen</button>'
             : '<select class="select select-xs select-bordered w-28 mr-1" data-rolle="' + m.person_id + '">' +
-              ["admin", "bokforing", "les", "ansatt"].map(function (r) {
-                return '<option value="' + r + '"' + (m.rolle === r ? " selected" : "") + ">" + r + "</option>";
+              rollevalg(roller).map(function (r) {
+                return '<option value="' + esc(r) + '"' + (m.rolle === r ? " selected" : "") + ">" +
+                  esc(r) + "</option>";
               }).join("") +
               '</select><button class="btn btn-xs btn-outline" data-revoke="' + m.person_id + '">Fjern</button>';
         return "<tr" + (m.aktiv ? "" : ' class="opacity-50"') + "><td>" + esc(m.navn) + "</td><td>" +
@@ -3762,9 +3843,9 @@
         '<div class="flex gap-2 items-center flex-wrap mb-3">' +
         '<input id="inv-epost" class="input input-sm input-bordered w-64" placeholder="e-postadresse">' +
         '<select id="inv-rolle" class="select select-sm select-bordered">' +
-        '<option value="ansatt">ansatt (egne timer, utlegg, lønnsslipp)</option>' +
-        '<option value="les">les</option><option value="bokforing">bokføring</option>' +
-        '<option value="admin">admin</option></select>' +
+        rollevalg(roller).map(function (r) {
+          return '<option value="' + esc(r) + '">' + esc(r) + "</option>";
+        }).join("") + "</select>" +
         '<button id="inv-send" class="btn btn-sm">Inviter</button></div>' +
         (invitasjonsrader
           ? "<h3 class='font-semibold text-sm mb-1'>Venter på innlogging</h3>" +
@@ -3781,7 +3862,54 @@
       card("Autoriserte byråer (Finanstilsynet-verifisert)",
         '<table class="table table-sm"><thead><tr><th>Navn</th><th>Orgnr</th><th>Type</th>' +
         "<th>Klienter</th><th></th></tr></thead><tbody>" + directory + "</tbody></table>") +
-      tilgangskort + integrasjonskort);
+      tilgangskort + rollekort + integrasjonskort);
+    if (roller) {
+      var valgte = function (prefix) {
+        return Array.prototype.slice
+          .call(app.querySelectorAll('[data-rett^="' + prefix + '|"]'))
+          .filter(function (b) { return b.checked; })
+          .map(function (b) { return b.dataset.rett.split("|")[1]; });
+      };
+      document.getElementById("ny-rolle").onclick = async function () {
+        try {
+          await post("/companies/" + id + "/roles", {
+            navn: document.getElementById("ny-rolle-navn").value.trim(),
+            rettigheter: valgte("ny"),
+          });
+          toast("Rollen er opprettet", true);
+          renderOppdrag(id);
+        } catch (error) { toast(error.message, false); }
+      };
+      app.querySelectorAll("[data-lagre-rolle]").forEach(function (button) {
+        button.onclick = async function () {
+          try {
+            await send("PUT", "/companies/" + id + "/roles/" + button.dataset.lagreRolle,
+              { rettigheter: valgte(button.dataset.lagreRolle) });
+            toast("Rettighetene er lagret", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+      app.querySelectorAll("[data-av-rolle]").forEach(function (button) {
+        button.onclick = async function () {
+          if (!confirm("Deaktivere rollen? De som har den mister tilgangen med én gang.")) return;
+          try {
+            await post("/companies/" + id + "/roles/" + button.dataset.avRolle + "/deactivate", {});
+            toast("Rollen er deaktivert", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+      app.querySelectorAll("[data-paa-rolle]").forEach(function (button) {
+        button.onclick = async function () {
+          try {
+            await post("/companies/" + id + "/roles/" + button.dataset.paaRolle + "/restore", {});
+            toast("Rollen er aktiv igjen", true);
+            renderOppdrag(id);
+          } catch (error) { toast(error.message, false); }
+        };
+      });
+    }
     if (tilgang) {
       document.getElementById("inv-send").onclick = async function () {
         try {

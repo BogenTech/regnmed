@@ -347,6 +347,171 @@ impl Rett {
         )
     }
 
+    /// Området rettigheten hører til — samme inndeling som portalens
+    /// meny, så et rutenett over rettigheter kan leses av noen som
+    /// kjenner produktet og ikke koden.
+    pub fn gruppe(self) -> &'static str {
+        use Rett::*;
+        match self {
+            BilagLes => "Bilag",
+            VedleggSkriv => "Bilag",
+            BilagLastOpp => "Bilag",
+            BilagBokfor => "Bilag",
+            PeriodeLaas => "Bilag",
+            RapportLes => "Rapporter",
+            MvaOrdningAdmin => "Rapporter",
+            FakturaLes => "Faktura",
+            FakturaSkriv => "Faktura",
+            FakturaSend => "Faktura",
+            FakturamalLes => "Faktura",
+            FakturamalSkriv => "Faktura",
+            TilbudLes => "Faktura",
+            TilbudSkriv => "Faktura",
+            PurringLes => "Faktura",
+            PurringSkriv => "Faktura",
+            ReskontroLes => "Reskontro",
+            ReskontroSkriv => "Reskontro",
+            BankLes => "Bank",
+            BankAvstem => "Bank",
+            OcrLes => "Bank",
+            OcrImport => "Bank",
+            BetalingLes => "Betaling",
+            BetalingOpprett => "Betaling",
+            BetalingGodkjenn => "Betaling",
+            BetalingOppgjor => "Betaling",
+            ValutaLes => "Bank",
+            ValutaSkriv => "Bank",
+            ProduktLes => "Produkter",
+            ProduktSkriv => "Produkter",
+            LagerLes => "Produkter",
+            LagerSkriv => "Produkter",
+            AnleggLes => "Anlegg",
+            AnleggSkriv => "Anlegg",
+            TimerLesEgne => "Timer",
+            TimerLesAlle => "Timer",
+            TimerRapportLes => "Timer",
+            TimerSkrivEgne => "Timer",
+            TimerSkrivAlle => "Timer",
+            TimerFakturer => "Timer",
+            TimerLaas => "Timer",
+            UtleggLesEgne => "Utlegg",
+            UtleggLesAlle => "Utlegg",
+            UtleggSkrivEgne => "Utlegg",
+            UtleggGodkjenn => "Utlegg",
+            UtleggUtbetal => "Utlegg",
+            LonnLes => "Lønn",
+            LonnsslippLesEgen => "Lønn",
+            LonnsslippLesAlle => "Lønn",
+            LonnSkriv => "Lønn",
+            LonnKjor => "Lønn",
+            BudsjettLes => "Rapporter",
+            BudsjettSkriv => "Rapporter",
+            DimensjonLes => "Dimensjoner",
+            DimensjonSkriv => "Dimensjoner",
+            AksjebokLes => "Aksjonærer",
+            AksjebokSkriv => "Aksjonærer",
+            AttesteringLes => "Attestering",
+            AttesteringUtfor => "Attestering",
+            AttesteringAdmin => "Attestering",
+            EpostInnLes => "Bilag",
+            EpostInnAdmin => "Bilag",
+            ForankringLes => "Rapporter",
+            SelskapLes => "Selskap",
+            SelskapAdmin => "Selskap",
+            MedlemAdmin => "Selskap",
+            KontaktSkriv => "Reskontro",
+            OppdragLes => "Selskap",
+            OppdragAdmin => "Selskap",
+            IntegrasjonLes => "Selskap",
+            IntegrasjonAdmin => "Selskap",
+            MigreringAdmin => "Selskap",
+        }
+    }
+
+    /// Hva rettigheten lar deg gjøre, på norsk.
+    ///
+    /// `TIMER_LES_ALLE` er for oss; «Se alles timer» er for den som skal
+    /// sette sammen en rolle. Teksten hører hjemme her og ikke i
+    /// portalen: da finnes det bare én liste, og en ny rettighet kan
+    /// ikke bli stående uten forklaring.
+    pub fn beskrivelse(self) -> &'static str {
+        use Rett::*;
+        match self {
+            BilagLes => "Se bilag og vedlegg",
+            VedleggSkriv => "Legge vedlegg på et bilag",
+            BilagLastOpp => "Sende dokument til innboksen",
+            BilagBokfor => "Bokføre fra innboksen",
+            PeriodeLaas => "Låse en periode",
+            RapportLes => "Se regnskapsrapportene",
+            MvaOrdningAdmin => "Endre mva-terminordning",
+            FakturaLes => "Se fakturaer",
+            FakturaSkriv => "Utstede faktura og kreditnota",
+            FakturaSend => "Sende faktura på e-post",
+            FakturamalLes => "Se repeterende fakturaer",
+            FakturamalSkriv => "Endre repeterende fakturaer",
+            TilbudLes => "Se tilbud og ordre",
+            TilbudSkriv => "Lage tilbud og ordre",
+            PurringLes => "Se purringer og forfalte krav",
+            PurringSkriv => "Sende purring og inkassovarsel",
+            ReskontroLes => "Se kunder, leverandører og åpne poster",
+            ReskontroSkriv => "Endre kontakter og matche åpne poster",
+            BankLes => "Se bankavstemming",
+            BankAvstem => "Importere kontoutdrag og matche",
+            OcrLes => "Se OCR-innbetalinger",
+            OcrImport => "Importere OCR-fil",
+            BetalingLes => "Se betalingslister",
+            BetalingOpprett => "Opprette betalingsliste",
+            BetalingGodkjenn => "Godkjenne betalingsliste",
+            BetalingOppgjor => "Registrere at betalingene er utført",
+            ValutaLes => "Se valutakurser",
+            ValutaSkriv => "Legge inn og hente valutakurser",
+            ProduktLes => "Se produktregisteret",
+            ProduktSkriv => "Endre produktregisteret",
+            LagerLes => "Se lagerbeholdning",
+            LagerSkriv => "Registrere lagerbevegelser og varetelling",
+            AnleggLes => "Se anleggsregisteret",
+            AnleggSkriv => "Registrere, avskrive og avhende anleggsmidler",
+            TimerLesEgne => "Se sine egne timer",
+            TimerLesAlle => "Se alles timer",
+            TimerRapportLes => "Se timeoversikt per prosjekt og ufakturert",
+            TimerSkrivEgne => "Føre sine egne timer",
+            TimerSkrivAlle => "Rette alles timer",
+            TimerFakturer => "Fakturere førte timer",
+            TimerLaas => "Låse timelisten for en måned",
+            UtleggLesEgne => "Se sine egne utlegg",
+            UtleggLesAlle => "Se alles utlegg",
+            UtleggSkrivEgne => "Sende inn eget utlegg og kjøregodtgjørelse",
+            UtleggGodkjenn => "Godkjenne og avvise utlegg",
+            UtleggUtbetal => "Registrere utbetaling av utlegg",
+            LonnLes => "Se ansattregisteret og lønnskjøringene",
+            LonnsslippLesEgen => "Se sin egen lønnsslipp",
+            LonnsslippLesAlle => "Se alles lønnsslipper",
+            LonnSkriv => "Registrere ansatte",
+            LonnKjor => "Kjøre lønn",
+            BudsjettLes => "Se budsjett og avviksrapport",
+            BudsjettSkriv => "Lage og fastsette budsjett",
+            DimensjonLes => "Se avdelinger og prosjekter",
+            DimensjonSkriv => "Endre avdelinger og prosjekter",
+            AksjebokLes => "Se aksjeeierboken",
+            AksjebokSkriv => "Registrere aksjonærer, hendelser og utbytte",
+            AttesteringLes => "Se attesteringssporet",
+            AttesteringUtfor => "Attestere bilag",
+            AttesteringAdmin => "Sette attesteringspolicyen",
+            EpostInnLes => "Se e-post inn til innboksen",
+            EpostInnAdmin => "Styre mottaksadresse og avsenderliste",
+            ForankringLes => "Se forankringen av hovedboken",
+            SelskapLes => "Se firmaopplysningene",
+            SelskapAdmin => "Endre firmaopplysningene",
+            MedlemAdmin => "Gi og fjerne tilgang",
+            KontaktSkriv => "Endre kontaktinfo på en part",
+            OppdragLes => "Se oppdrag",
+            OppdragAdmin => "Inngå og avslutte oppdrag",
+            IntegrasjonLes => "Se integrasjoner",
+            IntegrasjonAdmin => "Slippe til en integrasjon",
+            MigreringAdmin => "Importere regnskap fra et annet system",
+        }
+    }
+
     /// Hva denne rettigheten også gir. `_ALLE` gir `_EGNE`: den som ser
     /// alles timer ser selvsagt sine egne, og uten regelen måtte hver
     /// bunt huske begge.
@@ -900,6 +1065,33 @@ mod tests {
         assert!(!Rolle::Revisor.har(Rett::LonnKjor));
         // Sin egen slipp har enhver ansatt, uavhengig av dette.
         assert!(Rolle::Ansatt.har(Rett::LonnsslippLesEgen));
+    }
+
+    /// Hver rettighet må ha en forklaring og en gruppe. Uten testen kan
+    /// en ny rettighet bli stående i rutenettet uten tekst — og en
+    /// avkrysningsboks uten forklaring er verre enn ingen boks.
+    #[test]
+    fn hver_rettighet_har_forklaring_og_gruppe() {
+        for r in Rett::ALLE {
+            assert!(
+                !r.beskrivelse().is_empty(),
+                "{} mangler forklaring",
+                r.slug()
+            );
+            assert!(!r.gruppe().is_empty(), "{} mangler gruppe", r.slug());
+            // Forklaringen skal være for et menneske, ikke slug-en igjen.
+            assert_ne!(r.beskrivelse(), r.slug(), "{}", r.slug());
+        }
+    }
+
+    /// Slug-en må kunne leses tilbake — den er det #60 lagrer.
+    #[test]
+    fn slugen_er_rundtur() {
+        for r in Rett::ALLE {
+            assert_eq!(Rett::fra_slug(r.slug()), Some(*r), "{}", r.slug());
+        }
+        assert_eq!(Rett::fra_slug("FAKTURA_ALT"), None);
+        assert_eq!(Rett::fra_slug(""), None);
     }
 
     /// Rettighetslisten portalen viser skal være komplett og sortert
