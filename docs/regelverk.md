@@ -61,6 +61,9 @@ A recurring checklist, done as one reviewed commit in December:
 5. Frister (mva-terminer, a-melding when relevant) unchanged?
 6. RF-1086: ny årgang av skjema eller kodelister? (Skatteetatens
    SBS-nyheter melder endringer i kodelister separat fra skjemaet.)
+7. Maskinporten-nøklene: hvor lenge til de utløper? En utløpt nøkkel
+   feiler ved neste tokenforespørsel — altså ved en frist. Datoene står
+   per nøkkel i Samarbeidsportalen (docs/secrets.md).
 
 Sources to watch: Skatteetatens API-dokumentasjon og SAF-T-sider,
 statsbudsjettet (regjeringen.no), lovdata endringslover for bokførings-
