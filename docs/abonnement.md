@@ -124,6 +124,9 @@ regnmed abonnement --orgnr 999888777 --aksjon tegn --note "Avtale 2026-014"
 regnmed abonnement --orgnr 999888777 --aksjon avslutt --til 2026-09-01
 regnmed abonnement-faktura --orgnr <driftsselskapets orgnr>          # hele måneden
 regnmed abonnement-faktura --orgnr <drift> --bare-orgnr 999888777    # etterfakturering
+regnmed abonnement-pris                                              # vis prislisten
+regnmed abonnement-pris --plan standard --pris-ore 12900 \
+    --fra 2027-01-01 --kilde "prisvedtak 2026-12-01"                 # prisendring = én kommando
 ```
 
 Kunden ser statusen sin i `/me` og som banner i portalen; banneret er

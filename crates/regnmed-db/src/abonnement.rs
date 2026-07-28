@@ -107,6 +107,57 @@ pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<
     Ok(())
 }
 
+/// Ny rad i prislisten (prisen er daterte data — en endring er en ny
+/// rad med kilde, aldri en omskriving; docs/abonnement.md §4).
+pub async fn sett_pris(
+    pool: &PgPool,
+    plan: &str,
+    pris_ore_per_mnd: i64,
+    fra: NaiveDate,
+    kilde: &str,
+) -> Result<()> {
+    ensure!(!kilde.trim().is_empty(), "prisraden må ha en kilde");
+    ensure!(pris_ore_per_mnd >= 0, "prisen kan ikke være negativ");
+    sqlx::query(
+        "insert into abonnement_pris (plan, pris_ore_per_mnd, valid_from, kilde)
+         values ($1,$2,$3,$4)",
+    )
+    .bind(plan)
+    .bind(pris_ore_per_mnd)
+    .bind(fra)
+    .bind(kilde.trim())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct Prisrad {
+    pub plan: String,
+    pub pris_ore_per_mnd: i64,
+    pub valid_from: NaiveDate,
+    pub kilde: String,
+}
+
+/// Hele prislisten, nyeste først per plan.
+pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
+    let rows = sqlx::query(
+        "select plan, pris_ore_per_mnd, valid_from, kilde
+         from abonnement_pris order by plan, valid_from desc",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| Prisrad {
+            plan: r.get("plan"),
+            pris_ore_per_mnd: r.get("pris_ore_per_mnd"),
+            valid_from: r.get("valid_from"),
+            kilde: r.get("kilde"),
+        })
+        .collect())
+}
+
 /// Prisen som gjelder på en dato, i øre per måned eks. mva.
 pub async fn pris_pa(pool: &PgPool, plan: &str, dato: NaiveDate) -> Result<i64> {
     let pris: Option<i64> = sqlx::query_scalar(

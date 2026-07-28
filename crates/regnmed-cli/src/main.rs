@@ -58,6 +58,25 @@ enum Command {
         #[arg(long)]
         note: Option<String>,
     },
+    /// Vis prislisten, eller legg til en ny datert prisrad
+    /// (docs/abonnement.md §4). Prisen er data: en endring er en ny rad
+    /// med kilde, aldri en omskriving — eksisterende rader står som
+    /// historikk, og fakturaen bruker prisen som gjelder på
+    /// faktureringsdagen.
+    AbonnementPris {
+        /// Plan (utelat alt for å bare vise prislisten)
+        #[arg(long)]
+        plan: Option<String>,
+        /// Ny pris i ØRE per måned eks. mva (9900 = 99 kr)
+        #[arg(long)]
+        pris_ore: Option<i64>,
+        /// Dato den nye prisen gjelder fra (YYYY-MM-DD); default i dag
+        #[arg(long)]
+        fra: Option<chrono::NaiveDate>,
+        /// Vedtaksreferansen (påkrevd når pris settes)
+        #[arg(long)]
+        kilde: Option<String>,
+    },
     /// Fakturer inneværende måned for alle selskaper med dekning, inn i
     /// DRIFTSSELSKAPETS hovedbok (docs/abonnement.md, #65). Idempotent;
     /// kjøres månedlig (cron/CronJob). Driftsselskapet pekes ut med
@@ -241,6 +260,41 @@ async fn main() -> Result<()> {
             }
             let status = regnmed_db::abonnement::status_for(&pool, company_id).await?;
             println!("status nå: {}", status.slug());
+        }
+        Command::AbonnementPris {
+            plan,
+            pris_ore,
+            fra,
+            kilde,
+        } => {
+            if let (Some(plan), Some(pris_ore)) = (&plan, pris_ore) {
+                let kilde = kilde
+                    .as_deref()
+                    .context("en ny pris krever --kilde med vedtaksreferansen")?;
+                let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                    .fetch_one(&pool)
+                    .await?;
+                let fra = fra.unwrap_or(idag);
+                regnmed_db::abonnement::sett_pris(&pool, plan, pris_ore, fra, kilde).await?;
+                println!(
+                    "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {fra}",
+                    pris_ore / 100,
+                    pris_ore % 100
+                );
+            } else if plan.is_some() || pris_ore.is_some() || kilde.is_some() {
+                anyhow::bail!("en ny pris krever både --plan, --pris-ore og --kilde");
+            }
+            println!("prislisten (nyeste rad per plan gjelder fra sin dato):");
+            for p in regnmed_db::abonnement::list_priser(&pool).await? {
+                println!(
+                    "  {:10} {:>8},{:02} kr/mnd  fra {}  — {}",
+                    p.plan,
+                    p.pris_ore_per_mnd / 100,
+                    p.pris_ore_per_mnd % 100,
+                    p.valid_from,
+                    p.kilde
+                );
+            }
         }
         Command::AbonnementFaktura { orgnr, bare_orgnr } => {
             let orgnr = orgnr
