@@ -4,6 +4,7 @@
   import { me, loadMe } from "./lib/me.svelte.js";
   import { seksjonNavn } from "./lib/meny.js";
   import { toast } from "./lib/toast.svelte.js";
+  import { koSend } from "./lib/ko.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
@@ -12,10 +13,16 @@
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
   import Faktura from "./sections/faktura/Faktura.svelte";
   import Reskontro from "./sections/reskontro/Reskontro.svelte";
+  import Bilag from "./sections/bilag/Bilag.svelte";
 
   // Porterte seksjoner (#76 steg 2) — resten er plassholdere til
   // dagens portal inntil de flyttes hit.
-  const SECTIONS = { oversikt: Oversikt, faktura: Faktura, reskontro: Reskontro };
+  const SECTIONS = {
+    oversikt: Oversikt,
+    faktura: Faktura,
+    reskontro: Reskontro,
+    bilag: Bilag,
+  };
 
   let boot = $state({ done: false, error: null });
 
@@ -34,6 +41,11 @@
     boot.done = true;
   }
   start();
+
+  // Offline-køen for kvitteringsfoto (#48): tømmes ved oppstart og når
+  // nettet kommer tilbake.
+  window.addEventListener("online", koSend);
+  koSend();
 
   $effect(() => {
     if (boot.done && session.authed && !me.loaded) {
