@@ -865,6 +865,25 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    normen for SaaS), Vipps ev. tilleggs-skinne senere.
    `/me` bærer status; portalbanner i skallet varsler — serveren
    sperrer. Byråavtaler/moduler bevisst utsatt (dokumentert retning).
+54. ✅ Kortskinnen (docs/abonnement.md §5, closed #74): kort er
+   STANDARDVEIEN fra dag én — faktura krever at noen SER innbetalingen
+   (bankfiler manuelle til bank-API finnes), webhook gjør ikke.
+   Stripe, men ALDRI Stripe Billing: vår fakturamotor er autoritativ,
+   PSP-en er bare en raskere vei til «betalt» på samme reskontropost —
+   derfor utskiftbar (Nets Easy/Dintero er byttekandidater ved volum).
+   `regnmed-gov::stripe` hand-rolled (kunde, Checkout setup-modus,
+   off-session PaymentIntent m/ FAKTURA-ID SOM IDEMPOTENSNØKKEL,
+   webhook-verifisering m/ egen HMAC-SHA256 testet mot RFC 4231 + begge
+   retninger så testene kan signere). Migration 0043: `betalingskort`
+   (referanser + brand/last4 — kortnummer finnes aldri hos oss),
+   `kortbetaling` insert-only m/ UNIK payment_intent = webhook-replay
+   er no-op. Webhooken bokfører 1570 Kortoppgjør mot 1500 m/ part +
+   reskontro-match i ÉN tx m/ loggraden; feilede trekk logges (#75 tar
+   oppfølgingen). Selvbetjent i portalen: Legg til kort (hosted
+   checkout) + Start abonnement (kort-først, SELSKAP_ADMIN — virker
+   også sperret). Config STRIPE_SECRET_KEY+STRIPE_WEBHOOK_SECRET
+   (begge eller ingen) + REGNMED_DRIFT_ORGNR på API-et; uten = skinnen
+   AV og portalen sier det. Live-verifisering venter på Stripe-konto.
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

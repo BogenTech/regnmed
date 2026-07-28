@@ -43,7 +43,11 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    driftsselskapet i regnmed (BRREG, som alle andre) og sett dets orgnr
    som `REGNMED_DRIFT_ORGNR` i `deploy/prod/abonnement-faktura.yaml` —
    CronJob-en er prod-only (backup.yaml-mønsteret) fordi lokalklyngen
-   ikke har noe driftsselskap.
+   ikke har noe driftsselskap. Kortskinnen (#74): legg
+   `STRIPE_SECRET_KEY` og `STRIPE_WEBHOOK_SECRET` i en secret
+   out-of-band (aldri i git) og sett dem + `REGNMED_DRIFT_ORGNR` på
+   regnmed-api og CronJob-en; pek Stripes webhook på
+   `https://<api-host>/stripe/webhook`.
 6. `kubectl apply -k deploy/prod`.
 
 ## Backups — restored weekly, or they don't count

@@ -100,18 +100,42 @@ måneden; kundeparten opprettes fra selskapets orgnr ved første kjøring.
 Innbetalingen kommer inn som alle andre — OCR/bank på KID — og lukker
 reskontroposten. Purremaskineriet (#29) håndterer resten.
 
-**Betalingsleverandør er med vilje ikke valgt i v1**, for faktura+KID
-trenger ingen: null transaksjonsgebyr, null PCI-omfang, null
-hemmeligheter, og B2B-kunder aksepterer faktura. Når tier 2 bygges er
-retningen **kort først** (vurdert i #65, bekreftet 2026-07-28):
-bedrifter betaler SaaS-abonnementer med firmakort, og for gjentagende
-kortbetaling er **Stripe** den sterkeste plattformen (Billing, SCA,
-automatisk kortfornyelse, dunning) — redirect-/Checkout-basert, så
-kortdata aldri berører oss. Vipps MobilePay er en mulig
-TILLEGGS-skinne for ENK/småbedrifter senere, ikke hovedvalget.
-PSP-nøkler er hemmeligheter og bor utenfor repoet (docs/secrets.md);
-webhook-mottak må være idempotent. Ingen av delene endrer modellen her
-— en PSP er bare en raskere vei til «betalt» på samme reskontropost.
+**Kort er standardveien fra dag én** (#74, besluttet 2026-07-28):
+faktura+KID krever at noen *ser* innbetalingen — bankfiler importeres
+manuelt til det finnes bank-API — mens et korttrekk bekreftes av en
+webhook uten et menneske i nærheten. Leverandøren er **Stripe**
+(sterkest på gjentagende kort: SCA, kortfornyelse; vurdert mot
+Nets/Nexi Easy og norske Dintero, som begge priser ved avtale og er
+reelle byttekandidater ved volum). Prinsippet som gjør byttet billig:
+**vår fakturamotor er autoritativ** — aldri Stripe
+Billing/Subscriptions; Stripe er bare en raskere vei til «betalt» på
+samme reskontropost.
+
+Flyten, alle ledd idempotente:
+
+1. Admin legger inn kort i portalen: Stripe Checkout i **setup-modus**
+   (hosted — kortdata berører oss aldri; vi lagrer referanser og
+   brand/last4). Kortet kommer tilbake via webhook.
+2. Selvbetjent tegning: admin velger plan og starter abonnementet —
+   kort-først; uten kort avtales faktura med drift.
+3. Månedlig kjøring utsteder fakturaen som før, og trekker kortet
+   off-session med **fakturaens id som idempotensnøkkel** — samme
+   faktura kan aldri trekkes to ganger, uansett omkjøringer.
+4. Webhooken (signaturverifisert, HMAC-SHA256 hand-rolled og testet mot
+   RFC 4231) bokfører betalingsbilaget (1570 Kortoppgjør mot 1500 med
+   part) og lukker reskontroposten i ÉN transaksjon med loggraden i
+   `kortbetaling`; unikheten på payment_intent gjør replay til en
+   no-op. Feilede trekk logges — purring/sperre tar oppfølgingen (#75).
+5. Stripe-utbetalingen til driftskontoen avstemmes i den ordinære
+   bankmotoren (1570 → 1920, gebyret kostnadsføres).
+
+Konfig: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (begge eller
+ingen; nøkler er hemmeligheter og bor utenfor repoet, docs/secrets.md)
++ `REGNMED_DRIFT_ORGNR` på API-et (webhooken må vite hvilken hovedbok
+trekket hører hjemme i). Uten nøklene er kortskinnen AV og portalen
+sier det. Vipps MobilePay er en mulig tilleggs-skinne senere;
+merchant-of-record (Paddle o.l.) er avvist — de blir selger, og det
+kolliderer med at vi fører vårt eget regnskap i vårt eget system.
 
 ## 6. Driften
 

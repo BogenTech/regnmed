@@ -312,9 +312,49 @@ async fn main() -> Result<()> {
             if utfall.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }
+            // Kortskinnen (#74): trekk kortet for hver nyutstedt faktura
+            // der kunden har aktivt kort. Idempotensnøkkelen er
+            // fakturaens id, så en omkjøring kan aldri trekke to ganger;
+            // webhooken bokfører når trekket bekreftes.
+            let stripe = std::env::var("STRIPE_SECRET_KEY").ok().map(|key| {
+                regnmed_gov::stripe::Stripe::new(
+                    &key,
+                    std::env::var("STRIPE_API_BASE").ok().as_deref(),
+                )
+            });
             for u in &utfall {
                 match (&u.invoice_no, &u.detail) {
-                    (Some(no), _) => println!("{}: faktura {no}", u.company_navn),
+                    (Some(no), _) => {
+                        println!("{}: faktura {no}", u.company_navn);
+                        let (Some(stripe), Some(invoice_id), Some(gross)) =
+                            (&stripe, u.invoice_id, u.gross_ore)
+                        else {
+                            continue;
+                        };
+                        let kort = regnmed_db::abonnement::kort_for(&pool, u.company_id).await?;
+                        let Some(kort) = kort.filter(|k| k.aktiv) else {
+                            continue;
+                        };
+                        match stripe
+                            .charge_invoice(
+                                gross,
+                                &kort.stripe_customer_id,
+                                &kort.payment_method_id,
+                                &invoice_id.to_string(),
+                                &u.company_id.to_string(),
+                                &format!("regnmed abonnement, faktura {no}"),
+                            )
+                            .await
+                        {
+                            Ok((intent, status)) => {
+                                println!("  korttrekk {intent}: {status}")
+                            }
+                            // Et feilet trekk stopper ikke resten:
+                            // fakturaen står åpen, purring/sperre (#75)
+                            // tar oppfølgingen.
+                            Err(e) => println!("  korttrekk FEILET: {e:#}"),
+                        }
+                    }
                     (None, Some(detail)) => println!("{}: {detail}", u.company_navn),
                     (None, None) => {}
                 }

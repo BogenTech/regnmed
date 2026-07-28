@@ -84,6 +84,8 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         verifier: Arc::new(verifier),
         mailq: None,
         rate: Default::default(),
+        stripe: None,
+        drift_orgnr: None,
     })
 }
 

@@ -1,6 +1,7 @@
 //! HTTP API for regnmed. Library crate so integration tests can build the
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
+pub mod abonnement;
 pub mod aksjebok;
 pub mod anchor;
 pub mod asset;
@@ -54,6 +55,21 @@ pub struct AppState {
     pub mailq: Option<async_nats::jetstream::Context>,
     /// Per-integration rate limiting (docs/integrations.md, #45).
     pub rate: Arc<auth::RateLimiter>,
+    /// Kortskinnen (#74, docs/abonnement.md §5); None når
+    /// STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET ikke er satt —
+    /// endepunktene sier da fra i stedet for å late som.
+    pub stripe: Option<StripeCfg>,
+    /// Driftsselskapets orgnr (REGNMED_DRIFT_ORGNR) — hovedboken
+    /// abonnementstrekkene bokføres i.
+    pub drift_orgnr: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct StripeCfg {
+    pub secret_key: String,
+    pub webhook_secret: String,
+    /// Overstyrbar base-URL så tester kan peke mot en mock.
+    pub api_base: Option<String>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -449,6 +465,19 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/settings",
             get(settings::get_settings).put(settings::update_settings),
+        )
+        .route(
+            "/companies/{company_id}/subscription",
+            get(abonnement::subscription_status).post(abonnement::start_subscription),
+        )
+        .route(
+            "/companies/{company_id}/subscription/card-setup",
+            axum::routing::post(abonnement::card_setup),
+        )
+        // Åpen rute: autentisert av webhook-signaturen, ikke av et token.
+        .route(
+            "/stripe/webhook",
+            axum::routing::post(abonnement::stripe_webhook),
         )
         .route(
             "/companies/{company_id}/parties/{party_id}/contact",

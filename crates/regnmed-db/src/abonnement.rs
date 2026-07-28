@@ -107,6 +107,195 @@ pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<
     Ok(())
 }
 
+// ---------------------------------------------------------------------
+// Kortskinnen (#74): lagret kort og bokføring av trekk.
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct Kort {
+    pub stripe_customer_id: String,
+    pub payment_method_id: String,
+    pub brand: String,
+    pub last4: String,
+    pub aktiv: bool,
+}
+
+pub async fn kort_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Kort>> {
+    let row = sqlx::query(
+        "select stripe_customer_id, payment_method_id, brand, last4, aktiv
+         from betalingskort where company_id = $1",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| Kort {
+        stripe_customer_id: r.get("stripe_customer_id"),
+        payment_method_id: r.get("payment_method_id"),
+        brand: r.get("brand"),
+        last4: r.get("last4"),
+        aktiv: r.get("aktiv"),
+    }))
+}
+
+/// Lagrer (eller erstatter) selskapets kort. Nytt kort overtar —
+/// tilstand, ikke bevis; trekkloggen (`kortbetaling`) er beviset.
+pub async fn lagre_kort(
+    pool: &PgPool,
+    company_id: Uuid,
+    stripe_customer_id: &str,
+    payment_method_id: &str,
+    brand: &str,
+    last4: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into betalingskort
+             (company_id, stripe_customer_id, payment_method_id, brand, last4, aktiv)
+         values ($1,$2,$3,$4,$5,true)
+         on conflict (company_id) do update
+             set stripe_customer_id = $2, payment_method_id = $3,
+                 brand = $4, last4 = $5, aktiv = true, updated_at = now()",
+    )
+    .bind(company_id)
+    .bind(stripe_customer_id)
+    .bind(payment_method_id)
+    .bind(brand)
+    .bind(last4)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Registrerer utfallet av et korttrekk — webhookens ene jobb.
+///
+/// Idempotent: `payment_intent_id` er unik, så samme hendelse levert to
+/// ganger bokfører aldri to ganger (returnerer `false`). Ved suksess
+/// bokføres betalingsbilaget i DRIFTSSELSKAPETS hovedbok (1570
+/// Kortoppgjør mot 1500 med part) og reskontroposten lukkes — alt i ÉN
+/// transaksjon med loggraden.
+pub async fn registrer_kortbetaling(
+    pool: &PgPool,
+    drift_company_id: Uuid,
+    invoice_id: Uuid,
+    payment_intent_id: &str,
+    succeeded: bool,
+    belop_ore: i64,
+    detail: Option<&str>,
+) -> Result<bool> {
+    // Fakturaen må være driftsselskapets, og beløpet må stemme med
+    // fordringen — vi opprettet trekket selv, avvik er en feil.
+    let faktura = sqlx::query(
+        "select e.id as receivable_entry, e.amount_ore::bigint as gross,
+                p.party_no, i.invoice_no
+         from invoice i
+         join entry e on e.id = i.receivable_entry_id
+         join party p on p.id = i.party_id
+         where i.id = $1 and i.company_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(drift_company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("ukjent abonnementsfaktura for korttrekket")?;
+    let receivable_entry: Uuid = faktura.get("receivable_entry");
+    let gross: i64 = faktura.get("gross");
+    let party_no: String = faktura.get("party_no");
+    let invoice_no: i64 = faktura.get("invoice_no");
+
+    // Kundeselskapet identifiseres av kjøringsloggen (fakturaen ble
+    // skapt av fakturer_maned med run-rad i samme tx).
+    let kunde: Uuid =
+        sqlx::query_scalar("select company_id from abonnement_faktura_run where invoice_id = $1")
+            .bind(invoice_id)
+            .fetch_optional(pool)
+            .await?
+            .context("fakturaen er ikke en abonnementsfaktura (ingen kjøringsrad)")?;
+
+    crate::ensure_account(pool, drift_company_id, "1570", "Kortoppgjør").await?;
+    let idag: NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(pool)
+        .await?;
+
+    let mut tx = pool.begin().await?;
+    let nytt = sqlx::query(
+        "insert into kortbetaling
+             (id, company_id, invoice_id, payment_intent_id, status, belop_ore, detail)
+         values ($1,$2,$3,$4,$5,$6,$7)
+         on conflict (payment_intent_id) do nothing",
+    )
+    .bind(Uuid::new_v4())
+    .bind(kunde)
+    .bind(invoice_id)
+    .bind(payment_intent_id)
+    .bind(if succeeded { "succeeded" } else { "failed" })
+    .bind(belop_ore)
+    .bind(detail)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if nytt == 0 {
+        return Ok(false); // allerede registrert — webhook-replay
+    }
+    if !succeeded {
+        tx.commit().await?;
+        return Ok(true); // feilet trekk logges; purring/sperre tar resten (#75)
+    }
+
+    ensure!(
+        belop_ore == gross,
+        "trekket ({belop_ore} øre) stemmer ikke med fordringen ({gross} øre) for faktura {invoice_no}"
+    );
+
+    let draft = regnmed_core::voucher::VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: idag,
+        description: format!("Kortbetaling faktura {invoice_no}"),
+        reverses: None,
+        entries: vec![
+            regnmed_core::voucher::EntryDraft {
+                account_number: "1570".into(),
+                amount: regnmed_core::Ore(gross),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            regnmed_core::voucher::EntryDraft {
+                account_number: "1500".into(),
+                amount: regnmed_core::Ore(-gross),
+                vat_code: None,
+                description: None,
+                party_no: Some(party_no),
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    let posted =
+        crate::post_voucher_in(&mut tx, drift_company_id, &draft, "kortskinnen (webhook)").await?;
+    let betalings_entry: Uuid =
+        sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
+            .bind(posted.id)
+            .fetch_one(&mut *tx)
+            .await?;
+    // Matchen direkte i transaksjonen: fordringen (debet) mot
+    // betalingen (kredit) — samme part og konto by construction.
+    sqlx::query(
+        "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+         values ($1,$2,$3,$4,'kortskinnen (webhook)')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(receivable_entry)
+    .bind(betalings_entry)
+    .bind(gross)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Ny rad i prislisten (prisen er daterte data — en endring er en ny
 /// rad med kilde, aldri en omskriving; docs/abonnement.md §4).
 pub async fn sett_pris(
@@ -179,6 +368,10 @@ pub struct FakturaUtfall {
     /// Fakturanummer i driftsselskapet når fakturaen ble utstedt; None
     /// med `detail` når selskapet ble hoppet over eller feilet.
     pub invoice_no: Option<i64>,
+    /// Fakturaens id + brutto (inkl. mva) — det kortskinnen trenger for
+    /// å trekke (idempotensnøkkel og beløp).
+    pub invoice_id: Option<Uuid>,
+    pub gross_ore: Option<i64>,
     pub detail: Option<String>,
 }
 
@@ -241,18 +434,30 @@ pub async fn fakturer_maned(
         )
         .await;
         utfall.push(match resultat {
-            Ok(nr) => FakturaUtfall {
+            Ok(Some((nr, id, gross))) => FakturaUtfall {
                 company_id,
                 company_navn: navn,
-                invoice_no: nr,
-                // Ok(None) er de ufarlige tilfellene: måneden er alt
-                // fakturert, eller planen koster ingenting.
-                detail: nr.is_none().then(|| "hoppet over".into()),
+                invoice_no: Some(nr),
+                invoice_id: Some(id),
+                gross_ore: Some(gross),
+                detail: None,
+            },
+            // De ufarlige tilfellene: måneden er alt fakturert, eller
+            // planen koster ingenting.
+            Ok(None) => FakturaUtfall {
+                company_id,
+                company_navn: navn,
+                invoice_no: None,
+                invoice_id: None,
+                gross_ore: None,
+                detail: Some("hoppet over".into()),
             },
             Err(e) => FakturaUtfall {
                 company_id,
                 company_navn: navn,
                 invoice_no: None,
+                invoice_id: None,
+                gross_ore: None,
                 detail: Some(format!("{e:#}")),
             },
         });
@@ -268,7 +473,7 @@ async fn fakturer_en(
     kunde_navn: &str,
     plan: String,
     idag: NaiveDate,
-) -> Result<Option<i64>> {
+) -> Result<Option<(i64, Uuid, i64)>> {
     // Kundeparten i driftsselskapets reskontro, nøklet på orgnr.
     let party_no: Option<String> = sqlx::query_scalar(
         "select party_no from party
@@ -375,5 +580,9 @@ async fn fakturer_en(
     }
     resultat?;
     tx.commit().await?;
-    Ok(Some(utstedt.invoice_no))
+    Ok(Some((
+        utstedt.invoice_no,
+        utstedt.invoice_id,
+        utstedt.gross_ore,
+    )))
 }

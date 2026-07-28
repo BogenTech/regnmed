@@ -505,6 +505,32 @@
       "omskrevet historikk kan derfor bevises, ikke bare mistenkes.</p>" +
       '<button id="anchor-verify" class="btn btn-sm btn-outline">Verifiser kjeden mot forankringen</button>' +
       '<div id="anchor-result" class="mt-2"></div>');
+    // Abonnementskortet (#65/#74): status, plan og betalingskort.
+    // Kort er standardveien — portalen viser, SERVEREN håndhever.
+    var abo = await api("/companies/" + id + "/subscription").catch(function () { return null; });
+    var aboCard = "";
+    if (abo) {
+      var statusTekst = { aktiv: "Aktivt", prove: "Prøvetid til " + (abo.dato || ""),
+        frist: "Ubetalt — sperres " + (abo.dato || ""), sperret: "Sperret siden " + (abo.dato || "") }[abo.status] || abo.status;
+      var planValg = (abo.planer || []).map(function (p) {
+        return '<option value="' + esc(p.plan) + '">' + esc(p.plan) + " — " +
+          kr(p.pris_ore_per_mnd) + " kr/mnd eks. mva</option>";
+      }).join("");
+      aboCard = card("Abonnement",
+        '<p class="text-sm mb-2">Status: <b>' + esc(statusTekst) + "</b>" +
+        (abo.kort ? ' · kort ' + esc(abo.kort.brand) + " •••• " + esc(abo.kort.last4) : "") + "</p>" +
+        '<p class="text-sm opacity-70 mb-2">Alt er inkludert i begge planer — forskjellen er supportkanalen. ' +
+        "Kort er standardveien; beløpet trekkes automatisk for hver månedsfaktura.</p>" +
+        (abo.kort_mulig
+          ? '<div class="flex gap-2 flex-wrap items-center">' +
+            '<button id="abo-kort" class="btn btn-sm btn-outline">' +
+            (abo.kort ? "Bytt kort" : "Legg til kort") + "</button>" +
+            (abo.status !== "aktiv"
+              ? '<select id="abo-plan" class="select select-sm select-bordered">' + planValg + "</select>" +
+                '<button id="abo-start" class="btn btn-sm btn-primary">Start abonnement</button>'
+              : "") + "</div>"
+          : '<p class="text-xs opacity-60">Kortbetaling er ikke satt opp på denne installasjonen — abonnement avtales med drift.</p>'));
+    }
     var settings = await api("/companies/" + id + "/settings").catch(function () { return null; });
     var settingsCard = !settings ? "" : card("Firmaopplysninger — på salgsdokumentene",
       '<p class="text-sm opacity-70 mb-2">Adresse, kontonummer og selskapsform trykkes på faktura-PDF-en ' +
@@ -571,7 +597,24 @@
         : '<p class="opacity-70 text-sm">Ingen kurser ennå.</p>'));
     shell(id, "oversikt", stats + nokkeltallCard + importCard + card("Siste bilag",
       '<table class="table table-sm"><thead><tr><th>Bilag</th><th>Dato</th><th>Tekst</th></tr></thead>' +
-      "<tbody>" + recent + "</tbody></table>") + kurserCard + settingsCard + anchorCard);
+      "<tbody>" + recent + "</tbody></table>") + kurserCard + aboCard + settingsCard + anchorCard);
+    var aboKort = document.getElementById("abo-kort");
+    if (aboKort) aboKort.onclick = async function () {
+      try {
+        var svar = await post("/companies/" + id + "/subscription/card-setup", {});
+        location.href = svar.url; // Stripe hosted checkout — kortdata berører aldri oss
+      } catch (error) { toast(error.message, false); }
+    };
+    var aboStart = document.getElementById("abo-start");
+    if (aboStart) aboStart.onclick = async function () {
+      try {
+        await post("/companies/" + id + "/subscription",
+          { plan: document.getElementById("abo-plan").value });
+        toast("Abonnementet er aktivt", true);
+        companies = []; // /me-status er endret — hent på nytt
+        renderOversikt(id);
+      } catch (error) { toast(error.message, false); }
+    };
     var ratesFetch = document.getElementById("rates-fetch");
     if (ratesFetch) ratesFetch.onclick = async function () {
       var valutaer = prompt("Valutaer (kommaseparert):", "EUR,USD,SEK");

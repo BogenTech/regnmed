@@ -33,11 +33,33 @@ async fn main() -> Result<()> {
         println!("e-post-inn lytter på {}", regnmed_api::mailq_in::SUBJECT);
     }
 
+    // Kortskinnen (#74): begge nøklene eller ingen — en halv
+    // konfigurasjon er en feil, ikke en tilstand.
+    let stripe = match (
+        std::env::var("STRIPE_SECRET_KEY").ok(),
+        std::env::var("STRIPE_WEBHOOK_SECRET").ok(),
+    ) {
+        (Some(secret_key), Some(webhook_secret)) => Some(regnmed_api::StripeCfg {
+            secret_key,
+            webhook_secret,
+            api_base: std::env::var("STRIPE_API_BASE").ok(),
+        }),
+        (None, None) => None,
+        _ => anyhow::bail!(
+            "STRIPE_SECRET_KEY og STRIPE_WEBHOOK_SECRET må settes sammen (docs/abonnement.md)"
+        ),
+    };
+    if stripe.is_some() {
+        println!("kortskinnen er på (Stripe)");
+    }
+
     let app = router(AppState {
         pool,
         verifier,
         mailq,
         rate: Default::default(),
+        stripe,
+        drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the
