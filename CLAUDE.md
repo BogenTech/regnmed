@@ -851,8 +851,11 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    prøvetid/oppsigelse. Migration 0041: `abonnement` daterte
    dekningsrader m/ note (tegn=insert, avslutt=update valid_to alene),
    `abonnement_pris` datert insert-only prisliste m/ kilde
-   (satsregister-mønsteret; forslag 249 kr/mnd eks mva per selskap —
-   brukere koster aldri), `abonnement_faktura_run` unik per
+   (satsregister-mønsteret; PRISVEDTAK 2026-07-28 i migration 0042:
+   basis 49 kr/mnd selvbetjent, standard 99 kr/mnd m/ e-postsupport —
+   alt inkludert i begge, brukere koster aldri, skillet er
+   supportkanalen og ALDRI en funksjonssperre; konkurrentene verifisert
+   199–425 + moduler), `abonnement_faktura_run` unik per
    (selskap,år,måned) i SAMME tx som fakturaen; eksisterende selskaper
    sådd med åpen dekning. Fakturering = DOGFOOD: egen motor i
    driftsselskapets hovedbok (KID, reskontro, purring), `regnmed

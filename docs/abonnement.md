@@ -60,20 +60,34 @@ Migrasjon 0041, tre tabeller med kjente mønstre:
   måned kan ikke faktureres to ganger, og en feilet fakturering
   etterlater ingen rad og prøves igjen.
 
-## 4. Prisen (FORSLAG — endres ved prisvedtak)
+## 4. Prisen (vedtatt 2026-07-28, migrasjon 0042)
 
-Én plan, **`standard`, 249 kr/mnd eks. mva per selskap**. Ansatte,
-lesere og revisorer koster ingenting — prising per bruker ville
-straffet nettopp det vi vil ha mye av (timeføring, utlegg,
-selvbetjening). En prisendring er en ny rad i `abonnement_pris` med
-kilde, aldri en endring av en gammel.
+Markedet priser **modulene**: konkurrentene annonserer ~200 kr/mnd og
+tar 400–700 når kunden trenger bank, KID, lønn og timer (verifisert
+mot prissidene 2026-07-28 — Tripletex «fra 199», men lønn krever Pro
+479 + 65/lønnsbruker; Fiken 219 + 69 per modul per bruker; Conta
+209/339 årlig fakturert, lønn som tillegg; PowerOffice 425 + 9 kr per
+bilag). regnmed angriper strukturen: **alt er inkludert, brukere
+koster aldri, ingen bilagsgrenser** — og det eneste som prises er det
+eneste som faktisk koster noe per kunde, menneskelig support:
+
+| Plan | Pris (eks. mva, per selskap) | Forskjellen |
+| --- | --- | --- |
+| `basis` | **49 kr/mnd** | alt inkludert, selvbetjent (dokumentasjonen er supporten) |
+| `standard` | **99 kr/mnd** | alt inkludert + e-postsupport |
+
+Funksjonelt er planene identiske — skillet håndheves av
+supportkanalen (et menneske som ser på planen), ikke av koden, og skal
+forbli slik: en funksjonssperre ville gjeninnført modulmazen vi
+konkurrerer mot. En prisendring er en ny rad i `abonnement_pris` med
+kilde; eksisterende kunder beholder sin plan — grandfathering er
+gratis når prisen er daterte data.
 
 Bevisst utsatt, med retning: **byråavtaler** (byrået betaler rabattert
 for klientene — regnskapsførerne er distribusjonskanalen, og modellen
-her må formes med de første pilotbyråene, ikke gjettes); **moduler**
-(lønn som tillegg er bransjenormen; én plan til vi vet hvor grensen
-svir); gratisplan for sovende selskaper (en `abonnement_pris`-rad med
-pris 0 fakturerer ingenting — mekanismen finnes alt).
+her må formes med de første pilotbyråene, ikke gjettes); gratisplan
+for sovende selskaper (en rad med pris 0 fakturerer ingenting —
+mekanismen finnes alt).
 
 ## 5. Faktureringen: egen motor, ingen betalingsleverandør
 
