@@ -3,6 +3,7 @@
   // transaksjon på serveren (docs/bilagsinnboks.md) — skjemaet her fyller
   // bare ut linjene. Et forslag (#34) kan forhåndsutfylle dem; det er
   // ALLTID synlig som forslag, og ingenting bokføres før noen trykker.
+  import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
   import { today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -14,9 +15,9 @@
     return { account: "", amount: "", vat: "", party_no: null, avdeling: "", prosjekt: "" };
   }
 
-  let date = $state(forslag?.date || today());
-  let description = $state(forslag?.description || "");
-  let lines = $state(forslag?.lines || [tomLinje(), tomLinje()]);
+  let date = $state(untrack(() => forslag?.date || today()));
+  let description = $state(untrack(() => forslag?.description || ""));
+  let lines = $state(untrack(() => forslag?.lines || [tomLinje(), tomLinje()]));
 
   async function bokfor() {
     const payload = lines

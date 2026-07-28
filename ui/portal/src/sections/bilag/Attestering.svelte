@@ -2,6 +2,7 @@
   // Til attestering (#47): bilag som venter på en godkjenning.
   // Portalen viser køen — HÅNDHEVINGEN ligger i transaksjonene
   // (bokfor_inbox_document nekter selv-attestering over grensen).
+  import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
   import { kr, parseKr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -15,13 +16,11 @@
     inbox.filter((d) => d.status === "ny" && d.attestering !== "godkjent"),
   );
 
-  let aktiv = $state(!!policy?.aktiv);
-  let grense = $state(
-    policy?.belopsgrense_ore !== null && policy?.belopsgrense_ore !== undefined
+  let aktiv = $state(untrack(() => !!policy?.aktiv));
+  let grense = $state(untrack(() => policy?.belopsgrense_ore !== null && policy?.belopsgrense_ore !== undefined
       ? kr(policy.belopsgrense_ore)
-      : "",
-  );
-  let attestant = $state(policy?.attestant_person_id || "");
+      : "",));
+  let attestant = $state(untrack(() => policy?.attestant_person_id || ""));
 
   async function godkjenn(d) {
     try {

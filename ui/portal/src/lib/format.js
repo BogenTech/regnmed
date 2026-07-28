@@ -25,6 +25,12 @@ export function antallStr(milli) {
   return String(milli / 1000).replace(".", ",");
 }
 
+// Timeføring (docs/timer.md): minutter som heltall, redigerbart til
+// måneden låses eller timene faktureres.
+export function minutterTilTimer(min) {
+  return (min / 60).toFixed(2).replace(".", ",").replace(/,?0+$/, "") || "0";
+}
+
 export function parseAntall(text) {
   const value = Number(String(text).replace(/\s/g, "").replace(",", "."));
   if (!isFinite(value)) throw new Error("ugyldig antall: " + text);

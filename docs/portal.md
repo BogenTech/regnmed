@@ -15,7 +15,14 @@ distroless image.
 > `scripts/build-portal.sh`) og embeddes med `include_dir`, så
 > Rust-bygget — også kryssbygget i `build-images.sh` — aldri trenger
 > Node; én binær, én origin, samme temakontrakt, og dist har eget
-> budsjett i `scripts/frugality.sh`. Migrasjonsplanen står i #76.
+> budsjett i `scripts/frugality.sh`. En CI-jobb bygger portalen på nytt
+> og feiler hvis den innsjekkede dist-en avviker fra kilden.
+> Migrasjonsplanen står i #76.
+>
+> **Steg 2 er ferdig (2026-07-28):** alle seksjonene i menyen +
+> byråvisningen finnes i Svelte-appen. Det som gjenstår før flippen er
+> steg 3: bytte `/` til den nye appen, slette `app.js`, oppdatere
+> service worker + manifest, og reverifisere 375px-viewporten.
 
 ## Auth
 

@@ -2,6 +2,7 @@
   // Purring (#29): alltid en eksplisitt menneskelig handling —
   // forhåndsvis kravet (gebyrtak og rente hentes fra satsregisteret),
   // så registrer. Enveis trapp; serveren håndhever reglene.
+  import { untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -13,7 +14,7 @@
   let base = $derived("/companies/" + companyId + "/invoices/" + invoiceId + "/reminders");
 
   let history = $state(null);
-  let steg = $state(suggestedSteg);
+  let steg = $state(untrack(() => suggestedSteg));
   let frist = $state(new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10));
   let gebyr = $state(false);
   let rente = $state(false);

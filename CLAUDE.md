@@ -901,12 +901,14 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    består: Tailwind/daisyUI + temakontrakten, kompilert dist/ embeddes i
    binæren (app.css-presedensen: dist sjekkes inn, Rust-bygget trenger
    aldri node), én origin, PWA. Inkrementelt: ny app på /ny til
-   seksjonsparitet, så flippes / — planen står i #76. Steg 1 (stillas)
-   levert 2026-07-28: ui/portal/ (Vite + Svelte 5 + Tailwind/daisyUI,
+   seksjonsparitet, så flippes / — planen står i #76. Steg 1–2 levert
+   2026-07-28: ui/portal/ (Vite + Svelte 5 + Tailwind/daisyUI,
    scripts/build-portal.sh), PKCE/API/tema/skall/selskapsvalg portert,
-   include_dir-servering på /ny (browser-verifisert, dist-budsjett i
-   frugality.sh); seksjonene er lenkede plassholdere til dagens
-   portal.** Themes are daisyUI themes (user-selectable, third-party
+   include_dir-servering på /ny (dist-budsjett i frugality.sh + CI-jobb
+   som feiler hvis innsjekket dist avviker fra kilden), og ALLE
+   seksjonene + byråvisningen portert og browser-verifisert.
+   GJENSTÅR (steg 3, flippen): bytt / til ny app, slett app.js,
+   oppdater sw.js + manifest, reverifiser 375px.** Themes are daisyUI themes (user-selectable, third-party
    authorable as single CSS blocks); the theme contract and canonical
    theme definitions live in `../regnid/ui/themes.css` — the portal UI
    must reuse the same theme names/blocks so a user's theme feels

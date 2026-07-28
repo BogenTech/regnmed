@@ -1,6 +1,7 @@
 <script>
   // Tilbud→ordre→faktura (#31): utenfor hovedboken, redigerbar til
   // akseptert; enveis statuser, én ordre per tilbud.
+  import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
   import { kr, parseKr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -15,7 +16,7 @@
     bekreftet: "bekreftet", fakturert: "fakturert",
   };
 
-  let party = $state(parties[0]?.party_no || "");
+  let party = $state(untrack(() => parties[0]?.party_no || ""));
   let produkt = $state("");
   let desc = $state("");
   let price = $state("");

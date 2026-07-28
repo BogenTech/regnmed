@@ -9,19 +9,40 @@
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
   import Toasts from "./components/Toasts.svelte";
-  import Placeholder from "./sections/Placeholder.svelte";
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
   import Faktura from "./sections/faktura/Faktura.svelte";
+  import Produkter from "./sections/produkter/Produkter.svelte";
+  import Timer from "./sections/timer/Timer.svelte";
+  import Lonn from "./sections/lonn/Lonn.svelte";
+  import Utlegg from "./sections/utlegg/Utlegg.svelte";
+  import Anlegg from "./sections/anlegg/Anlegg.svelte";
+  import Aksjonaerer from "./sections/aksjonaerer/Aksjonaerer.svelte";
   import Reskontro from "./sections/reskontro/Reskontro.svelte";
+  import Mva from "./sections/mva/Mva.svelte";
+  import Rapporter from "./sections/rapporter/Rapporter.svelte";
+  import Bank from "./sections/bank/Bank.svelte";
   import Bilag from "./sections/bilag/Bilag.svelte";
+  import Periode from "./sections/periode/Periode.svelte";
+  import Oppdrag from "./sections/oppdrag/Oppdrag.svelte";
+  import Byra from "./sections/byra/Byra.svelte";
 
-  // Porterte seksjoner (#76 steg 2) — resten er plassholdere til
-  // dagens portal inntil de flyttes hit.
+  // Alle seksjonene i menyen (lib/meny.js) er portert (#76 steg 2).
   const SECTIONS = {
     oversikt: Oversikt,
     faktura: Faktura,
+    produkter: Produkter,
+    timer: Timer,
+    lonn: Lonn,
+    utlegg: Utlegg,
+    anlegg: Anlegg,
+    aksjonarer: Aksjonaerer,
     reskontro: Reskontro,
+    mva: Mva,
+    rapporter: Rapporter,
+    bank: Bank,
     bilag: Bilag,
+    periode: Periode,
+    oppdrag: Oppdrag,
   };
 
   let boot = $state({ done: false, error: null });
@@ -79,27 +100,16 @@
   <Shell companyId={route.companyId} section={route.section}>
     {#if SECTIONS[route.section]}
       {@const Section = SECTIONS[route.section]}
-      <Section companyId={route.companyId} extra={route.extra} />
+      <Section companyId={route.companyId} extra={route.extra} query={route.query} />
     {:else}
-      <Placeholder
-        companyId={route.companyId}
-        section={route.section}
-        label={seksjonNavn(route.section)}
-      />
+      <!-- Ukjent seksjonsnavn i adressen: si fra, ikke vis en tom side. -->
+      <div class="alert alert-warning">
+        <span>Ukjent seksjon «{route.section}».</span>
+      </div>
     {/if}
   </Shell>
 {:else if route.view === "byra"}
-  <div class="p-8">
-    <div class="card bg-base-100 shadow-sm max-w-md">
-      <div class="card-body">
-        <h2 class="card-title">Byrå</h2>
-        <p class="opacity-70 text-sm">Byråvisningen er ikke flyttet til den nye portalen ennå.</p>
-        <a class="btn btn-primary btn-sm w-fit" href={"/#/byra/" + route.firmId}>
-          Åpne i dagens portal
-        </a>
-      </div>
-    </div>
-  </div>
+  <Byra firmId={route.firmId} />
 {:else}
   <Companies />
 {/if}

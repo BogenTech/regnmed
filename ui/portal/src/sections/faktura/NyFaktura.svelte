@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -8,7 +9,7 @@
 
   let { companyId, parties, products, dims, currencies, onDone } = $props();
 
-  let partyNo = $state(parties[0]?.party_no || "");
+  let partyNo = $state(untrack(() => parties[0]?.party_no || ""));
   let invoiceDate = $state(today());
   let dueDate = $state(today());
   let produkt = $state("");

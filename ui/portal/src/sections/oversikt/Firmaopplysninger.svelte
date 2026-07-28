@@ -1,14 +1,15 @@
 <script>
+  import { untrack } from "svelte";
   import { send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, settings } = $props();
 
-  let address = $state(settings.address || "");
-  let email = $state(settings.email || "");
-  let bankAccount = $state(settings.bank_account || "");
-  let orgform = $state(settings.orgform || "");
+  let address = $state(untrack(() => settings.address || ""));
+  let email = $state(untrack(() => settings.email || ""));
+  let bankAccount = $state(untrack(() => settings.bank_account || ""));
+  let orgform = $state(untrack(() => settings.orgform || ""));
 
   const ORGFORMER = ["", "AS", "ASA", "ENK", "ANS", "DA"];
 

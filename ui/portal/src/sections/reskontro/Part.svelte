@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { api, send } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -7,9 +8,9 @@
   let { companyId, party, partyId } = $props();
 
   let items = $state(null);
-  let address = $state(party?.address || "");
-  let email = $state(party?.email || "");
-  let bankAccount = $state(party?.bank_account || "");
+  let address = $state(untrack(() => party?.address || ""));
+  let email = $state(untrack(() => party?.email || ""));
+  let bankAccount = $state(untrack(() => party?.bank_account || ""));
 
   $effect(() => {
     api("/companies/" + companyId + "/parties/" + partyId + "/items")

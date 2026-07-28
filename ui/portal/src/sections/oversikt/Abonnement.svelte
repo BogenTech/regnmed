@@ -1,6 +1,7 @@
 <script>
   // Abonnementskortet (#65/#74): status, plan og betalingskort.
   // Kort er standardveien — portalen viser, SERVEREN håndhever.
+  import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -9,7 +10,7 @@
 
   let { companyId, abo, onDone } = $props();
 
-  let plan = $state(abo.planer?.[0]?.plan || "");
+  let plan = $state(untrack(() => abo.planer?.[0]?.plan || ""));
 
   let statusTekst = $derived(
     {
