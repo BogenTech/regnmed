@@ -178,6 +178,12 @@ pub async fn company_roles(
 /// 'revisor' — read-only like 'les', but with the payroll access the
 /// audit needs (#55). A person can appear once per access path — the caller (or UI)
 /// decides how to merge.
+///
+/// **Ingen vei her krysser selskapsgrenser.** Alle tre er avgrenset til
+/// ett selskap i selve datamodellen, og det finnes ingen jokertegn og
+/// ingen plattformrolle. Det er en avgjørelse, ikke en tilfeldighet
+/// (#57, docs/auth.md §8), og den er festet i test: admin i ett selskap
+/// er en fullstendig fremmed i et annet.
 pub async fn company_access_for_person(
     pool: &PgPool,
     person_id: Uuid,

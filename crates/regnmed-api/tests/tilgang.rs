@@ -789,6 +789,164 @@ async fn deaktivert_rolle_gir_ingen_tilgang() {
     );
 }
 
+// ---------------------------------------------------------------------
+// Ingen plattformadministrator (#57).
+// ---------------------------------------------------------------------
+
+/// Ingen tilgangsvei krysser selskapsgrenser. Den sterkeste rollen som
+/// finnes — admin — er en FULLSTENDIG fremmed i naboselskapet: 404 på
+/// alt, nøyaktig som en uten tilgang noe sted.
+///
+/// Testen er avgjørelsens sperre, ikke bare dens illustrasjon: en
+/// fremtidig plattformrolle, en jokertegn-vei i tilgangsoppslaget eller
+/// en glemt company_id-filtrering ville alle slått ut her. Skulle den
+/// avgjørelsen noen gang omgjøres, må denne testen endres bevisst — og
+/// docs/auth.md §8 sammen med den.
+#[tokio::test]
+async fn admin_krysser_ingen_selskapsgrense() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let nabo = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Naboselskapet AS")
+        .await
+        .unwrap();
+
+    for uri in LESING {
+        let uri = uri.replace("{c}", &nabo.to_string());
+        assert_eq!(
+            status(&state, "GET", &uri, &admin, "").await,
+            StatusCode::NOT_FOUND,
+            "admin i et annet selskap skulle fått 404 på {uri}"
+        );
+    }
+    for (method, uri, body) in SKRIVING {
+        let uri = uri.replace("{c}", &nabo.to_string());
+        assert_eq!(
+            status(&state, method, &uri, &admin, body).await,
+            StatusCode::NOT_FOUND,
+            "admin i et annet selskap skulle fått 404 på {method} {uri}"
+        );
+    }
+    for (method, uri, body) in ADMIN {
+        let uri = uri.replace("{c}", &nabo.to_string());
+        assert_eq!(
+            status(&state, method, &uri, &admin, body).await,
+            StatusCode::NOT_FOUND,
+            "admin i et annet selskap skulle fått 404 på {method} {uri}"
+        );
+    }
+
+    // Og /me nevner ikke naboselskapet — tilgangslisten er de selskapene
+    // personen faktisk kan handle for, ingen flere.
+    let (kode, me) = json_call(&state, "GET", "/me", &admin, "").await;
+    assert_eq!(kode, StatusCode::OK);
+    let ids: Vec<&str> = me["companies"]
+        .as_array()
+        .expect("companies")
+        .iter()
+        .filter_map(|c| c["company_id"].as_str())
+        .collect();
+    assert!(ids.contains(&company.to_string().as_str()));
+    assert!(
+        !ids.contains(&nabo.to_string().as_str()),
+        "/me skulle ikke nevnt naboselskapet"
+    );
+}
+
+/// Nødprosedyren (#57, migrasjon 0040) etterlater et spor som heter det
+/// den er — og et nødinnslag uten samtykkereferanse avvises av selve
+/// databasen. Uten det ville tilgangsloggen kunne lyve om akkurat det
+/// innslaget den finnes for å fange.
+#[tokio::test]
+async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let sub = format!("gjenoppretting|{}", Uuid::new_v4());
+    let p = regnmed_db::ensure_person(&state.pool, &sub, Some("Ny Admin"), None)
+        .await
+        .unwrap();
+
+    // Uten referanse: avvist av check-constrainten.
+    let uten = sqlx::query(
+        "insert into company_member_change
+             (id, company_id, person_id, endring, til_rolle, kilde)
+         values ($1,$2,$3,'lagt_til','admin','nodprosedyre')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(company)
+    .bind(p)
+    .execute(&state.pool)
+    .await;
+    assert!(
+        uten.is_err(),
+        "et nødinnslag uten samtykkereferanse skulle vært avvist"
+    );
+
+    // Prosedyren slik den er dokumentert i docs/auth.md §8.
+    let mut tx = state.pool.begin().await.unwrap();
+    sqlx::query(
+        "insert into company_member (company_id, person_id, role)
+         values ($1,$2,'admin')
+         on conflict (company_id, person_id)
+             do update set role = 'admin', active = true",
+    )
+    .bind(company)
+    .bind(p)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into company_member_change
+             (id, company_id, person_id, endring, til_rolle, kilde, notat)
+         values ($1,$2,$3,'lagt_til','admin','nodprosedyre',
+                 'Samtykke fra styreleder 2026-07-28, ref SAK-123')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(company)
+    .bind(p)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    // Tilgangen virker, og sporet står med kilde og referanse — synlig
+    // gjennom det samme endepunktet som alle andre tilgangsendringer.
+    let token = idp.token(&sub, "Ny Admin");
+    assert_eq!(
+        status(
+            &state,
+            "GET",
+            &format!("/companies/{company}/access"),
+            &token,
+            ""
+        )
+        .await,
+        StatusCode::OK
+    );
+    let (_, hist) = json_call(
+        &state,
+        "GET",
+        &format!("/companies/{company}/access/history"),
+        &admin,
+        "",
+    )
+    .await;
+    let innslag = hist["endringer"]
+        .as_array()
+        .expect("endringer")
+        .iter()
+        .find(|e| e["kilde"] == "nodprosedyre")
+        .expect("nødinnslaget skulle stått i tilgangsloggen");
+    assert!(
+        innslag["notat"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("SAK-123"),
+        "referansen skulle fulgt innslaget: {innslag}"
+    );
+}
+
 /// Innebygde navn kan ikke kapres — en egendefinert «admin» ville
 /// skygget for den ekte.
 #[tokio::test]

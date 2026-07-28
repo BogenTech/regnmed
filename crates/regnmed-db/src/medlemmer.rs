@@ -455,6 +455,9 @@ pub struct Tilgangsendring {
     pub til_rolle: Option<String>,
     pub utfort_av: Option<String>,
     pub kilde: String,
+    /// Referanse til samtykket når `kilde = 'nodprosedyre'` (#57);
+    /// ellers normalt tom.
+    pub notat: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -462,7 +465,7 @@ pub struct Tilgangsendring {
 pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Tilgangsendring>> {
     let rows = sqlx::query(
         "select coalesce(p.name, p.oidc_sub) as navn,
-                c.endring, c.fra_rolle, c.til_rolle, c.kilde, c.created_at,
+                c.endring, c.fra_rolle, c.til_rolle, c.kilde, c.notat, c.created_at,
                 coalesce(u.name, u.oidc_sub) as utfort_av
          from company_member_change c
          join person p on p.id = c.person_id
@@ -483,6 +486,7 @@ pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ti
             til_rolle: r.get("til_rolle"),
             utfort_av: r.get("utfort_av"),
             kilde: r.get("kilde"),
+            notat: r.get("notat"),
             created_at: r.get("created_at"),
         })
         .collect())

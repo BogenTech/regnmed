@@ -124,6 +124,7 @@ pub async fn access_history(
             "til_rolle": e.til_rolle,
             "utfort_av": e.utfort_av,
             "kilde": e.kilde,
+            "notat": e.notat,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))

@@ -801,6 +801,45 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `versjon = år − 2019` treffer alle punktene, men det er en
    slutning og ikke en kilde — å skrive årgangsregisteret på den ville
    brutt #50. Ett spørsmål til brukerstøtte lukker det.
+51. ✅ Tilgangssporet (docs/auth.md, closed #56 #59 #53 #54 #55 #60 #61
+   #58): ÉN vakt i stedet for 22 kopier (`regnmed-api::tilgang::krev` —
+   eneste sted `company_roles` slås opp; ingen tilgang = 404, aldri
+   403); 72-rettighets vokabular som Rust-enum m/ norske slugger
+   (`FAKTURA_SKRIV`, `LONN_KJOR`), `_EGNE`/`_ALLE`-par der `_ALLE`
+   medfører `_EGNE`; roller = SETT av rettigheter, ikke stige —
+   `ansatt` (selvbetjening: egne timer/utlegg/lønnsslipp, ikke
+   hovedbok), `les` (IKKE lønn), `revisor` (les + lønn, følger
+   revisjonsoppdrag), `bokforing`, `admin`; rettigheter UNIONERES over
+   alle veier inn; ukjent rollenavn gir INGENTING (fail-closed).
+   Medlemsadministrasjon (migration 0037): invitasjon til
+   E-POSTADRESSE (person finnes ikke før første innlogging), løses inn
+   i `/me`, svaret røper aldri om adressen er bruker; siste admin kan
+   ikke fjerne seg selv (`for update` inne i tx); insert-only
+   `company_member_change`. Egendefinerte roller (migration 0039):
+   selskapet komponerer av vokabularet, innebygde navn reservert,
+   tilgangsstyrende rettigheter (`MEDLEM_ADMIN` m.fl.) kan IKKE
+   delegeres, roller deaktiveres — slettes aldri. Portal: Roller-kort
+   m/ beskrivelser servert fra koden (`Rett::beskrivelse()`/`gruppe()`
+   — ingen andre kopi). Matrisen i docs/auth.md er MASKINSJEKKET
+   (`tests/matrise.rs` genererer og krever likhet). Lærdom, festet i
+   docs: en autorisasjonstest som ikke er sett feile er ikke
+   verifisert (axum kjører `Json`/`Query`-uttrekk FØR vakten — ugyldig
+   kropp gir 422/400 og måler ingenting).
+52. ✅ Ingen plattformadministrator (docs/auth.md §8, closed #57):
+   avgjørelsen tatt UTTRYKKELIG — ingen tilgangsvei krysser
+   selskapsgrenser, ingen leverandørbakvei; festet i test
+   (`admin_krysser_ingen_selskapsgrense`: admin i A er fremmed i B,
+   404 på alt, `/me` tier). Støttevei = kunden inviterer selv
+   (minste rolle) eller gir oppdrag — synlig, logget, trekkbart samme
+   dag. Selskapet uten admin: dokumentert NØDPROSEDYRE via databasen
+   m/ skriftlig samtykke; migration 0040 gir sporet et eget navn
+   (`kilde='nodprosedyre'`) og check-constraint som NEKTER innslaget
+   uten samtykkereferanse i `notat` — loggen kan ikke lyve om akkurat
+   det innslaget den finnes for å fange. Driftsoppgavene
+   (anchor/generate-invoices/depreciate/…) går bevisst utenom vakten —
+   maskinelle, ingen menneskeavgjørelser. Bygges en plattformrolle
+   likevel en gang, står kravlisten i #57 (logget, varslet,
+   tidsbegrenset).
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

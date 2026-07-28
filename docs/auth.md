@@ -374,11 +374,91 @@ invitasjonen.
 
 ## 8. Det som IKKE finnes, og hvorfor
 
-- **Ingen global administrator.** Ingen tilgangsvei krysser
-  selskapsgrenser. Det er tillitshistorien: leverandøren har ingen
-  bakvei inn i kundens hovedbok. Støtteveien er at kunden gir et
-  tidsavgrenset oppdrag — synlig for dem, og trekkbart samme dag. Se
-  #57 for avgjørelsen i sin helhet.
+### Ingen plattformadministrator — en avgjørelse, ikke en tilfeldighet
+
+**Ingen tilgangsvei krysser selskapsgrenser.** Alle tre veiene i §2 er
+avgrenset til ett selskap i selve datamodellen — `company_member`,
+`engagement` og `integration_grant` bærer hver sin `company_id`, og
+tilgangsoppslaget (`company_access_for_person` i tenancy.rs) kjenner
+ingen jokertegn. Det finnes ingen fjerde vei, ingen driftsrolle i
+API-et og ingen leverandørkonto.
+
+Fram til #57 var det en tilfeldighet — aldri bygget, men heller aldri
+besluttet. Nå er det **besluttet**, og begrunnelsen er produktets egen
+tillitshistorie: hovedboken selges som etterprøvbar («ikke stol på oss —
+kontrollér»), og en global administrator er nøyaktig den bakveien vi
+selger fraværet av. En revisor som spør «hvem hos leverandøren kan lese
+klientens regnskap?» skal få svaret *ingen* — og takket være
+forankringen (docs/anchoring.md) er også den påstanden kontrollerbar i
+den delen som betyr mest: en omskrevet hovedbok kan bevises, uansett
+hvem som skrev.
+
+Avgjørelsen er festet i test, ikke bare i tekst:
+`admin_krysser_ingen_selskapsgrense` i `tests/tilgang.rs` viser at den
+sterkeste rollen som finnes er en fullstendig fremmed i naboselskapet —
+404 på lesing, skriving og administrasjon, og `/me` nevner ikke
+selskapet. Skal avgjørelsen noen gang omgjøres, må den testen endres
+bevisst, og dette avsnittet med den.
+
+**Støtteveien** er at kunden gir tilgangen selv, med de samme
+mekanismene som all annen tilgang: en **invitasjon** (§7) med den minste
+rollen som holder — ofte `les` — eller et **oppdrag** til et byrå.
+Begge er synlige for kunden, begge er logget, og begge kan trekkes
+tilbake med virkning samme dag (`valid_to` er eksklusiv). Brukerstøtte
+uten kundens aktive medvirkning finnes ikke; det er prisen for å kunne
+svare *ingen*, og den er betalt med vilje.
+
+**Selskapet uten administrator.** I normal drift kan det ikke oppstå —
+den siste administratoren kan verken degradere eller fjerne seg selv
+(§7). Men et dødsfall eller en brå avslutning spør ikke systemet først.
+For det tilfellet finnes en **nødprosedyre**, og den går gjennom
+databasen, ikke API-et — for det finnes ingen API-vei, og det skal det
+ikke gjøre:
+
+1. Selskapet ber om det skriftlig, fra noen med rett til å representere
+   det (styreleder, daglig leder, eier). Samtykket arkiveres og får en
+   referanse.
+2. Den som skal overta logger inn i portalen én gang, slik at personen
+   finnes (`person` opprettes just-in-time, §7).
+3. En operatør med databasetilgang utfører, i én transaksjon:
+
+   ```sql
+   begin;
+   insert into company_member (company_id, person_id, role)
+   values ('<selskap>', '<person>', 'admin')
+   on conflict (company_id, person_id)
+       do update set role = 'admin', active = true;
+   insert into company_member_change
+       (id, company_id, person_id, endring, til_rolle, kilde, notat)
+   values (gen_random_uuid(), '<selskap>', '<person>',
+           'lagt_til', 'admin', 'nodprosedyre',
+           '<samtykkereferanse>');
+   commit;
+   ```
+
+4. Kunden bekrefter at tilgangen virker, og rydder selv videre med den.
+
+Sporet **heter det det er**: `kilde = 'nodprosedyre'` (migrasjon 0040)
+står i den samme endringsloggen som alle andre tilgangsendringer,
+synlig for kundens admin og for revisoren. Uten en egen kilde måtte
+innslaget ha utgitt seg for å være en vanlig admin-handling —
+tilgangsloggen ville løyet om akkurat det innslaget den finnes for å
+fange. Og et nødinnslag *uten* samtykkereferanse avvises av selve
+databasen (check-constraint i 0040): det uattribuerte inngrepet er
+nettopp det prosedyren skal umuliggjøre.
+
+Merk hva prosedyren IKKE kan: databasetilgang gir ingen vei rundt
+hovedbokens vern. Endring og sletting stoppes av triggerne, og en
+omskriving på DBA-nivå bryter hasjkjeden mot den offentlig forankrede
+merkleroten (docs/anchoring.md).
+
+**Hvis det noen gang bygges** en avgrenset plattformrolle, står kravene
+allerede i #57: hver handling logget, kunden varslet, tilgangen
+tidsbegrenset — bygget som om misbruk antas. En fremtidig diskusjon
+starter fra den listen, ikke fra blanke ark.
+
+### Det som ellers ikke finnes
+
 - **Ingen tilgang i tokenet.** Tokenet beviser identitet, ingenting
   annet. Derfor virker en tilbakekalling straks, uten å vente på at et
   token løper ut.
@@ -389,9 +469,10 @@ invitasjonen.
 - **Driftsoppgavene går utenom.** `regnmed anchor`,
   `generate-invoices`, `depreciate`, `migrate`, `verify-ledger` og
   `saft-export` kjører som CLI/CronJob rett mot databasen, uten noen
-  person og uten denne vakten. Det er en bevisst grense
-  (docs/deploy.md), og den står her for at den ikke skal se ut som et
-  hull.
+  person og uten denne vakten. De er maskinelle og tar ingen avgjørelse
+  et menneske skulle tatt. Det er en bevisst grense (docs/deploy.md),
+  og den står her — rett ved plattformavgjørelsen — for at den ikke
+  skal se ut som et hull.
 
 ## 9. Grensene mot resten av systemet
 
@@ -440,7 +521,7 @@ annet som fanger.
 | Fil | Hva den fester |
 | --- | --- |
 | `tests/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
-| `tests/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier — og at en utenforstående får 404 og ikke 403 |
+| `tests/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
 | `tests/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
 | `tests/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
 | `regnmed_api::tilgang` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |

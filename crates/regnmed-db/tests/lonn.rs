@@ -10,7 +10,7 @@
 
 use chrono::NaiveDate;
 use regnmed_db::lonn::{self, Lonnspost, NyAnsatt};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 async fn pool() -> Option<PgPool> {
