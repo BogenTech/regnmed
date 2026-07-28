@@ -9,6 +9,11 @@
 #   against hard budgets (scripts/frugality.sh) — competing on the least
 #   resources is a product principle, so a service that grows fat fails
 #   the build (ROADMAP M6, docs/frugality.md).
+# - portal: rebuilds the Svelte portal and fails if the checked-in
+#   ui/portal/dist differs. The dist is checked in so the Rust build
+#   never needs Node (#76) — that only holds if the artifact actually
+#   matches its source, and a silent divergence would deploy a portal
+#   nobody reviewed. Node lives HERE, never in the Rust build.
 name: ci
 on:
   push:
@@ -69,3 +74,23 @@ jobs:
           key: frugality-release
       - name: Frugality gate
         run: scripts/frugality.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  portal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/portal/package-lock.json
+      - run: npm ci
+        working-directory: ui/portal
+      - run: npm run build
+        working-directory: ui/portal
+      - name: dist matches source
+        run: |
+          if ! git diff --exit-code -- ui/portal/dist; then
+            echo "ui/portal/dist er ikke bygget fra kilden — kjør scripts/build-portal.sh og sjekk inn resultatet." >&2
+            exit 1
+          fi
