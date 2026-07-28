@@ -1,48 +1,328 @@
-# Identity and authorization
+# Tilgang: hvem kan gjøre hva
 
-Two deliberately separated concerns:
+Dette dokumentet er svaret på det spørsmålet en revisor faktisk stiller:
+**hvem kan gjøre hva, og hvor er det håndhevet?**
 
-- **Identity** (who you are): proven by an OIDC token from the IdP.
-- **Authorization** (what you may do, for which company): decided by
-  regnmed's own database. Never carried in tokens — an accountant with 60
-  clients cannot meaningfully carry that in a JWT, and access changes
-  must take effect without re-login.
+To bevisst atskilte ting:
 
-## Identity: OIDC relying party only
+- **Identitet** (hvem du er): bevist av et OIDC-token fra
+  påloggingstjenesten.
+- **Tilgang** (hva du får gjøre, i hvilket selskap): avgjort av regnmeds
+  egen database. Aldri båret i tokenet — en regnskapsfører med 60
+  klienter kan ikke meningsfullt bære det i en JWT, og en
+  tilgangsendring må virke uten ny innlogging.
 
-The IdP is **regnid** (sibling repo, our Rust port of networco-id).
-regnmed validates RS256 tokens against a configured issuer/JWKS
-(`crates/regnmed-api/src/auth.rs`: `Verifier` + the `AuthPerson`
-extractor — adding `AuthPerson` as a handler argument protects the
-route). regnmed never bakes in IdP specifics; any spec-compliant issuer
-works. Config: `OIDC_ISSUER`, optional `OIDC_AUDIENCE`,
-`OIDC_JWKS_FILE` (dev/tests: static JWKS, signatures still validated).
+## 1. Identitet: bare OIDC relying party
 
-Rejected with 401, verified by tests: missing/garbage tokens, tokens
-signed by the wrong key, expired tokens, wrong audience.
+Påloggingstjenesten er **regnid** (søsterrepo). regnmed validerer
+RS256-tokens mot en konfigurert issuer/JWKS
+(`crates/regnmed-api/src/auth.rs`: `Verifier` + `AuthPerson`-ekstraktoren
+— å legge `AuthPerson` til som handler-argument beskytter ruten). regnmed
+baker aldri inn detaljer om én bestemt IdP; enhver spec-følgende issuer
+virker. Konfig: `OIDC_ISSUER`, valgfri `OIDC_AUDIENCE`, `OIDC_JWKS_FILE`
+(utvikling/test: statisk JWKS, signaturen valideres like fullt).
 
-## Authorization: the engagement model
+Avvist med 401, dekket av tester: manglende og oppdiktede tokens, tokens
+signert med feil nøkkel, utløpte tokens, feil audience.
 
-Migration 0005 (`person`, `firm`, `firm_member`, `company_member`,
-`engagement`):
+## 2. Aktørene
+
+En **person** opprettes just-in-time ved første innlogging, nøklet på
+tokenets `sub`. En **integrasjon** (#45, docs/integrations.md) er en
+person med `kind='integrasjon'` — nettopp for at tilgangsoppslag,
+attribusjon og revisjonsspor skal være identiske for robot og menneske.
+
+Tre veier inn til et selskap:
 
 ```
-person ──── company_member ────────────────► company   ("direkte")
+person ──── company_member ─────────────────────────► selskap   («direkte»)
    │
-   └─────── firm_member ──► firm ── engagement (oppdrag) ──► company
+   ├─────── firm_member ──► byrå ── oppdrag ────────► selskap   (byrånavnet)
+   │
+   └─────── integration_grant ──────────────────────► selskap   («integrasjon»)
 ```
 
-- An **engagement** (oppdrag) is the first-class relationship between a
-  regnskapsfører-/revisorfirma and a client company, with scope
-  (regnskap/revisjon) and validity. Revisor engagements are read-only +
-  chain verification.
-- `/me` resolves token → person (JIT-provisioned on first login) → all
-  companies the person may act for, each with its access level and the
-  path it came through (`via` = firm name or "direkte").
-- This mirrors Altinn's delegation model (see gov.md), which will let
-  government-side delegation and regnmed-side engagements stay aligned.
+- Et **oppdrag** er den kontraktsfestede relasjonen mellom et
+  regnskaps-/revisjonsbyrå og en klient, med omfang og gyldighet. Et
+  `regnskap`-oppdrag gir rollen `bokforing`; et `revisjon`-oppdrag gir
+  `revisor`.
+- `/me` løser token → person → alle selskapene personen kan handle for,
+  hver med rollen og veien den kom gjennom.
+- Dette speiler Altinns delegeringsmodell (docs/gov.md), slik at
+  offentlig delegering og regnmeds oppdrag kan holdes på linje.
 
-## Medlemsadministrasjon (#53)
+**Rettighetene unioneres over alle veier inn.** En person kan være
+direkte medlem *og* komme inn via et oppdrag. Så lenge rollene var en
+stige holdt det å velge den sterkeste; etter `ansatt` (#54) er de ikke
+det, og en ansatt som også kom inn gjennom et byrå ville mistet retten
+til å føre sine egne timer hvis vi valgte én. `company_access` finnes
+fortsatt, men bare til visning — tilgang avgjøres av `company_roles` og
+unionen.
+
+### Hvordan tilgang oppstår og opphører
+
+| Hendelse | Virkning |
+| --- | --- |
+| Invitasjon løses inn ved innlogging | medlemskap opprettes (se §7) |
+| Rolle endres | virker ved neste forespørsel |
+| Medlemskap deaktiveres | virker straks; raden slettes aldri |
+| Oppdrag avsluttes | `valid_to` er **eksklusiv** — tilgangen faller bort samme dag |
+| Integrasjonsgrant tilbakekalles | samme eksklusive `valid_to`, virker straks |
+| Egendefinert rolle deaktiveres | de som har den mister rettighetene straks |
+
+## 3. Vakten
+
+Hvert selskapsavgrenset endepunkt går gjennom **én** vakt,
+`regnmed_api::tilgang::krev` — det eneste stedet i API-et som slår opp
+tilgang. Endepunktet sier hvilken **rettighet** handlingen krever, ikke
+hvem som får gjøre den:
+
+```rust
+krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
+```
+
+`krev` returnerer personens samlede tilgang, så en handler som trenger
+mer enn ja/nei slipper et nytt oppslag — periodelåsen bruker det: å låse
+krever `PERIODE_LAAS`, å **åpne igjen** krever admin.
+
+**Ingen tilgang gir 404, ikke 403.** En som ikke har tilgang skal ikke
+lære at selskapet finnes. `403` betyr «du har tilgang, men ikke nok».
+Samme regel gjelder innenfor et selskap der omfanget er «egne data»:
+kollegaens lønnsslipp og kvittering svarer 404.
+
+**Hvorfor én vakt.** Fram til #56 hadde hver modul sin egen
+`require_access` — 22 kopier i tre ulike former (`write: bool`,
+`admin: bool`, et nivå som streng, og noen uten parameter i det hele
+tatt). Så lenge regelen var «les eller skriv» gikk det bra, men hver
+kopi var et sted å ta feil, og en fjerde rolle måtte skrives inn 22
+ganger. Samme begrunnelse som ratebegrensningen for integrasjoner: én
+søm ingen kan glemme.
+
+## 4. Rettigheter og roller
+
+**En rolle er et sett rettigheter, ikke et trinn på en stige.** Fram til
+#59 var tilgang tre nivåer (`admin` > `bokforing` > `les`), lett å
+forstå og umulig å bøye: enten så du hele hovedboken, eller ingenting.
+
+Vokabularet er en **enum i koden** (`regnmed_api::tilgang::Rett`), ikke
+fritekst i databasen: et endepunkt kan ikke kreve en rettighet som ikke
+finnes, og kompilatoren finner alle stedene når en rettighet endrer
+navn. Navnene er norske, som resten av domenet — `FAKTURA_LES`, ikke
+`INVOICE_READ`.
+
+**Rettigheter er additive, aldri subtraktive.** Det finnes ingen «alt
+unntatt X»; den regelen er umulig å resonnere om når roller settes
+sammen.
+
+En **ukjent rolleverdi gir ingen rettigheter.** Før `ansatt` var `les`
+svakest, så «ukjent → les» var trygt. Nå er `ansatt` og `les` ikke
+sammenlignbare, og under en rullerende utrulling kan en gammel binær
+møte `ansatt` i databasen — å tolke den som `les` ville vært en
+**oppgradering**, ikke en degradering. Den samme fail-closed-egenskapen
+er grunnen til at check-constraint-en på `company_member.role` kunne
+fjernes da egendefinerte roller kom (#60): en ugyldig verdi stenger ute
+i stedet for å slippe inn.
+
+### Omfang: egne data mot alles
+
+Noen rettigheter finnes i par, `_EGNE`/`_ALLE`: `TIMER_LES_*`,
+`TIMER_SKRIV_*`, `UTLEGG_LES_*` og `LONNSSLIPP_LES_*`.
+
+- **`_ALLE` medfører `_EGNE`.** Ellers måtte hver bunt huske begge, og
+  en bunt som glemte `_EGNE` ville stengt folk ute fra deres egne data.
+- Et endepunkt som allerede filtrerer på personen krever `_EGNE`; et som
+  viser eller endrer andres krever `_ALLE`.
+
+Dimensjonen ble bestemt i #59, ikke utsatt, nettopp fordi den er dyr i
+ettertid: hver «egen»-variant ville blitt et nytt navn, og lagrede roller
+måtte migreres.
+
+### De innebygde rollene
+
+| Rolle | Kort |
+| --- | --- |
+| `ansatt` | Selvbetjening: egne timer, eget utlegg, egen lønnsslipp, kvitteringsfoto |
+| `les` | Lesing av regnskapet — **ikke lønn** |
+| `revisor` | `les` + lønnsopplysningene revisjonen krever. Følger av et revisjonsoppdrag; kan ikke tildeles direkte |
+| `bokforing` | `les` + alt som endrer hovedboken, + lønn |
+| `admin` | `bokforing` + å styre selskapet og hvem som slipper inn |
+
+`les` ⊂ `revisor` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **disse
+fire**, ikke ved modellen. `ansatt` er ikke nøstet i det hele tatt, og en
+egendefinert rolle trenger ikke være det.
+
+**Ansattrollen er ikke «lesing minus noe».** Den er den formen
+rangstigen ikke kunne uttrykke: en ansatt får **skrive** noen få ting —
+sine egne timer, sitt eget refusjonskrav, et bilde av en kvittering — og
+**lese nesten ingenting**. Før #54 måtte man gi bort bokføringstilgang
+til hele hovedboken for å la noen føre timer. Bunten er positivt
+avgrenset: den lister hva en ansatt får, ikke hva hun er nektet, så
+resten havner ikke innenfor ved et uhell.
+
+**Lønn er ikke allmenn lesning.** Fram til #55 lå `LONNSSLIPP_LES_ALLE`
+og `LONN_LES` i lesebunten, så enhver med lesetilgang kunne laste ned
+hvem som helst sin lønnsslipp — bruttolønn, forskuddstrekk, feriepenger,
+fødselsdato — og se ansattlisten med månedslønn og trekkprosent. Det var
+ingen beslutning; lønn kom sist og gjenbrukte den generelle
+lesetilgangen.
+
+Rettingen tvang fram et skille som uansett var riktig: **`revisor` og en
+intern leser er ikke det samme.** Begge er skrivebeskyttet, men bare den
+ene har en revisjonsplikt som krever lønnsopplysningene — lønn er en
+vesentlig kostnad, og forskuddstrekk og arbeidsgiveravgift er lovpålagte
+størrelser som skal kunne kontrolleres. Svaret på «hvor mye ser en
+revisor?» er altså fortsatt «lønn også», men det er nå et **uttrykkelig
+ja** i stedet for en bieffekt.
+
+**Ingen egen lønnsrolle.** Vurdert og valgt bort: den som fører
+regnskapet må uansett se lønn for å bokføre den. Et selskap som vil ha
+«controller uten lønn» lager det som en egendefinert rolle (§6).
+
+## 5. Matrisen
+
+Hele vokabularet, og hva hver innebygd rolle gir. **Tabellen er
+maskinsjekket** — `crates/regnmed-api/tests/matrise.rs` genererer den fra
+`Rolle` og `Rett` og feiler hvis dokumentet ikke stemmer. En
+tilgangstabell som er blitt feil er verre enn ingen tabell: den blir
+sitert i en revisjon, og ingen leser koden for å kontrollere den.
+
+<!-- MATRISE: generert av crates/regnmed-api/tests/matrise.rs -->
+
+| Rettighet | Hva den gir | ansatt | les | revisor | bokforing | admin |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Bilag** | | | | | | |
+| `BILAG_LES` | Se bilag og vedlegg | — | ✅ | ✅ | ✅ | ✅ |
+| `VEDLEGG_SKRIV` | Legge vedlegg på et bilag | — | — | — | ✅ | ✅ |
+| `BILAG_LAST_OPP` | Sende dokument til innboksen | ✅ | — | — | ✅ | ✅ |
+| `BILAG_BOKFOR` | Bokføre fra innboksen | — | — | — | ✅ | ✅ |
+| `PERIODE_LAAS` | Låse en periode | — | — | — | ✅ | ✅ |
+| `EPOST_INN_LES` | Se e-post inn til innboksen | — | ✅ | ✅ | ✅ | ✅ |
+| `EPOST_INN_ADMIN` | Styre mottaksadresse og avsenderliste | — | — | — | — | ✅ |
+| **Rapporter** | | | | | | |
+| `RAPPORT_LES` | Se regnskapsrapportene | — | ✅ | ✅ | ✅ | ✅ |
+| `MVA_ORDNING_ADMIN` | Endre mva-terminordning | — | — | — | — | ✅ |
+| `BUDSJETT_LES` | Se budsjett og avviksrapport | — | ✅ | ✅ | ✅ | ✅ |
+| `BUDSJETT_SKRIV` | Lage og fastsette budsjett | — | — | — | ✅ | ✅ |
+| `FORANKRING_LES` | Se forankringen av hovedboken | — | ✅ | ✅ | ✅ | ✅ |
+| **Faktura** | | | | | | |
+| `FAKTURA_LES` | Se fakturaer | — | ✅ | ✅ | ✅ | ✅ |
+| `FAKTURA_SKRIV` | Utstede faktura og kreditnota | — | — | — | ✅ | ✅ |
+| `FAKTURA_SEND` | Sende faktura på e-post | — | — | — | ✅ | ✅ |
+| `FAKTURAMAL_LES` | Se repeterende fakturaer | — | ✅ | ✅ | ✅ | ✅ |
+| `FAKTURAMAL_SKRIV` | Endre repeterende fakturaer | — | — | — | ✅ | ✅ |
+| `TILBUD_LES` | Se tilbud og ordre | — | ✅ | ✅ | ✅ | ✅ |
+| `TILBUD_SKRIV` | Lage tilbud og ordre | — | — | — | ✅ | ✅ |
+| `PURRING_LES` | Se purringer og forfalte krav | — | ✅ | ✅ | ✅ | ✅ |
+| `PURRING_SKRIV` | Sende purring og inkassovarsel | — | — | — | ✅ | ✅ |
+| **Reskontro** | | | | | | |
+| `RESKONTRO_LES` | Se kunder, leverandører og åpne poster | — | ✅ | ✅ | ✅ | ✅ |
+| `RESKONTRO_SKRIV` | Endre kontakter og matche åpne poster | — | — | — | ✅ | ✅ |
+| `KONTAKT_SKRIV` | Endre kontaktinfo på en part | — | — | — | ✅ | ✅ |
+| **Bank** | | | | | | |
+| `BANK_LES` | Se bankavstemming | — | ✅ | ✅ | ✅ | ✅ |
+| `BANK_AVSTEM` | Importere kontoutdrag og matche | — | — | — | ✅ | ✅ |
+| `OCR_LES` | Se OCR-innbetalinger | — | ✅ | ✅ | ✅ | ✅ |
+| `OCR_IMPORT` | Importere OCR-fil | — | — | — | ✅ | ✅ |
+| `VALUTA_LES` | Se valutakurser | — | ✅ | ✅ | ✅ | ✅ |
+| `VALUTA_SKRIV` | Legge inn og hente valutakurser | — | — | — | ✅ | ✅ |
+| **Betaling** | | | | | | |
+| `BETALING_LES` | Se betalingslister | — | ✅ | ✅ | ✅ | ✅ |
+| `BETALING_OPPRETT` | Opprette betalingsliste | — | — | — | ✅ | ✅ |
+| `BETALING_GODKJENN` | Godkjenne betalingsliste | — | — | — | ✅ | ✅ |
+| `BETALING_OPPGJOR` | Registrere at betalingene er utført | — | — | — | ✅ | ✅ |
+| **Produkter** | | | | | | |
+| `PRODUKT_LES` | Se produktregisteret | — | ✅ | ✅ | ✅ | ✅ |
+| `PRODUKT_SKRIV` | Endre produktregisteret | — | — | — | ✅ | ✅ |
+| `LAGER_LES` | Se lagerbeholdning | — | ✅ | ✅ | ✅ | ✅ |
+| `LAGER_SKRIV` | Registrere lagerbevegelser og varetelling | — | — | — | ✅ | ✅ |
+| **Anlegg** | | | | | | |
+| `ANLEGG_LES` | Se anleggsregisteret | — | ✅ | ✅ | ✅ | ✅ |
+| `ANLEGG_SKRIV` | Registrere, avskrive og avhende anleggsmidler | — | — | — | ✅ | ✅ |
+| **Timer** | | | | | | |
+| `TIMER_LES_EGNE` | Se sine egne timer | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `TIMER_LES_ALLE` | Se alles timer | — | — | — | — | ✅ |
+| `TIMER_RAPPORT_LES` | Se timeoversikt per prosjekt og ufakturert | — | ✅ | ✅ | ✅ | ✅ |
+| `TIMER_SKRIV_EGNE` | Føre sine egne timer | ✅ | — | — | ✅ | ✅ |
+| `TIMER_SKRIV_ALLE` | Rette alles timer | — | — | — | — | ✅ |
+| `TIMER_FAKTURER` | Fakturere førte timer | — | — | — | ✅ | ✅ |
+| `TIMER_LAAS` | Låse timelisten for en måned | — | — | — | — | ✅ |
+| **Utlegg** | | | | | | |
+| `UTLEGG_LES_EGNE` | Se sine egne utlegg | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `UTLEGG_LES_ALLE` | Se alles utlegg | — | ✅ | ✅ | ✅ | ✅ |
+| `UTLEGG_SKRIV_EGNE` | Sende inn eget utlegg og kjøregodtgjørelse | ✅ | — | — | ✅ | ✅ |
+| `UTLEGG_GODKJENN` | Godkjenne og avvise utlegg | — | — | — | ✅ | ✅ |
+| `UTLEGG_UTBETAL` | Registrere utbetaling av utlegg | — | — | — | ✅ | ✅ |
+| **Lønn** | | | | | | |
+| `LONN_LES` | Se ansattregisteret og lønnskjøringene | — | — | ✅ | ✅ | ✅ |
+| `LONNSSLIPP_LES_EGEN` | Se sin egen lønnsslipp | ✅ | — | ✅ | ✅ | ✅ |
+| `LONNSSLIPP_LES_ALLE` | Se alles lønnsslipper | — | — | ✅ | ✅ | ✅ |
+| `LONN_SKRIV` | Registrere ansatte | — | — | — | ✅ | ✅ |
+| `LONN_KJOR` | Kjøre lønn | — | — | — | ✅ | ✅ |
+| **Dimensjoner** | | | | | | |
+| `DIMENSJON_LES` | Se avdelinger og prosjekter | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `DIMENSJON_SKRIV` | Endre avdelinger og prosjekter | — | — | — | ✅ | ✅ |
+| **Aksjonærer** | | | | | | |
+| `AKSJEBOK_LES` | Se aksjeeierboken | — | ✅ | ✅ | ✅ | ✅ |
+| `AKSJEBOK_SKRIV` | Registrere aksjonærer, hendelser og utbytte | — | — | — | ✅ | ✅ |
+| **Attestering** | | | | | | |
+| `ATTESTERING_LES` | Se attesteringssporet | — | ✅ | ✅ | ✅ | ✅ |
+| `ATTESTERING_UTFOR` | Attestere bilag | — | — | — | ✅ | ✅ |
+| `ATTESTERING_ADMIN` | Sette attesteringspolicyen | — | — | — | — | ✅ |
+| **Selskap** | | | | | | |
+| `SELSKAP_LES` | Se firmaopplysningene | — | ✅ | ✅ | ✅ | ✅ |
+| `SELSKAP_ADMIN` | Endre firmaopplysningene | — | — | — | — | ✅ |
+| `MEDLEM_ADMIN` | Gi og fjerne tilgang | — | — | — | — | ✅ |
+| `OPPDRAG_LES` | Se oppdrag | — | ✅ | ✅ | ✅ | ✅ |
+| `OPPDRAG_ADMIN` | Inngå og avslutte oppdrag | — | — | — | — | ✅ |
+| `INTEGRASJON_LES` | Se integrasjoner | — | ✅ | ✅ | ✅ | ✅ |
+| `INTEGRASJON_ADMIN` | Slippe til en integrasjon | — | — | — | — | ✅ |
+| `MIGRERING_ADMIN` | Importere regnskap fra et annet system | — | — | — | — | ✅ |
+
+<!-- /MATRISE -->
+
+Egendefinerte roller står ikke i tabellen — de er per selskap. De består
+av de samme rettighetene, med unntakene i §6.
+
+## 6. Egendefinerte roller
+
+Et selskap setter sammen sine egne roller av rettighetene som finnes:
+«Fakturaansvarlig», «Controller uten lønn», «Lagermedarbeider».
+`company_role` + `company_role_right`, per selskap, og
+`company_member.role` peker på navnet.
+
+**De innebygde rollene ligger IKKE i databasen.** De er definert i
+`regnmed-api::tilgang` og blir der. To definisjoner av det samme er to
+steder å drive fra hverandre, og et regnskapssystem har ikke råd til at
+tilgang betyr én ting i koden og en annen i basen. Tabellen holder bare
+det selskapet har funnet på selv; portalen får de innebygde beskrevet
+fra koden via `GET …/roles`.
+
+**Rollenavnet er permanent**, som en dimensjonskode og av samme grunn:
+det er nøkkelen medlemskapene peker på. De innebygde navnene er
+reservert, ellers ville en selskapsdefinert «admin» skygget for den
+ekte.
+
+**Rettigheter som styrer hvem som har tilgang kan ikke delegeres.**
+`MEDLEM_ADMIN`, `SELSKAP_ADMIN`, `OPPDRAG_ADMIN` og `INTEGRASJON_ADMIN`
+er utenfor rekkevidde for en egendefinert rolle
+([`Rett::kan_delegeres`]) — en rolle som kan endre tilganger kan gi seg
+selv alt annet, og da er resten av avgrensningen bare pynt. Avvist når
+rollen lages, ikke bare ignorert ved oppslag.
+
+**Ukjente rettighetsnavn oppfører seg forskjellig i de to retningene**,
+og det er med vilje: når et *menneske* skriver en rolle, avvises et
+ukjent navn høylytt (en rolle som stilltiende mangler halve innholdet er
+verre enn en feilmelding); ved *oppslag* ignoreres det (der er det en
+gammel database eller en tilbakerullet versjon, ikke en skrivefeil).
+
+En rolle **slettes aldri**, den deaktiveres — og en deaktivert rolle gir
+ingenting. Endringene ligger i `company_role_change`.
+
+Integrasjoner går gjennom samme oppslag, så en maskin kan få en
+egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer. At
+`admin` ikke er grantbart til en maskin står fortsatt.
+
+## 7. Medlemsadministrasjon
 
 Fram til migrasjon 0037 kunne **ingen gi noen tilgang**. De to veiene inn
 var å opprette selskapet selv (og bli admin) eller å få et oppdrag fra
@@ -51,8 +331,6 @@ regnskapsfører eller en ansatt.
 
 Nå: `MEDLEM_ADMIN` gir rett til å invitere, endre rolle og fjerne
 tilgang, under `/companies/{id}/access…` og `/companies/{id}/invitations…`.
-
-### Invitasjonen er stilet til en adresse, ikke til en person
 
 `person` opprettes just-in-time fra tokenets `sub`, så en som aldri har
 brukt regnmed **finnes ikke å slå opp**. En invitasjon peker derfor på en
@@ -94,116 +372,43 @@ hvem fikk hva, når, og hvem som ga det. En innløst invitasjon har ingen
 utfører (personen løste den inn selv); hvem som inviterte står på
 invitasjonen.
 
-## Per-company guard on API routes
+## 8. Det som IKKE finnes, og hvorfor
 
-Every company-scoped endpoint goes through **one** guard,
-`regnmed_api::tilgang::krev` — the only place in the API that calls
-`regnmed_db::company_access`. No path to the company yields **404, not
-403**: a caller without access must not learn that the company exists.
+- **Ingen global administrator.** Ingen tilgangsvei krysser
+  selskapsgrenser. Det er tillitshistorien: leverandøren har ingen
+  bakvei inn i kundens hovedbok. Støtteveien er at kunden gir et
+  tidsavgrenset oppdrag — synlig for dem, og trekkbart samme dag. Se
+  #57 for avgjørelsen i sin helhet.
+- **Ingen tilgang i tokenet.** Tokenet beviser identitet, ingenting
+  annet. Derfor virker en tilbakekalling straks, uten å vente på at et
+  token løper ut.
+- **Ingen tilgangsstyring i portalen.** Portalen skjuler menyvalg og
+  knapper for å slippe at man klikker seg inn i en feilmelding. Det er
+  en bekvemmelighet. **Serveren nekter**, og det er der sannheten
+  ligger.
+- **Driftsoppgavene går utenom.** `regnmed anchor`,
+  `generate-invoices`, `depreciate`, `migrate`, `verify-ledger` og
+  `saft-export` kjører som CLI/CronJob rett mot databasen, uten noen
+  person og uten denne vakten. Det er en bevisst grense
+  (docs/deploy.md), og den står her for at den ikke skal se ut som et
+  hull.
 
-Endepunktet sier hvilken **rettighet** handlingen krever, ikke hvem som
-får gjøre den. Rettigheten hører til handlingen og endrer seg ikke når
-vi legger til en rolle:
+## 9. Grensene mot resten av systemet
 
-```rust
-krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
-```
+Tilgang er ett lag av flere, og de gjør forskjellige ting:
 
-`krev` returnerer personens samlede tilgang, så en handler som trenger
-mer enn ja/nei slipper et nytt oppslag — periodelåsen bruker det: å låse
-krever `PERIODE_LAAS`, å **åpne igjen** krever admin.
-
-**Rettighetene unioneres over alle veier inn.** En person kan være
-direkte medlem *og* komme inn via et oppdrag. Så lenge rollene var en
-stige holdt det å velge den sterkeste; etter `ansatt` (#54) er de ikke
-det, og en ansatt som også kom inn gjennom et byrå ville mistet retten
-til å føre sine egne timer hvis vi valgte én. `company_access` finnes
-fortsatt, men bare til visning — tilgang avgjøres av `company_roles` og
-unionen.
-
-## Rettigheter og roller
-
-**En rolle er et sett rettigheter, ikke et trinn på en stige.** Fram
-til #59 var tilgang tre nivåer (`admin` > `bokforing` > `les`), lett å
-forstå og umulig å bøye: enten så du hele hovedboken, eller ingenting.
-Et selskap som vil ha «en som bare fakturerer» eller «en controller som
-ser alt bortsett fra lønn» hadde ingen vei.
-
-Vokabularet er en **enum i koden** (`regnmed_api::tilgang::Rett`), ikke
-fritekst i databasen: et endepunkt kan ikke kreve en rettighet som ikke
-finnes, og kompilatoren finner alle stedene når en rettighet endrer
-navn. Navnene er norske, som resten av domenet — `FAKTURA_LES`, ikke
-`INVOICE_READ`.
-
-**Rettigheter er additive, aldri subtraktive.** Det finnes ingen «alt
-unntatt X»; den regelen er umulig å resonnere om når roller settes
-sammen.
-
-De innebygde rollene er faste bunter:
-
-| Bunt | Innhold |
+| Mekanisme | Hva den stopper |
 | --- | --- |
-| `ansatt` | **Selvbetjening** (#54): `TIMER_LES_EGNE`, `TIMER_SKRIV_EGNE`, `UTLEGG_LES_EGNE`, `UTLEGG_SKRIV_EGNE`, `LONNSSLIPP_LES_EGEN`, `BILAG_LAST_OPP`, `DIMENSJON_LES` |
-| `les` | `*_LES` for bilag, rapporter, faktura, reskontro, bank, betaling, produkter, lager, anlegg, budsjett, dimensjoner, aksjebok, utlegg, forankring, oppdrag, integrasjoner — **ikke lønn** |
-| `revisor` | `les` + `LONN_LES` og `LONNSSLIPP_LES_ALLE` (#55). Kommer bare fra et revisjonsoppdrag; kan ikke tildeles direkte |
-| `bokforing` | `les` + alt som endrer hovedboken: `BILAG_BOKFOR`, `FAKTURA_SKRIV`, `BANK_AVSTEM`, `BETALING_OPPRETT`/`_GODKJENN`/`_OPPGJOR`, `LONN_KJOR`, `PERIODE_LAAS` … + lønnslesingen |
-| `admin` | `bokforing` + `SELSKAP_ADMIN`, `MEDLEM_ADMIN`, `INTEGRASJON_ADMIN`, `OPPDRAG_ADMIN`, `TIMER_LAAS`, `TIMER_*_ALLE`, `MIGRERING_ADMIN`, `MVA_ORDNING_ADMIN` |
+| **Tilgang** (dette dokumentet) | hvem som får utføre en handling |
+| **Attestering** (docs/attestering.md) | en EKSTRA sperre oppå tilgang: at *en annen* har godkjent før bokføring eller betaling. Ikke en erstatning — den som attesterer må uansett ha tilgang |
+| **Periodelås / timelås** | tidssperrer, ikke tilgangssperrer: en admin med all verdens rettigheter kan ikke bokføre i en låst periode |
+| **Append-only-hovedboken** (docs/ledger.md) | gjelder uansett rolle. En admin kan heller ikke endre eller slette et bilag — korreksjon er et reverserende bilag |
 
-`les` ⊂ `revisor` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **disse
-fire**, ikke ved modellen. En egendefinert rolle er ikke nøstet i det
-hele tatt — og `ansatt` er det ikke.
+Det siste punktet er verdt å si tydelig: **ingen rolle i dette
+dokumentet gir rett til å endre historikk.** Tilgangsmodellen avgjør hvem
+som får legge noe til, aldri hvem som får ta noe bort.
 
-### Egendefinerte roller (#60)
-
-Et selskap setter sammen sine egne roller av rettighetene som finnes:
-«Fakturaansvarlig», «Controller uten lønn», «Lagermedarbeider».
-`company_role` + `company_role_right`, per selskap, og
-`company_member.role` peker på navnet.
-
-**De innebygde rollene ligger IKKE i databasen.** De er definert i
-`regnmed-api::tilgang` og blir der. To definisjoner av det samme er to
-steder å drive fra hverandre, og et regnskapssystem har ikke råd til at
-tilgang betyr én ting i koden og en annen i basen. Tabellen holder bare
-det selskapet har funnet på selv; portalen får de innebygde beskrevet
-fra koden via `GET …/roles`.
-
-**Rollenavnet er permanent**, som en dimensjonskode og av samme grunn:
-det er nøkkelen medlemskapene peker på. Kunne det endres, ville de pekt
-på en rolle som ikke finnes lenger. Vil man ha et annet navn, lager man
-en ny rolle. De innebygde navnene er reservert, ellers ville en
-selskapsdefinert «admin» skygget for den ekte.
-
-**Rettigheter som styrer hvem som har tilgang kan ikke delegeres.**
-`MEDLEM_ADMIN`, `SELSKAP_ADMIN`, `OPPDRAG_ADMIN` og
-`INTEGRASJON_ADMIN` er utenfor rekkevidde for en egendefinert rolle
-([`Rett::kan_delegeres`]) — en rolle som kan endre tilganger kan gi seg
-selv alt annet, og da er resten av avgrensningen bare pynt. De blir
-værende hos `admin`, som er en rolle et selskap ikke kan skrive om.
-Avvist når rollen lages, ikke bare ignorert ved oppslag.
-
-**Ukjente rettighetsnavn oppfører seg forskjellig i de to retningene**,
-og det er med vilje: når et *menneske* skriver en rolle, avvises et
-ukjent navn høylytt (en rolle som stilltiende mangler halve innholdet er
-verre enn en feilmelding); ved *oppslag* ignoreres det (der er det en
-gammel database eller en tilbakerullet versjon, ikke en skrivefeil).
-Databasen kjenner ikke vokabularet, så en rolle kan aldri love en
-rettighet ingen håndhever.
-
-En rolle **slettes aldri**, den deaktiveres — og en deaktivert rolle gir
-ingenting. Medlemskapet står, så historikken om hvem som hadde hvilken
-tilgang er intakt. Endringene ligger i `company_role_change`.
-
-Migrasjon 0039 fjernet check-constraint-en på `company_member.role`,
-siden listen ikke lenger er kjent for databasen. Det svekker ikke
-vernet: oppslaget er **fail-closed** — et rollenavn koden ikke kjenner
-igjen gir ingen rettigheter, så en ugyldig verdi stenger ute i stedet
-for å slippe inn.
-
-Integrasjoner (#45) går gjennom samme oppslag, så en maskin kan få en
-egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
-At `admin` ikke er grantbart til en maskin står fortsatt.
-
-### I portalen (#61)
+## 10. I portalen
 
 Under **Oppdrag** ligger tre kort: Tilgang (hvem som kommer til), Roller
 og Integrasjoner. Rollekortet viser de innebygde rollene som de er —
@@ -226,131 +431,37 @@ Gruppene er `<details>` og ikke en bred tabell — det er formen som tåler
 rutenettet er en visning av det som allerede håndheves, og en meny uten
 et valg er en bekvemmelighet, ikke en sperre.
 
-### Lønn er ikke allmenn lesning
+## 11. Hvor det er testet
 
-Fram til #55 lå `LONNSSLIPP_LES_ALLE` og `LONN_LES` i lesebunten, så
-**enhver med lesetilgang kunne laste ned hvem som helst sin
-lønnsslipp** — bruttolønn, forskuddstrekk, feriepenger og fødselsdato —
-og se ansattlisten med månedslønn og trekkprosent. Det var ikke en
-beslutning; lønn kom sist og gjenbrukte den generelle lesetilgangen.
+Autorisasjon testes som **nektelser**. At en admin slipper til er dekket
+overalt ellers i suiten; at en leser *ikke* slipper til er det ingenting
+annet som fanger.
 
-Rettingen tvang fram et skille som uansett var riktig: **`revisor` og en
-intern leser er ikke det samme.** Begge er skrivebeskyttet, men bare den
-ene har en revisjonsplikt som krever lønnsopplysningene — lønn er en
-vesentlig kostnad, og forskuddstrekk og arbeidsgiveravgift er lovpålagte
-størrelser som skal kunne kontrolleres. Før #55 var de samme streng:
-et `revisjon`-oppdrag ga `les`. Nå gir det `revisor`.
+| Fil | Hva den fester |
+| --- | --- |
+| `tests/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
+| `tests/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier — og at en utenforstående får 404 og ikke 403 |
+| `tests/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
+| `tests/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
+| `regnmed_api::tilgang` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |
 
-Svaret på «hvor mye ser en revisor?» er altså fortsatt «lønn også», men
-det er nå et **uttrykkelig ja** i stedet for en bieffekt. En intern
-leser — et styremedlem, en controller — ser det ikke lenger.
+### Tre feller, alle gått i under bygging
 
-**Ingen egen `lonn`-rolle.** Vurdert og valgt bort: den som fører
-regnskapet må uansett se lønn for å bokføre den, så en rolle som skiller
-dem ville bare hatt mening sammen med egendefinerte roller (#60). Der
-kan et selskap lage «controller uten lønn» selv, av rettighetene som nå
-finnes.
+Dette avsnittet står her fordi hver av dem ga en test som så grønn ut
+mens den målte ingenting.
 
-### Ansattrollen er ikke «lesing minus noe»
+1. **Enhetstestene kan ikke fange en rettighet i feil bunt.** De utleder
+   fasiten sin *fra* buntene. Prøvd med vilje — `PRODUKT_SKRIV` flyttet
+   til lesebunten — og samtlige besto. Det er `tests/tilgang.rs` som er
+   sperren der, og den slo ut.
+2. **Kroppen må være gyldig JSON for endepunktet.** axum kjører
+   `Json<T>`-uttrekket før handleren, så en tom kropp gir 422 og vakten
+   blir aldri spurt. En matrise med `{}` består uten å bevise noe.
+3. **Spørrestrengen må også være gyldig.** Samme mekanisme med
+   `Query<T>`: `/bank/reconciliation` uten `?account=` gir 400 før
+   vakten. Felle nummer to og tre er samme feil i to former, og den
+   andre ble gjort etter at den første var oppdaget.
 
-Den er den formen rangstigen ikke kunne uttrykke: en ansatt får
-**skrive** noen få ting — sine egne timer, sitt eget refusjonskrav, et
-bilde av en kvittering — og **lese nesten ingenting**. Før #54 måtte man
-gi bort bokføringstilgang til hele hovedboken for å la noen føre timer.
-
-Bunten er positivt avgrenset: den lister hva en ansatt får, ikke hva hun
-er nektet. Hovedbok, rapporter, faktura, bank, reskontro, ansattlisten
-og alles timer, utlegg og lønn står utenfor, og havner ikke innenfor ved
-et uhell — en ny rettighet må skrives inn i bunten for å gjelde.
-
-To ting kom ut av å bygge den:
-
-- **`TIMER_RAPPORT_LES`** måtte skilles fra `TIMER_LES_ALLE`. De
-  selskapsvide timeoversiktene (per prosjekt, ufakturert) er ikke den
-  ansattes sak, men de er heller ikke det samme som admins rett til å se
-  og rette andres enkelttimer. Uten skillet ville enten en leser mistet
-  totalene, eller en ansatt fått dem.
-- **Ukjent rolleverdi gir nå ingen rettigheter**, ikke `les`. Før #54 var
-  `les` svakest, så «ukjent → les» var trygt. Nå er `ansatt` og `les`
-  ikke sammenlignbare, og under en rullerende utrulling kan en gammel
-  binær møte `ansatt` i databasen — å tolke den som `les` ville vært en
-  **oppgradering**, ikke en degradering.
-
-Portalen viser en ansatt bare Timer, Utlegg og en liten Bilag-side med
-kvitteringsfoto. Det er en bekvemmelighet, ikke en sperre: **portalen
-skjuler, serveren nekter.**
-
-### Omfang: egne data mot alles
-
-Noen rettigheter finnes i par, `_EGNE`/`_ALLE`. En ansatt skal føre sine
-egne timer uten å se kollegenes; en leder skal se begge deler.
-
-- **`_ALLE` medfører `_EGNE`.** Ellers måtte hver bunt huske begge, og
-  en bunt som glemte `_EGNE` ville stengt folk ute fra deres egne data.
-- Et endepunkt som allerede filtrerer på personen krever `_EGNE`; et
-  som viser eller endrer andres krever `_ALLE`.
-
-Dimensjonen ble bestemt i #59, ikke utsatt, nettopp fordi den er dyr i
-ettertid: hver «egen»-variant ville blitt et nytt navn, og lagrede
-roller måtte migreres. Timeføringen bruker den allerede — listen er
-egne timer, admin retter alles.
-
-Etter #54 gjelder det disse parene: `TIMER_LES_*`, `TIMER_SKRIV_*`,
-`UTLEGG_LES_*` og `LONNSSLIPP_LES_*`. Omfanget håndheves i handleren,
-ikke i spørringen alene: lønnsslippen og kvitteringen til en annen
-svarer **404**, ikke 403 — den som ikke får se noe skal heller ikke få
-vite at det finnes.
-
-**Kjent svakhet:** `LONNSSLIPP_LES_ALLE` ligger fortsatt i `les`-bunten,
-så enhver med lesetilgang kan laste ned andres lønnsslipp. Det er dagens
-oppførsel, ikke en ny beslutning — verken #59 eller #54 skulle endre
-hvem som har hva. #55 retter det.
-
-**Hvorfor én vakt.** Fram til #56 hadde hver modul sin egen
-`require_access` — 22 kopier i tre ulike former (`write: bool`,
-`admin: bool`, et nivå som streng, og noen uten parameter i det hele
-tatt). Så lenge regelen var «les eller skriv» gikk det bra, men hver
-kopi var et sted å ta feil, og en fjerde rolle ville måttet skrives inn
-22 ganger. Samme begrunnelse som ratebegrensningen for integrasjoner:
-én søm ingen kan glemme.
-
-En ukjent rolleverdi faller til **svakeste** rolle, ikke til en feil. En
-datafeil skal ikke kunne bli en tilgangseskalering.
-
-## Where it is tested
-
-- `crates/regnmed-api/tests/me_endpoint.rs` (real Postgres, also CI): a
-  locally generated JWKS signs real RS256 tokens; a seeded
-  firm-with-engagement plus a direct membership resolve to exactly the
-  expected company list; the forged/expired/wrong-audience matrix is
-  rejected.
-- `regnmed_api::tilgang` sine enhetstester — at buntene ikke
-  overlapper, at slug-ene er unike, at `_ALLE` medfører `_EGNE`, og at
-  en ukjent rolleverdi faller til svakeste rolle. **De kan ikke fange
-  at en rettighet ligger i feil bunt** — de utleder fasiten fra
-  buntene. Prøvd med vilje: flyttet `PRODUKT_SKRIV` til lesebunten, og
-  alle åtte besto. Det er matrisetesten under som er sperren der.
-- `crates/regnmed-api/tests/medlemmer.rs` — hele livsløpet: invitasjon →
-  innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at
-  siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan
-  endres herfra, at en bokfører ikke kan slippe noen inn, og at sporet
-  navngir hvem som ga hvem tilgang.
-- Ansattrollen har egne rader i matrisen: en bred liste over det hun
-  IKKE når (hovedbok, rapporter, faktura, bank, betaling, ansattlisten,
-  innboksen, selskapsvide timeoversikter), det hun SKAL nå, at hun kan
-  laste opp en kvittering uten å kunne lese innboksen, og at hun får sin
-  egen lønnsslipp men får 404 på kollegaens.
-- `crates/regnmed-api/tests/tilgang.rs` — tilgangsmatrisen, skrevet som
-  **nektelser**: at `les` ikke får endre noe, at `bokforing` ikke får
-  administrere, og at en utenforstående får 404 og ikke 403 på hvert
-  eneste endepunkt i utvalget. At en admin slipper til er dekket
-  overalt ellers; at en leser ikke slipper til er det ingenting annet
-  som fanger. Testen ble kontrollert ved å ødelegge én vakt med vilje —
-  den slo ut.
-
-  Merk at både kroppene og **spørrestrengene** må være gyldige for
-  endepunktet: axum kjører `Json<T>`- og `Query<T>`-uttrekkene før
-  handleren, så en tom kropp gir 422 og en manglende parameter gir 400 —
-  og vakten blir aldri spurt. En matrise med `{}` ville bestått uten å
-  bevise noe. Begge fellene er gått i under bygging, og begge ga en
-  test som så grønn ut mens den målte ingenting.
+Mønsteret er verdt å ta med videre: **en autorisasjonstest som ikke er
+sett feile, er ikke verifisert.** Hver av sperrene over er kontrollert
+ved å ødelegge det den skal fange.

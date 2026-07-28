@@ -41,7 +41,7 @@ CLAUDE.md).
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |
 | [betaling.md](betaling.md) | Betalingsliste og remittering: pain.001, enveis kjøringer, oppgjør som lukker reskontroen |
 | [secrets.md](secrets.md) | Ingenting hemmelig i repoet, heller ikke kryptert — hvor Maskinporten-nøkkelen faktisk ligger, og én nøkkel per maskin |
-| [auth.md](auth.md) | Identity (OIDC) and authorization (engagement model) |
+| [auth.md](auth.md) | **Hvem kan gjøre hva, og hvor er det håndhevet** — aktørene, rettighetsvokabularet, de innebygde og egendefinerte rollene, og den maskinsjekkede tilgangsmatrisen |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
 | [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |
 | [deploy.md](deploy.md) | Base + overlays, production checklist, verified backups, TLS |
