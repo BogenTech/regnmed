@@ -34,6 +34,42 @@ enum Command {
     /// Post every due monthly avskrivning across all companies
     /// (docs/anlegg.md, #40). Run monthly (cron/CronJob).
     Depreciate,
+    /// Tegn eller avslutt et abonnement for et selskap (drift/ops,
+    /// docs/abonnement.md, #65). Det finnes ingen API-vei for dette —
+    /// abonnementet styres av driften, som migrate og anchor.
+    Abonnement {
+        /// Company id (or use --orgnr)
+        #[arg(long)]
+        company: Option<Uuid>,
+        /// Organization number of the company
+        #[arg(long)]
+        orgnr: Option<String>,
+        /// "tegn" starter en dekning fra i dag; "avslutt" setter
+        /// sluttdato (eksklusiv) på den åpne dekningen
+        #[arg(long)]
+        aksjon: String,
+        /// Plan (default "standard")
+        #[arg(long, default_value = "standard")]
+        plan: String,
+        /// Sluttdato for "avslutt" (YYYY-MM-DD, EKSKLUSIV); default i dag
+        #[arg(long)]
+        til: Option<chrono::NaiveDate>,
+        /// Avtale-/vedtaksreferansen som forklarer raden (påkrevd for tegn)
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Fakturer inneværende måned for alle selskaper med dekning, inn i
+    /// DRIFTSSELSKAPETS hovedbok (docs/abonnement.md, #65). Idempotent;
+    /// kjøres månedlig (cron/CronJob). Driftsselskapet pekes ut med
+    /// --orgnr eller REGNMED_DRIFT_ORGNR.
+    AbonnementFaktura {
+        /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
+        #[arg(long)]
+        orgnr: Option<String>,
+        /// Fakturer bare dette kundeselskapet (orgnr) — etterfakturering
+        #[arg(long)]
+        bare_orgnr: Option<String>,
+    },
     /// Fetch dagskurser from Norges Banks åpne API into the valutakurs
     /// table (docs/valuta.md, #44). Manual rates can always be added
     /// via the API; every row records its kilde.
@@ -167,6 +203,75 @@ async fn main() -> Result<()> {
         }
         Command::Demo => demo(&pool).await?,
         Command::Anchor => anchor(&pool).await?,
+        Command::Abonnement {
+            company,
+            orgnr,
+            aksjon,
+            plan,
+            til,
+            note,
+        } => {
+            let company_id = resolve_company(&pool, company, orgnr.as_deref()).await?;
+            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            match aksjon.as_str() {
+                "tegn" => {
+                    let note = note
+                        .as_deref()
+                        .context("tegning krever --note med avtale-/vedtaksreferansen")?;
+                    regnmed_db::abonnement::tegn(
+                        &pool,
+                        company_id,
+                        &plan,
+                        idag,
+                        None,
+                        note,
+                        "regnmed abonnement",
+                    )
+                    .await?;
+                    println!("abonnement «{plan}» tegnet fra {idag} (til videre)");
+                }
+                "avslutt" => {
+                    let til = til.unwrap_or(idag);
+                    regnmed_db::abonnement::avslutt(&pool, company_id, til).await?;
+                    println!("åpen dekning avsluttet — siste dag med dekning er dagen før {til}");
+                }
+                annet => anyhow::bail!("ukjent --aksjon «{annet}» (bruk tegn eller avslutt)"),
+            }
+            let status = regnmed_db::abonnement::status_for(&pool, company_id).await?;
+            println!("status nå: {}", status.slug());
+        }
+        Command::AbonnementFaktura { orgnr, bare_orgnr } => {
+            let orgnr = orgnr
+                .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
+                .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
+            let drift = resolve_company(&pool, None, Some(&orgnr)).await?;
+            let bare = match bare_orgnr.as_deref() {
+                Some(o) => Some(resolve_company(&pool, None, Some(o)).await?),
+                None => None,
+            };
+            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let utfall = regnmed_db::abonnement::fakturer_maned(&pool, drift, idag, bare).await?;
+            if utfall.is_empty() {
+                println!("ingen selskaper med dekning å fakturere");
+            }
+            for u in &utfall {
+                match (&u.invoice_no, &u.detail) {
+                    (Some(no), _) => println!("{}: faktura {no}", u.company_navn),
+                    (None, Some(detail)) => println!("{}: {detail}", u.company_navn),
+                    (None, None) => {}
+                }
+            }
+            if utfall
+                .iter()
+                .any(|u| u.invoice_no.is_none() && u.detail.as_deref() != Some("hoppet over"))
+            {
+                anyhow::bail!("en eller flere abonnementsfakturaer feilet");
+            }
+        }
         Command::GenerateInvoices => {
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)

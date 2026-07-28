@@ -1,0 +1,42 @@
+# Abonnementsfakturaene (#65, docs/abonnement.md): den 1. hver måned
+# faktureres alle selskaper med dekning, inn i DRIFTSSELSKAPETS egen
+# hovedbok — regnmed er sin egen kunde nummer én. Idempotent per
+# (selskap, måned), så en omkjøring er trygg.
+#
+# PROD-ONLY (backup.yaml-mønsteret): jobben trenger driftsselskapets
+# orgnr, som er miljøkonfigurasjon — sett REGNMED_DRIFT_ORGNR under før
+# du ruller ut. Lokalklyngen har ikke noe driftsselskap, og en jobb som
+# alltid feiler der ville bare vært støy.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-abonnement-faktura
+  namespace: regnmed
+spec:
+  schedule: "0 7 1 * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: fakturer
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              command: ["/app/regnmed", "abonnement-faktura"]
+              env:
+                - name: REGNMED_DRIFT_ORGNR
+                  # Driftsselskapets orgnr — selskapet må finnes i
+                  # regnmed (onboardet fra BRREG som alle andre).
+                  value: "sett-meg-for-utrulling"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi

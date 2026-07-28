@@ -39,7 +39,12 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    Every DATABASE_URL/POSTGRES_PASSWORD in the prod render comes from
    this secret; the rendered YAML contains no credential (usernames and
    the OIDC audience are the only literals).
-5. `kubectl apply -k deploy/prod`.
+5. **Abonnementsfakturering** (docs/abonnement.md): onboard
+   driftsselskapet i regnmed (BRREG, som alle andre) og sett dets orgnr
+   som `REGNMED_DRIFT_ORGNR` i `deploy/prod/abonnement-faktura.yaml` —
+   CronJob-en er prod-only (backup.yaml-mønsteret) fordi lokalklyngen
+   ikke har noe driftsselskap.
+6. `kubectl apply -k deploy/prod`.
 
 ## Backups — restored weekly, or they don't count
 

@@ -840,6 +840,28 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    maskinelle, ingen menneskeavgjørelser. Bygges en plattformrolle
    likevel en gang, står kravlisten i #57 (logget, varslet,
    tidsbegrenset).
+53. ✅ Abonnement (docs/abonnement.md, closed #65): regnmeds egen kasse.
+   PRINSIPP håndhevet i tilgangsvakten: sperret abonnement stopper
+   ENDRINGER (`Rett::endrer()` — uttømmende match, ny rettighet må
+   velge side), ALDRI lesing, eksport eller styring av selskapet
+   (tilgang/oppdrag/integrasjoner åpne så noen kan rydde opp) —
+   hovedboken tas aldri som gissel. Status BEREGNES aldri lagres
+   (`regnmed-core::abonnement`): prove (30 d fra opprettelse) → aktiv
+   (dekkende rad) → frist (14 d) → sperret; frist regnes fra seneste av
+   prøvetid/oppsigelse. Migration 0041: `abonnement` daterte
+   dekningsrader m/ note (tegn=insert, avslutt=update valid_to alene),
+   `abonnement_pris` datert insert-only prisliste m/ kilde
+   (satsregister-mønsteret; forslag 249 kr/mnd eks mva per selskap —
+   brukere koster aldri), `abonnement_faktura_run` unik per
+   (selskap,år,måned) i SAMME tx som fakturaen; eksisterende selskaper
+   sådd med åpen dekning. Fakturering = DOGFOOD: egen motor i
+   driftsselskapets hovedbok (KID, reskontro, purring), `regnmed
+   abonnement`/`abonnement-faktura` CLI + prod-only CronJob
+   (REGNMED_DRIFT_ORGNR). INGEN betalingsleverandør i v1 (faktura+KID);
+   tier 2 = KORT via Stripe (bekreftet 2026-07-28 — firmakort er
+   normen for SaaS), Vipps ev. tilleggs-skinne senere.
+   `/me` bærer status; portalbanner i skallet varsler — serveren
+   sperrer. Byråavtaler/moduler bevisst utsatt (dokumentert retning).
    **Next:** Maskinporten (awaiting Skatteetaten scope grant,
    docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),

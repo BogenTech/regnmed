@@ -483,6 +483,7 @@ Tilgang er ett lag av flere, og de gjør forskjellige ting:
 | **Tilgang** (dette dokumentet) | hvem som får utføre en handling |
 | **Attestering** (docs/attestering.md) | en EKSTRA sperre oppå tilgang: at *en annen* har godkjent før bokføring eller betaling. Ikke en erstatning — den som attesterer må uansett ha tilgang |
 | **Periodelås / timelås** | tidssperrer, ikke tilgangssperrer: en admin med all verdens rettigheter kan ikke bokføre i en låst periode |
+| **Abonnementssperren** (docs/abonnement.md) | en betalingssperre, håndhevet i samme vakt: et sperret abonnement stopper endrende rettigheter (`Rett::endrer`), aldri lesing, eksport eller styringen av selskapet |
 | **Append-only-hovedboken** (docs/ledger.md) | gjelder uansett rolle. En admin kan heller ikke endre eller slette et bilag — korreksjon er et reverserende bilag |
 
 Det siste punktet er verdt å si tydelig: **ingen rolle i dette

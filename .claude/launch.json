@@ -8,6 +8,15 @@
       "port": 8082
     },
     {
+      "name": "regnmed-api-testidp",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": [
+        "-lc",
+        "exec env OIDC_ISSUER=https://id.test.invalid OIDC_AUDIENCE=regnmed OIDC_JWKS_FILE=$HOME/.cache/regnmed-seed/jwks.json BIND_ADDR=127.0.0.1:8083 cargo run -q -p regnmed-api"
+      ],
+      "port": 8083
+    },
+    {
       "name": "regnid",
       "runtimeExecutable": "zsh",
       "runtimeArgs": ["-lc", "cd ../regnid && exec cargo run -q -- serve"],

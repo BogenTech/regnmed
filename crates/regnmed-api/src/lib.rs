@@ -663,6 +663,25 @@ async fn me(
     let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
+
+    // Abonnementsstatus per selskap (#65): portalen viser banneret her,
+    // og sperren selv sitter i tilgangsvakten. Ett oppslag per unikt
+    // selskap — listen er kort (en persons selskaper, ikke alle).
+    let mut abonnement = std::collections::HashMap::new();
+    for a in &access {
+        if let std::collections::hash_map::Entry::Vacant(e) = abonnement.entry(a.company_id) {
+            let status = regnmed_db::abonnement::status_for(&state.pool, a.company_id).await?;
+            use regnmed_core::abonnement::Status;
+            let dato = match status {
+                Status::Aktiv => None,
+                Status::Prove { til } => Some(til),
+                Status::Frist { sperres } => Some(sperres),
+                Status::Sperret { siden } => Some(siden),
+            };
+            e.insert(json!({ "status": status.slug(), "dato": dato.map(|d| d.to_string()) }));
+        }
+    }
+
     Ok(Json(json!({
         "person_id": person.person_id,
         "nye_tilganger": nye,
@@ -677,6 +696,7 @@ async fn me(
                 "name": a.name,
                 "access": a.access,
                 "via": a.via,
+                "abonnement": abonnement.get(&a.company_id),
             }))
             .collect::<Vec<_>>(),
     })))

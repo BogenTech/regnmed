@@ -23,6 +23,7 @@ resources:
   - ingress.yaml
   - cert-issuer.yaml
   - backup.yaml
+  - abonnement-faktura.yaml
 images:
   - name: regnmed
     newTag: pin-me-to-a-release

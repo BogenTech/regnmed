@@ -72,7 +72,9 @@ pub fn compute(lines: &[InvoiceLineInput]) -> ComputedInvoice {
 }
 
 /// Norwegian month name (lowercase, as it appears in running text).
-fn maanedsnavn(month: u32) -> &'static str {
+/// Public because abonnementsfakturaen (#65) names its period the same
+/// way as repeterende faktura.
+pub fn maanedsnavn(month: u32) -> &'static str {
     [
         "januar",
         "februar",

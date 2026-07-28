@@ -323,6 +323,44 @@ impl Rett {
     /// Hele vokabularet, i den rekkefølgen enumet er skrevet.
     pub const ALLE: &'static [Rett] = &ALLE_RETTIGHETER;
 
+    /// Fører handlingen regnskapet (eller dataene rundt det) videre?
+    ///
+    /// Brukes av abonnementssperren (#65, docs/abonnement.md): et
+    /// sperret abonnement stopper alt som ENDRER — som en låst periode —
+    /// men aldri lesing eller eksport, og heller ikke styringen av
+    /// selskapet: tilgang, oppdrag, integrasjoner og firmaopplysninger
+    /// kan alltid ryddes i, ellers kunne et sperret selskap verken
+    /// avvikle oppdrag eller slippe inn den som skal ordne opp.
+    ///
+    /// Matchen er uttømmende med vilje: en NY rettighet tvinges til å
+    /// velge side her, den kan ikke havne utenfor sperren ved et uhell.
+    pub fn endrer(self) -> bool {
+        use Rett::*;
+        match self {
+            // Lesing — alltid åpen.
+            BilagLes | RapportLes | FakturaLes | FakturamalLes | TilbudLes | PurringLes
+            | ReskontroLes | BankLes | OcrLes | BetalingLes | ValutaLes | ProduktLes | LagerLes
+            | AnleggLes | TimerLesEgne | TimerLesAlle | TimerRapportLes | UtleggLesEgne
+            | UtleggLesAlle | LonnLes | LonnsslippLesEgen | LonnsslippLesAlle | BudsjettLes
+            | DimensjonLes | AksjebokLes | AttesteringLes | EpostInnLes | ForankringLes
+            | SelskapLes | OppdragLes | IntegrasjonLes => false,
+
+            // Styring av selskapet — åpen også når abonnementet er
+            // sperret (se over).
+            SelskapAdmin | MedlemAdmin | OppdragAdmin | IntegrasjonAdmin | EpostInnAdmin => false,
+
+            // Alt som fører regnskapet videre — sperres.
+            VedleggSkriv | BilagLastOpp | BilagBokfor | PeriodeLaas | MvaOrdningAdmin
+            | FakturaSkriv | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv
+            | ReskontroSkriv | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett
+            | BetalingGodkjenn | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv
+            | AnleggSkriv | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerLaas
+            | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv | LonnKjor
+            | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
+            | AttesteringAdmin | MigreringAdmin => true,
+        }
+    }
+
     /// Slår et lagret navn tilbake til en rettighet.
     ///
     /// Ukjente navn gir `None` og blir **ignorert** der de brukes (#60):
@@ -826,6 +864,16 @@ pub async fn krev(
     };
     if !tilgang.har(rett) {
         return Err(ApiError::Forbidden(manglende(rett)));
+    }
+
+    // Abonnementssperren (#65, docs/abonnement.md) — ETTER
+    // tilgangssjekken, så en utenforstående fortsatt får 404 og aldri
+    // lærer noe om selskapets abonnement. Bare endrende rettigheter
+    // koster oppslaget; lesing og eksport går alltid.
+    if rett.endrer() && regnmed_db::abonnement::sperret(&state.pool, company_id).await? {
+        return Err(ApiError::Forbidden(
+            "abonnementet er utløpt — lesing og eksport virker som før, men endringer er sperret til abonnementet er i orden (docs/abonnement.md)",
+        ));
     }
     Ok(tilgang)
 }

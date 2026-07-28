@@ -280,6 +280,26 @@
   // klikke seg inn i en feilmelding, ikke som en sperre.
   var ANSATT_MENY = ["timer", "utlegg", "bilag"];
 
+  // Abonnementsbanneret (#65, docs/abonnement.md). Vises i skallet, så
+  // det følger alle seksjoner. Portalen varsler — SERVEREN sperrer, i
+  // tilgangsvakten; banneret er bare beskjeden om hvorfor.
+  function abonnementBanner(company) {
+    var a = company && company.abonnement;
+    if (!a || a.status === "aktiv") return "";
+    if (a.status === "prove") {
+      return '<div class="alert alert-info mb-4 text-sm"><span>Prøvetid til ' +
+        esc(a.dato || "") + ". Alt virker som normalt.</span></div>";
+    }
+    if (a.status === "frist") {
+      return '<div class="alert alert-warning mb-4 text-sm"><span>Abonnementet er ikke i orden. ' +
+        "Alt virker fram til " + esc(a.dato || "") +
+        " — etter det sperres endringer, mens lesing og eksport alltid virker.</span></div>";
+    }
+    return '<div class="alert alert-error mb-4 text-sm"><span>Abonnementet er utløpt: endringer er sperret' +
+      (a.dato ? " siden " + esc(a.dato) : "") +
+      ". Lesing og eksport virker som før — hovedboken tas aldri som gissel.</span></div>";
+  }
+
   function shell(companyId, section, content) {
     var company = companies.find(function (c) { return c.company_id === companyId; });
     var bareEgne = company && company.access === "ansatt";
@@ -307,7 +327,8 @@
       '<div class="flex flex-col sm:flex-row">' +
       '<ul class="menu menu-horizontal sm:menu-vertical bg-base-100 w-full sm:w-44 ' +
       'sm:min-h-full flex-nowrap overflow-x-auto sm:overflow-visible">' + items + "</ul>" +
-      '<main class="flex-1 p-4 sm:p-6 max-w-5xl w-full min-w-0">' + content + "</main></div>";
+      '<main class="flex-1 p-4 sm:p-6 max-w-5xl w-full min-w-0">' +
+      abonnementBanner(company) + content + "</main></div>";
     wireChrome();
   }
 

@@ -4,6 +4,7 @@
 //! live database. Once the dev database is a fixture of CI, migrate hot
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
+pub mod abonnement;
 pub mod aksjebok;
 pub mod anchor;
 pub mod asset;
