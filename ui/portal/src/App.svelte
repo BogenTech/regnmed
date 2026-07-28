@@ -9,6 +9,11 @@
   import Shell from "./components/Shell.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Placeholder from "./sections/Placeholder.svelte";
+  import Oversikt from "./sections/oversikt/Oversikt.svelte";
+
+  // Porterte seksjoner (#76 steg 2) — resten er plassholdere til
+  // dagens portal inntil de flyttes hit.
+  const SECTIONS = { oversikt: Oversikt };
 
   let boot = $state({ done: false, error: null });
 
@@ -58,11 +63,16 @@
   </div>
 {:else if route.view === "company"}
   <Shell companyId={route.companyId} section={route.section}>
-    <Placeholder
-      companyId={route.companyId}
-      section={route.section}
-      label={seksjonNavn(route.section)}
-    />
+    {#if SECTIONS[route.section]}
+      {@const Section = SECTIONS[route.section]}
+      <Section companyId={route.companyId} extra={route.extra} />
+    {:else}
+      <Placeholder
+        companyId={route.companyId}
+        section={route.section}
+        label={seksjonNavn(route.section)}
+      />
+    {/if}
   </Shell>
 {:else if route.view === "byra"}
   <div class="p-8">
