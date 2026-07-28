@@ -896,7 +896,12 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
    **UI stack decision (2026-07-22): Tailwind v4 + daisyUI 5 across both
-   sites.** Themes are daisyUI themes (user-selectable, third-party
+   sites.** **REVIDERT 2026-07-28 (#76): portalen migreres til Svelte 5
+   (runes), Vite-bygget ren SPA — ingen SvelteKit-server/SSR. Alt annet
+   består: Tailwind/daisyUI + temakontrakten, kompilert dist/ embeddes i
+   binæren (app.css-presedensen: dist sjekkes inn, Rust-bygget trenger
+   aldri node), én origin, PWA. Inkrementelt: ny app på /ny til
+   seksjonsparitet, så flippes / — planen står i #76.** Themes are daisyUI themes (user-selectable, third-party
    authorable as single CSS blocks); the theme contract and canonical
    theme definitions live in `../regnid/ui/themes.css` — the portal UI
    must reuse the same theme names/blocks so a user's theme feels
