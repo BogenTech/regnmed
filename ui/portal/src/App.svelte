@@ -10,10 +10,11 @@
   import Toasts from "./components/Toasts.svelte";
   import Placeholder from "./sections/Placeholder.svelte";
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
+  import Faktura from "./sections/faktura/Faktura.svelte";
 
   // Porterte seksjoner (#76 steg 2) — resten er plassholdere til
   // dagens portal inntil de flyttes hit.
-  const SECTIONS = { oversikt: Oversikt };
+  const SECTIONS = { oversikt: Oversikt, faktura: Faktura };
 
   let boot = $state({ done: false, error: null });
 
