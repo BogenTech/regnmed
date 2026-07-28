@@ -28,6 +28,7 @@ pub mod ocr;
 pub mod payments;
 pub mod period;
 pub mod portal;
+pub mod portal_ny;
 pub mod product;
 pub mod purring;
 pub mod reports;
@@ -83,6 +84,12 @@ pub fn router(state: AppState) -> Router {
         .route("/sw.js", get(portal::service_worker))
         .route("/icon-192.png", get(portal::icon_192))
         .route("/icon-512.png", get(portal::icon_512))
+        // Den nye Svelte-portalen (#76) lever under /ny til seksjonene
+        // har paritet; da flippes /.
+        .route("/ny", get(portal_ny::index))
+        .route("/ny/", get(portal_ny::index))
+        .route("/ny/callback", get(portal_ny::index))
+        .route("/ny/{*path}", get(portal_ny::asset))
         .route("/portal-config", get(portal::portal_config))
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/health", get(health))

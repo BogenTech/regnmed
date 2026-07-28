@@ -1,0 +1,19 @@
+{
+  "name": "regnmed-portal",
+  "private": true,
+  "type": "module",
+  "description": "regnmed-portalen: Svelte 5 (runes) + Vite, ren SPA — ingen SSR. dist/ sjekkes inn og embeddes i regnmed-api, så Rust-bygget trenger aldri Node (#76).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./jsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6",
+    "@tailwindcss/vite": "^4",
+    "daisyui": "^5",
+    "svelte": "^5",
+    "tailwindcss": "^4",
+    "vite": "^7"
+  }
+}

@@ -52,6 +52,8 @@ echo "==> regnid: client regnmed-portal for port $PORT"
     --client-id regnmed-portal --name "regnmed portal" \
     --redirect-uri "http://localhost:$PORT/callback" \
     --redirect-uri "http://127.0.0.1:$PORT/callback" \
+    --redirect-uri "http://localhost:$PORT/ny/callback" \
+    --redirect-uri "http://127.0.0.1:$PORT/ny/callback" \
     --post-logout-redirect-uri "http://localhost:$PORT/" \
     --post-logout-redirect-uri "http://127.0.0.1:$PORT/" \
     --audience regnmed) >/dev/null 2>&1 ||

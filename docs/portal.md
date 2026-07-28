@@ -7,6 +7,16 @@ embedded into the regnmed-api binary with `include_str!` and served on
 the API's own origin. One service, no CORS, nothing extra in the
 distroless image.
 
+> **Under migrering (#76, vedtak 2026-07-28):** portalen skrives om til
+> **Svelte 5 (runes), Vite-bygget ren SPA** — ingen SvelteKit-server,
+> ingen SSR. Den nye appen bor i `ui/portal/` og serveres på **`/ny`**
+> til alle seksjoner har paritet; da flippes `/` og dette dokumentet
+> skrives om. Doktrinen består: `ui/portal/dist/` sjekkes inn (bygget av
+> `scripts/build-portal.sh`) og embeddes med `include_dir`, så
+> Rust-bygget — også kryssbygget i `build-images.sh` — aldri trenger
+> Node; én binær, én origin, samme temakontrakt, og dist har eget
+> budsjett i `scripts/frugality.sh`. Migrasjonsplanen står i #76.
+
 ## Auth
 
 OIDC authorization code + **PKCE** against regnid. The code→token
@@ -17,7 +27,8 @@ Logout goes through regnid's `end_session` with `id_token_hint`
 (RP-initiated logout). regnmed still never sees a password.
 
 The public client `regnmed-portal` must have the portal's origin
-registered: `{origin}/callback` as redirect URI and `{origin}/` as
+registered: `{origin}/callback` as redirect URI (plus `{origin}/ny/callback`
+while the Svelte migration runs, #76) and `{origin}/` as
 post-logout URI. The portal derives both from `location.origin`, so the
 **port is part of the registration** — moving the dev server means
 re-registering the client.

@@ -29,6 +29,9 @@ dotenvy = "0.15"
 # PDF content streams (docs/bilagstolkning.md). No C, no image codecs.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 hex = "0.4"
+# Embeds the compiled Svelte portal (ui/portal/dist, checked in) in the
+# binary — hashed asset filenames make per-file include_str! impractical.
+include_dir = "0.7"
 jsonwebtoken = "9"
 quick-xml = "0.37"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

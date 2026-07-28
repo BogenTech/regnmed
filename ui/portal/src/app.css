@@ -1,0 +1,13 @@
+/* Portalens stilark (Svelte-appen, #76). Samme temakontrakt som før:
+   ui/themes.css er en KOPI av regnids kanoniske fil — samme temanavn og
+   -blokker, så brukerens tema kjennes likt på begge sider. Oppdater
+   begge sammen. Preferansen lagres per side (localStorage), aldri via
+   IdP-en. */
+
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, nord, corporate, business, dim, sunset;
+}
+
+@import "../../themes.css";

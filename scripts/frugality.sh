@@ -20,6 +20,10 @@ cd "$(dirname "$0")/.."
 API_BIN_BUDGET_MB=24
 CLI_BIN_BUDGET_MB=20
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
+# The compiled Svelte portal (#76) ships inside the binary; its own
+# budget keeps the SPA from quietly absorbing heavy dependencies.
+# Measured 2026-07-28: ~120 KB (52 KB JS + 61 KB CSS).
+PORTAL_DIST_BUDGET_KB=512
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 
@@ -44,6 +48,14 @@ size_mb() { # path -> MB rounded up
 
 report "regnmed-api binary" "$(size_mb target/release/regnmed-api)" "$API_BIN_BUDGET_MB" MB
 report "regnmed cli binary" "$(size_mb target/release/regnmed)" "$CLI_BIN_BUDGET_MB" MB
+
+dist_kb() { # dir -> KB rounded up, summed over all files
+  local bytes
+  bytes=$(find "$1" -type f -exec stat -f%z {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+  [ -n "$bytes" ] || bytes=$(find "$1" -type f -exec stat -c%s {} + | awk '{s+=$1} END {print s}')
+  echo $(((bytes + 1023) / 1024))
+}
+report "portal dist (ui/portal/dist)" "$(dist_kb ui/portal/dist)" "$PORTAL_DIST_BUDGET_KB" KB
 
 echo "==> measuring regnmed-api peak RSS under load"
 ./target/release/regnmed migrate >/dev/null
