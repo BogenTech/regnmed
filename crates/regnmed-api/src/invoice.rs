@@ -9,14 +9,14 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 use crate::product::{DocLineRequest, resolve_lines};
@@ -133,17 +133,12 @@ pub async fn invoice_pdf(
     let (meta, content) = regnmed_db::get_attachment(&state.pool, company_id, attachment_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/pdf".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{}\"", meta.filename),
-            ),
-        ],
+    Ok(file_response(
+        Vis::Inline,
+        &meta.filename,
+        "application/pdf",
         content,
-    )
-        .into_response())
+    ))
 }
 
 /// EHF (PEPPOL BIS Billing 3.0) for an issued invoice — rendered from
@@ -161,15 +156,10 @@ pub async fn invoice_ehf(
     let xml = regnmed_db::invoice_ehf(&state.pool, company_id, invoice_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/xml".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"ehf-{invoice_id}.xml\""),
-            ),
-        ],
+    Ok(file_response(
+        Vis::Attachment,
+        &format!("ehf-{invoice_id}.xml"),
+        "application/xml",
         xml,
-    )
-        .into_response())
+    ))
 }

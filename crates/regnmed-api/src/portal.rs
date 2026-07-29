@@ -33,7 +33,7 @@ const SERVICE_WORKER: &str = include_str!("../portal/sw.js");
 const ICON_192: &[u8] = include_bytes!("../portal/icon-192.png");
 const ICON_512: &[u8] = include_bytes!("../portal/icon-512.png");
 
-fn index_html() -> &'static str {
+pub(crate) fn index_html() -> &'static str {
     DIST.get_file("index.html")
         .and_then(|f| f.contents_utf8())
         .unwrap_or("")

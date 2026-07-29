@@ -534,6 +534,46 @@ Det siste punktet er verdt å si tydelig: **ingen rolle i dette
 dokumentet gir rett til å endre historikk.** Tilgangsmodellen avgjør hvem
 som får legge noe til, aldri hvem som får ta noe bort.
 
+### Herding av HTTP-svarene (#64)
+
+Tilgangsvakten avgjør *om* du får bytene. Dette laget avgjør hva
+nettleseren gjør med dem, og finnes fordi forsvaret ellers hviler på
+vaner: portalen laster ned via `blob` + `a.download` og navigerer aldri
+til et dokument, Bearer-modellen gjør at en lenke ikke kan «åpnes
+autentisert», og Svelte escaper det den rendrer. Alt sammen stemmer i
+dag. Ingen av delene er håndhevet.
+
+To sømmer, av samme grunn som vakten er én søm:
+
+| Søm | Hva den gjør |
+| --- | --- |
+| `herding::security_headers` (middleware på ALT) | `X-Content-Type-Options: nosniff` og `Referrer-Policy: no-referrer` på hvert svar; `Content-Security-Policy` på HTML |
+| `herding::file_response` (hver eneste nedlasting) | saniterer filnavnet og bestemmer hva serveren påstår at bytene er |
+
+**Opplasteren bestemmer ikke hva serveren sier bytene er.** En `ansatt`
+eller en tillatt e-postavsender kunne ellers fått oss til å servere
+`text/html` fra vårt eget opphav — og `nosniff` hjelper ikke da, for
+typen ville vært vår egen påstand. Bare kjente typer serveres
+(dokumenter, bildeformater, XML, tekst); alt annet blir
+`application/octet-stream`, og `inline` nedgraderes til `attachment`.
+**`image/svg+xml` står bevisst ikke på listen** — en SVG er et dokument
+som kan kjøre skript, og er den ene bildetypen som aldri skal serveres
+som bilde. Bytene selv røres aldri: dokumentet er bevis (migrasjon 0015).
+
+Filnavnet er den andre halvparten. Et anførselstegn lukket
+quoted-stringen i `Content-Disposition` og lot opplasteren legge til egne
+parametere; CR/LF avsluttet headerlinjen og ga en 500. Nå saniteres
+ASCII-formen, og `filename*=UTF-8''…` bærer de norske bokstavene.
+
+CSP-en henter hashen til portalens ene innebygde skript **fra HTML-en som
+faktisk serveres**. En hash festet i koden ville stilltiende sluttet å
+matche den dagen noen redigerte skriptet — temablinket ville kommet
+tilbake, og ingen ville koblet det til en header. `script-src` har ikke
+`unsafe-inline`; det er den klausulen som gjør en glemt escape til en
+konsollfeil i stedet for et innbrudd. `style-src` tillater inline stil,
+fordi nøkkeltallsøylene er ren CSS (#36) og injisert stil er et
+vesentlig mindre problem enn injisert skript.
+
 ## 10. I portalen
 
 Under **Oppdrag** ligger tre kort: Tilgang (hvem som kommer til), Roller

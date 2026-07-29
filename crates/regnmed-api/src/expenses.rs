@@ -17,13 +17,14 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
@@ -153,17 +154,14 @@ pub async fn receipt(
         regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, content_type),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{filename}\""),
-            ),
-        ],
+    // A receipt photo is shown in place, but only when we are willing to
+    // assert its type — file_response downgrades anything else (#64).
+    Ok(file_response(
+        Vis::Inline,
+        &filename,
+        &content_type,
         content,
-    )
-        .into_response())
+    ))
 }
 
 #[derive(Deserialize, Default)]

@@ -11,7 +11,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use serde::Deserialize;
@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
@@ -101,17 +102,13 @@ pub async fn download(
         regnmed_db::get_inbox_document(&state.pool, company_id, document_id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, content_type),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}\""),
-            ),
-        ],
+    // The uploader does not decide what we say the bytes are (#64).
+    Ok(file_response(
+        Vis::Attachment,
+        &filename,
+        &content_type,
         content,
-    )
-        .into_response())
+    ))
 }
 
 #[derive(Deserialize)]

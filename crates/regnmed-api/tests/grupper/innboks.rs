@@ -289,3 +289,171 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// The uploader does not decide what the server says the bytes are (#64).
+///
+/// This is the attack the hardening exists for: someone with only
+/// `BILAG_LAST_OPP` — an `ansatt`, or an allowed e-mail sender — uploads
+/// HTML and gets the server to serve it back as HTML on our own origin.
+/// Then it runs with the portal's origin, and `nosniff` cannot help,
+/// because we would be asserting the dangerous type ourselves.
+///
+/// The filename is the second half: a quote in it would close the
+/// quoted-string in Content-Disposition and let the uploader append
+/// header parameters, and CR/LF would end the header line outright.
+#[tokio::test]
+async fn an_uploaded_html_file_is_neither_served_as_html_nor_trusted_in_the_header() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("laster|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Ola Opplaster"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Herding AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Ola Opplaster");
+
+    let evil = br#"<script>alert(document.cookie)</script>"#.to_vec();
+    let (status, uploaded) = request(
+        &state,
+        "POST",
+        // A quote AND a CRLF in the filename, both uploader-controlled.
+        &format!(
+            "/companies/{company}/inbox?filename={}",
+            urlencoding("evil\".html\r\nX-Injected: 1")
+        ),
+        &token,
+        Some("text/html"),
+        Some(evil.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {uploaded}");
+    let document_id = uploaded["document_id"].as_str().unwrap();
+
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/companies/{company}/inbox/{document_id}/content"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers().clone();
+
+    // The bytes come back untouched — the document is evidence and is
+    // never rewritten (migration 0015). Only what we SAY about them changes.
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(body.as_ref(), evil.as_slice());
+
+    let ct = headers.get("content-type").unwrap().to_str().unwrap();
+    assert_eq!(
+        ct, "application/octet-stream",
+        "an uploaded text/html must never be asserted as html"
+    );
+    let cd = headers
+        .get("content-disposition")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        cd.starts_with("attachment;"),
+        "must download, never render: {cd}"
+    );
+    // The property, not one exact string: nothing in the header may end
+    // the line or close the quoted-string early.
+    assert!(
+        !cd.contains('\r') && !cd.contains('\n'),
+        "CRLF survived: {cd}"
+    );
+    let quoted = cd
+        .split_once("filename=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0;
+    assert!(
+        !quoted.contains('"') && quoted.starts_with("evil_.html"),
+        "the quote must not survive into the quoted-string: {cd}"
+    );
+    assert_eq!(
+        headers.get("x-content-type-options").unwrap(),
+        "nosniff",
+        "nosniff belongs on every response"
+    );
+}
+
+/// The headers that hold when a habit slips — asserted on the portal
+/// itself, because the CSP is the one that turns a forgotten escape into
+/// a console error instead of an intrusion.
+#[tokio::test]
+async fn the_portal_carries_a_csp_and_every_response_carries_nosniff() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let response = router(state.clone())
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let headers = response.headers();
+    assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+    assert_eq!(headers.get("referrer-policy").unwrap(), "no-referrer");
+
+    let csp = headers
+        .get("content-security-policy")
+        .expect("the SPA must carry a CSP")
+        .to_str()
+        .unwrap()
+        .to_string();
+    // The clause that matters: script may not come from inline text, only
+    // from our own origin and the one hashed bootstrap script.
+    assert!(csp.contains("script-src 'self' 'sha256-"), "{csp}");
+    assert!(
+        !csp.contains("script-src 'self' 'unsafe-inline'"),
+        "unsafe-inline would defeat the whole point: {csp}"
+    );
+    assert!(csp.contains("object-src 'none'"), "{csp}");
+    assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
+
+    // A JSON endpoint gets nosniff but no CSP — it is meaningless there.
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+    assert!(response.headers().get("content-security-policy").is_none());
+}
+
+/// Percent-encodes a query value, so the test can put a quote and a
+/// newline in a filename without the request builder rejecting the URI.
+fn urlencoding(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}

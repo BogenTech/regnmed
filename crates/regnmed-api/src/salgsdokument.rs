@@ -13,14 +13,14 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 use crate::product::{DocLineRequest, resolve_lines};
@@ -248,15 +248,10 @@ pub async fn pdf(
     let (filename, pdf) = regnmed_db::salgsdokument_pdf(&state.pool, company_id, dokument_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/pdf".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{filename}\""),
-            ),
-        ],
+    Ok(file_response(
+        Vis::Inline,
+        &filename,
+        "application/pdf",
         pdf,
-    )
-        .into_response())
+    ))
 }

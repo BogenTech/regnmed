@@ -12,7 +12,6 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
@@ -20,6 +19,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 pub async fn overdue(
@@ -174,34 +174,21 @@ pub async fn reminder_document(
     // `?format=pdf`: the stored text rendered deterministically to PDF.
     if query.format.as_deref() == Some("pdf") {
         let pdf = regnmed_core::fakturapdf::render_tekst_pdf(&document);
-        return Ok((
-            [
-                (header::CONTENT_TYPE, "application/pdf".to_string()),
-                (
-                    header::CONTENT_DISPOSITION,
-                    format!("inline; filename=\"purring_{reminder_id}.pdf\""),
-                ),
-            ],
+        return Ok(file_response(
+            Vis::Inline,
+            &format!("purring_{reminder_id}.pdf"),
+            "application/pdf",
             pdf,
-        )
-            .into_response());
+        ));
     }
     if query.format.as_deref() == Some("tekst") {
         let filename = format!("purring_{reminder_id}.txt");
-        return Ok((
-            [
-                (
-                    header::CONTENT_TYPE,
-                    "text/plain; charset=utf-8".to_string(),
-                ),
-                (
-                    header::CONTENT_DISPOSITION,
-                    format!("attachment; filename=\"{filename}\""),
-                ),
-            ],
+        return Ok(file_response(
+            Vis::Attachment,
+            &filename,
+            "text/plain",
             document,
-        )
-            .into_response());
+        ));
     }
     Ok(Json(json!({ "document": document })).into_response())
 }

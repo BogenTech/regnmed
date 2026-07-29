@@ -14,14 +14,14 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 pub async fn payable(
@@ -154,17 +154,12 @@ pub async fn file(
     let (filename, content) = regnmed_db::run_file(&state.pool, company_id, run_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/xml".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}\""),
-            ),
-        ],
+    Ok(file_response(
+        Vis::Attachment,
+        &filename,
+        "application/xml",
         content,
-    )
-        .into_response())
+    ))
 }
 
 #[derive(Deserialize, Default)]

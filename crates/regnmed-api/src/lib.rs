@@ -14,6 +14,7 @@ pub mod dimension;
 pub mod engagement;
 pub mod epost;
 pub mod expenses;
+pub mod herding;
 pub mod innboks;
 pub mod integrasjon;
 pub mod invoice;
@@ -677,6 +678,9 @@ pub fn router(state: AppState) -> Router {
         )
         // Attachments and statement uploads need more than axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
+        // Hardening on EVERY response (#64): nosniff and Referrer-Policy
+        // always, CSP on HTML. One seam, so no endpoint can forget.
+        .layer(axum::middleware::from_fn(herding::security_headers))
         .layer(catch_panic_layer())
         .with_state(state)
 }
@@ -690,9 +694,8 @@ pub fn router(state: AppState) -> Router {
 /// exists. Without the layer the connection would simply be cut, with no
 /// status.
 ///
-/// The layer is built here, in one place, so the test can exercise exactly
-/// the
-/// `router()` monterer.
+/// The layer is built here, in one place, so the test can exercise
+/// exactly the layer `router()` mounts.
 pub fn catch_panic_layer()
 -> tower_http::catch_panic::CatchPanicLayer<fn(Box<dyn std::any::Any + Send + 'static>) -> Response>
 {

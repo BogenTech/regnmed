@@ -12,14 +12,14 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
@@ -258,17 +258,7 @@ pub async fn payslip_pdf(
         .map_err(|_| ApiError::NotFound)?;
     let filnavn = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.maned);
     let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&input);
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/pdf".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{filnavn}\""),
-            ),
-        ],
-        pdf,
-    )
-        .into_response())
+    Ok(file_response(Vis::Inline, &filnavn, "application/pdf", pdf))
 }
 
 #[derive(Deserialize)]

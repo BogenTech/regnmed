@@ -13,13 +13,14 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 pub async fn get_period_lock(
@@ -161,15 +162,11 @@ pub async fn download_attachment(
     let (meta, content) = regnmed_db::get_attachment(&state.pool, company_id, attachment_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, meta.content_type.clone()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{}\"", meta.filename),
-            ),
-        ],
+    // The uploader does not decide what we say the bytes are (#64).
+    Ok(file_response(
+        Vis::Attachment,
+        &meta.filename,
+        &meta.content_type,
         content,
-    )
-        .into_response())
+    ))
 }

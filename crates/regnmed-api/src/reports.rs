@@ -11,7 +11,6 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use chrono::NaiveDate;
 use regnmed_core::mva::{Direction, Termin, direction};
@@ -21,6 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
+use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
 /// 404 (not 403) when the person has no path to the company: a caller
@@ -209,20 +209,7 @@ pub async fn saft_export(
 }
 
 fn xml_download(xml: String, filename: &str) -> Response {
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                "application/xml; charset=utf-8".to_string(),
-            ),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}\""),
-            ),
-        ],
-        xml,
-    )
-        .into_response()
+    file_response(Vis::Attachment, filename, "application/xml", xml)
 }
 
 // ---- Lovpålagte spesifikasjoner (bokføringsforskriften §3-1) ----
@@ -416,20 +403,12 @@ pub async fn revisjon(
 
     if query.format.as_deref() == Some("tekst") {
         let filename = format!("verifikasjonsrapport_{}.txt", report.orgnr);
-        return Ok((
-            [
-                (
-                    header::CONTENT_TYPE,
-                    "text/plain; charset=utf-8".to_string(),
-                ),
-                (
-                    header::CONTENT_DISPOSITION,
-                    format!("attachment; filename=\"{filename}\""),
-                ),
-            ],
+        return Ok(file_response(
+            Vis::Attachment,
+            &filename,
+            "text/plain",
             regnmed_core::revisjon::render_text(&report),
-        )
-            .into_response());
+        ));
     }
 
     Ok(Json(json!({
