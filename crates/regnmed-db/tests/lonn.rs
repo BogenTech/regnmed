@@ -1,12 +1,12 @@
-//! Lønnskjøring mot ekte Postgres (#46, docs/lonn.md).
+//! Payroll runs against a real Postgres (#46, docs/lonn.md).
 //!
-//! Det som må stemme: bilaget balanserer, forskuddstrekket følger
-//! reglene (feriepenger trekkfrie, halv skatt i desember),
-//! arbeidsgiveravgiften kommer fra satsregisteret, utbetalte feriepenger
-//! trekker ned GJELDEN i stedet for å bli en ny kostnad, samme måned kan
-//! ikke kjøres to ganger, og en kjøring kan ikke endres i ettertid.
+//! What must hold: the bilag balances, the forskuddstrekk follows the
+//! rules (feriepenger trekkfrie, half tax in December), the
+//! arbeidsgiveravgift comes from the satsregister, feriepenger paid out
+//! draw down the LIABILITY instead of becoming a new cost, the same month
+//! cannot be run twice, and a run cannot be changed afterwards.
 //!
-//! Krever DATABASE_URL; hopper over ellers.
+//! Requires DATABASE_URL; skips otherwise.
 
 use chrono::NaiveDate;
 use regnmed_db::lonn::{self, Lonnspost, NyAnsatt};
@@ -106,7 +106,7 @@ async fn konto_belop(pool: &PgPool, voucher_id: Uuid, konto: &str) -> i64 {
 }
 
 #[tokio::test]
-async fn lonnskjoring_bokfores_som_ett_balansert_bilag() {
+async fn a_payroll_run_posts_as_one_balanced_bilag() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     // 50 000 kr, 35 % trekk, sone I (14,1 %).
@@ -133,12 +133,12 @@ async fn lonnskjoring_bokfores_som_ett_balansert_bilag() {
     assert_eq!(kjoring.sum.brutto_ore, 5_000_000);
     assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_750_000);
     assert_eq!(kjoring.sum.netto_ore, 3_250_000);
-    // 10,2 % feriepengeavsetning av bruttolønnen.
+    // 10,2 % feriepengeavsetning of the gross pay.
     assert_eq!(kjoring.sum.feriepengeavsetning_ore, 510_000);
-    // 14,1 % arbeidsgiveravgift, fra satsregisteret — ikke fra koden.
+    // 14,1 % arbeidsgiveravgift, from the satsregister — not from the code.
     assert_eq!(kjoring.sum.aga_ore, 705_000);
 
-    // Bilaget balanserer. Alt annet er uinteressant hvis dette svikter.
+    // The bilag balances. Nothing else matters if this fails.
     assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
 
     assert_eq!(
@@ -171,11 +171,11 @@ async fn lonnskjoring_bokfores_som_ett_balansert_bilag() {
     );
 }
 
-/// Utbetalte feriepenger er ikke en ny kostnad — de trekker ned gjelden
-/// som ble avsatt i opptjeningsåret. Blir dette feil, kostnadsføres
-/// feriepenger to ganger og resultatet er systematisk for lavt.
+/// Feriepenger paid out are not a new cost — they draw down the liability
+/// accrued in the year they were earned. Get this wrong and feriepenger
+/// are expensed twice, making the result systematically too low.
 #[tokio::test]
-async fn utbetalte_feriepenger_reduserer_gjeld_og_er_trekkfrie() {
+async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
@@ -198,27 +198,27 @@ async fn utbetalte_feriepenger_reduserer_gjeld_og_er_trekkfrie() {
     .await
     .unwrap();
 
-    // Trekk bare av ordinær lønn: 35 % av 30 000, ikke av 70 000.
+    // Withhold from ordinary pay only: 35 % of 30 000, not of 70 000.
     assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_050_000);
     assert_eq!(kjoring.sum.netto_ore, 3_000_000 + 4_000_000 - 1_050_000);
     assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
 
-    // 5000 bærer BARE ordinær lønn — feriepengene er ingen ny kostnad.
+    // 5000 carries ONLY ordinary pay — the feriepenger are not a new cost.
     assert_eq!(
         konto_belop(&pool, kjoring.voucher_id, "5000").await,
         3_000_000
     );
-    // 2940 debiteres 4 000 000 (uttak) og krediteres 306 000 (ny avsetning).
+    // 2940 is debited 4 000 000 (drawdown) and credited 306 000 (new accrual).
     assert_eq!(
         konto_belop(&pool, kjoring.voucher_id, "2940").await,
         4_000_000 - 306_000
     );
-    // Avgift faller på alt som faktisk utbetales, feriepengene inkludert.
+    // The avgift falls on everything actually paid out, feriepenger included.
     assert_eq!(kjoring.sum.aga_ore, 987_000); // 14,1 % av 70 000
 }
 
 #[tokio::test]
-async fn desember_gir_halvt_forskuddstrekk() {
+async fn december_withholds_half() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
@@ -248,7 +248,7 @@ async fn desember_gir_halvt_forskuddstrekk() {
 }
 
 #[tokio::test]
-async fn sone_v_er_nullsats_og_sone_ia_nektes() {
+async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "26829398612", "Finnmarking", 4_000_000).await;
@@ -273,7 +273,7 @@ async fn sone_v_er_nullsats_og_sone_ia_nektes() {
     assert_eq!(kjoring.sum.aga_ore, 0, "sone V er nullsats");
     assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
 
-    // Sone Ia nektes: fribeløpet kan ikke leses ut av én sats.
+    // Sone Ia is refused: the fribeløp cannot be read out of a single rate.
     let feil = lonn::kjor_lonn(
         &pool,
         company,
@@ -295,7 +295,7 @@ async fn sone_v_er_nullsats_og_sone_ia_nektes() {
 }
 
 #[tokio::test]
-async fn tabelltrekk_stopper_kjoringen_i_stedet_for_a_gjette() {
+async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = lonn::create_ansatt(
@@ -342,7 +342,7 @@ async fn tabelltrekk_stopper_kjoringen_i_stedet_for_a_gjette() {
 }
 
 #[tokio::test]
-async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
+async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "26829398612", "Kari", 4_000_000).await;
@@ -383,7 +383,7 @@ async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
     .unwrap_err();
     assert!(feil.to_string().contains("allerede kjørt"), "{feil}");
 
-    // Databasen selv nekter å endre eller slette en kjøring.
+    // The database itself refuses to change or delete a run.
     let err = sqlx::query("update payroll_run set brutto_ore = 1 where id = $1")
         .bind(forste.id)
         .execute(&pool)
@@ -398,7 +398,7 @@ async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
         .unwrap_err();
     assert!(err.to_string().contains("innsettings-bare"), "{err}");
 
-    // Den ansattes identitet er heller ikke redigerbar.
+    // The employee's identity is not editable either.
     let err = sqlx::query("update employee set fodselsnummer = '08888797336' where id = $1")
         .bind(a)
         .execute(&pool)
@@ -407,10 +407,10 @@ async fn samme_maned_kan_ikke_kjores_to_ganger_og_kjoringer_er_uforanderlige() {
     assert!(err.to_string().contains("uforanderlig"), "{err}");
 }
 
-/// Listen viser fødselsdato, ikke fødselsnummer — samme personvernvalg
-/// som i aksjeeierboken.
+/// The list shows the birth date, not the fødselsnummer — the same
+/// privacy choice as in the aksjeeierbok.
 #[tokio::test]
-async fn ansattlisten_viser_fodselsdato_ikke_fodselsnummer() {
+async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     ansatt(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
@@ -425,7 +425,7 @@ async fn ansattlisten_viser_fodselsdato_ikke_fodselsnummer() {
 }
 
 #[tokio::test]
-async fn ugyldig_fodselsnummer_avvises_ved_registrering() {
+async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let feil = lonn::create_ansatt(
@@ -452,11 +452,11 @@ async fn ugyldig_fodselsnummer_avvises_ved_registrering() {
     assert!(feil.to_string().contains("fødselsnummer"), "{feil}");
 }
 
-/// Lønnsslippen bygges av den innsettings-bare lønnslinjen, så den kan
-/// gjenskapes for alltid — og den skal forklare trekket, ikke bare
-/// oppgi det.
+/// The payslip is built from the insert-only payroll line, so it can be
+/// reproduced forever — and it must explain the withholding, not merely
+/// state it.
 #[tokio::test]
-async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
+async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
@@ -496,27 +496,27 @@ async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
 
     let slipp = lonn::lonnsslipp(&pool, company, juni.id, a).await.unwrap();
     assert_eq!(slipp.ansatt_navn, "Kari Utvikler");
-    // Fødselsdato, ikke fødselsnummer — også på slippen.
+    // Birth date, not fødselsnummer — on the payslip too.
     assert_eq!(slipp.ansatt_fodselsdato, Some(dato(1993, 2, 26)));
-    // Brutto på slippen er ALT som utbetales; trekkgrunnlaget er mindre.
+    // Brutto on the slip is EVERYTHING paid out; the trekkgrunnlag is less.
     assert_eq!(slipp.brutto_ore, 9_000_000);
     assert_eq!(slipp.trekkgrunnlag_ore, 5_000_000);
     assert_eq!(slipp.forskuddstrekk_ore, 1_750_000);
     assert_eq!(slipp.netto_ore, 7_250_000);
     assert_eq!(slipp.trekk_prosent_bp, Some(3500));
-    // Hittil i år t.o.m. juni: to måneder lønn + juni-feriepengene.
+    // Year to date through June: two months of pay + June's feriepenger.
     assert_eq!(slipp.hittil_brutto_ore, 5_000_000 + 9_000_000);
     assert_eq!(slipp.hittil_trekk_ore, 3_500_000);
     assert_eq!(slipp.hittil_feriepenger_ore, 1_020_000);
 
-    // Og den rendrer til en PDF som forklarer trekkfriheten.
+    // And it renders to a PDF that explains the trekkfrihet.
     let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&slipp);
     assert!(pdf.starts_with(b"%PDF-1.4"));
     let tekst = String::from_utf8_lossy(&pdf).to_string();
     assert!(tekst.contains("uten forskuddstrekk"), "{tekst}");
     assert!(!tekst.contains("26829398612"), "fnr skal ikke i slippen");
 
-    // Mai-slippen ser bare mai i hittil-tallene.
+    // The May slip sees only May in the year-to-date figures.
     let mai_id = lonn::list_kjoringer(&pool, company, Some(2026))
         .await
         .unwrap()
@@ -530,11 +530,12 @@ async fn lonnsslipp_bygges_fra_linjen_med_hittil_i_ar() {
     assert_eq!(mai.hittil_brutto_ore, 5_000_000);
 }
 
-/// Timelønn fra timeføringen. Det viktigste her er NEKTELSEN: timer som
-/// fortsatt kan endres skal ikke kunne betales, fordi lønnskjøringen er
-/// innsettings-bar og de to da spriker for alltid.
+/// Hourly pay from the timesheet. The important part here is the
+/// REFUSAL: hours that can still be changed must not be payable, because
+/// the payroll run is insert-only and the two would then diverge
+/// forever.
 #[tokio::test]
-async fn timelonn_krever_at_maneden_er_last() {
+async fn hourly_pay_requires_the_month_to_be_locked() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
 
@@ -574,7 +575,7 @@ async fn timelonn_krever_at_maneden_er_last() {
         .await
         .unwrap();
 
-    // 20 timer i mars.
+    // 20 hours in March.
     for dag in [2u32, 3, 4] {
         regnmed_db::timesheet::create_time_entry(
             &pool,
@@ -610,7 +611,7 @@ async fn timelonn_krever_at_maneden_er_last() {
         }]
     };
 
-    // Ulåst: nektes.
+    // Unlocked: refused.
     let feil = lonn::kjor_lonn(
         &pool,
         company,
@@ -625,7 +626,7 @@ async fn timelonn_krever_at_maneden_er_last() {
     .unwrap_err();
     assert!(feil.to_string().contains("ikke låst"), "{feil}");
 
-    // Lås måneden, og kjøringen går.
+    // Lock the month, and the run goes through.
     regnmed_db::timesheet::set_timesheet_lock(&pool, company, dato(2026, 3, 31), "Test", None)
         .await
         .unwrap();
@@ -651,10 +652,10 @@ async fn timelonn_krever_at_maneden_er_last() {
     assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
 }
 
-/// Uten kobling til en portalbruker vet timeføringen ikke hvem den
-/// ansatte er — og da sier vi det, i stedet for å betale null.
+/// Without a link to a portal user the timesheet does not know who the
+/// employee is — and then we say so, instead of paying zero.
 #[tokio::test]
-async fn ansatt_uten_portalbruker_gir_tydelig_feil() {
+async fn an_employee_without_a_portal_user_fails_clearly() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
@@ -666,15 +667,15 @@ async fn ansatt_uten_portalbruker_gir_tydelig_feil() {
 }
 
 // ---------------------------------------------------------------------
-// Arbeidsgiveravgift på feriepenger som er avsatt, men ikke utbetalt.
+// Arbeidsgiveravgift on feriepenger that are accrued but not paid out.
 //
-// Avgiften forfaller først når feriepengene utbetales, men forpliktelsen
-// oppstår med opptjeningen. Modellen er et MÅL, ikke en strøm av
-// tillegg: etter hver kjøring skal konto 2780 være satsen av det som
-// faktisk skyldes, og kjøringen bokfører differansen.
+// The avgift falls due only when the feriepenger are paid, but the
+// obligation arises with the earning. The model is a TARGET, not a stream
+// of increments: after every run, account 2780 must be the rate times
+// what is actually owed, and the run books the difference.
 // ---------------------------------------------------------------------
 
-/// Saldoen på en konto for HELE selskapet, ikke bare ett bilag.
+/// The balance of an account for the WHOLE company, not just one bilag.
 async fn konto_saldo(pool: &PgPool, company: Uuid, konto: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
@@ -717,15 +718,15 @@ async fn kjor(
 }
 
 #[tokio::test]
-async fn avsetning_pa_ikke_utbetalte_feriepenger_bokfores() {
+async fn the_accrual_on_unpaid_feriepenger_is_posted() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
 
     let k = kjor(&pool, company, a, 3, "I", None, 0).await;
 
-    // 10,2 % av 50 000 = 5 100 kr feriepenger skyldes; 14,1 % av det er
-    // 719,10 kr i avgift som påløper nå og forfaller ved utbetaling.
+    // 10,2 % of 50 000 = 5 100 kr of feriepenger owed; 14,1 % of that is
+    // 719,10 kr of avgift accruing now and falling due on payout.
     assert_eq!(k.sum.feriepengeavsetning_ore, 510_000);
     assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
     assert_eq!(voucher_sum(&pool, k.voucher_id).await, 0);
@@ -734,12 +735,12 @@ async fn avsetning_pa_ikke_utbetalte_feriepenger_bokfores() {
     assert!(k.advarsler.is_empty(), "{:?}", k.advarsler);
 }
 
-/// Livsløpet: avgiften avsettes ved opptjening og føres tilbake ved
-/// utbetaling — for da er den ordinære aga-linjen den som bærer den.
-/// Går dette galt, blir avgiften enten kostnadsført to ganger eller
-/// stående som en gjeld som aldri forsvinner.
+/// The life cycle: the avgift is accrued on earning and reversed on
+/// payout — because then the ordinary aga line is what carries it. Get
+/// this wrong and the avgift is either expensed twice or left standing as
+/// a liability that never goes away.
 #[tokio::test]
-async fn avsetningen_fores_tilbake_nar_feriepengene_utbetales() {
+async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
@@ -747,7 +748,7 @@ async fn avsetningen_fores_tilbake_nar_feriepengene_utbetales() {
     let opptjening = kjor(&pool, company, a, 3, "I", None, 0).await;
     assert_eq!(opptjening.sum.aga_feriepenger_ore, 71_910);
 
-    // Ferieavvikling: ingen ordinær lønn, feriepengene utbetales.
+    // Holiday taken: no ordinary pay, the feriepenger are paid out.
     let utbetaling = kjor(&pool, company, a, 4, "I", Some(0), 510_000).await;
 
     assert_eq!(
@@ -755,32 +756,32 @@ async fn avsetningen_fores_tilbake_nar_feriepengene_utbetales() {
         "avsetningen føres tilbake i sin helhet"
     );
     assert_eq!(voucher_sum(&pool, utbetaling.voucher_id).await, 0);
-    // Avgiften på det utbetalte ligger nå i den ordinære aga-linjen.
+    // The avgift on what was paid out now sits in the ordinary aga line.
     assert_eq!(utbetaling.sum.aga_ore, 71_910);
 
-    // Og etterpå står begge kontoene på null: ingen gjeld igjen, ingen
-    // avsetning igjen.
+    // And afterwards both accounts stand at zero: no liability left, no
+    // accrual left.
     assert_eq!(konto_saldo(&pool, company, "2940").await, 0);
     assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
 }
 
-/// Feriepengegjeld som ikke bærer avsetning — fordi den ble opptjent før
-/// funksjonen fantes, eller i en sone uten avgift — tas igjen ved neste
-/// kjøring. Det er hele poenget med å sikte mot en saldo i stedet for å
-/// legge til et beløp.
+/// A feriepenger liability that carries no accrual — because it was
+/// earned before the function existed, or in a zone without avgift — is
+/// caught up on the next run. That is the whole point of aiming at a
+/// balance instead of adding an amount.
 #[tokio::test]
-async fn gjeld_uten_avsetning_tas_igjen_ved_neste_kjoring() {
+async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
 
-    // Sone V er nullsats: feriepenger opptjenes, ingen avgift avsettes.
+    // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
     let uten = kjor(&pool, company, a, 3, "V", None, 0).await;
     assert_eq!(uten.sum.aga_feriepenger_ore, 0);
     assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
 
-    // Virksomheten flytter til sone I. Nå skylder den avgift på ALT som
-    // står ubetalt, ikke bare på månedens opptjening.
+    // The business moves to sone I. Now it owes avgift on EVERYTHING
+    // outstanding, not only on this month's earning.
     let med = kjor(&pool, company, a, 4, "I", None, 0).await;
     let skyldig = 510_000 + 510_000;
     assert_eq!(
@@ -791,10 +792,10 @@ async fn gjeld_uten_avsetning_tas_igjen_ved_neste_kjoring() {
     assert_eq!(konto_saldo(&pool, company, "2780").await, -143_820);
 }
 
-/// Invarianten som gjør at avsetningen ikke kan drive: etter enhver
-/// kjøring er saldoen på 2780 nøyaktig satsen av saldoen på 2940.
+/// The invariant that keeps the accrual from drifting: after any run, the
+/// balance of 2780 is exactly the rate times the balance of 2940.
 #[tokio::test]
-async fn avsetningen_er_alltid_satsen_av_feriepengegjelden() {
+async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
@@ -827,9 +828,10 @@ async fn avsetningen_er_alltid_satsen_av_feriepengegjelden() {
         .await
         .unwrap();
 
-        // Avrundingen skjer PER ANSATT, så fasiten må bygges per ansatt
-        // — 14,1 % av totalen ville bommet med et øre eller to og gjort
-        // testen til en tilnærming i stedet for en invariant.
+        // The rounding happens PER EMPLOYEE, so the expected value must
+        // be built per employee — 14,1 % of the total would be off by an
+        // øre or two and turn the test into an approximation rather than
+        // an invariant.
         let per_ansatt: Vec<i64> = sqlx::query_scalar(
             "select coalesce(sum(l.feriepengeavsetning_ore - l.feriepenger_ore), 0)::bigint
              from payroll_line l join payroll_run r on r.id = l.run_id
@@ -857,17 +859,17 @@ async fn avsetningen_er_alltid_satsen_av_feriepengegjelden() {
     }
 }
 
-/// Feriepengegjeld som ikke stammer fra lønnskjøringene — en
-/// åpningsbalanse, en manuell avsetning — kan ikke knyttes til noen
-/// ansatt, og får derfor ingen avgiftsavsetning. Det er en reell
-/// begrensning, og kjøringen sier fra om den i stedet for å late som.
+/// A feriepenger liability that does not come from the payroll runs — an
+/// opening balance, a manual accrual — cannot be tied to any employee,
+/// and therefore gets no avgift accrual. That is a real limitation, and
+/// the run says so instead of pretending otherwise.
 #[tokio::test]
-async fn ufordelt_feriepengegjeld_gir_advarsel_ikke_stillhet() {
+async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     let a = ansatt(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;
 
-    // Regnskapsføreren avsetter feriepenger manuelt, uten ansattkobling.
+    // The regnskapsfører accrues feriepenger manually, with no employee link.
     use regnmed_core::Ore;
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
     let linje = |konto: &str, belop: i64| EntryDraft {
@@ -897,7 +899,7 @@ async fn ufordelt_feriepengegjeld_gir_advarsel_ikke_stillhet() {
 
     let k = kjor(&pool, company, a, 3, "I", None, 0).await;
 
-    // Avsetningen dekker bare det lønnskjøringen selv har opptjent.
+    // The accrual covers only what the payroll run itself earned.
     assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
     let advarsel = k.advarsler.join(" ");
     assert!(

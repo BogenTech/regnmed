@@ -1,11 +1,11 @@
-//! Abonnement (#65, docs/abonnement.md): dekning, status og den
-//! månedlige fakturakjøringen.
+//! Abonnement (#65, docs/abonnement.md): coverage, status and the
+//! monthly invoicing run.
 //!
-//! Statusregelen bor i `regnmed-core::abonnement`; her hentes bare
-//! faktaene den trenger. Fakturaen utstedes av den ordinære motoren
-//! (`create_invoice_in`) i DRIFTSSELSKAPETS hovedbok — regnmed er sin
-//! egen kunde nummer én, med gap-frie nummer, KID og reskontro som alle
-//! andre.
+//! The status rule lives in `regnmed-core::abonnement`; this module only
+//! fetches the facts it needs. The faktura is issued by the ordinary
+//! engine (`create_invoice_in`) in the OPS COMPANY's hovedbok — regnmed
+//! is its own customer number one, with gap-free numbers, KID and
+//! reskontro like everybody else.
 
 use anyhow::{Context, Result, ensure};
 use chrono::{Datelike, NaiveDate, Utc};
@@ -13,7 +13,7 @@ use regnmed_core::abonnement::Status;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-/// Faktaene statusregelen trenger, hentet i én spørring.
+/// The facts the status rule needs, fetched in one query.
 async fn fakta(
     pool: &PgPool,
     company_id: Uuid,
@@ -42,7 +42,7 @@ async fn fakta(
     ))
 }
 
-/// Statusen i dag for ett selskap.
+/// Today's status for one company.
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     let idag = Utc::now().date_naive();
     let (opprettet, dekket, siste_slutt) = fakta(pool, company_id, idag).await?;
@@ -54,13 +54,13 @@ pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     ))
 }
 
-/// Skal skrivende handlinger avvises? Kalles fra tilgangsvakten på
-/// endrende rettigheter — én søm, som resten av vakten.
+/// Should writing actions be refused? Called from the access guard on
+/// changing rettigheter — one seam, like the rest of the guard.
 pub async fn sperret(pool: &PgPool, company_id: Uuid) -> Result<bool> {
     Ok(status_for(pool, company_id).await?.sperret())
 }
 
-/// Tegner en dekning fra `fra`. Åpen (`til videre`) når `til` er None.
+/// Starts coverage from `fra`. Open-ended when `til` is None.
 pub async fn tegn(
     pool: &PgPool,
     company_id: Uuid,
@@ -88,8 +88,8 @@ pub async fn tegn(
     Ok(id)
 }
 
-/// Avslutter den åpne dekningen: setter `valid_to` (EKSKLUSIV) på
-/// selskapets åpne rad. Historikken røres aldri.
+/// Ends the open coverage: sets `valid_to` (EXCLUSIVE) on the company's
+/// open row. History is never touched.
 pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<()> {
     let n = sqlx::query(
         "update abonnement set valid_to = $2
@@ -108,7 +108,7 @@ pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<
 }
 
 // ---------------------------------------------------------------------
-// Kortskinnen (#74): lagret kort og bokføring av trekk.
+// The card rail (#74): stored card and posting of charges.
 // ---------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -137,8 +137,8 @@ pub async fn kort_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Kort>> {
     }))
 }
 
-/// Lagrer (eller erstatter) selskapets kort. Nytt kort overtar —
-/// tilstand, ikke bevis; trekkloggen (`kortbetaling`) er beviset.
+/// Stores (or replaces) the company's card. A new card takes over —
+/// state, not evidence; the charge log (`kortbetaling`) is the evidence.
 pub async fn lagre_kort(
     pool: &PgPool,
     company_id: Uuid,
@@ -165,13 +165,13 @@ pub async fn lagre_kort(
     Ok(())
 }
 
-/// Registrerer utfallet av et korttrekk — webhookens ene jobb.
+/// Records the outcome of a card charge — the webhook's one job.
 ///
-/// Idempotent: `payment_intent_id` er unik, så samme hendelse levert to
-/// ganger bokfører aldri to ganger (returnerer `false`). Ved suksess
-/// bokføres betalingsbilaget i DRIFTSSELSKAPETS hovedbok (1570
-/// Kortoppgjør mot 1500 med part) og reskontroposten lukkes — alt i ÉN
-/// transaksjon med loggraden.
+/// Idempotent: `payment_intent_id` is unique, so the same event delivered
+/// twice never posts twice (it returns `false`). On success the payment
+/// bilag is posted in the OPS COMPANY's hovedbok (1570 Kortoppgjør
+/// against 1500 with a party) and the reskontro item is closed — all in
+/// ONE transaction with the log row.
 pub async fn registrer_kortbetaling(
     pool: &PgPool,
     drift_company_id: Uuid,
@@ -181,8 +181,9 @@ pub async fn registrer_kortbetaling(
     belop_ore: i64,
     detail: Option<&str>,
 ) -> Result<bool> {
-    // Fakturaen må være driftsselskapets, og beløpet må stemme med
-    // fordringen — vi opprettet trekket selv, avvik er en feil.
+    // The faktura must be the ops company's, and the amount must match
+    // the receivable — we created the charge ourselves, so a mismatch is
+    // a bug.
     let faktura = sqlx::query(
         "select e.id as receivable_entry, e.amount_ore::bigint as gross,
                 p.party_no, i.invoice_no
@@ -201,8 +202,8 @@ pub async fn registrer_kortbetaling(
     let party_no: String = faktura.get("party_no");
     let invoice_no: i64 = faktura.get("invoice_no");
 
-    // Kundeselskapet identifiseres av kjøringsloggen (fakturaen ble
-    // skapt av fakturer_maned med run-rad i samme tx).
+    // The customer company is identified by the run log (the faktura was
+    // created by fakturer_maned with a run row in the same tx).
     let kunde: Uuid =
         sqlx::query_scalar("select company_id from abonnement_faktura_run where invoice_id = $1")
             .bind(invoice_id)
@@ -280,8 +281,9 @@ pub async fn registrer_kortbetaling(
             .bind(posted.id)
             .fetch_one(&mut *tx)
             .await?;
-    // Matchen direkte i transaksjonen: fordringen (debet) mot
-    // betalingen (kredit) — samme part og konto by construction.
+    // The match directly in the transaction: the receivable (debit)
+    // against the payment (credit) — same party and account by
+    // construction.
     sqlx::query(
         "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
          values ($1,$2,$3,$4,'kortskinnen (webhook)')",
@@ -296,8 +298,8 @@ pub async fn registrer_kortbetaling(
     Ok(true)
 }
 
-/// Ny rad i prislisten (prisen er daterte data — en endring er en ny
-/// rad med kilde, aldri en omskriving; docs/abonnement.md §4).
+/// A new row in the price list (the price is dated data — a change is a
+/// new row with its kilde, never a rewrite; docs/abonnement.md §4).
 pub async fn sett_pris(
     pool: &PgPool,
     plan: &str,
@@ -328,7 +330,7 @@ pub struct Prisrad {
     pub kilde: String,
 }
 
-/// Hele prislisten, nyeste først per plan.
+/// The whole price list, newest first per plan.
 pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
     let rows = sqlx::query(
         "select plan, pris_ore_per_mnd, valid_from, kilde
@@ -347,7 +349,7 @@ pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
         .collect())
 }
 
-/// Prisen som gjelder på en dato, i øre per måned eks. mva.
+/// The price in force on a date, in øre per month excl. mva.
 pub async fn pris_pa(pool: &PgPool, plan: &str, dato: NaiveDate) -> Result<i64> {
     let pris: Option<i64> = sqlx::query_scalar(
         "select pris_ore_per_mnd from abonnement_pris
@@ -365,21 +367,21 @@ pub async fn pris_pa(pool: &PgPool, plan: &str, dato: NaiveDate) -> Result<i64> 
 pub struct FakturaUtfall {
     pub company_id: Uuid,
     pub company_navn: String,
-    /// Fakturanummer i driftsselskapet når fakturaen ble utstedt; None
-    /// med `detail` når selskapet ble hoppet over eller feilet.
+    /// Invoice number in the ops company when the faktura was issued;
+    /// None with `detail` when the company was skipped or failed.
     pub invoice_no: Option<i64>,
-    /// Fakturaens id + brutto (inkl. mva) — det kortskinnen trenger for
-    /// å trekke (idempotensnøkkel og beløp).
+    /// The faktura's id + gross (incl. mva) — what the card rail needs in
+    /// order to charge (idempotency key and amount).
     pub invoice_id: Option<Uuid>,
     pub gross_ore: Option<i64>,
     pub detail: Option<String>,
 }
 
-/// Fakturerer måneden `idag` ligger i, for hvert selskap med dekning på
-/// månedens første dag — inn i DRIFTSSELSKAPETS hovedbok. Idempotent:
-/// kjøringsraden er unik per (selskap, år, måned) og skrives i samme
-/// transaksjon som fakturaen. `bare` avgrenser til ett kundeselskap
-/// (etterfakturering, testing); None = alle med dekning.
+/// Invoices the month `idag` falls in, for every company with coverage on
+/// the first of that month — into the OPS COMPANY's hovedbok. Idempotent:
+/// the run row is unique per (company, year, month) and is written in the
+/// same transaction as the faktura. `bare` narrows to a single customer
+/// company (back-billing, testing); None = everyone with coverage.
 pub async fn fakturer_maned(
     pool: &PgPool,
     drift_company_id: Uuid,
@@ -388,8 +390,8 @@ pub async fn fakturer_maned(
 ) -> Result<Vec<FakturaUtfall>> {
     let forste = NaiveDate::from_ymd_opt(idag.year(), idag.month(), 1).unwrap();
 
-    // Driftsselskapet trenger konto og journal for salget; ensure er
-    // idempotent og gjør første kjøring selvoppsettende.
+    // The ops company needs an account and a journal for the sale;
+    // ensure is idempotent and makes the first run self-configuring.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
     for (nr, navn) in [
         ("1500", "Kundefordringer"),
@@ -398,9 +400,10 @@ pub async fn fakturer_maned(
     ] {
         crate::ensure_account(pool, drift_company_id, nr, navn).await?;
     }
-    // Fordringskontoen må bære reskontro, ellers nekter posteringen
-    // partslinjen — og abonnementsfakturaen SKAL på reskontro, det er
-    // slik innbetalingen (KID via OCR/bank) lukker den.
+    // The receivable account must carry reskontro, otherwise posting
+    // refuses the party line — and the abonnement faktura MUST be on the
+    // reskontro, since that is how the payment (KID via OCR/bank) closes
+    // it.
     crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
 
     let kunder = sqlx::query(
@@ -442,8 +445,8 @@ pub async fn fakturer_maned(
                 gross_ore: Some(gross),
                 detail: None,
             },
-            // De ufarlige tilfellene: måneden er alt fakturert, eller
-            // planen koster ingenting.
+            // The harmless cases: the month is already invoiced, or the
+            // plan costs nothing.
             Ok(None) => FakturaUtfall {
                 company_id,
                 company_navn: navn,
@@ -474,7 +477,7 @@ async fn fakturer_en(
     plan: String,
     idag: NaiveDate,
 ) -> Result<Option<(i64, Uuid, i64)>> {
-    // Kundeparten i driftsselskapets reskontro, nøklet på orgnr.
+    // The customer party in the ops company's reskontro, keyed on orgnr.
     let party_no: Option<String> = sqlx::query_scalar(
         "select party_no from party
          where company_id = $1 and kind = 'kunde' and orgnr = $2",
@@ -504,9 +507,9 @@ async fn fakturer_en(
         return Ok(None); // en gratisplan fakturerer ingenting
     }
 
-    // Rask vei: måneden er alt fakturert. Kappløpet mellom to
-    // samtidige kjøringer avgjøres ikke her, men av unikheten på
-    // kjøringsraden i transaksjonen under.
+    // Fast path: the month is already invoiced. A race between two
+    // concurrent runs is not decided here, but by the uniqueness of the
+    // run row in the transaction below.
     let finnes: Option<Uuid> = sqlx::query_scalar(
         "select invoice_id from abonnement_faktura_run
          where company_id = $1 and ar = $2 and maned = $3",
@@ -554,10 +557,10 @@ async fn fakturer_en(
         None,
     )
     .await?;
-    // Kjøringsraden SIST, i samme transaksjon: den finnes bare når
-    // fakturaen finnes. Taper vi et kappløp mot en parallell kjøring,
-    // bryter unikheten HELE transaksjonen — fakturaen vår rulles
-    // tilbake, vinnerens står, og ingen måned faktureres to ganger.
+    // The run row LAST, in the same transaction: it exists only when the
+    // faktura exists. If we lose a race against a parallel run, the
+    // uniqueness breaks THE WHOLE transaction — our faktura is rolled
+    // back, the winner's stands, and no month is ever invoiced twice.
     let resultat = sqlx::query(
         "insert into abonnement_faktura_run (id, company_id, ar, maned, invoice_id)
          values ($1, $2, $3, $4, $5)",
@@ -572,8 +575,8 @@ async fn fakturer_en(
     if let Err(e) = &resultat {
         if let Some(db) = e.as_database_error() {
             if db.code().as_deref() == Some("23505") {
-                // Noen andre rakk måneden først; vår faktura forsvinner
-                // med rollbacken når tx droppes her.
+                // Somebody else got the month first; our faktura goes
+                // away with the rollback when tx is dropped here.
                 return Ok(None);
             }
         }

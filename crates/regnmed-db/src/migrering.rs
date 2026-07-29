@@ -1,22 +1,23 @@
-//! Migreringsimport, filtier (docs/migration.md, #19) — det SAF-T ikke
-//! bærer: kontaktopplysninger og åpne reskontroposter.
+//! Migration import, file tier (docs/migration.md, #19) — what SAF-T does
+//! not carry: contact details and open reskontro items.
 //!
-//! Kontakter er ren registerdata og importeres idempotent (kjør filen
-//! to ganger, få samme register). Åpne poster er noe helt annet: de
-//! blir BILAG, og derfor gjelder hovedbokens regler.
+//! Contacts are plain register data and are imported idempotently (run
+//! the file twice, get the same register). Open items are something else
+//! entirely: they become BILAG, and so the hovedbok's rules apply.
 //!
-//! Åpne poster erstatter samlelinjen på reskontrokontoen — de legges
-//! ikke oppå den. Derfor krever importen at kontoen står i null før
-//! den kjøres, og sier tydelig fra med den faktiske saldoen hvis ikke.
-//! Rekkefølgen ved migrering er dermed:
+//! Open items REPLACE the summary line on the reskontro account — they
+//! are not laid on top of it. That is why the import requires the account
+//! to stand at zero before it runs, and says so plainly with the actual
+//! balance when it does not. The migration order is therefore:
 //!
-//! 1. Kontakter (så postene har noen å peke på).
-//! 2. Åpningsbalanse UTEN reskontrokontoene (docs/migration.md).
-//! 3. Åpne poster — én partslinje per post mot motkontoen, ETT bilag,
-//!    én transaksjon.
+//! 1. Contacts (so the items have something to point at).
+//! 2. Opening balance WITHOUT the reskontro accounts (docs/migration.md).
+//! 3. Open items — one party line per item against the contra account,
+//!    ONE bilag, one transaction.
 //!
-//! Etterpå er reskontrosaldoen lik summen av de åpne postene fordi det
-//! er de samme radene — ikke fordi noe ble avstemt i etterkant.
+//! Afterwards the reskontro balance equals the sum of the open items
+//! because they are the same rows — not because something was reconciled
+//! after the fact.
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;

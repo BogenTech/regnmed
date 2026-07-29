@@ -175,8 +175,9 @@ pub async fn post_voucher_in(
             .with_context(|| format!("unknown journal '{}' for this company", draft.journal_code))?
             .get("id");
 
-    // Hvilket regnskapsår bilaget hører til — antakelsen (kalenderår)
-    // bor ett sted, se regnmed-core::regnskapsar og docs/regelverk.md.
+    // Which fiscal year the bilag belongs to — the assumption (calendar
+    // year) lives in one place, see regnmed-core::regnskapsar and
+    // docs/regelverk.md.
     let fiscal_year = regnmed_core::regnskapsar::regnskapsar(draft.voucher_date);
     let voucher_number: i64 = sqlx::query(
         "insert into voucher_counter (journal_id, fiscal_year, last_number) values ($1, $2, 1)

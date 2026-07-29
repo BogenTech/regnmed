@@ -1,8 +1,8 @@
 //! Lønnskjøring (docs/lonn.md, #46 første del).
 //!
-//! En kjøring er ETT bilag, postert i samme transaksjon som kjøringen og
-//! linjene lagres. Linjene finnes for lønnsslippen og for a-meldingen
-//! senere; tallene i hovedboken er bilaget, ikke linjene.
+//! A run is ONE bilag, posted in the same transaction that stores the run
+//! and its lines. The lines exist for the payslip and for the a-melding
+//! later; the numbers in the hovedbok are the bilag, not the lines.
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
@@ -23,11 +23,12 @@ pub const KONTO_FORSKUDDSTREKK: &str = "2600";
 pub const KONTO_SKYLDIG_FERIEPENGER: &str = "2940";
 pub const KONTO_SKYLDIG_AGA: &str = "2770";
 pub const KONTO_SKYLDIG_LONN: &str = "2930";
-/// Aga på feriepenger som er avsatt men ikke utbetalt. Kontonumrene er
-/// valgt slik at SAF-T-grupperingen treffer riktig: kodelisten navngir
-/// 5400 og 2770, og nærmeste-nabo-oppslaget legger 5405 på 5400
-/// (Arbeidsgiveravgift) og 2780 på 2770 (Skyldig arbeidsgiveravgift).
-/// 2785 ville havnet på 2790 «Andre offentlige avgifter» i stedet.
+/// Aga on feriepenger that are accrued but not paid out. The account
+/// numbers are chosen so the SAF-T grouping lands correctly: the code
+/// list names 5400 and 2770, and the nearest-neighbour lookup puts 5405
+/// on 5400 (Arbeidsgiveravgift) and 2780 on 2770 (Skyldig
+/// arbeidsgiveravgift). 2785 would have landed on 2790 "Andre offentlige
+/// avgifter" instead.
 pub const KONTO_AGA_FERIEPENGER_KOSTNAD: &str = "5405";
 pub const KONTO_PAALOPT_AGA_FERIEPENGER: &str = "2780";
 
@@ -52,9 +53,10 @@ pub struct Ansatt {
     pub id: Uuid,
     pub navn: String,
     pub stilling: Option<String>,
-    /// Ferieloven §4-5 har ingen parallell her, men personvernhensynet er
-    /// det samme som i aksjeeierboken: listen bærer fødselsdato, ikke
-    /// fødselsnummer. Nummeret hentes bare når a-meldingen skal bygges.
+    /// Ferieloven §4-5 has no parallel here, but the privacy concern is
+    /// the same as in the aksjeeierbok: the list carries the birth date,
+    /// not the fødselsnummer. The number is fetched only when the
+    /// a-melding is to be built.
     pub fodselsdato: Option<NaiveDate>,
     pub ansatt_fra: NaiveDate,
     pub ansatt_til: Option<NaiveDate>,
@@ -312,10 +314,10 @@ pub async fn kjor_lonn(
     let sone = Sone::fra_slug(sone_slug)
         .with_context(|| format!("ukjent arbeidsgiveravgiftssone «{sone_slug}»"))?;
 
-    // Sone Ia avvises FØR satsoppslaget. Ellers ville feilmeldingen bli
-    // «satsen mangler — legg den inn», som er stikk motsatt av riktig
-    // råd: å legge inn 10,6 % som en flat sats er nettopp feilen
-    // fribeløpsregelen finnes for å hindre.
+    // Sone Ia is refused BEFORE the rate lookup. Otherwise the error
+    // would read "the rate is missing — add it", which is the exact
+    // opposite of the right advice: entering 10,6 % as a flat rate is
+    // precisely the mistake the fribeløp rule exists to prevent.
     lonn::arbeidsgiveravgift(0, sone, 0).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let alle_satser = satser(pool).await?;
@@ -352,9 +354,9 @@ pub async fn kjor_lonn(
         );
         let brutto = if post.fra_timer {
             let grunnlag = timegrunnlag(pool, company_id, ansatt.id, ar, maned).await?;
-            // Timene må være LÅST før de betales. En lønnskjøring er
-            // innsettings-bar; endres timene etterpå, spriker de to for
-            // alltid uten noen måte å avstemme dem på.
+            // The hours must be LOCKED before they are paid. A payroll
+            // run is insert-only; if the hours change afterwards the two
+            // diverge forever with no way to reconcile them.
             ensure!(
                 grunnlag.laast,
                 "timelisten for {maned:02}/{ar} er ikke låst — lås måneden før timelønn \
@@ -384,10 +386,10 @@ pub async fn kjor_lonn(
         )
         .map_err(|e| anyhow::anyhow!("{}: {e}", ansatt.navn))?;
 
-        // Feriepengegrunnlaget er det som utbetales som lønn; feriepenger
-        // opptjener ikke nye feriepenger.
+        // The feriepenger base is what is paid out as pay; feriepenger
+        // do not earn new feriepenger.
         let avsetning = lonn::feriepengeavsetning(brutto, ansatt.feriepenger_bp as i64);
-        // Avgiften faller på det som faktisk utbetales.
+        // The avgift falls on what is actually paid out.
         let aga = lonn::arbeidsgiveravgift(brutto + post.feriepenger_ore, sone, aga_bp)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -395,12 +397,12 @@ pub async fn kjor_lonn(
         sum.feriepenger_utbetalt_ore += beregning.feriepenger_ore;
         sum.forskuddstrekk_ore += beregning.forskuddstrekk_ore;
         sum.netto_ore += beregning.netto_ore;
-        // Avsetningen på ikke-utbetalte feriepenger er et MÅL, ikke et
-        // tillegg: etter kjøringen skal den ansattes påløpte aga være
-        // satsen av det vedkommende faktisk har til gode. Differansen er
-        // det kjøringen bokfører — som også er grunnen til at en
-        // feriepengegjeld opptjent før denne funksjonen fantes blir tatt
-        // igjen ved første kjøring i stedet for å bli stående udekket.
+        // The accrual on unpaid feriepenger is a TARGET, not an
+        // increment: after the run, the employee's accrued aga should be
+        // the rate times what they actually have coming. The difference
+        // is what the run books — which is also why a feriepenger
+        // liability earned before this function existed is caught up on
+        // the first run instead of standing uncovered.
         let hist = historikk.get(&ansatt.id).copied().unwrap_or_default();
         let skyldig_etter = hist.skyldig_ore + avsetning - post.feriepenger_ore;
         let aga_feriepenger = lonn::aga_avsetning_mal(skyldig_etter, aga_bp) - hist.avsatt_aga_ore;
@@ -418,11 +420,10 @@ pub async fn kjor_lonn(
         });
     }
 
-    // Hver linje utelates når den er null. En måned med bare
-    // ferieavvikling — feriepenger utbetales, ingen ordinær lønn — har
-    // verken lønnskostnad eller forskuddstrekk, og en nullinje avvises av
-    // bilagsvalideringen. Uten dette kunne den måneden ikke kjøres i det
-    // hele tatt.
+    // Each line is omitted when it is zero. A month with only holiday
+    // taken — feriepenger paid out, no ordinary pay — has neither a pay
+    // cost nor withholding, and a zero line is rejected by bilag
+    // validation. Without this, that month could not be run at all.
     let mut entries = Vec::new();
     if sum.brutto_ore != 0 {
         entries.push(EntryDraft {
@@ -461,8 +462,8 @@ pub async fn kjor_lonn(
         });
     }
 
-    // Utbetalte feriepenger er IKKE en ny kostnad — de trekker ned
-    // gjelden som ble avsatt i opptjeningsåret.
+    // Feriepenger paid out are NOT a new cost — they draw down the
+    // liability accrued in the year they were earned.
     if sum.feriepenger_utbetalt_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_FERIEPENGER.into(),
@@ -520,11 +521,11 @@ pub async fn kjor_lonn(
         });
     }
 
-    // Avgiften på feriepenger som ennå ikke er utbetalt. Beløpet er en
-    // differanse og kan gå begge veier: er feriepenger utbetalt denne
-    // måneden, føres avsetningen tilbake — kostnaden ble tatt i
-    // opptjeningsåret, og avgiften på det utbetalte ligger allerede i
-    // aga-linjen over.
+    // The avgift on feriepenger not yet paid out. The amount is a
+    // difference and can go either way: if feriepenger were paid out this
+    // month, the accrual is reversed — the cost was taken in the year
+    // they were earned, and the avgift on what was paid out is already in
+    // the aga line above.
     if sum.aga_feriepenger_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_AGA_FERIEPENGER_KOSTNAD.into(),
@@ -557,10 +558,11 @@ pub async fn kjor_lonn(
     };
     draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Kontoene for feriepengeavgiften er nye i denne funksjonen, så et
-    // selskap som har kjørt lønn før har dem ikke. De opprettes ved
-    // behov — å la kjøringen feile på «ukjent konto» ville vært en
-    // regresjon for hvert eneste selskap som allerede bruker lønn.
+    // The accounts for the feriepenger avgift are new in this function,
+    // so a company that has run payroll before does not have them. They
+    // are created on demand — letting the run fail on "unknown account"
+    // would have been a regression for every company already using
+    // payroll.
     if sum.aga_feriepenger_ore != 0 {
         crate::ledger::ensure_account(
             pool,
@@ -737,8 +739,8 @@ pub async fn list_kjoringer(
         })
         .collect::<Vec<_>>();
 
-    // Hvem som var med i hver kjøring, så portalen kan tilby lønnsslipp
-    // per person uten et nytt kall.
+    // Who took part in each run, so the portal can offer a payslip per
+    // person without another call.
     for kjoring in &mut out {
         let linjer = sqlx::query(
             "select l.employee_id, e.navn from payroll_line l
@@ -810,7 +812,7 @@ pub async fn lonnsslipp(
     let brutto: i64 = row.get("brutto_ore");
     let feriepenger: i64 = row.get("feriepenger_ore");
 
-    // Hittil i år, til og med denne kjøringen.
+    // Year to date, through this run.
     let hittil = sqlx::query(
         "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint as brutto,
                 coalesce(sum(l.forskuddstrekk_ore), 0)::bigint as trekk,
@@ -845,8 +847,8 @@ pub async fn lonnsslipp(
         arbeidsgiver_adresse: row.get("address"),
         ansatt_navn: row.get("navn"),
         ansatt_stilling: row.get("stilling"),
-        // Fødselsdato, ikke fødselsnummer — også på et dokument som
-        // sendes til den ansatte selv.
+        // Birth date, not fødselsnummer — even on a document sent to the
+        // employee themselves.
         ansatt_fodselsdato: row
             .get::<String, _>("fodselsnummer")
             .as_str()

@@ -1,14 +1,14 @@
-//! Maskin-tilgang til API-et (docs/integrations.md, #45).
+//! Machine access to the API (docs/integrations.md, #45).
 //!
-//! En integrasjon er en `person` med kind = 'integrasjon'. Det er ikke
-//! en snarvei — det er hele poenget: tilgangsoppslaget, attribusjonen
-//! og revisjonssporet er de samme for en robot som for et menneske, så
-//! det finnes ingen egen maskinvei som kan utvikle sine egne hull.
+//! An integration is a `person` with kind = 'integrasjon'. That is not a
+//! shortcut — it is the whole point: the access lookup, the attribution
+//! and the audit trail are the same for a robot as for a human, so there
+//! is no separate machine path that can grow holes of its own.
 //!
-//! Tokenet beviser identitet (client_credentials fra vår IdP; regnmed
-//! utsteder aldri egne API-nøkler). Hva identiteten får gjøre, avgjøres
-//! her — og uten et grant får den ingenting, uansett hvor gyldig
-//! tokenet er.
+//! The token proves identity (client_credentials from our IdP; regnmed
+//! never issues API keys of its own). What that identity may do is
+//! decided here — and without a grant it gets nothing, however valid the
+//! token is.
 
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, NaiveDate, Utc};

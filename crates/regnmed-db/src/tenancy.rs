@@ -134,11 +134,11 @@ pub async fn company_access(
         .filter(|a| a.company_id == company_id)
         // 'admin' > 'bokforing' > 'revisor' > 'les' > 'ansatt'.
         //
-        // MERK: dette er en heuristikk som bare virker mens rollene er
-        // en stige, og `ansatt` er den ikke — den kan skrive ting `les`
-        // ikke kan. Bruk [`company_roles`] når svaret skal avgjøre
-        // tilgang; denne finnes for visning og for kall som virkelig
-        // vil ha ett navn.
+        // NOTE: this is a heuristic that only works while the roles form
+        // a ladder, and `ansatt` does not — it can write things `les`
+        // cannot. Use [`company_roles`] when the answer decides access;
+        // this exists for display and for callers that genuinely want a
+        // single name.
         .max_by_key(|a| match a.access.as_str() {
             "admin" => 4,
             "bokforing" => 3,
@@ -149,13 +149,14 @@ pub async fn company_access(
     Ok(access.map(|a| a.access))
 }
 
-/// **Alle** rollene en person har i ett selskap, én per vei inn.
+/// **Every** role a person has in one company, one per route in.
 ///
-/// Tilgangsvakten unionerer rettighetene fra disse i stedet for å velge
-/// den «sterkeste» rollen: etter at `ansatt` kom til (#54) er rollene
-/// ikke lenger en stige, og en som er ansatt i selskapet OG kommer inn
-/// via et oppdrag ville mistet retten til å føre sine egne timer hvis vi
-/// bare valgte én.
+/// The access guard unions the rettigheter from these rather than picking
+/// the "strongest" role: since `ansatt` arrived (#54) the roles are no
+/// longer a ladder, and someone who is an employee of the company AND
+/// comes in through an oppdrag would lose the right to log their own
+/// hours if we picked just one.
+/// picked just one.
 pub async fn company_roles(
     pool: &PgPool,
     person_id: Uuid,
@@ -179,11 +180,11 @@ pub async fn company_roles(
 /// audit needs (#55). A person can appear once per access path — the caller (or UI)
 /// decides how to merge.
 ///
-/// **Ingen vei her krysser selskapsgrenser.** Alle tre er avgrenset til
-/// ett selskap i selve datamodellen, og det finnes ingen jokertegn og
-/// ingen plattformrolle. Det er en avgjørelse, ikke en tilfeldighet
-/// (#57, docs/auth.md §8), og den er festet i test: admin i ett selskap
-/// er en fullstendig fremmed i et annet.
+/// **No route here crosses a company boundary.** All three are confined
+/// to one company in the data model itself, and there is no wildcard and
+/// no platform role. That is a decision, not an accident (#57,
+/// docs/auth.md §8), and it is pinned in a test: an admin in one company
+/// is a complete stranger in another.
 pub async fn company_access_for_person(
     pool: &PgPool,
     person_id: Uuid,

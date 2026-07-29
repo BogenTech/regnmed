@@ -1,11 +1,11 @@
-//! Attestering (docs/attestering.md, #47): valgfri intern kontroll —
-//! hvem som godkjenner skilles fra hvem som bokfører og betaler.
+//! Attestering (docs/attestering.md, #47): optional internal control —
+//! who approves is separated from who posts and who pays.
 //!
-//! Policyen er append-only historikk (nyeste rad gjelder); beslutninger
-//! er et insert-only spor der nyeste beslutning gjelder. Håndhevingen
-//! bor i transaksjonene som bokfører og godkjenner — se
+//! The policy is append-only history (the newest row governs); decisions
+//! are an insert-only trail where the newest decision governs.
+//! Enforcement lives in the transactions that post and approve — see
 //! [`crate::innboks::bokfor_inbox_document`],
-//! [`crate::betaling::approve_run`] og [`crate::utlegg::approve_expense`].
+//! [`crate::betaling::approve_run`] and [`crate::utlegg::approve_expense`].
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
@@ -15,10 +15,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct AttestationPolicy {
     pub aktiv: bool,
-    /// Innboksbilag med debetsum >= grensen krever attestering;
-    /// None = alle bilag når policyen er aktiv.
+    /// Innboks bilag with a debit sum >= the threshold require
+    /// attestering; None = every bilag while the policy is active.
     pub belopsgrense_ore: Option<i64>,
-    /// Utpekt attestant; None = alle med bokføringstilgang.
+    /// The designated attestant; None = anyone with posting access.
     pub attestant_person_id: Option<Uuid>,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
@@ -80,9 +80,10 @@ pub async fn set_policy(
         ensure!(grense >= 0, "beløpsgrensen kan ikke være negativ");
     }
     if let Some(attestant) = attestant_person_id {
-        // Positiv liste, ikke «alt som ikke er les». Da rollene var tre
-        // betydde de to formene det samme; etter at 'revisor' og
-        // 'ansatt' kom til ville nektelsen sluppet begge gjennom.
+        // A positive list, not "everything that is not les". When there
+        // were three roles the two formulations meant the same; once
+        // 'revisor' and 'ansatt' arrived, the negation would have let
+        // both through.
         let roller = crate::tenancy::company_roles(pool, attestant, company_id).await?;
         ensure!(
             roller.iter().any(|r| r == "admin" || r == "bokforing"),

@@ -1,8 +1,8 @@
-//! Betalingsoppfølging: forfalte fakturaer (alltid beregnet fra åpne
-//! poster, aldri lagret tilstand) og purreskritt — regelverket anvendes
-//! rent i `regnmed-core::purring`, satsene kommer fra satsregisteret,
-//! og gebyr/rente som kreves bokføres i samme transaksjon som skrittet
-//! registreres (docs/purring.md).
+//! Payment follow-up: overdue fakturaer (always computed from open
+//! items, never stored state) and purring steps — the regelverk is
+//! applied purely in `regnmed-core::purring`, the rates come from the
+//! satsregister, and any gebyr/interest claimed is posted in the same
+//! transaction that records the step (docs/purring.md).
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
@@ -32,8 +32,8 @@ pub struct OverdueInvoice {
     pub last_sent: Option<NaiveDate>,
 }
 
-/// Åpne, forfalte fakturaer per `per_date`, med aldersintervall og siste
-/// purreskritt. Kreditnotaer teller aldri som forfalt.
+/// Open, overdue fakturaer as of `per_date`, with an age bucket and the
+/// last purring step. Kreditnotaer never count as overdue.
 pub async fn overdue_invoices(
     pool: &PgPool,
     company_id: Uuid,
@@ -95,10 +95,11 @@ pub struct ReminderDraft {
     pub sent_date: Option<NaiveDate>,
     pub frist_date: NaiveDate,
     pub gebyr_ore: i64,
-    /// Krev påløpt forsinkelsesrente i tillegg til hovedkravet.
+    /// Claim accrued forsinkelsesrente on top of the principal.
     pub med_rente: bool,
-    /// Skyldner er næringsdrivende: gebyrtaket er standardkompensasjonen
-    /// (forsinkelsesrenteloven §3a), ikke purregebyr_maks.
+    /// The debtor is næringsdrivende: the gebyr ceiling is the
+    /// standardkompensasjon (forsinkelsesrenteloven §3a), not
+    /// purregebyr_maks.
     pub naeringsdrivende: bool,
     pub gebyr_account: String,
     pub rente_account: String,
@@ -204,8 +205,8 @@ struct PreparedReminder {
     document: String,
 }
 
-/// Felles vei for forhåndsvisning og registrering: fakta, satser,
-/// regelverkssjekk og rendering — uten å skrive noe.
+/// The shared path for preview and recording: facts, rates, rule check
+/// and rendering — without writing anything.
 async fn prepare(
     pool: &PgPool,
     company_id: Uuid,
@@ -301,7 +302,7 @@ fn result_of(p: &PreparedReminder, draft: &ReminderDraft) -> ReminderResult {
     }
 }
 
-/// Forhåndsvisning: beregner gebyrtak, rente og dokument uten å skrive.
+/// Preview: computes the gebyr ceiling, interest and document without writing.
 pub async fn preview_reminder(
     pool: &PgPool,
     company_id: Uuid,
@@ -312,9 +313,9 @@ pub async fn preview_reminder(
     Ok(result_of(&prepared, draft))
 }
 
-/// Registrerer skrittet: én transaksjon som bokfører gebyr/rente (når
-/// krevd) og setter inn purreraden — feiler bokføringen finnes intet
-/// skritt, samme mønster som bilagsinnboksen.
+/// Records the step: one transaction that posts gebyr/interest (when
+/// claimed) and inserts the purring row — if posting fails there is no
+/// step at all, the same pattern as the bilagsinnboks.
 pub async fn create_reminder(
     pool: &PgPool,
     company_id: Uuid,
@@ -385,7 +386,7 @@ pub struct ReminderRow {
     pub created_by: String,
 }
 
-/// Purrehistorikken for en faktura, eldst først (insert-only — dette er
+/// The purring history for a faktura, oldest first (insert-only — this is
 /// hele hendelsesloggen).
 pub async fn list_reminders(
     pool: &PgPool,

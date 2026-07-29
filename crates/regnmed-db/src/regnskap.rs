@@ -269,9 +269,10 @@ pub async fn bokforingsspesifikasjon(
 }
 
 /// Nøkkeltall for oversikten (docs/rapporter.md, #36): resultat hittil
-/// i år mot samme periode i fjor, resultat per måned, og
-/// likviditetsbildet — alt rene SUM-spørringer over hovedboken og
-/// reskontroen, aldri lagret tilstand.
+/// Key figures for the overview (docs/rapporter.md, #36): result year to
+/// date against the same period last year, result per month, and the
+/// liquidity picture — all plain SUM queries over the hovedbok and the
+/// reskontro, never stored state.
 #[derive(Debug)]
 pub struct Nokkeltall {
     pub year: i32,
@@ -280,11 +281,11 @@ pub struct Nokkeltall {
     pub resultat_fjor_ore: i64,
     /// Index 0 = januar; presentasjonsfortegn.
     pub maaneder: [i64; 12],
-    /// Bank og kontanter (19xx-kontoene), nå.
+    /// Bank and cash (the 19xx accounts), now.
     pub bank_ore: i64,
     /// Utestående kundefordringer (kundereskontroens saldo), nå.
     pub kundefordringer_ore: i64,
-    /// Skyldig til leverandører (positivt beløp), nå.
+    /// Owed to suppliers (positive amount), now.
     pub leverandorgjeld_ore: i64,
 }
 
@@ -295,8 +296,8 @@ pub async fn nokkeltall(
     today: chrono::NaiveDate,
 ) -> anyhow::Result<Nokkeltall> {
     use chrono::Datelike;
-    // Resultatkontoene er 3xxx–8xxx; presentasjonen snur fortegnet
-    // (inntekter er kredit i hovedboken).
+    // The result accounts are 3xxx–8xxx; presentation flips the sign
+    // (income is credit in the hovedbok).
     let month_rows = sqlx::query(
         "select extract(month from v.voucher_date)::int as maned,
                 coalesce(-sum(e.amount_ore), 0)::bigint as resultat
@@ -320,8 +321,9 @@ pub async fn nokkeltall(
         }
     }
 
-    // "Hittil": til og med dagens dato i rapportåret; fjoråret måles
-    // til samme dato året før (29. februar faller tilbake til 28.).
+    // "Year to date": through today's date in the report year; last year
+    // is measured to the same date a year earlier (29 February falls back
+    // to the 28th).
     let cutoff = if today.year() == year {
         today
     } else {

@@ -1,39 +1,40 @@
-//! Egendefinerte roller (#60, docs/auth.md).
+//! Custom roles (#60, docs/auth.md).
 //!
-//! De innebygde rollene bor i koden (`regnmed-api::tilgang`). Dette
-//! modulet holder bare det et selskap har satt sammen selv, av
-//! rettighetene som allerede finnes.
+//! The built-in roles live in the code (`regnmed-api::tilgang`). This
+//! module holds only what a company has composed itself, out of the
+//! rettigheter that already exist.
 //!
-//! Rettighetsnavnene lagres som tekst, og **databasen kjenner dem
-//! ikke**. Oppslaget filtrerer bort det koden ikke gjenkjenner, så en
-//! rolle kan ikke love en rettighet ingen håndhever — og en tilbakerullet
-//! versjon som ikke kjenner en ny rettighet ser den bare forsvinne.
+//! The rettighet names are stored as text, and **the database does not
+//! know them**. The lookup filters out whatever the code does not
+//! recognise, so a role can never promise a rettighet nobody enforces —
+//! and a rolled-back version that does not know a new rettighet simply
+//! sees it disappear.
 //!
-//! **Hver endring er ÉN transaksjon** (#62), av to grunner som begge
-//! rammer noen andre enn den som skriver:
+//! **Every change is ONE transaction** (#62), for two reasons that both
+//! hit somebody other than the writer:
 //!
-//! 1. Rollen, rettighetene og loggraden hører sammen. Sto de i hvert
-//!    sitt statement, kunne en rolle bli til uten rettigheter og uten
-//!    en rad i `company_role_change` — og en rolle loggen ikke
-//!    forklarer er nøyaktig det endringsloggen finnes for å umuliggjøre.
-//! 2. Å sette rettigheter er `delete` + `insert`. Utenfor en
-//!    transaksjon kan `rettigheter_for` (tilgangsvakten, i en helt
-//!    annen forespørsel) lese MELLOM dem og se en tom liste: den som
-//!    har rollen mister tilgangen et øyeblikk, tilfeldig, uten at noe
-//!    er galt. Nå ser oppslaget alltid enten den gamle eller den nye
-//!    listen.
+//! 1. The role, its rettigheter and the log row belong together. Were
+//!    they in separate statements, a role could come into being without
+//!    rettigheter and without a row in `company_role_change` — and a role
+//!    the log cannot explain is exactly what the change log exists to
+//!    make impossible.
+//! 2. Setting rettigheter is `delete` + `insert`. Outside a transaction
+//!    `rettigheter_for` (the access guard, in an entirely different
+//!    request) can read BETWEEN them and see an empty list: whoever holds
+//!    the role loses access for a moment, at random, with nothing wrong.
+//!    Now the lookup always sees either the old list or the new one.
 //!
-//! Rollen låses (`for update`) før rettighetene skrives om. Uten låsen
-//! ville to samtidige endringer begge slettet den gamle listen og
-//! sluppet igjennom hver sin — resultatet ble UNIONEN, altså mer
-//! tilgang enn noen av dem ba om.
+//! The role is locked (`for update`) before the list is rewritten.
+//! Without the lock two concurrent changes would each delete the old list
+//! and let their own through — the result being the UNION, i.e. more
+//! access than either asked for.
 
 use anyhow::{Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-/// Navn som tilhører de innebygde rollene og ikke kan gjenbrukes.
+/// Names belonging to the built-in roles, which cannot be reused.
 pub const RESERVERTE_NAVN: [&str; 6] = ["admin", "bokforing", "les", "ansatt", "revisor", "ukjent"];
 
 /// SQLSTATE for unique_violation.
@@ -48,11 +49,11 @@ pub struct Rolle {
     pub i_bruk: i64,
 }
 
-/// Rettighetene knyttet til navngitte roller i ett selskap.
+/// The rettigheter attached to named roles in one company.
 ///
-/// Kalles fra tilgangsvakten for de rollenavnene som ikke er innebygde.
-/// En deaktivert rolle gir ingenting — det er slik en rolle «fjernes»
-/// uten at historikken om hvem som hadde den forsvinner.
+/// Called from the access guard for those role names that are not
+/// built-in. A deactivated role grants nothing — that is how a role is
+/// "removed" without losing the history of who held it.
 pub async fn rettigheter_for(
     pool: &PgPool,
     company_id: Uuid,
@@ -125,8 +126,8 @@ async fn logg(
     Ok(())
 }
 
-/// Oppretter en rolle. `godkjente` er rettighetene kalleren har
-/// kontrollert at kan delegeres — modulet her kjenner ikke vokabularet.
+/// Creates a role. `godkjente` are the rettigheter the caller has
+/// checked may be delegated — this module does not know the vocabulary.
 pub async fn opprett(
     pool: &PgPool,
     company_id: Uuid,
@@ -154,8 +155,8 @@ pub async fn opprett(
     .execute(&mut *tx)
     .await;
     if let Err(e) = res {
-        // Feilkoden, ikke constraint-navnet: en rename av constrainten
-        // skal ikke gjøre «navnet er opptatt» om til en 500.
+        // The error code, not the constraint name: renaming the
+        // constraint must not turn "the name is taken" into a 500.
         if e.as_database_error().and_then(|d| d.code()).as_deref() == Some(UNIK_KRENKELSE) {
             bail!("selskapet har allerede en rolle som heter «{navn}»");
         }
@@ -175,8 +176,8 @@ pub async fn opprett(
     Ok(id)
 }
 
-/// Skriver rettighetslisten om. Kjøres alltid inne i transaksjonen som
-/// også skriver loggraden, og etter at rollen er låst.
+/// Rewrites the rettighet list. Always runs inside the transaction that
+/// also writes the log row, and after the role has been locked.
 async fn sett_rettigheter_in(
     tx: &mut Transaction<'_, Postgres>,
     role_id: Uuid,
@@ -206,8 +207,8 @@ pub async fn sett_rettigheter(
     av: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    // Låser rollen og sjekker at den finnes i ett — to samtidige
-    // endringer skal skje etter hverandre, ikke blande listene sine.
+    // Locks the role and checks that it exists in one — two concurrent
+    // changes must happen one after the other, not blend their lists.
     let finnes: Option<Uuid> = sqlx::query_scalar(
         "select id from company_role where id = $1 and company_id = $2 for update",
     )
@@ -230,8 +231,8 @@ pub async fn sett_rettigheter(
     Ok(())
 }
 
-/// Deaktiverer eller gjenoppliver en rolle. Roller slettes aldri: de er
-/// forklaringen på hvilken tilgang noen HADDE.
+/// Deactivates or revives a role. Roles are never deleted: they are the
+/// explanation of what access somebody HAD.
 pub async fn sett_aktiv(
     pool: &PgPool,
     company_id: Uuid,
@@ -261,7 +262,7 @@ pub async fn sett_aktiv(
     Ok(())
 }
 
-/// Finnes rollenavnet som en aktiv egendefinert rolle her?
+/// Does this role name exist here as an active custom role?
 pub async fn finnes(pool: &PgPool, company_id: Uuid, navn: &str) -> Result<bool> {
     let n: i64 = sqlx::query_scalar(
         "select count(*) from company_role where company_id = $1 and navn = $2 and aktiv",

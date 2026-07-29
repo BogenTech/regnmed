@@ -1,18 +1,18 @@
-//! EHF ut og inn (docs/ehf.md, #14).
+//! EHF outbound and inbound (docs/ehf.md, #14).
 //!
-//! **Ut:** dokumentet bygges fra den utstedte fakturaens egne, låste
-//! rader og rendres på forespørsel. Det er med vilje ikke lagret som
-//! vedlegg slik PDF-en er: PDF-en ER salgsdokumentet (bokførings-
-//! forskriften §5-1, oppbevaringsplikt fra utstedelsen), mens EHF-en
-//! er en transportkonvolutt utledet av de samme uforanderlige tallene.
-//! Når et aksesspunkt faktisk sender den, er det sendingen som skal
-//! logges — utsendelsesmønsteret fra #32.
+//! **Outbound:** the document is built from the issued faktura's own,
+//! locked rows and rendered on request. It is deliberately not stored as
+//! an attachment the way the PDF is: the PDF IS the sales document
+//! (bokføringsforskriften §5-1, retention from the moment of issue),
+//! whereas the EHF is a transport envelope derived from the same
+//! immutable numbers. When an access point actually sends it, it is the
+//! sending that must be logged — the utsendelse pattern from #32.
 //!
-//! **Inn:** en mottatt EHF lagres som den er i bilagsinnboksen
-//! (uforanderlig fra ankomst, hash-sjekket — #21), og
-//! bokføringsforslaget regnes ut av originalen hver gang det spørres.
-//! Ingenting utledet lagres, så et forbedret forslag gjelder også for
-//! dokumenter som allerede ligger der.
+//! **Inbound:** a received EHF is stored as-is in the bilagsinnboks
+//! (immutable from arrival, hash-checked — #21), and the posting
+//! suggestion is computed from the original every time it is asked for.
+//! Nothing derived is stored, so an improved suggestion applies to
+//! documents already sitting there as well.
 
 use anyhow::{Context, Result};
 use regnmed_core::ehf::{Dokumenttype, EhfDokument, EhfLinje, EhfPart};
@@ -448,7 +448,7 @@ mod tests {
     use super::split_adresse;
 
     #[test]
-    fn adressen_deles_naar_formen_er_gjenkjennelig() {
+    fn the_address_is_split_when_its_shape_is_recognisable() {
         assert_eq!(
             split_adresse(Some("Storgata 1, 0155 Oslo".into())),
             (
@@ -457,7 +457,7 @@ mod tests {
                 Some("Oslo".into())
             )
         );
-        // Ukjent form: hele adressen går ut som gatelinje, ikke feilfordelt.
+        // Unknown shape: the whole address goes out as the street line, never misfiled.
         assert_eq!(
             split_adresse(Some("Postboks 42 Sentrum".into())),
             (Some("Postboks 42 Sentrum".into()), None, None)

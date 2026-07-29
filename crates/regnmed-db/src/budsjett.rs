@@ -1,13 +1,13 @@
-//! Budsjett og avviksrapport (docs/budsjett.md, #41).
+//! Budget and variance report (docs/budsjett.md, #41).
 //!
-//! Budsjettet er et arbeidsdokument mens det er utkast og fryses ved
-//! fastsettelse; en revisjon er en ny versjon for samme år (migration
-//! 0031 håndhever begge deler). Avviksrapporten navngir alltid hvilken
-//! versjon den sammenligner mot.
+//! The budget is a working document while it is a draft and is frozen
+//! when it is fastsatt; a revision is a new version for the same year
+//! (migration 0031 enforces both). The variance report always names which
+//! version it compares against.
 //!
-//! Faktiske tall hentes fra hovedboken med den samme rene
-//! SUM-spørringen som resten av rapportene — budsjettmodulen lagrer
-//! ingen fasit om virkeligheten, den henter den.
+//! Actuals are read from the hovedbok with the same plain SUM query as
+//! the rest of the reports — the budget module stores no truth about
+//! reality, it fetches it.
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};

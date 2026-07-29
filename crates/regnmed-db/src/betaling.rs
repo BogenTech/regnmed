@@ -1,4 +1,4 @@
-//! Betalingsliste og remittering (docs/betaling.md, #33).
+//! Payment list and remittering (docs/betaling.md, #33).
 //!
 //! The list is built from OPEN leverandør-poster (reskontro remainders
 //! — computed, never stored), creditor data is snapshotted onto the

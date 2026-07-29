@@ -260,9 +260,9 @@ pub async fn approve_expense(
     let status: String = expense.get("status");
     ensure!(status == "innsendt", "kravet er allerede {status}");
 
-    // Selvgodkjenning var tillatt i v1 (#42); med aktiv attestering
-    // (docs/attestering.md, #47) må godkjenneren være en annen enn den
-    // som sendte inn kravet.
+    // Self-approval was allowed in v1 (#42); with attestering active
+    // (docs/attestering.md, #47) the approver must be someone other than
+    // the person who submitted the claim.
     if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
         && policy.aktiv
     {

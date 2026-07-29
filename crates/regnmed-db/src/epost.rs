@@ -1,15 +1,15 @@
-//! E-post-inn til bilagsinnboksen (docs/epost-inn.md, #35).
+//! Inbound e-mail into the bilagsinnboks (docs/epost-inn.md, #35).
 //!
-//! Vedleggene i en mottatt e-post blir innboksdokumenter gjennom
-//! nøyaktig samme vei som en opplasting: uforanderlig innhold,
-//! SHA-256 ved ankomst, ingen beslutning tatt (migration 0015).
+//! The attachments in a received e-mail become innboks documents by
+//! exactly the same route as an upload: immutable content, SHA-256 on
+//! arrival, no decision taken (migration 0015).
 //!
-//! Det som er nytt er hvem som får levere. En ukjent avsender havner i
-//! **karantene**: e-posten lagres hel (rå melding og alt), men ingen
-//! dokumenter opprettes før en admin slipper den gjennom. Alternativene
-//! var å importere i stillhet (da kan hvem som helst fylle innboksen)
-//! eller å forkaste i stillhet (da forsvinner et bilag noen faktisk
-//! sendte) — begge er verre.
+//! What is new is who may deliver. An unknown sender lands in
+//! **quarantine**: the e-mail is stored whole (raw message and all), but
+//! no documents are created until an admin releases it. The alternatives
+//! were to import silently (then anyone can fill the innboks) or to
+//! discard silently (then a bilag somebody really sent disappears) — both
+//! are worse.
 
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Utc};

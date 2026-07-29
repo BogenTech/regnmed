@@ -1,40 +1,40 @@
-//! Medlemsadministrasjon (#53, docs/auth.md).
+//! Membership administration (#53, docs/auth.md).
 //!
-//! Hvem som har tilgang til et selskap, hvordan de fikk den, og hvordan
-//! den tas bort igjen. Tilgang gitt gjennom et **oppdrag** styres ikke
-//! herfra — den følger engasjementet (docs/marketplace.md), og et forsøk
-//! på å endre den skal si fra i stedet for å se ut som om det virket.
+//! Who has access to a company, how they got it, and how it is taken
+//! away again. Access granted through an **oppdrag** is not managed from
+//! here — it follows the engagement (docs/marketplace.md), and an attempt
+//! to change it must say so rather than look as though it worked.
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-/// Rollene som kan tildeles. `ansatt` er selvbetjening (#54) og ikke et
-/// trinn under `les` — den får skrive noen få egne ting og lese nesten
-/// ingenting.
+/// The roles that can be assigned. `ansatt` is self-service (#54) and not
+/// a step below `les` — it may write a few things of its own and read
+/// almost nothing.
 pub const ROLLER: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
 fn krev_tildelbar(rolle: &str) -> Result<()> {
     if rolle == "revisor" {
-        // Ikke en skrivefeil å avvise stille: 'revisor' er en ekte rolle
-        // i systemet, den kommer bare et annet sted fra.
+        // Not a typo to reject silently: 'revisor' is a real role in
+        // the system, it just arrives from somewhere else.
         bail!(
             "«revisor» tildeles ikke her — den følger av et revisjonsoppdrag \
              (docs/marketplace.md)"
         );
     }
-    // Egendefinerte roller (#60) slipper gjennom her; at navnet faktisk
-    // finnes i selskapet kontrolleres av API-laget, som kjenner
-    // selskapet. Et navn som ikke finnes gir uansett ingen rettigheter.
+    // Custom roles (#60) pass through here; that the name actually
+    // exists in the company is checked by the API layer, which knows the
+    // company. A name that does not exist grants nothing anyway.
     Ok(())
 }
 
-/// E-post normalisert som vi sammenligner den: trimmet, små bokstaver.
+/// E-mail normalised the way we compare it: trimmed, lower case.
 ///
-/// Adressen er nøkkelen en invitasjon løses inn på, så «Ola@Firma.no»
-/// og «ola@firma.no» må være samme invitasjon. Normaliseringen skjer
-/// her, ett sted, og det som lagres er den normaliserte formen.
+/// The address is the key an invitation is redeemed on, so "Ola@Firma.no"
+/// and "ola@firma.no" must be the same invitation. Normalisation happens
+/// here, in one place, and what is stored is the normalised form.
 pub fn normaliser_epost(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
@@ -46,18 +46,18 @@ pub struct Medlem {
     pub epost: Option<String>,
     pub rolle: String,
     pub aktiv: bool,
-    /// «direkte» eller navnet på byrået oppdraget går gjennom.
+    /// "direkte", or the name of the byrå the oppdrag runs through.
     pub via: String,
-    /// Tilgang gjennom oppdrag kan ikke endres her.
+    /// Access through an oppdrag cannot be changed here.
     pub kan_endres: bool,
 }
 
-/// Alle som har tilgang, uansett vei inn.
+/// Everyone with access, by whatever route.
 ///
-/// Direkte medlemskap og oppdragstilgang vises sammen, fordi det er slik
-/// spørsmålet stilles («hvem kommer til her?»), men de er merket
-/// forskjellig: den som kom inn via et oppdrag kan bare fjernes ved å
-/// avslutte oppdraget.
+/// Direct membership and oppdrag access are shown together, because that
+/// is how the question is asked ("who can get in here?"), but they are
+/// marked differently: someone who arrived through an oppdrag can only be
+/// removed by ending the oppdrag.
 pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medlem>> {
     let rows = sqlx::query(
         "select p.id as person_id,
@@ -134,12 +134,12 @@ async fn logg(
     Ok(())
 }
 
-/// Krever at selskapet fortsatt har minst én aktiv admin.
+/// Requires that the company still has at least one active admin.
 ///
-/// Kjøres INNE i transaksjonen, etter endringen, og låser selskapets
-/// medlemsrader først. Uten låsen kunne to samtidige degraderinger
-/// begge se «det finnes en annen admin» og etterlate selskapet uten —
-/// og et selskap uten admin er ikke gjenopprettelig uten DB-tilgang.
+/// Runs INSIDE the transaction, after the change, and locks the company's
+/// member rows first. Without the lock two concurrent demotions could
+/// both see "there is another admin" and leave the company with none —
+/// and a company without an admin is not recoverable without DB access.
 async fn krev_gjenvaerende_admin(
     tx: &mut Transaction<'_, Postgres>,
     company_id: Uuid,
@@ -158,7 +158,7 @@ async fn krev_gjenvaerende_admin(
     Ok(())
 }
 
-/// Låser selskapets medlemsrader for resten av transaksjonen.
+/// Locks the company's member rows for the rest of the transaction.
 async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, company_id: Uuid) -> Result<()> {
     sqlx::query("select 1 from company_member where company_id = $1 for update")
         .bind(company_id)
@@ -167,7 +167,7 @@ async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, company_id: Uuid) ->
     Ok(())
 }
 
-/// Endrer rollen til et direkte medlem.
+/// Changes the role of a direct member.
 pub async fn sett_rolle(
     pool: &PgPool,
     company_id: Uuid,
@@ -217,8 +217,8 @@ pub async fn sett_rolle(
     Ok(())
 }
 
-/// Slår tilgangen av eller på igjen. Medlemskapet slettes aldri — det er
-/// historikken over hvem som hadde tilgang.
+/// Turns access off or back on. The membership is never deleted — it is
+/// the history of who had access.
 pub async fn sett_aktiv(
     pool: &PgPool,
     company_id: Uuid,
@@ -277,11 +277,11 @@ pub struct Invitasjon {
     pub created_at: DateTime<Utc>,
 }
 
-/// Inviterer en e-postadresse inn i selskapet.
+/// Invites an e-mail address into the company.
 ///
-/// Svarer likt uansett om adressen alt har en bruker hos oss — se
-/// migrasjon 0037 for hvorfor. Har den det, blir invitasjonen løst inn
-/// neste gang vedkommende laster portalen.
+/// Answers identically whether or not the address already has a user with
+/// us — see migration 0037 for why. If it does, the invitation is
+/// redeemed the next time that person loads the portal.
 pub async fn inviter(
     pool: &PgPool,
     company_id: Uuid,
@@ -362,20 +362,19 @@ pub async fn tilbakekall_invitasjon(
     Ok(())
 }
 
-/// Løser inn invitasjoner som står til personens e-postadresse.
+/// Redeems invitations addressed to this person's e-mail address.
 ///
-/// Kalles fra `/me`, altså når portalen starter en økt. Det er samme
-/// mønster som oppdrag: tilgangen blir synlig uten ny innlogging, men
-/// den materialiseres når vi faktisk vet hvem som spør.
+/// Called from `/me`, i.e. when the portal starts a session. That is the
+/// same pattern as oppdrag: the access becomes visible without a fresh
+/// login, but it materialises when we actually know who is asking.
 ///
-/// Har personen allerede et medlemskap, oppgraderes rollen aldri i det
-/// stille — invitasjonen merkes brukt, og den sterkeste av de to
-/// rollene beholdes ikke automatisk. Vi lar det bestående medlemskapet
-/// stå: en admin som mener noe annet kan endre rollen uttrykkelig, og
-/// det er tryggere enn at en invitasjon kan heve tilgang uten at noen
-/// ser det.
+/// If the person already has a membership, the role is never silently
+/// upgraded — the invitation is marked used, and the stronger of the two
+/// roles is not automatically kept. We let the existing membership stand:
+/// an admin who thinks otherwise can change the role explicitly, and that
+/// is safer than an invitation being able to raise access unnoticed.
 ///
-/// Returnerer antall invitasjoner som ble løst inn.
+/// Returns the number of invitations redeemed.
 pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usize> {
     let epost: Option<String> = sqlx::query_scalar("select email from person where id = $1")
         .bind(person_id)
@@ -455,13 +454,13 @@ pub struct Tilgangsendring {
     pub til_rolle: Option<String>,
     pub utfort_av: Option<String>,
     pub kilde: String,
-    /// Referanse til samtykket når `kilde = 'nodprosedyre'` (#57);
-    /// ellers normalt tom.
+    /// Reference to the consent when `kilde = 'nodprosedyre'` (#57);
+    /// otherwise normally empty.
     pub notat: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
-/// Sporet over hvem som ga hvem tilgang — spørsmålet en revisor stiller.
+/// The trail of who granted whom access — the question a revisor asks.
 pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Tilgangsendring>> {
     let rows = sqlx::query(
         "select coalesce(p.name, p.oidc_sub) as navn,
@@ -497,7 +496,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn eposten_normaliseres_for_sammenligning() {
+    fn the_email_is_normalised_before_comparison() {
         assert_eq!(normaliser_epost("  Ola@Firma.NO "), "ola@firma.no");
         assert_eq!(normaliser_epost("ola@firma.no"), "ola@firma.no");
     }

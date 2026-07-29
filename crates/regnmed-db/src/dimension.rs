@@ -1,4 +1,4 @@
-//! Dimensjonsregisteret: avdeling og prosjekt (docs/dimensjoner.md).
+//! The dimension register: avdeling and prosjekt (docs/dimensjoner.md).
 //! Master data with a restricted lifecycle — insert, rename, open/close.
 //! The CODE is immutable (it is inside the v3 voucher hash); enforced by
 //! trigger + column grants in migration 0018.

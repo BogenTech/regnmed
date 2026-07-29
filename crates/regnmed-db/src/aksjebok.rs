@@ -1,8 +1,8 @@
-//! Aksjeeierbok og aksjonærregisteroppgave (docs/aksjonaer.md, #43).
+//! Aksjeeierbok and aksjonærregisteroppgave (docs/aksjonaer.md, #43).
 //!
-//! Beholdningen er alltid BEREGNET fra hendelsene (migration 0034), på
-//! samme måte som saldoer beregnes fra bilag. Ingen spørring her lagrer
-//! et eierandelstall, og ingen oppdaterer et.
+//! The holding is always COMPUTED from the events (migration 0034), the
+//! same way balances are computed from bilag. No query here stores an
+//! ownership figure, and none updates one.
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{Datelike, NaiveDate};
@@ -315,7 +315,7 @@ pub async fn record_hendelse(
     ensure!(antall > 0, "antall aksjer må være positivt");
 
     let mut tx = pool.begin().await?;
-    // Aksjonæren må høre til dette selskapet.
+    // The shareholder must belong to this company.
     let eier: Option<Uuid> = sqlx::query_scalar(
         "select id from shareholder where id = $1 and company_id = $2 for update",
     )
@@ -325,7 +325,7 @@ pub async fn record_hendelse(
     .await?;
     eier.context("no such aksjonær")?;
 
-    // En avgang kan ikke ta flere aksjer enn eieren har på datoen.
+    // An avgang cannot take more shares than the owner holds on the date.
     if !type_.er_tilgang() {
         let beholdning = beholdning_i_tx(&mut tx, shareholder_id, dato).await?;
         ensure!(
@@ -350,7 +350,7 @@ pub async fn record_hendelse(
     )
     .await?;
 
-    // Motparten, når overdragelsen har en kjent annen side.
+    // The counterparty, when the transfer has a known other side.
     if let (Some(motpart_id), Some(motpart_slug)) = (motpart_id, motpart_type_slug) {
         let motpart_type = Transaksjonstype::fra_slug(motpart_slug)
             .with_context(|| format!("ukjent transaksjonstype «{motpart_slug}»"))?;
@@ -598,12 +598,13 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
         .await?
         .context("no such company")?;
     let orgnr: String = selskap.get("orgnr");
-    // Adressen er fritekst hos oss; oppgaven vil ha den delt. Samme
-    // regel som EHF bruker, ett sted.
+    // The address is free text with us; the oppgave wants it split. The
+    // same rule EHF uses, in one place.
     let (gate, postnr, poststed) = crate::ehf::split_adresse(selskap.get("address"));
 
-    // Regnskapsåret er kalenderåret (docs/regelverk.md, #52) — og for
-    // aksjonærregisteroppgaven er det uansett inntektsåret som gjelder.
+    // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
+    // for the aksjonærregisteroppgave it is the inntektsår that governs
+    // anyway.
     let siste_i_ar = NaiveDate::from_ymd_opt(ar, 12, 31).context("ugyldig år")?;
 
     let bok = aksjeeierbok(pool, company_id, siste_i_ar).await?;
@@ -619,9 +620,10 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
     let mut nyutstedelser: Vec<oppgave::Nyutstedelse> = Vec::new();
     let mut underskjemaer = Vec::new();
 
-    // Pålydende er kjent gjennom hendelsene bare når noen har registrert
-    // stiftelsen med et beløp; ellers står det som null og selskapet må
-    // fylle det. Aksjekapitalen utledes av antall x pålydende.
+    // The nominal value is known through the events only when somebody
+    // registered the stiftelse with an amount; otherwise it stands at
+    // zero and the company must fill it in. The share capital is derived
+    // from count x nominal value.
     let palydende_ore = palydende_ore(pool, company_id).await?;
 
     for a in &bok {
@@ -638,7 +640,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
                 antall: h.antall,
                 belop_ore: h.vederlag_ore,
             });
-            // Nyutstedelser rapporteres også på selskapsnivå.
+            // New issues are reported at company level too.
             if matches!(
                 h.type_,
                 Transaksjonstype::Stiftelse | Transaksjonstype::Nyemisjon
@@ -687,9 +689,9 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
         ));
     }
 
-    // "Antall aksjer etter stiftelse/nyemisjon" er totalen PÅ HENDELSENS
-    // DATO, ikke ved årets slutt. Med én emisjon er det samme tall; med
-    // to ville årsslutt-totalen vært feil for den første.
+    // "Antall aksjer etter stiftelse/nyemisjon" is the total ON THE
+    // EVENT'S DATE, not at year end. With one emisjon they are the same
+    // number; with two, the year-end total would be wrong for the first.
     nyutstedelser.sort_by_key(|n| n.dato);
     for n in &mut nyutstedelser {
         n.antall_etter = aksjeeierbok(pool, company_id, n.dato)

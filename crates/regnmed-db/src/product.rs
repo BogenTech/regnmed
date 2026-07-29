@@ -1,4 +1,4 @@
-//! Produktregister og enkelt varelager (docs/produkter.md, #39).
+//! Product register and simple inventory (docs/produkter.md, #39).
 //!
 //! The register is editable master data; document lines COPY the values
 //! at issue time (resolve_product_line), so issued documents never
