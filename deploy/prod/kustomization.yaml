@@ -26,11 +26,21 @@ resources:
   # differs between the two is a patch below, so a fix to the backup
   # drill cannot land in one environment and miss the other.
   - ../shared
+# Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
+# deliberately unpullable, so an unpinned overlay fails loudly instead of
+# silently running something. newName points at the registry, newTag at an
+# immutable sha- tag from .github/workflows/images.yml.
+#
+# NEVER `main` here. It moves, and a production environment that cannot say
+# which commit it is running cannot be reasoned about after an incident.
+# Production should generally be a tag the test environment has already run.
 images:
   - name: regnmed
-    newTag: pin-me-to-a-release
+    newName: ghcr.io/bogentech/regnmed
+    newTag: sha-a22cae7
   - name: regnid
-    newTag: pin-me-to-a-release
+    newName: ghcr.io/bogentech/regnid
+    newTag: sha-68f89cb
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml

@@ -10,10 +10,10 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt
 spec:
   tls:
-    - hosts: [id.regnmed.example]
+    - hosts: [id.regnmed.no]
       secretName: regnid-tls
   rules:
-    - host: id.regnmed.example
+    - host: id.regnmed.no
       http:
         paths:
           - path: /
@@ -33,10 +33,10 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt
 spec:
   tls:
-    - hosts: [api.regnmed.example]
+    - hosts: [api.regnmed.no]
       secretName: regnmed-api-tls
   rules:
-    - host: api.regnmed.example
+    - host: api.regnmed.no
       http:
         paths:
           - path: /
@@ -60,10 +60,10 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt
 spec:
   tls:
-    - hosts: [regnmed.example]
+    - hosts: [regnmed.no]
       secretName: regnmed-portal-tls
   rules:
-    - host: regnmed.example
+    - host: regnmed.no
       http:
         paths:
           - path: /

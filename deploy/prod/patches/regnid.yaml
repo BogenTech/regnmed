@@ -18,4 +18,4 @@ spec:
                   name: db-credentials
                   key: regnid-url
             - name: ISSUER
-              value: https://id.regnmed.example
+              value: https://id.regnmed.no

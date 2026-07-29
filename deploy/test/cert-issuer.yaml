@@ -18,7 +18,7 @@ metadata:
 spec:
   acme:
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: drift@regnmed.example
+    email: drift@regnmed.no
     privateKeySecretRef:
       name: letsencrypt-staging-account-key
     solvers:

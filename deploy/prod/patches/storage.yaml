@@ -45,8 +45,12 @@
 #
 #   25 client companies × 1500 bilag/year × ~300 KB attached ≈ 11 GB/year
 #
-# 50Gi buys roughly four years at that rate, or one year at four times
-# the volume.
+# 20Gi buys roughly two years at that rate. It was 50Gi when this file
+# assumed dedicated disks; the cluster it actually runs on shares ~631Gi of
+# usable Longhorn space between prod, test and GlusterFS, and 50Gi + 150Gi
+# at three replicas would have claimed nearly all of it for a database with
+# no data in it yet. Longhorn has allowVolumeExpansion, so growing is one
+# edit — see the threshold below for when.
 #
 # ---------------------------------------------------------------------
 # THE BACKUP VOLUME IS NOT INDEPENDENT
@@ -62,8 +66,17 @@
 # first, and the nightly job would have begun failing while the database
 # still looked healthy.
 #
-# 150Gi covers 14 nights of a ~10 GB database, which is where the
-# assumption above puts the first year.
+# 60Gi does NOT hold 14 nights of a full 20Gi database — that would need
+# 280Gi. It holds 14 nights while the database is under ~4 GB, which the
+# rate above puts at at least the first four months, and longer in
+# practice because early months are the emptiest.
+#
+# SO THIS IS A THRESHOLD, NOT A SIZE. When the database passes ~4 GB,
+# either expand backup-data or cut the retention in shared/backup.yaml —
+# and do it deliberately, because the failure mode is the one described
+# above: backups stop while the database still looks healthy. Check it
+# from the restore-verification job's own output, which runs weekly and
+# is the thing that notices first.
 #
 # ---------------------------------------------------------------------
 # REPLICATION MULTIPLIES ALL OF IT
@@ -71,15 +84,18 @@
 # These are the sizes Kubernetes reports. A replicated class stores each
 # one N times across nodes, and Longhorn's default N is 3:
 #
-#   postgres  50Gi  × 3 = 150Gi raw
-#   backup   150Gi  × 3 = 450Gi raw
+#   postgres  20Gi  × 3 =  60Gi raw
+#   backup    60Gi  × 3 = 180Gi raw
 #   nats       1Gi  × 3 =   3Gi raw
-#                          ~600Gi of raw disk across the pool
+#                          ~243Gi of raw disk across the pool
 #
-# That is the number to provision against, and the reason to consider
-# `numberOfReplicas: 2` on the BACKUP volume specifically (via a
-# Longhorn StorageClass, per-volume): its contents are already a copy,
-# and a third replica of a copy is thin value for 150Gi.
+# Test adds ~63Gi on the same pool, against ~631Gi usable (three 932GB
+# disks less the 300Gi each reserved for GlusterFS). That leaves real
+# headroom to grow into rather than a pool that is full on day one.
+#
+# Still worth considering `numberOfReplicas: 2` on the BACKUP volume
+# specifically (via a Longhorn StorageClass, per-volume): its contents are
+# already a copy, and a third replica of a copy is thin value.
 #
 # Full daily dumps also do not scale with blob storage — they re-copy
 # every unchanged photo, nightly. PITR (CloudNativePG) ships WAL
@@ -100,7 +116,7 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 50Gi
+      storage: 20Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -111,7 +127,7 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 150Gi
+      storage: 60Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

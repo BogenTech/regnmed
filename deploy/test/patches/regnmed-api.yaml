@@ -19,7 +19,7 @@
 # regnmed-api requires BOTH or neither (crates/regnmed-api/src/lib.rs):
 # with one missing the rail is off and the endpoints say so, rather than
 # pretending. Point the Stripe test-mode webhook at
-# https://api.test.regnmed.example/stripe/webhook and use its signing
+# https://api.test.regnmed.no/stripe/webhook and use its signing
 # secret above — the signature is what authenticates that route, so a
 # mismatched secret means every event is rejected.
 #
@@ -55,11 +55,11 @@ spec:
                   name: db-credentials
                   key: regnmed-url
             - name: OIDC_ISSUER
-              value: https://id.test.regnmed.example
+              value: https://id.test.regnmed.no
             # The link in the invitation mail (#66) — the portal host,
             # not the API host.
             - name: PORTAL_BASE_URL
-              value: https://test.regnmed.example
+              value: https://test.regnmed.no
             # Must match patches/abonnement-cronjob.yaml: invoices issued
             # in one ledger and payments posted in another never settle.
             - name: REGNMED_DRIFT_ORGNR
@@ -67,7 +67,7 @@ spec:
             # Inbound bilag addresses (#35) are shown under this domain.
             # Set it only once its MX delivers into regnid's receiver.
             - name: MAIL_IN_DOMAIN
-              value: bilag.test.regnmed.example
+              value: bilag.test.regnmed.no
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:

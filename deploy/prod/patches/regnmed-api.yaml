@@ -32,7 +32,7 @@
 # The webhook secret is the LIVE-mode endpoint's signing secret — Stripe
 # issues separate ones per mode, and a test-mode secret here means every
 # live event is rejected as unsigned. Point the live webhook at
-# https://api.regnmed.example/stripe/webhook.
+# https://api.regnmed.no/stripe/webhook.
 #
 # MAIL_IN_DOMAIN (#35) is plain configuration, not a secret: it is the
 # domain inbound bilag addresses are shown under
@@ -68,17 +68,17 @@ spec:
                   name: db-credentials
                   key: regnmed-url
             - name: OIDC_ISSUER
-              value: https://id.regnmed.example
+              value: https://id.regnmed.no
             # The link in the invitation mail (#66) — the portal's real
             # address, i.e. the regnmed-portal host in ingress.yaml, not
             # the API host.
             - name: PORTAL_BASE_URL
-              value: https://regnmed.example
+              value: https://regnmed.no
             # Must match ../shared/abonnement-faktura.yaml — see above.
             - name: REGNMED_DRIFT_ORGNR
               value: "sett-meg-for-utrulling"
             - name: MAIL_IN_DOMAIN
-              value: bilag.regnmed.example
+              value: bilag.regnmed.no
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:

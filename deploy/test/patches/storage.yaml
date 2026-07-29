@@ -9,12 +9,21 @@
 #
 # The pairing rule from deploy/prod/patches/storage.yaml still holds:
 # backup keeps 14 nightly `pg_dump -Fc`, and -Fc does nothing for JPEG or
-# PDF, so backup needs `retention × database`. 5Gi × 14 = 70Gi, which is
-# what the backup volume is. Break that relationship and the backup job
-# starts failing while the database still looks healthy.
+# PDF, so backup needs `retention × database`. A full 5Gi database would
+# therefore need 70Gi of backup — and 15Gi is what is here.
+#
+# THAT IS DELIBERATE AND IT IS A THRESHOLD: 15Gi holds 14 nights while the
+# test database is under ~1 GB, which is far more than a test environment
+# that gets seeded and reset should ever hold. If test grows past that,
+# the honest fix is to reset it, not to grow the volume — a test database
+# accumulating a year of data is a test environment nobody trusts to
+# restore. Break the relationship without noticing and the backup job
+# starts failing while the database still looks healthy, which is exactly
+# the failure test exists to catch before production meets it.
 #
 # Replication multiplies these too: at Longhorn's default of 3 replicas
-# this is ~230Gi of raw disk.
+# this is ~63Gi of raw disk, on a pool of ~631Gi shared with production
+# and GlusterFS.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -35,7 +44,7 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 70Gi
+      storage: 15Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

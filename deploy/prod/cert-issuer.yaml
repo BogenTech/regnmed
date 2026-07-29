@@ -8,7 +8,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: drift@regnmed.example
+    email: drift@regnmed.no
     privateKeySecretRef:
       name: letsencrypt-account-key
     solvers:

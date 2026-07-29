@@ -27,16 +27,34 @@
 # environment that skips those tests nothing about them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+# Test and production run in the SAME cluster (five nodes is thin for two),
+# so the namespace has to differ or the two overlays overwrite each other —
+# both inherit `regnmed` from base. This rewrites every resource, including
+# the Namespace object itself, so nothing is left pointing at production.
+#
+# It is not isolation. A namespace separates names, not resources: test can
+# still starve prod for CPU, memory or Longhorn space. ResourceQuotas are
+# the next step if that starts to matter.
+namespace: regnmed-test
+
 resources:
   - ../base
   - ../shared
   - ingress.yaml
   - cert-issuer.yaml
+# Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
+# deliberately unpullable, so an unpinned overlay fails loudly instead of
+# silently running something. newName points at the registry, newTag at an
+# immutable sha- tag from .github/workflows/images.yml. Never `main`: it
+# moves, and then nothing can say what is running.
 images:
   - name: regnmed
-    newTag: pin-me-to-a-release
+    newName: ghcr.io/bogentech/regnmed
+    newTag: sha-a22cae7
   - name: regnid
-    newTag: pin-me-to-a-release
+    newName: ghcr.io/bogentech/regnid
+    newTag: sha-68f89cb
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml

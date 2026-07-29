@@ -164,6 +164,16 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    én per modus, og en test-hemmelighet her gjør at hver eneste ekte
    hendelse avvises som usignert.
 
+   **BEGGE hemmelighetene må finnes FØR første apply, i BEGGE miljøene**
+   (`-n regnmed-test` for testmiljøet, med `sk_test_…`/`whsec_…` fra
+   Stripes testmodus). Mangler `stripe-credentials`, starter ikke
+   regnmed-api i det hele tatt: poden blir stående i
+   `CreateContainerConfigError` med «secret "stripe-credentials" not
+   found», mens Postgres, migrasjonene og alt annet ser friskt ut.
+   Feilen står i pod-hendelsene, ikke i loggene — containeren rekker
+   aldri å starte. Erfart 2026-07-29 ved første utrulling av
+   testmiljøet.
+
    Every DATABASE_URL/POSTGRES_PASSWORD/STRIPE_* in the prod render
    comes from a secret; the rendered YAML contains no credential
    (usernames and the OIDC audience are the only literals).
