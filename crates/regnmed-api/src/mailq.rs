@@ -46,11 +46,18 @@ impl OutboundMail {
             subject: payload.subject.clone(),
             text: payload.text.clone(),
             reply_to: payload.reply_to.clone(),
-            attachments: vec![MailAttachment {
-                filename: payload.filename.clone(),
-                content_type: "application/pdf".into(),
-                content_base64: BASE64.encode(&payload.pdf),
-            }],
+            // A salgsdokument mail carries its PDF; an invitation (#66)
+            // carries none. An empty vec is skipped on the wire, which is
+            // the same shape regnid's own attachment-free mail has.
+            attachments: payload
+                .attachment
+                .iter()
+                .map(|doc| MailAttachment {
+                    filename: doc.filename.clone(),
+                    content_type: "application/pdf".into(),
+                    content_base64: BASE64.encode(&doc.pdf),
+                })
+                .collect(),
         }
     }
 }

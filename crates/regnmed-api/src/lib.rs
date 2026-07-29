@@ -63,6 +63,11 @@ pub struct AppState {
     /// Driftsselskapets orgnr (REGNMED_DRIFT_ORGNR) — hovedboken
     /// abonnementstrekkene bokføres i.
     pub drift_orgnr: Option<String>,
+    /// The portal's public URL (PORTAL_BASE_URL), used for the link in
+    /// the invitation mail (#66). Deliberately configuration and never
+    /// the request's Host header: a mail we send must not be addressable
+    /// by whoever made the request.
+    pub portal_base: Option<String>,
 }
 
 #[derive(Clone)]
@@ -629,6 +634,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/invitations/{invitation_id}",
             axum::routing::delete(medlemmer::revoke_invitation),
+        )
+        .route(
+            "/companies/{company_id}/invitations/{invitation_id}/resend",
+            axum::routing::post(utsendelse::resend_invitation),
         )
         .route(
             "/companies/{company_id}/roles",

@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
         rate: Default::default(),
         stripe,
         drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
+        portal_base: std::env::var("PORTAL_BASE_URL").ok(),
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

@@ -259,3 +259,166 @@ async fn invoice_mail_rides_the_shared_rail() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err.to_string().contains("NATS_URL"), "body: {err}");
 }
+
+/// The invitation mail actually goes out (#66).
+///
+/// What matters beyond "a message appeared": the mail carries **no
+/// token**, because redemption is still e-mail match at login. A test
+/// that only checked the subject would not notice a future change that
+/// started putting a secret in the link — so the body is asserted to
+/// contain the portal address and nothing that looks like a credential.
+///
+/// The second half is the reason the send cannot be wired into the
+/// invitation transaction: with the rail down the invitation must still
+/// be created, and the response must say the mail did not go.
+#[tokio::test]
+async fn the_invitation_mail_goes_out_and_carries_no_token() {
+    let idp = TestIdp::new();
+    let Some(base_state) = test_state(&idp).await else {
+        return;
+    };
+    let Some(nats) = start_nats().await else {
+        return;
+    };
+    let js = mailq::connect(&nats.url, None, None).await.unwrap();
+    let state = AppState {
+        mailq: Some(js.clone()),
+        portal_base: Some("https://regnmed.example/".into()),
+        ..base_state.clone()
+    };
+
+    let sub = format!("admin|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Invitasjon AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Kari Admin");
+
+    let (status, invited) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invitations"),
+        &token,
+        Some(r#"{"epost":"nyansatt@example.test","rolle":"bokforing"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {invited}");
+    assert_eq!(invited["epost_sendt"], true, "body: {invited}");
+
+    let stream = js.get_stream(mailq::STREAM).await.unwrap();
+    let consumer: async_nats::jetstream::consumer::PullConsumer = stream
+        .get_or_create_consumer(
+            "invitasjon-reader",
+            async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some("invitasjon-reader".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut messages = consumer.messages().await.unwrap();
+    let message = tokio::time::timeout(Duration::from_secs(5), messages.next())
+        .await
+        .expect("an invitation mail on the stream")
+        .unwrap()
+        .unwrap();
+    let mail: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+
+    assert_eq!(mail["to"], "nyansatt@example.test");
+    let text = mail["text"].as_str().unwrap();
+    assert!(text.contains("Invitasjon AS"), "{text}");
+    assert!(text.contains("bokforing"), "{text}");
+    assert!(
+        text.contains("Kari Admin"),
+        "the inviter should be named: {text}"
+    );
+    assert!(
+        text.contains("https://regnmed.example"),
+        "the portal link should be there: {text}"
+    );
+    // No attachment, and no token: the link is the front page, and the
+    // access hangs on the address rather than on this message.
+    assert!(
+        mail["attachments"].is_null(),
+        "an invitation carries no document: {mail}"
+    );
+    assert!(
+        !text.contains("token") && !text.contains("invitation_id") && !text.contains('?'),
+        "the mail must carry no credential: {text}"
+    );
+
+    // The send is logged like every other, against the invitation.
+    let invitation_id = invited["invitasjon_id"].as_str().unwrap();
+    let logged: i64 = sqlx::query_scalar(
+        "select count(*) from utsendelse where invitation_id = $1::uuid and company_id = $2",
+    )
+    .bind(invitation_id)
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(logged, 1);
+
+    // And the listing shows when it last went, so an admin knows whether
+    // resending is warranted.
+    let (_, open) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invitations"),
+        &token,
+        None,
+    )
+    .await;
+    assert!(
+        open["invitasjoner"][0]["sist_sendt"].is_string(),
+        "body: {open}"
+    );
+
+    // Resending sends again — the invitation itself is untouched.
+    let (status, again) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invitations/{invitation_id}/resend"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {again}");
+    let logged: i64 =
+        sqlx::query_scalar("select count(*) from utsendelse where invitation_id = $1::uuid")
+            .bind(invitation_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        logged, 2,
+        "a resend is a second utsendelse, not a replacement"
+    );
+
+    // Without the rail: the invitation is still created — an outage must
+    // not take membership administration with it — and the response says
+    // plainly that no mail went.
+    let (status, invited) = request(
+        &base_state,
+        "POST",
+        &format!("/companies/{company}/invitations"),
+        &token,
+        Some(r#"{"epost":"nummer.to@example.test","rolle":"les"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {invited}");
+    assert!(invited["invitasjon_id"].is_string(), "body: {invited}");
+    assert_eq!(invited["epost_sendt"], false);
+    assert!(
+        invited["epost_grunn"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("NATS_URL"),
+        "body: {invited}"
+    );
+}

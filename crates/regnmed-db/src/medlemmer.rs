@@ -275,6 +275,9 @@ pub struct Invitasjon {
     pub rolle: String,
     pub invitert_av: String,
     pub created_at: DateTime<Utc>,
+    /// When the invitation mail last went out (#66), or None if it never
+    /// did — which is what an admin needs to know before resending.
+    pub sist_sendt: Option<DateTime<Utc>>,
 }
 
 /// Invites an e-mail address into the company.
@@ -320,7 +323,9 @@ pub async fn inviter(
 pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitasjon>> {
     let rows = sqlx::query(
         "select i.id, i.epost, i.role, i.created_at,
-                coalesce(p.name, p.oidc_sub) as invitert_av
+                coalesce(p.name, p.oidc_sub) as invitert_av,
+                (select max(u.created_at) from utsendelse u
+                  where u.invitation_id = i.id) as sist_sendt
          from company_invitation i
          join person p on p.id = i.invited_by
          where i.company_id = $1 and i.accepted_at is null and i.revoked_at is null
@@ -337,6 +342,7 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
             rolle: r.get("role"),
             invitert_av: r.get("invitert_av"),
             created_at: r.get("created_at"),
+            sist_sendt: r.get("sist_sendt"),
         })
         .collect())
 }

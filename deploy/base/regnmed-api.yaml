@@ -38,6 +38,10 @@ spec:
               value: regnmed
             - name: NATS_URL
               value: nats://nats:4222
+            # The link in the invitation mail (#66). Configuration, never
+            # the request's Host header.
+            - name: PORTAL_BASE_URL
+              value: http://api.regnmed.localhost
             - name: BIND_ADDR
               value: 0.0.0.0:8080
           ports:

@@ -366,6 +366,29 @@ kartlegge hvem som er bruker på plattformen, ett forsøk om gangen. Både
 det kjente og det ukjente tilfellet gir samme svar, og det har sin egen
 test.
 
+**Invitasjonen sendes som e-post** (#66), på den samme mail-skinnen og i
+den samme insert-only `utsendelse`-loggen som faktura og purring —
+migrasjon 0044 utvider bare hva en utsendelsesrad kan peke på. Adressen
+får vite hvem som ga tilgang, til hvilket selskap, med hvilken rolle, og
+en lenke til portalen.
+
+**Det ligger ingen hemmelighet i e-posten.** Lenken går til portalens
+forside og ikke noe mer; innløsningen er fortsatt at adressen logger inn
+gjennom IdP-en og `/me` finner invitasjonen. En videresendt
+invitasjons-e-post gir altså mottakeren ingenting — som er nettopp
+grunnen til at det ikke er noe i den verdt å stjele. Lenkeadressen er
+konfigurasjon (`PORTAL_BASE_URL`), aldri forespørselens `Host`-header:
+en e-post vi sender skal ikke kunne pekes noe sted av den som kalte oss.
+
+**E-posten kan aldri velte invitasjonen.** Invitasjonen ER tildelingen;
+e-posten er bare varselet om den. Er køen nede, opprettes invitasjonen
+likevel, og svaret sier `epost_sendt: false` med grunnen — ellers ville
+et driftsavbrudd på NATS tatt med seg medlemsadministrasjonen. Portalen
+sier fra om det samme, så en admin vet at hun må si fra i en annen
+kanal. `POST …/invitations/{id}/resend` sender på nytt (egen
+utsendelsesrad, invitasjonen selv røres ikke), og listen over åpne
+invitasjoner bærer `sist_sendt`.
+
 ### Det som ikke kan skje
 
 - **Et selskap kan ikke bli stående uten administrator.** Den siste kan

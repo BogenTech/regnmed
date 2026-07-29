@@ -19,10 +19,19 @@ pub struct EmailPayload {
     pub text: String,
     /// The company's own address — replies go there, never to regnmed.
     pub reply_to: Option<String>,
-    pub filename: String,
-    pub pdf: Vec<u8>,
+    /// The document to attach, when there is one. A salgsdokument mail
+    /// always carries its PDF; an invitation (#66) carries nothing but
+    /// words, so this is None there.
+    pub attachment: Option<MailDocument>,
     pub invoice_id: Option<Uuid>,
     pub reminder_id: Option<Uuid>,
+    pub invitation_id: Option<Uuid>,
+}
+
+#[derive(Debug)]
+pub struct MailDocument {
+    pub filename: String,
+    pub pdf: Vec<u8>,
 }
 
 struct MailFacts {
@@ -123,10 +132,13 @@ pub async fn invoice_email_payload(
         subject,
         text,
         reply_to: facts.company_email.filter(|e| !e.is_empty()),
-        filename: meta.filename,
-        pdf,
+        attachment: Some(MailDocument {
+            filename: meta.filename,
+            pdf,
+        }),
         invoice_id: Some(invoice_id),
         reminder_id: None,
+        invitation_id: None,
     })
 }
 
@@ -167,10 +179,81 @@ pub async fn reminder_email_payload(
             facts.company_name
         ),
         reply_to: facts.company_email.filter(|e| !e.is_empty()),
-        filename: format!("{steg}-faktura-{}.pdf", facts.invoice_no),
-        pdf: regnmed_core::fakturapdf::render_tekst_pdf(&document),
+        attachment: Some(MailDocument {
+            filename: format!("{steg}-faktura-{}.pdf", facts.invoice_no),
+            pdf: regnmed_core::fakturapdf::render_tekst_pdf(&document),
+        }),
         invoice_id: Some(invoice_id),
         reminder_id: Some(reminder_id),
+        invitation_id: None,
+    })
+}
+
+/// The invitation mail (#66).
+///
+/// **Carries no secret.** The link goes to the portal's front page and
+/// nothing else; redemption is still the address logging in through the
+/// IdP, so a forwarded invitation grants the forwarder nothing. That is
+/// what lets this mail be plain text with no token to leak.
+///
+/// `portal_base` is the public URL of the portal when one is configured;
+/// without it the mail still explains itself and simply omits the link,
+/// rather than printing a URL that goes nowhere.
+pub async fn invitation_email_payload(
+    pool: &PgPool,
+    company_id: Uuid,
+    invitation_id: Uuid,
+    portal_base: Option<&str>,
+) -> Result<EmailPayload> {
+    let row = sqlx::query(
+        "select i.epost, i.role, c.name as company_name, c.email as company_email,
+                coalesce(p.name, p.oidc_sub) as invited_by
+         from company_invitation i
+         join company c on c.id = i.company_id
+         join person p on p.id = i.invited_by
+         where i.id = $1 and i.company_id = $2
+           and i.accepted_at is null and i.revoked_at is null",
+    )
+    .bind(invitation_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("ingen åpen invitasjon med den id-en")?;
+
+    let epost: String = row.get("epost");
+    let rolle: String = row.get("role");
+    let company_name: String = row.get("company_name");
+    let company_email: Option<String> = row.get("company_email");
+    let invited_by: String = row.get("invited_by");
+
+    let mut text = format!(
+        "Hei,\n\n{invited_by} har gitt deg tilgang til regnskapet til \
+         {company_name} i regnmed, med rollen «{rolle}».\n\n"
+    );
+    match portal_base {
+        Some(base) => text.push_str(&format!(
+            "Logg inn her, så er tilgangen på plass:\n{}\n\n",
+            base.trim_end_matches('/')
+        )),
+        None => text.push_str("Logg inn i regnmed, så er tilgangen på plass.\n\n"),
+    }
+    text.push_str(
+        "Bruk denne e-postadressen når du logger inn — tilgangen henger på \
+         adressen, ikke på denne meldingen, så det hjelper ingen å \
+         videresende den.\n\nMed vennlig hilsen\n",
+    );
+    text.push_str(&company_name);
+    text.push('\n');
+
+    Ok(EmailPayload {
+        to: epost,
+        subject: format!("Du har fått tilgang til {company_name} i regnmed"),
+        text,
+        reply_to: company_email.filter(|e| !e.is_empty()),
+        attachment: None,
+        invoice_id: None,
+        reminder_id: None,
+        invitation_id: Some(invitation_id),
     })
 }
 
@@ -183,21 +266,24 @@ pub async fn log_utsendelse(
     company_id: Uuid,
     invoice_id: Option<Uuid>,
     reminder_id: Option<Uuid>,
+    invitation_id: Option<Uuid>,
     to_email: &str,
     subject: &str,
     sent_by: &str,
 ) -> Result<()> {
-    if invoice_id.is_none() && reminder_id.is_none() {
-        bail!("utsendelse must reference an invoice or a reminder");
+    if invoice_id.is_none() && reminder_id.is_none() && invitation_id.is_none() {
+        bail!("utsendelse must reference an invoice, a reminder or an invitation");
     }
     sqlx::query(
-        "insert into utsendelse (id, company_id, invoice_id, reminder_id, to_email, subject, sent_by)
-         values ($1, $2, $3, $4, $5, $6, $7)",
+        "insert into utsendelse
+             (id, company_id, invoice_id, reminder_id, invitation_id, to_email, subject, sent_by)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(id)
     .bind(company_id)
     .bind(invoice_id)
     .bind(reminder_id)
+    .bind(invitation_id)
     .bind(to_email)
     .bind(subject)
     .bind(sent_by)

@@ -366,6 +366,7 @@ fn with_stripe(base: &AppState, drift_orgnr: &str) -> AppState {
             api_base: None,
         }),
         drift_orgnr: Some(drift_orgnr.into()),
+        portal_base: None,
         ..base.clone()
     }
 }

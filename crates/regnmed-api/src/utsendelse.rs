@@ -2,6 +2,7 @@
 //!
 //! - POST /companies/{id}/invoices/{iid}/send                      send invoice PDF
 //! - POST /companies/{id}/invoices/{iid}/reminders/{rid}/send      send purring PDF
+//! - POST /companies/{id}/invitations/{iid}/resend                 send the invitation again
 //! - GET  /companies/{id}/invoices/{iid}/utsendelser               insert-only log
 //!
 //! Sending is always an explicit human action. Recipient defaults to
@@ -49,6 +50,7 @@ async fn send_payload(
         company_id,
         payload.invoice_id,
         payload.reminder_id,
+        payload.invitation_id,
         &payload.to,
         &payload.subject,
         sent_by,
@@ -117,4 +119,66 @@ pub async fn list_utsendelser(
             "sent_at": u.sent_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))
+}
+
+/// Queues the invitation mail (#66) and logs it, returning why it did not
+/// go if it did not.
+///
+/// **This can never fail an invitation.** The invitation is the grant;
+/// the mail is only the notification of it. If NATS is down, or the
+/// stream refuses the publish, the access must still exist — otherwise a
+/// queue outage would take membership administration down with it. So the
+/// caller decides what to do with the reason: `invite` reports it in the
+/// response, while an explicit resend turns it into a 400.
+pub async fn try_send_invitation(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    invitation_id: Uuid,
+) -> Result<(), String> {
+    let Some(js) = &state.mailq else {
+        return Err("e-postutsendelse er ikke konfigurert (NATS_URL)".into());
+    };
+    let payload = regnmed_db::invitation_email_payload(
+        &state.pool,
+        company_id,
+        invitation_id,
+        state.portal_base.as_deref(),
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+
+    let id = Uuid::now_v7();
+    publish(js, &OutboundMail::from_payload(id, &payload))
+        .await
+        .map_err(|e| format!("kunne ikke legge i utsendelseskøen: {e:#}"))?;
+    let sent_by = person.name.as_deref().unwrap_or(&person.sub);
+    regnmed_db::log_utsendelse(
+        &state.pool,
+        id,
+        company_id,
+        None,
+        None,
+        Some(invitation_id),
+        &payload.to,
+        &payload.subject,
+        sent_by,
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+    Ok(())
+}
+
+/// "Send it again" for an open invitation — the mail is the only thing
+/// that gets repeated, the invitation itself is untouched.
+pub async fn resend_invitation(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invitation_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    try_send_invitation(&state, &person, company_id, invitation_id)
+        .await
+        .map_err(ApiError::BadRequest)?;
+    Ok(Json(json!({ "epost_sendt": true })))
 }

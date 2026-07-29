@@ -86,6 +86,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         rate: Default::default(),
         stripe: None,
         drift_orgnr: None,
+        portal_base: None,
     })
 }
 

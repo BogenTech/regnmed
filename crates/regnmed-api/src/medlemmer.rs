@@ -145,6 +145,7 @@ pub async fn list_invitations(
             "rolle": i.rolle,
             "invitert_av": i.invitert_av,
             "tidspunkt": i.created_at.to_rfc3339(),
+            "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
     })))
 }
@@ -177,12 +178,18 @@ pub async fn invite(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    // The invitation stands whether or not the e-mail went out: the
+    // invitation IS the grant, the mail only announces it. A queue that
+    // is down must not take membership administration down with it — so
+    // the failure is reported, never raised (#66).
+    let feil = crate::utsendelse::try_send_invitation(&state, &person, company_id, id)
+        .await
+        .err();
     Ok(Json(json!({
         "invitasjon_id": id,
-        // The invitation stands whether or not an e-mail went out; it is
-        // redeemed when the address logs in. Sending is a separate matter
-        // — pretending an e-mail was sent would be worse than saying so.
-        "epost_sendt": false,
+        "epost_sendt": feil.is_none(),
+        "epost_grunn": feil,
     })))
 }
 
