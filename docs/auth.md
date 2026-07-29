@@ -415,7 +415,7 @@ den delen som betyr mest: en omskrevet hovedbok kan bevises, uansett
 hvem som skrev.
 
 Avgjørelsen er festet i test, ikke bare i tekst:
-`admin_krysser_ingen_selskapsgrense` i `tests/grupper/tilgang.rs` viser at den
+`an_admin_crosses_no_company_boundary` i `tests/grupper/tilgang.rs` viser at den
 sterkeste rollen som finnes er en fullstendig fremmed i naboselskapet —
 404 på lesing, skriving og administrasjon, og `/me` nevner ikke
 selskapet. Skal avgjørelsen noen gang omgjøres, må den testen endres

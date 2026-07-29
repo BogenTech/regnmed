@@ -1,17 +1,17 @@
-//! E-post-inn: adresse, avsenderliste og karantene
+//! Inbound e-mail: address, sender list and quarantine
 //! (docs/epost-inn.md, #35).
 //!
-//! - GET    /companies/{id}/inbox/settings                 adresse + avsenderliste
-//! - POST   /companies/{id}/inbox/settings/address         ny adresse (roterer, admin)
+//! - GET    /companies/{id}/inbox/settings                 address + sender list
+//! - POST   /companies/{id}/inbox/settings/address         new address (rotates, admin)
 //! - POST   /companies/{id}/inbox/settings/senders         {sender, note} (admin)
-//! - DELETE /companies/{id}/inbox/settings/senders/{sid}   fjern (admin)
-//! - GET    /companies/{id}/inbox/mail[?status=karantene]  mottakslogg
-//! - POST   /companies/{id}/inbox/mail/{mid}/release       slipp gjennom (admin)
+//! - DELETE /companies/{id}/inbox/settings/senders/{sid}   remove (admin)
+//! - GET    /companies/{id}/inbox/mail[?status=karantene]  reception log
+//! - POST   /companies/{id}/inbox/mail/{mid}/release       let through (admin)
 //! - POST   /companies/{id}/inbox/mail/{mid}/reject        {note} (admin)
 //!
-//! Loggen er lesbar for alle med tilgang — en revisor skal kunne se hva
-//! som kom inn og hva som ble gjort med det. Å endre hvem som får
-//! levere, og å avgjøre karantene, krever admin.
+//! The log is readable by anyone with access — a revisor must be able to
+//! see what came in and what was done with it. Changing who may deliver,
+//! and deciding quarantine, requires admin.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};

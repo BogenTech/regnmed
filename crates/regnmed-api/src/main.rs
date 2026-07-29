@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
 
     // Kortskinnen (#74): begge nøklene eller ingen — en halv
-    // konfigurasjon er en feil, ikke en tilstand.
+    // configuration is an error, not a state.
     let stripe = match (
         std::env::var("STRIPE_SECRET_KEY").ok(),
         std::env::var("STRIPE_WEBHOOK_SECRET").ok(),

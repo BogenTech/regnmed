@@ -1,10 +1,11 @@
-//! Attestering (#47): med aktiv policy krever et innboksbilag over
-//! beløpsgrensen en godkjent attestering før bokføring, den som
-//! attesterte kan ikke selv bokføre, en avvist attestering stopper
-//! bokføringen, bilag UNDER grensen går rett gjennom, betalingslister
-//! må godkjennes av en annen enn oppretteren, og utleggskrav kan ikke
-//! godkjennes av innsenderen. Sporet er insert-only og leses av
-//! revisor. Requires DATABASE_URL (skips otherwise).
+//! Attestering (#47): with an active policy, an innboks bilag above the
+//! amount threshold requires an approved attestering before posting,
+//! whoever attested cannot post it themselves, a rejected attestering
+//! stops the posting, bilag BELOW the threshold go straight through,
+//! payment lists must be approved by someone other than their creator,
+//! and utlegg claims cannot be approved by the submitter. The trail is
+//! insert-only and is read by a revisor. Requires DATABASE_URL (skips
+//! otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -58,7 +59,7 @@ async fn upload(state: &AppState, company: Uuid, token: &str, name: &str) -> Str
     uploaded["document_id"].as_str().unwrap().to_string()
 }
 
-fn bokfor_body(belop: i64) -> Vec<u8> {
+fn post_body(belop: i64) -> Vec<u8> {
     json!({
         "journal_code": "GL", "date": "2026-07-10", "description": "Innkjøp",
         "lines": [
@@ -71,13 +72,13 @@ fn bokfor_body(belop: i64) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
+async fn attestering_requires_four_eyes_for_posting_and_payment() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
 
-    // Daglig leder (admin, attestant) og regnskapsfører (bokføring).
+    // Managing director (admin, attestant) and regnskapsfører (bokføring).
     let leder_sub = format!("test|{}", Uuid::new_v4());
     let leder = regnmed_db::ensure_person(&state.pool, &leder_sub, Some("Lise Leder"), None)
         .await
@@ -141,7 +142,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     let leder_token = idp.token(&leder_sub, "Lise Leder");
     let forer_token = idp.token(&forer_sub, "Frida Fører");
 
-    // Uten policy: bilaget bokføres uten attestering (v1-oppførselen).
+    // Without a policy: the bilag posts without attestering (the v1 behavior).
     let fritt = upload(&state, company, &leder_token, "fritt.pdf").await;
     let (status, body) = request(
         &state,
@@ -149,13 +150,13 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
         &format!("/companies/{company}/inbox/{fritt}/bokfor"),
         &forer_token,
         Some("application/json"),
-        Some(bokfor_body(9_000_00)),
+        Some(post_body(9_000_00)),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // Policyen slås på med grense 5 000 og Lise som utpekt attestant.
-    // Bare admin får sette den.
+    // The policy is switched on with a threshold of 5 000 and Lise as the
+    // designated attestant. Only an admin may set it.
     let policy = json!({
         "aktiv": true,
         "belopsgrense_ore": 5_000_00,
@@ -184,7 +185,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Under grensen: går rett gjennom, som før.
+    // Below the threshold: straight through, as before.
     let smatt = upload(&state, company, &leder_token, "smatt.pdf").await;
     let (status, body) = request(
         &state,
@@ -192,12 +193,12 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
         &format!("/companies/{company}/inbox/{smatt}/bokfor"),
         &forer_token,
         Some("application/json"),
-        Some(bokfor_body(1_200_00)),
+        Some(post_body(1_200_00)),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "under grensen: {body}");
 
-    // Over grensen uten attestering: nektet — og bilaget forblir 'ny'.
+    // Above the threshold without attestering: refused — and the bilag stays 'ny'.
     let stort = upload(&state, company, &leder_token, "stort.pdf").await;
     let (status, body) = request(
         &state,
@@ -205,7 +206,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
         &format!("/companies/{company}/inbox/{stort}/bokfor"),
         &forer_token,
         Some("application/json"),
-        Some(bokfor_body(40_000_00)),
+        Some(post_body(40_000_00)),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -227,7 +228,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     .await;
     assert_eq!(listing["documents"].as_array().unwrap().len(), 1);
 
-    // Regnskapsføreren er ikke utpekt attestant.
+    // The regnskapsfører is not the designated attestant.
     let (status, body) = request(
         &state,
         "POST",
@@ -239,7 +240,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 
-    // Lise avviser først — bokføring stoppes med begrunnelsen.
+    // Lise rejects first — posting is stopped with the reason.
     let (status, _) = request(
         &state,
         "POST",
@@ -260,7 +261,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
         &format!("/companies/{company}/inbox/{stort}/bokfor"),
         &forer_token,
         Some("application/json"),
-        Some(bokfor_body(40_000_00)),
+        Some(post_body(40_000_00)),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -271,7 +272,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
             .contains("mangler bestilling"),
         "{body}"
     );
-    // En avvisning uten begrunnelse er ikke en beslutning.
+    // A rejection without a reason is not a decision.
     let (status, _) = request(
         &state,
         "POST",
@@ -313,14 +314,14 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     assert_eq!(trail[0]["decision"], "godkjent");
     assert_eq!(trail[1]["decision"], "avvist");
 
-    // Lise attesterte — da kan hun ikke selv bokføre (fire øyne).
+    // Lise attested — so she cannot post it herself (four eyes).
     let (status, body) = request(
         &state,
         "POST",
         &format!("/companies/{company}/inbox/{stort}/bokfor"),
         &leder_token,
         Some("application/json"),
-        Some(bokfor_body(40_000_00)),
+        Some(post_body(40_000_00)),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -338,11 +339,11 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
         &format!("/companies/{company}/inbox/{stort}/bokfor"),
         &forer_token,
         Some("application/json"),
-        Some(bokfor_body(40_000_00)),
+        Some(post_body(40_000_00)),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // Attestering avgjør bare ubesluttede bilag.
+    // Attestering only decides undecided bilag.
     let (status, _) = request(
         &state,
         "POST",
@@ -373,7 +374,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     assert_eq!(bokfort["attestering"], "godkjent");
     assert_eq!(bokfort["attestert_av"], "Lise Leder");
 
-    // ---- Betalingsliste: fire øyne på penger ut ----
+    // ---- Payment list: four eyes on money going out ----
     let (status, payable) = request(
         &state,
         "GET",
@@ -435,7 +436,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // ---- Utlegg: innsenderen kan ikke godkjenne sitt eget krav ----
+    // ---- Utlegg: the submitter cannot approve their own claim ----
     let (status, expense) = request(
         &state,
         "POST",
@@ -478,7 +479,7 @@ async fn attestering_krever_fire_oyne_for_bokforing_og_betaling() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // Policyen er append-only: historikken viser hva som gjaldt når.
+    // The policy is append-only: the history shows what applied when.
     let (status, policy) = request(
         &state,
         "GET",

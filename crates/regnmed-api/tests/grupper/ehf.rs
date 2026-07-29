@@ -1,8 +1,8 @@
-//! EHF ut og inn (#14): en utstedt faktura rendres til PEPPOL BIS
-//! Billing 3.0 fra sine egne låste rader (og valideres mot UBL-skjemaet
-//! når xmllint finnes), og en mottatt EHF i bilagsinnboksen gir et
-//! bokføringsforslag som regnes ut av originalen hver gang — aldri
-//! lagret. Requires DATABASE_URL (skips otherwise).
+//! EHF outbound and inbound (#14): an issued faktura is rendered to
+//! PEPPOL BIS Billing 3.0 from its own locked rows (and validated against
+//! the UBL schema when xmllint is present), and a received EHF in the
+//! bilagsinnboks yields a posting suggestion computed from the original
+//! every time — never stored. Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -91,7 +91,7 @@ fn validate_ubl(xml: &str, schema: &str) {
 }
 
 #[tokio::test]
-async fn faktura_ut_som_ehf_og_mottatt_ehf_inn_i_innboksen() {
+async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -127,7 +127,7 @@ async fn faktura_ut_som_ehf_og_mottatt_ehf_inn_i_innboksen() {
     regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    // Firmaopplysninger: EHF trenger adresse og kontonummer.
+    // Company details: EHF needs an address and an account number.
     sqlx::query(
         "update company set address = 'Storgata 1, 0155 Oslo', bank_account = '86011117947',
                             orgform = 'AS', email = 'post@sender.no' where id = $1",
@@ -230,13 +230,13 @@ async fn faktura_ut_som_ehf_og_mottatt_ehf_inn_i_innboksen() {
         xml.contains(&format!("<cbc:PaymentID>{}</cbc:PaymentID>", issued.kid)),
         "KID-en følger med som betalingsreferanse"
     );
-    // 2 × 1 250 = 2 500 + 25 % mva, pluss 500 uten mva.
+    // 2 × 1 250 = 2 500 + 25 % mva, plus 500 without mva.
     assert!(
         xml.contains("<cbc:TaxInclusiveAmount currencyID=\"NOK\">3625.00</cbc:TaxInclusiveAmount>")
     );
     assert!(xml.contains("<cbc:Percent>25.00</cbc:Percent>"));
 
-    // Kreditnotaen peker tilbake på fakturaen.
+    // The kreditnota points back at the faktura.
     let credit = regnmed_db::credit_invoice(&state.pool, company, issued.invoice_id, "Eva EHF")
         .await
         .unwrap();
@@ -327,8 +327,8 @@ async fn faktura_ut_som_ehf_og_mottatt_ehf_inn_i_innboksen() {
     assert_eq!(forslag["linjer"][0]["mva_sats_bp"], 2500);
     assert_eq!(forslag["warnings"].as_array().unwrap().len(), 0);
 
-    // Forslaget er utledet, ikke lagret: dokumentet ligger fortsatt
-    // ubesluttet i innboksen, og innholdet er originalen.
+    // The suggestion is derived, not stored: the document still sits
+    // undecided in the innboks, and the content is the original.
     let (_, listing) = get_json(&state, &format!("{base}/inbox?status=ny"), &token).await;
     assert_eq!(listing["documents"].as_array().unwrap().len(), 1);
     let (status, content) = get_text(
@@ -340,7 +340,7 @@ async fn faktura_ut_som_ehf_og_mottatt_ehf_inn_i_innboksen() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(content, mottatt, "originalen er urørt");
 
-    // Et dokument som ikke er EHF sier fra i stedet for å gjette.
+    // A document that is not EHF says so instead of guessing.
     let (_, uploaded) = post_bytes(
         &state,
         &format!("{base}/inbox?filename=kvittering.txt"),

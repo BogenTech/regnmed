@@ -1,12 +1,12 @@
-//! Abonnementet (#65, docs/abonnement.md): status og sperre.
+//! The abonnement (#65, docs/abonnement.md): status and blocking.
 //!
-//! Det viktigste her er PRINSIPPET, testet som nektelser og
-//! IKKE-nektelser om hverandre: et sperret abonnement stopper endringer
-//! — og INGENTING annet. Lesing, eksport og styringen av selskapet skal
-//! bevises å virke på et sperret selskap, ellers er «hovedboken tas
-//! aldri som gissel» bare en setning i dokumentasjonen.
+//! What matters here is the PRINCIPLE, tested as refusals and
+//! NON-refusals side by side: a blocked abonnement stops changes — and
+//! NOTHING else. Reading, export and governance of the company must be
+//! proven to work on a blocked company, otherwise "the hovedbok is never
+//! taken hostage" is just a sentence in the documentation.
 //!
-//! Krever DATABASE_URL; hopper over ellers.
+//! Requires DATABASE_URL; skips otherwise.
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -66,10 +66,10 @@ async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String)> {
     Some((state, idp, company, token))
 }
 
-/// Setter selskapet i en gitt fase ved å skru på klokken og dekningen.
-async fn gjor_sperret(state: &AppState, company: Uuid) {
-    // Selskapet «ble opprettet» for lengst, og har ingen dekning:
-    // prøvetid og frist er begge ute.
+/// Puts the company in a given phase by moving the clock and the coverage.
+async fn make_blocked(state: &AppState, company: Uuid) {
+    // The company "was created" long ago and has no coverage: both the
+    // trial and the deadline are over.
     sqlx::query("update company set created_at = now() - interval '120 days' where id = $1")
         .bind(company)
         .execute(&state.pool)
@@ -78,7 +78,7 @@ async fn gjor_sperret(state: &AppState, company: Uuid) {
 }
 
 #[tokio::test]
-async fn nytt_selskap_er_i_provetid_og_kan_alt() {
+async fn a_new_company_is_in_its_trial_and_can_do_everything() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
@@ -106,15 +106,15 @@ async fn nytt_selskap_er_i_provetid_og_kan_alt() {
     );
 }
 
-/// Kjernen: sperret stopper endringer — og ingenting annet.
+/// The core: blocked stops changes — and nothing else.
 #[tokio::test]
-async fn sperret_stopper_endringer_og_ingenting_annet() {
+async fn a_block_stops_changes_and_nothing_else() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    gjor_sperret(&state, company).await;
+    make_blocked(&state, company).await;
 
-    // Endringer: nektet, med forklaringen i svaret.
+    // Changes: refused, with the explanation in the response.
     let (kode, svar) = kall(
         &state,
         "POST",
@@ -143,7 +143,7 @@ async fn sperret_stopper_endringer_og_ingenting_annet() {
     .await;
     assert_eq!(kode, StatusCode::OK, "lesing skal alltid virke");
 
-    // Eksport: virker — hovedboken tas aldri som gissel.
+    // Export: works — the hovedbok is never taken hostage.
     let year = Utc::now().year();
     let (kode, _) = kall(
         &state,
@@ -161,7 +161,7 @@ async fn sperret_stopper_endringer_og_ingenting_annet() {
         "SAF-T-eksport skal virke på et sperret selskap"
     );
 
-    // Styringen av selskapet: virker, ellers kunne ingen ryddet opp.
+    // Governance of the company: works, or nobody could sort things out.
     let (kode, _) = kall(
         &state,
         "GET",
@@ -185,7 +185,7 @@ async fn sperret_stopper_endringer_og_ingenting_annet() {
         "et sperret selskap må kunne slippe inn den som skal ordne opp"
     );
 
-    // /me sier det som det er.
+    // /me says it as it is.
     let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
     let selskap = me["companies"]
         .as_array()
@@ -196,13 +196,13 @@ async fn sperret_stopper_endringer_og_ingenting_annet() {
     assert_eq!(selskap["abonnement"]["status"], "sperret");
 }
 
-/// Tegning åpner igjen, oppsigelse gir frist — ikke øyeblikkelig sperre.
+/// Signing up reopens, cancelling gives a deadline — not an instant block.
 #[tokio::test]
-async fn tegning_apner_og_oppsigelse_gir_frist() {
+async fn signing_up_opens_and_cancelling_gives_a_deadline() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    gjor_sperret(&state, company).await;
+    make_blocked(&state, company).await;
 
     let idag = Utc::now().date_naive();
     regnmed_db::abonnement::tegn(
@@ -238,10 +238,10 @@ async fn tegning_apner_og_oppsigelse_gir_frist() {
     assert_eq!(status.slug(), "aktiv", "dekningen står ut siste dag");
 }
 
-/// Fakturakjøringen: regnmed fakturerer seg selv med sin egen motor —
-/// og en måned kan ikke faktureres to ganger.
+/// The invoicing run: regnmed invoices itself with its own engine — and a
+/// month cannot be invoiced twice.
 #[tokio::test]
-async fn abonnementsfaktura_gjennom_egen_motor_er_idempotent() {
+async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     let Some((state, _idp, kunde, _admin)) = oppsett().await else {
         return;
     };
@@ -261,9 +261,9 @@ async fn abonnementsfaktura_gjennom_egen_motor_er_idempotent() {
     .await
     .unwrap();
 
-    // `bare`-avgrensningen: dev-databasen kan ha tusenvis av selskaper
-    // med dekning (migrasjonens såing), og testen skal ikke fakturere
-    // dem alle.
+    // The `bare` narrowing: the dev database can hold thousands of
+    // companies with coverage (the migration's seeding), and the test
+    // must not invoice them all.
     let forste = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
         .await
         .unwrap();
@@ -286,8 +286,8 @@ async fn abonnementsfaktura_gjennom_egen_motor_er_idempotent() {
         "måneden skal ikke kunne faktureres to ganger (første var {nr})"
     );
 
-    // Fakturaen bor i DRIFTSSELSKAPETS hovedbok, med kundens orgnr på
-    // parten — beløpet er prislistens.
+    // The faktura lives in the OPS COMPANY's hovedbok, with the
+    // customer's orgnr on the party — the amount is the price list's.
     let (belop, orgnr): (i64, String) = sqlx::query_as(
         "select (select sum(l.net_ore)::bigint
                    from invoice_line l where l.invoice_id = i.id),
@@ -358,7 +358,7 @@ async fn webhook_post(
     )
 }
 
-fn med_stripe(base: &AppState, drift_orgnr: &str) -> AppState {
+fn with_stripe(base: &AppState, drift_orgnr: &str) -> AppState {
     AppState {
         stripe: Some(regnmed_api::StripeCfg {
             secret_key: "sk_test_x".into(),
@@ -370,25 +370,25 @@ fn med_stripe(base: &AppState, drift_orgnr: &str) -> AppState {
     }
 }
 
-/// Webhooken er autentisert av signaturen — uten gyldig signatur skjer
-/// INGENTING, uansett hvor riktig payloaden ser ut.
+/// The webhook is authenticated by the signature — without a valid one
+/// NOTHING happens, however correct the payload looks.
 #[tokio::test]
-async fn webhook_avviser_ugyldig_signatur() {
+async fn the_webhook_rejects_an_invalid_signature() {
     let Some((state, _idp, _company, _admin)) = oppsett().await else {
         return;
     };
-    let state = med_stripe(&state, "999999999");
+    let state = with_stripe(&state, "999999999");
     let payload = br#"{"type":"payment_intent.succeeded","data":{"object":{}}}"#;
     let (kode, _) = webhook_post(&state, payload, "t=1,v1=feil").await;
     assert_eq!(kode, StatusCode::BAD_REQUEST);
 }
 
-/// Hele kortveien: abonnementsfaktura utstedes, webhooken bekrefter
-/// trekket — betalingsbilag bokføres i driftsselskapet og
-/// reskontroposten lukkes. Og en REPLAY av samme hendelse bokfører
-/// ingenting: unikheten på payment_intent er dedup-nøkkelen.
+/// The whole card path: an abonnement faktura is issued, the webhook
+/// confirms the charge — the payment bilag is posted in the ops company
+/// and the reskontro item is closed. And a REPLAY of the same event posts
+/// nothing: uniqueness on payment_intent is the dedup key.
 #[tokio::test]
-async fn korttrekk_bokfores_en_gang_og_bare_en() {
+async fn a_card_charge_posts_once_and_only_once() {
     let Some((state, _idp, kunde, _admin)) = oppsett().await else {
         return;
     };
@@ -396,7 +396,7 @@ async fn korttrekk_bokfores_en_gang_og_bare_en() {
     let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
         .await
         .unwrap();
-    let state = med_stripe(&state, &drift_orgnr);
+    let state = with_stripe(&state, &drift_orgnr);
 
     let idag = Utc::now().date_naive();
     regnmed_db::abonnement::tegn(
@@ -433,7 +433,7 @@ async fn korttrekk_bokfores_en_gang_og_bare_en() {
     assert_eq!(kode, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "bokfort");
 
-    // Reskontroposten er lukket: fordringen har null i rest.
+    // The reskontro item is closed: the receivable has zero remaining.
     let rest: i64 = sqlx::query_scalar(
         "select (e.amount_ore
                  - coalesce((select sum(m.amount_ore) from reskontro_match m
@@ -447,7 +447,7 @@ async fn korttrekk_bokfores_en_gang_og_bare_en() {
     .unwrap();
     assert_eq!(rest, 0, "fordringen skulle vært lukket av korttrekket");
 
-    // Replay: samme hendelse igjen — kvitteres, men bokfører ingenting.
+    // Replay: the same event again — acknowledged, but posts nothing.
     let (kode, svar) = webhook_post(&state, &payload, &signatur).await;
     assert_eq!(kode, StatusCode::OK);
     assert_eq!(svar["handled"], "replay");
@@ -462,14 +462,14 @@ async fn korttrekk_bokfores_en_gang_og_bare_en() {
     assert_eq!(bilag, 1, "replay skulle ikke gitt et nytt bilag");
 }
 
-/// Kort-først: med kortskinnen på kan abonnementet ikke startes
-/// selvbetjent uten kort — og feilmeldingen sier hva som mangler.
+/// Card-first: with the card rail on, the abonnement cannot be started
+/// self-service without a card — and the error says what is missing.
 #[tokio::test]
-async fn selvbetjent_tegning_krever_kort_nar_skinnen_er_pa() {
+async fn self_service_signup_requires_a_card_when_the_rail_is_on() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    let state = med_stripe(&state, "999999999");
+    let state = with_stripe(&state, "999999999");
     let (kode, svar) = kall(
         &state,
         "POST",
@@ -487,8 +487,8 @@ async fn selvbetjent_tegning_krever_kort_nar_skinnen_er_pa() {
         "{svar}"
     );
 
-    // Med kort «på plass» (lagret direkte — checkout-flyten er Stripes)
-    // går tegningen, og statusen blir aktiv.
+    // With a card "in place" (stored directly — the checkout flow is
+    // Stripe's) the signup goes through, and the status becomes active.
     regnmed_db::abonnement::lagre_kort(&state.pool, company, "cus_x", "pm_x", "visa", "4242")
         .await
         .unwrap();

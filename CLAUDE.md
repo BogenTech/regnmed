@@ -888,7 +888,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
 52. ✅ Ingen plattformadministrator (docs/auth.md §8, closed #57):
    avgjørelsen tatt UTTRYKKELIG — ingen tilgangsvei krysser
    selskapsgrenser, ingen leverandørbakvei; festet i test
-   (`admin_krysser_ingen_selskapsgrense`: admin i A er fremmed i B,
+   (`an_admin_crosses_no_company_boundary`: admin i A er fremmed i B,
    404 på alt, `/me` tier). Støttevei = kunden inviterer selv
    (minste rolle) eller gir oppdrag — synlig, logget, trekkbart samme
    dag. Selskapet uten admin: dokumentert NØDPROSEDYRE via databasen

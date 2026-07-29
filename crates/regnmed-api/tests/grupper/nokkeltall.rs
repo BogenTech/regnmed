@@ -1,7 +1,7 @@
-//! Nøkkeltall (#36): resultat hittil i år mot samme periode i fjor,
-//! månedskolonner, likviditetsbildet fra hovedbok og reskontro, og
-//! kommende mva-frister etter selskapets terminordning — alt rene
-//! spørringer. Requires DATABASE_URL (skips otherwise).
+//! Key figures (#36): result year to date against the same period last
+//! year, month columns, the liquidity picture from hovedbok and reskontro,
+//! and upcoming mva deadlines under the company's terminordning — all
+//! plain queries. Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -58,7 +58,7 @@ fn bilag(dato: chrono::NaiveDate, entries: Vec<EntryDraft>) -> VoucherDraft {
 }
 
 #[tokio::test]
-async fn nokkeltall_resultat_likviditet_og_frister() {
+async fn key_figures_result_liquidity_and_deadlines() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -115,8 +115,8 @@ async fn nokkeltall_resultat_likviditet_og_frister() {
     let year = chrono::Datelike::year(&today);
     let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
 
-    // I fjor: 20 000 i inntekt før cutoff (jan), 99 000 ETTER cutoff
-    // (31. des) som ikke skal telle med i «samme periode i fjor».
+    // Last year: 20 000 of income before the cutoff (Jan), 99 000 AFTER
+    // the cutoff (31 Dec) which must not count in "the same period last year".
     regnmed_db::post_voucher(
         &state.pool,
         company,
@@ -199,8 +199,8 @@ async fn nokkeltall_resultat_likviditet_og_frister() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {tall}");
 
-    // Resultat hittil: 50 000 − 10 000; i fjor til samme dato: 20 000
-    // (desember-salget teller IKKE med).
+    // Result year to date: 50 000 − 10 000; last year to the same date:
+    // 20 000 (the December sale does NOT count).
     assert_eq!(tall["resultat_hittil_ore"], 40_000_00);
     assert_eq!(tall["resultat_fjor_ore"], 20_000_00);
     assert_eq!(tall["maaneder"][0], 50_000_00, "januar");
@@ -217,7 +217,7 @@ async fn nokkeltall_resultat_likviditet_og_frister() {
     assert_eq!(likv["mva_netto_ore"], 0);
     assert_eq!(likv["disponibelt_ore"], 159_000_00);
 
-    // Frister: neste to mva-frister etter ordningen, aldri i fortiden.
+    // Deadlines: the next two mva deadlines under the ordning, never in the past.
     let frister = tall["frister"].as_array().unwrap();
     assert_eq!(frister.len(), 2);
     for frist in frister {

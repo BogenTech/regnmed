@@ -201,7 +201,7 @@ async fn assets_depreciate_and_dispose() {
     .await;
     assert!(result.is_err(), "run log is append-only");
 
-    // Avhending med gevinst: vederlag 33 000 mot bokført 32 000.
+    // Disposal at a gain: proceeds 33 000 against a book value of 32 000.
     let (status, disposal) = request(
         &state,
         "POST",

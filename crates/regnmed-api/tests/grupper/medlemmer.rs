@@ -1,9 +1,9 @@
-//! Medlemsadministrasjon (#53, docs/auth.md).
+//! Membership administration (#53, docs/auth.md).
 //!
-//! Det som må stemme: en admin kan gi og ta tilgang, en invitasjon
-//! løses inn når adressen logger inn, tilgang gjennom et oppdrag kan
-//! IKKE endres herfra, selskapet kan ikke bli stående uten
-//! administrator, og hele sporet er lesbart etterpå.
+//! What must hold: an admin can grant and take access, an invitation is
+//! redeemed when the address logs in, access through an oppdrag can NOT
+//! be changed from here, the company cannot be left without an
+//! administrator, and the whole trail is readable afterwards.
 //!
 //! Krever DATABASE_URL; hopper over ellers.
 
@@ -45,21 +45,21 @@ async fn call(
     )
 }
 
-/// En bruker som ENNÅ IKKE har logget inn: bare identiteten IdP-en vil
-/// oppgi.
+/// A user who has NOT YET logged in: only the identity the IdP will
+/// supply.
 ///
-/// **E-postadressen kommer fra tokenet**, ikke fra noe vi finner på her.
-/// `ensure_person` skriver den fra hver innlogging, så en invitasjon må
-/// stiles til adressen IdP-en faktisk oppgir — det er den samme regelen
-/// som gjelder i produksjon, og testen ville vært verdiløs uten den.
+/// **The e-mail address comes from the token**, not from anything we make
+/// up here. `ensure_person` writes it on every login, so an invitation
+/// must be addressed to what the IdP actually supplies — that is the same
+/// rule as in production, and the test would be worthless without it.
 fn kommende(idp: &TestIdp, navn: &str) -> (String, String, String) {
     let sub = format!("{navn}|{}", Uuid::new_v4());
-    // Normalisert form: det er slik den lagres og sammenlignes.
+    // Normalised form: that is how it is stored and compared.
     let epost = format!("{}@test.invalid", sub.replace('|', ".")).to_lowercase();
     (sub.clone(), epost, idp.token(&sub, navn))
 }
 
-/// Samme, men logget inn: personen finnes i databasen.
+/// The same, but logged in: the person exists in the database.
 async fn innlogget(state: &AppState, idp: &TestIdp, navn: &str) -> (Uuid, String) {
     let (sub, _, token) = kommende(idp, navn);
     let id = regnmed_db::ensure_person(&state.pool, &sub, Some(navn), None)
@@ -68,7 +68,7 @@ async fn innlogget(state: &AppState, idp: &TestIdp, navn: &str) -> (Uuid, String
     (id, token)
 }
 
-async fn selskap_med_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, String) {
+async fn company_with_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, String) {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgang AS")
         .await
         .unwrap();
@@ -79,15 +79,15 @@ async fn selskap_med_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, Stri
     (company, admin_id, admin_token)
 }
 
-/// Hele livsløpet: inviter en adresse som ennå ikke finnes, la den
-/// logge inn, og se at tilgangen blir til.
+/// The whole life cycle: invite an address that does not yet exist, let
+/// it log in, and watch the access come into being.
 #[tokio::test]
-async fn invitasjon_blir_til_medlemskap_ved_innlogging() {
+async fn an_invitation_becomes_a_membership_on_login() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (_, epost, ny_token) = kommende(&idp, "Nyansatt");
     let (status, svar) = call(
@@ -95,13 +95,13 @@ async fn invitasjon_blir_til_medlemskap_ved_innlogging() {
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        // Store bokstaver og mellomrom skal ikke gjøre en forskjell.
+        // Upper case and spaces must make no difference.
         Some(json!({"epost": format!("  {} ", epost.to_uppercase()), "rolle": "bokforing"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{svar}");
 
-    // Adressen normaliseres, så invitasjonen står på små bokstaver.
+    // The address is normalised, so the invitation reads in lower case.
     let (_, liste) = call(
         &state,
         "GET",
@@ -112,14 +112,14 @@ async fn invitasjon_blir_til_medlemskap_ved_innlogging() {
     .await;
     assert_eq!(liste["invitasjoner"][0]["epost"], epost);
 
-    // Personen finnes ikke ennå — hun logger inn for første gang.
+    // The person does not exist yet — she logs in for the first time.
     let (status, me) = call(&state, "GET", "/me", &ny_token, None).await;
     assert_eq!(status, StatusCode::OK, "{me}");
     assert_eq!(me["nye_tilganger"], 1);
     assert_eq!(me["companies"][0]["company_id"], company.to_string());
     assert_eq!(me["companies"][0]["access"], "bokforing");
 
-    // Invitasjonen er brukt opp, ikke liggende.
+    // The invitation is used up, not left lying around.
     let (_, liste) = call(
         &state,
         "GET",
@@ -130,21 +130,21 @@ async fn invitasjon_blir_til_medlemskap_ved_innlogging() {
     .await;
     assert_eq!(liste["invitasjoner"].as_array().unwrap().len(), 0);
 
-    // Og den løses ikke inn en gang til.
+    // And it is not redeemed a second time.
     let (_, me) = call(&state, "GET", "/me", &ny_token, None).await;
     assert_eq!(me["nye_tilganger"], 0);
 }
 
-/// Svaret på en invitasjon skal ikke røpe om adressen alt har en bruker
-/// hos oss. Ellers kunne enhver selskapsadmin slå opp hvem som er
-/// bruker på plattformen, ett forsøk om gangen.
+/// The answer to an invitation must not reveal whether the address
+/// already has a user with us. Otherwise any company admin could look up
+/// who is a user on the platform, one attempt at a time.
 #[tokio::test]
-async fn invitasjonssvaret_rper_ikke_om_brukeren_finnes() {
+async fn the_invitation_response_does_not_reveal_whether_the_user_exists() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
     innlogget(&state, &idp, "Finnes").await;
 
     let (s1, svar1) = call(
@@ -173,16 +173,15 @@ async fn invitasjonssvaret_rper_ikke_om_brukeren_finnes() {
     );
 }
 
-/// Et selskap uten administrator er ikke gjenopprettelig uten
-/// DB-tilgang. Derfor kan den siste ikke degradere eller fjerne seg
-/// selv.
+/// A company without an administrator is not recoverable without DB
+/// access. So the last one cannot demote or remove themselves.
 #[tokio::test]
-async fn siste_administrator_kan_ikke_fjerne_seg_selv() {
+async fn the_last_administrator_cannot_remove_themselves() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, admin_id, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, admin_id, admin) = company_with_admin(&state, &idp).await;
 
     let (status, svar) = call(
         &state,
@@ -211,7 +210,7 @@ async fn siste_administrator_kan_ikke_fjerne_seg_selv() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // Med en admin nummer to går det fint.
+    // With a second admin it goes through fine.
     let (nr2, _) = innlogget(&state, &idp, "Nestor").await;
     regnmed_db::ensure_company_member(&state.pool, company, nr2, "admin")
         .await
@@ -227,15 +226,15 @@ async fn siste_administrator_kan_ikke_fjerne_seg_selv() {
     assert_eq!(status, StatusCode::OK, "{svar}");
 }
 
-/// Tilgang gjennom et oppdrag styres av engasjementet. Et forsøk på å
-/// endre den her skal si fra, ikke se ut som om det virket.
+/// Access through an oppdrag is governed by the engagement. An attempt to
+/// change it here must say so, not look as though it worked.
 #[tokio::test]
-async fn oppdragstilgang_kan_ikke_endres_herfra() {
+async fn oppdrag_access_cannot_be_changed_from_here() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Byrå AS", "regnskap")
         .await
@@ -248,7 +247,7 @@ async fn oppdragstilgang_kan_ikke_endres_herfra() {
         .await
         .unwrap();
 
-    // Vedkommende vises som medlem, men merket som ikke-endrbar.
+    // The person shows up as a member, but marked as not editable.
     let (_, liste) = call(
         &state,
         "GET",
@@ -267,7 +266,7 @@ async fn oppdragstilgang_kan_ikke_endres_herfra() {
     assert_eq!(via_oppdrag["kan_endres"], false);
     assert_eq!(via_oppdrag["rolle"], "bokforing");
 
-    // Og forsøk på å endre den avvises med en forklaring.
+    // And an attempt to change it is refused with an explanation.
     let (status, svar) = call(
         &state,
         "PUT",
@@ -286,15 +285,15 @@ async fn oppdragstilgang_kan_ikke_endres_herfra() {
     );
 }
 
-/// Bare den som har MEDLEM_ADMIN. En bokfører har full skrivetilgang til
-/// hovedboken og skal likevel ikke kunne slippe inn noen.
+/// Only whoever has MEDLEM_ADMIN. A bookkeeper has full write access to
+/// the hovedbok and must still not be able to let anybody in.
 #[tokio::test]
-async fn bokforing_kan_ikke_gi_andre_tilgang() {
+async fn bokforing_cannot_grant_others_access() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, _) = selskap_med_admin(&state, &idp).await;
+    let (company, _, _) = company_with_admin(&state, &idp).await;
     let (bokforer_id, bokforer) = innlogget(&state, &idp, "Bokfører").await;
     regnmed_db::ensure_company_member(&state.pool, company, bokforer_id, "bokforing")
         .await
@@ -314,15 +313,15 @@ async fn bokforing_kan_ikke_gi_andre_tilgang() {
     }
 }
 
-/// Sporet svarer på spørsmålet en revisor stiller: hvem ga hvem
-/// tilgang, og når.
+/// The trail answers the question a revisor asks: who granted whom
+/// access, and when.
 #[tokio::test]
-async fn sporet_viser_hvem_som_ga_hvem_tilgang() {
+async fn the_trail_shows_who_granted_whom_access() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (sub, epost, token) = kommende(&idp, "Spor");
     call(
@@ -371,25 +370,25 @@ async fn sporet_viser_hvem_som_ga_hvem_tilgang() {
     assert_eq!(endringer[1]["endring"], "rolle_endret");
     assert_eq!(endringer[1]["fra_rolle"], "les");
     assert_eq!(endringer[1]["til_rolle"], "bokforing");
-    // Innløsningen har ingen utfører — personen løste den inn selv, og
-    // hvem som inviterte står på invitasjonen.
+    // The redemption has no actor — the person redeemed it themselves,
+    // and who invited them is on the invitation.
     assert_eq!(endringer[2]["endring"], "lagt_til");
     assert_eq!(endringer[2]["kilde"], "invitasjon");
     assert!(endringer[2]["utfort_av"].is_null());
 
-    // Og tilgangen er faktisk borte.
+    // And the access is genuinely gone.
     let (_, me) = call(&state, "GET", "/me", &token, None).await;
     assert_eq!(me["companies"].as_array().unwrap().len(), 0);
 }
 
-/// En tilbakekalt invitasjon kan ikke løses inn.
+/// A revoked invitation cannot be redeemed.
 #[tokio::test]
-async fn tilbakekalt_invitasjon_gir_ingen_tilgang() {
+async fn a_revoked_invitation_grants_no_access() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (_, angret_epost, angret_token) = kommende(&idp, "Angret");
     let (_, svar) = call(
@@ -417,22 +416,22 @@ async fn tilbakekalt_invitasjon_gir_ingen_tilgang() {
     assert_eq!(me["companies"].as_array().unwrap().len(), 0);
 }
 
-/// En invitasjon kan peke på en egendefinert rolle som blir
-/// **deaktivert før den løses inn**. Medlemskapet blir da til med en
-/// rolle som ikke gir noe: vedkommende kommer inn i selskapet og får
-/// ingenting.
+/// An invitation can point at a custom role that is **deactivated before
+/// it is redeemed**. The membership then comes into being with a role
+/// that grants nothing: the person enters the company and gets nothing.
 ///
-/// Det er valgt, ikke oppdaget (docs/auth.md §7). Alternativet — å
-/// avvise innløsningen — måtte forklart den inviterte hvorfor, altså at
-/// selskapet har en deaktivert rolle med det navnet. Fail-closed er
-/// riktigere enn å lekke, og admin kan gi en annen rolle med én gang.
+/// That is chosen, not discovered (docs/auth.md §7). The alternative —
+/// refusing the redemption — would have had to explain to the invitee
+/// why, i.e. that the company has a deactivated role by that name.
+/// Fail-closed is better than leaking, and an admin can assign a
+/// different role right away.
 #[tokio::test]
-async fn invitasjon_til_deaktivert_rolle_gir_medlemskap_uten_tilgang() {
+async fn an_invitation_to_a_deactivated_role_yields_membership_without_access() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+    let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (status, svar) = call(
         &state,
@@ -467,8 +466,8 @@ async fn invitasjon_til_deaktivert_rolle_gir_medlemskap_uten_tilgang() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Medlemskapet blir til — invitasjonen er gyldig, den ble ikke
-    // tilbakekalt.
+    // The membership comes into being — the invitation is valid, it was
+    // not revoked.
     let (status, me) = call(&state, "GET", "/me", &ny_token, None).await;
     assert_eq!(status, StatusCode::OK, "{me}");
     assert_eq!(me["nye_tilganger"], 1);

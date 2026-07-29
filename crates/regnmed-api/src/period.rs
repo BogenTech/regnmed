@@ -51,8 +51,8 @@ pub async fn set_period_lock(
     Path(company_id): Path<Uuid>,
     Json(request): Json<SetLockRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // Å låse krever bokføring; å ÅPNE IGJEN krever admin, og det
-    // avgjøres inne i set_period_lock — derfor følger rollen med.
+    // Locking requires bokføring; REOPENING requires admin, and that is
+    // decided inside set_period_lock — hence the role comes along.
     let rolle = krev(&state, person.person_id, company_id, Rett::PeriodeLaas).await?;
     let set_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_period_lock(

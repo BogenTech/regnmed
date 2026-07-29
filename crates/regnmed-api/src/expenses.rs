@@ -1,4 +1,4 @@
-//! Utlegg og kjøregodtgjørelse (docs/utlegg.md, #42):
+//! Utlegg and kjøregodtgjørelse (docs/utlegg.md, #42):
 //!
 //! - GET  /companies/{id}/expenses                    list w/ status
 //! - POST /companies/{id}/expenses/utlegg?filename=   raw receipt body
@@ -69,7 +69,7 @@ pub async fn create_utlegg(
 #[derive(Deserialize)]
 pub struct KjoringRequest {
     dato: chrono::NaiveDate,
-    /// Strekning og formål, e.g. "Oslo–Drammen t/r, kundemøte".
+    /// Route and purpose, e.g. "Oslo–Drammen t/r, kundemøte".
     beskrivelse: String,
     km: i64,
 }
@@ -106,8 +106,8 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // En ansatt ser sine egne krav; alle andre ser selskapets. Omfanget
-    // avgjøres av rettigheten, ikke av rollen — da flytter det seg av
-    // seg selv når roller settes sammen på nytt (#60).
+    // decided by the rettighet, not by the role — then it moves by
+    // itself when roles are recomposed (#60).
     let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
     let bare_egne = !rolle.har(Rett::UtleggLesAlle);
     let expenses =
@@ -139,9 +139,9 @@ pub async fn receipt(
 ) -> Result<Response, ApiError> {
     let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
     if !rolle.har(Rett::UtleggLesAlle) {
-        // Kvitteringen er et bilde av noe privat. Uten UTLEGG_LES_ALLE
-        // får man bare sin egen — og et krav som tilhører en annen skal
-        // svare som om det ikke finnes.
+        // The receipt is a picture of something private. Without
+        // UTLEGG_LES_ALLE you get only your own — and a claim belonging
+        // to someone else must answer as though it does not exist.
         let eier = regnmed_db::expense_owner(&state.pool, company_id, expense_id)
             .await
             .map_err(|_| ApiError::NotFound)?;
@@ -174,7 +174,7 @@ pub struct ApproveRequest {
     mva_kode: Option<String>,
     /// Inngående mva-konto, default 2710.
     mva_konto: Option<String>,
-    /// Mellomregningskonto, default 2910 (gjeld til ansatte).
+    /// Mellomregning account, default 2910 (owed to employees).
     motkonto: Option<String>,
 }
 

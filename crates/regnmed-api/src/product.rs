@@ -1,4 +1,4 @@
-//! Produktregister og enkelt varelager (docs/produkter.md, #39):
+//! Product register and simple inventory (docs/produkter.md, #39):
 //!
 //! - GET/POST /companies/{id}/products             register
 //! - PUT  /companies/{id}/products/{nummer}        edit (nummer immutable)

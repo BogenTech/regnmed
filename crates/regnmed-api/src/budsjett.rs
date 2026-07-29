@@ -1,17 +1,18 @@
-//! Budsjett og avviksrapport (docs/budsjett.md, #41):
+//! Budget and variance report (docs/budsjett.md, #41):
 //!
-//! - GET    /companies/{id}/budgets[?year=]        versjoner m/ status
-//! - POST   /companies/{id}/budgets                nytt utkast (evt. fra fjoråret ±X %)
-//! - GET    /companies/{id}/budgets/{bid}          budsjettet m/ linjer
-//! - PUT    /companies/{id}/budgets/{bid}/lines    erstatt linjene (utkast)
-//! - POST   /companies/{id}/budgets/{bid}/fastsett fryser versjonen
-//! - DELETE /companies/{id}/budgets/{bid}          forkast utkast
+//! - GET    /companies/{id}/budgets[?year=]        versions with status
+//! - POST   /companies/{id}/budgets                new draft (optionally from last year ±X %)
+//! - GET    /companies/{id}/budgets/{bid}          the budget with its lines
+//! - PUT    /companies/{id}/budgets/{bid}/lines    replace the lines (draft)
+//! - POST   /companies/{id}/budgets/{bid}/fastsett freezes the version
+//! - DELETE /companies/{id}/budgets/{bid}          discard a draft
 //! - GET    /companies/{id}/reports/avvik?year=&budget_id=&t_o_m=
 //!
-//! Beløp er i presentasjonsfortegn (inntekt positiv, kostnad positiv) —
-//! budsjettet skrives slik det leses. Lesing er åpen for alle
-//! tilgangsnivåer (revisor ser planen som alt annet); endring krever
-//! bokføringstilgang, og fastsettelse er en egen, loggført handling.
+//! Amounts are in presentation sign (income positive, cost positive) —
+//! a budget is written the way it is read. Reading is open to every
+//! access level (a revisor sees the plan like everything else); changing
+//! requires posting access, and fastsettelse is a separate, logged
+//! action.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};

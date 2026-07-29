@@ -1,12 +1,12 @@
 //! Abonnement i portalen + kortskinnen (#65, #74 — docs/abonnement.md).
 //!
-//! Selvbetjeningen er kort-først: admin legger inn kort (Stripe
-//! Checkout i setup-modus — kortdata berører oss aldri) og starter
-//! abonnementet selv. Webhooken er eneste kilde til «betalt», og den er
-//! idempotent hele veien ned (unik payment_intent i loggen).
+//! Self-service is card-first: an admin adds a card (Stripe Checkout in
+//! setup mode — card data never touches us) and starts the abonnement
+//! themselves. The webhook is the only source of "paid", and it is
+//! idempotent all the way down (unique payment_intent in the log).
 //!
-//! Uten STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET er kortskinnen AV og
-//! endepunktene sier det — NATS-mønsteret, ingen late-som.
+//! Without STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET the card rail is OFF
+//! and the endpoints say so — the NATS pattern, no pretending.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -23,7 +23,7 @@ fn client(cfg: &StripeCfg) -> regnmed_gov::stripe::Stripe {
     regnmed_gov::stripe::Stripe::new(&cfg.secret_key, cfg.api_base.as_deref())
 }
 
-/// Status, plan, prisliste og kort — det portalens abonnementskort
+/// Status, plan, price list and card — what the portal's abonnement card
 /// trenger i ett kall.
 pub async fn subscription_status(
     State(state): State<AppState>,
@@ -68,15 +68,15 @@ pub async fn subscription_status(
 
 #[derive(Deserialize)]
 pub struct CardSetupRequest {
-    /// Siden brukeren sendes tilbake til; default portalens forside for
-    /// selskapet. Alltid relativ til vår egen origin.
+    /// The page the user is sent back to; defaults to the portal's front
+    /// page for the company. Always relative to our own origin.
     #[serde(default)]
     pub return_path: Option<String>,
 }
 
 /// Starter kortregistreringen: oppretter (eller gjenbruker)
-/// Stripe-kunden og svarer med Checkout-URL-en portalen sender
-/// brukeren til. Kortet kommer tilbake via webhooken.
+/// the Stripe customer and answers with the Checkout URL the portal sends
+/// the user to. The card comes back via the webhook.
 pub async fn card_setup(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -129,7 +129,7 @@ pub struct StartRequest {
 }
 
 /// Selvbetjent tegning: admin starter abonnementet fra portalen.
-/// Kort-først — uten aktivt kort må fakturaavtale gjøres med drift.
+/// Card-first — without an active card, invoicing must be arranged with ops.
 pub async fn start_subscription(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -172,8 +172,8 @@ pub async fn start_subscription(
     Ok(Json(json!({ "status": "aktiv" })))
 }
 
-/// Stripes webhook. ÅPEN rute (ingen AuthPerson) — autentisert av
-/// signaturen, og idempotent: samme hendelse levert to ganger endrer
+/// Stripe's webhook. An OPEN route (no AuthPerson) — authenticated by the
+/// signature, and idempotent: the same event delivered twice changes
 /// ingenting andre gangen.
 pub async fn stripe_webhook(
     State(state): State<AppState>,
@@ -231,7 +231,7 @@ pub async fn stripe_webhook(
                 .and_then(|s| s.parse::<Uuid>().ok())
             else {
                 // Ikke vårt trekk (manuelt i dashboardet e.l.) — kvitter
-                // uten å røre bøkene.
+                // without touching the books.
                 return Ok(Json(json!({ "handled": "ignorert" })));
             };
             let drift = drift_company(&state).await?;

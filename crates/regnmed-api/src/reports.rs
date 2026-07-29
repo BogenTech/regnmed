@@ -536,14 +536,14 @@ pub async fn set_terminordning(
 
 #[derive(Deserialize, Default)]
 pub struct NokkeltallQuery {
-    /// Månedskolonnene og «hittil»-tallene gjelder dette året; default
-    /// inneværende. Likviditet og frister er alltid NÅ.
+    /// The month columns and the year-to-date figures apply to this year;
+    /// defaults to the current one. Liquidity and deadlines are always NOW.
     year: Option<i32>,
 }
 
-/// Nøkkeltall for oversikten (docs/rapporter.md, #36): rene spørringer
-/// over tall vi allerede har — resultat, likviditetsbilde og kommende
-/// mva-frister etter selskapets terminordning.
+/// Key figures for the overview (docs/rapporter.md, #36): plain queries
+/// over numbers we already have — result, liquidity picture and upcoming
+/// mva deadlines under the company's terminordning.
 pub async fn nokkeltall(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -558,8 +558,8 @@ pub async fn nokkeltall(
     let year = query.year.unwrap_or(chrono::Datelike::year(&today));
     let tall = regnmed_db::nokkeltall(&state.pool, company_id, year, today).await?;
 
-    // Skyldig mva for inneværende periode (beregnet netto så langt) og
-    // de neste fristene, etter selskapets ordning.
+    // Mva owed for the current period (net computed so far) and the next
+    // deadlines, under the company's ordning.
     let ordning = regnmed_db::terminordning_on(&state.pool, company_id, today).await?;
     let naa = ordning.periode_of(today);
     let spes = regnmed_db::mva_spesifikasjon(

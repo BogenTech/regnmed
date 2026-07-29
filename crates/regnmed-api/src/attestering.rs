@@ -1,15 +1,15 @@
-//! Attestering (docs/attestering.md, #47) — intern kontroll som flyt:
+//! Attestering (docs/attestering.md, #47) — internal control as a flow:
 //!
-//! - GET  /companies/{id}/attestering/policy    gjeldende policy + historikk
-//! - POST /companies/{id}/attestering/policy    ny policyrad (admin)
-//! - GET  /companies/{id}/members               attestant-kandidater (admin)
-//! - POST /companies/{id}/inbox/{doc}/attester  {godkjent, note?}
-//! - GET  /companies/{id}/inbox/{doc}/attestering   beslutningssporet
+//! - GET  /companies/{id}/attestering/policy       current policy + history
+//! - POST /companies/{id}/attestering/policy       new policy row (admin)
+//! - GET  /companies/{id}/members                  attestant candidates (admin)
+//! - POST /companies/{id}/inbox/{doc}/attester     {godkjent, note?}
+//! - GET  /companies/{id}/inbox/{doc}/attestering  the decision trail
 //!
-//! Håndhevingen bor i regnmed-db (bokfør/godkjenn-transaksjonene) —
-//! endepunktene her registrerer beslutninger og viser sporet. Lesing er
-//! åpen for alle tilgangsnivåer: attesteringshistorikken er nøyaktig
-//! det en revisor spør etter.
+//! Enforcement lives in regnmed-db (the post/approve transactions) — the
+//! endpoints here record decisions and show the trail. Reading is open to
+//! every access level: the attestering history is exactly what a revisor
+//! asks for.
 
 use axum::Json;
 use axum::extract::{Path, State};

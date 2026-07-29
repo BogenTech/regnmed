@@ -114,7 +114,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     assert_eq!(status, StatusCode::OK, "{uploaded}");
     let document_id = uploaded["document_id"].as_str().unwrap().to_string();
 
-    // Revisor ser den, men får ikke bestemme.
+    // A revisor sees it, but does not get to decide.
     let (status, listing) = request(
         &state,
         "GET",
@@ -137,7 +137,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // En ubalansert bokføring feiler — og dokumentet forblir 'ny'.
+    // An unbalanced posting fails — and the document stays 'ny'.
     let bad = json!({
         "journal_code": "GL", "date": "2026-07-01", "description": "Husleie",
         "lines": [
@@ -190,7 +190,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     assert_eq!(status, StatusCode::OK, "{posted}");
     let voucher_id = posted["voucher_id"].as_str().unwrap().to_string();
 
-    // Vedlegget henger på bilaget med SAMME innholdshash som dokumentet.
+    // The attachment hangs on the bilag with the SAME content hash as the document.
     let attachments =
         regnmed_db::list_attachments(&state.pool, company, Uuid::parse_str(&voucher_id).unwrap())
             .await
@@ -207,7 +207,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         "the decision-maker is on record"
     );
 
-    // Statusen er bokført med kobling til bilaget; re-bokføring avvises.
+    // The status is bokført with a link to the bilag; re-posting is refused.
     let (_, listing) = request(
         &state,
         "GET",
@@ -231,13 +231,13 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "already decided");
 
-    // Kjeden verifiserer over det nye bilaget.
+    // The chain verifies over the new bilag.
     let chain = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();
     assert_eq!(chain.vouchers_checked, 1);
 
-    // Avvisning krever notat, og virker på et nytt dokument.
+    // Rejection requires a note, and works on a fresh document.
     let (_, uploaded2) = request(
         &state,
         "POST",

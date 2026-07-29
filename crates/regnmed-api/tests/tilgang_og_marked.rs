@@ -1,8 +1,8 @@
-//! Hvem får gjøre hva: tilgang, medlemmer, oppdrag, marked, abonnement.
+//! Who may do what: access, members, oppdrag, marketplace, abonnement.
 //!
-//! Én binær for flere testfiler: hver tests/*.rs lenkes for seg, og
-//! 33 av dem hadde én eneste test. nextest kjører hver test i sin
-//! egen prosess uansett, så grupperingen koster ingen parallellitet.
+//! One binary for several test files: each tests/*.rs links separately,
+//! and 33 of them held a single test. nextest runs every test in its own
+//! process regardless, so the grouping costs no parallelism.
 
 mod common;
 

@@ -1,7 +1,7 @@
-//! Maskin-tilgang til API-et (#45): et maskintoken uten grant får
-//! ingenting, en admin gir tilgang på et nivå, roboten navngis i
-//! bilagets created_by, tilbakekalling virker med én gang, og
-//! ratebegrensningen slår inn. Requires DATABASE_URL (skips otherwise).
+//! Machine access to the API (#45): a machine token without a grant gets
+//! nothing, an admin grants access at one level, the robot is named in
+//! the bilag's created_by, revocation takes effect at once, and the rate
+//! limit kicks in. Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -41,7 +41,7 @@ async fn request(
 }
 
 #[tokio::test]
-async fn maskintoken_far_bare_det_en_admin_har_gitt() {
+async fn a_machine_token_gets_only_what_an_admin_granted() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -67,12 +67,12 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
     let admin_token = idp.token(&sub, "Aud Admin");
     let base = format!("/companies/{company}");
 
-    // Maskinklienten er bare et subject i tokenet — vår IdP utsteder
-    // det, vi utsteder ingen egne nøkler.
+    // The machine client is only a subject in the token — our IdP issues
+    // it, we issue no keys of our own.
     let client_id = format!("nettbutikk-{}", Uuid::new_v4());
     let machine_token = idp.token(&client_id, "");
 
-    // ---- Uten grant finnes selskapet ikke for roboten ----
+    // ---- Without a grant the company does not exist for the robot ----
     let (status, _) = request(
         &state,
         "GET",
@@ -87,7 +87,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
         "et gyldig token uten grant gir ingen tilgang"
     );
 
-    // ---- Admin gir tilgang på bokføringsnivå ----
+    // ---- An admin grants access at bokføring level ----
     let (status, granted) = request(
         &state,
         "POST",
@@ -107,7 +107,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
     assert_eq!(status, StatusCode::OK, "{granted}");
     let integration_id = granted["integration_id"].as_str().unwrap().to_string();
 
-    // ---- Nå slipper roboten til, og bilaget navngir den ----
+    // ---- Now the robot gets in, and the bilag names it ----
     let (status, posted) = request(
         &state,
         "POST",
@@ -125,8 +125,8 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
             {"account": "3000", "amount_ore": -1_250_00},
         ],
     });
-    // Bilaget legges inn via innboksen, som en integrasjon ville gjort:
-    // last opp dokumentet, bokfør det.
+    // The bilag is entered through the innboks, as an integration would:
+    // upload the document, post it.
     let response = router(state.clone())
         .oneshot(
             Request::builder()
@@ -155,7 +155,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
     .await;
     assert_eq!(status, StatusCode::OK, "{posted}");
 
-    // Revisjonssporet navngir roboten, ikke et anonymt subject.
+    // The audit trail names the robot, not an anonymous subject.
     let created_by: String = sqlx::query_scalar(
         "select created_by from voucher where company_id = $1 order by voucher_number desc limit 1",
     )
@@ -165,7 +165,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
     .unwrap();
     assert_eq!(created_by, "Nettbutikken", "bilaget navngir integrasjonen");
 
-    // ---- Aktiviteten er synlig for selskapet ----
+    // ---- The activity is visible to the company ----
     let (status, log) = request(
         &state,
         "GET",
@@ -198,7 +198,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
         "også lesingene telles: {entry}"
     );
 
-    // ---- En integrasjon kan ikke gi seg selv mer ----
+    // ---- An integration cannot give itself more ----
     let (status, _) = request(
         &state,
         "POST",
@@ -213,7 +213,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
         "bokføringstilgang er ikke admin"
     );
 
-    // ---- Tilbakekalling virker med én gang ----
+    // ---- Revocation takes effect at once ----
     let (status, _) = request(
         &state,
         "POST",
@@ -236,7 +236,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
         StatusCode::NOT_FOUND,
         "valid_to er eksklusiv — tilgangen er borte i dag, ikke i morgen"
     );
-    // Historikken står igjen med hvem som trakk den tilbake.
+    // The history is left showing who revoked it.
     let (_, listing) = request(
         &state,
         "GET",
@@ -251,7 +251,7 @@ async fn maskintoken_far_bare_det_en_admin_har_gitt() {
 }
 
 #[tokio::test]
-async fn ratebegrensningen_stopper_en_lopsk_integrasjon() {
+async fn the_rate_limit_stops_a_runaway_integration() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -305,7 +305,7 @@ async fn ratebegrensningen_stopper_en_lopsk_integrasjon() {
         StatusCode::TOO_MANY_REQUESTS,
         "budsjettet tar slutt, og API-et sier det tydelig"
     );
-    // Mennesket merker ingenting til robotens grense.
+    // The human notices nothing of the robot's limit.
     let (status, _) = request(
         &state,
         "GET",

@@ -1,25 +1,25 @@
-//! Tilgangsmatrisen i docs/auth.md er MASKINSJEKKET (#58).
+//! The access matrix in docs/auth.md is MACHINE-CHECKED (#58).
 //!
-//! docs/ er revisorvendt dokumentasjon. En tilgangstabell som er blitt
-//! feil er verre enn ingen tabell: den blir sitert i en revisjon, og
-//! ingen leser koden for å kontrollere den. Derfor genereres tabellen
-//! her fra `Rolle` og `Rett`, og testen krever at dokumentet inneholder
-//! nøyaktig den.
+//! docs/ is audit-facing documentation. An access table that has gone
+//! wrong is worse than no table: it gets quoted in an audit, and nobody
+//! reads the code to check it. So the table is generated here from `Rolle`
+//! and `Rett`, and the test requires the document to contain exactly
+//! that.
 //!
-//! Feiler testen, skriver den ut blokken som skal limes inn. Den er
-//! altså ikke bare en sperre, men også verktøyet som holder dokumentet
-//! oppdatert.
+//! When the test fails it prints the block to paste in. It is therefore
+//! not only a guard, but also the tool that keeps the document up to
+//! date.
 //!
-//! Krever ingen database.
+//! Requires no database.
 
 use regnmed_api::tilgang::{Rett, Rolle};
 
 const START: &str = "<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrise.rs -->";
 const SLUTT: &str = "<!-- /MATRISE -->";
 
-/// Rollene i tabellen, i den rekkefølgen de gir mening å lese: fra minst
-/// til mest. `revisor` står mellom `les` og `bokforing` fordi den er
-/// lesing pluss lønn.
+/// The roles in the table, in the order that makes sense to read: from
+/// least to most. `revisor` sits between `les` and `bokforing` because it
+/// is reading plus lønn.
 const ROLLER: [Rolle; 5] = [
     Rolle::Ansatt,
     Rolle::Les,
@@ -41,8 +41,8 @@ fn matrise() -> String {
     }
     ut.push('\n');
 
-    // Gruppert som portalen, og innenfor gruppen i vokabularets egen
-    // rekkefølge — den er skrevet for å leses.
+    // Grouped like the portal, and within the group in the vocabulary's
+    // own order — it is written to be read.
     let mut grupper: Vec<&'static str> = Rett::ALLE.iter().map(|r| r.gruppe()).collect();
     grupper.dedup();
     let mut sett = Vec::new();
@@ -66,13 +66,13 @@ fn matrise() -> String {
 }
 
 #[test]
-fn matrisen_i_docs_stemmer_med_koden() {
+fn the_matrix_in_docs_matches_the_code() {
     let sti = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/auth.md");
     let doc = std::fs::read_to_string(sti).expect("docs/auth.md");
     let forventet = matrise();
 
     if !doc.contains(&forventet) {
-        // Skriv ut hele blokken, så rettingen er å lime inn.
+        // Print the whole block, so the fix is a paste.
         eprintln!("\n=== docs/auth.md skal inneholde denne blokken ===\n");
         eprintln!("{forventet}");
         eprintln!("\n=== slutt ===\n");
@@ -83,11 +83,11 @@ fn matrisen_i_docs_stemmer_med_koden() {
     }
 }
 
-/// Matrisen skal dekke HELE vokabularet. Uten dette kunne en ny
-/// rettighet bli borte fra dokumentet uten at noe sa fra — og en
-/// tilgangstabell med hull er en tabell man ikke kan stole på.
+/// The matrix must cover the WHOLE vocabulary. Without this a new
+/// rettighet could vanish from the document with nothing saying so — and
+/// an access table with holes is a table you cannot trust.
 #[test]
-fn matrisen_dekker_hele_vokabularet() {
+fn the_matrix_covers_the_whole_vocabulary() {
     let m = matrise();
     for rett in Rett::ALLE {
         assert!(

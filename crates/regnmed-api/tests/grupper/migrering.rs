@@ -1,9 +1,9 @@
-//! Migreringsimport, filtier (#19): kontaktlisten fra det gamle
-//! systemet blir parter (idempotent), åpne poster blir ETT bilag med
-//! én partslinje per post, reskontrosaldoen blir lik summen av postene
-//! fordi det er de samme radene, og en konto som allerede har saldo
-//! avvises med tallet i feilmeldingen. Requires DATABASE_URL (skips
-//! otherwise).
+//! Migration import, file tier (#19): the contact list from the old
+//! system becomes parties (idempotently), open items become ONE bilag
+//! with one party line each, the reskontro balance equals the sum of the
+//! items because they are the same rows, and an account that already has
+//! a balance is refused with the figure in the error message.
+//! Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -76,7 +76,7 @@ async fn saldo(state: &AppState, company: Uuid, konto: &str) -> i64 {
 }
 
 #[tokio::test]
-async fn kontakter_og_apne_poster_fra_gammelt_system() {
+async fn contacts_and_open_items_from_an_old_system() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -122,7 +122,7 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
     assert_eq!(body["opprettet"], 2);
     assert_eq!(body["oppdatert"], 0);
 
-    // Kundenummeret følger med — kontinuitet regnskapsføreren ser.
+    // The customer number comes along — continuity the regnskapsfører sees.
     let (_, parties) = get_json(&state, &format!("{base}/parties?kind=kunde"), &token).await;
     let hansen = parties["parties"]
         .as_array()
@@ -135,7 +135,7 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
     assert_eq!(hansen["email"], "post@hansen.no");
     assert_eq!(hansen["bank_account"], "86011117947", "MOD11-validert");
 
-    // Idempotent: samme fil igjen oppdaterer, oppretter ikke på nytt.
+    // Idempotent: the same file again updates, it does not create anew.
     let (_, body) = post_csv(
         &state,
         &format!("{base}/import/contacts?kind=kunde"),
@@ -146,8 +146,8 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
     assert_eq!(body["opprettet"], 0);
     assert_eq!(body["oppdatert"], 2);
 
-    // ---- Åpne poster: forhåndsvisning før noe bokføres ----
-    // Filen har både Beløp og Restbeløp — restbeløpet skal vinne.
+    // ---- Open items: preview before anything is posted ----
+    // The file has both Beløp and Restbeløp — the remainder must win.
     let apne = "Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n\
                 10001;Hansen AS;F-100;15.01.2026;29.01.2026;12 500,00;12 500,00;1234567897\n\
                 10002;Lille Bakeri;F-101;20.01.2026;03.02.2026;5 000,00;2 000,00;\n\
@@ -188,12 +188,12 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
     assert_eq!(body["sum_ore"], 15_500_00);
     assert_eq!(body["opprettede_parter"], 1);
 
-    // Reskontroen ER hovedboken her: saldoen er summen av postene fordi
-    // det er de samme radene.
+    // The reskontro IS the hovedbok here: the balance is the sum of the
+    // items because they are the same rows.
     assert_eq!(saldo(&state, company, "1500").await, 15_500_00);
     assert_eq!(saldo(&state, company, "2050").await, -15_500_00);
 
-    // Hver post ligger åpen på sin part, med fakturanummeret i teksten.
+    // Each item stands open on its party, with the invoice number in the text.
     let (_, parties) = get_json(&state, &format!("{base}/parties?kind=kunde"), &token).await;
     let hansen_id = parties["parties"]
         .as_array()
@@ -224,7 +224,7 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
         open[0]["description"]
     );
 
-    // ---- En konto med saldo avvises, med tallet i meldingen ----
+    // ---- An account with a balance is refused, with the figure in the message ----
     let (status, body) = post_csv(
         &state,
         &format!("{base}/import/open-items?kind=kunde"),
@@ -240,7 +240,7 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
     );
     assert!(error.contains("ERSTATTER"), "{error}");
 
-    // ---- Leverandørposter havner på kreditsiden ----
+    // ---- Supplier items land on the credit side ----
     let leverandorer = "Leverandørnr;Navn;Bilagsnr;Dato;Saldo\n\
                         20001;Grossisten AS;I-77;2026-02-01;4 500,00\n";
     let (status, body) = post_csv(
@@ -265,7 +265,7 @@ async fn kontakter_og_apne_poster_fra_gammelt_system() {
         "leverandørgjeld er kredit"
     );
 
-    // ---- En fil vi ikke forstår feiler høyt med kolonnene ----
+    // ---- A file we do not understand fails loudly with the columns ----
     let (status, body) = post_csv(
         &state,
         &format!("{base}/import/open-items?kind=kunde"),

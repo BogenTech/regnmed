@@ -1,14 +1,14 @@
 //! Consumer side of the shared mail rail (docs/epost-inn.md, #35).
 //!
-//! Utgående post går ut på `regnid.mail.send` (src/mailq.rs);
-//! innkommende post kommer inn på `regnid.mail.received`, publisert av
-//! den samme mail-infrastrukturen. Det er med vilje: plattformen har ÉN
-//! mail-rail, og MX-en/mottaket bor i regnid — som aldri vendores inn
-//! her. Feltene under er wire-kontrakten, akkurat som for utgående.
+//! Outbound mail goes out on `regnid.mail.send` (src/mailq.rs); inbound
+//! mail arrives on `regnid.mail.received`, published by the same mail
+//! infrastructure. That is deliberate: the platform has ONE mail rail,
+//! and the MX / reception lives in regnid — which is never vendored in
+//! here. The fields below are the wire contract, exactly as for outbound.
 //!
-//! Uten `NATS_URL` finnes ingen konsument, og e-post-inn er rett og
-//! slett av. Adressen vises da som «ikke konfigurert» i portalen i
-//! stedet for å love noe som ikke virker.
+//! Without `NATS_URL` there is no consumer, and inbound e-mail is simply
+//! off. The address is then shown as "ikke konfigurert" in the portal
+//! instead of promising something that does not work.
 
 use anyhow::{Context as _, Result};
 use async_nats::jetstream;

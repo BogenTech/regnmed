@@ -1,19 +1,20 @@
-//! Aksjeeierbok og aksjonærregisteroppgave (docs/aksjonaer.md, #43):
+//! Aksjeeierbok and aksjonærregisteroppgave (docs/aksjonaer.md, #43):
 //!
-//! - GET/POST /companies/{id}/shareholders            aksjeeierboken
-//! - PUT  /companies/{id}/shareholders/{sid}/contact  kontaktopplysninger
-//! - GET/POST /companies/{id}/share-events            hendelser
-//! - GET/POST /companies/{id}/dividends               utbyttevedtak
+//! - GET/POST /companies/{id}/shareholders            the aksjeeierbok
+//! - PUT  /companies/{id}/shareholders/{sid}/contact  contact details
+//! - GET/POST /companies/{id}/share-events            events
+//! - GET/POST /companies/{id}/dividends               dividend decisions
 //! - GET  /companies/{id}/shareholders/transaction-types
 //! - GET  /companies/{id}/reports/aksjonaeroppgave?year=&format=
 //!
-//! Lesing er åpen for alle tilgangsnivåer — aksjeeierboken er et
-//! register enhver har innsynsrett i etter aksjeloven §4-5, og revisor
-//! skal kunne lese den. Å føre hendelser krever bokforing eller admin.
+//! Reading is open to every access level — the aksjeeierbok is a
+//! register anyone has a right to inspect under aksjeloven §4-5, and a
+//! revisor must be able to read it. Recording events requires bokforing
+//! or admin.
 //!
-//! **Fødselsnummer forlater aldri dette laget** i en listing: JSON-en
-//! bærer fødselsdato, som er det §4-5 ber om. Nummeret går én vei — inn
-//! i RF-1086-innsendingen.
+//! **The fødselsnummer never leaves this layer** in a listing: the JSON
+//! carries the birth date, which is what §4-5 asks for. The number goes
+//! one way — in
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -31,7 +32,7 @@ fn aksjonaer_json(a: &regnmed_db::aksjebok::Aksjonaer) -> serde_json::Value {
         "id": a.id,
         "kind": a.kind,
         "navn": a.navn,
-        // §4-5: fødselsdato, ikke fødselsnummer.
+        // §4-5: birth date, not fødselsnummer.
         "fodselsdato": a.fodselsdato,
         "orgnr": a.orgnr,
         "utenlandsk_id": a.utenlandsk_id,
@@ -316,9 +317,9 @@ pub async fn oppgave(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    // Rendres alltid, men en feil er bare fatal når noen faktisk ber om
-    // filen. Forhåndsvisningen skal VISE hva som stopper leveringen —
-    // en tom side hjelper ingen med å forstå hvorfor.
+    // Always rendered, but an error is only fatal when somebody actually
+    // asks for the file. The preview must SHOW what is blocking the
+    // filing — a blank page helps nobody understand why.
     let hoved = regnmed_core::aksjonaeroppgave::render_hovedskjema(&sett.hovedskjema);
     let under: Vec<_> = sett
         .underskjemaer

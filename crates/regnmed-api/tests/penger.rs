@@ -1,8 +1,8 @@
-//! Penger inn og ut: bank, betaling, OCR, valuta og mva-terminer.
+//! Money in and out: bank, payment, OCR, currency and mva terminer.
 //!
-//! Én binær for flere testfiler: hver tests/*.rs lenkes for seg, og
-//! 33 av dem hadde én eneste test. nextest kjører hver test i sin
-//! egen prosess uansett, så grupperingen koster ingen parallellitet.
+//! One binary for several test files: each tests/*.rs links separately,
+//! and 33 of them held a single test. nextest runs every test in its own
+//! process regardless, so the grouping costs no parallelism.
 
 mod common;
 

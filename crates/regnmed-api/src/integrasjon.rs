@@ -1,14 +1,14 @@
-//! Maskin-tilgang: hvem slipper til, og hva de har gjort
+//! Machine access: who gets in, and what they have done
 //! (docs/integrations.md, #45).
 //!
-//! - GET    /companies/{id}/integrations              tilganger + bruk i dag
-//! - POST   /companies/{id}/integrations              gi tilgang (admin)
-//! - POST   /companies/{id}/integrations/{iid}/revoke trekk tilbake (admin)
-//! - GET    /companies/{id}/integrations/log          endrende kall
+//! - GET    /companies/{id}/integrations              grants + usage today
+//! - POST   /companies/{id}/integrations              grant access (admin)
+//! - POST   /companies/{id}/integrations/{iid}/revoke revoke (admin)
+//! - GET    /companies/{id}/integrations/log          changing calls
 //!
-//! Å gi og trekke tilbake krever admin — det er å slippe en robot inn i
-//! selskapets bøker. Å lese listen og loggen krever bare tilgang: en
-//! revisor skal kunne se hvilke maskiner som har skrevet.
+//! Granting and revoking require admin — that is letting a robot into the
+//! company's books. Reading the list and the log requires only access: a
+//! revisor must be able to see which machines have written.
 
 use axum::Json;
 use axum::extract::{Path, State};

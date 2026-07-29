@@ -1,14 +1,14 @@
-//! Lønn (docs/lonn.md, #46 første del):
+//! Lønn (docs/lonn.md, first part of #46):
 //!
-//! - GET/POST /companies/{id}/employees          ansattregister
-//! - GET/POST /companies/{id}/payroll            lønnskjøringer
-//! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  lønnsslipp (PDF)
-//! - GET      /companies/{id}/payroll/preview    beregning uten bokføring
+//! - GET/POST /companies/{id}/employees             employee register
+//! - GET/POST /companies/{id}/payroll               payroll runs
+//! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
+//! - GET      /companies/{id}/payroll/preview       computation without posting
 //!
-//! Lesing krever tilgang; å registrere ansatte og kjøre lønn krever
-//! bokforing eller admin. Fødselsnummer forlater aldri dette laget —
-//! listen bærer fødselsdato, som er alt noen trenger å se for å
-//! kjenne igjen en ansatt.
+//! Reading requires access; registering employees and running payroll
+//! requires bokforing or admin. The fødselsnummer never leaves this
+//! layer: the list carries the birth date, which is all anyone needs in
+//! order to recognise an employee.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -27,7 +27,7 @@ fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
         "id": a.id,
         "navn": a.navn,
         "stilling": a.stilling,
-        // Fødselsdato, ikke fødselsnummer.
+        // Birth date, not fødselsnummer.
         "fodselsdato": a.fodselsdato,
         "ansatt_fra": a.ansatt_fra,
         "ansatt_til": a.ansatt_til,
@@ -237,9 +237,9 @@ pub async fn payslip_pdf(
     Path((company_id, run_id, employee_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
     // Sin egen slipp får man alltid; andres krever LONNSSLIPP_LES_ALLE.
-    // Merk at det ikke er #55: den saken skal ta LONNSSLIPP_LES_ALLE UT
-    // av lesebunten. Her legges bare omfanget inn, uten å endre hvem som
-    // har hva.
+    // Note this is NOT #55: that issue takes LONNSSLIPP_LES_ALLE OUT of
+    // the reading bundle. Here only the scope is added, without changing
+    // who has what.
     let rolle = krev(
         &state,
         person.person_id,

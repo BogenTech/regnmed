@@ -160,8 +160,8 @@ async fn seed_browser_demo() {
         .await
         .unwrap();
     }
-    // Aksjeeierbok (#43): to eiere, en stiftelse, en overdragelse og et
-    // utbyttevedtak — nok til å se boken, hendelsene og oppgaven.
+    // Aksjeeierbok (#43): two owners, a stiftelse, a transfer and a
+    // dividend decision — enough to see the book, the events and the oppgave.
     let kari = regnmed_db::aksjebok::create_aksjonaer(
         &state.pool,
         company,
@@ -242,7 +242,7 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
 
-    // Ansatte + en kjørt måned, så Lønn-seksjonen har noe å vise.
+    // Employees + one month run, so the Lønn section has something to show.
     for (fnr, navn, stilling, lonn, trekk_bp, fp_bp) in [
         (
             "26829398612",
@@ -286,8 +286,8 @@ async fn seed_browser_demo() {
     let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company)
         .await
         .unwrap();
-    // Mai: vanlig måned. Feriepenger avsettes, og avgiften på dem
-    // påløper — så juni faktisk har noe å trekke ned.
+    // May: an ordinary month. Feriepenger are accrued, and the avgift on
+    // them accrues — so June actually has something to draw down.
     regnmed_db::lonn::kjor_lonn(
         &state.pool,
         company,
@@ -320,7 +320,7 @@ async fn seed_browser_demo() {
             .map(|a| regnmed_db::lonn::Lonnspost {
                 employee_id: a.id,
                 brutto_ore: None,
-                // Juni: feriepenger utbetales, og de er trekkfrie.
+                // June: feriepenger are paid out, and they carry no withholding.
                 feriepenger_ore: 4_500_000,
                 fra_timer: false,
             })
@@ -330,8 +330,8 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
 
-    // En timelønnet, koblet til demo-brukeren som fører timer, med
-    // juli-timer og måneden LÅST — så «fra timer» faktisk kan brukes.
+    // One hourly employee, linked to the demo user who logs hours, with
+    // July hours and the month LOCKED — so "from hours" can actually be used.
     let timo = regnmed_db::lonn::create_ansatt(
         &state.pool,
         company,

@@ -56,9 +56,9 @@ pub struct AppState {
     pub mailq: Option<async_nats::jetstream::Context>,
     /// Per-integration rate limiting (docs/integrations.md, #45).
     pub rate: Arc<auth::RateLimiter>,
-    /// Kortskinnen (#74, docs/abonnement.md §5); None når
-    /// STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET ikke er satt —
-    /// endepunktene sier da fra i stedet for å late som.
+    /// The card rail (#74, docs/abonnement.md §5); None when
+    /// STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are unset — the endpoints
+    /// then say so instead of pretending.
     pub stripe: Option<StripeCfg>,
     /// Driftsselskapets orgnr (REGNMED_DRIFT_ORGNR) — hovedboken
     /// abonnementstrekkene bokføres i.
@@ -69,7 +69,7 @@ pub struct AppState {
 pub struct StripeCfg {
     pub secret_key: String,
     pub webhook_secret: String,
-    /// Overstyrbar base-URL så tester kan peke mot en mock.
+    /// Overridable base URL so tests can point at a mock.
     pub api_base: Option<String>,
 }
 
@@ -475,7 +475,7 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/subscription/card-setup",
             axum::routing::post(abonnement::card_setup),
         )
-        // Åpen rute: autentisert av webhook-signaturen, ikke av et token.
+        // Open route: authenticated by the webhook signature, not by a token.
         .route(
             "/stripe/webhook",
             axum::routing::post(abonnement::stripe_webhook),
@@ -672,15 +672,17 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Én dårlig forespørsel skal ALDRI rive ned prosessen for alle andre.
+/// One bad request must NEVER take the process down for everybody else.
 ///
-/// To ting sikrer det, og de er forskjellige: prosessen overlever fordi
-/// vi bygger med `panic=unwind` og tokio isolerer den panikkende
-/// oppgaven (derfor er `panic="abort"` utelatt i release-profilen — se
-/// Cargo.toml), mens KLIENTEN får et svar fordi dette laget finnes.
-/// Uten laget ville forbindelsen bare blitt brutt, uten status.
+/// Two things ensure that, and they are different: the process survives
+/// because we build with `panic=unwind` and tokio isolates the panicking
+/// task (which is why `panic="abort"` is left out of the release profile
+/// — see Cargo.toml), while the CLIENT gets a response because this layer
+/// exists. Without the layer the connection would simply be cut, with no
+/// status.
 ///
-/// Laget bygges her, ett sted, så testen kan prøve nøyaktig det
+/// The layer is built here, in one place, so the test can exercise exactly
+/// the
 /// `router()` monterer.
 pub fn catch_panic_layer()
 -> tower_http::catch_panic::CatchPanicLayer<fn(Box<dyn std::any::Any + Send + 'static>) -> Response>
@@ -690,7 +692,7 @@ pub fn catch_panic_layer()
     )
 }
 
-/// Gjør en panikk om til 500. Detaljen logges server-side; klienten får
+/// Turns a panic into a 500. The detail is logged server-side; the client gets
 /// en nøytral melding — en panikk sier ofte noe om interne data.
 fn panikk_til_500(panikk: Box<dyn std::any::Any + Send + 'static>) -> Response {
     let detalj = panikk
@@ -717,22 +719,22 @@ async fn me(
     State(state): State<AppState>,
     person: AuthPerson,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // Invitasjoner løses inn her, når vi vet hvem som spør og hvilken
-    // e-postadresse tokenet bærer. En invitasjon er stilet til en
-    // ADRESSE, ikke til en person — personen finnes ikke å slå opp før
-    // hun har logget inn (#53, docs/auth.md).
+    // Invitations are redeemed here, once we know who is asking and
+    // which e-mail address the token carries. An invitation is addressed
+    // to an ADDRESS, not to a person — the person does not exist to look
+    // up before they have logged in (#53, docs/auth.md).
     //
-    // Samme mønster som oppdrag: tilgangen blir synlig uten ny
-    // innlogging, fordi portalen kaller /me når økten starter. Å legge
-    // oppslaget i AuthPerson-ekstraktoren i stedet ville kostet en
-    // spørring på HVER forespørsel for noe som skjer én gang.
+    // The same pattern as oppdrag: the access becomes visible without a
+    // fresh login, because the portal calls /me when the session starts.
+    // Putting the lookup in the extractor would cost a query on EVERY
+    // request for something that happens once.
     let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
 
     // Abonnementsstatus per selskap (#65): portalen viser banneret her,
-    // og sperren selv sitter i tilgangsvakten. Ett oppslag per unikt
-    // selskap — listen er kort (en persons selskaper, ikke alle).
+    // and the block itself sits in the access guard. One lookup per
+    // distinct company — the list is short (a person's companies, not all).
     let mut abonnement = std::collections::HashMap::new();
     for a in &access {
         if let std::collections::hash_map::Entry::Vacant(e) = abonnement.entry(a.company_id) {

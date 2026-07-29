@@ -1,8 +1,8 @@
-//! Én dårlig forespørsel skal ikke rive ned prosessen for alle andre.
+//! One bad request must not take the process down for everybody else.
 //!
-//! Testen trenger ingen database: den prøver laget `router()` monterer
-//! (`regnmed_api::catch_panic_layer`) på en rute som panikker med vilje.
-//! Produksjonskoden har ingen slik rute — derfor bygges den her.
+//! The test needs no database: it exercises the layer `router()` mounts
+//! (`regnmed_api::catch_panic_layer`) on a route that panics on purpose.
+//! The production code has no such route — hence it is built here.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -25,8 +25,8 @@ fn app() -> Router {
 }
 
 #[tokio::test]
-async fn panikk_blir_500_og_serveren_lever_videre() {
-    // En panikk i håndteringen gir et SVAR — ikke en brutt forbindelse.
+async fn a_panic_becomes_a_500_and_the_server_lives_on() {
+    // A panic in the handler yields a RESPONSE — not a broken connection.
     let response = app()
         .oneshot(
             Request::builder()
@@ -45,14 +45,14 @@ async fn panikk_blir_500_og_serveren_lever_videre() {
         .await
         .unwrap();
     let body: serde_json::Value = serde_json::from_slice(&bytes).expect("gyldig JSON");
-    // Klienten får en nøytral melding: en panikktekst kan røpe interne data.
+    // The client gets a neutral message: panic text can leak internal data.
     assert_eq!(body["error"], "intern feil");
     assert!(
         !String::from_utf8_lossy(&bytes).contains("bevisst panikk"),
         "panikkteksten skal bli i loggen, ikke i svaret"
     );
 
-    // Og det som betyr mest: neste forespørsel betjenes som før.
+    // And what matters most: the next request is served as before.
     let response = app()
         .oneshot(
             Request::builder()
@@ -65,15 +65,15 @@ async fn panikk_blir_500_og_serveren_lever_videre() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
-/// Den andre halvdelen av garantien: prosessen dør ikke av en panikk i
-/// en tokio-oppgave. Det er `panic=unwind` som gir oss dette — feiler
-/// denne, er `panic="abort"` sneket inn i profilen (Cargo.toml).
+/// The other half of the guarantee: the process does not die from a panic
+/// in a tokio task. `panic=unwind` is what gives us this — if this fails,
+/// `panic="abort"` has crept into the profile (Cargo.toml).
 #[tokio::test]
-async fn panikk_i_en_oppgave_dreper_ikke_prosessen() {
+async fn a_panic_in_one_task_does_not_kill_the_process() {
     let doemt = tokio::spawn(async { panic!("oppgaven ryker") });
     assert!(doemt.await.is_err(), "oppgaven skal ha panikket");
 
-    // Kjører vi fortsatt? Med panic="abort" hadde vi aldri kommet hit.
+    // Are we still running? With panic="abort" we would never have got here.
     let levende = tokio::spawn(async { 2 + 2 });
     assert_eq!(levende.await.unwrap(), 4);
 }

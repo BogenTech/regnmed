@@ -1,15 +1,14 @@
-//! Betalingsoppfølging (web-first, engagement-guarded):
+//! Payment follow-up (web-first, engagement-guarded):
 //!
-//! - GET  /companies/{id}/invoices/overdue                    forfalte m/ aldersintervall
-//! - GET  /companies/{id}/invoices/{iid}/reminders            purrehistorikk
-//! - POST /companies/{id}/invoices/{iid}/reminders            registrer skritt
-//!   (`?preview=true` beregner og rendrer uten å skrive noe)
+//! - GET  /companies/{id}/invoices/overdue          overdue, with age bucket
+//! - GET  /companies/{id}/invoices/{iid}/reminders  purring history
+//! - POST /companies/{id}/invoices/{iid}/reminders  record a step
+//!   (`?preview=true` computes and renders without writing anything)
 //! - GET  /companies/{id}/invoices/{iid}/reminders/{rid}?format=tekst
 //!
-//! Å sende en purring er alltid en eksplisitt menneskelig handling —
-//! endepunktene foreslår og registrerer, ingenting sendes automatisk.
-//! Lesing er åpen for alle tilgangsnivåer; registrering krever
-//! bokforing eller admin.
+//! Sending a purring is always an explicit human action — the endpoints
+//! propose and record, nothing is sent automatically. Reading is open to
+//! every access level; recording requires bokforing or admin.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -96,7 +95,7 @@ pub struct CreateReminderRequest {
     /// Krev påløpt forsinkelsesrente. Defaults to false.
     #[serde(default)]
     med_rente: bool,
-    /// Skyldner er næringsdrivende → gebyrtaket er standardkompensasjonen.
+    /// The debtor is næringsdrivende → the gebyr ceiling is the standardkompensasjon.
     #[serde(default)]
     naeringsdrivende: bool,
     /// Defaults: gebyr 3950 (annen driftsrelatert inntekt),

@@ -1,13 +1,13 @@
-//! Migreringsimport, filtier (docs/migration.md, #19):
+//! Migration import, file tier (docs/migration.md, #19):
 //!
 //! - POST /companies/{id}/import/contacts?kind=kunde|leverandor
 //! - POST /companies/{id}/import/open-items?kind=&konto=&motkonto=&dato=&preview=
 //!
-//! Begge tar CSV-en rått i body (som bankimporten) — filen er
-//! eksportert fra det gamle systemet og lastes opp som den er.
-//! Åpne poster har `?preview=true`: da leses filen, partene slås opp
-//! og saldoen sjekkes, men ingenting bokføres. Import krever admin,
-//! som resten av migreringen.
+//! Both take the CSV raw in the body (like the bank import) — the file is
+//! exported from the old system and uploaded as-is. Open items support
+//! `?preview=true`: the file is read, the parties resolved and the
+//! balance checked, but nothing is posted. Import requires admin, like
+//! the rest of the migration.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -62,10 +62,10 @@ pub async fn import_contacts(
 #[derive(Deserialize)]
 pub struct OpenItemsQuery {
     kind: Option<String>,
-    /// Reskontrokontoen postene hører til (1500 / 2400 by default).
+    /// The reskontro account the items belong to (1500 / 2400 by default).
     konto: Option<String>,
-    /// Motkontoen bilaget balanseres mot; 2050 (annen egenkapital) som
-    /// standard, samme plugg som åpningsbalansen bruker.
+    /// The contra account the bilag balances against; 2050 (annen
+    /// egenkapital) by default, the same plug the opening balance uses.
     motkonto: Option<String>,
     dato: Option<chrono::NaiveDate>,
     preview: Option<bool>,

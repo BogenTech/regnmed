@@ -1,7 +1,7 @@
-//! Portalen (Svelte 5 + Vite, #76) serveres fra binæren på roten — den
-//! innsjekkede ui/portal/dist, samme binær, samme origin. Requires
-//! DATABASE_URL (skips politely otherwise, like the other integration
-//! tests).
+//! The portal (Svelte 5 + Vite, #76) is served from the binary at the
+//! root — the checked-in ui/portal/dist, same binary, same origin.
+//! Requires DATABASE_URL (skips politely otherwise, like the other
+//! integration tests).
 
 use crate::common::{TestIdp, test_state};
 use axum::body::Body;
@@ -48,14 +48,14 @@ async fn get(state: &AppState, uri: &str) -> Svar {
 }
 
 #[tokio::test]
-async fn portalen_serveres_fra_binaren() {
+async fn the_portal_is_served_from_the_binary() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
     };
 
-    // / og /callback lander begge i appen: rutingen skjer i hashen, og
-    // callback-adressen må fullføre PKCE-flyten i appen.
+    // / and /callback both land in the app: routing happens in the hash,
+    // and the callback address must complete the PKCE flow in the app.
     let mut index = String::new();
     for uri in ["/", "/callback"] {
         let svar = get(&state, uri).await;
@@ -65,9 +65,9 @@ async fn portalen_serveres_fra_binaren() {
         index = svar.body;
     }
 
-    // Vite skriver innholdshashede filnavn — finn dem i index.html og
-    // sjekk at de faktisk serveres, med lang cache (innholdet bak en
-    // hashet adresse endrer seg aldri).
+    // Vite writes content-hashed file names — find them in index.html and
+    // check that they are actually served, with a long cache (content
+    // behind a hashed address never changes).
     let mut assets = 0;
     for del in index.split('"') {
         if !del.starts_with("/assets/") {
@@ -86,18 +86,18 @@ async fn portalen_serveres_fra_binaren() {
     }
     assert!(assets >= 2, "index.html må peke på minst JS + CSS: {index}");
 
-    // En ukjent asset er en FEIL, ikke appen på nytt: en 200 med HTML
-    // der JS-en skulle vært, feiler stille i nettleseren.
+    // An unknown asset is an ERROR, not the app again: a 200 with HTML
+    // where the JS should be fails silently in the browser.
     let svar = get(&state, "/assets/finnes-ikke.js").await;
     assert_eq!(svar.status, StatusCode::NOT_FOUND);
 
-    // /ny var portalens adresse under migreringen — gamle bokmerker og
-    // åpne faner skal lande på portalen, ikke i en 404.
+    // /ny was the portal's address during the migration — old bookmarks
+    // and open tabs must land on the portal, not in a 404.
     let svar = get(&state, "/ny").await;
     assert_eq!(svar.status, StatusCode::PERMANENT_REDIRECT);
     assert_eq!(svar.location, "/");
 
-    // Den rammeverksfrie portalen er borte for godt.
+    // The framework-free portal is gone for good.
     for gammel in ["/app.js", "/app.css", "/theme.js"] {
         assert_eq!(
             get(&state, gammel).await.status,

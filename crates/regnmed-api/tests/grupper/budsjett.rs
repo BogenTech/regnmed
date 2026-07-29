@@ -1,8 +1,8 @@
-//! Budsjett (#41): et utkast er fritt redigerbart, fastsettelse fryser
-//! versjonen (linjer og rad), en revisjon blir versjon 2, og
-//! avviksrapporten navngir alltid hvilket budsjett den sammenligner
-//! mot — med faktiske tall fra de samme rene summene som resten av
-//! rapportene. «Fra fjoråret ±X %» sår linjene fra virkeligheten.
+//! Budget (#41): a draft is freely editable, fastsettelse freezes the
+//! version (lines and row), a revision becomes version 2, and the
+//! variance report always names which budget it compares against — with
+//! actuals from the same plain sums as the rest of the reports. "From
+//! last year ±X %" seeds the lines from reality.
 //! Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
@@ -69,7 +69,7 @@ fn salg(dato: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
 }
 
 #[tokio::test]
-async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
+async fn budgets_are_versioned_and_the_variance_names_its_version() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -105,7 +105,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     let year = chrono::Datelike::year(&today);
     let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
 
-    // I fjor: 10 000 i inntekt og 2 000 i kostnad i januar og februar.
+    // Last year: 10 000 of income and 2 000 of cost in January and February.
     for m in [1u32, 2] {
         regnmed_db::post_voucher(
             &state.pool,
@@ -158,8 +158,8 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     assert_eq!(budget["budget"]["versjon"], 1);
     assert_eq!(budget["budget"]["status"], "utkast");
     let lines = budget["lines"].as_array().unwrap();
-    // 3000 og 6300 for januar og februar — i presentasjonsfortegn,
-    // 10 % over fjoråret.
+    // 3000 and 6300 for January and February — in presentation sign,
+    // 10 % above last year.
     let line = |konto: &str, maned: i64| {
         lines
             .iter()
@@ -171,7 +171,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     assert_eq!(line("3000", 1), 11_000_00, "inntekt positiv i budsjettet");
     assert_eq!(line("6300", 2), 2_200_00, "kostnad positiv i budsjettet");
 
-    // Utkastet er fritt redigerbart: erstatt linjene helt.
+    // The draft is freely editable: replace the lines entirely.
     let mut nye = Vec::new();
     for maned in 1..=12 {
         nye.push(json!({"account": "3000", "maned": maned, "belop_ore": 10_000_00}));
@@ -187,7 +187,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // Balansekontoer hører ikke hjemme i et resultatbudsjett.
+    // Balance sheet accounts do not belong in a result budget.
     let (status, body) = request(
         &state,
         "PUT",
@@ -241,7 +241,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "fastsatt slettes ikke");
 
-    // Avviksrapporten navngir versjonen den måler mot.
+    // The variance report names the version it measures against.
     let (status, avvik) = request(
         &state,
         "GET",
@@ -267,8 +267,8 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     assert_eq!(avvik["resultat_budsjett_hittil_ore"], 16_000_00);
     assert_eq!(avvik["resultat_budsjett_ar_ore"], 96_000_00);
 
-    // En revisjon er en NY versjon — den gamle rapporten betyr fortsatt
-    // det samme.
+    // A revision is a NEW version — the old report still means the same
+    // thing.
     let (status, created) = request(
         &state,
         "POST",
@@ -295,8 +295,8 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     .await;
     assert_eq!(body["lines"], 2);
 
-    // Standardvalget er nyeste FASTSATTE — utkastet v2 overtar ikke
-    // rapporten før noen fastsetter det.
+    // The default is the newest FASTSATT — draft v2 does not take over
+    // the report until somebody fastsetter it.
     let (_, avvik) = request(
         &state,
         "GET",
@@ -306,7 +306,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     )
     .await;
     assert_eq!(avvik["budsjett"]["versjon"], 1);
-    // …men den kan velges eksplisitt.
+    // …but it can be chosen explicitly.
     let (_, avvik) = request(
         &state,
         "GET",
@@ -322,7 +322,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
         "20 000 faktisk mot 30 000 planlagt"
     );
 
-    // Et ubudsjettert bilag dukker opp i rapporten, ikke i stillhet.
+    // An unbudgeted bilag shows up in the report, not in silence.
     regnmed_db::post_voucher(
         &state.pool,
         company,
@@ -382,7 +382,7 @@ async fn budsjett_versjoneres_og_avviket_navngir_versjonen() {
     assert_eq!(gebyr["faktisk_hittil_ore"], 750_00);
     assert_eq!(gebyr["avvik_hittil_ore"], 750_00);
 
-    // Utkast kan forkastes.
+    // Drafts can be discarded.
     let (status, _) = request(
         &state,
         "DELETE",

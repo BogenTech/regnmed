@@ -1,9 +1,9 @@
-//! Bilagstolkning (#34): innboksen foreslår, mennesket bokfører.
+//! Document interpretation (#34): the innboks suggests, the human posts.
 //!
-//! Den sterkeste testen er en round-trip: vi utsteder en faktura med
-//! vår egen PDF-generator, laster den opp i innboksen som om den kom
-//! fra en leverandør, og krever at tolkningen finner igjen tallene vi
-//! selv skrev — pluss kontoen leverandøren sist ble bokført på.
+//! The strongest test is a round-trip: we issue a faktura with our own
+//! PDF generator, upload it into the innboks as though it came from a
+//! supplier, and require the interpretation to find the numbers we wrote
+//! ourselves — plus the account that supplier was last posted to.
 //! Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
@@ -66,7 +66,7 @@ async fn upload(
 }
 
 #[tokio::test]
-async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
+async fn suggestions_from_the_pdf_text_layer_and_from_history() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -98,7 +98,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
     regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    // Leverandøren finnes med orgnr — det er nøkkelen tolkningen bruker.
+    // The supplier exists with an orgnr — that is the key the interpretation uses.
     let (_, leverandor_no) = regnmed_db::create_party(
         &state.pool,
         company,
@@ -110,7 +110,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
     .await
     .unwrap();
 
-    // Historikk: forrige måneds husleie ble bokført på 6300.
+    // History: last month's rent was posted to 6300.
     regnmed_db::post_voucher(
         &state.pool,
         company,
@@ -197,8 +197,8 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
     assert_eq!(f["netto_ore"], 10_000_00);
     assert_eq!(f["kid"], "1234567897");
     assert_eq!(f["kontonummer"], "86011117947");
-    // Leverandøren gjenkjennes, og kontoen kommer fra selskapets EGEN
-    // historikk — ikke fra en modell.
+    // The supplier is recognised, and the account comes from the
+    // company's OWN history — not from a model.
     assert_eq!(f["leverandor_no"], leverandor_no);
     assert_eq!(f["leverandor_navn"], "Utleiebygg AS");
     assert_eq!(f["konto"], "6300");
@@ -209,7 +209,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
             .contains("sist bokført"),
         "{f}"
     );
-    // Hvert felt kan forklare seg.
+    // Every field can explain itself.
     let begrunnelser = f["begrunnelser"].as_array().unwrap();
     assert!(
         begrunnelser
@@ -223,7 +223,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
                 && b["hvorfor"].as_str().unwrap().contains("kontrollsiffer"))
     );
 
-    // ---- Ingenting bokføres av seg selv ----
+    // ---- Nothing posts by itself ----
     let (_, listing) = get_json(&state, &format!("{base}/inbox?status=ny"), &token).await;
     assert_eq!(
         listing["documents"].as_array().unwrap().len(),
@@ -231,7 +231,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
         "forslaget rører ikke dokumentets status"
     );
 
-    // ---- Et skannet bilde uten tekstlag sier fra ----
+    // ---- A scanned image without a text layer says so ----
     let scan = upload(
         &state,
         company,
@@ -253,7 +253,7 @@ async fn forslag_fra_pdf_tekstlag_og_fra_historikken() {
         "{f}"
     );
 
-    // ---- EHF går fortsatt den eksakte veien gjennom samme endepunkt ----
+    // ---- EHF still takes the exact route through the same endpoint ----
     let ehf = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"

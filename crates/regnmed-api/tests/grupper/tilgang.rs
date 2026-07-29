@@ -1,20 +1,20 @@
-//! Tilgangsmatrisen (#56): hvem slipper til hvor.
+//! The access matrix (#56): who gets in where.
 //!
-//! Denne testen er skrevet som en **sperre mot regresjon i
-//! autorisasjonen**, ikke som en funksjonstest. Da de 22 kopiene av
-//! `require_access` ble slått sammen til én vakt (`regnmed_api::tilgang`)
-//! fantes det ingen test som ville sagt fra om en av dem ble oversatt
-//! feil — en `false` som ble til `Krav::Bokfor` ville stengt et
-//! endepunkt, en `true` som ble til `Krav::Les` ville åpnet ett.
+//! This test is written as a **regression guard on authorization**, not
+//! as a functional test. When the 22 copies of `require_access` were
+//! merged into one guard (`regnmed_api::tilgang`) there was no test that
+//! would have said anything if one of them had been translated wrong — a
+//! `false` that became `Krav::Bokfor` would have closed an endpoint, a
+//! `true` that became `Krav::Les` would have opened one.
 //!
-//! Derfor er det NEKTELSENE som testes. At en admin slipper til er
-//! dekket overalt ellers; at en leser IKKE slipper til er det ingenting
-//! annet som fanger.
+//! So it is the REFUSALS that are tested. That an admin gets in is
+//! covered everywhere else; that a reader does NOT is caught by nothing
+//! else.
 //!
-//! Matrisen er også spesifikasjonen de neste sakene måles mot (#54
-//! ansattrolle, #58 docs/auth.md).
+//! The matrix is also the specification the following issues are measured
+//! against (#54 the ansatt role, #58 docs/auth.md).
 //!
-//! Krever DATABASE_URL; hopper over ellers.
+//! Requires DATABASE_URL; skips otherwise.
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
 use axum::body::Body;
@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use regnmed_api::{AppState, router};
 
-/// Som [`status`], men med svarkroppen — for endepunkter der
-/// feilmeldingen er halve poenget.
+/// Like [`status`], but with the response body — for endpoints where the
+/// error message is half the point.
 async fn json_call(
     state: &AppState,
     method: &str,
@@ -72,7 +72,7 @@ async fn status(state: &AppState, method: &str, uri: &str, bearer: &str, body: &
 }
 
 /// A person with the given role on a fresh company.
-async fn person_med_rolle(state: &AppState, idp: &TestIdp, company: Uuid, rolle: &str) -> String {
+async fn person_with_role(state: &AppState, idp: &TestIdp, company: Uuid, rolle: &str) -> String {
     let sub = format!("{rolle}|{}", Uuid::new_v4());
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some(rolle), None)
         .await
@@ -83,8 +83,8 @@ async fn person_med_rolle(state: &AppState, idp: &TestIdp, company: Uuid, rolle:
     idp.token(&sub, rolle)
 }
 
-/// Et **lesende** endepunkt per gruppe. Alle tre rollene skal slippe
-/// inn; det er selve medlemskapet som gir lesetilgang.
+/// One **reading** endpoint per group. All three roles must get in; it is
+/// membership itself that grants read access.
 const LESING: &[&str] = &[
     "/companies/{c}/invoices",
     "/companies/{c}/products",
@@ -96,13 +96,14 @@ const LESING: &[&str] = &[
     "/companies/{c}/settings",
 ];
 
-/// Endepunkter som endrer noe. `les` skal få 403 — ikke 404, for
-/// selskapet finnes og vedkommende har tilgang til det; det er nivået
-/// som ikke rekker.
+/// Endpoints that change something. `les` must get 403 — not 404, since
+/// the company exists and the person has access to it; it is the level
+/// that falls short.
 ///
-/// Kroppene må være **gyldige**: axum kjører `Json<T>`-uttrekket før
-/// handleren, så en tom kropp gir 422 og vakten blir aldri spurt. En
-/// test med `{}` ville altså bestått uten å bevise noe.
+/// The bodies must be **valid**: axum runs the `Json<T>` extractor before
+/// the handler, so an empty body gives 422 and the guard is never asked.
+/// A test with `{}` would therefore have passed without proving
+/// anything.
 const SKRIVING: &[(&str, &str, &str)] = &[
     (
         "POST",
@@ -132,10 +133,10 @@ const SKRIVING: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Endepunkter bare en admin skal nå. Både `les` og `bokforing` skal
-/// avvises — og det er `bokforing` som er den interessante: den har
-/// full skrivetilgang til hovedboken og skal likevel ikke kunne slippe
-/// inn en integrasjon eller endre firmaopplysningene.
+/// Endpoints only an admin should reach. Both `les` and `bokforing` must
+/// be refused — and `bokforing` is the interesting one: it has full write
+/// access to the hovedbok and must still not be able to let in an
+/// integration or change the company details.
 const ADMIN: &[(&str, &str, &str)] = &[
     ("PUT", "/companies/{c}/settings", r#"{"address":"Gata 1"}"#),
     (
@@ -160,7 +161,7 @@ const ADMIN: &[(&str, &str, &str)] = &[
     ),
 ];
 
-async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String, String, String)> {
+async fn setup() -> Option<(AppState, TestIdp, Uuid, String, String, String)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgangstest AS")
@@ -169,15 +170,15 @@ async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String, String, String)> 
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    let admin = person_med_rolle(&state, &idp, company, "admin").await;
-    let bokforing = person_med_rolle(&state, &idp, company, "bokforing").await;
-    let les = person_med_rolle(&state, &idp, company, "les").await;
+    let admin = person_with_role(&state, &idp, company, "admin").await;
+    let bokforing = person_with_role(&state, &idp, company, "bokforing").await;
+    let les = person_with_role(&state, &idp, company, "les").await;
     Some((state, idp, company, admin, bokforing, les))
 }
 
 #[tokio::test]
-async fn alle_roller_far_lese() {
-    let Some((state, _idp, company, admin, bokforing, les)) = oppsett().await else {
+async fn every_role_may_read() {
+    let Some((state, _idp, company, admin, bokforing, les)) = setup().await else {
         return;
     };
     for uri in LESING {
@@ -190,11 +191,11 @@ async fn alle_roller_far_lese() {
     }
 }
 
-/// Kjernen i saken: en revisor (som får `les` gjennom oppdraget sitt)
-/// skal ikke kunne endre noe som helst.
+/// The heart of the matter: a revisor (who gets `les` through their
+/// oppdrag) must not be able to change anything at all.
 #[tokio::test]
-async fn lesetilgang_kan_ikke_endre_noe() {
-    let Some((state, _idp, company, _admin, _bokforing, les)) = oppsett().await else {
+async fn read_access_cannot_change_anything() {
+    let Some((state, _idp, company, _admin, _bokforing, les)) = setup().await else {
         return;
     };
     for (method, uri, body) in SKRIVING {
@@ -207,12 +208,12 @@ async fn lesetilgang_kan_ikke_endre_noe() {
     }
 }
 
-/// Bokføringstilgang er ikke administrasjon. Den som fører regnskapet
-/// skal ikke kunne endre firmaopplysninger, slippe inn en integrasjon
-/// eller sette attesteringspolicyen som skal kontrollere ham selv.
+/// Posting access is not administration. Whoever keeps the accounts must
+/// not be able to change company details, let in an integration, or set
+/// the attestering policy that is meant to check them.
 #[tokio::test]
-async fn bokforing_er_ikke_administrasjon() {
-    let Some((state, _idp, company, admin, bokforing, les)) = oppsett().await else {
+async fn bokforing_is_not_administration() {
+    let Some((state, _idp, company, admin, bokforing, les)) = setup().await else {
         return;
     };
     for (method, uri, body) in ADMIN {
@@ -227,8 +228,8 @@ async fn bokforing_er_ikke_administrasjon() {
             StatusCode::FORBIDDEN,
             "les skulle vært nektet {method} {uri}"
         );
-        // Admin slipper forbi vakten. Hva som skjer etterpå er ikke
-        // denne testens sak — poenget er at svaret IKKE er 403.
+        // Admin gets past the guard. What happens afterwards is not this
+        // test's business — the point is that the answer is NOT 403.
         assert_ne!(
             status(&state, method, &uri, &admin, body).await,
             StatusCode::FORBIDDEN,
@@ -237,12 +238,12 @@ async fn bokforing_er_ikke_administrasjon() {
     }
 }
 
-/// Uten tilgang skal selskapet ikke engang bekreftes å finnes — 404,
-/// aldri 403. Ellers blir tilgangsfeilen en oppslagstjeneste over hvem
-/// som er kunde hos oss.
+/// Without access the company must not even be confirmed to exist — 404,
+/// never 403. Otherwise the access error becomes a lookup service for who
+/// is a customer of ours.
 #[tokio::test]
-async fn utenforstaende_far_404_ikke_403() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+async fn an_outsider_gets_404_not_403() {
+    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let sub = format!("fremmed|{}", Uuid::new_v4());
@@ -270,20 +271,21 @@ async fn utenforstaende_far_404_ikke_403() {
 }
 
 // ---------------------------------------------------------------------
-// Ansattrollen (#54).
+// The ansatt role (#54).
 //
-// Det som er verdt å teste er NEKTELSENE. At en ansatt får føre sine
-// egne timer er lett å se i portalen; at hun ikke kommer til hovedboken,
-// kollegenes timer eller andres lønnsslipp er det ingenting annet som
-// fanger.
+// What is worth testing are the REFUSALS. That an employee may log their
+// own hours is easy to see in the portal; that they cannot reach the
+// hovedbok, their colleagues' hours or other people's payslips is caught
+// by nothing else.
 // ---------------------------------------------------------------------
 
-/// Alt en ansatt IKKE skal nå. Listen er med vilje bred: den dekker
-/// hovedbok, rapporter, penger, register og alles data.
-/// Merk at spørrestrengene må være **gyldige**, av samme grunn som
-/// kroppene i SKRIVING: axum kjører `Query<T>`-uttrekket før handleren,
-/// så en manglende parameter gir 400 og vakten blir aldri spurt. Da
-/// ville testen bestått uten å ha bevist noe.
+/// Everything an employee must NOT reach. The list is deliberately
+/// broad: it covers the hovedbok, reports, money, registers and everyone
+/// else's data. Note that the query strings must be **valid**, for the
+/// same reason as the bodies in SKRIVING: axum runs the `Query<T>`
+/// extractor before the handler, so a missing parameter gives 400 and the
+/// guard is never asked. The test would then have passed without proving
+/// anything.
 const NEKTET_FOR_ANSATT: &[(&str, &str)] = &[
     ("GET", "/companies/{c}/vouchers"),
     (
@@ -305,8 +307,8 @@ const NEKTET_FOR_ANSATT: &[(&str, &str)] = &[
     ("GET", "/companies/{c}/settings"),
     ("GET", "/companies/{c}/inbox"),
     ("GET", "/companies/{c}/access"),
-    // Selskapsvide timeoversikter: totalene per prosjekt og det
-    // ufakturerte er ikke den ansattes sak.
+    // Company-wide hour overviews: the totals per prosjekt and what is
+    // unbilled are not the employee's business.
     (
         "GET",
         "/companies/{c}/timesheet/summary?from=2026-01-01&to=2026-12-31",
@@ -314,7 +316,7 @@ const NEKTET_FOR_ANSATT: &[(&str, &str)] = &[
     ("GET", "/companies/{c}/timesheet/unbilled"),
 ];
 
-/// Og det hun SKAL nå — selvbetjeningen, som ellers ville vært verdiløs.
+/// And what they SHALL reach — the self-service, which would be useless otherwise.
 const TILLATT_FOR_ANSATT: &[&str] = &[
     "/companies/{c}/timesheet?from=2026-01-01&to=2026-12-31",
     "/companies/{c}/timesheet/lock",
@@ -323,11 +325,11 @@ const TILLATT_FOR_ANSATT: &[&str] = &[
 ];
 
 #[tokio::test]
-async fn ansatt_kommer_ikke_til_hovedboken() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+async fn an_ansatt_cannot_reach_the_hovedbok() {
+    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_med_rolle(&state, &idp, company, "ansatt").await;
+    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
 
     for (method, uri) in NEKTET_FOR_ANSATT {
         let uri = uri.replace("{c}", &company.to_string());
@@ -340,11 +342,11 @@ async fn ansatt_kommer_ikke_til_hovedboken() {
 }
 
 #[tokio::test]
-async fn ansatt_far_gjore_sitt_eget() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+async fn an_ansatt_may_do_their_own() {
+    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_med_rolle(&state, &idp, company, "ansatt").await;
+    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
 
     for uri in TILLATT_FOR_ANSATT {
         let uri = uri.replace("{c}", &company.to_string());
@@ -353,7 +355,7 @@ async fn ansatt_far_gjore_sitt_eget() {
         assert_ne!(s, StatusCode::NOT_FOUND, "ansatt fikk 404 på {uri}");
     }
 
-    // Føre en egen time, og sende inn et eget utlegg.
+    // Log an hour of their own, and submit an utlegg of their own.
     assert_ne!(
         status(
             &state,
@@ -380,15 +382,15 @@ async fn ansatt_far_gjore_sitt_eget() {
     );
 }
 
-/// Å laste opp en kvittering er ikke å bokføre den. Dokumentet havner i
-/// innboksen og venter på noen med BILAG_BOKFOR — den ansatte kommer
-/// verken til innboksen eller til bokføringen.
+/// Uploading a receipt is not posting it. The document lands in the
+/// innboks and waits for somebody with BILAG_BOKFOR — the employee
+/// reaches neither the innboks nor the posting.
 #[tokio::test]
-async fn ansatt_kan_laste_opp_men_ikke_bokfore() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+async fn an_ansatt_may_upload_but_not_post() {
+    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_med_rolle(&state, &idp, company, "ansatt").await;
+    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
 
     let opplasting = router(state.clone())
         .oneshot(
@@ -410,7 +412,7 @@ async fn ansatt_kan_laste_opp_men_ikke_bokfore() {
         "opplasting skulle gått"
     );
 
-    // Men innboksen er ikke hennes å lese.
+    // But the innboks is not hers to read.
     assert_eq!(
         status(
             &state,
@@ -424,13 +426,13 @@ async fn ansatt_kan_laste_opp_men_ikke_bokfore() {
     );
 }
 
-/// Omfanget, ikke bare rettigheten: en ansatt med LONNSSLIPP_LES_EGEN
-/// skal få SIN slipp og ikke kollegaens. Dette er selve grunnen til at
-/// `_EGNE`/`_ALLE` finnes — uten det ville rettigheten enten gitt alt
-/// eller ingenting.
+/// The scope, not just the rettighet: an employee with
+/// LONNSSLIPP_LES_EGEN must get THEIR slip and not a colleague's. This is
+/// the very reason `_EGNE`/`_ALLE` exists — without it the rettighet
+/// would grant either everything or nothing.
 #[tokio::test]
-async fn ansatt_far_bare_sin_egen_lonnsslipp() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn an_ansatt_gets_only_their_own_payslip() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     for (nr, navn) in [
@@ -447,7 +449,7 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
             .unwrap();
     }
 
-    // To ansatte, begge koblet til hver sin portalbruker.
+    // Two employees, each linked to their own portal user.
     let mut employees = Vec::new();
     for (fnr, navn) in [("03048810003", "Ansatt En"), ("03048810194", "Ansatt To")] {
         let sub = format!("{navn}|{}", Uuid::new_v4());
@@ -512,7 +514,7 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
     let (to_id, _) = &employees[1];
     let run = kjoring.id;
 
-    // Sin egen: ja.
+    // Their own: yes.
     assert_eq!(
         status(
             &state,
@@ -525,7 +527,7 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
         StatusCode::OK,
         "ansatt skulle fått sin egen lønnsslipp"
     );
-    // Kollegaens: 404, ikke 403 — hun skal ikke få vite at den finnes.
+    // The colleague's: 404, not 403 — she must not learn it exists.
     assert_eq!(
         status(
             &state,
@@ -538,8 +540,8 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
         StatusCode::NOT_FOUND,
         "ansatt skulle ikke nådd kollegaens lønnsslipp"
     );
-    // Admin har LONNSSLIPP_LES_ALLE og når begge — dagens oppførsel,
-    // uendret av #54 (det er #55 som skal snevre den inn).
+    // Admin has LONNSSLIPP_LES_ALLE and reaches both — today's behavior,
+    // unchanged by #54 (it is #55 that narrows it).
     assert_eq!(
         status(
             &state,
@@ -553,19 +555,20 @@ async fn ansatt_far_bare_sin_egen_lonnsslipp() {
     );
 }
 
-/// Lønn er ikke allmenn lesning (#55).
+/// Lønn is not general reading (#55).
 ///
-/// Før dette kunne enhver med lesetilgang laste ned hvem som helst sin
-/// lønnsslipp og se ansattlisten med fødselsdato, månedslønn og
-/// trekkprosent. Nå skiller vi: en **revisor** ser lønn, fordi det er
-/// revisjonspliktig, mens en **intern leser** ikke gjør det.
+/// Before this, anyone with read access could download anybody's payslip
+/// and see the employee list with birth date, monthly salary and
+/// withholding percentage. Now we separate them: a **revisor** sees lønn,
+/// because it is subject to audit, while an **internal reader** does
+/// not.
 #[tokio::test]
-async fn lonn_er_ikke_allmenn_lesning() {
-    let Some((state, idp, company, admin, bokforing, les)) = oppsett().await else {
+async fn lonn_is_not_general_reading() {
+    let Some((state, idp, company, admin, bokforing, les)) = setup().await else {
         return;
     };
 
-    // En revisor kommer inn gjennom et oppdrag, ikke som medlem.
+    // A revisor comes in through an oppdrag, not as a member.
     let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon AS", "revisjon")
         .await
         .unwrap();
@@ -580,11 +583,11 @@ async fn lonn_er_ikke_allmenn_lesning() {
         .await
         .unwrap();
     let revisor = idp.token(&sub, "Revisor");
-    let ansatt = person_med_rolle(&state, &idp, company, "ansatt").await;
+    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
 
     for uri in ["/companies/{c}/employees", "/companies/{c}/payroll"] {
         let uri = uri.replace("{c}", &company.to_string());
-        // Nektet: intern leser og ansatt.
+        // Refused: internal reader and employee.
         for (navn, token) in [("les", &les), ("ansatt", &ansatt)] {
             assert_eq!(
                 status(&state, "GET", &uri, token, "").await,
@@ -592,7 +595,7 @@ async fn lonn_er_ikke_allmenn_lesning() {
                 "{navn} skulle vært nektet {uri}"
             );
         }
-        // Tillatt: revisor (revisjonsplikt), bokføring og admin.
+        // Allowed: revisor (audit duty), bokføring and admin.
         for (navn, token) in [
             ("revisor", &revisor),
             ("bokforing", &bokforing),
@@ -606,8 +609,8 @@ async fn lonn_er_ikke_allmenn_lesning() {
         }
     }
 
-    // Revisoren er fortsatt skrivebeskyttet — tilgangen til lønn er
-    // lesing, ikke en oppgradering.
+    // The revisor is still read-only — access to lønn is reading, not an
+    // upgrade.
     assert_eq!(
         status(
             &state,
@@ -623,14 +626,14 @@ async fn lonn_er_ikke_allmenn_lesning() {
 }
 
 // ---------------------------------------------------------------------
-// Egendefinerte roller (#60).
+// Custom roles (#60).
 // ---------------------------------------------------------------------
 
-/// «En som bare fakturerer» — en rolle vi aldri har tenkt på, satt
-/// sammen av selskapet selv, og den virker.
+/// "Someone who only invoices" — a role we never thought of, composed by
+/// the company itself, and it works.
 #[tokio::test]
-async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn a_custom_role_grants_exactly_what_it_says() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
 
@@ -645,7 +648,7 @@ async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
     .await;
     assert_eq!(kode, StatusCode::OK, "{svar}");
 
-    // Gi rollen til noen.
+    // Give the role to somebody.
     let sub = format!("faktura|{}", Uuid::new_v4());
     let p = regnmed_db::ensure_person(&state.pool, &sub, Some("Fakturafolk"), None)
         .await
@@ -655,7 +658,7 @@ async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
         .unwrap();
     let token = idp.token(&sub, "Fakturafolk");
 
-    // Det rollen gir.
+    // What the role grants.
     for uri in ["/companies/{c}/invoices", "/companies/{c}/parties"] {
         let uri = uri.replace("{c}", &company.to_string());
         assert_ne!(
@@ -664,8 +667,8 @@ async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
             "rollen skulle gitt {uri}"
         );
     }
-    // Og alt den ikke gir — inkludert nabofunksjoner det er lett å anta
-    // følger med.
+    // And everything it does not — including neighbouring features it is
+    // easy to assume come along.
     for uri in [
         "/companies/{c}/vouchers",
         "/companies/{c}/reports/saldobalanse?from=2026-01-01&to=2026-12-31",
@@ -683,12 +686,12 @@ async fn egendefinert_rolle_gir_akkurat_det_den_sier() {
     }
 }
 
-/// En rolle som kan endre tilganger kan gi seg selv alt annet. Derfor
-/// kan de rettighetene ikke legges i en egendefinert rolle i det hele
-/// tatt — avvist når rollen lages, ikke bare ignorert ved oppslag.
+/// A role that can change access can give itself everything else. So
+/// those rettigheter cannot go into a custom role at all — refused when
+/// the role is created, not merely ignored on lookup.
 #[tokio::test]
-async fn tilgangsstyrende_rettigheter_kan_ikke_delegeres() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn access_governing_rettigheter_cannot_be_delegated() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     for farlig in [
@@ -715,9 +718,9 @@ async fn tilgangsstyrende_rettigheter_kan_ikke_delegeres() {
         );
     }
 
-    // Og et navn som ikke finnes i vokabularet avvises høylytt her —
-    // et menneske skriver, og en rolle som stilltiende mangler halve
-    // innholdet er verre enn en feilmelding.
+    // And a name that is not in the vocabulary is refused loudly here —
+    // a human is writing, and a role that silently lacks half its
+    // contents is worse than an error message.
     let (kode, svar) = json_call(
         &state,
         "POST",
@@ -736,11 +739,11 @@ async fn tilgangsstyrende_rettigheter_kan_ikke_delegeres() {
     );
 }
 
-/// En deaktivert rolle gir ingenting — det er slik en rolle «fjernes»
-/// uten at historikken om hvem som hadde den forsvinner.
+/// A deactivated role grants nothing — that is how a role is "removed"
+/// without losing the history of who held it.
 #[tokio::test]
-async fn deaktivert_rolle_gir_ingen_tilgang() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn a_deactivated_role_grants_no_access() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let (_, svar) = json_call(
@@ -777,9 +780,9 @@ async fn deaktivert_rolle_gir_ingen_tilgang() {
     .await;
     assert_eq!(kode, StatusCode::OK);
 
-    // Medlemskapet står, men rollen gir ingenting lenger. Merk 404, ikke
-    // 403: uten en eneste rettighet er personen ikke lenger noen som
-    // «har tilgang, men ikke nok».
+    // The membership stands, but the role grants nothing now. Note 404,
+    // not 403: without a single rettighet the person is no longer someone
+    // who "has access, but not enough".
     assert_ne!(
         status(&state, "GET", &uri, &token, "").await,
         StatusCode::OK,
@@ -788,21 +791,21 @@ async fn deaktivert_rolle_gir_ingen_tilgang() {
 }
 
 // ---------------------------------------------------------------------
-// Ingen plattformadministrator (#57).
+// No platform administrator (#57).
 // ---------------------------------------------------------------------
 
-/// Ingen tilgangsvei krysser selskapsgrenser. Den sterkeste rollen som
-/// finnes — admin — er en FULLSTENDIG fremmed i naboselskapet: 404 på
-/// alt, nøyaktig som en uten tilgang noe sted.
+/// No access route crosses a company boundary. The strongest role there
+/// is — admin — is a COMPLETE stranger in the neighbouring company: 404
+/// on everything, exactly like someone with no access anywhere.
 ///
-/// Testen er avgjørelsens sperre, ikke bare dens illustrasjon: en
-/// fremtidig plattformrolle, en jokertegn-vei i tilgangsoppslaget eller
-/// en glemt company_id-filtrering ville alle slått ut her. Skulle den
-/// avgjørelsen noen gang omgjøres, må denne testen endres bevisst — og
-/// docs/auth.md §8 sammen med den.
+/// The test is the decision's guard, not merely its illustration: a
+/// future platform role, a wildcard route in the access lookup or a
+/// forgotten company_id filter would all show up here. Should that
+/// decision ever be reversed, this test must be changed deliberately —
+/// and docs/auth.md §8 along with it.
 #[tokio::test]
-async fn admin_krysser_ingen_selskapsgrense() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn an_admin_crosses_no_company_boundary() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let nabo = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Naboselskapet AS")
@@ -834,8 +837,8 @@ async fn admin_krysser_ingen_selskapsgrense() {
         );
     }
 
-    // Og /me nevner ikke naboselskapet — tilgangslisten er de selskapene
-    // personen faktisk kan handle for, ingen flere.
+    // And /me does not mention the neighbouring company — the access list
+    // is the companies the person can actually act for, no more.
     let (kode, me) = json_call(&state, "GET", "/me", &admin, "").await;
     assert_eq!(kode, StatusCode::OK);
     let ids: Vec<&str> = me["companies"]
@@ -851,13 +854,13 @@ async fn admin_krysser_ingen_selskapsgrense() {
     );
 }
 
-/// Nødprosedyren (#57, migrasjon 0040) etterlater et spor som heter det
-/// den er — og et nødinnslag uten samtykkereferanse avvises av selve
-/// databasen. Uten det ville tilgangsloggen kunne lyve om akkurat det
-/// innslaget den finnes for å fange.
+/// The emergency procedure (#57, migration 0040) leaves a trail that is
+/// named for what it is — and an emergency entry without a consent
+/// reference is refused by the database itself. Without that, the access
+/// log could lie about the very entry it exists to catch.
 #[tokio::test]
-async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn the_emergency_procedure_requires_a_reference_and_names_itself() {
+    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let sub = format!("gjenoppretting|{}", Uuid::new_v4());
@@ -865,7 +868,7 @@ async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
         .await
         .unwrap();
 
-    // Uten referanse: avvist av check-constrainten.
+    // Without a reference: refused by the check constraint.
     let uten = sqlx::query(
         "insert into company_member_change
              (id, company_id, person_id, endring, til_rolle, kilde)
@@ -881,7 +884,7 @@ async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
         "et nødinnslag uten samtykkereferanse skulle vært avvist"
     );
 
-    // Prosedyren slik den er dokumentert i docs/auth.md §8.
+    // The procedure as documented in docs/auth.md §8.
     let mut tx = state.pool.begin().await.unwrap();
     sqlx::query(
         "insert into company_member (company_id, person_id, role)
@@ -908,8 +911,8 @@ async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
     .unwrap();
     tx.commit().await.unwrap();
 
-    // Tilgangen virker, og sporet står med kilde og referanse — synlig
-    // gjennom det samme endepunktet som alle andre tilgangsendringer.
+    // Access works, and the trail stands with its kilde and reference —
+    // visible through the same endpoint as every other access change.
     let token = idp.token(&sub, "Ny Admin");
     assert_eq!(
         status(
@@ -946,19 +949,20 @@ async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
 }
 
 // ---------------------------------------------------------------------
-// Én transaksjon per rolleendring (#62).
+// One transaction per role change (#62).
 // ---------------------------------------------------------------------
 
-/// En rolle som finnes uten at endringsloggen forklarer hvordan er
-/// nøyaktig det loggen finnes for å umuliggjøre. Feiler loggskrivingen,
-/// skal rollen ikke bli til.
+/// A role that exists without the change log explaining how is exactly
+/// what the log exists to make impossible. If writing the log fails, the
+/// role must not come into being.
 ///
-/// Feilen framkalles slik den ville oppstått i drift: `utfort_av` peker
-/// på en person som ikke finnes, og fremmednøkkelen avviser loggraden —
-/// altså tredje steg, etter at både rollen og rettighetene er skrevet.
+/// The failure is provoked the way it would arise in production:
+/// `utfort_av` points at a person who does not exist, and the foreign key
+/// rejects the log row — i.e. the third step, after both the role and its
+/// rettigheter have been written.
 #[tokio::test]
-async fn rolle_uten_logglinje_blir_ikke_til() {
-    let Some((state, _idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+async fn a_role_without_a_log_row_never_comes_into_being() {
+    let Some((state, _idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let spokelse = Uuid::new_v4();
@@ -983,21 +987,21 @@ async fn rolle_uten_logglinje_blir_ikke_til() {
     );
 }
 
-/// Tilgangsvakten skal aldri se rettighetslisten midt i en omskriving.
+/// The access guard must never see the rettighet list mid-rewrite.
 ///
-/// `sett_rettigheter` er `delete` + `insert`; utenfor en transaksjon kan
-/// et samtidig oppslag lese imellom og se en TOM liste — den som har
-/// rollen mister tilgangen et øyeblikk, tilfeldig, i en helt annen
-/// forespørsel.
+/// `sett_rettigheter` is `delete` + `insert`; outside a transaction a
+/// concurrent lookup can read in between and see an EMPTY list — whoever
+/// holds the role loses access for a moment, at random, in an entirely
+/// different request.
 ///
-/// Testen holder rollen låst slik en samtidig endring ville gjort, og
-/// leser mens skrivingen står og venter: svaret skal være den gamle
-/// listen, hele tiden. Uten låsen og transaksjonen kommer skrivingen
-/// forbi med én gang, og lesingen ser enten ingenting eller den nye
-/// listen — begge deler feiler her.
+/// The test holds the role locked the way a concurrent change would, and
+/// reads while the write stands waiting: the answer must be the old list,
+/// the whole time. Without the lock and the transaction the write gets
+/// past immediately, and the read sees either nothing or the new list —
+/// both fail here.
 #[tokio::test]
-async fn rettigheter_leses_aldri_halvveis() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn rettigheter_are_never_read_half_written() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let (kode, svar) = json_call(
@@ -1025,7 +1029,7 @@ async fn rettigheter_leses_aldri_halvveis() {
     .await
     .unwrap();
 
-    // Lås rollen, slik en samtidig rettighetsendring gjør.
+    // Lock the role, the way a concurrent rettighet change does.
     let mut laas = state.pool.begin().await.unwrap();
     sqlx::query("select id from company_role where id = $1 for update")
         .bind(role_id)
@@ -1033,7 +1037,7 @@ async fn rettigheter_leses_aldri_halvveis() {
         .await
         .unwrap();
 
-    // Endringen starter — og kommer ikke forbi låsen.
+    // The change starts — and does not get past the lock.
     let pool = state.pool.clone();
     let skriver = tokio::spawn(async move {
         regnmed_db::roller::sett_rettigheter(
@@ -1071,12 +1075,12 @@ async fn rettigheter_leses_aldri_halvveis() {
     );
 }
 
-/// Navnet er opptatt — og det skal si nettopp det. Unik-bruddet
-/// gjenkjennes på SQLSTATE, ikke på constraint-navnet, så en rename i en
-/// senere migrasjon ikke gjør meldingen om til en 500.
+/// The name is taken — and it must say precisely that. The unique
+/// violation is recognised by SQLSTATE, not by the constraint name, so a
+/// rename in a later migration cannot turn the message into a 500.
 #[tokio::test]
-async fn dobbelt_rollenavn_sier_at_navnet_er_opptatt() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn a_duplicate_role_name_says_the_name_is_taken() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let kropp = r#"{"navn":"Kontrollør","rettigheter":["FAKTURA_LES"]}"#;
@@ -1108,11 +1112,11 @@ async fn dobbelt_rollenavn_sier_at_navnet_er_opptatt() {
     );
 }
 
-/// Innebygde navn kan ikke kapres — en egendefinert «admin» ville
-/// skygget for den ekte.
+/// Built-in names cannot be hijacked — a custom "admin" would shadow the
+/// real one.
 #[tokio::test]
-async fn innebygde_rollenavn_er_reservert() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+async fn built_in_role_names_are_reserved() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
     for navn in ["admin", "les", "bokforing", "ansatt", "revisor"] {

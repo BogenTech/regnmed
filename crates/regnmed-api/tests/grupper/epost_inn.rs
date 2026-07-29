@@ -1,8 +1,8 @@
-//! E-post-inn (#35): en melding på mail-railen blir innboksdokumenter
-//! gjennom den vanlige uforanderlige veien, en ukjent avsender havner i
-//! karantene til en admin bestemmer, og ingenting forsvinner i
-//! stillhet. Kjører mot en ekte nats-server på PATH (hoppes over uten),
-//! og krever DATABASE_URL.
+//! Inbound e-mail (#35): a message on the mail rail becomes innboks
+//! documents by the ordinary immutable route, an unknown sender lands in
+//! quarantine until an admin decides, and nothing disappears silently.
+//! Runs against a real nats-server on PATH (skipped without), and
+//! requires DATABASE_URL.
 
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -111,7 +111,7 @@ fn mail(to: &str, from: &str, message_id: &str, filnavn: &str) -> mailq_in::Inbo
 }
 
 #[tokio::test]
-async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
+async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -133,7 +133,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
     let token = idp.token(&sub, "Ingrid Innboks");
     let base = format!("/companies/{company}");
 
-    // ---- Adressen finnes ikke før noen ber om den ----
+    // ---- The address does not exist until somebody asks for it ----
     let (status, settings) = request(
         &state,
         "GET",
@@ -161,7 +161,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
         "adressen har en uforutsigbar hale: {local}"
     );
 
-    // Grossisten står på listen; alle andre gjør ikke.
+    // Grossisten is on the list; nobody else is.
     let (status, _) = request(
         &state,
         "POST",
@@ -190,7 +190,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
         }
     };
 
-    // Kjent avsender → dokument i innboksen, uten beslutning.
+    // Known sender → a document in the innboks, with no decision taken.
     publish(mail(
         &format!("{local}@mottak.regnmed.no"),
         "Ola <POST@Grossisten.no>",
@@ -206,7 +206,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
         "kvittering.pdf",
     ))
     .await;
-    // Ingen vedlegg → avvist, men logget.
+    // No attachment → rejected, but logged.
     publish(mailq_in::InboundMail {
         to: format!("{local}@mottak.regnmed.no"),
         from: "post@grossisten.no".into(),
@@ -216,7 +216,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
         attachments: vec![],
     })
     .await;
-    // Samme melding en gang til (køer gjentar seg) → ingen dublett.
+    // The same message again (queues repeat) → no duplicate.
     publish(mail(
         &format!("{local}@mottak.regnmed.no"),
         "post@grossisten.no",
@@ -225,7 +225,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
     ))
     .await;
 
-    // Vent til loggen har alle tre meldingene.
+    // Wait until the log holds all three messages.
     let mut mail_rows = serde_json::Value::Null;
     for _ in 0..50 {
         let (_, body) = request(&state, "GET", &format!("{base}/inbox/mail"), &token, None).await;
@@ -275,7 +275,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
             .contains("ingen vedlegg")
     );
 
-    // ---- Bare den godkjente avsenderens vedlegg er dokument ----
+    // ---- Only the approved sender's attachment is a document ----
     let (_, listing) = request(
         &state,
         "GET",
@@ -314,7 +314,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
     )
     .await;
     assert_eq!(listing["documents"].as_array().unwrap().len(), 2);
-    // …og avsenderen står nå på listen, så neste gang går rett inn.
+    // …and the sender is now on the list, so next time goes straight in.
     let (_, settings) = request(
         &state,
         "GET",
@@ -331,7 +331,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
             .any(|s| s["sender"] == "ukjent@annetsted.no"),
         "{settings}"
     );
-    // En avgjort e-post kan ikke avgjøres om igjen.
+    // A decided e-mail cannot be decided again.
     let (status, _) = request(
         &state,
         "POST",
@@ -342,7 +342,7 @@ async fn epost_blir_innboksdokumenter_og_ukjent_avsender_i_karantene() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // ---- Rotasjon: den gamle adressen slutter å virke ----
+    // ---- Rotation: the old address stops working ----
     let (_, rotated) = request(
         &state,
         "POST",

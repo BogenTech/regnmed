@@ -1,16 +1,16 @@
-//! Medlemsadministrasjon (#53, docs/auth.md):
+//! Membership administration (#53, docs/auth.md):
 //!
-//! - GET    /companies/{id}/access                 hvem har tilgang, og hvordan
-//! - PUT    /companies/{id}/access/{person_id}     endre rolle
-//! - DELETE /companies/{id}/access/{person_id}     ta bort tilgangen
-//! - GET    /companies/{id}/access/history         hvem ga hvem tilgang
-//! - GET    /companies/{id}/invitations            åpne invitasjoner
-//! - POST   /companies/{id}/invitations            inviter en e-postadresse
-//! - DELETE /companies/{id}/invitations/{id}       tilbakekall
+//! - GET    /companies/{id}/access                 who has access, and how
+//! - PUT    /companies/{id}/access/{person_id}     change role
+//! - DELETE /companies/{id}/access/{person_id}     remove access
+//! - GET    /companies/{id}/access/history         who granted whom access
+//! - GET    /companies/{id}/invitations            open invitations
+//! - POST   /companies/{id}/invitations            invite an e-mail address
+//! - DELETE /companies/{id}/invitations/{id}       revoke
 //!
-//! Alt krever `MEDLEM_ADMIN`. Endepunktene ligger på `/access` og ikke
-//! på `/members`, fordi `/companies/{id}/members` alt er attesteringens
-//! kandidatliste og bør fortsette å være det.
+//! Everything requires `MEDLEM_ADMIN`. The endpoints live under `/access`
+//! rather than `/members`, because `/companies/{id}/members` is already
+//! attestering's candidate list and should stay that.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -37,8 +37,8 @@ pub async fn list_access(
             "rolle": m.rolle,
             "aktiv": m.aktiv,
             "via": m.via,
-            // Tilgang gjennom et oppdrag styres av engasjementet.
-            // Portalen skal vise det, ikke tilby en knapp som ikke
+            // Access through an oppdrag is governed by the engagement.
+            // The portal should show it, not offer a button that does
             // virker.
             "kan_endres": m.kan_endres,
         })).collect::<Vec<_>>(),
@@ -50,9 +50,10 @@ pub struct RolleRequest {
     rolle: String,
 }
 
-/// Rollen må enten være innebygd eller en aktiv egendefinert rolle i
-/// DETTE selskapet. Uten sjekken ville en skrivefeil gitt et medlemskap
-/// uten rettigheter — trygt, men helt uforståelig for den det gjelder.
+/// The role must be either built-in or an active custom role in this
+/// company. Otherwise the membership would be created
+/// without any rettigheter — safe, but completely baffling to the person
+/// concerned.
 async fn krev_kjent_rolle(state: &AppState, company_id: Uuid, rolle: &str) -> Result<(), ApiError> {
     if regnmed_db::medlemmer::ROLLER.contains(&rolle) {
         return Ok(());
@@ -156,9 +157,9 @@ pub struct InviteRequest {
 
 /// Inviterer en e-postadresse.
 ///
-/// Svaret sier **ikke** om adressen alt har en bruker hos oss. Det ville
-/// gjort enhver selskapsadmin i stand til å slå opp hvem som er bruker
-/// på plattformen, ett forsøk om gangen (migrasjon 0037).
+/// The response does **not** say whether the address already has a user
+/// with us. That would let any company admin look up who is a user on the
+/// platform, one attempt at a time (migration 0037).
 pub async fn invite(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -178,9 +179,9 @@ pub async fn invite(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "invitasjon_id": id,
-        // Invitasjonen gjelder uansett om en e-post gikk ut; den løses
-        // inn når adressen logger inn. Utsending er en egen sak — å
-        // late som en e-post ble sendt ville vært verre enn å si det.
+        // The invitation stands whether or not an e-mail went out; it is
+        // redeemed when the address logs in. Sending is a separate matter
+        // — pretending an e-mail was sent would be worse than saying so.
         "epost_sendt": false,
     })))
 }

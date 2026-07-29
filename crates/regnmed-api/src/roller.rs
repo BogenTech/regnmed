@@ -1,13 +1,13 @@
-//! Egendefinerte roller (#60, docs/auth.md):
+//! Custom roles (#60, docs/auth.md):
 //!
-//! - GET  /companies/{id}/roles            innebygde + selskapets egne
-//! - POST /companies/{id}/roles            lag en rolle
-//! - PUT  /companies/{id}/roles/{role_id}  sett rettighetene
+//! - GET  /companies/{id}/roles            built-in + the company's own
+//! - POST /companies/{id}/roles            create a role
+//! - PUT  /companies/{id}/roles/{role_id}  set its rettigheter
 //! - POST /companies/{id}/roles/{role_id}/deactivate|restore
 //! - GET  /companies/{id}/roles/history
 //!
-//! Alt krever `MEDLEM_ADMIN`: å sette sammen en rolle er å bestemme hvem
-//! som får gjøre hva, og hører til samme myndighet som å tildele den.
+//! Everything requires `MEDLEM_ADMIN`: composing a role is deciding who
+//! may do what, and belongs to the same authority as assigning one.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -19,7 +19,7 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, Rolle, krev};
 
-/// Rettighetene, med det navnet portalen viser dem under.
+/// The rettigheter, with the name the portal displays them under.
 fn rett_json(r: Rett) -> serde_json::Value {
     json!({
         "rett": r.slug(),
@@ -44,8 +44,8 @@ pub async fn list_roles(
         Rolle::Admin,
     ];
     Ok(Json(json!({
-        // Innebygde roller kan ikke endres. De vises som de er, så en
-        // admin ser hva de faktisk betyr uten å måtte lese koden.
+        // Built-in roles cannot be changed. They are shown as they are,
+        // so an admin sees what they actually mean without reading code.
         "innebygde": innebygde.iter().map(|r| json!({
             "navn": r.slug(),
             "rettigheter": r.rettigheter().iter().map(|x| x.slug()).collect::<Vec<_>>(),
@@ -57,8 +57,8 @@ pub async fn list_roles(
             "rettigheter": r.rettigheter,
             "i_bruk": r.i_bruk,
         })).collect::<Vec<_>>(),
-        // Vokabularet, så portalen kan bygge avkrysningsrutenettet uten
-        // å ha en egen kopi av listen.
+        // The vocabulary, so the portal can build the checkbox grid
+        // without keeping its own copy of the list.
         "vokabular": Rett::ALLE.iter().map(|r| rett_json(*r)).collect::<Vec<_>>(),
     })))
 }
@@ -70,13 +70,13 @@ pub struct RolleRequest {
     rettigheter: Vec<String>,
 }
 
-/// Oversetter navnene til rettigheter og nekter det som ikke kan
-/// delegeres.
+/// Translates the names into rettigheter and refuses what cannot be
+/// delegated.
 ///
-/// Feiler HØYLYTT på et ukjent navn i stedet for å ignorere det: her
-/// skriver et menneske, og en rolle som stilltiende mangler halve
-/// innholdet er verre enn en feilmelding. (Ved oppslag ignoreres ukjente
-/// navn — der er de en gammel database, ikke en skrivefeil.)
+/// Fails LOUDLY on an unknown name rather than ignoring it: a human is
+/// writing here, and a role that silently lacks half its contents is
+/// worse than an error message. (On lookup, unknown names ARE ignored —
+/// there they mean an old database, not a typo.)
 fn godkjenn(navn: &[String]) -> Result<Vec<String>, ApiError> {
     let mut ut = Vec::new();
     for n in navn {

@@ -1,7 +1,7 @@
-//! Aksjeeierbok og aksjonærregisteroppgave (#43): eierandelen er
-//! beregnet og aldri lagret, hendelsene kan ikke endres, utbyttet
-//! bokføres i samme transaksjon som vedtaket, og oppgaven som kommer ut
-//! validerer mot Skatteetatens egne XSD-er.
+//! Aksjeeierbok and aksjonærregisteroppgave (#43): the holding is
+//! computed and never stored, the events cannot be changed, the dividend
+//! is posted in the same transaction as the decision, and the oppgave
+//! that comes out validates against Skatteetaten's own XSDs.
 //!
 //! Requires DATABASE_URL — skips politely otherwise.
 
@@ -70,7 +70,7 @@ fn valider(xml: &str, xsd_navn: &str, tag: &str) {
 }
 
 #[tokio::test]
-async fn aksjeeierbok_utbytte_og_oppgave() {
+async fn aksjeeierbok_dividends_and_the_oppgave() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -100,7 +100,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     let token = idp.token(&sub, "Kari Styreleder");
     let base = format!("/companies/{company}");
 
-    // To aksjonærer: en person og et selskap.
+    // Two shareholders: a person and a company.
     let (status, body) = call(
         &state,
         &token,
@@ -134,8 +134,8 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let investor: Uuid = serde_json::from_value(body["shareholder_id"].clone()).unwrap();
 
-    // Et fødselsnummer med brukket kontrollsiffer er en tastefeil vi
-    // fanger nå, ikke i januar.
+    // A fødselsnummer with a broken check digit is a typo we catch now,
+    // not in January.
     let (status, body) = call(
         &state,
         &token,
@@ -149,7 +149,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("fødselsnummer"));
 
-    // Stiftelse: 100 aksjer til Kari, pålydende 1000 kr.
+    // Stiftelse: 100 shares to Kari, nominal value 1000 kr.
     let (status, body) = call(
         &state,
         &token,
@@ -163,7 +163,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // Overdragelse i 2026: Kari selger 40 til Investor. To rader, én tx.
+    // Transfer in 2026: Kari sells 40 to Investor. Two rows, one tx.
     let (status, body) = call(
         &state,
         &token,
@@ -178,7 +178,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    // Aksjeeierboken er beregnet — og den er en funksjon av datoen.
+    // The aksjeeierbok is computed — and it is a function of the date.
     let (_, body) = call(
         &state,
         &token,
@@ -197,7 +197,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
         .clone();
     assert_eq!(kari_2025["antall_aksjer"], 100);
     assert_eq!(kari_2025["andel_bp"], 10_000);
-    // §4-5 ber om fødselsdato — nummeret skal ikke stå i listingen.
+    // §4-5 asks for the birth date — the number must not be in the listing.
     assert_eq!(kari_2025["fodselsdato"], "1993-02-26");
     assert!(
         !body.to_string().contains("26829398612"),
@@ -218,7 +218,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
         assert_eq!(a["antall_aksjer"], forventet, "{a}");
     }
 
-    // Ingen kan selge flere aksjer enn de eier.
+    // Nobody can sell more shares than they own.
     let (status, body) = call(
         &state,
         &token,
@@ -260,8 +260,8 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     assert_eq!(body["antall_aksjer"], 100);
     assert_eq!(body["antall_aksjer_fjoraret"], 100);
     assert_eq!(body["palydende_ore"], 100_000i64);
-    // Forhåndsvisningen VISER hva som stopper leveringen — den dør ikke
-    // av det. Salget i 2026 har ingen verifisert kode.
+    // The preview SHOWS what blocks the filing — it does not die of it.
+    // The 2026 sale has no verified code.
     assert_eq!(body["leverbar"], false);
     let hindringer = body["hindringer"].as_array().unwrap();
     assert!(!hindringer.is_empty());
@@ -272,8 +272,8 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
         "{hindringer:?}"
     );
 
-    // Salget i 2026 har ingen verifisert RF-1086-kode — da nekter vi,
-    // høylytt, i stedet for å gjette.
+    // The 2026 sale has no verified RF-1086 code — so we refuse, loudly,
+    // rather than guess.
     let (status, body) = call(
         &state,
         &token,
@@ -287,7 +287,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
     assert!(feil.contains("salg"), "{feil}");
     assert!(feil.contains("gjetter"), "{feil}");
 
-    // Stiftelsesåret har bare koder vi HAR verifisert, og leveres.
+    // The stiftelse year has only codes we HAVE verified, and is filed.
     let (status, body) = call(
         &state,
         &token,
@@ -317,7 +317,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
             &format!("api-under-{i}"),
         );
     }
-    // Fødselsnummeret hører hjemme HER, i innsendingen — og bare her.
+    // The fødselsnummer belongs HERE, in the filing — and only here.
     assert!(
         under
             .iter()
@@ -327,7 +327,7 @@ async fn aksjeeierbok_utbytte_og_oppgave() {
 }
 
 #[tokio::test]
-async fn hendelser_kan_ikke_endres_eller_slettes() {
+async fn events_cannot_be_changed_or_deleted() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -378,7 +378,7 @@ async fn hendelser_kan_ikke_endres_eller_slettes() {
     .await
     .unwrap();
 
-    // Hendelsene er innsettings-bare, håndhevet av databasen selv.
+    // The events are insert-only, enforced by the database itself.
     let err = sqlx::query("update share_event set antall = 999 where id = $1")
         .bind(event)
         .execute(&state.pool)
@@ -393,7 +393,7 @@ async fn hendelser_kan_ikke_endres_eller_slettes() {
         .unwrap_err();
     assert!(err.to_string().contains("innsettings-bare"), "{err}");
 
-    // Identiteten til en aksjonær er heller ikke redigerbar…
+    // A shareholder's identity is not editable either…
     let err = sqlx::query("update shareholder set orgnr = '974760673' where id = $1")
         .bind(holder)
         .execute(&state.pool)
@@ -401,7 +401,7 @@ async fn hendelser_kan_ikke_endres_eller_slettes() {
         .unwrap_err();
     assert!(err.to_string().contains("uforanderlig"), "{err}");
 
-    // …men adressen er, for folk flytter.
+    // …but the address is, because people move.
     regnmed_db::aksjebok::update_aksjonaer_kontakt(
         &state.pool,
         company,

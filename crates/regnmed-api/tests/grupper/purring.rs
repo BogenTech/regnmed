@@ -265,7 +265,7 @@ async fn purring_loop_with_legal_guardrails() {
     assert_eq!(old_row["remaining_ore"], 12_500_00);
     assert_eq!(old_row["last_steg"], "purring");
 
-    // Purretrappen er enveis: påminnelse etter purring avvises.
+    // The purretrapp is one-way: a påminnelse after a purring is refused.
     let (status, back) = request(
         &state,
         "POST",

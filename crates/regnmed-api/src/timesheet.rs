@@ -20,8 +20,9 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-/// Timeføring krever bokføringstilgang; svaret sier om den som fører
-/// også er admin, for admin retter alles timer og ikke bare sine egne.
+/// Logging hours requires posting access; the response says whether the
+/// person is also an admin, since an admin corrects everyone's hours and
+/// not only their own.
 async fn require_write(
     state: &AppState,
     person_id: Uuid,

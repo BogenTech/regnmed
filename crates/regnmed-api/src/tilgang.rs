@@ -1,60 +1,59 @@
-//! Rettigheter, roller og den ene tilgangsvakten (#56, #59 —
+//! Rettigheter, roles and the one access guard (#56, #59 —
 //! docs/auth.md).
 //!
-//! Før #56 hadde hver modul sin egen `require_access` — 22 kopier i tre
-//! ulike former. Den ble slått sammen til én vakt med tre nivåer. #59
-//! byttet nivåene ut med et **vokabular av rettigheter**, fordi en
-//! rangstige ikke kan uttrykke «en som bare fakturerer» eller «en
-//! controller som ser alt bortsett fra lønn».
+//! Before #56 every module had its own `require_access` — 22 copies in
+//! three different shapes. They were merged into one guard with three
+//! levels. #59 replaced the levels with a **vocabulary of rettigheter**,
+//! because a ladder of ranks cannot express "someone who only invoices"
+//! or "a controller who sees everything except lønn".
 //!
-//! Modellen:
+//! The model:
 //!
-//! - Et endepunkt sier hvilken **rettighet** handlingen krever. Det
-//!   hører til handlingen, ikke til personen, og endrer seg ikke når vi
-//!   legger til en rolle.
-//! - En **rolle er et sett rettigheter**, ikke et trinn. I dag er
-//!   settene faste bunter i denne filen; #60 flytter dem til databasen
-//!   så et selskap kan sette sammen sine egne.
-//! - Vokabularet er en **enum i koden**, ikke fritekst. Et endepunkt
-//!   kan ikke kreve en rettighet som ikke finnes, og kompilatoren
-//!   finner alle stedene når en rettighet endrer navn.
+//! - An endpoint states which **rettighet** the action requires. That
+//!   belongs to the action, not to the person, and does not change when
+//!   we add a role.
+//! - A **role is a SET of rettigheter**, not a step. Today the sets are
+//!   fixed bundles in this file; #60 moves them to the database so a
+//!   company can compose its own.
+//! - The vocabulary is an **enum in the code**, not free text. An
+//!   endpoint cannot require a rettighet that does not exist, and the
+//!   compiler finds every site when one is renamed.
 //!
-//! Navnene er norske, som resten av domenet (CLAUDE.md): `FAKTURA_LES`,
-//! ikke `INVOICE_READ`.
+//! The names are Norwegian, like the rest of the domain (CLAUDE.md):
+//! `FAKTURA_LES`, not `INVOICE_READ`.
 //!
-//! **Rettigheter er additive, aldri subtraktive.** Det finnes ingen
-//! «alt unntatt X» — den regelen er umulig å resonnere om når roller
-//! settes sammen.
+//! **Rettigheter are additive, never subtractive.** There is no
+//! "everything except X" — that rule is impossible to reason about when
+//! roles are composed.
 //!
-//! Autorisasjonsoppslaget ligger fortsatt i regnmed-db
-//! (`company_access`) — tokenet beviser identitet, databasen avgjør
-//! tilgang.
+//! The authorization lookup still lives in regnmed-db (`company_access`)
+//! — the token proves identity, the database decides access.
 
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::ApiError;
 
-/// Hva en handling krever av den som utfører den.
+/// What an action requires of whoever performs it.
 ///
-/// ## Omfang: egne data mot alles
+/// ## Scope: one's own data versus everyone's
 ///
-/// Noen rettigheter finnes i par, `_EGNE`/`_ALLE`. En ansatt skal føre
-/// sine egne timer uten å se kollegenes; en leder skal se begge deler.
-/// Konvensjonen er:
+/// Some rettigheter come in `_EGNE`/`_ALLE` pairs. An employee should log
+/// their own hours without seeing their colleagues'; a manager should see
+/// both. The convention is:
 ///
-/// - `_ALLE` **medfører** `_EGNE` (se [`Rett::medforer`]). Ellers måtte
-///   hver bunt ta med begge, og en bunt som glemte `_EGNE` ville stengt
-///   folk ute fra deres egne data.
-/// - Et endepunkt som allerede filtrerer på personen krever `_EGNE`;
-///   et som viser eller endrer andres krever `_ALLE`.
+/// - `_ALLE` **implies** `_EGNE` (see [`Rett::medforer`]). Otherwise
+///   every bundle would have to carry both, and a bundle that forgot
+///   `_EGNE` would shut people out of their own data.
+/// - An endpoint that already filters by the person requires `_EGNE`; one
+///   that shows or changes other people's requires `_ALLE`.
 ///
-/// Denne dimensjonen er bestemt nå, ikke senere, nettopp fordi den er
-/// dyr å legge til i ettertid: hver «egen»-variant ville blitt et nytt
-/// navn, og lagrede roller måtte migreres.
+/// This dimension is decided now rather than later precisely because it
+/// is expensive to add afterwards: every "own" variant would be a new
+/// name, and stored roles would have to be migrated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Rett {
-    // Hovedbok, bilag og perioder
+    // Hovedbok, bilag and periods
     BilagLes,
     VedleggSkriv,
     BilagLastOpp,
@@ -65,7 +64,7 @@ pub enum Rett {
     RapportLes,
     MvaOrdningAdmin,
 
-    // Faktura og salg
+    // Faktura and sales
     FakturaLes,
     FakturaSkriv,
     FakturaSend,
@@ -76,11 +75,11 @@ pub enum Rett {
     PurringLes,
     PurringSkriv,
 
-    // Reskontro og kontakter
+    // Reskontro and contacts
     ReskontroLes,
     ReskontroSkriv,
 
-    // Bank, betaling og valuta
+    // Bank, payment and currency
     BankLes,
     BankAvstem,
     OcrLes,
@@ -92,22 +91,23 @@ pub enum Rett {
     ValutaLes,
     ValutaSkriv,
 
-    // Produkter og lager
+    // Products and inventory
     ProduktLes,
     ProduktSkriv,
     LagerLes,
     LagerSkriv,
 
-    // Anlegg
+    // Fixed assets
     AnleggLes,
     AnleggSkriv,
 
-    // Timer — omfang gjelder her i dag
+    // Hours — scope applies here today
     TimerLesEgne,
     TimerLesAlle,
-    /// Selskapsvide timeoversikter (per prosjekt, ufakturert). Skilt fra
-    /// `TimerLesAlle`, som er admins rett til å se og rette andres
-    /// enkelttimer: en leser skal se totalene uten å kunne rette noe.
+    /// Company-wide hour overviews (per prosjekt, unbilled). Kept apart
+    /// from `TimerLesAlle`, which is an admin's right to see and correct
+    /// other people's individual hours: a reader should see the totals
+    /// without being able to correct anything.
     TimerRapportLes,
     TimerSkrivEgne,
     TimerSkrivAlle,
@@ -120,38 +120,38 @@ pub enum Rett {
     UtleggSkrivEgne,
     UtleggGodkjenn,
     UtleggUtbetal,
-
+    // Lønn
     // Lønn
     LonnLes,
     LonnsslippLesEgen,
     LonnsslippLesAlle,
     LonnSkriv,
     LonnKjor,
-
+    // Budget
     // Budsjett
     BudsjettLes,
     BudsjettSkriv,
-
+    // Dimensions
     // Dimensjoner
     DimensjonLes,
     DimensjonSkriv,
-
+    // Aksjeeierbok
     // Aksjeeierbok
     AksjebokLes,
     AksjebokSkriv,
-
+    // Attestering
     // Attestering
     AttesteringLes,
     AttesteringUtfor,
     AttesteringAdmin,
-
+    // Innboks by e-mail
     // Innboks per e-post
     EpostInnLes,
     EpostInnAdmin,
-
+    // Anchoring
     // Forankring
     ForankringLes,
-
+    // Company, oppdrag, integrations, migration
     // Selskap, oppdrag, integrasjoner, migrering
     SelskapLes,
     SelskapAdmin,
@@ -240,8 +240,8 @@ static ALLE_RETTIGHETER: [Rett; 72] = [
 ];
 
 impl Rett {
-    /// Det kanoniske navnet. Dette er strengen #60 lagrer i
-    /// `role_right`, så den kan ikke endres uten en migrasjon.
+    /// The canonical name. This is the string #60 stores in
+    /// `role_right`, so it cannot change without a migration.
     pub fn slug(self) -> &'static str {
         use Rett::*;
         match self {
@@ -320,24 +320,25 @@ impl Rett {
         }
     }
 
-    /// Hele vokabularet, i den rekkefølgen enumet er skrevet.
+    /// The whole vocabulary, in the order the enum is written.
     pub const ALLE: &'static [Rett] = &ALLE_RETTIGHETER;
 
-    /// Fører handlingen regnskapet (eller dataene rundt det) videre?
+    /// Does the action carry the accounts (or the data around them)
+    /// forward?
     ///
-    /// Brukes av abonnementssperren (#65, docs/abonnement.md): et
-    /// sperret abonnement stopper alt som ENDRER — som en låst periode —
-    /// men aldri lesing eller eksport, og heller ikke styringen av
-    /// selskapet: tilgang, oppdrag, integrasjoner og firmaopplysninger
-    /// kan alltid ryddes i, ellers kunne et sperret selskap verken
-    /// avvikle oppdrag eller slippe inn den som skal ordne opp.
+    /// Used by the abonnement block (#65, docs/abonnement.md): a blocked
+    /// abonnement stops everything that CHANGES — like a locked period —
+    /// but never reading or export, and never the governance of the
+    /// company either: access, oppdrag, integrations and company details
+    /// can always be tidied, otherwise a blocked company could neither
+    /// end an oppdrag nor let in whoever is meant to sort it out.
     ///
-    /// Matchen er uttømmende med vilje: en NY rettighet tvinges til å
-    /// velge side her, den kan ikke havne utenfor sperren ved et uhell.
+    /// The match is exhaustive on purpose: a NEW rettighet is forced to
+    /// pick a side here, it cannot fall outside the block by accident.
     pub fn endrer(self) -> bool {
         use Rett::*;
         match self {
-            // Lesing — alltid åpen.
+            // Reading — always open.
             BilagLes | RapportLes | FakturaLes | FakturamalLes | TilbudLes | PurringLes
             | ReskontroLes | BankLes | OcrLes | BetalingLes | ValutaLes | ProduktLes | LagerLes
             | AnleggLes | TimerLesEgne | TimerLesAlle | TimerRapportLes | UtleggLesEgne
@@ -345,11 +346,11 @@ impl Rett {
             | DimensjonLes | AksjebokLes | AttesteringLes | EpostInnLes | ForankringLes
             | SelskapLes | OppdragLes | IntegrasjonLes => false,
 
-            // Styring av selskapet — åpen også når abonnementet er
-            // sperret (se over).
+            // Governance of the company — open even when the abonnement
+            // is blocked (see above).
             SelskapAdmin | MedlemAdmin | OppdragAdmin | IntegrasjonAdmin | EpostInnAdmin => false,
 
-            // Alt som fører regnskapet videre — sperres.
+            // Everything that carries the accounts forward — blocked.
             VedleggSkriv | BilagLastOpp | BilagBokfor | PeriodeLaas | MvaOrdningAdmin
             | FakturaSkriv | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv
             | ReskontroSkriv | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett
@@ -361,23 +362,23 @@ impl Rett {
         }
     }
 
-    /// Slår et lagret navn tilbake til en rettighet.
+    /// Turns a stored name back into a rettighet.
     ///
-    /// Ukjente navn gir `None` og blir **ignorert** der de brukes (#60):
-    /// databasen kjenner ikke vokabularet, så en rolle kan ikke love en
-    /// rettighet ingen håndhever. Rulles en versjon tilbake som ikke
-    /// kjenner en ny rettighet, forsvinner den — den blir ikke til noe
-    /// annet.
+    /// Unknown names give `None` and are **ignored** where they are used
+    /// (#60): the database does not know the vocabulary, so a role cannot
+    /// promise a rettighet nobody enforces. If a version is rolled back
+    /// that does not know a new rettighet, it disappears — it does not
+    /// turn into something else.
     pub fn fra_slug(s: &str) -> Option<Rett> {
         Rett::ALLE.iter().copied().find(|r| r.slug() == s)
     }
 
-    /// Om rettigheten kan legges i en **egendefinert** rolle (#60).
+    /// Whether the rettighet may be placed in a **custom** role (#60).
     ///
-    /// Nei for alt som styrer HVEM SOM HAR TILGANG. En rolle som kan
-    /// endre tilganger kan gi seg selv alt annet, og da er resten av
-    /// avgrensningen bare pynt. De rettighetene blir værende hos admin,
-    /// som er en rolle et selskap ikke kan skrive om.
+    /// No for anything that governs WHO HAS ACCESS. A role that can
+    /// change access can give itself everything else, and then the rest
+    /// of the boundary is decoration. Those rettigheter stay with admin,
+    /// which is a role a company cannot rewrite.
     pub fn kan_delegeres(self) -> bool {
         !matches!(
             self,
@@ -385,9 +386,9 @@ impl Rett {
         )
     }
 
-    /// Området rettigheten hører til — samme inndeling som portalens
-    /// meny, så et rutenett over rettigheter kan leses av noen som
-    /// kjenner produktet og ikke koden.
+    /// The area the rettighet belongs to — the same split as the
+    /// portal's menu, so a grid of rettigheter can be read by someone who
+    /// knows the product rather than the code.
     pub fn gruppe(self) -> &'static str {
         use Rett::*;
         match self {
@@ -466,12 +467,12 @@ impl Rett {
         }
     }
 
-    /// Hva rettigheten lar deg gjøre, på norsk.
+    /// What the rettighet lets you do, in Norwegian.
     ///
-    /// `TIMER_LES_ALLE` er for oss; «Se alles timer» er for den som skal
-    /// sette sammen en rolle. Teksten hører hjemme her og ikke i
-    /// portalen: da finnes det bare én liste, og en ny rettighet kan
-    /// ikke bli stående uten forklaring.
+    /// `TIMER_LES_ALLE` is for us; "Se alles timer" is for whoever is
+    /// composing a role. The text belongs here and not in the portal:
+    /// then there is only one list, and a new rettighet cannot be left
+    /// standing without an explanation.
     pub fn beskrivelse(self) -> &'static str {
         use Rett::*;
         match self {
@@ -550,9 +551,9 @@ impl Rett {
         }
     }
 
-    /// Hva denne rettigheten også gir. `_ALLE` gir `_EGNE`: den som ser
-    /// alles timer ser selvsagt sine egne, og uten regelen måtte hver
-    /// bunt huske begge.
+    /// What this rettighet also grants. `_ALLE` grants `_EGNE`: whoever
+    /// sees everyone's hours obviously sees their own, and without the
+    /// rule every bundle would have to remember both.
     pub fn medforer(self) -> &'static [Rett] {
         match self {
             Rett::TimerLesAlle => &[Rett::TimerLesEgne],
@@ -564,65 +565,66 @@ impl Rett {
     }
 }
 
-/// En persons rolle i ett selskap, slik `company_access` løser den.
+/// A person's role in one company, as `company_access` resolves it.
 ///
-/// Rollene er foreløpig faste bunter. #60 gjør dem til rader i
-/// databasen slik at et selskap kan lage sine egne — men vokabularet og
-/// vakten er de samme, så den endringen rører ikke endepunktene.
+/// The roles are fixed bundles for now. #60 turns them into rows in the
+/// database so a company can make its own — but the vocabulary and the
+/// guard are the same, so that change does not touch the endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rolle {
-    /// En rolleverdi denne binæren ikke kjenner. Gir INGEN rettigheter.
+    /// A role value this binary does not know. Grants NO rettigheter.
     ///
-    /// Dette er ikke teoretisk: under en rullerende utrulling kan
-    /// databasen ha en rolle den gamle binæren aldri har hørt om. Å
-    /// falle tilbake til `Les` ville da gjort en ansatt om til en som
-    /// leser hele hovedboken — en oppgradering, ikke en degradering.
-    /// Etter at `Ansatt` kom til finnes det heller ingen «svakeste»
-    /// rolle å falle til: `Ansatt` og `Les` er ikke sammenlignbare.
+    /// This is not theoretical: during a rolling deploy the database can
+    /// hold a role the old binary has never heard of. Falling back to
+    /// `Les` would then turn an employee into someone who reads the whole
+    /// hovedbok — an upgrade, not a downgrade. And since `Ansatt`
+    /// arrived there is no "weakest" role to fall back to either:
+    /// `Ansatt` and `Les` are not comparable.
     Ukjent,
-    /// Selvbetjening: egne timer, egne utlegg, egen lønnsslipp. Ikke
-    /// et trinn under `Les` — se [`ANSATT_BUNT`].
+    /// Self-service: own hours, own utlegg, own payslip. Not a step
+    /// below `Les` — see [`ANSATT_BUNT`].
     Ansatt,
     Les,
-    /// Lesing som `Les`, pluss lønnsopplysningene revisjonen trenger.
-    /// Kommer bare fra et oppdrag av typen `revisjon` — den kan ikke
-    /// tildeles direkte.
+    /// Reading like `Les`, plus the lønn data an audit needs. Comes only
+    /// from an oppdrag of kind `revisjon` — it cannot be assigned
+    /// directly.
     Revisor,
     Bokforing,
     Admin,
 }
 
-/// Den ansattes selvbetjening (#54).
+/// The employee's self-service (#54).
 ///
-/// **Dette er ikke «lesing minus noe».** En ansatt får SKRIVE noen få
-/// ting — sine egne timer, sitt eget utlegg, et bilde av en kvittering
-/// — og LESE nesten ingenting. Det er nettopp den formen en rangstige
-/// ikke kunne uttrykke, og grunnen til at rettighetsmodellen (#59) måtte
-/// komme først.
+/// **This is not "reading minus something".** An employee may WRITE a few
+/// things — their own hours, their own utlegg, a photo of a receipt — and
+/// READ almost nothing. That is precisely the shape a ladder of ranks
+/// could not express, and the reason the rettighet model (#59) had to
+/// come first.
 ///
-/// Bunten er positivt avgrenset: den lister hva en ansatt får, ikke hva
-/// hun er nektet. Hovedbok, rapporter, faktura, bank, reskontro,
-/// ansattlisten og alles timer, utlegg og lønn er ikke med, og blir det
-/// ikke ved et uhell heller — en ny rettighet må skrives inn her for å
-/// gjelde.
+/// The bundle is positively bounded: it lists what an employee gets, not
+/// what they are denied. Hovedbok, reports, faktura, bank, reskontro, the
+/// employee list and everyone's hours, utlegg and lønn are not in it, and
+/// will not get in by accident either — a new rettighet must be written
+/// in here to apply.
 pub const ANSATT_BUNT: &[Rett] = &[
-    // Føre og se sine egne timer. Prosjektregisteret må være lesbart,
-    // ellers finnes det ingenting å føre timene på.
+    // Logging and seeing one's own hours. The prosjekt register must be
+    // readable, or there is nothing to log the hours against.
     Rett::TimerLesEgne,
     Rett::TimerSkrivEgne,
     Rett::DimensjonLes,
-    // Sende inn og følge sitt eget refusjonskrav.
+    // Submitting and following one's own refusjonskrav.
     Rett::UtleggLesEgne,
     Rett::UtleggSkrivEgne,
-    // Sin egen lønnsslipp — ikke kollegenes.
+    // Their own payslip — not their colleagues'.
     Rett::LonnsslippLesEgen,
-    // Kvitteringsfoto fra mobilen (#48). Å laste opp er ikke å bokføre:
-    // dokumentet havner i innboksen og venter på noen med BILAG_BOKFOR.
+    // Receipt photos from the phone (#48). Uploading is not posting: the
+    // document lands in the innboks and waits for someone with
+    // BILAG_BOKFOR.
     Rett::BilagLastOpp,
 ];
 
-/// Det enhver med tilgang til selskapet får. Revisor lever her: lesing
-/// av alt, endring av ingenting.
+/// What anyone with access to the company gets. Revisor lives here:
+/// reading everything, changing nothing.
 const LES_BUNT: &[Rett] = &[
     Rett::BilagLes,
     Rett::RapportLes,
@@ -652,16 +654,16 @@ const LES_BUNT: &[Rett] = &[
     Rett::IntegrasjonLes,
 ];
 
-/// Det revisor legger til lesingen: lønnsopplysningene (#55).
+/// What revisor adds to reading: the lønn data (#55).
 ///
-/// Lønn er revisjonspliktig — den er en vesentlig kostnad, og
-/// forskuddstrekk og arbeidsgiveravgift er lovpålagte størrelser en
-/// revisor må kunne kontrollere. Så svaret er «ja, revisor ser lønn»,
-/// men nå er det et **uttrykkelig ja** i stedet for en bieffekt av at
-/// revisor og en intern leser var samme rolle.
+/// Lønn is subject to audit — it is a material cost, and forskuddstrekk
+/// and arbeidsgiveravgift are statutory figures a revisor must be able to
+/// check. So the answer is "yes, a revisor sees lønn", but now it is an
+/// **explicit yes** rather than a side effect of revisor and an internal
+/// reader having been the same role.
 pub const REVISOR_BUNT: &[Rett] = &[Rett::LonnLes, Rett::LonnsslippLesAlle];
 
-/// Det bokføring legger til: alt som endrer hovedboken eller ender der.
+/// What bokføring adds: everything that changes the hovedbok or ends there.
 const BOKFORING_BUNT: &[Rett] = &[
     Rett::VedleggSkriv,
     Rett::BilagLastOpp,
@@ -698,7 +700,7 @@ const BOKFORING_BUNT: &[Rett] = &[
     Rett::KontaktSkriv,
 ];
 
-/// Det admin legger til: å styre selskapet og hvem som slipper til.
+/// What admin adds: governing the company and who gets in.
 const ADMIN_BUNT: &[Rett] = &[
     Rett::MvaOrdningAdmin,
     Rett::TimerLesAlle,
@@ -707,8 +709,8 @@ const ADMIN_BUNT: &[Rett] = &[
     Rett::AttesteringAdmin,
     Rett::EpostInnAdmin,
     Rett::SelskapAdmin,
-    // Å styre hvem som slipper inn. Den som har denne kan gi seg
-    // selv alt annet, så den hører hjemme hos admin og ingen andre.
+    // Governing who gets in. Whoever holds this can give themselves
+    // everything else, so it belongs with admin and nobody else.
     Rett::MedlemAdmin,
     Rett::OppdragAdmin,
     Rett::IntegrasjonAdmin,
@@ -716,7 +718,7 @@ const ADMIN_BUNT: &[Rett] = &[
 ];
 
 impl Rolle {
-    /// Ukjente verdier gir INGEN rettigheter — se [`Rolle::Ukjent`].
+    /// Unknown values grant NO rettigheter — see [`Rolle::Ukjent`].
     pub fn fra_db(s: &str) -> Self {
         match s {
             "admin" => Self::Admin,
@@ -743,16 +745,15 @@ impl Rolle {
         self == Self::Admin
     }
 
-    /// Buntene rollen er satt sammen av. De er nøstet i dag — bokføring
-    /// er lesing pluss noe, admin er bokføring pluss noe — men det er
-    /// en egenskap ved disse tre bunter, ikke ved modellen. En
-    /// egendefinert rolle (#60) trenger ikke være nøstet i det hele
-    /// tatt.
+    /// The bundles the role is composed of. They are nested today —
+    /// bokføring is reading plus something, admin is bokføring plus
+    /// something — but that is a property of these three bundles, not of
+    /// the model. A custom role (#60) need not be nested at all.
     fn bunter(self) -> &'static [&'static [Rett]] {
         match self {
             Self::Ukjent => &[],
-            // Ansatt er IKKE nøstet under de tre andre — den er sin egen
-            // sammensetning, og det er hele poenget med modellen.
+            // Ansatt is NOT nested under the other three — it is its own
+            // composition, and that is the whole point of the model.
             Self::Ansatt => &[ANSATT_BUNT],
             Self::Les => &[LES_BUNT],
             Self::Revisor => &[LES_BUNT, REVISOR_BUNT],
@@ -761,8 +762,8 @@ impl Rolle {
         }
     }
 
-    /// Om rollen har rettigheten, direkte eller fordi en annen
-    /// rettighet medfører den.
+    /// Whether the role has the rettighet, directly or because another
+    /// rettighet implies it.
     pub fn har(self, rett: Rett) -> bool {
         self.bunter()
             .iter()
@@ -770,8 +771,8 @@ impl Rolle {
             .any(|r| *r == rett || r.medforer().contains(&rett))
     }
 
-    /// Alle rettigheter rollen faktisk gir, medregnet det som medføres.
-    /// Portalen bruker dette til å vise hva en rolle betyr (#61).
+    /// Every rettighet the role actually grants, implications included.
+    /// The portal uses this to show what a role means (#61).
     pub fn rettigheter(self) -> Vec<Rett> {
         let mut ut: Vec<Rett> = self
             .bunter()
@@ -785,20 +786,20 @@ impl Rolle {
     }
 }
 
-/// Alle rettighetene en person har i ett selskap, unionert over hver vei
-/// inn.
+/// Every rettighet a person has in one company, unioned across each route
+/// in.
 ///
-/// **Unionen er ikke pynt.** Så lenge rollene var en stige holdt det å
-/// velge den sterkeste, men `ansatt` er ikke et trinn — den kan skrive
-/// ting `les` ikke kan. En som er ansatt i selskapet OG kommer inn via
-/// et oppdrag ville mistet retten til å føre sine egne timer hvis vi
-/// bare valgte én rolle. Når roller blir egendefinerte (#60) er unionen
-/// dessuten den eneste regelen som fortsatt gir mening.
+/// **The union is not decoration.** While the roles were a ladder it was
+/// enough to pick the strongest, but `ansatt` is not a step — it can
+/// write things `les` cannot. Someone who is an employee of the company
+/// AND comes in through an oppdrag would lose the right to log their own
+/// hours if we picked just one role. Once roles become custom (#60) the
+/// union is moreover the only rule that still makes sense.
 #[derive(Debug, Clone)]
 pub struct Tilgang {
     roller: Vec<Rolle>,
-    /// Rettigheter fra selskapets EGNE roller (#60), allerede filtrert
-    /// mot vokabularet og mot [`Rett::kan_delegeres`].
+    /// Rettigheter from the company's OWN roles (#60), already filtered
+    /// against the vocabulary and against [`Rett::kan_delegeres`].
     egendefinerte: Vec<Rett>,
 }
 
@@ -811,18 +812,18 @@ impl Tilgang {
         self.roller.iter().any(|r| r.er_admin())
     }
 
-    /// Rollenavnene, sterkeste først — til visning og logging, aldri
-    /// til å avgjøre tilgang.
+    /// The role names, strongest first — for display and logging, never
+    /// for deciding access.
     pub fn roller(&self) -> Vec<&'static str> {
         self.roller.iter().map(|r| r.slug()).collect()
     }
 }
 
-/// Slår opp personens tilgang til selskapet og krever `rett`.
+/// Looks up the person's access to the company and requires `rett`.
 ///
-/// **Ukjent selskap og manglende tilgang gir begge 404.** En som ikke
-/// har tilgang skal ikke få vite om selskapet finnes; det er samme
-/// regel som ellers i API-et (docs/auth.md).
+/// **An unknown company and missing access both give 404.** Someone
+/// without access must not learn that the company exists; that is the
+/// same rule as everywhere else in the API (docs/auth.md).
 pub async fn krev(
     state: &AppState,
     person_id: Uuid,
@@ -835,8 +836,8 @@ pub async fn krev(
     }
     let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
 
-    // Navn som ikke er innebygde kan være selskapets egne roller. Bare
-    // da koster det et oppslag — de aller fleste kall gjør det ikke.
+    // Names that are not built-in may be the company's own roles. Only
+    // then does it cost a lookup — the vast majority of calls do not.
     let ukjente: Vec<String> = navn
         .iter()
         .zip(&roller)
@@ -849,10 +850,10 @@ pub async fn krev(
         regnmed_db::roller::rettigheter_for(&state.pool, company_id, &ukjente)
             .await?
             .iter()
-            // Et navn databasen bærer, men koden ikke kjenner, gir
-            // ingenting — og en rettighet som ikke kan delegeres blir
-            // liggende uvirksom selv om den skulle ha kommet inn i
-            // tabellen på et vis.
+            // A name the database carries but the code does not know
+            // grants nothing — and a rettighet that cannot be delegated
+            // stays inert even if it had somehow found its way into the
+            // table.
             .filter_map(|s| Rett::fra_slug(s))
             .filter(|r| r.kan_delegeres())
             .collect()
@@ -866,10 +867,10 @@ pub async fn krev(
         return Err(ApiError::Forbidden(manglende(rett)));
     }
 
-    // Abonnementssperren (#65, docs/abonnement.md) — ETTER
-    // tilgangssjekken, så en utenforstående fortsatt får 404 og aldri
-    // lærer noe om selskapets abonnement. Bare endrende rettigheter
-    // koster oppslaget; lesing og eksport går alltid.
+    // The abonnement block (#65, docs/abonnement.md) — AFTER the access
+    // check, so an outsider still gets 404 and never learns anything
+    // about the company's abonnement. Only changing rettigheter
+    // costs the lookup; reading and export always go through.
     if rett.endrer() && regnmed_db::abonnement::sperret(&state.pool, company_id).await? {
         return Err(ApiError::Forbidden(
             "abonnementet er utløpt — lesing og eksport virker som før, men endringer er sperret til abonnementet er i orden (docs/abonnement.md)",
@@ -878,35 +879,36 @@ pub async fn krev(
     Ok(tilgang)
 }
 
-/// Feilmeldingen navngir rettigheten som mangler. Den som får 403 skal
-/// kunne si til sin admin hva han trenger, uten at vi må lete i loggen.
+/// The error message names the missing rettighet. Whoever gets a 403
+/// should be able to tell their admin what they need, without us having
+/// to dig through the log.
 fn manglende(rett: Rett) -> &'static str {
-    // ApiError::Forbidden bærer &'static str, så slug-en brukes direkte.
+    // ApiError::Forbidden carries &'static str, so the slug is used directly.
     rett.slug()
 }
 
-/// Enhetstester for vokabularet.
+/// Unit tests for the vocabulary.
 ///
-/// **Disse kan ikke fange at en rettighet ligger i FEIL bunt.** De
-/// utleder fasiten sin fra buntene, så flyttes `PRODUKT_SKRIV` fra
-/// bokføring til lesing, består de fortsatt — prøvd, med vilje. Det er
-/// `tests/grupper/tilgang.rs` som er sperren der: den spør en ekte server med
-/// en ekte rolle og ser hva som slipper gjennom.
+/// **These cannot catch a rettighet sitting in the WRONG bundle.** They
+/// derive their expectations from the bundles, so moving `PRODUKT_SKRIV`
+/// from bokføring to reading still passes — tried, deliberately.
+/// `tests/grupper/tilgang.rs` is the guard there: it asks a real server
+/// with a real role and sees what gets through.
 ///
-/// Det disse testene fanger er det andre: en rettighet i to bunter, en
-/// duplisert slug, en bunt som glemte noe, en implikasjon som ikke
-/// virker.
+/// What these tests do catch is the rest: a rettighet in two bundles, a
+/// duplicated slug, a bundle that forgot something, an implication that
+/// does not work.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Hele vokabularet, som fasit for de andre testene.
+    /// The whole vocabulary, as the expected set for the other tests.
     ///
-    /// Buntene PLUSS det de medfører: `UTLEGG_LES_EGNE` står ikke i noen
-    /// bunt, den kommer av `UTLEGG_LES_ALLE`. Uten den utvidelsen ville
-    /// «hele vokabularet» utelatt nettopp de rettighetene omfanget
-    /// handler om.
-    fn alle_rettigheter() -> Vec<Rett> {
+    /// The bundles PLUS what they imply: `UTLEGG_LES_EGNE` is in no
+    /// bundle, it comes from `UTLEGG_LES_ALLE`. Without that expansion
+    /// the completeness test would fail on rettigheter no bundle names
+    /// directly.
+    fn every_rettighet() -> Vec<Rett> {
         let mut v: Vec<Rett> = LES_BUNT
             .iter()
             .chain(REVISOR_BUNT)
@@ -919,11 +921,11 @@ mod tests {
         v
     }
 
-    /// Buntene skal DELE vokabularet, ikke overlappe. En rettighet i to
-    /// bunter er enten en skrivefeil eller en rettighet som ikke betyr
-    /// det den ser ut som.
+    /// The bundles must SHARE the vocabulary, not overlap. A rettighet in
+    /// two bundles is either a typo or a rettighet that does not mean
+    /// what it looks like.
     #[test]
-    fn buntene_overlapper_ikke() {
+    fn the_bundles_do_not_overlap() {
         let mut sett = std::collections::BTreeSet::new();
         for bunt in [LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT] {
             for r in bunt {
@@ -932,13 +934,14 @@ mod tests {
         }
     }
 
-    /// ANSATT_BUNT er med vilje IKKE en av de tre nivåbuntene — den
-    /// gjenbruker rettigheter fra dem, og skal gjøre det. Kravet her er
-    /// et annet: hver rettighet den nevner må finnes i vokabularet, så
-    /// bunten ikke kan love noe ingen håndhever.
+    /// ANSATT_BUNT is deliberately NOT one of the three level bundles —
+    /// it reuses rettigheter from them, and is meant to. The requirement
+    /// here is different: every rettighet it names must exist in the
+    /// vocabulary, so the bundle cannot promise something nobody
+    /// enforces.
     #[test]
-    fn ansattbunten_bruker_bare_kjente_rettigheter() {
-        let kjente: std::collections::BTreeSet<_> = alle_rettigheter().into_iter().collect();
+    fn the_ansatt_bundle_uses_only_known_rettigheter() {
+        let kjente: std::collections::BTreeSet<_> = every_rettighet().into_iter().collect();
         for r in ANSATT_BUNT {
             assert!(
                 kjente.contains(r),
@@ -948,9 +951,9 @@ mod tests {
         }
     }
 
-    /// Det viktigste ved ansattrollen er hva den IKKE gir.
+    /// The most important thing about the ansatt role is what it does NOT give.
     #[test]
-    fn ansatt_kommer_ikke_til_hovedboken() {
+    fn an_ansatt_cannot_reach_the_hovedbok() {
         let a = Rolle::Ansatt;
         for nektet in [
             Rett::BilagLes,
@@ -972,7 +975,7 @@ mod tests {
         ] {
             assert!(!a.har(nektet), "ansatt skulle ikke hatt {}", nektet.slug());
         }
-        // Og det den SKAL ha.
+        // And what it SHALL have.
         for gitt in [
             Rett::TimerLesEgne,
             Rett::TimerSkrivEgne,
@@ -986,24 +989,24 @@ mod tests {
         }
     }
 
-    /// Slug-ene er det #60 lagrer i databasen. To rettigheter med samme
-    /// navn ville gjort en lagret rolle tvetydig.
+    /// The slugs are what #60 stores in the database. Two rettigheter with
+    /// the same name would make a stored role ambiguous.
     #[test]
-    fn slugene_er_unike() {
+    fn the_slugs_are_unique() {
         let mut sett = std::collections::BTreeSet::new();
-        for r in alle_rettigheter() {
+        for r in every_rettighet() {
             assert!(sett.insert(r.slug()), "duplisert slug {}", r.slug());
         }
     }
 
-    /// Rangstigen fra før #59 skal fortsatt gjelde for de innebygde
-    /// rollene: admin har alt bokføring har, som har alt lesing har.
-    /// Dette er ikke et krav til modellen — en egendefinert rolle
-    /// trenger ikke være nøstet — men det er et krav til DISSE tre, og
-    /// det er det som gjør #59 atferdsbevarende.
+    /// The rank ladder from before #59 must still hold for the built-in
+    /// roles: admin has everything bokføring has, which has everything
+    /// reading has. This is not a requirement of the model — a custom
+    /// role need not be nested — but it is a requirement of THESE three,
+    /// and it is what makes #59 behavior-preserving.
     #[test]
-    fn de_innebygde_rollene_er_nostet() {
-        for r in alle_rettigheter() {
+    fn the_built_in_roles_are_nested() {
+        for r in every_rettighet() {
             if Rolle::Les.har(r) {
                 assert!(Rolle::Revisor.har(r), "revisor mangler {}", r.slug());
                 assert!(Rolle::Bokforing.har(r), "bokforing mangler {}", r.slug());
@@ -1017,12 +1020,13 @@ mod tests {
         }
     }
 
-    /// Oversettelsen fra de gamle nivåene: alt i lesebunten skal alle
-    /// tre ha, alt i bokføringsbunten skal les IKKE ha, og alt i
-    /// adminbunten skal bare admin ha. Endres en rettighet til feil
-    /// bunt, er det her det merkes.
+    /// The translation from the old levels: everything in the reading
+    /// bundle all three must have, everything in the bokføring bundle
+    /// `les` must NOT have, and everything in the admin bundle only admin
+    /// has. If a rettighet moves to the wrong bundle, this is where it
+    /// shows.
     #[test]
-    fn buntene_gir_noyaktig_de_gamle_nivaene() {
+    fn the_bundles_reproduce_the_old_levels_exactly() {
         for r in LES_BUNT {
             assert!(Rolle::Les.har(*r), "les mangler {}", r.slug());
         }
@@ -1041,41 +1045,41 @@ mod tests {
         }
     }
 
-    /// `_ALLE` medfører `_EGNE`. Uten regelen ville en admin som har
-    /// TIMER_SKRIV_ALLE ikke kunne føre sine egne timer med mindre
-    /// bunten husket begge — og den slags «husk begge» er nettopp det
-    /// som glipper.
+    /// `_ALLE` implies `_EGNE`. Without the rule an admin holding
+    /// TIMER_SKRIV_ALLE could not log their own hours unless the bundle
+    /// remembered both — and that kind of "remember both" is exactly what
+    /// slips.
     #[test]
-    fn alle_medforer_egne() {
+    fn alle_implies_egne() {
         assert!(Rett::TimerLesAlle.medforer().contains(&Rett::TimerLesEgne));
         assert!(
             Rett::TimerSkrivAlle
                 .medforer()
                 .contains(&Rett::TimerSkrivEgne)
         );
-        // Admin har _ALLE og får dermed _EGNE uten å ha den i bunten.
+        // Admin has _ALLE and therefore gets _EGNE without it being in the bundle.
         assert!(!ADMIN_BUNT.contains(&Rett::TimerSkrivEgne));
         assert!(Rolle::Admin.har(Rett::TimerSkrivEgne));
-        // Og motsatt vei gjelder ikke: egne gir ikke alles.
+        // And it does not hold the other way: own does not give everyone's.
         assert!(!Rolle::Bokforing.har(Rett::TimerSkrivAlle));
         assert!(Rolle::Bokforing.har(Rett::TimerSkrivEgne));
     }
 
     #[test]
-    fn rollen_er_rundtur_mot_databasens_verdier() {
+    fn the_role_round_trips_against_the_database_values() {
         for slug in ["admin", "bokforing", "les", "ansatt", "revisor"] {
             assert_eq!(Rolle::fra_db(slug).slug(), slug);
         }
     }
 
-    /// En rolleverdi vi ikke kjenner igjen gir INGEN rettigheter.
+    /// A role value we do not recognise grants NO rettigheter.
     ///
-    /// Før ansattrollen falt ukjent til `Les`, som da var svakest. Nå
-    /// er `Ansatt` og `Les` ikke sammenlignbare, og under en rullerende
-    /// utrulling kan en gammel binær møte en rolle den ikke kjenner —
-    /// å tolke «ansatt» som «les» ville vært en oppgradering.
+    /// Before the ansatt role, unknown fell back to `Les`, which was then
+    /// the weakest. Now `Ansatt` and `Les` are not comparable, and during
+    /// a rolling deploy an old binary can meet a role it does not know —
+    /// reading "ansatt" as "les" would have been an upgrade.
     #[test]
-    fn ukjent_rolle_gir_ingen_rettigheter() {
+    fn an_unknown_role_grants_no_rettigheter() {
         for ukjent in ["superbruker", "", "Ansatt", "LES"] {
             let r = Rolle::fra_db(ukjent);
             assert_eq!(r, Rolle::Ukjent, "«{ukjent}»");
@@ -1083,12 +1087,11 @@ mod tests {
         }
     }
 
-    /// Revisor ser lønn, en intern leser gjør det ikke (#55). Det er
-    /// hele poenget med at de to ble skilt: begge er skrivebeskyttet,
-    /// men bare den ene har en revisjonsplikt som krever
-    /// lønnsopplysningene.
+    /// A revisor sees lønn, an internal reader does not (#55). That is
+    /// deliberate: both read everything else the same way, but only one
+    /// has an audit duty that requires the lønn data.
     #[test]
-    fn revisor_ser_lonn_men_en_intern_leser_gjor_det_ikke() {
+    fn a_revisor_sees_lonn_but_an_internal_reader_does_not() {
         for rett in [Rett::LonnLes, Rett::LonnsslippLesAlle] {
             assert!(Rolle::Revisor.har(rett), "revisor mangler {}", rett.slug());
             assert!(
@@ -1107,19 +1110,19 @@ mod tests {
                 rett.slug()
             );
         }
-        // Revisor er ellers akkurat en leser — og skriver ingenting.
+        // A revisor is otherwise exactly a reader — and writes nothing.
         assert!(Rolle::Revisor.har(Rett::RapportLes));
         assert!(!Rolle::Revisor.har(Rett::BilagBokfor));
         assert!(!Rolle::Revisor.har(Rett::LonnKjor));
-        // Sin egen slipp har enhver ansatt, uavhengig av dette.
+        // Their own slip belongs to every employee, independently of this.
         assert!(Rolle::Ansatt.har(Rett::LonnsslippLesEgen));
     }
 
-    /// Hver rettighet må ha en forklaring og en gruppe. Uten testen kan
-    /// en ny rettighet bli stående i rutenettet uten tekst — og en
-    /// avkrysningsboks uten forklaring er verre enn ingen boks.
+    /// Every rettighet must have an explanation and a group. Without the
+    /// test a new rettighet could be left standing in the grid without
+    /// text — and a checkbox without an explanation is worse than no box.
     #[test]
-    fn hver_rettighet_har_forklaring_og_gruppe() {
+    fn every_rettighet_has_a_description_and_a_group() {
         for r in Rett::ALLE {
             assert!(
                 !r.beskrivelse().is_empty(),
@@ -1127,14 +1130,14 @@ mod tests {
                 r.slug()
             );
             assert!(!r.gruppe().is_empty(), "{} mangler gruppe", r.slug());
-            // Forklaringen skal være for et menneske, ikke slug-en igjen.
+            // The description is for a human, not the slug again.
             assert_ne!(r.beskrivelse(), r.slug(), "{}", r.slug());
         }
     }
 
-    /// Slug-en må kunne leses tilbake — den er det #60 lagrer.
+    /// The slug must read back — it is what #60 stores.
     #[test]
-    fn slugen_er_rundtur() {
+    fn the_slug_round_trips() {
         for r in Rett::ALLE {
             assert_eq!(Rett::fra_slug(r.slug()), Some(*r), "{}", r.slug());
         }
@@ -1142,12 +1145,12 @@ mod tests {
         assert_eq!(Rett::fra_slug(""), None);
     }
 
-    /// Rettighetslisten portalen viser skal være komplett og sortert
-    /// uten duplikater, også når noe medføres.
+    /// The rettighet list the portal shows must be complete and sorted
+    /// without duplicates, including what is implied.
     #[test]
-    fn rettighetslisten_er_komplett() {
+    fn the_rettighet_list_is_complete() {
         let admin = Rolle::Admin.rettigheter();
-        assert_eq!(admin.len(), alle_rettigheter().len());
+        assert_eq!(admin.len(), every_rettighet().len());
         let les = Rolle::Les.rettigheter();
         assert!(les.contains(&Rett::TimerLesEgne));
         assert!(!les.contains(&Rett::TimerLesAlle));

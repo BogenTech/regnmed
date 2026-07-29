@@ -241,11 +241,11 @@ pub async fn ehf_forslag(
     })))
 }
 
-/// «Hva skal dette bilaget bli?» for ETHVERT dokument
-/// (docs/bilagstolkning.md, #34): EHF leses eksakt, en PDF med
-/// tekstlag tolkes heuristisk, et skannet bilde gir ingenting — og
-/// sier fra. Hvert felt har en begrunnelse, og ingenting bokføres:
-/// forslaget fyller skjemaet, mennesket bestemmer.
+/// "What should this bilag become?" for ANY document
+/// (docs/bilagstolkning.md, #34): EHF is read exactly, a PDF with a text
+/// layer is interpreted heuristically, a scanned image yields nothing —
+/// and says so. Every field carries a justification, and nothing is
+/// posted: the suggestion fills the form, the human decides.
 pub async fn forslag(
     State(state): State<AppState>,
     person: AuthPerson,

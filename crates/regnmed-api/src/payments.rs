@@ -1,4 +1,4 @@
-//! Betalingsliste og remittering (docs/betaling.md, #33):
+//! Payment list and remittering (docs/betaling.md, #33):
 //!
 //! - GET  /companies/{id}/payments/payable       åpne leverandørposter
 //! - GET  /companies/{id}/payments/runs          kjøringer m/ status

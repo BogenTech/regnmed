@@ -1,4 +1,4 @@
-//! Valutakurser og kursregulering (docs/valuta.md, #44):
+//! Exchange rates and revaluation (docs/valuta.md, #44):
 //!
 //! - GET  /companies/{id}/currency/rates          newest rate per valuta
 //! - POST /companies/{id}/currency/rates          manual rate, kilde recorded
