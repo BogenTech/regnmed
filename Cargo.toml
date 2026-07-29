@@ -14,6 +14,23 @@ edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/bisand/regnmed"
 
+# Frugality er et produktprinsipp (docs/frugality.md), og release-profilen
+# sto på Cargo-standardene. Målt på regnmed-api 2026-07-29:
+#
+#   standard                17,7 MB   (59 s)
+#   + thin LTO + cgu 1      12,3 MB   (2 m 32 s)
+#   + fat  LTO + cgu 1      10,7 MB   (3 m 04 s)   ← valgt
+#   + strip                  8,7 MB                 ← IKKE valgt
+#
+# Byggetiden betales én gang i CI; størrelsen betales ved hver
+# image-pull. `strip` er bevisst utelatt: de siste 2 MB koster
+# funksjonsnavnene i panic-backtraces, og et regnskapssystem skal kunne
+# diagnostisere en hendelse i produksjon. panic="abort" er også utelatt —
+# en panikk i én forespørsel skal ikke rive ned prosessen for alle andre.
+[profile.release]
+lto = true
+codegen-units = 1
+
 [workspace.dependencies]
 async-nats = "0.42"
 futures-util = "0.3"
