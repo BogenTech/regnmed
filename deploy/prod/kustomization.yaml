@@ -31,6 +31,7 @@ images:
     newTag: pin-me-to-a-release
 patches:
   - path: patches/postgres.yaml
+  - path: patches/storage.yaml
   - path: patches/regnid.yaml
   - path: patches/regnmed-api.yaml
   - path: patches/anchor-cronjob.yaml

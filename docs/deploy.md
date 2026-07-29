@@ -43,10 +43,81 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    link in the invitation e-mail (#66). Register `https://regnmed.no/callback`
    as a redirect URI on the portal's OIDC client; add the API host too if
    the app should be openable there as well.
-3. **TLS.** Install cert-manager, edit the e-mail in
+3. **Volumes — replicated storage, and check the arithmetic.**
+   Everything about volumes lives in `deploy/prod/patches/storage.yaml`,
+   which shows its working.
+
+   **Production needs a replicated storage class.** The base manifests
+   name none, so the local k3d cluster gets `local-path` — a directory
+   on the single node. That is right for a laptop and wrong for
+   production, where a node-local volume means the database dies with
+   its node. The prod patch names `longhorn`; any distributed
+   provisioner does (Rook/Ceph, OpenEBS Mayastor, a cloud class), and it
+   is named in that one file so switching is one edit. What the class
+   must provide, whatever its name: replication across nodes,
+   `allowVolumeExpansion: true`, and snapshots.
+
+   `ReadWriteOnce` is correct and stays — Postgres is a single writer,
+   and the two CronJobs sharing `/backup` never run at once (01:30
+   nightly, 04:00 Sundays), so the volume reattaches cleanly if they
+   land on different nodes.
+
+   **The local cluster deliberately does not run Longhorn.** It needs
+   iSCSI, real block devices and roughly a gigabyte for its own
+   components; `dev-cluster.sh` fits in a 2 CPU / 2 GB VM on purpose
+   (docs/frugality.md). So this is the one place where local stops
+   mirroring production, and it is worth knowing before a storage
+   problem is met for the first time in prod. Everything above the
+   volume — schema, jobs, restore drill — is identical.
+
+   Sizes: 50Gi for Postgres and 150Gi for backups (the base sizes are
+   for the local VM).
+
+   **The two are not independent.** The nightly job keeps 14
+   `pg_dump -Fc` files, and `-Fc` compression does nothing for content
+   that is already JPEG or PDF — so the backup volume needs
+   `retention × database`, not some fraction of it. The pair that
+   shipped before this was already broken in that direction: 2Gi of
+   database against 10Gi of backups, where a full database needs ~28Gi
+   of dumps. **The backup volume would have filled first**, and the
+   nightly job would have begun failing while the database still looked
+   healthy. Failed Jobs are the alerting signal (see Observability), so
+   it would have been visible — but the thing that broke would not have
+   been the thing that was undersized.
+
+   What fills the database is not the ledger; vouchers and entries are
+   small rows. It is four bytea columns — bilagsvedlegg, innboks
+   documents, receipt photos, raw e-mail — capped at 20 MB per upload
+   and averaging a few hundred KB in practice.
+
+   Full daily dumps do not scale with blob storage: they re-copy every
+   unchanged photo, nightly. PITR via CloudNativePG (below) is the
+   answer, and the trigger to adopt it is the database passing ~20 GB,
+   not a date.
+
+   **Replication multiplies all of it.** Those are the sizes Kubernetes
+   reports; a replicated class stores each one N times, and Longhorn's
+   default N is 3 — so 50 + 150 + 1 Gi of volumes is about **600Gi of
+   raw disk** across the pool. That is the number to provision against.
+   It is also the reason to consider `numberOfReplicas: 2` for the
+   backup volume specifically: its contents are already a copy, and a
+   third replica of a copy is thin value for 150Gi.
+
+   **Storage snapshots do not replace the dumps.** A block snapshot of a
+   running Postgres is crash-consistent — Postgres recovers from it as
+   from a power cut — but it proves nothing about the ledger. The weekly
+   restore-verification exists to prove exactly that, and it stays
+   whatever the storage layer offers. Treat snapshots as a faster
+   recovery tier layered on top.
+
+   Volumes can usually be grown in place later
+   (`allowVolumeExpansion: true` on the StorageClass) but never shrunk.
+   Confirm that before the first apply; the alternative is
+   dump-and-restore.
+4. **TLS.** Install cert-manager, edit the e-mail in
    `cert-issuer.yaml`; Let's Encrypt HTTP-01 through Traefik issues and
    renews the certificates.
-4. **Secrets — before the first apply, never in git:**
+5. **Secrets — before the first apply, never in git:**
 
    ```sh
    kubectl -n regnmed create secret generic db-credentials \
@@ -59,7 +130,7 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    Every DATABASE_URL/POSTGRES_PASSWORD in the prod render comes from
    this secret; the rendered YAML contains no credential (usernames and
    the OIDC audience are the only literals).
-5. **Abonnementsfakturering** (docs/abonnement.md): onboard
+6. **Abonnementsfakturering** (docs/abonnement.md): onboard
    driftsselskapet i regnmed (BRREG, som alle andre) og sett dets orgnr
    som `REGNMED_DRIFT_ORGNR` i `deploy/prod/abonnement-faktura.yaml` —
    CronJob-en er prod-only (backup.yaml-mønsteret) fordi lokalklyngen
@@ -147,3 +218,8 @@ on the product. What production runs on:
 Multi-node/HA Postgres, CloudNativePG (above), NetworkPolicies,
 autoscaling — added when a real load or a real requirement asks, each
 priced against the frugality budget.
+
+Longhorn in the **local** cluster is on this list too, and stays there:
+it needs iSCSI, real block devices and about a gigabyte for itself,
+against a 2 GB VM. The manifests support a replicated class (checklist
+item 3) without the laptop having to run one.

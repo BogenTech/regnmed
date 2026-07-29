@@ -1,0 +1,125 @@
+# Production volumes: size, and which storage they come from.
+#
+# ---------------------------------------------------------------------
+# STORAGE CLASS
+# ---------------------------------------------------------------------
+# The base manifests name no storageClassName, so the local k3d cluster
+# gets whatever is default there (local-path — a directory on the one
+# node). That is right for a laptop and wrong for production: a
+# node-local volume means the database dies with its node.
+#
+# Production therefore names a REPLICATED class. `longhorn` is the
+# default here; any distributed provisioner works (Ceph/Rook via
+# `rook-ceph-block`, OpenEBS Mayastor, a cloud provider's class). It is
+# named in exactly this one file, so switching is one edit.
+#
+# What the choice must give us, whatever the name:
+#   - replication across nodes (the database survives losing one)
+#   - `allowVolumeExpansion: true` (volumes below can grow; see sizing)
+#   - snapshots, ideally with a backup target
+#
+# ReadWriteOnce is correct and stays. Nothing here needs shared access:
+# Postgres is a single writer, and the two backup CronJobs that share
+# /backup never run at the same time (01:30 nightly vs 04:00 Sundays),
+# so the volume detaches and reattaches cleanly if they land on
+# different nodes.
+#
+# ---------------------------------------------------------------------
+# WHAT ACTUALLY FILLS THE DATABASE
+# ---------------------------------------------------------------------
+# Not the ledger — vouchers and entries are small rows. The weight is
+# four bytea columns:
+#
+#   attachment.content            bilagsvedlegg, incl. our own invoice PDFs
+#   inbox_document.content        what people upload or mail in
+#   expense.receipt_content       phone photos of receipts
+#   inbox_mail(.attachment)       the raw message, and the decoded parts
+#
+# Each upload is capped at 20 MB (DefaultBodyLimit in regnmed-api), and
+# the realistic average is a phone photo: a few hundred KB. Our own
+# invoice PDFs are ~3 KB and round to nothing beside them. The ledger is
+# append-only, so this grows monotonically for the life of the business.
+#
+# THE ASSUMPTION THESE NUMBERS ENCODE — change the numbers when it stops
+# being true, rather than discovering it when a volume fills:
+#
+#   25 client companies × 1500 bilag/year × ~300 KB attached ≈ 11 GB/year
+#
+# 50Gi buys roughly four years at that rate, or one year at four times
+# the volume.
+#
+# ---------------------------------------------------------------------
+# THE BACKUP VOLUME IS NOT INDEPENDENT
+# ---------------------------------------------------------------------
+# backup.yaml keeps 14 nightly `pg_dump -Fc` files, and -Fc compression
+# does nothing for content that is already JPEG or PDF — so a dump is
+# about the size of the data it dumps, and the volume needs
+# `retention × database`.
+#
+# The pair that shipped before this was already broken in that
+# direction: 2Gi of database against 10Gi of backups, where a full
+# database needs ~28Gi of dumps. The BACKUP volume would have filled
+# first, and the nightly job would have begun failing while the database
+# still looked healthy.
+#
+# 150Gi covers 14 nights of a ~10 GB database, which is where the
+# assumption above puts the first year.
+#
+# ---------------------------------------------------------------------
+# REPLICATION MULTIPLIES ALL OF IT
+# ---------------------------------------------------------------------
+# These are the sizes Kubernetes reports. A replicated class stores each
+# one N times across nodes, and Longhorn's default N is 3:
+#
+#   postgres  50Gi  × 3 = 150Gi raw
+#   backup   150Gi  × 3 = 450Gi raw
+#   nats       1Gi  × 3 =   3Gi raw
+#                          ~600Gi of raw disk across the pool
+#
+# That is the number to provision against, and the reason to consider
+# `numberOfReplicas: 2` on the BACKUP volume specifically (via a
+# Longhorn StorageClass, per-volume): its contents are already a copy,
+# and a third replica of a copy is thin value for 150Gi.
+#
+# Full daily dumps also do not scale with blob storage — they re-copy
+# every unchanged photo, nightly. PITR (CloudNativePG) ships WAL
+# instead, and the trigger to adopt it is the database passing ~20 GB,
+# not a date.
+#
+# Volume snapshots from the storage layer are a FASTER recovery tier,
+# not a replacement for the dumps: a block snapshot of a running
+# Postgres is crash-consistent (Postgres recovers from it, as from a
+# power cut), but it proves nothing about the ledger. The weekly
+# restore-verification exists to prove exactly that, and it stays.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 150Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
