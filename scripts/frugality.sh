@@ -18,11 +18,13 @@ cd "$(dirname "$0")/.."
 # Budgets sit ~1.5x above measured reality: tight enough to catch creep,
 # loose enough for normal feature growth. RSS matches the container limit.
 #
-# Measured in CI 2026-07-29, after the release profile got fat LTO +
-# codegen-units=1 (Cargo.toml): api 13 MB, cli 7 MB, dist 322 KB,
-# RSS 12 MB. The binaries were 22/11 MB the day before on the default
+# Measured in CI 2026-07-29, after the release profile got thin LTO +
+# codegen-units=1 (Cargo.toml): api 15 MB, cli 8 MB, dist 322 KB,
+# RSS 10 MB. The binaries were 22/11 MB earlier that day on the default
 # profile — the budgets were lowered to lock that reduction in, because
 # a budget nobody tightens turns a one-time win into headroom for creep.
+# (Fat LTO reached 13/7 MB but cost the frugality job ~1,5 minutter per
+# kjøring; se avveiningen i Cargo.toml.)
 API_BIN_BUDGET_MB=20
 CLI_BIN_BUDGET_MB=12
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
