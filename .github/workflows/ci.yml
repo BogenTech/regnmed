@@ -6,17 +6,18 @@
 #   generated XML against the official schemas: SAF-T (Skatteetaten),
 #   pain.001 (ISO 20022) and EHF/UBL 2.1 (OASIS).
 #
-#   Kjøres med cargo-nextest, ikke `cargo test`: suiten er 48
-#   testbinærer, 33 av dem med én eneste test, og `cargo test` kjører
-#   binærer ETTER HVERANDRE. Testene venter på Postgres, ikke på CPU, så
-#   det ble nesten ingen parallellitet — målt 4 m 15 s på 129 % CPU.
-#   nextest planlegger hver test som sin egen prosess på tvers av
-#   binærene: 1 m 11 s på 633 % CPU lokalt, 3,6× raskere, og fire
-#   kjøringer på rad ga 347/347 uten flakhet. Prosjektet har ingen
-#   doctests (verifisert), så nextest utelater ingenting.
+#   Run with cargo-nextest, not `cargo test`: the suite was 48 test
+#   binaries, 33 of them holding a single test, and `cargo test` runs
+#   binaries ONE AFTER ANOTHER. The tests wait on Postgres, not on CPU, so
+#   there was almost no parallelism — measured 4 m 15 s at 129 % CPU.
+#   nextest schedules every test as its own process across the binaries:
+#   1 m 11 s at 633 % CPU locally, 3.6× faster, and four runs in a row gave
+#   347/347 with no flakiness. The project has no doctests (verified), so
+#   nextest leaves nothing out.
 #
-#   Ikke skru opp --test-threads uten å se på Postgres' max_connections:
-#   hver test åpner sin egen pool, så samtidighet koster forbindelser.
+#   Do not raise --test-threads without looking at Postgres'
+#   max_connections: each test opens its own pool, so concurrency costs
+#   connections.
 # - frugality: release binary sizes + regnmed-api peak RSS under load
 #   against hard budgets (scripts/frugality.sh) — competing on the least
 #   resources is a product principle, so a service that grows fat fails
@@ -51,16 +52,19 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
-      # Testbinærene trenger ingen debuginfo i CI: assert-makroene bærer
-      # fil og linje selv, og nextest navngir testen som feilet. Målt:
-      # 1 m 17 s → 56 s å bygge, og target/ 5,2 → 2,9 GB — som også gjør
-      # cachen CI laster opp og ned mindre. Lokalt er profilen urørt.
+      # Test binaries need no debuginfo in CI: the assert macros carry file
+      # and line themselves, and nextest names the test that failed.
+      # Measured: 1 m 17 s → 56 s to build, and target/ 5.2 → 2.9 GB —
+      # which also shrinks the cache CI uploads and downloads. Locally the
+      # profile is untouched.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
-      # Inkrementell bygging hjelper bare når det finnes noe fra forrige
-      # gang å bygge videre på; i CI koster den bare skriving og cache.
+      # Incremental compilation only helps when there is something from a
+      # previous run to build on; in CI it costs writes and cache and
+      # nothing else.
       CARGO_INCREMENTAL: 0
-      # 54 testbinærer skal lenkes. Standardlenkeren er det trege leddet.
+      # A pile of test binaries has to be linked, and the default linker is
+      # the slow part.
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v7
@@ -91,8 +95,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
-      # Release-bygget er hele denne jobben (4 m 07 s av 4 m 12 s målt
-      # 2026-07-29), så lenkeren er verdt å bytte her også.
+      # The release build IS this whole job (4 m 07 s of 4 m 12 s, measured
+      # 2026-07-29), so the linker is worth switching here too.
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v7
@@ -109,9 +113,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # `node-version` er Noden portalen BYGGES med. Hvilken Node selve
-      # action-en kjører på er en annen sak, og den følger action-ens
-      # major: v4 kjørte på Node 20, som er avviklet på løperne.
+      # `node-version` is the Node the portal is BUILT with. Which Node the
+      # action itself runs on is a separate matter, and follows the
+      # action's major version: v4 ran on Node 20, which is retired on the
+      # runners.
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -124,6 +129,6 @@ jobs:
       - name: dist matches source
         run: |
           if ! git diff --exit-code -- ui/portal/dist; then
-            echo "ui/portal/dist er ikke bygget fra kilden — kjør scripts/build-portal.sh og sjekk inn resultatet." >&2
+            echo "ui/portal/dist was not built from the current source — run scripts/build-portal.sh and check in the result." >&2
             exit 1
           fi
