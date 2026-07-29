@@ -1,21 +1,21 @@
-//! Bilagstolkning: forslag fra dokumentets egen tekst
+//! Document interpretation: suggestions from the document's own text
 //! (docs/bilagstolkning.md, #34).
 //!
-//! Målet er å spare tastetrykk, ikke å bokføre. Alt her er **forslag**,
-//! og hvert forslag bærer sin egen begrunnelse («fant etter
-//! «Å betale»») — regnskapsføreren skal kunne se hvorfor maskinen tror
-//! noe, og overprøve det uten å lete.
+//! The goal is to save keystrokes, not to post. Everything here is a
+//! **suggestion**, and each one carries its own justification ("found
+//! after «Å betale»") — the regnskapsfører should be able to see why the
+//! machine believes something, and overrule it without hunting.
 //!
-//! Trikset som gjør heuristikken tålelig presis uten modeller:
-//! **kontrollsifrene vi allerede stoler på**. Et ni-sifret tall som
-//! passerer orgnr-MOD11 er nesten sikkert et organisasjonsnummer; et
-//! tall som passerer KID-MOD10/MOD11 ved siden av ordet «KID» er en
-//! KID; elleve siffer som passerer kontonummer-MOD11 er et
-//! kontonummer. Tilfeldige tall gjør ikke det.
+//! The trick that makes the heuristic tolerably precise without models:
+//! **the check digits we already trust**. A nine-digit number that passes
+//! orgnr MOD11 is almost certainly an organisasjonsnummer; a number that
+//! passes KID MOD10/MOD11 next to the word «KID» is a KID; eleven digits
+//! that pass account-number MOD11 are a kontonummer. Random numbers do
+//! not do that.
 //!
-//! Ingen skytjeneste, ingen modell i kjernen — OCR for skannede bilder
-//! hører til en valgfri sidecar (docs/frugality.md), og API-et
-//! oppfører seg likt uten den: da mangler forslagene, ferdig.
+//! No cloud service, no model in the core — OCR for scanned images
+//! belongs in an optional sidecar (docs/frugality.md), and the API
+//! behaves identically without it: the suggestions are simply absent.
 
 use chrono::NaiveDate;
 
@@ -44,7 +44,7 @@ pub struct Forslag {
     pub kontonummer: Option<Funn<String>>,
     pub dato: Option<Funn<NaiveDate>>,
     pub forfall: Option<Funn<NaiveDate>>,
-    /// Brutto å betale.
+    /// Gross amount to pay.
     pub belop_ore: Option<Funn<i64>>,
     pub mva_ore: Option<Funn<i64>>,
 }
@@ -165,7 +165,7 @@ pub fn tolk(text: &str) -> Forslag {
             egne
         };
 
-        // --- Identifikatorer, avgjort av kontrollsiffer ---
+        // --- Identifiers, decided by check digit ---
         for token in &tokens {
             let digits = digits_only(token);
             if forslag.orgnr.is_none()
@@ -198,7 +198,7 @@ pub fn tolk(text: &str) -> Forslag {
             }
         }
 
-        // --- Fakturanummer ---
+        // --- Invoice number ---
         if forslag.fakturanr.is_none()
             && (lower.contains("fakturanr")
                 || lower.contains("faktura nr")
@@ -211,7 +211,7 @@ pub fn tolk(text: &str) -> Forslag {
             forslag.fakturanr = Some(Funn::new(digits_only(token), "etter «fakturanr»"));
         }
 
-        // --- Datoer ---
+        // --- Dates ---
         let datoer = {
             let d = date_candidates(line);
             if d.is_empty() {
@@ -233,9 +233,9 @@ pub fn tolk(text: &str) -> Forslag {
             forslag.dato = Some(Funn::new(*dato, "etter «fakturadato»"));
         }
 
-        // --- Beløp ---
-        // «Å betale» er det eneste tallet på en faktura som betyr
-        // nøyaktig én ting, så det vinner over «sum» og «total».
+        // --- Amounts ---
+        // «Å betale» is the one number on an invoice that means exactly
+        // one thing, so it beats «sum» and «total».
         let belop_stikkord: &[(&str, &str)] = &[
             ("a betale", "«å betale»"),
             ("belop a betale", "«beløp å betale»"),
@@ -308,7 +308,7 @@ KID: 1234567897
 ";
 
     #[test]
-    fn leser_en_vanlig_norsk_faktura() {
+    fn reads_an_ordinary_norwegian_faktura() {
         let f = tolk(FAKTURA);
         assert_eq!(f.orgnr.as_ref().unwrap().verdi, "974760673");
         assert_eq!(f.fakturanr.as_ref().unwrap().verdi, "90210");
@@ -327,7 +327,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn hvert_funn_forteller_hvorfor() {
+    fn every_finding_says_why() {
         let f = tolk(FAKTURA);
         assert!(
             f.belop_ore
@@ -349,7 +349,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn tall_uten_gyldig_kontrollsiffer_foreslas_ikke() {
+    fn numbers_without_a_valid_check_digit_are_not_suggested() {
         let tekst = "Orgnr 123456789\nKID: 1111111111\nKontonummer: 12345678901\nBeskrivelse";
         let f = tolk(tekst);
         assert!(f.orgnr.is_none(), "ugyldig orgnr skal ikke foreslås");
@@ -358,7 +358,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn verdi_paa_linjen_under_etiketten_finnes_ogsaa() {
+    fn a_value_on_the_line_below_its_label_is_found_too() {
         let tekst = "Fakturanr\n55512\nForfallsdato\n01.09.2026\nÅ betale\n1 000,00";
         let f = tolk(tekst);
         assert_eq!(f.fakturanr.unwrap().verdi, "55512");
@@ -370,7 +370,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn a_betale_vinner_over_andre_summer() {
+    fn a_betale_beats_the_other_totals() {
         let tekst = "Sum inkl mva 9 999,00\nÅ betale 1 234,50\nTotalsum 8 888,00";
         let f = tolk(tekst).belop_ore.unwrap();
         assert_eq!(f.verdi, 1_234_50);
@@ -378,7 +378,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn belopsformater() {
+    fn amount_formats() {
         assert_eq!(parse_belop("1 234,50"), Some(123_450));
         assert_eq!(parse_belop("1.234,50"), Some(123_450));
         assert_eq!(parse_belop("1234.50"), Some(123_450));
@@ -392,7 +392,7 @@ KID: 1234567897
     }
 
     #[test]
-    fn tom_tekst_gir_tomt_forslag() {
+    fn empty_text_yields_an_empty_suggestion() {
         let f = tolk("");
         assert!(f.orgnr.is_none() && f.belop_ore.is_none() && f.dato.is_none());
     }

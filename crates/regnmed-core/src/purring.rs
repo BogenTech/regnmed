@@ -1,12 +1,12 @@
-//! Betalingsoppfølging, pure side: forsinkelsesrente, purreregler og
-//! deterministisk dokumentrendering (docs/purring.md).
+//! Payment follow-up, pure side: forsinkelsesrente, purring rules and
+//! deterministic document rendering (docs/purring.md).
 //!
-//! Alt regelverk hentes som data fra satsregisteret
-//! ([`crate::sats`]) — denne modulen vet *hvordan* reglene anvendes
-//! (forsinkelsesrenteloven, inkassoforskriften, inkassoloven §9), aldri
-//! hvilke tall som gjelder. Renter beregnes i heltall øre; dokumentet
-//! rendres deterministisk slik at et arkivert krav kan reproduseres
-//! byte for byte.
+//! All regelverk is pulled as data from the satsregister
+//! ([`crate::sats`]) — this module knows *how* the rules are applied
+//! (forsinkelsesrenteloven, inkassoforskriften, inkassoloven §9), never
+//! which numbers are in force. Interest is computed in integer øre, and
+//! the document renders deterministically so an archived claim can be
+//! reproduced byte for byte.
 
 use std::fmt;
 
@@ -16,8 +16,9 @@ use crate::sats::{SatsPeriode, sats_on};
 use crate::voucher::{EntryDraft, VoucherDraft};
 use crate::{LedgerError, Ore};
 
-/// Purretrappen. Stegene er enveis: et krav kan aldri gå tilbake til et
-/// mildere steg, og inkasso selv er utenfor regnmed (bevillingspliktig).
+/// The purretrapp. The steps are one-way: a claim can never go back to a
+/// milder step, and inkasso itself is outside regnmed (it requires a
+/// licence).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Steg {
     Paminnelse,
@@ -54,34 +55,34 @@ impl Steg {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PurringError {
-    /// Sendedato er ikke etter forfall — kravet er ikke forfalt.
+    /// The send date is not after forfall — the claim is not yet due.
     IkkeForfalt {
         forfall: NaiveDate,
     },
-    /// Ingen forsinkelsesrentesats dekker denne dagen (før tidligste
-    /// verifiserte periode) — vi gjetter aldri en sats.
+    /// No forsinkelsesrente rate covers this day (before the earliest
+    /// verified period) — we never guess a rate.
     ManglerRentesats {
         dato: NaiveDate,
     },
-    /// Purretrappen er enveis.
+    /// The purretrapp is one-way.
     StegTilbake {
         siste: Steg,
         forsokt: Steg,
     },
-    /// En betalingspåminnelse er gebyrfri; med gebyr er den en purring.
+    /// A betalingspåminnelse carries no gebyr; with one it is a purring.
     GebyrPaPaminnelse,
-    /// Inkassoforskriften §1-2: gebyr tidligst 14 dager etter forfall.
+    /// Inkassoforskriften §1-2: gebyr no earlier than 14 days after forfall.
     GebyrForTidlig {
         tidligst: NaiveDate,
     },
     GebyrOverMaks {
         maks_ore: i64,
     },
-    /// Maks to gebyrbelagte skritt per krav (inkassoforskriften §1-2).
+    /// At most two gebyr-bearing steps per claim (inkassoforskriften §1-2).
     ForMangeGebyr,
     NegativtBelop,
     FristForSendedato,
-    /// Inkassoloven §9: betalingsfrist på minst 14 dager.
+    /// Inkassoloven §9: a payment deadline of at least 14 days.
     FristForKort {
         minst: NaiveDate,
     },
@@ -135,7 +136,7 @@ impl fmt::Display for PurringError {
 
 impl std::error::Error for PurringError {}
 
-/// Én satsperiode av renteløpet, slik den vises i dokumentet.
+/// One rate period of the interest run, as shown in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RentePeriode {
     pub fra: NaiveDate,
@@ -159,10 +160,11 @@ fn rente_for_segment(belop_ore: i64, sats_bp: i64, dager: i64) -> Option<i64> {
     i64::try_from(avrundet * teller.signum()).ok()
 }
 
-/// Forsinkelsesrente etter forsinkelsesrenteloven §2: renten løper fra
-/// dagen etter forfall til og med `til`, med den satsen som gjaldt hver
-/// enkelt dag (faktiske dager / 365). Hver satsperiode avrundes for seg,
-/// så spesifikasjonen i dokumentet summerer eksakt til totalen.
+/// Forsinkelsesrente under forsinkelsesrenteloven §2: interest runs from
+/// the day after forfall through `til`, at whichever rate was in force on
+/// each single day (actual days / 365). Every rate period is rounded on
+/// its own, so the spesifikasjon in the document sums exactly to the
+/// total.
 pub fn forsinkelsesrente(
     belop_ore: i64,
     forfall: NaiveDate,
@@ -205,17 +207,17 @@ pub fn forsinkelsesrente(
     })
 }
 
-/// Et tidligere sendt skritt, slik regelverkssjekkene trenger det.
+/// A previously sent step, in the shape the rule checks need.
 #[derive(Debug, Clone, Copy)]
 pub struct TidligereSkritt {
     pub steg: Steg,
     pub gebyr_ore: i64,
 }
 
-/// Regelverkssjekken før et nytt skritt registreres. `maks_gebyr_ore` er
-/// satsen gyldig på sendedatoen (purregebyr_maks eller, for
-/// næringsdrivende skyldnere, standardkompensasjon) — oppslaget gjør
-/// kalleren, reglene anvendes her.
+/// The rule check before a new step is recorded. `maks_gebyr_ore` is the
+/// rate valid on the send date (purregebyr_maks or, for
+/// næringsdrivende debtors, standardkompensasjon) — the caller does the
+/// lookup, the rules are applied here.
 pub fn valider_steg(
     steg: Steg,
     sent_date: NaiveDate,
@@ -268,10 +270,11 @@ pub fn valider_steg(
     Ok(())
 }
 
-/// Bilaget når gebyr og/eller rente kreves: debet reskontrofordringen
-/// (med kunden — kravet blir en åpen post på samme reskontro som
-/// fakturaen), kredit inntektskontiene. Kalles bare når summen er
-/// positiv; et gebyr- og rentefritt skritt bokfører ingenting.
+/// The bilag when gebyr and/or interest is claimed: debit the reskontro
+/// receivable (with the customer — the claim becomes an open item on the
+/// same reskontro as the faktura), credit the revenue accounts. Called
+/// only when the sum is positive; a step with neither gebyr nor interest
+/// posts nothing.
 #[allow(clippy::too_many_arguments)]
 pub fn build_krav_voucher(
     journal_code: &str,
@@ -330,7 +333,8 @@ pub fn build_krav_voucher(
     Ok(draft)
 }
 
-/// Alt dokumentet trenger, samlet av persistenslaget. Ingen klokke og
+/// Everything the document needs, gathered by the persistence layer. No
+/// clock and
 /// ingen oppslag her — samme input gir samme bytes for alltid.
 #[derive(Debug, Clone)]
 pub struct PurringDokument {
@@ -345,7 +349,7 @@ pub struct PurringDokument {
     pub sent_date: NaiveDate,
     pub frist_date: NaiveDate,
     pub restbelop_ore: i64,
-    /// Rentespesifikasjonen når rente kreves; tom beregning ellers.
+    /// The interest spesifikasjon when interest is claimed; empty otherwise.
     pub rente: RenteBeregning,
     pub gebyr_ore: i64,
     pub kid: String,
@@ -355,8 +359,8 @@ fn prosent(bp: i64) -> String {
     format!("{},{:02} %", bp / 100, bp % 100)
 }
 
-/// Deterministisk klartekst-rendering av kravet, lagret ved
-/// registrering og gjenutstedbar for alltid (`?format=tekst`).
+/// Deterministic plain-text rendering of the claim, stored when the step
+/// is recorded and reissuable forever (`?format=tekst`).
 pub fn render_dokument(dok: &PurringDokument) -> String {
     let mut out = String::with_capacity(1024);
     let mut line = |s: &str| {
@@ -446,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn rente_segmenteres_over_satsskifte_og_er_pinned() {
+    fn interest_is_segmented_across_a_rate_change_and_is_pinned() {
         // 10 000 kr, forfall 15.6.2025, krav per 15.7.2025: 15 dager à
         // 12,50 % + 15 dager à 12,25 %, faktiske dager / 365.
         let beregning =
@@ -470,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn ingen_rente_til_og_med_forfallsdagen() {
+    fn no_interest_through_the_forfall_day_itself() {
         let beregning =
             forsinkelsesrente(1_000_000, date(2025, 6, 15), date(2025, 6, 15), &satser()).unwrap();
         assert_eq!(beregning.sum_ore, 0);
@@ -478,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn manglende_sats_feiler_hoyt_aldri_gjetting() {
+    fn a_missing_rate_fails_loudly_never_guesses() {
         let err = forsinkelsesrente(1_000_000, date(2024, 12, 15), date(2025, 1, 15), &satser())
             .unwrap_err();
         assert_eq!(
@@ -490,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn negativt_belop_avvises() {
+    fn a_negative_amount_is_rejected() {
         assert_eq!(
             forsinkelsesrente(-1, date(2025, 6, 15), date(2025, 7, 15), &satser()).unwrap_err(),
             PurringError::NegativtBelop
@@ -508,9 +512,9 @@ mod tests {
     }
 
     #[test]
-    fn stegreglene_handhever_lovkravene() {
+    fn the_step_rules_enforce_the_statutory_requirements() {
         let ingen = &[][..];
-        // Påminnelse dagen etter forfall, uten gebyr: ok.
+        // Påminnelse the day after forfall, without gebyr: fine.
         assert_eq!(
             ok_steg(
                 Steg::Paminnelse,
@@ -521,7 +525,7 @@ mod tests {
             ),
             Ok(())
         );
-        // Ikke forfalt ennå.
+        // Not yet due.
         assert!(matches!(
             ok_steg(
                 Steg::Purring,
@@ -532,7 +536,7 @@ mod tests {
             ),
             Err(PurringError::IkkeForfalt { .. })
         ));
-        // Gebyr på påminnelse er ikke en ting.
+        // A gebyr on a påminnelse is not a thing.
         assert_eq!(
             ok_steg(
                 Steg::Paminnelse,
@@ -543,7 +547,7 @@ mod tests {
             ),
             Err(PurringError::GebyrPaPaminnelse)
         );
-        // Gebyr før 14 dager etter forfall (inkassoforskriften §1-2).
+        // Gebyr before 14 days after forfall (inkassoforskriften §1-2).
         assert_eq!(
             ok_steg(
                 Steg::Purring,
@@ -567,7 +571,7 @@ mod tests {
             ),
             Err(PurringError::GebyrOverMaks { maks_ore: 3800 })
         );
-        // Purretrappen er enveis.
+        // The purretrapp is one-way.
         let etter_varsel = &[TidligereSkritt {
             steg: Steg::Inkassovarsel,
             gebyr_ore: 0,
@@ -603,7 +607,7 @@ mod tests {
             ),
             Err(PurringError::ForMangeGebyr)
         );
-        // Tredje skritt uten gebyr er fortsatt lov.
+        // A third step without gebyr is still allowed.
         assert_eq!(
             ok_steg(
                 Steg::Inkassovarsel,
@@ -617,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn inkassovarsel_krever_minst_14_dagers_frist() {
+    fn an_inkassovarsel_requires_at_least_a_14_day_deadline() {
         assert_eq!(
             ok_steg(
                 Steg::Inkassovarsel,
@@ -643,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn frist_for_sendedato_avvises() {
+    fn a_deadline_before_the_send_date_is_rejected() {
         assert_eq!(
             ok_steg(Steg::Purring, date(2026, 2, 1), date(2026, 2, 1), 0, &[]),
             Err(PurringError::FristForSendedato)
@@ -651,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn krav_bilaget_balanserer_og_baerer_kunden() {
+    fn the_claim_bilag_balances_and_carries_the_customer() {
         let draft = build_krav_voucher(
             "GL",
             date(2026, 2, 1),
@@ -708,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn dokumentet_rendres_deterministisk_med_spesifikasjon() {
+    fn the_document_renders_deterministically_with_its_spesifikasjon() {
         let a = render_dokument(&dokument(Steg::Purring));
         assert_eq!(a, render_dokument(&dokument(Steg::Purring)));
         assert!(a.starts_with("PURRING\n=======\n"));
@@ -726,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn inkassovarselet_baerer_lovteksten_og_stopper_der() {
+    fn the_inkassovarsel_carries_the_statutory_text_and_stops_there() {
         let text = render_dokument(&dokument(Steg::Inkassovarsel));
         assert!(text.starts_with("INKASSOVARSEL\n=============\n"));
         assert!(text.contains("inkassoloven §9"));

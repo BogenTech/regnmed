@@ -1,19 +1,19 @@
-//! Utlegg og kjøregodtgjørelse, pure side (docs/utlegg.md, #42).
+//! Utlegg and kjøregodtgjørelse, pure side (docs/utlegg.md, #42).
 //!
-//! Kjøregodtgjørelse: km × statens sats, med den trekkfrie delen
-//! (Skattedirektoratets forskuddssats) skilt ut fra den trekkpliktige.
-//! Satsene er regelverksdata i satsregisteret (`km_godtgjorelse`,
-//! `km_godtgjorelse_trekkfri`, øre per km) — aldri hardkodet her.
-//! Den trekkpliktige delen blir lønnsinnberetning den dagen lønn/
-//! a-melding finnes (#46); til da rapporteres den som varsel, aldri
-//! skjult (issuen).
+//! Kjøregodtgjørelse: km × the state's rate, with the trekkfri part
+//! (Skattedirektoratet's forskuddssats) separated from the trekkpliktig
+//! one. The rates are regelverk data in the satsregister
+//! (`km_godtgjorelse`, `km_godtgjorelse_trekkfri`, øre per km) — never
+//! hardcoded here. The trekkpliktig part becomes payroll reporting the
+//! day lønn / a-melding exists (#46); until then it is reported as a
+//! warning, never hidden (per the issue).
 //!
-//! Mva-splitten for utlegg (brutto kvittering → netto + mva) er
-//! [`crate::mva::split_gross`] — samme avrunding som all annen mva.
+//! The mva split for utlegg (gross receipt → net + mva) is
+//! [`crate::mva::split_gross`] — the same rounding as all other mva.
 
-/// En beregnet kjøregodtgjørelse: alt i heltall øre, lagret på kravet
-/// ved registrering så raden er selvstendig bevis (satsendringer rører
-/// aldri innsendte krav).
+/// A computed kjøregodtgjørelse: everything in integer øre, stored on
+/// the claim when it is submitted so the row is evidence on its own (rate
+/// changes never touch submitted claims).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Kjoregodtgjorelse {
     pub belop_ore: i64,
@@ -21,9 +21,10 @@ pub struct Kjoregodtgjorelse {
     pub trekkpliktig_ore: i64,
 }
 
-/// km × sats, split i trekkfri og trekkpliktig del. Er den trekkfrie
-/// satsen høyere enn statens sats (har skjedd historisk), er hele
-/// beløpet trekkfritt — aldri negativ trekkplikt.
+/// km × rate, split into a trekkfri and a trekkpliktig part. If the
+/// trekkfri rate is higher than the state's rate (which has happened
+/// historically), the whole amount is trekkfri — never a negative
+/// trekkplikt.
 pub fn kjoregodtgjorelse(
     km: i64,
     sats_ore_per_km: i64,
@@ -43,7 +44,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn satser_2026_gir_trekkpliktig_del() {
+    fn the_2026_rates_yield_a_trekkpliktig_part() {
         // 120 km à 5,30 kr, trekkfritt 3,50 kr.
         let k = kjoregodtgjorelse(120, 530, 350);
         assert_eq!(k.belop_ore, 63_600);
@@ -52,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn trekkfri_sats_over_statens_gir_null_trekkplikt() {
+    fn a_trekkfri_rate_above_the_states_yields_no_trekkplikt() {
         let k = kjoregodtgjorelse(100, 350, 500);
         assert_eq!(k.belop_ore, 35_000);
         assert_eq!(k.trekkfri_ore, 35_000, "aldri mer enn beløpet");
@@ -60,7 +61,7 @@ mod tests {
     }
 
     #[test]
-    fn null_km_er_null() {
+    fn zero_km_is_zero() {
         assert_eq!(
             kjoregodtgjorelse(0, 530, 350),
             Kjoregodtgjorelse {

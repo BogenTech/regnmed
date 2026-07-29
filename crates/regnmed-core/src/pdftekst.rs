@@ -1,17 +1,16 @@
-//! Tekstlaget ut av en PDF (docs/bilagstolkning.md, #34).
+//! The text layer out of a PDF (docs/bilagstolkning.md, #34).
 //!
-//! De fleste fakturaer som kommer inn i innboksen er *genererte* PDF-er
-//! med et tekstlag — teksten står allerede i filen, den skal bare
-//! hentes ut. Det krever ingen OCR og ingen modell; det krever at vi
-//! leser PDF-ens egne innholdsstrømmer.
+//! Most invoices that arrive in the innboks are *generated* PDFs with a
+//! text layer — the text is already in the file, it only has to be pulled
+//! out. That needs no OCR and no model; it needs us to read the PDF's own
+//! content streams.
 //!
-//! Dette er med vilje et **lite utsnitt** av PDF: objekter,
-//! innholdsstrømmer (rå eller Flate-komprimert), og de tekstvisende
-//! operatorene. Skannede bilder har ikke noe tekstlag, og PDF-er med
-//! egne fontkodinger gir bytes vi ikke kan tolke. I begge tilfeller
-//! returnerer vi **None** — aldri søppel som ser ut som et forslag.
-//! Bildesiden (OCR) hører til en valgfri sidecar, ikke kjernen
-//! (docs/frugality.md).
+//! This is deliberately a **small slice** of PDF: objects, content
+//! streams (raw or Flate-compressed), and the text-showing operators.
+//! Scanned images have no text layer, and PDFs with custom font encodings
+//! yield bytes we cannot interpret. In both cases we return **None** —
+//! never garbage that looks like a suggestion. The image side (OCR)
+//! belongs in an optional sidecar, not the core (docs/frugality.md).
 
 /// Extracted text, or None when the document has no readable text
 /// layer. Lines are approximate: each text-positioning operator starts
@@ -272,7 +271,7 @@ mod tests {
 
     /// Round-trip against our own writer: what we print, we can read.
     #[test]
-    fn leser_teksten_fra_var_egen_pdf() {
+    fn reads_the_text_from_our_own_pdf() {
         let mut pdf = Pdf::new();
         pdf.text(50.0, 700.0, 12.0, Font::Bold, "Faktura 1001");
         pdf.text(50.0, 680.0, 10.0, Font::Regular, "Grossisten AS");
@@ -289,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn parenteser_og_escapes_overlever() {
+    fn parentheses_and_escapes_survive() {
         let mut pdf = Pdf::new();
         pdf.text(50.0, 700.0, 10.0, Font::Regular, "Vare (rabatt 10%)");
         pdf.text(50.0, 680.0, 10.0, Font::Regular, "Levert av Grossisten AS");
@@ -299,20 +298,20 @@ mod tests {
     }
 
     #[test]
-    fn ikke_pdf_gir_ingenting() {
+    fn something_that_is_not_a_pdf_yields_nothing() {
         assert!(extract(b"dette er en tekstfil, ikke en PDF").is_none());
         assert!(extract(&[]).is_none());
     }
 
     #[test]
-    fn pdf_uten_lesbart_tekstlag_gir_ingenting() {
+    fn a_pdf_without_a_readable_text_layer_yields_nothing() {
         // A "scan": a PDF whose only stream is an image.
         let fake = b"%PDF-1.4\n1 0 obj\n<< /Subtype /Image /Length 8 >>\nstream\n\x00\x01\x02\x03\x04\x05\x06\x07\nendstream\nendobj\n";
         assert!(extract(fake).is_none());
     }
 
     #[test]
-    fn mojibake_regnes_ikke_som_tekst() {
+    fn mojibake_does_not_count_as_text() {
         // Subset-encoded font: bytes that decode to control characters.
         let content = b"BT /F1 10 Tf 50 700 Td (\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a) Tj ET";
         let mut fake = b"%PDF-1.4\n1 0 obj\n<< /Length 99 >>\nstream\n".to_vec();

@@ -1,22 +1,23 @@
-//! Anleggsregister, pure side (docs/anlegg.md, #40): lineære
-//! avskrivninger for regnskapet og saldoavskrivning per gruppe for
-//! skattemeldingen — begge som rene funksjoner over registerdata, alt
-//! i heltall øre.
+//! Fixed asset register, pure side (docs/anlegg.md, #40): straight-line
+//! avskrivninger for the accounts and saldo depreciation per gruppe for
+//! the skattemelding — both as pure functions over register data, all in
+//! integer øre.
 //!
-//! Regnskapsmessig: avskrivbart beløp (kostpris − restverdi) fordeles
-//! over levetiden i faste månedsbeløp; siste måned tar resten, så
-//! planen summerer EKSAKT til det avskrivbare beløpet.
+//! For the accounts: the depreciable amount (kostpris − residual value)
+//! is spread across the useful life in fixed monthly amounts; the last
+//! month takes the remainder, so the plan sums EXACTLY to the depreciable
+//! amount.
 //!
-//! Skattemessig: saldometoden (skatteloven §14-40 flg.) — grunnlaget er
-//! inngående saldo + tilganger − vederlag; årets avskrivning er
-//! grunnlag × gruppens sats når grunnlaget er positivt. Negativ saldo
-//! (vederlag over saldoen) avskrives ikke — den rapporteres som
-//! inntektsføringskandidat og håndteres av regnskapsfører (bevisst
-//! utenfor scope, se docs/anlegg.md).
+//! For tax: the saldo method (skatteloven §14-40 flg.) — the grunnlag is
+//! opening saldo + additions − proceeds; the year's depreciation is
+//! grunnlag × the gruppe's rate when the grunnlag is positive. A negative
+//! saldo (proceeds above the saldo) is not depreciated — it is reported
+//! as a candidate for income recognition and handled by the
+//! regnskapsfører (deliberately out of scope, see docs/anlegg.md).
 
-/// Saldogruppene i skatteloven §14-41 med beskrivelse — satsene selv
-/// er regelverksdata i satsregisteret (domene `saldogruppe_<bokstav>`),
-/// aldri hardkodet her.
+/// The saldogrupper in skatteloven §14-41 with descriptions — the rates
+/// themselves are regelverk data in the satsregister (domain
+/// `saldogruppe_<letter>`), never hardcoded here.
 pub const SALDOGRUPPER: &[(&str, &str)] = &[
     ("a", "Kontormaskiner o.l."),
     ("b", "Ervervet forretningsverdi"),
@@ -37,9 +38,9 @@ pub fn gyldig_saldogruppe(gruppe: &str) -> bool {
     SALDOGRUPPER.iter().any(|(g, _)| *g == gruppe)
 }
 
-/// Månedsbeløpet for måned `maned_nr` (1-basert) i en lineær plan.
-/// Alle måneder unntatt den siste får det avrundede grunnbeløpet; den
-/// siste tar resten, så summen over levetiden er eksakt
+/// The monthly amount for month `maned_nr` (1-based) in a straight-line
+/// plan. Every month but the last gets the rounded base amount; the last
+/// takes the remainder, so the sum across the life is exactly
 /// `kostpris - restverdi`.
 pub fn manedsbelop(
     kostpris_ore: i64,
@@ -57,7 +58,7 @@ pub fn manedsbelop(
     }
 }
 
-/// Ett saldoår: grunnlag, årets avskrivning og utgående saldo.
+/// One saldo year: grunnlag, the year's depreciation and closing saldo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SaldoAr {
     pub grunnlag_ore: i64,
@@ -65,12 +66,13 @@ pub struct SaldoAr {
     pub utgaende_ore: i64,
 }
 
-/// Saldometoden for ett år. Negativt grunnlag avskrives aldri — det
-/// rapporteres videre som utgående (inntektsføringskandidat).
+/// The saldo method for one year. A negative grunnlag is never
+/// depreciated — it is passed on as closing saldo (a candidate for
+/// income recognition).
 pub fn saldo_ar(inngaende_ore: i64, tilgang_ore: i64, vederlag_ore: i64, sats_bp: i64) -> SaldoAr {
     let grunnlag = inngaende_ore + tilgang_ore - vederlag_ore;
     let avskrivning = if grunnlag > 0 {
-        // Halvt vekk fra null; grunnlaget er positivt her.
+        // Half away from zero; the grunnlag is positive here.
         (grunnlag as i128 * sats_bp as i128 + 5_000) / 10_000
     } else {
         0
@@ -92,8 +94,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn planen_summerer_eksakt() {
-        // 35 000 kr over 36 måneder deler ikke jevnt.
+    fn the_plan_sums_exactly() {
+        // 35 000 kr across 36 months does not divide evenly.
         let (kostpris, restverdi, levetid) = (3_500_000i64, 0i64, 36i32);
         let sum: i64 = (1..=levetid)
             .map(|m| manedsbelop(kostpris, restverdi, levetid, m))
@@ -101,7 +103,7 @@ mod tests {
         assert_eq!(sum, kostpris);
         assert_eq!(manedsbelop(kostpris, restverdi, levetid, 1), 97_222);
         assert_eq!(manedsbelop(kostpris, restverdi, levetid, 36), 97_230);
-        // Restverdi reduserer det avskrivbare beløpet.
+        // A residual value reduces the depreciable amount.
         let sum: i64 = (1..=60)
             .map(|m| manedsbelop(50_000_00, 5_000_00, 60, m))
             .sum();
@@ -110,20 +112,20 @@ mod tests {
     }
 
     #[test]
-    fn saldo_ar_regner_grunnlag_og_avskrivning() {
-        // Gruppe d (20 %): inngående 0, tilgang 46 000, vederlag 33 000.
+    fn a_saldo_year_computes_grunnlag_and_depreciation() {
+        // Gruppe d (20 %): opening 0, addition 46 000, proceeds 33 000.
         let ar = saldo_ar(0, 46_000_00, 33_000_00, 2000);
         assert_eq!(ar.grunnlag_ore, 13_000_00);
         assert_eq!(ar.avskrivning_ore, 2_600_00);
         assert_eq!(ar.utgaende_ore, 10_400_00);
-        // Neste år ruller utgående inn som inngående.
+        // The next year rolls the closing saldo in as the opening one.
         let neste = saldo_ar(ar.utgaende_ore, 0, 0, 2000);
         assert_eq!(neste.avskrivning_ore, 2_080_00);
         assert_eq!(neste.utgaende_ore, 8_320_00);
     }
 
     #[test]
-    fn negativt_grunnlag_avskrives_ikke() {
+    fn a_negative_grunnlag_is_not_depreciated() {
         let ar = saldo_ar(10_000_00, 0, 25_000_00, 2000);
         assert_eq!(ar.grunnlag_ore, -15_000_00);
         assert_eq!(ar.avskrivning_ore, 0);
@@ -131,22 +133,22 @@ mod tests {
     }
 
     #[test]
-    fn avrunding_halvt_opp() {
-        // 1,25 kr × 20 % = 0,25 → 25 øre / grunnlag 125 øre, sats 2000 bp
+    fn rounding_is_half_up() {
+        // 1,25 kr × 20 % = 0,25 → 25 øre / grunnlag 125 øre, rate 2000 bp
         assert_eq!(saldo_ar(0, 125, 0, 2000).avskrivning_ore, 25);
         // 33 øre × 30 % = 9,9 → 10 øre.
         assert_eq!(saldo_ar(0, 33, 0, 3000).avskrivning_ore, 10);
     }
 
     #[test]
-    fn gevinst_og_tap() {
+    fn gain_and_loss() {
         assert_eq!(gevinst_ved_avhending(32_000_00, 33_000_00), 1_000_00);
         assert_eq!(gevinst_ved_avhending(32_000_00, 30_000_00), -2_000_00);
         assert_eq!(gevinst_ved_avhending(0, 0), 0);
     }
 
     #[test]
-    fn saldogruppene_er_a_til_j() {
+    fn the_saldogrupper_run_a_through_j() {
         assert_eq!(SALDOGRUPPER.len(), 10);
         assert!(gyldig_saldogruppe("a") && gyldig_saldogruppe("j"));
         assert!(!gyldig_saldogruppe("k") && !gyldig_saldogruppe(""));

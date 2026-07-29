@@ -1,16 +1,16 @@
-//! Budsjett og avviksrapport (docs/budsjett.md, #41) — ren regning over
-//! tall vi allerede stoler på.
+//! Budget and variance report (docs/budsjett.md, #41) — plain arithmetic
+//! over numbers we already trust.
 //!
-//! Beløpene her er i **presentasjonsfortegn** (som resultatrapporten:
-//! inntekt positiv, kostnad positiv), fordi et budsjett skrives slik et
-//! menneske leser det. Faktiske tall konverteres fra hovedbokens
-//! debet/kredit med [`crate::regnskap::presentasjon_ore`] før de møter
-//! budsjettet, så sammenligningen skjer i ett rom.
+//! The amounts here are in **presentation sign** (like the resultat
+//! report: income positive, cost positive), because a budget is written
+//! the way a human reads it. Actuals are converted from the hovedbok's
+//! debit/credit with [`crate::regnskap::presentasjon_ore`] before they
+//! meet the budget, so the comparison happens in one space.
 //!
-//! `avvik = faktisk − budsjett` per konto. Fortegnet tolkes av leseren:
-//! for en inntektskonto er positivt avvik bedre enn planlagt, for en
-//! kostnadskonto er det dyrere. Rapporten later ikke som den vet hva
-//! som er «bra» — den viser tallene.
+//! `avvik = actual − budget` per account. The sign is interpreted by the
+//! reader: for an income account a positive variance is better than
+//! planned, for a cost account it is more expensive. The report does not
+//! pretend to know what is "good" — it shows the numbers.
 
 use crate::regnskap::class_of;
 
@@ -54,7 +54,7 @@ pub struct Avviksrapport {
     /// Months 1..=t_o_m are counted as "hittil".
     pub t_o_m_maned: u32,
     pub seksjoner: Vec<AvvikSeksjon>,
-    /// Inntekter − kostnader, hittil.
+    /// Income − costs, year to date.
     pub resultat_budsjett_hittil_ore: i64,
     pub resultat_faktisk_hittil_ore: i64,
     pub resultat_avvik_hittil_ore: i64,
@@ -64,7 +64,7 @@ pub struct Avviksrapport {
     pub resultat_faktisk_maaneder: [i64; 12],
 }
 
-/// NS 4102-seksjonene, samme inndeling som resultatrapporten.
+/// The NS 4102 sections, the same split as the resultat report.
 const SEKSJONER: [(&str, &[u32]); 5] = [
     ("Driftsinntekter", &[3]),
     ("Varekostnad", &[4]),
@@ -154,9 +154,9 @@ pub fn avvik(tall: &[KontoTall], t_o_m_maned: u32) -> Avviksrapport {
     }
 }
 
-/// «Lag budsjett fra fjoråret ±X %»: scales an amount by basis points
-/// (500 = +5 %, -1000 = −10 %), rounding half away from zero so the
-/// suggestion never invents or loses an øre through truncation. Pure
+/// "Build a budget from last year ±X %": scales an amount by basis
+/// points (500 = +5 %, -1000 = −10 %), rounding half away from zero so
+/// the suggestion never invents or loses an øre through truncation. Pure
 /// integer arithmetic — no floats near money, ever.
 pub fn juster_ore(belop_ore: i64, justering_bp: i64) -> i64 {
     let faktor = 10_000 + justering_bp;
@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn hittil_stopper_ved_valgt_maned() {
+    fn year_to_date_stops_at_the_chosen_month() {
         let tall = vec![konto("3000", jevnt(100_00), jevnt(90_00))];
         let rapport = avvik(&tall, 3);
         let linje = &rapport.seksjoner[0].linjer[0];
@@ -202,14 +202,14 @@ mod tests {
     }
 
     #[test]
-    fn resultatet_legger_til_inntekt_og_trekker_fra_kostnad() {
+    fn the_result_adds_income_and_subtracts_cost() {
         let tall = vec![
             konto("3000", jevnt(100_00), jevnt(120_00)),
             konto("5000", jevnt(40_00), jevnt(45_00)),
             konto("6300", jevnt(10_00), jevnt(10_00)),
         ];
         let rapport = avvik(&tall, 12);
-        // Budsjettert resultat: (100 − 40 − 10) × 12.
+        // Budgeted result: (100 − 40 − 10) × 12.
         assert_eq!(rapport.resultat_budsjett_hittil_ore, 600_00);
         assert_eq!(rapport.resultat_faktisk_hittil_ore, 780_00);
         assert_eq!(rapport.resultat_avvik_hittil_ore, 180_00);
@@ -218,13 +218,13 @@ mod tests {
     }
 
     #[test]
-    fn konto_som_bare_finnes_paa_en_side_blir_med() {
+    fn an_account_present_on_only_one_side_is_kept() {
         let tall = vec![
-            // Ubudsjettert kostnad — nettopp det rapporten er til for.
+            // An unbudgeted cost — exactly what the report is for.
             konto("7770", [0; 12], jevnt(5_00)),
-            // Budsjettert, men ingenting bokført ennå.
+            // Budgeted, but nothing booked yet.
             konto("6300", jevnt(3_00), [0; 12]),
-            // Verken plan eller virkelighet: utelates.
+            // Neither plan nor reality: left out.
             konto("6400", [0; 12], [0; 12]),
         ];
         let rapport = avvik(&tall, 12);
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn seksjonene_folger_ns_4102() {
+    fn the_sections_follow_ns_4102() {
         let tall = vec![
             konto("3000", jevnt(1_00), [0; 12]),
             konto("4300", jevnt(1_00), [0; 12]),
@@ -261,16 +261,16 @@ mod tests {
                 "Finansposter, skatt m.m.",
             ]
         );
-        // 6 og 7 deler seksjon.
+        // 6 and 7 share a section.
         assert_eq!(rapport.seksjoner[3].linjer.len(), 2);
     }
 
     #[test]
-    fn justering_runder_halve_ore_bort_fra_null() {
+    fn scaling_rounds_half_ore_away_from_zero() {
         assert_eq!(juster_ore(100_00, 0), 100_00);
         assert_eq!(juster_ore(100_00, 500), 105_00);
         assert_eq!(juster_ore(100_00, -1000), 90_00);
-        // 1 øre + 5 % = 1,05 øre → 1; 1 øre + 50 % = 1,5 → 2 (bort fra null).
+        // 1 øre + 5 % = 1,05 øre → 1; 1 øre + 50 % = 1,5 → 2 (away from zero).
         assert_eq!(juster_ore(1, 500), 1);
         assert_eq!(juster_ore(1, 5000), 2);
         assert_eq!(juster_ore(-1, 5000), -2);

@@ -123,7 +123,7 @@ en felle, så den er behandlet slik:
 `regnskapsar(dato)` og `regnskapsar_periode(år)` med enhetstester som
 fester dagens oppførsel. Posteringen (bilagsnummerserien) og SAF-T-ens
 `year=`-form går gjennom den. Testen
-`regnskapsaret_er_kalenderaret` er der for at en endring skal være en
+`the_fiscal_year_is_the_calendar_year` er der for at en endring skal være en
 beslutning, ikke et uhell.
 
 ### Hva som må endres den dagen en kunde har avvikende år

@@ -1,12 +1,12 @@
-//! Faktura/kreditnota som PDF (docs/faktura.md) og purredokument som
-//! PDF (docs/purring.md) — pure layout over [`crate::pdf`].
+//! Faktura/kreditnota as PDF (docs/faktura.md) and the purring document
+//! as PDF (docs/purring.md) — pure layout over [`crate::pdf`].
 //!
-//! Innholdet følger bokføringsforskriften §5-1-1: nummer og dato,
-//! partene (selgers orgnr med "MVA"-suffiks når registrert,
-//! "Foretaksregisteret" for foretak registrert der), ytelsens art og
-//! omfang, vederlag med forfall, og merverdiavgift spesifisert i NOK
-//! per sats. Rendering er deterministisk — PDF-en som lagres på bilaget
-//! ved utstedelse kan reproduseres byte for byte.
+//! The content follows bokføringsforskriften §5-1-1: number and date, the
+//! parties (the seller's orgnr with the "MVA" suffix when registered,
+//! "Foretaksregisteret" for entities registered there), the nature and
+//! extent of what was supplied, the consideration with its forfall, and
+//! merverdiavgift specified in NOK per rate. Rendering is deterministic —
+//! the PDF stored on the bilag at issue can be reproduced byte for byte.
 
 use chrono::NaiveDate;
 
@@ -22,7 +22,7 @@ pub struct PdfLinje {
     /// Tusendeler: 1 stk = 1000.
     pub antall_milli: i64,
     pub enhetspris_ore: i64,
-    /// Basispunkter; None for linjer uten mva-kode.
+    /// Basis points; None for lines without an mva code.
     pub mva_sats_bp: Option<i64>,
     pub netto_ore: i64,
     pub mva_ore: i64,
@@ -64,14 +64,14 @@ impl Dokumenttype {
 #[derive(Debug, Clone)]
 pub struct FakturaPdfInput {
     pub dokumenttype: Dokumenttype,
-    /// Fakturanummeret til fakturaen denne krediterer.
+    /// The invoice number of the faktura this one credits.
     pub krediterer_nr: Option<i64>,
 
     pub selger_navn: String,
     pub selger_orgnr: String,
     pub selger_adresse: Option<String>,
     pub selger_mva_registrert: bool,
-    /// "Foretaksregisteret" påføres for foretak registrert der (AS/ASA,
+    /// "Foretaksregisteret" is added for entities registered there (AS/ASA,
     /// foretaksregisterloven §10-2).
     pub selger_foretaksregistrert: bool,
     pub selger_kontonummer: Option<String>,
@@ -341,8 +341,9 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     pdf.finish()
 }
 
-/// Et lagret klartekstdokument (purring/inkassovarsel) som PDF: Courier
-/// linje for linje, så kolonnene i tekstdokumentet beholder justeringen.
+/// A stored plain-text document (purring/inkassovarsel) as PDF: Courier
+/// line by line, so the columns in the text document keep their
+/// alignment.
 pub fn render_tekst_pdf(document: &str) -> Vec<u8> {
     let mut pdf = Pdf::new();
     let mut y = 60.0;

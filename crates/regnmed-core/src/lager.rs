@@ -1,18 +1,19 @@
-//! Enkelt varelager (docs/produkter.md, #39): beholdning og verdi som
-//! ren funksjon over bevegelsene — aldri lagret, samme filosofi som
-//! saldoer. Verdsettelse etter gjennomsnittsmetoden: innkjøp til
-//! anskaffelseskost, uttak til løpende gjennomsnittskost. Alt i heltall
-//! (milli-enheter og øre); avrunding halvt vekk fra null per bevegelse
-//! så statusen er deterministisk uansett hvor den beregnes.
+//! Simple inventory (docs/produkter.md, #39): stock and value as a pure
+//! function over the movements — never stored, the same philosophy as
+//! balances. Valued by the weighted-average method: purchases at
+//! acquisition cost, withdrawals at the running average cost. All in
+//! integers (milli-units and øre); rounding half away from zero per
+//! movement, so the status is deterministic wherever it is computed.
 //!
-//! Regler i randtilfellene (bevisst enkle, dokumentert her og i testene):
-//! - Inngang uten kostpris (varetelling opp, kreditnota-retur) tas inn
-//!   til løpende gjennomsnittskost; er beholdningen tom, til verdi 0.
-//! - Uttak utover beholdningen fjerner hele verdien og lar antallet gå
-//!   negativt — negativ beholdning er et telleavvik som skal synes,
-//!   ikke skjules.
-//! - Tømmes beholdningen eksakt, fjernes verdien eksakt (proporsjonen
-//!   er 1), så ingen rest-øre blir igjen.
+//! Edge-case rules (deliberately simple, documented here and in the
+//! tests):
+//! - An inbound movement without a cost (stocktake up, kreditnota return)
+//!   is taken in at the running average cost; if stock is empty, at 0.
+//! - A withdrawal beyond the stock removes the whole value and lets the
+//!   quantity go negative — negative stock is a counting discrepancy that
+//!   must be visible, not hidden.
+//! - When stock empties exactly, the value is removed exactly (the
+//!   proportion is 1), so no residual øre is left behind.
 
 /// One inventory movement, chronological order is the caller's job.
 /// Quantities are milli-units (1000 = one unit) matching invoice line
@@ -31,7 +32,7 @@ pub struct LagerStatus {
 }
 
 impl LagerStatus {
-    /// Løpende gjennomsnittskost per unit, when there is stock to price.
+    /// Running average cost per unit, when there is stock to price.
     pub fn gjennomsnitt_ore(&self) -> Option<i64> {
         if self.antall_milli > 0 {
             Some(div_round(
@@ -99,8 +100,8 @@ mod tests {
     }
 
     #[test]
-    fn gjennomsnitt_over_to_innkjop() {
-        // 10 stk à 100 kr + 10 stk à 200 kr → snitt 150 kr; selg 5.
+    fn average_across_two_purchases() {
+        // 10 units at 100 kr + 10 at 200 kr → average 150 kr; sell 5.
         let status = verdsett(&[inn(10_000, 100_00), inn(10_000, 200_00), bev(-5_000)]);
         assert_eq!(status.antall_milli, 15_000);
         assert_eq!(status.verdi_ore, 3_000_00 - 750_00);
@@ -108,48 +109,48 @@ mod tests {
     }
 
     #[test]
-    fn eksakt_tomming_etterlater_null_verdi() {
+    fn emptying_exactly_leaves_zero_value() {
         let status = verdsett(&[inn(3_000, 99_99), bev(-3_000)]);
         assert_eq!(status, LagerStatus::default());
     }
 
     #[test]
-    fn avrunding_halvt_vekk_fra_null() {
-        // 3 stk à 100 kr = 300 kr; selg 1 → fjern 100,00 eksakt.
-        // 3 stk til samlet 100,00 (33,3333 kr snitt); selg 1 → 33,33.
+    fn rounding_is_half_away_from_zero() {
+        // 3 units at 100 kr = 300 kr; sell 1 → remove 100,00 exactly.
+        // 3 units at 100,00 total (33,3333 kr average); sell 1 → 33,33.
         let status = verdsett(&[inn(3_000, 33_33), bev(-1_000)]);
         assert_eq!(status.verdi_ore, 99_99 - 33_33);
-        // Odd case: verdi 1,01 kr over 2 stk, selg 1 → fjern 0,51 (halvt opp).
+        // Odd case: value 1,01 kr across 2 units, sell 1 → remove 0,51 (half up).
         let status = verdsett(&[inn(1_000, 33), inn(1_000, 68), bev(-1_000)]);
         assert_eq!(status.verdi_ore, 101 - 51);
     }
 
     #[test]
-    fn inngang_uten_kost_tas_til_snitt() {
-        // Varetelling opp / kreditnota-retur: inn til løpende snitt.
+    fn an_inbound_without_cost_is_taken_at_the_average() {
+        // Stocktake up / kreditnota return: in at the running average.
         let status = verdsett(&[inn(10_000, 100_00), bev(-4_000), bev(2_000)]);
         assert_eq!(status.antall_milli, 8_000);
         assert_eq!(status.verdi_ore, 800_00);
-        // Inn i tom beholdning uten kost: verdi 0.
+        // Into empty stock without a cost: value 0.
         let status = verdsett(&[bev(5_000)]);
         assert_eq!(status.verdi_ore, 0);
         assert_eq!(status.antall_milli, 5_000);
     }
 
     #[test]
-    fn oversalg_gir_negativ_beholdning_og_null_verdi() {
+    fn overselling_yields_negative_stock_and_zero_value() {
         let status = verdsett(&[inn(2_000, 100_00), bev(-3_000)]);
         assert_eq!(status.antall_milli, -1_000);
         assert_eq!(status.verdi_ore, 0);
-        // Salg fra tom beholdning endrer bare antallet.
+        // A sale from empty stock changes only the quantity.
         let status = verdsett(&[bev(-1_000)]);
         assert_eq!(status.antall_milli, -1_000);
         assert_eq!(status.verdi_ore, 0);
     }
 
     #[test]
-    fn brokdels_antall() {
-        // 2,5 kg à 40 kr/kg = 100 kr.
+    fn fractional_quantities() {
+        // 2,5 kg at 40 kr/kg = 100 kr.
         let status = verdsett(&[inn(2_500, 40_00)]);
         assert_eq!(status.verdi_ore, 100_00);
         assert_eq!(status.gjennomsnitt_ore(), Some(40_00));

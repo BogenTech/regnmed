@@ -1,15 +1,15 @@
-//! E-post-inn: adressen og avsenderregelen (docs/epost-inn.md, #35).
+//! Inbound e-mail: the address and the sender rule (docs/epost-inn.md, #35).
 //!
-//! To rene avgjørelser som må være like hver gang, og som derfor bor
-//! her i stedet for i en spørring: hvordan en mottaksadresse dannes, og
-//! om en avsender står på selskapets liste.
+//! Two pure decisions that must come out the same every time, and
+//! therefore live here rather than in a query: how a receiving address is
+//! formed, and whether a sender is on the company's list.
 
 /// Local-part of a company's inbound address: `bilag-<navn>-<tilfeldig>`.
 ///
-/// Navnedelen er der for menneskene (adressen skal kunne leses opp over
-/// telefon), den tilfeldige halen er der fordi adressen er en
-/// **kapabilitet**: den som kjenner den kan levere noe i innboksen, så
-/// den må ikke kunne gjettes ut fra firmanavnet.
+/// The name part is there for the humans (the address should be readable
+/// over the phone); the random tail is there because the address is a
+/// **capability**: whoever knows it can deliver something into the
+/// innboks, so it must not be guessable from the company name.
 pub fn local_part(firmanavn: &str, tilfeldig: &str) -> String {
     let slug: String = firmanavn
         .to_lowercase()
@@ -73,10 +73,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adressen_er_lesbar_men_ikke_gjettbar() {
+    fn the_address_is_readable_but_not_guessable() {
         let a = local_part("Purredemo AS", "a1b2c3d4e5");
         assert_eq!(a, "bilag-purredemo-as-a1b2c3d4e5");
-        // Norske tegn og skilletegn overlever som noe en mailserver
+        // Norwegian characters and punctuation survive as something a
         // godtar.
         assert_eq!(
             local_part("Bråten & Sønn AS", "xyz123"),
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn avsender_leses_ut_av_visningsnavn() {
+    fn the_sender_is_read_out_of_a_display_name() {
         assert_eq!(
             normaliser_avsender("Ola Nordmann <POST@Grossisten.no>"),
             "post@grossisten.no"
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn listen_godtar_adresse_og_domene() {
+    fn the_list_accepts_an_address_and_a_domain() {
         let liste = vec![
             "post@grossisten.no".to_string(),
             "@utleiebygg.no".to_string(),

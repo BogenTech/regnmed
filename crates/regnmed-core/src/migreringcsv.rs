@@ -1,26 +1,26 @@
-//! Migreringsimport, filtier (docs/migration.md, #19).
+//! Migration import, file tier (docs/migration.md, #19).
 //!
-//! SAF-T flytter hovedboken (crate::saft_import), men den bærer ikke
-//! alt et byrå trenger for å slutte å bruke det gamle systemet:
-//! **kontaktopplysninger** og **åpne reskontroposter** står igjen.
-//! Alle de norske systemene (Tripletex, Fiken, Visma eAccounting,
-//! PowerOffice, Conta) kan eksportere begge deler som CSV/Excel i dag,
-//! uten API-nøkler — så filtieren kommer først, akkurat som for bank
+//! SAF-T moves the hovedbok (crate::saft_import), but it does not carry
+//! everything a byrå needs in order to stop using the old system:
+//! **contact details** and **open reskontro items** are left behind. All
+//! the Norwegian systems (Tripletex, Fiken, Visma eAccounting,
+//! PowerOffice, Conta) can export both as CSV/Excel today, without API
+//! keys — so the file tier comes first, exactly as for bank
 //! (docs/bank.md).
 //!
-//! Layouten leses av **kolonneoverskriftene**, ikke av en profil per
-//! leverandør: overskriftsvokabularet endrer seg langsommere enn
-//! produktnavnene, og en fil vi ikke forstår feiler høyt med
-//! kolonnene vi faktisk så — aldri en stille halv import.
+//! The layout is read from the **column headers**, not from a per-vendor
+//! profile: the header vocabulary changes more slowly than the product
+//! names, and a file we do not understand fails loudly listing the
+//! columns we actually saw — never a silent half import.
 //!
-//! To fortegnsregler er verdt å merke seg:
-//! - Åpne poster leses som **utestående beløp**, med filens eget
-//!   fortegn. En kreditnota i en kundeliste kommer negativ og forblir
-//!   negativ.
-//! - Hvilken vei posten peker i hovedboken bestemmes av parts-typen
-//!   (kunde = debet, leverandør = kredit), ikke av filen: eksportene
-//!   er uenige med hverandre om fortegn, men aldri om hvem som
-//!   skylder hvem.
+//! Two sign rules are worth noting:
+//! - Open items are read as the **outstanding amount**, with the file's
+//!   own sign. A kreditnota in a customer list arrives negative and stays
+//!   negative.
+//! - Which way the item points in the hovedbok is decided by the party
+//!   kind (kunde = debit, leverandør = credit), not by the file: the
+//!   exports disagree with each other about signs, but never about who
+//!   owes whom.
 
 use chrono::NaiveDate;
 
@@ -60,7 +60,7 @@ impl std::fmt::Display for MigreringError {
 
 impl std::error::Error for MigreringError {}
 
-/// Kunde eller leverandør — the same two kinds the reskontro knows.
+/// Kunde or leverandør — the same two kinds the reskontro knows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartKind {
     Kunde,
@@ -344,7 +344,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tripletex_style_kundeliste() {
+    fn tripletex_style_customer_list() {
         // Semicolon, Norwegian headers, quoted name with the delimiter.
         let csv = "Kundenr;Navn;Organisasjonsnummer;E-post;Adresse;Kontonummer\n\
                    10001;\"Hansen; Berg AS\";915933149;post@hansen.no;Storgata 1;8601.11.17947\n\
@@ -363,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn engelsk_eksport_med_typekolonne_vinner_over_standardvalget() {
+    fn an_english_export_with_a_type_column_beats_the_default_kind() {
         let csv = "Number,Name,Type,Email\n\
                    S-1,Supplier AS,Supplier,post@supplier.no\n\
                    C-1,Customer AS,Customer,post@customer.no\n";
@@ -378,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn kontaktliste_uten_navnekolonne_feiler_hoyt() {
+    fn a_contact_list_without_a_name_column_fails_loudly() {
         let csv = "Kundenr;Saldo\n10001;500,00\n";
         let error = parse_kontakter(csv, PartKind::Kunde).unwrap_err();
         match error {
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn restbelop_vinner_over_fakturabelop() {
+    fn restbelop_beats_the_invoice_total() {
         // The trap: importing "Beløp" would overstate the reskontro.
         let csv = "Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n\
                    10001;Hansen AS;F-100;15.01.2026;29.01.2026;12 500,00;2 500,00;1234567897\n";
@@ -415,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn kreditnota_beholder_sitt_negative_fortegn() {
+    fn a_kreditnota_keeps_its_negative_sign() {
         let csv = "Navn;Fakturanr;Restbeløp\n\
                    Hansen AS;F-101;-1 000,00\n\
                    Hansen AS;F-102;0,00\n";
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn apne_poster_uten_belopskolonne_feiler_hoyt() {
+    fn open_items_without_an_amount_column_fail_loudly() {
         let csv = "Kundenr;Navn;Fakturanr\n10001;Hansen AS;F-100\n";
         let error = parse_apne_poster(csv).unwrap_err();
         assert!(matches!(error, MigreringError::UnknownLayout(_)));
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn tabulator_og_iso_datoer_gaar_ogsaa() {
+    fn tabs_and_iso_dates_work_too() {
         let csv = "Leverandørnr\tNavn\tBilagsnr\tDato\tSaldo\n\
                    L-9\tGrossisten AS\tI-77\t2026-02-01\t-4500.50\n";
         let rader = parse_apne_poster(csv).unwrap();
@@ -447,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn forfallsdato_stjeler_ikke_fakturadatokolonnen() {
+    fn the_due_date_does_not_steal_the_invoice_date_column() {
         let csv = "Navn;Forfallsdato;Fakturadato;Restbeløp\n\
                    Hansen AS;29.01.2026;15.01.2026;100,00\n";
         let rader = parse_apne_poster(csv).unwrap();

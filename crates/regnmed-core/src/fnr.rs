@@ -1,22 +1,21 @@
-//! Fødselsnummer og D-nummer (docs/aksjonaer.md, #43): kontrollsifrene
-//! og fødselsdatoen som ligger inne i nummeret.
+//! Fødselsnummer and D-nummer (docs/aksjonaer.md, #43): the check digits
+//! and the birth date carried inside the number.
 //!
-//! Aksjonærregisteroppgaven identifiserer personlige aksjonærer med
-//! fødselsnummer, mens **aksjeeierboken etter aksjeloven §4-5 bare skal
-//! inneholde fødselsdato**. Det er ikke en detalj: det ene er en
-//! innrapportering til Skatteetaten, det andre er et register enhver
-//! har innsynsrett i. Derfor bor utledningen fødselsnummer →
-//! fødselsdato her, slik at aksjeeierboken kan vise akkurat det loven
-//! ber om og ikke ett siffer mer.
+//! The aksjonærregisteroppgave identifies personal shareholders by
+//! fødselsnummer, whereas **the aksjeeierbok under aksjeloven §4-5 is to
+//! contain only the birth date**. That is not a detail: one is a filing
+//! to Skatteetaten, the other a register anyone has a right to inspect.
+//! So the derivation fødselsnummer → birth date lives here, letting the
+//! aksjeeierbok show exactly what the law asks for and not one digit more.
 //!
-//! Kontrollsifrene er MOD11 med to runder (samme familie som orgnr og
-//! KID). Vi validerer dem fordi et nummer med feil kontrollsiffer er en
-//! tastefeil vi kan fange før den blir en innrapportering.
+//! The check digits are MOD11 in two rounds (the same family as orgnr and
+//! KID). We validate them because a number with a wrong check digit is a
+//! typo we can catch before it becomes a filing.
 //!
-//! **Merk hva dette IKKE er:** et gyldig kontrollsiffer beviser at
-//! nummeret er velformet, ikke at personen finnes. Oppslag mot
-//! Folkeregisteret er en egen tjeneste med egne hjemler, og gjøres ikke
-//! her.
+//! **Note what this is NOT:** a valid check digit proves the number is
+//! well-formed, not that the person exists. Looking a person up in
+//! Folkeregisteret is a separate service with its own legal basis, and is
+//! not done here.
 
 use chrono::NaiveDate;
 
@@ -78,12 +77,12 @@ pub fn fodselsdato(nummer: &str) -> Option<NaiveDate> {
     let ar2 = num(&d[4..6]);
     let individ = num(&d[6..9]);
 
-    // D-nummer: dagen er lagt 40 til.
+    // D-nummer: 40 has been added to the day.
     if dag > 40 {
         dag -= 40;
     }
-    // Syntetisk (80) før H-nummer (40) — rekkefølgen er entydig fordi
-    // en måned aldri er over 12 i utgangspunktet.
+    // Synthetic (80) before H-nummer (40) — the order is unambiguous
+    // because a month is never above 12 to begin with.
     if maned > 80 {
         maned -= 80;
     } else if maned > 40 {
@@ -113,20 +112,21 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, d)
     }
 
-    /// Syntetiske testnumre fra Skatteetatens Tenor-testdatasett. Det
-    /// første står i etatens egen RF-1086-eksempelfil. De er konstruert
-    /// for formålet og er ikke ekte personer — måneden er lagt 80 til.
+    /// Synthetic test numbers from Skatteetaten's Tenor test data set.
+    /// The first appears in the agency's own RF-1086 example file. They
+    /// are constructed for the purpose and are not real people — 80 has
+    /// been added to the month.
     const TENOR: [&str; 3] = ["26829398612", "08888797336", "25927898821"];
 
     #[test]
-    fn kontrollsifrene_stemmer_for_skatteetatens_egne_testnumre() {
+    fn check_digits_hold_for_skatteetatens_own_test_numbers() {
         for n in TENOR {
             assert!(is_valid(n), "{n}");
         }
     }
 
     #[test]
-    fn tastefeil_avvises() {
+    fn typos_are_rejected() {
         // Ett siffer endret bakerst bryter kontrollrunden.
         assert!(!is_valid("26829398613"));
         assert!(!is_valid("2682939861"));
@@ -135,8 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn syntetisk_maned_leses_som_ekte_maned() {
-        // 26.82.93 er den 26. februar 1993 med +80 på måneden.
+    fn a_synthetic_month_reads_as_the_real_month() {
+        // 26.82.93 is 26 February 1993 with +80 on the month.
         assert_eq!(fodselsdato("26829398612"), dato(1993, 2, 26));
         assert_eq!(fodselsdato("08888797336"), dato(1987, 8, 8));
         assert_eq!(fodselsdato("25927898821"), dato(1978, 12, 25));
@@ -144,41 +144,41 @@ mod tests {
     }
 
     #[test]
-    fn dnummer_trekker_fra_40_paa_dagen() {
+    fn dnummer_subtracts_40_from_the_day() {
         assert!(er_dnummer("41019010110"));
         assert_eq!(fodselsdato("41019010110"), dato(1990, 1, 1));
         assert!(is_valid("41019010110"));
     }
 
     #[test]
-    fn hnummer_trekker_fra_40_paa_maneden() {
+    fn hnummer_subtracts_40_from_the_month() {
         assert_eq!(fodselsdato("01419010029"), dato(1990, 1, 1));
     }
 
-    /// Århundret ligger i individnummeret, ikke i årstallet — dette er
-    /// regelen som gjør at en aksjonær født i 1905 og en født i 2005
-    /// ikke blandes sammen.
+    /// The century sits in the individnummer, not in the year — this is
+    /// the rule that keeps a shareholder born in 1905 and one born in
+    /// 2005 from being confused for each other.
     #[test]
-    fn arhundret_kommer_fra_individnummeret() {
-        // 500-749 med årstall 54-99 → 1800-tallet.
+    fn the_century_comes_from_the_individnummer() {
+        // 500-749 with year 54-99 → the 1800s.
         assert_eq!(fodselsdato("01016050012"), dato(1860, 1, 1));
-        // 500-999 med årstall 00-39 → 2000-tallet.
+        // 500-999 with year 00-39 → the 2000s.
         assert_eq!(fodselsdato("01010550048"), dato(2005, 1, 1));
-        // 900-999 med årstall 40-99 → 1900-tallet.
+        // 900-999 with year 40-99 → the 1900s.
         assert_eq!(fodselsdato("01016090073"), dato(1960, 1, 1));
     }
 
     #[test]
-    fn individnummer_utenfor_rekkevidde_er_ingen_dato() {
-        // 750-899 med årstall 54-99 er ikke tildelt noe århundre.
-        // Kontrollsifrene stemmer — det er datoregelen som sier nei.
+    fn an_individnummer_out_of_range_yields_no_date() {
+        // 750-899 with year 54-99 is assigned to no century at all.
+        // The check digits are fine — it is the date rule that says no.
         assert_eq!(fodselsdato("01016075015"), None);
         assert!(!is_valid("01016075015"));
     }
 
     #[test]
-    fn umulig_dato_avvises_selv_med_riktige_kontrollsiffer() {
-        // 31. februar finnes ikke.
+    fn an_impossible_date_is_rejected_even_with_valid_check_digits() {
+        // There is no 31 February.
         assert_eq!(fodselsdato("31029010059"), None);
         assert!(!is_valid("31029010059"));
     }

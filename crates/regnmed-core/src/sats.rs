@@ -32,11 +32,11 @@ pub fn sats_on(satser: &[SatsPeriode], domene: &str, dato: NaiveDate) -> Option<
 /// authorities publishing close to the effective date. Domains not
 /// listed change rarely and are exempt from staleness monitoring.
 const KADENSER: &[(&str, i64)] = &[
-    // Fastsatt hvert halvår (1/1 og 1/7): stale when the newest period
+    // Set every half year (1/1 and 1/7): stale when the newest period
     // started more than ~7 months ago.
     ("forsinkelsesrente", 215),
     ("standardkompensasjon", 215),
-    // Fastsatt årlig: stale when the newest period started more than
+    // Set annually: stale when the newest period started more than
     // ~13 months ago.
     ("inkassosats", 400),
     ("purregebyr_maks", 400),

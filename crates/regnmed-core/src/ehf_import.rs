@@ -1,16 +1,16 @@
-//! EHF inn: en mottatt faktura leses til et **bokføringsforslag**
+//! EHF inbound: a received faktura is read into a **posting suggestion**
 //! (docs/ehf.md, #14).
 //!
-//! Dette er den strukturerte enden av bilagstolkning (#34): når
-//! dokumentet er EHF, er ikke leverandør, beløp og mva gjetning — de
-//! står i filen. Parseren er tolerant i camt.053-stil (den leser bare
-//! det bokføringen trenger, hopper over resten og godtar både Invoice
-//! og CreditNote), fordi vi ikke kontrollerer avsenderen.
+//! This is the structured end of document interpretation (#34): when the
+//! document is EHF, the supplier, amounts and mva are not guesses — they
+//! are in the file. The parser is tolerant in the camt.053 style (it
+//! reads only what posting needs, skips the rest and accepts both Invoice
+//! and CreditNote), because we do not control the sender.
 //!
-//! Forslaget er nettopp et forslag: mennesket bokfører (eller avviser)
-//! det gjennom innboksen som ethvert annet bilag. Ingenting utledet
-//! herfra lagres — originalen er bevaret, resten regnes ut på nytt hver
-//! gang det spørres.
+//! The suggestion is exactly that: a human posts (or rejects) it through
+//! the innboks like any other bilag. Nothing derived here is stored — the
+//! original is preserved, and the rest is recomputed every time it is
+//! asked for.
 
 use chrono::NaiveDate;
 use thiserror::Error;
@@ -31,33 +31,33 @@ pub enum EhfImportError {
 pub struct MottattLinje {
     pub beskrivelse: String,
     pub netto_ore: i64,
-    /// Basispunkter fra ClassifiedTaxCategory når den finnes.
+    /// Basis points from ClassifiedTaxCategory when present.
     pub mva_sats_bp: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MottattFaktura {
-    /// True for CreditNote — beløpene snus når bilaget foreslås.
+    /// True for CreditNote — the amounts flip when the bilag is proposed.
     pub er_kreditnota: bool,
     pub fakturanr: String,
     pub fakturadato: Option<NaiveDate>,
     pub forfallsdato: Option<NaiveDate>,
     pub valuta: String,
     pub selger_navn: String,
-    /// Norsk orgnr uten prefiks når avsender bruker ICD 0192.
+    /// Norwegian orgnr without prefix when the sender uses ICD 0192.
     pub selger_orgnr: Option<String>,
     pub kjoper_orgnr: Option<String>,
     pub kid: Option<String>,
     pub kontonummer: Option<String>,
     pub netto_ore: i64,
     pub mva_ore: i64,
-    /// PayableAmount — det leverandøren faktisk krever.
+    /// PayableAmount — what the supplier actually claims.
     pub brutto_ore: i64,
     pub linjer: Vec<MottattLinje>,
 }
 
-/// "1234.56" / "1234,56" / "1234" → øre. Avsenderen bestemmer formatet;
-/// vi nekter å gjette på mer enn to desimaler.
+/// "1234.56" / "1234,56" / "1234" → øre. The sender decides the format;
+/// we refuse to guess at more than two decimals.
 fn amount(raw: &str) -> Result<i64, EhfImportError> {
     let cleaned: String = raw.trim().replace(',', ".");
     let bad = || EhfImportError::BadAmount(raw.to_string());
@@ -315,7 +315,7 @@ mod tests {
     /// Round-trip against our own renderer, the same guarantee the SAF-T
     /// importer carries: what we write, we can read.
     #[test]
-    fn leser_var_egen_faktura_tilbake() {
+    fn reads_our_own_faktura_back() {
         let xml = render(&dokument(Dokumenttype::Faktura));
         let mottatt = parse(&xml).unwrap();
         assert!(!mottatt.er_kreditnota);
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn kreditnota_kjennes_igjen() {
+    fn a_kreditnota_is_recognised() {
         let xml = render(&dokument(Dokumenttype::Kreditnota));
         let mottatt = parse(&xml).unwrap();
         assert!(mottatt.er_kreditnota);
@@ -354,7 +354,7 @@ mod tests {
     /// A real EHF from another system: different prefixes, extra
     /// elements, no line-level tax category.
     #[test]
-    fn tolererer_fremmed_dokument_med_ukjente_elementer() {
+    fn tolerates_a_foreign_document_with_unknown_elements() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
              xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -419,13 +419,13 @@ mod tests {
     }
 
     #[test]
-    fn noe_som_ikke_er_ehf_avvises() {
+    fn something_that_is_not_ehf_is_rejected() {
         let error = parse("<?xml version=\"1.0\"?><Document><Nope/></Document>").unwrap_err();
         assert!(matches!(error, EhfImportError::NotEhf));
     }
 
     #[test]
-    fn belop_uten_desimaler_og_med_komma_leses() {
+    fn amounts_without_decimals_and_with_commas_are_read() {
         assert_eq!(amount("2000").unwrap(), 200_000);
         assert_eq!(amount("2000.5").unwrap(), 200_050);
         assert_eq!(amount("-12,25").unwrap(), -1225);

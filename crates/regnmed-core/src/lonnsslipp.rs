@@ -1,18 +1,18 @@
-//! Lønnsslipp som PDF (docs/lonn.md, #46).
+//! The payslip as PDF (docs/lonn.md, #46).
 //!
-//! Rendret med den samme hand-rolled, deterministiske PDF-skriveren som
-//! fakturaen (`regnmed-core::pdf`) — samme begrunnelse: et dokument vi
-//! står ansvarlig for, uten en motor med skjult oppførsel.
+//! Rendered with the same hand-rolled, deterministic PDF writer as the
+//! faktura (`regnmed-core::pdf`) — the same reasoning: a document we are
+//! answerable for, without an engine that behaves in ways we cannot see.
 //!
-//! **Slippen lagres ikke.** Til forskjell fra fakturaen, der PDF-en *er*
-//! salgsdokumentet og derfor bokføres som vedlegg, er lønnsslippen
-//! utledet av lønnslinjen — og linjene er innsettings-bare. Samme linje
-//! gir samme slipp for alltid, så den rendres på forespørsel i stedet
-//! for å lagre enda en kopi av personopplysninger.
+//! **The slip is not stored.** Unlike the faktura, where the PDF *is* the
+//! sales document and is therefore posted as an attachment, the payslip
+//! is derived from the payroll line — and the lines are insert-only. The
+//! same line yields the same slip forever, so it renders on request
+//! rather than storing yet another copy of personal data.
 //!
-//! Slippen viser **fødselsdato, ikke fødselsnummer**, som ellers i
-//! systemet. Den ansatte kjenner sitt eget nummer; en fil på avveie
-//! trenger ikke bære det.
+//! The slip shows the **birth date, not the fødselsnummer**, as
+//! everywhere else in the system. Employees know their own number; a file
+//! that goes astray need not carry it.
 
 use crate::money::Ore;
 use crate::pdf::{Font, Pdf};
@@ -112,7 +112,7 @@ fn prosent(bp: i64) -> String {
 pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
 
-    // Arbeidsgiver, øverst til venstre.
+    // Employer, top left.
     pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.arbeidsgiver_navn);
     let mut y = 76.0;
     if let Some(adresse) = &input.arbeidsgiver_adresse {
@@ -127,7 +127,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         &format!("Org.nr {}", input.arbeidsgiver_orgnr),
     );
 
-    // Tittel og periode, øverst til høyre.
+    // Title and period, top right.
     pdf.text_right(RIGHT, 60.0, 16.0, Font::Bold, "LØNNSSLIPP");
     let maned_navn = MANEDER
         .get((input.maned as usize).saturating_sub(1))
@@ -144,7 +144,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         fy += 12.0;
     }
 
-    // Arbeidstaker.
+    // Employee.
     pdf.text(MARGIN, 130.0, 8.0, Font::Bold, "ARBEIDSTAKER");
     pdf.text(MARGIN, 144.0, 11.0, Font::Regular, &input.ansatt_navn);
     let mut ay = 158.0;
@@ -156,7 +156,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         pdf.text(MARGIN, ay, 9.0, Font::Regular, &format!("Født {fodt}"));
     }
 
-    // Lønnsarter og trekk.
+    // Pay elements and deductions.
     let mut ly = 210.0;
     pdf.text(MARGIN, ly, 8.0, Font::Bold, "BESKRIVELSE");
     pdf.text_right(RIGHT, ly, 8.0, Font::Bold, "BELØP");
@@ -177,8 +177,8 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     pdf.text_right(RIGHT, ly, 10.0, Font::Bold, &kr(input.brutto_ore));
     ly += 18.0;
 
-    // Forskuddstrekket med sin egen begrunnelse — den ansatte skal
-    // kunne se HVORFOR trekket ble som det ble.
+    // The withholding with its own explanation — the employee should
+    // be able to see WHY it came out the way it did.
     let mut trekktekst = String::from("Forskuddstrekk");
     if let Some(bp) = input.trekk_prosent_bp {
         trekktekst.push_str(&format!(
@@ -225,7 +225,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     pdf.text(MARGIN, ly, 12.0, Font::Bold, "Til utbetaling");
     pdf.text_right(RIGHT, ly, 12.0, Font::Bold, &kr(input.netto_ore));
 
-    // Opptjent, ikke utbetalt: holdt tydelig utenfor totalen.
+    // Earned, not paid: kept clearly outside the total.
     ly += 34.0;
     pdf.text(MARGIN, ly, 8.0, Font::Bold, "OPPTJENT DENNE MÅNEDEN");
     ly += 14.0;
@@ -247,7 +247,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         &kr(input.feriepengeavsetning_ore),
     );
 
-    // Hittil i år.
+    // Year to date.
     ly += 30.0;
     pdf.text(
         MARGIN,
@@ -318,22 +318,22 @@ mod tests {
     }
 
     #[test]
-    fn er_deterministisk() {
+    fn is_deterministic() {
         assert_eq!(render_lonnsslipp(&input()), render_lonnsslipp(&input()));
     }
 
-    /// Den ansatte skal kunne se hvorfor trekket ble som det ble, og
-    /// hvorfor feriepengene ikke ble trukket.
+    /// The employee should be able to see why the withholding came out
+    /// as it did, and why the feriepenger were not withheld from.
     #[test]
-    fn slippen_forklarer_trekket() {
+    fn the_slip_explains_the_withholding() {
         let tekst = String::from_utf8_lossy(&render_lonnsslipp(&input())).to_string();
         assert!(tekst.contains("Forskuddstrekk"), "{tekst}");
         assert!(tekst.contains("35 %"), "trekksatsen skal stå");
 
         let mut juni = input();
         juni.maned = 6;
-        // Brutto er alt som utbetales; trekkgrunnlaget er bare den
-        // ordinære lønnen.
+        // Brutto is everything paid out; the trekkgrunnlag is only the
+        // ordinary pay.
         juni.brutto_ore = 7_000_000;
         juni.trekkgrunnlag_ore = 3_000_000;
         juni.forskuddstrekk_ore = 1_050_000;
@@ -355,16 +355,16 @@ mod tests {
         assert!(tekst.contains("Halvt forskuddstrekk"), "{tekst}");
     }
 
-    /// Fødselsnummeret skal aldri havne i et dokument som sendes rundt.
+    /// The fødselsnummer must never end up in a document that travels.
     #[test]
-    fn slippen_viser_fodselsdato_ikke_fodselsnummer() {
+    fn the_slip_shows_the_birth_date_not_the_fodselsnummer() {
         let tekst = String::from_utf8_lossy(&render_lonnsslipp(&input())).to_string();
         assert!(tekst.contains("1993-02-26"));
         assert!(!tekst.contains("26829398612"));
     }
 
     #[test]
-    fn frikort_sier_frikort() {
+    fn frikort_says_frikort() {
         let mut fri = input();
         fri.trekk_prosent_bp = None;
         fri.forskuddstrekk_ore = 0;
@@ -374,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn belop_og_prosent_formatteres_norsk() {
+    fn amounts_and_percentages_are_formatted_norwegian_style() {
         assert_eq!(kr(5_000_000), "50 000,00");
         assert_eq!(kr(-1_750_000), "-17 500,00");
         assert_eq!(kr(123_455), "1 234,55");

@@ -140,7 +140,7 @@ mod tests {
     }
 
     /// A small complete ledger: aksjekapital innskutt, ett salg m/mva,
-    /// ett varekjøp, ett bankgebyr. Ledger signs throughout.
+    /// one purchase, one bank fee. Ledger signs throughout.
     fn saldo() -> Vec<SaldoLine> {
         vec![
             line("1920", "Bank", 100_000_00 + 12_500_00 - 8_000_00 - 150_00),

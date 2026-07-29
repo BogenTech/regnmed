@@ -1,25 +1,25 @@
-//! EHF / PEPPOL BIS Billing 3.0 — utgående faktura og kreditnota
+//! EHF / PEPPOL BIS Billing 3.0 — outgoing faktura and kreditnota
 //! (docs/ehf.md, #14).
 //!
-//! EHF er UBL 2.1 med PEPPOL-profil: mandatory mot det offentlige,
-//! forventet i B2B. Dokumentet rendres **hand-rolled og
-//! deterministisk**, som SAF-T, mva-meldingen og pain.001 — samme
-//! begrunnelse: utgående XML er et format vi står ansvarlig for, og en
-//! generator vi selv skriver har ingen skjult oppførsel. Skjemaet
-//! (UBL 2.1, vendored i docs/ehf/) valideres i tester og CI.
+//! EHF is UBL 2.1 with a PEPPOL profile: mandatory towards the public
+//! sector, expected in B2B. The document is rendered **hand-rolled and
+//! deterministically**, like SAF-T, the mva-melding and pain.001 — the
+//! same reasoning: outgoing XML is a format we are answerable for, and a
+//! generator we write ourselves has no hidden behavior. The schema
+//! (UBL 2.1, vendored in docs/ehf/) is validated in tests and in CI.
 //!
-//! Rekkefølgen på elementene er UBLs egen sekvens — XSD-en aksepterer
-//! ingen annen. Beløp er heltall øre helt frem til den avsluttende
-//! to-desimalsformatteringen; ingen flyttall er innom.
+//! The element order is UBL's own sequence — the XSD accepts no other.
+//! Amounts are integer øre right up to the closing two-decimal
+//! formatting; no float is ever involved.
 //!
-//! **Ærlig begrensning:** XSD-validering beviser at dokumentet er
-//! velformet UBL, ikke at det oppfyller alle PEPPOL BIS-forretnings-
-//! reglene (de er Schematron, og kjøres av aksesspunktet ved
-//! innsending). Se docs/ehf.md.
+//! **Honest limitation:** XSD validation proves the document is
+//! well-formed UBL, not that it satisfies every PEPPOL BIS business rule
+//! (those are Schematron, and are run by the access point on submission).
+//! See docs/ehf.md.
 
 use chrono::NaiveDate;
 
-/// Norsk organisasjonsnummer som PEPPOL-deltakerid: ISO 6523 ICD 0192.
+/// Norwegian orgnr as a PEPPOL participant id: ISO 6523 ICD 0192.
 pub const SCHEME_ORGNR: &str = "0192";
 
 const CUSTOMIZATION_ID: &str =
@@ -47,7 +47,7 @@ impl Dokumenttype {
         }
     }
 
-    /// UNCL1001: 380 handelsfaktura, 381 kreditnota.
+    /// UNCL1001: 380 commercial invoice, 381 credit note.
     fn type_code(self) -> &'static str {
         match self {
             Self::Faktura => "380",
@@ -60,13 +60,13 @@ impl Dokumenttype {
 pub struct EhfPart {
     pub navn: String,
     pub orgnr: String,
-    /// Gateadresse; EHF krever adresse med landkode.
+    /// Street address; EHF requires an address with a country code.
     pub adresse: Option<String>,
     pub postnr: Option<String>,
     pub poststed: Option<String>,
-    /// ISO 3166-1 alpha-2; "NO" når ukjent.
+    /// ISO 3166-1 alpha-2; "NO" when unknown.
     pub land: String,
-    /// Registrert i Merverdiavgiftsregisteret (gir PartyTaxScheme).
+    /// Registered in Merverdiavgiftsregisteret (yields PartyTaxScheme).
     pub mva_registrert: bool,
     pub epost: Option<String>,
 }
@@ -74,13 +74,13 @@ pub struct EhfPart {
 #[derive(Debug, Clone)]
 pub struct EhfLinje {
     pub beskrivelse: String,
-    /// Tusendeler: 1 stk = 1000.
+    /// Thousandths: 1 unit = 1000.
     pub antall_milli: i64,
-    /// UN/ECE Rec 20 unit code; "EA" (each) som standard.
+    /// UN/ECE Rec 20 unit code; "EA" (each) by default.
     pub enhet: String,
     pub enhetspris_ore: i64,
     pub netto_ore: i64,
-    /// Basispunkter; None = ingen mva-kode på linjen.
+    /// Basis points; None = no mva code on the line.
     pub mva_sats_bp: Option<i64>,
     pub mva_ore: i64,
 }
@@ -89,14 +89,14 @@ pub struct EhfLinje {
 pub struct EhfDokument {
     pub dokumenttype: Dokumenttype,
     pub fakturanr: String,
-    /// Fakturanummeret en kreditnota krediterer.
+    /// The invoice number a kreditnota credits.
     pub krediterer: Option<String>,
     pub fakturadato: NaiveDate,
     pub forfallsdato: Option<NaiveDate>,
-    /// ISO 4217; "NOK" for innenlands.
+    /// ISO 4217; "NOK" domestically.
     pub valuta: String,
-    /// Kjøpers referanse (EN 16931 BT-10) — mange offentlige mottakere
-    /// avviser fakturaer uten den; vi sender det vi har.
+    /// Buyer's reference (EN 16931 BT-10) — many public recipients
+    /// reject invoices without it, so we send what we have.
     pub kjopers_referanse: Option<String>,
     pub selger: EhfPart,
     pub kjoper: EhfPart,
@@ -133,7 +133,7 @@ fn amount(ore: i64) -> String {
     )
 }
 
-/// Basispunkter → "25.00".
+/// Basis points → "25.00".
 fn percent(bp: i64) -> String {
     let negative = bp < 0;
     let abs = bp.abs();
@@ -145,7 +145,7 @@ fn percent(bp: i64) -> String {
     )
 }
 
-/// Tusendeler → "2.000".
+/// Thousandths → "2.000".
 fn quantity(milli: i64) -> String {
     let negative = milli < 0;
     let abs = milli.abs();
@@ -157,9 +157,9 @@ fn quantity(milli: i64) -> String {
     )
 }
 
-/// EN 16931 avgiftskategori (UNCL5305). Standard sats → S, nullsats →
-/// Z. Fritak (E) og omvendt avgiftsplikt (AE) krever begrunnelse og er
-/// ikke utledet automatisk — se docs/ehf.md.
+/// EN 16931 tax category (UNCL5305). Standard rate → S, zero rate → Z.
+/// Exemption (E) and reverse charge (AE) require a reason and are not
+/// derived automatically — see docs/ehf.md.
 fn tax_category(mva_sats_bp: Option<i64>) -> (&'static str, i64) {
     match mva_sats_bp {
         Some(bp) if bp > 0 => ("S", bp),
@@ -252,7 +252,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.close("cac:PostalAddress");
     if part.mva_registrert {
         w.open("cac:PartyTaxScheme");
-        // Norsk mva-id er orgnr + MVA.
+        // A Norwegian mva id is the orgnr plus MVA.
         w.leaf("cbc:CompanyID", &format!("NO{}MVA", part.orgnr));
         w.open("cac:TaxScheme");
         w.leaf("cbc:ID", "VAT");
@@ -341,7 +341,7 @@ pub fn render(doc: &EhfDokument) -> String {
         w.close("cac:PaymentMeans");
     }
 
-    // Ett TaxSubtotal per sats — mottakerens avstemming skjer per sats.
+    // One TaxSubtotal per rate — the recipient reconciles per rate.
     let mut satser: Vec<(&'static str, i64)> = Vec::new();
     for linje in &doc.linjer {
         let key = tax_category(linje.mva_sats_bp);
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn fakturaen_har_peppol_profilen_og_norsk_deltakerid() {
+    fn the_invoice_carries_the_peppol_profile_and_a_norwegian_participant_id() {
         let xml = render(&dokument(Dokumenttype::Faktura));
         assert!(xml.contains(CUSTOMIZATION_ID));
         assert!(xml.contains(PROFILE_ID));
@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn belop_er_heltall_ore_med_punktum_og_valutakode() {
+    fn amounts_are_integer_ore_with_a_dot_and_a_currency_code() {
         let xml = render(&dokument(Dokumenttype::Faktura));
         assert!(xml.contains(
             "<cbc:TaxInclusiveAmount currencyID=\"NOK\">3625.00</cbc:TaxInclusiveAmount>"
@@ -501,18 +501,18 @@ mod tests {
     }
 
     #[test]
-    fn en_avgiftsgruppe_per_sats() {
+    fn one_tax_group_per_rate() {
         let xml = render(&dokument(Dokumenttype::Faktura));
         assert_eq!(xml.matches("<cac:TaxSubtotal>").count(), 2);
         assert!(xml.contains("<cbc:TaxableAmount currencyID=\"NOK\">2500.00</cbc:TaxableAmount>"));
         assert!(xml.contains("<cbc:Percent>25.00</cbc:Percent>"));
-        // Linjen uten mva-kode blir nullsats, ikke utelatt.
+        // The line without an mva code becomes zero-rated, not omitted.
         assert!(xml.contains("<cbc:ID>Z</cbc:ID>"));
         assert!(xml.contains("<cbc:TaxableAmount currencyID=\"NOK\">500.00</cbc:TaxableAmount>"));
     }
 
     #[test]
-    fn kreditnota_bruker_egne_elementnavn_og_peker_paa_fakturaen() {
+    fn a_kreditnota_uses_its_own_element_names_and_points_at_the_faktura() {
         let xml = render(&dokument(Dokumenttype::Kreditnota));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CreditNote "));
         assert!(xml.contains("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>"));
@@ -535,14 +535,14 @@ mod tests {
     }
 
     #[test]
-    fn tegn_som_ma_escapes_slipper_ikke_ut() {
+    fn characters_needing_escaping_never_leak_through() {
         let xml = render(&dokument(Dokumenttype::Faktura));
         assert!(xml.contains("Kjøper &amp; Sønn AS"));
         assert!(!xml.contains("Kjøper & Sønn"));
     }
 
     #[test]
-    fn samme_faktura_gir_identisk_xml() {
+    fn the_same_faktura_yields_identical_xml() {
         let a = render(&dokument(Dokumenttype::Faktura));
         let b = render(&dokument(Dokumenttype::Faktura));
         assert_eq!(a, b, "renderen er deterministisk");
@@ -550,7 +550,7 @@ mod tests {
 
     /// The XSD is the authority; xmllint runs it in CI as well.
     #[test]
-    fn validerer_mot_ubl_skjemaet() {
+    fn validates_against_the_ubl_schema() {
         for (dokumenttype, schema) in [
             (Dokumenttype::Faktura, "maindoc/UBL-Invoice-2.1.xsd"),
             (Dokumenttype::Kreditnota, "maindoc/UBL-CreditNote-2.1.xsd"),

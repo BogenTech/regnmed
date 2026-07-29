@@ -51,7 +51,7 @@ impl std::fmt::Display for Termin {
 }
 
 /// The company's mva-terminordning (docs/mva.md, #51). To-måneder is
-/// the default; årstermin (omsetning under grensen, etter søknad) and
+/// the default; årstermin (turnover below the threshold, on application) and
 /// primærnæring are yearly with their own frister. The ordning
 /// Skatteetaten has GRANTED is recorded per company with valid_from —
 /// eligibility is never auto-detected.
@@ -80,7 +80,7 @@ impl Terminordning {
         }
     }
 
-    /// Perioder per år: 6 to-månedersterminer, ellers én årstermin.
+    /// Periods per year: 6 two-month terminer, otherwise a single årstermin.
     pub fn antall_perioder(self) -> u8 {
         match self {
             Terminordning::ToManeder => 6,
@@ -118,10 +118,11 @@ impl Terminordning {
         }
     }
 
-    /// Leveringsfristen for perioden (skatteforvaltningsforskriften
-    /// §8-3): to-måneder = 1 måned og 10 dager etter terminslutt, med
-    /// særregelen 31. august for 3. termin; årstermin = 10. mars året
-    /// etter; primærnæring = 10. april året etter.
+    /// The filing deadline for the period (skatteforvaltningsforskriften
+    /// §8-3): two-month = 1 month and 10 days after the end of the
+    /// termin, with the special rule of 31 August for the 3rd termin;
+    /// årstermin = 10 March the following year; primærnæring = 10 April
+    /// the following year.
     pub fn frist(self, t: Termin) -> NaiveDate {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).expect("valid frist");
         match self {
@@ -309,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn terminordning_perioder_og_frister() {
+    fn terminordning_periods_and_deadlines() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         let to = Terminordning::ToManeder;
         assert_eq!(to.antall_perioder(), 6);

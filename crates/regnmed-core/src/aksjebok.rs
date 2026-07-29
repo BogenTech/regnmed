@@ -1,18 +1,18 @@
-//! Aksjeeierboken (docs/aksjonaer.md, #43): beholdningen som ren
-//! funksjon over hendelsene, aldri lagret — samme filosofi som saldoer
-//! i hovedboken.
+//! The aksjeeierbok (docs/aksjonaer.md, #43): the holding as a pure
+//! function over the events, never stored — the same philosophy as
+//! balances in the hovedbok.
 //!
-//! Aksjeeierboken er et **lovpålagt register** i seg selv (aksjeloven
-//! §4-5): styret skal føre den, den skal føres på betryggende måte, og
-//! den kan føres elektronisk. Den har verdi lenge før noen leverer en
-//! aksjonærregisteroppgave. Derfor er dette modellert som et
-//! innsettings-bare hendelsesspor og ikke som en «antall aksjer»-kolonne
-//! noen overskriver: en eierandel per i dag er en påstand, en
-//! hendelsesrekke er et bevis.
+//! The aksjeeierbok is a **statutory register** in its own right
+//! (aksjeloven §4-5): the board shall keep it, it shall be kept in a
+//! sound manner, and it may be kept electronically. It has value long
+//! before anyone files an aksjonærregisteroppgave. That is why this is
+//! modelled as an insert-only event trail and not as a "number of shares"
+//! column somebody overwrites: an ownership share as of today is a
+//! claim, a sequence of events is proof.
 //!
-//! Transaksjonstypene under er hentet fra Skatteetatens egen rettledning
-//! RF-1087 (post 23 tilgang, post 24 omfordeling, post 25 avgang).
-//! Navnene er autoritative. **Kodene er det ikke** — se
+//! The transaction types below are taken from Skatteetaten's own
+//! rettledning RF-1087 (post 23 tilgang, post 24 omfordeling, post 25
+//! avgang). The names are authoritative. **The codes are not** — see
 //! [`Transaksjonstype::kode`].
 
 use chrono::NaiveDate;
@@ -31,7 +31,7 @@ pub const AKSJETYPE_ORDINAERE: &str = "01";
 /// asks each variant where it belongs via [`Transaksjonstype::post`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transaksjonstype {
-    // Post 23 — tilgang (anskaffelser).
+    // Post 23 — tilgang (acquisitions).
     Kjop,
     ArvUtenKontinuitet,
     GaveUtenKontinuitet,
@@ -51,7 +51,7 @@ pub enum Transaksjonstype {
     FlyttingAvSelskap,
     FordelingEktefellerSkilsmisse,
     StiftelseNyemisjonMedInntektsfradrag,
-    // Post 24 — tilgang ved omfordeling.
+    // Post 24 — tilgang through omfordeling.
     Fondsemisjon,
     Splitt,
     SkattefriFusjon,
@@ -70,11 +70,11 @@ pub enum Transaksjonstype {
 /// Which RF-1086 post a transaction is reported under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Post {
-    /// Post 23: aksjer i tilgang (anskaffelser).
+    /// Post 23: shares in tilgang (acquisitions).
     Tilgang,
-    /// Post 24: aksjer i tilgang ved omfordeling.
+    /// Post 24: shares in tilgang through omfordeling.
     TilgangOmfordeling,
-    /// Post 25: aksjer i avgang.
+    /// Post 25: shares in avgang.
     Avgang,
 }
 
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn beholdningen_er_summen_av_hendelsene_fram_til_datoen() {
+    fn the_holding_is_the_sum_of_the_events_up_to_the_date() {
         let hendelser = vec![
             h(d(2025, 1, 1), Transaksjonstype::Stiftelse, 100),
             h(d(2026, 3, 1), Transaksjonstype::Kjop, 50),
@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn aarsbevegelsen_skiller_inngaende_fra_arets_bevegelse() {
+    fn the_year_movement_separates_opening_from_the_years_movement() {
         let hendelser = vec![
             h(d(2025, 1, 1), Transaksjonstype::Stiftelse, 100),
             h(d(2026, 3, 1), Transaksjonstype::Kjop, 50),
@@ -370,12 +370,12 @@ mod tests {
         assert_eq!(b.tilgang, 50);
         assert_eq!(b.avgang, 30);
         assert_eq!(b.utgaende, 120);
-        // Utgående i fjor er inngående i år — ellers stemmer ikke post 20.
+        // Last year's closing is this year's opening — otherwise post 20 does not add up.
         assert_eq!(aarsbevegelse(&hendelser, 2025).utgaende, b.inngaende);
     }
 
     #[test]
-    fn retningen_ligger_i_typen_ikke_i_fortegnet() {
+    fn the_direction_lives_in_the_type_not_in_the_sign() {
         assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Kjop, 10).delta(), 10);
         assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Salg, 10).delta(), -10);
         assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Splitt, 10).delta(), 10);
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn slug_er_rundtur_og_unik() {
+    fn slugs_round_trip_and_are_unique() {
         let mut sett = std::collections::HashSet::new();
         for t in ALLE {
             assert!(sett.insert(t.slug()), "duplikat slug: {}", t.slug());
@@ -392,12 +392,12 @@ mod tests {
         assert_eq!(Transaksjonstype::fra_slug("finnes-ikke"), None);
     }
 
-    /// Låser den ærlige begrensningen: vi har bare verifisert koden for
-    /// stiftelse/nyemisjon, fra Skatteetatens eget eksempel. Skulle
-    /// noen legge til flere koder, skal det være fordi de er verifisert
-    /// mot en offisiell kilde — ikke fordi de så rimelige ut.
+    /// Pins the honest limitation: we have verified the code only for
+    /// stiftelse/nyemisjon, from Skatteetaten's own example. Should
+    /// anyone add further codes, it must be because they were verified
+    /// against an official source — not because they looked plausible.
     #[test]
-    fn bare_verifiserte_koder_finnes() {
+    fn only_verified_codes_exist() {
         let med_kode: Vec<_> = ALLE.iter().filter(|t| t.kode().is_some()).collect();
         assert_eq!(med_kode.len(), 2, "{med_kode:?}");
         assert_eq!(Transaksjonstype::Stiftelse.kode(), Some("N"));

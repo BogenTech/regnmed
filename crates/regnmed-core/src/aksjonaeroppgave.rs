@@ -1,23 +1,23 @@
-//! Aksjonærregisteroppgaven RF-1086 (docs/aksjonaer.md, #43) — rendret
-//! hand-rolled og deterministisk, som SAF-T, mva-meldingen, pain.001 og
-//! EHF.
+//! The aksjonærregisteroppgave RF-1086 (docs/aksjonaer.md, #43) —
+//! rendered hand-rolled and deterministically, like SAF-T, the
+//! mva-melding, pain.001 and EHF.
 //!
-//! Oppgaven leveres i to deler, og API-et tar dem hver for seg:
-//! **hovedskjemaet** (RF-1086) med selskapets tall, og ett
-//! **underskjema** (RF-1086-U) per aksjonær. Formatet er Altinns
-//! `Skjema`-dialekt: hver gruppe bærer sin `gruppeid`, hvert felt sin
-//! `orid`, og rekkefølgen er XSD-ens egen sekvens — noe annet avvises.
-//! Begge skjemaene valideres mot Skatteetatens offisielle XSD-er
-//! (vendored i docs/aksjonaer/) i tester og i CI.
+//! The oppgave is filed in two parts, and the API takes them separately:
+//! the **main form** (RF-1086) with the company's figures, and one
+//! **sub-form** (RF-1086-U) per shareholder. The format is Altinn's
+//! `Skjema` dialect: every group carries its `gruppeid`, every field its
+//! `orid`, and the order is the XSD's own sequence — anything else is
+//! rejected. Both forms are validated against Skatteetaten's official
+//! XSDs (vendored in docs/aksjonaer/) in tests and in CI.
 //!
-//! Beløp er heltall øre helt fram til den avsluttende formatteringen;
-//! ingen flyttall er innom. Datoer er `xs:dateTime` ved midnatt, slik
-//! etatens eget eksempel skriver dem.
+//! Amounts are integer øre right up to the closing formatting; no float
+//! is ever involved. Dates are `xs:dateTime` at midnight, the way the
+//! agency's own example writes them.
 //!
-//! **Den ærlige begrensningen** er transaksjonstypekodene: se
-//! [`crate::aksjebok::Transaksjonstype::kode`]. Vi rendrer ikke en kode
-//! vi ikke har verifisert mot en offisiell kilde — [`render_underskjema`]
-//! feiler høylytt i stedet.
+//! **The honest limitation** is the transaction type codes: see
+//! [`crate::aksjebok::Transaksjonstype::kode`]. We do not render a code
+//! we have not verified against an official source — [`render_underskjema`]
+//! fails loudly instead.
 
 use chrono::NaiveDate;
 
@@ -309,7 +309,7 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     );
     w.felt("Aksjekapital-datadef-87", 87, &belop(h.aksjekapital.i_ar));
     w.close("AksjekapitalForHeleSelskapet-grp-3443");
-    // Én aksjeklasse i v1: klassens tall er selskapets tall.
+    // One share class in v1: the class's figures are the company's.
     w.gruppe("AksjekapitalIDenneAksjeklassen-grp-3444", 3444);
     w.felt(
         "AksjekapitalISINAksjetypeFjoraret-datadef-17663",
@@ -710,21 +710,21 @@ mod tests {
     }
 
     #[test]
-    fn hovedskjemaet_validerer_mot_offisiell_xsd() {
+    fn the_main_form_validates_against_the_official_xsd() {
         let xml = render_hovedskjema(&hovedskjema()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveHovedskjema.xsd", "hoved");
     }
 
     #[test]
-    fn underskjemaet_validerer_mot_offisiell_xsd() {
+    fn the_sub_form_validates_against_the_official_xsd() {
         let xml = render_underskjema(&underskjema()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveUnderskjema.xsd", "under");
     }
 
     #[test]
-    fn et_ar_uten_transaksjoner_er_fortsatt_en_gyldig_oppgave() {
-        // Det vanligste tilfellet: samme eiere som i fjor, ingenting
-        // skjedde. Da finnes det ingen kode å være usikker på.
+    fn a_year_without_transactions_is_still_a_valid_oppgave() {
+        // The common case: the same owners as last year, nothing
+        // happened. Then there is no code to be unsure about.
         let mut h = hovedskjema();
         h.nyutstedelser.clear();
         h.utbytte.clear();
@@ -744,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn selskapsaksjonaer_og_utenlandsk_id_validerer() {
+    fn a_corporate_shareholder_and_a_foreign_id_both_validate() {
         let mut u = underskjema();
         u.id = Some(Aksjonaerid::Organisasjonsnummer("923609016".into()));
         u.navn = "Equinor ASA".into();
@@ -764,10 +764,10 @@ mod tests {
         );
     }
 
-    /// Navnefeltet er 35 tegn. Et langt selskapsnavn skal korte ned, ikke
-    /// stoppe en ellers riktig levering.
+    /// The name field is 35 characters. A long company name should be
+    /// truncated, not stop an otherwise correct filing.
     #[test]
-    fn langt_aksjonaernavn_kortes_i_stedet_for_a_feile() {
+    fn a_long_shareholder_name_is_truncated_rather_than_failing() {
         let mut u = underskjema();
         u.id = Some(Aksjonaerid::Organisasjonsnummer("923609016".into()));
         u.navn = "Æ".repeat(60);
@@ -781,10 +781,10 @@ mod tests {
         assert!(!xml.contains(&"Æ".repeat(36)));
     }
 
-    /// Kjernen i den ærlige begrensningen: et salg kan vi ikke levere,
-    /// fordi vi ikke vet koden — og da sier vi det i stedet for å gjette.
+    /// The core of the honest limitation: we cannot file a sale, because
+    /// we do not know its code — and then we say so instead of guessing.
     #[test]
-    fn uverifisert_transaksjonstype_nektes_hoylytt() {
+    fn an_unverified_transaction_type_is_refused_loudly() {
         let mut u = underskjema();
         u.bevegelser = vec![Bevegelse {
             dato: d(2026, 6, 1),
@@ -799,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn aksjonaer_uten_identitet_nektes() {
+    fn a_shareholder_without_an_identity_is_refused() {
         let mut u = underskjema();
         u.id = None;
         assert!(matches!(
@@ -809,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn rendringen_er_deterministisk() {
+    fn the_rendering_is_deterministic() {
         assert_eq!(
             render_hovedskjema(&hovedskjema()).unwrap(),
             render_hovedskjema(&hovedskjema()).unwrap()
@@ -821,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn belop_skrives_med_to_desimaler() {
+    fn amounts_are_written_with_two_decimals() {
         assert_eq!(belop(10_000_000), "100000.00");
         assert_eq!(belop(12_345), "123.45");
         assert_eq!(belop(0), "0.00");

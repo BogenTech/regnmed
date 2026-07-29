@@ -5,20 +5,21 @@
 //! (SAF-T, mva-melding): same input, byte-identical file, validated
 //! against the official schema (vendored in docs/pain001/) in tests
 //! and CI. Amounts are integer øre until the final two-decimal
-//! formatting; KID rides as structured creditor reference (SCOR), fri
-//! melding as ustrukturert.
+//! formatting; KID rides as a structured creditor reference (SCOR), a
+//! free-text melding as unstructured.
 //!
-//! Scope (v1): innenlands NOK til norske kontonumre (BBAN). Utland/
-//! IBAN + BIC er filutvekslings-/PSD2-tierens sak (docs/betaling.md).
+//! Scope (v1): domestic NOK to Norwegian account numbers (BBAN). Foreign
+//! payments / IBAN + BIC belong to the file-exchange / PSD2 tier
+//! (docs/betaling.md).
 
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::kid::is_valid_mod11;
 use crate::xml::Xml;
 
-/// Et norsk kontonummer: 11 siffer med MOD11-kontrollsiffer (samme
-/// sykliske vekter som KID MOD11). Punktum og mellomrom godtas i
-/// input; valider den NORMALISERTE formen.
+/// A Norwegian kontonummer: 11 digits with a MOD11 check digit (the same
+/// cyclic weights as KID MOD11). Dots and spaces are accepted in the
+/// input; validate the NORMALISED form.
 pub fn normaliser_kontonummer(s: &str) -> String {
     s.chars().filter(|c| c.is_ascii_digit()).collect()
 }

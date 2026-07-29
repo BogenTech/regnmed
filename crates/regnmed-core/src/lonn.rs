@@ -1,24 +1,24 @@
-//! Lønn: brutto → forskuddstrekk → netto, arbeidsgiveravgift og
-//! feriepengeavsetning (docs/lonn.md, #46 første del).
+//! Lønn: brutto → forskuddstrekk → netto, arbeidsgiveravgift and
+//! feriepengeavsetning (docs/lonn.md, first part of #46).
 //!
-//! Alt er heltall øre. Ingen flyttall er innom, og hver avrunding skjer
-//! halvt vekk fra null på ett bestemt sted, slik at en lønnskjøring gir
-//! nøyaktig samme tall uansett hvor den beregnes.
+//! Everything is integer øre. No float is ever involved, and every
+//! rounding happens half away from zero at one defined place, so a
+//! payroll run yields exactly the same numbers wherever it is computed.
 //!
-//! **Hva denne modulen IKKE gjør**, og hvorfor det er et valg og ikke en
-//! forglemmelse:
+//! **What this module does NOT do**, and why that is a choice rather than
+//! an oversight:
 //!
-//! - **Tabelltrekk.** Trekktabellene er Skatteetatens datafiler, og uten
-//!   dem finnes det ingen forsvarlig måte å regne tabelltrekk på. Vi
-//!   nekter høylytt i stedet for å tilnærme — et for lavt forskuddstrekk
-//!   er den ansattes restskatt.
-//! - **Sone Ia.** Den reduserte satsen gjelder bare til fribeløpet er
-//!   brukt opp, og fribeløpet er bagatellmessig støtte som også kan
-//!   forbrukes av ting regnmed ikke ser. Å regne 10,6 % uten å kjenne
-//!   hele bildet ville underrapportert avgift.
+//! - **Tabelltrekk.** The withholding tables are Skatteetaten's data
+//!   files, and without them there is no defensible way to compute
+//!   tabelltrekk. We refuse loudly instead of approximating — withholding
+//!   too little is the employee's restskatt.
+//! - **Sone Ia.** The reduced rate applies only until the fribeløp is
+//!   used up, and that fribeløp is de minimis aid which can also be
+//!   consumed by things regnmed cannot see. Computing 10,6 % without the
+//!   whole picture would under-report avgift.
 //!
-//! Satsene selv er data i satsregisteret (docs/regelverk.md), ikke tall
-//! i denne koden.
+//! The rates themselves are data in the satsregister
+//! (docs/regelverk.md), not numbers in this code.
 
 use chrono::NaiveDate;
 
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn prosenttrekk_er_ren_prosent_av_brutto() {
+    fn percentage_withholding_is_plain_percent_of_brutto() {
         // 50 000 kr brutto, 35 % trekk.
         let b = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 3).unwrap();
         assert_eq!(b.forskuddstrekk_ore, 1_750_000);
@@ -298,104 +298,104 @@ mod tests {
         assert!(!b.halv_trekk);
     }
 
-    /// Feriepenger utbetales uten trekk — men de er fortsatt med i det
-    /// den ansatte får.
+    /// Feriepenger are paid without withholding — but they are still
+    /// part of what the employee receives.
     #[test]
-    fn feriepenger_er_trekkfrie() {
+    fn feriepenger_carry_no_withholding() {
         let g = Lonnsgrunnlag {
             brutto_ore: 1_000_000,
             feriepenger_ore: 4_000_000,
             trekk: Trekk::Prosent(3500),
         };
         let b = beregn(&g, 6).unwrap();
-        assert_eq!(b.trekkgrunnlag_ore, 1_000_000, "bare ordinær lønn");
+        assert_eq!(b.trekkgrunnlag_ore, 1_000_000, "ordinary pay only");
         assert_eq!(b.forskuddstrekk_ore, 350_000);
         assert_eq!(b.netto_ore, 1_000_000 + 4_000_000 - 350_000);
     }
 
-    /// Halv skatt i desember. Satsen på skattekortet er beregnet over
-    /// 10,5 måneder nettopp for at dette skal gå opp.
+    /// Half tax in December. The skattekort percentage is calculated
+    /// over 10,5 months precisely so that this works out.
     #[test]
-    fn desember_har_halvt_trekk() {
+    fn december_withholds_half() {
         let b = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 12).unwrap();
         assert!(b.halv_trekk);
         assert_eq!(b.forskuddstrekk_ore, 875_000);
-        // November er en helt vanlig måned.
+        // November is an entirely ordinary month.
         let nov = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 11).unwrap();
         assert_eq!(nov.forskuddstrekk_ore, 1_750_000);
     }
 
     #[test]
-    fn frikort_gir_ingen_trekk() {
+    fn frikort_withholds_nothing() {
         let b = beregn(&grunnlag(1_000_000, Trekk::Ingen), 5).unwrap();
         assert_eq!(b.forskuddstrekk_ore, 0);
         assert_eq!(b.netto_ore, 1_000_000);
     }
 
-    /// Den ærlige nektelsen: uten Skatteetatens tabeller regner vi ikke
-    /// tabelltrekk, vi sier fra.
+    /// The honest refusal: without Skatteetaten's tables we do not
+    /// compute tabelltrekk, we say so.
     #[test]
-    fn tabelltrekk_nektes_hoylytt() {
+    fn tabelltrekk_is_refused_loudly() {
         let feil = beregn(&grunnlag(5_000_000, Trekk::Tabell(7100)), 3).unwrap_err();
         assert_eq!(feil, LonnError::TabelltrekkIkkeStottet(7100));
         assert!(feil.to_string().contains("tilnærmer dem ikke"), "{feil}");
     }
 
     #[test]
-    fn aga_er_sats_av_grunnlaget() {
-        // Sone I: 14,1 % av 50 000 kr.
+    fn aga_is_the_rate_times_the_grunnlag() {
+        // Sone I: 14,1 % of 50 000 kr.
         assert_eq!(
             arbeidsgiveravgift(5_000_000, Sone::I, 1410).unwrap(),
             705_000
         );
-        // Sone V er nullsats — og det er et svar, ikke en manglende sats.
+        // Sone V is a zero rate — an answer, not a missing rate.
         assert_eq!(arbeidsgiveravgift(5_000_000, Sone::V, 0).unwrap(), 0);
     }
 
     #[test]
-    fn sone_ia_nektes_fordi_fribelopet_ikke_kan_ses_herfra() {
+    fn sone_ia_is_refused_because_the_fribelop_is_invisible_here() {
         let feil = arbeidsgiveravgift(5_000_000, Sone::Ia, 1060).unwrap_err();
         assert_eq!(feil, LonnError::SoneIaKreverFribelopsberegning);
         assert!(feil.to_string().contains("fribeløpet"), "{feil}");
     }
 
     #[test]
-    fn feriepenger_etter_ferieloven_og_tariff() {
-        // §10: 10,2 % av grunnlaget.
+    fn feriepenger_by_ferieloven_and_by_tariff() {
+        // §10: 10,2 % of the grunnlag.
         assert_eq!(feriepengeavsetning(50_000_000, 1020), 5_100_000);
-        // Fra året man fyller 60: +2,3 prosentpoeng.
+        // From the year the employee turns 60: +2,3 percentage points.
         assert_eq!(feriepengeavsetning(50_000_000, 1250), 6_250_000);
-        // Tariff, fem uker.
+        // Tariff agreement, five weeks.
         assert_eq!(feriepengeavsetning(50_000_000, 1200), 6_000_000);
     }
 
     #[test]
-    fn timelonn_regnes_fra_minutter() {
-        // 160 timer à 450 kr.
+    fn timelonn_is_computed_from_minutes() {
+        // 160 hours at 450 kr.
         assert_eq!(timelonn(160 * 60, 45_000), 7_200_000);
-        // Halvtimer er eksakte.
+        // Half hours are exact.
         assert_eq!(timelonn(30, 45_000), 22_500);
-        // Et skjevt minuttall runder halvt vekk fra null, én gang.
-        // 7 min à 450 kr = 52,50 kr = 5250 øre.
+        // An awkward minute count rounds half away from zero, once.
+        // 7 min at 450 kr = 52,50 kr = 5250 øre.
         assert_eq!(timelonn(7, 45_000), 5_250);
-        // 1 min à 100,01 kr → 166,68333… øre → 167.
+        // 1 min at 100,01 kr → 166,68333… øre → 167.
         assert_eq!(timelonn(1, 10_001), 167);
         assert_eq!(timelonn(0, 45_000), 0);
     }
 
     #[test]
-    fn avrunding_er_halvt_vekk_fra_null_og_deterministisk() {
+    fn rounding_is_half_away_from_zero_and_deterministic() {
         // 1234,55 kr * 10,2 % = 125,9241 -> 125,92
         assert_eq!(feriepengeavsetning(123_455, 1020), 12_592);
-        // Nøyaktig halvparten runder opp i absoluttverdi.
+        // Exactly one half rounds up in absolute value.
         assert_eq!(bp_av(50_000, 1), 5);
         assert_eq!(bp_av(-50_000, 1), -5);
-        // Samme input gir samme svar, alltid.
+        // The same input gives the same answer, always.
         assert_eq!(bp_av(123_455, 1020), bp_av(123_455, 1020));
     }
 
     #[test]
-    fn sone_slug_er_rundtur() {
+    fn sone_slug_round_trips() {
         for sone in [
             Sone::I,
             Sone::Ia,
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn lonnssum_summerer_kostnad_og_avgift() {
+    fn lonnssum_sums_cost_and_avgift() {
         let sum = Lonnssum {
             brutto_ore: 5_000_000,
             feriepenger_utbetalt_ore: 1_000_000,
@@ -424,69 +424,69 @@ mod tests {
             aga_feriepenger_ore: 71_910,
         };
         assert_eq!(sum.total_aga_ore(), 776_910);
-        // Kostnaden er ordinær lønn + det som påløper på den. De
-        // utbetalte feriepengene er IKKE med: de ble kostnadsført i
-        // opptjeningsåret, og å telle dem her ville kostnadsført dem
-        // to ganger.
+        // The cost is ordinary pay plus what accrues on it. The
+        // feriepenger paid out are NOT included: they were expensed in
+        // the year they were earned, and counting them here would
+        // expense them twice.
         assert_eq!(
             sum.lonnskostnad_ore(),
             5_000_000 + 510_000 + 705_000 + 71_910
         );
     }
 
-    /// Avsetningen er et MÅL, ikke en strøm av tillegg — derfor kan den
-    /// ikke drive fra hverandre.
+    /// The accrual is a TARGET, not a stream of increments — which is
+    /// why it cannot drift.
     #[test]
-    fn aga_avsetning_er_sats_av_skyldige_feriepenger() {
-        // 51 000 kr skyldige feriepenger, sone I 14,1 %.
+    fn aga_accrual_is_the_rate_times_feriepenger_owed() {
+        // 51 000 kr of feriepenger owed, sone I at 14,1 %.
         assert_eq!(aga_avsetning_mal(5_100_000, 1410), 719_100);
-        // Ingen gjeld, ingen avsetning.
+        // No liability, no accrual.
         assert_eq!(aga_avsetning_mal(0, 1410), 0);
-        // Sone V er nullsats hele veien.
+        // Sone V is a zero rate all the way through.
         assert_eq!(aga_avsetning_mal(5_100_000, 0), 0);
     }
 
-    /// Betales det ut mer feriepenger enn lønnshistorikken har avsatt,
-    /// stammer gjelden et annet sted fra — og da avsettes ingenting.
-    /// Negativ avgift finnes ikke, og å bokføre den ville gjort et hull
-    /// i regnskapet om til en inntekt.
+    /// If more feriepenger are paid out than the payroll history ever
+    /// set aside, the liability came from somewhere else — and then
+    /// nothing is accrued. A negative avgift does not exist, and booking
+    /// one would turn a gap in the books into income.
     #[test]
-    fn negativ_gjeld_gir_ingen_avsetning_ikke_negativ_avgift() {
+    fn negative_liability_accrues_nothing_rather_than_a_negative_avgift() {
         assert_eq!(aga_avsetning_mal(-3_694_000, 1410), 0);
     }
 
-    /// Livsløpet til én feriepengekrone: avsettes, ligger, utbetales.
-    /// Differansen hver kjøring bokfører er målet minus det som alt står
-    /// — og summen over livsløpet er null.
+    /// The life of one feriepenge krone: accrued, held, paid out. What
+    /// each run books is the target minus what already stands — and the
+    /// sum across the whole life is zero.
     #[test]
-    fn avsetningen_bygges_opp_og_trekkes_ned_til_null() {
+    fn the_accrual_builds_up_and_draws_back_down_to_zero() {
         let sats = 1410;
-        // År 1: 51 000 kr feriepenger opptjenes, ingenting avsatt før.
+        // Year 1: 51 000 kr of feriepenger earned, nothing accrued before.
         let mal1 = aga_avsetning_mal(5_100_000, sats);
         let delta1 = mal1 - 0;
         assert_eq!(delta1, 719_100);
 
-        // År 2, halvparten utbetales: gjelden er nå 25 500 kr.
+        // Year 2, half is paid out: the liability is now 25 500 kr.
         let mal2 = aga_avsetning_mal(2_550_000, sats);
         let delta2 = mal2 - mal1;
-        assert!(delta2 < 0, "utbetaling trekker avsetningen ned");
+        assert!(delta2 < 0, "a payout draws the accrual down");
 
-        // Resten utbetales: gjelden er null, og det samme er avsetningen.
+        // The rest is paid out: the liability is zero, and so is the accrual.
         let mal3 = aga_avsetning_mal(0, sats);
         let delta3 = mal3 - mal2;
         assert_eq!(mal3, 0);
-        assert_eq!(delta1 + delta2 + delta3, 0, "livsløpet summerer til null");
+        assert_eq!(delta1 + delta2 + delta3, 0, "the whole life sums to zero");
     }
 
-    /// En satsendring mellom opptjening og utbetaling korrigerer seg
-    /// selv ved neste kjøring i stedet for å bli liggende som en rest.
+    /// A rate change between earning and payout corrects itself on the
+    /// next run instead of lingering as a residue.
     #[test]
-    fn satsendring_korrigeres_ved_neste_kjoring() {
+    fn a_rate_change_corrects_itself_on_the_next_run() {
         let avsatt = aga_avsetning_mal(5_100_000, 1410);
-        // Satsen settes ned året etter; gjelden er den samme.
+        // The rate is lowered the year after; the liability is unchanged.
         let mal = aga_avsetning_mal(5_100_000, 1400);
         let delta = mal - avsatt;
-        assert_eq!(delta, -5_100, "differansen er nøyaktig satsendringen");
-        assert_eq!(avsatt + delta, mal, "og etterpå står avsetningen riktig");
+        assert_eq!(delta, -5_100, "the difference is exactly the rate change");
+        assert_eq!(avsatt + delta, mal, "and afterwards the accrual is right");
     }
 }
