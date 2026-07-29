@@ -1,4 +1,5 @@
-# The build context is TWO FILES. Everything else is excluded.
+# The build context is FOUR FILES — two binaries per supported target.
+# Everything else is excluded.
 #
 # Without this, `docker build` uploads the whole working tree to the
 # daemon before running the first step — and `target/` alone is ~11 GB
@@ -8,8 +9,10 @@
 # out from under the cluster.
 #
 # The binaries are cross-compiled on the HOST by scripts/build-images.sh
-# (aarch64-unknown-linux-musl, static); nothing compiles in Docker, so
-# nothing else belongs in the context.
+# (static musl); nothing compiles in Docker, so nothing else belongs in the
+# context. Two targets are readmitted because the two clusters differ:
+# aarch64 for the colima dev cluster on the Mac, x86_64 for the homelab
+# nodes. The Dockerfile's TARGET build-arg selects which one is copied.
 #
 # Exclude-all-then-readmit is deliberate: a new directory in the repo is
 # excluded by default, and a build that needs something new has to say so
@@ -18,3 +21,5 @@
 
 !target/aarch64-unknown-linux-musl/release/regnmed-api
 !target/aarch64-unknown-linux-musl/release/regnmed
+!target/x86_64-unknown-linux-musl/release/regnmed-api
+!target/x86_64-unknown-linux-musl/release/regnmed

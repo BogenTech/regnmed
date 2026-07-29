@@ -1,0 +1,105 @@
+# Builds the runtime image and pushes it to ghcr.io/bogentech/regnmed.
+#
+# WHY CI AND NOT THE MAC: the homelab nodes are x86_64 while the development
+# Mac is aarch64, so images built locally for the dev cluster cannot run there
+# at all. Building here also means the image that reaches production came from
+# a commit rather than from whatever happened to be in someone's target/
+# directory — and pushing needs no local registry credential, because
+# GITHUB_TOKEN already has package write for repositories in this org.
+#
+# The runner is x86_64, so `x86_64-unknown-linux-musl` is a native build with
+# musl-gcc rather than a cross-compile; only musl-tools is needed.
+#
+# Tags: every build gets an immutable `sha-<short>` tag, which is what the
+# deploy overlays should pin (deploy/prod and deploy/test both say
+# `pin-me-to-a-release`). `main` is a moving convenience tag — do not deploy
+# production from it, or you lose the ability to say what is running.
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/bogentech/regnmed
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl-image
+
+      # The same two binaries the Dockerfile copies. --locked so a drifting
+      # lockfile fails here rather than silently shipping different versions
+      # of a dependency than the test job ran against.
+      - name: Build static binaries
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          cargo build --release --locked \
+            --target x86_64-unknown-linux-musl \
+            -p regnmed-api -p regnmed-cli
+
+      # The portal dist is checked in (#76) so the Rust build never needs
+      # Node. The `portal` job in ci.yml is what proves it still matches its
+      # source; this job only consumes it, and would happily ship a stale one.
+      - name: Confirm the portal dist is present
+        run: |
+          test -d ui/portal/dist
+          echo "dist files: $(find ui/portal/dist -type f | wc -l)"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: tags
+        run: |
+          short=$(git rev-parse --short HEAD)
+          tags="$IMAGE:sha-$short"
+          case "$GITHUB_REF" in
+            refs/tags/v*) tags="$tags,$IMAGE:${GITHUB_REF#refs/tags/}" ;;
+            refs/heads/main) tags="$tags,$IMAGE:main" ;;
+          esac
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "built tags: $tags"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: TARGET=x86_64-unknown-linux-musl
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/BogenTech/regnmed
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # The frugality gate (docs/frugality.md) budgets the binaries at 24 MB
+      # (api) and 20 MB (cli). Reported here too so a size regression is
+      # visible on the artifact that actually ships, not only on the CI job's
+      # own build.
+      - name: Report shipped sizes
+        run: |
+          ls -l target/x86_64-unknown-linux-musl/release/regnmed-api \
+                target/x86_64-unknown-linux-musl/release/regnmed \
+            | awk '{printf "  %-16s %.1f MB\n", $9, $5/1048576}'
