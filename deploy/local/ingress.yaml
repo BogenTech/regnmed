@@ -3,6 +3,21 @@
 # host, so http://id.regnmed.localhost just works. (curl needs
 # --resolve id.regnmed.localhost:80:127.0.0.1 — macOS's resolver does
 # not do the *.localhost convention, browsers do.)
+#
+# THREE hosts, mirroring production (regnmed.no / api.regnmed.no /
+# id.regnmed.no):
+#
+#   regnmed.localhost      the portal — what a human opens
+#   api.regnmed.localhost  the API — what an integration calls
+#   id.regnmed.localhost   the IdP
+#
+# The first two are the SAME service, because one binary serves both the
+# SPA and the API (docs/portal.md). That is what keeps the portal's own
+# calls SAME-ORIGIN: the app asks for `/companies/…` relative to wherever
+# it was loaded, so a human on regnmed.localhost never makes a
+# cross-origin request. No CORS, and `connect-src 'self'` in the CSP
+# (#64) keeps meaning what it says. Split them onto different services
+# and both of those stop being true.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -29,6 +44,24 @@ metadata:
 spec:
   rules:
     - host: api.regnmed.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-portal
+  namespace: regnmed
+spec:
+  rules:
+    - host: regnmed.localhost
       http:
         paths:
           - path: /

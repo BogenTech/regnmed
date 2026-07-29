@@ -13,3 +13,4 @@ data:
   regnmed.override: |
     rewrite name id.regnmed.localhost traefik.kube-system.svc.cluster.local
     rewrite name api.regnmed.localhost traefik.kube-system.svc.cluster.local
+    rewrite name regnmed.localhost traefik.kube-system.svc.cluster.local

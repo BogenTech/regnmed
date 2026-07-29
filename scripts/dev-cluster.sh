@@ -21,8 +21,9 @@ VM_MEM=2
 
 urls() {
     echo
-    echo "  IdP:  http://id.regnmed.localhost   (login/admin UI, OIDC issuer)"
-    echo "  API:  http://api.regnmed.localhost  (regnmed-api; /health, /me)"
+    echo "  Portal: http://regnmed.localhost      (what a human opens)"
+    echo "  API:    http://api.regnmed.localhost  (same binary; /health, /me)"
+    echo "  IdP:    http://id.regnmed.localhost   (login/admin UI, OIDC issuer)"
     echo "  (browsers resolve *.localhost; for curl add:"
     echo "   --resolve id.regnmed.localhost:80:127.0.0.1)"
     echo
@@ -72,9 +73,15 @@ seed() {
     kubectl -n regnmed exec deploy/regnid -- /app/regnid add-user \
         --email admin-demo@example.test --password admin-demo-passord \
         --name "Demo Admin" --admin >/dev/null 2>&1 || true
+    # Both origins: the portal answers on regnmed.localhost (what a human
+    # opens) and on api.regnmed.localhost (the API host serves the same
+    # binary). The app builds its redirect_uri from location.origin, so
+    # each origin it can be opened from must be registered here.
     kubectl -n regnmed exec deploy/regnid -- /app/regnid add-client \
         --client-id regnmed-portal --name "regnmed portal" \
+        --redirect-uri http://regnmed.localhost/callback \
         --redirect-uri http://api.regnmed.localhost/callback \
+        --post-logout-redirect-uri http://regnmed.localhost/ \
         --post-logout-redirect-uri http://api.regnmed.localhost/ \
         --audience regnmed >/dev/null 2>&1 || true
 }

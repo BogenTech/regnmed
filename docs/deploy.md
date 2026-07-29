@@ -20,9 +20,29 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
 1. **Pin images.** Build with `scripts/build-images.sh`, push to your
    registry, set the two `newTag` values in
    `deploy/prod/kustomization.yaml`. Never `:dev` in production.
-2. **Hosts.** Edit the two hostnames in `deploy/prod/ingress.yaml` and
-   the matching `ISSUER`/`OIDC_ISSUER` values in `deploy/prod/patches/`
-   — the issuer URL the browser sees must be the one the pods see.
+2. **Hosts.** Three of them, and they mirror the local cluster:
+
+   | Host | Serves | Ingress |
+   | --- | --- | --- |
+   | `regnmed.no` | the portal — what a human opens | `regnmed-portal` |
+   | `api.regnmed.no` | the API — what an integration calls | `regnmed-api` |
+   | `id.regnmed.no` | the IdP | `regnid` |
+
+   The first two point at the **same service**: one binary serves both
+   the SPA and the API (docs/portal.md). That is deliberate, and it is
+   what keeps the portal's own calls same-origin — the app asks for
+   `/companies/…` relative to wherever it was loaded, so a human on
+   `regnmed.no` never makes a cross-origin request. No CORS, and
+   `connect-src 'self'` in the CSP (docs/auth.md §9) keeps meaning what
+   it says. Split them onto different services and both stop holding.
+
+   Edit the hostnames in `deploy/prod/ingress.yaml`, the matching
+   `ISSUER`/`OIDC_ISSUER` values in `deploy/prod/patches/` — the issuer
+   URL the browser sees must be the one the pods see — and
+   `PORTAL_BASE_URL`, which is the **portal** host, since it becomes the
+   link in the invitation e-mail (#66). Register `https://regnmed.no/callback`
+   as a redirect URI on the portal's OIDC client; add the API host too if
+   the app should be openable there as well.
 3. **TLS.** Install cert-manager, edit the e-mail in
    `cert-issuer.yaml`; Let's Encrypt HTTP-01 through Traefik issues and
    renews the certificates.

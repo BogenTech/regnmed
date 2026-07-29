@@ -46,3 +46,30 @@ spec:
                 name: regnmed-api
                 port:
                   number: 8080
+---
+# The portal — what a human opens. Same service as the API host above:
+# one binary serves the SPA and the API, which is what keeps the portal's
+# own calls same-origin (see deploy/local/ingress.yaml for why that
+# matters to CORS and to the CSP).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-portal
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  tls:
+    - hosts: [regnmed.example]
+      secretName: regnmed-portal-tls
+  rules:
+    - host: regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080

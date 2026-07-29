@@ -57,7 +57,9 @@ post-logout URI. The portal derives both from `location.origin`, so the
 **port is part of the registration** — moving the dev server means
 re-registering the client.
 
-- Cluster: `api.regnmed.localhost`, seeded by `scripts/dev-cluster.sh`.
+- Cluster: `regnmed.localhost` (portalen) og `api.regnmed.localhost`
+  (API-verten, samme binær), begge seedet av `scripts/dev-cluster.sh`.
+  **Begge opphav må stå på klienten**, siden appen kan åpnes fra begge.
 - Two-process dev (no cluster): `scripts/dev-sso.sh` registers the
   client and a dev admin against a local regnid, defaulting to
   regnmed-api on **8082** and regnid on 8081. 8080 is avoided because

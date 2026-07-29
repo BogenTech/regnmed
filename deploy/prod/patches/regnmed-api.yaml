@@ -30,7 +30,8 @@ spec:
                   key: regnmed-url
             - name: OIDC_ISSUER
               value: https://id.regnmed.example
-            # The link in the invitation mail (#66) — must be the portal's
-            # real address, i.e. the host in ingress.yaml.
+            # The link in the invitation mail (#66) — the portal's real
+            # address, i.e. the regnmed-portal host in ingress.yaml, not
+            # the API host.
             - name: PORTAL_BASE_URL
-              value: https://api.regnmed.example
+              value: https://regnmed.example
