@@ -318,6 +318,19 @@ gammel database eller en tilbakerullet versjon, ikke en skrivefeil).
 En rolle **slettes aldri**, den deaktiveres — og en deaktivert rolle gir
 ingenting. Endringene ligger i `company_role_change`.
 
+**Hver endring er én transaksjon** (#62). Rollen, rettighetene og
+loggraden skrives sammen eller ikke i det hele tatt: en rolle som finnes
+uten at `company_role_change` forklarer hvordan, er nøyaktig det
+endringsloggen finnes for å umuliggjøre. Og fordi det å sette
+rettigheter er `delete` + `insert`, ville et samtidig oppslag fra vakten
+utenfor en transaksjon kunne lest *mellom* dem og sett en tom liste — den
+som har rollen ville mistet tilgangen et øyeblikk, tilfeldig, i en helt
+annen forespørsel. Nå ser oppslaget alltid enten den gamle eller den nye
+listen. Rollen låses (`for update`) før listen skrives om, ellers ville
+to samtidige endringer begge slettet den gamle og sluppet igjennom hver
+sin — altså unionen, som er mer tilgang enn noen av dem ba om. Testene
+står i `tests/grupper/tilgang.rs` og er sett feile uten rettingen.
+
 Integrasjoner går gjennom samme oppslag, så en maskin kan få en
 egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer. At
 `admin` ikke er grantbart til en maskin står fortsatt.
@@ -366,6 +379,14 @@ test.
   virket.
 - **Medlemskap slettes aldri**, det deaktiveres — det er historikken over
   hvem som hadde tilgang.
+
+En invitasjon kan peke på en **egendefinert rolle som blir deaktivert før
+den løses inn**. Medlemskapet opprettes da med en rolle som ikke gir
+noe — vedkommende kommer inn i selskapet og får ingenting. Det er valgt,
+ikke oppdaget: alternativet ville vært å avvise innløsningen, og da måtte
+den inviterte fått vite hvorfor, altså at selskapet har en deaktivert
+rolle med det navnet. Fail-closed er riktigere enn å lekke, og en admin
+som ser medlemmet uten tilgang kan gi det en annen rolle med én gang.
 
 Hver endring havner i `company_member_change`, som er innsettings-bar:
 hvem fikk hva, når, og hvem som ga det. En innløst invitasjon har ingen

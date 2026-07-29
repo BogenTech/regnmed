@@ -945,6 +945,169 @@ async fn nodprosedyren_krever_referanse_og_navngir_seg_selv() {
     );
 }
 
+// ---------------------------------------------------------------------
+// Én transaksjon per rolleendring (#62).
+// ---------------------------------------------------------------------
+
+/// En rolle som finnes uten at endringsloggen forklarer hvordan er
+/// nøyaktig det loggen finnes for å umuliggjøre. Feiler loggskrivingen,
+/// skal rollen ikke bli til.
+///
+/// Feilen framkalles slik den ville oppstått i drift: `utfort_av` peker
+/// på en person som ikke finnes, og fremmednøkkelen avviser loggraden —
+/// altså tredje steg, etter at både rollen og rettighetene er skrevet.
+#[tokio::test]
+async fn rolle_uten_logglinje_blir_ikke_til() {
+    let Some((state, _idp, company, _admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let spokelse = Uuid::new_v4();
+    let res = regnmed_db::roller::opprett(
+        &state.pool,
+        company,
+        "Halvferdig",
+        &["FAKTURA_LES".to_string()],
+        spokelse,
+        "Testadmin",
+    )
+    .await;
+    assert!(res.is_err(), "loggraden skulle ikke gått gjennom");
+
+    let roller = regnmed_db::roller::list_roller(&state.pool, company)
+        .await
+        .unwrap();
+    assert!(
+        !roller.iter().any(|r| r.navn == "Halvferdig"),
+        "rollen står igjen uten spor i loggen: {:?}",
+        roller.iter().map(|r| &r.navn).collect::<Vec<_>>()
+    );
+}
+
+/// Tilgangsvakten skal aldri se rettighetslisten midt i en omskriving.
+///
+/// `sett_rettigheter` er `delete` + `insert`; utenfor en transaksjon kan
+/// et samtidig oppslag lese imellom og se en TOM liste — den som har
+/// rollen mister tilgangen et øyeblikk, tilfeldig, i en helt annen
+/// forespørsel.
+///
+/// Testen holder rollen låst slik en samtidig endring ville gjort, og
+/// leser mens skrivingen står og venter: svaret skal være den gamle
+/// listen, hele tiden. Uten låsen og transaksjonen kommer skrivingen
+/// forbi med én gang, og lesingen ser enten ingenting eller den nye
+/// listen — begge deler feiler her.
+#[tokio::test]
+async fn rettigheter_leses_aldri_halvveis() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        r#"{"navn":"Kasserer","rettigheter":["FAKTURA_LES","FAKTURA_SKRIV"]}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let role_id: Uuid = svar["role_id"].as_str().unwrap().parse().unwrap();
+    let navn = vec!["Kasserer".to_string()];
+
+    let sortert = |mut r: Vec<String>| {
+        r.sort();
+        r
+    };
+    let som_skriver = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("skriver|{}", Uuid::new_v4()),
+        Some("Skriver"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Lås rollen, slik en samtidig rettighetsendring gjør.
+    let mut laas = state.pool.begin().await.unwrap();
+    sqlx::query("select id from company_role where id = $1 for update")
+        .bind(role_id)
+        .fetch_one(&mut *laas)
+        .await
+        .unwrap();
+
+    // Endringen starter — og kommer ikke forbi låsen.
+    let pool = state.pool.clone();
+    let skriver = tokio::spawn(async move {
+        regnmed_db::roller::sett_rettigheter(
+            &pool,
+            company,
+            role_id,
+            &["RESKONTRO_LES".to_string()],
+            som_skriver,
+        )
+        .await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    for i in 0..20 {
+        let sett = regnmed_db::roller::rettigheter_for(&state.pool, company, &navn)
+            .await
+            .unwrap();
+        assert_eq!(
+            sortert(sett),
+            ["FAKTURA_LES", "FAKTURA_SKRIV"],
+            "oppslag {i} så noe annet enn den gamle listen mens endringen pågikk"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+
+    laas.commit().await.unwrap();
+    skriver.await.unwrap().unwrap();
+    let sett = regnmed_db::roller::rettigheter_for(&state.pool, company, &navn)
+        .await
+        .unwrap();
+    assert_eq!(
+        sortert(sett),
+        ["RESKONTRO_LES"],
+        "den nye listen skulle stått"
+    );
+}
+
+/// Navnet er opptatt — og det skal si nettopp det. Unik-bruddet
+/// gjenkjennes på SQLSTATE, ikke på constraint-navnet, så en rename i en
+/// senere migrasjon ikke gjør meldingen om til en 500.
+#[tokio::test]
+async fn dobbelt_rollenavn_sier_at_navnet_er_opptatt() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = oppsett().await else {
+        return;
+    };
+    let kropp = r#"{"navn":"Kontrollør","rettigheter":["FAKTURA_LES"]}"#;
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        kropp,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        kropp,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::BAD_REQUEST, "{svar}");
+    assert!(
+        svar["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("allerede en rolle"),
+        "{svar}"
+    );
+}
+
 /// Innebygde navn kan ikke kapres — en egendefinert «admin» ville
 /// skygget for den ekte.
 #[tokio::test]

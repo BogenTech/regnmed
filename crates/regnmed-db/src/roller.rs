@@ -8,14 +8,36 @@
 //! ikke**. Oppslaget filtrerer bort det koden ikke gjenkjenner, så en
 //! rolle kan ikke love en rettighet ingen håndhever — og en tilbakerullet
 //! versjon som ikke kjenner en ny rettighet ser den bare forsvinne.
+//!
+//! **Hver endring er ÉN transaksjon** (#62), av to grunner som begge
+//! rammer noen andre enn den som skriver:
+//!
+//! 1. Rollen, rettighetene og loggraden hører sammen. Sto de i hvert
+//!    sitt statement, kunne en rolle bli til uten rettigheter og uten
+//!    en rad i `company_role_change` — og en rolle loggen ikke
+//!    forklarer er nøyaktig det endringsloggen finnes for å umuliggjøre.
+//! 2. Å sette rettigheter er `delete` + `insert`. Utenfor en
+//!    transaksjon kan `rettigheter_for` (tilgangsvakten, i en helt
+//!    annen forespørsel) lese MELLOM dem og se en tom liste: den som
+//!    har rollen mister tilgangen et øyeblikk, tilfeldig, uten at noe
+//!    er galt. Nå ser oppslaget alltid enten den gamle eller den nye
+//!    listen.
+//!
+//! Rollen låses (`for update`) før rettighetene skrives om. Uten låsen
+//! ville to samtidige endringer begge slettet den gamle listen og
+//! sluppet igjennom hver sin — resultatet ble UNIONEN, altså mer
+//! tilgang enn noen av dem ba om.
 
 use anyhow::{Result, bail, ensure};
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 /// Navn som tilhører de innebygde rollene og ikke kan gjenbrukes.
 pub const RESERVERTE_NAVN: [&str; 6] = ["admin", "bokforing", "les", "ansatt", "revisor", "ukjent"];
+
+/// SQLSTATE for unique_violation.
+const UNIK_KRENKELSE: &str = "23505";
 
 #[derive(Debug, Clone)]
 pub struct Rolle {
@@ -80,7 +102,7 @@ pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolle>> 
 }
 
 async fn logg(
-    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     company_id: Uuid,
     role_id: Uuid,
     endring: &str,
@@ -98,7 +120,7 @@ async fn logg(
     .bind(endring)
     .bind(rettigheter)
     .bind(utfort_av)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }
@@ -121,6 +143,7 @@ pub async fn opprett(
     );
 
     let id = Uuid::new_v4();
+    let mut tx = pool.begin().await?;
     let res = sqlx::query(
         "insert into company_role (id, company_id, navn, created_by) values ($1,$2,$3,$4)",
     )
@@ -128,17 +151,19 @@ pub async fn opprett(
     .bind(company_id)
     .bind(navn)
     .bind(av_navn)
-    .execute(pool)
+    .execute(&mut *tx)
     .await;
     if let Err(e) = res {
-        if e.to_string().contains("company_role_company_id_navn_key") {
+        // Feilkoden, ikke constraint-navnet: en rename av constrainten
+        // skal ikke gjøre «navnet er opptatt» om til en 500.
+        if e.as_database_error().and_then(|d| d.code()).as_deref() == Some(UNIK_KRENKELSE) {
             bail!("selskapet har allerede en rolle som heter «{navn}»");
         }
         return Err(e.into());
     }
-    sett_rettigheter_in(pool, id, godkjente).await?;
+    sett_rettigheter_in(&mut tx, id, godkjente).await?;
     logg(
-        pool,
+        &mut tx,
         company_id,
         id,
         "opprettet",
@@ -146,24 +171,30 @@ pub async fn opprett(
         av,
     )
     .await?;
+    tx.commit().await?;
     Ok(id)
 }
 
-async fn sett_rettigheter_in(pool: &PgPool, role_id: Uuid, rettigheter: &[String]) -> Result<()> {
+/// Skriver rettighetslisten om. Kjøres alltid inne i transaksjonen som
+/// også skriver loggraden, og etter at rollen er låst.
+async fn sett_rettigheter_in(
+    tx: &mut Transaction<'_, Postgres>,
+    role_id: Uuid,
+    rettigheter: &[String],
+) -> Result<()> {
     sqlx::query("delete from company_role_right where role_id = $1")
         .bind(role_id)
-        .execute(pool)
+        .execute(&mut **tx)
         .await?;
-    for rett in rettigheter {
-        sqlx::query(
-            "insert into company_role_right (role_id, rett) values ($1,$2)
-             on conflict do nothing",
-        )
-        .bind(role_id)
-        .bind(rett)
-        .execute(pool)
-        .await?;
-    }
+    sqlx::query(
+        "insert into company_role_right (role_id, rett)
+         select $1, rett from unnest($2::text[]) as rett
+         on conflict do nothing",
+    )
+    .bind(role_id)
+    .bind(rettigheter)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -174,16 +205,20 @@ pub async fn sett_rettigheter(
     godkjente: &[String],
     av: Uuid,
 ) -> Result<()> {
-    let finnes: Option<Uuid> =
-        sqlx::query_scalar("select id from company_role where id = $1 and company_id = $2")
-            .bind(role_id)
-            .bind(company_id)
-            .fetch_optional(pool)
-            .await?;
+    let mut tx = pool.begin().await?;
+    // Låser rollen og sjekker at den finnes i ett — to samtidige
+    // endringer skal skje etter hverandre, ikke blande listene sine.
+    let finnes: Option<Uuid> = sqlx::query_scalar(
+        "select id from company_role where id = $1 and company_id = $2 for update",
+    )
+    .bind(role_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     ensure!(finnes.is_some(), "ukjent rolle");
-    sett_rettigheter_in(pool, role_id, godkjente).await?;
+    sett_rettigheter_in(&mut tx, role_id, godkjente).await?;
     logg(
-        pool,
+        &mut tx,
         company_id,
         role_id,
         "rettigheter_endret",
@@ -191,6 +226,7 @@ pub async fn sett_rettigheter(
         av,
     )
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -203,16 +239,17 @@ pub async fn sett_aktiv(
     aktiv: bool,
     av: Uuid,
 ) -> Result<()> {
+    let mut tx = pool.begin().await?;
     let n = sqlx::query("update company_role set aktiv = $3 where id = $2 and company_id = $1")
         .bind(company_id)
         .bind(role_id)
         .bind(aktiv)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
     ensure!(n == 1, "ukjent rolle");
     logg(
-        pool,
+        &mut tx,
         company_id,
         role_id,
         if aktiv { "reaktivert" } else { "deaktivert" },
@@ -220,6 +257,7 @@ pub async fn sett_aktiv(
         av,
     )
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 

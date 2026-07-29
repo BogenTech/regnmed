@@ -416,3 +416,76 @@ async fn tilbakekalt_invitasjon_gir_ingen_tilgang() {
     assert_eq!(me["nye_tilganger"], 0);
     assert_eq!(me["companies"].as_array().unwrap().len(), 0);
 }
+
+/// En invitasjon kan peke på en egendefinert rolle som blir
+/// **deaktivert før den løses inn**. Medlemskapet blir da til med en
+/// rolle som ikke gir noe: vedkommende kommer inn i selskapet og får
+/// ingenting.
+///
+/// Det er valgt, ikke oppdaget (docs/auth.md §7). Alternativet — å
+/// avvise innløsningen — måtte forklart den inviterte hvorfor, altså at
+/// selskapet har en deaktivert rolle med det navnet. Fail-closed er
+/// riktigere enn å lekke, og admin kan gi en annen rolle med én gang.
+#[tokio::test]
+async fn invitasjon_til_deaktivert_rolle_gir_medlemskap_uten_tilgang() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let (company, _, admin) = selskap_med_admin(&state, &idp).await;
+
+    let (status, svar) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        Some(json!({"navn": "Midlertidig", "rettigheter": ["FAKTURA_LES"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{svar}");
+    let role_id = svar["role_id"].as_str().unwrap().to_string();
+
+    let (_, epost, ny_token) = kommende(&idp, "Vikar");
+    let (status, svar) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invitations"),
+        &admin,
+        Some(json!({"epost": epost, "rolle": "Midlertidig"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{svar}");
+
+    // Rollen trekkes tilbake mens invitasjonen ligger ute.
+    let (status, _) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/roles/{role_id}/deactivate"),
+        &admin,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Medlemskapet blir til — invitasjonen er gyldig, den ble ikke
+    // tilbakekalt.
+    let (status, me) = call(&state, "GET", "/me", &ny_token, None).await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    assert_eq!(me["nye_tilganger"], 1);
+    assert_eq!(me["companies"][0]["access"], "Midlertidig");
+
+    // Men rollen gir ingenting.
+    let (status, _) = call(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices"),
+        &ny_token,
+        None,
+    )
+    .await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "en deaktivert rolle skal ikke gi tilgang, heller ikke via invitasjon"
+    );
+}

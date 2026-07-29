@@ -845,6 +845,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    docs: en autorisasjonstest som ikke er sett feile er ikke
    verifisert (axum kjører `Json`/`Query`-uttrekk FØR vakten — ugyldig
    kropp gir 422/400 og måler ingenting).
+   ETTERSLEP (closed #62): `regnmed-db::roller` skrev flerstegs rett mot
+   poolen — nå ÉN transaksjon per endring, med `for update` på rollen
+   før rettighetslisten skrives om. Uten det kunne (a) en rolle bli til
+   uten rettigheter og uten rad i `company_role_change`, og (b)
+   tilgangsvakten lese MELLOM `delete` og `insert` og se en TOM liste,
+   så den som har rollen mistet tilgangen et øyeblikk i en helt annen
+   forespørsel. Unik-bruddet gjenkjennes nå på SQLSTATE 23505, ikke på
+   constraint-navnet. Begge testene er sett feile uten rettingen.
+   Dokumentert samtidig (docs/auth.md §7): en invitasjon til en
+   egendefinert rolle som deaktiveres FØR innløsning gir medlemskap
+   uten tilgang — valgt fail-closed, ikke oppdaget.
 52. ✅ Ingen plattformadministrator (docs/auth.md §8, closed #57):
    avgjørelsen tatt UTTRYKKELIG — ingen tilgangsvei krysser
    selskapsgrenser, ingen leverandørbakvei; festet i test
