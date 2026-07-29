@@ -146,6 +146,16 @@ formats. Patterns in use:
   postgres:18 service (locally: `scripts/dev-db.sh` + `regnmed migrate`).
 - SAF-T output is validated against Skatteetaten's official XSD
   (vendored in `docs/saft/`) with xmllint, in unit tests and CI.
+- **API-integrasjonstestene er GRUPPERT** (2026-07-29): filene ligger i
+  `crates/regnmed-api/tests/grupper/` og samles av sju binærer i
+  `tests/` — salg, regnskap, penger, drift, personal,
+  tilgang_og_marked, portal_og_drift. Grunnen er byggetid: hver
+  `tests/*.rs` er en egen crate som lenkes for seg, og 33 av dem hadde
+  én eneste test. Nye tester legges i en eksisterende gruppe (`#[path]`
+  i gruppefila), ikke som ny fil i `tests/` — en ny fil der er en ny
+  binær. Modulene bruker `use crate::common::…`; `mod common;` står
+  bare i gruppefila. `seed_browser.rs` er med vilje alene, siden den
+  kjøres for hånd.
 
 ### Local production-like cluster (on demand, 8 GB-friendly)
 
@@ -831,7 +841,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    delegeres, roller deaktiveres — slettes aldri. Portal: Roller-kort
    m/ beskrivelser servert fra koden (`Rett::beskrivelse()`/`gruppe()`
    — ingen andre kopi). Matrisen i docs/auth.md er MASKINSJEKKET
-   (`tests/matrise.rs` genererer og krever likhet). Lærdom, festet i
+   (`tests/grupper/matrise.rs` genererer og krever likhet). Lærdom, festet i
    docs: en autorisasjonstest som ikke er sett feile er ikke
    verifisert (axum kjører `Json`/`Query`-uttrekk FØR vakten — ugyldig
    kropp gir 422/400 og måler ingenting).

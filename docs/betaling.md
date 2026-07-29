@@ -76,7 +76,7 @@ leverandørens kontonummer settes på partssiden under Reskontro.
 - `regnmed-core/src/pain001.rs` — kontonummer MOD11 (normalisering,
   feil kontrollsiffer), deterministisk rendering (KID/melding,
   escaping, CtrlSum), XSD-validering mot vendored skjema.
-- `crates/regnmed-api/tests/payments.rs` — end to end: betalbare
+- `crates/regnmed-api/tests/grupper/payments.rs` — end to end: betalbare
   poster m/ manglende-konto-flagg, avvist liste uten konto, kopierte
   kreditordata, fil KUN etter separat godkjenning (KID som SCOR,
   normalisert kontonummer, CtrlSum), DB-immutabilitet for kjøring og

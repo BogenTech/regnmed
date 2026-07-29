@@ -221,7 +221,7 @@ aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
 - `regnmed-core::aksjonaeroppgave` — begge skjemaene mot Skatteetatens
   XSD-er, året uten transaksjoner, selskaps- og utenlandsk aksjonær,
   navnekutting, determinisme, og at en uverifisert kode nektes.
-- `regnmed-api/tests/aksjonaer.rs` — hele veien: beregnet eierandel per
+- `regnmed-api/tests/grupper/aksjonaer.rs` — hele veien: beregnet eierandel per
   dato, at fødselsnummeret ikke er i listingen men *er* i innsendingen,
   at ingen kan avhende flere aksjer enn de eier, at utbyttet får bilag,
   at hendelser og identitet ikke kan endres eller slettes (databasen

@@ -170,11 +170,11 @@ registrert og aktiv med rot-scope, manifestet lest, kameraknappen med
 et «kamerabilde» lastet opp gjennom den ekte veien, der den samme
 filen sendt en gang til ble avvist av serveren.
 
-`regnmed-api/tests/pwa.rs` dekker det som må stå: manifest og ikoner
+`regnmed-api/tests/grupper/pwa.rs` dekker det som må stå: manifest og ikoner
 serveres med riktig content-type (og er ekte PNG-er i riktig
 størrelse), arbeideren nevner ikke hovedboken, `index.html` peker på
 manifestet, og den samme kvitteringen to ganger blir ett bilag mens en
-gal hash avvises. `tests/portal.rs` dekker serveringen: `/` og
+gal hash avvises. `tests/grupper/portal.rs` dekker serveringen: `/` og
 `/callback` gir appen, hver hashet asset serveres `immutable`, en ukjent
 asset gir 404 (ikke appen på nytt), `/ny` redirecter til `/`, og de
 gamle adressene `/app.js`, `/app.css`, `/theme.js` er borte.

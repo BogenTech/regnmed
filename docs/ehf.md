@@ -108,7 +108,7 @@ bokføringsskjemaet.
   (det vi skriver, kan vi lese), kreditnota gjenkjent, et fremmed
   dokument med ukjente elementer og uten linjesats, avvisning av noe
   som ikke er EHF, beløpsformater.
-- `regnmed-api/tests/ehf.rs` (ekte Postgres, også CI): faktura fra
+- `regnmed-api/tests/grupper/ehf.rs` (ekte Postgres, også CI): faktura fra
   databasen rendret og **XSD-validert**, adressen delt riktig, KID med,
   kreditnota som peker tilbake; mottatt EHF i innboksen gir forslag med
   leverandøren matchet på orgnr, originalen står urørt, og et dokument

@@ -123,7 +123,7 @@ tilgang til selskapet.
 
 ## Tester
 
-`regnmed-api/tests/integrasjon.rs` (ekte Postgres, også CI): et gyldig
+`regnmed-api/tests/grupper/integrasjon.rs` (ekte Postgres, også CI): et gyldig
 maskintoken uten grant får `404` (ikke `403` — en fremmed skal ikke
 lære at selskapet finnes); admin gir tilgang; roboten laster opp og
 bokfører; `created_by` på bilaget er «Nettbutikken»; de endrende

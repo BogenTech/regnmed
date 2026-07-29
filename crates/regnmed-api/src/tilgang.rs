@@ -890,7 +890,7 @@ fn manglende(rett: Rett) -> &'static str {
 /// **Disse kan ikke fange at en rettighet ligger i FEIL bunt.** De
 /// utleder fasiten sin fra buntene, så flyttes `PRODUKT_SKRIV` fra
 /// bokføring til lesing, består de fortsatt — prøvd, med vilje. Det er
-/// `tests/tilgang.rs` som er sperren der: den spør en ekte server med
+/// `tests/grupper/tilgang.rs` som er sperren der: den spør en ekte server med
 /// en ekte rolle og ser hva som slipper gjennom.
 ///
 /// Det disse testene fanger er det andre: en rettighet i to bunter, en

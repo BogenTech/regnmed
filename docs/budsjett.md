@@ -99,7 +99,7 @@ måler mot.
 `crates/regnmed-core/src/budsjett.rs` har enhetstestene for regningen
 (hittil-grensen, resultatfortegn, konto på bare én side, NS
 4102-seksjonene, avrunding av justeringen).
-`crates/regnmed-api/tests/budsjett.rs` kjører hele historien mot en
+`crates/regnmed-api/tests/grupper/budsjett.rs` kjører hele historien mot en
 ekte database: «fra fjoråret +10 %» sår riktige linjer i
 presentasjonsfortegn, utkastet redigeres fritt, balansekonto avvises,
 fastsettelse fryser linjene og hindrer sletting, avviksrapporten

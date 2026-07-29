@@ -99,7 +99,7 @@ innbetaling" line on the bank statement.
   skipped, entities, øre), malformed input.
 - `regnmed-core/src/bank.rs` — matching rules, window, no-reuse,
   ambiguity-goes-to-manual.
-- `regnmed-api/tests/bank.rs` (real Postgres, also CI) — the whole flow
+- `regnmed-api/tests/grupper/bank.rs` (real Postgres, also CI) — the whole flow
   over HTTP: revisor 403 on import, import + auto-match, duplicate
   import rejected, revisor reads reconciliation, manual match to full
   reconciliation, unmatch, stranger 404.

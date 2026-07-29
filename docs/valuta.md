@@ -98,7 +98,7 @@ som resten av eksporten.
 - `regnmed-core/src/hash.rs` — golden v4 + tampering på valutafeltene.
 - `regnmed-gov/src/norgesbank.rs` — SDMX-parseren mot vendored sample
   (inkl. UNIT_MULT).
-- `crates/regnmed-api/tests/valuta.rs` — end to end: kurser (manuell +
+- `crates/regnmed-api/tests/grupper/valuta.rs` — end to end: kurser (manuell +
   avvist søppel), EUR-faktura med hash-dekket valutainformasjon og
   NOK-postering, enhetsfeil avvist ved postering, valutamatch med
   agio i samme transaksjon (reskontro eksakt i null), urealisert

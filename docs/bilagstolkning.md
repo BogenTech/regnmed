@@ -94,7 +94,7 @@ leverandørreskontroen»), ikke en stille opprettelse.
 - `regnmed-core/src/bilagstolk.rs` — en vanlig norsk faktura leses
   komplett; ugyldige kontrollsifre foreslås ikke; verdi under etikett;
   «å betale» slår andre summer; beløpsformater.
-- `regnmed-api/tests/bilagstolkning.rs` (ekte Postgres, også CI): en
+- `regnmed-api/tests/grupper/bilagstolkning.rs` (ekte Postgres, også CI): en
   faktura-PDF generert av vår egen writer lastes opp som om den kom
   utenfra, og tolkningen finner igjen alle tallene + leverandøren på
   orgnr + kontoen fra historikken; dokumentet forblir ubesluttet; et

@@ -99,7 +99,7 @@ driftsmiddel og saldotabellen med midlertidige forskjeller.
 - `regnmed-core/src/anlegg.rs` — planen summerer eksakt, saldoår
   (grunnlag/avskrivning/utgående, negativt grunnlag, avrunding),
   gevinst/tap.
-- `crates/regnmed-api/tests/assets.rs` — end to end: warning under
+- `crates/regnmed-api/tests/grupper/assets.rs` — end to end: warning under
   grensen, 2 driftsmidler avskrevet månedlig (idempotent andre
   kjøring), immutabilitet i databasen (asset + logg), avhending med
   gevinst (3880-saldo verifisert) og utrangering med tap, avskrivning

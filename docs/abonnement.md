@@ -160,7 +160,7 @@ beskjeden, **serveren er sperren**.
 
 - `regnmed-core::abonnement`: statusovergangene, inkludert de
   eksklusive grensedagene og frist-fra-oppsigelse.
-- `crates/regnmed-api/tests/abonnement.rs`: prøvetiden virker; sperret
+- `crates/regnmed-api/tests/grupper/abonnement.rs`: prøvetiden virker; sperret
   selskap nektes endringer med forklaring **og bevises å kunne lese,
   eksportere SAF-T og administrere tilgang**; tegning åpner igjen;
   oppsigelse gir frist, ikke øyeblikkelig sperre; fakturakjøringen

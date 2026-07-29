@@ -49,7 +49,7 @@ API: `POST/GET /companies/{id}/vouchers/{vid}/attachments`,
 
 ## Where it is tested
 
-`regnmed-api/tests/period_attachments.rs` (real Postgres, also CI): both
+`regnmed-api/tests/grupper/period_attachments.rs` (real Postgres, also CI): both
 lock layers reject a back-dated posting (app error and raw-SQL trigger),
 accountant-vs-admin reopening rules with the audit trail, upload/download
 round-trip with hash equality, UPDATE rejected, DBA-level content

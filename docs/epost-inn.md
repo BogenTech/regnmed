@@ -97,7 +97,7 @@ Slipp inn / Avvis, avsenderlisten og de siste mottakene.
   holder skjemaets lengdekrav; avsender leses ut av visningsnavn;
   listen godtar adresse og domene, og et domene må matche helt
   (`grossisten.no.svindel.no` slipper ikke inn).
-- `regnmed-api/tests/epost_inn.rs` (ekte Postgres + ekte `nats-server`,
+- `regnmed-api/tests/grupper/epost_inn.rs` (ekte Postgres + ekte `nats-server`,
   hoppes over uten): fire meldinger på railen gir dokument, karantene,
   avvist-uten-vedlegg og ingen dublett; brødteksten er lagret;
   `uploaded_by` er avsenderadressen; karantene lager ingen dokumenter

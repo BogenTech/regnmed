@@ -54,7 +54,7 @@ faktura".
 
 ## Where it is tested
 
-- `regnmed-api/tests/timesheet.rs` (real Postgres, also CI) — record/
+- `regnmed-api/tests/grupper/timesheet.rs` (real Postgres, also CI) — record/
   edit/delete over HTTP, validation (sats required when fakturerbar,
   unknown/avsluttet prosjekt), week view and summary sums, the month
   lock rejecting changes at BOTH the API and the trigger layer, billing

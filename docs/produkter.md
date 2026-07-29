@@ -110,7 +110,7 @@ supplies price and mva unless overridden).
 
 - `regnmed-core/src/lager.rs` — valuation unit tests (rounding, count
   at average, oversell, exact depletion).
-- `crates/regnmed-api/tests/products.rs` — end to end: copy-at-issue
+- `crates/regnmed-api/tests/grupper/products.rs` — end to end: copy-at-issue
   (register edits and deactivation vs issued documents), automatic
   salg/retur movements through faktura, kreditnota and
   tilbud→ordre→faktura, DB-layer immutability of movements and nummer,

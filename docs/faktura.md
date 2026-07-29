@@ -154,7 +154,7 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
 - `regnmed-core/src/invoice.rs` — line/VAT computation, rounding, KID
   validity, voucher balance with party, credit-note sign flip.
-- `regnmed-api/tests/invoice.rs` (real Postgres, also CI) — the whole
+- `regnmed-api/tests/grupper/invoice.rs` (real Postgres, also CI) — the whole
   loop over HTTP: issue (12 500 kr, valid KID), failed attempt burns no
   number, chain verifies, OCR payment resolves the invoice by KID,
   kreditnota auto-settles, double-credit rejected.
@@ -162,23 +162,23 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   WinAnsi encoding incl. CP1252 typografi, escaping, width-based right
   alignment, determinism, lovpålagt innhold, kreditnota variant,
   pagination.
-- `regnmed-api/tests/faktura_pdf.rs` (real Postgres, also CI) —
+- `regnmed-api/tests/grupper/faktura_pdf.rs` (real Postgres, also CI) —
   settings over the API, the PDF exists as a verified attachment the
   moment the invoice does, served with the kontaktinfo, kreditnota
   document, purring `?format=pdf`, settings PUT rejected for
   non-admins.
-- `regnmed-api/tests/salgsdokument.rs` (real Postgres, also CI) — the
+- `regnmed-api/tests/grupper/salgsdokument.rs` (real Postgres, also CI) — the
   whole chain over HTTP: tilbud edited while utkast, PDF without
   KID/betalingsinfo, one-way trapp, ordre copied losslessly (one per
   tilbud), fakturering through the ordinary path (chain + stored PDF
   verify, links carried), avslått path keeps the number series
   gap-free, direct ordre.
-- `regnmed-api/tests/invoice_template.rs` (real Postgres, also CI) —
+- `regnmed-api/tests/grupper/invoice_template.rs` (real Postgres, also CI) —
   template over the API, catch-up generation with periodetekst through
   the gap-free path (chain + attachments verify), idempotence, run log
   append-only and marked til utsendelse, deactivation respected,
   "gjenta denne" copies customer + lines.
-- `regnmed-api/tests/utsendelse.rs` (real Postgres + a spawned
+- `regnmed-api/tests/grupper/utsendelse.rs` (real Postgres + a spawned
   `nats-server`, skips without either) — the send endpoint puts a real
   JetStream message on the rail in regnid's wire format (attachment
   base64-decodes back to the stored PDF, reply-to = company),

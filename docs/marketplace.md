@@ -71,11 +71,11 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
 - `regnmed-core/src/orgnr.rs` — MOD11 checksum on real orgnrs.
 - `regnmed-gov` — registry response parsing (tolerant to extra fields),
   license matching incl. inactive licenses not counting.
-- `regnmed-api/tests/engagement.rs` (real Postgres, also CI): the whole
+- `regnmed-api/tests/grupper/engagement.rs` (real Postgres, also CI): the whole
   loop — directory listing, non-admin refused, request + duplicate
   rejection, firm-member-only visibility and decision, access appearing
   via `/me` after accept and disappearing immediately after end.
-- `regnmed-api/tests/marketplace.rs` (real Postgres, mocked registries
+- `regnmed-api/tests/grupper/marketplace.rs` (real Postgres, mocked registries
   via env URLs, also CI): preview, checksum rejection, onboarding with
   seeded reskontro-flagged kontoplan and creator-as-admin, double
   onboarding and slettet enhet refused, firm creation refused without

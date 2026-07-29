@@ -80,7 +80,7 @@ mail rail (`POST …/reminders/{rid}/send`, portal "send" i historikken)
   loud failure without sats coverage, the full stegregel matrix (14-day
   rules, gebyrtak, maks to gebyr, enveis trapp), voucher balance,
   deterministic rendering incl. the inkassovarsel lovtekst.
-- `regnmed-api/tests/purring.rs` (real Postgres, also CI) — the loop
+- `regnmed-api/tests/grupper/purring.rs` (real Postgres, also CI) — the loop
   over HTTP: aldersfordeling buckets, gebyrfri påminnelse posts
   nothing, purring with gebyr + rente posts one voucher and the chain
   verifies, gebyr over maks / short inkassovarsel-frist / steg tilbake

@@ -58,7 +58,7 @@ same saldo queries.
 - `crates/regnmed-core/src/regnskap.rs` — grouping, presentation signs,
   driftsresultat/årsresultat, the balanse identity, class 6+7 merge,
   zero-balance omission.
-- `crates/regnmed-api/tests/regnskap.rs` (real Postgres, also in CI) —
+- `crates/regnmed-api/tests/grupper/regnskap.rs` (real Postgres, also in CI) —
   saldobalanse carries inngående across a year boundary and splits
   debet/kredit; kontospesifikasjon running saldo and bilagshenvisning;
   bokføringsspesifikasjon in posting order with every voucher balancing;
@@ -89,7 +89,7 @@ frister er alltid nå. Budsjettavvik hører til
 avviksrapporten som måler de samme resultattallene mot en navngitt,
 fastsatt plan.
 
-Testet i `crates/regnmed-api/tests/nokkeltall.rs`: resultat mot
+Testet i `crates/regnmed-api/tests/grupper/nokkeltall.rs`: resultat mot
 håndregnede tall (fjorårets poster ETTER cutoff teller ikke),
 månedskolonner med kostnadsmåned, likviditetsbildet fra reskontro og
 bank, og at fristene aldri ligger i fortiden.

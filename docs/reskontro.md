@@ -63,7 +63,7 @@ rest of the file.
 
 - `regnmed-core/src/hash.rs` — golden digests for v1 **and** v2;
   party reassignment changes the v2 hash; v1/v2 never collide.
-- `regnmed-api/tests/reskontro.rs` (real Postgres, also CI) — the whole
+- `regnmed-api/tests/grupper/reskontro.rs` (real Postgres, also CI) — the whole
   flow over HTTP: flag account, create customer, party-requirement
   enforcement both ways, invoice + partial payment, mixed-version chain
   verification, spesifikasjon saldo, åpne poster matching with

@@ -60,7 +60,7 @@ mobile capture ride on the same endpoint when they come.
 
 ## Where it is tested
 
-- `crates/regnmed-api/tests/innboks.rs` (real Postgres, also in CI):
+- `crates/regnmed-api/tests/grupper/innboks.rs` (real Postgres, also in CI):
   upload → list → bokfør posts voucher + attachment + status in one
   transaction (attachment bytes hash-identical to the upload); an
   unbalanced draft fails and leaves the document undecided; re-deciding

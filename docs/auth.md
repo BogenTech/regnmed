@@ -181,12 +181,12 @@ regnskapet må uansett se lønn for å bokføre den. Et selskap som vil ha
 ## 5. Matrisen
 
 Hele vokabularet, og hva hver innebygd rolle gir. **Tabellen er
-maskinsjekket** — `crates/regnmed-api/tests/matrise.rs` genererer den fra
+maskinsjekket** — `crates/regnmed-api/tests/grupper/matrise.rs` genererer den fra
 `Rolle` og `Rett` og feiler hvis dokumentet ikke stemmer. En
 tilgangstabell som er blitt feil er verre enn ingen tabell: den blir
 sitert i en revisjon, og ingen leser koden for å kontrollere den.
 
-<!-- MATRISE: generert av crates/regnmed-api/tests/matrise.rs -->
+<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrise.rs -->
 
 | Rettighet | Hva den gir | ansatt | les | revisor | bokforing | admin |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -394,7 +394,7 @@ den delen som betyr mest: en omskrevet hovedbok kan bevises, uansett
 hvem som skrev.
 
 Avgjørelsen er festet i test, ikke bare i tekst:
-`admin_krysser_ingen_selskapsgrense` i `tests/tilgang.rs` viser at den
+`admin_krysser_ingen_selskapsgrense` i `tests/grupper/tilgang.rs` viser at den
 sterkeste rollen som finnes er en fullstendig fremmed i naboselskapet —
 404 på lesing, skriving og administrasjon, og `/me` nevner ikke
 selskapet. Skal avgjørelsen noen gang omgjøres, må den testen endres
@@ -521,10 +521,10 @@ annet som fanger.
 
 | Fil | Hva den fester |
 | --- | --- |
-| `tests/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
-| `tests/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
-| `tests/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
-| `tests/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
+| `tests/grupper/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
+| `tests/grupper/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
+| `tests/grupper/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
+| `tests/grupper/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
 | `regnmed_api::tilgang` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |
 
 ### Tre feller, alle gått i under bygging
@@ -534,7 +534,7 @@ mens den målte ingenting.
 
 1. **Enhetstestene kan ikke fange en rettighet i feil bunt.** De utleder
    fasiten sin *fra* buntene. Prøvd med vilje — `PRODUKT_SKRIV` flyttet
-   til lesebunten — og samtlige besto. Det er `tests/tilgang.rs` som er
+   til lesebunten — og samtlige besto. Det er `tests/grupper/tilgang.rs` som er
    sperren der, og den slo ut.
 2. **Kroppen må være gyldig JSON for endepunktet.** axum kjører
    `Json<T>`-uttrekket før handleren, så en tom kropp gir 422 og vakten

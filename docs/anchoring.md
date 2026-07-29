@@ -117,7 +117,7 @@ ops decision, not a code change.
   foreign proofs rejected.
 - `crates/regnmed-gov/src/tsa.rs` — golden `TimeStampReq` DER bytes,
   PKIStatus parsing (granted/rejected/long-form/malformed).
-- `crates/regnmed-api/tests/anchor.rs` (real Postgres, also in CI) —
+- `crates/regnmed-api/tests/grupper/anchor.rs` (real Postgres, also in CI) —
   public feed carries the root; per-company proof from the API verifies
   against the public root using only regnmed-core; clean chain passes;
   a planted anchor claiming a different head is reported as a rewrite

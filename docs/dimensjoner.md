@@ -77,7 +77,7 @@ innboks bokfør form and the faktura form; resultat filter in Rapporter.
   v2/v3 never collide.
 - `regnmed-core/src/saft.rs` — AnalysisTypeTable + Analysis rendering,
   XSD-validated.
-- `regnmed-api/tests/dimensions.rs` (real Postgres, also CI) — registry
+- `regnmed-api/tests/grupper/dimensions.rs` (real Postgres, also CI) — registry
   over HTTP (duplicate/bad kind rejected), v3 postings mixed with
   dimension-free vouchers verify from genesis, unknown/avsluttet codes
   rejected at posting, resultat filters sum correctly per dimension,

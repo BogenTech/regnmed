@@ -121,7 +121,7 @@ så bokfør).
   rendered by our own exporter parses back with identical accounts,
   parties, signs and balances. The parser is tolerant (path-based, extra
   elements skipped) in the camt.053 parser's style.
-- `regnmed-api/tests/saft_migration.rs` (real Postgres, also CI): a
+- `regnmed-api/tests/grupper/saft_migration.rs` (real Postgres, also CI): a
   foreign file imports over HTTP into an empty company; the chain
   verifies from genesis; the trial balance equals the foreign system's
   closing balances konto for konto; customer numbers survive; deferred
@@ -136,7 +136,7 @@ så bokfør).
   winning over beløp, credit notes keeping their sign, settled items
   skipped, forfallsdato not stealing the fakturadato column, unknown
   layouts naming the headers).
-- `regnmed-api/tests/migrering.rs` (real Postgres, also CI): contacts
+- `regnmed-api/tests/grupper/migrering.rs` (real Postgres, also CI): contacts
   import twice (created, then updated — idempotent), kundenr surviving
   as party_no, MOD11-validated kontonummer, open-items preview with
   the unknown party listed and nothing posted, the import making the
@@ -144,7 +144,7 @@ så bokfør).
   entries, a second run refused with the balance in the message,
   supplier items landing on the credit side, and an unreadable file
   naming its columns.
-- `regnmed-api/tests/kontoplan.rs` (real Postgres, also CI): a 5-digit
+- `regnmed-api/tests/grupper/kontoplan.rs` (real Postgres, also CI): a 5-digit
   chart is refused raw, analyzed with correct suggestions, imported
   with a reviewed mapping including a two-onto-one merge — balances
   land merged and the chain verifies; the manual åpningsbalanse

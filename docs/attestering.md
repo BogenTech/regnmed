@@ -86,7 +86,7 @@ når kontrollen er på.
 
 ## Tester
 
-`crates/regnmed-api/tests/attestering.rs` kjører hele historien mot en
+`crates/regnmed-api/tests/grupper/attestering.rs` kjører hele historien mot en
 ekte database: fritt bilag uten policy, policy satt (og nektet for
 ikke-admin), bilag under grensen rett gjennom, bilag over grensen
 stoppet, feil attestant nektet, avvisning som stopper bokføring,

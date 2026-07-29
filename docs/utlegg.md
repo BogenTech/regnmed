@@ -88,7 +88,7 @@ kvitteringsfoto (PWA, #48).
 
 - `regnmed-core/src/utlegg.rs` — split trekkfri/trekkpliktig,
   historisk sats-invertering, null-tilfeller.
-- `crates/regnmed-api/tests/expenses.rs` — end to end: kvittering
+- `crates/regnmed-api/tests/grupper/expenses.rs` — end to end: kvittering
   rundtur + DB-immutabilitet, godkjenning med mva-splitt (7790/2710/
   2910-saldoer verifisert) og vedlegget på bilaget, enveis
   beslutninger (også ulovlige overganger direkte i SQL), kjøring med

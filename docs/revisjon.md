@@ -50,7 +50,7 @@ and no access yields 404, as everywhere.
 
 - `crates/regnmed-core/src/revisjon.rs` — deterministic rendering, the
   verdict flip on a failed kontroll, "no anchors" stated not hidden.
-- `crates/regnmed-api/tests/revisjon.rs` (real Postgres, also in CI) —
+- `crates/regnmed-api/tests/grupper/revisjon.rs` (real Postgres, also in CI) —
   a revisor whose only path is a `revisjon` engagement generates the
   report; all six kontroller pass on a healthy ledger (reskontro,
   period lock and anchor present); a planted anchor mismatch flips
