@@ -19,6 +19,7 @@ cargo run -p regnmed-cli -- migrate        # run migrations
 cargo run -p regnmed-cli -- demo           # post demo vouchers + verify chain
 cargo run -p regnmed-cli -- verify-ledger  # re-verify all hash chains
 cargo test                                 # unit tests (no database needed)
+cargo nextest run --workspace              # full suite (needs DATABASE_URL)
 ```
 
 Workspace layout:

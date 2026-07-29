@@ -1,10 +1,22 @@
-# Frugal CI, two jobs:
+# Frugal CI, three jobs:
 # - test: format check + the full test suite against a real Postgres 18
 #   service, so the DB-backed integration tests (ledger immutability,
 #   auth boundary, SAF-T loader) run for real instead of skipping.
 #   libxml2-utils provides xmllint so every run also validates our
 #   generated XML against the official schemas: SAF-T (Skatteetaten),
 #   pain.001 (ISO 20022) and EHF/UBL 2.1 (OASIS).
+#
+#   Kjøres med cargo-nextest, ikke `cargo test`: suiten er 48
+#   testbinærer, 33 av dem med én eneste test, og `cargo test` kjører
+#   binærer ETTER HVERANDRE. Testene venter på Postgres, ikke på CPU, så
+#   det ble nesten ingen parallellitet — målt 4 m 15 s på 129 % CPU.
+#   nextest planlegger hver test som sin egen prosess på tvers av
+#   binærene: 1 m 11 s på 633 % CPU lokalt, 3,6× raskere, og fire
+#   kjøringer på rad ga 347/347 uten flakhet. Prosjektet har ingen
+#   doctests (verifisert), så nextest utelater ingenting.
+#
+#   Ikke skru opp --test-threads uten å se på Postgres' max_connections:
+#   hver test åpner sin egen pool, så samtidighet koster forbindelser.
 # - frugality: release binary sizes + regnmed-api peak RSS under load
 #   against hard budgets (scripts/frugality.sh) — competing on the least
 #   resources is a product principle, so a service that grows fat fails
@@ -45,8 +57,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        run: curl -sSLf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
       - run: cargo fmt --all --check
-      - run: cargo test --workspace
+      - run: cargo nextest run --workspace
 
   frugality:
     runs-on: ubuntu-latest

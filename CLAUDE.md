@@ -89,7 +89,14 @@ cargo run -p regnmed-cli -- migrate
 cargo run -p regnmed-cli -- demo           # posts vouchers, attempts tampering, verifies chain
 cargo run -p regnmed-cli -- verify-ledger
 cargo test                                 # unit tests, no DB needed
+cargo nextest run --workspace              # hele suiten, ~3,6x raskere enn cargo test
 ```
+
+Hele suiten kjøres med **cargo-nextest** (også i CI): 48 testbinærer,
+de fleste med én test, og `cargo test` kjører binærer etter hverandre —
+testene venter på Postgres, ikke CPU. Installer: `cargo install
+cargo-nextest --locked` eller `curl -sSLf https://get.nexte.st/latest/mac
+| tar zxf - -C ~/.cargo/bin`.
 
 Norwegian domain terms are used deliberately (bilag, hovedbok, oppdrag,
 kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
