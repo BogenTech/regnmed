@@ -24,6 +24,16 @@ spec:
             - name: fakturer
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/app/regnmed", "abonnement-faktura"]
               env:
                 - name: REGNMED_DRIFT_ORGNR

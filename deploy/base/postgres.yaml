@@ -30,9 +30,32 @@ spec:
       labels:
         app: postgres
     spec:
+      # The data directory must be owned by the postgres user, or the
+      # entrypoint cannot start once we stop letting it be root.
+      securityContext:
+        fsGroup: 70
       containers:
         - name: postgres
           image: postgres:18-alpine
+          # uid 70 is `postgres` in the alpine image. Without this the
+          # container runs as ROOT — the image drops privileges itself,
+          # but nothing was making it, and an image change would have
+          # been silent.
+          #
+          # readOnlyRootFilesystem is deliberately NOT set: postgres
+          # writes its socket to /var/run/postgresql and temp files to
+          # /tmp, neither of which is a volume. Making those emptyDirs
+          # to win the flag would add moving parts for no real gain —
+          # the container is already unprivileged and capability-free.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           # Frugal by design: the whole cluster lives in a 2 GB VM.
           args:
             - -c

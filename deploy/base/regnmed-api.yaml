@@ -21,6 +21,16 @@ spec:
         - name: migrate
           image: regnmed:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           command: ["/app/regnmed", "migrate"]
           env:
             - name: DATABASE_URL
@@ -29,6 +39,16 @@ spec:
         - name: api
           image: regnmed:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: DATABASE_URL
               value: postgres://regnmed:regnmed@postgres:5432/regnmed
@@ -93,6 +113,16 @@ spec:
             - name: generate
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/app/regnmed", "generate-invoices"]
               env:
                 - name: DATABASE_URL
@@ -124,6 +154,16 @@ spec:
             - name: depreciate
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/app/regnmed", "depreciate"]
               env:
                 - name: DATABASE_URL
@@ -152,6 +192,16 @@ spec:
             - name: anchor
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/app/regnmed", "anchor"]
               env:
                 - name: DATABASE_URL

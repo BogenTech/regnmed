@@ -1,6 +1,15 @@
 # Mail delivery worker: consumes the JetStream work queue. log transport
 # locally — delivered mail shows up in `kubectl logs deploy/regnid-mail-
 # worker`. Scale replicas up to watch work-queue semantics distribute.
+#
+# NO READINESS PROBE, deliberately. Readiness gates Service traffic, and
+# this worker has no Service — nothing is ever routed to it, so a probe
+# would report a number nobody reads. What would actually help is a
+# liveness check that the consumer has not wedged, and there is nothing
+# honest to check: the image is distroless (no shell for an exec probe)
+# and a queue consumer exposes no endpoint. Adding one to make an audit
+# tick would be theatre. If this ever needs supervising, give the worker
+# a real health endpoint first.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +29,16 @@ spec:
         - name: worker
           image: regnid:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           args: ["mail-worker"]
           env:
             - name: NATS_URL

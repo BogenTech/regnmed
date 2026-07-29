@@ -70,6 +70,38 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    `https://<api-host>/stripe/webhook`.
 6. `kubectl apply -k deploy/prod`.
 
+## Pod hardening
+
+Every container runs unprivileged, with no capabilities and a default
+seccomp profile: `allowPrivilegeEscalation: false`,
+`capabilities: drop [ALL]`, `seccompProfile: RuntimeDefault`. Beyond
+that, the containers differ, and the differences are the interesting part.
+
+| | runs as | root fs |
+| --- | --- | --- |
+| regnmed-api, regnid, mail worker, every CronJob | 65532 (nonroot) | read-only |
+| postgres | 70 (`postgres`) | writable |
+| nats | 65532 | read-only |
+
+Our own images are distroless `:nonroot`, so they already had a nonroot
+USER — but **an image saying so is not the same as the cluster requiring
+it**, and nothing was requiring it. `runAsNonRoot` is what makes a future
+image change fail loudly instead of quietly running as root.
+
+`postgres` and `nats` were genuinely running as **root** until this was
+set; both images drop privileges themselves, or would have if asked, and
+neither was being asked. Postgres needs `fsGroup: 70` so the data
+directory is owned by the user it now runs as, and keeps a **writable
+root filesystem** on purpose: it writes its socket to
+`/var/run/postgresql` and temp files to `/tmp`, neither a volume.
+Turning those into emptyDirs to win the flag would add moving parts for
+no real gain — the container is already unprivileged and capability-free.
+
+`nats` gained `-m 8222` and a readiness probe on `/healthz`. Without one,
+a client could be routed to a NATS that had not finished opening its
+JetStream store. The mail worker deliberately has **no** probe; the
+manifest explains why.
+
 ## Backups — restored weekly, or they don't count
 
 `deploy/prod/backup.yaml`:

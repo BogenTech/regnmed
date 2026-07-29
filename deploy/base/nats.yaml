@@ -29,12 +29,38 @@ spec:
       labels:
         app: nats
     spec:
+      securityContext:
+        fsGroup: 65532
       containers:
         - name: nats
           image: nats:alpine
-          args: ["-js", "-sd", "/data"]
+          # -m 8222 is the monitoring endpoint, and it is here for the
+          # readiness probe: without one, a client can be routed to a
+          # nats that has not finished opening its JetStream store.
+          args: ["-js", "-sd", "/data", "-m", "8222"]
+          # The image has no unprivileged user of its own, so we pick
+          # one; JetStream writes only to /data, which fsGroup makes
+          # writable. Nothing else is written, so the root filesystem
+          # can be read-only.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 2
+            periodSeconds: 5
           ports:
             - containerPort: 4222
+            - containerPort: 8222
           volumeMounts:
             - name: data
               mountPath: /data
