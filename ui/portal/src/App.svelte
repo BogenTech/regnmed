@@ -49,7 +49,7 @@
 
   async function start() {
     session.config = await (await fetch("/portal-config")).json();
-    if (location.pathname === "/ny/callback") {
+    if (location.pathname === "/callback") {
       try {
         await handleCallback();
       } catch (error) {
@@ -88,7 +88,7 @@
 {:else if boot.error}
   <div class="p-8">
     <div class="alert alert-error"><span>{boot.error}</span></div>
-    <a class="btn mt-4" href="/ny">Til forsiden</a>
+    <a class="btn mt-4" href="/">Til forsiden</a>
   </div>
 {:else if !session.authed}
   <Login />

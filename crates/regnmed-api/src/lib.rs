@@ -28,7 +28,6 @@ pub mod ocr;
 pub mod payments;
 pub mod period;
 pub mod portal;
-pub mod portal_ny;
 pub mod product;
 pub mod purring;
 pub mod reports;
@@ -77,19 +76,13 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(portal::index))
         .route("/callback", get(portal::index))
-        .route("/app.js", get(portal::app_js))
-        .route("/theme.js", get(portal::theme_js))
-        .route("/app.css", get(portal::app_css))
+        .route("/assets/{*path}", get(portal::asset))
         .route("/manifest.webmanifest", get(portal::manifest))
         .route("/sw.js", get(portal::service_worker))
         .route("/icon-192.png", get(portal::icon_192))
         .route("/icon-512.png", get(portal::icon_512))
-        // Den nye Svelte-portalen (#76) lever under /ny til seksjonene
-        // har paritet; da flippes /.
-        .route("/ny", get(portal_ny::index))
-        .route("/ny/", get(portal_ny::index))
-        .route("/ny/callback", get(portal_ny::index))
-        .route("/ny/{*path}", get(portal_ny::asset))
+        // /ny var portalens adresse mens migreringen pågikk (#76).
+        .route("/ny", get(portal::ny_redirect))
         .route("/portal-config", get(portal::portal_config))
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/health", get(health))

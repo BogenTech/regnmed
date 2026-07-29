@@ -197,6 +197,7 @@ dukker opp med hver sak i ROADMAP.md.
 
 ### Portalen selv
 
-`/`, `/callback`, `/app.js`, `/app.css`, `/theme.js`, `/portal-config`
-og `/auth/token` betjener nettportalen (docs/portal.md). De er ikke en
-del av integrasjons-API-et.
+`/`, `/callback`, `/assets/*`, `/ny`, `/portal-config` og `/auth/token`
+betjener nettportalen (docs/portal.md), sammen med PWA-filene
+`/manifest.webmanifest`, `/sw.js` og `/icon-192.png` / `/icon-512.png`.
+De er ikke en del av integrasjons-API-et.

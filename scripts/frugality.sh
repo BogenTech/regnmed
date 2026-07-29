@@ -92,7 +92,7 @@ poll_rss() {
 for i in $(seq 1 100); do
   curl -sf "http://127.0.0.1:$PORT/health" >/dev/null
   curl -sf "http://127.0.0.1:$PORT/" >/dev/null
-  curl -sf "http://127.0.0.1:$PORT/app.js" >/dev/null
+  curl -sf "http://127.0.0.1:$PORT/sw.js" >/dev/null
   curl -sf "http://127.0.0.1:$PORT/portal-config" >/dev/null
   curl -sf "http://127.0.0.1:$PORT/anchors" >/dev/null
   curl -s -o /dev/null -H "authorization: Bearer bogus.$i" "http://127.0.0.1:$PORT/me"

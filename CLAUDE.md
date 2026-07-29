@@ -226,10 +226,12 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
 11. ✅ Portal UI (docs/portal.md): no-framework SPA embedded in
    regnmed-api (include_str!, same origin, no CORS), OIDC code+PKCE
    against regnid with the token exchange proxied via `/auth/token`.
-   Theme contract honored: ui/themes.css is a copy of regnid's canonical
-   file (update together); CSS built by scripts/build-css.sh, generated
-   portal/app.css checked in. Sections: oversikt, faktura, reskontro,
+   Theme contract honored: themes.css is a copy of regnid's canonical
+   file (update together). Sections: oversikt, faktura, reskontro,
    mva (+ eksport), bank, bilag, periode. Browser-verified end to end.
+   **HISTORIKK — erstattet 2026-07-29 av Svelte-portalen (#76, punkt
+   under): app.js/theme.js/app.css og scripts/build-css.sh finnes ikke
+   lenger; temakontrakten består, filen ligger nå i ui/portal/.**
 12. ✅ Marketplace onboarding (docs/marketplace.md): orgnr MOD11 in
    core; BRREG client + fail-closed Finanstilsynet adapter in
    regnmed-gov (both URL-configurable; FT endpoint pinned during pilot);
@@ -699,8 +701,9 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    stemmer med bytene (skadet underveis). Køen dropper et bilde
    serveren avviste, beholder det når nettet svikter. Responsivt:
    menyen vannrett under sm, kortkropper ruller egne tabeller;
-   temakontrakten urørt (app.css rebygget m/ scripts/build-css.sh).
-   Verifisert i 375×812-viewport.
+   temakontrakten urørt. Verifisert i 375×812-viewport (og på nytt
+   etter Svelte-flippen 2026-07-29; sw.js lister nå adresser i stedet
+   for filnavn, siden Vite hasher dem).
 47. 📌 Avvikende regnskapsår (#52) — BEVISST IKKE BYGGET. Saken sier
    det selv: målgruppen er kalenderår, dette er et sporet
    omfangsvalg, og leveransen er at antakelsen skal være eksplisitt.
@@ -901,14 +904,19 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    består: Tailwind/daisyUI + temakontrakten, kompilert dist/ embeddes i
    binæren (app.css-presedensen: dist sjekkes inn, Rust-bygget trenger
    aldri node), én origin, PWA. Inkrementelt: ny app på /ny til
-   seksjonsparitet, så flippes / — planen står i #76. Steg 1–2 levert
-   2026-07-28: ui/portal/ (Vite + Svelte 5 + Tailwind/daisyUI,
-   scripts/build-portal.sh), PKCE/API/tema/skall/selskapsvalg portert,
-   include_dir-servering på /ny (dist-budsjett i frugality.sh + CI-jobb
-   som feiler hvis innsjekket dist avviker fra kilden), og ALLE
-   seksjonene + byråvisningen portert og browser-verifisert.
-   GJENSTÅR (steg 3, flippen): bytt / til ny app, slett app.js,
-   oppdater sw.js + manifest, reverifiser 375px.** Themes are daisyUI themes (user-selectable, third-party
+   seksjonsparitet, så flippes / — planen sto i #76. **FERDIG
+   2026-07-29: Svelte-appen ER portalen.** ui/portal/ (Vite + Svelte 5
+   runes + Tailwind/daisyUI), alle seksjonene + byråvisningen portert,
+   dist sjekkes inn (scripts/build-portal.sh) og embeddes med
+   include_dir — cargo trenger aldri node. Den rammeverksfrie portalen
+   er slettet (app.js/theme.js/app.css/build-css.sh/input.css);
+   themes.css flyttet til ui/portal/ fordi daisyUI slås opp mot
+   nærmeste node_modules. /assets/* er immutable, ukjent asset gir 404
+   (ikke appen), /ny redirecter til /. sw.js uttrykker skall-regelen
+   som ADRESSER (/assets/* + PWA-filene) siden filnavnene er hashet —
+   hovedboken caches fortsatt aldri. Vakter: dist-budsjett i
+   frugality.sh + CI-jobb «portal» som feiler hvis innsjekket dist
+   avviker fra kilden.** Themes are daisyUI themes (user-selectable, third-party
    authorable as single CSS blocks); the theme contract and canonical
    theme definitions live in `../regnid/ui/themes.css` — the portal UI
    must reuse the same theme names/blocks so a user's theme feels

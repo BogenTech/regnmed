@@ -1,6 +1,12 @@
-//! The portal: a static single-page app embedded in the binary
-//! (include_str! — the distroless image needs no extra files) and served
-//! on the API's own origin, so browser calls need no CORS.
+//! The portal: the Svelte 5 SPA (ui/portal), compiled by Vite and
+//! embedded in the binary — `ui/portal/dist` is CHECKED IN, so the Rust
+//! build, including the cross-compile in build-images.sh, never needs
+//! Node. Served on the API's own origin, so browser calls need no CORS.
+//!
+//! Vite emits content-hashed asset names (assets/index-XXXX.js), so the
+//! files are read with include_dir rather than one include_str! each.
+//! The PWA shell (manifest, service worker, icons) is hand-written and
+//! still lives in `portal/`.
 //!
 //! Auth: the SPA runs OIDC authorization code + PKCE against regnid; the
 //! code→token exchange is proxied here (`POST /auth/token`), server-to-
@@ -8,48 +14,70 @@
 //! sees a password — the proxy only forwards the one-time code.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::header;
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
+use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::AppState;
 use crate::auth::ApiError;
 
-const INDEX_HTML: &str = include_str!("../portal/index.html");
-const APP_JS: &str = include_str!("../portal/app.js");
-const THEME_JS: &str = include_str!("../portal/theme.js");
-const APP_CSS: &str = include_str!("../portal/app.css");
+static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../ui/portal/dist");
+
 // PWA (docs/portal.md, #48): the shell is installable, and the service
-// worker caches ONLY these files — never anything from the ledger.
+// worker caches ONLY the shell — never anything from the ledger.
 const MANIFEST: &str = include_str!("../portal/manifest.webmanifest");
 const SERVICE_WORKER: &str = include_str!("../portal/sw.js");
 const ICON_192: &[u8] = include_bytes!("../portal/icon-192.png");
 const ICON_512: &[u8] = include_bytes!("../portal/icon-512.png");
 
+fn index_html() -> &'static str {
+    DIST.get_file("index.html")
+        .and_then(|f| f.contents_utf8())
+        .unwrap_or("")
+}
+
+/// `/` and `/callback`: always the app. Routing happens in the hash, and
+/// the callback address must land in the app to finish the PKCE flow.
 pub async fn index() -> Html<&'static str> {
-    Html(INDEX_HTML)
+    Html(index_html())
 }
 
-pub async fn app_js() -> Response {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        APP_JS,
-    )
-        .into_response()
+/// `/ny` was the app's address while the migration ran (#76). Old
+/// bookmarks and open tabs should land on the portal, not a 404.
+pub async fn ny_redirect() -> Redirect {
+    Redirect::permanent("/")
 }
 
-pub async fn theme_js() -> Response {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        THEME_JS,
-    )
-        .into_response()
+fn content_type(path: &str) -> &'static str {
+    match path.rsplit('.').next() {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("woff2") => "font/woff2",
+        Some("map") => "application/json",
+        _ => "application/octet-stream",
+    }
 }
 
-pub async fn app_css() -> Response {
-    ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS).into_response()
+/// Vite's build output. The filename carries the content hash, so what
+/// lives behind a given address never changes — safe to cache forever.
+pub async fn asset(Path(path): Path<String>) -> Response {
+    match DIST.get_file(format!("assets/{path}")) {
+        Some(file) => (
+            [
+                (header::CONTENT_TYPE, content_type(&path)),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            file.contents(),
+        )
+            .into_response(),
+        None => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
+    }
 }
 
 pub async fn manifest() -> Response {

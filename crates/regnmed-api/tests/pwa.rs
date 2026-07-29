@@ -78,9 +78,11 @@ async fn pwa_skallet_serveres_og_cacher_ikke_hovedboken() {
     let (status, content_type, sw) = get(&state, "/sw.js").await;
     assert_eq!(status, StatusCode::OK);
     assert!(content_type.starts_with("text/javascript"));
-    // Regelen som betyr noe: bare skallet caches.
+    // Regelen som betyr noe: bare skallet caches. Skallet er nå
+    // Vite-bygget, så regelen er uttrykt som adresser (/assets/ +
+    // de faste PWA-filene) i stedet for en liste over filnavn.
     assert!(
-        sw.contains("SHELL_FILES") && !sw.contains("/companies/"),
+        sw.contains("SHELL_FILES") && sw.contains("/assets/") && !sw.contains("/companies/"),
         "arbeideren må aldri lagre noe fra hovedboken"
     );
     assert!(

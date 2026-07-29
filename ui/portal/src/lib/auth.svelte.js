@@ -1,10 +1,8 @@
-// OIDC authorization code + PKCE mot regnid — portert fra app.js.
-// Token-utvekslingen proxyes via /auth/token (samme origin), så IdP-en
-// trenger ingen browser-CORS. Samme sessionStorage-nøkler som dagens
-// portal, så en økt følger med mellom / og /ny i samme fane.
-//
-// Eneste forskjell: redirect-URI-en er /ny/callback (må være registrert
-// på klienten i regnid — scripts/dev-sso.sh gjør det i dev).
+// OIDC authorization code + PKCE mot regnid. Token-utvekslingen proxyes
+// via /auth/token (samme origin), så IdP-en trenger ingen browser-CORS,
+// og regnmed ser aldri et passord — proxyen videresender bare
+// engangskoden. Tokenene ligger i sessionStorage; 401 sender brukeren
+// tilbake til innlogging.
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
@@ -55,7 +53,7 @@ export async function login() {
     "?response_type=code&client_id=" +
     encodeURIComponent(session.config.client_id) +
     "&redirect_uri=" +
-    encodeURIComponent(location.origin + "/ny/callback") +
+    encodeURIComponent(location.origin + "/callback") +
     "&scope=" +
     encodeURIComponent("openid profile email") +
     "&state=" +
@@ -81,12 +79,12 @@ export async function handleCallback() {
     body: JSON.stringify({
       code: params.get("code"),
       code_verifier: pkce.verifier,
-      redirect_uri: location.origin + "/ny/callback",
+      redirect_uri: location.origin + "/callback",
     }),
   });
   if (!response.ok) throw new Error("innlogging feilet (" + response.status + ")");
   saveTokens(await response.json());
-  history.replaceState(null, "", "/ny");
+  history.replaceState(null, "", "/");
 }
 
 export function logout() {

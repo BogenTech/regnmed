@@ -1,5 +1,5 @@
-// Hash-ruting — samme adresser som dagens portal (#/c/{id}/{seksjon}),
-// så en lenke kan flyttes mellom / og /ny uendret.
+// Hash-ruting (#/c/{id}/{seksjon}) — adressene er uendret fra den
+// rammeverksfrie portalen, så gamle bokmerker virker fortsatt.
 //
 // Spørringen (#/c/{id}/mva?year=&termin=) hører med til adressen: den
 // gjør en bestemt termin delbar. Den leses HER, ett sted, så ingen

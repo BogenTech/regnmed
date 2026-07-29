@@ -1,7 +1,6 @@
 // Temavalg — temakontrakten med regnid: samme daisyUI-temanavn velger
 // samme temablokker (ui/themes.css er en kopi av regnids kanoniske fil).
 // Preferansen er per side: bare localStorage, aldri via IdP eller token.
-// Samme nøkkel som dagens portal, så valget følger med til /ny.
 
 const KEY = "regnmed-theme";
 const CYCLE = ["system", "light", "dark"];

@@ -1,28 +1,46 @@
 # The portal
 
 The web frontend — the product surface for regnskapsførere, revisorer
-and businesses. Deliberately frugal: a static single-page app with **no
-JS framework and no JS build step** (Tailwind builds only the CSS),
-embedded into the regnmed-api binary with `include_str!` and served on
-the API's own origin. One service, no CORS, nothing extra in the
-distroless image.
+and businesses. A **Svelte 5 (runes) single-page app**, built by Vite,
+embedded into the regnmed-api binary and served on the API's own origin.
+One service, no CORS, nothing extra in the distroless image.
 
-> **Under migrering (#76, vedtak 2026-07-28):** portalen skrives om til
-> **Svelte 5 (runes), Vite-bygget ren SPA** — ingen SvelteKit-server,
-> ingen SSR. Den nye appen bor i `ui/portal/` og serveres på **`/ny`**
-> til alle seksjoner har paritet; da flippes `/` og dette dokumentet
-> skrives om. Doktrinen består: `ui/portal/dist/` sjekkes inn (bygget av
-> `scripts/build-portal.sh`) og embeddes med `include_dir`, så
-> Rust-bygget — også kryssbygget i `build-images.sh` — aldri trenger
-> Node; én binær, én origin, samme temakontrakt, og dist har eget
-> budsjett i `scripts/frugality.sh`. En CI-jobb bygger portalen på nytt
-> og feiler hvis den innsjekkede dist-en avviker fra kilden.
-> Migrasjonsplanen står i #76.
->
-> **Steg 2 er ferdig (2026-07-28):** alle seksjonene i menyen +
-> byråvisningen finnes i Svelte-appen. Det som gjenstår før flippen er
-> steg 3: bytte `/` til den nye appen, slette `app.js`, oppdatere
-> service worker + manifest, og reverifisere 375px-viewporten.
+## Byggekjeden: node bygger, cargo bare leser (#76)
+
+Kilden ligger i `ui/portal/`. `scripts/build-portal.sh` kompilerer den,
+og **`ui/portal/dist/` sjekkes inn** — nøyaktig presedensen den
+genererte `app.css` satte. Rust-siden leser dist med `include_dir`, så
+`cargo build`, og særlig kryssbygget i `build-images.sh`, **trenger
+aldri Node**. Vite gir innholdshashede filnavn, derfor `include_dir` og
+ikke én `include_str!` per fil.
+
+En innsjekket artefakt lyver hvis den ikke er bygget fra kilden, så en
+CI-jobb (`portal`) bygger portalen på nytt og feiler dersom `dist`
+avviker. dist har dessuten sitt eget budsjett i `scripts/frugality.sh`.
+
+Adressene:
+
+- `/` og `/callback` → appen (rutingen skjer i hashen, og
+  callback-adressen må lande i appen for å fullføre PKCE-flyten).
+- `/assets/*` → Vite-filene, `immutable` og cachet for alltid fordi
+  filnavnet bærer innholdshashen. En ukjent asset gir **404**, ikke
+  appen på nytt: en 200 med HTML der JS-en skulle vært feiler stille.
+- `/ny` → permanent redirect til `/`. Det var appens adresse mens
+  migreringen pågikk; gamle bokmerker skal ikke lande i en 404.
+
+Historikk: fram til 2026-07-29 var portalen rammeverksfri og uten
+byggesteg (`app.js` + `theme.js` + generert `app.css`, `include_str!`).
+Vedtaket om å bytte, og hvorfor, står i #76.
+
+## Utvikling
+
+```sh
+scripts/build-portal.sh          # bygg dist (kjøres før commit av UI-endringer)
+cd ui/portal && npm run dev      # hot reload mot en kjørende regnmed-api
+```
+
+Dev-serveren proxyer API-kallene til `localhost:8080`, så innlogging og
+data virker som i produksjon.
 
 ## Auth
 
@@ -34,8 +52,7 @@ Logout goes through regnid's `end_session` with `id_token_hint`
 (RP-initiated logout). regnmed still never sees a password.
 
 The public client `regnmed-portal` must have the portal's origin
-registered: `{origin}/callback` as redirect URI (plus `{origin}/ny/callback`
-while the Svelte migration runs, #76) and `{origin}/` as
+registered: `{origin}/callback` as redirect URI and `{origin}/` as
 post-logout URI. The portal derives both from `location.origin`, so the
 **port is part of the registration** — moving the dev server means
 re-registering the client.
@@ -50,26 +67,43 @@ re-registering the client.
 
 ## Theming (the cross-site contract)
 
-`ui/themes.css` is a **copy of the canonical `../regnid/ui/themes.css`**
-— same daisyUI theme names and blocks, so a user's theme feels identical
-on both sites. Update both files together. The preference is stored per
-site in localStorage (`regnmed-theme`), resolved stored → system →
-light, applied pre-paint by `theme.js`; it is never synced through the
-IdP or tokens. Build CSS with `scripts/build-css.sh`; the generated
-`crates/regnmed-api/portal/app.css` is checked in so cargo never needs
-Node.
+`ui/portal/themes.css` is a **copy of the canonical
+`../regnid/ui/themes.css`** — same daisyUI theme names and blocks, so a
+user's theme feels identical on both sites. Update both files together.
+(The copy lives beside the app because `@plugin "daisyui/theme"`
+resolves against the nearest `node_modules`, and Node lives only in
+`ui/portal`.) The preference is stored per site in localStorage
+(`regnmed-theme`), resolved stored → system → light, applied pre-paint
+by an inline script in `index.html` so the page never flashes; it is
+never synced through the IdP or tokens. Tailwind and daisyUI are built
+by Vite as part of `scripts/build-portal.sh`.
 
 ## Sections (all backed by the existing engagement-guarded API)
 
-Oversikt (nøkkeltall + siste bilag) · Faktura (opprett, liste,
-kreditnota) · Reskontro (parter, saldo, åpne poster) · Mva (spesifikasjon
-per termin, mva-melding- og SAF-T-nedlasting) · Bank (camt.053-opplasting,
-avstemming, manuell kobling) · Bilag (vedlegg opp/ned med sha256) ·
-Periode (lås, historikk).
+Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert
+i `App.svelte` og navngitt i `lib/meny.js`:
+
+Oversikt (stats, nøkkeltall, forankring, abonnement, firmaopplysninger,
+migrering av tomt selskap) · Faktura (ny faktura, liste m/ PDF/EHF/send,
+kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
+(register, varelager, telling) · Timer · Lønn · Utlegg · Anlegg ·
+Aksjonærer · Reskontro (parter, åpne poster, CSV-import) · Mva
+(spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
+resultat, balanse, budsjett/avvik, konto- og bokføringsspesifikasjon,
+revisjon) · Bank (kontoutskrift, avstemming, betalingsliste) · Bilag
+(attestering, innboks, e-post-inn, vedlegg, dimensjoner) · Periode ·
+Oppdrag (tilgang, roller, integrasjoner) — pluss byråvisningen på
+`#/byra/{id}`.
+
+Fellesdeler ligger i `src/lib/` (API-klient, auth, ruter, tema, toast,
+nedlasting, offline-kø) og `src/components/` (skall, kort, dimensjons-
+og mva-velger). Ruteren leser hash-spørringen ett sted, så
+`#/c/{id}/mva?year=&termin=` fortsatt kan deles.
 
 Authorization is entirely server-side — the portal is a *view*; a
 revisor's read-only access or a stranger's 404 comes from the API, never
-from hidden buttons.
+from hidden buttons. Menyen skjuler bare det en rolle ikke kan bruke, så
+ingen klikker seg inn i en feilmelding; sperren ligger i tilgangsvakten.
 
 ## PWA: kvitteringsfoto og attestering på farten (#48)
 
@@ -82,16 +116,19 @@ kodebase.
 192 og 512 — den siste `maskable`, fordi Android beskjærer) og
 `/sw.js`, servert fra binæren som alt annet. Ikonene genereres av
 `scripts/build-icons.py` (hand-rolled PNG, ingen bildebibliotek i
-treet) og sjekkes inn ferdig, akkurat som `app.css`.
+treet) og sjekkes inn ferdig, akkurat som `dist`.
 
 **Service workeren cacher app-skallet — og bare det.**
 
 > Hovedboken caches aldri. Et regnskap som viser gamle tall offline er
 > verre enn et som sier at det ikke har kontakt.
 
-Skallet hentes nett-først (en oppdatert app vinner alltid), og cachen
-trår bare til uten dekning. Endrende forespørsler går aldri gjennom
-arbeideren.
+Siden skallet er Vite-bygget, kan filnavnene ikke listes opp på
+forhånd. Regelen er derfor uttrykt som **adresser**: `/assets/*` er
+bygde, uforanderlige filer, og de faste PWA-filene er navngitt. Alt
+annet — hele API-et — går utenom cachen. Skallet hentes nett-først (en
+oppdatert app vinner alltid), og cachen trår bare til uten dekning.
+Endrende forespørsler går aldri gjennom arbeideren.
 
 **Kvitteringsfoto**: knappen bruker
 `<input type="file" accept="image/*" capture="environment">` — kamera
@@ -137,4 +174,19 @@ filen sendt en gang til ble avvist av serveren.
 serveres med riktig content-type (og er ekte PNG-er i riktig
 størrelse), arbeideren nevner ikke hovedboken, `index.html` peker på
 manifestet, og den samme kvitteringen to ganger blir ett bilag mens en
-gal hash avvises.
+gal hash avvises. `tests/portal.rs` dekker serveringen: `/` og
+`/callback` gir appen, hver hashet asset serveres `immutable`, en ukjent
+asset gir 404 (ikke appen på nytt), `/ny` redirecter til `/`, og de
+gamle adressene `/app.js`, `/app.css`, `/theme.js` er borte.
+
+### Flippen (2026-07-29, #76 steg 3)
+
+Svelte-appen overtok `/`, og den rammeverksfrie portalen ble slettet i
+samme endring: `app.js` (4 174 linjer), `theme.js`, den genererte
+`app.css`, `index.html`, `scripts/build-css.sh` og `ui/input.css`.
+Verifisert i nettleseren etterpå: appen serveres fra roten, service
+workeren er registrert med rot-scope og cachen inneholder **bare**
+skallet (`/`, `/assets/*`, ikoner, manifest) og ingenting fra
+hovedboken, den gamle `v1`-cachen er ryddet bort, de gamle adressene
+svarer 404, `/ny` redirecter, og 375×812 har fortsatt ingen vannrett
+sidescroll.

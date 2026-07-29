@@ -3,9 +3,9 @@
 
    A theme is ONE self-contained block: name it, say whether it is a
    light or dark scheme, and fill in the color tokens. Rebuild the CSS
-   (scripts/build-css.sh), add the name to THEMES in static/theme.js and
-   src/accounts.rs, and it appears in the picker. Colors are written in
-   oklch (lightness chroma hue) but any CSS color works.
+   (scripts/build-portal.sh), add the name to THEMES in
+   src/lib/theme.svelte.js, and it appears in the picker. Colors are
+   written in oklch (lightness chroma hue) but any CSS color works.
 
    Contract note: these token names are daisyUI's — the same block works
    on every daisyUI/Tailwind site, which is what makes themes portable

@@ -2,10 +2,11 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 
-// Appen serveres av regnmed-api under /ny (inkrementell migrering, #76).
-// Når alle seksjoner har paritet flippes base til /.
+// Appen serveres av regnmed-api på roten (#76 er flippet: Svelte-appen
+// ER portalen). Ingen SSR — index.html er statisk, rutingen skjer i
+// hashen, og API-et bor på samme origin.
 export default defineConfig({
-  base: "/ny/",
+  base: "/",
   plugins: [svelte(), tailwindcss()],
   build: {
     // dist sjekkes inn (app.css-presedensen): Rust-bygget leser den med
