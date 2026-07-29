@@ -15,20 +15,28 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/bisand/regnmed"
 
 # Frugality er et produktprinsipp (docs/frugality.md), og release-profilen
-# sto på Cargo-standardene. Målt på regnmed-api 2026-07-29:
+# sto på Cargo-standardene. Målt på regnmed-api 2026-07-29 (lokalt):
 #
 #   standard                17,7 MB   (59 s)
-#   + thin LTO + cgu 1      12,3 MB   (2 m 32 s)
-#   + fat  LTO + cgu 1      10,7 MB   (3 m 04 s)   ← valgt
+#   + thin LTO + cgu 1      12,3 MB   (2 m 32 s)   ← valgt
+#   + fat  LTO + cgu 1      10,7 MB   (3 m 04 s)
 #   + strip                  8,7 MB                 ← IKKE valgt
 #
-# Byggetiden betales én gang i CI; størrelsen betales ved hver
-# image-pull. `strip` er bevisst utelatt: de siste 2 MB koster
-# funksjonsnavnene i panic-backtraces, og et regnskapssystem skal kunne
-# diagnostisere en hendelse i produksjon. panic="abort" er også utelatt —
-# en panikk i én forespørsel skal ikke rive ned prosessen for alle andre.
+# Fat LTO ble prøvd først, men frugality-jobben i CI brukte da 4 m 07 s
+# på selve byggingen — og siden jobbene kjører parallelt, ble den
+# klokkegivende. Thin LTO beholder mesteparten av gevinsten for merkbart
+# mindre byggetid; de siste par megabytene betales én gang per
+# image-pull, byggetiden ved hver eneste kjøring.
+# RSS — tallet container-grensen faktisk gjelder — er upåvirket av
+# valget (12-13 MB uansett).
+#
+# `strip` er bevisst utelatt: de siste 2 MB koster funksjonsnavnene i
+# panic-backtraces, og et regnskapssystem skal kunne diagnostisere en
+# hendelse i produksjon. panic="abort" er også utelatt — en panikk i én
+# forespørsel skal ikke rive ned prosessen for alle andre (håndhevet av
+# tests/panikk.rs).
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1
 
 [workspace.dependencies]

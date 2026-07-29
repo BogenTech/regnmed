@@ -51,10 +51,21 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
+      # Testbinærene trenger ingen debuginfo i CI: assert-makroene bærer
+      # fil og linje selv, og nextest navngir testen som feilet. Målt:
+      # 1 m 17 s → 56 s å bygge, og target/ 5,2 → 2,9 GB — som også gjør
+      # cachen CI laster opp og ned mindre. Lokalt er profilen urørt.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      # Inkrementell bygging hjelper bare når det finnes noe fra forrige
+      # gang å bygge videre på; i CI koster den bare skriving og cache.
+      CARGO_INCREMENTAL: 0
+      # 54 testbinærer skal lenkes. Standardlenkeren er det trege leddet.
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v4
-      - name: Install xmllint (SAF-T, pain.001, EHF/UBL and RF-1086 XSD validation)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
+      - name: Install xmllint (XSD validation) and lld (faster linking)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils lld
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -80,8 +91,13 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://regnmed:regnmed@localhost:5432/regnmed
+      # Release-bygget er hele denne jobben (4 m 07 s av 4 m 12 s målt
+      # 2026-07-29), så lenkeren er verdt å bytte her også.
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v4
+      - name: Install lld (faster linking)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lld
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
