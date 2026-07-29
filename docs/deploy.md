@@ -166,13 +166,28 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    plan og reutsteder ikke per utrulling, så risikoen er langt mindre enn
    et cluster som reutsteder ved hver ombygging, men den er ikke null.
 
-   Når Traefik overtar 80/443 (etter at Swarm-stackene er flyttet av
-   nodene): installer cert-manager, legg tilbake en `ClusterIssuer` —
-   staging for test, produksjon for prod, med FORSKJELLIGE navn slik at
-   en kopiert annotasjon ikke stille bruker produksjonsendepunktet — og
-   legg `tls:` + annotasjonen tilbake per regel. Formen står i
-   kommentaren i `deploy/prod/ingress.yaml`, og git-historikken har de
-   slettede `cert-issuer.yaml`-filene.
+   **Dette er en planlagt overgang, ikke en permanent tilstand.** Når
+   Swarm-stackene er flyttet av nodene og NPM etter alt å dømme slås av,
+   overtar Traefik ruterens 80/443 og cert-manager skal tilbake.
+   `cert-issuer.yaml` ligger derfor fortsatt i BEGGE overlayene —
+   ferdig skrevet, men bevisst utenfor `resources:` i
+   `kustomization.yaml`. Filene er ikke død konfigurasjon; de er
+   klargjort konfigurasjon, og hver av dem har de fire stegene i
+   toppkommentaren:
+
+   1. Installer cert-manager.
+   2. Legg `- cert-issuer.yaml` tilbake i `resources:`.
+   3. Legg `tls:` + `cert-manager.io/cluster-issuer` tilbake per regel i
+      `ingress.yaml` (formen står i kommentaren der).
+   4. Oppdater dette punktet i samme endring.
+
+   Utstedernavnene er FORSKJELLIGE med vilje (`letsencrypt` i prod,
+   `letsencrypt-staging` i test): annotasjonen refererer utstederen ved
+   navn, så en kopiert annotasjon ville stille brukt
+   produksjonsendepunktet. Og legg merke til at steg 2 i test er det som
+   setter testmiljøet TILBAKE på staging-sertifikater — inntil da deler
+   test produksjonens ACME-grense med regnmed.no, som er selve grunnen
+   til at denne overgangen ikke bør gli ut.
 5. **Secrets — before the first apply, never in git:**
 
    ```sh

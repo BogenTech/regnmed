@@ -24,6 +24,11 @@ kind: Kustomization
 resources:
   - ../base
   - ingress.yaml
+  # cert-issuer.yaml is NOT listed here on purpose, and its absence is not an
+  # oversight — it is staged for the cutover when Traefik takes 80/443 from
+  # nginx-proxy-manager. The file itself has the four steps. Adding it back
+  # without also restoring the tls:/annotation pairs in ingress.yaml creates
+  # an issuer nothing uses.
   # Shared with deploy/test — described once, not copied. Anything that
   # differs between the two is a patch below, so a fix to the backup
   # drill cannot land in one environment and miss the other.

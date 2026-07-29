@@ -1,0 +1,45 @@
+# Let's Encrypt STAGING for the test environment. EDIT the e-mail.
+#
+# ---------------------------------------------------------------------
+# STAGED, NOT ACTIVE — deliberately not in kustomization.yaml's resources
+# ---------------------------------------------------------------------
+# Kept ready for the cutover, not applied today. nginx-proxy-manager
+# terminates TLS one hop earlier and forwards plain HTTP to Traefik's MetalLB
+# address, so nothing in the cluster can complete an HTTP-01 challenge: NPM
+# answers the challenge path and force-redirects to HTTPS. Applying this now
+# produces Certificate objects stuck at `ready=False` with "failed to perform
+# self check" — observed 2026-07-29. See the note in ingress.yaml.
+#
+# Reactivating this is also what puts test BACK on staging certificates.
+# Until then test runs on a real NPM-issued certificate, which means it
+# shares the production ACME rate limit with regnmed.no — the very thing
+# staging exists to avoid. That is the strongest reason not to let this
+# cutover drift once NPM is gone.
+#
+# THE CUTOVER — same four steps as deploy/prod/cert-issuer.yaml, with
+# `letsencrypt-staging` as the issuer name.
+#
+# Staging on purpose. The production ACME endpoint has a rate limit on
+# certificates per registered domain per week, and a test environment that
+# reissues on every rebuild is exactly what exhausts it — leaving PRODUCTION
+# unable to get a certificate when it needs one. Staging has generous limits
+# and issues from an untrusted root, so browsers warn. That warning is the
+# correct signal in test, not a problem to fix.
+#
+# Note the issuer NAME differs from prod's (`letsencrypt-staging` vs
+# `letsencrypt`); the ingress annotations reference it by name. Copying
+# prod's issuer name in here would silently use the production endpoint.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: drift@regnmed.no
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

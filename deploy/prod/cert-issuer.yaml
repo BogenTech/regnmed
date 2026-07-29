@@ -1,0 +1,46 @@
+# Let's Encrypt via HTTP-01 through Traefik. EDIT the e-mail.
+#
+# ---------------------------------------------------------------------
+# STAGED, NOT ACTIVE — deliberately not in kustomization.yaml's resources
+# ---------------------------------------------------------------------
+# This file is kept ready for the cutover, not applied today. Right now
+# nginx-proxy-manager terminates TLS one hop earlier and forwards plain HTTP
+# to Traefik's MetalLB address, so nothing in the cluster can complete an
+# HTTP-01 challenge: NPM answers the challenge path and force-redirects to
+# HTTPS. Applying this now produces Certificate objects stuck at
+# `ready=False` with "failed to perform self check" — observed 2026-07-29.
+# The long note in ingress.yaml has the full reasoning.
+#
+# THE CUTOVER, once the Swarm stacks have migrated off these nodes and NPM is
+# shut down so Traefik can take the router's 80/443:
+#
+#   1. Install cert-manager (docs/deploy.md).
+#   2. Add `- cert-issuer.yaml` back to kustomization.yaml's resources.
+#   3. Per rule in ingress.yaml, add back:
+#          metadata.annotations:
+#            cert-manager.io/cluster-issuer: letsencrypt
+#          spec.tls:
+#            - hosts: [<that rule's host>]
+#              secretName: <name>-tls
+#   4. Update the TLS step in docs/deploy.md in the SAME change — it is the
+#      single place that says which hop owns certificates.
+#
+# Note the issuer NAME differs from test's (`letsencrypt` vs
+# `letsencrypt-staging`) and the ingress annotations reference it by name.
+# That difference is the guard: copying prod's annotation into test would
+# silently spend the PRODUCTION rate limit, which is per registered domain
+# and shared between regnmed.no and test.regnmed.no.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: drift@regnmed.no
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

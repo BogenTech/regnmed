@@ -45,6 +45,11 @@ resources:
   - ../base
   - ../shared
   - ingress.yaml
+  # cert-issuer.yaml is NOT listed here on purpose, and its absence is not an
+  # oversight — it is staged for the cutover when Traefik takes 80/443 from
+  # nginx-proxy-manager. Reactivating it is also what puts test back on
+  # STAGING certificates; until then test shares production's ACME rate limit
+  # with regnmed.no. The file has the steps.
 # Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
 # deliberately unpullable, so an unpinned overlay fails loudly instead of
 # silently running something. newName points at the registry, newTag at an
