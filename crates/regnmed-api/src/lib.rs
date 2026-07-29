@@ -41,6 +41,7 @@ pub mod utsendelse;
 
 use std::sync::Arc;
 
+use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, extract::State, routing::get};
 use serde_json::json;
 
@@ -667,7 +668,43 @@ pub fn router(state: AppState) -> Router {
         )
         // Attachments and statement uploads need more than axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
+        .layer(catch_panic_layer())
         .with_state(state)
+}
+
+/// Én dårlig forespørsel skal ALDRI rive ned prosessen for alle andre.
+///
+/// To ting sikrer det, og de er forskjellige: prosessen overlever fordi
+/// vi bygger med `panic=unwind` og tokio isolerer den panikkende
+/// oppgaven (derfor er `panic="abort"` utelatt i release-profilen — se
+/// Cargo.toml), mens KLIENTEN får et svar fordi dette laget finnes.
+/// Uten laget ville forbindelsen bare blitt brutt, uten status.
+///
+/// Laget bygges her, ett sted, så testen kan prøve nøyaktig det
+/// `router()` monterer.
+pub fn catch_panic_layer()
+-> tower_http::catch_panic::CatchPanicLayer<fn(Box<dyn std::any::Any + Send + 'static>) -> Response>
+{
+    tower_http::catch_panic::CatchPanicLayer::custom(
+        panikk_til_500 as fn(Box<dyn std::any::Any + Send + 'static>) -> Response,
+    )
+}
+
+/// Gjør en panikk om til 500. Detaljen logges server-side; klienten får
+/// en nøytral melding — en panikk sier ofte noe om interne data.
+fn panikk_til_500(panikk: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    let detalj = panikk
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panikk.downcast_ref::<&str>().copied())
+        .unwrap_or("(ukjent panikk)");
+    eprintln!("panikk i forespørselshåndtering: {detalj}");
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        r#"{"error":"intern feil"}"#,
+    )
+        .into_response()
 }
 
 async fn health() -> &'static str {

@@ -15,10 +15,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Budgets are ~2x today's measured reality (11 MB / 8 MB / 11 MB) so
-# they catch creep, not normal growth. RSS matches the container limit.
-API_BIN_BUDGET_MB=24
-CLI_BIN_BUDGET_MB=20
+# Budgets sit ~1.5x above measured reality: tight enough to catch creep,
+# loose enough for normal feature growth. RSS matches the container limit.
+#
+# Measured in CI 2026-07-29, after the release profile got fat LTO +
+# codegen-units=1 (Cargo.toml): api 13 MB, cli 7 MB, dist 322 KB,
+# RSS 12 MB. The binaries were 22/11 MB the day before on the default
+# profile — the budgets were lowered to lock that reduction in, because
+# a budget nobody tightens turns a one-time win into headroom for creep.
+API_BIN_BUDGET_MB=20
+CLI_BIN_BUDGET_MB=12
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
 # The compiled Svelte portal (#76) ships inside the binary; its own
 # budget keeps the SPA from quietly absorbing heavy dependencies.

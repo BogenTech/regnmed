@@ -65,6 +65,11 @@ sqlx = { version = "0.8", features = [
 ] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+# Bare catch-panic: en panikk i én forespørsel skal bli en 500, ikke en
+# stille brutt forbindelse (og aldri en død prosess).
+tower-http = { version = "0.7", default-features = false, features = [
+    "catch-panic",
+] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
 # dev-dependencies (test-only)
