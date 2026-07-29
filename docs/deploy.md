@@ -152,19 +152,46 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
      --from-literal=restore-check-url='postgres://regnmed:<pw>@postgres:5432/regnmed_restore_check'
    ```
 
-   Every DATABASE_URL/POSTGRES_PASSWORD in the prod render comes from
-   this secret; the rendered YAML contains no credential (usernames and
-   the OIDC audience are the only literals).
-6. **Abonnementsfakturering** (docs/abonnement.md): onboard
-   driftsselskapet i regnmed (BRREG, som alle andre) og sett dets orgnr
-   som `REGNMED_DRIFT_ORGNR` i `deploy/prod/abonnement-faktura.yaml` —
-   CronJob-en er prod-only (backup.yaml-mønsteret) fordi lokalklyngen
-   ikke har noe driftsselskap. Kortskinnen (#74): legg
-   `STRIPE_SECRET_KEY` og `STRIPE_WEBHOOK_SECRET` i en secret
-   out-of-band (aldri i git) og sett dem + `REGNMED_DRIFT_ORGNR` på
-   regnmed-api og CronJob-en; pek Stripes webhook på
-   `https://<api-host>/stripe/webhook`.
-6. `kubectl apply -k deploy/prod`.
+   Kortskinnen (#74) trenger sin egen, samme regel — aldri i git:
+
+   ```sh
+   kubectl -n regnmed create secret generic stripe-credentials \
+     --from-literal=secret-key='sk_live_…' \
+     --from-literal=webhook-secret='whsec_…'
+   ```
+
+   Webhook-hemmeligheten er den **live**-endepunktets: Stripe utsteder
+   én per modus, og en test-hemmelighet her gjør at hver eneste ekte
+   hendelse avvises som usignert.
+
+   Every DATABASE_URL/POSTGRES_PASSWORD/STRIPE_* in the prod render
+   comes from a secret; the rendered YAML contains no credential
+   (usernames and the OIDC audience are the only literals).
+6. **Abonnementsfakturering og kortskinnen** (docs/abonnement.md):
+   onboard driftsselskapet i regnmed (BRREG, som alle andre) og sett
+   dets orgnr som `REGNMED_DRIFT_ORGNR` **begge stedene** — på
+   `regnmed-api` (patches/regnmed-api.yaml) og på CronJob-en
+   (`deploy/shared/abonnement-faktura.yaml`, patchet i overlayet).
+
+   **De tre kortinnstillingene er et sett.** `STRIPE_SECRET_KEY` og
+   `STRIPE_WEBHOOK_SECRET` er begge-eller-ingen — mangler én er skinnen
+   av, og endepunktene sier det. Den tredje, `REGNMED_DRIFT_ORGNR`, er
+   den som svir: webhooken er det som gjør et Stripe-trekk om til et
+   betalingsbilag og en lukket reskontropost, og uten orgnr vet den ikke
+   hvilken hovedbok det hører hjemme i. Stripe har uansett tatt pengene.
+   **Å sette de to første uten den tredje er verre enn å la skinnen være
+   av**: kunden trekkes, og regnskapet får det aldri med seg. Og de to
+   stedene må ha SAMME orgnr — ellers utstedes fakturaen i én hovedbok
+   og betalingen bokføres i en annen, og posten lukkes aldri.
+
+   Pek Stripes live-webhook på `https://<api-host>/stripe/webhook`.
+7. **E-post inn** (#35, docs/epost-inn.md): `MAIL_IN_DOMAIN` er vanlig
+   konfigurasjon, ikke en hemmelighet — domenet innboksadressene vises
+   under. Sett det **først når det domenets MX faktisk leverer inn i
+   regnids mottak**; ellers viser portalen en adresse som stille tar
+   imot ingenting, og det er nettopp det den usatte tilstanden finnes
+   for å unngå.
+8. `kubectl apply -k deploy/prod`.
 
 ## Pod hardening
 
@@ -200,7 +227,7 @@ manifest explains why.
 
 ## Backups — restored weekly, or they don't count
 
-`deploy/prod/backup.yaml`:
+`deploy/shared/backup.yaml` (prod and test both run it):
 
 - **Nightly** `pg_dump` (custom format) of both databases to the
   backup PVC, pruned after 14 days.

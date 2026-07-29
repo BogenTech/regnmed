@@ -1,6 +1,45 @@
 # Prod regnmed-api: two stateless replicas, credentials from the
 # secret, issuer over TLS. The migrate init container needs the same
 # DATABASE_URL.
+#
+# THE CARD RAIL (#74, docs/abonnement.md §5) IS THREE SETTINGS, AND THEY
+# ARE A SET.
+#
+#   STRIPE_SECRET_KEY      \ both or neither: with one missing the rail
+#   STRIPE_WEBHOOK_SECRET  / is off and the endpoints say so
+#   REGNMED_DRIFT_ORGNR      which ledger a confirmed charge posts into
+#
+# The third is the one that bites. The webhook is what turns a Stripe
+# charge into a payment bilag and a closed reskontro item; without the
+# orgnr it cannot tell which hovedbok that belongs in, and answers with
+# an error. Stripe would still have taken the money. Enabling the first
+# two without the third is therefore WORSE than leaving the rail off:
+# customers are charged and the ledger never learns.
+#
+# It must also be the SAME orgnr as the abonnement CronJob
+# (../shared/abonnement-faktura.yaml, patched below). If they disagree,
+# invoices are issued in one company's ledger and the payments that
+# settle them post in another's, and the reskontro never closes.
+#
+# The keys come from a secret created out-of-band, like the database
+# credentials. docs/secrets.md is absolute — nothing in this repo, in
+# any form:
+#
+#   kubectl -n regnmed create secret generic stripe-credentials \
+#     --from-literal=secret-key=sk_live_… \
+#     --from-literal=webhook-secret=whsec_…
+#
+# The webhook secret is the LIVE-mode endpoint's signing secret — Stripe
+# issues separate ones per mode, and a test-mode secret here means every
+# live event is rejected as unsigned. Point the live webhook at
+# https://api.regnmed.example/stripe/webhook.
+#
+# MAIL_IN_DOMAIN (#35) is plain configuration, not a secret: it is the
+# domain inbound bilag addresses are shown under
+# (bilag-<navn>-<tilfeldig>@…). Set it ONLY once that domain's MX
+# actually delivers into regnid's mail receiver — otherwise the portal
+# prints an address that silently receives nothing, which is exactly
+# what the unset case is designed to avoid.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,3 +74,18 @@ spec:
             # the API host.
             - name: PORTAL_BASE_URL
               value: https://regnmed.example
+            # Must match ../shared/abonnement-faktura.yaml — see above.
+            - name: REGNMED_DRIFT_ORGNR
+              value: "sett-meg-for-utrulling"
+            - name: MAIL_IN_DOMAIN
+              value: bilag.regnmed.example
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: secret-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: webhook-secret

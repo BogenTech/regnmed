@@ -60,8 +60,14 @@ spec:
             # not the API host.
             - name: PORTAL_BASE_URL
               value: https://test.regnmed.example
+            # Must match patches/abonnement-cronjob.yaml: invoices issued
+            # in one ledger and payments posted in another never settle.
             - name: REGNMED_DRIFT_ORGNR
               value: "sett-meg-for-test"
+            # Inbound bilag addresses (#35) are shown under this domain.
+            # Set it only once its MX delivers into regnid's receiver.
+            - name: MAIL_IN_DOMAIN
+              value: bilag.test.regnmed.example
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
