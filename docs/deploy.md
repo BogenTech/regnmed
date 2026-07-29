@@ -13,9 +13,9 @@ deploy/shared  what the SERVED environments run and the laptop does not:
 deploy/local   k3d in colima, *.localhost, no TLS, local-path storage —
                the integration proving ground (scripts/dev-cluster.sh,
                2 GB VM)
-deploy/test    prod-shaped: replicated storage, TLS (Let's Encrypt
-               STAGING), secrets out of git, every scheduled job running,
-               and the card rail against Stripe TEST mode
+deploy/test    prod-shaped: replicated storage, secrets out of git, every
+               scheduled job running, and the card rail against Stripe
+               TEST mode
 deploy/prod    real domains, TLS, secrets out of git, backups with
                restore-verification, TSA-witnessed anchoring
 ```
@@ -24,11 +24,9 @@ deploy/prod    real domains, TLS, secrets out of git, backups with
 it: replicated storage, the three-host split, the restore drill and the
 card rail all run there, so they are found broken while that is cheap.
 An environment that skips them tests nothing about them. What it does
-*not* share with production: staging certificates (untrusted on
-purpose, and they keep test from spending the production ACME rate
-limit), one API replica instead of two, small volumes, and no external
-TSA witness — a timestamp is a claim about a real ledger, and test roots
-are not that.
+*not* share with production: one API replica instead of two, small
+volumes, and no external TSA witness — a timestamp is a claim about a
+real ledger, and test roots are not that.
 
 **Stripe runs in test mode there**, with dummy cards, so the chain that
 has only ever run in integration tests — invoice issued, card charged
@@ -39,6 +37,77 @@ absolute, and `sk_test_…` is still a key.
 
 `kubectl kustomize deploy/<overlay>` renders any of them; the restructure
 kept the local render byte-identical, so dev-cluster.sh is unchanged.
+
+## Utrulling: clusteret HENTER, GitHub dytter aldri
+
+| Miljø | Følger | Utløses av |
+| --- | --- | --- |
+| test | grenen `main`, `deploy/test` | hver push |
+| prod | semver-tagger `>=0.1.0`, `deploy/prod` | at en release publiseres |
+
+Flux kjører i clusteret og henter fra git. Manifestene for det ligger i
+søsterrepoet `../homelab` (`cluster/flux-regnmed.yaml`) — de hører ikke
+hjemme her, like lite som UniFi-manifester gjør.
+
+**Retningen er ikke en smakssak.** To forhold tvinger den, og begge de
+enklere alternativene er feil:
+
+1. k3s-API-et ligger bak NAT, så en GitHub-hostet runner kan ikke nå det
+   — og løsningen er *ikke* å åpne 6443 mot internett, for det er å
+   publisere et cluster-admin-endepunkt.
+2. **BogenTech/regnmed er et OFFENTLIG repo.** En self-hosted runner
+   ville da la hvem som helst som åpner en pull request kjøre kode på en
+   maskin inne i hjemmenettet, ved siden av hovedboken. GitHub anbefaler
+   selv mot nettopp dette.
+
+### Hvor hemmelighetene bor
+
+**I clusteret, og ingen andre steder.** `db-credentials` og
+`stripe-credentials` opprettes én gang med `kubectl create secret` og
+lever videre gjennom hver utrulling. CI trenger dem aldri: den bygger et
+image og skriver en tagg til git, og clusteret gjør selve applyen.
+Derfor kan en kompromittert workflow på et offentlig repo ikke nå
+Stripe-nøklene eller databasen.
+
+Ingenting legges i GitHub repo secrets eller environment secrets. Flux
+trenger heller ingen deploy key, siden repoet er offentlig og lesing er
+anonym. Dette er docs/secrets.md som holder, ikke som omgås.
+
+`.env` er utelukkende for lokal utvikling (se `.env.example`, som
+dokumenterer alle 28 variablene) og har ingen rolle i utrulling.
+
+### Hvordan en test-utrulling faktisk skjer
+
+`.github/workflows/images.yml` bygger og pusher
+`ghcr.io/bogentech/regnmed:sha-<short>`, og **committer så den taggen inn
+i `deploy/test/kustomization.yaml` på main. Den commiten ER utrullingen**
+— Flux rekonsilierer den innen minuttet. Git blir den eneste kilden til
+sannhet, og taggene forblir uforanderlige, som er nettopp det som gjør at
+test alltid kan navngi commiten den kjører.
+
+Workflowen har `paths-ignore: deploy/**`. Uten den ville dens egen
+tagg-commit utløst et nytt bygg, i det uendelige.
+
+### Å slippe til produksjon
+
+Produksjon er **automatisk ved release, uten godkjenningssteg** — releasen
+er den bevisste handlingen. To følger av det:
+
+- Commiten du tagger må ALLEREDE peke på det image-taggen prod skal
+  kjøre, i `deploy/prod/kustomization.yaml`. Prod følger ikke nyeste
+  image; den følger det releasen sier. Det er dette som gjør at prod kan
+  navngi sin egen commit.
+- Å slette en feil tagg ruller ikke tilbake. Flux går til den høyeste
+  semver-taggen som matcher, så publiser en rettet, høyere release i
+  stedet.
+
+Forhåndsutgaver (`v1.2.3-rc1`) er utenfor semver-området, så en
+release-kandidat kan tagges og inspiseres uten å røre produksjon.
+
+`prune: true` på begge: fjerner du en ressurs fra et overlay, blir den
+faktisk slettet i clusteret. Uten det samler det seg opp levende objekter
+ingen manifest beskriver — det skjedde her én gang alt, med en
+gjenglemt ClusterIssuer.
 
 ## Production checklist (deploy/prod)
 

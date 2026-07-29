@@ -20,6 +20,13 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # deploy/** is ignored so the tag-bump commit this workflow makes at the
+    # end does not trigger a second, identical build — an infinite loop with
+    # an image push on every lap.
+    paths-ignore:
+      - "deploy/**"
+      - "docs/**"
+      - "*.md"
   workflow_dispatch:
 
 env:
@@ -30,7 +37,12 @@ jobs:
   image:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # contents: write so the final step can commit the new image tag into
+      # deploy/test. That commit is the deploy: Flux watches main and
+      # reconciles it (see ../../../homelab/cluster/flux-regnmed.yaml). Git
+      # stays the single source of truth, and no cluster credential exists in
+      # GitHub at all — the cluster pulls, this workflow never reaches it.
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v7
@@ -82,6 +94,7 @@ jobs:
             refs/heads/main) tags="$tags,$IMAGE:main" ;;
           esac
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
           echo "built tags: $tags"
 
       - uses: docker/build-push-action@v7
@@ -103,3 +116,56 @@ jobs:
           ls -l target/x86_64-unknown-linux-musl/release/regnmed-api \
                 target/x86_64-unknown-linux-musl/release/regnmed \
             | awk '{printf "  %-16s %.1f MB\n", $9, $5/1048576}'
+
+      # THIS COMMIT IS THE DEPLOY TO TEST.
+      #
+      # Flux watches main and reconciles deploy/test, so writing the new
+      # immutable tag into the overlay is what rolls test forward. Nothing
+      # here talks to the cluster — the cluster pulls, which is why no
+      # kubeconfig exists in this public repository.
+      #
+      # Only on main. A tag build must not rewrite the branch: the whole point
+      # of a release is that the tagged commit already says what it deploys.
+      # Production follows semver tags and is never touched from here.
+      - name: Roll test forward to the new image
+        if: github.ref == 'refs/heads/main'
+        env:
+          SHORT: ${{ steps.tags.outputs.short }}
+        run: |
+          set -euo pipefail
+          # Only the test overlay's tag; regnid's line and prod are untouched.
+          python3 - "$SHORT" <<'PY'
+          import re, sys
+          short = sys.argv[1]
+          path = "deploy/test/kustomization.yaml"
+          src = open(path).read()
+          # Match the newTag that follows the regnmed newName, so regnid's
+          # adjacent newTag cannot be hit by accident.
+          pat = re.compile(
+              r"(- name: regnmed\n    newName: ghcr\.io/bogentech/regnmed\n    newTag: )(\S+)"
+          )
+          m = pat.search(src)
+          if not m:
+              sys.exit("could not find regnmed's newTag in " + path)
+          if m.group(2) == f"sha-{short}":
+              print("already at sha-" + short)
+              sys.exit(0)
+          open(path, "w").write(pat.sub(rf"\1sha-{short}", src, count=1))
+          print(f"{m.group(2)} -> sha-{short}")
+          PY
+          if git diff --quiet -- deploy/test/kustomization.yaml; then
+            echo "no change to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/test/kustomization.yaml
+          git commit -m "test: roll to sha-${SHORT}
+
+          Written by .github/workflows/images.yml. Flux reconciles deploy/test
+          from main, so this commit is the deploy. Production is unaffected —
+          it follows semver release tags."
+          # Rebase rather than force: another push may have landed while this
+          # build ran, and losing it would be worse than failing here.
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
