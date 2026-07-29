@@ -98,8 +98,37 @@ testene venter på Postgres, ikke CPU. Installer: `cargo install
 cargo-nextest --locked` eller `curl -sSLf https://get.nexte.st/latest/mac
 | tar zxf - -C ~/.cargo/bin`.
 
-Norwegian domain terms are used deliberately (bilag, hovedbok, oppdrag,
-kontoplan NS 4102, SAF-T VAT codes); don't translate them away in code or docs.
+### Language policy (agreed 2026-07-29)
+
+**Prose in the codebase is English. Domain nouns are Norwegian.**
+
+| Where | Language | Why |
+| --- | --- | --- |
+| Comments, doc-comments | **English** | They explain *why* to whoever maintains this next. None of that reasoning is Norwegian-specific. |
+| Test function names | **English** | A test name is a sentence stating what must not break — same audience as a comment. |
+| Commit messages | **English** | Same. |
+| Domain nouns as identifiers | **Norwegian** | `bilag`, `hovedbok`, `reskontro`, `oppdrag`, `mva`, `sats`, `kontoplan` are statutory terms. "Voucher" is not quite *bilag*; "subledger" is not quite *reskontro*. The code implements XSDs and code lists that use these words — translating opens a gap between the code and the law it encodes. |
+| `docs/` | **Norwegian** | Audit-facing: revisorer and certification processes. See the documentation policy below. |
+| User-facing strings | **Norwegian** | Error messages, `Rett::beskrivelse()`, the portal. The users are Norwegian. |
+
+So the normal shape is English sentences about Norwegian nouns:
+
+```rust
+/// The role is locked (`for update`) before the rights list is rewritten:
+/// otherwise two concurrent edits would each delete the old list and let
+/// their own through — the union, i.e. more access than either asked for.
+```
+
+This was written down after a review found the repo had **drifted**, not
+chosen: ~990 Norwegian comment lines against ~1840 English, `regnmed-api`
+almost exactly half and half, early work English and recent work
+Norwegian. Mixed is worse than either pure choice — a maintainer can rely
+on neither language and has to read both.
+
+Two traps when converting: `matrise.rs`'s `START`/`SLUTT` marker strings
+must keep matching docs/auth.md **verbatim**, and applied migrations are
+never edited (their comments are part of the append-only record, so
+`migrations/*.sql` stays as written).
 
 ### Secrets policy (agreed 2026-07-26, docs/secrets.md)
 
