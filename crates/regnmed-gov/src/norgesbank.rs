@@ -1,9 +1,9 @@
 //! Norges Banks åpne valutakurs-API (docs/valuta.md, #44).
 //!
-//! `GET {base}/api/data/EXR/B.{VALUTAER}.NOK.SP?format=sdmx-json` —
-//! dagsnoteringer (bankdager) i SDMX-JSON. Parseren er ren og testes
-//! mot et vendored eksempel (docs/valuta/norges-bank-exr-sample.json);
-//! live-henting er samme kodevei med nettet i midten.
+//! `GET {base}/api/data/EXR/B.{VALUTAER}.NOK.SP?format=sdmx-json` — daily
+//! quotes (banking days) in SDMX-JSON. The parser is pure and is tested
+//! against a vendored sample (docs/valuta/norges-bank-exr-sample.json);
+//! fetching live is the same code path with the network in the middle.
 //!
 //! Two traps the parser handles explicitly:
 //! - `UNIT_MULT`: SEK/DKK/JPY quotes per 100 (multiplier 2) — the

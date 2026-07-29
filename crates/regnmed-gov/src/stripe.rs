@@ -1,16 +1,16 @@
-//! Stripe-klient for kortskinnen (#74, docs/abonnement.md §5).
+//! Stripe client for the card rail (#74, docs/abonnement.md §5).
 //!
-//! Minimal og hand-rolled, som resten av husets klienter: tre kall
-//! (kunde, checkout-sesjon i setup-modus, off-session trekk) pluss
-//! webhook-verifisering. Ingen Stripe Billing/Subscriptions —
-//! abonnementstilstanden bor i VÅR hovedbok, Stripe er bare en raskere
-//! vei til «betalt», og dermed er leverandøren utskiftbar.
+//! Minimal and hand-rolled, like the rest of the house's clients: three
+//! calls (customer, checkout session in setup mode, off-session charge)
+//! plus webhook verification. No Stripe Billing/Subscriptions — the
+//! abonnement state lives in OUR hovedbok, Stripe is only a faster route
+//! to "paid", and that is what keeps the provider replaceable.
 //!
-//! Kortdata berører oss aldri: kunden taster hos Stripe (hosted
-//! checkout), vi lagrer bare referanser og last4/brand til visning.
+//! Card data never touches us: the customer types it at Stripe (hosted
+//! checkout) and we store only references plus last4/brand for display.
 //!
-//! `base` er konfigurerbar så tester kan peke klienten mot en lokal
-//! mock — samme mønster som BRREG/Finanstilsynet-klientene.
+//! `base` is configurable so tests can point the client at a local mock —
+//! the same pattern as the BRREG and Finanstilsynet clients.
 
 use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
@@ -75,9 +75,9 @@ impl Stripe {
         Ok(body)
     }
 
-    /// Oppretter (eller gjenbruker aldri — kalleren sjekker først) en
-    /// Stripe-kunde for et selskap. Metadataen binder kunden til
-    /// selskapet vårt, ikke omvendt.
+    /// Creates a Stripe customer for a company — never reuses one, the
+    /// caller checks first. The metadata binds the customer to our
+    /// company, not the other way around.
     pub async fn create_customer(
         &self,
         company_id: &str,
@@ -101,9 +101,9 @@ impl Stripe {
             .context("stripe: kunde uten id")
     }
 
-    /// Checkout-sesjon i SETUP-modus: kunden lagrer et kort hos Stripe,
-    /// uten at noe trekkes. Resultatet er en URL portalen sender
-    /// brukeren til; kortet kommer tilbake via webhook.
+    /// Checkout session in SETUP mode: the customer stores a card with
+    /// Stripe, without anything being charged. The result is a URL the
+    /// portal sends the user to; the card comes back via webhook.
     pub async fn create_setup_session(
         &self,
         customer: &str,
@@ -130,7 +130,7 @@ impl Stripe {
             .context("stripe: sesjon uten url")
     }
 
-    /// Henter betalingsmetoden en fullført setup-sesjon lagret.
+    /// Fetches the payment method a completed setup session stored.
     pub async fn setup_intent_payment_method(&self, setup_intent_id: &str) -> Result<String> {
         let body = self
             .get(&format!("/v1/setup_intents/{setup_intent_id}"))
@@ -141,7 +141,7 @@ impl Stripe {
             .context("stripe: setup intent uten payment_method")
     }
 
-    /// Kortets visningsinfo (brand + last4) — aldri kortnummeret.
+    /// The card's display info (brand + last4) — never the card number.
     pub async fn payment_method_card(&self, payment_method_id: &str) -> Result<(String, String)> {
         let body = self
             .get(&format!("/v1/payment_methods/{payment_method_id}"))
@@ -152,10 +152,11 @@ impl Stripe {
         ))
     }
 
-    /// Off-session trekk for en utstedt abonnementsfaktura.
-    /// Idempotensnøkkelen ER fakturaens id: samme faktura kan aldri
-    /// trekkes to ganger, uansett hvor mange ganger jobben kjører.
-    /// Beløpet er BRUTTO inkl. mva, i øre (Stripes minste enhet for NOK).
+    /// Off-session charge for an issued abonnement faktura.
+    ///
+    /// The idempotency key IS the faktura's id: the same faktura can
+    /// never be charged twice, however many times the job runs. The
+    /// amount is GROSS incl. mva, in øre (Stripe's smallest unit for NOK).
     pub async fn charge_invoice(
         &self,
         amount_ore: i64,
@@ -214,11 +215,11 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Verifiserer Stripes webhook-signatur (`Stripe-Signature`-headeren:
-/// `t=<unix>,v1=<hex>`, signert over `"{t}.{payload}"`).
+/// Verifies Stripe's webhook signature (the `Stripe-Signature` header:
+/// `t=<unix>,v1=<hex>`, signed over `"{t}.{payload}"`).
 ///
-/// `now_unix` sendes inn av kalleren — klokken er en avhengighet, ikke
-/// en bivirkning, så toleransevinduet kan testes.
+/// `now_unix` is passed in by the caller — the clock is a dependency,
+/// not a side effect, so the tolerance window can be tested.
 pub fn verify_webhook(
     payload: &[u8],
     signature_header: &str,
@@ -247,7 +248,7 @@ pub fn verify_webhook(
     signed.extend_from_slice(payload);
     let expected = hex(&hmac_sha256(secret.as_bytes(), &signed));
 
-    // Konstant-tid-sammenligning over alle kandidatene.
+    // Constant-time comparison across every candidate.
     let ok = v1s.iter().any(|v| {
         v.len() == expected.len()
             && v.bytes()
@@ -259,9 +260,9 @@ pub fn verify_webhook(
     Ok(())
 }
 
-/// Signerer en payload slik Stripe ville gjort — for tester og
-/// dokumentasjon av formatet. Å ha begge retninger her er det som gjør
-/// verifiseringen testbar uten Stripe.
+/// Signs a payload the way Stripe would — for tests, and as
+/// documentation of the format. Having both directions here is what
+/// makes verification testable without Stripe.
 pub fn sign_webhook(payload: &[u8], secret: &str, t_unix: i64) -> String {
     let mut signed = t_unix.to_string().into_bytes();
     signed.push(b'.');
@@ -288,16 +289,16 @@ mod tests {
     }
 
     #[test]
-    fn webhook_rundtur_og_avvisninger() {
+    fn webhook_round_trip_and_rejections() {
         let payload = br#"{"type":"payment_intent.succeeded"}"#;
         let header = sign_webhook(payload, "whsec_test", 1_700_000_000);
         verify_webhook(payload, &header, "whsec_test", 300, 1_700_000_100).unwrap();
 
-        // Feil hemmelighet.
+        // Wrong secret.
         assert!(verify_webhook(payload, &header, "whsec_annen", 300, 1_700_000_100).is_err());
-        // Manipulert payload.
+        // Tampered payload.
         assert!(verify_webhook(b"{}", &header, "whsec_test", 300, 1_700_000_100).is_err());
-        // Utenfor toleransen (replay).
+        // Outside the tolerance window (replay).
         assert!(verify_webhook(payload, &header, "whsec_test", 300, 1_700_009_999).is_err());
     }
 }

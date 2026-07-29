@@ -34,9 +34,9 @@ enum Command {
     /// Post every due monthly avskrivning across all companies
     /// (docs/anlegg.md, #40). Run monthly (cron/CronJob).
     Depreciate,
-    /// Tegn eller avslutt et abonnement for et selskap (drift/ops,
-    /// docs/abonnement.md, #65). Det finnes ingen API-vei for dette —
-    /// abonnementet styres av driften, som migrate og anchor.
+    /// Start or end a company's abonnement (ops, docs/abonnement.md,
+    /// #65). There is no API route for this — the abonnement is driven by
+    /// ops, like migrate and anchor.
     Abonnement {
         /// Company id (or use --orgnr)
         #[arg(long)]
@@ -44,48 +44,47 @@ enum Command {
         /// Organization number of the company
         #[arg(long)]
         orgnr: Option<String>,
-        /// "tegn" starter en dekning fra i dag; "avslutt" setter
-        /// sluttdato (eksklusiv) på den åpne dekningen
+        /// "tegn" starts coverage from today; "avslutt" sets the end
+        /// date (exclusive) on the open coverage
         #[arg(long)]
         aksjon: String,
         /// Plan (default "standard")
         #[arg(long, default_value = "standard")]
         plan: String,
-        /// Sluttdato for "avslutt" (YYYY-MM-DD, EKSKLUSIV); default i dag
+        /// End date for "avslutt" (YYYY-MM-DD, EXCLUSIVE); defaults to today
         #[arg(long)]
         til: Option<chrono::NaiveDate>,
-        /// Avtale-/vedtaksreferansen som forklarer raden (påkrevd for tegn)
+        /// Agreement/decision reference explaining the row (required for tegn)
         #[arg(long)]
         note: Option<String>,
     },
-    /// Vis prislisten, eller legg til en ny datert prisrad
-    /// (docs/abonnement.md §4). Prisen er data: en endring er en ny rad
-    /// med kilde, aldri en omskriving — eksisterende rader står som
-    /// historikk, og fakturaen bruker prisen som gjelder på
-    /// faktureringsdagen.
+    /// Show the price list, or add a new dated price row
+    /// (docs/abonnement.md §4). The price is data: a change is a new row
+    /// with its kilde, never a rewrite — existing rows stand as history,
+    /// and the faktura uses the price in force on the invoicing day.
     AbonnementPris {
-        /// Plan (utelat alt for å bare vise prislisten)
+        /// Plan (omit everything to just show the price list)
         #[arg(long)]
         plan: Option<String>,
-        /// Ny pris i ØRE per måned eks. mva (9900 = 99 kr)
+        /// New price in ØRE per month excl. mva (9900 = 99 kr)
         #[arg(long)]
         pris_ore: Option<i64>,
-        /// Dato den nye prisen gjelder fra (YYYY-MM-DD); default i dag
+        /// Date the new price applies from (YYYY-MM-DD); defaults to today
         #[arg(long)]
         fra: Option<chrono::NaiveDate>,
-        /// Vedtaksreferansen (påkrevd når pris settes)
+        /// Decision reference (required when a price is set)
         #[arg(long)]
         kilde: Option<String>,
     },
-    /// Fakturer inneværende måned for alle selskaper med dekning, inn i
-    /// DRIFTSSELSKAPETS hovedbok (docs/abonnement.md, #65). Idempotent;
-    /// kjøres månedlig (cron/CronJob). Driftsselskapet pekes ut med
-    /// --orgnr eller REGNMED_DRIFT_ORGNR.
+    /// Invoice the current month for every company with coverage, into
+    /// the OPS COMPANY's hovedbok (docs/abonnement.md, #65). Idempotent;
+    /// run monthly (cron/CronJob). The ops company is named by --orgnr or
+    /// REGNMED_DRIFT_ORGNR.
     AbonnementFaktura {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
         #[arg(long)]
         orgnr: Option<String>,
-        /// Fakturer bare dette kundeselskapet (orgnr) — etterfakturering
+        /// Invoice only this customer company (orgnr) — back-billing
         #[arg(long)]
         bare_orgnr: Option<String>,
     },
@@ -126,7 +125,7 @@ enum Command {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
-    /// Mva-spesifikasjon: grunnlag og beregnet avgift per standardkode
+    /// Mva-spesifikasjon: grunnlag and computed avgift per standard code
     MvaReport {
         /// Company id (or use --orgnr)
         #[arg(long, conflicts_with = "orgnr")]
@@ -312,10 +311,10 @@ async fn main() -> Result<()> {
             if utfall.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }
-            // Kortskinnen (#74): trekk kortet for hver nyutstedt faktura
-            // der kunden har aktivt kort. Idempotensnøkkelen er
-            // fakturaens id, så en omkjøring kan aldri trekke to ganger;
-            // webhooken bokfører når trekket bekreftes.
+            // The card rail (#74): charge the card for every newly
+            // issued faktura where the customer has an active card. The
+            // idempotency key is the faktura's id, so a re-run can never
+            // charge twice; the webhook posts when the charge confirms.
             let stripe = std::env::var("STRIPE_SECRET_KEY").ok().map(|key| {
                 regnmed_gov::stripe::Stripe::new(
                     &key,
@@ -349,9 +348,9 @@ async fn main() -> Result<()> {
                             Ok((intent, status)) => {
                                 println!("  korttrekk {intent}: {status}")
                             }
-                            // Et feilet trekk stopper ikke resten:
-                            // fakturaen står åpen, purring/sperre (#75)
-                            // tar oppfølgingen.
+                            // A failed charge does not stop the rest: the
+                            // faktura stays open, and purring/blocking
+                            // (#75) takes the follow-up.
                             Err(e) => println!("  korttrekk FEILET: {e:#}"),
                         }
                     }
