@@ -1,8 +1,11 @@
 # Production overlay (docs/deploy.md). What it adds over the base:
 #
-# - Real hostnames + TLS: edit the two hosts in ingress.yaml, install
-#   cert-manager, and cert-issuer.yaml (Let's Encrypt HTTP-01 through
-#   Traefik) does the rest.
+# - Real hostnames: the hosts in ingress.yaml must match the
+#   OIDC_ISSUER/ISSUER values in patches/.
+# - TLS is NOT here. nginx-proxy-manager terminates it one hop earlier and
+#   forwards plain HTTP to Traefik's MetalLB address; the long note in
+#   ingress.yaml says why that is not a temporary shortcut but the only
+#   arrangement that works while Swarm still owns the router's 80/443.
 # - Secrets out of git: create the `db-credentials` secret out-of-band
 #   BEFORE applying (docs/deploy.md has the exact command); the patches
 #   below point every DATABASE_URL/POSTGRES_PASSWORD at it. Nothing in
@@ -21,7 +24,6 @@ kind: Kustomization
 resources:
   - ../base
   - ingress.yaml
-  - cert-issuer.yaml
   # Shared with deploy/test — described once, not copied. Anything that
   # differs between the two is a patch below, so a fix to the backup
   # drill cannot land in one environment and miss the other.

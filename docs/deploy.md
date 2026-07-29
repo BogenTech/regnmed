@@ -139,9 +139,40 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
    (`allowVolumeExpansion: true` on the StorageClass) but never shrunk.
    Confirm that before the first apply; the alternative is
    dump-and-restore.
-4. **TLS.** Install cert-manager, edit the e-mail in
-   `cert-issuer.yaml`; Let's Encrypt HTTP-01 through Traefik issues and
-   renews the certificates.
+4. **TLS — terminert i kantproxyen, ikke i clusteret.** Dette er den ene
+   plassen som sier hvilket hopp som eier sertifikatene, og den må
+   oppdateres i samme endring som manifestene.
+
+   I dag: **nginx-proxy-manager** holder Let's Encrypt-sertifikatene for
+   alle vertsnavnene og videresender ren HTTP til Traefiks
+   MetalLB-adresse. Ingressene har derfor **ingen** `tls:`-blokk og ingen
+   `cert-manager.io/cluster-issuer`-annotasjon.
+
+   Grunnen er ikke latskap, og det er ikke valgfritt: ruteren
+   videresender 80/443 til ÉN destinasjon, og NPM betjener et dusin andre
+   domener derfra. En ruter kan ikke rute på vertsnavn — det er L7, og en
+   ruter er L4. Ber man cert-manager om sertifikater likevel, er det ikke
+   bare overflødig, det **kan ikke fungere**: NPM terminerer TLS og
+   tvangsomdirigerer HTTP, så HTTP-01-utfordringen svares av NPM og ikke
+   av solver-poden, og sertifikatet Traefik til slutt fikk ville aldri
+   blitt presentert for noen. Erfart 2026-07-29: tre `Certificate`-objekt
+   sto `ready=False` i det uendelige med «failed to perform self check».
+   Sertifikatet var ikke problemet — topologien var det.
+
+   Prisen, som er verdt å kjenne: testmiljøet bruker nå et ekte
+   sertifikat i stedet for Let's Encrypts staging-endepunkt, og
+   produksjons-ACME har grenser **per registrert domene** — så
+   `test.regnmed.no` og `regnmed.no` deler budsjett. NPM fornyer på egen
+   plan og reutsteder ikke per utrulling, så risikoen er langt mindre enn
+   et cluster som reutsteder ved hver ombygging, men den er ikke null.
+
+   Når Traefik overtar 80/443 (etter at Swarm-stackene er flyttet av
+   nodene): installer cert-manager, legg tilbake en `ClusterIssuer` —
+   staging for test, produksjon for prod, med FORSKJELLIGE navn slik at
+   en kopiert annotasjon ikke stille bruker produksjonsendepunktet — og
+   legg `tls:` + annotasjonen tilbake per regel. Formen står i
+   kommentaren i `deploy/prod/ingress.yaml`, og git-historikken har de
+   slettede `cert-issuer.yaml`-filene.
 5. **Secrets — before the first apply, never in git:**
 
    ```sh

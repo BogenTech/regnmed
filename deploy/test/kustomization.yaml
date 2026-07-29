@@ -10,10 +10,13 @@
 #
 # - HOSTS: test.* (ingress.yaml). Same three-host shape as prod, so the
 #   portal/API/IdP split is exercised, not just assumed.
-# - TLS: Let's Encrypt STAGING (cert-issuer.yaml). Certificates are not
-#   browser-trusted, which is correct here and keeps test from spending
-#   the production ACME rate limit — the limit that would bite on the day
-#   prod needs to reissue.
+# - TLS: terminated by nginx-proxy-manager, same as prod, with a real
+#   browser-trusted certificate. This USED to be a Let's Encrypt staging
+#   issuer inside the cluster, which was better in one respect — it kept
+#   test off production ACME rate limits, shared per registered domain with
+#   regnmed.no. That option disappeared with cert-manager: NPM owns TLS and
+#   the challenge path, so nothing in the cluster can complete HTTP-01. See
+#   ingress.yaml.
 # - STRIPE IN TEST MODE: the card rail runs against Stripe's test
 #   environment with dummy cards, so abonnement invoicing and the webhook
 #   that posts payment are exercised end to end. The keys come from a
@@ -42,7 +45,6 @@ resources:
   - ../base
   - ../shared
   - ingress.yaml
-  - cert-issuer.yaml
 # Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
 # deliberately unpullable, so an unpinned overlay fails loudly instead of
 # silently running something. newName points at the registry, newTag at an

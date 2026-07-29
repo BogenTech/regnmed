@@ -9,19 +9,27 @@
 # `connect-src 'self'` in the CSP still means what it says. Testing a
 # two-host shape would test a topology production does not have.
 #
-# TLS comes from the STAGING issuer (cert-issuer.yaml): the certificates
-# are not browser-trusted, which is correct here.
+# NO TLS BLOCK, AND NO cert-manager ANNOTATION — deliberately, and for the
+# same reason as production (the long note in deploy/prod/ingress.yaml):
+# nginx-proxy-manager terminates TLS one hop earlier and forwards plain HTTP
+# to Traefik's MetalLB address, so a certificate requested here would never be
+# presented to anyone, and cert-manager's HTTP-01 self-check cannot even
+# complete — NPM answers the challenge path and force-redirects to HTTPS.
+#
+# Test therefore uses a REAL browser-trusted certificate from NPM, not a
+# staging one. That is a difference from what this file said before, and it
+# costs the thing staging was protecting: production ACME rate limits are per
+# registered domain, so test.regnmed.no and regnmed.no share a budget. NPM
+# renews on its own schedule and does not reissue per deploy, so the risk is
+# much smaller than a cluster that reissues on every rebuild — but it is no
+# longer zero, which is worth knowing before automating anything that
+# recreates NPM proxy hosts.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: regnid
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
 spec:
-  tls:
-    - hosts: [id.test.regnmed.no]
-      secretName: regnid-tls
   rules:
     - host: id.test.regnmed.no
       http:
@@ -39,12 +47,7 @@ kind: Ingress
 metadata:
   name: regnmed-api
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
 spec:
-  tls:
-    - hosts: [api.test.regnmed.no]
-      secretName: regnmed-api-tls
   rules:
     - host: api.test.regnmed.no
       http:
@@ -62,12 +65,7 @@ kind: Ingress
 metadata:
   name: regnmed-portal
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
 spec:
-  tls:
-    - hosts: [test.regnmed.no]
-      secretName: regnmed-portal-tls
   rules:
     - host: test.regnmed.no
       http:

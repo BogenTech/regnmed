@@ -1,17 +1,37 @@
-# Production ingress: EDIT THE HOSTS to your real domains (they must
-# also match the OIDC_ISSUER/ISSUER patches). TLS is issued by
-# cert-manager via the ClusterIssuer in cert-issuer.yaml.
+# Production ingress. The hosts must match the OIDC_ISSUER/ISSUER values in
+# patches/ — a mismatch there is an OIDC failure, not an ingress failure, and
+# it is diagnosed a long way from here.
+#
+# NO TLS BLOCK, AND NO cert-manager ANNOTATION — deliberately.
+#
+# TLS is terminated one hop earlier, by nginx-proxy-manager, which holds the
+# Let's Encrypt certificates and forwards plain HTTP to Traefik's MetalLB
+# address. NPM has to be the edge for now because the router forwards 80/443
+# to a single destination and NPM still serves a dozen other domains from
+# there; it cannot route by hostname, because that is L7 and a router is L4.
+#
+# Asking cert-manager for certificates here would not merely be redundant, it
+# CANNOT WORK: NPM terminates TLS and force-redirects HTTP, so cert-manager's
+# HTTP-01 self-check is answered by NPM rather than by the solver, and the
+# certificate Traefik ended up with would never be presented to anyone.
+#
+# WHEN TRAEFIK TAKES 80/443 (after the Swarm stacks migrate off these nodes),
+# restore it: install cert-manager, add back a ClusterIssuer, and per rule add
+#
+#   metadata.annotations:
+#     cert-manager.io/cluster-issuer: letsencrypt
+#   spec.tls:
+#     - hosts: [<the host below>]
+#       secretName: <name>-tls
+#
+# See docs/deploy.md — the TLS step there is the single description of which
+# hop owns certificates, and it must be updated in the same change.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: regnid
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt
 spec:
-  tls:
-    - hosts: [id.regnmed.no]
-      secretName: regnid-tls
   rules:
     - host: id.regnmed.no
       http:
@@ -29,12 +49,7 @@ kind: Ingress
 metadata:
   name: regnmed-api
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt
 spec:
-  tls:
-    - hosts: [api.regnmed.no]
-      secretName: regnmed-api-tls
   rules:
     - host: api.regnmed.no
       http:
@@ -56,12 +71,7 @@ kind: Ingress
 metadata:
   name: regnmed-portal
   namespace: regnmed
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt
 spec:
-  tls:
-    - hosts: [regnmed.no]
-      secretName: regnmed-portal-tls
   rules:
     - host: regnmed.no
       http:
