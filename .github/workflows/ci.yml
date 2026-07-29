@@ -63,7 +63,7 @@ jobs:
       # 54 testbinærer skal lenkes. Standardlenkeren er det trege leddet.
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install xmllint (XSD validation) and lld (faster linking)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils lld
       - uses: dtolnay/rust-toolchain@stable
@@ -95,7 +95,7 @@ jobs:
       # 2026-07-29), så lenkeren er verdt å bytte her også.
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install lld (faster linking)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lld
       - uses: dtolnay/rust-toolchain@stable
@@ -108,8 +108,11 @@ jobs:
   portal:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      # `node-version` er Noden portalen BYGGES med. Hvilken Node selve
+      # action-en kjører på er en annen sak, og den følger action-ens
+      # major: v4 kjørte på Node 20, som er avviklet på løperne.
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
