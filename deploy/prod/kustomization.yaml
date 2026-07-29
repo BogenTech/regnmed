@@ -22,8 +22,10 @@ resources:
   - ../base
   - ingress.yaml
   - cert-issuer.yaml
-  - backup.yaml
-  - abonnement-faktura.yaml
+  # Shared with deploy/test — described once, not copied. Anything that
+  # differs between the two is a patch below, so a fix to the backup
+  # drill cannot land in one environment and miss the other.
+  - ../shared
 images:
   - name: regnmed
     newTag: pin-me-to-a-release

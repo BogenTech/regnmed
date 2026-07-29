@@ -1,0 +1,27 @@
+# Let's Encrypt STAGING for the test environment. EDIT the e-mail.
+#
+# Staging on purpose. The production ACME endpoint has a rate limit on
+# certificates per registered domain per week, and a test environment
+# that reissues on every rebuild is exactly what exhausts it — leaving
+# PRODUCTION unable to get a certificate when it needs one. Staging has
+# generous limits and issues from an untrusted root, so browsers warn.
+# That warning is the correct signal in test, not a problem to fix.
+#
+# Note the issuer NAME differs from prod's (`letsencrypt-staging` vs
+# `letsencrypt`); the ingress annotations here reference it. Copying
+# prod's issuer name into a test cluster would silently use the
+# production endpoint.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: drift@regnmed.example
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

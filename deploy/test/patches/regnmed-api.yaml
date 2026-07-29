@@ -1,0 +1,74 @@
+# Test regnmed-api: one replica, credentials from the secret, and the
+# CARD RAIL ON against Stripe's TEST environment.
+#
+# One replica, not prod's two: test proves behavior, not capacity. Note
+# what that costs — the per-process rate limiter (docs/integrations.md)
+# behaves differently across two replicas than one, so a limit that looks
+# right here is half as generous in prod.
+#
+# STRIPE. The keys come from a secret created out-of-band, exactly like
+# the database credentials. docs/secrets.md is absolute — no secret in
+# this repo in any form — and a `sk_test_…` key is still a key: it can
+# read and write the Stripe test account, and leaking it in git means
+# rotating it. Create it before the first apply:
+#
+#   kubectl -n regnmed create secret generic stripe-credentials \
+#     --from-literal=secret-key=sk_test_… \
+#     --from-literal=webhook-secret=whsec_…
+#
+# regnmed-api requires BOTH or neither (crates/regnmed-api/src/lib.rs):
+# with one missing the rail is off and the endpoints say so, rather than
+# pretending. Point the Stripe test-mode webhook at
+# https://api.test.regnmed.example/stripe/webhook and use its signing
+# secret above — the signature is what authenticates that route, so a
+# mismatched secret means every event is rejected.
+#
+# REGNMED_DRIFT_ORGNR is the ops company whose ledger the abonnement
+# invoices land in. In test it must be a company that exists in the TEST
+# database — onboarded from BRREG like any other. It is not the real
+# operating company.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+spec:
+  replicas: 1
+  template:
+    spec:
+      initContainers:
+        - name: migrate
+          env:
+            - name: DATABASE_URL
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+      containers:
+        - name: api
+          env:
+            - name: DATABASE_URL
+              value: null
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+            - name: OIDC_ISSUER
+              value: https://id.test.regnmed.example
+            # The link in the invitation mail (#66) — the portal host,
+            # not the API host.
+            - name: PORTAL_BASE_URL
+              value: https://test.regnmed.example
+            - name: REGNMED_DRIFT_ORGNR
+              value: "sett-meg-for-test"
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: secret-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: webhook-secret

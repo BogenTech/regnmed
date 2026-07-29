@@ -1,0 +1,17 @@
+# Manifests shared by the SERVED environments (prod, test) but not by the
+# local cluster.
+#
+# They are not in base because the local k3d cluster should not run them:
+# there is no ops company to invoice there, and a nightly pg_dump of a
+# demo database on a laptop is noise. They are not copied into each
+# overlay either, because then a fix to the backup drill could land in
+# one environment and quietly miss the other — and the drill is the thing
+# that proves the ledger can be restored.
+#
+# What differs between prod and test is a patch in the overlay, never a
+# second copy of the file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - backup.yaml
+  - abonnement-faktura.yaml

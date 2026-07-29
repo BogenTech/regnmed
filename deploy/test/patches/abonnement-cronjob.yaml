@@ -1,0 +1,32 @@
+# Abonnement invoicing in test, pointed at a TEST ops company.
+#
+# This job issues real invoices in whatever ledger REGNMED_DRIFT_ORGNR
+# names — which is why it is prod-and-test only, and why the value here
+# must be a company in the TEST database. Against a real ledger it would
+# bill real customers.
+#
+# It runs here deliberately: with Stripe in test mode and dummy cards,
+# the whole rail is exercised end to end — invoice issued, card charged
+# off-session with the invoice id as idempotency key, webhook posting the
+# payment and closing the reskontro item. That chain has never run
+# outside integration tests, and this is where it should first fail.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-abonnement-faktura
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: fakturer
+              env:
+                - name: REGNMED_DRIFT_ORGNR
+                  value: "sett-meg-for-test"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url

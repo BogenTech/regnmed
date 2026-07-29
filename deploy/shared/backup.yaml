@@ -36,9 +36,22 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 70
           containers:
             - name: dump
               image: postgres:18-alpine
+              # pg_dump/psql as the postgres user, not root. fsGroup
+              # below makes the backup volume writable for it.
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 70
+                runAsGroup: 70
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/bin/sh", "-ec"]
               args:
                 - |
@@ -85,6 +98,17 @@ spec:
           initContainers:
             - name: restore
               image: postgres:18-alpine
+              # pg_dump/psql as the postgres user, not root. fsGroup
+              # below makes the backup volume writable for it.
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 70
+                runAsGroup: 70
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/bin/sh", "-ec"]
               args:
                 - |
@@ -111,6 +135,16 @@ spec:
           containers:
             - name: verify
               image: regnmed:dev
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
               command: ["/app/regnmed", "verify-ledger"]
               env:
                 - name: DATABASE_URL

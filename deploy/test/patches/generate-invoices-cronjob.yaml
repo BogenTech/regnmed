@@ -1,0 +1,21 @@
+# Prod repeterende-faktura CronJob: credentials from the secret (the
+# base carries a dev-only plaintext URL; value: null removes it).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-generate-invoices
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: generate
+              env:
+                - name: DATABASE_URL
+                  value: null
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url

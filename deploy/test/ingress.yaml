@@ -1,0 +1,81 @@
+# Test ingress: the SAME three-host shape as production, under test.*.
+# EDIT THE HOSTS to your real test domains (they must match the
+# ISSUER/OIDC_ISSUER/PORTAL_BASE_URL values in patches/).
+#
+# Three hosts rather than two, for the same reason as prod: the portal is
+# what a human opens and the API is what an integration calls, and the
+# first two point at the SAME service because one binary serves both.
+# That is what keeps the portal's calls same-origin — no CORS, and
+# `connect-src 'self'` in the CSP still means what it says. Testing a
+# two-host shape would test a topology production does not have.
+#
+# TLS comes from the STAGING issuer (cert-issuer.yaml): the certificates
+# are not browser-trusted, which is correct here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnid
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  tls:
+    - hosts: [id.test.regnmed.example]
+      secretName: regnid-tls
+  rules:
+    - host: id.test.regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnid
+                port:
+                  number: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-api
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  tls:
+    - hosts: [api.test.regnmed.example]
+      secretName: regnmed-api-tls
+  rules:
+    - host: api.test.regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: regnmed-portal
+  namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  tls:
+    - hosts: [test.regnmed.example]
+      secretName: regnmed-portal-tls
+  rules:
+    - host: test.regnmed.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: regnmed-api
+                port:
+                  number: 8080

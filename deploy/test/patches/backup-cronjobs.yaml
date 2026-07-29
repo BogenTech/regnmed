@@ -1,0 +1,22 @@
+# Test backups run on the same schedule and the same drill as production.
+#
+# Nothing is patched away. It is tempting to think a test environment
+# does not need backups — but the WHOLE POINT of running them here is the
+# weekly restore-verification: it restores the dump into a scratch
+# database and re-walks every hash chain with `verify-ledger`. That drill
+# is the thing most likely to be quietly broken, and finding out in test
+# is the entire reason test exists.
+#
+# The retention (14 nights) is unchanged too, because the backup volume
+# in patches/storage.yaml is sized for exactly that number. Shorten one
+# without the other and the arithmetic stops holding.
+#
+# This file exists to say that on purpose: an empty-looking patch that is
+# actually a decision, rather than a shared manifest nobody checked.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: regnmed
+spec:
+  schedule: "30 1 * * *"

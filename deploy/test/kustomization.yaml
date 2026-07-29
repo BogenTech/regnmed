@@ -1,0 +1,49 @@
+# Test overlay (docs/deploy.md).
+#
+# Test is PROD-SHAPED, not local-shaped: replicated storage, TLS, secrets
+# out of git, and every scheduled job running. The point of it is to be
+# the place where the machinery is found broken — a restore drill that
+# does not work, a card charge that does not post — while that is still
+# cheap to discover.
+#
+# What differs from prod, and why:
+#
+# - HOSTS: test.* (ingress.yaml). Same three-host shape as prod, so the
+#   portal/API/IdP split is exercised, not just assumed.
+# - TLS: Let's Encrypt STAGING (cert-issuer.yaml). Certificates are not
+#   browser-trusted, which is correct here and keeps test from spending
+#   the production ACME rate limit — the limit that would bite on the day
+#   prod needs to reissue.
+# - STRIPE IN TEST MODE: the card rail runs against Stripe's test
+#   environment with dummy cards, so abonnement invoicing and the webhook
+#   that posts payment are exercised end to end. The keys come from a
+#   secret created out-of-band (docs/secrets.md is absolute: no secret in
+#   this repo in any form — a test key is still a key).
+# - SIZES: smaller volumes and one API replica. Test proves behavior, not
+#   capacity.
+#
+# What is deliberately the SAME as prod: the storage class is replicated,
+# the backup drill runs and verifies, and the images are pinned. A test
+# environment that skips those tests nothing about them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - ../shared
+  - ingress.yaml
+  - cert-issuer.yaml
+images:
+  - name: regnmed
+    newTag: pin-me-to-a-release
+  - name: regnid
+    newTag: pin-me-to-a-release
+patches:
+  - path: patches/postgres.yaml
+  - path: patches/storage.yaml
+  - path: patches/regnid.yaml
+  - path: patches/regnmed-api.yaml
+  - path: patches/anchor-cronjob.yaml
+  - path: patches/generate-invoices-cronjob.yaml
+  - path: patches/depreciate-cronjob.yaml
+  - path: patches/abonnement-cronjob.yaml
+  - path: patches/backup-cronjobs.yaml

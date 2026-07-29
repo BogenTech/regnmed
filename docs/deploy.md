@@ -6,13 +6,38 @@ One topology, described once, deployed as overlays:
 deploy/base    the shared manifests: Postgres 18, NATS, regnid (+ mail
                worker), regnmed-api (migrate init container, nightly
                anchor CronJob)
-deploy/local   k3d in colima, *.localhost, no TLS — the integration
-               proving ground (scripts/dev-cluster.sh, 2 GB VM)
+deploy/shared  what the SERVED environments run and the laptop does not:
+               nightly backups + weekly restore-verification, and
+               abonnement invoicing. Referenced by prod and test, copied
+               into neither.
+deploy/local   k3d in colima, *.localhost, no TLS, local-path storage —
+               the integration proving ground (scripts/dev-cluster.sh,
+               2 GB VM)
+deploy/test    prod-shaped: replicated storage, TLS (Let's Encrypt
+               STAGING), secrets out of git, every scheduled job running,
+               and the card rail against Stripe TEST mode
 deploy/prod    real domains, TLS, secrets out of git, backups with
                restore-verification, TSA-witnessed anchoring
 ```
 
-`kubectl kustomize deploy/<overlay>` renders either; the restructure
+**Test is prod-shaped, not local-shaped.** That is the whole point of
+it: replicated storage, the three-host split, the restore drill and the
+card rail all run there, so they are found broken while that is cheap.
+An environment that skips them tests nothing about them. What it does
+*not* share with production: staging certificates (untrusted on
+purpose, and they keep test from spending the production ACME rate
+limit), one API replica instead of two, small volumes, and no external
+TSA witness — a timestamp is a claim about a real ledger, and test roots
+are not that.
+
+**Stripe runs in test mode there**, with dummy cards, so the chain that
+has only ever run in integration tests — invoice issued, card charged
+off-session, webhook posting the payment and closing the reskontro item
+— runs against the real Stripe API. The keys come from a
+`stripe-credentials` secret created out-of-band: docs/secrets.md is
+absolute, and `sk_test_…` is still a key.
+
+`kubectl kustomize deploy/<overlay>` renders any of them; the restructure
 kept the local render byte-identical, so dev-cluster.sh is unchanged.
 
 ## Production checklist (deploy/prod)

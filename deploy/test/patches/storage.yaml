@@ -1,0 +1,49 @@
+# Test volumes: the same REPLICATED class as production, at a fraction of
+# the size.
+#
+# The class matters more than the size here. Test exists to find the
+# machinery broken while that is cheap, and volume behaviour — a node
+# lost, a volume reattached elsewhere, an expansion — is exactly the kind
+# of thing that must not be met for the first time in production. A
+# node-local class in test would prove none of it.
+#
+# The pairing rule from deploy/prod/patches/storage.yaml still holds:
+# backup keeps 14 nightly `pg_dump -Fc`, and -Fc does nothing for JPEG or
+# PDF, so backup needs `retention × database`. 5Gi × 14 = 70Gi, which is
+# what the backup volume is. Break that relationship and the backup job
+# starts failing while the database still looks healthy.
+#
+# Replication multiplies these too: at Longhorn's default of 3 replicas
+# this is ~230Gi of raw disk.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 70Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-data
+  namespace: regnmed
+spec:
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi

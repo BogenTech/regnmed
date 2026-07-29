@@ -1,0 +1,31 @@
+# Test anchoring: credentials from the secret, and NO external witness.
+#
+# The anchor job itself runs — the Merkle snapshot, the append-only anchor
+# rows and `verify-ledger`'s anchor checks are exactly what should be
+# exercised here. What is left off is `ANCHOR_TSA_URL`: a timestamp from
+# a public TSA is a claim about a REAL ledger, and test roots are not
+# that. Asking a free service to witness a throwaway database nightly is
+# also noise on someone else's infrastructure.
+#
+# The base CronJob sets no TSA URL, so leaving it absent IS the whole
+# patch. (Were it inherited, a strategic-merge env patch would need
+# `value: null` to remove it — see the note in CLAUDE.md.)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-anchor
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: anchor
+              env:
+                - name: DATABASE_URL
+                  value: null
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
