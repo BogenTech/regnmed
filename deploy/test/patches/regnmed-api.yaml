@@ -19,7 +19,7 @@
 # regnmed-api requires BOTH or neither (crates/regnmed-api/src/lib.rs):
 # with one missing the rail is off and the endpoints say so, rather than
 # pretending. Point the Stripe test-mode webhook at
-# https://api.test.regnmed.no/stripe/webhook and use its signing
+# https://api.test.regnmed.no/webhooks/stripe and use its signing
 # secret above — the signature is what authenticates that route, so a
 # mismatched secret means every event is rejected.
 #

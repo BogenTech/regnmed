@@ -486,8 +486,11 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(abonnement::cancel_subscription),
         )
         // Open route: authenticated by the webhook signature, not by a token.
+        // Namespaced by provider because the card rail is deliberately
+        // replaceable (docs/abonnement.md §5) — a later Nets Easy or Dintero
+        // endpoint sits beside this one instead of renaming it.
         .route(
-            "/stripe/webhook",
+            "/webhooks/stripe",
             axum::routing::post(abonnement::stripe_webhook),
         )
         .route(

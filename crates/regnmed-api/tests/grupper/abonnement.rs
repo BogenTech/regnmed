@@ -340,7 +340,7 @@ async fn webhook_post(
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/stripe/webhook")
+                .uri("/webhooks/stripe")
                 .header("stripe-signature", signature)
                 .header("content-type", "application/json")
                 .body(Body::from(body.to_vec()))

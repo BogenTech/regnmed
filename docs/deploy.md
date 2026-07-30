@@ -309,7 +309,7 @@ gjenglemt ClusterIssuer.
    stedene må ha SAMME orgnr — ellers utstedes fakturaen i én hovedbok
    og betalingen bokføres i en annen, og posten lukkes aldri.
 
-   Pek Stripes live-webhook på `https://<api-host>/stripe/webhook`.
+   Pek Stripes live-webhook på `https://<api-host>/webhooks/stripe`.
 7. **E-post inn** (#35, docs/epost-inn.md): `MAIL_IN_DOMAIN` er vanlig
    konfigurasjon, ikke en hemmelighet — domenet innboksadressene vises
    under. Sett det **først når det domenets MX faktisk leverer inn i

@@ -32,7 +32,7 @@
 # The webhook secret is the LIVE-mode endpoint's signing secret — Stripe
 # issues separate ones per mode, and a test-mode secret here means every
 # live event is rejected as unsigned. Point the live webhook at
-# https://api.regnmed.no/stripe/webhook.
+# https://api.regnmed.no/webhooks/stripe.
 #
 # MAIL_IN_DOMAIN (#35) is plain configuration, not a secret: it is the
 # domain inbound bilag addresses are shown under
