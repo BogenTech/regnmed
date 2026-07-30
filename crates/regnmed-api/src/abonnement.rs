@@ -315,10 +315,24 @@ pub async fn stripe_webhook(
 
     match event["type"].as_str().unwrap_or("") {
         "checkout.session.completed" => {
-            let company: Uuid = object["client_reference_id"]
+            // One Stripe account can serve several products, so sessions
+            // that were never ours are delivered here too. "Not ours" has
+            // to be an acknowledged no-op: a 4xx makes Stripe retry for
+            // three days and then disable the endpoint over traffic we
+            // were never meant to see.
+            let Some(company) = object["client_reference_id"]
                 .as_str()
-                .and_then(|s| s.parse().ok())
-                .ok_or_else(|| ApiError::BadRequest("sesjon uten selskapsreferanse".into()))?;
+                .and_then(|s| s.parse::<Uuid>().ok())
+            else {
+                return Ok(Json(json!({ "handled": "ignorert" })));
+            };
+            // Subscription mode carries no setup_intent — Stripe attaches
+            // the card itself, and the subscription reaches us on
+            // customer.subscription.created. Only the setup-mode session
+            // from card_setup has a card for us to store.
+            if object["mode"].as_str() == Some("subscription") {
+                return Ok(Json(json!({ "handled": "abonnement_sesjon" })));
+            }
             let customer = object["customer"].as_str().unwrap_or_default().to_string();
             let setup_intent = object["setup_intent"].as_str().unwrap_or_default();
             if customer.is_empty() || setup_intent.is_empty() {

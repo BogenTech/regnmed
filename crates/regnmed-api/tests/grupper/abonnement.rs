@@ -384,6 +384,54 @@ async fn the_webhook_rejects_an_invalid_signature() {
     assert_eq!(kode, StatusCode::BAD_REQUEST);
 }
 
+/// A Stripe account can serve more than one product, so sessions that were
+/// never ours arrive here as well — and our OWN subscription sessions carry
+/// no setup_intent. Both must be acknowledged. A 4xx would make Stripe
+/// retry for three days and then disable the endpoint, which would silence
+/// the events that ARE ours.
+#[tokio::test]
+async fn a_session_that_carries_no_card_is_acknowledged_not_rejected() {
+    let Some((state, _idp, kunde, _admin)) = oppsett().await else {
+        return;
+    };
+    let state = with_stripe(&state, "999999999");
+    let send = |event: serde_json::Value| {
+        let state = state.clone();
+        async move {
+            let payload = serde_json::to_vec(&event).unwrap();
+            let sig =
+                regnmed_gov::stripe::sign_webhook(&payload, "whsec_test", Utc::now().timestamp());
+            webhook_post(&state, &payload, &sig).await
+        }
+    };
+
+    // Another product's checkout in the same Stripe account: no reference
+    // of ours, so nothing to do — but it must still be a 200.
+    let (kode, svar) = send(serde_json::json!({
+        "type": "checkout.session.completed",
+        "data": { "object": { "id": "cs_someone_else", "mode": "payment" } }
+    }))
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(svar["handled"], "ignorert");
+
+    // Our own subscription session: the card is attached by Stripe, and the
+    // subscription reaches us on customer.subscription.created instead.
+    let (kode, svar) = send(serde_json::json!({
+        "type": "checkout.session.completed",
+        "data": { "object": {
+            "id": "cs_abonnement",
+            "mode": "subscription",
+            "client_reference_id": kunde.to_string(),
+            "customer": "cus_test",
+            "subscription": "sub_test"
+        } }
+    }))
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(svar["handled"], "abonnement_sesjon");
+}
+
 /// The whole card path: an abonnement faktura is issued, the webhook
 /// confirms the charge — the payment bilag is posted in the ops company
 /// and the reskontro item is closed. And a REPLAY of the same event posts
