@@ -1,13 +1,23 @@
 //! Stripe client for the card rail (#74, docs/abonnement.md §5).
 //!
-//! Minimal and hand-rolled, like the rest of the house's clients: three
-//! calls (customer, checkout session in setup mode, off-session charge)
-//! plus webhook verification. No Stripe Billing/Subscriptions — the
-//! abonnement state lives in OUR hovedbok, Stripe is only a faster route
-//! to "paid", and that is what keeps the provider replaceable.
+//! Minimal and hand-rolled, like the rest of the house's clients, plus
+//! webhook verification.
 //!
-//! Card data never touches us: the customer types it at Stripe (hosted
-//! checkout) and we store only references plus last4/brand for display.
+//! TWO USES OF STRIPE THAT MUST NOT BE CONFUSED:
+//!
+//! 1. **regnmed's own invoice engine never touches Stripe.** The faktura
+//!    our customers send to *their* customers is issued, numbered and
+//!    collected by us — that is the product, and Stripe Billing has no
+//!    place in it. That is what "aldri Stripe Billing" means.
+//! 2. **The abonnement our customers pay US for uses Stripe properly**,
+//!    including Subscriptions: they recur until cancelled, Stripe owns
+//!    the retry/dunning clock, and card data never reaches us because we
+//!    have no wish to be PCI compliant.
+//!
+//! What still belongs to us in case 2: the coverage rows the access
+//! guard reads, the price list the Stripe Prices are created FROM, and
+//! the bookkeeping. Bokføringsloven does not care who collected the
+//! money.
 //!
 //! `base` is configurable so tests can point the client at a local mock —
 //! the same pattern as the BRREG and Finanstilsynet clients.
@@ -189,6 +199,120 @@ impl Stripe {
             body["id"].as_str().unwrap_or("").to_string(),
             body["status"].as_str().unwrap_or("").to_string(),
         ))
+    }
+
+    // -----------------------------------------------------------------
+    // Subscriptions — for the abonnement our customers pay US for.
+    // -----------------------------------------------------------------
+
+    /// Creates a recurring Price under a Product, from OUR price list.
+    ///
+    /// `brutto_ore` is GROSS, incl. mva. Stripe Tax stays off on purpose:
+    /// we already know the Norwegian rate from the satsregister, and an
+    /// amount computed in two places is an amount that eventually
+    /// disagrees with itself. So the customer sees at Stripe exactly what
+    /// they pay, and the split into base + mva happens when we post it.
+    ///
+    /// A Stripe Price is immutable once created (their rule), which suits
+    /// a dated, insert-only price list: a price change makes a new Price
+    /// and existing subscriptions keep the old one until moved.
+    pub async fn create_price(
+        &self,
+        product_name: &str,
+        brutto_ore: i64,
+        interval: &str,
+        plan: &str,
+    ) -> Result<String> {
+        ensure!(brutto_ore > 0, "prisen må være positiv");
+        ensure!(
+            interval == "month" || interval == "year",
+            "intervallet må være month eller year"
+        );
+        let amount = brutto_ore.to_string();
+        let body = self
+            .post_form(
+                "/v1/prices",
+                &[
+                    ("currency", "nok"),
+                    ("unit_amount", amount.as_str()),
+                    ("recurring[interval]", interval),
+                    ("product_data[name]", product_name),
+                    ("metadata[regnmed_plan]", plan),
+                ],
+                None,
+            )
+            .await?;
+        body["id"]
+            .as_str()
+            .map(str::to_string)
+            .context("stripe: pris uten id")
+    }
+
+    /// Checkout session in SUBSCRIPTION mode: the customer stores a card
+    /// AND the recurring schedule starts. This is what makes the payment
+    /// repeat until cancelled — Stripe owns that clock, not our cron.
+    pub async fn create_subscription_session(
+        &self,
+        customer: &str,
+        price_id: &str,
+        company_id: &str,
+        success_url: &str,
+        cancel_url: &str,
+    ) -> Result<String> {
+        let body = self
+            .post_form(
+                "/v1/checkout/sessions",
+                &[
+                    ("mode", "subscription"),
+                    ("customer", customer),
+                    ("line_items[0][price]", price_id),
+                    ("line_items[0][quantity]", "1"),
+                    ("client_reference_id", company_id),
+                    // Repeated on the subscription itself: the webhook for
+                    // invoice.paid sees the subscription, not the session,
+                    // so the company id has to travel with it.
+                    (
+                        "subscription_data[metadata][regnmed_company_id]",
+                        company_id,
+                    ),
+                    ("success_url", success_url),
+                    ("cancel_url", cancel_url),
+                ],
+                None,
+            )
+            .await?;
+        body["url"]
+            .as_str()
+            .map(str::to_string)
+            .context("stripe: sesjon uten url")
+    }
+
+    /// Cancels a subscription AT PERIOD END — the customer keeps what
+    /// they have paid for. Immediate cancellation would take away access
+    /// that is already bought, which is the opposite of the principle in
+    /// docs/abonnement.md §1.
+    pub async fn cancel_subscription_at_period_end(
+        &self,
+        subscription_id: &str,
+    ) -> Result<(String, Option<i64>)> {
+        let body = self
+            .post_form(
+                &format!("/v1/subscriptions/{subscription_id}"),
+                &[("cancel_at_period_end", "true")],
+                None,
+            )
+            .await?;
+        Ok((
+            body["status"].as_str().unwrap_or("").to_string(),
+            body["cancel_at"].as_i64(),
+        ))
+    }
+
+    /// Reads a subscription — used to resolve the company and the period
+    /// when a webhook arrives with only the subscription id.
+    pub async fn subscription(&self, subscription_id: &str) -> Result<serde_json::Value> {
+        self.get(&format!("/v1/subscriptions/{subscription_id}"))
+            .await
     }
 }
 

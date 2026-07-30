@@ -298,6 +298,402 @@ pub async fn registrer_kortbetaling(
     Ok(true)
 }
 
+// ---------------------------------------------------------------------
+// Stripe Subscriptions — the abonnement our customers pay US for.
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct StripeAbo {
+    pub stripe_subscription_id: String,
+    pub stripe_price_id: String,
+    pub plan: String,
+    pub interval: String,
+    pub status: String,
+    pub cancel_at: Option<chrono::DateTime<Utc>>,
+}
+
+/// The company's live Stripe subscription, if it has one. Cancelled rows
+/// are history and never returned here.
+pub async fn stripe_abo_for(pool: &PgPool, company_id: Uuid) -> Result<Option<StripeAbo>> {
+    let row = sqlx::query(
+        "select stripe_subscription_id, stripe_price_id, plan, interval, status, cancel_at
+         from abonnement_stripe
+         where company_id = $1 and canceled_at is null",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| StripeAbo {
+        stripe_subscription_id: r.get("stripe_subscription_id"),
+        stripe_price_id: r.get("stripe_price_id"),
+        plan: r.get("plan"),
+        interval: r.get("interval"),
+        status: r.get("status"),
+        cancel_at: r.get("cancel_at"),
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub struct StripeAboEier {
+    pub company_id: Uuid,
+    pub plan: String,
+    pub interval: String,
+}
+
+/// Resolves a Stripe subscription id to the company it belongs to. The
+/// webhook for `invoice.paid` carries only the subscription, so this is
+/// how a payment finds its customer — and a cancelled subscription still
+/// resolves, because its final invoice may arrive after cancellation.
+pub async fn stripe_abo_by_subscription(
+    pool: &PgPool,
+    subscription_id: &str,
+) -> Result<Option<StripeAboEier>> {
+    let row = sqlx::query(
+        "select company_id, plan, interval from abonnement_stripe
+         where stripe_subscription_id = $1",
+    )
+    .bind(subscription_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| StripeAboEier {
+        company_id: r.get("company_id"),
+        plan: r.get("plan"),
+        interval: r.get("interval"),
+    }))
+}
+
+/// Records a subscription created at Stripe, and opens coverage in the
+/// same transaction. Coverage is OPEN-ENDED: it recurs until cancelled,
+/// so there is no end date to write until somebody cancels.
+pub async fn lagre_stripe_abo(
+    pool: &PgPool,
+    company_id: Uuid,
+    subscription_id: &str,
+    price_id: &str,
+    plan: &str,
+    interval: &str,
+    status: &str,
+    av: &str,
+) -> Result<bool> {
+    let mut tx = pool.begin().await?;
+    let ny = sqlx::query(
+        "insert into abonnement_stripe
+             (company_id, stripe_subscription_id, stripe_price_id, plan, interval, status)
+         values ($1,$2,$3,$4,$5,$6)
+         on conflict (stripe_subscription_id) do nothing",
+    )
+    .bind(company_id)
+    .bind(subscription_id)
+    .bind(price_id)
+    .bind(plan)
+    .bind(interval)
+    .bind(status)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if ny == 0 {
+        return Ok(false); // webhook-replay
+    }
+    // Coverage only if the company does not already have an open row —
+    // an existing customer on the old rail keeps the one it has.
+    let dekket: bool = sqlx::query_scalar(
+        "select exists(select 1 from abonnement
+                        where company_id = $1 and valid_to is null)",
+    )
+    .bind(company_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !dekket {
+        sqlx::query(
+            "insert into abonnement (id, company_id, plan, valid_from, valid_to, note, created_by)
+             values ($1,$2,$3,current_date,null,$4,$5)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(company_id)
+        .bind(plan)
+        .bind(format!("Stripe-abonnement {subscription_id}"))
+        .bind(av)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Mirrors Stripe's own status. Never touches coverage — access is
+/// governed by the coverage rows alone, so a `past_due` at Stripe does
+/// not silently lock anyone out while Stripe is still retrying.
+pub async fn oppdater_stripe_status(
+    pool: &PgPool,
+    subscription_id: &str,
+    status: &str,
+    cancel_at: Option<chrono::DateTime<Utc>>,
+) -> Result<()> {
+    sqlx::query(
+        "update abonnement_stripe
+            set status = $2, cancel_at = $3, updated_at = now()
+          where stripe_subscription_id = $1",
+    )
+    .bind(subscription_id)
+    .bind(status)
+    .bind(cancel_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The subscription ended at Stripe: close the row AND the coverage, in
+/// one transaction. `til` is exclusive, as everywhere else.
+pub async fn avslutt_stripe_abo(
+    pool: &PgPool,
+    subscription_id: &str,
+    til: NaiveDate,
+) -> Result<Option<Uuid>> {
+    let mut tx = pool.begin().await?;
+    let company: Option<Uuid> = sqlx::query_scalar(
+        "update abonnement_stripe
+            set canceled_at = now(), status = 'canceled', updated_at = now()
+          where stripe_subscription_id = $1 and canceled_at is null
+          returning company_id",
+    )
+    .bind(subscription_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(company) = company else {
+        return Ok(None); // already closed — replay
+    };
+    sqlx::query(
+        "update abonnement set valid_to = $2
+          where company_id = $1 and valid_to is null and valid_from < $2",
+    )
+    .bind(company)
+    .bind(til)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Some(company))
+}
+
+/// A paid Stripe subscription invoice, booked the regnmed way.
+///
+/// The customer pays Stripe, but bokføringsloven still wants this sale in
+/// the ops company's own hovedbok — so ONE transaction issues the faktura
+/// through the ordinary engine (gap-free number, KID, reskontro), posts
+/// the payment against it, matches the two, and logs the charge.
+/// The faktura is therefore "paid" by construction rather than by a flag:
+/// its receivable is fully matched the moment it exists.
+///
+/// Idempotent on the Stripe invoice id: a redelivered webhook returns
+/// `false` and changes nothing.
+#[allow(clippy::too_many_arguments)]
+pub async fn bokfor_stripe_betaling(
+    pool: &PgPool,
+    drift_company_id: Uuid,
+    kunde: Uuid,
+    stripe_invoice_id: &str,
+    payment_intent_id: &str,
+    brutto_ore: i64,
+    plan: &str,
+    periode: &str,
+    idag: NaiveDate,
+) -> Result<bool> {
+    ensure!(brutto_ore > 0, "betalingen må være positiv");
+
+    // Same self-configuring setup the monthly run does.
+    crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
+    for (nr, navn) in [
+        ("1500", "Kundefordringer"),
+        ("1570", "Kortoppgjør"),
+        ("2700", "Utgående mva"),
+        ("3000", "Salgsinntekt, avgiftspliktig"),
+    ] {
+        crate::ensure_account(pool, drift_company_id, nr, navn).await?;
+    }
+    crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
+
+    let (kunde_orgnr, kunde_navn): (String, String) =
+        sqlx::query_as("select orgnr, name from company where id = $1")
+            .bind(kunde)
+            .fetch_one(pool)
+            .await?;
+    let party_no: Option<String> = sqlx::query_scalar(
+        "select party_no from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
+    )
+    .bind(drift_company_id)
+    .bind(&kunde_orgnr)
+    .fetch_optional(pool)
+    .await?;
+    let party_no = match party_no {
+        Some(no) => no,
+        None => {
+            crate::reskontro::create_party(
+                pool,
+                drift_company_id,
+                "kunde",
+                &kunde_navn,
+                Some(&kunde_orgnr),
+                None,
+            )
+            .await?
+            .1
+        }
+    };
+
+    // The Stripe price is GROSS; the faktura line wants the base, and the
+    // engine adds mva back at the rate valid on the invoice date. Using
+    // split_gross here (rather than trusting Stripe) keeps one authority
+    // for Norwegian mva: ours.
+    let rates = crate::mva::load_vat_rates(pool).await?;
+    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", idag)
+        .context("ingen ordinær mva-sats for betalingsdatoen — satsregisteret må dekke datoen")?;
+    let (netto, _mva) = regnmed_core::mva::split_gross(brutto_ore, rate_bp);
+
+    let mut tx = pool.begin().await?;
+
+    // The log row references the faktura, so it cannot be written before
+    // one exists — the cheap check comes first, and the unique index on
+    // stripe_invoice_id is what actually decides a genuine race: the
+    // loser's INSERT fails and takes its whole transaction, faktura
+    // included, with it. No Stripe invoice is ever booked twice.
+    let finnes: bool = sqlx::query_scalar(
+        "select exists(select 1 from kortbetaling where stripe_invoice_id = $1)",
+    )
+    .bind(stripe_invoice_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if finnes {
+        return Ok(false);
+    }
+
+    let draft = crate::invoice::InvoiceDraft {
+        party_no,
+        invoice_date: idag,
+        due_date: idag,
+        journal_code: "GL".into(),
+        receivable_account: "1500".into(),
+        vat_account: "2700".into(),
+        valuta: None,
+        valuta_kurs_micro: None,
+        lines: vec![crate::invoice::InvoiceLineDraft {
+            description: format!("regnmed {plan} — {periode}"),
+            account_number: "3000".into(),
+            quantity_milli: 1000,
+            unit_price_ore: netto,
+            vat_code: Some("3".into()),
+            avdeling: None,
+            prosjekt: None,
+            product_id: None,
+        }],
+    };
+    let utstedt = crate::invoice::create_invoice_in(
+        pool,
+        &mut tx,
+        drift_company_id,
+        &draft,
+        "Stripe-abonnement (webhook)",
+        None,
+    )
+    .await?;
+
+    let gross = utstedt.gross_ore;
+    let voucher = regnmed_core::voucher::VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: idag,
+        description: format!("Kortbetaling abonnement, faktura {}", utstedt.invoice_no),
+        reverses: None,
+        entries: vec![
+            regnmed_core::voucher::EntryDraft {
+                account_number: "1570".into(),
+                amount: regnmed_core::Ore(gross),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            regnmed_core::voucher::EntryDraft {
+                account_number: "1500".into(),
+                amount: regnmed_core::Ore(-gross),
+                vat_code: None,
+                description: None,
+                party_no: Some(
+                    sqlx::query_scalar::<_, String>(
+                        "select p.party_no from invoice i join party p on p.id = i.party_id
+                         where i.id = $1",
+                    )
+                    .bind(utstedt.invoice_id)
+                    .fetch_one(&mut *tx)
+                    .await?,
+                ),
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    let posted = crate::post_voucher_in(
+        &mut tx,
+        drift_company_id,
+        &voucher,
+        "Stripe-abonnement (webhook)",
+    )
+    .await?;
+
+    let receivable_entry: Uuid =
+        sqlx::query_scalar("select receivable_entry_id from invoice where id = $1")
+            .bind(utstedt.invoice_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let betalings_entry: Uuid =
+        sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
+            .bind(posted.id)
+            .fetch_one(&mut *tx)
+            .await?;
+    sqlx::query(
+        "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+         values ($1,$2,$3,$4,'Stripe-abonnement (webhook)')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(receivable_entry)
+    .bind(betalings_entry)
+    .bind(gross)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "insert into kortbetaling
+             (id, company_id, invoice_id, payment_intent_id, status, belop_ore, stripe_invoice_id)
+         values ($1,$2,$3,$4,'succeeded',$5,$6)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(kunde)
+    .bind(utstedt.invoice_id)
+    .bind(payment_intent_id)
+    .bind(gross)
+    .bind(stripe_invoice_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // The month is now invoiced: the monthly cron must not issue a second
+    // faktura for the same company and month.
+    sqlx::query(
+        "insert into abonnement_faktura_run (id, company_id, ar, maned, invoice_id)
+         values ($1,$2,$3,$4,$5)
+         on conflict (company_id, ar, maned) do nothing",
+    )
+    .bind(Uuid::new_v4())
+    .bind(kunde)
+    .bind(idag.year())
+    .bind(idag.month() as i32)
+    .bind(utstedt.invoice_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// A new row in the price list (the price is dated data — a change is a
 /// new row with its kilde, never a rewrite; docs/abonnement.md §4).
 pub async fn sett_pris(
@@ -347,6 +743,78 @@ pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
             kilde: r.get("kilde"),
         })
         .collect())
+}
+
+/// The Stripe Price currently mirroring a plan+interval, if one has been
+/// synced. Newest row wins — a price change adds a row, never rewrites.
+pub async fn stripe_price_for(
+    pool: &PgPool,
+    plan: &str,
+    interval: &str,
+) -> Result<Option<(String, i64)>> {
+    let row = sqlx::query(
+        "select stripe_price_id, brutto_ore from abonnement_stripe_price
+         where plan = $1 and interval = $2
+         order by created_at desc limit 1",
+    )
+    .bind(plan)
+    .bind(interval)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| (r.get("stripe_price_id"), r.get("brutto_ore"))))
+}
+
+/// Records a Stripe Price created from our price list.
+pub async fn lagre_stripe_price(
+    pool: &PgPool,
+    plan: &str,
+    interval: &str,
+    brutto_ore: i64,
+    stripe_price_id: &str,
+    kilde: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into abonnement_stripe_price
+             (plan, interval, brutto_ore, stripe_price_id, kilde)
+         values ($1,$2,$3,$4,$5)",
+    )
+    .bind(plan)
+    .bind(interval)
+    .bind(brutto_ore)
+    .bind(stripe_price_id)
+    .bind(kilde)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The gross (incl. mva) a plan costs for one billing interval, from OUR
+/// price list at the rate valid on `dato`.
+///
+/// Yearly is twelve times the monthly price unless the price list itself
+/// carries a `year` row — a discount for paying annually is a pricing
+/// decision (a new row with its kilde), never a multiplication hidden in
+/// code.
+pub async fn brutto_for(pool: &PgPool, plan: &str, interval: &str, dato: NaiveDate) -> Result<i64> {
+    let egen: Option<i64> = sqlx::query_scalar(
+        "select pris_ore_per_mnd from abonnement_pris
+         where plan = $1 and interval = $2 and valid_from <= $3
+         order by valid_from desc limit 1",
+    )
+    .bind(plan)
+    .bind(interval)
+    .bind(dato)
+    .fetch_optional(pool)
+    .await?;
+    let netto = match egen {
+        Some(n) => n,
+        None if interval == "year" => pris_pa(pool, plan, dato).await? * 12,
+        None => pris_pa(pool, plan, dato).await?,
+    };
+    let rates = crate::mva::load_vat_rates(pool).await?;
+    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", dato)
+        .context("ingen ordinær mva-sats for datoen — satsregisteret må dekke den")?;
+    Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
 }
 
 /// The price in force on a date, in øre per month excl. mva.
@@ -406,6 +874,11 @@ pub async fn fakturer_maned(
     // it.
     crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
 
+    // Companies on the Stripe rail are billed BY STRIPE and booked by the
+    // webhook. Excluding them here is what keeps the two rails from both
+    // invoicing the same month: the cron runs on the 1st, while Stripe
+    // bills on the subscription's own anniversary, so the run-log check
+    // alone would not save us — it would only notice after the fact.
     let kunder = sqlx::query(
         "select c.id, c.orgnr, c.name, a.plan
          from company c
@@ -414,6 +887,8 @@ pub async fn fakturer_maned(
            and a.valid_from <= $2
            and (a.valid_to is null or a.valid_to > $2)
            and ($3::uuid is null or c.id = $3)
+           and not exists (select 1 from abonnement_stripe s
+                            where s.company_id = c.id and s.canceled_at is null)
          order by c.name",
     )
     .bind(drift_company_id)

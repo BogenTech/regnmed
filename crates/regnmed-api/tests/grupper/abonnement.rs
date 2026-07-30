@@ -465,12 +465,65 @@ async fn a_card_charge_posts_once_and_only_once() {
 
 /// Card-first: with the card rail on, the abonnement cannot be started
 /// self-service without a card — and the error says what is missing.
+/// Signing up, on both rails.
+///
+/// WITHOUT the card rail (self-hosted, or invoicing agreed with ops) the
+/// coverage row is written directly and the company is active at once.
+///
+/// WITH the rail on, signup goes through Stripe Checkout in subscription
+/// mode instead — so the assertion that used to live here, that signup is
+/// refused until a card exists, is gone on purpose: Checkout collects the
+/// card as part of subscribing, and demanding one first would be two
+/// steps where Stripe offers one. What must still hold is that a company
+/// cannot end up with two live subscriptions, and that check runs BEFORE
+/// any call goes out to Stripe — which is also why it is testable here.
 #[tokio::test]
-async fn self_service_signup_requires_a_card_when_the_rail_is_on() {
+async fn signing_up_activates_directly_without_the_card_rail() {
+    let Some((state, _idp, company, admin)) = oppsett().await else {
+        return;
+    };
+    // Rail off: `state` from oppsett() has no StripeCfg.
+    let (kode, svar) = kall(
+        &state,
+        "POST",
+        &format!("/companies/{company}/subscription"),
+        &admin,
+        r#"{"plan":"standard"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(svar["status"], "aktiv");
+    assert_eq!(
+        regnmed_db::abonnement::status_for(&state.pool, company)
+            .await
+            .unwrap()
+            .slug(),
+        "aktiv"
+    );
+}
+
+/// One live subscription per company. The guard sits before any Stripe
+/// call, so a double click cannot start a second one that would then bill
+/// the customer twice every month until somebody noticed.
+#[tokio::test]
+async fn a_company_cannot_start_a_second_subscription() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
     let state = with_stripe(&state, "999999999");
+    regnmed_db::abonnement::lagre_stripe_abo(
+        &state.pool,
+        company,
+        &format!("sub_{}", Uuid::new_v4()),
+        "price_x",
+        "standard",
+        "month",
+        "active",
+        "test",
+    )
+    .await
+    .unwrap();
+
     let (kode, svar) = kall(
         &state,
         "POST",
@@ -484,29 +537,126 @@ async fn self_service_signup_requires_a_card_when_the_rail_is_on() {
         svar["error"]
             .as_str()
             .unwrap_or_default()
-            .contains("betalingskort"),
+            .contains("løpende abonnement"),
         "{svar}"
     );
+}
 
-    // With a card "in place" (stored directly — the checkout flow is
-    // Stripe's) the signup goes through, and the status becomes active.
-    regnmed_db::abonnement::lagre_kort(&state.pool, company, "cus_x", "pm_x", "visa", "4242")
+/// A Stripe subscription recurs until it is cancelled — the whole point
+/// of moving the abonnement our customers pay US for onto Stripe.
+///
+/// Driven entirely through webhooks, which is honest: no call goes OUT to
+/// Stripe here, so the test proves our side of the contract without a
+/// mock pretending to be theirs.
+///
+/// What must hold, in order:
+///   1. `customer.subscription.created` opens coverage — the customer is
+///      active because Stripe says the subscription exists.
+///   2. `invoice.paid` books it OUR way: a faktura through the ordinary
+///      engine, the payment against it, and the reskontro closed — so the
+///      sale is in the drift company's hovedbok as bokføringsloven wants,
+///      whoever collected the money.
+///   3. A REDELIVERED `invoice.paid` books NOTHING. Stripe retries
+///      webhooks, so this is not hypothetical.
+///   4. `customer.subscription.deleted` closes the coverage.
+#[tokio::test]
+async fn a_stripe_subscription_recurs_until_cancelled() {
+    let Some((state, _idp, kunde, _admin)) = oppsett().await else {
+        return;
+    };
+    let drift_orgnr = unique_orgnr();
+    let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
         .await
         .unwrap();
-    let (kode, svar) = kall(
-        &state,
-        "POST",
-        &format!("/companies/{company}/subscription"),
-        &admin,
-        r#"{"plan":"standard"}"#,
-    )
+    let state = with_stripe(&state, &drift_orgnr);
+    let sub_id = format!("sub_test_{}", Uuid::new_v4());
+
+    let send = async |body: serde_json::Value| -> (StatusCode, serde_json::Value) {
+        let payload = serde_json::to_vec(&body).unwrap();
+        let sig = regnmed_gov::stripe::sign_webhook(&payload, "whsec_test", Utc::now().timestamp());
+        webhook_post(&state, &payload, &sig).await
+    };
+
+    // 1. Subscription created → coverage opens.
+    let (kode, svar) = send(serde_json::json!({
+        "type": "customer.subscription.created",
+        "data": { "object": {
+            "id": sub_id,
+            "status": "active",
+            "metadata": { "regnmed_company_id": kunde.to_string() },
+            "items": { "data": [ { "price": {
+                "id": "price_test", "recurring": { "interval": "month" },
+                "metadata": { "regnmed_plan": "standard" }
+            } } ] },
+        }}
+    }))
     .await;
     assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(svar["handled"], "abonnement_opprettet");
     assert_eq!(
-        regnmed_db::abonnement::status_for(&state.pool, company)
+        regnmed_db::abonnement::status_for(&state.pool, kunde)
             .await
             .unwrap()
             .slug(),
-        "aktiv"
+        "aktiv",
+        "et opprettet Stripe-abonnement skal gi dekning"
+    );
+
+    // 2. First payment → faktura + payment + closed reskontro, in OUR books.
+    let stripe_invoice = format!("in_test_{}", Uuid::new_v4());
+    let betalt = serde_json::json!({
+        "type": "invoice.paid",
+        "data": { "object": {
+            "id": stripe_invoice,
+            "subscription": sub_id,
+            "amount_paid": 12_375i64,   // 99 kr + 25 % mva
+            "payment_intent": format!("pi_{stripe_invoice}"),
+            "lines": { "data": [ { "description": "regnmed standard — august 2026" } ] },
+        }}
+    });
+    let (kode, svar) = send(betalt.clone()).await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(svar["handled"], "bokfort");
+
+    let (fakturaer, rest): (i64, i64) = sqlx::query_as(
+        "select count(*)::bigint,
+                coalesce(sum(e.amount_ore
+                    - coalesce((select sum(m.amount_ore) from reskontro_match m
+                                 where m.entry_a = e.id), 0)), 0)::bigint
+         from invoice i join entry e on e.id = i.receivable_entry_id
+         where i.company_id = $1",
+    )
+    .bind(drift)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(fakturaer, 1, "betalingen skulle gitt én faktura");
+    assert_eq!(rest, 0, "fakturaen skulle vært lukket av betalingen");
+
+    // 3. Stripe redelivers the same event — nothing is booked twice.
+    let (kode, svar) = send(betalt).await;
+    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(svar["handled"], "replay", "en replay skal ikke bokføre");
+    let fakturaer: i64 = sqlx::query_scalar("select count(*) from invoice where company_id = $1")
+        .bind(drift)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(fakturaer, 1, "replay skulle ikke gitt en ny faktura");
+
+    // 4. Cancelled → coverage closes.
+    let (kode, svar) = send(serde_json::json!({
+        "type": "customer.subscription.deleted",
+        "data": { "object": { "id": sub_id, "status": "canceled" } }
+    }))
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(svar["handled"], "abonnement_avsluttet");
+    assert!(
+        regnmed_db::abonnement::stripe_abo_for(&state.pool, kunde)
+            .await
+            .unwrap()
+            .is_none(),
+        "et oppsagt abonnement skal ikke lenger regnes som løpende"
     );
 }

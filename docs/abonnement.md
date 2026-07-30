@@ -100,6 +100,68 @@ måneden; kundeparten opprettes fra selskapets orgnr ved første kjøring.
 Innbetalingen kommer inn som alle andre — OCR/bank på KID — og lukker
 reskontroposten. Purremaskineriet (#29) håndterer resten.
 
+### 5.1 To bruk av Stripe som ikke må forveksles
+
+Setningen «aldri Stripe Billing» over gjelder **vår fakturamotor** —
+fakturaene kundene våre sender til *sine* kunder. Den er produktet, og
+den skal aldri outsources.
+
+**Abonnementet kundene betaler OSS er en annen sak.** Der er Stripe
+leverandøren, og fra 2026-07-30 brukes deres **Subscriptions**: trekket
+gjentar seg til noen sier opp, Stripe eier gjentakelsen og
+purre-/nyforsøksklokka, og kortdata når oss aldri — vi har ingen ønske
+om å være PCI-compliant, og da skal kortet ligge hos en som er det.
+
+Det som fortsatt er VÅRT, og hvorfor:
+
+| Ting | Hvor | Hvorfor ikke hos Stripe |
+| --- | --- | --- |
+| Dekningsradene (`abonnement`) | Postgres | Sperreregelen i §1 er regnmed-oppførsel; ingen betalingsleverandør vet at lesing og eksport alltid skal virke |
+| Prøvetid/frist/sperret | `regnmed-core::abonnement` | Ren, enhetstestet logikk — beregnet, aldri lagret |
+| Prislisten (`abonnement_pris`) | Postgres | Datert data med kilde, som satsregisteret. Stripe-prisene OPPRETTES fra den |
+| Bokføringen | Driftsselskapets hovedbok | Bokføringsloven bryr seg ikke om hvem som krevde inn pengene |
+
+**To skinner går side om side med vilje.** Selskaper som alt hadde
+dekning (migrasjon 0041 ga alle en) fortsetter på månedsjobben med
+faktura og KID; bare NYE tegninger går via Stripe. Ingen pilotkunde
+tvinges til å taste kort på nytt for at vi skal bytte mekanikk.
+Månedsjobben hopper over selskaper med et løpende Stripe-abonnement —
+og det er en eksplisitt utelukkelse i spørringen, ikke bare
+kjøringsloggen: jobben går den 1., Stripe trekker på abonnementets egen
+dato, så loggen ville oppdaget dobbeltfaktureringen først etterpå.
+
+Flyten (migrasjon 0045, alle ledd idempotente):
+
+1. Admin velger plan og intervall i portalen → Stripe Checkout i
+   **abonnementsmodus**. Kortet lagres og gjentakelsen starter i ett
+   steg.
+2. `customer.subscription.created` åpner dekningen. Det er
+   betalingsleverandørens bekreftelse som gjør tegningen ekte, ikke vårt
+   eget klikk.
+3. `invoice.paid` bokfører **vår vei**: faktura gjennom den ordinære
+   motoren (gap-frie nummer, KID, reskontro), betalingsbilag mot den, og
+   reskontroposten lukket — alt i ÉN transaksjon. Fakturaen er «betalt»
+   ved konstruksjon, ikke ved et flagg: fordringen er fullt matchet i det
+   øyeblikket den finnes. Beløpet fra Stripe er BRUTTO og splittes med
+   `split_gross` på satsen som gjaldt betalingsdagen — mva beregnes ett
+   sted, hos oss.
+4. `invoice.payment_failed` **logges bare**. Stripe forsøker igjen, og
+   dekningen står åpen imens: å sperre på ett feilet trekk ville tatt
+   hovedboken som gissel over et kort som kanskje går i morgen.
+5. `customer.subscription.deleted` lukker dekningen.
+
+**Oppsigelsen er selvbetjent** (`POST …/subscription/cancel`,
+`SELSKAP_ADMIN`) og skjer **ved periodeslutt** — kunden beholder det som
+er betalt for. Umiddelbar oppsigelse ville tatt bort tilgang som alt er
+kjøpt, som er det motsatte av §1.
+
+Stripe Tax er bevisst AV: vi kan den norske satsen fra satsregisteret,
+og en avgift beregnet to steder er en avgift som før eller siden
+spriker. Stripe-prisen er derfor brutto, og kunden ser hos Stripe
+nøyaktig det de betaler.
+
+### 5.2 Den opprinnelige kortskinnen
+
 **Kort er standardveien fra dag én** (#74, besluttet 2026-07-28):
 faktura+KID krever at noen *ser* innbetalingen — bankfiler importeres
 manuelt til det finnes bank-API — mens et korttrekk bekreftes av en

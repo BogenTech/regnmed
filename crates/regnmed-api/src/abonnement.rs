@@ -1,12 +1,22 @@
-//! Abonnement i portalen + kortskinnen (#65, #74 — docs/abonnement.md).
+//! Abonnement i portalen (#65, #74 — docs/abonnement.md §5).
 //!
-//! Self-service is card-first: an admin adds a card (Stripe Checkout in
-//! setup mode — card data never touches us) and starts the abonnement
-//! themselves. The webhook is the only source of "paid", and it is
-//! idempotent all the way down (unique payment_intent in the log).
+//! Self-service signup goes through Stripe Checkout in SUBSCRIPTION mode:
+//! the card is stored and the recurring schedule starts in one step, and
+//! it keeps recurring until somebody cancels. Stripe owns the repetition
+//! and the retry clock; card data never touches us.
 //!
-//! Without STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET the card rail is OFF
-//! and the endpoints say so — the NATS pattern, no pretending.
+//! What stays ours, and is the reason this module is not a thin proxy:
+//! the coverage rows the access guard reads, the price list the Stripe
+//! Prices are created FROM, and the bookkeeping — every paid invoice
+//! becomes a voucher in the ops company's hovedbok, because
+//! bokføringsloven does not care who collected the money.
+//!
+//! The webhook is the only source of "paid", and it is idempotent all the
+//! way down (unique payment_intent and stripe_invoice_id in the log).
+//!
+//! Without STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET the card rail is OFF:
+//! signup writes the coverage row directly, which is how ops-agreed
+//! invoicing works — the NATS pattern, no pretending.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -57,12 +67,25 @@ pub async fn subscription_status(
         })
         .map(|p| json!({ "plan": p.plan, "pris_ore_per_mnd": p.pris_ore_per_mnd }))
         .collect();
+    // The Stripe subscription, when the company is on that rail. Its
+    // presence is what tells the portal to offer "si opp" rather than
+    // "kontakt drift" — companies from before the Stripe rail keep the
+    // old arrangement and have nothing to cancel here.
+    let abo = regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id).await?;
     Ok(Json(json!({
         "status": status.slug(),
         "dato": dato.map(|d| d.to_string()),
         "planer": planer,
         "kort": kort.filter(|k| k.aktiv).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
         "kort_mulig": state.stripe.is_some(),
+        "abonnement": abo.map(|a| json!({
+            "plan": a.plan,
+            "interval": a.interval,
+            "status": a.status,
+            // Set once cancelled: the day coverage actually ends. Until
+            // then the customer keeps what they have paid for.
+            "sies_opp": a.cancel_at.map(|d| d.date_naive().to_string()),
+        })),
     })))
 }
 
@@ -126,50 +149,142 @@ pub async fn card_setup(
 #[derive(Deserialize)]
 pub struct StartRequest {
     pub plan: String,
+    /// `month` (default) or `year`.
+    #[serde(default)]
+    pub interval: Option<String>,
+    #[serde(default)]
+    pub return_path: Option<String>,
 }
 
-/// Selvbetjent tegning: admin starter abonnementet fra portalen.
-/// Card-first — without an active card, invoicing must be arranged with ops.
+/// Finds — or creates — the Stripe Price mirroring our price list for a
+/// plan and interval.
+///
+/// OUR list stays authoritative: the Price is created FROM it, never the
+/// other way round, and a price change makes a new immutable Stripe Price
+/// rather than editing one. Existing subscriptions keep the Price they
+/// were created with, which is grandfathering for free — the same
+/// property dated price rows give us everywhere else.
+async fn sync_price(
+    state: &AppState,
+    cfg: &StripeCfg,
+    plan: &str,
+    interval: &str,
+    idag: chrono::NaiveDate,
+) -> Result<String, ApiError> {
+    let brutto = regnmed_db::abonnement::brutto_for(&state.pool, plan, interval, idag).await?;
+    if let Some((price_id, kjent)) =
+        regnmed_db::abonnement::stripe_price_for(&state.pool, plan, interval).await?
+    {
+        if kjent == brutto {
+            return Ok(price_id);
+        }
+    }
+    let navn = format!("regnmed {plan}");
+    let price_id = client(cfg)
+        .create_price(&navn, brutto, interval, plan)
+        .await?;
+    regnmed_db::abonnement::lagre_stripe_price(
+        &state.pool,
+        plan,
+        interval,
+        brutto,
+        &price_id,
+        &format!("synkronisert fra prislisten {idag}"),
+    )
+    .await?;
+    Ok(price_id)
+}
+
+/// Selvbetjent tegning. With Stripe configured this returns a Checkout
+/// URL in SUBSCRIPTION mode: the card is stored and the recurring
+/// schedule starts in one step, and it keeps recurring until somebody
+/// cancels. Coverage is opened by the webhook, not here — the payment
+/// provider confirming is what makes it real.
+///
+/// Without Stripe (self-hosted, no card rail) it falls back to writing
+/// the coverage row directly, which is how ops-agreed invoicing works.
 pub async fn start_subscription(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(request): Json<StartRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
     let idag = chrono::Utc::now().date_naive();
+    let interval = request.interval.as_deref().unwrap_or("month");
+    if interval != "month" && interval != "year" {
+        return Err(ApiError::BadRequest(
+            "intervallet må være «month» eller «year»".into(),
+        ));
+    }
     regnmed_db::abonnement::pris_pa(&state.pool, &request.plan, idag)
         .await
         .map_err(|_| ApiError::BadRequest("ukjent plan".into()))?;
-    if state.stripe.is_some() {
-        let kort = regnmed_db::abonnement::kort_for(&state.pool, company_id).await?;
-        if !kort.map(|k| k.aktiv).unwrap_or(false) {
-            return Err(ApiError::BadRequest(
-                "legg inn et betalingskort først — kortet er standardveien; fakturaavtale gjøres med drift".into(),
-            ));
-        }
-    }
-    if regnmed_db::abonnement::status_for(&state.pool, company_id)
+
+    if regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id)
         .await?
-        .slug()
-        == "aktiv"
+        .is_some()
     {
         return Err(ApiError::BadRequest(
-            "abonnementet er allerede aktivt".into(),
+            "selskapet har allerede et løpende abonnement".into(),
         ));
     }
-    let navn = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::abonnement::tegn(
-        &state.pool,
-        company_id,
-        &request.plan,
-        idag,
-        None,
-        &format!("selvbetjent i portalen av {navn}"),
-        navn,
-    )
-    .await?;
-    Ok(Json(json!({ "status": "aktiv" })))
+
+    let Some(cfg) = &state.stripe else {
+        // No card rail: ops-agreed invoicing, coverage written directly.
+        if regnmed_db::abonnement::status_for(&state.pool, company_id)
+            .await?
+            .slug()
+            == "aktiv"
+        {
+            return Err(ApiError::BadRequest(
+                "abonnementet er allerede aktivt".into(),
+            ));
+        }
+        let navn = person.name.as_deref().unwrap_or(&person.sub);
+        regnmed_db::abonnement::tegn(
+            &state.pool,
+            company_id,
+            &request.plan,
+            idag,
+            None,
+            &format!("selvbetjent i portalen av {navn}"),
+            navn,
+        )
+        .await?;
+        return Ok(Json(json!({ "status": "aktiv" })));
+    };
+
+    let price_id = sync_price(&state, cfg, &request.plan, interval, idag).await?;
+    let stripe = client(cfg);
+    let customer = match regnmed_db::abonnement::kort_for(&state.pool, company_id).await? {
+        Some(kort) => kort.stripe_customer_id,
+        None => {
+            let (navn, orgnr): (String, String) =
+                sqlx::query_as("select name, orgnr from company where id = $1")
+                    .bind(company_id)
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(anyhow::Error::from)?;
+            stripe
+                .create_customer(&company_id.to_string(), &navn, &orgnr)
+                .await?
+        }
+    };
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let path = request
+        .return_path
+        .unwrap_or_else(|| format!("/#/c/{company_id}/oversikt"));
+    let url = format!("{origin}{path}");
+    let checkout = stripe
+        .create_subscription_session(&customer, &price_id, &company_id.to_string(), &url, &url)
+        .await?;
+    Ok(Json(json!({ "url": checkout })))
 }
 
 /// Stripe's webhook. An OPEN route (no AuthPerson) — authenticated by the
@@ -257,8 +372,144 @@ pub async fn stripe_webhook(
                 json!({ "handled": if ny { "bokfort" } else { "replay" } }),
             ))
         }
+        // --- Stripe Subscriptions: the abonnement paid to US ---------
+        "customer.subscription.created" | "customer.subscription.updated" => {
+            let sub_id = object["id"].as_str().unwrap_or_default();
+            if sub_id.is_empty() {
+                return Err(ApiError::BadRequest("abonnement uten id".into()));
+            }
+            let status = object["status"].as_str().unwrap_or("unknown");
+            let cancel_at = object["cancel_at"]
+                .as_i64()
+                .and_then(|t| chrono::DateTime::from_timestamp(t, 0));
+            let company: Option<Uuid> = object["metadata"]["regnmed_company_id"]
+                .as_str()
+                .and_then(|s| s.parse().ok());
+            let price = object["items"]["data"][0]["price"].clone();
+            let price_id = price["id"].as_str().unwrap_or_default();
+            let interval = price["recurring"]["interval"].as_str().unwrap_or("month");
+            let plan = price["metadata"]["regnmed_plan"].as_str().unwrap_or("");
+
+            if let Some(company) = company {
+                let ny = regnmed_db::abonnement::lagre_stripe_abo(
+                    &state.pool,
+                    company,
+                    sub_id,
+                    price_id,
+                    plan,
+                    interval,
+                    status,
+                    "Stripe (webhook)",
+                )
+                .await?;
+                if ny {
+                    return Ok(Json(json!({ "handled": "abonnement_opprettet" })));
+                }
+            }
+            // Already known — mirror the status. Coverage is NOT touched:
+            // `past_due` at Stripe means Stripe is still retrying, and
+            // locking the customer out mid-retry would take the hovedbok
+            // hostage over a card that may well go through tomorrow.
+            regnmed_db::abonnement::oppdater_stripe_status(&state.pool, sub_id, status, cancel_at)
+                .await?;
+            Ok(Json(json!({ "handled": "status_oppdatert" })))
+        }
+        "customer.subscription.deleted" => {
+            let sub_id = object["id"].as_str().unwrap_or_default();
+            let idag = chrono::Utc::now().date_naive();
+            match regnmed_db::abonnement::avslutt_stripe_abo(&state.pool, sub_id, idag).await? {
+                Some(_) => Ok(Json(json!({ "handled": "abonnement_avsluttet" }))),
+                None => Ok(Json(json!({ "handled": "replay" }))),
+            }
+        }
+        "invoice.paid" => {
+            let stripe_invoice = object["id"].as_str().unwrap_or_default();
+            let sub_id = object["subscription"].as_str().unwrap_or_default();
+            if stripe_invoice.is_empty() || sub_id.is_empty() {
+                // Not a subscription invoice — nothing of ours.
+                return Ok(Json(json!({ "handled": "ignorert" })));
+            }
+            let Some(abo) =
+                regnmed_db::abonnement::stripe_abo_by_subscription(&state.pool, sub_id).await?
+            else {
+                return Ok(Json(json!({ "handled": "ukjent_abonnement" })));
+            };
+            let drift = drift_company(&state).await?;
+            let brutto = object["amount_paid"].as_i64().unwrap_or(0);
+            let intent = object["payment_intent"].as_str().unwrap_or(stripe_invoice);
+            let periode = object["lines"]["data"][0]["description"]
+                .as_str()
+                .unwrap_or("abonnement")
+                .to_string();
+            let idag = chrono::Utc::now().date_naive();
+            let ny = regnmed_db::abonnement::bokfor_stripe_betaling(
+                &state.pool,
+                drift,
+                abo.company_id,
+                stripe_invoice,
+                intent,
+                brutto,
+                &abo.plan,
+                &periode,
+                idag,
+            )
+            .await?;
+            Ok(Json(
+                json!({ "handled": if ny { "bokfort" } else { "replay" } }),
+            ))
+        }
+        "invoice.payment_failed" => {
+            // Logged only. Stripe's own retries chase the card, and the
+            // coverage row stays open while they do — the sperre comes
+            // from customer.subscription.deleted when Stripe finally
+            // gives up, not from a single failed attempt.
+            eprintln!(
+                "Stripe-trekk feilet (abonnement {}, faktura {}) — Stripe forsøker igjen",
+                object["subscription"].as_str().unwrap_or("?"),
+                object["id"].as_str().unwrap_or("?")
+            );
+            Ok(Json(json!({ "handled": "logget" })))
+        }
         _ => Ok(Json(json!({ "handled": "ignorert" }))),
     }
+}
+
+/// Selvbetjent oppsigelse. Cancels AT PERIOD END — the customer keeps
+/// what they have already paid for, and the coverage row is closed by
+/// `customer.subscription.deleted` when Stripe's period actually runs
+/// out. Cancelling immediately would take away access that is bought and
+/// paid, which is the opposite of docs/abonnement.md §1.
+pub async fn cancel_subscription(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    let Some(cfg) = &state.stripe else {
+        return Err(ApiError::BadRequest(
+            "kortbetaling er ikke satt opp på denne installasjonen".into(),
+        ));
+    };
+    let Some(abo) = regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id).await? else {
+        return Err(ApiError::BadRequest(
+            "selskapet har ikke et Stripe-abonnement å si opp — ta kontakt med drift".into(),
+        ));
+    };
+    let (status, cancel_at) = client(cfg)
+        .cancel_subscription_at_period_end(&abo.stripe_subscription_id)
+        .await?;
+    let cancel_at_dt = cancel_at.and_then(|t| chrono::DateTime::from_timestamp(t, 0));
+    regnmed_db::abonnement::oppdater_stripe_status(
+        &state.pool,
+        &abo.stripe_subscription_id,
+        &status,
+        cancel_at_dt,
+    )
+    .await?;
+    Ok(Json(json!({
+        "status": status,
+        "gjelder_til": cancel_at_dt.map(|d| d.date_naive().to_string()),
+    })))
 }
 
 async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {

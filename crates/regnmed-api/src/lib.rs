@@ -481,6 +481,10 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/subscription/card-setup",
             axum::routing::post(abonnement::card_setup),
         )
+        .route(
+            "/companies/{company_id}/subscription/cancel",
+            axum::routing::post(abonnement::cancel_subscription),
+        )
         // Open route: authenticated by the webhook signature, not by a token.
         .route(
             "/stripe/webhook",
