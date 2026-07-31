@@ -79,13 +79,16 @@ spec:
               value: "935115086"
             - name: MAIL_IN_DOMAIN
               value: bilag.regnmed.no
-            - name: STRIPE_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: stripe-credentials
-                  key: secret-key
-            - name: STRIPE_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: stripe-credentials
-                  key: webhook-secret
+            # STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are deliberately
+            # ABSENT: the card rail is off in production for now, and the
+            # portal says so rather than pretending. Everything else works
+            # — hovedbok, faktura, rapporter, onboarding.
+            #
+            # Restoring them is the two blocks kept in the header comment
+            # plus creating the secret. Do BOTH at once: the API requires
+            # both keys or neither, so half the pair only turns the rail
+            # off again with a less obvious message.
+            #
+            # When they come back they must be LIVE-mode values. A
+            # test-mode key here would not fail — it would accept a real
+            # card, charge nothing, and still close the reskontro item.

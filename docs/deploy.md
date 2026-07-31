@@ -35,6 +35,19 @@ off-session, webhook posting the payment and closing the reskontro item
 `stripe-credentials` secret created out-of-band: docs/secrets.md is
 absolute, and `sk_test_…` is still a key.
 
+Det ga full uttelling 2026-07-31: den første ekte leveransen fra Stripe
+avslørte at `invoice.subscription` er FJERNET i API-versjon
+2026-05-27.dahlia (feltet ligger nå under
+`parent.subscription_details`). Webhooken svarte 200, Stripe førte
+leveransen som vellykket — og fakturaen ble aldri til. Ingen
+integrasjonstest kunne fanget det: testens payload var skrevet ut fra
+hva koden leser, så den bekreftet kodens egen antakelse. Samme dag
+avdekket en oppsigelse på tegningsdagen at dekningsraden ikke kunne
+lukkes (`valid_to > valid_from`), slik at selskapet beholdt tilgangen
+gratis. Begge feilene var USYNLIGE ovenfra — derfor kjøres ekte trafikk
+mot testmiljøet før produksjon, og derfor kontrolleres hovedboken
+etterpå, ikke svarkoden.
+
 `kubectl kustomize deploy/<overlay>` renders any of them; the restructure
 kept the local render byte-identical, so dev-cluster.sh is unchanged.
 
@@ -279,9 +292,19 @@ gjenglemt ClusterIssuer.
    én per modus, og en test-hemmelighet her gjør at hver eneste ekte
    hendelse avvises som usignert.
 
-   **BEGGE hemmelighetene må finnes FØR første apply, i BEGGE miljøene**
-   (`-n regnmed-test` for testmiljøet, med `sk_test_…`/`whsec_…` fra
-   Stripes testmodus). Mangler `stripe-credentials`, starter ikke
+   **I PRODUKSJON er kortskinnen foreløpig AV** (besluttet 2026-07-31 ved
+   første utrulling): `STRIPE_*` er tatt ut av
+   `deploy/prod/patches/regnmed-api.yaml`, så `stripe-credentials`
+   trengs ikke der ennå og portalen sier at kortbetaling ikke er
+   tilgjengelig. Å slå den på er de to blokkene som står igjen i
+   toppkommentaren i patchen, pluss hemmeligheten — og da med
+   **live**-verdier. En testnøkkel der ville ikke feilet: den ville tatt
+   imot et ekte kort, ikke trukket noe, og likevel lukket
+   reskontroposten.
+
+   **I TESTMILJØET må BEGGE hemmelighetene finnes FØR første apply**
+   (`-n regnmed-test`, med `sk_test_…`/`whsec_…` fra Stripes testmodus).
+   Mangler `stripe-credentials` mens patchen krever den, starter ikke
    regnmed-api i det hele tatt: poden blir stående i
    `CreateContainerConfigError` med «secret "stripe-credentials" not
    found», mens Postgres, migrasjonene og alt annet ser friskt ut.
