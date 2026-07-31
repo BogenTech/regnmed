@@ -943,9 +943,67 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    checkout) + Start abonnement (kort-først, SELSKAP_ADMIN — virker
    også sperret). Config STRIPE_SECRET_KEY+STRIPE_WEBHOOK_SECRET
    (begge eller ingen) + REGNMED_DRIFT_ORGNR på API-et; uten = skinnen
-   AV og portalen sier det. Live-verifisering venter på Stripe-konto.
-   **Next:** Maskinporten (awaiting Skatteetaten scope grant,
-   docs/gov.md),
+   AV og portalen sier det. Live-verifisert 2026-07-31 (punkt 56).
+55. ✅ Ekte Stripe-abonnement (docs/abonnement.md §5.1): abonnementet
+   fornyes til noen sier opp. Stripe eier GJENTAKELSEN, purreklokka og
+   kortet (derfor er PCI utenfor vårt omfang); alt annet blir hos oss —
+   dekningsradene tilgangsvakten leser, `prove/aktiv/frist/sperret`
+   (ren, beregnet, aldri lagret) og bokføringen. «ALDRI Stripe Billing»
+   står fortsatt, men gjelder VÅR fakturamotor, ikke abonnementet vi
+   selv selger: to produkter hadde blitt slått sammen under ett ord.
+   Migration 0045: `interval` på `abonnement_pris` (unik blir
+   plan+interval+valid_from), `abonnement_stripe` (unik delindeks
+   `where canceled_at is null`), `abonnement_stripe_price` insert-only,
+   `kortbetaling.stripe_invoice_id`. Prislisten er autoritativ:
+   Stripe-Prisen opprettes FRA den og er uforanderlig, så en
+   prisendring lager en NY Price mens løpende abonnementer beholder
+   sin — grandfathering gratis, samme egenskap som daterte rader gir
+   overalt ellers. `invoice.paid` utsteder fakturaen, bokfører
+   betalingen og lukker reskontroposten i ÉN tx: fakturaen er betalt
+   ved konstruksjon. Mislykket trekk SPERRER IKKE — Stripe prøver
+   igjen, og å ta hovedboken som gissel over ett forsøk er feil vei.
+   Oppsigelse gjelder ut perioden. Selskaper fra før blir på
+   månedskjøringen, uttrykkelig ekskludert i `fakturer_maned`: den går
+   den 1., Stripe på abonnementets egen dato, så kjøreloggen ville
+   først oppdaget dobbeltfaktureringen etterpå.
+56. ✅ **Produksjon i drift — v0.1.0 rullet ut 2026-07-31**
+   (docs/deploy.md): sha-a815ad6 på regnmed.no + api.regnmed.no +
+   id.regnmed.no. Flux følger semver-tagger (`>=0.1.0`) og HENTER;
+   GitHub dytter aldri, siden repoet er offentlig og clusteret står bak
+   NAT. Hjemmelab: k3s på fem noder (joda/mando/obiwan/luke/andor) med
+   Longhorn, MetalLB og Traefik bak nginx-proxy-manager, som fortsatt
+   eier 80/443 — cert-manager ligger staged i
+   `deploy/prod/cert-issuer.yaml` til Swarm-stackene er migrert.
+   Kortskinnen er BEVISST AV i prod. Driftsselskapet er BOGENTECH AS
+   (935115086) på BÅDE API-et og abonnement-CronJobben; spriker de,
+   utstedes fakturaene i én hovedbok mens betalingene bokføres i en
+   annen, og ingenting går opp.
+   LÆRDOMMEN: tre ekte feil ble funnet av EKTE Stripe-trafikk mot
+   testmiljøet, og alle tre svarte «vellykket» til noe.
+   (a) `invoice.subscription` er FJERNET i API 2026-05-27.dahlia
+   (ligger nå under `parent.subscription_details`) — webhooken svarte
+   200, Stripe førte leveransen som vellykket, og fakturaen ble aldri
+   til. (b) En oppsigelse på tegningsdagen kunne ikke lukke
+   dekningsraden (`valid_to > valid_from`), så selskapet beholdt
+   tilgangen gratis for alltid — og det kunne ikke selvhele, siden
+   `canceled_at` alt var satt og neste leveranse regnes som replay.
+   (c) En checkout-sesjon uten kort for oss ga 400, som Stripe prøver
+   på nytt i tre døgn før endepunktet deaktiveres.
+   Ingen av dem kunne fanges av integrasjonstestene: payloadene var
+   skrevet ut fra hva koden LESER, så de bekreftet kodens egen
+   antakelse. Testene bærer nå payload fanget fra EKTE leveranser, og
+   verifiseringen ser i hovedboken, ikke på svarkoden.
+   Nesten-tabben: prod-overlayet pekte på et image 18 commits bak, med
+   migrasjoner som stoppet FØR `abonnement_stripe` fantes — Flux ville
+   rullet det ut uten å klage. Prod skal peke på taggen testmiljøet
+   FAKTISK har kjørt.
+   IKKE i git, og derfor lett å glemme: OIDC-klienten
+   (`regnmed-portal`) registreres i regnids database med
+   `add-client --audience regnmed`. Uten `--audience` fungerer
+   innloggingen — og hvert API-kall svarer 401 uten spor noe sted.
+   **Next:** migrering av Swarm-stackene til k3s (så Traefik tar
+   80/443 og cert-manager erstatter NPM), Maskinporten (awaiting
+   Skatteetaten scope grant, docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),
    EHF-transport via aksesspunkt, API-tier per leverandør
    (#19-oppfølger), OCR-sidecar (#34-oppfølger).
