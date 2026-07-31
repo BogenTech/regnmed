@@ -712,4 +712,21 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
             .is_none(),
         "et oppsagt abonnement skal ikke lenger regnes som løpende"
     );
+
+    // The COVERAGE has to close too — closing only the subscription record
+    // leaves the access guard reading an open row, so the company keeps
+    // everything for free. Same day on purpose: taken out and cancelled in
+    // one run is exactly the case CHECK (valid_to > valid_from) made
+    // unclosable, and nothing reported it.
+    let apen: i64 = sqlx::query_scalar(
+        "select count(*) from abonnement where company_id = $1 and valid_to is null",
+    )
+    .bind(kunde)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        apen, 0,
+        "dekningen skulle vært avsluttet, ikke bare abonnementsraden"
+    );
 }

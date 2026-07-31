@@ -90,20 +90,23 @@ pub async fn tegn(
 
 /// Ends the open coverage: sets `valid_to` (EXCLUSIVE) on the company's
 /// open row. History is never touched.
+///
+/// `valid_to` is exclusive and the table requires `valid_to > valid_from`,
+/// so the shortest coverage that can be recorded is one day — which is
+/// also the truthful one: a subscription cancelled the day it was taken
+/// out DID cover that day, and was paid for it. Hence `greatest`, rather
+/// than refusing to close the row and leaving access open forever.
 pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<()> {
     let n = sqlx::query(
-        "update abonnement set valid_to = $2
-         where company_id = $1 and valid_to is null and valid_from < $2",
+        "update abonnement set valid_to = greatest($2, valid_from + 1)
+         where company_id = $1 and valid_to is null",
     )
     .bind(company_id)
     .bind(til)
     .execute(pool)
     .await?
     .rows_affected();
-    ensure!(
-        n > 0,
-        "ingen åpen dekning å avslutte (eller sluttdatoen er før startdatoen)"
-    );
+    ensure!(n > 0, "ingen åpen dekning å avslutte");
     Ok(())
 }
 
@@ -462,9 +465,15 @@ pub async fn avslutt_stripe_abo(
     let Some(company) = company else {
         return Ok(None); // already closed — replay
     };
+    // `greatest` for the same reason as in `avslutt`: a subscription taken
+    // out and cancelled the same day still covered that day. Without it the
+    // CHECK (valid_to > valid_from) made the update match nothing, the
+    // coverage row stayed open — and since `canceled_at` is now set, a
+    // redelivery is treated as a replay and never retries. The company kept
+    // full access, free and forever, with nothing reporting a problem.
     sqlx::query(
-        "update abonnement set valid_to = $2
-          where company_id = $1 and valid_to is null and valid_from < $2",
+        "update abonnement set valid_to = greatest($2, valid_from + 1)
+          where company_id = $1 and valid_to is null",
     )
     .bind(company)
     .bind(til)
