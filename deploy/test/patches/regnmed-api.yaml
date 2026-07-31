@@ -63,7 +63,7 @@ spec:
             # Must match patches/abonnement-cronjob.yaml: invoices issued
             # in one ledger and payments posted in another never settle.
             - name: REGNMED_DRIFT_ORGNR
-              value: "sett-meg-for-test"
+              value: "935115086"
             # Inbound bilag addresses (#35) are shown under this domain.
             # Set it only once its MX delivers into regnid's receiver.
             - name: MAIL_IN_DOMAIN
