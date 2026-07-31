@@ -438,7 +438,7 @@ pub async fn stripe_webhook(
         }
         "invoice.paid" => {
             let stripe_invoice = object["id"].as_str().unwrap_or_default();
-            let sub_id = object["subscription"].as_str().unwrap_or_default();
+            let sub_id = invoice_subscription(object);
             if stripe_invoice.is_empty() || sub_id.is_empty() {
                 // Not a subscription invoice — nothing of ours.
                 return Ok(Json(json!({ "handled": "ignorert" })));
@@ -450,6 +450,10 @@ pub async fn stripe_webhook(
             };
             let drift = drift_company(&state).await?;
             let brutto = object["amount_paid"].as_i64().unwrap_or(0);
+            // `invoice.payment_intent` is gone in the same API revision, so
+            // the invoice id IS the dedup key now rather than a fallback.
+            // That is sound: kortbetaling.stripe_invoice_id carries its own
+            // unique index, so a redelivery is a no-op either way.
             let intent = object["payment_intent"].as_str().unwrap_or(stripe_invoice);
             let periode = object["lines"]["data"][0]["description"]
                 .as_str()
@@ -479,7 +483,7 @@ pub async fn stripe_webhook(
             // gives up, not from a single failed attempt.
             eprintln!(
                 "Stripe-trekk feilet (abonnement {}, faktura {}) — Stripe forsøker igjen",
-                object["subscription"].as_str().unwrap_or("?"),
+                invoice_subscription(object),
                 object["id"].as_str().unwrap_or("?")
             );
             Ok(Json(json!({ "handled": "logget" })))
@@ -526,6 +530,25 @@ pub async fn cancel_subscription(
     })))
 }
 
+/// The subscription an invoice belongs to.
+///
+/// Stripe MOVED this field: `invoice.subscription` is gone in newer API
+/// versions (verified absent on 2026-05-27.dahlia against a live test
+/// delivery) and now lives under `parent.subscription_details`. Both are
+/// read, newest first, so events replayed from an older version still
+/// resolve.
+///
+/// Reading only the old field was silent revenue loss rather than an
+/// error: the branch treated a missing subscription as "not ours",
+/// answered 200, and Stripe recorded a successful delivery. Nothing
+/// anywhere reported a problem — the invoice simply never appeared.
+fn invoice_subscription(object: &serde_json::Value) -> &str {
+    object["parent"]["subscription_details"]["subscription"]
+        .as_str()
+        .or_else(|| object["subscription"].as_str())
+        .unwrap_or_default()
+}
+
 async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {
     let Some(orgnr) = &state.drift_orgnr else {
         return Err(ApiError::BadRequest(
@@ -538,4 +561,30 @@ async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {
         .await
         .map_err(anyhow::Error::from)?;
     id.ok_or_else(|| ApiError::BadRequest("driftsselskapet finnes ikke i databasen".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::invoice_subscription;
+    use serde_json::json;
+
+    /// Both field positions resolve. The nested one is where Stripe puts
+    /// it today; the flat one has to keep working because events replayed
+    /// from an older API version still carry it.
+    #[test]
+    fn an_invoice_names_its_subscription_in_either_position() {
+        let nytt = json!({
+            "id": "in_1",
+            "parent": { "subscription_details": { "subscription": "sub_nytt" } }
+        });
+        assert_eq!(invoice_subscription(&nytt), "sub_nytt");
+
+        let gammelt = json!({ "id": "in_2", "subscription": "sub_gammelt" });
+        assert_eq!(invoice_subscription(&gammelt), "sub_gammelt");
+
+        // An invoice with no subscription anywhere is somebody else's —
+        // the caller turns an empty id into an acknowledged no-op.
+        let fremmed = json!({ "id": "in_3" });
+        assert_eq!(invoice_subscription(&fremmed), "");
+    }
 }

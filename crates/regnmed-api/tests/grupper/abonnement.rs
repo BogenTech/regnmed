@@ -652,13 +652,18 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
 
     // 2. First payment → faktura + payment + closed reskontro, in OUR books.
     let stripe_invoice = format!("in_test_{}", Uuid::new_v4());
+    // Shaped like a REAL delivery from Stripe API 2026-05-27.dahlia: the
+    // subscription sits under parent.subscription_details, and there is no
+    // payment_intent. Written from a captured live event, not from what
+    // the handler happens to read — the previous version of this payload
+    // carried `subscription` at the top level, so it passed against code
+    // that could not bill anyone.
     let betalt = serde_json::json!({
         "type": "invoice.paid",
         "data": { "object": {
             "id": stripe_invoice,
-            "subscription": sub_id,
+            "parent": { "subscription_details": { "subscription": sub_id } },
             "amount_paid": 12_375i64,   // 99 kr + 25 % mva
-            "payment_intent": format!("pi_{stripe_invoice}"),
             "lines": { "data": [ { "description": "regnmed standard — august 2026" } ] },
         }}
     });
