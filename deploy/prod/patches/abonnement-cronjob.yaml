@@ -1,0 +1,38 @@
+# Abonnement invoicing in prod, pointed at the real ops company.
+#
+# BOGENTECH AS (935115086) operates regnmed, so its ledger is where
+# subscription revenue belongs: the faktura is raised here with the
+# subscribing company as kunde on the reskontro, and the Stripe payment
+# closes that item in these same books.
+#
+# It must match REGNMED_DRIFT_ORGNR on regnmed-api. This job ISSUES the
+# invoices and the API BOOKS the payments — point them at different
+# ledgers and nothing ever reconciles.
+#
+# The value is not inherited from deploy/shared on purpose: the default
+# there is a placeholder that fails loudly, so a new environment cannot
+# start billing against whatever ledger happened to be configured last.
+#
+# BOGENTECH AS must be onboarded in the PROD database (from BRREG, like
+# any other company) before the first run. Until then the job fails with
+# "driftsselskapet finnes ikke i databasen" rather than inventing a ledger.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-abonnement-faktura
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: fakturer
+              env:
+                - name: REGNMED_DRIFT_ORGNR
+                  value: "935115086"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
