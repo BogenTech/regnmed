@@ -31,6 +31,8 @@ kind: Ingress
 metadata:
   name: regnid
   namespace: regnmed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
 spec:
   ingressClassName: traefik
   tls:
