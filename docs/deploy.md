@@ -221,55 +221,44 @@ gjenglemt ClusterIssuer.
    (`allowVolumeExpansion: true` on the StorageClass) but never shrunk.
    Confirm that before the first apply; the alternative is
    dump-and-restore.
-4. **TLS — terminert i kantproxyen, ikke i clusteret.** Dette er den ene
-   plassen som sier hvilket hopp som eier sertifikatene, og den må
-   oppdateres i samme endring som manifestene.
+4. **TLS — terminert av Traefik i clusteret (fra 2026-08-01).** Dette er
+   den ene plassen som sier hvilket hopp som eier sertifikatene, og den
+   må oppdateres i samme endring som manifestene.
 
-   I dag: **nginx-proxy-manager** holder Let's Encrypt-sertifikatene for
-   alle vertsnavnene og videresender ren HTTP til Traefiks
-   MetalLB-adresse. Ingressene har derfor **ingen** `tls:`-blokk og ingen
-   `cert-manager.io/cluster-issuer`-annotasjon.
+   I dag: **Traefik** eier ruterens 80/443, og **cert-manager** utsteder
+   Let's Encrypt-sertifikater per ingress via HTTP-01. Hver regel har
+   `tls:` og `cert-manager.io/cluster-issuer: letsencrypt`.
+   `ClusterIssuer`-objektet er clusteromfattende og bor derfor i
+   hjemmelab-repoet (`stacks/edge/`), ikke her — to repoer som begge
+   eier samme objekt ville kjempet om det. `cert-issuer.yaml` blir
+   liggende i overlayene som klargjort konfigurasjon for en frittstående
+   utrulling som ikke har hjemmelab-repoet.
 
-   Grunnen er ikke latskap, og det er ikke valgfritt: ruteren
-   videresender 80/443 til ÉN destinasjon, og NPM betjener et dusin andre
-   domener derfra. En ruter kan ikke rute på vertsnavn — det er L7, og en
-   ruter er L4. Ber man cert-manager om sertifikater likevel, er det ikke
-   bare overflødig, det **kan ikke fungere**: NPM terminerer TLS og
-   tvangsomdirigerer HTTP, så HTTP-01-utfordringen svares av NPM og ikke
-   av solver-poden, og sertifikatet Traefik til slutt fikk ville aldri
-   blitt presentert for noen. Erfart 2026-07-29: tre `Certificate`-objekt
-   sto `ready=False` i det uendelige med «failed to perform self check».
-   Sertifikatet var ikke problemet — topologien var det.
+   HISTORIKK, og grunnen til at overgangen måtte gjøres i to trinn:
+   fram til 2026-08-01 terminerte **nginx-proxy-manager** TLS og
+   videresendte ren HTTP til Traefik. Ingressene hadde da verken
+   `tls:`-blokk eller issuer-annotasjon, og det var ikke latskap: en
+   ruter videresender 80/443 til ÉN destinasjon og kan ikke rute på
+   vertsnavn — det er L7, og en ruter er L4. Ba man cert-manager om
+   sertifikater mens NPM eide porten, kunne det ikke fungere: NPM svarte
+   på HTTP-01-utfordringen i stedet for solver-poden. Erfart 2026-07-29,
+   tre `Certificate`-objekt sto `ready=False` med «failed to perform
+   self check». Sertifikatet var ikke problemet — topologien var det.
 
-   Prisen, som er verdt å kjenne: testmiljøet bruker nå et ekte
-   sertifikat i stedet for Let's Encrypts staging-endepunkt, og
-   produksjons-ACME har grenser **per registrert domene** — så
-   `test.regnmed.no` og `regnmed.no` deler budsjett. NPM fornyer på egen
-   plan og reutsteder ikke per utrulling, så risikoen er langt mindre enn
-   et cluster som reutsteder ved hver ombygging, men den er ikke null.
+   SELVE OVERGANGEN ble derfor delt: **port 80 flyttet til Traefik
+   først**, mens 443 fortsatt gikk til NPM. Da kunne cert-manager løse
+   HTTP-01 og utstede alle sertifikatene mens HTTPS var uforstyrret, og
+   443 ble flyttet først da hvert `Certificate` sto `Ready`. Grunnen til
+   å ikke bare flytte begge: Let's Encrypt tillater **5 mislykkede
+   valideringer per vertsnavn per time**, så å rulle ut annotasjonene før
+   porten var flyttet ville brent kvoten nøyaktig når man trenger den.
 
-   **Dette er en planlagt overgang, ikke en permanent tilstand.** Når
-   Swarm-stackene er flyttet av nodene og NPM etter alt å dømme slås av,
-   overtar Traefik ruterens 80/443 og cert-manager skal tilbake.
-   `cert-issuer.yaml` ligger derfor fortsatt i BEGGE overlayene —
-   ferdig skrevet, men bevisst utenfor `resources:` i
-   `kustomization.yaml`. Filene er ikke død konfigurasjon; de er
-   klargjort konfigurasjon, og hver av dem har de fire stegene i
-   toppkommentaren:
+   Prisen, fortsatt verdt å kjenne: produksjons-ACME har grenser **per
+   registrert domene**, så `test.regnmed.no` og `regnmed.no` deler
+   budsjett. cert-manager fornyer på 2/3 av levetiden og reutsteder ikke
+   ved hver ombygging, men et cluster som stadig gjenskapes kan komme
+   borti taket.
 
-   1. Installer cert-manager.
-   2. Legg `- cert-issuer.yaml` tilbake i `resources:`.
-   3. Legg `tls:` + `cert-manager.io/cluster-issuer` tilbake per regel i
-      `ingress.yaml` (formen står i kommentaren der).
-   4. Oppdater dette punktet i samme endring.
-
-   Utstedernavnene er FORSKJELLIGE med vilje (`letsencrypt` i prod,
-   `letsencrypt-staging` i test): annotasjonen refererer utstederen ved
-   navn, så en kopiert annotasjon ville stille brukt
-   produksjonsendepunktet. Og legg merke til at steg 2 i test er det som
-   setter testmiljøet TILBAKE på staging-sertifikater — inntil da deler
-   test produksjonens ACME-grense med regnmed.no, som er selve grunnen
-   til at denne overgangen ikke bør gli ut.
 5. **Secrets — before the first apply, never in git:**
 
    ```sh

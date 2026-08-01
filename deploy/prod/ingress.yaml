@@ -32,6 +32,11 @@ metadata:
   name: regnid
   namespace: regnmed
 spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - id.regnmed.no
+      secretName: regnid-tls
   rules:
     - host: id.regnmed.no
       http:
@@ -48,8 +53,15 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: regnmed-api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
   namespace: regnmed
 spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - api.regnmed.no
+      secretName: regnmed-api-tls
   rules:
     - host: api.regnmed.no
       http:
@@ -70,8 +82,15 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: regnmed-portal
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
   namespace: regnmed
 spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - regnmed.no
+      secretName: regnmed-portal-tls
   rules:
     - host: regnmed.no
       http:
