@@ -13,6 +13,7 @@ pub mod attestering;
 pub mod bank;
 pub mod betaling;
 pub mod budsjett;
+pub mod byramedlemmer;
 pub mod dimension;
 pub mod ehf;
 pub mod engagement;

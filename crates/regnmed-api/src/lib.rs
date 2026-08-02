@@ -9,6 +9,7 @@ pub mod attestering;
 pub mod auth;
 pub mod bank;
 pub mod budsjett;
+pub mod byramedlemmer;
 pub mod currency;
 pub mod dimension;
 pub mod engagement;
@@ -154,6 +155,31 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(engagement::decide_request),
         )
         .route("/firms/{firm_id}/clients", get(engagement::firm_clients))
+        .route("/firms/{firm_id}/access", get(byramedlemmer::list_access))
+        .route(
+            "/firms/{firm_id}/access/history",
+            get(byramedlemmer::access_history),
+        )
+        .route(
+            "/firms/{firm_id}/access/{person_id}",
+            axum::routing::put(byramedlemmer::set_role).delete(byramedlemmer::revoke_access),
+        )
+        .route(
+            "/firms/{firm_id}/access/{person_id}/restore",
+            axum::routing::post(byramedlemmer::restore_access),
+        )
+        .route(
+            "/firms/{firm_id}/invitations",
+            get(byramedlemmer::list_invitations).post(byramedlemmer::invite),
+        )
+        .route(
+            "/firms/{firm_id}/invitations/{invitasjon_id}",
+            axum::routing::delete(byramedlemmer::revoke_invitation),
+        )
+        .route(
+            "/firms/{firm_id}/invitations/{invitasjon_id}/resend",
+            axum::routing::post(byramedlemmer::resend_invitation),
+        )
         .route(
             "/companies/{company_id}/engagements",
             get(engagement::company_engagements),
@@ -747,7 +773,8 @@ async fn me(
     // fresh login, because the portal calls /me when the session starts.
     // Putting the lookup in the extractor would cost a query on EVERY
     // request for something that happens once.
-    let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
+    let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?
+        + regnmed_db::byramedlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
 

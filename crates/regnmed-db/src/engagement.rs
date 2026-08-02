@@ -62,13 +62,17 @@ pub struct MyFirm {
     pub kind: String,
     pub verified: bool,
     pub pending_requests: i64,
+    /// My own role in the firm — the portal shows member administration
+    /// to admins only (the server enforces it regardless).
+    pub role: String,
 }
 
 pub async fn my_firms(pool: &PgPool, person_id: Uuid) -> Result<Vec<MyFirm>> {
     let rows = sqlx::query(
         "select f.id, f.name, f.kind, (f.autorisasjon_verified_at is not null) as verified,
                 (select count(*) from engagement_request r
-                 where r.firm_id = f.id and r.status = 'pending')::bigint as pending_requests
+                 where r.firm_id = f.id and r.status = 'pending')::bigint as pending_requests,
+                m.role
          from firm f
          join firm_member m on m.firm_id = f.id and m.person_id = $1 and m.active
          order by f.name",
@@ -84,6 +88,7 @@ pub async fn my_firms(pool: &PgPool, person_id: Uuid) -> Result<Vec<MyFirm>> {
             kind: r.get("kind"),
             verified: r.get("verified"),
             pending_requests: r.get("pending_requests"),
+            role: r.get("role"),
         })
         .collect())
 }

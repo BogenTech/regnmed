@@ -2,13 +2,13 @@
 //! verified autorisasjon. Registry lookups happen in the API layer
 //! (regnmed-gov); this module persists the results.
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::ledger::{create_company, ensure_account, ensure_journal, find_company_by_orgnr};
 use crate::reskontro::set_account_reskontro;
-use crate::tenancy::{ensure_company_member, ensure_firm, ensure_firm_member};
+use crate::tenancy::ensure_company_member;
 
 /// Starter kontoplan (NS 4102 core) every onboarded company gets:
 /// enough to invoice, pay, and reconcile from day one.
@@ -63,9 +63,14 @@ pub async fn onboard_company(
     })
 }
 
-/// Creates (or verifies) a firm whose autorisasjon has been confirmed
-/// against Finanstilsynets register, records the verification, and makes
-/// the creator a firm admin.
+/// Creates a firm whose autorisasjon has been confirmed against
+/// Finanstilsynets register, records the verification, and makes the
+/// creator the firm's admin — all in one transaction.
+///
+/// An orgnr that is already a firm is refused (#78): registration used
+/// to be idempotent, which silently made the SECOND person to register
+/// the same byrå a co-admin of the existing one. Joining an existing
+/// byrå is an invitation decision its admins make, not a side effect.
 pub async fn create_verified_firm(
     pool: &PgPool,
     orgnr: &str,
@@ -78,15 +83,53 @@ pub async fn create_verified_firm(
         kind == "regnskap" || kind == "revisjon",
         "kind must be 'regnskap' or 'revisjon'"
     );
-    let firm_id = ensure_firm(pool, orgnr, registry_name, kind).await?;
-    sqlx::query(
-        "update firm set autorisasjon_verified_at = now(), autorisasjon_ref = $2
-         where id = $1",
+    const ALLEREDE: &str =
+        "byrået er allerede registrert i regnmed — be en administrator der om å invitere deg";
+    let mut tx = pool.begin().await?;
+    let existing: Option<Uuid> = sqlx::query_scalar("select id from firm where orgnr = $1")
+        .bind(orgnr)
+        .fetch_optional(&mut *tx)
+        .await?;
+    ensure!(existing.is_none(), "{ALLEREDE}");
+
+    let firm_id = Uuid::now_v7();
+    let res = sqlx::query(
+        "insert into firm (id, orgnr, name, kind, autorisasjon_verified_at, autorisasjon_ref)
+         values ($1, $2, $3, $4, now(), $5)",
     )
     .bind(firm_id)
+    .bind(orgnr)
+    .bind(registry_name)
+    .bind(kind)
     .bind(autorisasjon_ref)
-    .execute(pool)
+    .execute(&mut *tx)
+    .await;
+    if let Err(e) = res {
+        // Two simultaneous registrations: the loser of the unique race
+        // gets the same answer as if it had seen the row.
+        if let Some(db) = e.as_database_error() {
+            if db.code().as_deref() == Some("23505") {
+                bail!("{ALLEREDE}");
+            }
+        }
+        return Err(e.into());
+    }
+    sqlx::query("insert into firm_member (firm_id, person_id, role) values ($1, $2, 'admin')")
+        .bind(firm_id)
+        .bind(person_id)
+        .execute(&mut *tx)
+        .await?;
+    crate::byramedlemmer::logg(
+        &mut tx,
+        firm_id,
+        person_id,
+        "lagt_til",
+        None,
+        Some("admin"),
+        Some(person_id),
+        "registrering",
+    )
     .await?;
-    ensure_firm_member(pool, firm_id, person_id, "admin").await?;
+    tx.commit().await?;
     Ok(firm_id)
 }

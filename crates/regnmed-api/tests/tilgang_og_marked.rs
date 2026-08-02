@@ -8,6 +8,8 @@ mod common;
 
 #[path = "grupper/abonnement.rs"]
 mod abonnement;
+#[path = "grupper/byramedlemmer.rs"]
+mod byramedlemmer;
 #[path = "grupper/engagement.rs"]
 mod engagement;
 #[path = "grupper/integrasjon.rs"]

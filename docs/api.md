@@ -185,7 +185,14 @@ dukker opp med hver sak i ROADMAP.md.
 | `/directory/firms` | GET |
 | `/firms` | POST |
 | `/firms/mine` | GET |
+| `/firms/{firm_id}/access` | GET |
+| `/firms/{firm_id}/access/history` | GET |
+| `/firms/{firm_id}/access/{person_id}` | PUT DELETE |
+| `/firms/{firm_id}/access/{person_id}/restore` | POST |
 | `/firms/{firm_id}/clients` | GET |
+| `/firms/{firm_id}/invitations` | GET POST |
+| `/firms/{firm_id}/invitations/{invitasjon_id}` | DELETE |
+| `/firms/{firm_id}/invitations/{invitasjon_id}/resend` | POST |
 | `/firms/{firm_id}/requests` | GET |
 | `/firms/{firm_id}/requests/{request_id}/decision` | POST |
 | `/registry/enheter/{orgnr}` | GET |

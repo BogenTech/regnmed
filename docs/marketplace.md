@@ -75,6 +75,47 @@ The URL and field mapping get pinned against the live register during
 pilot onboarding; the enforcement point, flow and tests are real today
 and only the adapter may move. Re-verification cadence (licenses can be revoked) is a pilot decision.
 
+## Firm membership (byråmedlemmer, #78)
+
+A firm member reaches **every client of the firm** through the
+engagements (the access model resolves `firm_member → engagement →
+company` live), so letting someone into the byrå is letting them into
+its client portfolio. That shapes every rule here:
+
+- **First come, first served — then the gate closes.** Registration
+  (`POST /firms`) refuses an orgnr that is already a firm; it used to be
+  idempotent, which silently made the second registrant a co-admin of
+  the existing byrå. Everyone after the founder enters by invitation
+  from a firm admin. (Companies have always worked this way: an orgnr
+  onboards once.)
+- **Invitations mirror the company discipline** (migration 0046 ≈ 0037):
+  addressed to an e-mail address, redeemed by `/me` at login, the
+  response never reveals whether the address already has a user, one
+  open invitation per firm/address, the mail (same rail, same
+  `utsendelse` log) carries no secret token. An existing membership is
+  never silently upgraded by a redemption.
+- **Roles**: `admin` runs the byrå (members, invitations, engagement
+  decisions), `ansatt` works in it (sees requests and clients, decides
+  nothing). Engagement decisions are admin-only — accepting an oppdrag
+  commits the firm to a client. Everything administrative answers 404,
+  not 403, to non-admins.
+- **The firm can never lose its last active admin** — demotion and
+  deactivation check inside the transaction, after locking the member
+  rows (two concurrent demotions must not both see "there is another
+  admin"). Memberships are deactivated, never deleted.
+- **`firm_member_change` is the insert-only trail** of who let whom in
+  (`registrering`/`invitasjon`/`admin`), the question a revisor asks.
+
+Per-client assignment (which ansatte see which clients) is deliberately
+not built: every active member sees every client, which is right for the
+small byråer we onboard first. When a pilot byrå needs narrower scopes,
+that becomes an explicit follow-up — the schema does not have to change
+for it (a scoping table composes on top).
+
+Endpoints: `GET/PUT/DELETE /firms/{fid}/access…`,
+`GET/POST/DELETE /firms/{fid}/invitations…` (+ `/resend`). Portal: the
+Medlemmer card in the Byrå view, visible to admins.
+
 ## The engagement flow (oppdrag)
 
 The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
@@ -113,6 +154,13 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
   onboarding and slettet enhet refused (for firms too, before the
   autorisasjon gate), firm creation refused without autorisasjon and
   recorded with it.
+- `regnmed-api/tests/grupper/byramedlemmer.rs` (real Postgres, also CI):
+  re-registration of an existing firm refused without side effects,
+  invitation → redemption in `/me` → client access in the same
+  response, ansatt refused (404) on member administration and
+  engagement decisions (with the 400-vs-404 bogus-id probe pinning that
+  the status comes from the guard), last-admin demotion/deactivation
+  refused, the change trail, and a revoked invitation granting nothing.
 
 Browser-verified against the **live** Enhetsregisteret: lookup of
 974760673 showed the registry facts in the portal, and onboarding

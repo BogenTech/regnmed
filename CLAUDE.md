@@ -1031,6 +1031,28 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    på orgnr — andreperson som registrerer samme byrå blir med-admin i
    det eksisterende (autorisasjonsgaten er bestått, men #78 bør eie
    avgjørelsen uttrykkelig).
+58. ✅ Byråmedlemmer (docs/marketplace.md, closed #78): byrået kan
+   endelig slippe inn sine egne folk. Migration 0046 speiler 0037
+   (`firm_invitation` til E-POSTADRESSE, innsettings-bart
+   `firm_member_change`; utsendelse-loggen utvidet — company_id kan
+   være NULL bare når raden peker på en byråinvitasjon). Innløsning i
+   `/me` ved siden av selskapsinvitasjonene; klientporteføljen står i
+   SAMME svar (tilgangen løses live gjennom oppdragene — derfor er
+   medlemskap porteføljetilgang, og alt her er admin-territorium).
+   SIKKERHETSAVGJØRELSEN fra #77-verifiseringen tatt (bekreftet av
+   bruker): først til mølla, så stenges porten — `create_verified_firm`
+   NEKTER eksisterende orgnr (var idempotent: andremann ble stille
+   med-admin), én transaksjon, 23505-løperen får samme svar. Roller:
+   admin styrer (medlemmer + oppdragsavgjørelser — decide_request er nå
+   admin-only, GRFS-begrunnelsen står i koden), ansatt ser men avgjør
+   ikke; siste aktive admin kan verken degraderes eller deaktiveres
+   (lås + sjekk i tx); medlemskap deaktiveres, slettes aldri.
+   `/firms/{fid}/access…` + `…/invitations…`; /firms/mine bærer egen
+   rolle. Portal: Medlemmer-kort i Byrå-visningen (admin), Foresporsler
+   skjuler avgjørelsesknappene for ansatte («avgjøres av admin»).
+   Testen fester 400-vs-404-proben på bogus id (vakt vs handler,
+   docs/auth.md-lærdommen). Per-klient-tildeling bevisst utenfor —
+   retningen står i docs/marketplace.md.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

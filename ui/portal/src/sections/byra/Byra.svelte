@@ -7,6 +7,7 @@
   import ThemeControls from "../../components/ThemeControls.svelte";
   import Foresporsler from "./Foresporsler.svelte";
   import Klienter from "./Klienter.svelte";
+  import Medlemmer from "./Medlemmer.svelte";
 
   let { firmId } = $props();
 
@@ -18,10 +19,20 @@
       api("/firms/" + id + "/clients"),
       api("/firms/mine"),
     ]);
+    const firm = mine.firms.find((f) => f.firm_id === id) || null;
+    // Member administration is admin territory (#78) — the server
+    // enforces it; the portal just doesn't fetch what it may not show.
+    const admin = firm?.role === "admin";
+    const [access, invitations] = admin
+      ? await Promise.all([api("/firms/" + id + "/access"), api("/firms/" + id + "/invitations")])
+      : [null, null];
     data = {
-      firm: mine.firms.find((f) => f.firm_id === id) || null,
+      firm,
+      admin,
       pending: requests.requests.filter((r) => r.status === "pending"),
       clients: clients.clients,
+      medlemmer: access ? access.medlemmer : [],
+      invitasjoner: invitations ? invitations.invitasjoner : [],
     };
   }
 
@@ -49,7 +60,15 @@
   {#if !data}
     <span class="loading loading-spinner loading-lg"></span>
   {:else}
-    <Foresporsler {firmId} pending={data.pending} onDone={reload} />
+    <Foresporsler {firmId} pending={data.pending} admin={data.admin} onDone={reload} />
     <Klienter clients={data.clients} />
+    {#if data.admin}
+      <Medlemmer
+        {firmId}
+        medlemmer={data.medlemmer}
+        invitasjoner={data.invitasjoner}
+        onDone={reload}
+      />
+    {/if}
   {/if}
 </main>

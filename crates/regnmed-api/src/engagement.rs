@@ -64,6 +64,7 @@ pub async fn my_firms(
             "kind": f.kind,
             "verified": f.verified,
             "pending_requests": f.pending_requests,
+            "role": f.role,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -99,7 +100,12 @@ pub async fn decide_request(
     Path((firm_id, request_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<DecisionRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_firm_member(&state, person.person_id, firm_id).await?;
+    // Admin, not just member (#78): accepting an oppdrag commits the
+    // firm to a client — once `ansatt` exists as a distinct role, that
+    // decision belongs to the byrå's leadership, like GRFS puts the
+    // oppdragsansvar with named responsibles. Members still SEE the
+    // requests; they cannot answer them.
+    crate::byramedlemmer::require_firm_admin(&state, person.person_id, firm_id).await?;
     regnmed_db::decide_request(
         &state.pool,
         firm_id,

@@ -7,7 +7,10 @@
   import { loadMe } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
 
-  let { firmId, pending, onDone } = $props();
+  // `admin`: engagement decisions commit the firm to a client, so they
+  // are admin-only (#78). Members see the queue; the buttons would 404
+  // for them, so they are not offered.
+  let { firmId, pending, admin, onDone } = $props();
 
   async function avgjor(r, accept) {
     try {
@@ -34,8 +37,14 @@
             <td>{r.kind}</td>
             <td>{r.message || ""}</td>
             <td class="flex gap-1">
-              <button class="btn btn-xs btn-primary" onclick={() => avgjor(r, true)}>Godta</button>
-              <button class="btn btn-xs" onclick={() => avgjor(r, false)}>Avslå</button>
+              {#if admin}
+                <button class="btn btn-xs btn-primary" onclick={() => avgjor(r, true)}>
+                  Godta
+                </button>
+                <button class="btn btn-xs" onclick={() => avgjor(r, false)}>Avslå</button>
+              {:else}
+                <span class="opacity-60 text-xs">avgjøres av admin</span>
+              {/if}
             </td>
           </tr>
         {/each}
