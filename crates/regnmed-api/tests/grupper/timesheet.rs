@@ -81,9 +81,18 @@ async fn hours_lock_and_bill() {
     )
     .await
     .unwrap();
-    regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse")
-        .await
-        .unwrap();
+    // P1 is linked to its customer (#80) — the fakturagrunnlag suggests
+    // the recipient from this link further down.
+    regnmed_db::create_dimension(
+        &state.pool,
+        company,
+        "prosjekt",
+        "P1",
+        "Leveranse",
+        Some(&party_no),
+    )
+    .await
+    .unwrap();
     let token = idp.token(&sub, "Kari Konsulent");
     let base = format!("/companies/{company}/timesheet");
 
@@ -244,6 +253,10 @@ async fn hours_lock_and_bill() {
     let (_, unbilled) = request(&state, "GET", &format!("{base}/unbilled"), &token, None).await;
     assert_eq!(unbilled["groups"].as_array().unwrap().len(), 1);
     assert_eq!(unbilled["groups"][0]["minutter"], 180);
+    // The group carries the project's customer — the SUGGESTED
+    // recipient (#80). Billing below still names the party explicitly.
+    assert_eq!(unbilled["groups"][0]["kunde"], party_no.as_str());
+    assert_eq!(unbilled["groups"][0]["kunde_navn"], "Oppdragsgiver AS");
     let (status, issued) = request(
         &state,
         "POST",

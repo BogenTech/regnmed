@@ -1068,6 +1068,19 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    samme dag). Åpne invitasjoner m/ sendt-status i samme kort; kortet
    forsvinner ved medlem nummer to. Bare visning — alle kall går til
    de samme MEDLEM_ADMIN-vaktede endepunktene.
+60. ✅ Prosjekt knyttet til kunde (docs/dimensjoner.md, closed #80 —
+   registreringssporet fra #77 komplett): dimension fikk `party_id`
+   (migration 0047) — REDIGERBAR metadata på linje med navnet, aldri
+   del av kjeden (hashen dekker koden); sammensatt FK (company_id,
+   party_id) tvinger samme selskap, kunde-kind sjekkes i oppslaget
+   (delvis unik indeks kan ikke være FK-mål), avdeling med kunde
+   nektes (check + kode). ÉN kunde per prosjekt — et prosjekt for
+   flere kunder er to prosjekter. Fakturagrunnlaget bærer prosjektets
+   kunde som FORSLAG (aldri automatikk — fakturering tar fortsatt
+   eksplisitt party_no); portal: kundevelger i dimensjonsregisteret
+   (opprett + rader), Kunde-kolonne i ufakturerte og én
+   forslagsknapp per kundekoblet prosjekt («Fakturer P1 → Kunden
+   AS»). #71 (prosjektlønnsomhet) leser samme kobling per kunde.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

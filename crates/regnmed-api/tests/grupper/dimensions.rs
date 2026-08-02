@@ -51,6 +51,115 @@ async fn request(
     )
 }
 
+/// A prosjekt may carry its kunde (#80): editable metadata, never part
+/// of the chain. Only prosjekter, only actual customers, one at a time.
+#[tokio::test]
+async fn a_prosjekt_carries_its_kunde() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Dim Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kundekobling AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let (_, kunde) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
+            .await
+            .unwrap();
+    let (_, leverandor) = regnmed_db::create_party(
+        &state.pool,
+        company,
+        "leverandor",
+        "Leverandøren AS",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let token = idp.token(&sub, "Dim Admin");
+    let base = format!("/companies/{company}/dimensions");
+
+    // Created with the link; the listing carries number and name.
+    let (status, svar) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(serde_json::json!({"kind": "prosjekt", "code": "P9", "name": "Leveransen", "kunde": kunde}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {svar}");
+    let (_, liste) = request(&state, "GET", &base, &token, None).await;
+    let p9 = liste["dimensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "P9")
+        .unwrap();
+    assert_eq!(p9["kunde"], kunde.as_str());
+    assert_eq!(p9["kunde_navn"], "Kunden AS");
+
+    // An avdeling cannot have a customer; a supplier and an unknown
+    // number are not customers.
+    for (body, feil) in [
+        (
+            serde_json::json!({"kind": "avdeling", "code": "A9", "name": "Feil", "kunde": kunde}),
+            "bare prosjekter",
+        ),
+        (
+            serde_json::json!({"kind": "prosjekt", "code": "P10", "name": "Feil", "kunde": leverandor}),
+            "ingen kunde",
+        ),
+        (
+            serde_json::json!({"kind": "prosjekt", "code": "P11", "name": "Feil", "kunde": "999999"}),
+            "ingen kunde",
+        ),
+    ] {
+        let (status, svar) = request(&state, "POST", &base, &token, Some(body.to_string())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "body: {svar}");
+        assert!(
+            svar["error"].as_str().unwrap_or("").contains(feil),
+            "expected «{feil}»: {svar}"
+        );
+    }
+
+    // The link is editable: cleared with "", relinked with a number —
+    // the code itself stays immutable throughout.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/prosjekt/P9"),
+        &token,
+        Some(serde_json::json!({"kunde": ""}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, liste) = request(&state, "GET", &base, &token, None).await;
+    let p9 = liste["dimensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "P9")
+        .unwrap();
+    assert!(p9["kunde"].is_null(), "cleared: {p9}");
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/prosjekt/P9"),
+        &token,
+        Some(serde_json::json!({"kunde": kunde}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn dimensions_hash_v3_reports_and_saft() {
     let idp = TestIdp::new();

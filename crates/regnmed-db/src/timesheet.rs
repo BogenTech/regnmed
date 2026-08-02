@@ -280,6 +280,11 @@ pub async fn set_timesheet_lock(
 #[derive(Debug)]
 pub struct UnbilledGroup {
     pub prosjekt: Option<String>,
+    /// The customer the prosjekt is linked to (#80) — the SUGGESTED
+    /// invoice recipient. A suggestion only: billing still takes an
+    /// explicit party_no from the caller.
+    pub kunde: Option<String>,
+    pub kunde_navn: Option<String>,
     pub timesats_ore: i64,
     pub minutter: i64,
     pub entry_ids: Vec<Uuid>,
@@ -292,9 +297,11 @@ pub async fn unbilled_groups(
     through: Option<NaiveDate>,
 ) -> Result<Vec<UnbilledGroup>> {
     let rows = sqlx::query(
-        "select d.code as prosjekt, t.timesats_ore, t.id, t.minutter
+        "select d.code as prosjekt, p.party_no as kunde, p.name as kunde_navn,
+                t.timesats_ore, t.id, t.minutter
          from time_entry t
          left join dimension d on d.id = t.prosjekt_id
+         left join party p on p.id = d.party_id
          where t.company_id = $1 and t.fakturerbar and t.invoice_id is null
            and ($2::text is null or d.code = $2)
            and ($3::date is null or t.dato <= $3)
@@ -320,6 +327,8 @@ pub async fn unbilled_groups(
             }
             None => groups.push(UnbilledGroup {
                 prosjekt,
+                kunde: row.get("kunde"),
+                kunde_navn: row.get("kunde_navn"),
                 timesats_ore: sats,
                 minutter,
                 entry_ids: vec![row.get("id")],

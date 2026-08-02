@@ -42,9 +42,15 @@ path.
 | `POST …/timesheet/invoice` | bill (party_no; optional prosjekt/through/vat_code/dates) |
 | `GET/PUT …/timesheet/lock` | månedslås (insert-only history) |
 
+Unbilled groups carry the project's **kunde** when the dimension is
+linked (#80, docs/dimensjoner.md) — a *suggested* recipient, never
+automation: billing still takes an explicit `party_no` from the caller.
+
 Portal: the Timer section — min uke with week navigation and quick
 registration, per-prosjekt totals, ufakturerte timer with "Lag
-faktura".
+faktura". Customer-linked projects get one suggestion button each
+(«Fakturer P1 → Kunden AS», billing exactly that prosjekt to exactly
+that customer); the generic path remains for the rest.
 
 ## Deliberately not (yet)
 

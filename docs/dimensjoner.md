@@ -20,6 +20,26 @@ only**, enforced by trigger and column grants:
   closed dimension keeps reporting and verifying forever. Reopening is
   one update — no data is ever deleted.
 
+### Prosjekt → kunde (#80)
+
+A prosjekt may carry the customer it is for: `party_id` (migration
+0047), **editable metadata on par with the name** — never part of the
+chain (the hash covers the code, not the row). Rules:
+
+- Same company, enforced by a composite FK `(company_id, party_id)`;
+  actually being a **kunde** (not a leverandør) is checked at the
+  lookup, since a partial unique index cannot be an FK target.
+- Only prosjekter — an avdeling with a customer is refused (check
+  constraint + code).
+- **One customer per project**: a project for several customers is two
+  projects.
+
+The link is what lets hours be traced to the customer: the
+fakturagrunnlag carries it as a *suggested* recipient
+(docs/timer.md), and prosjektlønnsomhet per kunde (#71) will read the
+same link. Set at creation or via `PUT …/dimensions/prosjekt/{code}`
+(`kunde`: absent = unchanged, `""` = clear, party_no = link).
+
 ## Hash format v3
 
 Entries carry optional `avdeling_id`/`prosjekt_id`; the voucher hash

@@ -31,6 +31,8 @@ pub async fn list(
             "code": d.code,
             "name": d.name,
             "active": d.active,
+            "kunde": d.kunde,
+            "kunde_navn": d.kunde_navn,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -40,6 +42,8 @@ pub struct CreateRequest {
     kind: String,
     code: String,
     name: String,
+    /// Customer party_no for a prosjekt (#80). Optional.
+    kunde: Option<String>,
 }
 
 pub async fn create(
@@ -55,6 +59,7 @@ pub async fn create(
         &request.kind,
         &request.code,
         &request.name,
+        request.kunde.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -65,6 +70,9 @@ pub async fn create(
 pub struct UpdateRequest {
     name: Option<String>,
     active: Option<bool>,
+    /// Customer link (#80): absent = unchanged, "" = clear,
+    /// party_no = point the prosjekt at that customer.
+    kunde: Option<String>,
 }
 
 pub async fn update(
@@ -81,6 +89,7 @@ pub async fn update(
         &code,
         request.name.as_deref(),
         request.active,
+        request.kunde.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
