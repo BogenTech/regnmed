@@ -1053,6 +1053,21 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    Testen fester 400-vs-404-proben på bogus id (vakt vs handler,
    docs/auth.md-lærdommen). Per-klient-tildeling bevisst utenfor —
    retningen står i docs/marketplace.md.
+59. ✅ Guidet invitasjon av selskapets folk (docs/auth.md §10, closed
+   #79): registreringen endte med et opprettet selskap og så ingenting
+   — maskineriet fantes (#51/0037) men bodde under Oppdrag → Tilgang.
+   Nytt: `Rolle::beskrivelse()` i tilgang.rs — klartekstforklaring per
+   innebygd rolle, ÉN kopi rett ved buntene som gjør den sann, servert
+   på `/roles` (test: ingen innebygd rolle uten forklaring); vises i
+   Roller-kortet OG i nytt InviterKort på Oversikt. Kortet viser seg
+   så lenge selskapet har nøyaktig ett direkte medlem: typiske
+   profiler som snarveier (lønnsmottaker → ansatt, økonomiansvarlig →
+   bokforing, medeier → admin), rollens forklaring der valget tas, og
+   EKSTERN REGNSKAPSFØRER er med vilje ikke en invitasjon — kortet
+   peker til oppdragskatalogen (tilgang følger avtalen, avsluttes
+   samme dag). Åpne invitasjoner m/ sendt-status i samme kort; kortet
+   forsvinner ved medlem nummer to. Bare visning — alle kall går til
+   de samme MEDLEM_ADMIN-vaktede endepunktene.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

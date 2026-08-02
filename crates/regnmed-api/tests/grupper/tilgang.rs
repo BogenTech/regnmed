@@ -739,6 +739,35 @@ async fn access_governing_rettigheter_cannot_be_delegated() {
     );
 }
 
+/// Every built-in role explains itself (#79): the invitation guidance
+/// renders these texts, and an empty one would leave the admin guessing
+/// what they are granting.
+#[tokio::test]
+async fn every_builtin_role_describes_itself() {
+    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+        return;
+    };
+    let (kode, svar) = json_call(
+        &state,
+        "GET",
+        &format!("/companies/{company}/roles"),
+        &admin,
+        "",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let innebygde = svar["innebygde"].as_array().unwrap();
+    assert!(!innebygde.is_empty());
+    for rolle in innebygde {
+        let beskrivelse = rolle["beskrivelse"].as_str().unwrap_or_default();
+        assert!(
+            !beskrivelse.is_empty(),
+            "rollen {} mangler beskrivelse",
+            rolle["navn"]
+        );
+    }
+}
+
 /// A deactivated role grants nothing — that is how a role is "removed"
 /// without losing the history of who held it.
 #[tokio::test]

@@ -48,6 +48,7 @@ pub async fn list_roles(
         // so an admin sees what they actually mean without reading code.
         "innebygde": innebygde.iter().map(|r| json!({
             "navn": r.slug(),
+            "beskrivelse": r.beskrivelse(),
             "rettigheter": r.rettigheter().iter().map(|x| x.slug()).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "egne": egne.iter().map(|r| json!({

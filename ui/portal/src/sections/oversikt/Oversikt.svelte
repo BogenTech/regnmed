@@ -5,6 +5,7 @@
   import Card from "../../components/Card.svelte";
   import Nokkeltall from "./Nokkeltall.svelte";
   import ImportKort from "./ImportKort.svelte";
+  import InviterKort from "./InviterKort.svelte";
   import Valutakurser from "./Valutakurser.svelte";
   import Abonnement from "./Abonnement.svelte";
   import Firmaopplysninger from "./Firmaopplysninger.svelte";
@@ -102,6 +103,8 @@
   {#if data.vouchers.length === 0}
     <ImportKort {companyId} onDone={reload} />
   {/if}
+
+  <InviterKort {companyId} />
 
   <Card title="Siste bilag">
     <table class="table table-sm">

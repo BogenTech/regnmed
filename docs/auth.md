@@ -147,6 +147,12 @@ måtte migreres.
 | `bokforing` | `les` + alt som endrer hovedboken, + lønn |
 | `admin` | `bokforing` + å styre selskapet og hvem som slipper inn |
 
+Hver innebygd rolle bærer også en **forklaring i klartekst**
+(`Rolle::beskrivelse()`, #79) som serveres på `/roles` — én kopi, rett
+ved buntene som gjør den sann, vist både i rollekortet og i
+invitasjonsveiledningen. En test krever at ingen innebygd rolle står
+uten forklaring.
+
 `les` ⊂ `revisor` ⊂ `bokforing` ⊂ `admin` er en egenskap ved **disse
 fire**, ikke ved modellen. `ansatt` er ikke nøstet i det hele tatt, og en
 egendefinert rolle trenger ikke være det.
@@ -575,6 +581,18 @@ fordi nøkkeltallsøylene er ren CSS (#36) og injisert stil er et
 vesentlig mindre problem enn injisert skript.
 
 ## 10. I portalen
+
+**«Inviter folkene dine»** (#79): så lenge selskapet har nøyaktig ett
+direkte medlem, viser Oversikt et veiledningskort for de første
+invitasjonene. Typiske profiler er snarveier til riktig rolle
+(lønnsmottaker → `ansatt`, økonomiansvarlig → `bokforing`, medeier →
+`admin`), med rollens forklaring fra `/roles` synlig der valget tas.
+Den eksterne regnskapsføreren er med vilje **ikke** en invitasjon —
+kortet peker til oppdragskatalogen, siden tilgang gjennom et oppdrag
+følger avtalen og kan avsluttes samme dag. Åpne invitasjoner vises i
+samme kort med sendt-status; kortet forsvinner når medlem nummer to er
+inne, og Oppdrag → Tilgang tar over. Kortet er bare en visning: alle
+kallene går til de samme MEDLEM_ADMIN-vaktede endepunktene.
 
 Under **Oppdrag** ligger tre kort: Tilgang (hvem som kommer til), Roller
 og Integrasjoner. Rollekortet viser de innebygde rollene som de er —

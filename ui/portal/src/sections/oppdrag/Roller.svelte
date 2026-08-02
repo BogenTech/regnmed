@@ -50,6 +50,9 @@
         <summary class="cursor-pointer text-sm">
           {r.navn}<span class="opacity-70"> — {r.rettigheter.length} rettigheter</span>
         </summary>
+        {#if r.beskrivelse}
+          <p class="text-sm pl-3 mb-1">{r.beskrivelse}</p>
+        {/if}
         <p class="text-xs opacity-70 pl-3">{beskrivelser(r)}</p>
       </details>
     {/each}

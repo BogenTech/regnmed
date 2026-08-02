@@ -745,6 +745,33 @@ impl Rolle {
         self == Self::Admin
     }
 
+    /// What the role is FOR, in the user's language — the invitation
+    /// guidance in the portal renders these (#79). One copy, kept next
+    /// to the bundles that make the claims true: whoever changes a
+    /// bundle below must reread this text.
+    pub fn beskrivelse(self) -> &'static str {
+        match self {
+            Self::Ansatt => {
+                "Selvbetjening for en lønnsmottaker: fører egne timer og utlegg, \
+                 ser egne lønnsslipper og laster opp kvitteringer. Ser ikke hovedboken."
+            }
+            Self::Les => "Ser hele regnskapet, endrer ingenting. Lønn er unntatt.",
+            Self::Revisor => {
+                "Lesetilgang pluss lønn og kjedeverifikasjon. Tildeles ikke direkte — \
+                 rollen følger av et revisjonsoppdrag."
+            }
+            Self::Bokforing => {
+                "Den daglige økonomien: bilag, faktura og purring, bank og betaling, \
+                 timer, lønn og rapporter. Ikke tilgangsstyring."
+            }
+            Self::Admin => {
+                "Alt — også hvem som har tilgang: medlemmer og roller, oppdrag, \
+                 integrasjoner og abonnement."
+            }
+            Self::Ukjent => "",
+        }
+    }
+
     /// The bundles the role is composed of. They are nested today —
     /// bokføring is reading plus something, admin is bokføring plus
     /// something — but that is a property of these three bundles, not of
