@@ -1081,6 +1081,21 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (opprett + rader), Kunde-kolonne i ufakturerte og én
    forslagsknapp per kundekoblet prosjekt («Fakturer P1 → Kunden
    AS»). #71 (prosjektlønnsomhet) leser samme kobling per kunde.
+61. ✅ Prosjektlønnsomhet (docs/rapporter.md, closed #71): «tjener vi
+   penger på dette prosjektet?» som REN SAMMENSTILLING — ingen lagret
+   tilstand, ingen ny SQL-vei. `regnskap::lonnsomhet` (ren fold,
+   presentasjonsfortegn ett sted) over de dimensjonsfiltrerte
+   SUM-spørringene (+ ny `prosjekt_saldo_lines`: hele oversikten i ÉN
+   spørring, gruppert per prosjektkode — motpost uten dimensjon er
+   ikke prosjektøkonomi og telles ikke); timesummeringene utvidet med
+   fakturert-splitten (fakturerte_minutter/fakturert_ore); kunden fra
+   #80-koblingen. `GET …/reports/prosjekt?year=&prosjekt=` — uten
+   kode: én rad per registrert prosjekt (også avsluttede); med: NS
+   4102-seksjonene for akkurat det; ukjent kode = høylytt 400, aldri
+   tom rapport; året via regnskapsar-sømmen (#52). Portal: Prosjekt-
+   fane under Rapporter (rad-klikk åpner seksjonene + «på bordet»),
+   lenket fra dimensjonsregisteret. Testen håndregner oversikt og
+   detalj fra faktura + kostnadsbilag + delvis fakturerte timer.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

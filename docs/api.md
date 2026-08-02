@@ -163,6 +163,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/reports/mva` | GET |
 | `/companies/{company_id}/reports/mva-melding` | GET |
 | `/companies/{company_id}/reports/nokkeltall` | GET |
+| `/companies/{company_id}/reports/prosjekt` | GET |
 | `/companies/{company_id}/reports/resultat` | GET |
 | `/companies/{company_id}/reports/revisjon` | GET |
 | `/companies/{company_id}/reports/saft` | GET |

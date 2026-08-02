@@ -74,7 +74,8 @@
   <p class="text-sm opacity-70 mb-2">
     Koden er permanent (den inngår i bilagshashen); navnet kan endres, og avsluttede dimensjoner
     avviser nye posteringer. Et prosjekt kan knyttes til kunden det er for — da kan timene følges
-    til kunden, og fakturagrunnlaget foreslår mottaker.
+    til kunden, og fakturagrunnlaget foreslår mottaker. Lønnsomheten per prosjekt står under
+    <a class="link" href={"#/c/" + companyId + "/rapporter/prosjekt"}>Rapporter → Prosjekt</a>.
   </p>
   {#if dims.length}
     <table class="table table-xs mb-2">

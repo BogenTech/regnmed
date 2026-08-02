@@ -93,3 +93,33 @@ Testet i `crates/regnmed-api/tests/grupper/nokkeltall.rs`: resultat mot
 håndregnede tall (fjorårets poster ETTER cutoff teller ikke),
 månedskolonner med kostnadsmåned, likviditetsbildet fra reskontro og
 bank, og at fristene aldri ligger i fortiden.
+
+## Prosjektlønnsomhet (#71)
+
+`GET /companies/{id}/reports/prosjekt?year=&prosjekt=` — svaret på
+«tjener vi penger på dette prosjektet?», som ren sammenstilling av det
+som allerede finnes (ingen lagret tilstand, ingen ny SQL-vei):
+
+- **Inntekter og kostnader per prosjekt** fra de dimensjonsfiltrerte
+  SUM-spørringene (`saldo_lines`/`prosjekt_saldo_lines`), foldet med
+  `regnskap::lonnsomhet` — presentasjonsfortegnene ett sted, som alt
+  annet. Bare posteringer MED prosjektdimensjon telles; en bankmotpost
+  uten dimensjon er ikke prosjektøkonomi.
+- **Timene** fra timelistesummeringene, splittet fakturert/ufakturert
+  til registrert timesats — det ufakturerte er «på bordet».
+- **Kunden** fra prosjekt→kunde-koblingen (#80,
+  docs/dimensjoner.md) — lønnsomheten kan leses per kunde.
+- Uten `prosjekt=`: oversikten, én rad per registrert prosjekt (også
+  avsluttede — historikken er poenget). Med: NS 4102-seksjonene for
+  akkurat det prosjektet; ukjent kode er en høylytt 400, aldri en tom
+  rapport.
+
+Året går gjennom `regnskapsar`-sømmen (#52). Portal: Rapporter →
+Prosjekt (rad-klikk åpner seksjonene), lenket fra
+dimensjonsregisteret.
+
+Testet i `crates/regnmed-api/tests/grupper/dimensions.rs`
+(`prosjektlonnsomhet_composes_ledger_and_hours`): faktura + kostnadsbilag +
+delvis fakturerte timer på et kundekoblet prosjekt gir håndregnede
+tall i oversikt og detalj; motpost uten dimensjon lekker ikke inn;
+ukjent kode nektes.

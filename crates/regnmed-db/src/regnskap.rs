@@ -108,6 +108,47 @@ pub async fn saldo_lines(
         .collect())
 }
 
+/// Per-prosjekt account sums over a period (#71) — the overview's data
+/// in ONE query, folded per project with `regnskap::lonnsomhet` by the
+/// caller. Same SUM style as `saldo_lines`, grouped by the project
+/// code; entries without a prosjekt are not project economics and are
+/// deliberately absent.
+pub async fn prosjekt_saldo_lines(
+    pool: &PgPool,
+    company_id: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<(String, SaldoLine)>> {
+    let rows = sqlx::query(
+        "select dp.code as prosjekt, a.number, a.name, sum(e.amount_ore)::bigint as saldo
+         from account a
+         join entry e on e.account_id = a.id
+         join voucher v on v.id = e.voucher_id
+         join dimension dp on dp.id = e.prosjekt_id
+         where a.company_id = $1 and v.voucher_date between $2 and $3
+         group by dp.code, a.number, a.name
+         order by dp.code, a.number",
+    )
+    .bind(company_id)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get("prosjekt"),
+                SaldoLine {
+                    number: r.get("number"),
+                    name: r.get("name"),
+                    saldo_ore: r.get("saldo"),
+                },
+            )
+        })
+        .collect())
+}
+
 /// One posting on one account, with the dokumentasjonshenvisning
 /// (journal + bilagsnummer) the forskrift requires.
 #[derive(Debug)]

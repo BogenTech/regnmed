@@ -162,6 +162,8 @@ pub async fn summary(
             "minutter": r.minutter,
             "fakturerbare_minutter": r.fakturerbare_minutter,
             "ufakturert_ore": r.ufakturert_ore,
+            "fakturerte_minutter": r.fakturerte_minutter,
+            "fakturert_ore": r.fakturert_ore,
         })).collect::<Vec<_>>(),
     })))
 }

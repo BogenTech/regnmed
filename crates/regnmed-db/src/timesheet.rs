@@ -207,9 +207,14 @@ pub struct ProsjektSum {
     pub minutter: i64,
     pub fakturerbare_minutter: i64,
     pub ufakturert_ore: i64,
+    /// Billed hours and their value at the recorded sats (#71) — the
+    /// "fakturert vs ufakturert" split prosjektlønnsomheten shows.
+    pub fakturerte_minutter: i64,
+    pub fakturert_ore: i64,
 }
 
-/// Totals per prosjekt over a period, plus the unbilled billable value.
+/// Totals per prosjekt over a period, plus the billable value split
+/// into billed and unbilled.
 pub async fn timesheet_summary(
     pool: &PgPool,
     company_id: Uuid,
@@ -222,7 +227,12 @@ pub async fn timesheet_summary(
                 sum(t.minutter) filter (where t.fakturerbar)::bigint as fakturerbare,
                 coalesce(sum((t.minutter::bigint * t.timesats_ore + 30) / 60)
                     filter (where t.fakturerbar and t.invoice_id is null), 0)::bigint
-                    as ufakturert
+                    as ufakturert,
+                sum(t.minutter) filter
+                    (where t.fakturerbar and t.invoice_id is not null)::bigint as fakturerte,
+                coalesce(sum((t.minutter::bigint * t.timesats_ore + 30) / 60)
+                    filter (where t.fakturerbar and t.invoice_id is not null), 0)::bigint
+                    as fakturert
          from time_entry t
          left join dimension d on d.id = t.prosjekt_id
          where t.company_id = $1 and t.dato between $2 and $3
@@ -241,6 +251,8 @@ pub async fn timesheet_summary(
             minutter: r.get("minutter"),
             fakturerbare_minutter: r.get::<Option<i64>, _>("fakturerbare").unwrap_or(0),
             ufakturert_ore: r.get("ufakturert"),
+            fakturerte_minutter: r.get::<Option<i64>, _>("fakturerte").unwrap_or(0),
+            fakturert_ore: r.get("fakturert"),
         })
         .collect())
 }

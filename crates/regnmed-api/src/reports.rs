@@ -352,6 +352,109 @@ pub async fn resultat(
 }
 
 #[derive(Deserialize)]
+pub struct ProsjektRapportQuery {
+    year: Option<i32>,
+    prosjekt: Option<String>,
+}
+
+/// Prosjektlønnsomhet (#71, docs/rapporter.md): does the project make
+/// money? Pure composition of what already exists — dimension-filtered
+/// SUM queries folded with `regnskap::lonnsomhet` (presentation signs
+/// in one place), the timesheet summary's billed/unbilled split, and
+/// the kunde link from #80. No new stored state.
+pub async fn prosjektlonnsomhet(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<ProsjektRapportQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    let year = match query.year {
+        Some(y) => y,
+        None => {
+            let today: NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&state.pool)
+                .await
+                .map_err(anyhow::Error::from)?;
+            regnmed_core::regnskapsar::regnskapsar(today)
+        }
+    };
+    let (from, to) = regnmed_core::regnskapsar::regnskapsar_periode(year)
+        .ok_or_else(|| ApiError::BadRequest(format!("ugyldig år {year}")))?;
+
+    let dims = regnmed_db::list_dimensions(&state.pool, company_id).await?;
+    let timer = regnmed_db::timesheet_summary(&state.pool, company_id, from, to).await?;
+    let timer_for = |code: &str| timer.iter().find(|t| t.prosjekt.as_deref() == Some(code));
+    let timer_json = |t: Option<&regnmed_db::timesheet::ProsjektSum>| match t {
+        Some(t) => json!({
+            "minutter": t.minutter,
+            "fakturerte_minutter": t.fakturerte_minutter,
+            "fakturert_ore": t.fakturert_ore,
+            "ufakturert_ore": t.ufakturert_ore,
+        }),
+        None => json!({
+            "minutter": 0, "fakturerte_minutter": 0,
+            "fakturert_ore": 0, "ufakturert_ore": 0,
+        }),
+    };
+
+    if let Some(code) = &query.prosjekt {
+        let dim = dims
+            .iter()
+            .find(|d| d.kind == "prosjekt" && &d.code == code)
+            .ok_or_else(|| ApiError::BadRequest(format!("ingen prosjekt med kode {code}")))?;
+        let lines =
+            regnmed_db::saldo_lines(&state.pool, company_id, Some(from), to, None, Some(code))
+                .await?;
+        let l = regnmed_core::regnskap::lonnsomhet(&lines);
+        let r = regnmed_core::regnskap::resultat(&lines);
+        return Ok(Json(json!({
+            "year": year,
+            "prosjekt": dim.code,
+            "name": dim.name,
+            "active": dim.active,
+            "kunde": dim.kunde,
+            "kunde_navn": dim.kunde_navn,
+            "inntekter_ore": l.inntekter_ore,
+            "kostnader_ore": l.kostnader_ore,
+            "resultat_ore": l.resultat_ore(),
+            "timer": timer_json(timer_for(code)),
+            "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
+        })));
+    }
+
+    let saldo = regnmed_db::prosjekt_saldo_lines(&state.pool, company_id, from, to).await?;
+    let rows = dims
+        .iter()
+        .filter(|d| d.kind == "prosjekt")
+        .map(|d| {
+            let lines: Vec<regnmed_core::regnskap::SaldoLine> = saldo
+                .iter()
+                .filter(|(p, _)| p == &d.code)
+                .map(|(_, l)| regnmed_core::regnskap::SaldoLine {
+                    number: l.number.clone(),
+                    name: l.name.clone(),
+                    saldo_ore: l.saldo_ore,
+                })
+                .collect();
+            let l = regnmed_core::regnskap::lonnsomhet(&lines);
+            json!({
+                "prosjekt": d.code,
+                "name": d.name,
+                "active": d.active,
+                "kunde": d.kunde,
+                "kunde_navn": d.kunde_navn,
+                "inntekter_ore": l.inntekter_ore,
+                "kostnader_ore": l.kostnader_ore,
+                "resultat_ore": l.resultat_ore(),
+                "timer": timer_json(timer_for(&d.code)),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "year": year, "prosjekter": rows })))
+}
+
+#[derive(Deserialize)]
 pub struct DateQuery {
     date: NaiveDate,
 }

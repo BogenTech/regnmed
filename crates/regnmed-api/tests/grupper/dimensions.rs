@@ -160,6 +160,207 @@ async fn a_prosjekt_carries_its_kunde() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Prosjektlønnsomhet (#71): the report composes the ledger's
+/// dimension-filtered sums with the hours' billed/unbilled split and
+/// the kunde link — presentation signs, no stored state.
+#[tokio::test]
+async fn prosjektlonnsomhet_composes_ledger_and_hours() {
+    use regnmed_core::Ore;
+    use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Prosjekt Per"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Lønnsomhet AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("1920", "Bank"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+        ("4300", "Varekostnad"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let (_, party_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
+            .await
+            .unwrap();
+    regnmed_db::create_dimension(
+        &state.pool,
+        company,
+        "prosjekt",
+        "PL1",
+        "Leveransen",
+        Some(&party_no),
+    )
+    .await
+    .unwrap();
+    let token = idp.token(&sub, "Prosjekt Per");
+
+    // Revenue: an invoice with the prosjekt on the revenue line —
+    // 10 000 ex mva.
+    let (status, issued) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invoices"),
+        &token,
+        Some(
+            serde_json::json!({
+                "party_no": party_no,
+                "invoice_date": "2026-03-01",
+                "due_date": "2026-03-15",
+                "lines": [{
+                    "description": "Leveranse",
+                    "unit_price_ore": 10_000_00,
+                    "vat_code": "3",
+                    "prosjekt": "PL1",
+                }],
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {issued}");
+
+    // Cost: 3 000 on the project; the bank leg carries no dimension and
+    // must stay out of the project's economics.
+    let linje = |konto: &str, belop: i64, prosjekt: Option<&str>| EntryDraft {
+        account_number: konto.into(),
+        amount: Ore(belop),
+        vat_code: None,
+        description: Some("Materialkjøp".into()),
+        party_no: None,
+        avdeling: None,
+        prosjekt: prosjekt.map(Into::into),
+        valuta: None,
+    };
+    regnmed_db::post_voucher(
+        &state.pool,
+        company,
+        &VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: chrono::NaiveDate::from_ymd_opt(2026, 3, 10).unwrap(),
+            description: "Materialer PL1".into(),
+            reverses: None,
+            entries: vec![
+                linje("4300", 3_000_00, Some("PL1")),
+                linje("1920", -3_000_00, None),
+            ],
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    // Hours: 60 min billed (through the ordinary timesheet invoice,
+    // which adds 1 000 revenue on the project), 90 min still on the
+    // table. Sats 1 000 kr/t.
+    let time = |dato: chrono::NaiveDate| regnmed_db::timesheet::TimeEntryDraft {
+        dato,
+        minutter: 60,
+        beskrivelse: "Prosjektarbeid".into(),
+        prosjekt: Some("PL1".into()),
+        fakturerbar: true,
+        timesats_ore: Some(100_000),
+    };
+    regnmed_db::timesheet::create_time_entry(
+        &state.pool,
+        company,
+        person,
+        &time(chrono::NaiveDate::from_ymd_opt(2026, 4, 1).unwrap()),
+        "Test",
+    )
+    .await
+    .unwrap();
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/timesheet/invoice"),
+        &token,
+        Some(serde_json::json!({ "party_no": party_no, "prosjekt": "PL1" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let mut ufakturert = time(chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
+    ufakturert.minutter = 90;
+    regnmed_db::timesheet::create_time_entry(&state.pool, company, person, &ufakturert, "Test")
+        .await
+        .unwrap();
+
+    // The overview: one row for PL1 with everything composed.
+    let (status, rapport) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reports/prosjekt?year=2026"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {rapport}");
+    let rad = rapport["prosjekter"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["prosjekt"] == "PL1")
+        .expect("PL1 in the overview");
+    assert_eq!(rad["kunde_navn"], "Kunden AS");
+    assert_eq!(rad["inntekter_ore"], 1_100_000, "10 000 + 1 000 timer");
+    assert_eq!(rad["kostnader_ore"], 300_000);
+    assert_eq!(rad["resultat_ore"], 800_000);
+    assert_eq!(rad["timer"]["minutter"], 150);
+    assert_eq!(rad["timer"]["fakturerte_minutter"], 60);
+    assert_eq!(rad["timer"]["fakturert_ore"], 100_000);
+    assert_eq!(rad["timer"]["ufakturert_ore"], 150_000, "på bordet");
+
+    // The detail adds the NS 4102 sections for exactly this project.
+    let (status, detalj) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reports/prosjekt?year=2026&prosjekt=PL1"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {detalj}");
+    assert_eq!(detalj["resultat_ore"], 800_000);
+    let inntekter = detalj["seksjoner"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["heading"] == "Driftsinntekter")
+        .unwrap();
+    assert_eq!(inntekter["sum_ore"], 1_100_000);
+
+    // An unknown code is a loud error, not an empty report.
+    let (status, _) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reports/prosjekt?year=2026&prosjekt=FINNESIKKE"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn dimensions_hash_v3_reports_and_saft() {
     let idp = TestIdp::new();

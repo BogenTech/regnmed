@@ -109,6 +109,30 @@ pub fn resultat(lines: &[SaldoLine]) -> Resultat {
     }
 }
 
+/// Profitability totals in presentation signs (#71): what a project (or
+/// any dimension-filtered slice) earned and cost. Both numbers read
+/// positive; the difference is the dekningsbidrag.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Lonnsomhet {
+    /// Class 3, negated to read positive.
+    pub inntekter_ore: i64,
+    /// Classes 4–8 as booked (costs are debits, already positive).
+    pub kostnader_ore: i64,
+}
+
+impl Lonnsomhet {
+    pub fn resultat_ore(&self) -> i64 {
+        self.inntekter_ore - self.kostnader_ore
+    }
+}
+
+pub fn lonnsomhet(lines: &[SaldoLine]) -> Lonnsomhet {
+    Lonnsomhet {
+        inntekter_ore: -ledger_sum(lines, &[3]),
+        kostnader_ore: ledger_sum(lines, &[4, 5, 6, 7, 8]),
+    }
+}
+
 /// Balanse over saldo lines accumulated from day one through the
 /// balance date (classes 1–2, plus the running result on the EK side).
 pub fn balanse(lines: &[SaldoLine]) -> Balanse {
@@ -137,6 +161,22 @@ mod tests {
             name: name.into(),
             saldo_ore,
         }
+    }
+
+    #[test]
+    fn lonnsomhet_reads_positive_and_subtracts() {
+        // Revenue booked as credit (negative), costs as debit, and a
+        // balance line that must not leak into the result.
+        let lines = [
+            line("3000", "Salg", -10_000_00),
+            line("4300", "Varekjøp", 3_000_00),
+            line("7790", "Annet", 1_500_00),
+            line("1920", "Bank", 99_00),
+        ];
+        let l = lonnsomhet(&lines);
+        assert_eq!(l.inntekter_ore, 10_000_00);
+        assert_eq!(l.kostnader_ore, 4_500_00);
+        assert_eq!(l.resultat_ore(), 5_500_00);
     }
 
     /// A small complete ledger: aksjekapital innskutt, ett salg m/mva,
