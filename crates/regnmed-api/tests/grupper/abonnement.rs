@@ -327,6 +327,260 @@ impl NaiveDateHelper {
     }
 }
 
+/// The automatic follow-up (#75) on a shifted clock: påminnelse →
+/// purring with gebyr → coverage ended → inkassovarsel → ladder stops —
+/// and payment restores coverage, while an oppsigelse never resurrects.
+#[tokio::test]
+async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
+    use regnmed_db::abonnement_oppfolging as opf;
+
+    let Some((state, _idp, kunde, _admin)) = oppsett().await else {
+        return;
+    };
+    let drift = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Regnmed Drift AS")
+        .await
+        .unwrap();
+    let idag = Utc::now().date_naive();
+    regnmed_db::abonnement::tegn(
+        &state.pool,
+        kunde,
+        "standard",
+        NaiveDateHelper::forste_i_maneden(idag),
+        None,
+        "test: dekning for oppfølging",
+        "test",
+    )
+    .await
+    .unwrap();
+    let utfall = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+        .await
+        .unwrap();
+    let gross = utfall
+        .iter()
+        .find(|u| u.company_id == kunde)
+        .and_then(|u| u.gross_ore)
+        .expect("faktura utstedt");
+
+    let mine = |apne: Vec<opf::AbonnementFaktura>| {
+        apne.into_iter()
+            .find(|f| f.company_id == kunde)
+            .expect("abonnementsfakturaen i listen")
+    };
+    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    assert!(!f.sendt, "ingenting er sendt ennå");
+    assert_eq!(f.remaining_ore, gross);
+    let forfall = f.due_date;
+
+    // Too early: the transfer may be in flight.
+    assert!(
+        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(2))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // Day 3: the free påminnelse.
+    let (_, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(3))
+        .await
+        .unwrap()
+        .expect("påminnelse");
+    assert_eq!(steg, "paminnelse");
+    // Same snapshot again: the reminder exists now, one step per day max.
+    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    assert!(
+        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(3))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // 14 days later: purring, with the standardkompensasjon gebyr.
+    let (purring_id, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(17))
+        .await
+        .unwrap()
+        .expect("purring");
+    assert_eq!(steg, "purring");
+    let gebyr: i64 = sqlx::query_scalar("select gebyr_ore from invoice_reminder where id = $1")
+        .bind(purring_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert!(gebyr > 0, "purringen bærer gebyret");
+
+    // Not yet 30 days past forfall: coverage stands.
+    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    assert!(
+        !opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(29))
+            .await
+            .unwrap()
+    );
+    // Day 30, purring long since sent: coverage is ended and logged.
+    assert!(
+        opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(30))
+            .await
+            .unwrap()
+    );
+    let (apen, logg): (bool, String) = (
+        sqlx::query_scalar(
+            "select exists(select 1 from abonnement where company_id = $1 and valid_to is null)",
+        )
+        .bind(kunde)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap(),
+        sqlx::query_scalar(
+            "select aksjon from abonnement_oppfolging
+             where company_id = $1 order by created_at desc limit 1",
+        )
+        .bind(kunde)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap(),
+    );
+    assert!(!apen, "ingen åpen dekning igjen");
+    assert_eq!(logg, "sperret");
+    // A second look the day after changes nothing — no open row left.
+    assert!(
+        !opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(31))
+            .await
+            .unwrap()
+    );
+
+    // The ladder continues past the sperre: inkassovarsel with rente,
+    // then silence.
+    let (_, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(31))
+        .await
+        .unwrap()
+        .expect("inkassovarsel");
+    assert_eq!(steg, "inkassovarsel");
+    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    assert!(
+        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(90))
+            .await
+            .unwrap()
+            .is_none(),
+        "etter inkassovarselet stopper maskinen"
+    );
+
+    // Unpaid: no restoration.
+    assert!(
+        !opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(40))
+            .await
+            .unwrap()
+    );
+
+    // The payment lands: an ordinary bank voucher matched against the
+    // receivable, exactly what a manual bank import ends in.
+    regnmed_db::ensure_account(&state.pool, drift, "1920", "Bank")
+        .await
+        .unwrap();
+    let party_no: String = sqlx::query_scalar(
+        "select p.party_no from invoice i join party p on p.id = i.party_id where i.id = $1",
+    )
+    .bind(f.invoice_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    let linje =
+        |konto: &str, belop: i64, party: Option<String>| regnmed_core::voucher::EntryDraft {
+            account_number: konto.into(),
+            amount: regnmed_core::Ore(belop),
+            vat_code: None,
+            description: None,
+            party_no: party,
+            avdeling: None,
+            prosjekt: None,
+            valuta: None,
+        };
+    let posted = regnmed_db::post_voucher(
+        &state.pool,
+        drift,
+        &regnmed_core::voucher::VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: idag,
+            description: "Innbetaling abonnement".into(),
+            reverses: None,
+            entries: vec![
+                linje("1920", gross, None),
+                linje("1500", -gross, Some(party_no)),
+            ],
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    let betaling: Uuid =
+        sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
+            .bind(posted.id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    let fordring: Uuid =
+        sqlx::query_scalar("select receivable_entry_id from invoice where id = $1")
+            .bind(f.invoice_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+         values ($1,$2,$3,$4,'test')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(fordring)
+    .bind(betaling)
+    .bind(gross)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+
+    // Paid → restored, once; the trail remembers.
+    assert!(
+        opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(41))
+            .await
+            .unwrap()
+    );
+    let (plan, valid_to): (String, Option<chrono::NaiveDate>) = sqlx::query_as(
+        "select plan, valid_to from abonnement where company_id = $1
+         order by valid_from desc, created_at desc limit 1",
+    )
+    .bind(kunde)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(plan, "standard", "planen fortsetter som før");
+    assert!(valid_to.is_none(), "dekningen er åpen igjen");
+    assert!(
+        !opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(42))
+            .await
+            .unwrap(),
+        "gjenoppretting skjer én gang"
+    );
+
+    // An OPPSIGELSE is never resurrected: no 'sperret' entry in the
+    // trail means no restoration, paid or not.
+    let oppsagt = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oppsagt AS")
+        .await
+        .unwrap();
+    regnmed_db::abonnement::tegn(
+        &state.pool,
+        oppsagt,
+        "basis",
+        NaiveDateHelper::forste_i_maneden(idag),
+        None,
+        "test: dekning som sies opp",
+        "test",
+    )
+    .await
+    .unwrap();
+    regnmed_db::abonnement::avslutt(&state.pool, oppsagt, idag + chrono::Days::new(1))
+        .await
+        .unwrap();
+    assert!(
+        !opf::gjenopprett_om_betalt(&state.pool, drift, oppsagt, idag + chrono::Days::new(60))
+            .await
+            .unwrap(),
+        "en oppsigelse vekkes aldri til live"
+    );
+}
+
 // ---------------------------------------------------------------------
 // Kortskinnen (#74).
 // ---------------------------------------------------------------------

@@ -1717,6 +1717,7 @@ dependencies = [
  "regnmed-core",
  "regnmed-db",
  "regnmed-gov",
+ "regnmed-mail",
  "reqwest",
  "rsa",
  "serde",
@@ -1741,6 +1742,7 @@ dependencies = [
  "regnmed-core",
  "regnmed-db",
  "regnmed-gov",
+ "regnmed-mail",
  "sqlx",
  "tokio",
  "uuid",
@@ -1789,6 +1791,19 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "regnmed-mail"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "base64",
+ "regnmed-db",
+ "serde",
+ "serde_json",
  "uuid",
 ]
 

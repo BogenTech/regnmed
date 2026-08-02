@@ -1,0 +1,27 @@
+# The daily abonnement follow-up (#75), pointed at the same ops company
+# as invoicing and the API — spread them across different ledgers and
+# purringer chase claims that were never raised. See
+# abonnement-cronjob.yaml for why the value is not inherited from
+# deploy/shared.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-abonnement-oppfolging
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: oppfolging
+              env:
+                - name: REGNMED_DRIFT_ORGNR
+                  value: "935115086"
+                - name: NATS_URL
+                  value: nats://nats:4222
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url

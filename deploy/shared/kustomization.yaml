@@ -15,3 +15,4 @@ kind: Kustomization
 resources:
   - backup.yaml
   - abonnement-faktura.yaml
+  - abonnement-oppfolging.yaml

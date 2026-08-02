@@ -5,6 +5,7 @@
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
 pub mod abonnement;
+pub mod abonnement_oppfolging;
 pub mod aksjebok;
 pub mod anchor;
 pub mod asset;

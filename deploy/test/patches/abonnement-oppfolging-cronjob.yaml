@@ -1,0 +1,27 @@
+# The daily abonnement follow-up (#75) in test, same ops company as
+# invoicing. The whole no-human loop is meant to fail here first: an
+# unpaid test invoice walks påminnelse → purring → inkassovarsel →
+# coverage ended, and a payment restores it — with real mail through the
+# cluster's own rail and real vouchers in the test ledger.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-abonnement-oppfolging
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: oppfolging
+              env:
+                - name: REGNMED_DRIFT_ORGNR
+                  value: "935115086"
+                - name: NATS_URL
+                  value: nats://nats:4222
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url

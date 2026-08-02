@@ -21,6 +21,13 @@ pub const PROVETID_DAGER: i64 = 30;
 /// faktura.
 pub const FRIST_DAGER: i64 = 14;
 
+/// The automatic follow-up (#75) ends coverage when an abonnement
+/// faktura is this many days past forfall AND a purring has been sent —
+/// the debtor has been asked twice by then. Ending coverage does not
+/// block by itself: the ordinary [`FRIST_DAGER`] grace runs on top, so
+/// the actual sperre lands ~44 days past forfall.
+pub const SPERR_ETTER_FORFALL_DAGER: i64 = 30;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// A row covers today's date.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/regnmed-core",
     "crates/regnmed-db",
+    "crates/regnmed-mail",
     "crates/regnmed-api",
     "crates/regnmed-cli",
     "crates/regnmed-gov",
@@ -44,6 +45,7 @@ async-nats = "0.42"
 futures-util = "0.3"
 regnmed-core = { path = "crates/regnmed-core" }
 regnmed-db = { path = "crates/regnmed-db" }
+regnmed-mail = { path = "crates/regnmed-mail" }
 
 anyhow = "1"
 axum = "0.8"

@@ -88,6 +88,17 @@ enum Command {
         #[arg(long)]
         bare_orgnr: Option<String>,
     },
+    /// Automatic abonnement follow-up (#75, docs/abonnement.md §5.3):
+    /// mail unsent abonnement invoices, take the next purring step on
+    /// overdue ones, end coverage on prolonged non-payment, and restore
+    /// it when the payment lands. Idempotent; run daily (CronJob).
+    /// Sending needs NATS_URL — without it the bookkeeping steps still
+    /// run and the unsent mail is reported as failure.
+    AbonnementOppfolging {
+        /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
+        #[arg(long)]
+        orgnr: Option<String>,
+    },
     /// Fetch dagskurser from Norges Banks åpne API into the valutakurs
     /// table (docs/valuta.md, #44). Manual rates can always be added
     /// via the API; every row records its kilde.
@@ -176,6 +187,33 @@ async fn resolve_company(
             .with_context(|| format!("no company with orgnr {orgnr}")),
         (None, None) => anyhow::bail!("pass --company or --orgnr"),
     }
+}
+
+/// Publishes one mail on the shared rail and logs it in the utsendelse
+/// trail — the log id doubles as Nats-Msg-Id, so a retried send is
+/// deduplicated by the stream (#75).
+async fn send_epost(
+    pool: &sqlx::PgPool,
+    js: &regnmed_mail::jetstream::Context,
+    drift: Uuid,
+    payload: regnmed_db::EmailPayload,
+) -> Result<()> {
+    let id = Uuid::now_v7();
+    let mail = regnmed_mail::OutboundMail::from_payload(id, &payload);
+    regnmed_mail::publish(js, &mail).await?;
+    regnmed_db::log_utsendelse(
+        pool,
+        id,
+        drift,
+        payload.invoice_id,
+        payload.reminder_id,
+        payload.invitation_id,
+        &payload.to,
+        &payload.subject,
+        regnmed_db::abonnement_oppfolging::UTFORT_AV,
+    )
+    .await?;
+    Ok(())
 }
 
 #[tokio::main]
@@ -363,6 +401,158 @@ async fn main() -> Result<()> {
                 .any(|u| u.invoice_no.is_none() && u.detail.as_deref() != Some("hoppet over"))
             {
                 anyhow::bail!("en eller flere abonnementsfakturaer feilet");
+            }
+        }
+        Command::AbonnementOppfolging { orgnr } => {
+            use regnmed_db::abonnement_oppfolging as opf;
+            let orgnr = orgnr
+                .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
+                .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
+            let drift = resolve_company(&pool, None, Some(&orgnr)).await?;
+            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let mailq = regnmed_mail::connect_from_env().await?;
+            if mailq.is_none() {
+                println!("NATS_URL er ikke satt — bokføringsstegene kjører, ingenting sendes");
+            }
+            let mut feil = 0usize;
+
+            // The snapshot is taken BEFORE today's purringer: the sperre
+            // gate ("a purring has been sent") therefore only sees steps
+            // from EARLIER runs — a purring never triggers the sperre on
+            // the day it goes out.
+            let apne = opf::apne_fakturaer(&pool, drift).await?;
+
+            // 1) Next purring step where the cadence says one is due. A
+            // purring must reach somebody: no e-mail address, no step —
+            // reported loudly instead, until a human fixes the address.
+            for f in &apne {
+                if f.epost.is_none() {
+                    println!(
+                        "{}: faktura {} — selskapet mangler e-postadresse, purres ikke",
+                        f.company_navn, f.invoice_no
+                    );
+                    feil += 1;
+                    continue;
+                }
+                match opf::purr(&pool, drift, f, idag).await {
+                    Ok(Some((_, steg))) => {
+                        println!("{}: faktura {} → {steg}", f.company_navn, f.invoice_no)
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        println!(
+                            "{}: faktura {} — purring FEILET: {e:#}",
+                            f.company_navn, f.invoice_no
+                        );
+                        feil += 1;
+                    }
+                }
+            }
+
+            // 2) Mail: first the invoices that never went out (a fresh
+            // månedskjøring, or an earlier failed send), then reminders
+            // without an utsendelse row. The utsendelse id doubles as
+            // Nats-Msg-Id, so a retried send cannot double-deliver.
+            if let Some(js) = &mailq {
+                for f in apne.iter().filter(|f| !f.sendt) {
+                    let Some(epost) = &f.epost else {
+                        // Already counted above.
+                        continue;
+                    };
+                    let sendt = async {
+                        let payload = regnmed_db::invoice_email_payload(
+                            &pool,
+                            drift,
+                            f.invoice_id,
+                            Some(epost),
+                        )
+                        .await?;
+                        send_epost(&pool, js, drift, payload).await
+                    }
+                    .await;
+                    match sendt {
+                        Ok(()) => println!(
+                            "{}: faktura {} sendt til {epost}",
+                            f.company_navn, f.invoice_no
+                        ),
+                        Err(e) => {
+                            println!(
+                                "{}: faktura {} — utsendelse FEILET: {e:#}",
+                                f.company_navn, f.invoice_no
+                            );
+                            feil += 1;
+                        }
+                    }
+                }
+                for p in opf::usendte_purringer(&pool, drift).await? {
+                    let Some(epost) = &p.epost else {
+                        continue;
+                    };
+                    let sendt = async {
+                        let payload = regnmed_db::reminder_email_payload(
+                            &pool,
+                            drift,
+                            p.invoice_id,
+                            p.reminder_id,
+                            Some(epost),
+                        )
+                        .await?;
+                        send_epost(&pool, js, drift, payload).await
+                    }
+                    .await;
+                    match sendt {
+                        Ok(()) => println!(
+                            "{}: {} for faktura {} sendt til {epost}",
+                            p.company_navn, p.steg, p.invoice_no
+                        ),
+                        Err(e) => {
+                            println!(
+                                "{}: {} for faktura {} — utsendelse FEILET: {e:#}",
+                                p.company_navn, p.steg, p.invoice_no
+                            );
+                            feil += 1;
+                        }
+                    }
+                }
+            } else if apne.iter().any(|f| !f.sendt) {
+                println!("usendte fakturaer venter på NATS_URL");
+                feil += 1;
+            }
+
+            // 3) End coverage on prolonged non-payment (the pre-purring
+            // snapshot gates this on a purring from an earlier run).
+            for f in &apne {
+                match opf::sperr_om_moden(&pool, f, idag).await {
+                    Ok(true) => println!(
+                        "{}: dekningen avsluttet — faktura {} ubetalt siden {}",
+                        f.company_navn, f.invoice_no, f.due_date
+                    ),
+                    Ok(false) => {}
+                    Err(e) => {
+                        println!("{}: sperring FEILET: {e:#}", f.company_navn);
+                        feil += 1;
+                    }
+                }
+            }
+
+            // 4) Restore coverage where the payment has since landed —
+            // only for coverage the machine itself ended (the trail is
+            // the memory; an oppsigelse is never resurrected).
+            for company in opf::auto_sperrede(&pool).await? {
+                match opf::gjenopprett_om_betalt(&pool, drift, company, idag).await {
+                    Ok(true) => println!("{company}: dekningen gjenopprettet"),
+                    Ok(false) => {}
+                    Err(e) => {
+                        println!("{company}: gjenoppretting FEILET: {e:#}");
+                        feil += 1;
+                    }
+                }
+            }
+
+            if feil > 0 {
+                anyhow::bail!("{feil} oppfølgingssteg feilet");
             }
         }
         Command::GenerateInvoices => {

@@ -298,6 +298,16 @@ pub async fn registrer_kortbetaling(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    // The payment may be what an auto-sperret customer was waiting on —
+    // restore coverage NOW rather than at the next nightly sweep (#75).
+    // Best effort after the payment is safely booked: a failure here
+    // must not fail the webhook, the sweep will catch it.
+    if let Err(e) =
+        crate::abonnement_oppfolging::gjenopprett_om_betalt(pool, drift_company_id, kunde, idag)
+            .await
+    {
+        eprintln!("gjenoppretting etter kortbetaling feilet (sweep tar den): {e:#}");
+    }
     Ok(true)
 }
 

@@ -199,6 +199,52 @@ sier det. Vipps MobilePay er en mulig tilleggs-skinne senere;
 merchant-of-record (Paddle o.l.) er avvist — de blir selger, og det
 kolliderer med at vi fører vårt eget regnskap i vårt eget system.
 
+### 5.3 Automatisk oppfølging (#75): send, purr, sperr — uten mennesker
+
+«Sending er menneskelig handling» gjelder KUNDENES bokføring;
+driftsselskapets egen fakturering er nettopp maskinell. Den daglige
+CronJobben `regnmed abonnement-oppfolging` lukker livssyklusen:
+
+1. **Send**: abonnementsfakturaer uten utsendelsesrad e-postes til
+   kundeselskapets egen adresse (Firmaopplysninger) med PDF-en vedlagt.
+   Utsendelses-id-en er Nats-Msg-Id, så en omsending kan aldri
+   dobbeltlevere — og en faktura kortet betalte ved utstedelse har
+   ingenting utestående og sendes ikke som krav.
+2. **Purr**: kadensen er en REN REGEL (`regnmed-core::purring::
+   neste_skritt`): gratis påminnelse 3 dager etter forfall, purring med
+   gebyr (standardkompensasjon — kundene er næringsdrivende) 14 dager
+   senere, inkassovarsel med rente 14 dager etter det — og så stopper
+   maskinen: inkasso hører til bevillingshavere (docs/purring.md).
+   Hvert skritt går gjennom samme `create_reminder` som menneskene
+   bruker — stegreglene og satsregisteret håndhever lovligheten, kravet
+   bokføres i samme transaksjon, dokumentet lagres. En purring må nå
+   noen: selskap uten e-postadresse purres ikke, men rapporteres
+   høylytt til noen retter adressen.
+3. **Sperr**: står fakturaen ubetalt
+   `SPERR_ETTER_FORFALL_DAGER` (30) dager etter forfall OG en purring
+   er sendt i en TIDLIGERE kjøring, avsluttes dekningen. Det sperrer
+   ikke i seg selv — den vanlige fristen på 14 dager løper oppå
+   (statusen er fortsatt beregnet, aldri lagret), så selve sperren
+   lander ~44 dager etter forfall. Kortabonnenter (Stripe
+   Subscriptions) har sin egen vei: Stripe purrer selv, og
+   `customer.subscription.deleted` avslutter dekningen som før.
+4. **Gjenopprett**: når alle abonnementsfakturaer er betalt (webhook
+   eller bankimport/manuell match), tegnes dekningen på nytt med samme
+   plan — ØYEBLIKKELIG fra kortwebhooken, ellers ved neste kjøring.
+
+Beslutningene om dekning står i det innsettings-bare sporet
+`abonnement_oppfolging` (migrasjon 0048) — som også er maskinens eget
+minne: gjenoppretting skjer BARE for dekninger maskinen selv avsluttet
+for mislighold. En oppsigelse ser identisk ut i abonnement-tabellen, og
+uten sporet ville en betalt sluttfaktura vekket det oppsagte
+abonnementet til live igjen. Gebyr- og rentekrav er egne åpne poster på
+samme reskontro; gjenopprettingen krever fakturaene betalt, ikke
+gebyrene — et gebyr holder aldri hovedboken som gissel.
+
+Utsendingen bruker samme mail-skinne som alt annet; publisisten bor nå
+i egen crate (`regnmed-mail`) siden BÅDE API-et og CLI-en sender, og en
+wire-kontrakt skal ha nøyaktig én kopi.
+
 ## 6. Driften
 
 Det finnes ingen API-vei for å styre abonnementer — det er driftens
@@ -210,6 +256,7 @@ regnmed abonnement --orgnr 999888777 --aksjon tegn --note "Avtale 2026-014"
 regnmed abonnement --orgnr 999888777 --aksjon avslutt --til 2026-09-01
 regnmed abonnement-faktura --orgnr <driftsselskapets orgnr>          # hele måneden
 regnmed abonnement-faktura --orgnr <drift> --bare-orgnr 999888777    # etterfakturering
+regnmed abonnement-oppfolging --orgnr <drift>                        # daglig: send, purr, sperr (§5.3)
 regnmed abonnement-pris                                              # vis prislisten
 regnmed abonnement-pris --plan standard --pris-ore 12900 \
     --fra 2027-01-01 --kilde "prisvedtak 2026-12-01"                 # prisendring = én kommando
@@ -228,3 +275,9 @@ beskjeden, **serveren er sperren**.
   oppsigelse gir frist, ikke øyeblikkelig sperre; fakturakjøringen
   utsteder gjennom egen motor, med prislistens beløp mot kundens orgnr,
   og samme måned kan ikke faktureres to ganger.
+- Oppfølgingen (§5.3): `regnmed-core::purring` fester kadensen
+  (påminnelse → purring → inkassovarsel → stopp) som ren regel;
+  integrasjonstesten går hele trappen på flyttet klokke — gebyret på
+  purringen, dekningen avsluttet på dag 30 og logget, inkassovarselet
+  etterpå, stillhet etter det, gjenoppretting nøyaktig én gang når
+  betalingen er matchet — og at en OPPSIGELSE aldri gjenopprettes.

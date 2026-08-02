@@ -214,6 +214,69 @@ pub struct TidligereSkritt {
     pub gebyr_ore: i64,
 }
 
+/// The machine's next move on an overdue invoice (#75) — the cadence
+/// the automatic follow-up walks. A SUGGESTION shape like everything
+/// else in this module: `valider_steg` still judges the actual step.
+#[derive(Debug, PartialEq, Eq)]
+pub struct NesteSkritt {
+    pub steg: Steg,
+    /// Charge the gebyr the satsregister allows on the send date.
+    pub med_gebyr: bool,
+    /// Add forsinkelsesrente to the claim.
+    pub med_rente: bool,
+    /// Payment deadline, days from the send date.
+    pub frist_dager: i64,
+}
+
+/// Days past forfall before the first (free) påminnelse — a bank
+/// transfer needs a few days to land before we nag.
+pub const PAMINNELSE_ETTER_DAGER: i64 = 3;
+/// Days between steps — matches the frist each step gives the debtor.
+pub const SKRITT_MELLOMROM_DAGER: i64 = 14;
+
+/// What the automatic follow-up should do today, or None when nothing
+/// is due: the ladder is påminnelse (free) → purring (gebyr) →
+/// inkassovarsel (rente, 14-day frist as the law requires) → stop.
+/// Inkasso itself belongs to bevillingshavere (docs/purring.md), so
+/// after the inkassovarsel the machine's job is blocking, not nagging.
+pub fn neste_skritt(
+    siste: Option<(Steg, NaiveDate)>,
+    forfall: NaiveDate,
+    idag: NaiveDate,
+) -> Option<NesteSkritt> {
+    match siste {
+        None if idag >= forfall + chrono::Days::new(PAMINNELSE_ETTER_DAGER as u64) => {
+            Some(NesteSkritt {
+                steg: Steg::Paminnelse,
+                med_gebyr: false,
+                med_rente: false,
+                frist_dager: SKRITT_MELLOMROM_DAGER,
+            })
+        }
+        Some((Steg::Paminnelse, sendt))
+            if idag >= sendt + chrono::Days::new(SKRITT_MELLOMROM_DAGER as u64) =>
+        {
+            Some(NesteSkritt {
+                steg: Steg::Purring,
+                med_gebyr: true,
+                med_rente: false,
+                frist_dager: SKRITT_MELLOMROM_DAGER,
+            })
+        }
+        Some((Steg::Purring, sendt))
+            if idag >= sendt + chrono::Days::new(SKRITT_MELLOMROM_DAGER as u64) =>
+        {
+            Some(NesteSkritt {
+                steg: Steg::Inkassovarsel,
+                med_gebyr: false,
+                med_rente: true,
+                frist_dager: SKRITT_MELLOMROM_DAGER,
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The rule check before a new step is recorded. `maks_gebyr_ore` is the
 /// rate valid on the send date (purregebyr_maks or, for
 /// næringsdrivende debtors, standardkompensasjon) — the caller does the
@@ -432,6 +495,47 @@ mod tests {
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    #[test]
+    fn the_ladder_walks_paminnelse_purring_inkassovarsel_then_stops() {
+        let forfall = date(2026, 3, 1);
+        // Too early: the transfer may be in flight.
+        assert_eq!(neste_skritt(None, forfall, date(2026, 3, 3)), None);
+        // Day 3: the free påminnelse.
+        let p = neste_skritt(None, forfall, date(2026, 3, 4)).unwrap();
+        assert_eq!(p.steg, Steg::Paminnelse);
+        assert!(!p.med_gebyr && !p.med_rente);
+        // 14 days after the påminnelse: purring, now with gebyr.
+        let sendt = date(2026, 3, 4);
+        assert_eq!(
+            neste_skritt(Some((Steg::Paminnelse, sendt)), forfall, date(2026, 3, 17)),
+            None,
+            "not before the frist has run out"
+        );
+        let p = neste_skritt(Some((Steg::Paminnelse, sendt)), forfall, date(2026, 3, 18)).unwrap();
+        assert_eq!(p.steg, Steg::Purring);
+        assert!(p.med_gebyr);
+        // 14 more: inkassovarsel with rente and the statutory frist.
+        let p = neste_skritt(
+            Some((Steg::Purring, date(2026, 3, 18))),
+            forfall,
+            date(2026, 4, 1),
+        )
+        .unwrap();
+        assert_eq!(p.steg, Steg::Inkassovarsel);
+        assert!(p.med_rente && !p.med_gebyr);
+        assert_eq!(p.frist_dager, 14);
+        // After the inkassovarsel the machine stops nagging — no matter
+        // how long it waits.
+        assert_eq!(
+            neste_skritt(
+                Some((Steg::Inkassovarsel, date(2026, 4, 1))),
+                forfall,
+                date(2026, 12, 31)
+            ),
+            None
+        );
     }
 
     fn satser() -> Vec<SatsPeriode> {

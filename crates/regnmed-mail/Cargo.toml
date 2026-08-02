@@ -1,0 +1,17 @@
+[package]
+name = "regnmed-mail"
+description = "Publisher side of the shared outbound-mail rail (wire contract with regnid)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+regnmed-db.workspace = true
+
+anyhow.workspace = true
+async-nats.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

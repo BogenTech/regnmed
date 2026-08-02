@@ -1096,6 +1096,30 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    fane under Rapporter (rad-klikk åpner seksjonene + «på bordet»),
    lenket fra dimensjonsregisteret. Testen håndregner oversikt og
    detalj fra faktura + kostnadsbilag + delvis fakturerte timer.
+62. ✅ Automatisk abonnementsoppfølging (docs/abonnement.md §5.3,
+   closed #75): livssyklusen rundt kortskinnen er menneskefri. Daglig
+   CronJob `regnmed abonnement-oppfolging` (deploy/shared, prod/test-
+   patcher m/ driftsorgnr + NATS_URL): (1) SEND — usendte
+   abonnementsfakturaer e-postes m/ PDF til kundeselskapets adresse;
+   utsendelses-id = Nats-Msg-Id, så omsending aldri dobbeltleverer; en
+   kortbetalt faktura har ingenting utestående og sendes ikke. (2)
+   PURR — kadensen som REN REGEL (`purring::neste_skritt`: påminnelse
+   forfall+3, purring m/ standardkompensasjon +14, inkassovarsel m/
+   rente +14, så STOPP — inkasso hører bevillingshavere til); hvert
+   skritt gjennom samme create_reminder som menneskene, uten
+   e-postadresse purres det ikke men ropes. (3) SPERR — dekningen
+   avsluttes 30 dager etter forfall NÅR en purring fra en TIDLIGERE
+   kjøring foreligger (øyeblikksbildet tas før dagens purringer);
+   vanlig frist løper oppå → reell sperre ~dag 44; Stripe-abonnenter
+   uendret (subscription.deleted). (4) GJENOPPRETT — alle fakturaer
+   betalt → samme plan tegnes på nytt, ØYEBLIKKELIG fra kortwebhooken,
+   ellers ved neste kjøring. Migration 0048: innsettings-bart
+   `abonnement_oppfolging`-spor = maskinens minne — gjenoppretting
+   BARE for dekninger maskinen selv avsluttet; en OPPSIGELSE
+   gjenopprettes aldri (testfestet). NY CRATE `regnmed-mail`:
+   publisisten flyttet ut av regnmed-api siden både API og CLI sender
+   — én kopi av wire-kontrakten; api::mailq er re-eksport.
+   Integrasjonstesten går hele trappen på flyttet klokke.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

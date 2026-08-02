@@ -71,4 +71,5 @@ patches:
   - path: patches/generate-invoices-cronjob.yaml
   - path: patches/depreciate-cronjob.yaml
   - path: patches/abonnement-cronjob.yaml
+  - path: patches/abonnement-oppfolging-cronjob.yaml
   - path: patches/backup-cronjobs.yaml
