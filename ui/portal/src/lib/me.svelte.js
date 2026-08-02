@@ -4,7 +4,13 @@
 
 import { api } from "./api.js";
 
-export const me = $state({ loaded: false, name: "", email: "", companies: [] });
+export const me = $state({
+  loaded: false,
+  name: "",
+  email: "",
+  companies: [],
+  nyeTilganger: 0,
+});
 
 export async function loadMe(force = false) {
   if (me.loaded && !force) return;
@@ -12,6 +18,9 @@ export async function loadMe(force = false) {
   me.name = svar.name || "";
   me.email = svar.email || "";
   me.companies = svar.companies || [];
+  // Invitations redeemed by this very call — the invited user's first
+  // login should say so instead of silently listing the companies.
+  me.nyeTilganger = svar.nye_tilganger || 0;
   me.loaded = true;
 }
 

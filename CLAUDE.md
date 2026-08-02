@@ -1010,6 +1010,27 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    NOTE: run `cargo fmt --all` before every commit — CI gates on
    `cargo fmt --all --check` (learned 2026-07-25 after three red
    runs).
+57. ✅ Registreringsflyt (docs/marketplace.md, closed #77): guidet
+   førstegangsflyt med rutevalg-badges i portalen — «Egen virksomhet»
+   (30 dager prøvetid), «Regnskapsfører eller revisor» (`POST /firms`
+   fikk endelig UI; gratis for byrået — all fakturering er per selskap,
+   byråer har ingen billingtabeller) og «Jeg er invitert» (forklarer at
+   `/me` løser inn invitasjoner ved innlogging, viser adressen og
+   tilbyr ny sjekk; `nye_tilganger` vises nå i portalen). Felles
+   orgnr-oppslag; previewens autorisasjonsflagg RUTER SOM FORSLAG,
+   aldri avgjørelse (et autorisert byrå kan lovlig også føre eget
+   regnskap som selskap — hint begge veier). `create_firm` avviser nå
+   slettet/konkurs enhet som `onboard_company` (manglet;
+   integrasjonstesten fester det). Eksisterende brukere når flyten via
+   sammenleggbart «Registrer nytt»-kort. seed_browser skriver også
+   token for en HELT NY bruker (velkomstvisningen kan bare ses av en
+   som eier ingenting). Browser-verifisert alle stier mot mockede
+   registre. Oppfølgere filet: #78 byråmedlemmer, #79 guidet
+   invitasjon av brukere til selskapet, #80 prosjekt↔kunde for
+   timeføringen. MERK fra verifiseringen: `ensure_firm` er idempotent
+   på orgnr — andreperson som registrerer samme byrå blir med-admin i
+   det eksisterende (autorisasjonsgaten er bestått, men #78 bør eie
+   avgjørelsen uttrykkelig).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

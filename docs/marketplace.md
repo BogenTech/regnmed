@@ -4,6 +4,35 @@ The marketplace's trust starts at onboarding: **names and facts come
 from the registries, never from user input**, and firms may only offer
 services after their autorisasjon is verified.
 
+## The registration flow (#77)
+
+Two fundamentally different paths lead into the system, and the portal
+routes the first-time user **before** asking for anything (badge cards
+on the Companies view; existing users reach the same flow via
+"Registrer nytt selskap eller byrå"):
+
+1. **Egen virksomhet** → company onboarding below. 30-day prøvetid,
+   then abonnement (docs/abonnement.md).
+2. **Regnskapsfører eller revisor** → firm verification below. **Free
+   for the byrå** — all billing is per company; firms have no billing
+   tables at all. Clients each carry their own prøvetid/abonnement.
+3. **Jeg er invitert** → nothing to create: invitations are redeemed
+   automatically by `/me` at login (docs/auth.md §7). The portal shows
+   which address the invitation must be sent to, offers a re-check, and
+   surfaces `nye_tilganger` when the redemption happens.
+
+Both creating paths share the registry preview, and its autorisasjon
+flags steer the routing **both ways as suggestions, never decisions**:
+an orgnr with active autorisasjon looked up under "egen virksomhet"
+gets a "register as byrå instead?" hint (a byrå may legitimately also
+keep its own books as a company), and an orgnr without autorisasjon
+under the byrå path is told why firm registration is impossible and
+offered the company path. Slettet/konkurs blocks both paths — also
+enforced server-side on both endpoints, not just for companies.
+
+Connecting further users to a created company (lønnsmottakere,
+økonomiansvarlig, …) is #79; the byrå's own employees are #78.
+
 ## Company onboarding (Enhetsregisteret)
 
 `POST /companies {orgnr}` (portal: "Nytt selskap fra Enhetsregisteret"):
@@ -24,9 +53,12 @@ flags) before anything is created.
 
 ## Firm verification (Finanstilsynets register)
 
-`POST /firms {orgnr, kind}` creates a regnskapsfører-/revisorfirma
-**only** when the orgnr holds an active autorisasjon of that kind:
+`POST /firms {orgnr, kind}` (portal: the byrå path of the registration
+flow) creates a regnskapsfører-/revisorfirma **only** when the orgnr
+holds an active autorisasjon of that kind:
 
+- Slettede and konkurs-registrerte enheter are refused before the
+  autorisasjon gate — same registry-facts rule as companies.
 - The check **fails closed**: unconfigured or unreachable register, or
   unknown orgnr, all mean "not verified" — nobody becomes a firm because
   a lookup happened to break.
@@ -78,8 +110,9 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
 - `regnmed-api/tests/grupper/marketplace.rs` (real Postgres, mocked registries
   via env URLs, also CI): preview, checksum rejection, onboarding with
   seeded reskontro-flagged kontoplan and creator-as-admin, double
-  onboarding and slettet enhet refused, firm creation refused without
-  autorisasjon and recorded with it.
+  onboarding and slettet enhet refused (for firms too, before the
+  autorisasjon gate), firm creation refused without autorisasjon and
+  recorded with it.
 
 Browser-verified against the **live** Enhetsregisteret: lookup of
 974760673 showed the registry facts in the portal, and onboarding

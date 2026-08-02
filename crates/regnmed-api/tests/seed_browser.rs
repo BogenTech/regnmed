@@ -397,6 +397,13 @@ async fn seed_browser_demo() {
         idp.token(&sub, "Demo Bruker"),
     )
     .unwrap();
+    // A second identity with no access at all — the registration flow's
+    // brand-new-user view can only be seen by someone who owns nothing.
+    std::fs::write(
+        format!("{out_dir}/token-ny.txt"),
+        idp.token(&format!("browser|{}", Uuid::new_v4()), "Ny Bruker"),
+    )
+    .unwrap();
     std::fs::write(format!("{out_dir}/company.txt"), company.to_string()).unwrap();
     println!("seeded company {company}");
 }

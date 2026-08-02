@@ -208,6 +208,22 @@ async fn onboarding_from_registries_end_to_end() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "slettet enhet");
 
+    // Firm creation refuses a deleted enhet before the autorisasjon
+    // gate is even consulted (registry-facts parity with companies).
+    let (status, body) = request(
+        &state,
+        "POST",
+        "/firms",
+        &token,
+        Some(serde_json::json!({ "orgnr": DELETED_ORGNR, "kind": "regnskap" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "slettet enhet: {body}");
+    assert!(
+        body["error"].as_str().unwrap_or("").contains("slettet"),
+        "the refusal names the reason: {body}"
+    );
+
     // Firm creation is gated on Finanstilsynet: the company orgnr (no
     // autorisasjon) is refused; the firm orgnr passes and is recorded.
     let (status, _) = request(

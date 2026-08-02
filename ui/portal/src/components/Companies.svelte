@@ -1,41 +1,33 @@
 <script>
-  import { api, post } from "../lib/api.js";
-  import { me, loadMe } from "../lib/me.svelte.js";
+  // The hub after login: pick a company or byrå — or, for a brand-new
+  // user, the guided registration flow (#77) front and center. Existing
+  // users reach the same flow through a collapsed card at the bottom.
+  import { api } from "../lib/api.js";
+  import { me } from "../lib/me.svelte.js";
   import { logout } from "../lib/auth.svelte.js";
-  import { toast } from "../lib/toast.svelte.js";
   import ThemeControls from "./ThemeControls.svelte";
+  import Registrering from "./Registrering.svelte";
 
   let firms = $state([]);
-  let orgnr = $state("");
-  let preview = $state(null);
+  let firmsLastet = $state(false);
+
+  async function lastByraer() {
+    try {
+      const mine = await api("/firms/mine");
+      firms = mine.firms || [];
+    } catch (error) {
+      /* seksjonen er valgfri */
+    }
+    firmsLastet = true;
+  }
 
   $effect(() => {
-    api("/firms/mine")
-      .then((mine) => (firms = mine.firms || []))
-      .catch(() => {
-        /* seksjonen er valgfri */
-      });
+    lastByraer();
   });
 
-  async function slaOpp() {
-    preview = null;
-    try {
-      preview = await api("/registry/enheter/" + encodeURIComponent(orgnr.trim()));
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
-
-  async function opprett() {
-    try {
-      const created = await post("/companies", { orgnr: orgnr.trim() });
-      toast(created.navn + " opprettet med " + created.seeded_accounts + " kontoer", true);
-      preview = null;
-      await loadMe(true);
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
+  // Only call the user "new" once both sources have answered — a
+  // byrå-only user must not see the welcome flow flash by.
+  const nyBruker = $derived(firmsLastet && me.companies.length === 0 && firms.length === 0);
 </script>
 
 <div class="navbar bg-base-100 shadow-sm">
@@ -46,71 +38,59 @@
   </div>
 </div>
 <main class="p-6 max-w-3xl mx-auto">
-  <h1 class="text-lg mb-4">Hei, {me.name || me.email || ""} — velg selskap:</h1>
-  <div class="grid gap-4 sm:grid-cols-2">
-    {#each me.companies as c (c.company_id)}
-      <a
-        href={"#/c/" + c.company_id + "/oversikt"}
-        class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow"
-      >
-        <div class="card-body">
-          <h2 class="card-title">{c.name}</h2>
-          <p class="text-sm opacity-70">{c.orgnr} · {c.access} via {c.via}</p>
-        </div>
-      </a>
-    {:else}
-      <p class="opacity-70">Ingen selskaper ennå — be om tilgang, et oppdrag, eller start under.</p>
-    {/each}
-  </div>
-
-  <div class="card bg-base-100 shadow-sm mt-8">
-    <div class="card-body">
-      <h2 class="card-title">Nytt selskap fra Enhetsregisteret</h2>
-      <div class="flex gap-2">
-        <input
-          class="input input-bordered"
-          placeholder="Organisasjonsnummer"
-          maxlength="9"
-          bind:value={orgnr}
-        />
-        <button class="btn" onclick={slaOpp}>Slå opp</button>
-      </div>
-      {#if preview}
-        <div class="mt-4 p-4 bg-base-200 rounded-box">
-          <p class="font-semibold">{preview.navn} ({preview.organisasjonsform || ""})</p>
-          <p class="text-sm opacity-70">{preview.naeringskode || ""}</p>
-          <div class="flex gap-2 mt-2">
-            {#if preview.mva_registrert}<span class="badge badge-ghost">MVA-registrert</span>{/if}
-            {#if preview.autorisasjon.regnskap}
-              <span class="badge badge-success">Autorisert regnskapsførerselskap</span>
-            {/if}
-            {#if preview.autorisasjon.revisjon}
-              <span class="badge badge-success">Autorisert revisjonsselskap</span>
-            {/if}
-            {#if preview.konkurs}<span class="badge badge-error">Konkurs</span>{/if}
-          </div>
-          <button class="btn btn-primary btn-sm mt-4" onclick={opprett}>Opprett selskap</button>
-        </div>
-      {/if}
+  {#if me.nyeTilganger > 0}
+    <div class="alert alert-success mb-4 text-sm">
+      Invitasjonen din er innløst — du har fått {me.nyeTilganger} ny(e) tilgang(er).
     </div>
-  </div>
+  {/if}
 
-  {#if firms.length}
-    <h2 class="text-lg mt-8 mb-4">Mine byråer</h2>
+  {#if nyBruker}
+    <h1 class="text-lg mb-1">Velkommen, {me.name || me.email || ""}!</h1>
+    <p class="opacity-70 mb-4">Hva beskriver deg best?</p>
+    <Registrering onFirmsChanged={lastByraer} />
+  {:else}
+    <h1 class="text-lg mb-4">Hei, {me.name || me.email || ""} — velg selskap:</h1>
     <div class="grid gap-4 sm:grid-cols-2">
-      {#each firms as f (f.firm_id)}
-        <a href={"#/byra/" + f.firm_id} class="card bg-base-100 shadow-sm hover:shadow-md">
+      {#each me.companies as c (c.company_id)}
+        <a
+          href={"#/c/" + c.company_id + "/oversikt"}
+          class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow"
+        >
           <div class="card-body">
-            <h2 class="card-title">
-              {f.name}
-              {#if f.pending_requests > 0}
-                <span class="badge badge-primary">{f.pending_requests} nye</span>
-              {/if}
-            </h2>
-            <p class="text-sm opacity-70">{f.kind}{f.verified ? " · autorisert" : ""}</p>
+            <h2 class="card-title">{c.name}</h2>
+            <p class="text-sm opacity-70">{c.orgnr} · {c.access} via {c.via}</p>
           </div>
         </a>
+      {:else}
+        <p class="opacity-70">Ingen selskaper ennå.</p>
       {/each}
+    </div>
+
+    {#if firms.length}
+      <h2 class="text-lg mt-8 mb-4">Mine byråer</h2>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {#each firms as f (f.firm_id)}
+          <a href={"#/byra/" + f.firm_id} class="card bg-base-100 shadow-sm hover:shadow-md">
+            <div class="card-body">
+              <h2 class="card-title">
+                {f.name}
+                {#if f.pending_requests > 0}
+                  <span class="badge badge-primary">{f.pending_requests} nye</span>
+                {/if}
+              </h2>
+              <p class="text-sm opacity-70">{f.kind}{f.verified ? " · autorisert" : ""}</p>
+            </div>
+          </a>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="collapse collapse-arrow bg-base-100 shadow-sm mt-8">
+      <input type="checkbox" />
+      <div class="collapse-title font-semibold">Registrer nytt selskap eller byrå</div>
+      <div class="collapse-content">
+        <Registrering onFirmsChanged={lastByraer} />
+      </div>
     </div>
   {/if}
 </main>

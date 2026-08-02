@@ -117,6 +117,18 @@ pub async fn create_firm(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
+    // Same registry facts gate as company onboarding: a deleted or
+    // bankrupt enhet cannot become a firm either.
+    if enhet.slettedato.is_some() {
+        return Err(ApiError::BadRequest(
+            "enheten er slettet i Enhetsregisteret".into(),
+        ));
+    }
+    if enhet.konkurs {
+        return Err(ApiError::BadRequest(
+            "enheten er registrert som konkurs".into(),
+        ));
+    }
 
     let verified = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env()
         .has_autorisasjon(&request.orgnr, &request.kind)
