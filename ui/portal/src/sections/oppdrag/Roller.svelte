@@ -46,14 +46,17 @@
   <h3 class="font-semibold text-sm mb-1">Innebygde</h3>
   <div class="mb-3">
     {#each roller.innebygde as r (r.navn)}
-      <details class="mb-1">
-        <summary class="cursor-pointer text-sm">
-          {r.navn}<span class="opacity-70"> — {r.rettigheter.length} rettigheter</span>
+      <details class="collapse collapse-arrow border border-base-300 mb-1">
+        <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm">
+          {r.navn}
+          <span class="opacity-70">— {r.rettigheter.length} rettigheter</span>
         </summary>
-        {#if r.beskrivelse}
-          <p class="text-sm pl-3 mb-1">{r.beskrivelse}</p>
-        {/if}
-        <p class="text-xs opacity-70 pl-3">{beskrivelser(r)}</p>
+        <div class="collapse-content pl-3">
+          {#if r.beskrivelse}
+            <p class="text-sm mb-1">{r.beskrivelse}</p>
+          {/if}
+          <p class="text-xs opacity-70">{beskrivelser(r)}</p>
+        </div>
       </details>
     {/each}
   </div>
@@ -65,14 +68,18 @@
   {:else}
     <p class="text-sm opacity-70 mb-2">Ingen egne roller ennå.</p>
   {/if}
-  <details class="mt-2">
-    <summary class="cursor-pointer text-sm font-semibold">Ny rolle</summary>
-    <input
-      class="input input-sm input-bordered w-64 my-2"
-      placeholder="Navn på rollen"
-      bind:value={nyNavn}
-    />
-    <Rettighetsvelger vokabular={roller.vokabular} bind:valgte={nyValgte} />
-    <button class="btn btn-sm mt-2" onclick={opprett}>Opprett</button>
+  <details class="collapse collapse-arrow border border-base-300 mt-2">
+    <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm font-semibold">
+      Ny rolle
+    </summary>
+    <div class="collapse-content pl-3">
+      <input
+        class="input input-sm w-64 my-2"
+        placeholder="Navn på rollen"
+        bind:value={nyNavn}
+      />
+      <Rettighetsvelger vokabular={roller.vokabular} bind:valgte={nyValgte} />
+      <button class="btn btn-sm mt-2" onclick={opprett}>Opprett</button>
+    </div>
   </details>
 </Card>

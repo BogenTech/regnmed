@@ -30,7 +30,7 @@
 <Card title="Kontoutskrift (camt.053 eller CSV)">
   <input
     type="file"
-    class="file-input file-input-bordered"
+    class="file-input"
     accept=".xml,.csv,.txt"
     onchange={filValgt}
   />

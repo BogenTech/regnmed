@@ -26,9 +26,13 @@
 <!-- details/summary i stedet for en bred tabell: det er det som tåler
      375 px uten å måtte rulle sidelengs. -->
 {#each grupper as [gruppe, retter] (gruppe)}
-  <details class="mb-1">
-    <summary class="cursor-pointer text-sm font-semibold py-1">{gruppe}</summary>
-    <div class="pl-2">
+  <details class="collapse collapse-arrow border border-base-300 mb-1">
+    <!-- collapse-title/-content har 1rem padding; her er listen tett, så
+         den trekkes ned med utilities. pr-8 holder plass til pilen. -->
+    <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm font-semibold">
+      {gruppe}
+    </summary>
+    <div class="collapse-content pl-3">
       {#each retter as v (v.rett)}
         <label
           class="flex items-start gap-2 py-0.5 {v.kan_delegeres ? '' : 'opacity-50'}"

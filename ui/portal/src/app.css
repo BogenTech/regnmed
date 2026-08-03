@@ -10,8 +10,16 @@
 
 @import "tailwindcss";
 
+/* Alle daisyUIs innebygde temaer er slått på, ikke et kuratert utvalg:
+   temavalget er brukerens, og en håndplukket liste måtte holdes i takt
+   med daisyUI for hånd. `all` beholder standardene — `light` på
+   :where(:root), `dark` under prefers-color-scheme — så den kan IKKE
+   kombineres med `light --default, dark --prefersdark`: da faller
+   resten av listen stille bort (verifisert 2026-08-03: 4 temaer i
+   bygget i stedet for 37). Kostnaden er ~32 KB CSS (20 KB gzipet),
+   dekket av dist-budsjettet i scripts/frugality.sh. */
 @plugin "daisyui" {
-  themes: light --default, dark --prefersdark, nord, corporate, business, dim, sunset;
+  themes: all;
 }
 
 @import "../themes.css";

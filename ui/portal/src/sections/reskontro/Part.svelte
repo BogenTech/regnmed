@@ -63,17 +63,17 @@
   <Card title="Kontaktinfo">
     <div class="grid gap-2 max-w-md">
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="Adresse (på fakturaen)"
         bind:value={address}
       />
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="E-post (for utsendelse)"
         bind:value={email}
       />
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="Kontonummer (for remittering)"
         bind:value={bankAccount}
       />

@@ -165,7 +165,7 @@
     <h3 class="font-semibold mb-1">Kjør lønn</h3>
     <div class="grid gap-2 mb-2 max-w-lg">
       <div class="grid grid-cols-3 gap-2">
-        <select class="select select-sm select-bordered" bind:value={maned}>
+        <select class="select select-sm" bind:value={maned}>
           {#each MANEDER as navn, i (navn)}
             <option value={i + 1} disabled={kjortIAr.has(i + 1)}>
               {navn}{kjortIAr.has(i + 1) ? " (kjørt)" : ""}
@@ -174,11 +174,11 @@
         </select>
         <input
           type="date"
-          class="input input-sm input-bordered"
+          class="input input-sm"
           title="Utbetalingsdato — styrer hvilke satser som gjelder"
           bind:value={dato}
         />
-        <select class="select select-sm select-bordered" bind:value={sone}>
+        <select class="select select-sm" bind:value={sone}>
           {#each AGA_SONER as s (s[0])}
             <option value={s[0]}>Sone {s[1]}</option>
           {/each}
@@ -202,14 +202,14 @@
               <td>{l.navn}</td>
               <td>
                 <input
-                  class="input input-xs input-bordered w-32"
+                  class="input input-xs w-32"
                   placeholder="Brutto"
                   bind:value={l.brutto}
                 />
               </td>
               <td>
                 <input
-                  class="input input-xs input-bordered w-32"
+                  class="input input-xs w-32"
                   placeholder="Feriepenger"
                   bind:value={l.fp}
                 />

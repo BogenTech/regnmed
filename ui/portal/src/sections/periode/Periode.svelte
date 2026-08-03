@@ -41,7 +41,7 @@
   <Card title="Periodelåsing">
     <p class="mb-2">Låst til og med: <strong>{lock.locked_through || "ingen lås"}</strong></p>
     <form class="flex gap-2 items-end" onsubmit={laas}>
-      <input type="date" class="input input-bordered" required bind:value={lockedThrough} />
+      <input type="date" class="input" required bind:value={lockedThrough} />
       <button class="btn btn-primary">Lås periode</button>
     </form>
     <p class="text-sm opacity-70 mt-2">

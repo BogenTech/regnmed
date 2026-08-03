@@ -66,25 +66,25 @@
 
 <div class="grid gap-2 max-w-md">
   <input
-    class="input input-sm input-bordered"
+    class="input input-sm"
     placeholder="Navn (f.eks. Varebil)"
     bind:value={navn}
   />
   <div class="grid grid-cols-3 gap-2">
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered" placeholder="Kostpris (kr)" bind:value={kostpris} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm" placeholder="Kostpris (kr)" bind:value={kostpris} />
     <input
-      class="input input-sm input-bordered"
+      class="input input-sm"
       placeholder="Restverdi (kr)"
       bind:value={restverdi}
     />
   </div>
   <div class="grid grid-cols-3 gap-2">
-    <input class="input input-sm input-bordered" placeholder="Levetid (mnd)" bind:value={levetid} />
-    <input class="input input-sm input-bordered" title="Balansekonto" bind:value={balanse} />
-    <input class="input input-sm input-bordered" title="Avskrivningskonto" bind:value={avskr} />
+    <input class="input input-sm" placeholder="Levetid (mnd)" bind:value={levetid} />
+    <input class="input input-sm" title="Balansekonto" bind:value={balanse} />
+    <input class="input input-sm" title="Avskrivningskonto" bind:value={avskr} />
   </div>
-  <select class="select select-sm select-bordered" bind:value={gruppe}>
+  <select class="select select-sm" bind:value={gruppe}>
     {#each SALDOGRUPPER as g (g[0])}
       <option value={g[0]}>{g[0]} — {g[1]}</option>
     {/each}

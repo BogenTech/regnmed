@@ -83,7 +83,7 @@
   {#if kunder.length}
     <div class="flex gap-2">
       <select
-        class="select select-sm select-bordered"
+        class="select select-sm"
         value={partyNo}
         onchange={(e) => (valgtKunde = e.currentTarget.value)}
       >

@@ -63,97 +63,99 @@
   }
 </script>
 
-<div class="border border-base-300 rounded-lg p-3 mt-3">
-  {#if history?.length}
-    <p class="text-sm font-semibold mb-1">Purrehistorikk</p>
-    <table class="table table-xs mb-3">
-      <thead>
-        <tr>
-          <th>Skritt</th><th>Sendt</th><th>Frist</th>
-          <th class="text-right">Gebyr+rente</th><th>Bilag</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each history as r (r.reminder_id)}
+<div class="card card-border card-sm mt-3">
+  <div class="card-body">
+    {#if history?.length}
+      <p class="text-sm font-semibold mb-1">Purrehistorikk</p>
+      <table class="table table-xs mb-3">
+        <thead>
           <tr>
-            <td>{r.steg}</td>
-            <td>{r.sent_date}</td>
-            <td>{r.frist_date}</td>
-            <td class="text-right">{kr(r.gebyr_ore + r.rente_ore)}</td>
-            <td>{r.voucher || "–"}</td>
-            <td>
-              <button
-                class="link text-xs"
-                onclick={() => download(base + "/" + r.reminder_id + "?format=tekst", "purring.txt")}
-              >
-                tekst
-              </button>
-              <button
-                class="link text-xs"
-                onclick={() => download(base + "/" + r.reminder_id + "?format=pdf", "purring.pdf")}
-              >
-                pdf
-              </button>
-              <button
-                class="link text-xs"
-                onclick={() => sendDocument(base + "/" + r.reminder_id + "/send")}
-              >
-                send
-              </button>
-            </td>
+            <th>Skritt</th><th>Sendt</th><th>Frist</th>
+            <th class="text-right">Gebyr+rente</th><th>Bilag</th><th></th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
-  <div class="grid gap-2 max-w-md">
-    <label class="form-control">
-      <span class="label-text">Skritt</span>
-      <select class="select select-sm select-bordered" bind:value={steg}>
-        <option value="paminnelse">Betalingspåminnelse (gebyrfri)</option>
-        <option value="purring">Purring</option>
-        <option value="inkassovarsel">Inkassovarsel (14 dagers frist)</option>
-      </select>
-    </label>
-    <label class="form-control">
-      <span class="label-text">Betalingsfrist</span>
-      <input type="date" class="input input-sm input-bordered" bind:value={frist} />
-    </label>
-    <label class="label cursor-pointer justify-start gap-2">
-      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={gebyr} />
-      <span class="label-text">Purregebyr (maks-sats)</span>
-    </label>
-    <label class="label cursor-pointer justify-start gap-2">
-      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={rente} />
-      <span class="label-text">Krev forsinkelsesrente</span>
-    </label>
-    <label class="label cursor-pointer justify-start gap-2">
-      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={naering} />
-      <span class="label-text">Næringsdrivende skyldner (standardkompensasjon)</span>
-    </label>
-    <div class="flex gap-2">
-      <button class="btn btn-sm" onclick={forhandsvis}>Forhåndsvis</button>
-      <button class="btn btn-sm btn-primary" disabled={!previewed} onclick={registrer}>
-        Registrer
-      </button>
-    </div>
-    {#if previewed}
-      <div>
-        <p class="text-sm mt-2">
-          Å betale: <b>{kr(previewed.total_ore)}</b>
-          {#if previewed.gebyr_ore || previewed.rente_ore}
-            {" (" +
-              [
-                previewed.gebyr_ore ? "gebyr " + kr(previewed.gebyr_ore) : null,
-                previewed.rente_ore ? "rente " + kr(previewed.rente_ore) : null,
-              ]
-                .filter(Boolean)
-                .join(", ") +
-              ")"}
-          {/if}
-        </p>
-        <pre class="bg-base-200 rounded p-2 text-xs overflow-x-auto mt-2">{previewed.document}</pre>
-      </div>
+        </thead>
+        <tbody>
+          {#each history as r (r.reminder_id)}
+            <tr>
+              <td>{r.steg}</td>
+              <td>{r.sent_date}</td>
+              <td>{r.frist_date}</td>
+              <td class="text-right">{kr(r.gebyr_ore + r.rente_ore)}</td>
+              <td>{r.voucher || "–"}</td>
+              <td>
+                <button
+                  class="link text-xs"
+                  onclick={() => download(base + "/" + r.reminder_id + "?format=tekst", "purring.txt")}
+                >
+                  tekst
+                </button>
+                <button
+                  class="link text-xs"
+                  onclick={() => download(base + "/" + r.reminder_id + "?format=pdf", "purring.pdf")}
+                >
+                  pdf
+                </button>
+                <button
+                  class="link text-xs"
+                  onclick={() => sendDocument(base + "/" + r.reminder_id + "/send")}
+                >
+                  send
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
+    <div class="grid gap-2 max-w-md">
+      <label class="fieldset">
+        <span class="fieldset-legend">Skritt</span>
+        <select class="select select-sm" bind:value={steg}>
+          <option value="paminnelse">Betalingspåminnelse (gebyrfri)</option>
+          <option value="purring">Purring</option>
+          <option value="inkassovarsel">Inkassovarsel (14 dagers frist)</option>
+        </select>
+      </label>
+      <label class="fieldset">
+        <span class="fieldset-legend">Betalingsfrist</span>
+        <input type="date" class="input input-sm" bind:value={frist} />
+      </label>
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={gebyr} />
+        <span>Purregebyr (maks-sats)</span>
+      </label>
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={rente} />
+        <span>Krev forsinkelsesrente</span>
+      </label>
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={naering} />
+        <span>Næringsdrivende skyldner (standardkompensasjon)</span>
+      </label>
+      <div class="flex gap-2">
+        <button class="btn btn-sm" onclick={forhandsvis}>Forhåndsvis</button>
+        <button class="btn btn-sm btn-primary" disabled={!previewed} onclick={registrer}>
+          Registrer
+        </button>
+      </div>
+      {#if previewed}
+        <div>
+          <p class="text-sm mt-2">
+            Å betale: <b>{kr(previewed.total_ore)}</b>
+            {#if previewed.gebyr_ore || previewed.rente_ore}
+              {" (" +
+                [
+                  previewed.gebyr_ore ? "gebyr " + kr(previewed.gebyr_ore) : null,
+                  previewed.rente_ore ? "rente " + kr(previewed.rente_ore) : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ") +
+                ")"}
+            {/if}
+          </p>
+          <pre class="bg-base-200 rounded p-2 text-xs overflow-x-auto mt-2">{previewed.document}</pre>
+        </div>
+      {/if}
+    </div>
   </div>
 </div>

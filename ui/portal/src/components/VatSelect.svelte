@@ -1,7 +1,7 @@
 <script>
   // Mva-kodevelgeren — standardkodene med dagens satser; med
   // produktvalg kan koden stå tom («mva fra produkt»).
-  let { cls = "select select-bordered", produktvalg = false, value = $bindable("3") } = $props();
+  let { cls = "select", produktvalg = false, value = $bindable("3") } = $props();
 </script>
 
 <select class={cls} bind:value>

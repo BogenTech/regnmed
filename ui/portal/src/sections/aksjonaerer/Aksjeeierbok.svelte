@@ -124,7 +124,7 @@
       Per dato
       <input
         type="date"
-        class="input input-sm input-bordered"
+        class="input input-sm"
         value={dato}
         onchange={(e) => perDato(e.currentTarget.value)}
       />
@@ -172,22 +172,22 @@
 
   <h3 class="font-semibold mb-1">Ny aksjonær</h3>
   <div class="grid gap-2 max-w-md">
-    <select class="select select-sm select-bordered" bind:value={kind}>
+    <select class="select select-sm" bind:value={kind}>
       <option value="person">Person (fødselsnummer)</option>
       <option value="selskap">Selskap (organisasjonsnummer)</option>
       <option value="utenlandsk">Utenlandsk (UTL-id)</option>
     </select>
-    <input class="input input-sm input-bordered" placeholder="Navn" bind:value={navn} />
+    <input class="input input-sm" placeholder="Navn" bind:value={navn} />
     <input
-      class="input input-sm input-bordered"
+      class="input input-sm"
       placeholder={identPlaceholder}
       bind:value={identVerdi}
     />
-    <input class="input input-sm input-bordered" placeholder="Adresse" bind:value={adresseFelt} />
+    <input class="input input-sm" placeholder="Adresse" bind:value={adresseFelt} />
     <div class="grid grid-cols-3 gap-2">
-      <input class="input input-sm input-bordered" placeholder="Postnr" bind:value={postnummer} />
-      <input class="input input-sm input-bordered" placeholder="Poststed" bind:value={poststed} />
-      <input class="input input-sm input-bordered" placeholder="Land (SE)" bind:value={landkode} />
+      <input class="input input-sm" placeholder="Postnr" bind:value={postnummer} />
+      <input class="input input-sm" placeholder="Poststed" bind:value={poststed} />
+      <input class="input input-sm" placeholder="Land (SE)" bind:value={landkode} />
     </div>
     <button class="btn btn-sm" onclick={opprett}>Registrer aksjonær</button>
   </div>

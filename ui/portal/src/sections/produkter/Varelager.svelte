@@ -99,7 +99,7 @@
   </p>
   <div class="flex flex-wrap gap-2 items-end mb-3">
     <select
-      class="select select-sm select-bordered"
+      class="select select-sm"
       value={produkt}
       onchange={(e) => (valgtProdukt = e.currentTarget.value)}
     >
@@ -107,14 +107,14 @@
         <option value={p.nummer}>{p.nummer} {p.navn}</option>
       {/each}
     </select>
-    <select class="select select-sm select-bordered" bind:value={kind}>
+    <select class="select select-sm" bind:value={kind}>
       <option value="kjop">Varekjøp</option>
       <option value="justering">Justering</option>
     </select>
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered w-20" placeholder="Antall" bind:value={antall} />
-    <input class="input input-sm input-bordered w-28" placeholder="Kost/stk (kr)" bind:value={kost} />
-    <input class="input input-sm input-bordered" placeholder="Notat (justering)" bind:value={note} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm w-20" placeholder="Antall" bind:value={antall} />
+    <input class="input input-sm w-28" placeholder="Kost/stk (kr)" bind:value={kost} />
+    <input class="input input-sm" placeholder="Notat (justering)" bind:value={note} />
     <button class="btn btn-sm" onclick={registrer}>Registrer</button>
   </div>
   <table class="table table-sm">
@@ -135,7 +135,7 @@
           <td class="text-right">{kr(r.verdi_ore)}</td>
           <td>
             <input
-              class="input input-xs input-bordered w-20"
+              class="input input-xs w-20"
               placeholder="Talt"
               bind:value={talt[r.nummer]}
             />
@@ -150,7 +150,7 @@
     </tbody>
   </table>
   <div class="flex gap-2 items-end mt-2">
-    <input type="date" class="input input-sm input-bordered" bind:value={tellingDato} />
+    <input type="date" class="input input-sm" bind:value={tellingDato} />
     <button class="btn btn-sm btn-outline" onclick={bokforTelling}>
       Registrer telling og bokfør
     </button>

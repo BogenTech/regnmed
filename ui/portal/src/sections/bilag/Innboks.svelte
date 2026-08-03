@@ -11,6 +11,10 @@
 
   let { companyId, inbox, dims, policy, onDone } = $props();
 
+  // Samme merking som e-postloggen i EpostInn: avgjørelsen er en status,
+  // ikke løpende tekst.
+  const BADGE = { bokfort: "badge-success", avvist: "badge-ghost" };
+
   let policyAktiv = $derived(!!policy?.aktiv);
   let open = $derived(inbox.filter((d) => d.status === "ny"));
   let decided = $derived(inbox.filter((d) => d.status !== "ny"));
@@ -170,7 +174,8 @@
   {/if}
   {#each decided.slice(0, 6) as d (d.document_id)}
     <div class="text-xs opacity-60 py-0.5">
-      {d.filename} — {d.status}{d.note ? " (" + d.note + ")" : ""} · {d.decided_by || ""}
+      <span class="badge badge-xs {BADGE[d.status] || 'badge-ghost'}">{d.status}</span>
+      {d.filename}{d.note ? " (" + d.note + ")" : ""} · {d.decided_by || ""}
     </div>
   {/each}
 </Card>

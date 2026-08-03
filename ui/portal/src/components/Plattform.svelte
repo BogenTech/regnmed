@@ -134,10 +134,12 @@
       </span>
     </div>
 
-    <div class="join mb-4">
+    <div role="tablist" class="tabs tabs-box tabs-sm mb-4">
       {#each FANER as [slug, navn] (slug)}
         <button
-          class="btn btn-sm join-item {fane === slug ? 'btn-primary' : ''}"
+          role="tab"
+          class="tab {fane === slug ? 'tab-active' : ''}"
+          aria-selected={fane === slug}
           onclick={() => {
             fane = slug;
             sok = "";
@@ -151,7 +153,7 @@
     {#if fane !== "medlemmer"}
       <form class="mb-4 flex gap-2" onsubmit={sokSubmit}>
         <input
-          class="input input-sm input-bordered w-full max-w-xs"
+          class="input input-sm w-full max-w-xs"
           placeholder="Søk (navn eller orgnr)"
           bind:value={sok}
         />
@@ -223,17 +225,17 @@
         {#if tildel}
           <form class="mt-3 flex flex-wrap gap-2 items-end" onsubmit={utfoerTildeling}>
             <span class="text-sm self-center">Tildel {tildel.navn} tilgang til</span>
-            <select class="select select-sm select-bordered" bind:value={tildel.slag}>
+            <select class="select select-sm" bind:value={tildel.slag}>
               <option value="selskap">selskap</option>
               <option value="byra">byrå</option>
             </select>
             <input
-              class="input input-sm input-bordered w-32"
+              class="input input-sm w-32"
               placeholder="Orgnr"
               required
               bind:value={tildel.orgnr}
             />
-            <select class="select select-sm select-bordered" bind:value={tildel.rolle}>
+            <select class="select select-sm" bind:value={tildel.rolle}>
               {#each ROLLER[tildel.slag] as r (r)}
                 <option value={r}>{r}</option>
               {/each}
@@ -279,18 +281,18 @@
       <Card title="Plattformbrukere">
         <form class="flex flex-wrap gap-2 items-end mb-4" onsubmit={giRolle}>
           <input
-            class="input input-sm input-bordered"
+            class="input input-sm"
             placeholder="E-post (må ha logget inn)"
             required
             bind:value={ny.epost}
           />
-          <select class="select select-sm select-bordered" bind:value={ny.rolle}>
+          <select class="select select-sm" bind:value={ny.rolle}>
             <option value="support">support</option>
             <option value="systemadmin">systemadmin</option>
           </select>
-          <input class="input input-sm input-bordered" type="date" required bind:value={ny.valid_to} />
+          <input class="input input-sm" type="date" required bind:value={ny.valid_to} />
           <input
-            class="input input-sm input-bordered w-56"
+            class="input input-sm w-56"
             placeholder="Begrunnelse (obligatorisk)"
             required
             bind:value={ny.notat}

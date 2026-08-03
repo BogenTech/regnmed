@@ -78,7 +78,7 @@
     av overskriftene, og en fil vi ikke forstår sier hvilke kolonner den fant.
   </p>
   <div class="flex gap-2 items-center flex-wrap mb-2">
-    <select class="select select-sm select-bordered" bind:value={kind}>
+    <select class="select select-sm" bind:value={kind}>
       <option value="kunde">kunder</option>
       <option value="leverandor">leverandører</option>
     </select>
@@ -114,21 +114,23 @@
           poster erstatter samlelinjen. Utelat kontoen fra åpningsbalansen først.
         </div>
       {:else}
-        <div class="border border-base-300 rounded-lg p-3">
-          <p class="text-sm font-semibold mb-1">
-            {preview.p.antall} åpne poster, sum {kr(preview.p.sum_ore)} på konto {preview.p.konto}
-          </p>
-          {#if preview.p.nye_parter.length}
-            <p class="text-xs opacity-70 mb-2">
-              Opprettes ved import: {preview.p.nye_parter.join(", ")}
+        <div class="card card-border card-sm">
+          <div class="card-body">
+            <p class="text-sm font-semibold mb-1">
+              {preview.p.antall} åpne poster, sum {kr(preview.p.sum_ore)} på konto {preview.p.konto}
             </p>
-          {/if}
-          {#if preview.p.warnings.length}
-            <p class="text-xs opacity-70 mb-2">
-              {#each preview.p.warnings as w, i}{#if i}<br />{/if}{w}{/each}
-            </p>
-          {/if}
-          <button class="btn btn-sm btn-primary" onclick={bekreft}>Bokfør de åpne postene</button>
+            {#if preview.p.nye_parter.length}
+              <p class="text-xs opacity-70 mb-2">
+                Opprettes ved import: {preview.p.nye_parter.join(", ")}
+              </p>
+            {/if}
+            {#if preview.p.warnings.length}
+              <p class="text-xs opacity-70 mb-2">
+                {#each preview.p.warnings as w, i}{#if i}<br />{/if}{w}{/each}
+              </p>
+            {/if}
+            <button class="btn btn-sm btn-primary" onclick={bekreft}>Bokfør de åpne postene</button>
+          </div>
         </div>
       {/if}
     {/if}

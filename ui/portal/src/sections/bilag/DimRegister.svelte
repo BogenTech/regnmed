@@ -91,7 +91,7 @@
             <td>
               {#if d.kind === "prosjekt" && kunder.length}
                 <select
-                  class="select select-xs select-bordered"
+                  class="select select-xs"
                   value={d.kunde || ""}
                   onchange={(e) => settKunde(d, e.currentTarget.value)}
                 >
@@ -115,14 +115,14 @@
     </table>
   {/if}
   <div class="flex gap-2 flex-wrap">
-    <select class="select select-sm select-bordered" bind:value={kind}>
+    <select class="select select-sm" bind:value={kind}>
       <option value="avdeling">avdeling</option>
       <option value="prosjekt">prosjekt</option>
     </select>
-    <input class="input input-sm input-bordered w-24" placeholder="Kode" bind:value={code} />
-    <input class="input input-sm input-bordered" placeholder="Navn" bind:value={name} />
+    <input class="input input-sm w-24" placeholder="Kode" bind:value={code} />
+    <input class="input input-sm" placeholder="Navn" bind:value={name} />
     {#if kind === "prosjekt" && kunder.length}
-      <select class="select select-sm select-bordered" bind:value={nyKunde}>
+      <select class="select select-sm" bind:value={nyKunde}>
         <option value="">— ingen kunde —</option>
         {#each kunder as p (p.party_no)}
           <option value={p.party_no}>{p.party_no} {p.name}</option>

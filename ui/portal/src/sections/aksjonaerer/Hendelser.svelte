@@ -87,12 +87,12 @@
   {#if aksjonarer.length}
     <h3 class="font-semibold mb-1">Ny hendelse</h3>
     <div class="grid gap-2 max-w-md">
-      <select class="select select-sm select-bordered" bind:value={holder}>
+      <select class="select select-sm" bind:value={holder}>
         {#each aksjonarer as a (a.id)}
           <option value={a.id}>{a.navn} ({a.antall_aksjer})</option>
         {/each}
       </select>
-      <select class="select select-sm select-bordered" bind:value={type}>
+      <select class="select select-sm" bind:value={type}>
         {#each typer as t (t.slug)}
           <!-- ⚠: transaksjonstypen kan registreres, men ikke leveres —
                en feil type flyter inn i aksjonærens RF-1088. -->
@@ -100,11 +100,11 @@
         {/each}
       </select>
       <div class="grid grid-cols-3 gap-2">
-        <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-        <input class="input input-sm input-bordered" placeholder="Antall aksjer" bind:value={antall} />
-        <input class="input input-sm input-bordered" placeholder="Beløp (kr)" bind:value={belop} />
+        <input type="date" class="input input-sm" bind:value={dato} />
+        <input class="input input-sm" placeholder="Antall aksjer" bind:value={antall} />
+        <input class="input input-sm" placeholder="Beløp (kr)" bind:value={belop} />
       </div>
-      <select class="select select-sm select-bordered" bind:value={motpart}>
+      <select class="select select-sm" bind:value={motpart}>
         <option value="">Ingen motpart</option>
         {#each aksjonarer as a (a.id)}
           <option value={a.id}>{a.navn} ({a.antall_aksjer})</option>

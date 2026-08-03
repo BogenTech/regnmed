@@ -60,14 +60,14 @@
     <p class="text-xs opacity-70 mb-2">Låst t.o.m. {uke.locked_through}</p>
   {/if}
   <div class="flex flex-wrap gap-2 mb-3 items-end">
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered w-20" placeholder="Timer" bind:value={timer} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm w-20" placeholder="Timer" bind:value={timer} />
     <input
-      class="input input-sm input-bordered flex-1"
+      class="input input-sm flex-1"
       placeholder="Hva jobbet du med?"
       bind:value={beskrivelse}
     />
-    <DimSelect {dims} kind="prosjekt" cls="select select-sm select-bordered" bind:value={prosjekt}>
+    <DimSelect {dims} kind="prosjekt" cls="select select-sm" bind:value={prosjekt}>
       {#snippet tomHint()}
         <DimRegisterLenke
           {companyId}
@@ -78,9 +78,9 @@
     </DimSelect>
     <label class="label cursor-pointer gap-1">
       <input type="checkbox" class="checkbox checkbox-xs" bind:checked={fakturerbar} />
-      <span class="label-text text-xs">Fakturerbar</span>
+      <span class="text-xs">Fakturerbar</span>
     </label>
-    <input class="input input-sm input-bordered w-24" placeholder="Sats (kr/t)" bind:value={sats} />
+    <input class="input input-sm w-24" placeholder="Sats (kr/t)" bind:value={sats} />
     <button class="btn btn-sm btn-primary" onclick={forTimer}>Før timer</button>
   </div>
   <table class="table table-sm">

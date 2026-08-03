@@ -108,41 +108,43 @@
     kunder/leverandører og hele historikken importeres i én operasjon. Har det gamle systemet en
     annen kontoplan, foreslår vi mapping til NS 4102 som du godkjenner først.
   </p>
-  <input type="file" class="file-input file-input-bordered" accept=".xml" onchange={fileChosen} />
+  <input type="file" class="file-input" accept=".xml" onchange={fileChosen} />
   {#if analysis}
-    <div class="border border-base-300 rounded-lg p-3 mt-3">
-      <p class="text-sm font-semibold mb-1">Kontoplanen må mappes til NS 4102</p>
-      <p class="text-xs opacity-70 mb-2">
-        {analysis.transactions} transaksjoner, {analysis.customers} kunder,
-        {analysis.suppliers} leverandører. Forslagene under er heuristikk — du bestemmer.
-      </p>
-      <table class="table table-xs">
-        <thead>
-          <tr><th>Konto i filen</th><th>Navn</th><th>NS 4102</th><th>Forslag</th></tr>
-        </thead>
-        <tbody>
-          {#each analysis.accounts as a (a.account_id)}
-            <tr>
-              <td>{a.account_id}</td>
-              <td>{a.name}</td>
-              <td>
-                <input
-                  class="input input-xs input-bordered w-20 {missing[a.account_id]
-                    ? 'input-error'
-                    : ''}"
-                  bind:value={mapping[a.account_id]}
-                />
-              </td>
-              <td class="text-xs opacity-60">
-                {a.reason}{a.standard_name ? " → " + a.standard_name : ""}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      <button class="btn btn-sm btn-primary mt-2" onclick={importMapped}>
-        Importer med denne mappingen
-      </button>
+    <div class="card card-border card-sm mt-3">
+      <div class="card-body">
+        <p class="text-sm font-semibold mb-1">Kontoplanen må mappes til NS 4102</p>
+        <p class="text-xs opacity-70 mb-2">
+          {analysis.transactions} transaksjoner, {analysis.customers} kunder,
+          {analysis.suppliers} leverandører. Forslagene under er heuristikk — du bestemmer.
+        </p>
+        <table class="table table-xs">
+          <thead>
+            <tr><th>Konto i filen</th><th>Navn</th><th>NS 4102</th><th>Forslag</th></tr>
+          </thead>
+          <tbody>
+            {#each analysis.accounts as a (a.account_id)}
+              <tr>
+                <td>{a.account_id}</td>
+                <td>{a.name}</td>
+                <td>
+                  <input
+                    class="input input-xs w-20 {missing[a.account_id]
+                      ? 'input-error'
+                      : ''}"
+                    bind:value={mapping[a.account_id]}
+                  />
+                </td>
+                <td class="text-xs opacity-60">
+                  {a.reason}{a.standard_name ? " → " + a.standard_name : ""}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <button class="btn btn-sm btn-primary mt-2" onclick={importMapped}>
+          Importer med denne mappingen
+        </button>
+      </div>
     </div>
   {/if}
 </Card>
@@ -150,18 +152,18 @@
 <Card title="Ingen SAF-T? Legg inn åpningsbalansen manuelt">
   <p class="text-sm opacity-70 mb-2">Saldo per konto på overgangsdagen — må gå i null.</p>
   <div class="flex gap-2 mb-2">
-    <input type="date" class="input input-sm input-bordered" bind:value={obDate} />
+    <input type="date" class="input input-sm" bind:value={obDate} />
   </div>
   <div>
     {#each obLines as line, i}
       <div class="flex gap-2 mb-1">
         <input
-          class="input input-sm input-bordered w-24"
+          class="input input-sm w-24"
           placeholder="Konto"
           bind:value={line.account}
         />
         <input
-          class="input input-sm input-bordered w-36"
+          class="input input-sm w-36"
           placeholder={i === 0 ? "Beløp (debet +)" : i === 1 ? "Beløp (kredit −)" : "Beløp"}
           bind:value={line.amount}
         />

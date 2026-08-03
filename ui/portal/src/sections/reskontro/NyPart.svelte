@@ -29,12 +29,12 @@
 
 <Card title="Ny part">
   <form class="flex flex-wrap gap-2 items-end" onsubmit={opprett}>
-    <select class="select select-bordered" bind:value={kind}>
+    <select class="select" bind:value={kind}>
       <option value="kunde">kunde</option>
       <option value="leverandor">leverandør</option>
     </select>
-    <input class="input input-bordered" placeholder="Navn" required bind:value={name} />
-    <input class="input input-bordered w-32" placeholder="Orgnr (valgfritt)" bind:value={orgnr} />
+    <input class="input" placeholder="Navn" required bind:value={name} />
+    <input class="input w-32" placeholder="Orgnr (valgfritt)" bind:value={orgnr} />
     <button class="btn btn-primary">Opprett</button>
   </form>
 </Card>

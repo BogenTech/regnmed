@@ -45,10 +45,10 @@
     fra den trekkpliktige, som varsles tydelig (lønnsinnberetning kommer med a-melding).
   </p>
   <div class="flex flex-wrap gap-2 items-end">
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered w-24" placeholder="Km" bind:value={km} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm w-24" placeholder="Km" bind:value={km} />
     <input
-      class="input input-sm input-bordered"
+      class="input input-sm"
       placeholder="Strekning og formål"
       bind:value={formal}
     />

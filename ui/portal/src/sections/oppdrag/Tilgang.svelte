@@ -114,8 +114,8 @@
         <tr class={m.aktiv ? "" : "opacity-50"}>
           <td>{m.navn}</td>
           <td>{m.epost || ""}</td>
-          <td>{m.rolle}</td>
-          <td>{m.via}</td>
+          <td><span class="badge badge-ghost badge-sm">{m.rolle}</span></td>
+          <td><span class="badge badge-ghost badge-sm">{m.via}</span></td>
           <td>
             {#if !m.kan_endres}
               <!-- Tilgang gjennom et oppdrag styres av engasjementet. Si det,
@@ -127,7 +127,7 @@
               </button>
             {:else}
               <select
-                class="select select-xs select-bordered w-28 mr-1"
+                class="select select-xs w-28 mr-1"
                 value={m.rolle}
                 onchange={(e) => endreRolle(m, e.currentTarget.value)}
               >
@@ -144,11 +144,11 @@
   </table>
   <div class="flex gap-2 items-center flex-wrap mb-3">
     <input
-      class="input input-sm input-bordered w-64"
+      class="input input-sm w-64"
       placeholder="e-postadresse"
       bind:value={epost}
     />
-    <select class="select select-sm select-bordered" bind:value={rolle}>
+    <select class="select select-sm" bind:value={rolle}>
       {#each rollevalg as r}
         <option value={r}>{r}</option>
       {/each}

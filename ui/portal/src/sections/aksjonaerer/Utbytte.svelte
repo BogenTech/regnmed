@@ -55,9 +55,9 @@
   {/if}
   <div class="grid gap-2 max-w-md">
     <div class="grid grid-cols-2 gap-2">
-      <input type="date" class="input input-sm input-bordered" bind:value={dato} />
+      <input type="date" class="input input-sm" bind:value={dato} />
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="Utbytte per aksje (kr)"
         bind:value={perAksje}
       />

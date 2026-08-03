@@ -23,6 +23,17 @@
     }[abo.status] || abo.status,
   );
 
+  // Samme fargespråk som AbonnementBanner: statusen skal se lik ut der den
+  // varsles og der den vises.
+  let statusFarge = $derived(
+    {
+      aktiv: "badge-success",
+      prove: "badge-info",
+      frist: "badge-warning",
+      sperret: "badge-error",
+    }[abo.status] || "badge-ghost",
+  );
+
   // Løpende Stripe-abonnement: fornyes til det sies opp.
   let loper = $derived(abo.abonnement && !abo.abonnement.sies_opp);
   let oppsagt = $derived(abo.abonnement?.sies_opp);
@@ -74,7 +85,9 @@
 
 <Card title="Abonnement">
   <p class="text-sm mb-2">
-    Status: <b>{statusTekst}</b>{abo.kort ? " · kort " + abo.kort.brand + " •••• " + abo.kort.last4 : ""}
+    Status: <span class="badge {statusFarge} badge-sm">{statusTekst}</span>{abo.kort
+      ? " · kort " + abo.kort.brand + " •••• " + abo.kort.last4
+      : ""}
   </p>
 
   {#if oppsagt}
@@ -105,12 +118,12 @@
           {sierOpp ? "Sier opp …" : "Si opp abonnement"}
         </button>
       {:else if !abo.abonnement && abo.status !== "aktiv"}
-        <select class="select select-sm select-bordered" bind:value={plan}>
+        <select class="select select-sm" bind:value={plan}>
           {#each abo.planer || [] as p}
             <option value={p.plan}>{p.plan} — {kr(p.pris_ore_per_mnd)} kr/mnd eks. mva</option>
           {/each}
         </select>
-        <select class="select select-sm select-bordered" bind:value={interval}>
+        <select class="select select-sm" bind:value={interval}>
           <option value="month">Månedlig</option>
           <option value="year">Årlig</option>
         </select>

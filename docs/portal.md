@@ -80,6 +80,48 @@ by an inline script in `index.html` so the page never flashes; it is
 never synced through the IdP or tokens. Tailwind and daisyUI are built
 by Vite as part of `scripts/build-portal.sh`.
 
+**Alle daisyUIs innebygde temaer er tilgjengelige** (`themes: all` i
+`ui/portal/src/app.css`, samme i `../regnid/ui/input.css`) — 35 innebygde
+pluss våre to egne, `regnid` og `kontrast`. Temavalget er brukerens, og en
+håndplukket liste måtte vedlikeholdes for hånd hver gang daisyUI la til et
+tema. To ting å vite:
+
+- `all` kan **ikke** kombineres med `light --default, dark --prefersdark`:
+  da faller resten av listen stille bort (verifisert 2026-08-03 — 4 temaer
+  i bygget i stedet for 37). `all` beholder de samme standardene selv:
+  `light` på `:where(:root)`, `dark` under `prefers-color-scheme`.
+- Velgeren er **gruppert etter daisyUIs egen `color-scheme`** på hver
+  temablokk, ikke etter skjønn: `THEME_GROUPS` i
+  `src/lib/theme.svelte.js` og `THEME_GROUPS` i regnids `src/accounts.rs`
+  (som også er allowlisten `is_theme` validerer mot). En flat liste på 37
+  navn er ubrukelig, og den som vil ha et mørkt tema skal slippe å gjette.
+
+Selve velgeren er daisyUIs **theme-controller** i et `dropdown`+`menu`
+(begge steder): en avkrysset radio med temanavnet som `value` velger
+temaet i REN CSS. I regnid heter radioene `theme`, så skjemaet POSTer
+valget uten JS i innsendingsveien. JS-en består likevel — den husker
+valget (localStorage) og setter `data-theme` FØR første maling, ellers
+blinker siden i feil tema.
+
+**Fellen, og hvorfor «system» er bygget som den er:** en avkrysset
+theme-controller har HØYERE spesifisitet enn `[data-theme]`
+(`:root:has(input.theme-controller[value=x]:checked)` slår
+`[data-theme=x]`). «Følg systemet» er derfor med vilje IKKE en
+theme-controller: den ligger i samme radiogruppe, så den krysser av de
+andre, og uten noen avkrysset controller finnes ingen overstyring — da
+får OS-preferansen bestemme. Var «system» en controller, ville en
+gjenglemt avkryssing overstyrt den i det stille.
+
+Nye temaer lages enklest med daisyUIs **Theme Generator**
+(<https://daisyui.com/theme-generator/>): den skriver ut nøyaktig én
+`@plugin "daisyui/theme" { … }`-blokk, som er formatet `themes.css`
+allerede har. Lim blokken inn i BEGGE `themes.css`-filene, legg navnet i
+begge `THEME_GROUPS`, og bygg (`scripts/build-portal.sh` +
+`../regnid/scripts/build-css.sh`).
+
+Kostnaden er ren CSS: dist vokste ~32 KB (~21 KB gzipet) og ligger godt
+innenfor `PORTAL_DIST_BUDGET_KB` i `scripts/frugality.sh`.
+
 ## Sections (all backed by the existing engagement-guarded API)
 
 Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert

@@ -81,22 +81,22 @@
   </p>
   {#if parties.length}
     <div class="flex flex-wrap gap-2 mb-3 items-end">
-      <select class="select select-sm select-bordered" bind:value={party}>
+      <select class="select select-sm" bind:value={party}>
         {#each parties as p (p.party_no)}
           <option value={p.party_no}>{p.party_no} {p.name}</option>
         {/each}
       </select>
       {#if products.length}
-        <select class="select select-sm select-bordered" bind:value={produkt}>
+        <select class="select select-sm" bind:value={produkt}>
           <option value="">— fritekst —</option>
           {#each products as p (p.nummer)}
             <option value={p.nummer}>{p.nummer} {p.navn} ({kr(p.salgspris_ore)})</option>
           {/each}
         </select>
       {/if}
-      <input class="input input-sm input-bordered" placeholder="Beskrivelse" bind:value={desc} />
-      <input class="input input-sm input-bordered w-28" placeholder="Pris (kr)" bind:value={price} />
-      <VatSelect cls="select select-sm select-bordered" produktvalg={products.length > 0} bind:value={vat} />
+      <input class="input input-sm" placeholder="Beskrivelse" bind:value={desc} />
+      <input class="input input-sm w-28" placeholder="Pris (kr)" bind:value={price} />
+      <VatSelect cls="select select-sm" produktvalg={products.length > 0} bind:value={vat} />
       <button class="btn btn-sm" onclick={nyttTilbud}>Nytt tilbud</button>
     </div>
   {/if}

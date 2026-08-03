@@ -30,7 +30,11 @@ CLI_BIN_BUDGET_MB=12
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
 # The compiled Svelte portal (#76) ships inside the binary; its own
 # budget keeps the SPA from quietly absorbing heavy dependencies.
-# Measured 2026-07-28: ~120 KB (52 KB JS + 61 KB CSS).
+# Measured 2026-08-03: 407 KB (288 KB JS + 128 KB CSS). The CSS grew
+# ~32 KB when every built-in daisyUI theme was enabled (`themes: all`
+# in ui/portal/src/app.css) — that is 35 blocks of colour variables,
+# and it gzips to ~21 KB. Budget deliberately left at 512 KB: the
+# theme list is now complete, so it will not keep growing.
 PORTAL_DIST_BUDGET_KB=512
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"

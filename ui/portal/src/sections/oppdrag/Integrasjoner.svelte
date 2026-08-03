@@ -87,12 +87,12 @@
   {/if}
   <div class="flex gap-2 items-center flex-wrap">
     <input
-      class="input input-sm input-bordered w-56"
+      class="input input-sm w-56"
       placeholder="client_id fra regnid"
       bind:value={clientId}
     />
-    <input class="input input-sm input-bordered w-40" placeholder="Navn" bind:value={navn} />
-    <select class="select select-sm select-bordered" bind:value={access}>
+    <input class="input input-sm w-40" placeholder="Navn" bind:value={navn} />
+    <select class="select select-sm" bind:value={access}>
       <option value="les">les</option>
       <option value="bokforing">bokføring</option>
     </select>

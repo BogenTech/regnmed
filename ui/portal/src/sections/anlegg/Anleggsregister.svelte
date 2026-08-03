@@ -125,7 +125,7 @@
                 {#if r.voucher}
                   bilag {r.voucher}
                 {:else}
-                  <span class="text-error">{r.detail || "feilet"}</span>
+                  <span class="badge badge-error badge-sm">{r.detail || "feilet"}</span>
                 {/if}
               </td>
             </tr>

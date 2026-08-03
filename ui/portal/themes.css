@@ -3,7 +3,7 @@
 
    A theme is ONE self-contained block: name it, say whether it is a
    light or dark scheme, and fill in the color tokens. Rebuild the CSS
-   (scripts/build-portal.sh), add the name to THEMES in
+   (scripts/build-portal.sh), add the name to THEME_GROUPS in
    src/lib/theme.svelte.js, and it appears in the picker. Colors are
    written in oklch (lightness chroma hue) but any CSS color works.
 

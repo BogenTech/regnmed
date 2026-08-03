@@ -17,6 +17,12 @@
       "port": 8083
     },
     {
+      "name": "portal",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-lc", "cd ui/portal && exec npm run dev -- --port 5173"],
+      "port": 5173
+    },
+    {
       "name": "regnid",
       "runtimeExecutable": "zsh",
       "runtimeArgs": ["-lc", "cd ../regnid && exec cargo run -q -- serve"],

@@ -140,19 +140,21 @@
 </div>
 
 {#if valg === "invitert"}
-  <div class="mt-4 p-4 bg-base-200 rounded-box">
-    <p class="text-sm">
-      Da trenger du ikke registrere noe selv: be den som har selskapet i regnmed om å invitere
-      <span class="font-semibold">{me.email || "e-postadressen du logger inn med"}</span>
-      (under Oppdrag → Tilgang). Invitasjonen løses inn automatisk neste gang du logger inn — eller
-      sjekk nå:
-    </p>
-    <button class="btn btn-sm mt-3" disabled={travelt} onclick={sjekkInvitasjoner}>
-      Sjekk på nytt
-    </button>
-    {#if sjekkResultat}
-      <p class="text-sm mt-2 opacity-80">{sjekkResultat}</p>
-    {/if}
+  <div class="card card-sm bg-base-200 mt-4">
+    <div class="card-body">
+      <p class="text-sm">
+        Da trenger du ikke registrere noe selv: be den som har selskapet i regnmed om å invitere
+        <span class="font-semibold">{me.email || "e-postadressen du logger inn med"}</span>
+        (under Oppdrag → Tilgang). Invitasjonen løses inn automatisk neste gang du logger inn — eller
+        sjekk nå:
+      </p>
+      <button class="btn btn-sm mt-3" disabled={travelt} onclick={sjekkInvitasjoner}>
+        Sjekk på nytt
+      </button>
+      {#if sjekkResultat}
+        <p class="text-sm mt-2 opacity-80">{sjekkResultat}</p>
+      {/if}
+    </div>
   </div>
 {:else if valg}
   <div class="mt-4">
@@ -163,7 +165,7 @@
     </p>
     <div class="flex gap-2">
       <input
-        class="input input-bordered"
+        class="input"
         placeholder="Organisasjonsnummer"
         maxlength="9"
         bind:value={orgnr}
@@ -173,67 +175,69 @@
     </div>
 
     {#if preview}
-      <div class="mt-4 p-4 bg-base-200 rounded-box">
-        <p class="font-semibold">{preview.navn} ({preview.organisasjonsform || ""})</p>
-        <p class="text-sm opacity-70">{preview.naeringskode || ""}</p>
-        <div class="flex flex-wrap gap-2 mt-2">
-          {#if preview.mva_registrert}<span class="badge badge-ghost">MVA-registrert</span>{/if}
-          {#if preview.autorisasjon.regnskap}
-            <span class="badge badge-success">Autorisert regnskapsførerselskap</span>
-          {/if}
-          {#if preview.autorisasjon.revisjon}
-            <span class="badge badge-success">Autorisert revisjonsselskap</span>
-          {/if}
-          {#if preview.konkurs}<span class="badge badge-error">Konkurs</span>{/if}
-          {#if preview.slettet}<span class="badge badge-error">Slettet</span>{/if}
-        </div>
+      <div class="card card-sm bg-base-200 mt-4">
+        <div class="card-body">
+          <p class="font-semibold">{preview.navn} ({preview.organisasjonsform || ""})</p>
+          <p class="text-sm opacity-70">{preview.naeringskode || ""}</p>
+          <div class="flex flex-wrap gap-2 mt-2">
+            {#if preview.mva_registrert}<span class="badge badge-ghost">MVA-registrert</span>{/if}
+            {#if preview.autorisasjon.regnskap}
+              <span class="badge badge-success">Autorisert regnskapsførerselskap</span>
+            {/if}
+            {#if preview.autorisasjon.revisjon}
+              <span class="badge badge-success">Autorisert revisjonsselskap</span>
+            {/if}
+            {#if preview.konkurs}<span class="badge badge-error">Konkurs</span>{/if}
+            {#if preview.slettet}<span class="badge badge-error">Slettet</span>{/if}
+          </div>
 
-        {#if sperret}
-          <div class="alert alert-error mt-4 text-sm">
-            En slettet eller konkurs enhet kan ikke registreres.
-          </div>
-        {:else if valg === "selskap"}
-          {#if autorisert}
-            <div class="alert alert-info mt-4 text-sm">
+          {#if sperret}
+            <div class="alert alert-error mt-4 text-sm">
+              En slettet eller konkurs enhet kan ikke registreres.
+            </div>
+          {:else if valg === "selskap"}
+            {#if autorisert}
+              <div class="alert alert-info mt-4 text-sm">
+                <span>
+                  Dette er et autorisert byrå. Skal dere føre regnskap for andre, registrer det som
+                  byrå — selskapet kan i tillegg opprettes her for byråets eget regnskap.
+                </span>
+                <button class="btn btn-sm" onclick={() => velg("byra")}>Registrer som byrå</button>
+              </div>
+            {/if}
+            <button class="btn btn-primary btn-sm mt-4" disabled={travelt} onclick={opprettSelskap}>
+              Opprett selskap
+            </button>
+          {:else if !autorisert}
+            <div class="alert alert-warning mt-4 text-sm">
               <span>
-                Dette er et autorisert byrå. Skal dere føre regnskap for andre, registrer det som
-                byrå — selskapet kan i tillegg opprettes her for byråets eget regnskap.
+                Fant ingen aktiv autorisasjon i Finanstilsynets register for dette
+                organisasjonsnummeret. Uten autorisasjon kan det ikke registreres som byrå — men det
+                kan opprettes som vanlig selskap.
               </span>
-              <button class="btn btn-sm" onclick={() => velg("byra")}>Registrer som byrå</button>
+              <button class="btn btn-sm" onclick={() => velg("selskap")}>Opprett som selskap</button>
             </div>
+          {:else}
+            {#if preview.autorisasjon.regnskap && preview.autorisasjon.revisjon}
+              <div class="flex gap-4 mt-3">
+                <label class="label cursor-pointer gap-2">
+                  <input type="radio" class="radio radio-sm" bind:group={kind} value="regnskap" />
+                  <span>Regnskapsførerselskap</span>
+                </label>
+                <label class="label cursor-pointer gap-2">
+                  <input type="radio" class="radio radio-sm" bind:group={kind} value="revisjon" />
+                  <span>Revisjonsselskap</span>
+                </label>
+              </div>
+            {/if}
+            <button class="btn btn-primary btn-sm mt-4" disabled={travelt} onclick={registrerByra}>
+              Registrer byrå
+            </button>
+            <p class="text-xs opacity-60 mt-2">
+              Gratis for byrået. Klientene deres får hver sin prøvetid og sitt eget abonnement.
+            </p>
           {/if}
-          <button class="btn btn-primary btn-sm mt-4" disabled={travelt} onclick={opprettSelskap}>
-            Opprett selskap
-          </button>
-        {:else if !autorisert}
-          <div class="alert alert-warning mt-4 text-sm">
-            <span>
-              Fant ingen aktiv autorisasjon i Finanstilsynets register for dette
-              organisasjonsnummeret. Uten autorisasjon kan det ikke registreres som byrå — men det
-              kan opprettes som vanlig selskap.
-            </span>
-            <button class="btn btn-sm" onclick={() => velg("selskap")}>Opprett som selskap</button>
-          </div>
-        {:else}
-          {#if preview.autorisasjon.regnskap && preview.autorisasjon.revisjon}
-            <div class="flex gap-4 mt-3">
-              <label class="label cursor-pointer gap-2">
-                <input type="radio" class="radio radio-sm" bind:group={kind} value="regnskap" />
-                <span class="label-text">Regnskapsførerselskap</span>
-              </label>
-              <label class="label cursor-pointer gap-2">
-                <input type="radio" class="radio radio-sm" bind:group={kind} value="revisjon" />
-                <span class="label-text">Revisjonsselskap</span>
-              </label>
-            </div>
-          {/if}
-          <button class="btn btn-primary btn-sm mt-4" disabled={travelt} onclick={registrerByra}>
-            Registrer byrå
-          </button>
-          <p class="text-xs opacity-60 mt-2">
-            Gratis for byrået. Klientene deres får hver sin prøvetid og sitt eget abonnement.
-          </p>
-        {/if}
+        </div>
       </div>
     {/if}
   </div>

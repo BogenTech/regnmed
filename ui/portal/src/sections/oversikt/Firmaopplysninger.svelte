@@ -34,19 +34,19 @@
     for AS/ASA).
   </p>
   <div class="grid gap-2 max-w-md">
-    <input class="input input-sm input-bordered" placeholder="Adresse" bind:value={address} />
+    <input class="input input-sm" placeholder="Adresse" bind:value={address} />
     <input
-      class="input input-sm input-bordered"
+      class="input input-sm"
       placeholder="E-post (svaradresse på utsendelser)"
       bind:value={email}
     />
     <div class="flex gap-2">
       <input
-        class="input input-sm input-bordered flex-1"
+        class="input input-sm flex-1"
         placeholder="Kontonummer"
         bind:value={bankAccount}
       />
-      <select class="select select-sm select-bordered" bind:value={orgform}>
+      <select class="select select-sm" bind:value={orgform}>
         {#each ORGFORMER as f}
           <option value={f}>{f || "(selskapsform)"}</option>
         {/each}

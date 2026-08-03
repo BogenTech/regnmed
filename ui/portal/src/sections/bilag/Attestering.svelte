@@ -100,14 +100,14 @@
   <div class="flex gap-2 items-center flex-wrap">
     <label class="label cursor-pointer gap-2">
       <input type="checkbox" class="checkbox checkbox-sm" bind:checked={aktiv} />
-      <span class="label-text">Krev attestering</span>
+      <span>Krev attestering</span>
     </label>
     <input
-      class="input input-sm input-bordered w-36"
+      class="input input-sm w-36"
       placeholder="Beløpsgrense (kr)"
       bind:value={grense}
     />
-    <select class="select select-sm select-bordered" bind:value={attestant}>
+    <select class="select select-sm" bind:value={attestant}>
       <option value="">Alle med bokføringstilgang</option>
       {#each members as m (m.person_id)}
         <option value={m.person_id}>{m.name}</option>

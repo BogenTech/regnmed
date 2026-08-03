@@ -3,8 +3,8 @@
   import ThemeControls from "./ThemeControls.svelte";
 </script>
 
-<div class="min-h-screen flex items-center justify-center">
-  <div class="card bg-base-100 shadow-sm w-full max-w-sm">
+<div class="hero min-h-screen">
+  <div class="hero-content card bg-base-100 shadow-sm w-full max-w-sm">
     <div class="card-body items-center">
       <h1 class="card-title text-2xl">regnmed</h1>
       <p class="opacity-70 text-sm mb-2">Regnskap du kan etterprøve.</p>

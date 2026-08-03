@@ -15,7 +15,7 @@
   let {
     dims,
     kind,
-    cls = "select select-bordered flex-1",
+    cls = "select flex-1",
     inkluderAvsluttede = false,
     alleLabel = null,
     tomHint = null,

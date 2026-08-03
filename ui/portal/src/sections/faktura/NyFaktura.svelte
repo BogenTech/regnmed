@@ -62,23 +62,23 @@
     <p class="opacity-70">Opprett en kunde under Reskontro først.</p>
   {:else}
     <form class="grid gap-2 max-w-md" onsubmit={opprett}>
-      <select class="select select-bordered" bind:value={partyNo}>
+      <select class="select" bind:value={partyNo}>
         {#each parties as p (p.party_no)}
           <option value={p.party_no}>{p.party_no} {p.name}</option>
         {/each}
       </select>
       <div class="grid grid-cols-2 gap-2">
-        <label class="form-control">
-          <span class="label-text">Fakturadato</span>
-          <input type="date" class="input input-bordered" bind:value={invoiceDate} />
+        <label class="fieldset">
+          <span class="fieldset-legend">Fakturadato</span>
+          <input type="date" class="input" bind:value={invoiceDate} />
         </label>
-        <label class="form-control">
-          <span class="label-text">Forfall</span>
-          <input type="date" class="input input-bordered" bind:value={dueDate} />
+        <label class="fieldset">
+          <span class="fieldset-legend">Forfall</span>
+          <input type="date" class="input" bind:value={dueDate} />
         </label>
       </div>
       {#if products.length}
-        <select class="select select-bordered" bind:value={produkt}>
+        <select class="select" bind:value={produkt}>
           <option value="">— fritekst —</option>
           {#each products as p (p.nummer)}
             <option value={p.nummer}>{p.nummer} {p.navn} ({kr(p.salgspris_ore)})</option>
@@ -86,18 +86,18 @@
         </select>
       {/if}
       {#if currencies.length}
-        <select class="select select-bordered" title="Fakturavaluta" bind:value={valuta}>
+        <select class="select" title="Fakturavaluta" bind:value={valuta}>
           <option value="">NOK</option>
           {#each currencies as c (c)}
             <option value={c}>{c}</option>
           {/each}
         </select>
       {/if}
-      <input class="input input-bordered" placeholder="Beskrivelse" bind:value={description} />
+      <input class="input" placeholder="Beskrivelse" bind:value={description} />
       <div class="grid grid-cols-3 gap-2">
-        <input class="input input-bordered" title="Antall" bind:value={quantity} />
+        <input class="input" title="Antall" bind:value={quantity} />
         <input
-          class="input input-bordered"
+          class="input"
           placeholder={produkt ? "Pris fra produkt" : "Pris (kr)"}
           bind:value={unitPrice}
         />

@@ -46,9 +46,9 @@
   </p>
   <div class="flex flex-wrap gap-2 items-end mb-2">
     <button class="btn btn-sm btn-outline" onclick={fetchRates}>Hent fra Norges Bank</button>
-    <input class="input input-sm input-bordered w-20" placeholder="EUR" bind:value={valuta} />
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered w-28" placeholder="Kurs (11,6543)" bind:value={kurs} />
+    <input class="input input-sm w-20" placeholder="EUR" bind:value={valuta} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm w-28" placeholder="Kurs (11,6543)" bind:value={kurs} />
     <button class="btn btn-sm" onclick={addRate}>Registrer manuelt</button>
   </div>
   {#if rates.length}

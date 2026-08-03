@@ -137,12 +137,12 @@
   {/if}
 
   <div class="flex gap-2 items-center flex-wrap">
-    <input class="input input-sm input-bordered w-48" placeholder="Navn (valgfritt)" bind:value={navn} />
+    <input class="input input-sm w-48" placeholder="Navn (valgfritt)" bind:value={navn} />
     <label class="label cursor-pointer gap-2">
       <input type="checkbox" class="checkbox checkbox-sm" bind:checked={fraFjor} />
-      <span class="label-text">Fra {year - 1}</span>
+      <span>Fra {year - 1}</span>
     </label>
-    <input class="input input-sm input-bordered w-24" placeholder="± %" bind:value={prosent} />
+    <input class="input input-sm w-24" placeholder="± %" bind:value={prosent} />
     <button class="btn btn-sm" onclick={nyttBudsjett}>Nytt budsjett {year}</button>
   </div>
 

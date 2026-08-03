@@ -40,7 +40,7 @@
     <DimSelect
       {dims}
       kind="avdeling"
-      cls="select select-sm select-bordered"
+      cls="select select-sm"
       inkluderAvsluttede
       alleLabel="Alle avdelinger"
       bind:value={avdeling}
@@ -48,7 +48,7 @@
     <DimSelect
       {dims}
       kind="prosjekt"
-      cls="select select-sm select-bordered"
+      cls="select select-sm"
       inkluderAvsluttede
       alleLabel="Alle prosjekter"
       bind:value={prosjekt}

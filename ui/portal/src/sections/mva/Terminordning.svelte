@@ -47,13 +47,13 @@
     frister følger den. Systemet vurderer aldri berettigelse.
   </p>
   <div class="flex flex-wrap gap-2 items-end mb-2">
-    <select class="select select-sm select-bordered" bind:value={ordning}>
+    <select class="select select-sm" bind:value={ordning}>
       <option value="to-maneder">to-månedersterminer</option>
       <option value="arlig">årstermin</option>
       <option value="primaernaering">årstermin (primærnæring)</option>
     </select>
-    <input type="date" class="input input-sm input-bordered" bind:value={fra} />
-    <input class="input input-sm input-bordered" placeholder="Vedtaksreferanse" bind:value={note} />
+    <input type="date" class="input input-sm" bind:value={fra} />
+    <input class="input input-sm" placeholder="Vedtaksreferanse" bind:value={note} />
     <button class="btn btn-sm" onclick={registrer}>Registrer</button>
   </div>
   {#if ordningInfo.history.length}

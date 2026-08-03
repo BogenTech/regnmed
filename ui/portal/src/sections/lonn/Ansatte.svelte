@@ -170,7 +170,7 @@
                   <!-- Tabelltrekk regnes IKKE ut av oss: trekktabellene er
                        Skatteetatens datafiler, og en tilnærming blir den
                        ansattes restskatt. Derfor merket, ikke beregnet. -->
-                  <span class="text-warning">tabell {a.trekk_tabell} ⚠</span>
+                  <span class="badge badge-warning badge-sm">tabell {a.trekk_tabell} ⚠</span>
                 {:else}
                   frikort
                 {/if}
@@ -200,40 +200,42 @@
       </table>
     </div>
     {#if kobling}
-      <div class="border border-base-300 rounded-lg p-3 mb-4 max-w-lg">
-        <h4 class="font-semibold text-sm mb-2">Koble {kobling.ansatt.navn} til portalbruker</h4>
-        <div class="flex flex-wrap gap-2 items-end">
-          <input
-            class="input input-sm input-bordered"
-            placeholder="E-postadresse"
-            bind:value={kobling.epost}
-          />
-          <button
-            class="btn btn-sm btn-primary"
-            disabled={!kobling.epost.trim()}
-            onclick={inviterFraKobling}
-          >
-            Inviter og koble
-          </button>
-        </div>
-        <p class="text-xs opacity-70 mt-1 mb-2">
-          Invitasjonen kobler når den ansatte selv logger inn med adressen — den kan ikke treffe
-          feil person uten at noen andre har adgang til postkassen.
-        </p>
-        {#if koblbareMedlemmer && koblbareMedlemmer.length}
+      <div class="card card-border card-sm mb-4 max-w-lg">
+        <div class="card-body">
+          <h4 class="font-semibold text-sm mb-2">Koble {kobling.ansatt.navn} til portalbruker</h4>
           <div class="flex flex-wrap gap-2 items-end">
-            <select class="select select-sm select-bordered" bind:value={kobling.personId}>
-              <option value="">— eksisterende medlem —</option>
-              {#each koblbareMedlemmer as m (m.person_id)}
-                <option value={m.person_id}>{m.navn}{m.epost ? " (" + m.epost + ")" : ""}</option>
-              {/each}
-            </select>
-            <button class="btn btn-sm" disabled={!kobling.personId} onclick={kobleTilMedlem}>
-              Koble
+            <input
+              class="input input-sm"
+              placeholder="E-postadresse"
+              bind:value={kobling.epost}
+            />
+            <button
+              class="btn btn-sm btn-primary"
+              disabled={!kobling.epost.trim()}
+              onclick={inviterFraKobling}
+            >
+              Inviter og koble
             </button>
           </div>
-        {/if}
-        <button class="btn btn-ghost btn-xs mt-2" onclick={() => (kobling = null)}>Avbryt</button>
+          <p class="text-xs opacity-70 mt-1 mb-2">
+            Invitasjonen kobler når den ansatte selv logger inn med adressen — den kan ikke treffe
+            feil person uten at noen andre har adgang til postkassen.
+          </p>
+          {#if koblbareMedlemmer && koblbareMedlemmer.length}
+            <div class="flex flex-wrap gap-2 items-end">
+              <select class="select select-sm" bind:value={kobling.personId}>
+                <option value="">— eksisterende medlem —</option>
+                {#each koblbareMedlemmer as m (m.person_id)}
+                  <option value={m.person_id}>{m.navn}{m.epost ? " (" + m.epost + ")" : ""}</option>
+                {/each}
+              </select>
+              <button class="btn btn-sm" disabled={!kobling.personId} onclick={kobleTilMedlem}>
+                Koble
+              </button>
+            </div>
+          {/if}
+          <button class="btn btn-ghost btn-xs mt-2" onclick={() => (kobling = null)}>Avbryt</button>
+        </div>
       </div>
     {/if}
   {:else}
@@ -242,33 +244,33 @@
 
   <h3 class="font-semibold mb-1">Ny ansatt</h3>
   <div class="grid gap-2 max-w-md">
-    <input class="input input-sm input-bordered" placeholder="Navn" bind:value={navn} />
+    <input class="input input-sm" placeholder="Navn" bind:value={navn} />
     <div class="grid grid-cols-2 gap-2">
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="Fødselsnummer (11 siffer)"
         bind:value={fnr}
       />
-      <input class="input input-sm input-bordered" placeholder="Stilling" bind:value={stilling} />
+      <input class="input input-sm" placeholder="Stilling" bind:value={stilling} />
     </div>
     <div class="grid grid-cols-2 gap-2">
-      <input type="date" class="input input-sm input-bordered" bind:value={fra} />
-      <input class="input input-sm input-bordered" placeholder="Månedslønn (kr)" bind:value={lonn} />
+      <input type="date" class="input input-sm" bind:value={fra} />
+      <input class="input input-sm" placeholder="Månedslønn (kr)" bind:value={lonn} />
     </div>
     <div class="grid grid-cols-2 gap-2">
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         placeholder="Trekkprosent (f.eks. 35)"
         bind:value={trekk}
       />
       <input
-        class="input input-sm input-bordered"
+        class="input input-sm"
         title="Feriepengesats i prosent"
         bind:value={fp}
       />
     </div>
     <input
-      class="input input-sm input-bordered"
+      class="input input-sm"
       placeholder="E-post — inviter til portalen og koble (valgfritt)"
       bind:value={epost}
     />

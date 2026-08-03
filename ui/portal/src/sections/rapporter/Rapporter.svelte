@@ -49,10 +49,14 @@
 
 <Card title={tittel}>
   <div class="flex gap-2 flex-wrap mb-4">
-    <div class="join">
+    <!-- Faner, ikke en knapperad: role=tablist/tab sier til skjermlesere
+         at dette bytter panel under, ikke utfører en handling. -->
+    <div role="tablist" class="tabs tabs-box tabs-sm">
       {#each FANER as [key, label] (key)}
         <button
-          class="join-item btn btn-sm {key === rapport ? 'btn-primary' : ''}"
+          role="tab"
+          class="tab {key === rapport ? 'tab-active' : ''}"
+          aria-selected={key === rapport}
           onclick={() => (rapport = key)}
         >
           {label}

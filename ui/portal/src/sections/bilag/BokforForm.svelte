@@ -48,54 +48,56 @@
   }
 </script>
 
-<div class="border border-base-300 rounded-lg p-3 mt-3">
-  {#if forslag}
-    <div class="alert alert-info text-sm py-2 mb-2">
-      <div>
-        <strong>Forslag</strong> ({forslag.kildeTekst}) — kontroller tallene før du bokfører.
-        {#if forslag.hvorfor.length}
-          <br />
-          <span class="text-xs opacity-80">
-            {#each forslag.hvorfor as h, i}{#if i}<br />{/if}{h}{/each}
-          </span>
-        {/if}
+<div class="card card-border card-sm mt-3">
+  <div class="card-body">
+    {#if forslag}
+      <div class="alert alert-info text-sm py-2 mb-2">
+        <div>
+          <strong>Forslag</strong> ({forslag.kildeTekst}) — kontroller tallene før du bokfører.
+          {#if forslag.hvorfor.length}
+            <br />
+            <span class="text-xs opacity-80">
+              {#each forslag.hvorfor as h, i}{#if i}<br />{/if}{h}{/each}
+            </span>
+          {/if}
+        </div>
       </div>
+    {/if}
+    <p class="text-sm font-semibold mb-2">Bokfør dokument</p>
+    <div class="flex gap-2 mb-2">
+      <input type="date" class="input input-sm" bind:value={date} />
+      <input class="input input-sm flex-1" placeholder="Tekst" bind:value={description} />
     </div>
-  {/if}
-  <p class="text-sm font-semibold mb-2">Bokfør dokument</p>
-  <div class="flex gap-2 mb-2">
-    <input type="date" class="input input-sm input-bordered" bind:value={date} />
-    <input class="input input-sm input-bordered flex-1" placeholder="Tekst" bind:value={description} />
+    <div>
+      {#each lines as line}
+        <div class="flex gap-2 mb-1">
+          <input
+            class="input input-sm w-24"
+            placeholder="Konto"
+            bind:value={line.account}
+          />
+          <input
+            class="input input-sm w-32"
+            placeholder="Beløp (f.eks. -125,50)"
+            bind:value={line.amount}
+          />
+          <input class="input input-sm w-16" placeholder="Mva" bind:value={line.vat} />
+          <DimSelect
+            {dims}
+            kind="avdeling"
+            cls="select select-sm w-28"
+            bind:value={line.avdeling}
+          />
+          <DimSelect
+            {dims}
+            kind="prosjekt"
+            cls="select select-sm w-28"
+            bind:value={line.prosjekt}
+          />
+        </div>
+      {/each}
+    </div>
+    <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
+    <button class="btn btn-sm btn-primary" onclick={bokfor}>Bokfør</button>
   </div>
-  <div>
-    {#each lines as line}
-      <div class="flex gap-2 mb-1">
-        <input
-          class="input input-sm input-bordered w-24"
-          placeholder="Konto"
-          bind:value={line.account}
-        />
-        <input
-          class="input input-sm input-bordered w-32"
-          placeholder="Beløp (f.eks. -125,50)"
-          bind:value={line.amount}
-        />
-        <input class="input input-sm input-bordered w-16" placeholder="Mva" bind:value={line.vat} />
-        <DimSelect
-          {dims}
-          kind="avdeling"
-          cls="select select-sm select-bordered w-28"
-          bind:value={line.avdeling}
-        />
-        <DimSelect
-          {dims}
-          kind="prosjekt"
-          cls="select select-sm select-bordered w-28"
-          bind:value={line.prosjekt}
-        />
-      </div>
-    {/each}
-  </div>
-  <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
-  <button class="btn btn-sm btn-primary" onclick={bokfor}>Bokfør</button>
 </div>

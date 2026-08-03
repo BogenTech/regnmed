@@ -71,17 +71,17 @@
     utstedte dokumenter. Nummer er permanent; produkter deaktiveres, slettes aldri.
   </p>
   <div class="flex flex-wrap gap-2 items-end">
-    <input class="input input-sm input-bordered w-24" placeholder="Nummer" bind:value={nummer} />
-    <input class="input input-sm input-bordered" placeholder="Navn" bind:value={navn} />
-    <input class="input input-sm input-bordered w-28" placeholder="Pris (kr)" bind:value={pris} />
-    <VatSelect cls="select select-sm select-bordered" bind:value={vat} />
+    <input class="input input-sm w-24" placeholder="Nummer" bind:value={nummer} />
+    <input class="input input-sm" placeholder="Navn" bind:value={navn} />
+    <input class="input input-sm w-28" placeholder="Pris (kr)" bind:value={pris} />
+    <VatSelect cls="select select-sm" bind:value={vat} />
     <input
-      class="input input-sm input-bordered w-20"
+      class="input input-sm w-20"
       title="Inntektskonto"
       bind:value={konto}
     />
     <label class="label cursor-pointer gap-1">
-      <span class="label-text text-sm">Lager</span>
+      <span class="text-sm">Lager</span>
       <input type="checkbox" class="checkbox checkbox-sm" bind:checked={lager} />
     </label>
     <button class="btn btn-sm" onclick={opprett}>Nytt produkt</button>

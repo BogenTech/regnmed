@@ -95,15 +95,15 @@
 {:else}
   <Card title="Ny kunde">
     <form class="flex flex-wrap gap-2 items-end" onsubmit={opprett}>
-      <input class="input input-bordered" placeholder="Navn" required bind:value={navn} />
-      <input class="input input-bordered w-32" placeholder="Orgnr (valgfritt)" bind:value={orgnr} />
+      <input class="input" placeholder="Navn" required bind:value={navn} />
+      <input class="input w-32" placeholder="Orgnr (valgfritt)" bind:value={orgnr} />
       <button class="btn btn-primary">Opprett</button>
     </form>
   </Card>
 
   <Card title="Kunder">
     <input
-      class="input input-sm input-bordered w-full max-w-xs mb-2"
+      class="input input-sm w-full max-w-xs mb-2"
       placeholder="Søk på navn, nummer, orgnr eller e-post"
       bind:value={sok}
     />

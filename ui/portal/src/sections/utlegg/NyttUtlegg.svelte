@@ -55,9 +55,9 @@
     (oppbevaringsplikt). Avvisning krever begrunnelse.
   </p>
   <div class="flex flex-wrap gap-2 items-end">
-    <input type="date" class="input input-sm input-bordered" bind:value={dato} />
-    <input class="input input-sm input-bordered w-28" placeholder="Beløp (kr)" bind:value={belop} />
-    <input class="input input-sm input-bordered" placeholder="Formål" bind:value={formal} />
+    <input type="date" class="input input-sm" bind:value={dato} />
+    <input class="input input-sm w-28" placeholder="Beløp (kr)" bind:value={belop} />
+    <input class="input input-sm" placeholder="Formål" bind:value={formal} />
     <label class="btn btn-sm">
       Velg kvittering og send inn
       <input type="file" class="hidden" onchange={filValgt} />

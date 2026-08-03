@@ -48,8 +48,12 @@
   }
 </script>
 
-<details class="border border-base-300 rounded p-2 mb-2 {rolle.aktiv ? '' : 'opacity-50'}">
-  <summary class="cursor-pointer font-semibold">
+<details
+  class="collapse collapse-arrow border border-base-300 mb-2 {rolle.aktiv
+    ? ''
+    : 'opacity-50'}"
+>
+  <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 font-semibold">
     {rolle.navn}
     <span class="opacity-70 text-sm font-normal">
       — {rolle.rettigheter.length} rettigheter, {rolle.i_bruk} med rollen{rolle.aktiv
@@ -57,15 +61,15 @@
         : ", deaktivert"}
     </span>
   </summary>
-  <div class="mt-2">
+  <div class="collapse-content pl-3">
     <Rettighetsvelger {vokabular} bind:valgte />
-  </div>
-  <div class="flex gap-2 mt-2">
-    <button class="btn btn-xs" onclick={lagre}>Lagre</button>
-    {#if rolle.aktiv}
-      <button class="btn btn-xs btn-outline" onclick={deaktiver}>Deaktiver</button>
-    {:else}
-      <button class="btn btn-xs btn-outline" onclick={aktiver}>Aktiver igjen</button>
-    {/if}
+    <div class="flex gap-2 mt-2">
+      <button class="btn btn-xs" onclick={lagre}>Lagre</button>
+      {#if rolle.aktiv}
+        <button class="btn btn-xs btn-outline" onclick={deaktiver}>Deaktiver</button>
+      {:else}
+        <button class="btn btn-xs btn-outline" onclick={aktiver}>Aktiver igjen</button>
+      {/if}
+    </div>
   </div>
 </details>

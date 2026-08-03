@@ -57,7 +57,7 @@
             <td class="text-right">{kr(t.amount_ore)}</td>
             <td class="flex gap-1">
               <select
-                class="select select-xs select-bordered"
+                class="select select-xs"
                 bind:value={valgt[t.bank_transaction_id]}
               >
                 {#each recon.unmatched_entries as e (e.entry_id)}

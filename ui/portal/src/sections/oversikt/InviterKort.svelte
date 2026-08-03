@@ -107,7 +107,7 @@
       </p>
       <div class="flex gap-2 items-center flex-wrap">
         <input
-          class="input input-sm input-bordered w-64"
+          class="input input-sm w-64"
           placeholder="e-postadresse"
           bind:value={epost}
           onkeydown={(e) => e.key === "Enter" && inviter()}

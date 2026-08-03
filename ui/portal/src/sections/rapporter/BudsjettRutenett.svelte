@@ -108,7 +108,7 @@
             {#each rad.celler as _, m}
               <td>
                 <input
-                  class="input input-xs input-bordered w-20 text-right"
+                  class="input input-xs w-20 text-right"
                   bind:value={rad.celler[m]}
                 />
               </td>
@@ -123,8 +123,8 @@
   </div>
 
   <div class="flex gap-2 items-center flex-wrap mt-3">
-    <input class="input input-sm input-bordered w-24" placeholder="Konto" bind:value={nyKonto} />
-    <input class="input input-sm input-bordered w-32" placeholder="Per måned" bind:value={nyBelop} />
+    <input class="input input-sm w-24" placeholder="Konto" bind:value={nyKonto} />
+    <input class="input input-sm w-32" placeholder="Per måned" bind:value={nyBelop} />
     <button class="btn btn-sm btn-ghost" onclick={leggTil}>+ konto</button>
     <button class="btn btn-sm btn-primary" onclick={lagre}>Lagre linjer</button>
   </div>
