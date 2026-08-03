@@ -68,6 +68,11 @@ pub struct Ansatt {
     pub feriepenger_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
+    /// The linked portal user (migration 0036/0050), if any — who may
+    /// see this employee's payslip and whose hours become timelønn.
+    pub person_id: Option<Uuid>,
+    pub person_navn: Option<String>,
+    pub person_epost: Option<String>,
 }
 
 impl Ansatt {
@@ -130,10 +135,15 @@ pub async fn create_ansatt(
 
 pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ansatt>> {
     let rows = sqlx::query(
-        "select id, fodselsnummer, navn, stilling, ansatt_fra, ansatt_til,
-                manedslonn_ore, timelonn_ore, trekk_type, trekk_prosent_bp,
-                trekk_tabell, feriepenger_bp, bank_account, note
-         from employee where company_id = $1 order by navn",
+        "select e.id, e.fodselsnummer, e.navn, e.stilling, e.ansatt_fra, e.ansatt_til,
+                e.manedslonn_ore, e.timelonn_ore, e.trekk_type, e.trekk_prosent_bp,
+                e.trekk_tabell, e.feriepenger_bp, e.bank_account, e.note,
+                e.person_id,
+                coalesce(p.name, p.oidc_sub) as person_navn,
+                p.email as person_epost
+         from employee e
+         left join person p on p.id = e.person_id
+         where e.company_id = $1 order by e.navn",
     )
     .bind(company_id)
     .fetch_all(pool)
@@ -160,6 +170,9 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Ansatt {
         feriepenger_bp: r.get("feriepenger_bp"),
         bank_account: r.get("bank_account"),
         note: r.get("note"),
+        person_id: r.get("person_id"),
+        person_navn: r.get("person_navn"),
+        person_epost: r.get("person_epost"),
     }
 }
 
@@ -963,4 +976,190 @@ pub async fn timegrunnlag(
         belop_ore: regnmed_core::lonn::timelonn(minutter, timesats),
         laast,
     })
+}
+
+/// Refuses everything that must never be on the other end of the link:
+/// a person that does not exist, or a machine identity — an integration
+/// with an employee's payslip access would be a leak by construction.
+async fn krev_koblbar_person(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    person_id: Uuid,
+) -> Result<()> {
+    let kind: Option<String> = sqlx::query_scalar("select kind from person where id = $1")
+        .bind(person_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    match kind.as_deref() {
+        None => bail!("ukjent portalbruker"),
+        Some("menneske") => Ok(()),
+        Some(_) => bail!("en integrasjon kan ikke være lønnsmottaker"),
+    }
+}
+
+/// Links an employee to a portal user, the manual way (docs/lonn.md).
+///
+/// The guards are the point: the employee must be UNLINKED (re-linking
+/// is a deliberate two-step — unlink first — never a dropdown slip),
+/// the person must be a human, and the partial unique index refuses a
+/// person who is already another employee in the same company. Every
+/// outcome that changes the link leaves an `employee_link_change` row.
+pub async fn link_ansatt_person(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    person_id: Uuid,
+    utfort_av: Uuid,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let eksisterende: Option<Option<Uuid>> = sqlx::query_scalar(
+        "select person_id from employee where id = $1 and company_id = $2 for update",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(eksisterende) = eksisterende else {
+        bail!("ukjent ansatt");
+    };
+    if let Some(p) = eksisterende {
+        ensure!(
+            p == person_id,
+            "den ansatte er alt koblet til en annen portalbruker — koble fra først"
+        );
+        // Idempotent: linking to the person already linked is a no-op,
+        // and writes no audit row pretending something changed.
+        return Ok(());
+    }
+    krev_koblbar_person(&mut tx, person_id).await?;
+    let res = sqlx::query("update employee set person_id = $3 where id = $1 and company_id = $2")
+        .bind(employee_id)
+        .bind(company_id)
+        .bind(person_id)
+        .execute(&mut *tx)
+        .await;
+    if let Err(e) = &res {
+        if let Some(db) = e.as_database_error() {
+            if db.code().as_deref() == Some("23505") {
+                bail!("portalbrukeren er alt koblet til en annen ansatt i selskapet");
+            }
+        }
+    }
+    res?;
+    logg_kobling(
+        &mut tx,
+        company_id,
+        employee_id,
+        person_id,
+        "koblet",
+        "admin",
+        Some(utfort_av),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Removes the link. The employee record stands; only who-may-log-in-as
+/// them is cleared. Audited like the link itself.
+pub async fn unlink_ansatt_person(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    utfort_av: Uuid,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let eksisterende: Option<Option<Uuid>> = sqlx::query_scalar(
+        "select person_id from employee where id = $1 and company_id = $2 for update",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(Some(person_id)) = eksisterende else {
+        bail!("den ansatte er ikke koblet til noen portalbruker");
+    };
+    sqlx::query("update employee set person_id = null where id = $1 and company_id = $2")
+        .bind(employee_id)
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await?;
+    logg_kobling(
+        &mut tx,
+        company_id,
+        employee_id,
+        person_id,
+        "frakoblet",
+        "admin",
+        Some(utfort_av),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn logg_kobling(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    employee_id: Uuid,
+    person_id: Uuid,
+    endring: &str,
+    kilde: &str,
+    utfort_av: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query(
+        "insert into employee_link_change
+             (company_id, employee_id, person_id, endring, kilde, utfort_av)
+         values ($1,$2,$3,$4,$5,$6)",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .bind(person_id)
+    .bind(endring)
+    .bind(kilde)
+    .bind(utfort_av)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Koblingsendring {
+    pub endring: String,
+    pub kilde: String,
+    pub person_navn: String,
+    pub utfort_av: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// The trail of who linked whom — the question that matters when a
+/// payslip was readable by the wrong person.
+pub async fn ansatt_link_historikk(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+) -> Result<Vec<Koblingsendring>> {
+    let rows = sqlx::query(
+        "select c.endring, c.kilde, c.created_at,
+                coalesce(p.name, p.oidc_sub) as person_navn,
+                coalesce(u.name, u.oidc_sub) as utfort_av
+         from employee_link_change c
+         join person p on p.id = c.person_id
+         left join person u on u.id = c.utfort_av
+         where c.company_id = $1 and c.employee_id = $2
+         order by c.created_at desc",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| Koblingsendring {
+            endring: r.get("endring"),
+            kilde: r.get("kilde"),
+            person_navn: r.get("person_navn"),
+            utfort_av: r.get("utfort_av"),
+            created_at: r.get("created_at"),
+        })
+        .collect())
 }

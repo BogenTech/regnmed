@@ -114,6 +114,12 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/expenses/{expense_id}/pay` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/receipt` | GET |
 | `/companies/{company_id}/expenses/{expense_id}/reject` | POST |
+| `/companies/{company_id}/employees` | GET POST |
+| `/companies/{company_id}/employees/{employee_id}/link` | POST DELETE |
+| `/companies/{company_id}/employees/{employee_id}/link/history` | GET |
+| `/companies/{company_id}/payroll` | GET POST |
+| `/companies/{company_id}/payroll/{run_id}/slip/{employee_id}` | GET |
+| `/companies/{company_id}/payroll/hours/{employee_id}` | GET |
 | `/companies/{company_id}/import/contacts` | POST |
 | `/companies/{company_id}/import/open-items` | POST |
 | `/companies/{company_id}/import/saft` | POST |

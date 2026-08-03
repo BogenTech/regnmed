@@ -146,6 +146,7 @@ pub async fn list_invitations(
             "invitert_av": i.invitert_av,
             "tidspunkt": i.created_at.to_rfc3339(),
             "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
+            "employee_id": i.employee_id,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -154,6 +155,10 @@ pub async fn list_invitations(
 pub struct InviteRequest {
     epost: String,
     rolle: String,
+    /// Lønnsmottaker to link on redemption (docs/lonn.md, 0050).
+    /// Requires LONN_SKRIV in addition to MEDLEM_ADMIN — the link
+    /// decides who may read a payslip.
+    employee_id: Option<Uuid>,
 }
 
 /// Inviterer en e-postadresse.
@@ -169,12 +174,16 @@ pub async fn invite(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
     krev_kjent_rolle(&state, company_id, &request.rolle).await?;
+    if request.employee_id.is_some() {
+        krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    }
     let id = regnmed_db::medlemmer::inviter(
         &state.pool,
         company_id,
         &request.epost,
         &request.rolle,
         person.person_id,
+        request.employee_id,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

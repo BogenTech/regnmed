@@ -411,6 +411,14 @@ pub fn router(state: AppState) -> Router {
             get(lonn::list_employees).post(lonn::create_employee),
         )
         .route(
+            "/companies/{company_id}/employees/{employee_id}/link",
+            axum::routing::post(lonn::link_employee).delete(lonn::unlink_employee),
+        )
+        .route(
+            "/companies/{company_id}/employees/{employee_id}/link/history",
+            get(lonn::employee_link_history),
+        )
+        .route(
             "/companies/{company_id}/payroll",
             get(lonn::list_payroll).post(lonn::run_payroll),
         )

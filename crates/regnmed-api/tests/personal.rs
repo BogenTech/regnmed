@@ -8,6 +8,8 @@ mod common;
 
 #[path = "grupper/aksjonaer.rs"]
 mod aksjonaer;
+#[path = "grupper/ansattkobling.rs"]
+mod ansattkobling;
 #[path = "grupper/assets.rs"]
 mod assets;
 #[path = "grupper/expenses.rs"]

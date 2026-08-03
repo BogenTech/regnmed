@@ -165,6 +165,8 @@ listingen.
 | Metode | Sti |
 | --- | --- |
 | GET/POST | `/companies/{id}/employees` |
+| POST/DELETE | `/companies/{id}/employees/{eid}/link` (koble/koble fra portalbruker) |
+| GET | `/companies/{id}/employees/{eid}/link/history` |
 | GET/POST | `/companies/{id}/payroll` |
 | GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
 | GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
@@ -224,6 +226,32 @@ det ville koblet feil person til feil lønn første gang to ansatte het
 det samme. Mangler koblingen, sier `timegrunnlag` fra i stedet for å
 returnere null timer.
 
+### Hvordan koblingen settes (migration 0050)
+
+Koblingen avgjør hvem som kan lese en lønnsslipp, så veiene inn er få
+og kontrollerte, og hver endring står i det innsettings-bare sporet
+`employee_link_change` (hvem koblet hvem, når, av hvem — spørsmålet som
+teller når en slipp var lesbar for feil person).
+
+1. **Invitasjonen bærer den ansatte** (hovedveien). Admin oppgir den
+   ansattes e-postadresse; invitasjonen (docs/auth.md §7) får en
+   `employee_id`, og innløsningen i `/me` setter koblingen i SAMME
+   transaksjon som medlemskapet. Da er det den ansatte selv som kobler
+   seg, ved å logge inn med sin egen adresse — admin velger aldri en
+   person fra en liste, og feilkobling krever at noen andre disponerer
+   postkassen. Bare én åpen invitasjon kan love en ansatt om gangen.
+   Kan koblingen ikke settes ved innløsning (personen er alt en annen
+   ansatt her), består medlemskapet og den ansatte forblir SYNLIG
+   ukoblet — en invitasjonstabbe skal aldri knekke en innlogging, og
+   aldri skjules bak en stille feilkobling.
+2. **Manuell kobling til et eksisterende medlem** (unntaksveien).
+   `POST …/employees/{eid}/link` — portalvelgeren viser bare selskapets
+   direkte, aktive medlemmer, og vaktene holder uansett hva UI-et
+   sender: bare ukoblede ansatte (omkobling er et to-stegs bevisst
+   valg: koble fra først), bare mennesker (en integrasjon med
+   lønnsslipptilgang ville vært en lekkasje ved konstruksjon), og én
+   ansatt per person (delvis unik indeks fra 0036).
+
 `GET /companies/{id}/payroll/hours/{employee}?ar=&maned=` gir minutter,
 sats, beløp og `laast`, så portalen bare tilbyr timelønn når det faktisk
 er trygt å kjøre.
@@ -268,6 +296,10 @@ månedslønn og trekkprosent er ikke allmenn lesning.
 Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og
 **Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
 der brutto kan overstyres og feriepenger legges inn per person).
+Ansatte-kortet har en **Portalbruker**-kolonne (koblet / invitert /
+ikke koblet) med invitasjons- og koblingsflyten fra 0050; skjemaet for
+ny ansatt tar e-postadresse rett i registreringen, så invitasjonen går
+ut i samme håndvending.
 Hver kjørt måned har en knapp per ansatt som laster ned lønnsslippen.
 Ansatte med timesats har en «fra timer»-avkrysning i kjøreskjemaet;
 serveren nekter hvis måneden ikke er låst.
@@ -296,6 +328,13 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   2780 etter hver kjøring er satsen av **hver ansatts** gjeld (fasiten
   bygges per ansatt — avrundingen skjer der), og at feriepengegjeld
   lønnshistorikken ikke forklarer gir en advarsel med beløpet i.
+- Koblingen (`tests/grupper/ansattkobling.rs`): at invitasjonen kobler i
+  samme transaksjon som medlemskapet med `kilde='invitasjon'` i sporet,
+  at en konfliktkobling aldri knekker innloggingen men etterlater den
+  ansatte synlig ukoblet, at bare én åpen invitasjon kan love en
+  ansatt, og at manuell kobling nekter omkobling uten frakobling,
+  person som alt er en annen ansatt, og maskinidentiteter — med begge
+  hendelsene navngitt i historikken.
 - `regnmed-db/tests/lonn.rs` — mot ekte Postgres: at bilaget balanserer
   eksakt, at hver konto får riktig beløp, at utbetalte feriepenger
   reduserer gjelden i stedet for å bli kostnad, at sone V er nullsats,

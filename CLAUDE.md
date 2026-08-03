@@ -1151,6 +1151,23 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    CRUD på kunderegisteret) og Brukere (medlemmer/invitasjoner/roller
    samlet + Leverandørtilgang-kortet), Plattform-visning
    (`#/plattform`) for plattformbrukere.
+64. ✅ Ansatt↔portalbruker-kobling (docs/lonn.md, oppfølger til 0036 som
+   ga kolonnen uten noen vei inn): koblingen avgjør hvem som leser en
+   lønnsslipp, så veiene er få og sporet innsettings-bart. Migration
+   0050: `company_invitation.employee_id` + `employee_link_change`.
+   HOVEDVEIEN er idiotsikker per konstruksjon: invitasjonen bærer den
+   ansatte, og innløsningen i `/me` setter koblingen i SAMME tx som
+   medlemskapet — den ansatte kobler seg selv ved å logge inn med egen
+   adresse, admin velger aldri fra en liste (0036-lærdommen: aldri
+   navnegjetting). Konfliktkobling knekker ALDRI innloggingen:
+   medlemskapet består, den ansatte forblir SYNLIG ukoblet. Én åpen
+   invitasjon per ansatt. UNNTAKSVEIEN `POST …/employees/{eid}/link`
+   (LONN_SKRIV; invitasjon m/ employee_id krever MEDLEM_ADMIN +
+   LONN_SKRIV): bare ukoblede (omkobling = koble fra først, to-stegs),
+   bare mennesker, én ansatt per person (0036-indeksen). Historikk på
+   `…/link/history`. Portal: Portalbruker-kolonne i Ansatte-kortet
+   (koblet/invitert/ikke koblet, medlemsvelger begrenset til direkte
+   aktive medlemmer), e-postfelt i ny ansatt-skjemaet.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

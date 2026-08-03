@@ -278,6 +278,8 @@ pub struct Invitasjon {
     /// When the invitation mail last went out (#66), or None if it never
     /// did — which is what an admin needs to know before resending.
     pub sist_sendt: Option<DateTime<Utc>>,
+    /// The lønnsmottaker this invitation will link on redemption (0050).
+    pub employee_id: Option<Uuid>,
 }
 
 /// Invites an e-mail address into the company.
@@ -285,12 +287,19 @@ pub struct Invitasjon {
 /// Answers identically whether or not the address already has a user with
 /// us — see migration 0037 for why. If it does, the invitation is
 /// redeemed the next time that person loads the portal.
+///
+/// `employee_id` makes the invitation carry a lønnsmottaker (migration
+/// 0050): redemption then links `employee.person_id` in the same
+/// transaction as the membership. That is the foolproof direction — the
+/// employee links themselves by logging in with their own address; the
+/// admin never picks a person from a list.
 pub async fn inviter(
     pool: &PgPool,
     company_id: Uuid,
     epost: &str,
     rolle: &str,
     invited_by: Uuid,
+    employee_id: Option<Uuid>,
 ) -> Result<Uuid> {
     krev_tildelbar(rolle)?;
     let epost = normaliser_epost(epost);
@@ -298,17 +307,48 @@ pub async fn inviter(
         epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),
         "«{epost}» ser ikke ut som en e-postadresse"
     );
+    if let Some(eid) = employee_id {
+        // The employee must be the company's own, unlinked, and not
+        // already promised to another open invitation — two invitations
+        // racing to link the same employee would make the outcome depend
+        // on login order.
+        let fri: Option<bool> = sqlx::query_scalar(
+            "select person_id is null from employee where id = $1 and company_id = $2",
+        )
+        .bind(eid)
+        .bind(company_id)
+        .fetch_optional(pool)
+        .await?;
+        match fri {
+            None => bail!("ukjent ansatt"),
+            Some(false) => bail!("den ansatte er alt koblet til en portalbruker"),
+            Some(true) => {}
+        }
+        let apen: bool = sqlx::query_scalar(
+            "select exists (select 1 from company_invitation
+                            where employee_id = $1
+                              and accepted_at is null and revoked_at is null)",
+        )
+        .bind(eid)
+        .fetch_one(pool)
+        .await?;
+        ensure!(
+            !apen,
+            "den ansatte har alt en åpen invitasjon — trekk den tilbake først"
+        );
+    }
 
     let id = Uuid::new_v4();
     let res = sqlx::query(
-        "insert into company_invitation (id, company_id, epost, role, invited_by)
-         values ($1,$2,$3,$4,$5)",
+        "insert into company_invitation (id, company_id, epost, role, invited_by, employee_id)
+         values ($1,$2,$3,$4,$5,$6)",
     )
     .bind(id)
     .bind(company_id)
     .bind(&epost)
     .bind(rolle)
     .bind(invited_by)
+    .bind(employee_id)
     .execute(pool)
     .await;
     if let Err(e) = res {
@@ -322,7 +362,7 @@ pub async fn inviter(
 
 pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitasjon>> {
     let rows = sqlx::query(
-        "select i.id, i.epost, i.role, i.created_at,
+        "select i.id, i.epost, i.role, i.created_at, i.employee_id,
                 coalesce(p.name, p.oidc_sub) as invitert_av,
                 (select max(u.created_at) from utsendelse u
                   where u.invitation_id = i.id) as sist_sendt
@@ -343,6 +383,7 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
             invitert_av: r.get("invitert_av"),
             created_at: r.get("created_at"),
             sist_sendt: r.get("sist_sendt"),
+            employee_id: r.get("employee_id"),
         })
         .collect())
 }
@@ -395,7 +436,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 
     let mut tx = pool.begin().await?;
     let rader = sqlx::query(
-        "select id, company_id, role from company_invitation
+        "select id, company_id, role, employee_id from company_invitation
          where epost = $1 and accepted_at is null and revoked_at is null
          for update",
     )
@@ -408,6 +449,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
         let company_id: Uuid = rad.get("company_id");
         let rolle: String = rad.get("role");
         let invitasjon_id: Uuid = rad.get("id");
+        let employee_id: Option<Uuid> = rad.get("employee_id");
 
         let fantes: Option<String> = sqlx::query_scalar(
             "select role from company_member where company_id = $1 and person_id = $2",
@@ -437,6 +479,40 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
                 "invitasjon",
             )
             .await?;
+        }
+
+        // The invitation carries a lønnsmottaker (0050): the redeeming
+        // person IS the employee — link in the same transaction. The
+        // guarded update makes the link best-effort, never blocking the
+        // login: it applies only if the employee is still unlinked and
+        // this person is not already another employee here. A skipped
+        // link leaves the employee visibly unlinked on the ansatt card,
+        // which is the honest outcome — silently failing /me would hide
+        // an invitation mistake behind a broken login.
+        if let Some(eid) = employee_id {
+            let koblet = sqlx::query(
+                "update employee set person_id = $3
+                 where id = $1 and company_id = $2 and person_id is null
+                   and not exists (select 1 from employee
+                                   where company_id = $2 and person_id = $3)",
+            )
+            .bind(eid)
+            .bind(company_id)
+            .bind(person_id)
+            .execute(&mut *tx)
+            .await?;
+            if koblet.rows_affected() == 1 {
+                crate::lonn::logg_kobling(
+                    &mut tx,
+                    company_id,
+                    eid,
+                    person_id,
+                    "koblet",
+                    "invitasjon",
+                    None,
+                )
+                .await?;
+            }
         }
 
         sqlx::query(

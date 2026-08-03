@@ -39,6 +39,13 @@ fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
         "feriepenger_bp": a.feriepenger_bp,
         "bank_account": a.bank_account,
         "note": a.note,
+        // The linked portal user (docs/lonn.md, 0050) — null when the
+        // employee has no portal access.
+        "person": a.person_id.map(|pid| json!({
+            "person_id": pid,
+            "navn": a.person_navn,
+            "epost": a.person_epost,
+        })),
     })
 }
 
@@ -285,5 +292,67 @@ pub async fn payroll_hours(
         "timesats_ore": g.timesats_ore,
         "belop_ore": g.belop_ore,
         "laast": g.laast,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct LinkRequest {
+    person_id: Uuid,
+}
+
+/// Manually links an employee to an EXISTING portal user — the fallback
+/// when the invitation path (invite with `employee_id`) does not fit.
+/// The picker in the portal is limited to the company's members; the
+/// guards here hold regardless of what the UI sends: unlinked employee
+/// only, humans only, one employee per person (docs/lonn.md).
+pub async fn link_employee(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<LinkRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    regnmed_db::lonn::link_ansatt_person(
+        &state.pool,
+        company_id,
+        employee_id,
+        request.person_id,
+        person.person_id,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "koblet": true })))
+}
+
+/// Clears the link. Re-linking afterwards is a fresh, audited decision.
+pub async fn unlink_employee(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    regnmed_db::lonn::unlink_ansatt_person(&state.pool, company_id, employee_id, person.person_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "frakoblet": true })))
+}
+
+/// Who linked whom, when — read when a link is questioned.
+pub async fn employee_link_history(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
+    let rader =
+        regnmed_db::lonn::ansatt_link_historikk(&state.pool, company_id, employee_id).await?;
+    Ok(Json(json!({
+        "historikk": rader.iter().map(|h| json!({
+            "endring": h.endring,
+            "kilde": h.kilde,
+            "person": h.person_navn,
+            "utfort_av": h.utfort_av,
+            "tidspunkt": h.created_at.to_rfc3339(),
+        })).collect::<Vec<_>>(),
     })))
 }
