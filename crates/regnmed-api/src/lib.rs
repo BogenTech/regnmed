@@ -29,6 +29,7 @@ pub mod migrering;
 pub mod ocr;
 pub mod payments;
 pub mod period;
+pub mod plattform;
 pub mod portal;
 pub mod product;
 pub mod purring;
@@ -155,6 +156,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(engagement::decide_request),
         )
         .route("/firms/{firm_id}/clients", get(engagement::firm_clients))
+        .route(
+            "/firms/{firm_id}/platform-access",
+            get(plattform::firm_platform_access),
+        )
         .route("/firms/{firm_id}/access", get(byramedlemmer::list_access))
         .route(
             "/firms/{firm_id}/access/history",
@@ -713,6 +718,15 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/attachments/{attachment_id}",
             get(period::download_attachment),
         )
+        // Vendor access made visible to the one it touched (docs/auth.md §8):
+        // the company's own admins read what the platform did here.
+        .route(
+            "/companies/{company_id}/platform-access",
+            get(plattform::company_platform_access),
+        )
+        // The /platform sub-router (docs/auth.md §8) — its own guard + log
+        // middleware; nothing here reaches any company's ledger.
+        .merge(plattform::plattform_router(state.clone()))
         // Attachments and statement uploads need more than axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
         // Hardening on EVERY response (#64): nosniff and Referrer-Policy
@@ -782,6 +796,15 @@ async fn me(
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
 
+    // Platform role (docs/auth.md §8), so the portal can show the
+    // Plattform view. Deliberately separate from `companies`: a platform
+    // role grants no company access and never appears in that list.
+    let plattform = if person.integration.is_none() {
+        regnmed_db::active_platform_role(&state.pool, person.person_id).await?
+    } else {
+        None
+    };
+
     // Abonnementsstatus per selskap (#65): portalen viser banneret her,
     // and the block itself sits in the access guard. One lookup per
     // distinct company — the list is short (a person's companies, not all).
@@ -806,6 +829,10 @@ async fn me(
         "sub": person.sub,
         "name": person.name,
         "email": person.email,
+        "plattform": plattform.map(|p| json!({
+            "rolle": p.rolle,
+            "valid_to": p.valid_to.to_string(),
+        })),
         "companies": access
             .iter()
             .map(|a| json!({

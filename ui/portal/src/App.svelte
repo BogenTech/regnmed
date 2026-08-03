@@ -24,7 +24,10 @@
   import Bilag from "./sections/bilag/Bilag.svelte";
   import Periode from "./sections/periode/Periode.svelte";
   import Oppdrag from "./sections/oppdrag/Oppdrag.svelte";
+  import Kunder from "./sections/kunder/Kunder.svelte";
+  import Brukere from "./sections/brukere/Brukere.svelte";
   import Byra from "./sections/byra/Byra.svelte";
+  import Plattform from "./components/Plattform.svelte";
 
   // Alle seksjonene i menyen (lib/meny.js) er portert (#76 steg 2).
   const SECTIONS = {
@@ -42,6 +45,8 @@
     bank: Bank,
     bilag: Bilag,
     periode: Periode,
+    kunder: Kunder,
+    brukere: Brukere,
     oppdrag: Oppdrag,
   };
 
@@ -110,6 +115,8 @@
   </Shell>
 {:else if route.view === "byra"}
   <Byra firmId={route.firmId} />
+{:else if route.view === "plattform"}
+  <Plattform />
 {:else}
   <Companies />
 {/if}

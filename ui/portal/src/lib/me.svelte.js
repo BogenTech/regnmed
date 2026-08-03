@@ -10,6 +10,9 @@ export const me = $state({
   email: "",
   companies: [],
   nyeTilganger: 0,
+  // Aktiv plattformrolle (docs/auth.md §8): {rolle, valid_to} eller null.
+  // Gir INGEN selskabstilgang — bare Plattform-visningen i menyen.
+  plattform: null,
 });
 
 export async function loadMe(force = false) {
@@ -18,6 +21,7 @@ export async function loadMe(force = false) {
   me.name = svar.name || "";
   me.email = svar.email || "";
   me.companies = svar.companies || [];
+  me.plattform = svar.plattform || null;
   // Invitations redeemed by this very call — the invited user's first
   // login should say so instead of silently listing the companies.
   me.nyeTilganger = svar.nye_tilganger || 0;

@@ -422,19 +422,20 @@ hvem fikk hva, når, og hvem som ga det. En innløst invitasjon har ingen
 utfører (personen løste den inn selv); hvem som inviterte står på
 invitasjonen.
 
-## 8. Det som IKKE finnes, og hvorfor
+## 8. Grensen mot plattformen: hva som finnes, og hva som aldri gjør det
 
-### Ingen plattformadministrator — en avgjørelse, ikke en tilfeldighet
+### Ingen vei inn i hovedboken krysser selskapsgrenser
 
-**Ingen tilgangsvei krysser selskapsgrenser.** Alle tre veiene i §2 er
-avgrenset til ett selskap i selve datamodellen — `company_member`,
-`engagement` og `integration_grant` bærer hver sin `company_id`, og
-tilgangsoppslaget (`company_access_for_person` i tenancy.rs) kjenner
-ingen jokertegn. Det finnes ingen fjerde vei, ingen driftsrolle i
-API-et og ingen leverandørkonto.
+**Ingen tilgangsvei inn i et selskaps regnskap krysser selskapsgrenser.**
+Alle tre veiene i §2 er avgrenset til ett selskap i selve datamodellen —
+`company_member`, `engagement` og `integration_grant` bærer hver sin
+`company_id`, og tilgangsoppslaget (`company_access_for_person` i
+tenancy.rs) kjenner ingen jokertegn. Plattformrollene i neste avsnitt
+går ikke gjennom det oppslaget og gir **ingen** selskabstilgang: bilag,
+saldoer, rapporter og reskontroposter er utenfor rekkevidde for enhver
+leverandørrolle.
 
-Fram til #57 var det en tilfeldighet — aldri bygget, men heller aldri
-besluttet. Nå er det **besluttet**, og begrunnelsen er produktets egen
+Det ble besluttet i #57, og begrunnelsen er produktets egen
 tillitshistorie: hovedboken selges som etterprøvbar («ikke stol på oss —
 kontrollér»), og en global administrator er nøyaktig den bakveien vi
 selger fraværet av. En revisor som spør «hvem hos leverandøren kan lese
@@ -445,18 +446,71 @@ hvem som skrev.
 
 Avgjørelsen er festet i test, ikke bare i tekst:
 `an_admin_crosses_no_company_boundary` i `tests/grupper/tilgang.rs` viser at den
-sterkeste rollen som finnes er en fullstendig fremmed i naboselskapet —
-404 på lesing, skriving og administrasjon, og `/me` nevner ikke
-selskapet. Skal avgjørelsen noen gang omgjøres, må den testen endres
-bevisst, og dette avsnittet med den.
+sterkeste selskapsrollen som finnes er en fullstendig fremmed i
+naboselskapet — 404 på lesing, skriving og administrasjon, og `/me`
+nevner ikke selskapet. Og
+`a_company_admin_is_a_stranger_to_the_platform_and_vice_versa` i
+`tests/grupper/plattform.rs` fester den andre retningen: en
+plattform-systemadmin får 404 på selskapets hovedbok, stamdata og
+administrasjon. Skal noen av grensene flyttes, må testene endres
+bevisst, og dette avsnittet med dem.
 
-**Støtteveien** er at kunden gir tilgangen selv, med de samme
-mekanismene som all annen tilgang: en **invitasjon** (§7) med den minste
-rollen som holder — ofte `les` — eller et **oppdrag** til et byrå.
-Begge er synlige for kunden, begge er logget, og begge kan trekkes
-tilbake med virkning samme dag (`valid_to` er eksklusiv). Brukerstøtte
-uten kundens aktive medvirkning finnes ikke; det er prisen for å kunne
-svare *ingen*, og den er betalt med vilje.
+### Plattformrollene systemadmin og support — den avgrensede unntaksveien
+
+Bygget 2026-08-03, etter kravlisten #57 selv stilte opp. En
+plattformrolle når **administrative stamdata på tvers av selskaper og
+byråer** — personer, medlemskap, invitasjoner-i-praksis (tildeling av
+medlemskap) og kunderegistre — og ingenting i noen hovedbok. Alt den
+kan ligger under `/platform/*` på sin egen sub-router
+(`regnmed-api::plattform`); tilgangsvakten `tilgang::krev` og
+tenancy-oppslaget er uendret.
+
+To roller, lagret i `platform_member` (migrasjon 0049):
+
+- **`support`** ser selskaper, byråer og brukere med tilknytninger, og
+  kan tildele et **nytt** medlemskap (innebygde roller). Den ser ikke
+  kunderegistre og administrerer ikke plattformbrukere.
+- **`systemadmin`** ser i tillegg kunderegistrene (stamdata med eierens
+  selskap navngitt — aldri saldoer), endrer eksisterende medlemskap og
+  roller, og administrerer plattformmedlemskapene selv.
+
+Kravene fra #57 er håndhevet strukturelt, ikke i rutiner:
+
+1. **Logget.** `vakt`-middlewaren omslutter hele sub-routeren: token →
+   person → aktiv rolle → loggrad i `platform_access_log`
+   (innsettings-bar) → handler. Raden skrives FØR handleren avgjør noe
+   (et avvist forsøk er også synlig) og synkront — feiler
+   logginnsettet, feiler kallet. Et /platform-endepunkt som glemmer
+   loggen kan ikke eksistere.
+2. **Synlig for den det gjelder.** `GET /companies/{id}/platform-access`
+   (og byråtvillingen `GET /firms/{id}/platform-access`) serverer radene
+   som angår selskapet til selskapets egne administratorer — vist i
+   portalen under Brukere. Medlemskap plattformen tildeler havner i
+   `company_member_change`/`firm_member_change` med **`kilde =
+   'plattform'`** (0049 utvider sjekkene), i samme logg som alle andre
+   tilgangsendringer.
+3. **Tidsbegrenset.** `platform_member.valid_to` er NOT NULL — en
+   plattformrolle uten utløpsdato kan ikke skrives inn. Datoen er
+   eksklusiv og sjekkes per forespørsel; tilbakekalling
+   (`DELETE /platform/members/{id}`, eller `regnmed platform-end`)
+   virker på neste kall. Notat med begrunnelse er obligatorisk.
+
+Førstegangs tildeling skjer i CLI-et (`regnmed platform-grant`) — den
+første systemadminen kan ikke komme gjennom et API bare systemadminer
+får kalle. Deretter administreres medlemskapene via
+`/platform/members`. Roller gis bare til mennesker; en
+integrasjonsidentitet avvises både ved tildeling og i vakten. En kundes
+tilknytning til sitt selskap er for øvrig **fast**: part-id-en er del av
+hasjkjeden, så det finnes bevisst ingen funksjon som flytter en kunde
+mellom selskaper.
+
+**Støtteveien via kunden består** og er fortsatt førstevalget der den
+strekker til: en **invitasjon** (§7) med den minste rollen som holder,
+eller et **oppdrag** til et byrå — synlig, logget, trekkbar samme dag.
+Plattformrollen finnes for det invitasjonen ikke dekker (feiladresserte
+invitasjoner, låste medlemskap, onboarding-hjelp), og prisen for den er
+betalt i punktene over: den er logget, synlig og tidsbegrenset, bygget
+som om misbruk antas.
 
 **Selskapet uten administrator.** I normal drift kan det ikke oppstå —
 den siste administratoren kan verken degradere eller fjerne seg selv
@@ -502,10 +556,12 @@ hovedbokens vern. Endring og sletting stoppes av triggerne, og en
 omskriving på DBA-nivå bryter hasjkjeden mot den offentlig forankrede
 merkleroten (docs/anchoring.md).
 
-**Hvis det noen gang bygges** en avgrenset plattformrolle, står kravene
-allerede i #57: hver handling logget, kunden varslet, tilgangen
-tidsbegrenset — bygget som om misbruk antas. En fremtidig diskusjon
-starter fra den listen, ikke fra blanke ark.
+Med plattformrollene på plass er nødprosedyren sjeldnere nødvendig —
+en systemadmin kan tildele en ny administrator gjennom
+`/platform/users/{pid}/companies/{cid}`, logget og synlig som
+beskrevet over. Databaseprosedyren består for tilfellet der ingen
+plattformrolle finnes eller selve API-et er utilgjengelig; kravet om
+skriftlig samtykke med referanse gjelder begge veier.
 
 ### Det som ellers ikke finnes
 
@@ -626,6 +682,7 @@ annet som fanger.
 | `tests/grupper/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
 | `tests/grupper/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
 | `tests/grupper/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
+| `tests/grupper/plattform.rs` | Plattformgrensen (§8) begge veier: en selskapsadmin er fremmed for `/platform`, en plattform-systemadmin får 404 på hovedbok/stamdata/administrasjon i ethvert selskap; hvert kall logges (også avviste) og loggen leses av selskapets admin men ikke av `les`; support får ikke kunderegistre, medlemsendringer eller plattformadministrasjon; tilbakekalling virker på neste forespørsel; tildelinger står med `kilde='plattform'` i selskapets egen logg |
 | `tests/grupper/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
 | `regnmed_api::tilgang` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |
 

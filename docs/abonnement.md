@@ -248,8 +248,8 @@ wire-kontrakt skal ha nøyaktig én kopi.
 ## 6. Driften
 
 Det finnes ingen API-vei for å styre abonnementer — det er driftens
-jobb, som migrate og anchor, og en plattformadministrator finnes ikke
-(docs/auth.md §8):
+jobb, som migrate og anchor; plattformrollene (docs/auth.md §8) når
+stamdata, ikke abonnementer:
 
 ```sh
 regnmed abonnement --orgnr 999888777 --aksjon tegn --note "Avtale 2026-014"

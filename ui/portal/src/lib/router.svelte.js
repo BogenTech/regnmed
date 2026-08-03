@@ -12,6 +12,9 @@ function parse() {
   if (parts[0] === "byra" && parts[1]) {
     return { view: "byra", firmId: parts[1], query };
   }
+  if (parts[0] === "plattform") {
+    return { view: "plattform", query };
+  }
   if (parts[0] === "c" && parts[1]) {
     return {
       view: "company",

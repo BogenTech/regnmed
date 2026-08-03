@@ -55,7 +55,26 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/roles/{role_id}` | PUT |
 | `/companies/{company_id}/roles/{role_id}/deactivate` | POST |
 | `/companies/{company_id}/roles/{role_id}/restore` | POST |
+| `/companies/{company_id}/platform-access` | GET |
+| `/firms/{firm_id}/platform-access` | GET |
 | `/me` | GET |
+
+### Plattform (docs/auth.md §8)
+
+Krever aktiv plattformrolle (`systemadmin`/`support`); hvert kall
+logges og loggen er synlig for selskapet/byrået det gjaldt. Ingen av
+endepunktene når noe selskaps hovedbok.
+
+| Endepunkt | Metoder |
+| --- | --- |
+| `/platform/members` | GET POST |
+| `/platform/members/{member_id}` | DELETE |
+| `/platform/companies` | GET |
+| `/platform/firms` | GET |
+| `/platform/users` | GET |
+| `/platform/customers` | GET |
+| `/platform/users/{person_id}/companies/{company_id}` | POST |
+| `/platform/users/{person_id}/firms/{firm_id}` | POST |
 
 ### Selskap og onboarding
 

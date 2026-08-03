@@ -1,12 +1,13 @@
 // Seksjonsmenyen — én liste, brukt av skallet og ruteren.
 
 export const SEKSJONER = [
-  ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["produkter", "Produkter"],
+  ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["kunder", "Kunder"],
+  ["produkter", "Produkter"],
   ["timer", "Timer"], ["lonn", "Lønn"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"],
   ["aksjonarer", "Aksjonærer"],
   ["reskontro", "Reskontro"],
   ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
-  ["periode", "Periode"], ["oppdrag", "Oppdrag"],
+  ["periode", "Periode"], ["brukere", "Brukere"], ["oppdrag", "Oppdrag"],
 ];
 
 // Det en ansatt får se (#54). Portalen SKJULER bare — serveren nekter,

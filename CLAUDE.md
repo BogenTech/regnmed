@@ -885,7 +885,11 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    Dokumentert samtidig (docs/auth.md §7): en invitasjon til en
    egendefinert rolle som deaktiveres FØR innløsning gir medlemskap
    uten tilgang — valgt fail-closed, ikke oppdaget.
-52. ✅ Ingen plattformadministrator (docs/auth.md §8, closed #57):
+52. ✅ Ingen plattformadministrator (docs/auth.md §8, closed #57 —
+   **REVIDERT 2026-08-03, se punkt 63**: en AVGRENSET plattformrolle
+   finnes nå, bygget etter #57s egen kravliste; grensen «ingen
+   leverandørvei inn i noen hovedbok» står urørt og er testfestet begge
+   veier):
    avgjørelsen tatt UTTRYKKELIG — ingen tilgangsvei krysser
    selskapsgrenser, ingen leverandørbakvei; festet i test
    (`an_admin_crosses_no_company_boundary`: admin i A er fremmed i B,
@@ -1120,6 +1124,33 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    publisisten flyttet ut av regnmed-api siden både API og CLI sender
    — én kopi av wire-kontrakten; api::mailq er re-eksport.
    Integrasjonstesten går hele trappen på flyttet klokke.
+63. ✅ Plattformroller + Kunder/Brukere-seksjoner (docs/auth.md §8,
+   revisjon av #57 ETTER DENS EGEN KRAVLISTE — brukerbeslutning
+   2026-08-03): `systemadmin`/`support` når administrative STAMDATA på
+   tvers (personer, medlemskap, kunderegistre m/ eierselskap navngitt)
+   og ALDRI noen hovedbok — egen sub-router `/platform/*`
+   (`regnmed-api::plattform`), `tilgang::krev`/tenancy URØRT,
+   `an_admin_crosses_no_company_boundary` uendret + ny test fester
+   motsatt retning (plattformrolle = 404 på alt selskapsskopet).
+   Migration 0049: `platform_member` (valid_to NOT NULL =
+   TIDSBEGRENSET, eksklusiv; notat obligatorisk; insert + end-only),
+   `platform_access_log` innsettings-bar; kilde 'plattform' i begge
+   medlemsendringsloggene. #57-kravene håndhevet STRUKTURELT:
+   vakt-middleware rundt hele sub-routeren logger FØR handleren
+   (avviste kall er også synlige) og synkront (feilet logg = feilet
+   kall); loggen er SYNLIG for den det gjaldt via
+   `GET /companies/{id}/platform-access` + byråtvillingen. support:
+   se selskaper/byråer/brukere + tildele NYE medlemskap; systemadmin:
+   + kunderegistre, endre eksisterende medlemskap/roller,
+   plattformmedlemsadmin. Bootstrap i CLI (`regnmed platform-grant`/
+   `-list`/`-end`) — første systemadmin kan ikke komme via et API bare
+   systemadminer får kalle. Kunde↔selskap-koblingen er FAST (part-id i
+   hasjkjeden) — ingen flyttefunksjon finnes, med vilje. Integrasjoner
+   avvises både ved tildeling og i vakten; `/me` bærer
+   `plattform`-feltet. Portal: nye seksjoner Kunder (søk/sortering/
+   CRUD på kunderegisteret) og Brukere (medlemmer/invitasjoner/roller
+   samlet + Leverandørtilgang-kortet), Plattform-visning
+   (`#/plattform`) for plattformbrukere.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

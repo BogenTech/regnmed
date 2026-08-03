@@ -181,10 +181,12 @@ pub async fn company_roles(
 /// decides how to merge.
 ///
 /// **No route here crosses a company boundary.** All three are confined
-/// to one company in the data model itself, and there is no wildcard and
-/// no platform role. That is a decision, not an accident (#57,
-/// docs/auth.md §8), and it is pinned in a test: an admin in one company
-/// is a complete stranger in another.
+/// to one company in the data model itself, and there is no wildcard.
+/// The platform roles (docs/auth.md §8, `plattform.rs`) deliberately do
+/// NOT flow through this resolver: they grant no company access, ever.
+/// That is a decision, not an accident (#57), and it is pinned in tests:
+/// an admin in one company is a complete stranger in another, and a
+/// platform systemadmin is a complete stranger to every ledger.
 pub async fn company_access_for_person(
     pool: &PgPool,
     person_id: Uuid,

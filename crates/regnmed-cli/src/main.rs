@@ -99,6 +99,31 @@ enum Command {
         #[arg(long)]
         orgnr: Option<String>,
     },
+    /// Grant a platform role (docs/auth.md §8). This is the BOOTSTRAP
+    /// path: the first systemadmin cannot arrive through an API only
+    /// systemadmins may call. Time-limited by design — --til is required.
+    PlatformGrant {
+        /// E-mail address of the person (they must have logged in once)
+        #[arg(long)]
+        epost: String,
+        /// "systemadmin" or "support"
+        #[arg(long)]
+        rolle: String,
+        /// Expiry date (YYYY-MM-DD, EXCLUSIVE) — platform roles always end
+        #[arg(long)]
+        til: chrono::NaiveDate,
+        /// Why this person holds the role (appointment/case reference)
+        #[arg(long)]
+        notat: String,
+    },
+    /// List platform role memberships, active and ended
+    PlatformList,
+    /// End a platform membership with immediate effect
+    PlatformEnd {
+        /// Membership id (from platform-list)
+        #[arg(long)]
+        id: Uuid,
+    },
     /// Fetch dagskurser from Norges Banks åpne API into the valutakurs
     /// table (docs/valuta.md, #44). Manual rates can always be added
     /// via the API; every row records its kilde.
@@ -259,6 +284,41 @@ async fn main() -> Result<()> {
         }
         Command::Demo => demo(&pool).await?,
         Command::Anchor => anchor(&pool).await?,
+        Command::PlatformGrant {
+            epost,
+            rolle,
+            til,
+            notat,
+        } => {
+            let person_id = regnmed_db::person_by_email(&pool, &epost)
+                .await?
+                .context("no person with that e-mail — they must log in once first")?;
+            let id = regnmed_db::grant_platform_role(&pool, person_id, &rolle, til, &notat, None)
+                .await?;
+            println!("granted {rolle} to {epost} until {til} (membership {id})");
+        }
+        Command::PlatformList => {
+            let medlemmer = regnmed_db::list_platform_members(&pool).await?;
+            if medlemmer.is_empty() {
+                println!("no platform memberships");
+            }
+            for m in medlemmer {
+                println!(
+                    "{} {} {} ({}) {} — {}  [{}]",
+                    m.id,
+                    if m.aktiv { "AKTIV " } else { "avsluttet" },
+                    m.navn,
+                    m.epost.as_deref().unwrap_or("-"),
+                    m.rolle,
+                    format_args!("{} → {}", m.valid_from, m.valid_to),
+                    m.notat,
+                );
+            }
+        }
+        Command::PlatformEnd { id } => {
+            regnmed_db::end_platform_member(&pool, id).await?;
+            println!("membership {id} ended (effective immediately)");
+        }
         Command::Abonnement {
             company,
             orgnr,

@@ -404,6 +404,32 @@ async fn seed_browser_demo() {
         idp.token(&format!("browser|{}", Uuid::new_v4()), "Ny Bruker"),
     )
     .unwrap();
+    // A platform systemadmin (docs/auth.md §8) with no company access —
+    // the Plattform view is only reachable with an active platform role.
+    let plattform_sub = format!("browser|{}", Uuid::new_v4());
+    let plattform_person = regnmed_db::ensure_person(
+        &state.pool,
+        &plattform_sub,
+        Some("Plattform Demo"),
+        Some("plattform@test.invalid"),
+    )
+    .await
+    .unwrap();
+    regnmed_db::grant_platform_role(
+        &state.pool,
+        plattform_person,
+        "systemadmin",
+        (chrono::Utc::now() + chrono::Duration::days(90)).date_naive(),
+        "demo",
+        None,
+    )
+    .await
+    .unwrap();
+    std::fs::write(
+        format!("{out_dir}/token-plattform.txt"),
+        idp.token(&plattform_sub, "Plattform Demo"),
+    )
+    .unwrap();
     std::fs::write(format!("{out_dir}/company.txt"), company.to_string()).unwrap();
     println!("seeded company {company}");
 }

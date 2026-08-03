@@ -27,7 +27,11 @@
 
   // Only call the user "new" once both sources have answered — a
   // byrå-only user must not see the welcome flow flash by.
-  const nyBruker = $derived(firmsLastet && me.companies.length === 0 && firms.length === 0);
+  // En ren plattformbruker er ikke «ny» — den skal til plattformkortet,
+  // ikke inn i registreringsflyten.
+  const nyBruker = $derived(
+    firmsLastet && me.companies.length === 0 && firms.length === 0 && !me.plattform,
+  );
 </script>
 
 <div class="navbar bg-base-100 shadow-sm">
@@ -42,6 +46,19 @@
     <div class="alert alert-success mb-4 text-sm">
       Invitasjonen din er innløst — du har fått {me.nyeTilganger} ny(e) tilgang(er).
     </div>
+  {/if}
+
+  {#if me.plattform}
+    <a href="#/plattform" class="card bg-base-100 shadow-sm hover:shadow-md mb-4 block">
+      <div class="card-body">
+        <h2 class="card-title">
+          Plattform <span class="badge badge-warning">{me.plattform.rolle}</span>
+        </h2>
+        <p class="text-sm opacity-70">
+          Stamdata på tvers av selskaper og byråer — alle kall logges.
+        </p>
+      </div>
+    </a>
   {/if}
 
   {#if nyBruker}

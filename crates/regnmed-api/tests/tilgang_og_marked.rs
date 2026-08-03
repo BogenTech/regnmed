@@ -22,5 +22,7 @@ mod matrise;
 mod me_endpoint;
 #[path = "grupper/medlemmer.rs"]
 mod medlemmer;
+#[path = "grupper/plattform.rs"]
+mod plattform;
 #[path = "grupper/tilgang.rs"]
 mod tilgang;
