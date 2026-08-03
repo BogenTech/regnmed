@@ -61,7 +61,7 @@ images:
     newTag: sha-a0c88a8
   - name: regnid
     newName: ghcr.io/bogentech/regnid
-    newTag: sha-68f89cb
+    newTag: sha-414bfec
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml
