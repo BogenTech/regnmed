@@ -83,6 +83,14 @@ kreditnota reverses revenue on the same dimensions).
 Portal: registry management in the Bilag section; pickers in the
 innboks bokfør form and the faktura form; resultat filter in Rapporter.
 
+Discoverability: the registry lives under Bilag because a dimension is
+posting data first — which is not where someone thinking about projects
+looks. The Timer section therefore points at it in both of its
+project-shaped views (`DimRegisterLenke`), and the project picker in
+timeføring explains its own absence instead of vanishing silently when
+the registry is empty (`DimSelect`'s `tomHint`). The report filters keep
+the silent behaviour: there, empty is just empty.
+
 ## Deliberately not (yet)
 
 - Mandatory dimensions per account (policy config, later).

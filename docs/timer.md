@@ -48,7 +48,10 @@ automation: billing still takes an explicit `party_no` from the caller.
 
 Portal: the Timer section — min uke with week navigation and quick
 registration, per-prosjekt totals, ufakturerte timer with "Lag
-faktura". Customer-linked projects get one suggestion button each
+faktura". Both project-shaped cards link to the dimension registry
+under Bilag, and with an empty registry the project picker says so
+rather than disappearing (docs/dimensjoner.md).
+Customer-linked projects get one suggestion button each
 («Fakturer P1 → Kunden AS», billing exactly that prosjekt to exactly
 that customer); the generic path remains for the rest.
 

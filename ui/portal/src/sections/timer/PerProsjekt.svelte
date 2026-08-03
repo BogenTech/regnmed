@@ -1,8 +1,9 @@
 <script>
   import { kr, minutterTilTimer } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
+  import DimRegisterLenke from "../../components/DimRegisterLenke.svelte";
 
-  let { summary } = $props();
+  let { companyId, summary } = $props();
 </script>
 
 <Card title="Per prosjekt (denne uken)">
@@ -24,4 +25,5 @@
       {/each}
     </tbody>
   </table>
+  <DimRegisterLenke {companyId} tekst="Prosjekter opprettes og avsluttes i" />
 </Card>

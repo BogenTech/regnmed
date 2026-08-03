@@ -7,13 +7,18 @@
   //   deres finnes, og et regnskap må kunne leses per avdeling selv om
   //   avdelingen er lagt ned.
   //
-  // Rendrer ingenting når registeret ikke har dimensjoner av slaget.
+  // Rendrer ingenting når registeret ikke har dimensjoner av slaget —
+  // med mindre kalleren gir en `tomHint`. Et felt som forsvinner uten
+  // et ord er ikke det samme som et felt som ikke finnes: der brukeren
+  // VENTER å velge dimensjon (timeføring), skal fraværet forklares.
+  // Rapportfiltrene sier fortsatt ingenting — der er tomt bare tomt.
   let {
     dims,
     kind,
     cls = "select select-bordered flex-1",
     inkluderAvsluttede = false,
     alleLabel = null,
+    tomHint = null,
     value = $bindable(""),
   } = $props();
 
@@ -29,4 +34,6 @@
       <option value={d.code}>{d.code} {d.name}{d.active ? "" : " (avsluttet)"}</option>
     {/each}
   </select>
+{:else if tomHint}
+  {@render tomHint()}
 {/if}

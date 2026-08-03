@@ -89,7 +89,7 @@
     onDone={reload}
   />
 
-  <PerProsjekt summary={data.summary} />
+  <PerProsjekt {companyId} summary={data.summary} />
 
   {#if data.unbilled.length}
     <Ufakturerte {companyId} unbilled={data.unbilled} kunder={data.kunder} onDone={reload} />

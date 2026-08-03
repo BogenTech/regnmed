@@ -5,6 +5,7 @@
   import { kr, parseKr, today, minutterTilTimer } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
+  import DimRegisterLenke from "../../components/DimRegisterLenke.svelte";
   import DimSelect from "../../components/DimSelect.svelte";
 
   let { companyId, uke, from, to, forrige, neste, dims, onDone } = $props();
@@ -66,7 +67,15 @@
       placeholder="Hva jobbet du med?"
       bind:value={beskrivelse}
     />
-    <DimSelect {dims} kind="prosjekt" cls="select select-sm select-bordered" bind:value={prosjekt} />
+    <DimSelect {dims} kind="prosjekt" cls="select select-sm select-bordered" bind:value={prosjekt}>
+      {#snippet tomHint()}
+        <DimRegisterLenke
+          {companyId}
+          tekst="Ingen prosjekter ennå — opprett dem i"
+          ansattTekst="Ingen prosjekter er opprettet ennå."
+        />
+      {/snippet}
+    </DimSelect>
     <label class="label cursor-pointer gap-1">
       <input type="checkbox" class="checkbox checkbox-xs" bind:checked={fakturerbar} />
       <span class="label-text text-xs">Fakturerbar</span>
