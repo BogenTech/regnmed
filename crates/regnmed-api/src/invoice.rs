@@ -34,6 +34,11 @@ pub struct CreateInvoiceRequest {
     /// unit. None = NOK. Requires a kurs in the valutakurs table.
     valuta: Option<String>,
     lines: Vec<DocLineRequest>,
+    /// Selected unbilled hours (docs/timer.md): appended as hour lines
+    /// per (prosjekt, sats) group and marked fakturert in the SAME
+    /// transaction as the invoice — one invoice can carry products and
+    /// hours. Requires TIMER_FAKTURER in addition to FAKTURA_SKRIV.
+    timer_entry_ids: Option<Vec<Uuid>>,
 }
 
 fn issued_json(issued: &regnmed_db::IssuedInvoice) -> serde_json::Value {
@@ -56,6 +61,12 @@ pub async fn create_invoice(
     Json(request): Json<CreateInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
+    let timer = request.timer_entry_ids.filter(|ids| !ids.is_empty());
+    if timer.is_some() {
+        // Hours on the invoice lock other people's entries — that is the
+        // biller's action, not any invoice writer's.
+        krev(&state, person.person_id, company_id, Rett::TimerFakturer).await?;
+    }
 
     let draft = regnmed_db::InvoiceDraft {
         party_no: request.party_no,
@@ -69,9 +80,21 @@ pub async fn create_invoice(
         lines: resolve_lines(&state, company_id, request.lines).await?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let issued = regnmed_db::create_invoice(&state.pool, company_id, &draft, created_by, None)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let issued = match timer {
+        Some(entry_ids) => {
+            regnmed_db::create_invoice_with_hours(
+                &state.pool,
+                company_id,
+                &draft,
+                &entry_ids,
+                None,
+                created_by,
+            )
+            .await
+        }
+        None => regnmed_db::create_invoice(&state.pool, company_id, &draft, created_by, None).await,
+    }
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(issued_json(&issued)))
 }
 

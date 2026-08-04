@@ -402,6 +402,21 @@ async fn timer_rights_mean_what_they_say() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
+    // The rate lives on the project (0052) — the ansatt logs against it.
+    regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
+        .await
+        .unwrap();
+    regnmed_db::set_prosjekt_sats(
+        &state.pool,
+        company,
+        "P1",
+        None,
+        1_000_00,
+        "2026-01-01".parse().unwrap(),
+        "test",
+    )
+    .await
+    .unwrap();
 
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
     let ansatt_token = idp.token(&ansatt_sub, "Espen Ansatt");
@@ -432,7 +447,7 @@ async fn timer_rights_mean_what_they_say() {
         Some(
             serde_json::json!({
                 "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Levering",
-                "fakturerbar": true, "timesats_ore": 1_000_00,
+                "prosjekt": "P1", "fakturerbar": true,
             })
             .to_string(),
         ),
@@ -461,7 +476,7 @@ async fn timer_rights_mean_what_they_say() {
     // bokforing role does not hold it, the custom role does.
     let korreksjon = serde_json::json!({
         "dato": "2026-08-03", "minutter": 90, "beskrivelse": "Levering",
-        "fakturerbar": true, "timesats_ore": 1_000_00,
+        "prosjekt": "P1", "fakturerbar": true,
     })
     .to_string();
     let (status, _) = request(
@@ -558,6 +573,20 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
+    regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
+        .await
+        .unwrap();
+    regnmed_db::set_prosjekt_sats(
+        &state.pool,
+        company,
+        "P1",
+        None,
+        1_000_00,
+        "2026-01-01".parse().unwrap(),
+        "test",
+    )
+    .await
+    .unwrap();
     let a_token = idp.token(&a_sub, "Anna");
     let b_token = idp.token(&b_sub, "Bjørn");
     let base = format!("/companies/{company}/timesheet");
@@ -566,7 +595,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let timer = |dato: &str, minutter: i32| {
         serde_json::json!({
             "dato": dato, "minutter": minutter, "beskrivelse": "Arbeid",
-            "fakturerbar": true, "timesats_ore": 1_000_00,
+            "prosjekt": "P1", "fakturerbar": true,
         })
         .to_string()
     };
@@ -639,4 +668,335 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
         StatusCode::BAD_REQUEST,
         "gammelt utvalg feiler helt"
     );
+}
+
+/// The project owns the billing rules (migration 0052): fakturerbar
+/// defaults from the prosjekt, the rate comes from the dated register
+/// (the person's own rate first, the project default second, dated by
+/// the ENTRY's date), and a caller without TIMER_SATS_SKRIV cannot
+/// smuggle their own number in — the register's rate is stored no
+/// matter what the request says. Billable hours with no rate anywhere
+/// fail loudly instead of flowing into an invoice at 0.
+#[tokio::test]
+async fn the_project_owns_the_rate_and_the_default() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let ansatt_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
+        .await
+        .unwrap();
+    let ansatt = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Satseiere AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, ansatt, "ansatt")
+        .await
+        .unwrap();
+    regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
+        .await
+        .unwrap();
+    regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P2", "Uten sats", None)
+        .await
+        .unwrap();
+    let admin_token = idp.token(&admin_sub, "Astrid Admin");
+    let ansatt_token = idp.token(&ansatt_sub, "Espen Ansatt");
+    let base = format!("/companies/{company}/timesheet");
+
+    // Admin turns on the billable default and sets the rates: project
+    // default 1000 kr, Espen's own rate 800 kr — through the API, which
+    // requires TIMER_SATS_SKRIV (the ansatt is refused).
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/dimensions/prosjekt/P1"),
+        &admin_token,
+        Some(serde_json::json!({ "fakturerbar_default": true }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let satser = format!("/companies/{company}/dimensions/prosjekt/P1/satser");
+    let (status, _) = request(
+        &state,
+        "POST",
+        &satser,
+        &ansatt_token,
+        Some(serde_json::json!({ "timesats_ore": 1 }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "ansatt setter ikke satser");
+    for body in [
+        serde_json::json!({ "timesats_ore": 1_000_00, "valid_from": "2026-01-01" }),
+        serde_json::json!({ "person_id": ansatt, "timesats_ore": 800_00,
+                            "valid_from": "2026-01-01" }),
+    ] {
+        let (status, svar) = request(
+            &state,
+            "POST",
+            &satser,
+            &admin_token,
+            Some(body.to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {svar}");
+    }
+
+    // Espen logs an hour WITHOUT saying fakturerbar and WITH a bogus
+    // rate: the entry is billable (project default) at HIS register rate.
+    let (status, created) = request(
+        &state,
+        "POST",
+        &base,
+        &ansatt_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Levering",
+                "prosjekt": "P1", "timesats_ore": 999_999_00,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {created}");
+    let uke = format!("{base}?from=2026-08-03&to=2026-08-09");
+    let (_, sett) = request(&state, "GET", &uke, &ansatt_token, None).await;
+    let egen = &sett["entries"][0];
+    assert_eq!(egen["fakturerbar"], true, "prosjektets standard: {sett}");
+    assert_eq!(
+        egen["timesats_ore"], 800_00,
+        "registerets sats, aldri klientens"
+    );
+
+    // The admin holds TIMER_SATS_SKRIV: an explicit override is honored.
+    let (status, overstyrt) = request(
+        &state,
+        "POST",
+        &base,
+        &admin_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-03", "minutter": 30, "beskrivelse": "Særavtale",
+                "prosjekt": "P1", "fakturerbar": true, "timesats_ore": 1_500_00,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {overstyrt}");
+    let (_, alle) = request(&state, "GET", &uke, &admin_token, None).await;
+    let admins = alle["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["beskrivelse"] == "Særavtale")
+        .unwrap();
+    assert_eq!(admins["timesats_ore"], 1_500_00);
+    // Admin has no personal rate: the project default applies when no
+    // override is given.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &base,
+        &admin_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-04", "minutter": 30, "beskrivelse": "Standard",
+                "prosjekt": "P1", "fakturerbar": true,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, alle) = request(&state, "GET", &uke, &admin_token, None).await;
+    let standard = alle["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["beskrivelse"] == "Standard")
+        .unwrap();
+    assert_eq!(standard["timesats_ore"], 1_000_00);
+
+    // Billable hours on a project with NO rate anywhere fail loudly.
+    let (status, feil) = request(
+        &state,
+        "POST",
+        &base,
+        &ansatt_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-03", "minutter": 60, "beskrivelse": "X",
+                "prosjekt": "P2", "fakturerbar": true,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {feil}");
+    assert!(
+        feil["error"].as_str().unwrap().contains("timesats"),
+        "feilen navngir det som mangler: {feil}"
+    );
+    // Not billable works without any rate.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &base,
+        &ansatt_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Intern",
+                "prosjekt": "P2", "fakturerbar": false,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// One invoice, products AND hours (docs/faktura.md): the Faktura path
+/// takes ordinary lines plus a selection of unbilled hours, appends the
+/// hour lines per (prosjekt, sats) group and marks the entries
+/// fakturert in the same transaction. Attaching hours requires
+/// TIMER_FAKTURER on top of FAKTURA_SKRIV — a custom role that only
+/// writes invoices is refused.
+#[tokio::test]
+async fn an_invoice_carries_products_and_selected_hours() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let fakturist_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
+        .await
+        .unwrap();
+    let fakturist =
+        regnmed_db::ensure_person(&state.pool, &fakturist_sub, Some("Fia Fakturist"), None)
+            .await
+            .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kombinert AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    regnmed_db::roller::opprett(
+        &state.pool,
+        company,
+        "Fakturist",
+        &["FAKTURA_SKRIV".to_string()],
+        admin,
+        "Astrid Admin",
+    )
+    .await
+    .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, fakturist, "Fakturist")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let (_, party_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
+            .await
+            .unwrap();
+    let admin_token = idp.token(&admin_sub, "Astrid Admin");
+    let fakturist_token = idp.token(&fakturist_sub, "Fia Fakturist");
+
+    // One billable hour at 1000 kr, logged by the admin.
+    let (status, created) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/timesheet"),
+        &admin_token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Rådgivning",
+                "fakturerbar": true, "timesats_ore": 1_000_00,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {created}");
+    let entry_id = created["entry_id"].as_str().unwrap().to_string();
+
+    // A product line + that hour in ONE invoice.
+    let body = serde_json::json!({
+        "party_no": party_no,
+        "invoice_date": "2026-08-04",
+        "due_date": "2026-08-18",
+        "lines": [{
+            "description": "Lisens", "account": "3000",
+            "quantity_milli": 1000, "unit_price_ore": 500_00, "vat_code": "3",
+        }],
+        "timer_entry_ids": [entry_id],
+    })
+    .to_string();
+    // The invoice-only role is refused BECAUSE of the hours.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invoices"),
+        &fakturist_token,
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "timer på fakturaen krever TIMER_FAKTURER"
+    );
+    let (status, issued) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invoices"),
+        &admin_token,
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {issued}");
+    // 500 kr product + 1000 kr hour + 25 % mva.
+    assert_eq!(issued["gross_ore"], 1_875_00, "body: {issued}");
+
+    // The hour is locked by the invoice; nothing remains unbilled.
+    let tamper = sqlx::query("update time_entry set minutter = 1 where id = $1")
+        .bind(Uuid::parse_str(&entry_id).unwrap())
+        .execute(&state.pool)
+        .await;
+    assert!(tamper.is_err(), "fakturert time er låst");
+    let (_, rest) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/timesheet/unbilled"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert!(rest["groups"].as_array().unwrap().is_empty());
+    let report = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(report.vouchers_checked, 1);
 }

@@ -19,18 +19,29 @@ pub struct TimeEntryDraft {
     pub beskrivelse: String,
     /// Prosjekt dimension CODE (resolved against the registry).
     pub prosjekt: Option<String>,
-    pub fakturerbar: bool,
+    /// None = the project's fakturerbar_default (false without a
+    /// project). Every user may set this per entry.
+    pub fakturerbar: Option<bool>,
+    /// An EXPLICIT rate. Only honored when the caller may override
+    /// (`sats_override`, i.e. TIMER_SATS_SKRIV) — otherwise the rate is
+    /// resolved from the project's dated sats register on the entry's
+    /// date (person-specific first, project default second).
     pub timesats_ore: Option<i64>,
+}
+
+struct Prosjekt {
+    id: Uuid,
+    fakturerbar_default: bool,
 }
 
 async fn resolve_prosjekt(
     pool: &PgPool,
     company_id: Uuid,
     code: &Option<String>,
-) -> Result<Option<Uuid>> {
+) -> Result<Option<Prosjekt>> {
     let Some(code) = code else { return Ok(None) };
     let row = sqlx::query(
-        "select id, active from dimension
+        "select id, active, fakturerbar_default from dimension
          where company_id = $1 and kind = 'prosjekt' and code = $2",
     )
     .bind(company_id)
@@ -39,17 +50,71 @@ async fn resolve_prosjekt(
     .await?
     .with_context(|| format!("no prosjekt {code}"))?;
     ensure!(row.get::<bool, _>("active"), "prosjekt {code} er avsluttet");
-    Ok(Some(row.get("id")))
+    Ok(Some(Prosjekt {
+        id: row.get("id"),
+        fakturerbar_default: row.get("fakturerbar_default"),
+    }))
+}
+
+/// The rate valid on `dato`: the person's own newest row first, the
+/// project default second, nothing third (migration 0052).
+async fn resolve_sats(
+    pool: &PgPool,
+    dimension_id: Uuid,
+    person_id: Uuid,
+    dato: NaiveDate,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "select timesats_ore from prosjekt_sats
+         where dimension_id = $1 and (person_id = $2 or person_id is null)
+           and valid_from <= $3
+         order by (person_id is not null) desc, valid_from desc
+         limit 1",
+    )
+    .bind(dimension_id)
+    .bind(person_id)
+    .bind(dato)
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Resolves fakturerbar and sats for a draft: the project owns the
+/// defaults, the register owns the rate, and only `sats_override`
+/// (TIMER_SATS_SKRIV) lets the caller's own number through. Billable
+/// hours without any rate fail loudly — a silent 0 would flow into an
+/// invoice.
+async fn resolve_billing(
+    pool: &PgPool,
+    person_id: Uuid,
+    draft: &TimeEntryDraft,
+    prosjekt: &Option<Prosjekt>,
+    sats_override: bool,
+) -> Result<(bool, Option<i64>)> {
+    let fakturerbar = draft
+        .fakturerbar
+        .unwrap_or_else(|| prosjekt.as_ref().is_some_and(|p| p.fakturerbar_default));
+    if !fakturerbar {
+        return Ok((false, None));
+    }
+    if sats_override && draft.timesats_ore.is_some() {
+        return Ok((true, draft.timesats_ore));
+    }
+    let sats = match prosjekt {
+        Some(p) => resolve_sats(pool, p.id, person_id, draft.dato).await?,
+        None => None,
+    };
+    ensure!(
+        sats.is_some(),
+        "fakturerbare timer trenger timesats — sett den på prosjektet (Prosjekter), \
+         eller be noen med rett til å sette timesats"
+    );
+    Ok((true, sats))
 }
 
 fn check_draft(draft: &TimeEntryDraft) -> Result<()> {
     ensure!(
         (1..=1440).contains(&draft.minutter),
         "minutter must be 1..=1440"
-    );
-    ensure!(
-        !draft.fakturerbar || draft.timesats_ore.is_some(),
-        "fakturerbare timer trenger timesats"
     );
     Ok(())
 }
@@ -59,10 +124,14 @@ pub async fn create_time_entry(
     company_id: Uuid,
     person_id: Uuid,
     draft: &TimeEntryDraft,
+    sats_override: bool,
     created_by: &str,
 ) -> Result<Uuid> {
     check_draft(draft)?;
-    let prosjekt_id = resolve_prosjekt(pool, company_id, &draft.prosjekt).await?;
+    let prosjekt = resolve_prosjekt(pool, company_id, &draft.prosjekt).await?;
+    let (fakturerbar, timesats_ore) =
+        resolve_billing(pool, person_id, draft, &prosjekt, sats_override).await?;
+    let prosjekt_id = prosjekt.map(|p| p.id);
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into time_entry (id, company_id, person_id, dato, minutter, beskrivelse,
@@ -76,8 +145,8 @@ pub async fn create_time_entry(
     .bind(draft.minutter)
     .bind(&draft.beskrivelse)
     .bind(prosjekt_id)
-    .bind(draft.fakturerbar)
-    .bind(draft.timesats_ore)
+    .bind(fakturerbar)
+    .bind(timesats_ore)
     .bind(created_by)
     .execute(pool)
     .await
@@ -95,9 +164,22 @@ pub async fn update_time_entry(
     person_id: Uuid,
     own_only: bool,
     draft: &TimeEntryDraft,
+    sats_override: bool,
 ) -> Result<()> {
     check_draft(draft)?;
-    let prosjekt_id = resolve_prosjekt(pool, company_id, &draft.prosjekt).await?;
+    let prosjekt = resolve_prosjekt(pool, company_id, &draft.prosjekt).await?;
+    // The entry may belong to someone else (TIMER_SKRIV_ALLE): the rate
+    // follows the OWNER of the hours, not the corrector.
+    let eier: Uuid =
+        sqlx::query_scalar("select person_id from time_entry where id = $1 and company_id = $2")
+            .bind(entry_id)
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await?
+            .context("no such time entry")?;
+    let (fakturerbar, timesats_ore) =
+        resolve_billing(pool, eier, draft, &prosjekt, sats_override).await?;
+    let prosjekt_id = prosjekt.map(|p| p.id);
     let updated = sqlx::query(
         "update time_entry set dato = $4, minutter = $5, beskrivelse = $6, prosjekt_id = $7,
                 fakturerbar = $8, timesats_ore = $9, updated_at = now()
@@ -110,8 +192,8 @@ pub async fn update_time_entry(
     .bind(draft.minutter)
     .bind(&draft.beskrivelse)
     .bind(prosjekt_id)
-    .bind(draft.fakturerbar)
-    .bind(draft.timesats_ore)
+    .bind(fakturerbar)
+    .bind(timesats_ore)
     .execute(pool)
     .await
     .context("kunne ikke endre timene (låst måned eller fakturert?)")?;
@@ -427,6 +509,106 @@ fn milli_hours(minutter: i64) -> i64 {
     (minutter * 1000 + 30) / 60
 }
 
+fn hour_line(group: &UnbilledGroup, vat_code: Option<&str>) -> InvoiceLineDraft {
+    InvoiceLineDraft {
+        description: match &group.prosjekt {
+            Some(p) => format!("Timer — prosjekt {p}"),
+            None => "Timer".into(),
+        },
+        account_number: "3000".into(),
+        quantity_milli: milli_hours(group.minutter),
+        unit_price_ore: group.timesats_ore,
+        vat_code: Some(vat_code.unwrap_or("3").to_string()),
+        avdeling: None,
+        prosjekt: group.prosjekt.clone(),
+        product_id: None,
+    }
+}
+
+/// Narrows the grunnlag to an explicit selection: every id must still be
+/// billable and unbilled — anything else fails the whole call rather
+/// than silently billing less than what was chosen.
+fn behold_utvalg(rows: &mut Vec<UnbilledRow>, valgte: &[Uuid]) -> Result<()> {
+    ensure!(!valgte.is_empty(), "ingen timer valgt");
+    let finnes: std::collections::HashSet<Uuid> = rows.iter().map(|r| r.id).collect();
+    for id in valgte {
+        ensure!(
+            finnes.contains(id),
+            "valgt time {id} er allerede fakturert, ikke fakturerbar eller finnes ikke"
+        );
+    }
+    let valgt_sett: std::collections::HashSet<Uuid> = valgte.iter().copied().collect();
+    rows.retain(|r| valgt_sett.contains(&r.id));
+    Ok(())
+}
+
+/// Marks the entries fakturert INSIDE the invoice transaction — the
+/// selection is locked by the invoice itself, there is never a
+/// chosen-but-editable window.
+async fn merk_fakturert(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    entry_ids: &[Uuid],
+    invoice_id: Uuid,
+) -> Result<()> {
+    let marked = sqlx::query(
+        "update time_entry set invoice_id = $3, updated_at = now()
+         where company_id = $1 and id = any($2) and invoice_id is null",
+    )
+    .bind(company_id)
+    .bind(entry_ids)
+    .bind(invoice_id)
+    .execute(&mut **tx)
+    .await?;
+    ensure!(
+        marked.rows_affected() == entry_ids.len() as u64,
+        "timene endret seg under fakturering — prøv igjen"
+    );
+    Ok(())
+}
+
+/// The Faktura path (docs/faktura.md): ONE invoice carrying the caller's
+/// ordinary lines AND the selected unbilled hours — hour lines appended
+/// per (prosjekt, sats) group, entries marked fakturert in the same
+/// transaction as the invoice.
+pub async fn create_invoice_with_hours(
+    pool: &PgPool,
+    company_id: Uuid,
+    draft: &InvoiceDraft,
+    entry_ids: &[Uuid],
+    vat_code: Option<&str>,
+    created_by: &str,
+) -> Result<IssuedInvoice> {
+    ensure!(
+        draft.valuta.is_none(),
+        "timelinjer på valutafaktura støttes ikke — satsene er i NOK"
+    );
+    let mut rows = unbilled_rows(pool, company_id, None, None).await?;
+    behold_utvalg(&mut rows, entry_ids)?;
+    let groups = grupper(rows);
+
+    let mut lines = draft.lines.clone();
+    lines.extend(groups.iter().map(|g| hour_line(g, vat_code)));
+    let full = InvoiceDraft {
+        party_no: draft.party_no.clone(),
+        invoice_date: draft.invoice_date,
+        due_date: draft.due_date,
+        journal_code: draft.journal_code.clone(),
+        receivable_account: draft.receivable_account.clone(),
+        vat_account: draft.vat_account.clone(),
+        valuta: None,
+        valuta_kurs_micro: None,
+        lines,
+    };
+
+    let mut tx = pool.begin().await?;
+    let issued = create_invoice_in(pool, &mut tx, company_id, &full, created_by, None).await?;
+    let all_ids: Vec<Uuid> = groups.iter().flat_map(|g| g.entry_ids.clone()).collect();
+    merk_fakturert(&mut tx, company_id, &all_ids, issued.invoice_id).await?;
+    tx.commit().await?;
+    Ok(issued)
+}
+
 /// Bills the unbilled hours: one invoice through the ordinary atomic
 /// path (line per gruppe, prosjekt dimension carried onto the revenue
 /// line) and every entry marked fakturert IN THE SAME TRANSACTION —
@@ -453,36 +635,12 @@ pub async fn bill_hours(
 ) -> Result<IssuedInvoice> {
     let mut rows = unbilled_rows(pool, company_id, prosjekt, through).await?;
     if let Some(valgte) = entry_ids {
-        ensure!(!valgte.is_empty(), "ingen timer valgt");
-        let finnes: std::collections::HashSet<Uuid> = rows.iter().map(|r| r.id).collect();
-        for id in valgte {
-            ensure!(
-                finnes.contains(id),
-                "valgt time {id} er allerede fakturert, ikke fakturerbar eller finnes ikke"
-            );
-        }
-        let valgt_sett: std::collections::HashSet<Uuid> = valgte.iter().copied().collect();
-        rows.retain(|r| valgt_sett.contains(&r.id));
+        behold_utvalg(&mut rows, valgte)?;
     }
     let groups = grupper(rows);
     ensure!(!groups.is_empty(), "ingen ufakturerte fakturerbare timer");
 
-    let lines = groups
-        .iter()
-        .map(|g| InvoiceLineDraft {
-            description: match &g.prosjekt {
-                Some(p) => format!("Timer — prosjekt {p}"),
-                None => "Timer".into(),
-            },
-            account_number: "3000".into(),
-            quantity_milli: milli_hours(g.minutter),
-            unit_price_ore: g.timesats_ore,
-            vat_code: Some(vat_code.unwrap_or("3").to_string()),
-            avdeling: None,
-            prosjekt: g.prosjekt.clone(),
-            product_id: None,
-        })
-        .collect();
+    let lines = groups.iter().map(|g| hour_line(g, vat_code)).collect();
     let draft = InvoiceDraft {
         party_no: party_no.to_string(),
         invoice_date,
@@ -498,19 +656,7 @@ pub async fn bill_hours(
     let mut tx = pool.begin().await?;
     let issued = create_invoice_in(pool, &mut tx, company_id, &draft, created_by, None).await?;
     let all_ids: Vec<Uuid> = groups.iter().flat_map(|g| g.entry_ids.clone()).collect();
-    let marked = sqlx::query(
-        "update time_entry set invoice_id = $3, updated_at = now()
-         where company_id = $1 and id = any($2) and invoice_id is null",
-    )
-    .bind(company_id)
-    .bind(&all_ids)
-    .bind(issued.invoice_id)
-    .execute(&mut *tx)
-    .await?;
-    ensure!(
-        marked.rows_affected() == all_ids.len() as u64,
-        "timene endret seg under fakturering — prøv igjen"
-    );
+    merk_fakturert(&mut tx, company_id, &all_ids, issued.invoice_id).await?;
     tx.commit().await?;
     Ok(issued)
 }

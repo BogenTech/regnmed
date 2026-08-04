@@ -369,9 +369,10 @@ async fn seed_browser_demo() {
                 minutter,
                 beskrivelse: "Konsulentarbeid".into(),
                 prosjekt: None,
-                fakturerbar: true,
+                fakturerbar: Some(true),
                 timesats_ore: Some(120_000),
             },
+            true,
             "Demo Bruker",
         )
         .await

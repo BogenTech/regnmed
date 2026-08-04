@@ -29,14 +29,26 @@ path.
   transaction. Nothing is ever billed twice.
 - Prosjekt references must be active dimensions (avsluttet rejects, as
   everywhere).
+- **The project owns the billing rules (migration 0052).**
+  `fakturerbar_default` sits on the prosjekt; the RATE lives in
+  `prosjekt_sats` — dated, insert-only rows in the satsregister pattern
+  (per prosjekt, `person_id` for a person's own rate, null for the
+  project default). An entry resolves its rate on ITS date: the owner's
+  personal rate first, the project default second — and a caller
+  without `TIMER_SATS_SKRIV` gets the register's rate no matter what
+  the request says. An explicit rate is honored only with the right.
+  Billable hours with no rate anywhere fail loudly — a silent 0 would
+  flow into an invoice. Recorded hours keep the rate they were logged
+  at (`time_entry.timesats_ore` is evidence, never re-priced).
 
 ## Web API (the rettigheter decide — docs/auth.md)
 
 | Endpoint | Purpose | Rettighet |
 | --- | --- | --- |
 | `GET /companies/{id}/timesheet?from=&to=` | entries in range + lock status | `TIMER_LES_EGNE` — own rows only unless `TIMER_LES_ALLE` |
-| `POST /companies/{id}/timesheet` | record (dato, minutter, beskrivelse, prosjekt?, fakturerbar?, timesats_ore?) | `TIMER_SKRIV_EGNE` |
+| `POST /companies/{id}/timesheet` | record (dato, minutter, beskrivelse?, prosjekt?, fakturerbar? — absent = project default, timesats_ore? — honored only with the right) | `TIMER_SKRIV_EGNE` (+`TIMER_SATS_SKRIV` for an explicit rate) |
 | `PUT/DELETE …/timesheet/{eid}` | correct/remove an entry | `TIMER_SKRIV_EGNE` (own) / `TIMER_SKRIV_ALLE` (anyone's) |
+| `GET/POST …/dimensions/prosjekt/{code}/satser` | the dated rate history / set a rate (person_id? = null for the project default) | `TIMER_SATS_SKRIV` |
 | `GET …/timesheet/summary?from=&to=` | per-prosjekt totals + unbilled value | `TIMER_RAPPORT_LES` |
 | `GET …/timesheet/unbilled` | fakturagrunnlaget, grouped, w/ per-person breakdown | `TIMER_RAPPORT_LES` |
 | `POST …/timesheet/invoice` | bill (party_no; optional prosjekt/through/entry_ids/vat_code/dates) | `TIMER_FAKTURER` |
@@ -47,6 +59,17 @@ An ansatt therefore sees **only their own hours**; `TIMER_LES_ALLE`
 reads everyone's like lønn) unlocks the whole team. The `_ALLE` →
 `_EGNE` implication holds for company-defined roles too — it is a
 property of the rettighet, not of the role kind.
+
+**Billing lives under Faktura in the portal** (user decision
+2026-08-04): everything fakturerbart is gathered where the person
+responsible for invoicing works. The grunnlag card (per-person lines,
+checkboxes, «Fakturer valgte») sits in the Faktura section, and «Ny
+faktura» can take a selection of unbilled hours onto an ordinary
+invoice — ONE invoice carrying product lines AND hour lines
+(`timer_entry_ids` on `POST …/invoices`, requires `TIMER_FAKTURER` on
+top of `FAKTURA_SKRIV`; the entries are marked fakturert in the same
+transaction as the invoice, docs/faktura.md). The Timer section keeps
+the per-prosjekt totals and points at Faktura.
 
 Unbilled groups carry the project's **kunde** when the dimension is
 linked (#80, docs/dimensjoner.md) — a *suggested* recipient, never
@@ -67,11 +90,11 @@ input: 7,5 / 7.5 / 7:30), Enter and arrow keys move like a
 spreadsheet, rows pre-populate from last week's projects and «Kopier
 forrige uke» fills an empty week; locked days render disabled, billed
 cells show their faktura. Beskrivelse/sats per line live in the detail
-panel under the grid (focused cell); on small screens the grid
-collapses to a one-day view with day chips. Below: per-prosjekt totals
-and the ufakturerte card with per-person lines, checkboxes and
-«Fakturer valgte» (plus the #80 suggestion buttons and the everything
-path). Project-shaped cards link to the dimension registry, and with
+panel under the grid (focused cell — the sats field renders only with
+`TIMER_SATS_SKRIV`, everyone else sees the register's rate as text);
+on small screens the grid collapses to a one-day view with day chips.
+Below: per-prosjekt totals, with billing itself under Faktura (see
+above). Project-shaped cards link to the Prosjekter section, and with
 an empty registry the project picker says so rather than disappearing
 (docs/dimensjoner.md).
 
@@ -79,9 +102,8 @@ an empty registry the project picker says so rather than disappearing
 
 - Bemanningsplanlegging and attestering-flyt — the lock covers the
   integrity need first (the issue's own scoping).
-- Default timesats per prosjekt/kunde — sats is entered per entry in v1
-  (the grid softens this: new cells inherit fakturerbar/sats from the
-  row's newest line).
+- Multi-currency rates — satsene er i NOK (timelinjer avvises på
+  valutafaktura).
 - **Per-project access** (a "prosjektleder" who may only see/bill ONE
   project's hours): rights are company-scoped; a custom role holding
   `TIMER_LES_ALLE` + `TIMER_FAKTURER` covers the person, not the
@@ -104,4 +126,10 @@ an empty registry the project picker says so rather than disappearing
   (`a_selection_of_the_grunnlag_bills_and_locks_exactly_itself`) pins
   the per-person grunnlag, billing one person's hours while the rest
   stay unbilled, the DB lock on the selection, and that a stale
-  selection fails whole.
+  selection fails whole. The rate model
+  (`the_project_owns_the_rate_and_the_default`, guards seen failing
+  when sabotaged) pins the resolution order, the ignored client rate,
+  the honored override, and the loud failure without a rate; the
+  combined path (`an_invoice_carries_products_and_selected_hours`)
+  pins products+hours on one invoice, the TIMER_FAKTURER guard, the
+  lock and the emptied grunnlag.

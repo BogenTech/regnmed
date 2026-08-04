@@ -5,7 +5,6 @@
   import { toast } from "../../lib/toast.svelte.js";
   import MinUke from "./MinUke.svelte";
   import PerProsjekt from "./PerProsjekt.svelte";
-  import Ufakturerte from "./Ufakturerte.svelte";
 
   let { companyId } = $props();
 
@@ -51,24 +50,21 @@
 
   async function load(id, from, to, forrigeFra, forrigeTil) {
     // Forrige uke hentes med: gridet lager tomme rader av forrige ukes
-    // prosjekter, og «Kopier forrige uke» trenger linjene.
-    const [timesheet, forrigeUke, summary, unbilled, dims, parties] = await Promise.all([
+    // prosjekter, og «Kopier forrige uke» trenger linjene. Fakturering
+    // av timene bor under Faktura (grunnlaget hentes der).
+    const [timesheet, forrigeUke, summary, dims] = await Promise.all([
       api("/companies/" + id + "/timesheet?from=" + from + "&to=" + to),
       api("/companies/" + id + "/timesheet?from=" + forrigeFra + "&to=" + forrigeTil).catch(
         () => ({ entries: [] }),
       ),
-      api("/companies/" + id + "/timesheet/summary?from=" + from + "&to=" + to),
-      api("/companies/" + id + "/timesheet/unbilled").catch(() => ({ groups: [] })),
+      api("/companies/" + id + "/timesheet/summary?from=" + from + "&to=" + to).catch(() => null),
       api("/companies/" + id + "/dimensions").catch(() => ({ dimensions: [] })),
-      api("/companies/" + id + "/parties?kind=kunde").catch(() => ({ parties: [] })),
     ]);
     data = {
       uke: timesheet,
       forrigeUke,
-      summary: summary.prosjekter,
-      unbilled: unbilled.groups,
+      summary: summary ? summary.prosjekter : null,
       dims: dims.dimensions,
-      kunder: parties.parties,
     };
   }
 
@@ -101,9 +97,11 @@
     onDone={reload}
   />
 
-  <PerProsjekt {companyId} summary={data.summary} />
-
-  {#if data.unbilled.length}
-    <Ufakturerte {companyId} unbilled={data.unbilled} kunder={data.kunder} onDone={reload} />
+  {#if data.summary}
+    <PerProsjekt {companyId} summary={data.summary} />
+    <p class="text-xs opacity-60 -mt-4 mb-6 ml-1">
+      Fakturering av timene skjer under
+      <a class="link" href={"#/c/" + companyId + "/faktura"}>Faktura</a>.
+    </p>
   {/if}
 {/if}

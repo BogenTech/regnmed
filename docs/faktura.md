@@ -143,7 +143,7 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /companies/{id}/invoices` | issue (party_no, dates, lines; defaults: journal GL, receivable 1500, VAT 2700, account 3000, quantity 1) |
+| `POST /companies/{id}/invoices` | issue (party_no, dates, lines; defaults: journal GL, receivable 1500, VAT 2700, account 3000, quantity 1). Optional `timer_entry_ids`: selected unbilled hours appended as hour lines per (prosjekt, sats) and marked fakturert in the SAME transaction — one invoice carries products and hours (docs/timer.md; requires `TIMER_FAKTURER`, NOK only) |
 | `GET /companies/{id}/invoices?open=true` | list with reskontro remaining per invoice |
 | `POST /companies/{id}/invoices/{iid}/credit-note` | full kreditnota |
 | `GET /companies/{id}/invoices/{iid}/pdf` | the stored salgsdokument (hash-checked) |

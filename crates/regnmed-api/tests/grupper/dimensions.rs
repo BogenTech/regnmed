@@ -278,7 +278,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         minutter: 60,
         beskrivelse: "Prosjektarbeid".into(),
         prosjekt: Some("PL1".into()),
-        fakturerbar: true,
+        fakturerbar: Some(true),
         timesats_ore: Some(100_000),
     };
     regnmed_db::timesheet::create_time_entry(
@@ -286,6 +286,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         company,
         person,
         &time(chrono::NaiveDate::from_ymd_opt(2026, 4, 1).unwrap()),
+        true,
         "Test",
     )
     .await
@@ -301,9 +302,16 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     assert_eq!(status, StatusCode::OK);
     let mut ufakturert = time(chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
     ufakturert.minutter = 90;
-    regnmed_db::timesheet::create_time_entry(&state.pool, company, person, &ufakturert, "Test")
-        .await
-        .unwrap();
+    regnmed_db::timesheet::create_time_entry(
+        &state.pool,
+        company,
+        person,
+        &ufakturert,
+        true,
+        "Test",
+    )
+    .await
+    .unwrap();
 
     // The overview: one row for PL1 with everything composed.
     let (status, rapport) = request(

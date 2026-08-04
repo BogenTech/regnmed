@@ -298,6 +298,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(dimension::update),
         )
         .route(
+            "/companies/{company_id}/dimensions/prosjekt/{code}/satser",
+            get(dimension::list_satser).post(dimension::set_sats),
+        )
+        .route(
             "/companies/{company_id}/parties",
             get(reskontro::list_parties).post(reskontro::create_party),
         )

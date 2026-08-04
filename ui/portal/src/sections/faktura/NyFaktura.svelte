@@ -1,13 +1,13 @@
 <script>
   import { untrack } from "svelte";
   import { post } from "../../lib/api.js";
-  import { kr, parseKr, today } from "../../lib/format.js";
+  import { kr, parseKr, today, minutterTilTimer } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
   import DimSelect from "../../components/DimSelect.svelte";
   import VatSelect from "../../components/VatSelect.svelte";
 
-  let { companyId, parties, products, dims, currencies, onDone } = $props();
+  let { companyId, parties, products, dims, currencies, unbilled = [], onDone } = $props();
 
   let partyNo = $state(untrack(() => parties[0]?.party_no || ""));
   let invoiceDate = $state(today());
@@ -24,6 +24,35 @@
   // Et valgt produkt leverer pris og mva med mindre de overstyres.
   $effect(() => {
     vatCode = produkt ? "" : "3";
+  });
+
+  // Én faktura kan bære varer OG timer (docs/timer.md): personlinjer
+  // fra grunnlaget hukes av her og blir timelinjer på samme faktura —
+  // merket fakturert i samme transaksjon. Timelinjer krever NOK.
+  let valgteTimer = $state([]);
+  function timerNokkel(gIdx, p) {
+    return gIdx + ":" + p.person_id;
+  }
+  function veksleTimer(gIdx, p) {
+    const n = timerNokkel(gIdx, p);
+    valgteTimer = valgteTimer.includes(n)
+      ? valgteTimer.filter((v) => v !== n)
+      : [...valgteTimer, n];
+  }
+  let timerUtvalg = $derived.by(() => {
+    let minutter = 0;
+    let belop = 0;
+    let entryIds = [];
+    unbilled.forEach((g, gIdx) => {
+      for (const p of g.personer || []) {
+        if (valgteTimer.includes(timerNokkel(gIdx, p))) {
+          minutter += p.minutter;
+          belop += Math.round((p.minutter * g.timesats_ore) / 60);
+          entryIds = entryIds.concat(p.entry_ids);
+        }
+      }
+    });
+    return { minutter, belop, entryIds };
   });
 
   async function opprett(event) {
@@ -48,8 +77,10 @@
         due_date: dueDate,
         valuta: valuta || null,
         lines: [line],
+        timer_entry_ids: timerUtvalg.entryIds.length ? timerUtvalg.entryIds : null,
       });
       toast("Faktura " + issued.invoice_no + " opprettet (KID " + issued.kid + ")", true);
+      valgteTimer = [];
       onDone();
     } catch (error) {
       toast(error.message, false);
@@ -107,6 +138,33 @@
         <div class="flex gap-2">
           <DimSelect {dims} kind="avdeling" bind:value={avdeling} />
           <DimSelect {dims} kind="prosjekt" bind:value={prosjekt} />
+        </div>
+      {/if}
+      {#if unbilled.length && !valuta}
+        <div class="border border-base-300 rounded-lg p-2">
+          <p class="text-sm font-medium mb-1">Ta med ufakturerte timer</p>
+          {#each unbilled as g, gIdx}
+            {#each g.personer || [] as p (timerNokkel(gIdx, p))}
+              <label class="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-xs"
+                  checked={valgteTimer.includes(timerNokkel(gIdx, p))}
+                  onchange={() => veksleTimer(gIdx, p)}
+                />
+                <span>
+                  {p.navn} — {g.prosjekt || "uten prosjekt"} ·
+                  {minutterTilTimer(p.minutter)} t à {kr(g.timesats_ore)}
+                </span>
+              </label>
+            {/each}
+          {/each}
+          {#if timerUtvalg.entryIds.length}
+            <p class="text-xs opacity-70 mt-1">
+              {minutterTilTimer(timerUtvalg.minutter)} t — {kr(timerUtvalg.belop)} kr legges til
+              som timelinjer og låses idet fakturaen utstedes.
+            </p>
+          {/if}
         </div>
       {/if}
       <button class="btn btn-primary">Opprett faktura</button>

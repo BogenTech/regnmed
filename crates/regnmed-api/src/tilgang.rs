@@ -112,6 +112,10 @@ pub enum Rett {
     TimerSkrivEgne,
     TimerSkrivAlle,
     TimerFakturer,
+    /// Setting the dated timesatser on prosjekter (default and per
+    /// person) and overriding the rate on a single entry. Without it,
+    /// entries get the register's rate — never the caller's number.
+    TimerSatsSkriv,
     TimerLaas,
 
     // Utlegg
@@ -164,7 +168,7 @@ pub enum Rett {
     MigreringAdmin,
 }
 
-static ALLE_RETTIGHETER: [Rett; 72] = [
+static ALLE_RETTIGHETER: [Rett; 73] = [
     Rett::BilagLes,
     Rett::VedleggSkriv,
     Rett::BilagLastOpp,
@@ -205,6 +209,7 @@ static ALLE_RETTIGHETER: [Rett; 72] = [
     Rett::TimerSkrivEgne,
     Rett::TimerSkrivAlle,
     Rett::TimerFakturer,
+    Rett::TimerSatsSkriv,
     Rett::TimerLaas,
     Rett::UtleggLesEgne,
     Rett::UtleggLesAlle,
@@ -285,6 +290,7 @@ impl Rett {
             TimerSkrivEgne => "TIMER_SKRIV_EGNE",
             TimerSkrivAlle => "TIMER_SKRIV_ALLE",
             TimerFakturer => "TIMER_FAKTURER",
+            TimerSatsSkriv => "TIMER_SATS_SKRIV",
             TimerLaas => "TIMER_LAAS",
             UtleggLesEgne => "UTLEGG_LES_EGNE",
             UtleggLesAlle => "UTLEGG_LES_ALLE",
@@ -355,9 +361,9 @@ impl Rett {
             | FakturaSkriv | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv
             | ReskontroSkriv | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett
             | BetalingGodkjenn | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv
-            | AnleggSkriv | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerLaas
-            | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv | LonnKjor
-            | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
+            | AnleggSkriv | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerSatsSkriv
+            | TimerLaas | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv
+            | LonnKjor | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
             | AttesteringAdmin | MigreringAdmin => true,
         }
     }
@@ -432,6 +438,7 @@ impl Rett {
             TimerSkrivEgne => "Timer",
             TimerSkrivAlle => "Timer",
             TimerFakturer => "Timer",
+            TimerSatsSkriv => "Timer",
             TimerLaas => "Timer",
             UtleggLesEgne => "Utlegg",
             UtleggLesAlle => "Utlegg",
@@ -516,6 +523,7 @@ impl Rett {
             TimerSkrivEgne => "Føre sine egne timer",
             TimerSkrivAlle => "Rette alles timer",
             TimerFakturer => "Fakturere førte timer",
+            TimerSatsSkriv => "Sette timesatser på prosjekter og overstyre sats på timeføringer",
             TimerLaas => "Låse timelisten for en måned",
             UtleggLesEgne => "Se sine egne utlegg",
             UtleggLesAlle => "Se alles utlegg",
@@ -693,6 +701,8 @@ const BOKFORING_BUNT: &[Rett] = &[
     // Whoever bills the hours needs to see whose they are.
     Rett::TimerLesAlle,
     Rett::TimerFakturer,
+    // The rates live on the project; whoever keeps the books sets them.
+    Rett::TimerSatsSkriv,
     Rett::UtleggSkrivEgne,
     Rett::UtleggGodkjenn,
     Rett::UtleggUtbetal,

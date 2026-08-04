@@ -5,6 +5,7 @@
   import Salgsdok from "./Salgsdok.svelte";
   import Repeterende from "./Repeterende.svelte";
   import NyFaktura from "./NyFaktura.svelte";
+  import UfakturerteTimer from "./UfakturerteTimer.svelte";
   import FakturaListe from "./FakturaListe.svelte";
 
   let { companyId } = $props();
@@ -12,7 +13,9 @@
   let data = $state(null);
 
   async function load(id) {
-    const [invoices, parties, overdue, dims, templates, quotes, orders, products, rates] =
+    // Alt fakturerbart samles her (brukerbeslutning 2026-08-04) — også
+    // ufakturerte timer fra hele laget (docs/timer.md).
+    const [invoices, parties, overdue, dims, templates, quotes, orders, products, rates, unbilled] =
       await Promise.all([
         api("/companies/" + id + "/invoices"),
         api("/companies/" + id + "/parties?kind=kunde"),
@@ -23,6 +26,7 @@
         api("/companies/" + id + "/orders").catch(() => ({ documents: [] })),
         api("/companies/" + id + "/products").catch(() => ({ products: [] })),
         api("/companies/" + id + "/currency/rates").catch(() => ({ rates: [] })),
+        api("/companies/" + id + "/timesheet/unbilled").catch(() => ({ groups: [] })),
       ]);
     data = {
       invoices: invoices.invoices,
@@ -34,6 +38,7 @@
       orders: orders.documents,
       products: products.products.filter((p) => p.aktiv),
       currencies: rates.rates.map((r) => r.valuta),
+      unbilled: unbilled.groups,
     };
   }
 
@@ -69,12 +74,22 @@
     <Repeterende {companyId} templates={data.templates} onDone={reload} />
   {/if}
 
+  {#if data.unbilled.length}
+    <UfakturerteTimer
+      {companyId}
+      unbilled={data.unbilled}
+      kunder={data.parties}
+      onDone={reload}
+    />
+  {/if}
+
   <NyFaktura
     {companyId}
     parties={data.parties}
     products={data.products}
     dims={data.dims}
     currencies={data.currencies}
+    unbilled={data.unbilled}
     onDone={reload}
   />
 

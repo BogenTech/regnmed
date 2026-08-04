@@ -255,6 +255,7 @@ sitert i en revisjon, og ingen leser koden for å kontrollere den.
 | `TIMER_SKRIV_EGNE` | Føre sine egne timer | ✅ | — | — | ✅ | ✅ |
 | `TIMER_SKRIV_ALLE` | Rette alles timer | — | — | — | — | ✅ |
 | `TIMER_FAKTURER` | Fakturere førte timer | — | — | — | ✅ | ✅ |
+| `TIMER_SATS_SKRIV` | Sette timesatser på prosjekter og overstyre sats på timeføringer | — | — | — | ✅ | ✅ |
 | `TIMER_LAAS` | Låse timelisten for en måned | — | — | — | — | ✅ |
 | **Utlegg** | | | | | | |
 | `UTLEGG_LES_EGNE` | Se sine egne utlegg | ✅ | ✅ | ✅ | ✅ | ✅ |

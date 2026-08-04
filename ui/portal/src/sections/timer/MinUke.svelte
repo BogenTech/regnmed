@@ -8,12 +8,18 @@
   // faktisk inneholdt.
   import { api, post, send } from "../../lib/api.js";
   import { kr, parseKr, minutterTilTimer } from "../../lib/format.js";
+  import { harRett } from "../../lib/me.svelte.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
   import DimRegisterLenke from "../../components/DimRegisterLenke.svelte";
   import DimSelect from "../../components/DimSelect.svelte";
 
   let { companyId, uke, forrigeUke, from, to, forrige, neste, dims, onDone } = $props();
+
+  // Satsen kommer fra prosjektregisteret (docs/timer.md) — bare den som
+  // holder TIMER_SATS_SKRIV ser og setter satser her; alle andre får
+  // registerets sats uansett hva klienten sender, så feltet skjules.
+  let kanSats = $derived(harRett(companyId, "TIMER_SATS_SKRIV"));
 
   const DAGNAVN = ["Ma", "Ti", "On", "To", "Fr", "Lø", "Sø"];
   const IDAG = new Date().toISOString().slice(0, 10);
@@ -59,13 +65,12 @@
     return egne.filter((e) => (e.prosjekt || "") === prosjekt && e.dato === dato);
   }
 
-  // Ny celle i en rad arver fakturerbar/sats fra radens nyeste linje —
-  // denne uken først, ellers forrige uke.
+  // Radens standard kommer fra PROSJEKTET (0052): fakturerbar_default og
+  // min egen sats i registeret. Uten prosjekt finnes ingen standard.
   function radStandard(prosjekt) {
-    const kilder = [...egne, ...egneForrige].filter((e) => (e.prosjekt || "") === prosjekt);
-    const siste = kilder[kilder.length - 1];
-    return siste
-      ? { fakturerbar: siste.fakturerbar, timesats_ore: siste.timesats_ore }
+    const d = prosjekt ? dims.find((x) => x.kind === "prosjekt" && x.code === prosjekt) : null;
+    return d
+      ? { fakturerbar: d.fakturerbar_default, timesats_ore: d.min_timesats_ore }
       : { fakturerbar: false, timesats_ore: null };
   }
 
@@ -115,14 +120,13 @@
     lagrer = "lagrer";
     try {
       if (entries.length === 0 && minutter > 0) {
-        const standard = radStandard(prosjekt);
+        // fakturerbar og sats sendes IKKE: prosjektets standard og
+        // registerets sats avgjør på serveren.
         await post("/companies/" + companyId + "/timesheet", {
           dato,
           minutter,
           beskrivelse: "",
           prosjekt: prosjekt || null,
-          fakturerbar: standard.fakturerbar,
-          timesats_ore: standard.fakturerbar ? standard.timesats_ore : null,
         });
       } else if (entries.length === 1 && minutter > 0) {
         const e = entries[0];
@@ -189,26 +193,30 @@
   }
 
   // Kopierer forrige ukes egne linjer til samme ukedag denne uken.
-  // Tilbys bare når uken står tom, så en dobbelttrykk ikke dobler timene.
+  // Tilbys bare når uken står tom, så en dobbelttrykk ikke dobler
+  // timene. Satsen sendes ikke med — registeret priser de nye linjene
+  // på sin dato — og en linje som feiler stopper ikke resten.
   let kopierer = $state(false);
   async function kopierForrigeUke() {
     kopierer = true;
+    let feilet = 0;
     try {
       for (const e of egneForrige) {
         const dato = datoPluss(e.dato, 7);
         if (laast(dato) || e.invoice_no) continue;
-        await post("/companies/" + companyId + "/timesheet", {
-          dato,
-          minutter: e.minutter,
-          beskrivelse: e.beskrivelse,
-          prosjekt: e.prosjekt || null,
-          fakturerbar: e.fakturerbar,
-          timesats_ore: e.timesats_ore,
-        });
+        try {
+          await post("/companies/" + companyId + "/timesheet", {
+            dato,
+            minutter: e.minutter,
+            beskrivelse: e.beskrivelse,
+            prosjekt: e.prosjekt || null,
+            fakturerbar: e.fakturerbar,
+          });
+        } catch (error) {
+          feilet += 1;
+        }
       }
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
+      if (feilet) toast(feilet + " linjer kunne ikke kopieres", false);
       onDone();
     } finally {
       kopierer = false;
@@ -241,7 +249,8 @@
         beskrivelse: d.beskrivelse,
         prosjekt: aktiv.prosjekt || null,
         fakturerbar: d.fakturerbar,
-        timesats_ore: d.fakturerbar ? parseKr(d.sats) : null,
+        // Uten TIMER_SATS_SKRIV avgjør registeret — feltet sendes ikke.
+        timesats_ore: kanSats && d.fakturerbar && d.sats ? parseKr(d.sats) : null,
       });
       lagrer = "lagret";
       onDone();
@@ -270,7 +279,8 @@
         beskrivelse: nyLinje.beskrivelse,
         prosjekt: aktiv.prosjekt || null,
         fakturerbar: nyLinje.fakturerbar,
-        timesats_ore: nyLinje.fakturerbar ? parseKr(nyLinje.sats) : null,
+        timesats_ore:
+          kanSats && nyLinje.fakturerbar && nyLinje.sats ? parseKr(nyLinje.sats) : null,
       });
       lagrer = "lagret";
       nyLinje = null;
@@ -485,8 +495,12 @@
               <input type="checkbox" class="checkbox checkbox-xs" bind:checked={d.fakturerbar} />
               <span class="text-xs">Fakturerbar</span>
             </label>
-            {#if d.fakturerbar}
+            {#if d.fakturerbar && kanSats}
               <input class="input input-sm w-20" placeholder="Sats (kr/t)" bind:value={d.sats} />
+            {:else if d.fakturerbar && d.sats}
+              <span class="text-xs opacity-60" title="Satsen kommer fra prosjektet">
+                {d.sats} kr/t
+              </span>
             {/if}
             <button class="btn btn-sm btn-primary" onclick={() => lagreDetalj(d)}>Lagre</button>
             <button class="btn btn-sm btn-ghost" onclick={() => slettDetalj(d)}>Slett</button>
@@ -509,7 +523,7 @@
             <input type="checkbox" class="checkbox checkbox-xs" bind:checked={nyLinje.fakturerbar} />
             <span class="text-xs">Fakturerbar</span>
           </label>
-          {#if nyLinje.fakturerbar}
+          {#if nyLinje.fakturerbar && kanSats}
             <input
               class="input input-sm w-20"
               placeholder="Sats (kr/t)"

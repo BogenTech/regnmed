@@ -73,7 +73,8 @@ message before anything is written.
 | --- | --- |
 | `GET /companies/{id}/dimensions` | the registry |
 | `POST /companies/{id}/dimensions` | create (kind, code, name) |
-| `PUT /companies/{id}/dimensions/{kind}/{code}` | rename and/or open/close |
+| `PUT /companies/{id}/dimensions/{kind}/{code}` | rename, open/close, kunde, fakturerbar_default |
+| `GET/POST …/dimensions/prosjekt/{code}/satser` | dated timesatser (docs/timer.md, `TIMER_SATS_SKRIV`) |
 
 Lines accept `avdeling`/`prosjekt` codes on: innboks bokføring
 (`…/inbox/{id}/bokfor`) and faktura revenue lines

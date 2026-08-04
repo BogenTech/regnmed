@@ -382,7 +382,7 @@ pub async fn prosjektlonnsomhet(
     let (from, to) = regnmed_core::regnskapsar::regnskapsar_periode(year)
         .ok_or_else(|| ApiError::BadRequest(format!("ugyldig år {year}")))?;
 
-    let dims = regnmed_db::list_dimensions(&state.pool, company_id).await?;
+    let dims = regnmed_db::list_dimensions(&state.pool, company_id, person.person_id).await?;
     let timer = regnmed_db::timesheet_summary(&state.pool, company_id, from, to).await?;
     let timer_for = |code: &str| timer.iter().find(|t| t.prosjekt.as_deref() == Some(code));
     let timer_json = |t: Option<&regnmed_db::timesheet::ProsjektSum>| match t {

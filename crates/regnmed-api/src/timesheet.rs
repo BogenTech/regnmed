@@ -22,27 +22,29 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-/// Logging hours requires `TIMER_SKRIV_EGNE`; the answer says whether the
-/// caller also holds `TIMER_SKRIV_ALLE` and may correct everyone's hours,
-/// not only their own.
+/// Logging hours requires `TIMER_SKRIV_EGNE`; the returned [`Tilgang`]
+/// answers the follow-ups — `TIMER_SKRIV_ALLE` (correct everyone's, not
+/// only one's own) and `TIMER_SATS_SKRIV` (the caller's own sats number
+/// is honored instead of the project register's).
 async fn require_write(
     state: &AppState,
     person_id: Uuid,
     company_id: Uuid,
-) -> Result<bool, ApiError> {
-    Ok(krev(state, person_id, company_id, Rett::TimerSkrivEgne)
-        .await?
-        .har(Rett::TimerSkrivAlle))
+) -> Result<crate::tilgang::Tilgang, ApiError> {
+    krev(state, person_id, company_id, Rett::TimerSkrivEgne).await
 }
 
 #[derive(Deserialize)]
 pub struct EntryRequest {
     dato: chrono::NaiveDate,
     minutter: i32,
+    #[serde(default)]
     beskrivelse: String,
     prosjekt: Option<String>,
-    #[serde(default)]
-    fakturerbar: bool,
+    /// Absent = the project's fakturerbar_default.
+    fakturerbar: Option<bool>,
+    /// Honored only with TIMER_SATS_SKRIV — otherwise the register's
+    /// rate applies (docs/timer.md).
     timesats_ore: Option<i64>,
 }
 
@@ -65,13 +67,14 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<EntryRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_write(&state, person.person_id, company_id).await?;
+    let tilgang = require_write(&state, person.person_id, company_id).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_time_entry(
         &state.pool,
         company_id,
         person.person_id,
         &request.draft(),
+        tilgang.har(Rett::TimerSatsSkriv),
         created_by,
     )
     .await
@@ -85,14 +88,15 @@ pub async fn update(
     Path((company_id, entry_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<EntryRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let admin = require_write(&state, person.person_id, company_id).await?;
+    let tilgang = require_write(&state, person.person_id, company_id).await?;
     regnmed_db::update_time_entry(
         &state.pool,
         company_id,
         entry_id,
         person.person_id,
-        !admin,
+        !tilgang.har(Rett::TimerSkrivAlle),
         &request.draft(),
+        tilgang.har(Rett::TimerSatsSkriv),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -104,10 +108,16 @@ pub async fn delete(
     person: AuthPerson,
     Path((company_id, entry_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let admin = require_write(&state, person.person_id, company_id).await?;
-    regnmed_db::delete_time_entry(&state.pool, company_id, entry_id, person.person_id, !admin)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let tilgang = require_write(&state, person.person_id, company_id).await?;
+    regnmed_db::delete_time_entry(
+        &state.pool,
+        company_id,
+        entry_id,
+        person.person_id,
+        !tilgang.har(Rett::TimerSkrivAlle),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "deleted": true })))
 }
 

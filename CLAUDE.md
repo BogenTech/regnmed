@@ -1194,6 +1194,32 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    Vite-proxyen ble konfigurerbar (REGNMED_API_PROXY). Browser-verifisert
    hele veien. IKKE bygget: per-prosjekt-tilgang (dokumentert i
    docs/timer.md), rettighetsstyrt meny utover Prosjekter.
+66. ✅ Prosjektet eier faktureringsreglene + alt fakturerbart under
+   Faktura (docs/timer.md, docs/faktura.md, brukerbeslutning
+   2026-08-04): migration 0052 — `fakturerbar_default` på prosjektet
+   (redigerbar metadata, 0047-mønsteret) og `prosjekt_sats` i
+   satsregister-doktrinen: daterte, innsettings-bare rader per
+   prosjekt, person_id for personens egen sats, null for standarden.
+   En føring prises PÅ SIN DATO (eierens sats foran standarden), og
+   uten ny rett `TIMER_SATS_SKRIV` (bokforing-bunten) gjelder
+   registerets sats uansett hva klienten sender — overstyring krever
+   retten, fakturerbare timer uten sats nekter HØYLYTT (en stille 0
+   ville fløtet inn i en faktura), førte timer beholder satsen sin
+   (bevis, reprises aldri). Vaktene er SETT FEILE (sabotert og
+   gjenopprettet). `/dimensions` bærer fakturerbar_default + KALLERENS
+   sats; `…/prosjekt/{code}/satser` (GET/POST, TIMER_SATS_SKRIV).
+   FAKTURA: grunnlagskortet flyttet fra Timer til Faktura-seksjonen,
+   og `POST /invoices` tar `timer_entry_ids` — ÉN faktura bærer
+   varelinjer OG valgte timer (timelinjer per (prosjekt, sats),
+   merket fakturert i SAMME transaksjon; krever TIMER_FAKTURER oppå
+   FAKTURA_SKRIV, NOK only). Portal: Prosjekter fikk
+   fakturerbar-avhuking + satseditor (historikk + ny datert sats,
+   person fra /access når MEDLEM_ADMIN); ny prosjekt-skjemaet setter
+   alt i ett trykk; gridet henter radstandard fra prosjektet og
+   skjuler satsfeltet uten retten; NyFaktura har «Ta med ufakturerte
+   timer». Browser-verifisert: prosjekt m/ sats → 6 t i grid uten
+   sats sendt (7 200 kr fra registeret) → kombinert faktura 500 kr
+   vare + timene = 9 625 kr brutto, grunnlaget tømt.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

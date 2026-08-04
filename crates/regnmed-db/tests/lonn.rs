@@ -586,9 +586,10 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
                 minutter: 400,
                 beskrivelse: "Arbeid".into(),
                 prosjekt: None,
-                fakturerbar: false,
+                fakturerbar: Some(false),
                 timesats_ore: None,
             },
+            false,
             "Test",
         )
         .await
