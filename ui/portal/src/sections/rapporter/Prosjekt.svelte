@@ -51,8 +51,9 @@
   <span class="loading loading-spinner"></span>
 {:else if !data.prosjekter.length}
   <p class="opacity-70">
-    Ingen prosjekter registrert — opprett dem i dimensjonsregisteret under Bilag, og knytt gjerne
-    hvert prosjekt til kunden det er for.
+    Ingen prosjekter registrert — opprett dem i
+    <a class="link" href={"#/c/" + companyId + "/prosjekter"}>Prosjekter</a>-seksjonen, og knytt
+    gjerne hvert prosjekt til kunden det er for.
   </p>
 {:else}
   <table class="table table-sm">

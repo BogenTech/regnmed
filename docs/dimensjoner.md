@@ -80,13 +80,21 @@ Lines accept `avdeling`/`prosjekt` codes on: innboks bokføring
 (`POST …/invoices`; the codes are stored on `invoice_line`, so a
 kreditnota reverses revenue on the same dimensions).
 
-Portal: registry management in the Bilag section; pickers in the
-innboks bokfør form and the faktura form; resultat filter in Rapporter.
+Portal: the registry is its own **Prosjekter section** (it lived at the
+bottom of Bilag until 2026-08-04 — the last place someone thinking in
+projects would look): prosjekter with kunde-link, per-project hours and
+unbilled value for the year, rename (the API always supported it, the
+UI finally offers it), avslutt/gjenåpne, and an Avdelinger card with
+the same rules minus the customer. Pickers remain in the innboks bokfør
+form and the faktura form; resultat filter in Rapporter.
 
-Discoverability: the registry lives under Bilag because a dimension is
-posting data first — which is not where someone thinking about projects
-looks. The Timer section therefore points at it in both of its
-project-shaped views (`DimRegisterLenke`), and the project picker in
+Visibility follows the rettigheter: the section is readable for
+everyone with `DIMENSJON_LES` (including ansatte — they log hours
+against the projects), while every writing control renders only with
+`DIMENSJON_SKRIV`. The portal learns this from `/me`, which carries the
+resolved rettighet slugs per company — DISPLAY ONLY, the server's guard
+still decides (docs/auth.md). Project-shaped views elsewhere
+(`DimRegisterLenke`) point at the section, and the project picker in
 timeføring explains its own absence instead of vanishing silently when
 the registry is empty (`DimSelect`'s `tomHint`). The report filters keep
 the silent behaviour: there, empty is just empty.

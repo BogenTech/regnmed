@@ -3,6 +3,7 @@
 export const SEKSJONER = [
   ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["kunder", "Kunder"],
   ["produkter", "Produkter"],
+  ["prosjekter", "Prosjekter"],
   ["timer", "Timer"], ["lonn", "Lønn"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"],
   ["aksjonarer", "Aksjonærer"],
   ["reskontro", "Reskontro"],
@@ -12,8 +13,11 @@ export const SEKSJONER = [
 
 // Det en ansatt får se (#54). Portalen SKJULER bare — serveren nekter,
 // og det er der sannheten ligger. Menyen finnes for at man ikke skal
-// klikke seg inn i en feilmelding, ikke som en sperre.
-export const ANSATT_MENY = ["timer", "utlegg", "bilag"];
+// klikke seg inn i en feilmelding, ikke som en sperre. Prosjekter er
+// med: registeret er lesbart for ansatte (DIMENSJON_LES i
+// ansattbunten — det må finnes noe å føre timene på), skriveknappene
+// styres av DIMENSJON_SKRIV inne i seksjonen.
+export const ANSATT_MENY = ["prosjekter", "timer", "utlegg", "bilag"];
 
 export function seksjonNavn(slug) {
   const hit = SEKSJONER.find(([s]) => s === slug);

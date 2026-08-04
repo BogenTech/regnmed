@@ -831,6 +831,20 @@ async fn me(
         }
     }
 
+    // Rettighetene per selskap, so the portal can show only controls
+    // that will succeed. DISPLAY ONLY — the server's guard decides, the
+    // portal just stops offering buttons that would 403 (docs/auth.md).
+    let mut rettigheter = std::collections::HashMap::new();
+    for a in &access {
+        if let std::collections::hash_map::Entry::Vacant(e) = rettigheter.entry(a.company_id) {
+            let slugs = tilgang::slaa_opp(&state, person.person_id, a.company_id)
+                .await?
+                .map(|t| t.rettighet_slugs())
+                .unwrap_or_default();
+            e.insert(slugs);
+        }
+    }
+
     Ok(Json(json!({
         "person_id": person.person_id,
         "nye_tilganger": nye,
@@ -850,6 +864,7 @@ async fn me(
                 "access": a.access,
                 "via": a.via,
                 "abonnement": abonnement.get(&a.company_id),
+                "rettigheter": rettigheter.get(&a.company_id),
             }))
             .collect::<Vec<_>>(),
     })))

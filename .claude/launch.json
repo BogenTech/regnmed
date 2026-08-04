@@ -17,6 +17,15 @@
       "port": 8083
     },
     {
+      "name": "portal-testidp",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": [
+        "-lc",
+        "cd ui/portal && exec env REGNMED_API_PROXY=http://localhost:8083 npm run dev -- --port 5174"
+      ],
+      "port": 5174
+    },
+    {
       "name": "portal",
       "runtimeExecutable": "zsh",
       "runtimeArgs": ["-lc", "cd ui/portal && exec npm run dev -- --port 5173"],

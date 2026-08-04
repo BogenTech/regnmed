@@ -1168,6 +1168,32 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `…/link/history`. Portal: Portalbruker-kolonne i Ansatte-kortet
    (koblet/invitert/ikke koblet, medlemsvelger begrenset til direkte
    aktive medlemmer), e-postfelt i ny ansatt-skjemaet.
+65. ✅ Ukegrid for timeføring + Prosjekter-seksjon + timer-rettighetene
+   håndhevet (docs/timer.md, docs/dimensjoner.md, brukerbeslutning
+   2026-08-04): Timeregistrering er et REGNEARK — rader er prosjekter,
+   kolonner dager, cellene lagrer seg selv på blur (7,5/7.5/7:30;
+   Enter/piltaster flytter; rader arver forrige ukes prosjekter;
+   «Kopier forrige uke»; detaljfelt for beskrivelse/sats per linje;
+   låste dager disabled, fakturerte celler viser fakturaen; mobil =
+   dagvisning). Migration 0051: beskrivelsen VALGFRI (tom tekst, aldri
+   NULL) — regnearkfølelsen dør om hver celle krever tekst.
+   RETTIGHETSFIKS (sett feile først): GET /timesheet ga ALLE personers
+   timer til enhver med TIMER_LES_EGNE — nå egne med mindre
+   TIMER_LES_ALLE (flyttet til bokforing-bunten + revisor; admin
+   arver); require_write bruker TIMER_SKRIV_ALLE (ikke er_admin), bill
+   krever TIMER_FAKTURER (var definert men aldri sjekket); `_ALLE`
+   medfører `_EGNE` også for egendefinerte roller (Tilgang::har).
+   UTVALGSFAKTURERING: unbilled-gruppene bærer per-person-splitt,
+   `entry_ids` på invoice-kallet fakturerer akkurat utvalget — hver id
+   må være fakturerbar og ufakturert (gammelt utvalg feiler HELT), og
+   merkingen skjer i fakturatransaksjonen: utvalg og lås er ETT steg.
+   /me bærer nå `rettigheter` per selskap (BARE visning — vakten
+   avgjør); ny Prosjekter-seksjon i menyen (også for ansatte, lesbart)
+   m/ kundekobling, navneendring (fantes i API-et, aldri i UI),
+   avdelinger, timer/ufakturert per prosjekt; registeret ute av Bilag.
+   Vite-proxyen ble konfigurerbar (REGNMED_API_PROXY). Browser-verifisert
+   hele veien. IKKE bygget: per-prosjekt-tilgang (dokumentert i
+   docs/timer.md), rettighetsstyrt meny utover Prosjekter.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

@@ -31,3 +31,11 @@ export async function loadMe(force = false) {
 export function company(companyId) {
   return me.companies.find((c) => c.company_id === companyId) || null;
 }
+
+// Rettighetene fra /me — BARE visning: seksjonene skjuler knapper som
+// ville fått 403, serveren nekter uansett (docs/auth.md). Mangler
+// listen (gammelt svar), vises ingenting skrivbart — fail-closed.
+export function harRett(companyId, rett) {
+  const c = company(companyId);
+  return !!c && Array.isArray(c.rettigheter) && c.rettigheter.includes(rett);
+}

@@ -160,10 +160,13 @@ pub struct TimeEntryRow {
     pub invoice_no: Option<i64>,
 }
 
+/// `own_only` restricts the answer to the viewer's rows — the caller
+/// decides from `TIMER_LES_ALLE`, the query only obeys.
 pub async fn list_time_entries(
     pool: &PgPool,
     company_id: Uuid,
     viewer: Uuid,
+    own_only: bool,
     from: NaiveDate,
     to: NaiveDate,
 ) -> Result<Vec<TimeEntryRow>> {
@@ -176,12 +179,14 @@ pub async fn list_time_entries(
          left join dimension d on d.id = t.prosjekt_id
          left join invoice i on i.id = t.invoice_id
          where t.company_id = $1 and t.dato between $3 and $4
+           and (not $5 or t.person_id = $2)
          order by t.dato, t.created_at",
     )
     .bind(company_id)
     .bind(viewer)
     .bind(from)
     .bind(to)
+    .bind(own_only)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -300,18 +305,42 @@ pub struct UnbilledGroup {
     pub timesats_ore: i64,
     pub minutter: i64,
     pub entry_ids: Vec<Uuid>,
+    /// Who the hours belong to — the selection unit when billing part of
+    /// the grunnlag (a person's hours in or out, never half an entry).
+    pub personer: Vec<UnbilledPerson>,
 }
 
-pub async fn unbilled_groups(
+#[derive(Debug)]
+pub struct UnbilledPerson {
+    pub person_id: Uuid,
+    pub navn: String,
+    pub minutter: i64,
+    pub entry_ids: Vec<Uuid>,
+}
+
+struct UnbilledRow {
+    id: Uuid,
+    person_id: Uuid,
+    person_navn: String,
+    prosjekt: Option<String>,
+    kunde: Option<String>,
+    kunde_navn: Option<String>,
+    timesats_ore: i64,
+    minutter: i64,
+}
+
+async fn unbilled_rows(
     pool: &PgPool,
     company_id: Uuid,
     prosjekt: Option<&str>,
     through: Option<NaiveDate>,
-) -> Result<Vec<UnbilledGroup>> {
+) -> Result<Vec<UnbilledRow>> {
     let rows = sqlx::query(
         "select d.code as prosjekt, p.party_no as kunde, p.name as kunde_navn,
-                t.timesats_ore, t.id, t.minutter
+                t.timesats_ore, t.id, t.minutter, t.person_id,
+                coalesce(pe.name, pe.oidc_sub) as person_navn
          from time_entry t
+         join person pe on pe.id = t.person_id
          left join dimension d on d.id = t.prosjekt_id
          left join party p on p.id = d.party_id
          where t.company_id = $1 and t.fakturerbar and t.invoice_id is null
@@ -324,30 +353,73 @@ pub async fn unbilled_groups(
     .bind(through)
     .fetch_all(pool)
     .await?;
+    Ok(rows
+        .iter()
+        .map(|row| UnbilledRow {
+            id: row.get("id"),
+            person_id: row.get("person_id"),
+            person_navn: row.get("person_navn"),
+            prosjekt: row.get("prosjekt"),
+            kunde: row.get("kunde"),
+            kunde_navn: row.get("kunde_navn"),
+            timesats_ore: row.get("timesats_ore"),
+            minutter: i64::from(row.get::<i32, _>("minutter")),
+        })
+        .collect())
+}
+
+fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
     let mut groups: Vec<UnbilledGroup> = Vec::new();
-    for row in &rows {
-        let prosjekt: Option<String> = row.get("prosjekt");
-        let sats: i64 = row.get("timesats_ore");
-        let minutter = i64::from(row.get::<i32, _>("minutter"));
-        match groups
+    for row in rows {
+        let group = match groups
             .iter_mut()
-            .find(|g| g.prosjekt == prosjekt && g.timesats_ore == sats)
+            .find(|g| g.prosjekt == row.prosjekt && g.timesats_ore == row.timesats_ore)
         {
-            Some(group) => {
-                group.minutter += minutter;
-                group.entry_ids.push(row.get("id"));
+            Some(group) => group,
+            None => {
+                groups.push(UnbilledGroup {
+                    prosjekt: row.prosjekt.clone(),
+                    kunde: row.kunde.clone(),
+                    kunde_navn: row.kunde_navn.clone(),
+                    timesats_ore: row.timesats_ore,
+                    minutter: 0,
+                    entry_ids: Vec::new(),
+                    personer: Vec::new(),
+                });
+                groups.last_mut().unwrap()
             }
-            None => groups.push(UnbilledGroup {
-                prosjekt,
-                kunde: row.get("kunde"),
-                kunde_navn: row.get("kunde_navn"),
-                timesats_ore: sats,
-                minutter,
-                entry_ids: vec![row.get("id")],
+        };
+        group.minutter += row.minutter;
+        group.entry_ids.push(row.id);
+        match group
+            .personer
+            .iter_mut()
+            .find(|p| p.person_id == row.person_id)
+        {
+            Some(p) => {
+                p.minutter += row.minutter;
+                p.entry_ids.push(row.id);
+            }
+            None => group.personer.push(UnbilledPerson {
+                person_id: row.person_id,
+                navn: row.person_navn,
+                minutter: row.minutter,
+                entry_ids: vec![row.id],
             }),
         }
     }
-    Ok(groups)
+    groups
+}
+
+pub async fn unbilled_groups(
+    pool: &PgPool,
+    company_id: Uuid,
+    prosjekt: Option<&str>,
+    through: Option<NaiveDate>,
+) -> Result<Vec<UnbilledGroup>> {
+    Ok(grupper(
+        unbilled_rows(pool, company_id, prosjekt, through).await?,
+    ))
 }
 
 /// Quantity in milli-hours, rounded half up: 90 min → 1500.
@@ -359,18 +431,40 @@ fn milli_hours(minutter: i64) -> i64 {
 /// path (line per gruppe, prosjekt dimension carried onto the revenue
 /// line) and every entry marked fakturert IN THE SAME TRANSACTION —
 /// one-way, enforced by the guard trigger thereafter.
+///
+/// `entry_ids` narrows the grunnlag to a selection (chosen people, or a
+/// hand-picked set): every id must still be billable and unbilled —
+/// anything else fails the whole call rather than silently billing less
+/// than what was chosen. Selection and lock are one step: the entries
+/// are marked fakturert in the invoice transaction itself, so there is
+/// never a chosen-but-editable window.
+#[allow(clippy::too_many_arguments)]
 pub async fn bill_hours(
     pool: &PgPool,
     company_id: Uuid,
     party_no: &str,
     prosjekt: Option<&str>,
     through: Option<NaiveDate>,
+    entry_ids: Option<&[Uuid]>,
     vat_code: Option<&str>,
     invoice_date: NaiveDate,
     due_date: NaiveDate,
     created_by: &str,
 ) -> Result<IssuedInvoice> {
-    let groups = unbilled_groups(pool, company_id, prosjekt, through).await?;
+    let mut rows = unbilled_rows(pool, company_id, prosjekt, through).await?;
+    if let Some(valgte) = entry_ids {
+        ensure!(!valgte.is_empty(), "ingen timer valgt");
+        let finnes: std::collections::HashSet<Uuid> = rows.iter().map(|r| r.id).collect();
+        for id in valgte {
+            ensure!(
+                finnes.contains(id),
+                "valgt time {id} er allerede fakturert, ikke fakturerbar eller finnes ikke"
+            );
+        }
+        let valgt_sett: std::collections::HashSet<Uuid> = valgte.iter().copied().collect();
+        rows.retain(|r| valgt_sett.contains(&r.id));
+    }
+    let groups = grupper(rows);
     ensure!(!groups.is_empty(), "ingen ufakturerte fakturerbare timer");
 
     let lines = groups

@@ -661,7 +661,12 @@ const LES_BUNT: &[Rett] = &[
 /// check. So the answer is "yes, a revisor sees lønn", but now it is an
 /// **explicit yes** rather than a side effect of revisor and an internal
 /// reader having been the same role.
-pub const REVISOR_BUNT: &[Rett] = &[Rett::LonnLes, Rett::LonnsslippLesAlle];
+pub const REVISOR_BUNT: &[Rett] = &[
+    Rett::LonnLes,
+    Rett::LonnsslippLesAlle,
+    // Hours are billing evidence — the audit reads everyone's, like lønn.
+    Rett::TimerLesAlle,
+];
 
 /// What bokføring adds: everything that changes the hovedbok or ends there.
 const BOKFORING_BUNT: &[Rett] = &[
@@ -685,6 +690,8 @@ const BOKFORING_BUNT: &[Rett] = &[
     Rett::LagerSkriv,
     Rett::AnleggSkriv,
     Rett::TimerSkrivEgne,
+    // Whoever bills the hours needs to see whose they are.
+    Rett::TimerLesAlle,
     Rett::TimerFakturer,
     Rett::UtleggSkrivEgne,
     Rett::UtleggGodkjenn,
@@ -703,7 +710,6 @@ const BOKFORING_BUNT: &[Rett] = &[
 /// What admin adds: governing the company and who gets in.
 const ADMIN_BUNT: &[Rett] = &[
     Rett::MvaOrdningAdmin,
-    Rett::TimerLesAlle,
     Rett::TimerSkrivAlle,
     Rett::TimerLaas,
     Rett::AttesteringAdmin,
@@ -832,7 +838,15 @@ pub struct Tilgang {
 
 impl Tilgang {
     pub fn har(&self, rett: Rett) -> bool {
-        self.roller.iter().any(|r| r.har(rett)) || self.egendefinerte.contains(&rett)
+        // The implication (`_ALLE` medfører `_EGNE`) is a property of the
+        // rettighet, not of the role kind — a custom role holding
+        // TIMER_SKRIV_ALLE can correct everyone's hours and therefore
+        // also its own, whether or not the admin ticked both boxes.
+        self.roller.iter().any(|r| r.har(rett))
+            || self
+                .egendefinerte
+                .iter()
+                .any(|r| *r == rett || r.medforer().contains(&rett))
     }
 
     pub fn er_admin(&self) -> bool {
@@ -844,6 +858,62 @@ impl Tilgang {
     pub fn roller(&self) -> Vec<&'static str> {
         self.roller.iter().map(|r| r.slug()).collect()
     }
+
+    /// Every rettighet the person holds, as slugs — implications
+    /// included, sorted and deduplicated. `/me` carries this so the
+    /// portal can show only controls that will succeed; DISPLAY ONLY,
+    /// the guard below remains the enforcement.
+    pub fn rettighet_slugs(&self) -> Vec<&'static str> {
+        let mut ut: Vec<&'static str> = self
+            .roller
+            .iter()
+            .flat_map(|r| r.rettigheter())
+            .chain(
+                self.egendefinerte
+                    .iter()
+                    .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied())),
+            )
+            .map(|r| r.slug())
+            .collect();
+        ut.sort_unstable();
+        ut.dedup();
+        ut
+    }
+}
+
+/// Builds the person's [`Tilgang`] for one company without requiring any
+/// particular rettighet — `None` when they have no access at all. `/me`
+/// uses this; every guarded endpoint goes through [`krev`].
+pub async fn slaa_opp(
+    state: &AppState,
+    person_id: Uuid,
+    company_id: Uuid,
+) -> Result<Option<Tilgang>, ApiError> {
+    let navn = regnmed_db::company_roles(&state.pool, person_id, company_id).await?;
+    if navn.is_empty() {
+        return Ok(None);
+    }
+    let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
+    let ukjente: Vec<String> = navn
+        .iter()
+        .zip(&roller)
+        .filter(|(_, r)| **r == Rolle::Ukjent)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let egendefinerte = if ukjente.is_empty() {
+        Vec::new()
+    } else {
+        regnmed_db::roller::rettigheter_for(&state.pool, company_id, &ukjente)
+            .await?
+            .iter()
+            .filter_map(|s| Rett::fra_slug(s))
+            .filter(|r| r.kan_delegeres())
+            .collect()
+    };
+    Ok(Some(Tilgang {
+        roller,
+        egendefinerte,
+    }))
 }
 
 /// Looks up the person's access to the company and requires `rett`.
@@ -857,38 +927,13 @@ pub async fn krev(
     company_id: Uuid,
     rett: Rett,
 ) -> Result<Tilgang, ApiError> {
-    let navn = regnmed_db::company_roles(&state.pool, person_id, company_id).await?;
-    if navn.is_empty() {
+    // Names that are not built-in may be the company's own roles (the
+    // lookup in `slaa_opp` only costs an extra query then). A name the
+    // database carries but the code does not know grants nothing — and a
+    // rettighet that cannot be delegated stays inert even if it had
+    // somehow found its way into the table.
+    let Some(tilgang) = slaa_opp(state, person_id, company_id).await? else {
         return Err(ApiError::NotFound);
-    }
-    let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
-
-    // Names that are not built-in may be the company's own roles. Only
-    // then does it cost a lookup — the vast majority of calls do not.
-    let ukjente: Vec<String> = navn
-        .iter()
-        .zip(&roller)
-        .filter(|(_, r)| **r == Rolle::Ukjent)
-        .map(|(n, _)| n.clone())
-        .collect();
-    let egendefinerte = if ukjente.is_empty() {
-        Vec::new()
-    } else {
-        regnmed_db::roller::rettigheter_for(&state.pool, company_id, &ukjente)
-            .await?
-            .iter()
-            // A name the database carries but the code does not know
-            // grants nothing — and a rettighet that cannot be delegated
-            // stays inert even if it had somehow found its way into the
-            // table.
-            .filter_map(|s| Rett::fra_slug(s))
-            .filter(|r| r.kan_delegeres())
-            .collect()
-    };
-
-    let tilgang = Tilgang {
-        roller,
-        egendefinerte,
     };
     if !tilgang.har(rett) {
         return Err(ApiError::Forbidden(manglende(rett)));

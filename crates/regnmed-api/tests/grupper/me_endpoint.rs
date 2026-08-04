@@ -85,6 +85,16 @@ async fn valid_token_resolves_engagement_access() {
         .expect("own company present");
     assert_eq!(direct["access"], "admin");
     assert_eq!(direct["via"], "direkte");
+
+    // Each company entry carries the resolved rettigheter (display only —
+    // the guard still decides): bokforing via oppdrag writes hours but
+    // does not govern members; admin does both.
+    let via_retter = via_engagement["rettigheter"].as_array().expect("retter");
+    assert!(via_retter.iter().any(|r| r == "TIMER_SKRIV_EGNE"));
+    assert!(via_retter.iter().any(|r| r == "DIMENSJON_SKRIV"));
+    assert!(!via_retter.iter().any(|r| r == "MEDLEM_ADMIN"));
+    let direct_retter = direct["rettigheter"].as_array().expect("retter");
+    assert!(direct_retter.iter().any(|r| r == "MEDLEM_ADMIN"));
 }
 
 #[tokio::test]

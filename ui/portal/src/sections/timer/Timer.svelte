@@ -34,21 +34,29 @@
     slutt.setUTCDate(slutt.getUTCDate() + 6);
     const forrige = new Date(start);
     forrige.setUTCDate(forrige.getUTCDate() - 7);
+    const forrigeSlutt = new Date(start);
+    forrigeSlutt.setUTCDate(forrigeSlutt.getUTCDate() - 1);
     const neste = new Date(start);
     neste.setUTCDate(neste.getUTCDate() + 7);
     return {
       from: start.toISOString().slice(0, 10),
       to: slutt.toISOString().slice(0, 10),
       forrige: forrige.toISOString().slice(0, 10),
+      forrigeSlutt: forrigeSlutt.toISOString().slice(0, 10),
       neste: neste.toISOString().slice(0, 10),
     };
   });
 
   let data = $state(null);
 
-  async function load(id, from, to) {
-    const [timesheet, summary, unbilled, dims, parties] = await Promise.all([
+  async function load(id, from, to, forrigeFra, forrigeTil) {
+    // Forrige uke hentes med: gridet lager tomme rader av forrige ukes
+    // prosjekter, og «Kopier forrige uke» trenger linjene.
+    const [timesheet, forrigeUke, summary, unbilled, dims, parties] = await Promise.all([
       api("/companies/" + id + "/timesheet?from=" + from + "&to=" + to),
+      api("/companies/" + id + "/timesheet?from=" + forrigeFra + "&to=" + forrigeTil).catch(
+        () => ({ entries: [] }),
+      ),
       api("/companies/" + id + "/timesheet/summary?from=" + from + "&to=" + to),
       api("/companies/" + id + "/timesheet/unbilled").catch(() => ({ groups: [] })),
       api("/companies/" + id + "/dimensions").catch(() => ({ dimensions: [] })),
@@ -56,6 +64,7 @@
     ]);
     data = {
       uke: timesheet,
+      forrigeUke,
       summary: summary.prosjekter,
       unbilled: unbilled.groups,
       dims: dims.dimensions,
@@ -64,14 +73,16 @@
   }
 
   function reload() {
-    load(companyId, uke.from, uke.to).catch((error) => toast(error.message, false));
+    load(companyId, uke.from, uke.to, uke.forrige, uke.forrigeSlutt).catch((error) =>
+      toast(error.message, false),
+    );
   }
 
   $effect(() => {
     const id = companyId;
-    const { from, to } = uke;
+    const { from, to, forrige, forrigeSlutt } = uke;
     data = null;
-    load(id, from, to).catch((error) => toast(error.message, false));
+    load(id, from, to, forrige, forrigeSlutt).catch((error) => toast(error.message, false));
   });
 </script>
 
@@ -81,6 +92,7 @@
   <MinUke
     {companyId}
     uke={data.uke}
+    forrigeUke={data.forrigeUke}
     from={uke.from}
     to={uke.to}
     forrige={uke.forrige}

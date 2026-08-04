@@ -7,8 +7,10 @@
 //! - POST /companies/{id}/timesheet/invoice            bill the hours
 //! - GET/PUT /companies/{id}/timesheet/lock            månedslås (PUT admin)
 //!
-//! Writing requires bokforing or admin; everyone writes their OWN
-//! hours (admins may correct anyone's). Locking is admin-only.
+//! Everyone with `TIMER_SKRIV_EGNE` writes their OWN hours;
+//! `TIMER_SKRIV_ALLE` corrects anyone's, `TIMER_LES_ALLE` sees the whole
+//! team, `TIMER_FAKTURER` bills, `TIMER_LAAS` locks — the rettigheter,
+//! never the role name, decide (docs/auth.md).
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -20,8 +22,8 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-/// Logging hours requires posting access; the response says whether the
-/// person is also an admin, since an admin corrects everyone's hours and
+/// Logging hours requires `TIMER_SKRIV_EGNE`; the answer says whether the
+/// caller also holds `TIMER_SKRIV_ALLE` and may correct everyone's hours,
 /// not only their own.
 async fn require_write(
     state: &AppState,
@@ -30,7 +32,7 @@ async fn require_write(
 ) -> Result<bool, ApiError> {
     Ok(krev(state, person_id, company_id, Rett::TimerSkrivEgne)
         .await?
-        .er_admin())
+        .har(Rett::TimerSkrivAlle))
 }
 
 #[derive(Deserialize)]
@@ -121,11 +123,12 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
     Query(range): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
+    let tilgang = krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
     let entries = regnmed_db::list_time_entries(
         &state.pool,
         company_id,
         person.person_id,
+        !tilgang.har(Rett::TimerLesAlle),
         range.from,
         range.to,
     )
@@ -196,6 +199,12 @@ pub async fn unbilled(
             "timesats_ore": g.timesats_ore,
             "minutter": g.minutter,
             "entries": g.entry_ids.len(),
+            "personer": g.personer.iter().map(|p| json!({
+                "person_id": p.person_id,
+                "navn": p.navn,
+                "minutter": p.minutter,
+                "entry_ids": p.entry_ids,
+            })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })))
 }
@@ -205,6 +214,10 @@ pub struct BillRequest {
     party_no: String,
     prosjekt: Option<String>,
     through: Option<chrono::NaiveDate>,
+    /// A selection of the grunnlag (chosen people/entries in the
+    /// portal). Every id must be billable and unbilled — a stale
+    /// selection fails whole, never silently bills less.
+    entry_ids: Option<Vec<Uuid>>,
     vat_code: Option<String>,
     invoice_date: Option<chrono::NaiveDate>,
     due_date: Option<chrono::NaiveDate>,
@@ -216,7 +229,7 @@ pub async fn bill(
     Path(company_id): Path<Uuid>,
     Json(request): Json<BillRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_write(&state, person.person_id, company_id).await?;
+    krev(&state, person.person_id, company_id, Rett::TimerFakturer).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -232,6 +245,7 @@ pub async fn bill(
         &request.party_no,
         request.prosjekt.as_deref(),
         request.through,
+        request.entry_ids.as_deref(),
         request.vat_code.as_deref(),
         invoice_date,
         due_date,

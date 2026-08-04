@@ -7,7 +7,6 @@
   import Innboks from "./Innboks.svelte";
   import EpostInn from "./EpostInn.svelte";
   import BilagListe from "./BilagListe.svelte";
-  import DimRegister from "./DimRegister.svelte";
 
   let { companyId } = $props();
 
@@ -72,5 +71,4 @@
     />
   {/if}
   <BilagListe {companyId} vouchers={data.vouchers} />
-  <DimRegister {companyId} dims={data.dims} onDone={reload} />
 {/if}

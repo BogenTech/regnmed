@@ -11,7 +11,7 @@ path.
   discipline as øre. Displayed hours are presentation.
 - **Editable until locked or billed, then immutable — enforced in the
   database.** Entries are working data (edit/delete freely, own
-  entries; admins may correct anyone's) until either:
+  entries; `TIMER_SKRIV_ALLE` corrects anyone's) until either:
   - the **month lock** passes them: `timesheet_lock` is an insert-only
     history exactly like period_lock (newest row wins, reopening is an
     audited insert), and a trigger rejects insert/update/delete of
@@ -30,36 +30,63 @@ path.
 - Prosjekt references must be active dimensions (avsluttet rejects, as
   everywhere).
 
-## Web API (writes require bokforing; lock requires admin)
+## Web API (the rettigheter decide — docs/auth.md)
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /companies/{id}/timesheet?from=&to=` | entries in range + lock status |
-| `POST /companies/{id}/timesheet` | record (dato, minutter, beskrivelse, prosjekt?, fakturerbar?, timesats_ore?) |
-| `PUT/DELETE …/timesheet/{eid}` | own entries (admins: anyone's) |
-| `GET …/timesheet/summary?from=&to=` | per-prosjekt totals + unbilled value |
-| `GET …/timesheet/unbilled` | fakturagrunnlaget, grouped |
-| `POST …/timesheet/invoice` | bill (party_no; optional prosjekt/through/vat_code/dates) |
-| `GET/PUT …/timesheet/lock` | månedslås (insert-only history) |
+| Endpoint | Purpose | Rettighet |
+| --- | --- | --- |
+| `GET /companies/{id}/timesheet?from=&to=` | entries in range + lock status | `TIMER_LES_EGNE` — own rows only unless `TIMER_LES_ALLE` |
+| `POST /companies/{id}/timesheet` | record (dato, minutter, beskrivelse, prosjekt?, fakturerbar?, timesats_ore?) | `TIMER_SKRIV_EGNE` |
+| `PUT/DELETE …/timesheet/{eid}` | correct/remove an entry | `TIMER_SKRIV_EGNE` (own) / `TIMER_SKRIV_ALLE` (anyone's) |
+| `GET …/timesheet/summary?from=&to=` | per-prosjekt totals + unbilled value | `TIMER_RAPPORT_LES` |
+| `GET …/timesheet/unbilled` | fakturagrunnlaget, grouped, w/ per-person breakdown | `TIMER_RAPPORT_LES` |
+| `POST …/timesheet/invoice` | bill (party_no; optional prosjekt/through/entry_ids/vat_code/dates) | `TIMER_FAKTURER` |
+| `GET/PUT …/timesheet/lock` | månedslås (insert-only history) | `TIMER_LES_EGNE` / `TIMER_LAAS` |
+
+An ansatt therefore sees **only their own hours**; `TIMER_LES_ALLE`
+(bokforing, revisor, admin — hours are billing evidence, the audit
+reads everyone's like lønn) unlocks the whole team. The `_ALLE` →
+`_EGNE` implication holds for company-defined roles too — it is a
+property of the rettighet, not of the role kind.
 
 Unbilled groups carry the project's **kunde** when the dimension is
 linked (#80, docs/dimensjoner.md) — a *suggested* recipient, never
 automation: billing still takes an explicit `party_no` from the caller.
+Each group also names **whose** hours it holds (per-person minutter +
+entry ids), and `entry_ids` on the invoice call bills exactly that
+selection: every chosen id must still be billable and unbilled (a stale
+selection fails whole, never silently bills less), and the entries are
+marked fakturert in the invoice transaction itself — **selection and
+lock are one step**, there is never a chosen-but-editable window. For
+approval AHEAD of billing, the månedslås is the tool: lock the month,
+then bill (billing locked hours is the one allowed change).
 
-Portal: the Timer section — min uke with week navigation and quick
-registration, per-prosjekt totals, ufakturerte timer with "Lag
-faktura". Both project-shaped cards link to the dimension registry
-under Bilag, and with an empty registry the project picker says so
-rather than disappearing (docs/dimensjoner.md).
-Customer-linked projects get one suggestion button each
-(«Fakturer P1 → Kunden AS», billing exactly that prosjekt to exactly
-that customer); the generic path remains for the rest.
+Portal: the Timer section opens with **ukegridet** — rows are
+prosjekter, columns are the days, a cell is that day's hours. Cells
+save themselves on blur through the ordinary entry endpoints (flexible
+input: 7,5 / 7.5 / 7:30), Enter and arrow keys move like a
+spreadsheet, rows pre-populate from last week's projects and «Kopier
+forrige uke» fills an empty week; locked days render disabled, billed
+cells show their faktura. Beskrivelse/sats per line live in the detail
+panel under the grid (focused cell); on small screens the grid
+collapses to a one-day view with day chips. Below: per-prosjekt totals
+and the ufakturerte card with per-person lines, checkboxes and
+«Fakturer valgte» (plus the #80 suggestion buttons and the everything
+path). Project-shaped cards link to the dimension registry, and with
+an empty registry the project picker says so rather than disappearing
+(docs/dimensjoner.md).
 
 ## Deliberately not (yet)
 
 - Bemanningsplanlegging and attestering-flyt — the lock covers the
   integrity need first (the issue's own scoping).
-- Default timesats per prosjekt/kunde — sats is entered per entry in v1.
+- Default timesats per prosjekt/kunde — sats is entered per entry in v1
+  (the grid softens this: new cells inherit fakturerbar/sats from the
+  row's newest line).
+- **Per-project access** (a "prosjektleder" who may only see/bill ONE
+  project's hours): rights are company-scoped; a custom role holding
+  `TIMER_LES_ALLE` + `TIMER_FAKTURER` covers the person, not the
+  project boundary. If a real need arrives it is a new scoping on the
+  rettighet model, not a bundle tweak.
 
 ## Where it is tested
 
@@ -69,4 +96,12 @@ that customer); the generic path remains for the rest.
   lock rejecting changes at BOTH the API and the trigger layer, billing
   locked hours into an invoice whose revenue entry carries the prosjekt
   dimension (chain verifies), fakturerte timer immutable and never
-  rebilled, invoice link visible in the week view.
+  rebilled, invoice link visible in the week view. The rights test
+  (`timer_rights_mean_what_they_say`, seen failing before the guards
+  landed) pins visibility (egne vs `TIMER_LES_ALLE`), correction via a
+  custom role holding `TIMER_SKRIV_ALLE`, and `TIMER_FAKTURER` on
+  billing. Selective billing
+  (`a_selection_of_the_grunnlag_bills_and_locks_exactly_itself`) pins
+  the per-person grunnlag, billing one person's hours while the rest
+  stay unbilled, the DB lock on the selection, and that a stale
+  selection fails whole.

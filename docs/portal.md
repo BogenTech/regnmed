@@ -130,12 +130,15 @@ i `App.svelte` og navngitt i `lib/meny.js`:
 Oversikt (stats, nøkkeltall, forankring, abonnement, firmaopplysninger,
 migrering av tomt selskap) · Faktura (ny faktura, liste m/ PDF/EHF/send,
 kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
-(register, varelager, telling) · Timer · Lønn · Utlegg · Anlegg ·
+(register, varelager, telling) · Prosjekter (register m/ kundekobling og
+navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
+autolagring per celle, kopier forrige uke, fakturagrunnlag m/
+personutvalg — docs/timer.md) · Lønn · Utlegg · Anlegg ·
 Aksjonærer · Reskontro (parter, åpne poster, CSV-import) · Mva
 (spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
 resultat, balanse, budsjett/avvik, konto- og bokføringsspesifikasjon,
 revisjon) · Bank (kontoutskrift, avstemming, betalingsliste) · Bilag
-(attestering, innboks, e-post-inn, vedlegg, dimensjoner) · Periode ·
+(attestering, innboks, e-post-inn, vedlegg) · Periode ·
 Oppdrag (tilgang, roller, integrasjoner) — pluss byråvisningen på
 `#/byra/{id}`.
 

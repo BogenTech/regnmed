@@ -12,6 +12,7 @@
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
   import Faktura from "./sections/faktura/Faktura.svelte";
   import Produkter from "./sections/produkter/Produkter.svelte";
+  import Prosjekter from "./sections/prosjekter/Prosjekter.svelte";
   import Timer from "./sections/timer/Timer.svelte";
   import Lonn from "./sections/lonn/Lonn.svelte";
   import Utlegg from "./sections/utlegg/Utlegg.svelte";
@@ -34,6 +35,7 @@
     oversikt: Oversikt,
     faktura: Faktura,
     produkter: Produkter,
+    prosjekter: Prosjekter,
     timer: Timer,
     lonn: Lonn,
     utlegg: Utlegg,

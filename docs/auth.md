@@ -47,7 +47,11 @@ person ──── company_member ───────────────
   `regnskap`-oppdrag gir rollen `bokforing`; et `revisjon`-oppdrag gir
   `revisor`.
 - `/me` løser token → person → alle selskapene personen kan handle for,
-  hver med rollen og veien den kom gjennom.
+  hver med rollen, veien den kom gjennom og de OPPLØSTE rettighetene
+  (`rettigheter`, sluggene fra vokabularet under, implikasjoner
+  inkludert). Rettighetslisten er BARE visning: portalen slutter å tilby
+  knapper som ville fått 403, mens vakten på serveren fortsatt avgjør
+  hvert kall.
 - Dette speiler Altinns delegeringsmodell (docs/gov.md), slik at
   offentlig delegering og regnmeds oppdrag kan holdes på linje.
 
@@ -246,7 +250,7 @@ sitert i en revisjon, og ingen leser koden for å kontrollere den.
 | `ANLEGG_SKRIV` | Registrere, avskrive og avhende anleggsmidler | — | — | — | ✅ | ✅ |
 | **Timer** | | | | | | |
 | `TIMER_LES_EGNE` | Se sine egne timer | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `TIMER_LES_ALLE` | Se alles timer | — | — | — | — | ✅ |
+| `TIMER_LES_ALLE` | Se alles timer | — | — | ✅ | ✅ | ✅ |
 | `TIMER_RAPPORT_LES` | Se timeoversikt per prosjekt og ufakturert | — | ✅ | ✅ | ✅ | ✅ |
 | `TIMER_SKRIV_EGNE` | Føre sine egne timer | ✅ | — | — | ✅ | ✅ |
 | `TIMER_SKRIV_ALLE` | Rette alles timer | — | — | — | — | ✅ |
