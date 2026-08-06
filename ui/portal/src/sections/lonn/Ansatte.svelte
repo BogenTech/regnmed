@@ -200,7 +200,7 @@
       </table>
     </div>
     {#if kobling}
-      <div class="card card-border card-sm mb-4 max-w-lg">
+      <div class="card border border-base-300 card-sm mb-4 max-w-lg">
         <div class="card-body">
           <h4 class="font-semibold text-sm mb-2">Koble {kobling.ansatt.navn} til portalbruker</h4>
           <div class="flex flex-wrap gap-2 items-end">

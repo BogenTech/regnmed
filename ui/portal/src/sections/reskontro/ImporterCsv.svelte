@@ -114,7 +114,7 @@
           poster erstatter samlelinjen. Utelat kontoen fra åpningsbalansen først.
         </div>
       {:else}
-        <div class="card card-border card-sm">
+        <div class="card border border-base-300 card-sm">
           <div class="card-body">
             <p class="text-sm font-semibold mb-1">
               {preview.p.antall} åpne poster, sum {kr(preview.p.sum_ore)} på konto {preview.p.konto}

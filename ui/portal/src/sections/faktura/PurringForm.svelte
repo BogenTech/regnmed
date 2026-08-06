@@ -63,7 +63,7 @@
   }
 </script>
 
-<div class="card card-border card-sm mt-3">
+<div class="card border border-base-300 card-sm mt-3">
   <div class="card-body">
     {#if history?.length}
       <p class="text-sm font-semibold mb-1">Purrehistorikk</p>

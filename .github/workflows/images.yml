@@ -45,7 +45,12 @@ jobs:
       contents: write
       packages: write
     steps:
+      # Full history: the version baked into main builds is
+      # `git describe --tags` ("v0.2.5-2-g40e9a7a" = 2 commits after
+      # v0.2.5), which needs the tags a shallow clone lacks.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install musl toolchain
         run: |
@@ -67,11 +72,12 @@ jobs:
         run: |
           # Bake the build identity into the binary (compile-time
           # option_env!): the release tag when there is one, otherwise
-          # the immutable sha- tag the overlays pin. Shown in the
-          # portal's user menu via /portal-config.
+          # `git describe` — "v0.2.5-2-g40e9a7a" reads as "2 commits
+          # after v0.2.5", so the test environment's user menu names its
+          # place relative to the last release instead of a bare sha.
           case "$GITHUB_REF" in
             refs/tags/v*) export REGNMED_VERSION="${GITHUB_REF#refs/tags/}" ;;
-            *) export REGNMED_VERSION="sha-$(git rev-parse --short HEAD)" ;;
+            *) export REGNMED_VERSION="$(git describe --tags --always)" ;;
           esac
           echo "REGNMED_VERSION=$REGNMED_VERSION"
           cargo build --release --locked \

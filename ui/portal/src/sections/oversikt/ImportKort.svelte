@@ -110,7 +110,7 @@
   </p>
   <input type="file" class="file-input" accept=".xml" onchange={fileChosen} />
   {#if analysis}
-    <div class="card card-border card-sm mt-3">
+    <div class="card border border-base-300 card-sm mt-3">
       <div class="card-body">
         <p class="text-sm font-semibold mb-1">Kontoplanen må mappes til NS 4102</p>
         <p class="text-xs opacity-70 mb-2">

@@ -47,7 +47,7 @@
   {/if}
 
   {#if me.plattform}
-    <a href="#/plattform" class="card card-border bg-base-100 hover:border-primary mb-4 block">
+    <a href="#/plattform" class="card border border-base-300 bg-base-100 hover:border-primary mb-4 block">
       <div class="card-body">
         <h2 class="card-title">
           Plattform <span class="badge badge-warning">{me.plattform.rolle}</span>
@@ -69,7 +69,7 @@
       {#each me.companies as c (c.company_id)}
         <a
           href={"#/c/" + c.company_id + "/oversikt"}
-          class="card card-border bg-base-100 transition-colors hover:border-primary"
+          class="card border border-base-300 bg-base-100 transition-colors hover:border-primary"
         >
           <div class="card-body">
             <h2 class="card-title">{c.name}</h2>
@@ -85,7 +85,7 @@
       <h2 class="text-lg mt-8 mb-4">Mine byråer</h2>
       <div class="grid gap-4 sm:grid-cols-2">
         {#each firms as f (f.firm_id)}
-          <a href={"#/byra/" + f.firm_id} class="card card-border bg-base-100 hover:border-primary">
+          <a href={"#/byra/" + f.firm_id} class="card border border-base-300 bg-base-100 hover:border-primary">
             <div class="card-body">
               <h2 class="card-title">
                 {f.name}
@@ -100,7 +100,7 @@
       </div>
     {/if}
 
-    <div class="collapse collapse-arrow bg-base-100 border border-base-200 mt-8">
+    <div class="collapse collapse-arrow bg-base-100 border border-base-300 mt-8">
       <input type="checkbox" />
       <div class="collapse-title font-semibold">Registrer nytt selskap eller byrå</div>
       <div class="collapse-content">

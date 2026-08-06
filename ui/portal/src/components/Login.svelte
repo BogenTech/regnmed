@@ -4,7 +4,7 @@
 </script>
 
 <div class="hero min-h-screen">
-  <div class="hero-content card card-border bg-base-100 w-full max-w-sm">
+  <div class="hero-content card border border-base-300 bg-base-100 w-full max-w-sm">
     <div class="card-body items-center">
       <h1 class="card-title text-2xl">regnmed</h1>
       <p class="opacity-70 text-sm mb-2">Regnskap du kan etterprøve.</p>

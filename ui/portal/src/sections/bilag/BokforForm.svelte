@@ -48,7 +48,7 @@
   }
 </script>
 
-<div class="card card-border card-sm mt-3">
+<div class="card border border-base-300 card-sm mt-3">
   <div class="card-body">
     {#if forslag}
       <div class="alert alert-info text-sm py-2 mb-2">
