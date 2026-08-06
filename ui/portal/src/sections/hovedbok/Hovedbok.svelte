@@ -88,6 +88,7 @@
       description = "";
       lines = [tomLinje(), tomLinje()];
       reload();
+      lastPosteringer();
     } catch (error) {
       toast(error.message, false);
     }
@@ -164,8 +165,31 @@
     }
   }
 
-  // ---- Drill-down (extra = account number) ----
+  // ---- Posteringene — the actual hovedbok. Every bilag with its
+  // lines (bokføringsspesifikasjon, chain order), newest first for
+  // daily reading. The kontoplan below is the index; this is the book.
   let year = $state(new Date().getFullYear());
+  let posteringer = $state(null);
+
+  async function lastPosteringer() {
+    posteringer = null;
+    try {
+      posteringer = await api(
+        "/companies/" + companyId + "/reports/bokforingsspesifikasjon?from=" + year +
+          "-01-01&to=" + year + "-12-31",
+      );
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  $effect(() => {
+    if (extra) return;
+    void year;
+    lastPosteringer();
+  });
+
+  // ---- Drill-down (extra = account number) ----
   let drill = $state(null);
   $effect(() => {
     if (!extra) {
@@ -261,6 +285,45 @@
       </span>
       <button class="btn btn-sm btn-primary" disabled={sum !== 0} onclick={bokfor}>Bokfør</button>
     </div>
+  </Card>
+
+  <Card title="Posteringer">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="join">
+        <button class="btn btn-xs join-item" onclick={() => (year -= 1)}>«</button>
+        <span class="btn btn-xs join-item pointer-events-none">{year}</span>
+        <button class="btn btn-xs join-item" onclick={() => (year += 1)}>»</button>
+      </div>
+      <span class="text-sm opacity-70">Alle bilag med linjene sine — nyeste øverst.</span>
+    </div>
+    {#if !posteringer}
+      <span class="loading loading-spinner loading-sm"></span>
+    {:else if !posteringer.vouchers.length}
+      <p class="opacity-70 text-sm">Ingen bilag i {year} ennå — det første kan føres over.</p>
+    {:else}
+      {#each [...posteringer.vouchers].reverse() as v (v.bilag)}
+        <div class="mb-3">
+          <span class="font-semibold">{v.bilag}</span>
+          <span class="opacity-70 text-sm">{v.date} — {v.description}</span>
+          <table class="table table-sm">
+            <tbody>
+              {#each v.lines as l}
+                <tr>
+                  <td>
+                    <a class="link font-mono" href={"#/c/" + companyId + "/hovedbok/" + l.account}>
+                      {l.account}
+                    </a>
+                    {l.account_name}
+                  </td>
+                  <td>{l.vat_code ? "mva " + l.vat_code : ""}</td>
+                  <td class="text-right">{kr(l.amount_ore)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/each}
+    {/if}
   </Card>
 
   <Card title="Kontoplan">

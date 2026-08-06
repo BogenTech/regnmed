@@ -42,11 +42,15 @@ frie veien, med de samme vaktene.
   internkontrollen. Fail-closed, testfestet.
 - Portalen: Hovedbok-seksjonen har Nytt bilag-skjemaet (kontovelger
   med søk i egne kontoer + katalogen, dimensjoner, differanse-sperre
-  på Bokfør-knappen), kontoplankortet (søk, legg til fra katalog,
-  egendefinert konto, navn/deaktiver) og drill-down per konto
-  (`/reports/kontospesifikasjon?account=` — filteret fantes på
-  serveren fra #4, seksjonen tok det i bruk). Et bilag MED dokument
-  hører fortsatt hjemme i innboksen; skjemaet sier det.
+  på Bokfør-knappen), **Posteringer-kortet — selve boken**: alle
+  bilag med linjene sine (bokføringsspesifikasjonen, nyeste øverst,
+  årsvelger, kontonummer klikkbare) — kontoplanen er indeksen, ikke
+  hovedinnholdet (brukerkorreks 2026-08-06), kontoplankortet (søk,
+  legg til fra katalog, egendefinert konto, navn/deaktiver) og
+  drill-down per konto (`/reports/kontospesifikasjon?account=` —
+  filteret fantes på serveren fra #4, seksjonen tok det i bruk). Et
+  bilag MED dokument hører fortsatt hjemme i innboksen; skjemaet sier
+  det.
 
 ## Verifisert mot virkeligheten (2026-08-06)
 
