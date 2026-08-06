@@ -163,9 +163,11 @@ pub async fn post_manual_voucher(
             .collect(),
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    // {e:#} keeps the whole error chain — "bokføringen feilet" alone
+    // hides the actual refusal (locked period, unknown account, …).
     let posted = regnmed_db::post_manual_voucher(&state.pool, company_id, &draft, created_by)
         .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({
         "voucher_id": posted.id,
         "voucher": format!("{}-{}", posted.fiscal_year, posted.voucher_number),
