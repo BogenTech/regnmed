@@ -401,6 +401,51 @@ fn crate_trunc(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
+#[derive(Debug)]
+pub struct SaftImportLogRow {
+    pub sha256_hex: String,
+    pub accounts: i32,
+    pub vouchers: i32,
+    pub opening_posted: bool,
+    pub created_by: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// The files a migrated ledger was built from, oldest first — the
+/// audit trail behind the multi-year import.
+pub async fn saft_import_log(pool: &PgPool, company_id: Uuid) -> Result<Vec<SaftImportLogRow>> {
+    let rows = sqlx::query_as::<
+        _,
+        (
+            Vec<u8>,
+            i32,
+            i32,
+            bool,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
+        "select content_sha256, accounts, vouchers, opening_posted, created_by, created_at
+         from saft_import_log where company_id = $1 order by created_at",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(sha, accounts, vouchers, opening_posted, created_by, created_at)| SaftImportLogRow {
+                sha256_hex: sha.iter().map(|b| format!("{b:02x}")).collect(),
+                accounts,
+                vouchers,
+                opening_posted,
+                created_by,
+                created_at,
+            },
+        )
+        .collect())
+}
+
 /// A follow-up file must continue exactly where the imported history
 /// stopped, konto for konto:
 ///

@@ -70,9 +70,11 @@ and the same content is refused with a plain sentence. The unique
 constraint on the log is the second layer: even without the explicit
 check, inserting the duplicate row would roll the whole import back.
 The log doubles as the audit trail of which files a migrated ledger was
-built from. A *re-export* of the same period (different bytes, same
-zero-net content) is not caught — that is documented honesty, not a
-promise.
+built from: `GET /companies/{id}/import/saft/log` serves it to anyone
+who can read the ledger (where the history came from is part of the
+history), and the portal's import card lists the files. A *re-export*
+of the same period (different bytes, same zero-net content) is not
+caught — that is documented honesty, not a promise.
 
 Two findings from the real Conta files that shaped these rules:
 

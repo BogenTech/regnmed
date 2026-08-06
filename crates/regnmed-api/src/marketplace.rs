@@ -222,6 +222,30 @@ pub async fn import_saft(
     })))
 }
 
+/// The files a migrated ledger was built from — readable by anyone who
+/// can read the ledger itself: where the history came from is part of
+/// the history.
+pub async fn saft_import_log(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    let rows = regnmed_db::saft_import_log(&state.pool, company_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({
+        "imports": rows.iter().map(|r| json!({
+            "sha256": r.sha256_hex,
+            "accounts": r.accounts,
+            "vouchers": r.vouchers,
+            "opening_posted": r.opening_posted,
+            "created_by": r.created_by,
+            "created_at": r.created_at.to_rfc3339(),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
 /// Kontoplan wizard, step 1: parse the file and suggest a mapping to
 /// NS 4102 for every account. Nothing is written; the administrator
 /// reviews, adjusts, and re-posts to the import endpoint with the

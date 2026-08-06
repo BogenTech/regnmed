@@ -524,6 +524,23 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
         "identical content is refused by the log, not by luck: {body}"
     );
 
+    // The import log is the audit trail: one row per file, oldest
+    // first, readable by anyone who can read the ledger.
+    let (status, log) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/import/saft/log"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "log: {log}");
+    let imports = log["imports"].as_array().unwrap();
+    assert_eq!(imports.len(), 4, "2025, 2026 a+b, zero-net: {log}");
+    assert_eq!(imports[0]["opening_posted"], true, "first file: {log}");
+    assert_eq!(imports[3]["vouchers"], 2, "zero-net file: {log}");
+    assert_eq!(imports[0]["sha256"].as_str().unwrap().len(), 64);
+
     // A continuation file with a bank opening 850 kr off: refused, and
     // the refusal names the account and the exact difference.
     let file_wrong = year_saft(

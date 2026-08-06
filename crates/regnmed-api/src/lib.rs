@@ -126,6 +126,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(marketplace::analyze_saft),
         )
         .route(
+            "/companies/{company_id}/import/saft/log",
+            axum::routing::get(marketplace::saft_import_log),
+        )
+        .route(
             "/companies/{company_id}/import/contacts",
             axum::routing::post(migrering::import_contacts),
         )

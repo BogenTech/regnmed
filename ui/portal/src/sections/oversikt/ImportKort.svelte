@@ -10,6 +10,17 @@
 
   let { companyId, onDone, harHistorikk = false } = $props();
 
+  // The audit trail behind the multi-year import: which files this
+  // ledger was built from (saft_import_log, docs/migration.md).
+  let importer = $state([]);
+  $effect(() => {
+    importer = [];
+    if (!harHistorikk) return;
+    api("/companies/" + companyId + "/import/saft/log")
+      .then((svar) => (importer = svar.imports))
+      .catch(() => {});
+  });
+
   let xml = $state(null);
   let analysis = $state(null);
   let mapping = $state({}); // account_id -> NS 4102-nummer (bind per rad)
@@ -118,6 +129,24 @@
     {/if}
   </p>
   <input type="file" class="file-input" accept=".xml" onchange={fileChosen} />
+  {#if importer.length}
+    <table class="table table-xs mt-3">
+      <thead>
+        <tr><th>Importert</th><th>Bilag</th><th>Kontoer</th><th>Av</th><th>Innhold (SHA-256)</th></tr>
+      </thead>
+      <tbody>
+        {#each importer as im}
+          <tr>
+            <td>{im.created_at.slice(0, 10)}</td>
+            <td>{im.vouchers}{im.opening_posted ? " + åpningsbalanse" : ""}</td>
+            <td>{im.accounts}</td>
+            <td>{im.created_by}</td>
+            <td class="font-mono text-xs opacity-60">{im.sha256.slice(0, 12)}…</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
   {#if analysis}
     <div class="card border border-base-300 card-sm mt-3">
       <div class="card-body">
