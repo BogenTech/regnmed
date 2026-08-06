@@ -115,6 +115,9 @@ pub fn render_text(input: &RevisjonInput) -> String {
     line("   /anchors-strømmen og egne kopier av røttene.");
     line("3. RFC 3161-vitner verifiseres frakoblet med openssl ts");
     line("   (docs/anchoring.md).");
+    line("4. Importert historikk: hash kildesystemets SAF-T-filer");
+    line("   (shasum -a 256 <fil>) og sammenlign med importloggens");
+    line("   hasher i kontrollen over.");
     out
 }
 

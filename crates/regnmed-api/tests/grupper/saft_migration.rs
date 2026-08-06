@@ -541,6 +541,32 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
     assert_eq!(imports[3]["vouchers"], 2, "zero-net file: {log}");
     assert_eq!(imports[0]["sha256"].as_str().unwrap().len(), 64);
 
+    // The revisjonsrapport carries the trail as kontroll «Importert
+    // historikk» — full hashes, so the revisor can compare the source
+    // system's files byte for byte.
+    let (status, revisjon) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reports/revisjon"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "revisjon: {revisjon}");
+    let importert = revisjon["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Importert historikk")
+        .expect("kontrollen finnes");
+    assert_eq!(importert["ok"], true, "{importert}");
+    let detalj = importert["detalj"].as_str().unwrap();
+    assert!(detalj.contains("4 fil(er)"), "{detalj}");
+    assert!(
+        detalj.contains(imports[0]["sha256"].as_str().unwrap()),
+        "full sha in the report: {detalj}"
+    );
+
     // A continuation file with a bank opening 850 kr off: refused, and
     // the refusal names the account and the exact difference.
     let file_wrong = year_saft(

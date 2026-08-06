@@ -31,6 +31,7 @@ it is never an error that hides the document.
 | Balansekontroll | all postings sum to exactly zero øre |
 | Periodelåsing | current lock and the size of the insert-only lock history (informational) |
 | Regelverkssatser | no monitored sats domain in the satsregister is older than its known change cadence ([regelverk.md](regelverk.md)) — outdated satser would silently produce unlawful gebyrer/renter |
+| Importert historikk | which external SAF-T files the ledger was built from ([migration.md](migration.md)): full content hashes from the insert-only import log, so the source system's export can be compared byte for byte; history imported before the log existed is stated, never hidden (informational) |
 
 The report also lists every external anchor covering the company
 (timestamp, sequence, root hash, witnesses) and the chain head at
@@ -41,7 +42,8 @@ generation time.
 for the revisor's own archive, ending with the independent
 re-verification procedure: re-walk the chain from the documented
 format, compare roots against the public `/anchors` feed and one's own
-copies, verify RFC 3161 tokens offline with `openssl ts`.
+copies, verify RFC 3161 tokens offline with `openssl ts`, and hash the
+source system's SAF-T files against the import log.
 
 Any access level may generate the report — verification never mutates —
 and no access yields 404, as everywhere.
@@ -52,10 +54,14 @@ and no access yields 404, as everywhere.
   verdict flip on a failed kontroll, "no anchors" stated not hidden.
 - `crates/regnmed-api/tests/grupper/revisjon.rs` (real Postgres, also in CI) —
   a revisor whose only path is a `revisjon` engagement generates the
-  report; all six kontroller pass on a healthy ledger (reskontro,
-  period lock and anchor present); a planted anchor mismatch flips
-  `alle_ok` and marks Ekstern forankring AVVIK; the text download
-  renders with the verdict; outsiders get 404.
+  report; every kontroll passes on a healthy ledger (reskontro,
+  period lock and anchor present; "ingen importert historikk" stated);
+  a planted anchor mismatch flips `alle_ok` and marks Ekstern
+  forankring AVVIK; the text download renders with the verdict;
+  outsiders get 404.
+- `crates/regnmed-api/tests/grupper/saft_migration.rs` — a ledger built
+  from four import files carries kontroll «Importert historikk» with
+  the full sha256 of each file in the report.
 
 ## Hva revisor ser av lønn
 

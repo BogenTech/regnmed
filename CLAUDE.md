@@ -1385,7 +1385,12 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    viste seg å ha NULL transaksjoner, bare åpningsbalanser — håndtert:
    reconciliert, ingenting bokført). Ærlig begrensning dokumentert:
    en RE-EKSPORT av samme periode (andre bytes, samme nullnett) fanges
-   ikke.
+   ikke. Loggen er LESBAR: `GET …/import/saft/log` (BILAG_LES — hvor
+   historikken kom fra er del av historikken), portalkortet lister
+   filene, og revisjonsrapporten fikk kontroll 8 «Importert historikk»
+   m/ FULLE hasher + nytt steg 4 i etterprøvingsprosedyren (hash
+   kildefilene, sammenlign) — historikk importert FØR loggen fantes
+   sies fra om, aldri skjult (informasjonskontroll, ikke AVVIK).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

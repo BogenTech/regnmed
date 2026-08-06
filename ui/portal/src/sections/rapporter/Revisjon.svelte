@@ -1,5 +1,5 @@
 <script>
-  // Revisorens verifikasjonsrapport (#24): seks kontroller kjøres og
+  // Revisorens verifikasjonsrapport (#24): kontrollene kjøres og
   // AVVIK VISES SOM LINJER — en feilet kontroll skal aldri skjules
   // bak en feilmelding eller utelates fra rapporten.
   import { api } from "../../lib/api.js";

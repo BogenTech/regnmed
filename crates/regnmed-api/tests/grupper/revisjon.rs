@@ -143,7 +143,7 @@ async fn revisor_generates_the_verification_report() {
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
     let kontroller = report["kontroller"].as_array().unwrap();
-    assert_eq!(kontroller.len(), 7);
+    assert_eq!(kontroller.len(), 8);
     for kontroll in kontroller {
         assert_eq!(kontroll["ok"], true, "{kontroll}");
     }
@@ -154,6 +154,15 @@ async fn revisor_generates_the_verification_report() {
             .iter()
             .any(|k| k["navn"] == "Reskontro mot hovedbok"
                 && k["detalj"].as_str().unwrap().contains("1 reskontrokonto")),
+        "{report}"
+    );
+    // A ledger without imports says so — the kontroll never hides.
+    assert!(
+        kontroller.iter().any(|k| k["navn"] == "Importert historikk"
+            && k["detalj"]
+                .as_str()
+                .unwrap()
+                .contains("ingen importert historikk")),
         "{report}"
     );
     assert!(!report["ankere"].as_array().unwrap().is_empty());

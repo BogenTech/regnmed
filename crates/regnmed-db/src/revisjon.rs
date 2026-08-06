@@ -191,6 +191,49 @@ pub async fn build_revisjon_report(
         },
     });
 
+    // 8. Importert historikk (informational): which external files the
+    // ledger was built from (docs/migration.md, saft_import_log). The
+    // full hashes are printed so the revisor can hash the source
+    // system's export (`shasum -a 256 <fil>`) and compare byte for byte
+    // with what was actually imported. History imported before the log
+    // existed (migration 0054) is stated, never hidden.
+    let imp_vouchers: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from voucher v join journal j on j.id = v.journal_id
+         where v.company_id = $1 and j.code = 'IMP'",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    let importlogg = crate::saft_import_log(pool, company_id).await?;
+    kontroller.push(Kontroll {
+        navn: "Importert historikk".into(),
+        ok: true,
+        detalj: if imp_vouchers == 0 {
+            "ingen importert historikk — hovedboken er ført i sin helhet i regnmed".into()
+        } else if importlogg.is_empty() {
+            format!(
+                "{imp_vouchers} bilag i importjournalen uten dokumenterte kildefiler \
+                 (importert før importloggen fantes)"
+            )
+        } else {
+            format!(
+                "{imp_vouchers} bilag i importjournalen fra {} fil(er): {}",
+                importlogg.len(),
+                importlogg
+                    .iter()
+                    .map(|r| format!(
+                        "sha256 {} ({} bilag, importert {} av {})",
+                        r.sha256_hex,
+                        r.vouchers,
+                        r.created_at.date_naive(),
+                        r.created_by
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        },
+    });
+
     let ankere = crate::company_anchors(pool, company_id)
         .await?
         .into_iter()
