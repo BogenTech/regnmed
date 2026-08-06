@@ -178,6 +178,12 @@
           class="tab gap-1.5 {fane === slug ? 'tab-active' : ''}"
           aria-selected={fane === slug}
           onclick={() => {
+            // rader FIRST: fanene har ulik datafasong (objekt vs liste),
+            // og malen re-rendres i det fane endres — med forrige fanes
+            // rader ville feil fane lest feil fasong og kastet, og et
+            // ukastet unntak i malen fryser hele konsollen (sett i prod
+            // 2026-08-06 som «knappene reagerer ikke»).
+            rader = null;
             fane = slug;
             sok = "";
             valgtSelskap = null;
@@ -214,30 +220,35 @@
       <span class="loading loading-spinner loading-lg"></span>
     {:else if fane === "oversikt"}
       <!-- Dashbordet: administrative tall + abonnementsfordelingen.
-           Rene aggregater fra /platform/overview — ingen hovedbok. -->
+           Rene aggregater fra /platform/overview — ingen hovedbok.
+           Defensivt mot feilfasong (feilet kall setter rader = []):
+           «–» og tom fordeling framfor et malunntak som fryser alt. -->
       <div class="stats shadow-sm bg-base-100 w-full mb-6 stats-vertical sm:stats-horizontal">
         {#each [["selskaper", "Selskaper", rader.selskaper], ["byraer", "Byråer", rader.byraer], ["brukere", "Brukere", rader.brukere], ["medlemmer", "Plattformbrukere", rader.plattformbrukere]] as [slug, tittel, verdi] (slug)}
           <button
             class="stat text-left cursor-pointer"
             onclick={() => {
-              if (FANER.some(([f]) => f === slug)) fane = slug;
+              if (FANER.some(([f]) => f === slug)) {
+                rader = null;
+                fane = slug;
+              }
             }}
           >
             <div class="stat-figure opacity-60"><Ikon navn={slug} /></div>
             <div class="stat-title">{tittel}</div>
-            <div class="stat-value text-2xl">{verdi}</div>
+            <div class="stat-value text-2xl">{verdi ?? "–"}</div>
           </button>
         {/each}
         <div class="stat">
           <div class="stat-title">Integrasjoner</div>
-          <div class="stat-value text-2xl">{rader.integrasjoner}</div>
+          <div class="stat-value text-2xl">{rader.integrasjoner ?? "–"}</div>
           <div class="stat-desc">maskintilganger</div>
         </div>
       </div>
 
       <Card title="Abonnementer">
         <div class="flex gap-2 flex-wrap">
-          {#each Object.entries(rader.abonnement) as [slug, antall] (slug)}
+          {#each Object.entries(rader.abonnement || {}) as [slug, antall] (slug)}
             <span class="badge {ABO_FARGE[slug] || 'badge-ghost'}">
               {ABO_TEKST[slug] || slug}: {antall}
             </span>
@@ -247,7 +258,13 @@
         </div>
         {#if systemadmin}
           <p class="text-sm mt-2">
-            <button class="link" onclick={() => (fane = "abonnementer")}>
+            <button
+              class="link"
+              onclick={() => {
+                rader = null;
+                fane = "abonnementer";
+              }}
+            >
               Se per selskap →
             </button>
           </p>

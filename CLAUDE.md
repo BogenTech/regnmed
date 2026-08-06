@@ -1271,6 +1271,18 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    FEILE; lærdom fra testen: dekning avsluttet samme dag den ble åpnet
    holder statusen aktiv til i morgen (eksklusiv valid_to) — asserter
    på raden, ikke statusen. Browser-verifisert hele veien.
+   PROD-FEIL funnet og fikset samme dag («knappene i konsollen
+   reagerer ikke, inkonsistent»): Plattform-fanene deler ÉN
+   `rader`-tilstand med ulik fasong (objekt for oversikt/innstillinger,
+   liste ellers), og malen re-rendres i det `fane` endres — FØR
+   `$effect` rekker å nullstille. Feil fane leste feil fasong
+   (`Object.entries(undefined)` etter et feilet kall som satte
+   `rader = []`), og et ukastet unntak i en Svelte-mal FRYSER
+   komponentens reaktivitet — deretter er alle klikk døde til reload.
+   Fiks: `rader = null` synkront i klikkhandleren før fanebyttet +
+   defensive `?? "–"`/`|| {}` i dashbord-malen. Regelen å huske: bytter
+   et klikk både visning og datatilstand, må tilstanden nullstilles i
+   HANDLEREN — effekter kjører etter render.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
