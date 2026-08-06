@@ -1220,6 +1220,31 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    timer». Browser-verifisert: prosjekt m/ sats → 6 t i grid uten
    sats sendt (7 200 kr fra registeret) → kombinert faktura 500 kr
    vare + timene = 9 625 kr brutto, grunnlaget tømt.
+67. ✅ Menyikoner + Administrasjon-konsollen + plattformdashbord
+   (docs/portal.md, docs/auth.md §8, brukerbeslutning 2026-08-06):
+   håndrullede 24×24 outline-SVG-ikoner per seksjon i
+   `ui/portal/src/lib/ikoner.js` — vendored som themes.css, INTET
+   ikonbibliotek/CDN; markup lagres én gang, den valgbare IKONSTILEN
+   (linje/kraftig/emoji/ingen) endrer bare gjengivelsen i
+   `Ikon.svelte`. Tilordning seksjon→ikon er fast (gjenkjenning);
+   stilen er brukerpreferanse etter temadoktrinen (localStorage
+   `regnmed-ikonstil`, aldri IdP/token), valgt i konsollen. NY seksjon
+   **Administrasjon** (`#/c/{id}/admin/{fane}`): dashbord m/
+   statusfliser + faner som GJENBRUKER kortene — Firmaopplysninger og
+   Abonnement (flyttet fra Oversikt), Brukere og roller, Oppdrag og
+   integrasjoner, Periode, Utseende; menyen krympet (Brukere/Oppdrag/
+   Periode ut av toppnivået, gamle adresser rutes til riktig fane via
+   FLYTTET_TIL_ADMIN, aktiv-markering følger med). Ingen ny
+   autorisasjonsvei — flis hvis endepunkt nektet sier «krever mer
+   tilgang». Plattformkonsollen (#/plattform) fikk dashbord:
+   `GET /platform/overview` (tellinger + abonnementsfordeling, begge
+   roller) og `GET /platform/subscriptions` (status per selskap —
+   systemadmin-territorium som kunderegistrene; regelen i core kjøres
+   over mengdevis hentede fakta, lagres aldri); begge gjennom samme
+   vakt/logg, guarden SETT FEILE (sabotert og gjenopprettet).
+   Vite-proxyen manglet /platform og /directory — lagt til. Browser-
+   verifisert: ikonstilbytte live, gamle bokmerker, dashbordene,
+   Abonnementer-tabellen, mobil 375px.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

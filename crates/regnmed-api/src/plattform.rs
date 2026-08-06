@@ -66,6 +66,8 @@ pub fn plattform_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/platform/members", get(list_members).post(grant_member))
         .route("/platform/members/{member_id}", delete(end_member))
+        .route("/platform/overview", get(overview))
+        .route("/platform/subscriptions", get(list_subscriptions))
         .route("/platform/companies", get(list_companies))
         .route("/platform/firms", get(list_firms))
         .route("/platform/users", get(list_users))
@@ -294,6 +296,68 @@ async fn list_customers(
                 "orgnr": k.company_orgnr,
             },
         })).collect::<Vec<_>>(),
+    })))
+}
+
+/// Dashboard counts + the abonnement status distribution. Open to both
+/// roles: the same aggregates support already sees as lists, nothing
+/// per-company beyond what `/platform/companies` shows.
+async fn overview(
+    State(state): State<AppState>,
+    Extension(_ctx): Extension<PlattformKontekst>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let tall = regnmed_db::platform_overview(&state.pool).await?;
+    let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
+    let idag = chrono::Utc::now().date_naive();
+    let mut fordeling = std::collections::BTreeMap::new();
+    for a in &abo {
+        let status =
+            regnmed_core::abonnement::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+        *fordeling.entry(status.slug()).or_insert(0i64) += 1;
+    }
+    Ok(Json(json!({
+        "selskaper": tall.selskaper,
+        "byraer": tall.byraer,
+        "brukere": tall.brukere,
+        "integrasjoner": tall.integrasjoner,
+        "plattformbrukere": tall.plattformbrukere,
+        "abonnement": fordeling,
+    })))
+}
+
+/// Per-company abonnement status — regnmed's own billing relationship,
+/// systemadmin only (the customer-register precedent). The status rule
+/// runs here, in one place, over the facts the db fetched set-wise;
+/// nothing is stored and no company ledger is read.
+async fn list_subscriptions(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
+    let idag = chrono::Utc::now().date_naive();
+    Ok(Json(json!({
+        "abonnementer": abo.iter().map(|a| {
+            use regnmed_core::abonnement::Status;
+            let status =
+                regnmed_core::abonnement::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+            // The date that matters for THIS status — same shape as /me.
+            let dato = match status {
+                Status::Aktiv => a.valid_to,
+                Status::Prove { til } => Some(til),
+                Status::Frist { sperres } => Some(sperres),
+                Status::Sperret { siden } => Some(siden),
+            };
+            json!({
+                "company_id": a.company_id,
+                "orgnr": a.orgnr,
+                "name": a.name,
+                "opprettet": a.opprettet.to_string(),
+                "plan": a.plan,
+                "status": status.slug(),
+                "dato": dato.map(|d| d.to_string()),
+            })
+        }).collect::<Vec<_>>(),
     })))
 }
 

@@ -127,8 +127,8 @@ innenfor `PORTAL_DIST_BUDGET_KB` i `scripts/frugality.sh`.
 Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert
 i `App.svelte` og navngitt i `lib/meny.js`:
 
-Oversikt (stats, nøkkeltall, forankring, abonnement, firmaopplysninger,
-migrering av tomt selskap) · Faktura (ny faktura, liste m/ PDF/EHF/send,
+Oversikt (stats, nøkkeltall, forankring, migrering av tomt selskap,
+inviter-kort) · Faktura (ny faktura, liste m/ PDF/EHF/send,
 kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
 (register, varelager, telling) · Prosjekter (register m/ kundekobling og
 navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
@@ -138,9 +138,36 @@ Aksjonærer · Reskontro (parter, åpne poster, CSV-import) · Mva
 (spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
 resultat, balanse, budsjett/avvik, konto- og bokføringsspesifikasjon,
 revisjon) · Bank (kontoutskrift, avstemming, betalingsliste) · Bilag
-(attestering, innboks, e-post-inn, vedlegg) · Periode ·
-Oppdrag (tilgang, roller, integrasjoner) — pluss byråvisningen på
+(attestering, innboks, e-post-inn, vedlegg) ·
+**Administrasjon** (konsollen, se under) — pluss byråvisningen på
 `#/byra/{id}`.
+
+## Administrasjon-konsollen og ikonene (2026-08-06)
+
+**Administrasjon** (`#/c/{id}/admin/{fane}`) samler selskapets styring
+bak én menyoppføring: et dashbord med statusfliser (abonnement,
+medlemmer, åpne invitasjoner, oppdrag/integrasjoner, periodelås,
+firmaopplysninger) og faner som gjenbruker de eksisterende kortene —
+Firmaopplysninger og Abonnement (flyttet fra Oversikt), Brukere og
+roller, Oppdrag og integrasjoner, Periode, Utseende. Ingen ny
+autorisasjon: alle kall går til de samme vaktede endepunktene, og en
+flis hvis endepunkt nektet sier «krever mer tilgang» i stedet for å
+late som null. De gamle adressene `#/c/{id}/brukere|oppdrag|periode`
+består og rutes til riktig fane (`FLYTTET_TIL_ADMIN` i `lib/meny.js`).
+
+**Menyikonene** er håndrullede 24×24 outline-SVG-er i
+`src/lib/ikoner.js` — vendored som themes.css: intet ikonbibliotek,
+ingen CDN, ingenting hentes i kjøretid. Hvert ikon lagres ÉN gang som
+statisk markup; **ikonstilen** (linje / kraftig / emoji / ingen) endrer
+bare gjengivelsen i `components/Ikon.svelte` (strekbredde eller
+emoji-fallback). Tilordningen seksjon → ikon er fast med vilje —
+gjenkjenning dør om hver installasjon stokker om. Stilen velges under
+Administrasjon → Utseende og følger temadoktrinen: per bruker,
+localStorage (`regnmed-ikonstil`, `lib/prefs.svelte.js`), aldri gjennom
+IdP eller token. Plattformkonsollen (`#/plattform`) bruker samme ikoner
+på sine faner og fikk samtidig et dashbord (`/platform/overview`) og en
+Abonnementer-fane per selskap (`/platform/subscriptions`, systemadmin —
+docs/auth.md §8).
 
 Fellesdeler ligger i `src/lib/` (API-klient, auth, ruter, tema, toast,
 nedlasting, offline-kø) og `src/components/` (skall, kort, dimensjons-

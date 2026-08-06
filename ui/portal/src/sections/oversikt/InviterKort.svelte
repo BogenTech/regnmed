@@ -98,7 +98,7 @@
           stedet. Da følger tilgangen oppdraget: den finnes så lenge avtalen består, og kan
           avsluttes samme dag.
         </span>
-        <a class="btn btn-sm" href={"#/c/" + companyId + "/oppdrag"}>Finn byrå</a>
+        <a class="btn btn-sm" href={"#/c/" + companyId + "/admin/oppdrag"}>Finn byrå</a>
       </div>
     {:else}
       <p class="text-sm mb-3">
@@ -134,7 +134,7 @@
       </table>
       <p class="text-xs opacity-60 mt-1">
         Innløses automatisk når adressen logger inn. Full tilgangsstyring:
-        <a class="link" href={"#/c/" + companyId + "/oppdrag"}>Oppdrag → Tilgang</a>.
+        <a class="link" href={"#/c/" + companyId + "/admin/brukere"}>Administrasjon → Brukere</a>.
       </p>
     {/if}
   </Card>

@@ -69,6 +69,8 @@ endepunktene når noe selskaps hovedbok.
 | --- | --- |
 | `/platform/members` | GET POST |
 | `/platform/members/{member_id}` | DELETE |
+| `/platform/overview` | GET |
+| `/platform/subscriptions` | GET |
 | `/platform/companies` | GET |
 | `/platform/firms` | GET |
 | `/platform/users` | GET |

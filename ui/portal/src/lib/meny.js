@@ -8,8 +8,13 @@ export const SEKSJONER = [
   ["aksjonarer", "Aksjonærer"],
   ["reskontro", "Reskontro"],
   ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
-  ["periode", "Periode"], ["brukere", "Brukere"], ["oppdrag", "Oppdrag"],
+  ["admin", "Administrasjon"],
 ];
+
+// Brukere, Oppdrag og Periode gikk inn i Administrasjon-konsollen som
+// faner. Adressene består (gamle bokmerker og lenker virker — App.svelte
+// ruter dem fortsatt), de står bare ikke i menyen lenger.
+export const FLYTTET_TIL_ADMIN = { brukere: "brukere", oppdrag: "oppdrag", periode: "periode" };
 
 // Det en ansatt får se (#54). Portalen SKJULER bare — serveren nekter,
 // og det er der sannheten ligger. Menyen finnes for at man ikke skal

@@ -4,7 +4,8 @@
   import ThemeControls from "./ThemeControls.svelte";
   import AbonnementBanner from "./AbonnementBanner.svelte";
 
-  import { SEKSJONER, ANSATT_MENY } from "../lib/meny.js";
+  import { SEKSJONER, ANSATT_MENY, FLYTTET_TIL_ADMIN } from "../lib/meny.js";
+  import Ikon from "./Ikon.svelte";
 
   let { companyId, section, children } = $props();
 
@@ -14,6 +15,9 @@
       ? SEKSJONER.filter(([slug]) => ANSATT_MENY.includes(slug))
       : SEKSJONER,
   );
+  // Old bookmarks to the sections that moved into Administrasjon should
+  // still light up the Administrasjon entry.
+  let aktiv = $derived(FLYTTET_TIL_ADMIN[section] ? "admin" : section);
 </script>
 
 <div class="navbar bg-base-100 shadow-sm">
@@ -30,11 +34,15 @@
      spise halve skjermen; fra sm og opp er den sidestilt som før. -->
 <div class="flex flex-col sm:flex-row">
   <ul
-    class="menu menu-horizontal sm:menu-vertical bg-base-100 w-full sm:w-44 sm:min-h-full flex-nowrap overflow-x-auto sm:overflow-visible"
+    class="menu menu-horizontal sm:menu-vertical bg-base-100 w-full sm:w-48 sm:min-h-full flex-nowrap overflow-x-auto sm:overflow-visible"
   >
     {#each items as [slug, label]}
       <li>
-        <a href={"#/c/" + companyId + "/" + slug} class={section === slug ? "active" : ""}>
+        <a
+          href={"#/c/" + companyId + "/" + slug}
+          class="flex items-center gap-2 {aktiv === slug ? 'active' : ''}"
+        >
+          <Ikon navn={slug} />
           {label}
         </a>
       </li>

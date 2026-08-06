@@ -606,3 +606,90 @@ pub async fn platform_assign_firm(
     tx.commit().await?;
     Ok(())
 }
+
+/// Counts for the platform console's dashboard. Cheap aggregates over
+/// administrative master data — nothing here reads any ledger.
+#[derive(Debug, Clone)]
+pub struct PlattformOversikt {
+    pub selskaper: i64,
+    pub byraer: i64,
+    pub brukere: i64,
+    pub integrasjoner: i64,
+    pub plattformbrukere: i64,
+}
+
+pub async fn platform_overview(pool: &PgPool) -> Result<PlattformOversikt> {
+    let row = sqlx::query(
+        "select
+            (select count(*) from company) as selskaper,
+            (select count(*) from firm) as byraer,
+            (select count(*) from person where kind = 'menneske') as brukere,
+            (select count(*) from person where kind = 'integrasjon') as integrasjoner,
+            (select count(*) from platform_member
+              where valid_from <= current_date and current_date < valid_to)
+                as plattformbrukere",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(PlattformOversikt {
+        selskaper: row.get("selskaper"),
+        byraer: row.get("byraer"),
+        brukere: row.get("brukere"),
+        integrasjoner: row.get("integrasjoner"),
+        plattformbrukere: row.get("plattformbrukere"),
+    })
+}
+
+/// The facts the abonnement status rule needs, for every company at
+/// once. The RULE stays in `regnmed-core::abonnement` — this fetches the
+/// same three facts as `abonnement::fakta`, just set-wise, and the API
+/// layer folds them into statuses. Billing master data, never balances.
+#[derive(Debug, Clone)]
+pub struct PlattformAbonnement {
+    pub company_id: Uuid,
+    pub orgnr: String,
+    pub name: String,
+    pub opprettet: NaiveDate,
+    pub dekket_i_dag: bool,
+    pub siste_slutt: Option<NaiveDate>,
+    /// Plan on the row covering today, if any.
+    pub plan: Option<String>,
+    /// The current coverage's end, when an oppsigelse has set one.
+    pub valid_to: Option<NaiveDate>,
+}
+
+pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlattformAbonnement>> {
+    let rows = sqlx::query(
+        "select c.id, c.orgnr, c.name, c.created_at::date as opprettet,
+                d.plan, d.valid_to,
+                (d.plan is not null) as dekket,
+                (select max(a.valid_to) from abonnement a
+                  where a.company_id = c.id and a.valid_to is not null
+                    and a.valid_to <= current_date) as siste_slutt
+         from company c
+         left join lateral (
+             select a.plan, a.valid_to from abonnement a
+              where a.company_id = c.id
+                and a.valid_from <= current_date
+                and (a.valid_to is null or a.valid_to > current_date)
+              order by a.valid_from desc
+              limit 1
+         ) d on true
+         order by c.name",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| PlattformAbonnement {
+            company_id: r.get("id"),
+            orgnr: r.get("orgnr"),
+            name: r.get("name"),
+            opprettet: r.get("opprettet"),
+            dekket_i_dag: r.get("dekket"),
+            siste_slutt: r.get("siste_slutt"),
+            plan: r.get("plan"),
+            valid_to: r.get("valid_to"),
+        })
+        .collect())
+}

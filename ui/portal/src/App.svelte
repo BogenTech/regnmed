@@ -2,7 +2,7 @@
   import { session, tokens, handleCallback } from "./lib/auth.svelte.js";
   import { route } from "./lib/router.svelte.js";
   import { me, loadMe } from "./lib/me.svelte.js";
-  import { seksjonNavn } from "./lib/meny.js";
+  import { FLYTTET_TIL_ADMIN } from "./lib/meny.js";
   import { toast } from "./lib/toast.svelte.js";
   import { koSend } from "./lib/ko.js";
   import Login from "./components/Login.svelte";
@@ -23,14 +23,14 @@
   import Rapporter from "./sections/rapporter/Rapporter.svelte";
   import Bank from "./sections/bank/Bank.svelte";
   import Bilag from "./sections/bilag/Bilag.svelte";
-  import Periode from "./sections/periode/Periode.svelte";
-  import Oppdrag from "./sections/oppdrag/Oppdrag.svelte";
   import Kunder from "./sections/kunder/Kunder.svelte";
-  import Brukere from "./sections/brukere/Brukere.svelte";
+  import Admin from "./sections/admin/Admin.svelte";
   import Byra from "./sections/byra/Byra.svelte";
   import Plattform from "./components/Plattform.svelte";
 
   // Alle seksjonene i menyen (lib/meny.js) er portert (#76 steg 2).
+  // Brukere/Oppdrag/Periode bor nå som faner i Administrasjon; gamle
+  // adresser rutes dit under (FLYTTET_TIL_ADMIN).
   const SECTIONS = {
     oversikt: Oversikt,
     faktura: Faktura,
@@ -46,10 +46,8 @@
     rapporter: Rapporter,
     bank: Bank,
     bilag: Bilag,
-    periode: Periode,
     kunder: Kunder,
-    brukere: Brukere,
-    oppdrag: Oppdrag,
+    admin: Admin,
   };
 
   let boot = $state({ done: false, error: null });
@@ -105,7 +103,11 @@
   </div>
 {:else if route.view === "company"}
   <Shell companyId={route.companyId} section={route.section}>
-    {#if SECTIONS[route.section]}
+    {#if FLYTTET_TIL_ADMIN[route.section]}
+      <!-- Gamle bokmerker (#/c/{id}/brukere osv.) lander på riktig fane
+           i Administrasjon-konsollen i stedet for en død adresse. -->
+      <Admin companyId={route.companyId} extra={FLYTTET_TIL_ADMIN[route.section]} />
+    {:else if SECTIONS[route.section]}
       {@const Section = SECTIONS[route.section]}
       <Section companyId={route.companyId} extra={route.extra} query={route.query} />
     {:else}

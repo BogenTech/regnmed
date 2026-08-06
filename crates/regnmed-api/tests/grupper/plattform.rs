@@ -399,3 +399,57 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
         "master data only — no balances on the platform path"
     );
 }
+
+/// The console's numbers: the overview is open to support (the same
+/// aggregates the lists already show), while the per-company abonnement
+/// list is systemadmin territory like the customer registers. A fresh
+/// company with no coverage shows up in its trial — computed by the one
+/// status rule, never stored.
+#[tokio::test]
+async fn the_overview_is_shared_but_subscriptions_are_systemadmin_territory() {
+    let Some((state, idp, company)) = setup().await else {
+        return;
+    };
+    // A stranger probes nothing: 404 on both, like the rest of /platform.
+    let (_, _, fremmed) = person(&state, &idp, "Fremmed").await;
+    for uri in ["/platform/overview", "/platform/subscriptions"] {
+        assert_eq!(
+            status(&state, "GET", uri, &fremmed, "").await,
+            StatusCode::NOT_FOUND,
+            "{uri} must not exist for a non-platform person"
+        );
+    }
+
+    let (_, support) = platform_person(&state, &idp, "support").await;
+    let (kode, svar) = json_call(&state, "GET", "/platform/overview", &support, "").await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert!(svar["selskaper"].as_i64().unwrap() >= 1);
+    assert!(svar["brukere"].as_i64().unwrap() >= 1);
+    assert!(
+        svar["abonnement"].is_object(),
+        "the status distribution must be present: {svar}"
+    );
+    assert_eq!(
+        status(&state, "GET", "/platform/subscriptions", &support, "").await,
+        StatusCode::FORBIDDEN,
+        "billing per company is systemadmin territory"
+    );
+
+    let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
+    let (kode, svar) = json_call(&state, "GET", "/platform/subscriptions", &sysadmin, "").await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let rad = svar["abonnementer"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["company_id"] == company.to_string())
+        .expect("the fresh company must be listed")
+        .clone();
+    // Created moments ago, no coverage row: the trial is running.
+    assert_eq!(rad["status"], "prove", "{rad}");
+    assert!(rad["plan"].is_null());
+    assert!(
+        rad.get("saldo_ore").is_none(),
+        "billing status only — no balances on the platform path"
+    );
+}

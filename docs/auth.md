@@ -479,6 +479,17 @@ To roller, lagret i `platform_member` (migrasjon 0049):
   selskap navngitt — aldri saldoer), endrer eksisterende medlemskap og
   roller, og administrerer plattformmedlemskapene selv.
 
+Konsollens dashbord (2026-08-06): `GET /platform/overview` gir tellinger
+(selskaper, byråer, brukere, integrasjoner, aktive plattformroller) og
+fordelingen av abonnementsstatuser — samme aggregater som listene
+support alt ser. `GET /platform/subscriptions` lister
+abonnementsstatus **per selskap** (plan, status, dato) og er
+systemadmin-territorium som kunderegistrene: det er regnmeds eget
+kundeforhold, aldri noe selskaps saldo. Statusen beregnes av regelen i
+`regnmed-core::abonnement` over fakta hentet mengdevis
+(`platform_list_subscriptions`) — lagres aldri, som ellers. Begge går
+gjennom samme `vakt` og logges som alt annet under `/platform/*`.
+
 Kravene fra #57 er håndhevet strukturelt, ikke i rutiner:
 
 1. **Logget.** `vakt`-middlewaren omslutter hele sub-routeren: token →

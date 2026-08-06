@@ -9,24 +9,29 @@
   import { toast } from "../lib/toast.svelte.js";
   import ThemeControls from "./ThemeControls.svelte";
   import Card from "./Card.svelte";
+  import Ikon from "./Ikon.svelte";
 
   const systemadmin = $derived(me.plattform?.rolle === "systemadmin");
 
+  // [slug, navn, ikon] — ikonet gjør fanene gjenkjennbare på et blikk,
+  // samme faste tilordning som selskapsmenyen (lib/ikoner.js).
   const FANER = $derived(
     [
-      ["selskaper", "Selskaper"],
-      ["byraer", "Byråer"],
-      ["brukere", "Brukere"],
+      ["oversikt", "Oversikt", "oversikt"],
+      ["selskaper", "Selskaper", "selskaper"],
+      ["byraer", "Byråer", "byraer"],
+      ["brukere", "Brukere", "brukere"],
       ...(systemadmin
         ? [
-            ["kunder", "Kunder"],
-            ["medlemmer", "Plattformbrukere"],
+            ["abonnementer", "Abonnementer", "abonnementer"],
+            ["kunder", "Kunder", "kunder"],
+            ["medlemmer", "Plattformbrukere", "medlemmer"],
           ]
         : []),
     ],
   );
 
-  let fane = $state("selskaper");
+  let fane = $state("oversikt");
   let sok = $state("");
   let rader = $state(null);
 
@@ -34,9 +39,12 @@
     rader = null;
     const q = sok.trim() ? "?sok=" + encodeURIComponent(sok.trim()) : "";
     try {
-      if (fane === "selskaper") rader = (await api("/platform/companies" + q)).selskaper;
+      if (fane === "oversikt") rader = await api("/platform/overview");
+      else if (fane === "selskaper") rader = (await api("/platform/companies" + q)).selskaper;
       else if (fane === "byraer") rader = (await api("/platform/firms" + q)).byraer;
       else if (fane === "brukere") rader = (await api("/platform/users" + q)).brukere;
+      else if (fane === "abonnementer")
+        rader = (await api("/platform/subscriptions")).abonnementer;
       else if (fane === "kunder") rader = (await api("/platform/customers" + q)).kunder;
       else if (fane === "medlemmer") rader = (await api("/platform/members")).medlemmer;
     } catch (error) {
@@ -44,6 +52,16 @@
       toast(error.message, false);
     }
   }
+
+  // Samme fargespråk som abonnementskortet: statusen ser lik ut hos
+  // kunden og i konsollen.
+  const ABO_FARGE = {
+    aktiv: "badge-success",
+    prove: "badge-info",
+    frist: "badge-warning",
+    sperret: "badge-error",
+  };
+  const ABO_TEKST = { aktiv: "aktiv", prove: "prøvetid", frist: "ubetalt", sperret: "sperret" };
 
   $effect(() => {
     fane;
@@ -134,23 +152,24 @@
       </span>
     </div>
 
-    <div role="tablist" class="tabs tabs-box tabs-sm mb-4">
-      {#each FANER as [slug, navn] (slug)}
+    <div role="tablist" class="tabs tabs-box tabs-sm mb-4 flex-wrap">
+      {#each FANER as [slug, navn, ikonNavn] (slug)}
         <button
           role="tab"
-          class="tab {fane === slug ? 'tab-active' : ''}"
+          class="tab gap-1.5 {fane === slug ? 'tab-active' : ''}"
           aria-selected={fane === slug}
           onclick={() => {
             fane = slug;
             sok = "";
           }}
         >
+          <Ikon navn={ikonNavn} />
           {navn}
         </button>
       {/each}
     </div>
 
-    {#if fane !== "medlemmer"}
+    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer"}
       <form class="mb-4 flex gap-2" onsubmit={sokSubmit}>
         <input
           class="input input-sm w-full max-w-xs"
@@ -163,6 +182,77 @@
 
     {#if !rader}
       <span class="loading loading-spinner loading-lg"></span>
+    {:else if fane === "oversikt"}
+      <!-- Dashbordet: administrative tall + abonnementsfordelingen.
+           Rene aggregater fra /platform/overview — ingen hovedbok. -->
+      <div class="stats shadow-sm bg-base-100 w-full mb-6 stats-vertical sm:stats-horizontal">
+        {#each [["selskaper", "Selskaper", rader.selskaper], ["byraer", "Byråer", rader.byraer], ["brukere", "Brukere", rader.brukere], ["medlemmer", "Plattformbrukere", rader.plattformbrukere]] as [slug, tittel, verdi] (slug)}
+          <button
+            class="stat text-left cursor-pointer"
+            onclick={() => {
+              if (FANER.some(([f]) => f === slug)) fane = slug;
+            }}
+          >
+            <div class="stat-figure opacity-60"><Ikon navn={slug} /></div>
+            <div class="stat-title">{tittel}</div>
+            <div class="stat-value text-2xl">{verdi}</div>
+          </button>
+        {/each}
+        <div class="stat">
+          <div class="stat-title">Integrasjoner</div>
+          <div class="stat-value text-2xl">{rader.integrasjoner}</div>
+          <div class="stat-desc">maskintilganger</div>
+        </div>
+      </div>
+
+      <Card title="Abonnementer">
+        <div class="flex gap-2 flex-wrap">
+          {#each Object.entries(rader.abonnement) as [slug, antall] (slug)}
+            <span class="badge {ABO_FARGE[slug] || 'badge-ghost'}">
+              {ABO_TEKST[slug] || slug}: {antall}
+            </span>
+          {:else}
+            <span class="opacity-70">Ingen selskaper ennå.</span>
+          {/each}
+        </div>
+        {#if systemadmin}
+          <p class="text-sm mt-2">
+            <button class="link" onclick={() => (fane = "abonnementer")}>
+              Se per selskap →
+            </button>
+          </p>
+        {/if}
+      </Card>
+    {:else if fane === "abonnementer"}
+      <Card title="Abonnementer per selskap">
+        <p class="text-sm opacity-70 mb-2">
+          Status beregnes av samme regel som hos kunden (aldri lagret). Faktureringen bor i
+          driftsselskapets hovedbok — dette er kundeforholdet, ikke saldoen.
+        </p>
+        <table class="table table-sm">
+          <thead>
+            <tr><th>Orgnr</th><th>Selskap</th><th>Plan</th><th>Status</th><th>Dato</th><th>Opprettet</th></tr>
+          </thead>
+          <tbody>
+            {#each rader as a (a.company_id)}
+              <tr>
+                <td>{a.orgnr}</td>
+                <td>{a.name}</td>
+                <td>{a.plan || "–"}</td>
+                <td>
+                  <span class="badge badge-sm {ABO_FARGE[a.status] || 'badge-ghost'}">
+                    {ABO_TEKST[a.status] || a.status}
+                  </span>
+                </td>
+                <td>{a.dato || ""}</td>
+                <td>{a.opprettet}</td>
+              </tr>
+            {:else}
+              <tr><td colspan="6" class="opacity-70">Ingen selskaper.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </Card>
     {:else if fane === "selskaper"}
       <Card title="Selskaper">
         <table class="table table-sm">

@@ -30,6 +30,8 @@ export default defineConfig({
       "/auth": api,
       "/portal-config": api,
       "/anchors": api,
+      "/platform": api,
+      "/directory": api,
     },
   },
 });
