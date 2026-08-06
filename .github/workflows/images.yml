@@ -132,6 +132,36 @@ jobs:
                 target/x86_64-unknown-linux-musl/release/regnmed \
             | awk '{printf "  %-16s %.1f MB\n", $9, $5/1048576}'
 
+      # THE CI GATE (2026-08-06): the roll commit below is the deploy to
+      # test, and it must not happen while the `ci` workflow is red on
+      # the same commit. The two workflows run in parallel — twice today
+      # test got a build whose CI later failed (the portal dist check).
+      # The image push above is harmless (an image in the registry
+      # deploys nothing); only the roll is gated. If ci fails, THIS job
+      # fails here too, so a red deploy attempt is visible, and the next
+      # green push rolls test forward again.
+      - name: Wait for ci to pass on this commit
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            state=$(gh run list --commit "$GITHUB_SHA" --workflow ci.yml \
+                      --json status,conclusion \
+                      --jq '.[0] | if .status == "completed" then .conclusion else "pending" end' \
+                    2>/dev/null || echo pending)
+            case "$state" in
+              success) echo "ci is green — rolling test"; exit 0 ;;
+              failure|cancelled|timed_out|startup_failure)
+                echo "ci concluded '$state' on $GITHUB_SHA — refusing to roll test" >&2
+                exit 1 ;;
+              *) echo "ci: $state — waiting"; sleep 30 ;;
+            esac
+          done
+          echo "gave up waiting for ci after 30 minutes" >&2
+          exit 1
+
       # THIS COMMIT IS THE DEPLOY TO TEST.
       #
       # Flux watches main and reconciles deploy/test, so writing the new

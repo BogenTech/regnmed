@@ -55,8 +55,18 @@ kept the local render byte-identical, so dev-cluster.sh is unchanged.
 
 | Miljø | Følger | Utløses av |
 | --- | --- | --- |
-| test | grenen `main`, `deploy/test` | hver push |
+| test | grenen `main`, `deploy/test` | hver push **med grønn CI** |
 | prod | semver-tagger `>=0.1.0`, `deploy/prod` | at en release publiseres |
+
+**CI-porten (2026-08-06):** `images`-workflowen og `ci`-workflowen
+kjører parallelt, og rullesteget i images ventet ikke — test fikk to
+ganger et bygg hvis CI senere feilet. Rullesteget venter nå på at `ci`
+er grønn på samme commit før test-overlayet skrives; feiler CI, feiler
+images-jobben på samme sted, synlig. Selve image-pushen er ikke portet
+(et image i registeret deployer ingenting). Forhåndsutgaver
+(`vX.Y.Z-rcN`) er fortsatt fluktluken for risikofylte endringer: de
+bygger et image utenfor prods semver-område og kan soakes på test før
+den ordentlige taggen kuttes.
 
 Flux kjører i clusteret og henter fra git. Manifestene for det ligger i
 søsterrepoet `../homelab` (`cluster/flux-regnmed.yaml`) — de hører ikke

@@ -1323,7 +1323,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    baker REGNMED_VERSION=vX.Y.Z — brukermenyen viser da releasen;
    pin-commiten rører bare deploy/, så sha==tag i kode. Hver release
    får GITHUB-RELEASE m/ notater om hva som slippes siden forrige
-   (gh release create).
+   (gh release create); v0.2.1–v0.2.4 etterfylt. Main-bygg
+   identifiserer seg som `git describe` (v0.2.5-2-g…), så test-menyen
+   er lesbar. (d) CI-PORTEN (brukerbeslutning etter diskusjon): test
+   ruller fortsatt på HVER push til main (integrasjonsprøvebenken skal
+   møte virkeligheten tidligst mulig; prerelease-portet test ble
+   vurdert og avvist som friksjon uten QA-team), men rullesteget i
+   images.yml VENTER nå på grønn `ci` på samme commit — to ganger
+   2026-08-06 fikk test et bygg hvis CI var rød, fordi workflowene
+   kjørte parallelt. Image-pushen er ikke portet (et image i
+   registeret deployer ingenting); rc-tagger er fluktluken for
+   risikofylte endringer.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.
