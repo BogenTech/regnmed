@@ -5,5 +5,9 @@
 # Run this after changing anything under ui/portal/src/.
 set -e
 cd "$(dirname "$0")/../ui/portal"
-[ -d node_modules ] || npm install
+# Always a clean, lockfile-exact install — the same environment the CI
+# `portal` job rebuilds in. A stale node_modules once produced a dist
+# 46 KB smaller than the reproducible build (2026-08-06), and the
+# checked-in dist must match CI byte for byte.
+npm ci
 npm run build
