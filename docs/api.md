@@ -90,6 +90,8 @@ endepunktene når noe selskaps hovedbok.
 | Endepunkt | Metoder |
 | --- | --- |
 | `/companies` | POST |
+| `/companies/{company_id}/accounts` | GET POST |
+| `/companies/{company_id}/accounts/{account_number}` | PUT |
 | `/companies/{company_id}/accounts/{account_number}/reskontro` | PUT |
 | `/companies/{company_id}/anchors` | GET |
 | `/companies/{company_id}/anchors/verify` | GET |
@@ -216,7 +218,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/timesheet/summary` | GET |
 | `/companies/{company_id}/timesheet/unbilled` | GET |
 | `/companies/{company_id}/timesheet/{entry_id}` | PUT |
-| `/companies/{company_id}/vouchers` | GET |
+| `/companies/{company_id}/vouchers` | GET POST |
 | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | GET POST |
 | `/directory/firms` | GET |
 | `/firms` | POST |

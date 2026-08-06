@@ -14,6 +14,7 @@ CLAUDE.md).
 | [anchoring.md](anchoring.md) | External anchoring: Merkle snapshots of chain heads, the public root feed, RFC 3161 witnesses |
 | [mva.md](mva.md) | VAT: standard codes, dated rates, beregning rules, mva-spesifikasjon, mva-melding |
 | [rapporter.md](rapporter.md) | Lovpålagte spesifikasjoner: bokførings-/kontospesifikasjon, saldobalanse, resultat og balanse |
+| [hovedbok.md](hovedbok.md) | Kontoplan (standardkatalog + egne kontoer), drill-down per konto, manuell bilagsføring |
 | [saft/README.md](saft/README.md) | SAF-T Financial export and the vendored official artifacts |
 | [reskontro.md](reskontro.md) | Kunde-/leverandørspesifikasjon, åpne poster, hash format v2 |
 | [dimensjoner.md](dimensjoner.md) | Avdeling/prosjekt på posteringene, hash format v3, resultat per dimensjon |

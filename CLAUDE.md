@@ -1335,6 +1335,27 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    kjørte parallelt. Image-pushen er ikke portet (et image i
    registeret deployer ingenting); rc-tagger er fluktluken for
    risikofylte endringer.
+70. ✅ Hovedbok: kontoplan + manuell bilagsføring (docs/hovedbok.md,
+   brukerbeslutning 2026-08-06): den frie veien inn i hovedboken, med
+   de samme vaktene. `GET/POST /companies/{id}/accounts` +
+   `PUT …/accounts/{nr}`: selskapets kontoer m/ BEREGNET saldo (SUM,
+   aldri lagret) + STANDARDKATALOGEN (Skatteetatens 254-kontoliste,
+   alt vendored i core for SAF-T-veiviseren) — «catalog + picker»:
+   katalogen sås ALDRI inn, en konto blir selskapets første gang den
+   legges til/brukes; uten navn slås standardnavnet opp, egendefinerte
+   nummer krever eget navn; nummer permanent, navn/aktiv redigerbart,
+   deaktivert konto nekter nye posteringer. `POST …/vouchers`
+   (BilagBokfor): manuelt bilag gjennom post_voucher — og AKTIV
+   attesteringspolicy over grensen NEKTER manuell føring (peker til
+   innboksen; sidedøren ville opphevet #47; guard SETT FEILE).
+   Portal: ny Hovedbok-seksjon (KontoVelger-komponent m/ søk i egne +
+   katalog, Nytt bilag m/ differanse-sperre, kontoplankort,
+   drill-down per konto via kontospesifikasjonens `account=`-filter
+   som fantes ubrukt siden #4). VERIFISERT MOT VIRKELIGHETEN:
+   BogenTechs ekte Conta-SAF-T (2025) importert — saldobalansen
+   stemte PÅ ØRET mot det godkjente årsregnskapet (RR-0002), kjeden
+   verifisert fra genesis. Funn: Conta eksporterer én SAF-T per ÅR og
+   importen krever tom hovedbok — flerårsimport filet som oppfølger.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

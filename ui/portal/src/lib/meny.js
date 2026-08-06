@@ -8,6 +8,7 @@ export const SEKSJONER = [
   ["aksjonarer", "Aksjonærer"],
   ["reskontro", "Reskontro"],
   ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
+  ["hovedbok", "Hovedbok"],
   ["admin", "Administrasjon"],
 ];
 

@@ -79,6 +79,10 @@ export const IKONER = {
     emoji: "📥",
     d: '<path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M2 12h6l2 3h4l2-3h6"/>',
   },
+  hovedbok: {
+    emoji: "📒",
+    d: '<path d="M12 6.5C10.4 5.2 8.4 4.5 6 4.5H4v14h2c2.4 0 4.4.7 6 2 1.6-1.3 3.6-2 6-2h2v-14h-2c-2.4 0-4.4.7-6 2z"/><path d="M12 6.5v14"/>',
+  },
   periode: {
     emoji: "📅",
     d: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',

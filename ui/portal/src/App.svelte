@@ -25,6 +25,7 @@
   import Rapporter from "./sections/rapporter/Rapporter.svelte";
   import Bank from "./sections/bank/Bank.svelte";
   import Bilag from "./sections/bilag/Bilag.svelte";
+  import Hovedbok from "./sections/hovedbok/Hovedbok.svelte";
   import Kunder from "./sections/kunder/Kunder.svelte";
   import Admin from "./sections/admin/Admin.svelte";
   import Byra from "./sections/byra/Byra.svelte";
@@ -48,6 +49,7 @@
     rapporter: Rapporter,
     bank: Bank,
     bilag: Bilag,
+    hovedbok: Hovedbok,
     kunder: Kunder,
     admin: Admin,
   };

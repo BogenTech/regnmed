@@ -20,6 +20,7 @@ pub mod innboks;
 pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
+pub mod kontoplan;
 pub mod lonn;
 pub mod mailq;
 pub mod mailq_in;
@@ -320,6 +321,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/accounts/{account_number}/reskontro",
             axum::routing::put(reskontro::set_account_reskontro),
+        )
+        .route(
+            "/companies/{company_id}/accounts",
+            get(kontoplan::list_accounts).post(kontoplan::create_account),
+        )
+        .route(
+            "/companies/{company_id}/accounts/{account_number}",
+            axum::routing::put(kontoplan::update_account),
         )
         .route(
             "/companies/{company_id}/invoices",
@@ -720,7 +729,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/vouchers",
-            get(period::list_vouchers),
+            get(period::list_vouchers).post(kontoplan::post_manual_voucher),
         )
         .route(
             "/companies/{company_id}/vouchers/{voucher_id}/attachments",
