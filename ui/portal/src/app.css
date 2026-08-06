@@ -10,6 +10,14 @@
 
 @import "tailwindcss";
 
+/* dist/ er FORRIGE byggs output og sjekkes inn (#76) — uten unntaket
+   skanner Tailwinds kildedeteksjon den for klassenavn, og bygget blir
+   selvrefererende: utdata avhenger av forrige utdata og konvergerer
+   bare ved flaks. Oppdaget 2026-08-06 da portal-CI-jobben avviste to
+   dist-er på rad; et rent bygg og et gjenbygg ga ulik CSS til unntaket
+   kom inn. */
+@source not "../dist";
+
 /* Alle daisyUIs innebygde temaer er slått på, ikke et kuratert utvalg:
    temavalget er brukerens, og en håndplukket liste måtte holdes i takt
    med daisyUI for hånd. `all` beholder standardene — `light` på

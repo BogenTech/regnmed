@@ -35,11 +35,12 @@ API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed
 # in ui/portal/src/app.css) — that is 35 blocks of colour variables,
 # and it gzips to ~21 KB. Budget deliberately left at 512 KB: the
 # theme list is now complete, so it will not keep growing.
-# Raised 512 → 576 on 2026-08-06: steelzombie (the house dark theme,
-# docs/portal.md) is a full custom daisyUI theme emitted twice — once by
-# name, once as the prefers-dark default — ≈46 KB raw, ≈4.5 KB gzipped
-# on the wire. A conscious cost, not drift.
-PORTAL_DIST_BUDGET_KB=576
+# Briefly raised to 576 on 2026-08-06 and lowered back the same day:
+# the "46 KB steelzombie cost" that motivated the raise was mostly the
+# build scanning its own previous dist for class names (fixed with
+# `@source not "../dist"` in app.css). The deterministic build fits the
+# original budget with room to spare.
+PORTAL_DIST_BUDGET_KB=512
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 

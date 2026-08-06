@@ -6,8 +6,9 @@
 set -e
 cd "$(dirname "$0")/../ui/portal"
 # Always a clean, lockfile-exact install — the same environment the CI
-# `portal` job rebuilds in. A stale node_modules once produced a dist
-# 46 KB smaller than the reproducible build (2026-08-06), and the
-# checked-in dist must match CI byte for byte.
+# `portal` job rebuilds in; the checked-in dist must match CI byte for
+# byte. (The 2026-08-06 dist drift turned out to be Tailwind scanning
+# the previous dist — see `@source not` in src/app.css — but the clean
+# install stays: it removes the other way local and CI can diverge.)
 npm ci
 npm run build

@@ -1303,11 +1303,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    system → light → steelzombie; innebygde dark kan velges ved navn.
    Browser-verifisert: dropdown-innhold, temabytte via menyen,
    steelzombie i selskaps- og plattformvisningen.
-   OPPFØLGING samme dag: (a) portal-CI-jobben avviste dist bygget fra
-   et FORELDET node_modules — 46 KB manglet, og det var hele
-   steelzombies komponentpalett; build-portal.sh kjører nå npm ci
-   ubetinget, dist-budsjettet hevet bevisst 512→576 KB (gzip-kostnaden
-   er ~4,5 KB). (b) Boksflatene byttet fra shadow-sm til TEMASTYRTE
+   OPPFØLGING samme dag: (a) portal-CI-jobben avviste to dist-er på
+   rad, og den VIRKELIGE årsaken var at BYGGET SPISTE SITT EGET AVTRYKK:
+   dist/ sjekkes inn og er ikke gitignorert, så Tailwind v4s
+   kildedeteksjon skannet forrige byggs output for klassenavn — utdata
+   avhang av forrige utdata og konvergerte bare ved flaks (bevist:
+   rent bygg 133 KB, gjenbygg oppå dist 186 KB). Fiks: `@source not
+   "../dist"` i app.css; bygget er nå deterministisk (bygg × 2 = samme
+   hash), build-portal.sh kjører npm ci ubetinget uansett, og
+   dist-budsjettet står på 512 KB (576-hevingen var basert på feil
+   diagnose og ble rullet tilbake samme dag).
+   (b) Boksflatene byttet fra shadow-sm til TEMASTYRTE
    kanter (card-border/border-base-200) så steelzombies flate, kantede
    formspråk (--border 1.5px, --depth 0) faktisk kommer gjennom —
    daisyui-generatorens utseende er fasiten; navbarer og flytende
