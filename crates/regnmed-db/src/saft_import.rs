@@ -15,6 +15,10 @@
 //!   while regnmed never posts year-end closings — udisponert resultat
 //!   is derived in reports). Any difference refuses the import with the
 //!   numbers named.
+//! - Every imported file is recorded in `saft_import_log` with its
+//!   content hash: the same bytes can never be imported twice, and the
+//!   log is the audit trail of which files a migrated ledger was built
+//!   from.
 //! - Imported vouchers are posted through the normal posting path
 //!   (`post_voucher_in`): our voucher numbers, our hash chain from
 //!   genesis, into a dedicated `IMP` journal; the source system's
@@ -56,9 +60,11 @@ pub async fn import_saft(
     pool: &PgPool,
     company_id: Uuid,
     file: &SaftFile,
+    source_xml: &str,
     created_by: &str,
 ) -> Result<ImportReport> {
     let mut report = ImportReport::default();
+    let digest = regnmed_core::hash::sha256(source_xml.as_bytes());
     let mut tx = pool.begin().await?;
 
     // Migration into a virgin ledger, or on top of prior imports only:
@@ -86,6 +92,27 @@ pub async fn import_saft(
              SAF-T-importer, før den løpende bokføringen starter"
         );
     }
+
+    // The same file can never land twice. The opening-balance
+    // reconciliation below catches files that do not continue the
+    // history, but a period netting to zero on every account would
+    // reconcile cleanly a second time — the content hash closes the
+    // byte-identical case.
+    let already: bool = sqlx::query_scalar(
+        "select exists(select 1 from saft_import_log
+          where company_id = $1 and content_sha256 = $2)",
+    )
+    .bind(company_id)
+    .bind(digest.as_slice())
+    .fetch_one(&mut *tx)
+    .await?;
+    // Belt and braces: the unique constraint on the log would roll the
+    // whole transaction back anyway — this check exists so the refusal
+    // is a sentence, not a constraint name. Both layers are test-covered.
+    ensure!(
+        !already,
+        "denne SAF-T-filen er allerede importert i selskapet (identisk innhold)"
+    );
 
     // Accounts: 4-digit NS 4102 only (the mapping wizard, #18, handles the rest).
     let bad: Vec<&str> = file
@@ -352,6 +379,20 @@ pub async fn import_saft(
     if report.accounts == 0 && report.vouchers == 0 {
         bail!("the file contained nothing to import");
     }
+    sqlx::query(
+        "insert into saft_import_log
+             (id, company_id, content_sha256, accounts, vouchers, opening_posted, created_by)
+         values ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(company_id)
+    .bind(digest.as_slice())
+    .bind(report.accounts as i32)
+    .bind(report.vouchers as i32)
+    .bind(report.opening_posted)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(report)
 }

@@ -1356,6 +1356,36 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    stemte PÅ ØRET mot det godkjente årsregnskapet (RR-0002), kjeden
    verifisert fra genesis. Funn: Conta eksporterer én SAF-T per ÅR og
    importen krever tom hovedbok — flerårsimport filet som oppfølger.
+71. ✅ Flerårig SAF-T-import (docs/migration.md, oppfølgeren fra punkt
+   70): historikken kommer som ÉN FIL PER REGNSKAPSÅR (Conta), så
+   importdøren står åpen så lenge hovedboken BARE inneholder
+   IMP-bilag — første ordinære bilag stenger for godt. Oppfølgingsfilen
+   må fortsette NØYAKTIG der historikken slapp, konto for konto:
+   balansekontoer (klasse 1–2) åpner på bokført totalsaldo,
+   resultatkontoer (3–9) på bokført saldo i FILENS EGET regnskapsår
+   (regnskapsar-sømmen, #52) — null ved årsskifte, hittil-i-år når ett
+   år kommer i flere filer. Avvik nekter med konto og øredifferanse
+   navngitt; ingen ny åpningsbalanse bokføres (opening_reconciled i
+   svaret). REGELEN KOM FRA DE EKTE FILENE: Conta nuller
+   resultatkontoene i neste års åpning UTEN motpost (åpningen summerer
+   IKKE til null — nullsumsregelen gjelder bare første fil), og regnmed
+   bokfører aldri årsavslutning (udisponert resultat utledes i
+   rapportene) — derfor passer bokført akkumulert saldo. Migration
+   0054: innsettings-bar `saft_import_log` m/ innholds-SHA-256 (av
+   kilde-XML-en, FØR mapping) — samme bytes kan aldri importeres to
+   ganger; tetter reconcilieringens blindsone (en periode i nullnett
+   ville reconciliert rent andre gang og DOBBELTPOSTERT), og
+   unik-constrainten er andre lag (guard SETT FEILE: med sjekken
+   deaktivert svarte constrainten). Bilagslisten bærer journalkode;
+   portalkortet består som «Importer neste årsfil» så lenge hovedboken
+   er IMP-only (manuell åpningsbalanse fortsatt bare tom hovedbok).
+   VERIFISERT MOT VIRKELIGHETEN: BogenTechs ekte 2025+2026-filer
+   importert sekvensielt — saldobalansen stemmer PÅ ØRET mot
+   2026-filens closing, kjeden verifisert fra genesis (2026-filen
+   viste seg å ha NULL transaksjoner, bare åpningsbalanser — håndtert:
+   reconciliert, ingenting bokført). Ærlig begrensning dokumentert:
+   en RE-EKSPORT av samme periode (andre bytes, samme nullnett) fanges
+   ikke.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

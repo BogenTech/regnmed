@@ -277,9 +277,9 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
         "deferred reskontro flag is warned about: {report}"
     );
 
-    // Re-importing the same file is refused: the ledger is still
-    // IMP-only so the door is open, but the file's openings no longer
-    // match the booked balances.
+    // Re-importing the same file is refused by the import log: the
+    // ledger is still IMP-only so the door is open, but identical
+    // content can never land twice.
     let (status, body) = request(
         &state,
         "POST",
@@ -289,6 +289,10 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(
+        body.to_string().contains("allerede importert"),
+        "the dedup guard names itself: {body}"
+    );
 }
 
 /// One SAF-T file per fiscal year (the Conta export shape). The follow-up
@@ -476,6 +480,49 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
         .unwrap();
         assert_eq!(balance, expected, "konto {account}");
     }
+
+    // A file whose period nets to ZERO on every account is the
+    // reconciliation's blind spot — a second import would reconcile
+    // cleanly and double-post. The import log must catch it by content.
+    let zero_net = year_saft(
+        date(2026, 9, 1),
+        date(2026, 10, 31),
+        vec![
+            acct("1920", "Bank", 14_850_00, 14_850_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("7770", "Gebyr", 150_00, 150_00),
+        ],
+        vec![
+            plain_tx(
+                1,
+                date(2026, 9, 10),
+                "Gebyr",
+                &[("7770", 100_00), ("1920", -100_00)],
+            ),
+            plain_tx(
+                2,
+                date(2026, 9, 20),
+                "Gebyr refundert",
+                &[("7770", -100_00), ("1920", 100_00)],
+            ),
+        ],
+    );
+    let (status, report) = request(
+        &state,
+        "POST",
+        &import_uri,
+        &admin_token,
+        Some(zero_net.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "zero-net file: {report}");
+    assert_eq!(report["vouchers"], 2);
+    let (status, body) = request(&state, "POST", &import_uri, &admin_token, Some(zero_net)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(
+        body.to_string().contains("allerede importert"),
+        "identical content is refused by the log, not by luck: {body}"
+    );
 
     // A continuation file with a bank opening 850 kr off: refused, and
     // the refusal names the account and the exact difference.

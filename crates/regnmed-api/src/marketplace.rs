@@ -168,17 +168,20 @@ pub async fn create_firm(
 /// The body is either raw SAF-T XML, or (content-type application/json)
 /// a wizard envelope `{"file": "<xml>", "mapping": {"15000": "1500"}}`
 /// from the kontoplan mapping step.
+/// Returns the parsed (possibly mapped) file together with the raw XML
+/// source — the import log hashes the source document, not the mapping.
 fn parse_import_body(
     headers: &axum::http::HeaderMap,
-    body: &str,
-) -> Result<regnmed_core::saft_import::SaftFile, ApiError> {
+    body: String,
+) -> Result<(regnmed_core::saft_import::SaftFile, String), ApiError> {
     let is_json = headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.contains("application/json"));
     if !is_json {
-        return regnmed_core::saft_import::parse(body)
-            .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")));
+        let file = regnmed_core::saft_import::parse(&body)
+            .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
+        return Ok((file, body));
     }
     #[derive(serde::Deserialize)]
     struct Envelope {
@@ -186,13 +189,13 @@ fn parse_import_body(
         #[serde(default)]
         mapping: std::collections::HashMap<String, String>,
     }
-    let envelope: Envelope = serde_json::from_str(body)
+    let envelope: Envelope = serde_json::from_str(&body)
         .map_err(|e| ApiError::BadRequest(format!("ugyldig konvolutt: {e}")))?;
     let mut file = regnmed_core::saft_import::parse(&envelope.file)
         .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
     regnmed_core::kontoplan::apply_mapping(&mut file, &envelope.mapping)
         .map_err(ApiError::BadRequest)?;
-    Ok(file)
+    Ok((file, envelope.file))
 }
 
 pub async fn import_saft(
@@ -203,9 +206,9 @@ pub async fn import_saft(
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
-    let file = parse_import_body(&headers, &body)?;
+    let (file, source_xml) = parse_import_body(&headers, body)?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let report = regnmed_db::import_saft(&state.pool, company_id, &file, created_by)
+    let report = regnmed_db::import_saft(&state.pool, company_id, &file, &source_xml, created_by)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({

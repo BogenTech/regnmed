@@ -61,6 +61,19 @@ and neither is papered over. No second `Åpningsbalanse` is posted: the
 balances are already in the ledger, and the report says
 `opening_reconciled` instead of `opening_posted`.
 
+Reconciliation has one blind spot: a file whose period nets to zero on
+every account would reconcile cleanly a second time and double-post its
+transactions. The insert-only **`saft_import_log`** (migration 0054)
+closes the byte-identical case — every imported file is recorded with
+its content SHA-256 (of the source XML, before any kontoplan mapping),
+and the same content is refused with a plain sentence. The unique
+constraint on the log is the second layer: even without the explicit
+check, inserting the duplicate row would roll the whole import back.
+The log doubles as the audit trail of which files a migrated ledger was
+built from. A *re-export* of the same period (different bytes, same
+zero-net content) is not caught — that is documented honesty, not a
+promise.
+
 Two findings from the real Conta files that shaped these rules:
 
 - The follow-up file's openings do **not** sum to zero — resultat
@@ -173,7 +186,10 @@ så bokfør).
   openings that do not sum to zero), a mid-year continuation file
   reconciles resultat accounts against the year-to-date sum, a
   mismatched opening is refused with the account and øre difference
-  named, and one ordinary voucher closes the import for good.
+  named, a zero-net file re-imported byte-identically is refused by the
+  import log (the guard has been seen to fail: with the check disabled
+  the unique constraint answers instead), and one ordinary voucher
+  closes the import for good.
 - `regnmed-core/src/kontoplan.rs` — suggestion heuristics (identity,
   truncation, padding, name match, no-suggestion) and mapping
   application (rewrite, merge with summed openings, 4-digit target
