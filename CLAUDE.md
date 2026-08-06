@@ -1006,9 +1006,9 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    `add-client --audience regnmed`. Uten `--audience` fungerer
    innloggingen — og hvert API-kall svarer 401 uten spor noe sted.
    **Next:** migrering av Swarm-stackene til k3s (så Traefik tar
-   80/443 og cert-manager erstatter NPM), Maskinporten (skriv-til-oss
-   avvist 2026-08-06 — bestillingen må sendes på nytt via
-   brukerstøttedesken, stegene står i docs/gov.md),
+   80/443 og cert-manager erstatter NPM), Maskinporten (bestilling
+   sendt 2026-08-06, **sak SSV-5760** — venter på tildeling,
+   docs/gov.md),
    RF-1086 transaksjonstypekoder + innsending (#43-oppfølger),
    EHF-transport via aksesspunkt, API-tier per leverandør
    (#19-oppfølger), OCR-sidecar (#34-oppfølger).

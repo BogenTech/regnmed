@@ -31,46 +31,50 @@ carve-out. Where the keys actually live is recorded in docs/secrets.md.
 
 ### Operational setup (one-time, per environment)
 
-**Status:** the 2026-07-24 scope bestilling via skriv-til-oss was
-answered 2026-08-06 with a redirect: that channel does not handle scope
-orders, and the reply points to the brukerstøtte desk on the API
-documentation's kontakt-oss page — i.e. the same
-`eksternjira.sits.no`-tjeneste this document identified on 2026-07-28.
-**Nobody is processing the old request**; the bestilling must be
-re-sent there, and the redirect is no loss: the July request asked for
-`skatteetaten:mvameldinginnsending`, which does not exist (innsending
-goes via Altinn 3, see the table below), while the re-send can order
-the full verified list in one henvendelse.
+**Status: bestilling sendt 2026-08-06 — sak SSV-5760** på
+brukerstøttedesken (eksternjira.sits.no, kategori Innrapportering),
+tjenesteområder A-meldingen, Aksjonærregisteret, MVA-melding og
+Skattekort til arbeidsgiver, miljø **test**, akseptert bruksvilkår.
+Skjemaet spør aldri om klient-id — tilgangen gis organisasjonen, og
+scopene legges på klienten i Samarbeidsportalen etterpå. Venter på
+tildeling (erfaringsmessig ukers ledetid). Historikken bak: den
+opprinnelige bestillingen 2026-07-24 gikk via skriv-til-oss, som
+2026-08-06 svarte at kanalen ikke behandler slike saker; omveien
+kostet lite, siden juli-bestillingen ba om
+`skatteetaten:mvameldinginnsending` som ikke finnes (innsending går
+via Altinn 3, se tabellen under).
 
-Next concrete steps, in order:
+Veien inn, for neste gang (dette var det som stanset bestillingen):
+**det finnes ikke noe registreringsskjema** — daglig leder/styreleder
+har automatisk tilgang til brukeradministrasjonsverktøyet
+(<https://skatt.skatteetaten.no/web/sakservice-web/>), oppretter
+brukerkontoene der (gjort 2026-08-06, andre@bogentech.no), og første
+pålogging på desken går via «Har du glemt passordet ditt?». Skal
+andre enn daglig leder administrere: deleger Altinn-tjenesten
+«Brukeradministrasjon – brukerstøtte for bruk av Skatteetatens
+opplysninger» først.
 
-1. ✅ **Done 2026-08-06:** user account created
-   (andre@bogentech.no) in the brukeradministrasjonsverktøy at
-   <https://skatt.skatteetaten.no/web/sakservice-web/>. For the
-   record, since this was the step that stalled the bestilling:
-   **there is no registration form anywhere** — least of all on the
-   github.io documentation site. Access follows the company role
-   (*«Daglig leder, styrets leder eller lignende … vil automatisk ha
-   tilgang»*); daglig leder logs in there representing the org and
-   creates the accounts. Only if someone else is to administer:
-   delegate the Altinn service «Brukeradministrasjon – brukerstøtte
-   for bruk av Skatteetatens opplysninger» first. First login on the
-   desk goes via «Har du glemt passordet ditt?» with the account's
-   e-mail.
-2. Send ONE henvendelse ordering the whole «bestilles nå» table below
-   for **test**, stating orgnr, environment and the test client-id.
-   (Prod is ordered separately when test has proven out.)
-3. When granted: add the scopes to the test client in
-   Samarbeidsportalen, then run the live validation round-trip
-   (step 4 below).
+Gjenstår:
+
+1. Når tildelingen lander på SSV-5760: legg scopene på testklienten i
+   Samarbeidsportalen, kjør valideringsrundturen (steg 4 under).
+2. `skatteetaten:mvaregisteravgiftssubjekt` og `skatteetaten:frister`
+   var **ikke** valgbare i Innrapportering-skjemaet — de hører til
+   Deling-siden (eget behandlingsgrunnlagskrav) og bestilles separat
+   der når de trengs. Lav prioritet: begge er kryssjekker, ikke
+   forutsetninger.
+3. Altinn 3-tilgangen for mva-melding-INNSENDING
+   (`altinn:instances.read`/`write` mot mva-melding-appen) hadde ikke
+   noe felt i skjemaet — still spørsmålet som oppfølging på SSV-5760
+   når saken får en behandler.
+4. Produksjon bestilles i samme skjema når testintegrasjonen er
+   verifisert.
 
 The **test client exists** with an RS256 keypair registered on it; its
 id and the rest of the `MASKINPORTEN_*` configuration live outside git
 in `~/.config/regnmed/maskinporten-test.env` (docs/secrets.md).
 
-The aksjonærregisteroppgave scope
-(`skatteetaten:innrapporteringaksjonaerregisteroppgave`, #43,
-docs/aksjonaer.md) rides in the same henvendelse — and additionally
+The aksjonærregisteroppgave scope rides in SSV-5760 — and additionally
 needs an Altinn systembruker, see below.
 
 1. Get access to Digdir's **Samarbeidsportalen** (requires the
