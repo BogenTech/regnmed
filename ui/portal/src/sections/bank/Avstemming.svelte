@@ -31,7 +31,7 @@
 
 {#if recon}
   <Card title={"Avstemming " + recon.account}>
-    <div class="stats bg-base-200 mb-4">
+    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 mb-4">
       <div class="stat">
         <div class="stat-title">Hovedbok</div>
         <div class="stat-value text-lg">{kr(recon.ledger_balance_ore)}</div>

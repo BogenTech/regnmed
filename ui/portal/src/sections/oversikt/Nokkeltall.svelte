@@ -13,7 +13,7 @@
 </script>
 
 <Card title={"Nøkkeltall " + tall.year}>
-  <div class="stats bg-base-200 w-full mb-3">
+  <div class="stats stats-vertical lg:stats-horizontal bg-base-200 w-full mb-3">
     <div class="stat">
       <div class="stat-title">Resultat hittil i år</div>
       <div class="stat-value text-xl">{kr(tall.resultat_hittil_ore)}</div>

@@ -135,26 +135,22 @@
   {#if !data}
     <span class="loading loading-spinner loading-lg"></span>
   {:else}
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+    <!-- daisyUI stat tiles, same shape as the platform dashboard's. -->
+    <div class="stats border border-base-300 bg-base-100 w-full mb-6 stats-vertical lg:stats-horizontal">
       {#each fliser as [slug, tittel, verdi, beskrivelse] (slug)}
-        <a
-          href={"#/c/" + companyId + "/admin/" + slug}
-          class="card border border-base-300 bg-base-100 transition-colors hover:border-primary"
-        >
-          <div class="card-body py-4">
-            <div class="flex items-center gap-2 text-sm opacity-70">
-              <Ikon navn={FANER.find(([f]) => f === slug)?.[2] || slug} />
-              {tittel}
-            </div>
-            {#if verdi === null}
-              <div class="text-sm opacity-50">krever mer tilgang</div>
-            {:else}
-              <div class="text-2xl font-semibold">{verdi}</div>
-            {/if}
-            {#if beskrivelse}
-              <div class="text-xs opacity-60">{beskrivelse}</div>
-            {/if}
+        <a href={"#/c/" + companyId + "/admin/" + slug} class="stat">
+          <div class="stat-figure opacity-60">
+            <Ikon navn={FANER.find(([f]) => f === slug)?.[2] || slug} />
           </div>
+          <div class="stat-title">{tittel}</div>
+          {#if verdi === null}
+            <div class="stat-value text-sm opacity-50 whitespace-normal">krever mer tilgang</div>
+          {:else}
+            <div class="stat-value text-2xl">{verdi}</div>
+          {/if}
+          {#if beskrivelse}
+            <div class="stat-desc">{beskrivelse}</div>
+          {/if}
         </a>
       {/each}
     </div>

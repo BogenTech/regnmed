@@ -5,6 +5,7 @@
   // handling, og hvert kall logges og er synlig for selskapet.
   import { api, post, send } from "../lib/api.js";
   import { toast } from "../lib/toast.svelte.js";
+  import { bekreft } from "../lib/dialog.svelte.js";
   import Card from "./Card.svelte";
 
   let { companyId, systemadmin, onClose } = $props();
@@ -60,7 +61,15 @@
   }
 
   async function deaktiver(m) {
-    if (!confirm("Deaktivere tilgangen til " + m.navn + "?")) return;
+    if (
+      !(await bekreft("Deaktivere tilgangen til " + m.navn + "?", {
+        tittel: "Deaktiver medlem",
+        ok: "Deaktiver",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await send("DELETE", "/platform/companies/" + companyId + "/members/" + m.person_id);
       toast("Deaktivert — logget hos selskapet", true);
@@ -96,7 +105,15 @@
   }
 
   async function avsluttDekning() {
-    if (!confirm("Avslutte den åpne dekningen? Vanlig frist løper før noe sperres.")) return;
+    if (
+      !(await bekreft("Avslutte den åpne dekningen? Vanlig frist løper før noe sperres.", {
+        tittel: "Avslutt dekning",
+        ok: "Avslutt",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await post("/platform/companies/" + companyId + "/subscription/end", {});
       toast("Dekningen er avsluttet", true);

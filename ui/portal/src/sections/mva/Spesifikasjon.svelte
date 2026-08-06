@@ -49,7 +49,7 @@
         {/each}
       </tbody>
     </table>
-    <div class="stats bg-base-200 mt-4">
+    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 mt-4">
       <div class="stat">
         <div class="stat-title">Utgående</div>
         <div class="stat-value text-lg">{kr(report.utgaende_ore)}</div>

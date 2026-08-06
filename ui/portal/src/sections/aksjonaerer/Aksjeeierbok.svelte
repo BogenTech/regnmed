@@ -1,6 +1,7 @@
 <script>
   import { api, post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { skjema } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, bok, onDone } = $props();
@@ -88,20 +89,23 @@
   }
 
   async function endreAdresse(a) {
-    const nyttNavn = prompt("Navn", a.navn);
-    if (nyttNavn === null) return;
-    const nyAdresse = prompt("Adresse", "");
-    if (nyAdresse === null) return;
-    const nyttPostnummer = prompt("Postnummer", "");
-    if (nyttPostnummer === null) return;
-    const nyttPoststed = prompt("Poststed", "");
-    if (nyttPoststed === null) return;
+    const svar = await skjema(
+      "Kontaktopplysninger",
+      [
+        { navn: "navn", etikett: "Navn", standard: a.navn },
+        { navn: "adresse", etikett: "Adresse", valgfri: true },
+        { navn: "postnummer", etikett: "Postnummer", valgfri: true },
+        { navn: "poststed", etikett: "Poststed", valgfri: true },
+      ],
+      { ok: "Lagre" },
+    );
+    if (!svar) return;
     try {
       await send("PUT", "/companies/" + companyId + "/shareholders/" + a.id + "/contact", {
-        navn: nyttNavn,
-        adresse: nyAdresse || null,
-        postnummer: nyttPostnummer || null,
-        poststed: nyttPoststed || null,
+        navn: svar.navn,
+        adresse: svar.adresse || null,
+        postnummer: svar.postnummer || null,
+        poststed: svar.poststed || null,
         landkode: null,
       });
       toast("Kontaktopplysninger oppdatert", true);

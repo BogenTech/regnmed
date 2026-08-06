@@ -4,13 +4,16 @@
   // — derfor må /me hentes på nytt etterpå.
   import { post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import { loadMe } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, engagements, onDone } = $props();
 
   async function avslutt(e) {
-    if (!confirm("Avslutte oppdraget?")) return;
+    if (!(await bekreft("Avslutte oppdraget?", { tittel: "Avslutt oppdrag", ok: "Avslutt", farlig: true }))) {
+      return;
+    }
     try {
       await post("/companies/" + companyId + "/engagements/" + e.engagement_id + "/end", {});
       toast("Oppdrag avsluttet", true);

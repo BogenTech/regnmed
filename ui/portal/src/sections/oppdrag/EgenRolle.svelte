@@ -5,6 +5,7 @@
   import { untrack } from "svelte";
   import { post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import Rettighetsvelger from "./Rettighetsvelger.svelte";
 
   let { companyId, rolle, vokabular, onDone } = $props();
@@ -27,7 +28,15 @@
   }
 
   async function deaktiver() {
-    if (!confirm("Deaktivere rollen? De som har den mister tilgangen med én gang.")) return;
+    if (
+      !(await bekreft("Deaktivere rollen? De som har den mister tilgangen med én gang.", {
+        tittel: "Deaktiver rolle",
+        ok: "Deaktiver",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await post("/companies/" + companyId + "/roles/" + rolle.id + "/deactivate", {});
       toast("Rollen er deaktivert", true);

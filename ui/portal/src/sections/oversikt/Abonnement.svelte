@@ -5,6 +5,7 @@
   import { post } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import { loadMe } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
 
@@ -64,7 +65,15 @@
 
   async function siOpp() {
     // Bevisst friksjon: en oppsigelse skal ikke skje ved et uhell.
-    if (!confirm("Si opp abonnementet? Det løper ut perioden du har betalt for.")) return;
+    if (
+      !(await bekreft("Si opp abonnementet? Det løper ut perioden du har betalt for.", {
+        tittel: "Si opp abonnementet",
+        ok: "Si opp",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     sierOpp = true;
     try {
       const svar = await post("/companies/" + companyId + "/subscription/cancel", {});

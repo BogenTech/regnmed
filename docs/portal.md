@@ -151,7 +151,8 @@ revisjon) · Bank (kontoutskrift, avstemming, betalingsliste) · Bilag
 ## Administrasjon-konsollen og ikonene (2026-08-06)
 
 **Administrasjon** (`#/c/{id}/admin/{fane}`) samler selskapets styring
-bak én menyoppføring: et dashbord med statusfliser (abonnement,
+bak én menyoppføring: et dashbord med statusfliser (daisyUI
+stat-komponenter, samme form som plattformdashbordet: abonnement,
 medlemmer, åpne invitasjoner, oppdrag/integrasjoner, periodelås,
 firmaopplysninger) og faner som gjenbruker de eksisterende kortene —
 Firmaopplysninger og Abonnement (flyttet fra Oversikt), Brukere og
@@ -198,6 +199,19 @@ Fellesdeler ligger i `src/lib/` (API-klient, auth, ruter, tema, toast,
 nedlasting, offline-kø) og `src/components/` (skall, kort, dimensjons-
 og mva-velger). Ruteren leser hash-spørringen ett sted, så
 `#/c/{id}/mva?year=&termin=` fortsatt kan deles.
+
+**Modale spørsmål** (2026-08-06): nettleserens `confirm()`/`prompt()`
+er erstattet av daisyUI-modaler med samme mønster som toastene —
+`lib/dialog.svelte.js` eier tilstanden og tilbyr promise-funksjonene
+`bekreft` (ja/nei; `farlig` gir rød OK-knapp), `sporsmal`
+(prompt-ekvivalenten) og `skjema` (flere felt i én modal: text/date/
+textarea/select/checkbox, påkrevde felt sperrer OK-knappen);
+`components/Dialog.svelte` monteres én gang i App.svelte og rendrer via
+en nativ `<dialog>` (`showModal()`), så Esc, fokusfelle og
+bakgrunnsklikk kommer fra plattformen. Flyter som før stilte flere
+prompt-spørsmål etter hverandre (gjenta faktura, avhending, godkjenn
+utlegg, aksjonærkontakt) er nå ett skjema. Ingen `confirm(`/`prompt(`
+skal finnes igjen i `ui/portal/src`.
 
 Authorization is entirely server-side — the portal is a *view*; a
 revisor's read-only access or a stranger's 404 comes from the API, never
@@ -252,6 +266,15 @@ Køen fjerner et bilde når serveren avviser det (det blir ikke bedre av
 og er sidestilt fra `sm` og opp; kortkroppene ruller sine egne brede
 tabeller i stedet for å dytte siden sidelengs. Temakontrakten er
 urørt — samme daisyUI-temaer som på skrivebordet.
+Stat-radene stabler (`stats-vertical`) under sitt brytepunkt i stedet
+for å rulle sidelengs. Aktivt menyvalg markeres diskret med
+temastyrte tokens (`bg-base-200 text-primary` + primærfarget stolpe
+via inset-skygge i `currentColor` + `aria-current` — daisyUIs
+`menu-active` ble prøvd og var for kraftig, og stolpen bærer
+markeringen i temaer der tonen knapt synes), og skallet
+viser brødsmulesti
+(daisyUI `breadcrumbs`): Mine selskaper → selskap → seksjon — dybden
+innenfor en seksjon er seksjonens egen fanelinje.
 
 Bevisst utenfor: native apper, push-varsler (e-post dekker frister),
 og offline bokføring — aldri.

@@ -5,6 +5,7 @@
   import { post } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { skjema, sporsmal } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
   import Card from "../../components/Card.svelte";
 
@@ -19,14 +20,21 @@
 
   async function godkjenn(e) {
     const isKjoring = e.kind === "kjoring";
-    const konto = prompt("Kostnadskonto:", isKjoring ? "7100" : "7790");
-    if (!konto) return;
-    const body = { konto: konto.trim() };
+    const felter = [
+      { navn: "konto", etikett: "Kostnadskonto", standard: isKjoring ? "7100" : "7790" },
+    ];
     if (!isKjoring) {
-      const mva = prompt("Mva-kode for inngående mva (tom = ingen):", "");
-      if (mva === null) return;
-      if (mva.trim()) body.mva_kode = mva.trim();
+      felter.push({
+        navn: "mva",
+        etikett: "Mva-kode for inngående mva",
+        valgfri: true,
+        hjelp: "Tom = ingen",
+      });
     }
+    const svar = await skjema("Godkjenn krav", felter, { ok: "Godkjenn" });
+    if (!svar) return;
+    const body = { konto: svar.konto };
+    if (!isKjoring && svar.mva) body.mva_kode = svar.mva;
     try {
       const result = await post(
         "/companies/" + companyId + "/expenses/" + e.expense_id + "/approve",
@@ -40,11 +48,15 @@
   }
 
   async function avvis(e) {
-    const note = prompt("Begrunnelse for avvisning (påkrevd):");
+    const note = await sporsmal("Begrunnelse for avvisning (påkrevd):", {
+      type: "textarea",
+      ok: "Avvis",
+      farlig: true,
+    });
     if (!note) return;
     try {
       await post("/companies/" + companyId + "/expenses/" + e.expense_id + "/reject", {
-        note: note.trim(),
+        note,
       });
       onDone();
     } catch (error) {

@@ -4,6 +4,7 @@
 
 import { post } from "./api.js";
 import { toast } from "./toast.svelte.js";
+import { sporsmal } from "./dialog.svelte.js";
 
 export async function sendDocument(path) {
   const attempt = (email) => post(path, email ? { email } : {});
@@ -12,7 +13,7 @@ export async function sendDocument(path) {
     toast("Sendt til " + sent.to, true);
   } catch (error) {
     if (String(error.message).includes("e-postadresse")) {
-      const email = prompt("Kundens e-postadresse:");
+      const email = await sporsmal("Kundens e-postadresse:", { type: "email", ok: "Send" });
       if (!email) return;
       try {
         const retried = await attempt(email);

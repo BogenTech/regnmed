@@ -5,6 +5,7 @@
   // byråets klienter gjennom oppdragene, så dette er porteføljetilgang.
   import { post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { firmId, medlemmer, invitasjoner, onDone } = $props();
@@ -45,7 +46,15 @@
   }
 
   async function fjern(m) {
-    if (!confirm("Fjerne tilgangen? Den slutter å virke med én gang — også hos klientene.")) return;
+    if (
+      !(await bekreft("Fjerne tilgangen? Den slutter å virke med én gang — også hos klientene.", {
+        tittel: "Fjern tilgang",
+        ok: "Fjern",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await send("DELETE", "/firms/" + firmId + "/access/" + m.person_id);
       toast("Tilgangen er fjernet", true);

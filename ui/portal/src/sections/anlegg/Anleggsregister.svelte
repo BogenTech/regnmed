@@ -5,6 +5,7 @@
   import { api, post } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { skjema } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import NyttDriftsmiddel from "./NyttDriftsmiddel.svelte";
 
@@ -32,14 +33,23 @@
   // Avhending er ENVEIS: kravet lukkes, gevinst eller tap bokføres, og
   // driftsmidlet kan aldri gjenåpnes.
   async function avhend(a) {
-    const dato = prompt("Avhendingsdato (ÅÅÅÅ-MM-DD):", today());
-    if (!dato) return;
-    const vederlag = prompt("Vederlag (kr, 0 ved utrangering):", "0");
-    if (vederlag === null) return;
+    const svar = await skjema(
+      "Avhend " + a.navn,
+      [
+        { navn: "dato", etikett: "Avhendingsdato", type: "date", standard: today() },
+        { navn: "vederlag", etikett: "Vederlag (kr)", standard: "0", hjelp: "0 ved utrangering" },
+      ],
+      {
+        melding: "Avhending er enveis: kravet lukkes, gevinst eller tap bokføres.",
+        ok: "Avhend",
+        farlig: true,
+      },
+    );
+    if (!svar) return;
     try {
       const result = await post(
         "/companies/" + companyId + "/assets/" + a.asset_id + "/dispose",
-        { dato: dato.trim(), vederlag_ore: parseKr(vederlag) },
+        { dato: svar.dato, vederlag_ore: parseKr(svar.vederlag) },
       );
       const g = result.gevinst_ore;
       toast(

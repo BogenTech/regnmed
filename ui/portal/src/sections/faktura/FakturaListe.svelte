@@ -2,6 +2,7 @@
   import { post } from "../../lib/api.js";
   import { kr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
   import { sendDocument } from "../../lib/utsendelse.js";
   import Card from "../../components/Card.svelte";
@@ -9,7 +10,14 @@
   let { companyId, invoices, onDone } = $props();
 
   async function kreditnota(invoice) {
-    if (!confirm("Opprette kreditnota for hele fakturaen?")) return;
+    if (
+      !(await bekreft("Opprette kreditnota for hele fakturaen?", {
+        tittel: "Kreditnota",
+        ok: "Opprett kreditnota",
+      }))
+    ) {
+      return;
+    }
     try {
       await post("/companies/" + companyId + "/invoices/" + invoice.invoice_id + "/credit-note", {});
       toast("Kreditnota opprettet", true);
@@ -20,15 +28,30 @@
   }
 
   async function gjenta(invoice) {
-    const intervall = prompt("Intervall (manedlig, kvartalsvis, arlig):", "manedlig");
-    if (!intervall) return;
-    const neste = prompt("Første genereringsdato (ÅÅÅÅ-MM-DD):", today());
-    if (!neste) return;
+    const svar = await skjema(
+      "Gjenta faktura " + invoice.invoice_no,
+      [
+        {
+          navn: "intervall",
+          etikett: "Intervall",
+          type: "select",
+          standard: "manedlig",
+          valg: [
+            ["manedlig", "Månedlig"],
+            ["kvartalsvis", "Kvartalsvis"],
+            ["arlig", "Årlig"],
+          ],
+        },
+        { navn: "neste", etikett: "Første genereringsdato", type: "date", standard: today() },
+      ],
+      { ok: "Opprett mal" },
+    );
+    if (!svar) return;
     try {
       await post("/companies/" + companyId + "/invoice-templates", {
         from_invoice_id: invoice.invoice_id,
-        intervall: intervall.trim(),
-        neste_dato: neste.trim(),
+        intervall: svar.intervall,
+        neste_dato: svar.neste,
       });
       toast("Repeterende mal opprettet", true);
       onDone();

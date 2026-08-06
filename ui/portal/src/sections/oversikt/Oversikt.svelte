@@ -61,7 +61,8 @@
 {#if !data}
   <span class="loading loading-spinner loading-lg"></span>
 {:else}
-  <div class="stats border border-base-300 bg-base-100 w-full mb-6">
+  <!-- Stack on narrow screens instead of scrolling sideways. -->
+  <div class="stats stats-vertical lg:stats-horizontal border border-base-300 bg-base-100 w-full mb-6">
     <div class="stat">
       <div class="stat-title">Utestående fakturaer</div>
       <div class="stat-value text-2xl">{kr(openSum)}</div>

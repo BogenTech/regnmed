@@ -5,6 +5,7 @@
   // på nytt etterpå.
   import { post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import { loadMe } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
 
@@ -55,7 +56,15 @@
   }
 
   async function fjern(m) {
-    if (!confirm("Fjerne tilgangen? Den slutter å virke med én gang.")) return;
+    if (
+      !(await bekreft("Fjerne tilgangen? Den slutter å virke med én gang.", {
+        tittel: "Fjern tilgang",
+        ok: "Fjern",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await send("DELETE", "/companies/" + companyId + "/access/" + m.person_id);
       toast("Tilgangen er fjernet", true);

@@ -6,6 +6,7 @@
   import { post } from "../../lib/api.js";
   import { kr, parseKr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import AttesteringMerke from "./AttesteringMerke.svelte";
 
@@ -35,7 +36,11 @@
   }
 
   async function avvis(d) {
-    const note = prompt("Hvorfor avvises bilaget i attesteringen?");
+    const note = await sporsmal("Hvorfor avvises bilaget i attesteringen?", {
+      type: "textarea",
+      ok: "Avvis",
+      farlig: true,
+    });
     if (!note) return;
     try {
       await post("/companies/" + companyId + "/inbox/" + d.document_id + "/attester", {

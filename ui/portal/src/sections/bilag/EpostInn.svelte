@@ -4,6 +4,7 @@
   // forkasting — noen må bestemme, og valget står i loggen.
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft, skjema, sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, settings, mailLog, onDone } = $props();
@@ -14,7 +15,14 @@
   let nyAvsender = $state("");
 
   async function adresse() {
-    if (settings.adresse && !confirm("Ny adresse gjør den gamle ubrukelig med én gang. Fortsette?")) {
+    if (
+      settings.adresse &&
+      !(await bekreft("Ny adresse gjør den gamle ubrukelig med én gang. Fortsette?", {
+        tittel: "Ny mottaksadresse",
+        ok: "Lag ny adresse",
+        farlig: true,
+      }))
+    ) {
       return;
     }
     try {
@@ -49,10 +57,17 @@
   }
 
   async function slippInn(m) {
-    const tillat = confirm("Slippe inn? OK legger også avsenderen til på listen.");
+    // The old confirm() could not abort — OK/Avbryt only chose whether the
+    // sender was allowlisted. The modal makes the three-way choice honest.
+    const svar = await skjema(
+      "Slipp inn e-posten",
+      [{ navn: "tillat", etikett: "Legg avsenderen til på listen", type: "checkbox", standard: true }],
+      { melding: "Vedleggene blir dokumenter i innboksen.", ok: "Slipp inn" },
+    );
+    if (!svar) return;
     try {
       const r = await post("/companies/" + companyId + "/inbox/mail/" + m.mail_id + "/release", {
-        tillat_avsender: tillat,
+        tillat_avsender: svar.tillat,
       });
       toast(r.dokumenter + " dokument(er) lagt i innboksen", true);
       onDone();
@@ -62,7 +77,11 @@
   }
 
   async function avvisMail(m) {
-    const note = prompt("Hvorfor avvises e-posten?");
+    const note = await sporsmal("Hvorfor avvises e-posten?", {
+      type: "textarea",
+      ok: "Avvis",
+      farlig: true,
+    });
     if (!note) return;
     try {
       await post("/companies/" + companyId + "/inbox/mail/" + m.mail_id + "/reject", { note });

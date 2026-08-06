@@ -2,6 +2,7 @@
   import { post } from "../../lib/api.js";
   import { today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, rates, onDone } = $props();
@@ -11,7 +12,10 @@
   let kurs = $state("");
 
   async function fetchRates() {
-    const valutaer = prompt("Valutaer (kommaseparert):", "EUR,USD,SEK");
+    const valutaer = await sporsmal("Valutaer (kommaseparert):", {
+      standard: "EUR,USD,SEK",
+      ok: "Hent",
+    });
     if (!valutaer) return;
     try {
       const result = await post("/companies/" + companyId + "/currency/rates/fetch", {

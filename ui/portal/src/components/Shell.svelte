@@ -17,6 +17,7 @@
   // Old bookmarks to the sections that moved into Administrasjon should
   // still light up the Administrasjon entry.
   let aktiv = $derived(FLYTTET_TIL_ADMIN[section] ? "admin" : section);
+  let aktivLabel = $derived(SEKSJONER.find(([slug]) => slug === aktiv)?.[1] || aktiv);
 </script>
 
 <div class="navbar bg-base-100 shadow-sm">
@@ -38,7 +39,10 @@
       <li>
         <a
           href={"#/c/" + companyId + "/" + slug}
-          class="flex items-center gap-2 {aktiv === slug ? 'active' : ''}"
+          class="flex items-center gap-2 {aktiv === slug
+            ? 'bg-base-200 text-primary font-semibold shadow-[inset_3px_0_0_0_currentColor]'
+            : ''}"
+          aria-current={aktiv === slug ? "page" : undefined}
         >
           <Ikon navn={slug} />
           {label}
@@ -47,6 +51,15 @@
     {/each}
   </ul>
   <main class="flex-1 p-4 sm:p-6 max-w-5xl w-full min-w-0">
+    <!-- Where am I: selskapsliste → selskap → seksjon. Depth within a
+         section (faner, undersider) is the section's own tab bar. -->
+    <div class="breadcrumbs text-sm pt-0 pb-3">
+      <ul>
+        <li><a href="#/">Mine selskaper</a></li>
+        <li><a href={"#/c/" + companyId + "/oversikt"}>{selskap?.name || "…"}</a></li>
+        <li>{aktivLabel}</li>
+      </ul>
+    </div>
     <AbonnementBanner company={selskap} />
     {@render children?.()}
   </main>

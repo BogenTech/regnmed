@@ -1,6 +1,7 @@
 <script>
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { sporsmal } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
   import { lastOppKvittering } from "../../lib/ko.js";
   import Card from "../../components/Card.svelte";
@@ -81,7 +82,11 @@
   }
 
   async function avvis(d) {
-    const note = prompt("Hvorfor avvises dokumentet?");
+    const note = await sporsmal("Hvorfor avvises dokumentet?", {
+      type: "textarea",
+      ok: "Avvis",
+      farlig: true,
+    });
     if (!note) return;
     try {
       await post("/companies/" + companyId + "/inbox/" + d.document_id + "/avvis", { note });

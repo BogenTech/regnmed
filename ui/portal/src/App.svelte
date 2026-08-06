@@ -10,6 +10,7 @@
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
   import Toasts from "./components/Toasts.svelte";
+  import Dialog from "./components/Dialog.svelte";
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
   import Faktura from "./sections/faktura/Faktura.svelte";
   import Produkter from "./sections/produkter/Produkter.svelte";
@@ -89,6 +90,7 @@
 </script>
 
 <Toasts />
+<Dialog />
 
 {#if !boot.done}
   <div class="min-h-screen flex items-center justify-center">

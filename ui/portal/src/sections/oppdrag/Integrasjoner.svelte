@@ -4,6 +4,7 @@
   // Tilbakekalling virker straks (valid_to er eksklusiv).
   import { post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, integrasjoner, kall, onDone } = $props();
@@ -29,7 +30,15 @@
   }
 
   async function trekkTilbake(i) {
-    if (!confirm("Trekke tilbake tilgangen? Den slutter å virke med én gang.")) return;
+    if (
+      !(await bekreft("Trekke tilbake tilgangen? Den slutter å virke med én gang.", {
+        tittel: "Trekk tilbake",
+        ok: "Trekk tilbake",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await post("/companies/" + companyId + "/integrations/" + i.integration_id + "/revoke", {});
       toast("Tilgangen er trukket tilbake", true);

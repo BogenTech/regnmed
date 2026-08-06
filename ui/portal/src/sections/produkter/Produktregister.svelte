@@ -5,6 +5,7 @@
   import { post, send } from "../../lib/api.js";
   import { kr, parseKr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import VatSelect from "../../components/VatSelect.svelte";
 
@@ -41,7 +42,7 @@
   }
 
   async function nyPris(p) {
-    const svar = prompt("Ny salgspris (kr):");
+    const svar = await sporsmal("Ny salgspris (kr):", { ok: "Lagre" });
     if (!svar) return;
     try {
       await send("PUT", "/companies/" + companyId + "/products/" + encodeURIComponent(p.nummer), {
