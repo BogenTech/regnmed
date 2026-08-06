@@ -91,3 +91,44 @@
   --depth: 0;
   --noise: 0;
 }
+
+/* "steelzombie" — the house DARK theme (added 2026-08-06, user
+   decision): warm near-black steel with an emerald primary.
+   `prefersdark: true` is the point — this block REPLACES daisyUI's
+   built-in `dark` as what "follow the system" resolves to when the OS
+   is dark. `themes: all` still ships `dark` itself (pickable by name);
+   this block loads after the plugin and wins the prefers-dark slot. */
+@plugin "daisyui/theme" {
+  name: "steelzombie";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(21% 0.006 56.043);
+  --color-base-200: oklch(26% 0.007 34.298);
+  --color-base-300: oklch(37% 0.01 67.558);
+  --color-base-content: oklch(97% 0.001 106.424);
+  --color-primary: oklch(76% 0.177 163.223);
+  --color-primary-content: oklch(26% 0.051 172.552);
+  --color-secondary: oklch(71% 0.202 349.761);
+  --color-secondary-content: oklch(28% 0.109 3.907);
+  --color-accent: oklch(70% 0.022 261.325);
+  --color-accent-content: oklch(13% 0.028 261.692);
+  --color-neutral: oklch(44% 0.011 73.639);
+  --color-neutral-content: oklch(98% 0.001 106.423);
+  --color-info: oklch(70% 0.165 254.624);
+  --color-info-content: oklch(28% 0.091 267.935);
+  --color-success: oklch(79% 0.209 151.711);
+  --color-success-content: oklch(26% 0.065 152.934);
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(27% 0.077 45.635);
+  --color-error: oklch(71% 0.194 13.428);
+  --color-error-content: oklch(27% 0.105 12.094);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1.5px;
+  --depth: 0;
+  --noise: 0;
+}

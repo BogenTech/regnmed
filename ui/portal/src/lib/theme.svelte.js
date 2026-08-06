@@ -8,11 +8,14 @@
 // Rekkefølgen innenfor hver gruppe er daisyUIs egen.
 
 const KEY = "regnmed-theme";
-const CYCLE = ["system", "light", "dark"];
+// Snarveisknappen sykler system → lys → mørk. Den mørke er steelzombie
+// (hustemaet, 2026-08-06) — samme tema som «følg systemet» gir når
+// OS-et er mørkt (prefersdark i temablokken).
+const CYCLE = ["system", "light", "steelzombie"];
 
 // Våre egne temaer (ui/portal/themes.css). Står først fordi de er
 // husstilen; resten er daisyUIs innebygde.
-const EGNE = ["regnid", "kontrast"];
+const EGNE = ["regnid", "kontrast", "steelzombie"];
 
 const LYSE = [
   "light", "cupcake", "bumblebee", "emerald", "corporate", "retro",
@@ -36,7 +39,7 @@ export const THEME_GROUPS = [
   { label: "Mørke", themes: MORKE },
 ];
 
-export const ICON = { system: "🖥️", light: "☀️", dark: "🌙" };
+export const ICON = { system: "🖥️", light: "☀️", dark: "🌙", steelzombie: "🌙" };
 
 function stored() {
   try {

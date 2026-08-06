@@ -65,6 +65,15 @@ jobs:
           CC_x86_64_unknown_linux_musl: musl-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
+          # Bake the build identity into the binary (compile-time
+          # option_env!): the release tag when there is one, otherwise
+          # the immutable sha- tag the overlays pin. Shown in the
+          # portal's user menu via /portal-config.
+          case "$GITHUB_REF" in
+            refs/tags/v*) export REGNMED_VERSION="${GITHUB_REF#refs/tags/}" ;;
+            *) export REGNMED_VERSION="sha-$(git rev-parse --short HEAD)" ;;
+          esac
+          echo "REGNMED_VERSION=$REGNMED_VERSION"
           cargo build --release --locked \
             --target x86_64-unknown-linux-musl \
             -p regnmed-api -p regnmed-cli

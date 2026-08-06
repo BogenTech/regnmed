@@ -82,9 +82,15 @@ by Vite as part of `scripts/build-portal.sh`.
 
 **Alle daisyUIs innebygde temaer er tilgjengelige** (`themes: all` i
 `ui/portal/src/app.css`, samme i `../regnid/ui/input.css`) — 35 innebygde
-pluss våre to egne, `regnid` og `kontrast`. Temavalget er brukerens, og en
-håndplukket liste måtte vedlikeholdes for hånd hver gang daisyUI la til et
-tema. To ting å vite:
+pluss våre egne: `regnid`, `kontrast` og `steelzombie`. Temavalget er
+brukerens, og en håndplukket liste måtte vedlikeholdes for hånd hver gang
+daisyUI la til et tema. **`steelzombie` er husets MØRKE standard**
+(2026-08-06): blokken i themes.css har `prefersdark: true`, som vinner
+prefers-dark-plassen over innebygde `dark` fordi den lastes ETTER
+plugin-en — «følg systemet» med mørkt OS gir steelzombie, og
+snarveisknappens syklus er system → light → steelzombie (`CYCLE` i
+theme.svelte.js). Innebygde `dark` kan fortsatt velges ved navn.
+To ting å vite:
 
 - `all` kan **ikke** kombineres med `light --default, dark --prefersdark`:
   da faller resten av listen stille bort (verifisert 2026-08-03 — 4 temaer
@@ -168,6 +174,16 @@ ved oppstart (`lib/prefs.svelte.js` er bare speilet), og velgeren bor i
 plattformkonsollens Innstillinger-fane (`PUT /platform/settings`).
 Ingen brukeroverstyring — i motsetning til fargetemaet, som fortsatt er
 per bruker.
+
+**Brukermenyen** (2026-08-06, `components/UserMenu.svelte`): én
+avatar-dropdown (initialer, daisyUI avatar-placeholder) i alle
+innloggede navbarer — navn/e-post, Profil (lenker til IdP-ens
+`/account`, identitet redigeres ALDRI her), kontekstens Innstillinger
+(selskapsskallet peker på Administrasjon), fargetemavelgeren (samme
+theme-controller-maskineri som før; ThemeControls består bare på
+innloggingssiden), Logg ut og versjonsnummeret. Versjonen kommer fra
+`/portal-config` (`versjon`): CI baker `REGNMED_VERSION` inn i binæren
+(taggen eller sha-<kort> — images.yml), lokalt svarer den ærlig «dev».
 
 **Plattformkonsollen** (`#/plattform`, docs/auth.md §8) er back-office:
 dashbord (`/platform/overview`), Abonnementer per selskap

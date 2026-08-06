@@ -1,7 +1,6 @@
 <script>
-  import { logout } from "../lib/auth.svelte.js";
   import { company } from "../lib/me.svelte.js";
-  import ThemeControls from "./ThemeControls.svelte";
+  import UserMenu from "./UserMenu.svelte";
   import AbonnementBanner from "./AbonnementBanner.svelte";
 
   import { SEKSJONER, ANSATT_MENY, FLYTTET_TIL_ADMIN } from "../lib/meny.js";
@@ -26,8 +25,7 @@
     <span class="text-sm opacity-70">{selskap?.name || ""}</span>
   </div>
   <div class="flex-none gap-2">
-    <ThemeControls />
-    <button class="btn btn-ghost btn-sm" onclick={logout}>Logg ut</button>
+    <UserMenu innstillingerHref={"#/c/" + companyId + "/admin"} />
   </div>
 </div>
 <!-- Mobil: menyen legger seg vannrett over innholdet i stedet for å

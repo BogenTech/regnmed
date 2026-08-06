@@ -1283,6 +1283,26 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    defensive `?? "–"`/`|| {}` i dashbord-malen. Regelen å huske: bytter
    et klikk både visning og datatilstand, må tilstanden nullstilles i
    HANDLEREN — effekter kjører etter render.
+69. ✅ Brukermeny + steelzombie som mørk standard (docs/portal.md,
+   brukerbeslutning 2026-08-06): UserMenu.svelte — avatar-dropdown
+   (initialer) i alle innloggede navbarer m/ navn/e-post, Profil (→
+   IdP-ens /account, identitet redigeres aldri i regnmed),
+   kontekstens Innstillinger (skallet → Administrasjon),
+   fargetemavelger (theme-controller-maskineriet flyttet inn;
+   ThemeControls består bare på innloggingssiden), Logg ut og
+   VERSJONSNUMMER: /portal-config fikk `versjon` fra
+   option_env!(REGNMED_VERSION) — images.yml eksporterer taggen eller
+   sha-<kort> før cargo build (cargo sporer env-avhengigheten), lokalt
+   «dev». TEMA: `steelzombie` lagt i BEGGE themes.css (temakontrakten;
+   regnid 589322c bygde app.css + allowlist) med `prefersdark: true` —
+   brukerens blokk sa false, men bestillingen var «erstatt standard
+   mørkt tema», og flokken lastes etter plugin-en så den VINNER
+   prefers-dark-plassen fra innebygde `dark` (verifisert i bygget CSS:
+   siste prefers-dark-regel bærer steelzombies base-100, og i
+   nettleser: system+mørkt OS → oklch(21% 0.006 56.043)). CYCLE er
+   system → light → steelzombie; innebygde dark kan velges ved navn.
+   Browser-verifisert: dropdown-innhold, temabytte via menyen,
+   steelzombie i selskaps- og plattformvisningen.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

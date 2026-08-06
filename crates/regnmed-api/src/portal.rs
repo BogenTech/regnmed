@@ -126,6 +126,10 @@ pub async fn portal_config(State(state): State<AppState>) -> Json<serde_json::Va
         "client_id": std::env::var("PORTAL_OIDC_CLIENT_ID")
             .unwrap_or_else(|_| "regnmed-portal".into()),
         "ikonstil": ikonstil,
+        // Which build answered — baked in by CI (.github/workflows/
+        // images.yml sets REGNMED_VERSION to the tag or sha-<short>).
+        // "dev" is the truthful local answer, not a missing value.
+        "versjon": option_env!("REGNMED_VERSION").unwrap_or("dev"),
     }))
 }
 

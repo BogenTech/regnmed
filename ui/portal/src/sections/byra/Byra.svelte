@@ -2,9 +2,8 @@
   // Byråvisningen er ikke en selskapsseksjon: den står utenfor et
   // enkelt selskap og har derfor sitt eget skall uten selskapsmeny.
   import { api } from "../../lib/api.js";
-  import { logout } from "../../lib/auth.svelte.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import ThemeControls from "../../components/ThemeControls.svelte";
+  import UserMenu from "../../components/UserMenu.svelte";
   import Foresporsler from "./Foresporsler.svelte";
   import Klienter from "./Klienter.svelte";
   import Medlemmer from "./Medlemmer.svelte";
@@ -52,8 +51,7 @@
     <span class="text-sm opacity-70">{data?.firm?.name || ""}</span>
   </div>
   <div class="flex-none gap-2">
-    <ThemeControls />
-    <button class="btn btn-ghost btn-sm" onclick={logout}>Logg ut</button>
+    <UserMenu />
   </div>
 </div>
 <main class="p-6 max-w-4xl mx-auto">

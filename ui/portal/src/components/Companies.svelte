@@ -4,8 +4,7 @@
   // users reach the same flow through a collapsed card at the bottom.
   import { api } from "../lib/api.js";
   import { me } from "../lib/me.svelte.js";
-  import { logout } from "../lib/auth.svelte.js";
-  import ThemeControls from "./ThemeControls.svelte";
+  import UserMenu from "./UserMenu.svelte";
   import Registrering from "./Registrering.svelte";
 
   let firms = $state([]);
@@ -37,8 +36,7 @@
 <div class="navbar bg-base-100 shadow-sm">
   <div class="flex-1"><span class="btn btn-ghost text-xl">regnmed</span></div>
   <div class="flex-none gap-2">
-    <ThemeControls />
-    <button class="btn btn-ghost btn-sm" onclick={logout}>Logg ut</button>
+    <UserMenu />
   </div>
 </div>
 <main class="p-6 max-w-3xl mx-auto">

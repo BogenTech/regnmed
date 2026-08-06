@@ -5,11 +5,11 @@
   // gjaldt; banneret sier det, så ingen tror de ser usporet.
   import { api, post, send } from "../lib/api.js";
   import { me } from "../lib/me.svelte.js";
-  import { session, logout } from "../lib/auth.svelte.js";
+  import { session } from "../lib/auth.svelte.js";
   import { toast } from "../lib/toast.svelte.js";
   import { IKONSTILER } from "../lib/ikoner.js";
   import { prefs, setIkonstil } from "../lib/prefs.svelte.js";
-  import ThemeControls from "./ThemeControls.svelte";
+  import UserMenu from "./UserMenu.svelte";
   import Card from "./Card.svelte";
   import Ikon from "./Ikon.svelte";
   import PlattformSelskap from "./PlattformSelskap.svelte";
@@ -154,8 +154,7 @@
     <span class="badge badge-warning">Plattform · {me.plattform?.rolle}</span>
   </div>
   <div class="flex-none gap-2">
-    <ThemeControls />
-    <button class="btn btn-ghost btn-sm" onclick={logout}>Logg ut</button>
+    <UserMenu />
   </div>
 </div>
 
