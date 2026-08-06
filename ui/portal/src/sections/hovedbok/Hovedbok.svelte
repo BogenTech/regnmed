@@ -1,9 +1,12 @@
 <script>
-  // Hovedbok (docs/hovedbok.md): the kontoplan with balances, a
-  // per-account drill-down (kontospesifikasjon filtered server-side),
-  // and manual bilagsføring. Standard accounts live in the catalog and
-  // join the company's kontoplan the first time they are used; custom
-  // accounts are added explicitly with a name.
+  // Hovedbok (docs/hovedbok.md): the book itself — every bilag with its
+  // lines — plus manual bilagsføring, with the kontoplan as a deep-
+  // linkable sub-tab (…/hovedbok/kontoplan): it is the book's index,
+  // not a section of its own, but it deserves an address. A four-digit
+  // `extra` is an account drill-down (kontospesifikasjon filtered
+  // server-side). Standard accounts live in the catalog and join the
+  // company's kontoplan the first time they are used; custom accounts
+  // are added explicitly with a name.
   import { api, post, send } from "../../lib/api.js";
   import { kr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -11,8 +14,13 @@
   import Card from "../../components/Card.svelte";
   import KontoVelger from "../../components/KontoVelger.svelte";
   import DimSelect from "../../components/DimSelect.svelte";
+  import Paginering from "../../components/Paginering.svelte";
+  import Ikon from "../../components/Ikon.svelte";
 
   let { companyId, extra } = $props();
+
+  let erKonto = $derived(!!extra && /^\d{4}$/.test(extra));
+  let fane = $derived(extra === "kontoplan" ? "kontoplan" : "posteringer");
 
   let data = $state(null); // { kontoer, standard }
   let dims = $state([]);
@@ -94,22 +102,38 @@
     }
   }
 
-  // ---- Kontoplan ----
+  // ---- Kontoplan (the index): search, active-filter, paging ----
+  const KONTOER_PER_SIDE = 25;
+  let visDeaktiverte = $state(false);
+  let kSide = $state(1);
+
   let treffEgne = $derived.by(() => {
     if (!data) return [];
     const q = sok.trim().toLowerCase();
-    if (!q) return data.kontoer;
     return data.kontoer.filter(
-      (k) => k.number.startsWith(q) || k.name.toLowerCase().includes(q),
+      (k) =>
+        (visDeaktiverte || k.active) &&
+        (!q || k.number.startsWith(q) || k.name.toLowerCase().includes(q)),
     );
   });
+  let kontoSide = $derived(
+    treffEgne.slice((kSide - 1) * KONTOER_PER_SIDE, kSide * KONTOER_PER_SIDE),
+  );
+  $effect(() => {
+    void sok;
+    void visDeaktiverte;
+    kSide = 1;
+  });
+
   let treffStandard = $derived.by(() => {
     if (!data) return [];
     const q = sok.trim().toLowerCase();
     if (!q) return [];
     const egne = new Set(data.kontoer.map((k) => k.number));
     return data.standard
-      .filter((s) => !egne.has(s.number) && (s.number.startsWith(q) || s.name.toLowerCase().includes(q)))
+      .filter(
+        (s) => !egne.has(s.number) && (s.number.startsWith(q) || s.name.toLowerCase().includes(q)),
+      )
       .slice(0, 15);
   });
 
@@ -167,9 +191,12 @@
 
   // ---- Posteringene — the actual hovedbok. Every bilag with its
   // lines (bokføringsspesifikasjon, chain order), newest first for
-  // daily reading. The kontoplan below is the index; this is the book.
+  // daily reading, with free-text filter and paging.
+  const BILAG_PER_SIDE = 20;
   let year = $state(new Date().getFullYear());
   let posteringer = $state(null);
+  let pSok = $state("");
+  let pSide = $state(1);
 
   async function lastPosteringer() {
     posteringer = null;
@@ -189,10 +216,35 @@
     lastPosteringer();
   });
 
+  // The filter reads the whole bilag: number, date, text, and every
+  // line's account number/name — "everything about 1920 in August" is
+  // two searches away, not a report.
+  let bilagTreff = $derived.by(() => {
+    if (!posteringer) return [];
+    const alle = [...posteringer.vouchers].reverse();
+    const q = pSok.trim().toLowerCase();
+    if (!q) return alle;
+    return alle.filter(
+      (v) =>
+        v.bilag.toLowerCase().includes(q) ||
+        v.date.includes(q) ||
+        (v.description || "").toLowerCase().includes(q) ||
+        v.lines.some(
+          (l) => l.account.startsWith(q) || (l.account_name || "").toLowerCase().includes(q),
+        ),
+    );
+  });
+  let bilagSide = $derived(bilagTreff.slice((pSide - 1) * BILAG_PER_SIDE, pSide * BILAG_PER_SIDE));
+  $effect(() => {
+    void pSok;
+    void year;
+    pSide = 1;
+  });
+
   // ---- Drill-down (extra = account number) ----
   let drill = $state(null);
   $effect(() => {
-    if (!extra) {
+    if (!erKonto) {
       drill = null;
       return;
     }
@@ -207,10 +259,12 @@
   let drillKonto = $derived(data?.kontoer.find((k) => k.number === extra));
 </script>
 
-{#if extra}
+{#if erKonto}
   <Card title={"Konto " + extra + (drillKonto ? " — " + drillKonto.name : "")}>
     <div class="flex items-center gap-3 mb-2">
-      <a class="btn btn-xs btn-ghost" href={"#/c/" + companyId + "/hovedbok"}>← Kontoplan</a>
+      <a class="btn btn-xs btn-ghost" href={"#/c/" + companyId + "/hovedbok/kontoplan"}>
+        ← Kontoplan
+      </a>
       <div class="join">
         <button class="btn btn-xs join-item" onclick={() => (year -= 1)}>«</button>
         <span class="btn btn-xs join-item pointer-events-none">{year}</span>
@@ -254,152 +308,209 @@
 {:else if !data}
   <span class="loading loading-spinner loading-lg"></span>
 {:else}
-  <Card title="Nytt bilag">
-    <p class="text-sm opacity-70 mb-2">
-      Manuell postering rett i hovedboken — debet positivt, kredit negativt, summen må gå i null.
-      Har bilaget et dokument, hører det hjemme i
-      <a class="link" href={"#/c/" + companyId + "/bilag"}>innboksen</a> (vedlegget følger da
-      bilaget).
-    </p>
-    <div class="flex gap-2 mb-2">
-      <input type="date" class="input input-sm" bind:value={date} />
-      <input class="input input-sm flex-1" placeholder="Tekst" bind:value={description} />
-    </div>
-    {#each lines as line}
-      <div class="flex gap-2 mb-1 flex-wrap">
-        <KontoVelger
-          kontoer={data.kontoer}
-          standard={data.standard}
-          bind:value={line.account}
-        />
-        <input class="input input-sm w-32" placeholder="Beløp (−125,50)" bind:value={line.amount} />
-        <input class="input input-sm w-16" placeholder="Mva" bind:value={line.vat} />
-        <DimSelect {dims} kind="avdeling" cls="select select-sm w-28" bind:value={line.avdeling} />
-        <DimSelect {dims} kind="prosjekt" cls="select select-sm w-28" bind:value={line.prosjekt} />
-      </div>
-    {/each}
-    <div class="flex items-center gap-3 mt-1">
-      <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
-      <span class="text-sm {sum === 0 ? 'opacity-70' : 'text-error'}">
-        Differanse: {kr(sum)}
-      </span>
-      <button class="btn btn-sm btn-primary" disabled={sum !== 0} onclick={bokfor}>Bokfør</button>
-    </div>
-  </Card>
+  <div role="tablist" class="tabs tabs-box tabs-sm mb-4">
+    <a
+      role="tab"
+      href={"#/c/" + companyId + "/hovedbok"}
+      class="tab gap-1.5 {fane === 'posteringer' ? 'tab-active' : ''}"
+      aria-selected={fane === "posteringer"}
+    >
+      <Ikon navn="hovedbok" />
+      Posteringer
+    </a>
+    <a
+      role="tab"
+      href={"#/c/" + companyId + "/hovedbok/kontoplan"}
+      class="tab gap-1.5 {fane === 'kontoplan' ? 'tab-active' : ''}"
+      aria-selected={fane === "kontoplan"}
+    >
+      <Ikon navn="rapporter" />
+      Kontoplan
+    </a>
+  </div>
 
-  <Card title="Posteringer">
-    <div class="flex items-center gap-3 mb-2">
-      <div class="join">
-        <button class="btn btn-xs join-item" onclick={() => (year -= 1)}>«</button>
-        <span class="btn btn-xs join-item pointer-events-none">{year}</span>
-        <button class="btn btn-xs join-item" onclick={() => (year += 1)}>»</button>
+  {#if fane === "kontoplan"}
+    <Card title="Kontoplan">
+      <div class="flex gap-3 items-center flex-wrap mb-2">
+        <input
+          class="input input-sm w-full max-w-sm"
+          placeholder="Søk på nummer eller navn (også i standardkontoplanen)"
+          bind:value={sok}
+        />
+        <label class="label cursor-pointer gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={visDeaktiverte} />
+          Vis deaktiverte
+        </label>
       </div>
-      <span class="text-sm opacity-70">Alle bilag med linjene sine — nyeste øverst.</span>
-    </div>
-    {#if !posteringer}
-      <span class="loading loading-spinner loading-sm"></span>
-    {:else if !posteringer.vouchers.length}
-      <p class="opacity-70 text-sm">Ingen bilag i {year} ennå — det første kan føres over.</p>
-    {:else}
-      {#each [...posteringer.vouchers].reverse() as v (v.bilag)}
-        <div class="mb-3">
-          <span class="font-semibold">{v.bilag}</span>
-          <span class="opacity-70 text-sm">{v.date} — {v.description}</span>
-          <table class="table table-sm">
-            <tbody>
-              {#each v.lines as l}
-                <tr>
-                  <td>
-                    <a class="link font-mono" href={"#/c/" + companyId + "/hovedbok/" + l.account}>
-                      {l.account}
-                    </a>
-                    {l.account_name}
-                  </td>
-                  <td>{l.vat_code ? "mva " + l.vat_code : ""}</td>
-                  <td class="text-right">{kr(l.amount_ore)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+      {#if treffEgne.length}
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Nr</th><th>Navn</th>
+              <th class="text-right">Saldo</th><th class="text-right">Posteringer</th>
+              <th></th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each kontoSide as k (k.number)}
+              <tr class={k.active ? "" : "opacity-50"}>
+                <td class="font-mono">
+                  <a class="link" href={"#/c/" + companyId + "/hovedbok/" + k.number}>{k.number}</a>
+                </td>
+                <td>
+                  {k.name}
+                  {#if k.reskontro_kind}
+                    <span class="badge badge-ghost badge-xs">{k.reskontro_kind}</span>
+                  {/if}
+                  {#if !k.active}<span class="badge badge-ghost badge-xs">deaktivert</span>{/if}
+                </td>
+                <td class="text-right">{kr(k.saldo_ore)}</td>
+                <td class="text-right">{k.posteringer}</td>
+                <td>
+                  <button class="btn btn-xs btn-ghost" onclick={() => endreNavn(k)}>Navn</button>
+                </td>
+                <td>
+                  <button class="btn btn-xs btn-ghost" onclick={() => toggleAktiv(k)}>
+                    {k.active ? "Deaktiver" : "Aktiver"}
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <div class="mt-2">
+          <Paginering bind:side={kSide} antall={treffEgne.length} perSide={KONTOER_PER_SIDE} />
+        </div>
+      {:else}
+        <p class="opacity-70 text-sm mb-2">Ingen kontoer i selskapet matcher søket.</p>
+      {/if}
+
+      {#if treffStandard.length}
+        <p class="text-sm font-semibold mt-3 mb-1">Fra standardkontoplanen</p>
+        <table class="table table-sm">
+          <tbody>
+            {#each treffStandard as s (s.number)}
+              <tr>
+                <td class="font-mono w-16">{s.number}</td>
+                <td>{s.name}</td>
+                <td class="text-right">
+                  <button class="btn btn-xs btn-outline" onclick={() => leggTil(s.number, null)}>
+                    + Legg til
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+
+      <p class="text-sm font-semibold mt-3 mb-1">Egendefinert konto</p>
+      <div class="flex gap-2 flex-wrap items-center">
+        <input class="input input-sm w-24" placeholder="Nummer" bind:value={egenNummer} />
+        <input
+          class="input input-sm w-64"
+          placeholder="Navn (standardnavn brukes om tomt)"
+          bind:value={egenNavn}
+        />
+        <button
+          class="btn btn-sm"
+          disabled={!/^\d{4}$/.test(egenNummer.trim())}
+          onclick={() => leggTil(egenNummer.trim(), egenNavn.trim() || null)}
+        >
+          Legg til konto
+        </button>
+      </div>
+    </Card>
+  {:else}
+    <Card title="Nytt bilag">
+      <p class="text-sm opacity-70 mb-2">
+        Manuell postering rett i hovedboken — debet positivt, kredit negativt, summen må gå i null.
+        Har bilaget et dokument, hører det hjemme i
+        <a class="link" href={"#/c/" + companyId + "/bilag"}>innboksen</a> (vedlegget følger da
+        bilaget).
+      </p>
+      <div class="flex gap-2 mb-2">
+        <input type="date" class="input input-sm" bind:value={date} />
+        <input class="input input-sm flex-1" placeholder="Tekst" bind:value={description} />
+      </div>
+      {#each lines as line}
+        <div class="flex gap-2 mb-1 flex-wrap">
+          <KontoVelger
+            kontoer={data.kontoer}
+            standard={data.standard}
+            bind:value={line.account}
+          />
+          <input
+            class="input input-sm w-32"
+            placeholder="Beløp (−125,50)"
+            bind:value={line.amount}
+          />
+          <input class="input input-sm w-16" placeholder="Mva" bind:value={line.vat} />
+          <DimSelect {dims} kind="avdeling" cls="select select-sm w-28" bind:value={line.avdeling} />
+          <DimSelect {dims} kind="prosjekt" cls="select select-sm w-28" bind:value={line.prosjekt} />
         </div>
       {/each}
-    {/if}
-  </Card>
+      <div class="flex items-center gap-3 mt-1">
+        <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
+        <span class="text-sm {sum === 0 ? 'opacity-70' : 'text-error'}">
+          Differanse: {kr(sum)}
+        </span>
+        <button class="btn btn-sm btn-primary" disabled={sum !== 0} onclick={bokfor}>Bokfør</button>
+      </div>
+    </Card>
 
-  <Card title="Kontoplan">
-    <input
-      class="input input-sm w-full max-w-sm mb-2"
-      placeholder="Søk på nummer eller navn (også i standardkontoplanen)"
-      bind:value={sok}
-    />
-    {#if treffEgne.length}
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>Nr</th><th>Navn</th>
-            <th class="text-right">Saldo</th><th class="text-right">Posteringer</th>
-            <th></th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each treffEgne as k (k.number)}
-            <tr class={k.active ? "" : "opacity-50"}>
-              <td class="font-mono">
-                <a class="link" href={"#/c/" + companyId + "/hovedbok/" + k.number}>{k.number}</a>
-              </td>
-              <td>
-                {k.name}
-                {#if k.reskontro_kind}
-                  <span class="badge badge-ghost badge-xs">{k.reskontro_kind}</span>
-                {/if}
-                {#if !k.active}<span class="badge badge-ghost badge-xs">deaktivert</span>{/if}
-              </td>
-              <td class="text-right">{kr(k.saldo_ore)}</td>
-              <td class="text-right">{k.posteringer}</td>
-              <td><button class="btn btn-xs btn-ghost" onclick={() => endreNavn(k)}>Navn</button></td>
-              <td>
-                <button class="btn btn-xs btn-ghost" onclick={() => toggleAktiv(k)}>
-                  {k.active ? "Deaktiver" : "Aktiver"}
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {:else}
-      <p class="opacity-70 text-sm mb-2">Ingen kontoer i selskapet matcher søket.</p>
-    {/if}
-
-    {#if treffStandard.length}
-      <p class="text-sm font-semibold mt-3 mb-1">Fra standardkontoplanen</p>
-      <table class="table table-sm">
-        <tbody>
-          {#each treffStandard as s (s.number)}
-            <tr>
-              <td class="font-mono w-16">{s.number}</td>
-              <td>{s.name}</td>
-              <td class="text-right">
-                <button class="btn btn-xs btn-outline" onclick={() => leggTil(s.number, null)}>
-                  + Legg til
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-
-    <p class="text-sm font-semibold mt-3 mb-1">Egendefinert konto</p>
-    <div class="flex gap-2 flex-wrap items-center">
-      <input class="input input-sm w-24" placeholder="Nummer" bind:value={egenNummer} />
-      <input class="input input-sm w-64" placeholder="Navn (standardnavn brukes om tomt)" bind:value={egenNavn} />
-      <button
-        class="btn btn-sm"
-        disabled={!/^\d{4}$/.test(egenNummer.trim())}
-        onclick={() => leggTil(egenNummer.trim(), egenNavn.trim() || null)}
-      >
-        Legg til konto
-      </button>
-    </div>
-  </Card>
+    <Card title="Posteringer">
+      <div class="flex items-center gap-3 mb-2 flex-wrap">
+        <div class="join">
+          <button class="btn btn-xs join-item" onclick={() => (year -= 1)}>«</button>
+          <span class="btn btn-xs join-item pointer-events-none">{year}</span>
+          <button class="btn btn-xs join-item" onclick={() => (year += 1)}>»</button>
+        </div>
+        <input
+          class="input input-sm w-full max-w-xs"
+          placeholder="Filtrer: bilag, dato, tekst, konto …"
+          bind:value={pSok}
+        />
+        {#if posteringer}
+          <span class="text-sm opacity-70">
+            {bilagTreff.length} bilag{pSok.trim() ? " (filtrert)" : ""} — nyeste øverst
+          </span>
+        {/if}
+      </div>
+      {#if !posteringer}
+        <span class="loading loading-spinner loading-sm"></span>
+      {:else if !bilagTreff.length}
+        <p class="opacity-70 text-sm">
+          {pSok.trim() ? "Ingen bilag matcher filteret." : "Ingen bilag i " + year + " ennå — det første kan føres over."}
+        </p>
+      {:else}
+        {#each bilagSide as v (v.bilag)}
+          <div class="mb-3">
+            <span class="font-semibold">{v.bilag}</span>
+            <span class="opacity-70 text-sm">{v.date} — {v.description}</span>
+            <table class="table table-sm">
+              <tbody>
+                {#each v.lines as l}
+                  <tr>
+                    <td>
+                      <a
+                        class="link font-mono"
+                        href={"#/c/" + companyId + "/hovedbok/" + l.account}
+                      >
+                        {l.account}
+                      </a>
+                      {l.account_name}
+                    </td>
+                    <td>{l.vat_code ? "mva " + l.vat_code : ""}</td>
+                    <td class="text-right">{kr(l.amount_ore)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/each}
+        <Paginering bind:side={pSide} antall={bilagTreff.length} perSide={BILAG_PER_SIDE} />
+      {/if}
+    </Card>
+  {/if}
 {/if}

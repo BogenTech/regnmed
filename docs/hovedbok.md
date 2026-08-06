@@ -40,14 +40,19 @@ frie veien, med de samme vaktene.
   bokføring med beskjed om å bruke innboksen — attestering er knyttet
   til innboksdokumenter (#47), og en manuell sidedør ville opphevet
   internkontrollen. Fail-closed, testfestet.
-- Portalen: Hovedbok-seksjonen har Nytt bilag-skjemaet (kontovelger
-  med søk i egne kontoer + katalogen, dimensjoner, differanse-sperre
-  på Bokfør-knappen), **Posteringer-kortet — selve boken**: alle
-  bilag med linjene sine (bokføringsspesifikasjonen, nyeste øverst,
-  årsvelger, kontonummer klikkbare) — kontoplanen er indeksen, ikke
-  hovedinnholdet (brukerkorreks 2026-08-06), kontoplankortet (søk,
-  legg til fra katalog, egendefinert konto, navn/deaktiver) og
-  drill-down per konto (`/reports/kontospesifikasjon?account=` —
+- Portalen: Hovedbok-seksjonen har to dyplenkbare faner
+  (Rapporter-mønsteret). **Posteringer** (`…/hovedbok`) er selve
+  boken: Nytt bilag-skjemaet (kontovelger med søk i egne kontoer +
+  katalogen, dimensjoner, differanse-sperre på Bokfør-knappen) og
+  alle bilag med linjene sine (bokføringsspesifikasjonen, nyeste
+  øverst, årsvelger, fritekstfilter over bilagsnr/dato/tekst/konto,
+  klientside-paginering — serverside kan komme når volum krever det).
+  **Kontoplan** (`…/hovedbok/kontoplan`) er indeksen, ikke
+  hovedinnholdet (brukerkorreks 2026-08-06) og BEVISST ingen egen
+  menyseksjon — den hører til boken sin, men har egen adresse: søk,
+  vis-deaktiverte-filter, paginering, legg til fra katalog,
+  egendefinert konto, navn/deaktiver. Drill-down per konto
+  (`…/hovedbok/<nr>`, `/reports/kontospesifikasjon?account=` —
   filteret fantes på serveren fra #4, seksjonen tok det i bruk). Et
   bilag MED dokument hører fortsatt hjemme i innboksen; skjemaet sier
   det.
