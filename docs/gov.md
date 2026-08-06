@@ -31,19 +31,37 @@ carve-out. Where the keys actually live is recorded in docs/secrets.md.
 
 ### Operational setup (one-time, per environment)
 
-**Status:** Samarbeidsportalen access obtained and scope bestilling
-sent to Skatteetaten (skriv-til-oss, both scopes, orgnr stated)
-2026-07-24 — awaiting their grant. The **test client exists** with an
-RS256 keypair registered on it; its id and the rest of the
-`MASKINPORTEN_*` configuration live outside git in
-`~/.config/regnmed/maskinporten-test.env` (docs/secrets.md). When the
-grant lands: add the scopes to the test client in Samarbeidsportalen,
-then run the live validation round-trip (step 4).
+**Status:** the 2026-07-24 scope bestilling via skriv-til-oss was
+answered 2026-08-06 with a redirect: that channel does not handle scope
+orders, and the reply points to the brukerstøtte desk on the API
+documentation's kontakt-oss page — i.e. the same
+`eksternjira.sits.no`-tjeneste this document identified on 2026-07-28.
+**Nobody is processing the old request**; the bestilling must be
+re-sent there, and the redirect is no loss: the July request asked for
+`skatteetaten:mvameldinginnsending`, which does not exist (innsending
+goes via Altinn 3, see the table below), while the re-send can order
+the full verified list in one henvendelse.
 
-A third scope is now also pending, for the aksjonærregisteroppgave:
-`skatteetaten:innrapporteringaksjonaerregisteroppgave` (#43,
-docs/aksjonaer.md) — and that one additionally needs an Altinn
-systembruker, see below.
+Next concrete steps, in order:
+
+1. Create a **brukeradministrator** for the org on the brukerstøtte
+   service (own account system, not ID-porten; first login via «glemt
+   passord»), then a user account.
+2. Send ONE henvendelse ordering the whole «bestilles nå» table below
+   for **test**, stating orgnr, environment and the test client-id.
+   (Prod is ordered separately when test has proven out.)
+3. When granted: add the scopes to the test client in
+   Samarbeidsportalen, then run the live validation round-trip
+   (step 4 below).
+
+The **test client exists** with an RS256 keypair registered on it; its
+id and the rest of the `MASKINPORTEN_*` configuration live outside git
+in `~/.config/regnmed/maskinporten-test.env` (docs/secrets.md).
+
+The aksjonærregisteroppgave scope
+(`skatteetaten:innrapporteringaksjonaerregisteroppgave`, #43,
+docs/aksjonaer.md) rides in the same henvendelse — and additionally
+needs an Altinn systembruker, see below.
 
 1. Get access to Digdir's **Samarbeidsportalen** (requires the
    organization's Altinn roles).
