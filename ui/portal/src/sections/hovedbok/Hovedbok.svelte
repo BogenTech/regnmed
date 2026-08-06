@@ -189,22 +189,44 @@
     }
   }
 
-  // ---- Posteringene — the actual hovedbok. Every bilag with its
-  // lines (bokføringsspesifikasjon, chain order), newest first for
-  // daily reading, with free-text filter and paging.
+  // ---- Posteringene — the actual hovedbok. Vouchers newest-first
+  // with their lines, paged and filtered SERVER-SIDE (GET /vouchers
+  // with from/to/sok/limit/offset/lines) — the fetch is one page, so
+  // the view scales with the ledger. The filter reads the whole bilag:
+  // number, date, text, and every line's account number/name.
   const BILAG_PER_SIDE = 20;
   let year = $state(new Date().getFullYear());
-  let posteringer = $state(null);
+  let posteringer = $state(null); // { total, vouchers }
   let pSok = $state("");
+  let pSokAktiv = $state("");
   let pSide = $state(1);
+  let fetchId = 0;
+  let debounceTimer;
+
+  // Debounce the filter: one request per pause in typing, not one per
+  // keystroke. The stale-response guard (fetchId) makes overlapping
+  // answers harmless — only the newest lands.
+  $effect(() => {
+    const v = pSok;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => (pSokAktiv = v), 300);
+  });
+  $effect(() => {
+    void pSokAktiv;
+    void year;
+    pSide = 1;
+  });
 
   async function lastPosteringer() {
+    const id = ++fetchId;
     posteringer = null;
     try {
-      posteringer = await api(
-        "/companies/" + companyId + "/reports/bokforingsspesifikasjon?from=" + year +
-          "-01-01&to=" + year + "-12-31",
+      const svar = await api(
+        "/companies/" + companyId + "/vouchers?lines=true&from=" + year + "-01-01&to=" + year +
+          "-12-31&limit=" + BILAG_PER_SIDE + "&offset=" + (pSide - 1) * BILAG_PER_SIDE +
+          (pSokAktiv.trim() ? "&sok=" + encodeURIComponent(pSokAktiv.trim()) : ""),
       );
+      if (id === fetchId) posteringer = svar;
     } catch (error) {
       toast(error.message, false);
     }
@@ -213,32 +235,9 @@
   $effect(() => {
     if (extra) return;
     void year;
+    void pSide;
+    void pSokAktiv;
     lastPosteringer();
-  });
-
-  // The filter reads the whole bilag: number, date, text, and every
-  // line's account number/name — "everything about 1920 in August" is
-  // two searches away, not a report.
-  let bilagTreff = $derived.by(() => {
-    if (!posteringer) return [];
-    const alle = [...posteringer.vouchers].reverse();
-    const q = pSok.trim().toLowerCase();
-    if (!q) return alle;
-    return alle.filter(
-      (v) =>
-        v.bilag.toLowerCase().includes(q) ||
-        v.date.includes(q) ||
-        (v.description || "").toLowerCase().includes(q) ||
-        v.lines.some(
-          (l) => l.account.startsWith(q) || (l.account_name || "").toLowerCase().includes(q),
-        ),
-    );
-  });
-  let bilagSide = $derived(bilagTreff.slice((pSide - 1) * BILAG_PER_SIDE, pSide * BILAG_PER_SIDE));
-  $effect(() => {
-    void pSok;
-    void year;
-    pSide = 1;
   });
 
   // ---- Drill-down (extra = account number) ----
@@ -473,20 +472,20 @@
         />
         {#if posteringer}
           <span class="text-sm opacity-70">
-            {bilagTreff.length} bilag{pSok.trim() ? " (filtrert)" : ""} — nyeste øverst
+            {posteringer.total} bilag{pSokAktiv.trim() ? " (filtrert)" : ""} — nyeste øverst
           </span>
         {/if}
       </div>
       {#if !posteringer}
         <span class="loading loading-spinner loading-sm"></span>
-      {:else if !bilagTreff.length}
+      {:else if !posteringer.vouchers.length}
         <p class="opacity-70 text-sm">
-          {pSok.trim() ? "Ingen bilag matcher filteret." : "Ingen bilag i " + year + " ennå — det første kan føres over."}
+          {pSokAktiv.trim() ? "Ingen bilag matcher filteret." : "Ingen bilag i " + year + " ennå — det første kan føres over."}
         </p>
       {:else}
-        {#each bilagSide as v (v.bilag)}
+        {#each posteringer.vouchers as v (v.voucher)}
           <div class="mb-3">
-            <span class="font-semibold">{v.bilag}</span>
+            <span class="font-semibold">{v.journal}-{v.voucher}</span>
             <span class="opacity-70 text-sm">{v.date} — {v.description}</span>
             <table class="table table-sm">
               <tbody>
@@ -500,6 +499,9 @@
                         {l.account}
                       </a>
                       {l.account_name}
+                      {#if l.party_no}<span class="opacity-60">({l.party_no})</span>{/if}
+                      {#if l.avdeling}<span class="badge badge-ghost badge-xs">{l.avdeling}</span>{/if}
+                      {#if l.prosjekt}<span class="badge badge-ghost badge-xs">{l.prosjekt}</span>{/if}
                     </td>
                     <td>{l.vat_code ? "mva " + l.vat_code : ""}</td>
                     <td class="text-right">{kr(l.amount_ore)}</td>
@@ -509,7 +511,7 @@
             </table>
           </div>
         {/each}
-        <Paginering bind:side={pSide} antall={bilagTreff.length} perSide={BILAG_PER_SIDE} />
+        <Paginering bind:side={pSide} antall={posteringer.total} perSide={BILAG_PER_SIDE} />
       {/if}
     </Card>
   {/if}

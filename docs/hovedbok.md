@@ -44,9 +44,14 @@ frie veien, med de samme vaktene.
   (Rapporter-mønsteret). **Posteringer** (`…/hovedbok`) er selve
   boken: Nytt bilag-skjemaet (kontovelger med søk i egne kontoer +
   katalogen, dimensjoner, differanse-sperre på Bokfør-knappen) og
-  alle bilag med linjene sine (bokføringsspesifikasjonen, nyeste
-  øverst, årsvelger, fritekstfilter over bilagsnr/dato/tekst/konto,
-  klientside-paginering — serverside kan komme når volum krever det).
+  alle bilag med linjene sine, nyeste øverst, årsvelger,
+  fritekstfilter og paginering — ALT SERVERSIDE via
+  `GET /companies/{id}/vouchers?from&to&sok&limit&offset&lines=true`
+  (utvidelse av det eksisterende endepunktet; uten parametre svarer
+  det som før, og den lovpålagte bokføringsspesifikasjonen er urørt —
+  en rapport er komplett per definisjon, dette er skjermen man blar
+  i). Filteret (`sok`) leser hele bilaget: nummer, dato, tekst og
+  linjenes kontonummer/-navn; filterfeltet i portalen er debouncet.
   **Kontoplan** (`…/hovedbok/kontoplan`) er indeksen, ikke
   hovedinnholdet (brukerkorreks 2026-08-06) og BEVISST ingen egen
   menyseksjon — den hører til boken sin, men har egen adresse: søk,

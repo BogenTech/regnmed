@@ -330,3 +330,126 @@ async fn manual_posting_respects_the_attestering_policy() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn voucher_listing_pages_and_filters_server_side() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Paige Pager"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Sidevis AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "bokforing")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1920", "Bank"),
+        ("6800", "Kontorkostnad"),
+        ("6300", "Leie"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let token = idp.token(&sub, "Paige Pager");
+    let base = format!("/companies/{company}");
+
+    // 24 kontor + 1 leie = 25 vouchers in 2026.
+    for i in 1..=24 {
+        let (status, _) = call(
+            &state,
+            "POST",
+            &format!("{base}/vouchers"),
+            &token,
+            Some(json!({
+                "journal_code": "GL",
+                "date": format!("2026-04-{:02}", (i % 28) + 1),
+                "description": format!("Kontorkostnad {i}"),
+                "lines": [
+                    { "account": "6800", "amount_ore": i * 100 },
+                    { "account": "1920", "amount_ore": -(i * 100) },
+                ],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, _) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(json!({
+            "journal_code": "GL",
+            "date": "2026-05-01",
+            "description": "Husleie mai",
+            "lines": [
+                { "account": "6300", "amount_ore": 9_000_00 },
+                { "account": "1920", "amount_ore": -9_000_00 },
+            ],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Page 1: newest 20 of 25, WITH lines; page 2: the remaining 5.
+    let (status, side1) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers?lines=true&from=2026-01-01&to=2026-12-31&limit=20&offset=0"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(side1["total"], 25);
+    assert_eq!(side1["vouchers"].as_array().unwrap().len(), 20);
+    // Newest first: the husleie voucher (posted last) leads, lines attached.
+    assert_eq!(side1["vouchers"][0]["description"], "Husleie mai");
+    assert_eq!(side1["vouchers"][0]["lines"].as_array().unwrap().len(), 2);
+    let (_, side2) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers?lines=true&from=2026-01-01&to=2026-12-31&limit=20&offset=20"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(side2["vouchers"].as_array().unwrap().len(), 5);
+
+    // The filter runs server-side: by description text...
+    let (_, treff) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers?lines=true&sok=husleie"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(treff["total"], 1);
+    assert_eq!(treff["vouchers"][0]["description"], "Husleie mai");
+    // ...and by account number on the LINES, which headers alone can't see.
+    let (_, treff) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers?sok=6300"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(treff["total"], 1);
+
+    // Without parameters the old contract stands: headers only, no lines key.
+    let (status, alle) = call(&state, "GET", &format!("{base}/vouchers"), &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(alle["vouchers"].as_array().unwrap().len(), 25);
+    assert!(alle["vouchers"][0].get("lines").is_none());
+}
