@@ -14,7 +14,6 @@
   import Brukere from "../brukere/Brukere.svelte";
   import Oppdrag from "../oppdrag/Oppdrag.svelte";
   import Periode from "../periode/Periode.svelte";
-  import Utseende from "./Utseende.svelte";
 
   let { companyId, extra } = $props();
 
@@ -27,7 +26,6 @@
     ["brukere", "Brukere og roller", "brukere"],
     ["oppdrag", "Oppdrag og integrasjoner", "oppdrag"],
     ["periode", "Periode", "periode"],
-    ["utseende", "Utseende", "admin"],
   ];
 
   let fane = $derived(extra || "");
@@ -187,8 +185,6 @@
   <Oppdrag {companyId} />
 {:else if fane === "periode"}
   <Periode {companyId} />
-{:else if fane === "utseende"}
-  <Utseende />
 {:else}
   <div class="alert alert-warning"><span>Ukjent fane «{fane}».</span></div>
 {/if}

@@ -161,13 +161,22 @@ ingen CDN, ingenting hentes i kjøretid. Hvert ikon lagres ÉN gang som
 statisk markup; **ikonstilen** (linje / kraftig / emoji / ingen) endrer
 bare gjengivelsen i `components/Ikon.svelte` (strekbredde eller
 emoji-fallback). Tilordningen seksjon → ikon er fast med vilje —
-gjenkjenning dør om hver installasjon stokker om. Stilen velges under
-Administrasjon → Utseende og følger temadoktrinen: per bruker,
-localStorage (`regnmed-ikonstil`, `lib/prefs.svelte.js`), aldri gjennom
-IdP eller token. Plattformkonsollen (`#/plattform`) bruker samme ikoner
-på sine faner og fikk samtidig et dashbord (`/platform/overview`) og en
-Abonnementer-fane per selskap (`/platform/subscriptions`, systemadmin —
-docs/auth.md §8).
+gjenkjenning dør om hver installasjon stokker om. Stilen er en
+PLATTFORMINNSTILLING, låst globalt av systemadmin (brukerbeslutning
+2026-08-06, migrasjon 0053): portalen leser den fra `/portal-config`
+ved oppstart (`lib/prefs.svelte.js` er bare speilet), og velgeren bor i
+plattformkonsollens Innstillinger-fane (`PUT /platform/settings`).
+Ingen brukeroverstyring — i motsetning til fargetemaet, som fortsatt er
+per bruker.
+
+**Plattformkonsollen** (`#/plattform`, docs/auth.md §8) er back-office:
+dashbord (`/platform/overview`), Abonnementer per selskap
+(`/platform/subscriptions`), og drill-down per selskap
+(`components/PlattformSelskap.svelte` mot
+`GET /platform/companies/{id}`) med redigerbare firmaopplysninger,
+medlemsstyring (kilde «plattform» i selskapets logg) og manuell
+åpning/avslutning av dekning. Identitetsdata (navn/e-post) eies av
+IdP-en — Brukere-fanen sier det og lenker dit (BogenTech/regnid#1).
 
 Fellesdeler ligger i `src/lib/` (API-klient, auth, ruter, tema, toast,
 nedlasting, offline-kø) og `src/components/` (skall, kort, dimensjons-

@@ -7,9 +7,9 @@
 //
 // The assignment section → icon is fixed on purpose: the point of the
 // icons is instant recognition, and that dies if every installation
-// shuffles them. What the user picks (in Administrasjon → Utseende) is
-// the STYLE, stored like the theme — localStorage, per user, never
-// through the IdP or a token (docs/portal.md).
+// shuffles them. The STYLE is a platform setting locked globally by
+// systemadmin (migration 0053, picker in the platform console); the
+// portal reads it from /portal-config at boot.
 
 export const IKONSTILER = [
   ["linje", "Linje"],

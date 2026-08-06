@@ -71,7 +71,14 @@ endepunktene når noe selskaps hovedbok.
 | `/platform/members/{member_id}` | DELETE |
 | `/platform/overview` | GET |
 | `/platform/subscriptions` | GET |
+| `/platform/settings` | GET PUT |
 | `/platform/companies` | GET |
+| `/platform/companies/{company_id}` | GET |
+| `/platform/companies/{company_id}/settings` | PUT |
+| `/platform/companies/{company_id}/members/{person_id}` | DELETE |
+| `/platform/companies/{company_id}/members/{person_id}/restore` | POST |
+| `/platform/companies/{company_id}/subscription` | POST |
+| `/platform/companies/{company_id}/subscription/end` | POST |
 | `/platform/firms` | GET |
 | `/platform/users` | GET |
 | `/platform/customers` | GET |

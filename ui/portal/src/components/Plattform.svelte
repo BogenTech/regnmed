@@ -5,11 +5,14 @@
   // gjaldt; banneret sier det, så ingen tror de ser usporet.
   import { api, post, send } from "../lib/api.js";
   import { me } from "../lib/me.svelte.js";
-  import { logout } from "../lib/auth.svelte.js";
+  import { session, logout } from "../lib/auth.svelte.js";
   import { toast } from "../lib/toast.svelte.js";
+  import { IKONSTILER } from "../lib/ikoner.js";
+  import { prefs, setIkonstil } from "../lib/prefs.svelte.js";
   import ThemeControls from "./ThemeControls.svelte";
   import Card from "./Card.svelte";
   import Ikon from "./Ikon.svelte";
+  import PlattformSelskap from "./PlattformSelskap.svelte";
 
   const systemadmin = $derived(me.plattform?.rolle === "systemadmin");
 
@@ -26,6 +29,7 @@
             ["abonnementer", "Abonnementer", "abonnementer"],
             ["kunder", "Kunder", "kunder"],
             ["medlemmer", "Plattformbrukere", "medlemmer"],
+            ["innstillinger", "Innstillinger", "admin"],
           ]
         : []),
     ],
@@ -34,6 +38,8 @@
   let fane = $state("oversikt");
   let sok = $state("");
   let rader = $state(null);
+  // Drill-down: ett valgt selskap i Selskaper-fanen.
+  let valgtSelskap = $state(null);
 
   async function last() {
     rader = null;
@@ -47,8 +53,21 @@
         rader = (await api("/platform/subscriptions")).abonnementer;
       else if (fane === "kunder") rader = (await api("/platform/customers" + q)).kunder;
       else if (fane === "medlemmer") rader = (await api("/platform/members")).medlemmer;
+      else if (fane === "innstillinger") rader = await api("/platform/settings");
     } catch (error) {
       rader = [];
+      toast(error.message, false);
+    }
+  }
+
+  async function lagreIkonstil(stil) {
+    try {
+      await send("PUT", "/platform/settings", { ikonstil: stil });
+      // Oppdater visningen straks — alle andre får den ved neste
+      // innlasting av portal-config.
+      setIkonstil(stil);
+      toast("Ikonstilen er satt for hele plattformen", true);
+    } catch (error) {
       toast(error.message, false);
     }
   }
@@ -161,6 +180,7 @@
           onclick={() => {
             fane = slug;
             sok = "";
+            valgtSelskap = null;
           }}
         >
           <Ikon navn={ikonNavn} />
@@ -169,7 +189,17 @@
       {/each}
     </div>
 
-    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer"}
+    {#if fane === "selskaper" && valgtSelskap}
+      <PlattformSelskap
+        companyId={valgtSelskap}
+        {systemadmin}
+        onClose={() => {
+          valgtSelskap = null;
+          last();
+        }}
+      />
+    {:else}
+    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer" && fane !== "innstillinger"}
       <form class="mb-4 flex gap-2" onsubmit={sokSubmit}>
         <input
           class="input input-sm w-full max-w-xs"
@@ -256,12 +286,23 @@
     {:else if fane === "selskaper"}
       <Card title="Selskaper">
         <table class="table table-sm">
-          <thead><tr><th>Orgnr</th><th>Navn</th></tr></thead>
+          <thead><tr><th>Orgnr</th><th>Navn</th><th></th></tr></thead>
           <tbody>
             {#each rader as c (c.company_id)}
-              <tr><td>{c.orgnr}</td><td>{c.name}</td></tr>
+              <tr>
+                <td>{c.orgnr}</td>
+                <td>{c.name}</td>
+                <td>
+                  <button
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => (valgtSelskap = c.company_id)}
+                  >
+                    Åpne
+                  </button>
+                </td>
+              </tr>
             {:else}
-              <tr><td colspan="2" class="opacity-70">Ingen treff.</td></tr>
+              <tr><td colspan="3" class="opacity-70">Ingen treff.</td></tr>
             {/each}
           </tbody>
         </table>
@@ -281,6 +322,16 @@
       </Card>
     {:else if fane === "brukere"}
       <Card title="Brukere">
+        <p class="text-sm opacity-70 mb-2">
+          Navn og e-post eies av innloggingstjenesten
+          {#if session.config?.issuer}
+            (<a class="link" href={session.config.issuer} target="_blank" rel="noreferrer">
+              {session.config.issuer.replace(/^https?:\/\//, "")}</a>)
+          {:else}
+            (IdP-en)
+          {/if}
+          og speiles hit ved innlogging — identitetsdata endres der, tilganger her.
+        </p>
         <table class="table table-sm">
           <thead>
             <tr><th>Navn</th><th>E-post</th><th>Tilknytninger</th><th></th></tr>
@@ -412,6 +463,41 @@
           </tbody>
         </table>
       </Card>
+    {:else if fane === "innstillinger"}
+      <Card title="Innstillinger — hele plattformen">
+        <p class="text-sm opacity-70 mb-3">
+          Ikonstilen i portalmenyen, låst globalt for alle brukere. Endringen gjelder ved neste
+          innlasting; din egen visning oppdateres straks.
+        </p>
+        <div class="flex flex-col gap-2 max-w-md">
+          {#each IKONSTILER as [slug, navn] (slug)}
+            <label
+              class="flex items-center gap-3 rounded-box border border-base-300 px-3 py-2 cursor-pointer
+                     {prefs.ikonstil === slug ? 'border-primary bg-base-200' : ''}"
+            >
+              <input
+                type="radio"
+                name="ikonstil"
+                class="radio radio-sm"
+                value={slug}
+                checked={prefs.ikonstil === slug}
+                onchange={() => lagreIkonstil(slug)}
+              />
+              <span class="w-28">{navn}</span>
+              <span class="flex items-center gap-3 opacity-80">
+                {#if slug === "ingen"}
+                  <span class="text-xs opacity-60">bare tekst</span>
+                {:else}
+                  {#each ["oversikt", "faktura", "bank", "rapporter", "timer"] as ikonNavn (ikonNavn)}
+                    <Ikon navn={ikonNavn} stil={slug} />
+                  {/each}
+                {/if}
+              </span>
+            </label>
+          {/each}
+        </div>
+      </Card>
+    {/if}
     {/if}
   {/if}
 </main>

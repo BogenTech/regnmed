@@ -329,6 +329,108 @@ gjenglemt ClusterIssuer.
    imot ingenting, og det er nettopp det den usatte tilstanden finnes
    for å unngå.
 8. `kubectl apply -k deploy/prod`.
+9. **Bootstrap** — OIDC-klienten og det første mennesket, se neste
+   avsnitt. Uten steget står et miljø oppe som ingen kan logge inn i.
+
+## Bootstrap etter første apply
+
+Manifestene reiser topologien, men de kan ikke reise **staten inne i
+regnid**. OIDC-klienten og den første kontoen er rader i regnids
+database, og et passord kan uansett aldri ligge i dette repoet
+(docs/secrets.md). Da finnes bare én plass framgangsmåten kan bo, og det
+er her.
+
+Den bodde ingen steder fram til 2026-08-06, og prisen kom som forventet:
+spørsmålet «hvilken administrator lagde vi til testmiljøet?» kunne ikke
+besvares av noen, og repoet kunne ikke svare heller — det eneste
+`add-user`-kallet i git er `seed()` i `scripts/dev-cluster.sh`, som
+sår **det lokale** clusteret og aldri har rørt `test.regnmed.no`.
+Passordet hører hjemme i en passordhåndterer; det som mangler her er
+bare hvilke steg som ble tatt.
+
+Stegene kjøres én gang per miljø, etter første apply. `-n regnmed-test`
+for test, `-n regnmed` for prod; alt annet er likt. Eksemplene under er
+testverdier — bytt vertsnavnene i prod.
+
+### 1. OIDC-klienten `regnmed-portal`
+
+```sh
+kubectl -n regnmed-test exec deploy/regnid -- /app/regnid add-client \
+    --client-id regnmed-portal --name "regnmed portal" \
+    --redirect-uri https://test.regnmed.no/callback \
+    --redirect-uri https://api.test.regnmed.no/callback \
+    --post-logout-redirect-uri https://test.regnmed.no/ \
+    --post-logout-redirect-uri https://api.test.regnmed.no/ \
+    --audience regnmed
+```
+
+**`--audience regnmed` er det som svir hvis den glemmes.** Innloggingen
+virker helt fint uten den — brukeren kommer tilbake til portalen med et
+token — og så svarer hvert eneste API-kall 401, uten et spor noe sted
+som peker på klientregistreringen. Erfart i prod 2026-07-31.
+
+Klient-id-en må være den API-et ber om: `PORTAL_OIDC_CLIENT_ID`, som
+faller tilbake på `regnmed-portal` (`crates/regnmed-api/src/portal.rs`).
+Redirect-URI-ene er **hver origin portalen kan åpnes fra**, ikke bare
+den vanlige: appen bygger sin egen `redirect_uri` av `location.origin`
+(`ui/portal/src/lib/auth.svelte.js`), og de to første vertsnavnene peker
+på samme service — én binær serverer både SPA-en og API-et — så portalen
+svarer også på API-verten. Åpner noen den der, må den origin være
+registrert, ellers avviser regnid redirecten.
+
+### 2. Den første kontoen
+
+```sh
+kubectl -n regnmed-test exec deploy/regnid -- /app/regnid add-user \
+    --email deg@example.no --password '<engangspassord>' \
+    --name 'Navn Navnesen' --admin
+```
+
+`--admin` gjelder **regnids egne administrasjonssider** (brukere og
+klienter i IdP-en) og gir ingen tilgang til noen hovedbok — grensen i
+docs/auth.md §8 går ikke gjennom regnid. Passordet står i klartekst i
+kommandoen, altså i skallhistorikken: bruk et engangspassord og bytt det
+fra kontosiden etter første innlogging. Regnid har også `/forgot`, men
+den veien forutsetter at utgående e-post faktisk leveres i miljøet
+(`MAIL_BACKEND=nats` + en mail-worker med transport-legitimasjon) — er
+den ikke oppe, er `add-user` eneste vei inn.
+
+### 3. Selskapsadministrator lages ikke her
+
+Den kommer av seg selv: den som onboarder et selskap fra
+Enhetsregisteret blir dets administrator (docs/marketplace.md).
+Registreringsflyten i portalen er hele framgangsmåten, og det finnes
+ingen CLI-vei — med vilje.
+
+### 4. Plattformrolle, hvis miljøet skal ha en
+
+```sh
+kubectl -n regnmed-test exec deploy/regnmed-api -- /app/regnmed platform-grant \
+    --epost deg@example.no --rolle systemadmin \
+    --til 2026-12-31 --notat 'Sak 123: drift av testmiljøet'
+```
+
+Personen **må ha logget inn i portalen én gang først** — `platform-grant`
+slår opp en eksisterende `person`, og finner den ingen, sier den det.
+`--til` er obligatorisk og eksklusiv (docs/auth.md §8: en plattformrolle
+uten utløpsdato kan ikke skrives inn). `platform-list` viser
+medlemskapene, `platform-end --id <id>` avslutter et med virkning fra
+neste kall.
+
+### Hva finnes allerede i et miljø?
+
+Det er dette spørsmålet avsnittet finnes for. Kontoene:
+
+```sh
+kubectl -n regnmed-test exec deploy/postgres -- psql -U regnmed -d regnid -c "select email, name, is_admin, created_at from users order by created_at"
+```
+
+(`psql` over containerens egen socket trenger ikke passord.) Og
+plattformrollene, aktive som avsluttede:
+
+```sh
+kubectl -n regnmed-test exec deploy/regnmed-api -- /app/regnmed platform-list
+```
 
 ## Pod hardening
 

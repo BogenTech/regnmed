@@ -453,3 +453,280 @@ async fn the_overview_is_shared_but_subscriptions_are_systemadmin_territory() {
         "billing status only — no balances on the platform path"
     );
 }
+
+/// The back office: systemadmin edits master data, memberships and the
+/// abonnement relationship on the customer's behalf — support looks but
+/// does not touch, the change log names the platform, and the guards
+/// that protect a company from its own admins protect it from the
+/// platform too.
+#[tokio::test]
+async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
+    let Some((state, idp, company)) = setup().await else {
+        return;
+    };
+    let (_, support) = platform_person(&state, &idp, "support").await;
+    let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
+
+    // Support sees the drill-down (same master data as the lists) but
+    // every mutation below is systemadmin territory.
+    assert_eq!(
+        status(
+            &state,
+            "GET",
+            &format!("/platform/companies/{company}"),
+            &support,
+            ""
+        )
+        .await,
+        StatusCode::OK
+    );
+    for (method, uri, body) in [
+        (
+            "PUT",
+            format!("/platform/companies/{company}/settings"),
+            r#"{"address":"x"}"#,
+        ),
+        (
+            "POST",
+            format!("/platform/companies/{company}/subscription"),
+            r#"{"plan":"standard","note":"sak"}"#,
+        ),
+        (
+            "POST",
+            format!("/platform/companies/{company}/subscription/end"),
+            "",
+        ),
+        (
+            "PUT",
+            "/platform/settings".to_string(),
+            r#"{"ikonstil":"emoji"}"#,
+        ),
+    ] {
+        assert_eq!(
+            status(&state, method, &uri, &support, body).await,
+            StatusCode::FORBIDDEN,
+            "{method} {uri} must be systemadmin territory"
+        );
+    }
+
+    // Master data edit lands where the company's own admin reads it.
+    let (kode, _) = json_call(
+        &state,
+        "PUT",
+        &format!("/platform/companies/{company}/settings"),
+        &sysadmin,
+        r#"{"address":"Plattformgata 1","email":"post@kunde.invalid"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+    let (_, detalj) = json_call(
+        &state,
+        "GET",
+        &format!("/platform/companies/{company}"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(detalj["settings"]["address"], "Plattformgata 1");
+
+    // Coverage by hand: refuses without an active-status check bypass,
+    // carries the mandatory note, and ending it flips the status off
+    // aktiv again.
+    let (kode, svar) = json_call(
+        &state,
+        "POST",
+        &format!("/platform/companies/{company}/subscription"),
+        &sysadmin,
+        r#"{"plan":"standard","note":"supportsak 42"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let (_, detalj) = json_call(
+        &state,
+        "GET",
+        &format!("/platform/companies/{company}"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(detalj["abonnement"]["status"], "aktiv");
+    assert!(
+        detalj["abonnement"]["dekning"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("supportsak 42"),
+        "the reason must be on the row: {detalj}"
+    );
+    // A second opening while active is refused.
+    let (kode, _) = json_call(
+        &state,
+        "POST",
+        &format!("/platform/companies/{company}/subscription"),
+        &sysadmin,
+        r#"{"plan":"standard","note":"dobbelt"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    let (kode, _) = json_call(
+        &state,
+        "POST",
+        &format!("/platform/companies/{company}/subscription/end"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+    // The row is closed. The STATUS stays aktiv until the exclusive
+    // valid_to passes — coverage opened today ends tomorrow at the
+    // earliest ("the shortest truthful coverage is one day"), so
+    // asserting on the row rather than the status is the honest check.
+    let (_, detalj) = json_call(
+        &state,
+        "GET",
+        &format!("/platform/companies/{company}"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert!(
+        !detalj["abonnement"]["dekning"][0]["valid_to"].is_null(),
+        "the open row must be closed: {detalj}"
+    );
+}
+
+/// Membership deactivation from the platform: kilde='plattform' in the
+/// company's own log, access gone on the next /me — and the last active
+/// admin cannot be deactivated even by the platform (no orphaned
+/// companies; the nødprosedyre exists for the opposite problem).
+#[tokio::test]
+async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
+    let Some((state, idp, company)) = setup().await else {
+        return;
+    };
+    let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
+
+    let admin_sub = format!("admin|{}", Uuid::new_v4());
+    let admin_id = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Eneadmin"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin_id, "admin")
+        .await
+        .unwrap();
+
+    // The only active admin: refused.
+    let (kode, svar) = json_call(
+        &state,
+        "DELETE",
+        &format!("/platform/companies/{company}/members/{admin_id}"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::BAD_REQUEST, "{svar}");
+
+    // An ordinary member: deactivated, logged as plattform, access gone.
+    let (medlem_id, _, medlem_token) = person(&state, &idp, "Medlem").await;
+    regnmed_db::ensure_company_member(&state.pool, company, medlem_id, "les")
+        .await
+        .unwrap();
+    let (kode, _) = json_call(
+        &state,
+        "DELETE",
+        &format!("/platform/companies/{company}/members/{medlem_id}"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+    let (_, me) = json_call(&state, "GET", "/me", &medlem_token, "").await;
+    assert!(
+        me["companies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["company_id"] != company.to_string()),
+        "access must be gone: {me}"
+    );
+    let kilde: String = sqlx::query(
+        "select kilde from company_member_change
+         where company_id = $1 and person_id = $2 and endring = 'deaktivert'",
+    )
+    .bind(company)
+    .bind(medlem_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap()
+    .get("kilde");
+    assert_eq!(kilde, "plattform");
+
+    // Restore works and is also the platform's doing.
+    let (kode, _) = json_call(
+        &state,
+        "POST",
+        &format!("/platform/companies/{company}/members/{medlem_id}/restore"),
+        &sysadmin,
+        "",
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+}
+
+/// The global icon style: validated, systemadmin-set, and served to the
+/// whole platform through the unauthenticated /portal-config.
+#[tokio::test]
+async fn the_icon_style_is_validated_and_served_platform_wide() {
+    let Some((state, idp, _company)) = setup().await else {
+        return;
+    };
+    let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
+
+    let (kode, svar) = json_call(
+        &state,
+        "PUT",
+        "/platform/settings",
+        &sysadmin,
+        r#"{"ikonstil":"comic-sans"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::BAD_REQUEST, "{svar}");
+
+    let (kode, _) = json_call(
+        &state,
+        "PUT",
+        "/platform/settings",
+        &sysadmin,
+        r#"{"ikonstil":"kraftig"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+
+    // portal-config is public — no bearer at all.
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/portal-config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let config: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(config["ikonstil"], "kraftig");
+
+    // Leave the shared dev database on the default so a test run does
+    // not restyle everyone's portal.
+    let (kode, _) = json_call(
+        &state,
+        "PUT",
+        "/platform/settings",
+        &sysadmin,
+        r#"{"ikonstil":"linje"}"#,
+    )
+    .await;
+    assert_eq!(kode, StatusCode::OK);
+}

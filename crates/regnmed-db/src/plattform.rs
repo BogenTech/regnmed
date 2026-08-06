@@ -693,3 +693,67 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlattformA
         })
         .collect())
 }
+
+// ---------------------------------------------------------------------
+// Platform settings (migration 0053): what systemadmin decides for the
+// whole platform. Insert-only, newest row per key wins.
+// ---------------------------------------------------------------------
+
+pub async fn platform_setting(pool: &PgPool, key: &str) -> Result<Option<String>> {
+    let value = sqlx::query_scalar(
+        "select value from platform_setting
+         where key = $1 order by created_at desc limit 1",
+    )
+    .bind(key)
+    .fetch_optional(pool)
+    .await?;
+    Ok(value)
+}
+
+pub async fn set_platform_setting(
+    pool: &PgPool,
+    key: &str,
+    value: &str,
+    set_by: Uuid,
+) -> Result<()> {
+    sqlx::query("insert into platform_setting (key, value, set_by) values ($1, $2, $3)")
+        .bind(key)
+        .bind(value)
+        .bind(set_by)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Coverage history for the drill-down — the abonnement rows as they
+/// were written, newest first. Billing master data, never balances.
+#[derive(Debug, Clone)]
+pub struct DekningsRad {
+    pub plan: String,
+    pub valid_from: NaiveDate,
+    pub valid_to: Option<NaiveDate>,
+    pub note: String,
+    pub created_by: String,
+}
+
+pub async fn coverage_rows(pool: &PgPool, company_id: Uuid) -> Result<Vec<DekningsRad>> {
+    let rows = sqlx::query(
+        "select plan, valid_from, valid_to, note, created_by
+         from abonnement where company_id = $1
+         order by valid_from desc, created_at desc
+         limit 20",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| DekningsRad {
+            plan: r.get("plan"),
+            valid_from: r.get("valid_from"),
+            valid_to: r.get("valid_to"),
+            note: r.get("note"),
+            created_by: r.get("created_by"),
+        })
+        .collect())
+}

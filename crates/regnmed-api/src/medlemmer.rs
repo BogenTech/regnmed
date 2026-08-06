@@ -92,9 +92,16 @@ pub async fn revoke_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::medlemmer::sett_aktiv(&state.pool, company_id, person_id, false, person.person_id)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    regnmed_db::medlemmer::sett_aktiv(
+        &state.pool,
+        company_id,
+        person_id,
+        false,
+        person.person_id,
+        "admin",
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -104,9 +111,16 @@ pub async fn restore_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::medlemmer::sett_aktiv(&state.pool, company_id, person_id, true, person.person_id)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    regnmed_db::medlemmer::sett_aktiv(
+        &state.pool,
+        company_id,
+        person_id,
+        true,
+        person.person_id,
+        "admin",
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
 }
 

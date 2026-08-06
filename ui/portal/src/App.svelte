@@ -4,6 +4,7 @@
   import { me, loadMe } from "./lib/me.svelte.js";
   import { FLYTTET_TIL_ADMIN } from "./lib/meny.js";
   import { toast } from "./lib/toast.svelte.js";
+  import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
@@ -54,6 +55,9 @@
 
   async function start() {
     session.config = await (await fetch("/portal-config")).json();
+    // Ikonstilen er en plattforminnstilling (låst globalt av
+    // systemadmin) og følger med portal-config.
+    if (session.config.ikonstil) setIkonstil(session.config.ikonstil);
     if (location.pathname === "/callback") {
       try {
         await handleCallback();

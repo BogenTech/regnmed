@@ -490,6 +490,38 @@ kundeforhold, aldri noe selskaps saldo. Statusen beregnes av regelen i
 (`platform_list_subscriptions`) — lagres aldri, som ellers. Begge går
 gjennom samme `vakt` og logges som alt annet under `/platform/*`.
 
+**Back-office (2026-08-06, brukerbeslutning):** konsollen er
+arbeidsflaten for leverandørens egne folk — supportsaker, vedlikehold,
+oversikt — og fikk derfor redigering, fortsatt bare av administrative
+stamdata:
+
+- `GET /platform/companies/{id}` — drill-down: firmaopplysninger,
+  medlemmer, åpne invitasjoner og abonnementsforholdet (dekningsrader
+  m/ referanse) på én side. Support ser; alt under er systemadmin.
+- `PUT /platform/companies/{id}/settings` — retter firmaopplysninger på
+  kundens vegne (samme lagring som selskapets egen PUT /settings —
+  adresse, e-post, kontonummer, orgform; ingenting hasjet).
+- `DELETE/POST …/members/{pid}[/restore]` — deaktiverer/gjenoppretter
+  medlemskap via samme `sett_aktiv` som selskapets admin bruker, med
+  **`kilde='plattform'`** i selskapets egen endringslogg; vakten mot å
+  fjerne siste aktive admin gjelder plattformen også (ingen foreldreløse
+  selskaper — nødprosedyren finnes for det motsatte problemet).
+- `POST …/subscription` (+ `/end`) — åpner/avslutter dekning manuelt for
+  supporttilfellene kort/faktura-maskineriet ikke dekker; åpningen
+  krever obligatorisk referanse som står på dekningsraden, avslutningen
+  følger «korteste sanne dekning er én dag»-regelen fra `avslutt`.
+- `GET/PUT /platform/settings` — plattforminnstillinger (migrasjon 0053,
+  innsettings-bare rader, nyeste per nøkkel): i dag ikonstilen i
+  portalmenyen, **låst globalt** av systemadmin og servert alle via det
+  åpne `/portal-config`. Verdien valideres mot stilene portalen kan.
+
+Identitetsdata (navn/e-post) eies av IdP-en og speiles hit ved
+innlogging — regnmed redigerer dem aldri (neste innlogging ville
+overskrevet), konsollen lenker til utstederen i stedet
+(BogenTech/regnid#1). Sperregrensene består uendret: ingen
+plattformrolle når noen hovedbok, og alle kallene over går gjennom samme
+loggede `vakt`.
+
 Kravene fra #57 er håndhevet strukturelt, ikke i rutiner:
 
 1. **Logget.** `vakt`-middlewaren omslutter hele sub-routeren: token →

@@ -1244,7 +1244,33 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    vakt/logg, guarden SETT FEILE (sabotert og gjenopprettet).
    Vite-proxyen manglet /platform og /directory — lagt til. Browser-
    verifisert: ikonstilbytte live, gamle bokmerker, dashbordene,
-   Abonnementer-tabellen, mobil 375px.
+   Abonnementer-tabellen, mobil 375px. Rullet ut som v0.2.1.
+68. ✅ Back-office i plattformkonsollen (docs/auth.md §8, docs/portal.md,
+   brukerbeslutning 2026-08-06 — «systemadmin skal kunne administrere
+   ALLE brukere og selskaper»): #/plattform er leverandørens
+   arbeidsflate, selskapene styrer fortsatt seg selv i sin egen
+   Administrasjon-seksjon. Nytt: drill-down per selskap
+   (`GET /platform/companies/{id}` — firmaopplysninger, medlemmer,
+   invitasjoner, dekningsrader på én side; support ser, systemadmin
+   endrer), `PUT …/settings` (retter stamdata på kundens vegne),
+   medlemsdeaktivering/gjenoppretting via SAMME `sett_aktiv` som
+   selskapets admin (fikk kilde-parameter; **kilde='plattform'** i
+   selskapets egen logg; siste-admin-vakten gjelder plattformen også),
+   manuell dekning (`POST …/subscription` m/ obligatorisk referanse på
+   raden + `/end` — «korteste sanne dekning er én dag»). IKONSTILEN ble
+   PLATTFORMINNSTILLING per brukerbeslutning (låst globalt, ingen
+   brukeroverstyring): migrasjon 0053 `platform_setting`
+   (innsettings-bar, nyeste per nøkkel, set_by), `GET/PUT
+   /platform/settings` (validert mot stilene portalen kan), servert
+   alle via åpne /portal-config; Utseende-fanen FLYTTET fra
+   selskapskonsollen til plattformkonsollens Innstillinger-fane.
+   VIKTIG GRENSE bekreftet av testene: identitetsdata (navn/e-post)
+   eies av regnid og speiles ved innlogging — regnmed redigerer aldri
+   (ville blitt overskrevet), konsollen lenker til utstederen
+   (BogenTech/regnid#1 filet). Hovedbok-grensen urørt. Guardene SETT
+   FEILE; lærdom fra testen: dekning avsluttet samme dag den ble åpnet
+   holder statusen aktiv til i morgen (eksklusiv valid_to) — asserter
+   på raden, ikke statusen. Browser-verifisert hele veien.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

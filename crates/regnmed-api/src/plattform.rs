@@ -68,7 +68,29 @@ pub fn plattform_router(state: AppState) -> Router<AppState> {
         .route("/platform/members/{member_id}", delete(end_member))
         .route("/platform/overview", get(overview))
         .route("/platform/subscriptions", get(list_subscriptions))
+        .route("/platform/settings", get(get_settings).put(put_settings))
         .route("/platform/companies", get(list_companies))
+        .route("/platform/companies/{company_id}", get(company_detail))
+        .route(
+            "/platform/companies/{company_id}/settings",
+            axum::routing::put(put_company_settings),
+        )
+        .route(
+            "/platform/companies/{company_id}/members/{person_id}",
+            delete(deactivate_member),
+        )
+        .route(
+            "/platform/companies/{company_id}/members/{person_id}/restore",
+            post(restore_member),
+        )
+        .route(
+            "/platform/companies/{company_id}/subscription",
+            post(start_coverage),
+        )
+        .route(
+            "/platform/companies/{company_id}/subscription/end",
+            post(end_coverage),
+        )
         .route("/platform/firms", get(list_firms))
         .route("/platform/users", get(list_users))
         .route("/platform/customers", get(list_customers))
@@ -359,6 +381,237 @@ async fn list_subscriptions(
             })
         }).collect::<Vec<_>>(),
     })))
+}
+
+// ---------------------------------------------------------------------
+// The back office (docs/auth.md §8): systemadmin's tools for supporting
+// customers — editing administrative master data, memberships and the
+// abonnement relationship. Everything below runs behind the same `vakt`
+// (logged, time-limited role) and reaches NO ledger.
+// ---------------------------------------------------------------------
+
+/// Icon styles the portal knows (ui/portal/src/lib/ikoner.js). Locked
+/// globally by systemadmin — validated here so a typo cannot blank every
+/// menu on the platform.
+const IKONSTILER: [&str; 4] = ["linje", "kraftig", "emoji", "ingen"];
+
+async fn get_settings(
+    State(state): State<AppState>,
+    Extension(_ctx): Extension<PlattformKontekst>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let ikonstil = regnmed_db::platform_setting(&state.pool, "ikonstil").await?;
+    Ok(Json(
+        json!({ "ikonstil": ikonstil.unwrap_or_else(|| "linje".into()) }),
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct SettingsRequest {
+    ikonstil: String,
+}
+
+async fn put_settings(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Json(body): Json<SettingsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    if !IKONSTILER.contains(&body.ikonstil.as_str()) {
+        return Err(ApiError::BadRequest(format!(
+            "ukjent ikonstil «{}» — gyldige: {}",
+            body.ikonstil,
+            IKONSTILER.join(", ")
+        )));
+    }
+    regnmed_db::set_platform_setting(&state.pool, "ikonstil", &body.ikonstil, ctx.person_id)
+        .await?;
+    Ok(Json(json!({ "updated": true })))
+}
+
+/// One company, everything the back office needs on one page: master
+/// data, memberships, open invitations and the abonnement relationship.
+/// Support may look (same data as the lists plus what the company's own
+/// admin sees about itself); editing is systemadmin, guarded per action.
+async fn company_detail(
+    State(state): State<AppState>,
+    Extension(_ctx): Extension<PlattformKontekst>,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let s = regnmed_db::company_settings(&state.pool, company_id).await?;
+    let medlemmer = regnmed_db::medlemmer::list_medlemmer(&state.pool, company_id).await?;
+    let invitasjoner = regnmed_db::medlemmer::list_invitasjoner(&state.pool, company_id).await?;
+    let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
+    let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
+    use regnmed_core::abonnement::Status;
+    let dato = match status {
+        Status::Aktiv => None,
+        Status::Prove { til } => Some(til),
+        Status::Frist { sperres } => Some(sperres),
+        Status::Sperret { siden } => Some(siden),
+    };
+    Ok(Json(json!({
+        "settings": {
+            "name": s.name,
+            "orgnr": s.orgnr,
+            "address": s.address,
+            "bank_account": s.bank_account,
+            "orgform": s.orgform,
+            "email": s.email,
+        },
+        "medlemmer": medlemmer.iter().map(|m| json!({
+            "person_id": m.person_id,
+            "navn": m.navn,
+            "epost": m.epost,
+            "rolle": m.rolle,
+            "aktiv": m.aktiv,
+            "via": m.via,
+            "kan_endres": m.kan_endres,
+        })).collect::<Vec<_>>(),
+        "invitasjoner": invitasjoner.iter().map(|i| json!({
+            "id": i.id,
+            "epost": i.epost,
+            "rolle": i.rolle,
+            "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "abonnement": {
+            "status": status.slug(),
+            "dato": dato.map(|d| d.to_string()),
+            "dekning": dekning.iter().map(|d| json!({
+                "plan": d.plan,
+                "valid_from": d.valid_from.to_string(),
+                "valid_to": d.valid_to.map(|d| d.to_string()),
+                "note": d.note,
+                "created_by": d.created_by,
+            })).collect::<Vec<_>>(),
+        },
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct CompanySettingsRequest {
+    address: Option<String>,
+    bank_account: Option<String>,
+    orgform: Option<String>,
+    email: Option<String>,
+}
+
+/// Edit a company's master data on its behalf (support cases). Same
+/// storage and validation as the company's own PUT /settings; nothing
+/// here touches the ledger or anything hashed.
+async fn put_company_settings(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<CompanySettingsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    regnmed_db::update_company_settings(
+        &state.pool,
+        company_id,
+        request.address.as_deref(),
+        request.bank_account.as_deref(),
+        request.orgform.as_deref(),
+        request.email.as_deref(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "updated": true })))
+}
+
+/// Deactivates a membership with kilde='plattform' in the company's own
+/// change log. The last-active-admin guard inside `sett_aktiv` holds
+/// here too: the platform must not orphan a company either.
+async fn deactivate_member(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Path((company_id, person_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    regnmed_db::medlemmer::sett_aktiv(
+        &state.pool,
+        company_id,
+        person_id,
+        false,
+        ctx.person_id,
+        "plattform",
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "deaktivert": true })))
+}
+
+async fn restore_member(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Path((company_id, person_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    regnmed_db::medlemmer::sett_aktiv(
+        &state.pool,
+        company_id,
+        person_id,
+        true,
+        ctx.person_id,
+        "plattform",
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "reaktivert": true })))
+}
+
+#[derive(Deserialize)]
+pub struct CoverageRequest {
+    plan: String,
+    /// Mandatory reference: WHY coverage is opened by hand (support
+    /// case, agreement, migration). `tegn` refuses an empty one.
+    note: String,
+}
+
+/// Opens coverage manually — the support case where the card/invoice
+/// machinery does not fit. The row carries the reason and who did it.
+async fn start_coverage(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<CoverageRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    let idag = chrono::Utc::now().date_naive();
+    let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
+    if matches!(status, regnmed_core::abonnement::Status::Aktiv) {
+        return Err(ApiError::BadRequest(
+            "selskapet har allerede aktiv dekning".into(),
+        ));
+    }
+    regnmed_db::abonnement::tegn(
+        &state.pool,
+        company_id,
+        &request.plan,
+        idag,
+        None,
+        &format!("plattform: {}", request.note),
+        &format!("plattform:{}", ctx.person_id),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "startet": true })))
+}
+
+/// Ends the open coverage today (exclusive, so today is still covered —
+/// the shortest truthful coverage is one day). The ordinary frist runs
+/// on top before anything is blocked; the row's own note says why it
+/// existed, and this call is in the platform access log.
+async fn end_coverage(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlattformKontekst>,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ctx.krev_systemadmin()?;
+    let idag = chrono::Utc::now().date_naive();
+    regnmed_db::abonnement::avslutt(&state.pool, company_id, idag)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "avsluttet": true })))
 }
 
 #[derive(Deserialize)]

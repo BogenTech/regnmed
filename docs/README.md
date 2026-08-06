@@ -45,7 +45,7 @@ CLAUDE.md).
 | [abonnement.md](abonnement.md) | Regnmeds egen kasse: statuser beregnet aldri lagret, prislisten som data, fakturering gjennom egen motor — og sperren som aldri tar hovedboken som gissel |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
 | [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |
-| [deploy.md](deploy.md) | Base + overlays, production checklist, verified backups, TLS |
+| [deploy.md](deploy.md) | Base + overlays, production checklist, bootstrap of the first login, verified backups, TLS |
 | [regelverk.md](regelverk.md) | Rules as data: dated satser, per-year authority artifacts, the yearly regelverksrevisjon |
 
 Conventions used everywhere:

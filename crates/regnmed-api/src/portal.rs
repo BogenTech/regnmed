@@ -112,11 +112,20 @@ pub async fn icon_512() -> Response {
 
 /// What the SPA needs to start the OIDC flow. The client id defaults to
 /// the conventional public client; override with PORTAL_OIDC_CLIENT_ID.
-pub async fn portal_config() -> Json<serde_json::Value> {
+/// Also carries the platform-wide UI settings (migration 0053) — the
+/// icon style is locked globally by systemadmin, so the portal reads it
+/// here at boot instead of from any per-user storage.
+pub async fn portal_config(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let ikonstil = regnmed_db::platform_setting(&state.pool, "ikonstil")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "linje".into());
     Json(json!({
         "issuer": std::env::var("OIDC_ISSUER").unwrap_or_default(),
         "client_id": std::env::var("PORTAL_OIDC_CLIENT_ID")
             .unwrap_or_else(|_| "regnmed-portal".into()),
+        "ikonstil": ikonstil,
     }))
 }
 

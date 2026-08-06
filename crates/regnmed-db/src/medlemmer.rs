@@ -225,6 +225,10 @@ pub async fn sett_aktiv(
     person_id: Uuid,
     aktiv: bool,
     utfort_av: Uuid,
+    // 'admin' for the company's own administration, 'plattform' when a
+    // platform role does it (docs/auth.md §8) — the company's change log
+    // must name the source truthfully.
+    kilde: &str,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, company_id).await?;
@@ -261,7 +265,7 @@ pub async fn sett_aktiv(
         Some(&rolle),
         Some(&rolle),
         Some(utfort_av),
-        "admin",
+        kilde,
     )
     .await?;
     tx.commit().await?;
