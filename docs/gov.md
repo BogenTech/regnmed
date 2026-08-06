@@ -44,19 +44,19 @@ the full verified list in one henvendelse.
 
 Next concrete steps, in order:
 
-1. Create a user account. **There is no registration form anywhere** —
-   least of all on the github.io documentation site (looked for there
-   2026-08-06, does not exist; the account machinery lives on
-   skatteetaten.no/deling/brukeradministrasjon/). Access follows the
-   company role: *«Daglig leder, styrets leder eller lignende for
-   virksomheten vil automatisk ha tilgang til
-   brukeradministrasjonsverktøyet»* —
-   <https://skatt.skatteetaten.no/web/sakservice-web/>. Daglig leder
-   logs in there representing the org and creates the user account(s).
-   Only if someone else is to administer: delegate the Altinn service
-   «Brukeradministrasjon – brukerstøtte for bruk av Skatteetatens
-   opplysninger» to them first. The created account's first login on
-   the desk goes via «Har du glemt passordet ditt?».
+1. ✅ **Done 2026-08-06:** user account created
+   (andre@bogentech.no) in the brukeradministrasjonsverktøy at
+   <https://skatt.skatteetaten.no/web/sakservice-web/>. For the
+   record, since this was the step that stalled the bestilling:
+   **there is no registration form anywhere** — least of all on the
+   github.io documentation site. Access follows the company role
+   (*«Daglig leder, styrets leder eller lignende … vil automatisk ha
+   tilgang»*); daglig leder logs in there representing the org and
+   creates the accounts. Only if someone else is to administer:
+   delegate the Altinn service «Brukeradministrasjon – brukerstøtte
+   for bruk av Skatteetatens opplysninger» first. First login on the
+   desk goes via «Har du glemt passordet ditt?» with the account's
+   e-mail.
 2. Send ONE henvendelse ordering the whole «bestilles nå» table below
    for **test**, stating orgnr, environment and the test client-id.
    (Prod is ordered separately when test has proven out.)
