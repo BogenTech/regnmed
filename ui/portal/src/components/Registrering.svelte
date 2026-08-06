@@ -120,7 +120,7 @@
 <div class="grid gap-4 sm:grid-cols-3">
   {#each VALG as v (v.id)}
     <button
-      class={"card bg-base-100 shadow-sm text-left transition-shadow hover:shadow-md border-2 " +
+      class={"card bg-base-100 text-left transition-colors border-2 " +
         (valg === v.id ? "border-primary" : "border-transparent")}
       onclick={() => velg(v.id)}
     >

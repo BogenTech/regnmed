@@ -1303,6 +1303,21 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    system → light → steelzombie; innebygde dark kan velges ved navn.
    Browser-verifisert: dropdown-innhold, temabytte via menyen,
    steelzombie i selskaps- og plattformvisningen.
+   OPPFØLGING samme dag: (a) portal-CI-jobben avviste dist bygget fra
+   et FORELDET node_modules — 46 KB manglet, og det var hele
+   steelzombies komponentpalett; build-portal.sh kjører nå npm ci
+   ubetinget, dist-budsjettet hevet bevisst 512→576 KB (gzip-kostnaden
+   er ~4,5 KB). (b) Boksflatene byttet fra shadow-sm til TEMASTYRTE
+   kanter (card-border/border-base-200) så steelzombies flate, kantede
+   formspråk (--border 1.5px, --depth 0) faktisk kommer gjennom —
+   daisyui-generatorens utseende er fasiten; navbarer og flytende
+   menyer beholder skygge. (c) SLIPPFLYT (docs/deploy.md,
+   brukerbeslutning): prod pinner RELEASE-taggen (vX.Y.Z, ikke sha-)
+   siden Flux applyer overlayet fra den taggede commiten og tag-bygget
+   baker REGNMED_VERSION=vX.Y.Z — brukermenyen viser da releasen;
+   pin-commiten rører bare deploy/, så sha==tag i kode. Hver release
+   får GITHUB-RELEASE m/ notater om hva som slippes siden forrige
+   (gh release create).
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

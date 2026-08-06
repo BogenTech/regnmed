@@ -114,6 +114,33 @@ er den bevisste handlingen. To følger av det:
   semver-taggen som matcher, så publiser en rettet, høyere release i
   stedet.
 
+**Slippflyten** (revidert 2026-08-06 — versjonen i brukermenyen skal
+være releasen, og hver release skal forklare seg):
+
+1. Verifiser at **testmiljøet faktisk kjører** shaen du slipper —
+   `test.regnmed.no` serverer portalbunten fra det bygget (CI ruller
+   test automatisk ved push til main).
+2. Sett `newTag: vX.Y.Z` (den KOMMENDE taggen) for regnmed i
+   `deploy/prod/kustomization.yaml`, commit («Prod: roll to vX.Y.Z»),
+   **tagg samme commit** `vX.Y.Z`, push begge. Tag-pushen bygger imaget
+   med `REGNMED_VERSION=vX.Y.Z` bakt inn — Flux kan stå i
+   ImagePullBackOff i ~4 minutter til imaget finnes, og henter seg inn
+   selv. Kodeekvivalensen sha == tag holder fordi pin-commiten bare
+   rører `deploy/`, som aldri går inn i imaget.
+3. **Opprett GitHub-releasen** — taggen alene er ikke nok:
+
+   ```sh
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(git log --format='- %s' vFORRIGE..vX.Y.Z^)"
+   ```
+
+   Notatene skal si hva som slippes siden forrige release, i klartekst —
+   det er endringsloggen kunder og drift leser, og `git log`-linjene er
+   utgangspunktet, ikke fasiten: rediger til noe et menneske har glede
+   av.
+4. Verifiser at prod svarer med releasen:
+   `curl -s https://regnmed.no/portal-config` skal bære
+   `"versjon": "vX.Y.Z"`.
+
 Forhåndsutgaver (`v1.2.3-rc1`) er utenfor semver-området, så en
 release-kandidat kan tagges og inspiseres uten å røre produksjon.
 

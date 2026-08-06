@@ -222,7 +222,7 @@
            Rene aggregater fra /platform/overview — ingen hovedbok.
            Defensivt mot feilfasong (feilet kall setter rader = []):
            «–» og tom fordeling framfor et malunntak som fryser alt. -->
-      <div class="stats shadow-sm bg-base-100 w-full mb-6 stats-vertical sm:stats-horizontal">
+      <div class="stats border border-base-200 bg-base-100 w-full mb-6 stats-vertical sm:stats-horizontal">
         {#each [["selskaper", "Selskaper", rader.selskaper], ["byraer", "Byråer", rader.byraer], ["brukere", "Brukere", rader.brukere], ["medlemmer", "Plattformbrukere", rader.plattformbrukere]] as [slug, tittel, verdi] (slug)}
           <button
             class="stat text-left cursor-pointer"

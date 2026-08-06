@@ -139,7 +139,7 @@
       {#each fliser as [slug, tittel, verdi, beskrivelse] (slug)}
         <a
           href={"#/c/" + companyId + "/admin/" + slug}
-          class="card bg-base-100 shadow-sm hover:shadow transition-shadow"
+          class="card card-border bg-base-100 transition-colors hover:border-primary"
         >
           <div class="card-body py-4">
             <div class="flex items-center gap-2 text-sm opacity-70">
