@@ -96,8 +96,12 @@
     <Nokkeltall tall={data.tall} />
   {/if}
 
-  {#if data.vouchers.length === 0}
-    <ImportKort {companyId} onDone={reload} />
+  <!-- Import stays available while the ledger holds nothing but imported
+       history: systems like Conta export one SAF-T file per fiscal year,
+       so the years arrive one upload at a time. The server enforces the
+       rule; this condition only mirrors it. -->
+  {#if data.vouchers.length === 0 || data.vouchers.every((v) => v.journal === "IMP")}
+    <ImportKort {companyId} onDone={reload} harHistorikk={data.vouchers.length > 0} />
   {/if}
 
   <InviterKort {companyId} />

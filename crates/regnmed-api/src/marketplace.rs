@@ -159,8 +159,11 @@ pub async fn create_firm(
     })))
 }
 
-/// SAF-T migration import: XML body, admin only, empty ledger only —
-/// the whole file lands in one transaction or not at all.
+/// SAF-T migration import: XML body, admin only, into an empty ledger
+/// or on top of previous SAF-T imports (one file per fiscal year,
+/// oldest first — a follow-up file's opening balances must reconcile
+/// against the imported history). Each file lands in one transaction
+/// or not at all.
 
 /// The body is either raw SAF-T XML, or (content-type application/json)
 /// a wizard envelope `{"file": "<xml>", "mapping": {"15000": "1500"}}`
@@ -211,6 +214,7 @@ pub async fn import_saft(
         "suppliers": report.suppliers,
         "vouchers": report.vouchers,
         "opening_posted": report.opening_posted,
+        "opening_reconciled": report.opening_reconciled,
         "warnings": report.warnings,
     })))
 }

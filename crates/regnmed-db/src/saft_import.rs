@@ -2,9 +2,19 @@
 //! hash-chained history in ONE database transaction.
 //!
 //! Rules that keep the migration honest:
-//! - Only into an **empty ledger** (chain head at genesis) — migration
-//!   happens before day-to-day bookkeeping, and a re-run cannot
-//!   duplicate anything. All-or-nothing: any error rolls back the lot.
+//! - Only into an **empty ledger** (chain head at genesis), or on top of
+//!   **previous SAF-T imports alone** — several source systems (Conta)
+//!   export one file per fiscal year, so history arrives as a series of
+//!   files, oldest first. Migration still happens before day-to-day
+//!   bookkeeping: one ordinary voucher in the ledger closes the door.
+//!   Each import is all-or-nothing: any error rolls back the lot.
+//! - A follow-up file must **continue exactly where the imported history
+//!   stopped**: balance accounts (class 1–2) must open at the booked
+//!   balance, and resultat accounts at the booked balance of the file's
+//!   own fiscal year (the exporting system resets them at year end,
+//!   while regnmed never posts year-end closings — udisponert resultat
+//!   is derived in reports). Any difference refuses the import with the
+//!   numbers named.
 //! - Imported vouchers are posted through the normal posting path
 //!   (`post_voucher_in`): our voucher numbers, our hash chain from
 //!   genesis, into a dedicated `IMP` journal; the source system's
@@ -35,6 +45,10 @@ pub struct ImportReport {
     pub suppliers: usize,
     pub vouchers: usize,
     pub opening_posted: bool,
+    /// Set on a follow-up import: the file's opening balances were
+    /// checked against the already-imported history instead of being
+    /// posted as a new Åpningsbalanse.
+    pub opening_reconciled: bool,
     pub warnings: Vec<String>,
 }
 
@@ -47,17 +61,31 @@ pub async fn import_saft(
     let mut report = ImportReport::default();
     let mut tx = pool.begin().await?;
 
-    // Migration only into a virgin ledger.
+    // Migration into a virgin ledger, or on top of prior imports only:
+    // one file per fiscal year is a real export shape (Conta), so the
+    // door stays open exactly as long as the ledger contains nothing but
+    // IMP-journal vouchers. One ordinary voucher closes it for good.
     let last_seq: i64 = sqlx::query_scalar("select last_seq from chain_head where company_id = $1")
         .bind(company_id)
         .fetch_optional(&mut *tx)
         .await?
         .context("company has no chain head")?;
-    ensure!(
-        last_seq == 0,
-        "the ledger already has {last_seq} vouchers — SAF-T import is only \
-         allowed into an empty company"
-    );
+    let follow_up = last_seq > 0;
+    if follow_up {
+        let ordinary: i64 = sqlx::query_scalar(
+            "select count(*) from voucher v join journal j on j.id = v.journal_id
+             where v.company_id = $1 and j.code <> 'IMP'",
+        )
+        .bind(company_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        ensure!(
+            ordinary == 0,
+            "hovedboken inneholder {ordinary} bilag utenfor importjournalen — \
+             SAF-T-import er bare mulig i et tomt selskap eller oppå tidligere \
+             SAF-T-importer, før den løpende bokføringen starter"
+        );
+    }
 
     // Accounts: 4-digit NS 4102 only (the mapping wizard, #18, handles the rest).
     let bad: Vec<&str> = file
@@ -71,6 +99,11 @@ pub async fn import_saft(
         "accounts are not 4-digit NS 4102 ({}...) — use the kontoplan mapping (issue #18)",
         bad.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
     );
+
+    if follow_up {
+        reconcile_openings(&mut tx, company_id, file).await?;
+        report.opening_reconciled = true;
+    }
     for account in &file.accounts {
         sqlx::query(
             "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
@@ -191,7 +224,9 @@ pub async fn import_saft(
     .execute(&mut *tx)
     .await?;
 
-    // Opening balance voucher, dated the day before history starts.
+    // Opening balance voucher, dated the day before history starts. On a
+    // follow-up import the balances are already in the ledger — the
+    // file's openings were reconciled above, never posted again.
     let history_start = file
         .selection_start
         .or_else(|| file.transactions.iter().map(|t| t.date).min());
@@ -200,7 +235,7 @@ pub async fn import_saft(
         .iter()
         .filter(|a| a.opening_ore != 0)
         .collect();
-    if !opening.is_empty() {
+    if !follow_up && !opening.is_empty() {
         let start = history_start.context("file has opening balances but no dates")?;
         let sum: i64 = opening.iter().map(|a| a.opening_ore).sum();
         ensure!(
@@ -323,4 +358,100 @@ pub async fn import_saft(
 
 fn crate_trunc(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
+}
+
+/// A follow-up file must continue exactly where the imported history
+/// stopped, konto for konto:
+///
+/// - **Balance accounts (class 1–2)** open at the booked all-time
+///   balance — they carry over the year end unchanged.
+/// - **Resultat accounts (class 3–9)** are reset at year end by the
+///   exporting system, but regnmed never posts year-end closings
+///   (udisponert resultat is derived in reports), so their file opening
+///   is compared against the booked entries of the file's own fiscal
+///   year: zero at a year boundary, the year-to-date sum when a year is
+///   delivered in several files.
+///
+/// Verified against a real Conta export (2026-08-06): balance accounts
+/// carry over to the øre, resultat accounts open at zero, and the
+/// openings therefore do NOT sum to zero — the prior year's result has
+/// no counterpart in the file. That is why the first-import zero-sum
+/// rule cannot apply here.
+async fn reconcile_openings(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    file: &SaftFile,
+) -> Result<()> {
+    let start = file
+        .selection_start
+        .or_else(|| file.transactions.iter().map(|t| t.date).min())
+        .context("oppfølgingsfilen har verken periodestart eller daterte transaksjoner")?;
+    let (year_start, _) = regnmed_core::regnskapsar::regnskapsar_periode(
+        regnmed_core::regnskapsar::regnskapsar(start),
+    )
+    .context("regnskapsår utenfor gyldig datoområde")?;
+
+    // (all-time balance, balance within the file's fiscal year) per account.
+    let booked: HashMap<String, (i64, i64)> = sqlx::query_as::<_, (String, i64, i64)>(
+        "select a.number,
+                coalesce(sum(e.amount_ore), 0)::bigint,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date >= $2), 0)::bigint
+         from entry e
+         join account a on a.id = e.account_id
+         join voucher v on v.id = e.voucher_id
+         where a.company_id = $1
+         group by a.number",
+    )
+    .bind(company_id)
+    .bind(year_start)
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .map(|(number, total, in_year)| (number, (total, in_year)))
+    .collect();
+    let file_opening: HashMap<&str, i64> = file
+        .accounts
+        .iter()
+        .filter(|a| a.opening_ore != 0)
+        .map(|a| (a.account_id.as_str(), a.opening_ore))
+        .collect();
+
+    let mut numbers: Vec<&str> = booked
+        .keys()
+        .map(String::as_str)
+        .chain(file_opening.keys().copied())
+        .collect();
+    numbers.sort_unstable();
+    numbers.dedup();
+    let mut mismatches: Vec<String> = Vec::new();
+    for number in numbers {
+        let (total, in_year) = booked.get(number).copied().unwrap_or((0, 0));
+        let expected = if number.starts_with('1') || number.starts_with('2') {
+            total
+        } else {
+            in_year
+        };
+        let opening = file_opening.get(number).copied().unwrap_or(0);
+        if opening != expected {
+            mismatches.push(format!(
+                "konto {number}: filens åpningsbalanse {opening} øre, bokført {expected} øre \
+                 (avvik {} øre)",
+                opening - expected
+            ));
+        }
+    }
+    let shown = mismatches.iter().take(10).cloned().collect::<Vec<_>>();
+    let rest = mismatches.len().saturating_sub(shown.len());
+    ensure!(
+        mismatches.is_empty(),
+        "filens åpningsbalanser stemmer ikke med den importerte historikken — \
+         importer årsfilene i rekkefølge, eldste først: {}{}",
+        shown.join("; "),
+        if rest > 0 {
+            format!("; … og {rest} kontoer til")
+        } else {
+            String::new()
+        }
+    );
+    Ok(())
 }

@@ -8,10 +8,14 @@ an empty company's dashboard ("Kom fra et annet system?").
 
 ## The rules that keep migration honest
 
-- **Empty ledger only, one transaction**: import is allowed only while
-  the chain head sits at genesis, and the entire file lands in a single
-  database transaction — any error rolls back everything, and a re-run
-  cannot duplicate. Migration happens before day-to-day bookkeeping.
+- **Before day-to-day bookkeeping, one transaction per file**: import is
+  allowed into an empty ledger (chain head at genesis) — and after that
+  for as long as the ledger contains nothing but `IMP`-journal vouchers,
+  so a history that arrives as several files (below) can be imported one
+  file at a time. The first ordinary voucher closes the door for good.
+  Each file lands in a single database transaction — any error rolls
+  back that whole file, and a re-run cannot duplicate (a repeated file
+  fails the opening-balance reconciliation).
 - **History becomes real vouchers**: every SAF-T transaction is posted
   through the normal posting path — our gap-free numbers, hash chain v2
   from genesis — into a dedicated `IMP` journal, with the source
@@ -31,6 +35,45 @@ an empty company's dashboard ("Kom fra et annet system?").
   the SAF-T standard codes, so conforming files map 1:1); non-4-digit
   account ids are refused unless the import carries a kontoplan mapping
   (below).
+
+## Flerårig historikk: én fil per regnskapsår
+
+Several source systems export one SAF-T Financial file per fiscal year —
+verified 2026-08-06 against a real Conta export (2025 full year, 2026
+January–April). The years are therefore imported **one file at a time,
+oldest first**, and a follow-up file must continue exactly where the
+imported history stopped. Its opening balances are reconciled konto for
+konto before anything is written:
+
+- **Balance accounts (class 1–2)** must open at the booked all-time
+  balance — they carry over the year end unchanged.
+- **Resultat accounts (class 3–9)** are reset at year end by the
+  exporting system, while regnmed never posts year-end closings
+  (udisponert resultat is derived in the balanse report). Their file
+  opening is therefore compared against the booked entries of the
+  file's **own fiscal year** (the `regnskapsar` seam): zero at a year
+  boundary, the year-to-date sum when one year arrives in several
+  files.
+
+Any difference refuses the import with each account and the exact øre
+difference named — the numbers are wrong or the files are out of order,
+and neither is papered over. No second `Åpningsbalanse` is posted: the
+balances are already in the ledger, and the report says
+`opening_reconciled` instead of `opening_posted`.
+
+Two findings from the real Conta files that shaped these rules:
+
+- The follow-up file's openings do **not** sum to zero — resultat
+  accounts open at zero without any counterpart on equity (the
+  resultatdisponering is simply absent). The first-import zero-sum rule
+  therefore only applies to the first file.
+- Per-year reports still match the source system because regnmed's
+  resultat reports select by date range; only the all-time saldo on
+  resultat accounts differs from a system that closes its books, and
+  the balanse report accounts for exactly that as udisponert resultat.
+
+The portal keeps the import card on the dashboard for as long as the
+ledger contains only imported history, and says so.
 
 ## Kontoplan wizard (non-NS 4102 charts)
 
@@ -126,6 +169,11 @@ så bokfør).
   verifies from genesis; the trial balance equals the foreign system's
   closing balances konto for konto; customer numbers survive; deferred
   reskontro flags are warned; non-admins and re-imports are refused.
+  Multi-year: one file per year imports sequentially (Conta-shaped
+  openings that do not sum to zero), a mid-year continuation file
+  reconciles resultat accounts against the year-to-date sum, a
+  mismatched opening is refused with the account and øre difference
+  named, and one ordinary voucher closes the import for good.
 - `regnmed-core/src/kontoplan.rs` — suggestion heuristics (identity,
   truncation, padding, name match, no-suggestion) and mapping
   application (rewrite, merge with summed openings, 4-digit target

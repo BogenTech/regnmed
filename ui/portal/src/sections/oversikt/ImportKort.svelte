@@ -1,12 +1,14 @@
 <script>
-  // Migrering inn i et TOMT selskap (#18/#19, docs/migration.md):
-  // SAF-T-import m/ kontoplan-wizard, eller manuell åpningsbalanse.
-  // Vises bare når hovedboken er tom.
+  // Migrering (#18/#19, docs/migration.md): SAF-T-import m/
+  // kontoplan-wizard, eller manuell åpningsbalanse. Vises når hovedboken
+  // er tom — og videre så lenge den bare inneholder importert historikk
+  // (harHistorikk), siden systemer som Conta eksporterer én SAF-T-fil
+  // per regnskapsår. Manuell åpningsbalanse krever fortsatt tom hovedbok.
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, onDone } = $props();
+  let { companyId, onDone, harHistorikk = false } = $props();
 
   let xml = $state(null);
   let analysis = $state(null);
@@ -102,11 +104,18 @@
   }
 </script>
 
-<Card title="Kom fra et annet system?">
+<Card title={harHistorikk ? "Importer neste årsfil" : "Kom fra et annet system?"}>
   <p class="text-sm opacity-70 mb-2">
-    Last opp en SAF-T-eksport (alle norske systemer kan lage en) — kontoplan,
-    kunder/leverandører og hele historikken importeres i én operasjon. Har det gamle systemet en
-    annen kontoplan, foreslår vi mapping til NS 4102 som du godkjenner først.
+    {#if harHistorikk}
+      Hovedboken inneholder bare importert historikk, så flere SAF-T-filer kan legges oppå —
+      eksporterer det gamle systemet én fil per regnskapsår (f.eks. Conta), laster du dem opp én
+      om gangen, eldste først. Filens åpningsbalanse må stemme med det som allerede er importert;
+      avvik avvises med beløpet navngitt. Første ordinære bilag stenger importen.
+    {:else}
+      Last opp en SAF-T-eksport (alle norske systemer kan lage en) — kontoplan,
+      kunder/leverandører og hele historikken importeres i én operasjon. Har det gamle systemet en
+      annen kontoplan, foreslår vi mapping til NS 4102 som du godkjenner først.
+    {/if}
   </p>
   <input type="file" class="file-input" accept=".xml" onchange={fileChosen} />
   {#if analysis}
@@ -149,6 +158,7 @@
   {/if}
 </Card>
 
+{#if !harHistorikk}
 <Card title="Ingen SAF-T? Legg inn åpningsbalansen manuelt">
   <p class="text-sm opacity-70 mb-2">Saldo per konto på overgangsdagen — må gå i null.</p>
   <div class="flex gap-2 mb-2">
@@ -182,3 +192,4 @@
     </button>
   </div>
 </Card>
+{/if}

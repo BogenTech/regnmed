@@ -2,6 +2,10 @@
 //! is imported into an empty company — accounts, customers, opening
 //! balance and history land in one transaction as chain-verified
 //! vouchers; balances reconcile; re-import and non-admins are refused.
+//! Multi-year history (one file per fiscal year, the Conta shape) is
+//! imported file by file: follow-up openings must reconcile against the
+//! imported history, mismatches are refused with the difference named,
+//! and one ordinary voucher closes the import door for good.
 //! Requires DATABASE_URL (skips otherwise).
 
 use crate::common::{TestIdp, test_state, unique_orgnr};
@@ -273,7 +277,9 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
         "deferred reskontro flag is warned about: {report}"
     );
 
-    // Re-import into the now non-empty ledger is refused.
+    // Re-importing the same file is refused: the ledger is still
+    // IMP-only so the door is open, but the file's openings no longer
+    // match the booked balances.
     let (status, body) = request(
         &state,
         "POST",
@@ -283,4 +289,272 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+}
+
+/// One SAF-T file per fiscal year (the Conta export shape). The follow-up
+/// file's openings mirror reality: balance accounts carry the closing
+/// balance over, resultat accounts open at zero WITHOUT a counterpart —
+/// the openings do not sum to zero, and no year-end closing is posted.
+fn year_saft(
+    start: NaiveDate,
+    end: NaiveDate,
+    accounts: Vec<SaftAccount>,
+    transactions: Vec<SaftTransaction>,
+) -> String {
+    let input = SaftInput {
+        orgnr: "923609016".into(),
+        company_name: "Gammelt System AS".into(),
+        contact_first_name: "Kari".into(),
+        contact_last_name: "Nordmann".into(),
+        file_created: end,
+        software_version: "old-system".into(),
+        start,
+        end,
+        accounts,
+        customers: vec![],
+        suppliers: vec![],
+        tax_codes: vec![],
+        analysis_types: vec![],
+        journals: vec![SaftJournal {
+            code: "GEN".into(),
+            name: "Hovedbok".into(),
+            transactions,
+        }],
+    };
+    regnmed_core::saft::render(&input).unwrap()
+}
+
+fn acct(number: &str, name: &str, opening_ore: i64, closing_ore: i64) -> SaftAccount {
+    SaftAccount {
+        number: number.into(),
+        name: name.into(),
+        created: date(2020, 1, 1),
+        opening_ore,
+        closing_ore,
+    }
+}
+
+fn plain_tx(number: i64, on: NaiveDate, text: &str, lines: &[(&str, i64)]) -> SaftTransaction {
+    use chrono::Datelike;
+    SaftTransaction {
+        fiscal_year: on.year(),
+        number,
+        date: on,
+        description: text.into(),
+        created_by: "old".into(),
+        created_at: Utc.with_ymd_and_hms(on.year(), 1, 2, 9, 0, 0).unwrap(),
+        reverses: None,
+        lines: lines
+            .iter()
+            .enumerate()
+            .map(|(i, (account, ore))| SaftLine {
+                line_no: i as i32 + 1,
+                account_number: (*account).into(),
+                description: None,
+                amount_ore: *ore,
+                vat_code: None,
+                tax_percent_bp: None,
+                customer_id: None,
+                supplier_id: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+                valutabelop_cent: None,
+                kurs_micro: None,
+            })
+            .collect(),
+    }
+}
+
+#[tokio::test]
+async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Milla Migrerer"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Flerårig AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    let admin_token = idp.token(&admin_sub, "Milla Migrerer");
+    let import_uri = format!("/companies/{company}/import/saft");
+
+    // 2025: opening equity + bank, one sale during the year.
+    let file_2025 = year_saft(
+        date(2025, 1, 1),
+        date(2025, 12, 31),
+        vec![
+            acct("1920", "Bank", 10_000_00, 15_000_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("3000", "Salgsinntekt", 0, -5_000_00),
+        ],
+        vec![plain_tx(
+            1,
+            date(2025, 6, 1),
+            "Salg",
+            &[("1920", 5_000_00), ("3000", -5_000_00)],
+        )],
+    );
+    let (status, report) =
+        request(&state, "POST", &import_uri, &admin_token, Some(file_2025)).await;
+    assert_eq!(status, StatusCode::OK, "2025: {report}");
+    assert_eq!(report["opening_posted"], true);
+    assert_eq!(report["opening_reconciled"], false);
+
+    // 2026 Jan–Apr: balance accounts carry over, 3000 opens at zero with
+    // no counterpart (openings sum to 5 000, like a real Conta file).
+    let file_2026 = year_saft(
+        date(2026, 1, 1),
+        date(2026, 4, 30),
+        vec![
+            acct("1920", "Bank", 15_000_00, 14_900_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("3000", "Salgsinntekt", 0, 0),
+            acct("7770", "Gebyr", 0, 100_00),
+        ],
+        vec![plain_tx(
+            1,
+            date(2026, 2, 1),
+            "Bankgebyr",
+            &[("7770", 100_00), ("1920", -100_00)],
+        )],
+    );
+    let (status, report) =
+        request(&state, "POST", &import_uri, &admin_token, Some(file_2026)).await;
+    assert_eq!(status, StatusCode::OK, "2026: {report}");
+    assert_eq!(report["opening_posted"], false, "no second Åpningsbalanse");
+    assert_eq!(report["opening_reconciled"], true);
+    assert_eq!(report["vouchers"], 1);
+
+    // 2026 May–Aug: a year delivered in several files. Resultat accounts
+    // open at the year-to-date sum, not zero and not the all-time sum.
+    let file_2026_b = year_saft(
+        date(2026, 5, 1),
+        date(2026, 8, 31),
+        vec![
+            acct("1920", "Bank", 14_900_00, 14_850_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("7770", "Gebyr", 100_00, 150_00),
+        ],
+        vec![plain_tx(
+            1,
+            date(2026, 6, 15),
+            "Bankgebyr",
+            &[("7770", 50_00), ("1920", -50_00)],
+        )],
+    );
+    let (status, report) =
+        request(&state, "POST", &import_uri, &admin_token, Some(file_2026_b)).await;
+    assert_eq!(status, StatusCode::OK, "2026 May–Aug: {report}");
+
+    // The chain verifies from genesis across all three files.
+    let chain = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(chain.vouchers_checked, 4, "opening + one voucher per file");
+    for (account, expected) in [
+        ("1920", 14_850_00i64),
+        ("2050", -10_000_00),
+        ("3000", -5_000_00),
+        ("7770", 150_00),
+    ] {
+        let balance: i64 = sqlx::query_scalar(
+            "select coalesce(sum(e.amount_ore), 0)::bigint
+             from entry e join account a on a.id = e.account_id
+             where a.company_id = $1 and a.number = $2",
+        )
+        .bind(company)
+        .bind(account)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        assert_eq!(balance, expected, "konto {account}");
+    }
+
+    // A continuation file with a bank opening 850 kr off: refused, and
+    // the refusal names the account and the exact difference.
+    let file_wrong = year_saft(
+        date(2026, 9, 1),
+        date(2026, 12, 31),
+        vec![
+            acct("1920", "Bank", 14_000_00, 14_000_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("7770", "Gebyr", 150_00, 150_00),
+        ],
+        vec![],
+    );
+    let (status, body) = request(&state, "POST", &import_uri, &admin_token, Some(file_wrong)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let message = body.to_string();
+    assert!(
+        message.contains("konto 1920"),
+        "names the account: {message}"
+    );
+    assert!(
+        message.contains("-85000"),
+        "names the difference: {message}"
+    );
+
+    // One ordinary voucher closes the import door for good.
+    sqlx::query(
+        "insert into journal (id, company_id, code, name) values ($1, $2, 'BILAG', 'Bilag')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(company)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    let draft = regnmed_core::voucher::VoucherDraft {
+        journal_code: "BILAG".into(),
+        voucher_date: date(2026, 9, 1),
+        description: "Ordinært bilag".into(),
+        reverses: None,
+        entries: vec![
+            regnmed_core::voucher::EntryDraft {
+                account_number: "7770".into(),
+                amount: regnmed_core::Ore(10_00),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            regnmed_core::voucher::EntryDraft {
+                account_number: "1920".into(),
+                amount: regnmed_core::Ore(-10_00),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    regnmed_db::post_voucher(&state.pool, company, &draft, "Milla Migrerer")
+        .await
+        .unwrap();
+    let next_file = year_saft(
+        date(2026, 9, 1),
+        date(2026, 12, 31),
+        vec![
+            acct("1920", "Bank", 14_840_00, 14_840_00),
+            acct("2050", "Annen egenkapital", -10_000_00, -10_000_00),
+            acct("7770", "Gebyr", 160_00, 160_00),
+        ],
+        vec![],
+    );
+    let (status, body) = request(&state, "POST", &import_uri, &admin_token, Some(next_file)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(
+        body.to_string().contains("importjournalen"),
+        "explains that ordinary bookkeeping closed the door: {body}"
+    );
 }
