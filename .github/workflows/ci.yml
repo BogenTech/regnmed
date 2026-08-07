@@ -32,6 +32,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual retrigger: push events can be dropped wholesale during GitHub
+  # Actions incidents (seen 2026-08-06), and a commit whose event was
+  # dropped never gets a run any other way.
+  workflow_dispatch:
 
 jobs:
   test:

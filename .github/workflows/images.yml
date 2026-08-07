@@ -25,6 +25,12 @@ on:
     # an image push on every lap.
     paths-ignore:
       - "deploy/**"
+  # Manual retrigger for dropped push events (Actions incident 2026-08-06).
+  # Dispatching on main behaves like a main push (incl. the gated test
+  # roll); dispatching on a tag requires the workflow at that tag to have
+  # this trigger, so tags from before it exist are rebuilt by re-pushing
+  # the tag instead.
+  workflow_dispatch:
       - "docs/**"
       - "*.md"
   workflow_dispatch:
