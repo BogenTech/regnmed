@@ -15,7 +15,7 @@ The specifications and where they live:
 | --- | --- | --- |
 | Bokføringsspesifikasjon | `GET /companies/{id}/reports/bokforingsspesifikasjon?from=&to=` | every voucher in posting (chain) order with all lines |
 | Kontospesifikasjon (hovedbok) | `GET …/reports/kontospesifikasjon?from=&to=[&account=]` | every posting per account, running saldo seeded from inngående balance, bilagshenvisning `journal-år-nummer` |
-| Kunde-/leverandørspesifikasjon | `GET …/parties/{pid}/items` | reskontro ([reskontro.md](reskontro.md)) |
+| Kunde-/leverandørspesifikasjon | `GET …/reports/kundespesifikasjon?from=&to=` and `GET …/reports/leverandorspesifikasjon?from=&to=` | per party: inngående saldo, every posting with running saldo and bilagshenvisning, utgående saldo; a party with nonzero inngående but no movement is still listed. (`GET …/parties/{pid}/items` remains the åpne poster working view — no period filter, no running saldo — see [reskontro.md](reskontro.md)) |
 | Mva-spesifikasjon | `GET …/reports/mva?year=&termin=` | dated rates ([mva.md](mva.md)) |
 | Saldobalanse | `GET …/reports/saldobalanse?from=&to=` | per account: inngående, debet, kredit, utgående |
 | Resultatregnskap | `GET …/reports/resultat?from=&to=` (optional `avdeling=`/`prosjekt=` — resultat per dimensjon, docs/dimensjoner.md) | NS 4102 classes 3–8 |

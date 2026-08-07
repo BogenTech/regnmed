@@ -284,6 +284,57 @@ pub async fn kontospesifikasjon(
     })))
 }
 
+pub async fn kundespesifikasjon(
+    state: State<AppState>,
+    person: AuthPerson,
+    path: Path<Uuid>,
+    query: Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    reskontrospesifikasjon(state, person, path, query, "kunde").await
+}
+
+pub async fn leverandorspesifikasjon(
+    state: State<AppState>,
+    person: AuthPerson,
+    path: Path<Uuid>,
+    query: Query<PeriodQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    reskontrospesifikasjon(state, person, path, query, "leverandor").await
+}
+
+/// Kunde-/leverandørspesifikasjon (bokføringsforskriften §3-1 nr. 3–4):
+/// per party, inngående saldo + every posting with running saldo and
+/// bilagshenvisning + utgående saldo, for any period.
+async fn reskontrospesifikasjon(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<PeriodQuery>,
+    kind: &str,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    check_period(query.from, query.to)?;
+    let parties =
+        regnmed_db::reskontrospesifikasjon(&state.pool, company_id, kind, query.from, query.to)
+            .await?;
+    Ok(Json(json!({
+        "parties": parties.iter().map(|p| json!({
+            "party_no": p.party_no,
+            "name": p.party_name,
+            "inngaende_ore": p.inngaende_ore,
+            "utgaende_ore": p.utgaende_ore,
+            "posts": p.posts.iter().map(|l| json!({
+                "bilag": format!("{}-{}-{}", l.journal_code, l.fiscal_year, l.voucher_number),
+                "date": l.voucher_date.to_string(),
+                "account": l.account_number,
+                "description": l.description,
+                "amount_ore": l.amount_ore,
+                "saldo_ore": l.saldo_ore,
+            })).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
 pub async fn bokforingsspesifikasjon(
     State(state): State<AppState>,
     person: AuthPerson,

@@ -198,6 +198,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/reports/balanse` | GET |
 | `/companies/{company_id}/reports/bokforingsspesifikasjon` | GET |
 | `/companies/{company_id}/reports/kontospesifikasjon` | GET |
+| `/companies/{company_id}/reports/kundespesifikasjon` | GET |
+| `/companies/{company_id}/reports/leverandorspesifikasjon` | GET |
 | `/companies/{company_id}/reports/mva` | GET |
 | `/companies/{company_id}/reports/mva-melding` | GET |
 | `/companies/{company_id}/reports/nokkeltall` | GET |

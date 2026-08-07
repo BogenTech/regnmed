@@ -231,6 +231,14 @@ pub fn router(state: AppState) -> Router {
             get(reports::bokforingsspesifikasjon),
         )
         .route(
+            "/companies/{company_id}/reports/kundespesifikasjon",
+            get(reports::kundespesifikasjon),
+        )
+        .route(
+            "/companies/{company_id}/reports/leverandorspesifikasjon",
+            get(reports::leverandorspesifikasjon),
+        )
+        .route(
             "/companies/{company_id}/reports/resultat",
             get(reports::resultat),
         )

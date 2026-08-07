@@ -230,6 +230,134 @@ pub async fn kontospesifikasjon(
         .collect())
 }
 
+/// One posting on one party, with the dokumentasjonshenvisning the
+/// forskrift requires and the running saldo per party.
+#[derive(Debug)]
+pub struct ReskontroPost {
+    pub account_number: String,
+    pub journal_code: String,
+    pub fiscal_year: i32,
+    pub voucher_number: i64,
+    pub voucher_date: NaiveDate,
+    pub description: String,
+    pub amount_ore: i64,
+    /// Running saldo for the party, including this posting, from the
+    /// period's inngående saldo.
+    pub saldo_ore: i64,
+}
+
+/// One party's block of the spesifikasjon: inngående saldo, every
+/// posting in the period, utgående saldo.
+#[derive(Debug)]
+pub struct ReskontroParty {
+    pub party_no: String,
+    pub party_name: String,
+    pub inngaende_ore: i64,
+    pub utgaende_ore: i64,
+    pub posts: Vec<ReskontroPost>,
+}
+
+/// Kunde-/leverandørspesifikasjon (bokføringsforskriften §3-1 nr. 3–4):
+/// every party-bound posting per party in date/bilag order, with running
+/// saldo seeded from the party's inngående saldo. `kind` is `kunde` or
+/// `leverandor`. A party with no movement in the period is still listed
+/// when its inngående saldo is nonzero — the saldo exists whether or not
+/// the period touched it.
+pub async fn reskontrospesifikasjon(
+    pool: &PgPool,
+    company_id: Uuid,
+    kind: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<ReskontroParty>> {
+    // Saldi first: the party list is everyone with a nonzero inngående
+    // saldo or any movement in the period, so the blocks below can be
+    // seeded even when a party has no lines.
+    let saldi = sqlx::query(
+        "select p.party_no, p.name,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date < $3), 0)::bigint as inngaende,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $4), 0)::bigint as utgaende
+         from party p
+         join entry e on e.party_id = p.id
+         join voucher v on v.id = e.voucher_id
+         where p.company_id = $1 and p.kind = $2
+         group by p.id, p.party_no, p.name
+         having coalesce(sum(e.amount_ore) filter (where v.voucher_date < $3), 0) <> 0
+             or count(*) filter (where v.voucher_date between $3 and $4) > 0
+         order by p.party_no",
+    )
+    .bind(company_id)
+    .bind(kind)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await?;
+    let mut parties: Vec<ReskontroParty> = saldi
+        .iter()
+        .map(|r| ReskontroParty {
+            party_no: r.get("party_no"),
+            party_name: r.get("name"),
+            inngaende_ore: r.get("inngaende"),
+            utgaende_ore: r.get("utgaende"),
+            posts: Vec::new(),
+        })
+        .collect();
+    let rows = sqlx::query(
+        "select p.party_no, a.number as account_number, j.code as journal_code,
+                v.fiscal_year, v.voucher_number, v.voucher_date,
+                coalesce(e.description, v.description) as description,
+                e.amount_ore
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         join journal j on j.id = v.journal_id
+         join account a on a.id = e.account_id
+         join party p on p.id = e.party_id
+         where p.company_id = $1 and p.kind = $2
+           and v.voucher_date between $3 and $4
+         order by p.party_no, v.voucher_date, v.chain_seq, e.line_no",
+    )
+    .bind(company_id)
+    .bind(kind)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await?;
+    // Index by party_no rather than walking both orderings in step: the
+    // two queries are separate statements, so a voucher posted between
+    // them can produce a line whose party the first query never saw.
+    // That line belongs to no block and is skipped — the alternative,
+    // assuming the orderings line up, would be an index panic.
+    let plass: std::collections::HashMap<String, usize> = parties
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.party_no.clone(), i))
+        .collect();
+    for r in &rows {
+        let party_no: String = r.get("party_no");
+        let Some(&idx) = plass.get(&party_no) else {
+            continue;
+        };
+        let block = &mut parties[idx];
+        let amount: i64 = r.get("amount_ore");
+        let saldo = block
+            .posts
+            .last()
+            .map_or(block.inngaende_ore, |p| p.saldo_ore)
+            + amount;
+        block.posts.push(ReskontroPost {
+            account_number: r.get("account_number"),
+            journal_code: r.get("journal_code"),
+            fiscal_year: r.get("fiscal_year"),
+            voucher_number: r.get("voucher_number"),
+            voucher_date: r.get("voucher_date"),
+            description: r.get("description"),
+            amount_ore: amount,
+            saldo_ore: saldo,
+        });
+    }
+    Ok(parties)
+}
+
 #[derive(Debug)]
 pub struct BokforingLine {
     pub line_no: i32,

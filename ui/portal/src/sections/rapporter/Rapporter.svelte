@@ -8,6 +8,7 @@
   import Balanse from "./Balanse.svelte";
   import Budsjett from "./Budsjett.svelte";
   import Kontospesifikasjon from "./Kontospesifikasjon.svelte";
+  import Reskontrospesifikasjon from "./Reskontrospesifikasjon.svelte";
   import Prosjekt from "./Prosjekt.svelte";
   import Bokforingsspesifikasjon from "./Bokforingsspesifikasjon.svelte";
   import Revisjon from "./Revisjon.svelte";
@@ -21,6 +22,7 @@
     ["budsjett", "Budsjett"],
     ["prosjekt", "Prosjekt"],
     ["kontospesifikasjon", "Kontospesifikasjon"],
+    ["reskontrospesifikasjon", "Reskontro"],
     ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
     ["revisjon", "Revisjon"],
   ];
@@ -41,6 +43,7 @@
       budsjett: "Budsjett og avvik " + year,
       prosjekt: "Prosjektlønnsomhet " + year,
       kontospesifikasjon: "Kontospesifikasjon " + year,
+      reskontrospesifikasjon: "Kunde- og leverandørspesifikasjon " + year,
       bokforingsspesifikasjon: "Bokføringsspesifikasjon " + year,
       revisjon: "Verifikasjonsrapport",
     }[rapport],
@@ -82,6 +85,8 @@
     <Prosjekt {companyId} {year} />
   {:else if rapport === "kontospesifikasjon"}
     <Kontospesifikasjon {companyId} {from} {to} />
+  {:else if rapport === "reskontrospesifikasjon"}
+    <Reskontrospesifikasjon {companyId} {from} {to} />
   {:else if rapport === "bokforingsspesifikasjon"}
     <Bokforingsspesifikasjon {companyId} {from} {to} />
   {:else if rapport === "revisjon"}
