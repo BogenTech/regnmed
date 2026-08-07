@@ -164,6 +164,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            kontant_betalingsmiddel: None,
             party_no: kunde_no.clone(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),

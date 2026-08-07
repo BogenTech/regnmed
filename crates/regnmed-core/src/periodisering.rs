@@ -16,7 +16,7 @@
 //! Derfor tar funksjonene her et NETTOBELØP, og kalleren har allerede
 //! skilt avgiften ut.
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
 /// Antall måneder fra og med `fra` til og med `til`, begge angitt som
 /// (år, måned). 0 eller mindre når intervallet er tomt eller baklengs —

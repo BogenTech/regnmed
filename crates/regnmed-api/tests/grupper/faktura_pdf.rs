@@ -359,6 +359,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            kontant_betalingsmiddel: None,
             party_no,
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
@@ -478,6 +479,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            kontant_betalingsmiddel: None,
             party_no,
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),

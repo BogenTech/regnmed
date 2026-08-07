@@ -42,6 +42,15 @@ pub struct CreateInvoiceRequest {
     /// Document currency (docs/valuta.md); line amounts in its minor
     /// unit. None = NOK. Requires a kurs in the valutakurs table.
     valuta: Option<String>,
+    /// Kontantsalg (#89, §5-3): what settled the ytelse on delivery
+    /// ("Kort", "Vipps", "Kontant"). Present = kontantfaktura: the
+    /// receivable is raised and settled in one transaction, and the
+    /// document carries no KID and no forfall.
+    kontant_betalingsmiddel: Option<String>,
+    /// Where the money landed — 1900 kontanter, 1920 bank, or the card
+    /// acquirer's clearing account. Required with the above; we never
+    /// guess how somebody was paid.
+    oppgjorskonto: Option<String>,
     lines: Vec<DocLineRequest>,
     /// Selected unbilled hours (docs/timer.md): appended as hour lines
     /// per (prosjekt, sats) group and marked fakturert in the SAME
@@ -77,7 +86,15 @@ pub async fn create_invoice(
         krev(&state, person.person_id, company_id, Rett::TimerFakturer).await?;
     }
 
+    let kontant = request
+        .kontant_betalingsmiddel
+        .filter(|s| !s.trim().is_empty());
+    let oppgjorskonto = request.oppgjorskonto;
     let draft = regnmed_db::InvoiceDraft {
+        // create_kontantfaktura sets this itself; the ordinary route
+        // never issues one, so a caller cannot turn a credit sale into a
+        // "paid" document by passing a flag.
+        kontant_betalingsmiddel: None,
         party_no: request.party_no,
         invoice_date: request.invoice_date,
         due_date: request.due_date,
@@ -91,6 +108,31 @@ pub async fn create_invoice(
         lines: resolve_lines(&state, company_id, request.lines).await?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
+
+    // Kontantsalg takes its own route: the settlement has to be in the
+    // same transaction as the issue, so it cannot be an extra step a
+    // caller might skip and leave a "paid" document with an open item
+    // behind it.
+    if let Some(middel) = kontant {
+        let konto = oppgjorskonto.ok_or_else(|| {
+            ApiError::BadRequest(
+                "kontantsalg må si hvor pengene havnet (oppgjorskonto, f.eks. 1900 eller 1920)"
+                    .into(),
+            )
+        })?;
+        let issued = regnmed_db::invoice::create_kontantfaktura(
+            &state.pool,
+            company_id,
+            &draft,
+            &konto,
+            &middel,
+            created_by,
+        )
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        return Ok(Json(issued_json(&issued)));
+    }
+
     let issued = match timer {
         Some(entry_ids) => {
             regnmed_db::create_invoice_with_hours(

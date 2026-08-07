@@ -239,3 +239,29 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   base64-decodes back to the stored PDF, reply-to = company),
   the log records it, and an unconfigured rail answers clearly.
   regnid's own suite pins the wire format's backward compatibility.
+
+
+## Kontantsalg (#89, bokføringsforskriften §5-3)
+
+En **kontantfaktura** dokumenterer en ytelse som er betalt ved levering
+— kort, Vipps eller kontanter. Dokumentet er et annet dokument, ikke en
+faktura med et flagg: `Dokumenttype::Kontantfaktura` gir tittelen
+KONTANTFAKTURA, «Betalt: <betalingsmiddel>» blant dokumentfaktaene, og
+**ingen KID, ingen forfallsdato og ingen betalingsinformasjon**. Å be
+noen betale det de allerede har betalt er ikke en skjønnhetsfeil, det er
+et krav om betaling nummer to. Testen lister de forbudte strengene og
+sjekker samtidig at en vanlig faktura beholder dem alle.
+
+**Fordringen oppstår og gjøres opp i SAMME transaksjon.** Det ville vært
+enklere å postere salget rett mot bank og hoppe over 1500 — og det er
+nettopp det som ikke må skje: reskontro-doktrinen sier at en kundes
+posteringer bærer en part, og en sidedør forbi den ville gjort
+`reskontro_kontroll` (revisors avstemming) stille ufullstendig. Kravet
+finnes, bærer parten på BEGGE sider, og den åpne posten lukkes i det
+øyeblikket den oppstår.
+
+`oppgjorskonto` oppgis av kalleren — 1900 kontanter, 1920 bank eller
+kortinnløserens oppgjørskonto. Vi gjetter aldri hvordan noen ble betalt.
+
+`POST /companies/{id}/invoices` med `kontant_betalingsmiddel` +
+`oppgjorskonto` tar denne veien; uten dem er alt som før.

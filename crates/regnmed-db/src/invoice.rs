@@ -28,8 +28,13 @@ pub struct InvoiceLineDraft {
     pub product_id: Option<Uuid>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InvoiceDraft {
+    /// Set for a kontantfaktura (#89, §5-3): the ytelse was paid on
+    /// delivery, and this is what settled it ("Kort", "Vipps",
+    /// "Kontant"). It changes the DOCUMENT — no KID, no forfall — so it
+    /// belongs on the draft, not only on the posting.
+    pub kontant_betalingsmiddel: Option<String>,
     pub party_no: String,
     pub invoice_date: NaiveDate,
     pub due_date: NaiveDate,
@@ -338,9 +343,12 @@ pub async fn create_invoice_in(
     let pdf = render_faktura_pdf(&FakturaPdfInput {
         dokumenttype: if credits_invoice_id.is_some() {
             Dokumenttype::Kreditnota
+        } else if draft.kontant_betalingsmiddel.is_some() {
+            Dokumenttype::Kontantfaktura
         } else {
             Dokumenttype::Faktura
         },
+        betalingsmiddel: draft.kontant_betalingsmiddel.clone(),
         krediterer_nr: credited_invoice_no,
         selger_navn: company.get("name"),
         selger_orgnr: company.get("orgnr"),
@@ -539,6 +547,7 @@ pub async fn credit_invoice(
         .fetch_one(pool)
         .await?;
     let draft = InvoiceDraft {
+        kontant_betalingsmiddel: None,
         party_no: original.get("party_no"),
         invoice_date: today,
         due_date: today,
@@ -660,4 +669,115 @@ pub async fn list_invoices(
         })
         .filter(|row| !open_only || row.remaining_ore != 0)
         .collect())
+}
+
+/// Kontantfaktura (#89, bokføringsforskriften §5-3): a salgsdokument for
+/// a ytelse paid on delivery.
+///
+/// The receivable ARISES AND IS SETTLED in one transaction. It would be
+/// simpler to post the sale straight against bank and skip 1500
+/// entirely, and that is exactly what must not happen: the reskontro
+/// doctrine says a customer's postings carry a party, and a side door
+/// past it would make `reskontro_kontroll` — the revisor's tie-out —
+/// quietly incomplete. The customer history stays true, and the open
+/// item is closed the instant it exists.
+///
+/// `oppgjorskonto` is where the money landed: 1900 kontanter, 1920 bank,
+/// or the card acquirer's clearing account. The caller names it; we do
+/// not guess how someone was paid.
+pub async fn create_kontantfaktura(
+    pool: &PgPool,
+    company_id: Uuid,
+    draft: &InvoiceDraft,
+    oppgjorskonto: &str,
+    betalingsmiddel: &str,
+    created_by: &str,
+) -> Result<IssuedInvoice> {
+    ensure!(
+        !betalingsmiddel.trim().is_empty(),
+        "kontantfakturaen må si hva den ble gjort opp med (§5-3)"
+    );
+    // Set here rather than trusted from the caller: a kontantfaktura
+    // that reached the PDF as an ordinary faktura would print a KID for
+    // money already received.
+    let draft = &InvoiceDraft {
+        kontant_betalingsmiddel: Some(betalingsmiddel.trim().to_string()),
+        ..InvoiceDraft::clone(draft)
+    };
+    let mut tx = pool.begin().await?;
+    let utstedt = create_invoice_in(pool, &mut tx, company_id, draft, created_by, None).await?;
+
+    let (party_no, receivable_entry, gross): (String, Uuid, i64) = {
+        let row = sqlx::query(
+            "select p.party_no, i.receivable_entry_id, e.amount_ore::bigint as gross
+             from invoice i
+             join party p on p.id = i.party_id
+             join entry e on e.id = i.receivable_entry_id
+             where i.id = $1",
+        )
+        .bind(utstedt.invoice_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        (
+            row.get("party_no"),
+            row.get("receivable_entry_id"),
+            row.get("gross"),
+        )
+    };
+
+    let oppgjor = regnmed_core::voucher::VoucherDraft {
+        journal_code: draft.journal_code.clone(),
+        voucher_date: draft.invoice_date,
+        description: format!(
+            "Kontantsalg, oppgjør faktura {} ({betalingsmiddel})",
+            utstedt.invoice_no
+        ),
+        reverses: None,
+        entries: vec![
+            regnmed_core::voucher::EntryDraft {
+                account_number: oppgjorskonto.to_string(),
+                amount: regnmed_core::Ore(gross),
+                vat_code: None,
+                description: Some(betalingsmiddel.trim().to_string()),
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            regnmed_core::voucher::EntryDraft {
+                account_number: draft.receivable_account.clone(),
+                amount: regnmed_core::Ore(-gross),
+                vat_code: None,
+                description: None,
+                // The party goes on BOTH sides of the customer's history:
+                // the claim and its settlement.
+                party_no: Some(party_no),
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    let posted = crate::post_voucher_in(&mut tx, company_id, &oppgjor, created_by).await?;
+    let betalings_entry: Uuid = sqlx::query_scalar(
+        "select e.id from entry e join account a on a.id = e.account_id
+         where e.voucher_id = $1 and a.number = $2",
+    )
+    .bind(posted.id)
+    .bind(&draft.receivable_account)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+         values ($1,$2,$3,$4,$5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(receivable_entry)
+    .bind(betalings_entry)
+    .bind(gross)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(utstedt)
 }

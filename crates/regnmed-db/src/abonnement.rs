@@ -564,6 +564,7 @@ pub async fn bokfor_stripe_betaling(
     }
 
     let draft = crate::invoice::InvoiceDraft {
+        kontant_betalingsmiddel: None,
         party_no,
         invoice_date: idag,
         due_date: idag,
@@ -1088,6 +1089,7 @@ async fn fakturer_en(
 
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
+        kontant_betalingsmiddel: None,
         party_no,
         invoice_date: idag,
         due_date: idag + chrono::Days::new(14),

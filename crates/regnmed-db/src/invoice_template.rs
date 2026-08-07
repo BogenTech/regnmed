@@ -381,6 +381,7 @@ pub async fn generate_one(
     ensure!(!line_rows.is_empty(), "template has no lines");
 
     let draft = InvoiceDraft {
+        kontant_betalingsmiddel: None,
         party_no: template.get("party_no"),
         invoice_date: neste_dato,
         due_date: neste_dato + chrono::Days::new(template.get::<i32, _>("forfall_dager") as u64),

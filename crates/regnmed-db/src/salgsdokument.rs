@@ -294,6 +294,7 @@ pub async fn ordre_to_invoice(
 
     let lines = load_lines(pool, ordre_id).await?;
     let draft = InvoiceDraft {
+        kontant_betalingsmiddel: None,
         party_no: ordre.get("party_no"),
         invoice_date,
         due_date,
@@ -487,6 +488,7 @@ pub async fn salgsdokument_pdf(
         Dokumenttype::Ordrebekreftelse
     };
     let pdf = render_faktura_pdf(&FakturaPdfInput {
+        betalingsmiddel: None,
         dokumenttype,
         krediterer_nr: None,
         selger_navn: doc.get("company_name"),

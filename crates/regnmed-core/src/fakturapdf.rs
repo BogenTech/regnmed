@@ -39,6 +39,11 @@ pub enum Dokumenttype {
     Kreditnota,
     Tilbud,
     Ordrebekreftelse,
+    /// Kontantfaktura (bokføringsforskriften §5-3): the ytelse was paid
+    /// on delivery. Carries NO KID, NO forfallsdato and no payment
+    /// instructions — telling someone to pay what they already paid is
+    /// not a detail, it is a wrong document.
+    Kontantfaktura,
 }
 
 impl Dokumenttype {
@@ -48,6 +53,7 @@ impl Dokumenttype {
             Dokumenttype::Kreditnota => "KREDITNOTA",
             Dokumenttype::Tilbud => "TILBUD",
             Dokumenttype::Ordrebekreftelse => "ORDREBEKREFTELSE",
+            Dokumenttype::Kontantfaktura => "KONTANTFAKTURA",
         }
     }
 
@@ -57,6 +63,7 @@ impl Dokumenttype {
             Dokumenttype::Kreditnota => "Kreditnotanr",
             Dokumenttype::Tilbud => "Tilbudsnr",
             Dokumenttype::Ordrebekreftelse => "Ordrenr",
+            Dokumenttype::Kontantfaktura => "Fakturanr",
         }
     }
 }
@@ -93,6 +100,9 @@ pub struct FakturaPdfInput {
     /// Leveringssted, same hjemmel — "der det er relevant".
     pub leveringssted: Option<String>,
     pub kid: String,
+    /// How a kontantfaktura was settled ("Kort", "Vipps", "Kontant").
+    /// Ignored on every other dokumenttype.
+    pub betalingsmiddel: Option<String>,
 
     /// Dokumentvaluta (docs/valuta.md). None = NOK. When set, every
     /// beløp on the document is in this currency and the totals block
@@ -182,6 +192,15 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     ];
     if input.dokumenttype == Dokumenttype::Faktura {
         fakta.push(("Forfall".into(), input.forfallsdato.to_string()));
+    }
+    // A kontantfaktura says what settled it, where a faktura says when
+    // it falls due. §5-3 wants the salgsdokument to show that the
+    // ytelse is paid.
+    if input.dokumenttype == Dokumenttype::Kontantfaktura {
+        fakta.push((
+            "Betalt".into(),
+            input.betalingsmiddel.clone().unwrap_or_else(|| "Ja".into()),
+        ));
     }
     // Leveringstidspunkt is mandatory on the salgsdokument, so it sits
     // with the other document facts rather than in a footnote. On a
@@ -396,7 +415,7 @@ mod tests {
         haystack.windows(needle.len()).position(|w| w == needle)
     }
 
-    fn input() -> FakturaPdfInput {
+    pub(super) fn input() -> FakturaPdfInput {
         FakturaPdfInput {
             dokumenttype: Dokumenttype::Faktura,
             krediterer_nr: None,
@@ -416,6 +435,7 @@ mod tests {
             leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 20),
             leveringssted: None,
             kid: "000000071".into(),
+            betalingsmiddel: None,
             linjer: vec![
                 PdfLinje {
                     beskrivelse: "Konsulentbistand".into(),
@@ -543,5 +563,41 @@ mod tests {
         assert_eq!(antall(333), "0,333");
         assert_eq!(prosent(2500), "25 %");
         assert_eq!(prosent(1150), "11,50 %");
+    }
+}
+
+#[cfg(test)]
+mod kontant_tests {
+    use super::*;
+
+    fn input(dokumenttype: Dokumenttype) -> FakturaPdfInput {
+        let mut i = super::tests::input();
+        i.dokumenttype = dokumenttype;
+        i.betalingsmiddel = Some("Kort".into());
+        i
+    }
+
+    /// §5-3: a kontantfaktura documents a ytelse already paid. Telling
+    /// the buyer where to transfer money — and by when — is not a
+    /// cosmetic slip; it is a demand for a second payment.
+    #[test]
+    fn a_kontantfaktura_carries_no_kid_and_no_due_date() {
+        let pdf = render_faktura_pdf(&input(Dokumenttype::Kontantfaktura));
+        let text = String::from_utf8_lossy(&pdf).to_string();
+        assert!(text.contains("KONTANTFAKTURA"), "tittelen");
+        assert!(text.contains("Betalt"), "at den er gjort opp");
+        assert!(text.contains("Kort"), "og med hva");
+        for forbudt in ["KID", "BETALINGSINFORMASJON", "Betales innen", "Forfall"] {
+            assert!(
+                !text.contains(forbudt),
+                "«{forbudt}» hører ikke hjemme på en kontantfaktura"
+            );
+        }
+        // An ordinary faktura still carries all of it — the guard is the
+        // dokumenttype, not a global removal.
+        let vanlig =
+            String::from_utf8_lossy(&render_faktura_pdf(&input(Dokumenttype::Faktura))).to_string();
+        assert!(vanlig.contains("KID"));
+        assert!(vanlig.contains("Betales innen"));
     }
 }
