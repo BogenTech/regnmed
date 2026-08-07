@@ -66,6 +66,7 @@
           ? "Bokført som bilag " + svar.bilag + "; kassadifferanse " +
               kr(svar.differanse_ore) + " som bilag " + svar.differansebilag
           : "Bokført som bilag " + svar.bilag,
+        true,
       );
       zNummer = "";
       salg = [{ konto: "3000", vat_code: "3", belop: "" }];

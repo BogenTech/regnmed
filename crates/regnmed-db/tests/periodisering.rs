@@ -262,3 +262,57 @@ async fn a_started_plan_cannot_be_rewritten() {
         .await
         .unwrap();
 }
+
+/// A plan is a standing instruction, so a bad account must fail when it
+/// is created — not once a month for a year, where only the run log
+/// would see it. Found in browser verification (#87).
+#[tokio::test]
+async fn a_plan_refuses_an_account_it_could_never_post_to() {
+    let Some(pool) = pool().await else { return };
+    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Kontosjekk AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [
+        ("1500", "Kundefordringer"),
+        ("1700", "Forskuddsbetalt"),
+        ("6300", "Leie"),
+    ] {
+        regnmed_db::ensure_account(&pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+
+    let plan = |resultat: &str, balanse: &str| PeriodiseringDraft {
+        kilde_voucher: None,
+        beskrivelse: "Husleie".into(),
+        resultatkonto: resultat.into(),
+        balansekonto: balanse.into(),
+        total_ore: 30_000,
+        fra: (2026, 1),
+        til: (2026, 3),
+        avdeling: None,
+        prosjekt: None,
+        notat: None,
+    };
+
+    let feil = create_periodisering(&pool, company, &plan("6300", "1500"), "test")
+        .await
+        .expect_err("reskontrokonto kan aldri lykkes uten part");
+    assert!(feil.to_string().contains("reskontrokonto"), "{feil}");
+
+    let feil = create_periodisering(&pool, company, &plan("6300", "9999"), "test")
+        .await
+        .expect_err("ukjent konto");
+    assert!(feil.to_string().contains("finnes ikke"), "{feil}");
+
+    // The good one still works.
+    create_periodisering(&pool, company, &plan("6300", "1700"), "test")
+        .await
+        .unwrap();
+}

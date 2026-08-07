@@ -267,7 +267,7 @@
         til_maned: Number(pForm.til_maned),
       });
       pForm = null;
-      toast("Periodiseringen er opprettet");
+      toast("Periodiseringen er opprettet", true);
       await lastPlaner();
     } catch (error) {
       toast(error.message, false);
@@ -278,7 +278,21 @@
     try {
       const svar = await post("/companies/" + companyId + "/periodiseringer/" + id + "/kjor", {});
       const ok = svar.kjort.filter((k) => k.bilag).length;
-      toast(ok ? ok + " måned(er) bokført" : "Ingen måneder forfalt ennå");
+      // A failed month is NOT "nothing was due". The run log carries the
+      // reason, and saying "ingen måneder forfalt" over three refusals
+      // would hide exactly what the operator needs to act on.
+      const feilet = svar.kjort.filter((k) => k.feil);
+      if (feilet.length) {
+        toast(
+          (ok ? ok + " måned(er) bokført. " : "") +
+            feilet.length +
+            " feilet: " +
+            feilet[0].feil,
+          false,
+        );
+      } else {
+        toast(ok ? ok + " måned(er) bokført" : "Ingen måneder forfalt ennå", true);
+      }
       await lastPlaner();
       await lastPosteringer();
     } catch (error) {

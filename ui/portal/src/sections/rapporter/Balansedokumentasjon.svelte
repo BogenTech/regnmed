@@ -55,7 +55,7 @@
         });
       }
       skjema = null;
-      toast("Avstemmingen er registrert");
+      toast("Avstemmingen er registrert", true);
       await last();
     } catch (error) {
       toast(error.message, false);

@@ -85,6 +85,34 @@ pub async fn create_periodisering(
         draft.total_ore.abs()
     );
 
+    // Same reason the dimensions are resolved below: a plan is a standing
+    // instruction, so a bad account must fail HERE and not once a month
+    // for a year. Found in browser verification — 1500 is a reskontro
+    // account, the plan was accepted, and all three months then failed
+    // with "requires a party" where only the run log could see it.
+    for (konto, rolle) in [
+        (&draft.resultatkonto, "resultatkontoen"),
+        (&draft.balansekonto, "balansekontoen"),
+    ] {
+        let funnet: Option<(bool, Option<String>)> = sqlx::query_as(
+            "select active, reskontro_kind from account where company_id = $1 and number = $2",
+        )
+        .bind(company_id)
+        .bind(konto)
+        .fetch_optional(pool)
+        .await?;
+        let (aktiv, reskontro) =
+            funnet.with_context(|| format!("{rolle} {konto} finnes ikke i kontoplanen"))?;
+        ensure!(aktiv, "{rolle} {konto} er deaktivert");
+        // Periodisering posts without a party, so a reskontro account
+        // could never succeed — refusing now beats refusing monthly.
+        ensure!(
+            reskontro.is_none(),
+            "{rolle} {konto} er en reskontrokonto og krever part på hver postering. \
+             Periodisering fører uten part, så velg en annen konto"
+        );
+    }
+
     // Dimensions are resolved here so a typo fails the plan rather than
     // every monthly posting for the next year.
     let dim = |kode: Option<&str>, kind: &'static str| {
