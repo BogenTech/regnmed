@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="100%"
+   viewBox="0 0 680 450"
+   role="img"
+   style=""
+   version="1.1"
+   id="svg18"
+   sodipodi:docname="regnmed_logo_v3_clipped_highlights.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview18"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     showguides="true"
+     inkscape:zoom="1.9692896"
+     inkscape:cx="288.68279"
+     inkscape:cy="255.67596"
+     inkscape:window-width="2560"
+     inkscape:window-height="1326"
+     inkscape:window-x="1800"
+     inkscape:window-y="30"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg18" />
+  <title
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="title1">RegnMed logo, third version</title>
+  <desc
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="desc1">A tapered cyan raindrop with highlights contained inside the silhouette and a smaller white sigma set high in the bulb, shown beside the RegnMed wordmark and three size variants.</desc>
+  <defs
+     id="defs6">
+    <radialGradient
+       id="rB"
+       cx="36%"
+       cy="72%"
+       r="78%">
+      <stop
+         offset="0"
+         stop-color="#5CEDEC"
+         id="stop1" />
+      <stop
+         offset="0.42"
+         stop-color="#18C6D8"
+         id="stop2" />
+      <stop
+         offset="0.78"
+         stop-color="#0E9BBC"
+         id="stop3" />
+      <stop
+         offset="1"
+         stop-color="#0B7396"
+         id="stop4" />
+    </radialGradient>
+    <path
+       id="rD"
+       d="M200 50 C186 96 150 168 130 216 C114 254 105 278 105 305 A95 95 0 0 0 295 305 C295 278 286 254 270 216 C250 168 214 96 200 50 Z" />
+    <polyline
+       id="rS"
+       points="242,236 162,236 206,282 162,328 242,328"
+       fill="none"
+       stroke-width="20"
+       stroke-linejoin="miter"
+       stroke-linecap="butt" />
+    <clipPath
+       id="rC">
+      <use
+         href="#rD"
+         id="use4" />
+    </clipPath>
+    <mask
+       id="rK">
+      <use
+         href="#rD"
+         fill="#fff"
+         id="use5" />
+      <use
+         href="#rS"
+         stroke="#000"
+         stroke-width="24"
+         id="use6" />
+    </mask>
+  </defs>
+  <ellipse
+     cx="200"
+     cy="416"
+     rx="86"
+     ry="12"
+     fill="#0B3B52"
+     opacity="0.15"
+     style="fill:rgb(11, 59, 82);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.15;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="ellipse6" />
+  <use
+     href="#rD"
+     fill="url(#rB)"
+     style="stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="use7" />
+  <g
+     clip-path="url(#rC)"
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="g8">
+    <path
+       d="M246 176 C264 212 274 250 272 290 C270 318 260 338 244 348 C253 318 255 284 249 250 C245 220 238 198 246 176 Z"
+       fill="#FFFFFF"
+       opacity="0.5"
+       style="fill:rgb(255, 255, 255);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.5;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="path7" />
+    <ellipse
+       cx="246"
+       cy="356"
+       rx="17"
+       ry="10"
+       fill="#FFFFFF"
+       opacity="0.6"
+       transform="rotate(-28 246 356)"
+       style="fill:rgb(255, 255, 255);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.6;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="ellipse7" />
+    <path
+       d="M193 82 C185 108 179 134 177 158 C176 170 181 172 184 161 C190 138 195 108 197 86 Z"
+       fill="#FFFFFF"
+       opacity="0.42"
+       style="fill:rgb(255, 255, 255);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.42;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="path8" />
+    <use
+       href="#rD"
+       fill="none"
+       stroke="#7FE9F5"
+       stroke-width="3"
+       opacity="0.55"
+       style="fill:none;stroke:rgb(127, 233, 245);color:rgb(11, 11, 11);stroke-width:3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.55;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use8" />
+  </g>
+  <use
+     href="#rD"
+     fill="none"
+     stroke="#0A3348"
+     stroke-width="6"
+     stroke-linejoin="round"
+     style="fill:none;stroke:rgb(10, 51, 72);color:rgb(11, 11, 11);stroke-width:6px;stroke-linecap:butt;stroke-linejoin:round;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="use9" />
+  <use
+     href="#rS"
+     stroke="#0A3348"
+     stroke-width="28"
+     stroke-linejoin="round"
+     style="fill:rgb(0, 0, 0);stroke:rgb(10, 51, 72);color:rgb(11, 11, 11);stroke-width:28px;stroke-linecap:butt;stroke-linejoin:round;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="use10" />
+  <use
+     href="#rS"
+     stroke="#FFFFFF"
+     style="fill:rgb(0, 0, 0);stroke:rgb(255, 255, 255);color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="use11" />
+  <text
+     x="390"
+     y="206"
+     font-family="var(--font-sans)"
+     font-size="46"
+     font-weight="500"
+     fill="var(--text-primary)"
+     letter-spacing="-0.5"
+     style="fill:rgb(11, 11, 11);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, sans-serif;font-size:46px;font-weight:500;text-anchor:start;dominant-baseline:auto"
+     id="text11">RegnMed</text>
+  <text
+     x="392"
+     y="234"
+     font-family="var(--font-sans)"
+     font-size="14"
+     fill="var(--text-secondary)"
+     letter-spacing="3.4"
+     style="fill:rgb(82, 81, 78);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, sans-serif;font-size:14px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="text12">REGNSKAPSSYSTEM</text>
+  <g
+     transform="translate(365,279) scale(0.15)"
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="g14">
+    <use
+       href="#rD"
+       fill="url(#rB)"
+       style="stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use12" />
+    <use
+       href="#rS"
+       stroke="#0A3348"
+       stroke-width="34"
+       style="fill:rgb(0, 0, 0);stroke:rgb(10, 51, 72);color:rgb(11, 11, 11);stroke-width:34px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use13" />
+    <use
+       href="#rS"
+       stroke="#FFFFFF"
+       stroke-width="24"
+       style="fill:rgb(0, 0, 0);stroke:rgb(255, 255, 255);color:rgb(11, 11, 11);stroke-width:24px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use14" />
+  </g>
+  <g
+     transform="translate(423,279) scale(0.15)"
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="g15">
+    <use
+       href="#rD"
+       fill="#0E9BBC"
+       mask="url(#rK)"
+       style="fill:rgb(14, 155, 188);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use15" />
+  </g>
+  <rect
+     x="486"
+     y="280"
+     width="60"
+     height="68"
+     rx="12"
+     fill="#0A3348"
+     style="fill:rgb(10, 51, 72);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="rect15" />
+  <g
+     transform="translate(490,282) scale(0.13)"
+     style="fill:rgb(0, 0, 0);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="g16">
+    <use
+       href="#rD"
+       fill="#FFFFFF"
+       mask="url(#rK)"
+       style="fill:rgb(255, 255, 255);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+       id="use16" />
+  </g>
+  <text
+     x="382"
+     y="372"
+     font-family="var(--font-sans)"
+     font-size="12"
+     fill="var(--text-muted)"
+     style="fill:rgb(137, 135, 129);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="text16">Full</text>
+  <text
+     x="440"
+     y="372"
+     font-family="var(--font-sans)"
+     font-size="12"
+     fill="var(--text-muted)"
+     style="fill:rgb(137, 135, 129);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="text17">Solid</text>
+  <text
+     x="498"
+     y="372"
+     font-family="var(--font-sans)"
+     font-size="12"
+     fill="var(--text-muted)"
+     style="fill:rgb(137, 135, 129);stroke:none;color:rgb(11, 11, 11);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:anthropic-sans, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto"
+     id="text18">Reversed</text>
+  <metadata
+     id="metadata725">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>RegnMed logo, third version</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>
