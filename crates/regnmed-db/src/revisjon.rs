@@ -8,9 +8,10 @@
 //! 2. Attachment content re-hashed against stored SHA-256.
 //! 3. External anchors: anchored heads still on the chain, roots
 //!    recompute (docs/anchoring.md).
-//! 4. Reskontro mot hovedbok: on reskontro-flagged accounts every entry
-//!    carries a party, so subledger == hovedbok by construction — the
-//!    check proves the invariant actually holds in the data.
+//! 4. Reskontro mot hovedbok: per account, the sum of the parties' own
+//!    postings against the account's saldo — plus the two ways an
+//!    amount can sit on the wrong side of that equation (a party of the
+//!    wrong kind, a party on an account that is not flagged at all).
 //! 5. Balansekontroll: all entries sum to zero.
 //! 6. Periodelåsing status (informational: current lock and history).
 //! 7. Regelverkssatser: no monitored sats domain is older than its
@@ -18,7 +19,7 @@
 //!    regelverksrevisjon (docs/regelverk.md).
 
 use anyhow::Result;
-use regnmed_core::revisjon::{AnkerInfo, Kontroll, RevisjonInput};
+use regnmed_core::revisjon::{AnkerInfo, Kontroll, ReskontroKonto, RevisjonInput};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -85,44 +86,62 @@ pub async fn build_revisjon_report(
         },
     });
 
-    // 4. Reskontro mot hovedbok: entries without a party on flagged
-    // accounts would make the subledger diverge from the account.
+    // 4. Reskontro mot hovedbok — the real tie-out: per account, the sum
+    // of the parties' own postings against the account's saldo. Both
+    // sides are pure SUM queries over the same entries; the
+    // reconciliation is `regnmed_core::revisjon::reskontro_kontroll`.
+    //
+    // The account list is every flagged account PLUS every unflagged
+    // account that carries party postings — an amount in a party's
+    // spesifikasjon that no reskontro account holds is exactly the kind
+    // of divergence a check limited to flagged accounts cannot see.
     let reskontro = sqlx::query(
-        "select a.number,
-                coalesce(sum(e.amount_ore) filter (where e.party_id is null), 0)::bigint as uten_part,
-                count(*) filter (where e.party_id is null)::bigint as uten_part_antall
+        "select a.number, a.reskontro_kind,
+                coalesce(sum(e.amount_ore), 0)::bigint as hovedbok_ore,
+                coalesce(sum(e.amount_ore) filter (where e.party_id is not null), 0)::bigint
+                    as reskontro_ore,
+                count(e.id) filter (where e.party_id is null)::bigint as uten_part_antall,
+                count(e.id) filter (where e.party_id is not null)::bigint as med_part_antall,
+                count(e.id) filter (where p.kind is not null
+                                      and p.kind is distinct from a.reskontro_kind)::bigint
+                    as feil_kind_antall,
+                coalesce(sum(e.amount_ore) filter (where p.kind is not null
+                                      and p.kind is distinct from a.reskontro_kind), 0)::bigint
+                    as feil_kind_ore,
+                coalesce(array_agg(distinct p.kind) filter (where p.kind is not null),
+                         array[]::text[]) as part_kinds
          from account a
          left join entry e on e.account_id = a.id
-         where a.company_id = $1 and a.reskontro_kind is not null
-         group by a.number
+         left join party p on p.id = e.party_id
+         where a.company_id = $1
+           and (a.reskontro_kind is not null
+                or exists (select 1 from entry x
+                           where x.account_id = a.id and x.party_id is not null))
+         group by a.number, a.reskontro_kind
          order by a.number",
     )
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    let avvik: Vec<String> = reskontro
+    let kontoer: Vec<ReskontroKonto> = reskontro
         .iter()
-        .filter(|r| r.get::<i64, _>("uten_part_antall") != 0)
         .map(|r| {
-            format!(
-                "konto {}: {} posteringer uten part",
-                r.get::<String, _>("number"),
-                r.get::<i64, _>("uten_part_antall")
-            )
+            let mut part_kinds: Vec<String> = r.get("part_kinds");
+            part_kinds.sort(); // array_agg has no order; the report is deterministic
+            ReskontroKonto {
+                konto: r.get("number"),
+                flagg: r.get("reskontro_kind"),
+                hovedbok_ore: r.get("hovedbok_ore"),
+                reskontro_ore: r.get("reskontro_ore"),
+                uten_part_antall: r.get("uten_part_antall"),
+                med_part_antall: r.get("med_part_antall"),
+                feil_kind_antall: r.get("feil_kind_antall"),
+                feil_kind_ore: r.get("feil_kind_ore"),
+                part_kinds,
+            }
         })
         .collect();
-    kontroller.push(Kontroll {
-        navn: "Reskontro mot hovedbok".into(),
-        ok: avvik.is_empty(),
-        detalj: if avvik.is_empty() {
-            format!(
-                "{} reskontrokontoer avstemt; hver postering bærer part",
-                reskontro.len()
-            )
-        } else {
-            avvik.join("; ")
-        },
-    });
+    kontroller.push(regnmed_core::revisjon::reskontro_kontroll(&kontoer));
 
     // 5. Balansekontroll.
     let total: i64 = sqlx::query_scalar(

@@ -69,6 +69,15 @@ subledger opening/closing balances, and invoice/payment lines carry
 `CustomerID`/`SupplierID` — validated against the official XSD like the
 rest of the file.
 
+## Avstemmingen mot hovedboken
+
+At spesifikasjonen og hovedboken er de samme posteringene, følger av
+posteringsveien (partskravet er håndhevet i `post_voucher`) — men
+reskontro-flagget kan flytte seg etterpå (åpningsbalanse og SAF-T-import
+nullstiller det). Revisjonsrapportens **kontroll 4** avstemmer derfor
+Σ reskontro mot kontosaldoen konto for konto, og navngir differansen i
+øre: [revisjon.md](revisjon.md).
+
 ## What this unlocks next
 
 - **Faktura (#13)**: invoices post against parties with KID; OCR

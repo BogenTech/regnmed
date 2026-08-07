@@ -32,7 +32,9 @@
         <tr>
           <td>{k.ok ? "✓" : "✗"}</td>
           <td class="font-semibold">{k.navn}</td>
-          <td>{k.detalj}</td>
+          <!-- En kontroll kan finne flere avvik; hvert står på sin egen
+               linje i detaljteksten og skal vises slik. -->
+          <td class="whitespace-pre-line">{k.detalj}</td>
         </tr>
       {/each}
     </tbody>

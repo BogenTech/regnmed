@@ -216,3 +216,265 @@ async fn revisor_generates_the_verification_report() {
     let (status, _, _) = get_raw(&state, &uri, &stranger_token).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// Kontroll 4 is a real tie-out: Σ reskontro against the account's own
+/// saldo, konto for konto. Every divergence below is reachable WITHOUT
+/// editing the ledger — the reskontro flag is what moves (åpningsbalanse
+/// and SAF-T import clear it, an admin can set it again), and the
+/// postings then sit on the wrong side of the equation.
+#[tokio::test]
+async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Bea Bokfører"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Avstemt AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Bea Bokfører");
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("2400", "Leverandørgjeld"),
+        ("2500", "Gammel gjeld"),
+        ("3000", "Salg"),
+        ("4000", "Varekjøp"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+
+    let post = |konto: &'static str,
+                ore: i64,
+                motkonto: &'static str,
+                party_no: Option<String>,
+                dag: u32| {
+        let pool = state.pool.clone();
+        async move {
+            let draft = VoucherDraft {
+                journal_code: "GL".into(),
+                voucher_date: NaiveDate::from_ymd_opt(2026, 5, dag).unwrap(),
+                description: "Bilag".into(),
+                reverses: None,
+                entries: vec![
+                    EntryDraft {
+                        account_number: konto.into(),
+                        amount: Ore(ore),
+                        vat_code: None,
+                        description: None,
+                        party_no,
+                        avdeling: None,
+                        prosjekt: None,
+                        valuta: None,
+                    },
+                    EntryDraft {
+                        account_number: motkonto.into(),
+                        amount: Ore(-ore),
+                        vat_code: None,
+                        description: None,
+                        party_no: None,
+                        avdeling: None,
+                        prosjekt: None,
+                        valuta: None,
+                    },
+                ],
+            };
+            regnmed_db::post_voucher(&pool, company, &draft, "test")
+                .await
+                .unwrap();
+        }
+    };
+
+    // (a) 1500 flagged: one invoice with a party, then the flag is
+    // cleared (as åpningsbalanse does), 2 500,00 is posted without a
+    // party, and the flag comes back. The saldo now exceeds what the
+    // kundespesifikasjon holds.
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let (_, kunde_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
+            .await
+            .unwrap();
+    post("1500", 12_500_00, "3000", Some(kunde_no), 10).await;
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", None)
+        .await
+        .unwrap();
+    post("1500", 2_500_00, "3000", None, 11).await;
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+
+    // (b) 2400 carries leverandør postings, then someone flags it
+    // 'kunde' — the amounts land in the spesifikasjon the account is not.
+    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+        .await
+        .unwrap();
+    let (_, lev_no) = regnmed_db::create_party(
+        &state.pool,
+        company,
+        "leverandor",
+        "Leverandør AS",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    post("2400", -8_000_00, "4000", Some(lev_no.clone()), 12).await;
+    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("kunde"))
+        .await
+        .unwrap();
+
+    // (c) 2500 holds party postings but the flag was cleared and never
+    // restored — the amount is in the leverandørspesifikasjon while no
+    // reskontro account in the hovedbok holds it.
+    regnmed_db::set_account_reskontro(&state.pool, company, "2500", Some("leverandor"))
+        .await
+        .unwrap();
+    post("2500", -3_000_00, "4000", Some(lev_no), 13).await;
+    regnmed_db::set_account_reskontro(&state.pool, company, "2500", None)
+        .await
+        .unwrap();
+
+    let uri = format!("/companies/{company}/reports/revisjon");
+    let (status, _, body) = get_raw(&state, &uri, &token).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let report: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let kontroll = report["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Reskontro mot hovedbok")
+        .unwrap();
+    assert_eq!(kontroll["ok"], false, "{report}");
+    assert_eq!(report["alle_ok"], false);
+    let detalj = kontroll["detalj"].as_str().unwrap();
+
+    // (a) the difference, in kroner and in øre, with the konto named.
+    assert!(
+        detalj.contains("konto 1500: hovedbok 15000,00 mot reskontro 12500,00 — differanse 2500,00 (250000 øre), 1 postering uten part"),
+        "{detalj}"
+    );
+    // (b) the party of the wrong kind.
+    assert!(
+        detalj.contains(
+            "konto 2400 er merket kunde, men 1 postering bærer part av typen leverandor (-8000,00)"
+        ),
+        "{detalj}"
+    );
+    // (c) the party postings on an account nobody flagged.
+    assert!(
+        detalj.contains("konto 2500 er ikke merket som reskontrokonto, men 1 postering bærer part (-3000,00, leverandor)"),
+        "{detalj}"
+    );
+    // Every finding on its own line, and only the reskontro kontroll
+    // fails — the tie-out never drags the other checks down with it.
+    assert_eq!(detalj.lines().count(), 3, "{detalj}");
+    for other in report["kontroller"].as_array().unwrap() {
+        if other["navn"] != "Reskontro mot hovedbok" {
+            assert_eq!(other["ok"], true, "{other}");
+        }
+    }
+
+    // The text rendering carries each finding as its own indented line.
+    let (status, _, text) = get_raw(&state, &format!("{uri}?format=tekst"), &token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(text.contains("[AVVIK] Reskontro mot hovedbok"), "{text}");
+    assert!(text.contains("       konto 2500 er ikke merket"), "{text}");
+
+    // Restoring the flags and posting the missing party binding is not
+    // possible (the ledger is append-only) — but a company where every
+    // party posting sits on its own flagged account ties out, and says
+    // so with the total it reconciled.
+    let clean = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Ren AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, clean, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, clean, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("2400", "Leverandørgjeld"),
+        ("3000", "Salg"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, clean, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, clean, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    // 2400 is flagged and never posted to: zero is a saldo like any
+    // other and ties out. (Counting rows rather than amounts made an
+    // untouched account look like it held a party-less posting, because
+    // the left join hands the account back with a null entry.)
+    regnmed_db::set_account_reskontro(&state.pool, clean, "2400", Some("leverandor"))
+        .await
+        .unwrap();
+    let (_, ren_kunde) =
+        regnmed_db::create_party(&state.pool, clean, "kunde", "Kunde AS", None, None)
+            .await
+            .unwrap();
+    let draft = VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: NaiveDate::from_ymd_opt(2026, 5, 10).unwrap(),
+        description: "Faktura".into(),
+        reverses: None,
+        entries: vec![
+            EntryDraft {
+                account_number: "1500".into(),
+                amount: Ore(7_000_00),
+                vat_code: None,
+                description: None,
+                party_no: Some(ren_kunde),
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            EntryDraft {
+                account_number: "3000".into(),
+                amount: Ore(-7_000_00),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    regnmed_db::post_voucher(&state.pool, clean, &draft, "test")
+        .await
+        .unwrap();
+    let (_, _, body) = get_raw(
+        &state,
+        &format!("/companies/{clean}/reports/revisjon"),
+        &token,
+    )
+    .await;
+    let report: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let kontroll = report["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Reskontro mot hovedbok")
+        .unwrap();
+    assert_eq!(kontroll["ok"], true, "{report}");
+    let detalj = kontroll["detalj"].as_str().unwrap();
+    assert!(detalj.contains("2 reskontrokontoer avstemt"), "{detalj}");
+    assert!(detalj.contains("7000,00"), "{detalj}");
+}
