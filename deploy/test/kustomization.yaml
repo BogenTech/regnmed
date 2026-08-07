@@ -58,7 +58,7 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: sha-f277d93
+    newTag: sha-ca97cae
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     newTag: sha-fe620f7
