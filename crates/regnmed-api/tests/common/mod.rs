@@ -94,3 +94,50 @@ pub fn unique_orgnr() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
+
+/// Gives a test company the master data a salgsdokument legally needs
+/// (bokføringsforskriften §5-1-2, #81): an address, and a recorded
+/// registration status. Tests that ISSUE INVOICES need this; tests that
+/// only post vouchers do not. Onboarding through `POST /companies` does
+/// it from Enhetsregisteret — this is the shortcut for fixtures that
+/// call `create_company` directly.
+pub async fn gjor_fakturaklar(pool: &sqlx::PgPool, company_id: Uuid) {
+    regnmed_db::update_company_settings(
+        pool,
+        company_id,
+        Some("Storgata 1, 0155 Oslo"),
+        None,
+        Some("AS"),
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::record_registrering(
+        pool,
+        company_id,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            mva_registrert: true,
+            foretaksregistrert: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
+}
+
+/// The buyer's half of the same requirement: §5-1-2 wants an address for
+/// BOTH parties, so a fixture that issues an invoice needs one on the
+/// kunde too. Call after the parties exist.
+pub async fn gi_partene_adresse(pool: &sqlx::PgPool, company_id: Uuid) {
+    sqlx::query(
+        "update party set address = 'Lilleveien 3, 5003 Bergen'
+         where company_id = $1 and (address is null or address = '')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}

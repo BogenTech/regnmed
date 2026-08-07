@@ -10,7 +10,7 @@
 
 use sqlx::Row;
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -57,6 +57,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Koblingstest AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     let sub = format!("admin|{}", Uuid::new_v4());
     let admin_id = regnmed_db::ensure_person(&state.pool, &sub, Some("Admin"), None)
         .await

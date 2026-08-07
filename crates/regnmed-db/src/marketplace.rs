@@ -32,6 +32,18 @@ pub struct OnboardedCompany {
     pub seeded_accounts: usize,
 }
 
+/// What Enhetsregisteret says about the enhet at onboarding time. It is
+/// recorded rather than re-derived later: the registrations govern
+/// påtegninger on every salgsdokument (§5-1-2), and the address is
+/// required on one (#81).
+#[derive(Debug, Default)]
+pub struct RegistryFacts {
+    pub orgform: Option<String>,
+    pub address: Option<String>,
+    pub mva_registrert: bool,
+    pub foretaksregistrert: bool,
+}
+
 /// Creates a company from verified registry facts, makes the onboarding
 /// person its admin, and seeds journal + starter kontoplan (1500/2400
 /// flagged as reskontro). Idempotency: an orgnr can only be onboarded
@@ -41,6 +53,7 @@ pub async fn onboard_company(
     orgnr: &str,
     registry_name: &str,
     person_id: Uuid,
+    facts: &RegistryFacts,
 ) -> Result<OnboardedCompany> {
     ensure!(
         find_company_by_orgnr(pool, orgnr).await?.is_none(),
@@ -49,6 +62,33 @@ pub async fn onboard_company(
     let company_id = create_company(pool, orgnr, registry_name)
         .await
         .context("creating company")?;
+    // Address and orgform straight from the register: the salgsdokument
+    // needs the address, and issuing refuses without it.
+    crate::settings::update_company_settings(
+        pool,
+        company_id,
+        facts.address.as_deref(),
+        None,
+        facts.orgform.as_deref(),
+        None,
+    )
+    .await?;
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(pool)
+        .await?;
+    crate::settings::record_registrering(
+        pool,
+        company_id,
+        today,
+        crate::settings::Registrering {
+            mva_registrert: facts.mva_registrert,
+            foretaksregistrert: facts.foretaksregistrert,
+        },
+        "brreg",
+        Some("Hentet fra Enhetsregisteret ved onboarding"),
+        "onboarding",
+    )
+    .await?;
     ensure_company_member(pool, company_id, person_id, "admin").await?;
     ensure_journal(pool, company_id, "GL", "Hovedbok").await?;
     for (number, name) in STARTER_ACCOUNTS {

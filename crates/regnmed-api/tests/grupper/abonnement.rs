@@ -8,7 +8,7 @@
 //!
 //! Requires DATABASE_URL; skips otherwise.
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{Datelike, Utc};
@@ -52,6 +52,7 @@ async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Abonnementstest AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
@@ -248,6 +249,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     let drift = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Regnmed Drift AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, drift).await;
     let idag = Utc::now().date_naive();
     regnmed_db::abonnement::tegn(
         &state.pool,
@@ -340,6 +342,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     let drift = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Regnmed Drift AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, drift).await;
     let idag = Utc::now().date_naive();
     regnmed_db::abonnement::tegn(
         &state.pool,
@@ -699,6 +702,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, drift).await;
     let state = with_stripe(&state, &drift_orgnr);
 
     let idag = Utc::now().date_naive();
@@ -870,6 +874,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, drift).await;
     let state = with_stripe(&state, &drift_orgnr);
     let sub_id = format!("sub_test_{}", Uuid::new_v4());
 

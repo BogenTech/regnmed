@@ -112,7 +112,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
     let (selger_gate, selger_postnr, selger_poststed) = split_adresse(head.get("selger_adresse"));
     let (kjoper_gate, kjoper_postnr, kjoper_poststed) = split_adresse(head.get("kjoper_adresse"));
     let krediterer_nr: Option<i64> = head.get("krediterer_nr");
-    let mva_sum: i64 = linjer.iter().map(|l| l.mva_ore).sum();
+    let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
 
     let doc = EhfDokument {
         dokumenttype: if head.get::<Option<Uuid>, _>("credits_invoice_id").is_some() {
@@ -141,7 +141,10 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             postnr: selger_postnr,
             poststed: selger_poststed,
             land: "NO".into(),
-            mva_registrert: mva_sum != 0,
+            // Registreringsstatus på fakturadatoen, ikke «bar dette
+            // dokumentet mva» — en eksportfaktura fra en registrert
+            // selger skal fortsatt ha PartyTaxScheme (#81).
+            mva_registrert: reg.mva_registrert,
             epost: head.get("selger_epost"),
         },
         kjoper: EhfPart {

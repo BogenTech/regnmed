@@ -3,7 +3,7 @@
 //! the bilag's created_by, revocation takes effect at once, and the rate
 //! limit kicks in. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -53,6 +53,7 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Butikken AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -263,6 +264,7 @@ async fn the_rate_limit_stops_a_runaway_integration() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Grense AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

@@ -4,7 +4,7 @@
 //! kreditnotaer get their own document, and purringer render to PDF on
 //! demand. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -68,6 +68,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "PDF & Co AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -90,6 +91,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Firmaopplysninger over the API (admin) — printed on the PDF.
@@ -272,4 +274,248 @@ async fn invoice_pdf_is_stored_served_and_verified() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// §5-1-2 knytter «MVA» til REGISTRERING i Merverdiavgiftsregisteret og
+/// «Foretaksregisteret» til registrering DER. Begge ble utledet av
+/// dokumentet: mva-suffikset av om akkurat denne fakturaen bar mva, og
+/// foretaksregister-påtegningen av orgform AS/ASA (#81).
+///
+/// Denne testen er nettopp tilfellet den gamle logikken tok feil av: en
+/// registrert selger som fakturerer AVGIFTSFRITT (eksport, fritatt) fra
+/// et ENK som ER registrert i Foretaksregisteret. Gammel kode ga null
+/// påtegninger; begge skal stå.
+#[tokio::test]
+async fn the_registration_notes_come_from_the_register_not_from_the_document() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Eksportøren"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Eksport ENK")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    // ENK — the old rule (AS/ASA) would deny it the påtegning.
+    regnmed_db::update_company_settings(
+        &state.pool,
+        company,
+        Some("Storgata 1, 0155 Oslo"),
+        None,
+        Some("ENK"),
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::record_registrering(
+        &state.pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            mva_registrert: true,
+            foretaksregistrert: true,
+        },
+        "brreg",
+        None,
+        "test",
+    )
+    .await
+    .unwrap();
+    let (_, party_no) = regnmed_db::create_party(
+        &state.pool,
+        company,
+        "kunde",
+        "Utenlandsk Kjøper",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
+    let token = idp.token(&sub, "Eksportøren");
+
+    // Avgiftsfritt salg: the document carries NO mva at all.
+    let issued = regnmed_db::create_invoice(
+        &state.pool,
+        company,
+        &regnmed_db::InvoiceDraft {
+            party_no,
+            invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            due_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            delivery_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            delivery_place: None,
+            journal_code: "GL".into(),
+            receivable_account: "1500".into(),
+            vat_account: "2700".into(),
+            valuta: None,
+            valuta_kurs_micro: None,
+            lines: vec![regnmed_db::InvoiceLineDraft {
+                description: "Eksportsalg".into(),
+                account_number: "3000".into(),
+                quantity_milli: 1_000,
+                unit_price_ore: 10_000_00,
+                vat_code: Some("5".into()),
+                avdeling: None,
+                prosjekt: None,
+                product_id: None,
+            }],
+        },
+        "Eksportøren",
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(issued.vat_ore, 0, "salget er avgiftsfritt");
+
+    let (status, pdf) = send(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{}/pdf", issued.invoice_id),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        find(&pdf, b"MVA").is_some(),
+        "en registrert selger beholder MVA-suffikset selv uten mva på dokumentet"
+    );
+    assert!(
+        find(&pdf, b"Foretaksregisteret").is_some(),
+        "registreringen gjelder, ikke organisasjonsformen"
+    );
+}
+
+/// Registreringen er DATERT: et salgsdokument fra før registreringen
+/// skal ikke bære påtegningen. Uten dateringen ville tilbud og
+/// ordrebekreftelser — som rendres på forespørsel — fått dagens status
+/// neste gang noen lastet dem ned.
+#[tokio::test]
+async fn a_document_predating_the_registration_carries_no_note() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Nyregistrert"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Fersk AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    regnmed_db::update_company_settings(
+        &state.pool,
+        company,
+        Some("Storgata 1, 0155 Oslo"),
+        None,
+        Some("AS"),
+        None,
+    )
+    .await
+    .unwrap();
+    // Registrert FRA 1. juli.
+    regnmed_db::record_registrering(
+        &state.pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+        regnmed_db::Registrering {
+            mva_registrert: true,
+            foretaksregistrert: true,
+        },
+        "brreg",
+        None,
+        "test",
+    )
+    .await
+    .unwrap();
+    let (_, party_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Tidlig Kunde", None, None)
+            .await
+            .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
+    let token = idp.token(&sub, "Nyregistrert");
+
+    // Faktura datert FØR registreringen.
+    let issued = regnmed_db::create_invoice(
+        &state.pool,
+        company,
+        &regnmed_db::InvoiceDraft {
+            party_no,
+            invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            due_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            delivery_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            delivery_place: None,
+            journal_code: "GL".into(),
+            receivable_account: "1500".into(),
+            vat_account: "2700".into(),
+            valuta: None,
+            valuta_kurs_micro: None,
+            lines: vec![regnmed_db::InvoiceLineDraft {
+                description: "Salg før registrering".into(),
+                account_number: "3000".into(),
+                quantity_milli: 1_000,
+                unit_price_ore: 5_000_00,
+                vat_code: Some("5".into()),
+                avdeling: None,
+                prosjekt: None,
+                product_id: None,
+            }],
+        },
+        "Nyregistrert",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, pdf) = send(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{}/pdf", issued.invoice_id),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        find(&pdf, b"Foretaksregisteret").is_none(),
+        "dokumentet er datert før registreringen"
+    );
 }

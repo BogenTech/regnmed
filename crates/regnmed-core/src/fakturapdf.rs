@@ -211,7 +211,6 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             Font::Regular,
             &format!("Leveringssted: {sted}"),
         );
-        fy += 12.0;
     }
 
     // Buyer block.

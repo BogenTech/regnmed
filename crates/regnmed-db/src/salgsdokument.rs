@@ -476,7 +476,11 @@ pub async fn salgsdokument_pdf(
         });
     }
 
-    let orgform: Option<String> = doc.get("orgform");
+    // Dette dokumentet rendres PÅ FORESPØRSEL, også år etter at det ble
+    // skrevet — derfor slås registreringsstatusen opp på DOKUMENTETS
+    // dato. Uten dateringen ville et gammelt tilbud fått dagens status
+    // neste gang noen lastet det ned (#81).
+    let reg = crate::settings::registrering_on(pool, company_id, doc_date).await?;
     let dokumenttype = if kind == "tilbud" {
         Dokumenttype::Tilbud
     } else {
@@ -488,8 +492,8 @@ pub async fn salgsdokument_pdf(
         selger_navn: doc.get("company_name"),
         selger_orgnr: doc.get("orgnr"),
         selger_adresse: doc.get("address"),
-        selger_mva_registrert: computed.vat_ore != 0,
-        selger_foretaksregistrert: matches!(orgform.as_deref(), Some("AS") | Some("ASA")),
+        selger_mva_registrert: reg.mva_registrert,
+        selger_foretaksregistrert: reg.foretaksregistrert,
         selger_kontonummer: None,
         kjoper_navn: doc.get("party_name"),
         kjoper_nr: doc.get("party_no"),

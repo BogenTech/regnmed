@@ -68,10 +68,46 @@ async fn seed_browser_demo() {
     regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
-    let (_, party_no) =
+    // Salgsdokumentet krever adresse for begge parter og en registrert
+    // status (§5-1-2) — demoen må se ut som et ekte selskap.
+    regnmed_db::update_company_settings(
+        &state.pool,
+        company,
+        Some("Storgata 1, 0155 Oslo"),
+        Some("1234.56.78903"),
+        Some("AS"),
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::record_registrering(
+        &state.pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            mva_registrert: true,
+            foretaksregistrert: true,
+        },
+        "brreg",
+        Some("demo"),
+        "seed",
+    )
+    .await
+    .unwrap();
+    let (party_id, party_no) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Sen Betaler AS", None, None)
             .await
             .unwrap();
+    regnmed_db::update_party_contact(
+        &state.pool,
+        company,
+        party_id,
+        Some("Lilleveien 3, 5003 Bergen"),
+        Some("post@senbetaler.invalid"),
+        None,
+    )
+    .await
+    .unwrap();
     let today = chrono::Utc::now().date_naive();
     for (invoice_date, due_date, price) in [
         (

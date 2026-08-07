@@ -4,7 +4,7 @@
 //! dimension, and the SAF-T export carries Analysis elements.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -66,6 +66,7 @@ async fn a_prosjekt_carries_its_kunde() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kundekobling AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -73,6 +74,7 @@ async fn a_prosjekt_carries_its_kunde() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let (_, leverandor) = regnmed_db::create_party(
         &state.pool,
         company,
@@ -179,6 +181,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Lønnsomhet AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -203,6 +206,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     regnmed_db::create_dimension(
         &state.pool,
         company,
@@ -382,6 +386,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Dimensjon AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -404,6 +409,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Register the dimension registry over the API.

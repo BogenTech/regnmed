@@ -4,7 +4,7 @@
 //! bilagsinnboks yields a posting suggestion computed from the original
 //! every time — never stored. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -103,6 +103,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Sender AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -147,6 +148,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     )
     .await
     .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     regnmed_db::update_party_contact(
         &state.pool,
         company,

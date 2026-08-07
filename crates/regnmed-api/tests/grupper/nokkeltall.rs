@@ -3,7 +3,7 @@
 //! and upcoming mva deadlines under the company's terminordning — all
 //! plain queries. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -70,6 +70,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oversikt AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -97,6 +98,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let (_, leverandor) = regnmed_db::create_party(
         &state.pool,
         company,

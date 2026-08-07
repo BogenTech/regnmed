@@ -6,7 +6,7 @@
 //! ourselves — plus the account that supplier was last posted to.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -78,6 +78,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mottaker AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

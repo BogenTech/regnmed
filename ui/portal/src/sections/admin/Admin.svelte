@@ -163,7 +163,7 @@
   {#if !data}
     <span class="loading loading-spinner loading-lg"></span>
   {:else if data.settings}
-    <Firmaopplysninger {companyId} settings={data.settings} />
+    <Firmaopplysninger {companyId} settings={data.settings} onDone={reload} />
   {:else}
     <div class="alert alert-info"><span>Firmaopplysninger krever lesetilgang til selskapet.</span></div>
   {/if}

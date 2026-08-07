@@ -12,7 +12,7 @@
 use chrono::{Duration, Utc};
 use sqlx::Row;
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -81,6 +81,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Plattformtest AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     Some((state, idp, company))
 }
 
@@ -377,6 +378,7 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
         regnmed_db::create_party(&state.pool, company, "kunde", &navn, None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
     let (kode, svar) = json_call(
         &state,

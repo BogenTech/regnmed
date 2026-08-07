@@ -3,7 +3,7 @@
 //! party (hash v2), match them, verify the chain still holds, and check
 //! the enforcement rules. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -86,6 +86,7 @@ async fn full_reskontro_flow_with_hash_v2() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -316,6 +317,7 @@ async fn supplier_subledger_matches_payment_against_invoice() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innkjøp AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

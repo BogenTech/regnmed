@@ -6,7 +6,7 @@
 //! active attestering policy closes the manual side door. Requires
 //! DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -73,6 +73,7 @@ async fn kontoplan_and_manual_vouchers_end_to_end() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Hovedbok AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "bokforing")
         .await
         .unwrap();
@@ -270,6 +271,7 @@ async fn manual_posting_respects_the_attestering_policy() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Policy AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -344,6 +346,7 @@ async fn voucher_listing_pages_and_filters_server_side() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Sidevis AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "bokforing")
         .await
         .unwrap();

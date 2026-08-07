@@ -5,7 +5,7 @@
 //! opening balance manually — zero-sum enforced, empty-ledger only.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -142,6 +142,7 @@ async fn foreign_chart_maps_through_the_wizard() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mappet AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -234,6 +235,7 @@ async fn manual_opening_balance_posts_once_and_balances() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Manuell AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();

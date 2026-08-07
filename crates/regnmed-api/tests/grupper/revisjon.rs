@@ -4,7 +4,7 @@
 //! planted anchor mismatch turns the verdict; the text download renders;
 //! outsiders get 404. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -66,6 +66,7 @@ async fn revisor_generates_the_verification_report() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kontrollert AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_engagement(&state.pool, firm, company, "revisjon")
         .await
         .unwrap();
@@ -91,6 +92,7 @@ async fn revisor_generates_the_verification_report() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: NaiveDate::from_ymd_opt(2026, 5, 10).unwrap(),
@@ -236,6 +238,7 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Avstemt AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -307,6 +310,7 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     post("1500", 12_500_00, "3000", Some(kunde_no), 10).await;
     regnmed_db::set_account_reskontro(&state.pool, company, "1500", None)
         .await

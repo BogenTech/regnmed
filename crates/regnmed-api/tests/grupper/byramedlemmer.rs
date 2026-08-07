@@ -9,7 +9,7 @@
 //! check pins the difference: the same request answers 400 (handler,
 //! unknown id) for an admin and 404 (guard) for an ansatt.
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -128,6 +128,7 @@ async fn byra_members_are_invited_never_coregistered() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Klientselskap AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     let klientadmin =
         regnmed_db::ensure_person(&state.pool, &format!("test|{}", Uuid::new_v4()), None, None)
             .await

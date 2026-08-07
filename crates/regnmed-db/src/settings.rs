@@ -4,8 +4,111 @@
 //! evidence of what a document said when it was issued).
 
 use anyhow::{Result, ensure};
+use chrono::NaiveDate;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+
+/// The company's registrations as they stood on a given date
+/// (migration 0056, #81). Both flags govern påtegninger on the
+/// salgsdokument under bokføringsforskriften §5-1-2 and are STORED,
+/// never derived from the document being rendered.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Registrering {
+    pub mva_registrert: bool,
+    pub foretaksregistrert: bool,
+}
+
+/// Registration status in force on `dato` — newest row at or before it.
+///
+/// No row at all yields `false`/`false`: we do not claim a registration
+/// we hold no evidence for. Every company gets a row from migration
+/// 0056, so this is the case of a company created outside the normal
+/// paths (tests, fixtures).
+pub async fn registrering_on(
+    pool: &PgPool,
+    company_id: Uuid,
+    dato: NaiveDate,
+) -> Result<Registrering> {
+    let row = sqlx::query(
+        "select mva_registrert, foretaksregistrert from company_registrering
+         where company_id = $1 and valid_from <= $2
+         order by valid_from desc limit 1",
+    )
+    .bind(company_id)
+    .bind(dato)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map_or(Registrering::default(), |r| Registrering {
+        mva_registrert: r.get("mva_registrert"),
+        foretaksregistrert: r.get("foretaksregistrert"),
+    }))
+}
+
+/// Records a registration observation. Insert-only: a correction is a
+/// NEW row, and re-recording the same day replaces that day's row
+/// (the observation is about the day, not about the moment we asked).
+pub async fn record_registrering(
+    pool: &PgPool,
+    company_id: Uuid,
+    valid_from: NaiveDate,
+    reg: Registrering,
+    kilde: &str,
+    notat: Option<&str>,
+    recorded_by: &str,
+) -> Result<()> {
+    ensure!(
+        matches!(kilde, "brreg" | "manuell" | "migrert"),
+        "ukjent kilde «{kilde}»"
+    );
+    sqlx::query(
+        "insert into company_registrering
+             (id, company_id, valid_from, mva_registrert, foretaksregistrert,
+              kilde, notat, recorded_by)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (company_id, valid_from) do nothing",
+    )
+    .bind(Uuid::now_v7())
+    .bind(company_id)
+    .bind(valid_from)
+    .bind(reg.mva_registrert)
+    .bind(reg.foretaksregistrert)
+    .bind(kilde)
+    .bind(notat)
+    .bind(recorded_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The recorded history, newest first — the audit trail behind a
+/// påtegning on an old salgsdokument.
+pub async fn registrering_history(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<Vec<(NaiveDate, Registrering, String, Option<String>)>> {
+    let rows = sqlx::query(
+        "select valid_from, mva_registrert, foretaksregistrert, kilde, notat
+         from company_registrering where company_id = $1
+         order by valid_from desc",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get("valid_from"),
+                Registrering {
+                    mva_registrert: r.get("mva_registrert"),
+                    foretaksregistrert: r.get("foretaksregistrert"),
+                },
+                r.get("kilde"),
+                r.get("notat"),
+            )
+        })
+        .collect())
+}
 
 #[derive(Debug)]
 pub struct CompanySettings {

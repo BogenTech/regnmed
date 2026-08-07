@@ -4,7 +4,7 @@
 //! ordinary invoice with the prosjekt dimension — hours marked
 //! fakturert one-way. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -53,6 +53,7 @@ async fn hours_lock_and_bill() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timer AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -81,6 +82,7 @@ async fn hours_lock_and_bill() {
     )
     .await
     .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     // P1 is linked to its customer (#80) — the fakturagrunnlag suggests
     // the recipient from this link further down.
     regnmed_db::create_dimension(
@@ -358,6 +360,7 @@ async fn timer_rights_mean_what_they_say() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timevakt AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -402,6 +405,7 @@ async fn timer_rights_mean_what_they_say() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     // The rate lives on the project (0052) — the ansatt logs against it.
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
@@ -548,6 +552,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Utvalg AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, a, "admin")
         .await
         .unwrap();
@@ -573,6 +578,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
         .unwrap();
@@ -694,6 +700,7 @@ async fn the_project_owns_the_rate_and_the_default() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Satseiere AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -886,6 +893,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kombinert AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -921,6 +929,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
     let fakturist_token = idp.token(&fakturist_sub, "Fia Fakturist");
 

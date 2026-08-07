@@ -535,28 +535,8 @@ pub async fn bokfor_stripe_betaling(
             .bind(kunde)
             .fetch_one(pool)
             .await?;
-    let party_no: Option<String> = sqlx::query_scalar(
-        "select party_no from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
-    )
-    .bind(drift_company_id)
-    .bind(&kunde_orgnr)
-    .fetch_optional(pool)
-    .await?;
-    let party_no = match party_no {
-        Some(no) => no,
-        None => {
-            crate::reskontro::create_party(
-                pool,
-                drift_company_id,
-                "kunde",
-                &kunde_navn,
-                Some(&kunde_orgnr),
-                None,
-            )
-            .await?
-            .1
-        }
-    };
+    let party_no =
+        party_for_kunde(pool, drift_company_id, kunde, &kunde_orgnr, &kunde_navn).await?;
 
     // The Stripe price is GROSS; the faktura line wants the base, and the
     // engine adds mva back at the rate valid on the invoice date. Using
@@ -966,6 +946,67 @@ pub async fn fakturer_maned(
     Ok(utfall)
 }
 
+/// The customer party in the ops company's reskontro IS the customer
+/// company, so it inherits that company's address — the salgsdokument
+/// needs one (§5-1-2, #81) and inventing a second source for the same
+/// legal entity's address would let the two drift apart.
+async fn party_for_kunde(
+    pool: &PgPool,
+    drift: Uuid,
+    kunde: Uuid,
+    kunde_orgnr: &str,
+    kunde_navn: &str,
+) -> Result<String> {
+    let eksisterende: Option<String> = sqlx::query_scalar(
+        "select party_no from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
+    )
+    .bind(drift)
+    .bind(kunde_orgnr)
+    .fetch_optional(pool)
+    .await?;
+    let adresse: Option<String> = sqlx::query_scalar("select address from company where id = $1")
+        .bind(kunde)
+        .fetch_one(pool)
+        .await?;
+    let (party_id, party_no) = match eksisterende {
+        Some(no) => {
+            let id: Uuid = sqlx::query_scalar(
+                "select id from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
+            )
+            .bind(drift)
+            .bind(kunde_orgnr)
+            .fetch_one(pool)
+            .await?;
+            (id, no)
+        }
+        None => {
+            crate::reskontro::create_party(
+                pool,
+                drift,
+                "kunde",
+                kunde_navn,
+                Some(kunde_orgnr),
+                None,
+            )
+            .await?
+        }
+    };
+    // Kept in step with the company record, which the customer's own
+    // admin maintains; only filled in, never blanked.
+    if let Some(adresse) = adresse.filter(|a| !a.trim().is_empty()) {
+        sqlx::query(
+            "update party set address = $3
+             where id = $1 and company_id = $2 and (address is null or address = '')",
+        )
+        .bind(party_id)
+        .bind(drift)
+        .bind(&adresse)
+        .execute(pool)
+        .await?;
+    }
+    Ok(party_no)
+}
+
 async fn fakturer_en(
     pool: &PgPool,
     drift: Uuid,
@@ -976,29 +1017,7 @@ async fn fakturer_en(
     idag: NaiveDate,
 ) -> Result<Option<(i64, Uuid, i64)>> {
     // The customer party in the ops company's reskontro, keyed on orgnr.
-    let party_no: Option<String> = sqlx::query_scalar(
-        "select party_no from party
-         where company_id = $1 and kind = 'kunde' and orgnr = $2",
-    )
-    .bind(drift)
-    .bind(&kunde_orgnr)
-    .fetch_optional(pool)
-    .await?;
-    let party_no = match party_no {
-        Some(no) => no,
-        None => {
-            crate::reskontro::create_party(
-                pool,
-                drift,
-                "kunde",
-                kunde_navn,
-                Some(&kunde_orgnr),
-                None,
-            )
-            .await?
-            .1
-        }
-    };
+    let party_no = party_for_kunde(pool, drift, kunde, &kunde_orgnr, kunde_navn).await?;
 
     let pris = pris_pa(pool, &plan, idag).await?;
     if pris == 0 {

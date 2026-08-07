@@ -7,7 +7,7 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
@@ -127,6 +127,7 @@ async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mottak AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

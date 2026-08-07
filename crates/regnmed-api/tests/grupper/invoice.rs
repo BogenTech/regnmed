@@ -3,7 +3,7 @@
 //! OCR payment identify it by KID, credit it, and verify the chain.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -103,6 +103,7 @@ async fn invoice_to_payment_to_credit_note_loop() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Faktura AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -126,6 +127,7 @@ async fn invoice_to_payment_to_credit_note_loop() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Issue: 2,5 timer à 4 000 kr + 25 % mva = 12 500 kr gross.

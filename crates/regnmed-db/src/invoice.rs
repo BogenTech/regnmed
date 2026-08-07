@@ -176,6 +176,22 @@ pub async fn create_invoice_in(
     .bind(company_id)
     .fetch_one(pool)
     .await?;
+    // §5-1-2 krever navn OG adresse for begge parter. Kravet håndheves
+    // ved utstedelse, ikke som en advarsel etterpå: fakturaen er
+    // uforanderlig i det den finnes, så et manglende felt kan ikke
+    // rettes — bare krediteres og gjøres om (#81).
+    let utfylt = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+    ensure!(
+        utfylt(company.get("address")).is_some(),
+        "selskapet mangler adresse — salgsdokumentet krever den (bokføringsforskriften §5-1-2). \
+         Fyll den ut under Administrasjon → Firmaopplysninger."
+    );
+    ensure!(
+        utfylt(party.get("address")).is_some(),
+        "kunde {} mangler adresse — salgsdokumentet krever den (bokføringsforskriften §5-1-2). \
+         Fyll den ut på kundens side under Kunder.",
+        draft.party_no
+    );
     let credited_invoice_no: Option<i64> = match credits_invoice_id {
         Some(id) => {
             sqlx::query_scalar("select invoice_no from invoice where id = $1")
@@ -312,7 +328,13 @@ pub async fn create_invoice_in(
     // as an attachment on the voucher IN THE SAME TRANSACTION — what
     // the customer receives is part of oppbevaringen from the moment
     // the invoice exists (bokføringsforskriften §5-1, issue #32).
-    let orgform: Option<String> = company.get("orgform");
+    // Påtegningene «MVA» og «Foretaksregisteret» (§5-1-2) kommer fra
+    // selskapets LAGREDE registreringsstatus på fakturadatoen, ikke fra
+    // dokumentet: en registrert selger som fakturerer eksport eller
+    // fritatt omsetning har ingen mva på fakturaen og skal likevel ha
+    // påtegningen, og registreringsplikten i Foretaksregisteret gjelder
+    // flere enn AS/ASA (#81).
+    let reg = crate::settings::registrering_on(pool, company_id, draft.invoice_date).await?;
     let pdf = render_faktura_pdf(&FakturaPdfInput {
         dokumenttype: if credits_invoice_id.is_some() {
             Dokumenttype::Kreditnota
@@ -323,10 +345,8 @@ pub async fn create_invoice_in(
         selger_navn: company.get("name"),
         selger_orgnr: company.get("orgnr"),
         selger_adresse: company.get("address"),
-        // Charging VAT on the document is what makes the "MVA" suffix
-        // apply; registration status itself is not stored master data.
-        selger_mva_registrert: computed.vat_ore != 0,
-        selger_foretaksregistrert: matches!(orgform.as_deref(), Some("AS") | Some("ASA")),
+        selger_mva_registrert: reg.mva_registrert,
+        selger_foretaksregistrert: reg.foretaksregistrert,
         selger_kontonummer: company.get("bank_account"),
         kjoper_navn: party.get("name"),
         kjoper_nr: draft.party_no.clone(),

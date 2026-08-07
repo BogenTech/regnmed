@@ -8,7 +8,7 @@
 //! and one ordinary voucher closes the import door for good.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -193,6 +193,7 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Migrert AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -383,6 +384,7 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Flerårig AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();

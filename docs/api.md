@@ -211,6 +211,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/reskontro/matches` | POST |
 | `/companies/{company_id}/reskontro/matches/{match_id}` | DELETE |
 | `/companies/{company_id}/settings` | GET |
+| `/companies/{company_id}/settings/registrering` | POST |
 | `/companies/{company_id}/share-events` | GET POST |
 | `/companies/{company_id}/shareholders` | GET POST |
 | `/companies/{company_id}/shareholders/transaction-types` | GET |

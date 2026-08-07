@@ -7,7 +7,7 @@
 //!
 //! Krever DATABASE_URL; hopper over ellers.
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -72,6 +72,7 @@ async fn company_with_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, Str
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgang AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     let (admin_id, admin_token) = innlogget(state, idp, "Admin").await;
     regnmed_db::ensure_company_member(&state.pool, company, admin_id, "admin")
         .await

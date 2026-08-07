@@ -5,7 +5,7 @@
 //! last year ±X %" seeds the lines from reality.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -81,6 +81,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Plan AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

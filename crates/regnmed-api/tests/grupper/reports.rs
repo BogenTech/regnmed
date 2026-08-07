@@ -3,7 +3,7 @@
 //! HTTP; a person with no path to the company gets 404 (not 403 — no
 //! existence leak). Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -37,6 +37,7 @@ async fn seed(state: &AppState, sub: &str) -> Uuid {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Rapportklient AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Tall & Orden AS", "regnskap")
         .await
         .unwrap();

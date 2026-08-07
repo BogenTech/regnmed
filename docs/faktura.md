@@ -41,9 +41,39 @@ reversing-voucher rule.
   hash-checked on every download like all dokumentasjon. Serving is a
   DB read; nothing renders on the request path.
 - Contents per bokføringsforskriften §5-1-1: nummer/dato, selger med
-  orgnr ("MVA" when the document carries VAT, "Foretaksregisteret" for
-  AS/ASA), kjøper, **leveringstidspunkt (og -sted)**, linjer, mva
-  spesifisert i NOK per sats, forfall, KID og kontonummer.
+  orgnr (påtegningene under), kjøper, **leveringstidspunkt (og -sted)**,
+  linjer, mva spesifisert i NOK per sats, forfall, KID og kontonummer.
+  **Begge parters adresse er påkrevd** (§5-1-2) — utstedelsen nekter
+  uten dem, siden fakturaen er uforanderlig i det den finnes og et
+  manglende felt bare kan rettes ved å kreditere og gjøre om.
+
+### Registreringsstatus (§5-1-2, #81)
+
+"MVA" etter orgnr og påtegningen "Foretaksregisteret" hører til
+REGISTRERINGEN, ikke til dokumentet. De ble utledet — `vat_ore != 0`
+respektive `orgform in (AS, ASA)` — og begge utledningene er gale i
+vanlige tilfeller: en registrert selger som fakturerer eksport eller
+fritatt omsetning fikk ingen "MVA", og ANS/DA, NUF og næringsdrivende
+ENK er registreringspliktige i Foretaksregisteret uten å være AS.
+
+Statusen er nå lagret i `company_registrering` (migration 0056),
+**datert og innsettings-bar** etter mønsteret fra sats og vat_rate:
+oppslag = nyeste rad med `valid_from <= dokumentets dato`. Dateringen
+er ikke teoretisk — tilbud og ordrebekreftelser rendres *on demand*, så
+uten den ville et gammelt tilbud fått dagens status neste gang noen
+lastet det ned.
+
+- **Onboarding** henter begge flaggene og forretningsadressen fra
+  Enhetsregisteret (`kilde='brreg'`).
+- **Korrigering**: `POST …/settings/registrering` (admin) skriver en ny
+  datert rad; den forrige blir stående som det som gjaldt da.
+- **Eksisterende selskaper** ble backfillet med den gamle utledningen
+  løftet fra per-dokument til per-selskap, merket `kilde='migrert'` —
+  en ANTAKELSE, og portalen ber om at den bekreftes.
+- Ingen rad = ingen påtegning: vi hevder ikke en registrering vi ikke
+  har belegg for.
+
+Det samme oppslaget styrer `cac:PartyTaxScheme` i EHF-en.
 
 ### Leveringstidspunkt (§5-1-1 nr. 4, #81)
 

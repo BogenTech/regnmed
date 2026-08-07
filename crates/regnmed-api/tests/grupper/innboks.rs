@@ -5,7 +5,7 @@
 //! re-deciding is refused; the revisor may look but not decide.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -66,6 +66,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innboks AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, klient, "admin")
         .await
         .unwrap();
@@ -314,6 +315,7 @@ async fn an_uploaded_html_file_is_neither_served_as_html_nor_trusted_in_the_head
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Herding AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

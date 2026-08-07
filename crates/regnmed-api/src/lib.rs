@@ -542,6 +542,10 @@ pub fn router(state: AppState) -> Router {
             get(settings::get_settings).put(settings::update_settings),
         )
         .route(
+            "/companies/{company_id}/settings/registrering",
+            axum::routing::post(settings::set_registrering),
+        )
+        .route(
             "/companies/{company_id}/subscription",
             get(abonnement::subscription_status).post(abonnement::start_subscription),
         )

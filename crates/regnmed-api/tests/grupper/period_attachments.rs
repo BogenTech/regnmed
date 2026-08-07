@@ -4,7 +4,7 @@
 //! and verify content hashes catch tampering. Requires DATABASE_URL
 //! (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -100,6 +100,7 @@ async fn period_lock_and_attachments_end_to_end() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Periodetest AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();

@@ -5,7 +5,7 @@
 //!
 //! Requires DATABASE_URL — skips politely otherwise.
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -82,6 +82,7 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Aksjeselskapet AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -339,6 +340,7 @@ async fn events_cannot_be_changed_or_deleted() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Uforanderlig AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

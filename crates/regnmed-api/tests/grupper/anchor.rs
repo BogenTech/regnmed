@@ -5,7 +5,7 @@
 //! chain — and detects a mismatching anchor when one is planted.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use regnmed_core::Ore;
@@ -95,6 +95,7 @@ async fn anchors_publish_roots_and_proofs_and_detect_rewrites() {
         let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Forankret AS")
             .await
             .unwrap();
+        gjor_fakturaklar(&state.pool, company).await;
         regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
             .await
             .unwrap();

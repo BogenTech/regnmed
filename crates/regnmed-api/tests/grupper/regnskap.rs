@@ -4,7 +4,7 @@
 //! lists vouchers in posting order, and resultat/balanse balance to the
 //! øre. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -93,6 +93,7 @@ async fn statutory_reports_reconcile_to_the_ore() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Rapport AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "les")
         .await
         .unwrap();
@@ -262,6 +263,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
         .await
         .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "les")
         .await
         .unwrap();
@@ -289,10 +291,12 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde A", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let (_, kunde_b) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde B", None, None)
             .await
             .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
     let (_, leverandor) =
         regnmed_db::create_party(&state.pool, company, "leverandor", "Grossisten", None, None)
             .await

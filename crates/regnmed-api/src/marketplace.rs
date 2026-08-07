@@ -87,10 +87,21 @@ pub async fn onboard_company(
         ));
     }
 
-    let onboarded =
-        regnmed_db::onboard_company(&state.pool, &request.orgnr, &enhet.navn, person.person_id)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let facts = regnmed_db::RegistryFacts {
+        orgform: enhet.organisasjonsform.as_ref().map(|k| k.kode.clone()),
+        address: enhet.forretningsadresse.as_ref().and_then(|a| a.en_linje()),
+        mva_registrert: enhet.registrert_i_mvaregisteret,
+        foretaksregistrert: enhet.registrert_i_foretaksregisteret,
+    };
+    let onboarded = regnmed_db::onboard_company(
+        &state.pool,
+        &request.orgnr,
+        &enhet.navn,
+        person.person_id,
+        &facts,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "company_id": onboarded.company_id,
         "orgnr": request.orgnr,

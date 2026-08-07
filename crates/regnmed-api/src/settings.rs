@@ -24,6 +24,12 @@ pub async fn get_settings(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let reg = regnmed_db::registrering_on(&state.pool, company_id, today).await?;
+    let historikk = regnmed_db::registrering_history(&state.pool, company_id).await?;
     Ok(Json(json!({
         "name": s.name,
         "orgnr": s.orgnr,
@@ -31,6 +37,17 @@ pub async fn get_settings(
         "bank_account": s.bank_account,
         "orgform": s.orgform,
         "email": s.email,
+        // Registreringsstatus (§5-1-2, #81): lagret og datert, aldri
+        // utledet av dokumentet som rendres.
+        "mva_registrert": reg.mva_registrert,
+        "foretaksregistrert": reg.foretaksregistrert,
+        "registrering_historikk": historikk.iter().map(|(dato, r, kilde, notat)| json!({
+            "valid_from": dato.to_string(),
+            "mva_registrert": r.mva_registrert,
+            "foretaksregistrert": r.foretaksregistrert,
+            "kilde": kilde,
+            "notat": notat,
+        })).collect::<Vec<_>>(),
     })))
 }
 
@@ -60,6 +77,52 @@ pub async fn update_settings(
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "updated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct RegistreringRequest {
+    mva_registrert: bool,
+    foretaksregistrert: bool,
+    /// The date the status took effect. Omitted = today; a registration
+    /// that happened earlier should say so, since documents dated
+    /// before it must not carry the påtegning.
+    valid_from: Option<chrono::NaiveDate>,
+    notat: Option<String>,
+}
+
+/// Records the company's registration status (§5-1-2, #81). A new dated
+/// row — the previous one stays as the record of what applied then, so
+/// old salgsdokumenter keep rendering with the status they were issued
+/// under.
+pub async fn set_registrering(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<RegistreringRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    let valid_from = match request.valid_from {
+        Some(dato) => dato,
+        None => sqlx::query_scalar("select current_date")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(anyhow::Error::from)?,
+    };
+    regnmed_db::record_registrering(
+        &state.pool,
+        company_id,
+        valid_from,
+        regnmed_db::Registrering {
+            mva_registrert: request.mva_registrert,
+            foretaksregistrert: request.foretaksregistrert,
+        },
+        "manuell",
+        request.notat.as_deref(),
+        person.name.as_deref().unwrap_or(&person.sub),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "valid_from": valid_from.to_string() })))
 }
 
 #[derive(Deserialize)]
