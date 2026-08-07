@@ -25,6 +25,7 @@ pub mod fakturapdf;
 pub mod fnr;
 pub mod hash;
 pub mod invoice;
+pub mod kassa;
 pub mod kid;
 pub mod kontoplan;
 pub mod lager;

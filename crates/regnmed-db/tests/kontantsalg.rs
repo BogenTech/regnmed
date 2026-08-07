@@ -195,3 +195,90 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     assert!(text.contains("KONTANTFAKTURA"), "dokumenttypen");
     assert!(!text.contains("KID"), "ingen KID på et betalt salg");
 }
+
+/// Kassaoppgjør (#89, §5-3/§5-4): the day's Z-report as one voucher with
+/// the mva split, and the till discrepancy as its OWN bilag.
+#[tokio::test]
+async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
+    let Some(pool) = pool().await else { return };
+    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Kafeen AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [
+        ("1571", "Kortfordring"),
+        ("1900", "Kontanter"),
+        ("2700", "Utgående mva"),
+        ("3000", "Salg 25 %"),
+        ("3010", "Salg 15 %"),
+        ("7830", "Kassadifferanse"),
+    ] {
+        regnmed_db::ensure_account(&pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+
+    let bokfort = regnmed_db::kassa::bokfor_dagsoppgjor(
+        &pool,
+        company,
+        &regnmed_db::kassa::DagsoppgjorInn {
+            dato: d(2026, 4, 3),
+            z_nummer: "0042".into(),
+            salg: vec![
+                ("3000".into(), Some("3".into()), 12_500_00),
+                ("3010".into(), Some("31".into()), 2_300_00),
+            ],
+            betaling: vec![("1900".into(), 4_800_00), ("1571".into(), 10_000_00)],
+            mva_konto: "2700".into(),
+            kontantkonto: Some("1900".into()),
+            // 50 kr short in the till.
+            opptalt_kontant_ore: Some(4_750_00),
+            differansekonto: "7830".into(),
+        },
+        Some(("z-0042.txt", "text/plain", b"Z-rapport 0042")),
+        "test",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(bokfort.differanse_ore, -50_00);
+    assert!(bokfort.differanse.is_some(), "differansen får eget bilag");
+
+    // The day: income net per rate, mva as the sum of the parts.
+    assert_eq!(saldo(&pool, company, "3000").await, -10_000_00);
+    assert_eq!(saldo(&pool, company, "3010").await, -2_000_00);
+    assert_eq!(saldo(&pool, company, "2700").await, -2_800_00);
+    assert_eq!(saldo(&pool, company, "1571").await, 10_000_00);
+    // Cash: registered 4 800 less the 50 that was missing.
+    assert_eq!(saldo(&pool, company, "1900").await, 4_750_00);
+    assert_eq!(
+        saldo(&pool, company, "7830").await,
+        50_00,
+        "differansen er kostnadsført, ikke jevnet ut i salget"
+    );
+
+    // Two vouchers, not one: the discrepancy is a finding about the day.
+    let bilag: i64 =
+        sqlx::query_scalar("select count(*)::bigint from voucher where company_id = $1")
+            .bind(company)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(bilag, 2);
+
+    // The Z-report hangs on the settlement, per §5-4.
+    let vedlegg: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from attachment a
+         join voucher v on v.id = a.voucher_id
+         where v.company_id = $1 and v.description like 'Kassaoppgjør Z-0042%'",
+    )
+    .bind(company)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(vedlegg, 1);
+
+    regnmed_db::verify_chain(&pool, company).await.unwrap();
+}

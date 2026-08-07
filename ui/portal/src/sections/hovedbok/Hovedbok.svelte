@@ -16,6 +16,7 @@
   import DimSelect from "../../components/DimSelect.svelte";
   import Paginering from "../../components/Paginering.svelte";
   import Ikon from "../../components/Ikon.svelte";
+  import Kassaoppgjor from "./Kassaoppgjor.svelte";
 
   let { companyId, extra } = $props();
 
@@ -542,6 +543,10 @@
         </span>
         <button class="btn btn-sm btn-primary" disabled={sum !== 0} onclick={bokfor}>Bokfør</button>
       </div>
+    </Card>
+
+    <Card title="Kassaoppgjør">
+      <Kassaoppgjor {companyId} onDone={lastPosteringer} />
     </Card>
 
     <Card title="Periodisering">

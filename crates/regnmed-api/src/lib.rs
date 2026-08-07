@@ -21,6 +21,7 @@ pub mod innboks;
 pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
+pub mod kassa;
 pub mod kontoplan;
 pub mod lonn;
 pub mod mailq;
@@ -490,6 +491,14 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(asset::depreciate),
         )
         .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
+        .route(
+            "/companies/{company_id}/kassaoppgjor",
+            axum::routing::post(kassa::dagsoppgjor),
+        )
+        .route(
+            "/companies/{company_id}/kassaoppgjor/rapport",
+            axum::routing::post(kassa::dagsoppgjor_med_rapport),
+        )
         .route(
             "/companies/{company_id}/balansedokumentasjon",
             get(balansedok::status).post(balansedok::avstem),

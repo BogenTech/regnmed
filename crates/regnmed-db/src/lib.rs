@@ -24,6 +24,7 @@ pub mod innboks;
 pub mod integrasjon;
 pub mod invoice;
 pub mod invoice_template;
+pub mod kassa;
 pub mod kontoplan;
 pub mod ledger;
 pub mod lonn;
