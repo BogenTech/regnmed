@@ -31,6 +31,10 @@ export const IKONER = {
     emoji: "👥",
     d: '<circle cx="9" cy="8" r="3.25"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.1a3.25 3.25 0 0 1 0 5.8"/><path d="M17.5 14.6a5.5 5.5 0 0 1 3 4.9"/>',
   },
+  leverandorer: {
+    emoji: "🚚",
+    d: '<path d="M3 6.5h10v9H3z"/><path d="M13 9.5h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/>',
+  },
   produkter: {
     emoji: "📦",
     d: '<path d="M12 3l9 4.5v9L12 21l-9-4.5v-9z"/><path d="M3 7.5l9 4.5 9-4.5"/><path d="M12 12v9"/>',

@@ -27,6 +27,7 @@
   import Bilag from "./sections/bilag/Bilag.svelte";
   import Hovedbok from "./sections/hovedbok/Hovedbok.svelte";
   import Kunder from "./sections/kunder/Kunder.svelte";
+  import Leverandorer from "./sections/leverandorer/Leverandorer.svelte";
   import Admin from "./sections/admin/Admin.svelte";
   import Byra from "./sections/byra/Byra.svelte";
   import Plattform from "./components/Plattform.svelte";
@@ -51,6 +52,7 @@
     bilag: Bilag,
     hovedbok: Hovedbok,
     kunder: Kunder,
+    leverandorer: Leverandorer,
     admin: Admin,
   };
 

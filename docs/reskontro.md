@@ -46,6 +46,22 @@ pairings impossible.
 | `POST /companies/{id}/reskontro/matches` + `DELETE …/{match_id}` | åpne poster matching |
 | `PUT /companies/{id}/accounts/{nr}/reskontro` | flag/clear a reskontro account |
 
+The statutory kunde-/leverandørspesifikasjon (per party, per period,
+with running saldo and bilagshenvisning) lives with the other
+bokføringsforskriften §3-1 reports:
+`GET …/reports/kundespesifikasjon` and
+`GET …/reports/leverandorspesifikasjon` ([rapporter.md](rapporter.md)).
+`…/parties/{pid}/items` stays the åpne poster working view.
+
+In the portal, **Kunder** and **Leverandører** are mirrored sections
+over the same endpoints (register w/ search and sorting, party page w/
+contact info, åpne poster and manual matching); **Reskontro** keeps the
+cross-kind list and the CSV import. The match form labels its two sides
+from the party kind: the matcher always takes the positive remainder as
+`entry_a`, but that is the customer's *invoice* and the supplier's
+*payment* — a fixed "Faktura" label would point the user the wrong way
+on the supplier side.
+
 ## SAF-T
 
 The export now includes `Customers`/`Suppliers` master data with

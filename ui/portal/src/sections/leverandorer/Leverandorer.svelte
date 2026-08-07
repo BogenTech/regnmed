@@ -1,10 +1,9 @@
 <script>
-  // Kundene som egen seksjon (#63-oppfølgeren til docs/auth.md §8):
-  // registeret med søk og sortering, nyregistrering, og partssiden
-  // (kontaktinfo + åpne poster) gjenbrukt fra Reskontro — samme data,
-  // ett skjermbilde mindre å lete i. Leverandørene har sin egen
-  // speilvendte seksjon; kundens selskapstilknytning er fast og vises
-  // ikke som noe valg.
+  // Leverandørene som egen seksjon, speilbildet av Kunder: registeret
+  // med søk og sortering, nyregistrering, og partssiden (kontaktinfo,
+  // åpne poster, matching) gjenbrukt fra Reskontro. Saldoen står i
+  // hovedbokens fortegn — leverandørgjeld er kredit, altså negativ —
+  // og «Skyldig» viser den snudd, slik gjelden leses.
   import { api, post } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -19,16 +18,14 @@
   let sortFall = $state(false);
 
   function reload() {
-    api("/companies/" + companyId + "/parties?kind=kunde")
+    api("/companies/" + companyId + "/parties?kind=leverandor")
       .then((svar) => (parties = svar.parties))
       .catch((error) => toast(error.message, false));
   }
 
   $effect(() => {
     parties = null;
-    api("/companies/" + companyId + "/parties?kind=kunde")
-      .then((svar) => (parties = svar.parties))
-      .catch((error) => toast(error.message, false));
+    reload();
   });
 
   function sorter(key) {
@@ -62,6 +59,8 @@
     return treff;
   });
 
+  let sumSkyldig = $derived(filtrert.reduce((sum, p) => sum + -p.saldo_ore, 0));
+
   function pil(key) {
     return sortKey === key ? (sortFall ? " ↓" : " ↑") : "";
   }
@@ -73,11 +72,11 @@
     event.preventDefault();
     try {
       const created = await post("/companies/" + companyId + "/parties", {
-        kind: "kunde",
+        kind: "leverandor",
         name: navn,
         orgnr: orgnr || null,
       });
-      toast("Kunde " + created.party_no + " opprettet", true);
+      toast("Leverandør " + created.party_no + " opprettet", true);
       navn = "";
       orgnr = "";
       reload();
@@ -94,10 +93,10 @@
     {companyId}
     party={parties.find((p) => p.party_id === extra)}
     partyId={extra}
-    tilbake="kunder"
+    tilbake="leverandorer"
   />
 {:else}
-  <Card title="Ny kunde">
+  <Card title="Ny leverandør">
     <form class="flex flex-wrap gap-2 items-end" onsubmit={opprett}>
       <input class="input" placeholder="Navn" required bind:value={navn} />
       <input class="input w-32" placeholder="Orgnr (valgfritt)" bind:value={orgnr} />
@@ -105,7 +104,7 @@
     </form>
   </Card>
 
-  <Card title="Kunder">
+  <Card title="Leverandører">
     <input
       class="input input-sm w-full max-w-xs mb-2"
       placeholder="Søk på navn, nummer, orgnr eller e-post"
@@ -117,9 +116,9 @@
           <th class="cursor-pointer" onclick={() => sorter("party_no")}>Nr{pil("party_no")}</th>
           <th class="cursor-pointer" onclick={() => sorter("name")}>Navn{pil("name")}</th>
           <th>Orgnr</th>
-          <th>E-post</th>
+          <th>Kontonummer</th>
           <th class="cursor-pointer text-right" onclick={() => sorter("saldo_ore")}>
-            Saldo{pil("saldo_ore")}
+            Skyldig{pil("saldo_ore")}
           </th>
         </tr>
       </thead>
@@ -128,16 +127,25 @@
           <tr>
             <td>{p.party_no}</td>
             <td>
-              <a class="link" href={"#/c/" + companyId + "/kunder/" + p.party_id}>{p.name}</a>
+              <a class="link" href={"#/c/" + companyId + "/leverandorer/" + p.party_id}>
+                {p.name}
+              </a>
             </td>
             <td>{p.orgnr || ""}</td>
-            <td>{p.email || ""}</td>
-            <td class="text-right">{kr(p.saldo_ore)}</td>
+            <td>{p.bank_account || ""}</td>
+            <td class="text-right">{kr(-p.saldo_ore)}</td>
           </tr>
         {:else}
-          <tr><td colspan="5" class="opacity-70">Ingen kunder{sok ? " matcher søket" : " ennå"}.</td></tr>
+          <tr>
+            <td colspan="5" class="opacity-70">
+              Ingen leverandører{sok ? " matcher søket" : " ennå"}.
+            </td>
+          </tr>
         {/each}
       </tbody>
     </table>
+    {#if filtrert.length}
+      <div class="text-right font-semibold">Sum skyldig {kr(sumSkyldig)}</div>
+    {/if}
   </Card>
 {/if}

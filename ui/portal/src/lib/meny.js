@@ -1,14 +1,18 @@
 // Seksjonsmenyen — én liste, brukt av skallet og ruteren.
 
+// Ordered by workflow, roughly daily → periodic: salgsflyten øverst
+// (faktura → kunder → produkter → prosjekter → timer), så dokumenter
+// inn (bilag, utlegg), penger (bank, reskontro), regnskapet
+// (hovedbok, mva, rapporter), det periodiske (lønn, anlegg,
+// aksjonærer) — og Administrasjon sist, som konvensjonen er.
 export const SEKSJONER = [
-  ["oversikt", "Oversikt"], ["faktura", "Faktura"], ["kunder", "Kunder"],
-  ["produkter", "Produkter"],
-  ["prosjekter", "Prosjekter"],
-  ["timer", "Timer"], ["lonn", "Lønn"], ["utlegg", "Utlegg"], ["anlegg", "Anlegg"],
-  ["aksjonarer", "Aksjonærer"],
-  ["reskontro", "Reskontro"],
-  ["mva", "Mva"], ["rapporter", "Rapporter"], ["bank", "Bank"], ["bilag", "Bilag"],
-  ["hovedbok", "Hovedbok"],
+  ["oversikt", "Oversikt"],
+  ["faktura", "Faktura"], ["kunder", "Kunder"], ["produkter", "Produkter"],
+  ["prosjekter", "Prosjekter"], ["timer", "Timer"],
+  ["leverandorer", "Leverandører"], ["bilag", "Bilag"], ["utlegg", "Utlegg"],
+  ["bank", "Bank"], ["reskontro", "Reskontro"],
+  ["hovedbok", "Hovedbok"], ["mva", "Mva"], ["rapporter", "Rapporter"],
+  ["lonn", "Lønn"], ["anlegg", "Anlegg"], ["aksjonarer", "Aksjonærer"],
   ["admin", "Administrasjon"],
 ];
 

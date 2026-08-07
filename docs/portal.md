@@ -140,10 +140,13 @@ kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
 navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
 autolagring per celle, kopier forrige uke, fakturagrunnlag m/
 personutvalg — docs/timer.md) · Lønn · Utlegg · Anlegg ·
-Aksjonærer · Reskontro (parter, åpne poster, CSV-import) · Mva
+Aksjonærer · Kunder og Leverandører (hver sin speilvendte seksjon:
+register m/ søk og sortering, partsside m/ kontaktinfo, åpne poster og
+manuell matching) · Reskontro (alle parter på tvers, CSV-import) · Mva
 (spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
-resultat, balanse, budsjett/avvik, konto- og bokføringsspesifikasjon,
-revisjon) · Bank (kontoutskrift, avstemming, betalingsliste) · Bilag
+resultat, balanse, budsjett/avvik, konto-, reskontro- og
+bokføringsspesifikasjon, revisjon) · Bank (kontoutskrift, avstemming,
+betalingsliste) · Bilag
 (attestering, innboks, e-post-inn, vedlegg) ·
 **Administrasjon** (konsollen, se under) — pluss byråvisningen på
 `#/byra/{id}`.
