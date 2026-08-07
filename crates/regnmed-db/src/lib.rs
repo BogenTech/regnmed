@@ -8,6 +8,7 @@ pub mod abonnement;
 pub mod abonnement_oppfolging;
 pub mod aksjebok;
 pub mod anchor;
+pub mod arsavslutning;
 pub mod asset;
 pub mod attachment;
 pub mod attestering;

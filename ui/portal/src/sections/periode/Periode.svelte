@@ -5,6 +5,7 @@
   import { api, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
+  import Arsavslutning from "./Arsavslutning.svelte";
 
   let { companyId } = $props();
 
@@ -65,3 +66,5 @@
     </table>
   </Card>
 {/if}
+
+<Arsavslutning {companyId} />

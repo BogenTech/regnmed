@@ -50,6 +50,28 @@ pub struct Balanse {
     pub udisponert_resultat_ore: i64,
 }
 
+/// Resultatdisponering (#84): where the year's result is transferred to
+/// equity at årsavslutning. NOT our choice of account — Skatteetaten's
+/// næringsspesifikasjon code list gives 8800 its OWN grouping category,
+/// `resultatDisponeringForSAF-T`, separate from every income-statement
+/// line ("Disponering av årets overskudd/dekning av årets underskudd",
+/// vendored in `saft/naeringsspesifikasjon_*.csv`).
+///
+/// It sits in class 8, and that is what makes the whole årsavslutning
+/// work without new state: the disposition entry lowers `-sum(3..8)` by
+/// exactly the amount it raises equity, so `udisponert_resultat_ore`
+/// falls to zero for the closed year and the balanse still nets out.
+/// The ledger carries it, like everything else.
+///
+/// The resultatregnskap must therefore EXCLUDE it: a disposition is not
+/// a result line, and counting it would make last year's P&L read zero
+/// the moment the year was closed.
+pub const DISPONERING_KONTO: &str = "8800";
+
+fn er_disponering(number: &str) -> bool {
+    number == DISPONERING_KONTO
+}
+
 pub fn class_of(number: &str) -> Option<u32> {
     number.chars().next()?.to_digit(10)
 }
@@ -68,6 +90,7 @@ pub fn presentasjon_ore(number: &str, ledger_ore: i64) -> i64 {
 fn section(lines: &[SaldoLine], classes: &[u32], heading: &'static str, negate: bool) -> Seksjon {
     let mut selected: Vec<SaldoLine> = lines
         .iter()
+        .filter(|l| !er_disponering(&l.number))
         .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
         .filter(|l| l.saldo_ore != 0)
         .cloned()
@@ -85,9 +108,25 @@ fn section(lines: &[SaldoLine], classes: &[u32], heading: &'static str, negate: 
     }
 }
 
+/// Ledger-sign sum over account classes, disposition INCLUDED.
+///
+/// `balanse` depends on that: the disposition entry is what makes
+/// `udisponert_resultat_ore` fall to zero for a closed year. The
+/// resultatregnskap uses `resultat_sum` instead.
 fn ledger_sum(lines: &[SaldoLine], classes: &[u32]) -> i64 {
     lines
         .iter()
+        .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
+        .map(|l| l.saldo_ore)
+        .sum()
+}
+
+/// The same sum with the disposition excluded — what the reader means
+/// by "resultat".
+fn resultat_sum(lines: &[SaldoLine], classes: &[u32]) -> i64 {
+    lines
+        .iter()
+        .filter(|l| !er_disponering(&l.number))
         .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
         .map(|l| l.saldo_ore)
         .sum()
@@ -103,8 +142,8 @@ pub fn resultat(lines: &[SaldoLine]) -> Resultat {
         section(lines, &[8], "Finansposter, skatt m.m.", false),
     ];
     Resultat {
-        driftsresultat_ore: -ledger_sum(lines, &[3, 4, 5, 6, 7]),
-        arsresultat_ore: -ledger_sum(lines, &[3, 4, 5, 6, 7, 8]),
+        driftsresultat_ore: -resultat_sum(lines, &[3, 4, 5, 6, 7]),
+        arsresultat_ore: -resultat_sum(lines, &[3, 4, 5, 6, 7, 8]),
         seksjoner,
     }
 }
@@ -128,8 +167,8 @@ impl Lonnsomhet {
 
 pub fn lonnsomhet(lines: &[SaldoLine]) -> Lonnsomhet {
     Lonnsomhet {
-        inntekter_ore: -ledger_sum(lines, &[3]),
-        kostnader_ore: ledger_sum(lines, &[4, 5, 6, 7, 8]),
+        inntekter_ore: -resultat_sum(lines, &[3]),
+        kostnader_ore: resultat_sum(lines, &[4, 5, 6, 7, 8]),
     }
 }
 
@@ -201,6 +240,52 @@ mod tests {
         assert_eq!(r.seksjoner[3].sum_ore, 150_00, "annen driftskostnad");
         assert_eq!(r.driftsresultat_ore, 10_000_00 - 8_000_00 - 150_00);
         assert_eq!(r.arsresultat_ore, 1_850_00);
+    }
+
+    /// Årsavslutning (#84): the disposition moves the year's result to
+    /// equity, and the two reports must react DIFFERENTLY to it.
+    ///
+    /// - The balanse must see it, or the profit is counted twice: once
+    ///   in equity and once still sitting in classes 3–8.
+    /// - The resultatregnskap must NOT, or last year's P&L reads zero
+    ///   the moment the year is closed.
+    ///
+    /// Both fall out of one fact: 8800 is class 8 with its own grouping
+    /// category in Skatteetatens code list, so the ledger carries the
+    /// disposition without any stored "this year is closed" flag.
+    #[test]
+    fn a_disposition_leaves_the_resultat_alone_and_empties_udisponert() {
+        let mut lines = saldo();
+        let arsresultat = resultat(&lines).arsresultat_ore;
+        assert_eq!(arsresultat, 1_850_00);
+        assert_eq!(balanse(&lines).udisponert_resultat_ore, arsresultat);
+
+        // Close the year: debit 8800, credit 2050 (equity), same amount.
+        lines.push(line("8800", "Disponering av årets resultat", arsresultat));
+        lines.push(line("2050", "Annen egenkapital", -arsresultat));
+
+        assert_eq!(
+            resultat(&lines).arsresultat_ore,
+            arsresultat,
+            "disponeringen er ikke en resultatlinje — fjorårets resultat står"
+        );
+        assert!(
+            !resultat(&lines)
+                .seksjoner
+                .iter()
+                .any(|s| s.lines.iter().any(|l| l.number == "8800")),
+            "8800 skal ikke vises som en resultatlinje"
+        );
+        assert_eq!(
+            balanse(&lines).udisponert_resultat_ore,
+            0,
+            "resultatet er disponert — det kan ikke også ligge udisponert"
+        );
+        assert_eq!(
+            balanse(&lines).differanse_ore(),
+            0,
+            "balansen går fortsatt i null"
+        );
     }
 
     #[test]

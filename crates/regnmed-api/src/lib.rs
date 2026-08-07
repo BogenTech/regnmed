@@ -4,6 +4,7 @@
 pub mod abonnement;
 pub mod aksjebok;
 pub mod anchor;
+pub mod arsavslutning;
 pub mod asset;
 pub mod attestering;
 pub mod auth;
@@ -491,6 +492,14 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(asset::depreciate),
         )
         .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
+        .route(
+            "/companies/{company_id}/arsavslutning",
+            get(arsavslutning::list).post(arsavslutning::avslutt),
+        )
+        .route(
+            "/companies/{company_id}/arsavslutning/{ar}/forslag",
+            get(arsavslutning::forslag),
+        )
         .route(
             "/companies/{company_id}/kassaoppgjor",
             axum::routing::post(kassa::dagsoppgjor),
