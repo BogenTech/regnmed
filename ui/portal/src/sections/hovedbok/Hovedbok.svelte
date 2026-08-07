@@ -200,6 +200,10 @@
   let pSok = $state("");
   let pSokAktiv = $state("");
   let pSide = $state(1);
+  // Dokumentasjonsplikten (#85): the same set the revisjonsrapport's
+  // Dokumentasjon-kontroll counts, as a working list. Importjournalen is
+  // excluded server-side — its documentation is the source file.
+  let pUtenVedlegg = $state(false);
   let fetchId = 0;
   let debounceTimer;
 
@@ -214,6 +218,7 @@
   $effect(() => {
     void pSokAktiv;
     void year;
+    void pUtenVedlegg;
     pSide = 1;
   });
 
@@ -224,7 +229,8 @@
       const svar = await api(
         "/companies/" + companyId + "/vouchers?lines=true&from=" + year + "-01-01&to=" + year +
           "-12-31&limit=" + BILAG_PER_SIDE + "&offset=" + (pSide - 1) * BILAG_PER_SIDE +
-          (pSokAktiv.trim() ? "&sok=" + encodeURIComponent(pSokAktiv.trim()) : ""),
+          (pSokAktiv.trim() ? "&sok=" + encodeURIComponent(pSokAktiv.trim()) : "") +
+          (pUtenVedlegg ? "&uten_vedlegg=true" : ""),
       );
       if (id === fetchId) posteringer = svar;
     } catch (error) {
@@ -237,6 +243,7 @@
     void year;
     void pSide;
     void pSokAktiv;
+    void pUtenVedlegg;
     lastPosteringer();
   });
 
@@ -470,9 +477,13 @@
           placeholder="Filtrer: bilag, dato, tekst, konto …"
           bind:value={pSok}
         />
+        <label class="label cursor-pointer gap-2 py-0">
+          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={pUtenVedlegg} />
+          <span class="label-text">Uten vedlegg</span>
+        </label>
         {#if posteringer}
           <span class="text-sm opacity-70">
-            {posteringer.total} bilag{pSokAktiv.trim() ? " (filtrert)" : ""} — nyeste øverst
+            {posteringer.total} bilag{pSokAktiv.trim() || pUtenVedlegg ? " (filtrert)" : ""} — nyeste øverst
           </span>
         {/if}
       </div>
@@ -480,7 +491,13 @@
         <span class="loading loading-spinner loading-sm"></span>
       {:else if !posteringer.vouchers.length}
         <p class="opacity-70 text-sm">
-          {pSokAktiv.trim() ? "Ingen bilag matcher filteret." : "Ingen bilag i " + year + " ennå — det første kan føres over."}
+          {#if pUtenVedlegg}
+            Alle bilag i {year} har vedlegg.
+          {:else if pSokAktiv.trim()}
+            Ingen bilag matcher filteret.
+          {:else}
+            Ingen bilag i {year} ennå — det første kan føres over.
+          {/if}
         </p>
       {:else}
         {#each posteringer.vouchers as v (v.voucher)}

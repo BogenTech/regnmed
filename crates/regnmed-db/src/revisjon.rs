@@ -210,6 +210,78 @@ pub async fn build_revisjon_report(
         },
     });
 
+    // 9. Dokumentasjon (informational, #85): bokføringsloven §10 wants
+    // booked information documented, and "which bilag lack it?" is the
+    // question a bokettersyn opens with — the system could not answer it.
+    //
+    // An INFORMASJONSKONTROLL, not an AVVIK: a missing attachment is not
+    // proof of a missing document. It may sit in a permanent archive
+    // elsewhere, and documentation legitimately arrives after the
+    // posting. Making vedlegg mandatory would only teach people to
+    // upload rubbish to get past the form.
+    //
+    // Bilag that carry their documentation BY CONSTRUCTION are not
+    // counted: faktura and innboks copy the document onto the voucher in
+    // the issuing transaction, so they simply have one. Importjournalen
+    // is documented by its source files, which kontroll 8 hashes.
+    let udokumenterte: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from voucher v
+         where v.company_id = $1
+           and not exists (select 1 from attachment a where a.voucher_id = v.id)
+           and not exists (select 1 from journal j
+                           where j.id = v.journal_id and j.code = 'IMP')",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    let totalt: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from voucher v
+         where v.company_id = $1
+           and not exists (select 1 from journal j
+                           where j.id = v.journal_id and j.code = 'IMP')",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    let eldste: Vec<String> = sqlx::query(
+        "select v.fiscal_year, v.voucher_number, v.voucher_date, v.description
+         from voucher v
+         where v.company_id = $1
+           and not exists (select 1 from attachment a where a.voucher_id = v.id)
+           and not exists (select 1 from journal j
+                           where j.id = v.journal_id and j.code = 'IMP')
+         order by v.voucher_date, v.chain_seq limit 10",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|r| {
+        format!(
+            "{}-{} {} {}",
+            r.get::<i32, _>("fiscal_year"),
+            r.get::<i64, _>("voucher_number"),
+            r.get::<chrono::NaiveDate, _>("voucher_date"),
+            r.get::<String, _>("description")
+        )
+    })
+    .collect();
+    kontroller.push(Kontroll {
+        navn: "Dokumentasjon".into(),
+        ok: true,
+        detalj: if udokumenterte == 0 {
+            format!("alle {totalt} bilag utenfor importjournalen har vedlegg")
+        } else {
+            format!(
+                "{udokumenterte} av {totalt} bilag mangler vedlegg i regnmed \
+                 (informasjon, ikke avvik — dokumentasjonen kan finnes i annet \
+                 oppbevaringsmedium; bokføringsloven §10 krever at den finnes, \
+                 ikke at den ligger her). Eldste: {}",
+                eldste.join("; ")
+            )
+        },
+    });
+
     // 8. Importert historikk (informational): which external files the
     // ledger was built from (docs/migration.md, saft_import_log). The
     // full hashes are printed so the revisor can hash the source

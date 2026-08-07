@@ -145,10 +145,19 @@ async fn revisor_generates_the_verification_report() {
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
     let kontroller = report["kontroller"].as_array().unwrap();
-    assert_eq!(kontroller.len(), 8);
+    assert_eq!(kontroller.len(), 9);
     for kontroll in kontroller {
         assert_eq!(kontroll["ok"], true, "{kontroll}");
     }
+    // Dokumentasjon is an INFORMASJONSKONTROLL (#85): this ledger's
+    // bilag have no vedlegg, and the verdict must still be ok — a
+    // missing attachment is not proof of a missing document.
+    assert!(
+        kontroller.iter().any(|k| k["navn"] == "Dokumentasjon"
+            && k["ok"] == true
+            && k["detalj"].as_str().unwrap().contains("mangler vedlegg")),
+        "{report}"
+    );
     assert!(
         report["kontroller"]
             .as_array()
@@ -481,4 +490,130 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
     let detalj = kontroll["detalj"].as_str().unwrap();
     assert!(detalj.contains("2 reskontrokontoer avstemt"), "{detalj}");
     assert!(detalj.contains("7000,00"), "{detalj}");
+}
+
+/// «Hvilke bilag mangler dokumentasjon?» — the question a bokettersyn
+/// opens with, which the system could not answer before #85.
+///
+/// Counted as INFORMATION, never as an avvik, and never counting bilag
+/// that carry their documentation by construction. The same set backs
+/// the bilag list's `uten_vedlegg` filter, so whoever tidies up works
+/// from exactly the numbers the revisor read.
+#[tokio::test]
+async fn undocumented_bilag_are_counted_and_listable() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("admin|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Adm"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Dokumentasjon AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [("1920", "Bank"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    let token = idp.token(&sub, "Adm");
+
+    let bilag = |dag: u32, tekst: &str| VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: NaiveDate::from_ymd_opt(2026, 4, dag).unwrap(),
+        description: tekst.into(),
+        reverses: None,
+        entries: vec![
+            EntryDraft {
+                account_number: "6800".into(),
+                amount: Ore(250_00),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+            EntryDraft {
+                account_number: "1920".into(),
+                amount: Ore(-250_00),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                avdeling: None,
+                prosjekt: None,
+                valuta: None,
+            },
+        ],
+    };
+    let dokumentert =
+        regnmed_db::post_voucher(&state.pool, company, &bilag(2, "Med kvittering"), "test")
+            .await
+            .unwrap();
+    regnmed_db::post_voucher(&state.pool, company, &bilag(3, "Uten kvittering"), "test")
+        .await
+        .unwrap();
+    regnmed_db::add_attachment(
+        &state.pool,
+        company,
+        dokumentert.id,
+        "kvittering.txt",
+        "text/plain",
+        b"kvittering",
+        "test",
+    )
+    .await
+    .unwrap();
+
+    let (_, _, body) = get_raw(
+        &state,
+        &format!("/companies/{company}/reports/revisjon"),
+        &token,
+    )
+    .await;
+    let report: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let dok = report["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Dokumentasjon")
+        .expect("Dokumentasjon-kontrollen");
+    assert_eq!(
+        dok["ok"], true,
+        "manglende vedlegg er ikke et avvik i seg selv"
+    );
+    let detalj = dok["detalj"].as_str().unwrap();
+    assert!(
+        detalj.contains("1 av 2"),
+        "det dokumenterte bilaget skal ikke telles: {detalj}"
+    );
+    assert!(
+        detalj.contains("Uten kvittering"),
+        "kontrollen skal navngi bilaget som mangler: {detalj}"
+    );
+
+    // The working list behind it.
+    let (status, _, body) = get_raw(
+        &state,
+        &format!("/companies/{company}/vouchers?uten_vedlegg=true"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let side: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(side["total"], 1, "{side}");
+    assert_eq!(side["vouchers"][0]["description"], "Uten kvittering");
+
+    // Unfiltered, both are still there — the filter narrows, it never
+    // hides.
+    let (_, _, body) = get_raw(&state, &format!("/companies/{company}/vouchers"), &token).await;
+    let alle: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(alle["total"], 2, "{alle}");
 }

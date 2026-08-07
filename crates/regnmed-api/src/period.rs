@@ -80,6 +80,11 @@ pub struct VoucherListQuery {
     offset: Option<i64>,
     /// Include each voucher's lines (the hovedbok browsing view).
     lines: Option<bool>,
+    /// Only bilag without an attachment (#85) — the working list behind
+    /// the revisjonsrapport's Dokumentasjon-kontroll, so whoever is
+    /// tidying can see exactly which ones. Importjournalen is left out:
+    /// its documentation is the source file, hashed in kontroll 8.
+    uten_vedlegg: Option<bool>,
 }
 
 /// Vouchers newest-first, paged and filtered server-side. Without
@@ -105,6 +110,7 @@ pub async fn list_vouchers(
         limit,
         offset,
         med_linjer,
+        query.uten_vedlegg.unwrap_or(false),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

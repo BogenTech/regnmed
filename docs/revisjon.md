@@ -31,6 +31,7 @@ it is never an error that hides the document.
 | Balansekontroll | all postings sum to exactly zero øre |
 | Periodelåsing | current lock and the size of the insert-only lock history (informational) |
 | Regelverkssatser | no monitored sats domain in the satsregister is older than its known change cadence ([regelverk.md](regelverk.md)) — outdated satser would silently produce unlawful gebyrer/renter |
+| Dokumentasjon | how many bilag lack an attachment in regnmed, oldest first ([bokføringsloven §10](https://lovdata.no/lov/2004-11-19-73/§10)). **Informational, never an avvik**: a missing attachment is not proof of a missing document — it may live in another oppbevaringsmedium, and documentation legitimately arrives after the posting. Bilag that carry documentation BY CONSTRUCTION are not counted (faktura and innboks copy the document onto the voucher when it is posted, so they simply have one), and the import journal is left out because kontroll «Importert historikk» hashes its source files instead. The same set backs `GET …/vouchers?uten_vedlegg=true`, so whoever tidies up works from exactly the numbers the revisor read |
 | Importert historikk | which external SAF-T files the ledger was built from ([migration.md](migration.md)): full content hashes from the insert-only import log, so the source system's export can be compared byte for byte; history imported before the log existed is stated, never hidden (informational) |
 
 The report also lists every external anchor covering the company

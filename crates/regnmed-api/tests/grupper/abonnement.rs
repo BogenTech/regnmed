@@ -197,6 +197,89 @@ async fn a_block_stops_changes_and_nothing_else() {
     assert_eq!(selskap["abonnement"]["status"], "sperret");
 }
 
+/// Documenting what is already booked survives a block (#85).
+///
+/// Bokføringsloven §10 requires booked information to be documented, and
+/// documentation legitimately arrives later. If a missed payment could
+/// stop an attachment, the abonnement would prevent the bokføringspliktige
+/// from meeting a statutory duty on entries that already stand — the
+/// hovedbok taken hostage. Booking MORE stays blocked, which is the line.
+#[tokio::test]
+async fn a_block_still_allows_documenting_what_is_already_booked() {
+    let Some((state, _idp, company, admin)) = oppsett().await else {
+        return;
+    };
+    for (nr, navn) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    // Posted while the abonnement was in order.
+    let entry = |konto: &str, ore: i64| regnmed_core::voucher::EntryDraft {
+        account_number: konto.into(),
+        amount: regnmed_core::Ore(ore),
+        vat_code: None,
+        description: None,
+        party_no: None,
+        avdeling: None,
+        prosjekt: None,
+        valuta: None,
+    };
+    let bilag = regnmed_db::post_voucher(
+        &state.pool,
+        company,
+        &regnmed_core::voucher::VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: Utc::now().date_naive(),
+            description: "Kontorrekvisita".into(),
+            reverses: None,
+            entries: vec![entry("6800", 500_00), entry("1920", -500_00)],
+        },
+        "test",
+    )
+    .await
+    .unwrap();
+
+    make_blocked(&state, company).await;
+
+    let (kode, svar) = kall(
+        &state,
+        "POST",
+        &format!(
+            "/companies/{company}/vouchers/{}/attachments?filename=kvittering.txt",
+            bilag.id
+        ),
+        &admin,
+        "kvitteringens innhold",
+    )
+    .await;
+    assert_eq!(
+        kode,
+        StatusCode::OK,
+        "dokumentasjonsplikten kan ikke sperres av manglende betaling: {svar}"
+    );
+
+    // …but the accounts still cannot be carried forward.
+    let (kode, _) = kall(
+        &state,
+        "POST",
+        &format!("/companies/{company}/vouchers"),
+        &admin,
+        &format!(
+            r#"{{"journal_code":"GL","date":"{}","description":"Nytt bilag",
+                 "lines":[{{"account":"6800","amount_ore":10000}},
+                          {{"account":"1920","amount_ore":-10000}}]}}"#,
+            Utc::now().date_naive()
+        ),
+    )
+    .await;
+    assert_eq!(
+        kode,
+        StatusCode::FORBIDDEN,
+        "å bokføre mer er fortsatt sperret"
+    );
+}
+
 /// Signing up reopens, cancelling gives a deadline — not an instant block.
 #[tokio::test]
 async fn signing_up_opens_and_cancelling_gives_a_deadline() {

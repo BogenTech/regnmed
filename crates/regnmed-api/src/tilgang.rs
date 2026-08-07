@@ -356,14 +356,30 @@ impl Rett {
             // is blocked (see above).
             SelskapAdmin | MedlemAdmin | OppdragAdmin | IntegrasjonAdmin | EpostInnAdmin => false,
 
+            // Documenting what is ALREADY booked — open (#85).
+            // Bokføringsloven §10 requires booked information to be
+            // documented, and documentation legitimately arrives after
+            // the posting. Blocking it would let a missed payment stop
+            // the bokføringspliktige from meeting a statutory duty on
+            // entries that already stand, which is the hovedbok taken
+            // hostage — the one thing the abonnement must never do.
+            // docs/perioder.md already draws this line for LOCKED
+            // periods, where attaching is likewise allowed: an
+            // attachment carries nothing new into the accounts.
+            //
+            // BilagLastOpp stays blocked, deliberately: the innboks is
+            // where NEW documents arrive to be booked, not where
+            // existing entries get their documentation.
+            VedleggSkriv => false,
+
             // Everything that carries the accounts forward — blocked.
-            VedleggSkriv | BilagLastOpp | BilagBokfor | PeriodeLaas | MvaOrdningAdmin
-            | FakturaSkriv | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv
-            | ReskontroSkriv | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett
-            | BetalingGodkjenn | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv
-            | AnleggSkriv | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerSatsSkriv
-            | TimerLaas | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv
-            | LonnKjor | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
+            BilagLastOpp | BilagBokfor | PeriodeLaas | MvaOrdningAdmin | FakturaSkriv
+            | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv | ReskontroSkriv
+            | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett | BetalingGodkjenn
+            | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv | AnleggSkriv
+            | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerSatsSkriv | TimerLaas
+            | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv | LonnKjor
+            | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
             | AttesteringAdmin | MigreringAdmin => true,
         }
     }

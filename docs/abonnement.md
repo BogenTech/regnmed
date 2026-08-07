@@ -18,6 +18,15 @@ og tas med ut. Derfor:
 - **Styringen av selskapet virker alltid**: tilgang, oppdrag,
   integrasjoner og firmaopplysninger. Et sperret selskap må kunne
   slippe inn den som skal ordne opp, og avvikle det som skal avvikles.
+- **Å dokumentere det som alt er bokført virker alltid** (#85).
+  `VEDLEGG_SKRIV` står på den åpne siden: bokføringsloven §10 krever at
+  bokførte opplysninger er dokumentert, og dokumentasjon kommer
+  legitimt i etterkant. En manglende betaling kan ikke hindre den
+  bokføringspliktige i å oppfylle en lovpålagt plikt på poster som
+  allerede står — et vedlegg fører ingenting nytt inn i regnskapet.
+  docs/perioder.md trekker samme grense for LÅSTE perioder.
+  `BILAG_LAST_OPP` (innboksen) er bevisst fortsatt sperret: der kommer
+  det inn NYE dokumenter som skal bokføres.
 
 Sperren håndheves i tilgangsvakten (docs/auth.md §3) — én søm, ingen
 endepunkter kan glemme den. Skillet mellom «endrer» og «leser» er en

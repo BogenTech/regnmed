@@ -156,6 +156,7 @@ pub async fn list_vouchers_paged(
     limit: i64,
     offset: i64,
     med_linjer: bool,
+    uten_vedlegg: bool,
 ) -> Result<BilagSide> {
     let sok = sok.map(str::trim).filter(|s| !s.is_empty());
     let filter = "v.company_id = $1
@@ -167,13 +168,20 @@ pub async fn list_vouchers_paged(
               or v.voucher_date::text like '%' || $4 || '%'
               or exists (select 1 from entry e join account a on a.id = e.account_id
                          where e.voucher_id = v.id
-                           and (a.number like $4 || '%' or a.name ilike '%' || $4 || '%')))";
+                           and (a.number like $4 || '%' or a.name ilike '%' || $4 || '%')))
+         and (not $7::bool or (
+              not exists (select 1 from attachment att where att.voucher_id = v.id)
+              and not exists (select 1 from journal ji
+                              where ji.id = v.journal_id and ji.code = 'IMP')))";
 
     let total: i64 = sqlx::query_scalar(&format!("select count(*) from voucher v where {filter}"))
         .bind(company_id)
         .bind(from)
         .bind(to)
         .bind(sok)
+        .bind(limit)
+        .bind(offset)
+        .bind(uten_vedlegg)
         .fetch_one(pool)
         .await?;
 
@@ -190,6 +198,7 @@ pub async fn list_vouchers_paged(
     .bind(sok)
     .bind(limit)
     .bind(offset)
+    .bind(uten_vedlegg)
     .fetch_all(pool)
     .await?;
 
