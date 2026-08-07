@@ -76,6 +76,24 @@ eneste som faktisk koster noe per kunde, menneskelig support:
 | `basis` | **49 kr/mnd** | alt inkludert, selvbetjent (dokumentasjonen er supporten) |
 | `standard` | **99 kr/mnd** | alt inkludert + e-postsupport |
 
+**Mva legges på etter driftsselskapets EGEN registrering**, aldri som
+en konstant (`abonnement::utgaende_mva`). Prisene over er eks. mva; er
+driftsselskapet registrert i Merverdiavgiftsregisteret på fakturadatoen,
+får linjen kode 3 og alminnelig sats fra satsregisteret. Er det ikke
+registrert, får linjen kode 7 «Ingen mva-behandling (inntekter)» og
+ingen avgift — mval. §11-4 forbyr å oppgi merverdiavgift i
+salgsdokumentet når selgeren ikke er registrert, og et beløp som likevel
+oppgis skal innbetales til staten. Koden var hardkodet `3` fram til
+2026-08-07, skrevet den gangen driftsselskapet tilfeldigvis var
+registrert; registreringsstatusen er datert stamdata (#81), og det er
+nettopp det som gjør den lesbar per fakturadato. Kode 7 og ikke 6:
+«omsetning utenfor merverdiavgiftsloven» er en påstand om VIRKSOMHETEN,
+og å selge regnskapsprogram ligger godt innenfor loven — selgeren er
+bare under grensen. Det samme oppslaget bestemmer bruttoen Stripe-Prisen
+opprettes med, ellers ville kortet blitt trukket 25 % mer enn fakturaen
+viser og beløpskontrollen i `bokfor_stripe_betaling` slått ut ved hvert
+trekk.
+
 Funksjonelt er planene identiske — skillet håndheves av
 supportkanalen (et menneske som ser på planen), ikke av koden, og skal
 forbli slik: en funksjonssperre ville gjeninnført modulmazen vi
@@ -144,7 +162,9 @@ Flyten (migrasjon 0045, alle ledd idempotente):
    ved konstruksjon, ikke ved et flagg: fordringen er fullt matchet i det
    øyeblikket den finnes. Beløpet fra Stripe er BRUTTO og splittes med
    `split_gross` på satsen som gjaldt betalingsdagen — mva beregnes ett
-   sted, hos oss.
+   sted, hos oss (og satsen er driftsselskapets egen, se kapittel 4: et
+   uregistrert driftsselskap splitter på 0, altså er hele trekket
+   grunnlaget).
 4. `invoice.payment_failed` **logges bare**. Stripe forsøker igjen, og
    dekningen står åpen imens: å sperre på ett feilet trekk ville tatt
    hovedboken som gissel over et kort som kanskje går i morgen.

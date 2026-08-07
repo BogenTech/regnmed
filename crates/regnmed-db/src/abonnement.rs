@@ -541,10 +541,9 @@ pub async fn bokfor_stripe_betaling(
     // The Stripe price is GROSS; the faktura line wants the base, and the
     // engine adds mva back at the rate valid on the invoice date. Using
     // split_gross here (rather than trusting Stripe) keeps one authority
-    // for Norwegian mva: ours.
-    let rates = crate::mva::load_vat_rates(pool).await?;
-    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", idag)
-        .context("ingen ordinær mva-sats for betalingsdatoen — satsregisteret må dekke datoen")?;
+    // for Norwegian mva: ours. An unregistered ops company splits at 0,
+    // i.e. the whole charge is the base — same code path, no special case.
+    let (mva_kode, rate_bp) = utgaende_mva(pool, drift_company_id, idag).await?;
     let (netto, _mva) = regnmed_core::mva::split_gross(brutto_ore, rate_bp);
 
     let mut tx = pool.begin().await?;
@@ -582,7 +581,7 @@ pub async fn bokfor_stripe_betaling(
             account_number: "3000".into(),
             quantity_milli: 1000,
             unit_price_ore: netto,
-            vat_code: Some("3".into()),
+            vat_code: Some(mva_kode),
             avdeling: None,
             prosjekt: None,
             product_id: None,
@@ -798,7 +797,19 @@ pub async fn lagre_stripe_price(
 /// carries a `year` row — a discount for paying annually is a pricing
 /// decision (a new row with its kilde), never a multiplication hidden in
 /// code.
-pub async fn brutto_for(pool: &PgPool, plan: &str, interval: &str, dato: NaiveDate) -> Result<i64> {
+///
+/// The mva added on top is the ops company's own (`utgaende_mva`): the
+/// card is charged this exact amount, and `bokfor_stripe_betaling`
+/// asserts the charge equals the faktura's gross. An unregistered seller
+/// whose Stripe Price still carried 25 % would fail that assertion on
+/// every single payment.
+pub async fn brutto_for(
+    pool: &PgPool,
+    drift_company_id: Uuid,
+    plan: &str,
+    interval: &str,
+    dato: NaiveDate,
+) -> Result<i64> {
     let egen: Option<i64> = sqlx::query_scalar(
         "select pris_ore_per_mnd from abonnement_pris
          where plan = $1 and interval = $2 and valid_from <= $3
@@ -814,10 +825,43 @@ pub async fn brutto_for(pool: &PgPool, plan: &str, interval: &str, dato: NaiveDa
         None if interval == "year" => pris_pa(pool, plan, dato).await? * 12,
         None => pris_pa(pool, plan, dato).await?,
     };
+    let (_kode, rate_bp) = utgaende_mva(pool, drift_company_id, dato).await?;
+    Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
+}
+
+/// The utgående mva code for OUR OWN subscription invoices, and the rate
+/// it implies — decided by the ops company's registration on the invoice
+/// date, never by a constant.
+///
+/// This used to be a hard-coded `"3"` (25 %), written when whoever ran
+/// regnmed happened to be mva-registrert. mval. §11-4 forbids stating
+/// merverdiavgift on a salgsdokument when the seller is NOT registered,
+/// and an amount stated anyway must be paid over to the state regardless
+/// — so the constant was not merely wrong in presentation, it invented a
+/// liability. Registration is dated master data (#81), which is exactly
+/// what makes this readable per invoice date: the day the ops company
+/// enters the register, its invoices start carrying mva, and the ones
+/// issued before it keep rendering without.
+///
+/// Not registered gives code 7 «Ingen mva-behandling (inntekter)» rather
+/// than 6 «Omsetning utenfor merverdiavgiftsloven»: 6 is a claim about
+/// the ACTIVITY, and selling accounting software is squarely inside the
+/// law. The seller is simply below the threshold. Both are zero-rated,
+/// so this changes nothing about the amounts — only about what the
+/// hovedbok and the SAF-T say happened.
+pub async fn utgaende_mva(
+    pool: &PgPool,
+    drift_company_id: Uuid,
+    dato: NaiveDate,
+) -> Result<(String, i64)> {
+    let reg = crate::settings::registrering_on(pool, drift_company_id, dato).await?;
+    if !reg.mva_registrert {
+        return Ok(("7".into(), 0));
+    }
     let rates = crate::mva::load_vat_rates(pool).await?;
     let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", dato)
         .context("ingen ordinær mva-sats for datoen — satsregisteret må dekke den")?;
-    Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
+    Ok(("3".into(), rate_bp))
 }
 
 /// The price in force on a date, in øre per month excl. mva.
@@ -1040,6 +1084,8 @@ async fn fakturer_en(
         return Ok(None);
     }
 
+    let (mva_kode, _rate_bp) = utgaende_mva(pool, drift, idag).await?;
+
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
         party_no,
@@ -1063,7 +1109,7 @@ async fn fakturer_en(
             account_number: "3000".into(),
             quantity_milli: 1000,
             unit_price_ore: pris,
-            vat_code: Some("3".into()),
+            vat_code: Some(mva_kode),
             avdeling: None,
             prosjekt: None,
             product_id: None,

@@ -171,7 +171,14 @@ async fn sync_price(
     interval: &str,
     idag: chrono::NaiveDate,
 ) -> Result<String, ApiError> {
-    let brutto = regnmed_db::abonnement::brutto_for(&state.pool, plan, interval, idag).await?;
+    let brutto = regnmed_db::abonnement::brutto_for(
+        &state.pool,
+        drift_company(state).await?,
+        plan,
+        interval,
+        idag,
+    )
+    .await?;
     if let Some((price_id, kjent)) =
         regnmed_db::abonnement::stripe_price_for(&state.pool, plan, interval).await?
     {
@@ -552,7 +559,9 @@ fn invoice_subscription(object: &serde_json::Value) -> &str {
 async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {
     let Some(orgnr) = &state.drift_orgnr else {
         return Err(ApiError::BadRequest(
-            "REGNMED_DRIFT_ORGNR er ikke satt — webhooken vet ikke hvilken hovedbok trekket hører hjemme i".into(),
+            "REGNMED_DRIFT_ORGNR er ikke satt — da vet vi verken hvilken hovedbok \
+             trekket hører hjemme i eller hvilken mva-registrering prisen skal følge"
+                .into(),
         ));
     };
     let id: Option<Uuid> = sqlx::query_scalar("select id from company where orgnr = $1")

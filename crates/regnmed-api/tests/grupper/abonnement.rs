@@ -322,6 +322,131 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     assert_eq!(orgnr, kunde_orgnr);
 }
 
+/// A faktura-ready company whose mva registration we choose.
+async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, mva_registrert: bool) -> Uuid {
+    let id = regnmed_db::create_company(pool, &unique_orgnr(), navn)
+        .await
+        .unwrap();
+    gjor_fakturaklar(pool, id).await;
+    // gjor_fakturaklar records a registered row from 2000-01-01; a LATER
+    // row is what an unregistration (or a never-registered company set
+    // straight) looks like, and it exercises the dated lookup rather than
+    // an empty table.
+    regnmed_db::record_registrering(
+        pool,
+        id,
+        chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            mva_registrert,
+            foretaksregistrert: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
+    id
+}
+
+/// Mva on our OWN abonnementsfakturaer follows the ops company's
+/// registration, never a constant.
+///
+/// mval. §11-4: a seller who is not registered in Merverdiavgiftsregisteret
+/// must not state merverdiavgift on a salgsdokument — and would owe the
+/// state any amount stated anyway. The two ops companies here differ in
+/// exactly one fact, so the assertions below are the difference that fact
+/// makes: the code on the line, the mva on the faktura, and the gross the
+/// card rail would charge.
+#[tokio::test]
+async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
+    let Some((state, _idp, kunde_a, _admin)) = oppsett().await else {
+        return;
+    };
+    let kunde_b = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kunde B AS")
+        .await
+        .unwrap();
+    gjor_fakturaklar(&state.pool, kunde_b).await;
+
+    let idag = Utc::now().date_naive();
+    let fra = NaiveDateHelper::forste_i_maneden(idag);
+    for kunde in [kunde_a, kunde_b] {
+        regnmed_db::abonnement::tegn(
+            &state.pool,
+            kunde,
+            "standard",
+            fra,
+            None,
+            "test: dekning",
+            "test",
+        )
+        .await
+        .unwrap();
+    }
+
+    let registrert = driftsselskap(&state.pool, "Drift Registrert AS", true).await;
+    let utenfor = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
+
+    let linje = async |drift: Uuid, kunde: Uuid| -> (String, i64, i64) {
+        let utfall = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+            .await
+            .unwrap();
+        let vare = utfall
+            .iter()
+            .find(|u| u.company_id == kunde)
+            .expect("kundeselskapet i utfallet");
+        let id = vare
+            .invoice_id
+            .unwrap_or_else(|| panic!("faktura skal være utstedt, men: {:?}", vare.detail));
+        sqlx::query_as::<_, (String, i64, i64)>(
+            "select l.vat_code, l.vat_ore::bigint, l.net_ore::bigint
+             from invoice_line l where l.invoice_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap()
+    };
+
+    let pris = regnmed_db::abonnement::pris_pa(&state.pool, "standard", idag)
+        .await
+        .unwrap();
+
+    let (kode, mva, netto) = linje(registrert, kunde_a).await;
+    assert_eq!(kode, "3", "registrert selger fakturerer utgående mva");
+    assert_eq!(netto, pris);
+    assert!(mva > 0, "25 % skulle vært beregnet, men mva_ore = {mva}");
+
+    let (kode, mva, netto) = linje(utenfor, kunde_b).await;
+    assert_eq!(
+        kode, "7",
+        "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
+    );
+    assert_eq!(mva, 0, "mval. §11-4: ingen mva skal oppgis");
+    assert_eq!(
+        netto, pris,
+        "prisen er den samme — bare avgiften faller bort"
+    );
+
+    // The same fact decides the Stripe Price: the card is charged the
+    // gross, and bokfor_stripe_betaling asserts charge == fordring.
+    let brutto_registrert =
+        regnmed_db::abonnement::brutto_for(&state.pool, registrert, "standard", "month", idag)
+            .await
+            .unwrap();
+    let brutto_utenfor =
+        regnmed_db::abonnement::brutto_for(&state.pool, utenfor, "standard", "month", idag)
+            .await
+            .unwrap();
+    assert!(brutto_registrert > pris, "registrert selger trekker brutto");
+    assert_eq!(
+        brutto_utenfor, pris,
+        "kortet skal trekkes fakturaens beløp — en Stripe-pris med 25 % \
+         på en uregistrert selger ville sprengt beløpskontrollen i \
+         bokfor_stripe_betaling ved hvert eneste trekk"
+    );
+}
+
 struct NaiveDateHelper;
 impl NaiveDateHelper {
     fn forste_i_maneden(d: chrono::NaiveDate) -> chrono::NaiveDate {
