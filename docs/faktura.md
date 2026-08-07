@@ -42,8 +42,33 @@ reversing-voucher rule.
   DB read; nothing renders on the request path.
 - Contents per bokføringsforskriften §5-1-1: nummer/dato, selger med
   orgnr ("MVA" when the document carries VAT, "Foretaksregisteret" for
-  AS/ASA), kjøper, linjer, mva spesifisert i NOK per sats, forfall,
-  KID og kontonummer.
+  AS/ASA), kjøper, **leveringstidspunkt (og -sted)**, linjer, mva
+  spesifisert i NOK per sats, forfall, KID og kontonummer.
+
+### Leveringstidspunkt (§5-1-1 nr. 4, #81)
+
+The forskrift requires *when* the ytelse was delivered on every
+salgsdokument, and it is **not** the same fact as the invoice date —
+anything billed in arrears separates them. `InvoiceDraft.delivery_date`
+is therefore not an `Option`: every caller has to decide. The choices
+in the tree today:
+
+| Path | Leveringsdato |
+| --- | --- |
+| `POST …/invoices` | `leveringsdato` in the request; omitted = the invoice date (the default is declared at the boundary, and the portal always sends it) |
+| Timer → faktura | the **last day worked** among the billed hours — that is when the ytelse was complete, often weeks before billing |
+| Kombinert faktura (varer + timer) | the caller's date, unless hours were worked later; then the later one wins, so the document cannot claim delivery before the work happened |
+| Ordre → faktura | `leveringsdato` on the request; omitted = the invoice date |
+| Repeterende faktura | the period's own start date (`neste_dato`) |
+| Kreditnota | the **original** invoice's delivery date — it credits that delivery; dating it today would assert a delivery that never happened |
+| Tilbud / ordrebekreftelse | none: nothing is delivered yet, and these are not salgsdokumenter |
+
+The database column is **nullable, deliberately**: invoices issued
+before #81 have no recorded delivery date, and backfilling them with
+the invoice date would invent a legal fact on an immutable document.
+That history stays visibly incomplete; the requirement is enforced at
+issue time instead. In EHF the field is `cac:Delivery/cbc:ActualDeliveryDate`
+(BT-72) — omitted entirely rather than guessed when absent.
 - **Kontaktinfo** (migration 0019, editable master data, never hashed):
   company address/kontonummer/selskapsform via
   `GET/PUT /companies/{id}/settings` (PUT is admin-only); party

@@ -287,6 +287,8 @@ mod tests {
             kjopers_referanse: None,
             selger: part("Grossisten AS", "915933149"),
             kjoper: part("Vår Klient AS", "923609016"),
+            leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 2),
+            leveringssted: None,
             kontonummer: Some("86011117947".into()),
             kid: Some("1234567897".into()),
             linjer: vec![

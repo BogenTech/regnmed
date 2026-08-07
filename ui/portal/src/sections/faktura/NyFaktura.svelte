@@ -12,6 +12,11 @@
   let partyNo = $state(untrack(() => parties[0]?.party_no || ""));
   let invoiceDate = $state(today());
   let dueDate = $state(today());
+  // Følger fakturadatoen inntil brukeren rører feltet; etter det er den
+  // et selvstendig valg og skal ikke overstyres i ryggen.
+  let leveringsdato = $state(today());
+  let leveringsdatoRort = $state(false);
+  let leveringssted = $state("");
   let produkt = $state("");
   let valuta = $state("");
   let description = $state("");
@@ -24,6 +29,11 @@
   // Et valgt produkt leverer pris og mva med mindre de overstyres.
   $effect(() => {
     vatCode = produkt ? "" : "3";
+  });
+
+  $effect(() => {
+    const dato = invoiceDate;
+    if (!untrack(() => leveringsdatoRort)) leveringsdato = dato;
   });
 
   // Én faktura kan bære varer OG timer (docs/timer.md): personlinjer
@@ -75,6 +85,8 @@
         party_no: partyNo,
         invoice_date: invoiceDate,
         due_date: dueDate,
+        leveringsdato,
+        leveringssted: leveringssted.trim() || null,
         valuta: valuta || null,
         lines: [line],
         timer_entry_ids: timerUtvalg.entryIds.length ? timerUtvalg.entryIds : null,
@@ -106,6 +118,26 @@
         <label class="fieldset">
           <span class="fieldset-legend">Forfall</span>
           <input type="date" class="input" bind:value={dueDate} />
+        </label>
+      </div>
+      <!-- Leveringstidspunktet er lovpålagt på salgsdokumentet
+           (bokføringsforskriften §5-1-1 nr. 4). Det følger fakturadatoen
+           til noen endrer det — det vanlige tilfellet er levering samme
+           dag — men feltet står synlig, for datoene skiller lag så snart
+           noe faktureres etterskuddsvis. -->
+      <div class="grid grid-cols-2 gap-2">
+        <label class="fieldset">
+          <span class="fieldset-legend">Leveringsdato</span>
+          <input
+            type="date"
+            class="input"
+            bind:value={leveringsdato}
+            oninput={() => (leveringsdatoRort = true)}
+          />
+        </label>
+        <label class="fieldset">
+          <span class="fieldset-legend">Leveringssted (valgfritt)</span>
+          <input class="input" placeholder="F.eks. Lagerveien 3, Oslo" bind:value={leveringssted} />
         </label>
       </div>
       {#if products.length}

@@ -165,6 +165,10 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
             party_no: kunde_no.clone(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            // Delivered before it was invoiced, so the rendered EHF
+            // cannot pass by echoing the invoice date.
+            delivery_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+            delivery_place: None,
             journal_code: "GL".into(),
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
@@ -230,6 +234,12 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
         xml.contains(&format!("<cbc:PaymentID>{}</cbc:PaymentID>", issued.kid)),
         "KID-en følger med som betalingsreferanse"
     );
+    // §5-1-1 nr. 4 / BT-72: the delivery date reaches the wire, and it
+    // is the one that was recorded — not the invoice date.
+    assert!(
+        xml.contains("<cbc:ActualDeliveryDate>2026-06-27</cbc:ActualDeliveryDate>"),
+        "leveringstidspunktet mangler i EHF: {xml}"
+    );
     // 2 × 1 250 = 2 500 + 25 % mva, plus 500 without mva.
     assert!(
         xml.contains("<cbc:TaxInclusiveAmount currencyID=\"NOK\">3625.00</cbc:TaxInclusiveAmount>")
@@ -252,6 +262,13 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     assert!(
         credit_xml.contains(&format!("<cbc:ID>{}</cbc:ID>", issued.invoice_no)),
         "kreditnotaen navngir fakturaen den krediterer"
+    );
+    // The kreditnota repeats the ORIGINAL leveringstidspunkt: it
+    // credits that delivery, and dating it "today" would assert a
+    // delivery that never happened.
+    assert!(
+        credit_xml.contains("<cbc:ActualDeliveryDate>2026-06-27</cbc:ActualDeliveryDate>"),
+        "kreditnotaen skal peke på den opprinnelige leveringen: {credit_xml}"
     );
 
     // ---- Inn: en mottatt EHF i innboksen ----

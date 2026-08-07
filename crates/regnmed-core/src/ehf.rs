@@ -100,6 +100,13 @@ pub struct EhfDokument {
     pub kjopers_referanse: Option<String>,
     pub selger: EhfPart,
     pub kjoper: EhfPart,
+    /// Leveringstidspunkt (EN 16931 BT-72). Mandatory on the Norwegian
+    /// salgsdokument (bokføringsforskriften §5-1-1 nr. 4); `None` only
+    /// for invoices issued before regnmed recorded it (#81).
+    pub leveringsdato: Option<NaiveDate>,
+    /// Leveringssted (BT-71 / BG-15) as a single free-text line — we
+    /// have no structured deliver-to address to split.
+    pub leveringssted: Option<String>,
     pub kontonummer: Option<String>,
     pub kid: Option<String>,
     pub linjer: Vec<EhfLinje>,
@@ -326,6 +333,24 @@ pub fn render(doc: &EhfDokument) -> String {
     write_party(&mut w, "cac:AccountingSupplierParty", &doc.selger);
     write_party(&mut w, "cac:AccountingCustomerParty", &doc.kjoper);
 
+    // cac:Delivery sits between the customer party and PaymentMeans in
+    // the UBL 2.1 sequence — the XSD run in tests and CI enforces that,
+    // so a wrong position fails loudly rather than shipping.
+    if doc.leveringsdato.is_some() || doc.leveringssted.is_some() {
+        w.open("cac:Delivery");
+        if let Some(dato) = doc.leveringsdato {
+            w.leaf("cbc:ActualDeliveryDate", &dato.to_string());
+        }
+        if let Some(sted) = &doc.leveringssted {
+            w.open("cac:DeliveryLocation");
+            w.open("cac:Address");
+            w.leaf("cbc:StreetName", sted);
+            w.close("cac:Address");
+            w.close("cac:DeliveryLocation");
+        }
+        w.close("cac:Delivery");
+    }
+
     if doc.dokumenttype == Dokumenttype::Faktura
         && let Some(konto) = &doc.kontonummer
     {
@@ -451,6 +476,8 @@ mod tests {
             kjopers_referanse: Some("Bestilling 42".into()),
             selger: part("Selger AS", "915933149", true),
             kjoper: part("Kjøper & Sønn AS", "923609016", true),
+            leveringsdato: NaiveDate::from_ymd_opt(2026, 6, 28),
+            leveringssted: Some("Lagerveien 3, 0666 Oslo".into()),
             kontonummer: Some("86011117947".into()),
             kid: Some("1234567897".into()),
             linjer: vec![
@@ -487,6 +514,39 @@ mod tests {
         assert!(xml.contains("<cbc:PaymentID>1234567897</cbc:PaymentID>"));
     }
 
+    /// Leveringstidspunktet er lovpålagt på salgsdokumentet
+    /// (bokføringsforskriften §5-1-1 nr. 4) og BT-72 i EN 16931. Det må
+    /// stå på BÅDE faktura og kreditnota, og cac:Delivery må ligge
+    /// mellom kjøperen og betalingsopplysningene — UBL-sekvensen er
+    /// bundet, og XSD-testen under fanger feil plassering.
+    #[test]
+    fn the_delivery_date_is_carried_on_both_document_kinds() {
+        for kind in [Dokumenttype::Faktura, Dokumenttype::Kreditnota] {
+            let xml = render(&dokument(kind));
+            assert!(
+                xml.contains("<cbc:ActualDeliveryDate>2026-06-28</cbc:ActualDeliveryDate>"),
+                "{kind:?} mangler leveringstidspunkt"
+            );
+            assert!(xml.contains("<cbc:StreetName>Lagerveien 3, 0666 Oslo</cbc:StreetName>"));
+            let delivery = xml.find("<cac:Delivery>").expect("cac:Delivery");
+            let kjoper = xml
+                .find("<cac:AccountingCustomerParty>")
+                .expect("kjøperparten");
+            assert!(delivery > kjoper, "cac:Delivery must follow the buyer");
+        }
+    }
+
+    /// A document with no recorded delivery (issued before #81) omits
+    /// the element entirely rather than shipping an empty one.
+    #[test]
+    fn a_document_without_a_delivery_omits_the_element() {
+        let mut doc = dokument(Dokumenttype::Faktura);
+        doc.leveringsdato = None;
+        doc.leveringssted = None;
+        let xml = render(&doc);
+        assert!(!xml.contains("cac:Delivery"));
+    }
+
     #[test]
     fn amounts_are_integer_ore_with_a_dot_and_a_currency_code() {
         let xml = render(&dokument(Dokumenttype::Faktura));
@@ -497,7 +557,21 @@ mod tests {
         assert!(xml.contains(
             "<cbc:LineExtensionAmount currencyID=\"NOK\">3000.00</cbc:LineExtensionAmount>"
         ));
-        assert!(!xml.contains(','), "desimalskilletegn i XML er punktum");
+        // Desimalskilletegnet i XML er punktum. Sjekken gjelder de
+        // NUMERISKE elementene, ikke hele dokumentet: et navn eller en
+        // leveringsadresse ("Lagerveien 3, 0666 Oslo") kan inneholde
+        // komma helt lovlig, og en blankosjekk på hele teksten ville
+        // gjort testen til en felle for fri tekst i stedet for en vakt
+        // på tallformatet.
+        for line in xml.lines() {
+            let numerisk = ["Amount", "Quantity", "Percent"]
+                .iter()
+                .any(|tag| line.contains(tag));
+            assert!(
+                !(numerisk && line.contains(',')),
+                "desimalskilletegn i XML er punktum: {line}"
+            );
+        }
     }
 
     #[test]

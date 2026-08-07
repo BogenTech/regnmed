@@ -384,6 +384,11 @@ pub async fn generate_one(
         party_no: template.get("party_no"),
         invoice_date: neste_dato,
         due_date: neste_dato + chrono::Days::new(template.get::<i32, _>("forfall_dager") as u64),
+        // A repeating invoice bills the period that starts on
+        // `neste_dato`; that date is both when it is issued and when
+        // the period's ytelse begins to be delivered.
+        delivery_date: neste_dato,
+        delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),

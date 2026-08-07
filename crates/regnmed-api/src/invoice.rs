@@ -26,6 +26,15 @@ pub struct CreateInvoiceRequest {
     party_no: String,
     invoice_date: chrono::NaiveDate,
     due_date: chrono::NaiveDate,
+    /// Leveringstidspunkt (bokføringsforskriften §5-1-1 nr. 4).
+    /// Omitted = the invoice date, which is the ordinary case: billed
+    /// on delivery. The default is stated HERE, at the boundary, so it
+    /// is one documented decision rather than an assumption buried in
+    /// the posting — the portal always sends it explicitly.
+    leveringsdato: Option<chrono::NaiveDate>,
+    /// Leveringssted, required "der det er relevant" — typically a
+    /// vareleveranse to an address other than the buyer's.
+    leveringssted: Option<String>,
     /// Defaults: journal GL, receivable 1500, VAT account 2700.
     journal: Option<String>,
     receivable_account: Option<String>,
@@ -72,6 +81,8 @@ pub async fn create_invoice(
         party_no: request.party_no,
         invoice_date: request.invoice_date,
         due_date: request.due_date,
+        delivery_date: request.leveringsdato.unwrap_or(request.invoice_date),
+        delivery_place: request.leveringssted,
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),

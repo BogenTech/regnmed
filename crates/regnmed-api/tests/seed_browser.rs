@@ -92,6 +92,8 @@ async fn seed_browser_demo() {
                 party_no: party_no.clone(),
                 invoice_date,
                 due_date,
+                delivery_date: invoice_date,
+                delivery_place: None,
                 journal_code: "GL".into(),
                 receivable_account: "1500".into(),
                 vat_account: "2700".into(),

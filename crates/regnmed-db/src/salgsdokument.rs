@@ -272,6 +272,8 @@ pub async fn ordre_to_invoice(
     ordre_id: Uuid,
     invoice_date: NaiveDate,
     due_date: NaiveDate,
+    delivery_date: NaiveDate,
+    delivery_place: Option<&str>,
     created_by: &str,
 ) -> Result<IssuedInvoice> {
     let mut tx = pool.begin().await?;
@@ -295,6 +297,8 @@ pub async fn ordre_to_invoice(
         party_no: ordre.get("party_no"),
         invoice_date,
         due_date,
+        delivery_date,
+        delivery_place: delivery_place.map(str::to_owned),
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
@@ -494,6 +498,11 @@ pub async fn salgsdokument_pdf(
         fakturanr: doc.get("doc_no"),
         fakturadato: doc_date,
         forfallsdato: doc_date,
+        // A tilbud/ordrebekreftelse is not a salgsdokument — nothing is
+        // delivered yet, so §5-1-1's leveringstidspunkt does not apply
+        // and stating one would be a promise we did not make.
+        leveringsdato: None,
+        leveringssted: None,
         kid: String::new(),
         valuta: None,
         motverdi_nok_ore: None,

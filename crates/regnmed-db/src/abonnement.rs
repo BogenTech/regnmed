@@ -588,6 +588,10 @@ pub async fn bokfor_stripe_betaling(
         party_no,
         invoice_date: idag,
         due_date: idag,
+        // Stripe has already collected for the period that starts now;
+        // the abonnementet is delivered from this date.
+        delivery_date: idag,
+        delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
@@ -1022,6 +1026,10 @@ async fn fakturer_en(
         party_no,
         invoice_date: idag,
         due_date: idag + chrono::Days::new(14),
+        // The monthly run bills the month it runs in — that month is
+        // the period being delivered.
+        delivery_date: idag,
+        delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),

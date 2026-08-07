@@ -199,6 +199,9 @@ pub async fn quote_to_order(
 pub struct ToInvoiceRequest {
     invoice_date: Option<chrono::NaiveDate>,
     due_date: Option<chrono::NaiveDate>,
+    /// Leveringstidspunkt (§5-1-1 nr. 4); omitted = the invoice date.
+    leveringsdato: Option<chrono::NaiveDate>,
+    leveringssted: Option<String>,
 }
 
 pub async fn order_to_invoice(
@@ -224,6 +227,8 @@ pub async fn order_to_invoice(
         order_id,
         invoice_date,
         due_date,
+        request.leveringsdato.unwrap_or(invoice_date),
+        request.leveringssted.as_deref(),
         created_by,
     )
     .await

@@ -84,6 +84,14 @@ pub struct FakturaPdfInput {
     pub fakturanr: i64,
     pub fakturadato: NaiveDate,
     pub forfallsdato: NaiveDate,
+    /// Leveringstidspunkt — bokføringsforskriften §5-1-1 nr. 4 requires
+    /// it on every salgsdokument. `None` only for invoices issued
+    /// before the field existed (#81): their stored PDF is what it is,
+    /// and the document renders without the line rather than inventing
+    /// a date it never recorded.
+    pub leveringsdato: Option<NaiveDate>,
+    /// Leveringssted, same hjemmel — "der det er relevant".
+    pub leveringssted: Option<String>,
     pub kid: String,
 
     /// Dokumentvaluta (docs/valuta.md). None = NOK. When set, every
@@ -175,6 +183,13 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     if input.dokumenttype == Dokumenttype::Faktura {
         fakta.push(("Forfall".into(), input.forfallsdato.to_string()));
     }
+    // Leveringstidspunkt is mandatory on the salgsdokument, so it sits
+    // with the other document facts rather than in a footnote. On a
+    // kreditnota it points at the ORIGINAL delivery — the one being
+    // credited — not at the day the correction was written.
+    if let Some(levering) = input.leveringsdato {
+        fakta.push(("Levering".into(), levering.to_string()));
+    }
     if let Some(nr) = input.krediterer_nr {
         fakta.push(("Krediterer faktura".into(), nr.to_string()));
     }
@@ -182,6 +197,20 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     for (label, value) in &fakta {
         pdf.text_right(RIGHT - 70.0, fy, 9.0, Font::Regular, label);
         pdf.text_right(RIGHT, fy, 9.0, Font::Bold, value);
+        fy += 12.0;
+    }
+    // Leveringsstedet er fri tekst og hører ikke hjemme i faktablokken:
+    // den gir verdien 70 pt før etiketten, nok til en dato og ikke til
+    // en adresse, så en adresse ville lagt seg OVER etiketten. Det er
+    // en hel linje i stedet, høyrejustert som resten.
+    if let Some(sted) = &input.leveringssted {
+        pdf.text_right(
+            RIGHT,
+            fy,
+            9.0,
+            Font::Regular,
+            &format!("Leveringssted: {sted}"),
+        );
         fy += 12.0;
     }
 
@@ -385,6 +414,8 @@ mod tests {
             fakturanr: 7,
             fakturadato: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
             forfallsdato: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
+            leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 20),
+            leveringssted: None,
             kid: "000000071".into(),
             linjer: vec![
                 PdfLinje {
@@ -429,6 +460,10 @@ mod tests {
             b"KID: 000000071",
             b"Kontonummer: 1234.56.78903",
             b"Betales innen 2026-08-07",
+            // §5-1-1 nr. 4: leveringstidspunktet, som ikke er det
+            // samme som fakturadatoen (her levert 20., fakturert 24.).
+            b"Levering",
+            b"2026-07-20",
         ] {
             assert!(
                 find(&bytes, expected).is_some(),
@@ -437,6 +472,22 @@ mod tests {
             );
         }
         assert_eq!(bytes, render_faktura_pdf(&input()), "deterministic");
+    }
+
+    /// Leveringsstedet er fri tekst av ukjent lengde. Faktablokken gir
+    /// verdien 70 pt før etiketten — nok til en dato, ikke til en
+    /// adresse — så stedet skrives som ÉN linje. Testen fester at det
+    /// er én sammenhengende tekststreng: to separate strenger ville
+    /// vært den overlappende varianten som ble funnet i nettleseren.
+    #[test]
+    fn the_delivery_place_is_one_line_not_a_label_value_pair() {
+        let mut i = input();
+        i.leveringssted = Some("Lagerveien 3, 0666 Oslo".into());
+        let bytes = render_faktura_pdf(&i);
+        assert!(find(&bytes, b"Leveringssted: Lagerveien 3, 0666 Oslo").is_some());
+        // Etiketten skal ikke også stå alene et sted — da ville den
+        // ligget i faktablokken, der adressen kolliderer med den.
+        assert!(find(&bytes, b"(Leveringssted) Tj").is_none());
     }
 
     #[test]

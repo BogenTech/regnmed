@@ -33,6 +33,16 @@ pub struct InvoiceDraft {
     pub party_no: String,
     pub invoice_date: NaiveDate,
     pub due_date: NaiveDate,
+    /// Leveringstidspunkt (bokføringsforskriften §5-1-1 nr. 4). NOT an
+    /// Option: every salgsdokument must state when the ytelse was
+    /// delivered, so the caller has to decide. The invoice date is a
+    /// legitimate value — it is the usual one — but it has to be
+    /// CHOSEN here, never assumed further down.
+    pub delivery_date: NaiveDate,
+    /// Leveringssted, same hjemmel. Optional because the forskrift asks
+    /// for it "der det er relevant" — a place is meaningful for a
+    /// vareleveranse and rarely for a fjernlevert tjeneste.
+    pub delivery_place: Option<String>,
     pub journal_code: String,
     pub receivable_account: String,
     pub vat_account: String,
@@ -242,8 +252,8 @@ pub async fn create_invoice_in(
     sqlx::query(
         "insert into invoice (id, company_id, party_id, invoice_no, invoice_date, due_date,
                               kid, credits_invoice_id, voucher_id, receivable_entry_id, created_by,
-                              valuta)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                              valuta, delivery_date, delivery_place)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(invoice_id)
     .bind(company_id)
@@ -257,6 +267,8 @@ pub async fn create_invoice_in(
     .bind(receivable_entry_id)
     .bind(created_by)
     .bind(&draft.valuta)
+    .bind(draft.delivery_date)
+    .bind(&draft.delivery_place)
     .execute(&mut **tx)
     .await?;
 
@@ -323,6 +335,8 @@ pub async fn create_invoice_in(
         fakturanr: invoice_no,
         fakturadato: draft.invoice_date,
         forfallsdato: draft.due_date,
+        leveringsdato: Some(draft.delivery_date),
+        leveringssted: draft.delivery_place.clone(),
         kid: kid.clone(),
         valuta: draft.valuta.clone(),
         motverdi_nok_ore: draft.valuta.as_ref().map(|_| gross_nok_ore),
@@ -464,6 +478,7 @@ pub async fn credit_invoice(
 ) -> Result<IssuedInvoice> {
     let original = sqlx::query(
         "select i.id, i.invoice_no, i.receivable_entry_id, p.party_no, i.valuta,
+                i.invoice_date, i.delivery_date, i.delivery_place,
                 (select e.kurs_micro from entry e where e.id = i.receivable_entry_id)
                     as kurs_micro,
                 (select exists (select 1 from invoice c where c.credits_invoice_id = i.id))
@@ -507,6 +522,16 @@ pub async fn credit_invoice(
         party_no: original.get("party_no"),
         invoice_date: today,
         due_date: today,
+        // The kreditnota credits a delivery that already happened, so
+        // it repeats the ORIGINAL leveringstidspunkt — dating it today
+        // would state that something was delivered on the day the
+        // correction was written. Invoices issued before #81 have no
+        // recorded delivery date; their own invoice date is the closest
+        // fact we hold, and it beats leaving the field empty.
+        delivery_date: original
+            .get::<Option<NaiveDate>, _>("delivery_date")
+            .unwrap_or_else(|| original.get("invoice_date")),
+        delivery_place: original.get("delivery_place"),
         journal_code: line_rows[0].get("journal_code"),
         receivable_account: line_rows[0].get("receivable_account"),
         vat_account: "2700".into(),

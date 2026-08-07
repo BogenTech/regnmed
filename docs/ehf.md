@@ -42,6 +42,14 @@ Detaljer verdt å vite:
 - Kreditnota bruker `CreditNote`-elementene, koden 381, og navngir
   fakturaen den krediterer i `BillingReference`. Ingen forfallsdato,
   ingen betalingsinformasjon.
+- **Leveringstidspunktet** (`cac:Delivery/cbc:ActualDeliveryDate`,
+  BT-72) følger med på både faktura og kreditnota — lovpålagt på
+  salgsdokumentet uansett kanal (bokføringsforskriften §5-1-1 nr. 4,
+  docs/faktura.md). `cac:Delivery` ligger mellom kjøperparten og
+  betalingsopplysningene; UBL-sekvensen er bundet, og XSD-kjøringen i
+  testene og CI fanger feil plassering. Fakturaer utstedt før #81 har
+  ingen registrert leveringsdato, og da utelates elementet helt
+  framfor å gjette.
 - Adressen vår er fritekst i masterdata og EHF vil ha den delt; en form
   vi kjenner igjen («Storgata 1, 0155 Oslo») deles, en vi ikke kjenner
   igjen går ut hel som gatelinje. Bedre en komplett adresse i ett felt

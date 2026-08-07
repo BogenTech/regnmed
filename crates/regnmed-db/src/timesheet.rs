@@ -409,6 +409,9 @@ struct UnbilledRow {
     kunde_navn: Option<String>,
     timesats_ore: i64,
     minutter: i64,
+    /// The day the work was done — the leveringstidspunkt of an hours
+    /// invoice is the last of these, not the day someone billed it.
+    dato: NaiveDate,
 }
 
 async fn unbilled_rows(
@@ -419,7 +422,7 @@ async fn unbilled_rows(
 ) -> Result<Vec<UnbilledRow>> {
     let rows = sqlx::query(
         "select d.code as prosjekt, p.party_no as kunde, p.name as kunde_navn,
-                t.timesats_ore, t.id, t.minutter, t.person_id,
+                t.timesats_ore, t.id, t.minutter, t.person_id, t.dato,
                 coalesce(pe.name, pe.oidc_sub) as person_navn
          from time_entry t
          join person pe on pe.id = t.person_id
@@ -446,8 +449,17 @@ async fn unbilled_rows(
             kunde_navn: row.get("kunde_navn"),
             timesats_ore: row.get("timesats_ore"),
             minutter: i64::from(row.get::<i32, _>("minutter")),
+            dato: row.get("dato"),
         })
         .collect())
+}
+
+/// Leveringstidspunkt for an hours invoice: the last day any of the
+/// billed hours was worked. That is when the ytelse was fully
+/// delivered — the invoice date only says when someone got around to
+/// billing it, and may be weeks later.
+fn siste_arbeidsdag(rows: &[UnbilledRow]) -> Option<NaiveDate> {
+    rows.iter().map(|r| r.dato).max()
 }
 
 fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
@@ -585,6 +597,11 @@ pub async fn create_invoice_with_hours(
     );
     let mut rows = unbilled_rows(pool, company_id, None, None).await?;
     behold_utvalg(&mut rows, entry_ids)?;
+    // A combined invoice carries goods lines AND hours. The caller's
+    // leveringsdato governs — it decided what this document delivers —
+    // but hours worked after that date would make it a lie, so the
+    // later of the two wins.
+    let siste_time = siste_arbeidsdag(&rows);
     let groups = grupper(rows);
 
     let mut lines = draft.lines.clone();
@@ -593,6 +610,10 @@ pub async fn create_invoice_with_hours(
         party_no: draft.party_no.clone(),
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
+        delivery_date: siste_time
+            .filter(|d| *d > draft.delivery_date)
+            .unwrap_or(draft.delivery_date),
+        delivery_place: draft.delivery_place.clone(),
         journal_code: draft.journal_code.clone(),
         receivable_account: draft.receivable_account.clone(),
         vat_account: draft.vat_account.clone(),
@@ -637,6 +658,9 @@ pub async fn bill_hours(
     if let Some(valgte) = entry_ids {
         behold_utvalg(&mut rows, valgte)?;
     }
+    // Leveringstidspunktet er den siste arbeidsdagen som faktureres,
+    // ikke fakturadatoen: timene ble levert da de ble utført.
+    let levering = siste_arbeidsdag(&rows).unwrap_or(invoice_date);
     let groups = grupper(rows);
     ensure!(!groups.is_empty(), "ingen ufakturerte fakturerbare timer");
 
@@ -645,6 +669,8 @@ pub async fn bill_hours(
         party_no: party_no.to_string(),
         invoice_date,
         due_date,
+        delivery_date: levering,
+        delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),

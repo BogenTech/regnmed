@@ -50,7 +50,7 @@ pub(crate) fn split_adresse(
 pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result<String> {
     let head = sqlx::query(
         "select i.invoice_no, i.invoice_date, i.due_date, i.kid, i.valuta,
-                i.credits_invoice_id,
+                i.credits_invoice_id, i.delivery_date, i.delivery_place,
                 (select k.invoice_no from invoice k where k.id = i.credits_invoice_id)
                     as krediterer_nr,
                 c.name as selger_navn, c.orgnr as selger_orgnr, c.address as selger_adresse,
@@ -130,6 +130,10 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         // BT-10 is the buyer's own reference; we send the customer
         // number we know them by until an order reference exists.
         kjopers_referanse: head.get::<Option<String>, _>("party_no"),
+        // BT-72. Null only on invoices issued before #81 — the element
+        // is then omitted rather than filled with a guess.
+        leveringsdato: head.get("delivery_date"),
+        leveringssted: head.get("delivery_place"),
         selger: EhfPart {
             navn: head.get("selger_navn"),
             orgnr: head.get("selger_orgnr"),
