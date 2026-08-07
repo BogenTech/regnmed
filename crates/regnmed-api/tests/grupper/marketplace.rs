@@ -17,6 +17,7 @@ use regnmed_api::{AppState, router};
 const COMPANY_ORGNR: &str = "923609016"; // in BRREG, no autorisasjon
 const FIRM_ORGNR: &str = "974760673"; // in BRREG, autorisert regnskap
 const DELETED_ORGNR: &str = "971524960"; // slettet in BRREG
+const AVVIKLING_ORGNR: &str = "915933149"; // under avvikling in BRREG
 
 /// One mock serving both registries' URL shapes.
 async fn start_mock_registries() -> String {
@@ -32,6 +33,26 @@ async fn start_mock_registries() -> String {
                         "organisasjonsform": {"kode": "AS", "beskrivelse": "Aksjeselskap"},
                         "naeringskode1": {"kode": "62.010", "beskrivelse": "Programmeringstjenester"},
                         "registrertIMvaregisteret": true,
+                        "registrertIForetaksregisteret": true,
+                        // Independent dates: the mva registration is a
+                        // year later than the foretaksregister one.
+                        "registreringsdatoForetaksregisteret": "2019-03-04",
+                        "registreringsdatoMerverdiavgiftsregisteret": "2020-06-15",
+                        "forretningsadresse": {
+                            "adresse": ["Storgata 1"],
+                            "postnummer": "0155",
+                            "poststed": "OSLO"
+                        },
+                        "epostadresse": "post@testselskap.no",
+                        "kapital": {"belop": 30000.0, "antallAksjer": 1000,
+                                    "type": "Aksjekapital", "valuta": "NOK"},
+                        "konkurs": false
+                    }),
+                    AVVIKLING_ORGNR => serde_json::json!({
+                        "organisasjonsnummer": AVVIKLING_ORGNR,
+                        "navn": "AVVIKLES AS",
+                        "organisasjonsform": {"kode": "AS", "beskrivelse": "Aksjeselskap"},
+                        "underAvvikling": true,
                         "konkurs": false
                     }),
                     FIRM_ORGNR => serde_json::json!({
@@ -168,6 +189,46 @@ async fn onboarding_from_registries_end_to_end() {
     assert_eq!(onboarded["seeded_accounts"], 10);
     let company_id = onboarded["company_id"].as_str().unwrap();
 
+    // Master data is taken from the register rather than asked for: the
+    // salgsdokument needs the address (§5-1-2), and the rest has a named
+    // consumer (næringskode → #11, aksjekapital → #43).
+    let (status, settings) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company_id}/settings"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["address"], "Storgata 1, 0155 OSLO");
+    assert_eq!(settings["email"], "post@testselskap.no");
+    assert_eq!(settings["orgform"], "AS");
+
+    let (naering, kapital, aksjer): (Option<String>, Option<i64>, Option<i64>) = sqlx::query_as(
+        "select naeringskode, aksjekapital_ore, antall_aksjer from company where id = $1::uuid",
+    )
+    .bind(company_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(naering.as_deref(), Some("62.010"));
+    // 30 000 kr as integer øre — the registry sends a JSON float.
+    assert_eq!(kapital, Some(3_000_000));
+    assert_eq!(aksjer, Some(1000));
+
+    // The two registers have INDEPENDENT dates, so the timeline has one
+    // row per change. A document dated between them must carry only the
+    // påtegning that applied then (#81) — the whole point of the dating.
+    let historikk = settings["registrering_historikk"].as_array().unwrap();
+    assert_eq!(historikk.len(), 2, "en rad per endring: {historikk:?}");
+    assert_eq!(historikk[1]["valid_from"], "2019-03-04");
+    assert_eq!(historikk[1]["mva_registrert"], false);
+    assert_eq!(historikk[1]["foretaksregistrert"], true);
+    assert_eq!(historikk[0]["valid_from"], "2020-06-15");
+    assert_eq!(historikk[0]["mva_registrert"], true);
+    assert_eq!(historikk[0]["kilde"], "brreg");
+
     let (status, me) = request(&state, "GET", "/me", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     let mine = me["companies"]
@@ -207,6 +268,21 @@ async fn onboarding_from_registries_end_to_end() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "slettet enhet");
+    // Avvikling is not konkurs, so the konkurs check does not catch it —
+    // but an enhet being wound up is not a going concern to onboard.
+    let (status, body) = request(
+        &state,
+        "POST",
+        "/companies",
+        &token,
+        Some(serde_json::json!({ "orgnr": AVVIKLING_ORGNR })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "under avvikling: {body}");
+    assert!(
+        body["error"].as_str().unwrap_or("").contains("avvikling"),
+        "the refusal names the reason: {body}"
+    );
 
     // Firm creation refuses a deleted enhet before the autorisasjon
     // gate is even consulted (registry-facts parity with companies).

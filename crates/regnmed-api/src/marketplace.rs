@@ -54,7 +54,10 @@ pub async fn registry_preview(
         "organisasjonsform": enhet.organisasjonsform.as_ref().map(|k| k.kode.clone()),
         "naeringskode": enhet.naeringskode1.as_ref().map(|k| format!("{} {}", k.kode, k.beskrivelse)),
         "mva_registrert": enhet.registrert_i_mvaregisteret,
+        "foretaksregistrert": enhet.registrert_i_foretaksregisteret,
+        "adresse": enhet.forretningsadresse.as_ref().and_then(|a| a.en_linje()),
         "konkurs": enhet.konkurs,
+        "under_avvikling": enhet.under_avvikling || enhet.under_tvangsavvikling,
         "slettet": enhet.slettedato.is_some(),
         "autorisasjon": { "regnskap": regnskap, "revisjon": revisjon },
     })))
@@ -86,12 +89,31 @@ pub async fn onboard_company(
             "enheten er registrert som konkurs".into(),
         ));
     }
+    // Avvikling er ikke konkurs, så konkurs-sjekken over fanger den
+    // ikke — men en enhet under avvikling er ikke et selskap som skal
+    // begynne å føre regnskap hos oss.
+    if enhet.under_tvangsavvikling {
+        return Err(ApiError::BadRequest(
+            "enheten er under tvangsavvikling eller tvangsoppløsning".into(),
+        ));
+    }
+    if enhet.under_avvikling {
+        return Err(ApiError::BadRequest("enheten er under avvikling".into()));
+    }
 
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let kapital = enhet.kapital.as_ref();
     let facts = regnmed_db::RegistryFacts {
         orgform: enhet.organisasjonsform.as_ref().map(|k| k.kode.clone()),
         address: enhet.forretningsadresse.as_ref().and_then(|a| a.en_linje()),
-        mva_registrert: enhet.registrert_i_mvaregisteret,
-        foretaksregistrert: enhet.registrert_i_foretaksregisteret,
+        email: enhet.epostadresse.clone(),
+        naeringskode: enhet.naeringskode1.as_ref().map(|k| k.kode.clone()),
+        aksjekapital_ore: kapital.and_then(|k| k.belop_ore()),
+        antall_aksjer: kapital.and_then(|k| k.antall_aksjer),
+        registreringer: enhet.registreringstidslinje(today),
     };
     let onboarded = regnmed_db::onboard_company(
         &state.pool,
@@ -128,8 +150,8 @@ pub async fn create_firm(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
-    // Same registry facts gate as company onboarding: a deleted or
-    // bankrupt enhet cannot become a firm either.
+    // Same registry facts gate as company onboarding: a deleted,
+    // bankrupt or liquidating enhet cannot become a firm either.
     if enhet.slettedato.is_some() {
         return Err(ApiError::BadRequest(
             "enheten er slettet i Enhetsregisteret".into(),
@@ -139,6 +161,14 @@ pub async fn create_firm(
         return Err(ApiError::BadRequest(
             "enheten er registrert som konkurs".into(),
         ));
+    }
+    if enhet.under_tvangsavvikling {
+        return Err(ApiError::BadRequest(
+            "enheten er under tvangsavvikling eller tvangsoppløsning".into(),
+        ));
+    }
+    if enhet.under_avvikling {
+        return Err(ApiError::BadRequest("enheten er under avvikling".into()));
     }
 
     let verified = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env()

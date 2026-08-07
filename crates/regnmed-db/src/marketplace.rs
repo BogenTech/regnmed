@@ -3,6 +3,7 @@
 //! (regnmed-gov); this module persists the results.
 
 use anyhow::{Context, Result, bail, ensure};
+use chrono::NaiveDate;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -40,8 +41,17 @@ pub struct OnboardedCompany {
 pub struct RegistryFacts {
     pub orgform: Option<String>,
     pub address: Option<String>,
-    pub mva_registrert: bool,
-    pub foretaksregistrert: bool,
+    pub email: Option<String>,
+    pub naeringskode: Option<String>,
+    /// Registered share capital in øre, and the share count — control
+    /// figures for the aksjeeierbok (#43), never posted.
+    pub aksjekapital_ore: Option<i64>,
+    pub antall_aksjer: Option<i64>,
+    /// The registration history `(fra og med, mva, foretaksregister)`,
+    /// oldest first — the two registers have independent dates, so this
+    /// is a timeline rather than a pair of flags
+    /// (`BrregEnhet::registreringstidslinje`).
+    pub registreringer: Vec<(NaiveDate, bool, bool)>,
 }
 
 /// Creates a company from verified registry facts, makes the onboarding
@@ -62,33 +72,46 @@ pub async fn onboard_company(
     let company_id = create_company(pool, orgnr, registry_name)
         .await
         .context("creating company")?;
-    // Address and orgform straight from the register: the salgsdokument
-    // needs the address, and issuing refuses without it.
+    // Master data straight from the register: the salgsdokument needs
+    // the address (issuing refuses without it), and asking the user to
+    // type what Enhetsregisteret already knows is needless friction.
     crate::settings::update_company_settings(
         pool,
         company_id,
         facts.address.as_deref(),
         None,
         facts.orgform.as_deref(),
-        None,
+        facts.email.as_deref(),
     )
     .await?;
-    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
-        .fetch_one(pool)
+    sqlx::query(
+        "update company set naeringskode = $2, aksjekapital_ore = $3, antall_aksjer = $4
+         where id = $1",
+    )
+    .bind(company_id)
+    .bind(&facts.naeringskode)
+    .bind(facts.aksjekapital_ore)
+    .bind(facts.antall_aksjer)
+    .execute(pool)
+    .await?;
+    // One row per registration change, with the register's OWN dates —
+    // a company that entered Merverdiavgiftsregisteret in 2019 must not
+    // carry the "MVA" note on a document dated 2018 (#81).
+    for (fra, mva, foretak) in &facts.registreringer {
+        crate::settings::record_registrering(
+            pool,
+            company_id,
+            *fra,
+            crate::settings::Registrering {
+                mva_registrert: *mva,
+                foretaksregistrert: *foretak,
+            },
+            "brreg",
+            Some("Hentet fra Enhetsregisteret ved onboarding"),
+            "onboarding",
+        )
         .await?;
-    crate::settings::record_registrering(
-        pool,
-        company_id,
-        today,
-        crate::settings::Registrering {
-            mva_registrert: facts.mva_registrert,
-            foretaksregistrert: facts.foretaksregistrert,
-        },
-        "brreg",
-        Some("Hentet fra Enhetsregisteret ved onboarding"),
-        "onboarding",
-    )
-    .await?;
+    }
     ensure_company_member(pool, company_id, person_id, "admin").await?;
     ensure_journal(pool, company_id, "GL", "Hovedbok").await?;
     for (number, name) in STARTER_ACCOUNTS {

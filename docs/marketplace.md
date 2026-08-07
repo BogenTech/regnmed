@@ -40,13 +40,42 @@ Connecting further users to a created company (lønnsmottakere,
 1. Orgnr is checksum-validated (MOD11, `regnmed-core::orgnr`) before any
    lookup.
 2. Facts are fetched from BRREG's open API (`regnmed-gov::brreg`;
-   `BRREG_API_URL` overrides for tests/mirrors). Slettede and
-   konkurs-registrerte enheter are refused.
+   `BRREG_API_URL` overrides for tests/mirrors). Enheter that are
+   **slettet, konkurs, under avvikling or under tvangsavvikling** are
+   refused — the last two are not bankruptcy, so the konkurs check
+   alone missed them.
 3. The company is created with the **registry name**, the onboarding
    person becomes admin, and a starter NS 4102 kontoplan (10 accounts)
    is seeded with 1500/2400 flagged as kunde-/leverandør-reskontro —
    invoice-ready from the first minute. An orgnr can only be onboarded
    once.
+
+### What else is taken from the register
+
+The principle is that regnmed should not ask the user to type what
+Enhetsregisteret already knows, and should not *derive* what it can
+*read*:
+
+| Felt | Brukes til |
+| --- | --- |
+| `forretningsadresse` → `company.address` | påkrevd på salgsdokumentet (§5-1-2) — utstedelse nekter uten |
+| `organisasjonsform` → `company.orgform` | firmaopplysninger |
+| `epostadresse` → `company.email` | svaradresse på utsendelser |
+| `registrertIMvaregisteret` / `-IForetaksregisteret` **med registreringsdato** | påtegningene «MVA»/«Foretaksregisteret», som daterte rader |
+| `naeringskode1` → `company.naeringskode` | næringsspesifikasjonen (#11); ingen konsument ennå |
+| `kapital` → `aksjekapital_ore`, `antall_aksjer` | kontrolltall for aksjeeierboken (#43); bokføres aldri |
+
+**Registreringsdatoene er poenget, ikke flaggene.** De to registrene har
+uavhengige datoer — Equinor kom i Foretaksregisteret i 1988 og i
+Merverdiavgiftsregisteret i 1989 — så onboarding skriver ÉN RAD PER
+ENDRING (`BrregEnhet::registreringstidslinje`), ikke én rad datert i dag.
+Et dokument datert mellom dem bærer da nøyaktig de påtegningene som
+gjaldt. Uten dette ville et selskap som registrerte seg for mva i 2019
+og onboardes nå, mangle «MVA» på all importert historikk.
+
+Aksjekapitalen kommer som et JSON-**tall** og parses desimalt til øre
+(samme parser som valutakursene) — ingen float rører penger. Kapital i
+annen valuta enn NOK lagres ikke i stedet for å regnes om.
 
 `GET /registry/enheter/{orgnr}` previews the facts (incl. autorisasjon
 flags) before anything is created.
