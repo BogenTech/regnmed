@@ -109,6 +109,32 @@ gang under kode 81. De hoppes nå over som kode 0. Kodelisten sier selv
 at de ikke er obligatoriske, og at «ved selve avgiftsberegningen
 benyttes kode 81 eller kode 14».
 
+### Avgiften bokføres (#82)
+
+Beregnet avgift på omvendt avgiftsplikt og innførsel fantes bare som et
+tall i rapporten. XSD-en kaller `merverdiavgift` «Bokført beløp for
+merverdiavgift» — vi rapporterte altså et bokført beløp som ikke var
+bokført noe sted, og bokføringsforskriften §3-1 nr. 8 krever at
+merverdiavgiften spesifiseres i regnskapet.
+
+Utvidelsen skjer i POSTERINGSTRANSAKSJONEN (`post_voucher_in` →
+`expand_omvendt`), ikke i den enkelte inngangen: da kan ingen vei inn i
+hovedboken glemme den, og linjene hashes sammen med resten av bilaget.
+Satsen er den som gjaldt på BILAGSDATOEN, fra samme daterte tabell som
+spesifikasjonen — hovedboken og meldingen regner på samme kilde.
+
+| Kodetype | Linjer som legges til | Kostnaden |
+| --- | --- | --- |
+| med fradragsrett | 2701 kredit, 2711 debet | uendret |
+| uten fradragsrett | 2701 kredit, **grunnlagskontoen** debet | øker |
+
+Begge summerer til null, så et bilag som balanserte før balanserer
+etter. Ikke-fradragsberettiget avgift er en del av hva tingen kostet,
+derfor havner den på grunnlagskontoen og arver dens avdeling/prosjekt.
+Kontoene 2701/2711 opprettes ved behov, som resten av kontoplanen. De
+tillagte linjene er UKODEDE, akkurat som fakturamotorens mva-linje —
+en kode der ville telt det samme grunnlaget to ganger.
+
 **Gjenstår, uavklart mot Skatteetaten:** om en tosidig kode skal sendes
 som ÉN linje (beregnet avgift i `merverdiavgift`, fradraget bare i
 totalen — slik vi gjør nå) eller som to linjer. XSD-en tillater begge,

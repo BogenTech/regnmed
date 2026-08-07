@@ -129,6 +129,88 @@ pub async fn post_voucher(
     Ok(posted)
 }
 
+/// Konti for the computed tax. Created on demand like the rest of the
+/// self-configuring chart — a company that never imports never sees them.
+const OMVENDT_UTGAENDE: (&str, &str) = ("2701", "Beregnet mva, omvendt avgiftsplikt og innførsel");
+const OMVENDT_FRADRAG: (&str, &str) = (
+    "2711",
+    "Fradrag beregnet mva, omvendt avgiftsplikt og innførsel",
+);
+
+/// Adds the avgiftsposteringer for reverse-charge / import basis lines,
+/// or `None` when the voucher has none (the overwhelmingly common case,
+/// and then this costs one match over the entries and no query at all).
+///
+/// The rate is the one valid on the VOUCHER DATE, from the same dated
+/// table the spesifikasjon uses — so the ledger and the melding compute
+/// the same amount from the same source, which is the whole point.
+async fn expand_omvendt(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    draft: &VoucherDraft,
+) -> Result<Option<VoucherDraft>> {
+    use regnmed_core::mva::{Direction, direction};
+    let treffer = |e: &regnmed_core::voucher::EntryDraft| {
+        matches!(
+            e.vat_code.as_deref().map_or(Direction::Ingen, direction),
+            Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+        )
+    };
+    if !draft.entries.iter().any(treffer) {
+        return Ok(None);
+    }
+    let mut entries = Vec::with_capacity(draft.entries.len() + 2);
+    for entry in &draft.entries {
+        entries.push(entry.clone());
+        if !treffer(entry) {
+            continue;
+        }
+        let code = entry.vat_code.as_deref().unwrap_or_default();
+        let rate_bp: i64 = sqlx::query_scalar::<_, i32>(
+            "select r.rate_bp from vat_code c
+             join vat_rate r on r.rate_class = c.rate_class
+             where c.code = $1 and r.valid_from <= $2
+             order by r.valid_from desc limit 1",
+        )
+        .bind(code)
+        .bind(draft.voucher_date)
+        .fetch_optional(&mut **tx)
+        .await?
+        .map(i64::from)
+        .with_context(|| {
+            format!(
+                "ingen mva-sats for kode {code} per {} — satsregisteret må dekke datoen",
+                draft.voucher_date
+            )
+        })?;
+        entries.extend(regnmed_core::mva::omvendt_entries(
+            entry,
+            rate_bp,
+            OMVENDT_UTGAENDE.0,
+            OMVENDT_FRADRAG.0,
+        ));
+    }
+    for (nummer, navn) in [OMVENDT_UTGAENDE, OMVENDT_FRADRAG] {
+        sqlx::query(
+            "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
+             on conflict (company_id, number) do nothing",
+        )
+        .bind(Uuid::now_v7())
+        .bind(company_id)
+        .bind(nummer)
+        .bind(navn)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(Some(VoucherDraft {
+        entries,
+        journal_code: draft.journal_code.clone(),
+        voucher_date: draft.voucher_date,
+        description: draft.description.clone(),
+        reverses: draft.reverses,
+    }))
+}
+
 /// Transaction-taking variant, so callers (e.g. invoice issuing) can make
 /// the posting atomic with their own writes — gap-free counters on both
 /// sides survive a rollback together.
@@ -139,6 +221,17 @@ pub async fn post_voucher_in(
     created_by: &str,
 ) -> Result<PostedVoucher> {
     draft.validate()?;
+
+    // Omvendt avgiftsplikt / innførsel: the buyer's own computed tax has
+    // to reach the hovedbok (#82, bokføringsforskriften §3-1 nr. 8) —
+    // before this it existed only as a number in the report, while the
+    // mva-melding claimed to report a BOOKED amount. Expanded HERE, in
+    // the posting transaction, so no path in or out of the ledger can
+    // forget it, and so the added entries are hashed with the rest of
+    // the voucher. Both shapes net to zero, so a draft that balanced
+    // still balances.
+    let expanded = expand_omvendt(tx, company_id, draft).await?;
+    let draft = expanded.as_ref().unwrap_or(draft);
 
     // Ajourhold: locked periods reject postings — corrections go in an
     // open period as reversing vouchers. The database trigger re-checks

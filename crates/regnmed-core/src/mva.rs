@@ -255,6 +255,81 @@ pub fn direction(code: &str) -> Direction {
     }
 }
 
+/// The avgiftsposteringer a reverse-charge / import basis line must
+/// carry, so the hovedbok holds the tax the mva-melding reports
+/// (bokføringsforskriften §3-1 nr. 8; the melding XSD calls
+/// `merverdiavgift` «Bokført beløp for merverdiavgift», which it was
+/// not — the amount existed only as a computation in the report).
+///
+/// Both shapes net to zero, so a voucher that balanced before still
+/// balances after:
+/// - **Med fradragsrett**: the computed tax is a liability (2701) and
+///   an equal deduction (2711). Nothing is owed, and both sides are
+///   visible instead of silently cancelling.
+/// - **Uten fradragsrett**: the liability stands, and the offsetting
+///   debit goes to the BASIS ACCOUNT — non-deductible import tax is
+///   part of what the thing cost, not a separate expense.
+///
+/// Returns empty for every other code, so callers can apply it blindly.
+pub fn omvendt_entries(
+    basis: &crate::voucher::EntryDraft,
+    rate_bp: i64,
+    utgaende_konto: &str,
+    fradrag_konto: &str,
+) -> Vec<crate::voucher::EntryDraft> {
+    let retning = basis
+        .vat_code
+        .as_deref()
+        .map_or(Direction::Ingen, direction);
+    if !matches!(
+        retning,
+        Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+    ) {
+        return Vec::new();
+    }
+    // Sign-preserving: a reversing voucher reverses the tax with it.
+    let avgift = vat_of_base(basis.amount.0, rate_bp);
+    if avgift == 0 {
+        return Vec::new();
+    }
+    let entry = |konto: &str, belop: i64, tekst: &str, dims: bool| crate::voucher::EntryDraft {
+        account_number: konto.to_string(),
+        amount: crate::Ore(belop),
+        // Uncoded, exactly like the invoice engine's mva entry: the
+        // spesifikasjon derives grunnlag from the CODED lines, and a code
+        // here would count the same basis twice.
+        vat_code: None,
+        description: Some(tekst.to_string()),
+        party_no: None,
+        avdeling: if dims { basis.avdeling.clone() } else { None },
+        prosjekt: if dims { basis.prosjekt.clone() } else { None },
+        valuta: None,
+    };
+    let mut ut = vec![entry(
+        utgaende_konto,
+        -avgift,
+        "Beregnet mva, omvendt avgiftsplikt/innførsel",
+        false,
+    )];
+    match retning {
+        Direction::OmvendtMedFradrag => ut.push(entry(
+            fradrag_konto,
+            avgift,
+            "Fradrag for beregnet mva",
+            false,
+        )),
+        // No deduction right: the tax becomes cost, on the same account
+        // and therefore under the same avdeling/prosjekt as the basis.
+        _ => ut.push(entry(
+            &basis.account_number,
+            avgift,
+            "Ikke-fradragsberettiget beregnet mva",
+            true,
+        )),
+    }
+    ut
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,6 +424,52 @@ mod tests {
         assert_eq!(direction("14"), Direction::Inngaende, "fradragssiden alene");
         assert_eq!(direction("5"), Direction::Ingen);
         assert_eq!(direction("0"), Direction::Ingen);
+    }
+
+    /// The computed tax must reach the hovedbok, and the voucher must
+    /// still balance — otherwise the posting transaction would reject it.
+    #[test]
+    fn omvendt_avgift_is_posted_and_nets_to_zero() {
+        let basis = |code: &str| crate::voucher::EntryDraft {
+            account_number: "6800".into(),
+            amount: crate::Ore(100_000_00),
+            vat_code: Some(code.into()),
+            description: None,
+            party_no: None,
+            avdeling: None,
+            prosjekt: Some("P1".into()),
+            valuta: None,
+        };
+
+        // Full deduction right: liability and deduction, both visible.
+        let med = omvendt_entries(&basis("86"), 2500, "2701", "2711");
+        assert_eq!(med.len(), 2);
+        assert_eq!(med[0].account_number, "2701");
+        assert_eq!(med[0].amount.0, -25_000_00, "beregnet utgående avgift");
+        assert_eq!(med[1].account_number, "2711");
+        assert_eq!(med[1].amount.0, 25_000_00, "og fradraget for den");
+        assert_eq!(med.iter().map(|e| e.amount.0).sum::<i64>(), 0, "balanserer");
+        assert!(
+            med.iter().all(|e| e.vat_code.is_none()),
+            "kodede linjer ville telt grunnlaget to ganger"
+        );
+
+        // No deduction right: the tax is part of what it cost, so it
+        // lands on the basis account — and carries its prosjekt.
+        let uten = omvendt_entries(&basis("87"), 2500, "2701", "2711");
+        assert_eq!(uten[1].account_number, "6800");
+        assert_eq!(uten[1].prosjekt.as_deref(), Some("P1"));
+        assert_eq!(uten.iter().map(|e| e.amount.0).sum::<i64>(), 0);
+
+        // A reversing voucher reverses the tax with it.
+        let mut kreditert = basis("86");
+        kreditert.amount = crate::Ore(-100_000_00);
+        let rev = omvendt_entries(&kreditert, 2500, "2701", "2711");
+        assert_eq!(rev[0].amount.0, 25_000_00);
+
+        // Everything else is untouched — callers apply this blindly.
+        assert!(omvendt_entries(&basis("1"), 2500, "2701", "2711").is_empty());
+        assert!(omvendt_entries(&basis("21"), 2500, "2701", "2711").is_empty());
     }
 
     #[test]

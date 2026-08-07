@@ -185,3 +185,107 @@ async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
         .expect("2017 voucher line with code 33");
     assert_eq!(saft_line.tax_percent_bp, Some(1000));
 }
+
+/// The computed tax on omvendt avgiftsplikt reaches the HOVEDBOK, not
+/// just the report (#82, bokføringsforskriften §3-1 nr. 8).
+///
+/// The buyer posts only what they were invoiced — a foreign supplier
+/// charges no Norwegian mva, so the bilag is cost against gjeld and
+/// nothing else. The two avgiftslinjene are ours to add, in the posting
+/// transaction, or the melding reports a "bokført beløp" that is booked
+/// nowhere.
+#[tokio::test]
+async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
+    let Some(pool) = pool().await else { return };
+    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Innførsel AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [("2400", "Leverandørgjeld"), ("6800", "Konsulenttjenester")] {
+        regnmed_db::ensure_account(&pool, company, number, name)
+            .await
+            .unwrap();
+    }
+
+    // Kode 86: tjeneste kjøpt fra utlandet MED fradragsrett.
+    regnmed_db::post_voucher(
+        &pool,
+        company,
+        &voucher(
+            date(2026, 3, 5),
+            "Konsulent fra utlandet",
+            vec![
+                entry("6800", 100_000_00, Some("86")),
+                entry("2400", -100_000_00, None),
+            ],
+        ),
+        "test",
+    )
+    .await
+    .unwrap();
+
+    let saldo = |number: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<i64>>(
+                "select sum(e.amount_ore)::bigint from entry e
+                 join account a on a.id = e.account_id
+                 where a.company_id = $1 and a.number = $2",
+            )
+            .bind(company)
+            .bind(number)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .unwrap_or(0)
+        }
+    };
+
+    assert_eq!(
+        saldo("2701").await,
+        -25_000_00,
+        "beregnet utgående avgift skal stå som gjeld i hovedboken"
+    );
+    assert_eq!(saldo("2711").await, 25_000_00, "og fradraget for den");
+    assert_eq!(
+        saldo("6800").await,
+        100_000_00,
+        "full fradragsrett endrer ikke kostnaden"
+    );
+
+    // Kode 87, samme kjøp UTEN fradragsrett: avgiften er en kostnad.
+    regnmed_db::post_voucher(
+        &pool,
+        company,
+        &voucher(
+            date(2026, 3, 6),
+            "Konsulent fra utlandet, uten fradragsrett",
+            vec![
+                entry("6800", 100_000_00, Some("87")),
+                entry("2400", -100_000_00, None),
+            ],
+        ),
+        "test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        saldo("2701").await,
+        -50_000_00,
+        "avgiften skal beregnes også uten fradragsrett"
+    );
+    assert_eq!(saldo("2711").await, 25_000_00, "men ikke føres til fradrag");
+    assert_eq!(
+        saldo("6800").await,
+        225_000_00,
+        "ikke-fradragsberettiget avgift er en del av kostnaden"
+    );
+
+    // The chain still verifies: the added entries are hashed with the
+    // voucher, not smuggled past it.
+    regnmed_db::verify_chain(&pool, company)
+        .await
+        .expect("kjeden skal verifisere med de tillagte linjene");
+}
