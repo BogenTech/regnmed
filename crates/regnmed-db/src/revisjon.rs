@@ -282,6 +282,81 @@ pub async fn build_revisjon_report(
         },
     });
 
+    // 10. Balansedokumentasjon (#88): bokføringsloven §11 wants
+    // documentation of what each balance post CONSISTS OF at period end.
+    //
+    // Unlike kontroll 9 this IS an avvik. The difference is what the law
+    // asks of each: §10 says booked information shall be documented, and
+    // the documentation may lawfully live in another oppbevaringsmedium
+    // — so a missing attachment is not proof of anything. §11 says the
+    // documentation SHALL EXIST for the balance post, and regnmed is
+    // where the company records that it does. Nobody else can say it for
+    // them.
+    //
+    // Measured at the latest closed period. Without one there is nothing
+    // to document yet, and saying so beats inventing a deadline.
+    let siste_las: Option<chrono::NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await?;
+    kontroller.push(match siste_las {
+        None => Kontroll {
+            navn: "Balansedokumentasjon".into(),
+            ok: true,
+            detalj: "ingen periode er låst ennå — balansepostene dokumenteres ved periodeslutt \
+                     (bokføringsloven §11)"
+                .into(),
+        },
+        Some(periode) => {
+            let linjer = crate::balansedok::balanse_status(pool, company_id, periode).await?;
+            let udokumentert: Vec<&crate::balansedok::BalanseLinje> =
+                linjer.iter().filter(|l| l.avstemt.is_none()).collect();
+            let flyttet: Vec<(&str, i64)> = linjer
+                .iter()
+                .filter_map(|l| l.avvik_ore().map(|d| (l.konto.as_str(), d)))
+                .collect();
+            let mut deler = Vec::new();
+            if !udokumentert.is_empty() {
+                deler.push(format!(
+                    "{} av {} balansekontoer med saldo mangler dokumentasjon per {periode}: {}",
+                    udokumentert.len(),
+                    linjer.len(),
+                    udokumentert
+                        .iter()
+                        .take(10)
+                        .map(|l| format!("{} {}", l.konto, l.kontonavn))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            // Documented, then posted to. Not the same failing, and the
+            // report must not blur them: the avstemming happened, the
+            // saldo simply moved afterwards.
+            if !flyttet.is_empty() {
+                deler.push(format!(
+                    "bokført videre etter avstemming: {}",
+                    flyttet
+                        .iter()
+                        .map(|(k, d)| format!("{k} ({} øre)", d))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            Kontroll {
+                navn: "Balansedokumentasjon".into(),
+                ok: deler.is_empty(),
+                detalj: if deler.is_empty() {
+                    format!(
+                        "alle {} balansekontoer med saldo er dokumentert per {periode}",
+                        linjer.len()
+                    )
+                } else {
+                    deler.join("; ")
+                },
+            }
+        }
+    });
+
     // 8. Importert historikk (informational): which external files the
     // ledger was built from (docs/migration.md, saft_import_log). The
     // full hashes are printed so the revisor can hash the source

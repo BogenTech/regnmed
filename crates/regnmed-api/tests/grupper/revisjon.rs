@@ -138,6 +138,22 @@ async fn revisor_generates_the_verification_report() {
         .unwrap()
         .expect("ledger has vouchers");
 
+    // §11 (#88): a balance account with a saldo must be documented, or
+    // the report is right to call it an avvik. 1500 is the only one
+    // here, and documenting it is what makes this ledger "healthy".
+    regnmed_db::balansedok::avstem(
+        &state.pool,
+        company,
+        "1500",
+        NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
+        "Åpne poster i kundereskontroen, avstemt mot hovedboken",
+        None,
+        revisor,
+        NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+    )
+    .await
+    .unwrap();
+
     // Healthy ledger: every kontroll OK, anchors listed.
     let uri = format!("/companies/{company}/reports/revisjon");
     let (status, _, body) = get_raw(&state, &uri, &token).await;
@@ -145,7 +161,7 @@ async fn revisor_generates_the_verification_report() {
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
     let kontroller = report["kontroller"].as_array().unwrap();
-    assert_eq!(kontroller.len(), 9);
+    assert_eq!(kontroller.len(), 10);
     for kontroll in kontroller {
         assert_eq!(kontroll["ok"], true, "{kontroll}");
     }
@@ -156,6 +172,13 @@ async fn revisor_generates_the_verification_report() {
         kontroller.iter().any(|k| k["navn"] == "Dokumentasjon"
             && k["ok"] == true
             && k["detalj"].as_str().unwrap().contains("mangler vedlegg")),
+        "{report}"
+    );
+    assert!(
+        kontroller
+            .iter()
+            .any(|k| k["navn"] == "Balansedokumentasjon"
+                && k["detalj"].as_str().unwrap().contains("er dokumentert")),
         "{report}"
     );
     assert!(

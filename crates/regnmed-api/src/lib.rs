@@ -7,6 +7,7 @@ pub mod anchor;
 pub mod asset;
 pub mod attestering;
 pub mod auth;
+pub mod balansedok;
 pub mod bank;
 pub mod budsjett;
 pub mod byramedlemmer;
@@ -489,6 +490,22 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(asset::depreciate),
         )
         .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
+        .route(
+            "/companies/{company_id}/balansedokumentasjon",
+            get(balansedok::status).post(balansedok::avstem),
+        )
+        .route(
+            "/companies/{company_id}/balansedokumentasjon/vedlegg",
+            axum::routing::post(balansedok::avstem_med_vedlegg),
+        )
+        .route(
+            "/companies/{company_id}/balansedokumentasjon/historikk",
+            get(balansedok::historikk),
+        )
+        .route(
+            "/companies/{company_id}/balansedokumentasjon/{id}/vedlegg",
+            get(balansedok::vedlegg),
+        )
         .route(
             "/companies/{company_id}/periodiseringer",
             get(periodisering::list).post(periodisering::create),

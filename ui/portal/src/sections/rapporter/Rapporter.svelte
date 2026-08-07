@@ -12,6 +12,7 @@
   import Prosjekt from "./Prosjekt.svelte";
   import Bokforingsspesifikasjon from "./Bokforingsspesifikasjon.svelte";
   import Revisjon from "./Revisjon.svelte";
+  import Balansedokumentasjon from "./Balansedokumentasjon.svelte";
 
   let { companyId, extra } = $props();
 
@@ -24,6 +25,7 @@
     ["kontospesifikasjon", "Kontospesifikasjon"],
     ["reskontrospesifikasjon", "Reskontro"],
     ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
+    ["balansedokumentasjon", "Balansedokumentasjon"],
     ["revisjon", "Revisjon"],
   ];
 
@@ -45,6 +47,7 @@
       kontospesifikasjon: "Kontospesifikasjon " + year,
       reskontrospesifikasjon: "Kunde- og leverandørspesifikasjon " + year,
       bokforingsspesifikasjon: "Bokføringsspesifikasjon " + year,
+      balansedokumentasjon: "Balansedokumentasjon (bokføringsloven §11)",
       revisjon: "Verifikasjonsrapport",
     }[rapport],
   );
@@ -89,6 +92,8 @@
     <Reskontrospesifikasjon {companyId} {from} {to} />
   {:else if rapport === "bokforingsspesifikasjon"}
     <Bokforingsspesifikasjon {companyId} {from} {to} />
+  {:else if rapport === "balansedokumentasjon"}
+    <Balansedokumentasjon {companyId} {to} />
   {:else if rapport === "revisjon"}
     <Revisjon {companyId} />
   {/if}

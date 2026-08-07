@@ -11,6 +11,7 @@ pub mod anchor;
 pub mod asset;
 pub mod attachment;
 pub mod attestering;
+pub mod balansedok;
 pub mod bank;
 pub mod betaling;
 pub mod budsjett;
