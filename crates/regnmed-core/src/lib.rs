@@ -39,6 +39,7 @@ pub mod orgnr;
 pub mod pain001;
 pub mod pdf;
 pub mod pdftekst;
+pub mod periodisering;
 pub mod purring;
 pub mod regnskap;
 pub mod regnskapsar;
