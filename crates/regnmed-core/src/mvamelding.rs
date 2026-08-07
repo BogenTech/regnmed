@@ -16,10 +16,15 @@
 //!
 //! Per Skatteetaten's rules: utgående and omsetning codes report
 //! grunnlag + sats + merverdiavgift; inngående (fradrag) codes report
-//! only merverdiavgift; code 0 is not reported at all. Import /
-//! reverse-charge codes are emitted with their beregnet side; the full
-//! two-sided treatment is documented as a limitation until real
-//! submissions begin.
+//! only merverdiavgift; code 0 is not reported at all.
+//!
+//! Reverse charge and import (#82) are TWO-SIDED where the code says the
+//! deduction right is full — the buyer computes the tax under
+//! mval. §11-1 (2) and deducts it under (3), so the purchase costs
+//! nothing. `fastsatt_kr` therefore sums each line's net effect
+//! (`mva_kr + fradrag_kr`), not just the computed side. Which codes
+//! carry the deduction is not our judgement; it is stated per code in
+//! Skatteetaten's own code list, quoted in `mva::direction`.
 
 use crate::mva::{Direction, SpesLine, Termin, Terminordning, direction};
 use crate::xml::Xml;
@@ -49,7 +54,12 @@ pub struct MeldingLine {
     pub description: String,
     pub grunnlag_kr: Option<i64>,
     pub sats_bp: Option<i64>,
+    /// The code's own booked tax, melding signs.
     pub mva_kr: i64,
+    /// The deduction the SAME code carries (reverse charge / import with
+    /// full deduction right); 0 for every other code. Signed opposite
+    /// `mva_kr`, so the pair sums to the line's net effect.
+    pub fradrag_kr: i64,
 }
 
 /// Whole kroner from øre, rounded half away from zero.
@@ -75,13 +85,24 @@ pub fn build(
         // Ledger → melding: negate (payable-positive) and round to kroner.
         let mva_kr = kroner(-line.avgift_ore);
         let grunnlag_kr = kroner(-line.grunnlag_ore);
-        let (grunnlag, sats) = match direction(&line.code) {
+        let retning = direction(&line.code);
+        // Cost markers are not tax calculations, and using them is not
+        // even mandatory — the import's tax is reported under 81/14.
+        // Skipped like code 0 rather than emitted with a zeroed amount:
+        // a line carrying a 25 % sats invites the recipient to compute
+        // the very tax we already reported elsewhere.
+        if retning == Direction::Kostnadsmarkor {
+            continue;
+        }
+        let (grunnlag, sats) = match retning {
             // Fradrag lines carry only the deducted amount.
             Direction::Inngaende => (None, None),
-            // Utgående and omsetning codes report grunnlag + sats.
-            Direction::Utgaende | Direction::Ingen => (Some(grunnlag_kr), Some(line.rate_bp)),
-            // Import/reverse-charge: beregnet side, grunnlag as observed.
-            Direction::OmvendtAvgiftsplikt => (Some(grunnlag_kr), Some(line.rate_bp)),
+            // Everything else reports grunnlag + sats.
+            Direction::Utgaende
+            | Direction::Ingen
+            | Direction::Kostnadsmarkor
+            | Direction::OmvendtMedFradrag
+            | Direction::OmvendtUtenFradrag => (Some(grunnlag_kr), Some(line.rate_bp)),
         };
         lines.push(MeldingLine {
             code: line.code.clone(),
@@ -89,9 +110,23 @@ pub fn build(
             grunnlag_kr: grunnlag,
             sats_bp: sats,
             mva_kr,
+            // The deduction the same code carries. Kept beside the line
+            // rather than folded into `mva_kr`, because the two are
+            // different statements: `merverdiavgift` is the code's OWN
+            // booked tax (the XSD calls it «Bokført beløp for
+            // merverdiavgift»), while the fastsatte total is the net
+            // effect on what is payable.
+            fradrag_kr: match retning {
+                Direction::OmvendtMedFradrag => -mva_kr,
+                _ => 0,
+            },
         });
     }
-    let fastsatt_kr = lines.iter().map(|l| l.mva_kr).sum();
+    // §11-1 (2)/(3): the buyer computing reverse-charge or import tax
+    // ALSO deducts it when the deduction right is full. Summing only the
+    // computed side billed every such customer 25 % of a basis they owed
+    // nothing on.
+    let fastsatt_kr = lines.iter().map(|l| l.mva_kr + l.fradrag_kr).sum();
     MvaMelding {
         orgnr: orgnr.to_string(),
         termin,
@@ -243,6 +278,68 @@ mod tests {
         assert_eq!(inn.sats_bp, None);
 
         assert_eq!(m.fastsatt_kr, 500, "fastsatt = sum of line effects");
+    }
+
+    /// Reverse charge, computed by hand.
+    ///
+    /// A norwegian business buys a fjernleverbar tjeneste from abroad for
+    /// 100 000 kr and has FULL deduction right (code 86). Under
+    /// mval. §11-1 (2) it computes 25 000 kr output tax — and under (3)
+    /// it deducts the same 25 000. Nothing is owed on the purchase, so
+    /// the melding must fastsette 0, not 25 000.
+    ///
+    /// The same purchase WITHOUT deduction right is code 87, and there
+    /// the 25 000 really is payable. The two cases differ by one
+    /// character in the code, which is exactly why the old single-sided
+    /// treatment was invisible: it produced a plausible number.
+    #[test]
+    fn reverse_charge_with_full_deduction_is_a_wash() {
+        let kjop = |code: &str| {
+            vec![SpesLine {
+                code: code.into(),
+                description: "Tjenester kjøpt fra utlandet".into(),
+                rate_bp: 2500,
+                // A purchase basis posts as a debit; the computed tax is
+                // an output tax, i.e. a credit in the ledger.
+                grunnlag_ore: 100_000_00,
+                avgift_ore: -25_000_00,
+            }]
+        };
+        let melding = |code: &str| {
+            build(
+                "999888777",
+                Termin::new(2026, 1).unwrap(),
+                Terminordning::ToManeder,
+                "r",
+                "0.1.0",
+                &kjop(code),
+            )
+        };
+
+        let med = melding("86");
+        assert_eq!(med.lines[0].mva_kr, 25_000, "beregnet utgående avgift");
+        assert_eq!(med.lines[0].fradrag_kr, -25_000, "og fradraget for den");
+        assert_eq!(
+            med.fastsatt_kr, 0,
+            "full fradragsrett: kjøpet skal ikke koste avgift"
+        );
+
+        let uten = melding("87");
+        assert_eq!(
+            uten.lines[0].fradrag_kr, 0,
+            "ingen fradragsrett, intet fradrag"
+        );
+        assert_eq!(
+            uten.fastsatt_kr, 25_000,
+            "uten fradragsrett skal avgiften betales i sin helhet"
+        );
+
+        // The cost markers calculate nothing: the tax on an import is
+        // computed under 81/14, so letting 21 generate it too would
+        // charge the same import twice.
+        let markor = melding("21");
+        assert!(markor.lines.is_empty(), "kode 21 er en kostnadsmarkør");
+        assert_eq!(markor.fastsatt_kr, 0, "og beregner ingen avgift");
     }
 
     #[test]

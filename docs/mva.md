@@ -78,11 +78,44 @@ Conversion rules — all in one place, tested:
 `fastsattMerverdiavgift` = the sum of all line effects, which is the same
 netto the mva-report shows.
 
-**Known limitation** (documented, deliberate): import/omvendt
-avgiftsplikt codes (2x, 8x, 9x) are emitted with their beregnet side
-only; the full two-sided treatment (utgående + fradrag from one posting)
-is finalized together with real submission testing against Skatteetaten's
-test environment.
+### Omvendt avgiftsplikt og innførsel er TOSIDIG (#82)
+
+Kjøperen både beregner utgående avgift og fører fradraget for den —
+mval. §11-1 (2) og (3), jf. §3-30. Fram til 2026-08-07 sendte vi bare
+den beregnede siden, og `fastsattMerverdiavgift` krevde da inn 25 % av
+et grunnlag kjøperen ikke skyldte noe på.
+
+Hvilke koder som bærer fradraget er **ikke vår vurdering**. Det står per
+kode i Skatteetatens egen kodeliste (*Norwegian SAF-T Standard VAT/Tax
+codes*, dokumentet mva-melding-XSD-en selv peker til for `mvaKode`).
+Ordrett for kode 81: «Grunnlaget og beregnet utgående
+innførselsmerverdiavgift føres i post 9, mens fradragsberettiget
+inngående innførselsmerverdiavgift føres i post 17». For kode 82 stopper
+den samme setningen etter post 9.
+
+| Koder | Kodelisten sier | Virkning på fastsatt |
+| --- | --- | --- |
+| 81, 83, 86, 88, 91 | beregnet utgående **og** fradrag | **null** |
+| 82, 84, 87, 89, 92 | bare beregnet utgående | hele avgiften |
+| 14, 15 | bare fradraget (avgiften betalt ved innførsel) | fradrag |
+| 20, 21, 22 | kostnadsmarkør på fakturaen | **rapporteres ikke** |
+
+Postnumrene tilhører gamle RF-0002; tosidigheten de beskriver er en
+egenskap ved KODEN og følger med inn i den kodebaserte meldingen.
+
+Kostnadsmarkørene var tidligere rutet sammen med 8x/9x-kodene, slik at
+en innførsel beregnet avgift to ganger — én gang under kode 21 og én
+gang under kode 81. De hoppes nå over som kode 0. Kodelisten sier selv
+at de ikke er obligatoriske, og at «ved selve avgiftsberegningen
+benyttes kode 81 eller kode 14».
+
+**Gjenstår, uavklart mot Skatteetaten:** om en tosidig kode skal sendes
+som ÉN linje (beregnet avgift i `merverdiavgift`, fradraget bare i
+totalen — slik vi gjør nå) eller som to linjer. XSD-en tillater begge,
+og `fastsattMerverdiavgift` er uansett riktig. Spørsmålet avklares mot
+valideringstjenesten før første innsending (`regnmed mva-melding
+--validate`, docs/gov.md). Selve avgiftsbeløpet er ikke lenger avhengig
+av svaret — bare linjeformen.
 
 Validation and submission against Skatteetaten's APIs: see
 [gov.md](gov.md).

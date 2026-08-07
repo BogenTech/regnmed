@@ -920,10 +920,12 @@ async fn mva_report(
         println!("Til gode:         {:>15}", Ore(-netto).to_string());
     }
 
-    if lines
-        .iter()
-        .any(|l| direction(&l.code) == Direction::OmvendtAvgiftsplikt)
-    {
+    if lines.iter().any(|l| {
+        matches!(
+            direction(&l.code),
+            Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+        )
+    }) {
         println!(
             "\nmerk: koder med omvendt avgiftsplikt/innførsel er listet, men\n\
              tosidig behandling skjer i mva-meldingen."

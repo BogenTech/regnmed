@@ -207,19 +207,50 @@ pub enum Direction {
     Utgaende,
     /// Input VAT, deductible (codes 1, 11, 12, 13, 14, 15).
     Inngaende,
-    /// Import / reverse-charge basis codes (2x, 8x, 9x) — the two-sided
-    /// treatment belongs to the mva-melding, not the ledger report.
-    OmvendtAvgiftsplikt,
-    /// No VAT effect (codes 0, 5, 51, 52, 6, 7).
+    /// Reverse charge / import basis, WITH deduction right (81, 83, 86,
+    /// 88, 91). The buyer both computes the output tax and deducts it —
+    /// mval. §11-1 (2) and (3), jf. §3-30 — so the net effect on the
+    /// amount payable is ZERO.
+    OmvendtMedFradrag,
+    /// The same, WITHOUT deduction right (82, 84, 87, 89, 92): the
+    /// computed output tax stands alone and is payable in full.
+    OmvendtUtenFradrag,
+    /// «Kostnad ved innførsel av varer» (20, 21, 22): a marker on the
+    /// supplier invoice, NOT a tax calculation. Reported nowhere — the
+    /// tax on that same import is calculated under 81/83 or 14/15, and a
+    /// melding line here would charge it a second time.
+    Kostnadsmarkor,
+    /// No VAT effect (codes 0, 5, 51, 52, 6, 7, 85).
     Ingen,
 }
 
+/// How a standard code participates in the oppgjør.
+///
+/// The split between med/uten fradragsrett is not a modelling choice; it
+/// is what Skatteetatens own code list says, per code. Verbatim for 81:
+/// «Grunnlaget og beregnet utgående innførselsmerverdiavgift føres i
+/// post 9, mens fradragsberettiget inngående innførselsmerverdiavgift
+/// føres i post 17» — two posts, one code. For 82 the same sentence
+/// stops after post 9. Codes 86/88 say the same about post 12 (7) and
+/// post 17 (8), and 91 about post 13 and post 14.
+///
+/// 20/21/22 are «Kostnad ved innførsel av varer» — markers on the
+/// SUPPLIER INVOICE, not tax calculations: «Ved selve avgiftsberegningen
+/// benyttes kode 81 eller kode 14», and using them is not even
+/// mandatory. They used to be routed with the 8x/9x codes, which made
+/// every import generate tax twice: once under 21 and once under 81.
+///
+/// Source: Norwegian SAF-T Standard VAT/Tax codes v1.13, the document
+/// the mva-melding XSD itself points to for `mvaKode`. The post numbers
+/// belong to the old RF-0002; the two-sidedness they describe is a
+/// property of the CODE and carries into the code-based melding.
 pub fn direction(code: &str) -> Direction {
     match code {
         "3" | "31" | "32" | "33" => Direction::Utgaende,
         "1" | "11" | "12" | "13" | "14" | "15" => Direction::Inngaende,
-        "20" | "21" | "22" | "81" | "82" | "83" | "84" | "85" | "86" | "87" | "88" | "89"
-        | "91" | "92" => Direction::OmvendtAvgiftsplikt,
+        "81" | "83" | "86" | "88" | "91" => Direction::OmvendtMedFradrag,
+        "82" | "84" | "87" | "89" | "92" => Direction::OmvendtUtenFradrag,
+        "20" | "21" | "22" => Direction::Kostnadsmarkor,
         _ => Direction::Ingen,
     }
 }
@@ -304,7 +335,18 @@ mod tests {
     fn directions_classify_the_standard_codes() {
         assert_eq!(direction("3"), Direction::Utgaende);
         assert_eq!(direction("1"), Direction::Inngaende);
-        assert_eq!(direction("86"), Direction::OmvendtAvgiftsplikt);
+        // The deduction right is in the code, and it decides whether the
+        // computed tax is payable or a wash.
+        assert_eq!(direction("86"), Direction::OmvendtMedFradrag);
+        assert_eq!(direction("87"), Direction::OmvendtUtenFradrag);
+        assert_eq!(direction("81"), Direction::OmvendtMedFradrag);
+        assert_eq!(direction("82"), Direction::OmvendtUtenFradrag);
+        assert_eq!(direction("91"), Direction::OmvendtMedFradrag);
+        // Import COST markers compute nothing — 81/14 do.
+        assert_eq!(direction("21"), Direction::Kostnadsmarkor);
+        // A zero-rated import basis is still a basis, not a marker.
+        assert_eq!(direction("85"), Direction::Ingen);
+        assert_eq!(direction("14"), Direction::Inngaende, "fradragssiden alene");
         assert_eq!(direction("5"), Direction::Ingen);
         assert_eq!(direction("0"), Direction::Ingen);
     }
