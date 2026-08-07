@@ -65,5 +65,6 @@ patches:
   - path: patches/anchor-cronjob.yaml
   - path: patches/generate-invoices-cronjob.yaml
   - path: patches/depreciate-cronjob.yaml
+  - path: patches/periodiser-cronjob.yaml
   - path: patches/abonnement-cronjob.yaml
   - path: patches/abonnement-oppfolging-cronjob.yaml

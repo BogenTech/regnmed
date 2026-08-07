@@ -174,6 +174,48 @@ spec:
                 limits:
                   memory: 32Mi
 ---
+# Monthly periodisering: one ordinary voucher per (plan, month) due,
+# spreading a prepaid cost or an unearned income over the months it
+# belongs to (rskl. §4-1, docs/periodisering.md, #87). Same shape as the
+# avskrivninger above — insert-only run log, partial unique index against
+# double posting. Runs on the 1st and posts the just-ended month.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-periodiser
+  namespace: regnmed
+spec:
+  schedule: "30 6 1 * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: periodiser
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+              command: ["/app/regnmed", "periodiser"]
+              env:
+                - name: DATABASE_URL
+                  value: postgres://regnmed:regnmed@postgres:5432/regnmed
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi
+---
 # ANCHOR_TSA_URL is set — deliberately unset in the local cluster).
 apiVersion: batch/v1
 kind: CronJob

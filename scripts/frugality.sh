@@ -40,7 +40,20 @@ API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed
 # build scanning its own previous dist for class names (fixed with
 # `@source not "../dist"` in app.css). The deterministic build fits the
 # original budget with room to spare.
-PORTAL_DIST_BUDGET_KB=512
+#
+# Raised 512 -> 544 on 2026-08-07 (#87). This one is NOT the 2026-08-06
+# mistake repeating itself: that raise papered over a build bug, and the
+# measurement moved 46 KB in one commit. Here the deterministic build is
+# 514 KB, up 5 KB from 509, and the 5 KB is one feature's markup — the
+# periodiseringskortet. The CSS did not move at all (143 KB, unchanged),
+# which is the signal that no dependency crept in; all of the growth is
+# in the JS chunk where hand-written components live.
+#
+# 544 buys roughly six more cards before this has to be looked at again.
+# When it does, the question to ask FIRST is whether the CSS moved: JS
+# growth in step with the feature list is the SPA doing its job, CSS
+# growth without a theme change is a dependency nobody meant to add.
+PORTAL_DIST_BUDGET_KB=544
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 

@@ -222,6 +222,85 @@
     pSide = 1;
   });
 
+  // Periodisering (#87, docs/periodisering.md): fordeling av en
+  // forskuddsbetalt kostnad eller en uopptjent inntekt over månedene den
+  // hører hjemme i. NETTObeløpet — avgiften ble gjort opp på
+  // kildebilaget og fordeles aldri (mval. §15-9).
+  let planer = $state(null);
+  let pForm = $state(null);
+
+  function nyPlan() {
+    const n = new Date();
+    pForm = {
+      beskrivelse: "",
+      resultatkonto: "",
+      balansekonto: "1700",
+      belop: "",
+      fra_ar: n.getFullYear(),
+      fra_maned: n.getMonth() + 1,
+      til_ar: n.getFullYear(),
+      til_maned: 12,
+    };
+  }
+
+  async function lastPlaner() {
+    try {
+      planer = (await api("/companies/" + companyId + "/periodiseringer")).periodiseringer;
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function lagrePlan() {
+    const ore = Math.round(parseFloat(String(pForm.belop).replace(",", ".")) * 100);
+    if (!ore) return toast("Beløpet mangler", false);
+    try {
+      await post("/companies/" + companyId + "/periodiseringer", {
+        beskrivelse: pForm.beskrivelse,
+        resultatkonto: pForm.resultatkonto,
+        balansekonto: pForm.balansekonto,
+        total_ore: ore,
+        fra_ar: Number(pForm.fra_ar),
+        fra_maned: Number(pForm.fra_maned),
+        til_ar: Number(pForm.til_ar),
+        til_maned: Number(pForm.til_maned),
+      });
+      pForm = null;
+      toast("Periodiseringen er opprettet");
+      await lastPlaner();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function kjorPlan(id) {
+    try {
+      const svar = await post("/companies/" + companyId + "/periodiseringer/" + id + "/kjor", {});
+      const ok = svar.kjort.filter((k) => k.bilag).length;
+      toast(ok ? ok + " måned(er) bokført" : "Ingen måneder forfalt ennå");
+      await lastPlaner();
+      await lastPosteringer();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function stoppPlan(id) {
+    if (!(await bekreft("Stoppe periodiseringen? Måneder som alt er bokført står."))) return;
+    try {
+      await post("/companies/" + companyId + "/periodiseringer/" + id + "/stopp", {});
+      await lastPlaner();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  $effect(() => {
+    if (extra) return;
+    void companyId;
+    lastPlaner();
+  });
+
   async function lastPosteringer() {
     const id = ++fetchId;
     posteringer = null;
@@ -463,6 +542,81 @@
         </span>
         <button class="btn btn-sm btn-primary" disabled={sum !== 0} onclick={bokfor}>Bokfør</button>
       </div>
+    </Card>
+
+    <Card title="Periodisering">
+      <p class="text-sm opacity-70 mb-2">
+        Fordeler en forskuddsbetalt kostnad eller en uopptjent inntekt over månedene den hører
+        hjemme i (rskl. §4-1). Ett bilag per måned, datert månedsslutt, ført automatisk den 1.
+        <strong>Beløpet er uten mva</strong> — avgiften ble gjort opp på kildebilaget og skal ikke
+        fordeles.
+      </p>
+      {#if pForm}
+        <div class="grid gap-2 sm:grid-cols-2 mb-2">
+          <input class="input input-sm" placeholder="Beskrivelse" bind:value={pForm.beskrivelse} />
+          <input class="input input-sm" placeholder="Beløp uten mva" bind:value={pForm.belop} />
+          <KontoVelger
+            {companyId}
+            bind:value={pForm.resultatkonto}
+            placeholder="Resultatkonto (f.eks. 6300)"
+          />
+          <KontoVelger
+            {companyId}
+            bind:value={pForm.balansekonto}
+            placeholder="Balansekonto (1700 / 2900)"
+          />
+          <label class="flex items-center gap-1 text-sm">
+            Fra
+            <input type="number" class="input input-sm w-20" bind:value={pForm.fra_maned} min="1" max="12" />
+            <input type="number" class="input input-sm w-24" bind:value={pForm.fra_ar} />
+          </label>
+          <label class="flex items-center gap-1 text-sm">
+            Til
+            <input type="number" class="input input-sm w-20" bind:value={pForm.til_maned} min="1" max="12" />
+            <input type="number" class="input input-sm w-24" bind:value={pForm.til_ar} />
+          </label>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm btn-primary" onclick={lagrePlan}>Opprett</button>
+          <button class="btn btn-sm btn-ghost" onclick={() => (pForm = null)}>Avbryt</button>
+        </div>
+      {:else}
+        <button class="btn btn-sm mb-2" onclick={nyPlan}>Fordel over flere måneder</button>
+      {/if}
+      {#if planer && planer.length}
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Beskrivelse</th><th>Konti</th><th>Periode</th>
+                <th class="text-right">Totalt</th><th class="text-right">Ført</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each planer as p (p.id)}
+                <tr>
+                  <td>
+                    {p.beskrivelse}
+                    {#if p.stoppet_dato}<span class="badge badge-ghost badge-sm ml-1">stoppet</span>{/if}
+                  </td>
+                  <td class="opacity-70">{p.resultatkonto} / {p.balansekonto}</td>
+                  <td class="opacity-70">{p.fra_maned.slice(0, 7)} – {p.til_maned.slice(0, 7)}</td>
+                  <td class="text-right">{kr(p.total_ore)}</td>
+                  <td class="text-right">{kr(p.fort_ore)} ({p.forte_maneder} mnd)</td>
+                  <td class="text-right whitespace-nowrap">
+                    {#if !p.stoppet_dato}
+                      <button class="btn btn-xs" onclick={() => kjorPlan(p.id)}>Kjør nå</button>
+                      <button class="btn btn-xs btn-ghost" onclick={() => stoppPlan(p.id)}>Stopp</button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else if planer}
+        <p class="opacity-70 text-sm">Ingen periodiseringer ennå.</p>
+      {/if}
     </Card>
 
     <Card title="Posteringer">

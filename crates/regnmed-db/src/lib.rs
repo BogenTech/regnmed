@@ -33,6 +33,7 @@ pub mod mva;
 pub mod ocr;
 pub mod opening;
 pub mod period;
+pub mod periodisering;
 pub mod plattform;
 pub mod product;
 pub mod purring;

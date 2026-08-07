@@ -21,6 +21,7 @@ CLAUDE.md).
 | [timer.md](timer.md) | Timeføring: heltallsminutter, månedslås, fakturagrunnlag gjennom fakturaflyten |
 | [faktura.md](faktura.md) | Utgående faktura: gap-free numbers, KID, kreditnota |
 | [produkter.md](produkter.md) | Produktregister (kopiert ved utstedelse) og enkelt varelager: insert-only bevegelser, gjennomsnittskost, varetelling |
+| [periodisering.md](periodisering.md) | Periodisering: fordeling av kostnad og inntekt over månedene de hører hjemme i (rskl. §4-1) — aldri av merverdiavgiften |
 | [anlegg.md](anlegg.md) | Anleggsregister: lineære avskrivninger som ordinære bilag, skattemessig saldo per gruppe, avhending m/ gevinst/tap |
 | [utlegg.md](utlegg.md) | Utlegg og kjøregodtgjørelse: uforanderlige krav, enveis beslutninger, statens satser fra satsregisteret |
 | [valuta.md](valuta.md) | Flervaluta: hash format v4, daterte kurser fra Norges Bank, realisert agio i samme transaksjon som matchen |

@@ -34,6 +34,9 @@ enum Command {
     /// Post every due monthly avskrivning across all companies
     /// (docs/anlegg.md, #40). Run monthly (cron/CronJob).
     Depreciate,
+    /// Post every due month of every periodisering across all companies
+    /// (docs/periodisering.md, #87). Run monthly (cron/CronJob).
+    Periodiser,
     /// Start or end a company's abonnement (ops, docs/abonnement.md,
     /// #65). There is no API route for this — the abonnement is driven by
     /// ops, like migrate and anchor.
@@ -640,6 +643,35 @@ async fn main() -> Result<()> {
             }
             if outcomes.iter().any(|o| o.invoice_no.is_none()) {
                 anyhow::bail!("one or more templates failed to generate");
+            }
+        }
+        Command::Periodiser => {
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let utfall = regnmed_db::periodisering::periodiser_all(&pool, today).await?;
+            if utfall.is_empty() {
+                println!("ingen periodiseringer forfalt");
+            }
+            for u in &utfall {
+                match (&u.voucher, &u.detail) {
+                    (Some((year, no)), _) => println!(
+                        "{}: {}-{:02} bokfort som bilag {}-{} ({} ore)",
+                        u.beskrivelse,
+                        u.period.format("%Y"),
+                        chrono::Datelike::month(&u.period),
+                        year,
+                        no,
+                        u.belop_ore
+                    ),
+                    (None, Some(detail)) => println!(
+                        "{}: {}-{:02} FEILET: {detail}",
+                        u.beskrivelse,
+                        u.period.format("%Y"),
+                        chrono::Datelike::month(&u.period)
+                    ),
+                    (None, None) => {}
+                }
             }
         }
         Command::Depreciate => {

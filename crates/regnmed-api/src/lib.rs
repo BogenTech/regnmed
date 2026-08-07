@@ -30,6 +30,7 @@ pub mod migrering;
 pub mod ocr;
 pub mod payments;
 pub mod period;
+pub mod periodisering;
 pub mod plattform;
 pub mod portal;
 pub mod product;
@@ -488,6 +489,22 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(asset::depreciate),
         )
         .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
+        .route(
+            "/companies/{company_id}/periodiseringer",
+            get(periodisering::list).post(periodisering::create),
+        )
+        .route(
+            "/companies/{company_id}/periodiseringer/{id}/stopp",
+            axum::routing::post(periodisering::stopp),
+        )
+        .route(
+            "/companies/{company_id}/periodiseringer/{id}/kjor",
+            axum::routing::post(periodisering::kjor),
+        )
+        .route(
+            "/companies/{company_id}/periodiseringer/{id}/kjoringer",
+            get(periodisering::runs),
+        )
         .route(
             "/companies/{company_id}/assets/{asset_id}/dispose",
             axum::routing::post(asset::dispose),

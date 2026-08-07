@@ -1,0 +1,21 @@
+# Prod periodiserings-CronJob: credentials from the secret (the base
+# carries a dev-only plaintext URL; value: null removes it).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-periodiser
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: periodiser
+              env:
+                - name: DATABASE_URL
+                  value: null
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
