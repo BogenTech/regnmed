@@ -1,0 +1,44 @@
+# Prod mail worker: deliver through postbud instead of printing to stdout.
+#
+# postbud (sibling repo, its own single-node cluster at ServeTheWorld) is
+# the platform's outbound mail service. It is reached over the tailnet, so
+# POSTBUD_URL is a 100.x address and never a public one — a hostname that
+# resolved differently inside and outside the cluster is how mail quietly
+# starts leaving by the wrong door.
+#
+# Why this transport and not `smtp` straight at the relay: the mail worker
+# NAKs and retries a failed delivery up to five times, and over SMTP each
+# retry risks a second copy in the recipient's inbox. postbud takes the
+# queue id as its idempotency key, so a redelivery returns the original
+# message id and sends nothing. It also holds the suppression list, which
+# this side cannot — a hard bounce arrives at the relay minutes after the
+# mail has been handed over and forgotten.
+#
+# The API key is its own tenant, separate from test's, so the two can be
+# attributed and suppressed independently. It comes from a secret created
+# out-of-band; docs/secrets.md is absolute.
+#
+# Sender domain: regnmed.no authenticates from postbud — SPF, DKIM
+# (selector pb2026a) and DMARC all verified passing at Gmail 2026-08-08.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnid-mail-worker
+  namespace: regnmed
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: MAIL_TRANSPORT
+              value: postbud
+            - name: MAIL_FROM
+              value: regnmed <no-reply@regnmed.no>
+            - name: POSTBUD_URL
+              value: http://100.121.55.58:30080
+            - name: POSTBUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postbud-credentials
+                  key: api-key
