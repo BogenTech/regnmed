@@ -8,7 +8,9 @@
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId } = $props();
+  // onavsluttet: avslutningen låser året, og låsen vises av kortet over —
+  // den må få vite at den er utdatert.
+  let { companyId, onavsluttet } = $props();
 
   let rader = $state(null);
   let ar = $state(new Date().getFullYear() - 1);
@@ -60,6 +62,7 @@
       forslag = null;
       skatt = "";
       await last();
+      onavsluttet?.();
     } catch (error) {
       toast(error.message, false);
     } finally {

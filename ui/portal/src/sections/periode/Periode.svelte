@@ -67,4 +67,13 @@
   </Card>
 {/if}
 
-<Arsavslutning {companyId} />
+<!--
+  Årsavslutningen SETTER periodelåsen (docs/arsavslutning.md), så kortet
+  over må lastes på nytt — ellers står det «ingen lås» rett over kortet
+  som nettopp låste året, og operatøren får to motstridende svar på
+  samme spørsmål.
+-->
+<Arsavslutning
+  {companyId}
+  onavsluttet={() => load(companyId).catch((error) => toast(error.message, false))}
+/>

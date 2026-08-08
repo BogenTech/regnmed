@@ -21,7 +21,7 @@
       "runtimeExecutable": "zsh",
       "runtimeArgs": [
         "-lc",
-        "cd ui/portal && exec env REGNMED_API_PROXY=http://localhost:8083 npm run dev -- --port 5174"
+        "cd ui/portal && exec env REGNMED_API_PROXY=http://127.0.0.1:8083 npm run dev -- --port 5174"
       ],
       "port": 5174
     },
