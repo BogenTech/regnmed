@@ -56,7 +56,10 @@ images:
     newTag: v0.6.1
   - name: regnid
     newName: ghcr.io/bogentech/regnid
-    newTag: sha-42f8b18
+    # A RELEASE tag, like regnmed's above: regnid started cutting
+    # releases with v0.1.0, and the number an operator reads here should
+    # be the one whose notes say what it contains.
+    newTag: v0.1.1
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml
