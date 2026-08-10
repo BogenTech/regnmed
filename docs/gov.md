@@ -285,17 +285,20 @@ Dette er dagens viktigste funn (2026-08-10), og det flytter #8.
 Meldings-XML-en bygges fint fra demo-boken, men rundturen fullfører
 ikke — av to grunner som ble blandet sammen i første diagnose:
 
-**1. Den dokumenterte testverten er død.**
-`idporten-api-sbstest.sits.no` fullfører TLS-håndtrykket (gyldig
-Sectigo-sertifikat) og RESETTER så ALLE forespørsler — hver sti, også
+**1. Vi leste feil dokumentasjonssted, og URL-en var utdatert.**
+`idporten-api-sbstest.sits.no` — verten på mva-meldingens eget
+dokumentasjonsnettsted — fullfører TLS-håndtrykket (gyldig
+Sectigo-sertifikat) og RESETTER så ALLE forespørsler: hver sti, også
 `/` og port 80, med og uten token, TLS 1.2 og 1.3, fra tre uavhengige
-nett (hjemme bak Check Point-VPN, homelab, amerikansk sky). Det samme
-gjør `mp-test.sits.no`, og ETM2-URL-en `skatt-utv3.sits.no` fra
-Skatteetatens eget testskript slår ikke engang opp i DNS. **Verten som
-faktisk svarer er `api-test.sits.no`**, på nøyaktig samme sti — den er
-nå standard i `MvaMeldingClient::from_env` (overstyres med
-`MVA_VALIDATION_URL`), fordi en feil da kommer tilbake som et
-diagnostiserbart API-svar i stedet for en naken TCP-reset.
+nett (hjemme bak Check Point-VPN, homelab, amerikansk sky). Verten er
+åpenbart avviklet. Den riktige er `idporten-api-**test**.sits.no`
+(uten `sbs`), som svarer 401 som seg hør og bør, og den står i
+**api-dokumentasjon-katalogen** — `Skatteetaten/api-dokumentasjon`,
+`docs/api/*.md`. **Den katalogen er fasiten**, ikke de eldre
+per-tjeneste-nettstedene: den har ett oppslag per API med scope,
+token-type, testvert og lenke til OpenAPI-spesifikasjonen på
+SwaggerHub. Vi brukte flere timer på et feilsøk som ett oppslag der
+ville avsluttet.
 
 **2. Og da svarer API-et hva som faktisk er galt:**
 
@@ -318,11 +321,45 @@ docs/skattemelding.md alt hadde gjort for #11, men ROADMAP-en fanget
 det ikke for mva-meldingen. Selve klienten er ikke bortkastet: formen
 på kallet er riktig, det er token-KILDEN som må byttes.
 
-**Lærdommen, ett hakk dypere enn den forrige i dette dokumentet:**
+### Hva hver av de fire tildelingene faktisk krever
+
+Prøvd med ekte token mot testmiljøet 2026-08-10 — ikke lest, kjørt.
+Svarene skiller seg fra hverandre på en måte som er verdt å merke seg:
+**401 betyr at selve token-TYPEN ble avvist, 403 at den ble godtatt og
+noe annet mangler.**
+
+| Tildeling | Skinne | Svar i dag | Mangler |
+| --- | --- | --- | --- |
+| DM-39 mva-validering | **ID-porten** | 401 | brukerpålogging (#26) |
+| DM-1 a-melding | Maskinporten | 403 `AMLD_1063` | systembruker |
+| DM-41 skattekort | Maskinporten | 403 | systembruker |
+| DM-8 aksjonærregister | Maskinporten | (dok.) | systembruker |
+
+A-meldingen sier det rett ut, og er derfor kilden til hele
+konklusjonen: *«Tokenet mangler informasjon om systembruker i
+`authorization_details`»*.
+
+**Altså: ÉN ting låser opp tre av fire — Altinn systembruker.** Det er
+Digdirs nyere mekanisme, den samme docs/aksjonaer.md alt hadde notert
+for RF-1086, og den gjelder hele den reetablerte Altinn-generasjonen av
+Skatteetatens API-er. Oppskriften står i api-dokumentasjonens
+`docs/om/systembruker.md`: bestill Digdir-scopene
+(`altinn:authentication/systemregister.write`,
+`…/systemuser.request.read`, `…/systemuser.request.write`,
+`digdir:dialogporten`) via Digdirs skjema, registrer systemet i
+systemregisteret knyttet til vår klient-id, og oppgi tilgangspakkene
+API-ene krever. Det er nå det høyest prioriterte neste steget på denne
+skinnen — ikke fordi det haster mest, men fordi det låser opp mest.
+
+Den fjerde, mva-valideringen, låses ikke opp av systembruker og venter
+på #26.
+
+**Lærdommen, to hakk dypere enn den forrige i dette dokumentet:**
 katalogen viser hva som *finnes*, tildelingen avgjør hva som kan
-*utstedes* — og **API-et avgjør hvilken token-TYPE det godtar**. At
-DM-39 ble tildelt og at scope-testen svarer GRANTED beviser bare de to
-første leddene. Bare et ekte kall beviser det tredje.
+*utstedes*, **API-et avgjør hvilken token-TYPE det godtar** — og selv
+riktig type kan mangle **systembruker**. At DM-39 ble tildelt og at
+scope-testen svarer GRANTED beviser bare de to første leddene. Bare et
+ekte kall beviser resten.
 
 ## Status & verification
 

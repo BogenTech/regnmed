@@ -49,18 +49,18 @@ impl MvaMeldingClient {
         }
     }
 
-    /// Reads MVA_VALIDATION_URL (falls back to the test environment host
-    /// that actually answers).
+    /// Reads MVA_VALIDATION_URL (falls back to the test environment).
     ///
-    /// Not the host Skatteetaten documents: `idporten-api-sbstest.sits.no`
-    /// completes a TLS handshake and then resets every request, on every
-    /// path, from every network tried (2026-08-10) — it looks
-    /// decommissioned. `api-test.sits.no` serves the same path and returns
-    /// real, structured API errors, so a misconfiguration now surfaces as
-    /// a diagnosable response instead of a bare connection reset.
+    /// Two hosts, one letter apart, and only one of them is real:
+    /// `idporten-api-TEST.sits.no` is the current test endpoint (from
+    /// Skatteetaten's api-dokumentasjon catalogue), while
+    /// `idporten-api-SBSTEST.sits.no` — still printed on the older
+    /// mva-meldingen documentation site — accepts a TLS handshake and
+    /// then resets every request, on every path. Trust the catalogue.
     pub fn from_env() -> Self {
         Self::new(std::env::var("MVA_VALIDATION_URL").unwrap_or_else(|_| {
-            "https://api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider".to_string()
+            "https://idporten-api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider"
+                .to_string()
         }))
     }
 
