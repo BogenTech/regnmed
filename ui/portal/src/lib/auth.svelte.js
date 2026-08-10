@@ -90,7 +90,20 @@ export async function handleCallback() {
 export function logout() {
   const t = tokens();
   clearTokens();
-  let end = session.config.issuer.replace(/\/$/, "") + "/end_session";
-  if (t && t.id_token) end += "?id_token_hint=" + encodeURIComponent(t.id_token);
+  // Send the user BACK here after the issuer has ended its session.
+  // Without post_logout_redirect_uri they are left standing on the
+  // issuer's own "logget ut" page, whose only way onward is a bare
+  // /login -- which, having no pending authorize request, finishes at
+  // the issuer's account page instead of this application. That reads
+  // as "logging in again didn't bring me back".
+  //
+  // The URI must be pre-registered on the client (it is, for this
+  // origin); client_id goes along so the issuer can validate it even
+  // when there is no id_token to take it from.
+  const params = new URLSearchParams();
+  if (t && t.id_token) params.set("id_token_hint", t.id_token);
+  params.set("client_id", session.config.client_id);
+  params.set("post_logout_redirect_uri", location.origin + "/");
+  const end = session.config.issuer.replace(/\/$/, "") + "/end_session?" + params;
   location.assign(end);
 }
