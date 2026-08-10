@@ -361,6 +361,64 @@ riktig type kan mangle **systembruker**. At DM-39 ble tildelt og at
 scope-testen svarer GRANTED beviser bare de to første leddene. Bare et
 ekte kall beviser resten.
 
+### Systembruker: hvilke tilgangspakker, og hvorfor det er to systemer
+
+Kartlagt 2026-08-10 mot Altinns egen dokumentasjon og deres levende
+tilgangspakke-API
+(`platform.tt02.altinn.no/accessmanagement/api/v1/meta/info/accesspackages/export`).
+Skatteetatens advarsel om å «ikke kombinere tilgangspakker på tvers av
+fullmaktsområder» er et symptom; **den egentlige regelen er strengere og
+står hos Altinn**.
+
+**Regel 1 — klientpakker er OG, ikke ELLER.** Altinn skriver at
+tilgangspakker for klientforhold *«fungerer kun for AND-tilfeller»*: har
+systembrukeren flere pakker, må klienten ha **alle** for at den skal
+virke i det hele tatt. Å bunte pakker gjør altså systemet mindre
+brukbart, ikke mer. Derfor er regnskapsfører- og revisorpakker
+utelukket fra samme system — et selskaps regnskapsfører og revisor er
+to forskjellige foretak, så ingen klient vil noensinne ha begge.
+
+**Regel 2 — systemregisteret godtar bare klientpakkene.** Feilkoden
+`AUTH.VLD-00008` sier at pakker må være del av **REGN/REVI/
+Forretningsfører**. `a-ordning`, `lonn`, `skattegrunnlag` og
+`skatt-naering` — som API-ene ellers godtar — kan altså **ikke**
+registreres som `accessPackages`. De hører til fullmaktsområdene
+Personale og «Skatt, avgift, regnskap og toll», som en virksomhet
+delegerer direkte.
+
+Det er nettopp derfor regnmed trenger **to systemregistreringer**, én
+per kundeform vi allerede har i produktet (#77s to ruter):
+
+| Rute | Mekanisme | Registreres med |
+| --- | --- | --- |
+| «Egen virksomhet» — selskapet rapporterer selv | standard systembruker | `rights` med Skatteetatens ressurser |
+| «Regnskapsfører» — byrået rapporterer for klientene | klient-systembruker | `accessPackages` fra REGN |
+
+Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
+`ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
+`ske-innrapportering-aksjonaerregisteroppgave`. Den ruten berøres ikke
+av regel 1 i det hele tatt.
+
+Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
+API-ene godtar dem slik:
+
+| Pakke | a-melding | skattekort | aksjonærreg. |
+| --- | --- | --- | --- |
+| `regnskapsforer-med-signeringsrettighet` | ✓ | ✓ | ✓ |
+| `regnskapsforer-uten-signeringsrettighet` | ✓ | ✓ | ✓ |
+| `regnskapsforer-lonn` | ✓ | ✓ | — |
+
+**Anbefaling (vår slutning, ikke Altinns instruks): én pakke per
+klient-system.** Med OG-semantikken er et system med `med-` OG `uten-
+signeringsrettighet` ubrukelig for begge slags byråer, mens to systemer
+med én pakke hver virker for hver sin. De to signeringsvariantene
+dekker alle tre API-ene alene, så det er nok å begynne med.
+
+**Revisor er bevisst utelatt.** regnmeds revisoroppdrag er lesetilgang
++ kjedeverifikasjon (CLAUDE.md), og alle tre API-ene er
+rapportering. Skulle det endres, blir det et eget system i
+revisorområdet — aldri blandet inn i regnskapsførersystemet.
+
 ## Status & verification
 
 - Implemented and locked by tests (no credentials needed): grant-JWT
