@@ -279,20 +279,50 @@ SSV-5760 (DM-1, DM-8, DM-39, DM-41 — se øverst), og **empirisk
 verifisert samme dag**: alle fire scopene svarer **GRANTED** med den
 nye maskinnøkkelen. Hele kjeden nøkkel → grant-JWT → token virker.
 
-**Valideringsrundturen (steg 4) strandet 2026-08-10 på Skatteetatens
-testmiljø, ikke hos oss:** meldings-XML-en bygges fint fra demo-boken,
-men `idporten-api-sbstest.sits.no` RESETTER tilkoblingen — med og uten
-gyldig token, TLS 1.2 og 1.3, fra tre uavhengige nett (hjemme, homelab,
-amerikansk sky), og det samme gjør ETM2-varianten
-`skatt-utv3.sits.no/api/mva/mva-melding/valider` (URL-en står i
-Skatteetatens eget testskript, som også skrur AV sertifikatverifisering
-i test — `verify=False`). Prod-tvillingen
-`idporten.api.skatteetaten.no` svarer normalt (401 uten token), og
-`api-test.sits.no` (a-meldingens hjem) er oppe — altså er URL-ene
-riktige per gjeldende dokumentasjon
-(skatteetaten.github.io/mva-meldingen, verifisert mot repoet
-2026-08-10) og feilen ligger i kanten av sbstest-miljøet. Prøv igjen
-senere; vedvarer det, spør på SSV-5760 (saken har en behandler nå).
+### Valideringsrundturen: mva-melding vil ha ID-PORTEN, ikke Maskinporten
+
+Dette er dagens viktigste funn (2026-08-10), og det flytter #8.
+Meldings-XML-en bygges fint fra demo-boken, men rundturen fullfører
+ikke — av to grunner som ble blandet sammen i første diagnose:
+
+**1. Den dokumenterte testverten er død.**
+`idporten-api-sbstest.sits.no` fullfører TLS-håndtrykket (gyldig
+Sectigo-sertifikat) og RESETTER så ALLE forespørsler — hver sti, også
+`/` og port 80, med og uten token, TLS 1.2 og 1.3, fra tre uavhengige
+nett (hjemme bak Check Point-VPN, homelab, amerikansk sky). Det samme
+gjør `mp-test.sits.no`, og ETM2-URL-en `skatt-utv3.sits.no` fra
+Skatteetatens eget testskript slår ikke engang opp i DNS. **Verten som
+faktisk svarer er `api-test.sits.no`**, på nøyaktig samme sti — den er
+nå standard i `MvaMeldingClient::from_env` (overstyres med
+`MVA_VALIDATION_URL`), fordi en feil da kommer tilbake som et
+diagnostiserbart API-svar i stedet for en naken TCP-reset.
+
+**2. Og da svarer API-et hva som faktisk er galt:**
+
+```json
+{"feilkode":"IDPORTEN_TOKEN_FEIL_FORMAT","feilmelding":"Ingen tilgang",
+ "tekniskeDetaljer":"403 - Forbidden"}
+```
+
+Valideringstjenesten vil ha et **ID-porten-token**, ikke vårt
+Maskinporten-token. Skatteetatens egen dokumentasjon sier det samme,
+lest på nytt etterpå: scopene for validering og innsending listes
+sammen med **`openid`** — som bare en brukerpålogging bærer — og om
+Maskinporten står det gjennomgående *«det kommer senere»*. Maskinporten
+er dokumentert for **innsynstjenestene** (`mp-test.sits.no`,
+`.../innsyn/...`), altså det som LESER fastsatte meldinger.
+
+**Konsekvens: #8s gjenstående halvdel er nedstrøms #26**
+(ID-porten-føderering via regnid) — nøyaktig samme funn som
+docs/skattemelding.md alt hadde gjort for #11, men ROADMAP-en fanget
+det ikke for mva-meldingen. Selve klienten er ikke bortkastet: formen
+på kallet er riktig, det er token-KILDEN som må byttes.
+
+**Lærdommen, ett hakk dypere enn den forrige i dette dokumentet:**
+katalogen viser hva som *finnes*, tildelingen avgjør hva som kan
+*utstedes* — og **API-et avgjør hvilken token-TYPE det godtar**. At
+DM-39 ble tildelt og at scope-testen svarer GRANTED beviser bare de to
+første leddene. Bare et ekte kall beviser det tredje.
 
 ## Status & verification
 

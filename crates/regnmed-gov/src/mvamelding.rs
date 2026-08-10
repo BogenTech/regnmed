@@ -2,13 +2,23 @@
 //!
 //! The melding XML (built by `regnmed_core::mvamelding`) is POSTed to the
 //! validation endpoint before submission; Skatteetaten replies with a
-//! `valideringsresultat` naming every avvik. Validation requires a
-//! Maskinporten token with scope `skatteetaten:mvameldingvalidering`.
+//! `valideringsresultat` naming every avvik.
 //!
-//! Endpoints (see docs/gov.md): test environment
-//! `https://idporten-api-sbstest.sits.no/api/mva/grensesnittstoette/mva-melding/valider`.
-//! The Altinn3 submission (instance) flow is implemented once real test
-//! credentials exist — validation is the required first gate anyway.
+//! **This API wants an ID-porten token, not a Maskinporten one** —
+//! established empirically 2026-08-10, and the reason this client cannot
+//! complete a round-trip yet. Holding the Maskinporten scope
+//! `skatteetaten:mvameldingvalidering` is not enough: Digdir mints it
+//! happily (Skatteetaten granted it to us), but the API rejects the token
+//! type with `IDPORTEN_TOKEN_FEIL_FORMAT` / 403. Skatteetaten's own
+//! documentation agrees — validation and submission list the scopes
+//! alongside `openid`, which only a user login carries, and Maskinporten
+//! support is described as a later ambition. So this endpoint is
+//! downstream of ID-porten federation (issue #26), exactly like the
+//! skattemelding (docs/skattemelding.md). Details in docs/gov.md.
+//!
+//! The bearer token below therefore stays as-is: the shape of the call is
+//! right and the token source is what has to change, once #26 gives us
+//! one. Endpoints and the dead documented host: docs/gov.md.
 
 use anyhow::{Context, Result};
 
@@ -39,12 +49,18 @@ impl MvaMeldingClient {
         }
     }
 
-    /// Reads MVA_VALIDATION_URL (falls back to Skatteetaten's documented
-    /// test environment endpoint).
+    /// Reads MVA_VALIDATION_URL (falls back to the test environment host
+    /// that actually answers).
+    ///
+    /// Not the host Skatteetaten documents: `idporten-api-sbstest.sits.no`
+    /// completes a TLS handshake and then resets every request, on every
+    /// path, from every network tried (2026-08-10) — it looks
+    /// decommissioned. `api-test.sits.no` serves the same path and returns
+    /// real, structured API errors, so a misconfiguration now surfaces as
+    /// a diagnosable response instead of a bare connection reset.
     pub fn from_env() -> Self {
         Self::new(std::env::var("MVA_VALIDATION_URL").unwrap_or_else(|_| {
-            "https://idporten-api-sbstest.sits.no/api/mva/grensesnittstoette/mva-melding/valider"
-                .to_string()
+            "https://api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider".to_string()
         }))
     }
 
