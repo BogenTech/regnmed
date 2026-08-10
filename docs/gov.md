@@ -31,13 +31,16 @@ carve-out. Where the keys actually live is recorded in docs/secrets.md.
 
 ### Operational setup (one-time, per environment)
 
-**Status: bestilling sendt 2026-08-06 — sak SSV-5760** på
-brukerstøttedesken (eksternjira.sits.no, kategori Innrapportering),
-tjenesteområder A-meldingen, Aksjonærregisteret, MVA-melding og
-Skattekort til arbeidsgiver, miljø **test**, akseptert bruksvilkår.
-Skjemaet spør aldri om klient-id — tilgangen gis organisasjonen, og
-scopene legges på klienten i Samarbeidsportalen etterpå. Venter på
-tildeling (erfaringsmessig ukers ledetid). Historikken bak: den
+**Status: TILDELT 2026-08-10** — svar på sak SSV-5760: BogenTech AS
+(935115086) har fått følgende tilganger i **test**: Innrapportering
+A-melding (DM-1), Innrapportering aksjonærregisteroppgave (DM-8), MVA
+Melding Validering (DM-39), Skattekort til arbeidsgiver (DM-41).
+Bestillingen ble sendt 2026-08-06 på brukerstøttedesken
+(eksternjira.sits.no, kategori Innrapportering), tjenesteområder
+A-meldingen, Aksjonærregisteret, MVA-melding og Skattekort til
+arbeidsgiver, akseptert bruksvilkår. Skjemaet spør aldri om klient-id —
+tilgangen gis organisasjonen, og scopene legges på klienten i
+Samarbeidsportalen etterpå. Historikken bak: den
 opprinnelige bestillingen 2026-07-24 gikk via skriv-til-oss, som
 2026-08-06 svarte at kanalen ikke behandler slike saker; omveien
 kostet lite, siden juli-bestillingen ba om
@@ -56,8 +59,12 @@ opplysninger» først.
 
 Gjenstår:
 
-1. Når tildelingen lander på SSV-5760: legg scopene på testklienten i
-   Samarbeidsportalen, kjør valideringsrundturen (steg 4 under).
+1. Legg de fire tildelte scopene på testklienten i Samarbeidsportalen
+   (tildelingen gjelder organisasjonen; klienten må fortsatt bære
+   scopene), registrer denne maskinens nye nøkkel (se nøkkelnotatet
+   under), og kjør valideringsrundturen (steg 4 under) — empirisk
+   sjekk: `scripts/maskinporten-scope-test.py <scope>` skal svare
+   GRANTED for alle fire.
 2. `skatteetaten:mvaregisteravgiftssubjekt` og `skatteetaten:frister`
    var **ikke** valgbare i Innrapportering-skjemaet — de hører til
    Deling-siden (eget behandlingsgrunnlagskrav) og bestilles separat
@@ -73,6 +80,14 @@ Gjenstår:
 The **test client exists** with an RS256 keypair registered on it; its
 id and the rest of the `MASKINPORTEN_*` configuration live outside git
 in `~/.config/regnmed/maskinporten-test.env` (docs/secrets.md).
+**Nøkkelnotat 2026-08-10:** denne utviklingsmaskinen hadde ingen
+`~/.config/regnmed/`, så en ny nøkkel ble generert etter
+per-maskin-oppskriften (`scripts/maskinporten-key.sh`) og registrert
+på klienten samme dag (kid = RFC 7638-thumbprinten — portalen beholdt
+JWK-ens egen kid denne gangen, utløper 10.08.2027). Den gamle nøkkelen
+(kid `6e9b86f2-…`, utløper 24.07.2027) er fortsatt I BRUK på den andre
+MacBook-en — to maskiner, to nøkler, akkurat slik docs/secrets.md
+foreskriver.
 
 The aksjonærregisteroppgave scope rides in SSV-5760 — and additionally
 needs an Altinn systembruker, see below.
@@ -258,6 +273,26 @@ virker. `skatteetaten:innrapporteringamelding` og
 `skatteetaten:skattekorttilarbeidsgiver` svarer **IKKE TILDELT**, altså
 ligger bestillingen hos Skatteetaten. Bestill med de verifiserte
 navnene i tabellen over, ikke fra hukommelsen.
+
+**Status 2026-08-10:** tildelingen fra Skatteetaten er bekreftet på
+SSV-5760 (DM-1, DM-8, DM-39, DM-41 — se øverst), og **empirisk
+verifisert samme dag**: alle fire scopene svarer **GRANTED** med den
+nye maskinnøkkelen. Hele kjeden nøkkel → grant-JWT → token virker.
+
+**Valideringsrundturen (steg 4) strandet 2026-08-10 på Skatteetatens
+testmiljø, ikke hos oss:** meldings-XML-en bygges fint fra demo-boken,
+men `idporten-api-sbstest.sits.no` RESETTER tilkoblingen — med og uten
+gyldig token, TLS 1.2 og 1.3, fra tre uavhengige nett (hjemme, homelab,
+amerikansk sky), og det samme gjør ETM2-varianten
+`skatt-utv3.sits.no/api/mva/mva-melding/valider` (URL-en står i
+Skatteetatens eget testskript, som også skrur AV sertifikatverifisering
+i test — `verify=False`). Prod-tvillingen
+`idporten.api.skatteetaten.no` svarer normalt (401 uten token), og
+`api-test.sits.no` (a-meldingens hjem) er oppe — altså er URL-ene
+riktige per gjeldende dokumentasjon
+(skatteetaten.github.io/mva-meldingen, verifisert mot repoet
+2026-08-10) og feilen ligger i kanten av sbstest-miljøet. Prøv igjen
+senere; vedvarer det, spør på SSV-5760 (saken har en behandler nå).
 
 ## Status & verification
 
