@@ -4,7 +4,7 @@ Thank you for considering a contribution!
 
 ## Contributor License Agreement (CLA)
 
-regnmed is dual-licensed (AGPL-3.0 + commercial). To keep this model possible, **all contributors must agree to the Contributor License Agreement** before their contribution can be merged. See [CLA.md](CLA.md).
+regnmed is licensed under the AGPL-3.0, and the maintainer keeps the ability to license it on other terms as well (see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). To keep that possible, **all contributors must agree to the Contributor License Agreement** before their contribution can be merged. See [CLA.md](CLA.md).
 
 In short, the CLA means:
 
@@ -18,7 +18,9 @@ By opening a pull request, you confirm that you have read and agree to the CLA. 
 
 ## Contributor benefits — negotiated per contribution
 
-The CLA's license grant is strict and identical for all contributors — it is not negotiable. What **is** negotiated in each individual case, depending on the scope and value of your contribution, are the commercial terms of your own regnmed license: **price** (including free), **subscription model**, and **duration**. Reach out to the maintainer before or after contributing to discuss terms. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) and section 6 of the [CLA](CLA.md).
+The CLA's license grant is strict and identical for all contributors — it is not negotiable. What **is** negotiated in each individual case, depending on the scope and value of your contribution, are the terms of your own subscription to the hosted service at regnmed.no: **price** (including free), **plan**, and **duration**. Reach out to the maintainer before or after contributing to discuss terms. See section 6 of the [CLA](CLA.md).
+
+To be clear about what that is and isn't: regnmed is AGPL-3.0, so you may already run, modify and self-host it free of charge without asking anyone. The benefit on offer is on the hosted service — the thing we actually charge for.
 
 ## How to contribute
 

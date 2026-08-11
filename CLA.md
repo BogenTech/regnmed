@@ -31,11 +31,13 @@ You retain copyright ownership of your Contribution. This agreement is a license
 
 ## 6. Contributor benefits — negotiable per contribution
 
-The license grants in sections 2 and 3 are strict, uniform, and non-negotiable — they apply identically to every Contribution. What may be negotiated individually, depending on the scope and value of the Contribution, is limited to the **commercial terms of a license to regnmed for the Contributor**:
+The license grants in sections 2 and 3 are strict, uniform, and non-negotiable — they apply identically to every Contribution. What may be negotiated individually, depending on the scope and value of the Contribution, is limited to the **terms of the Contributor's own subscription to the hosted regnmed service**:
 
 - Price (including free of charge or discounted)
-- Subscription model
-- Duration of the license
+- Subscription plan
+- Duration
+
+Note that this is a benefit on the *hosted service*, not on the software: regnmed is AGPL-3.0, so every Contributor may already run, modify and self-host it free of charge without any agreement with the Maintainer.
 
 Such arrangements are agreed on a case-by-case basis and documented in a separate written agreement. They do not alter the license grants in sections 2 and 3.
 

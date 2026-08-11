@@ -1,7 +1,22 @@
 # regnmed — project context
 
 Accounting system (regnskapssystem) for the Norwegian market, written in Rust.
-Dual-licensed AGPL-3.0 + commercial (see LICENSE, COMMERCIAL-LICENSE.md).
+AGPL-3.0, with an optional commercial license by agreement (see LICENSE,
+COMMERCIAL-LICENSE.md).
+
+**License decision reaffirmed 2026-08-11 — do not silently revisit.** Moving to
+a source-available anti-reseller license (FSL/BUSL/Elastic-2.0) was evaluated
+and declined. AGPL does *not* forbid a competitor reselling regnmed — §13 only
+obliges them to publish their modifications — but the barrier to reselling this
+product is Maskinporten, Altinn, ID-porten and the yearly regelverksrevisjon,
+not the code. The revenue lever is operating the service, never the license.
+The CLA keeps relicensing possible, so this stays reversible if a real reseller
+ever appears; revisit on evidence, not on speculation. Corollary fixed the same
+day: "commercial" was doing two jobs — the proprietary license and the
+49/99 kr subscription — and COMMERCIAL-LICENSE.md read as if customers had to
+negotiate a contract to use regnmed.no. Customers need no license from us; the
+contributor benefit is a free/discounted **subscription** (a free commercial
+license is worth nothing when AGPL already grants self-hosting).
 
 ## Product vision
 

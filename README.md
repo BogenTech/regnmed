@@ -37,13 +37,25 @@ Workspace layout:
 
 ## License
 
-regnmed is **dual-licensed**:
+regnmed is licensed under the **[GNU AGPL-3.0](LICENSE)**. The source is public
+so that anyone — customers, revisorer, security researchers — can read exactly
+how the ledger is built and check the guarantees it claims. That is the point:
+don't trust us, verify.
 
-- **[AGPL-3.0](LICENSE)** — free to use, provided you comply with the AGPL terms. Note that AGPL requires you to make your complete corresponding source code available to all users, including users who interact with the software **over a network** (e.g. SaaS).
-- **[Commercial license](COMMERCIAL-LICENSE.md)** — for use in proprietary products or hosted services without AGPL obligations.
+**Customers of the hosted service need no license from us.** If you use
+regnmed.no, you subscribe and that is all — nothing in this section applies to
+you.
 
-This project is *source available* under a copyleft license; commercial use without AGPL compliance requires a paid license.
+**If you self-host,** AGPL-3.0 applies: you are free to run and modify regnmed,
+provided you make your complete corresponding source available to your users,
+including users who interact with it **over a network**.
+
+A separate [commercial license](COMMERCIAL-LICENSE.md) is available by agreement
+for the unusual case where AGPL-3.0 does not work for you. It is not how regnmed
+is sold — the product is the hosted service.
 
 ## Contributing
 
-Contributions are welcome! All contributors must agree to our [CLA](CLA.md) — see [CONTRIBUTING.md](CONTRIBUTING.md). Significant contributors may qualify for a **free or discounted commercial license**.
+Contributions are welcome! All contributors must agree to our [CLA](CLA.md) —
+see [CONTRIBUTING.md](CONTRIBUTING.md). Significant contributors may qualify for
+a **free or discounted regnmed subscription**.
