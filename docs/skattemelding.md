@@ -28,14 +28,23 @@ for det motsatte. Sammenlign med de andre innsendingene:
 
 | Innsending | Skinne |
 | --- | --- |
-| Mva-melding | Maskinporten + Altinn 3-instansflyt |
+| **Mva-melding** | **ID-porten** (+ Altinn 3-instansflyt ved innsending) |
 | Aksjonærregisteroppgaven (RF-1086) | Maskinporten + Altinn systembruker |
+| A-melding, skattekort | Maskinporten + Altinn systembruker |
 | **Skattemelding + næringsspesifikasjon** | **ID-porten — en innlogget person** |
+
+Mva-raden sto som «Maskinporten» her til 2026-08-11. Det var feil, og
+Skatteetaten oppga selv grunnen da vi spurte (docs/gov.md): **mval.
+krever å vite hvilket menneske som sendte inn**, og Maskinporten bærer
+bare organisasjonsnummer. Skillet i tabellen er altså ikke teknisk
+tilfeldig — det følger av hva loven krever at innsendingen skal kunne
+tilskrives.
 
 **Derfor henger #11 sammen med #26** (ID-porten-føderering via regnid) på
 en måte ROADMAP-en ikke sa: #26 er ikke bare en innloggingsbekvemmelighet,
-den ligger på veien til å kunne sende inn skattemelding herfra. Den
-rekkefølgen bør avgjøres bevisst, ikke oppdages når renderen er ferdig.
+den ligger på veien til å kunne sende inn skattemelding herfra — og
+etter mva-svaret gjelder det samme #8. Den rekkefølgen bør avgjøres
+bevisst, ikke oppdages når renderen er ferdig.
 
 Dokumentet kan altså bygges lenge før det kan leveres — akkurat som
 RF-1086 (docs/aksjonaer.md). Forskjellen er at RF-1086 venter på et

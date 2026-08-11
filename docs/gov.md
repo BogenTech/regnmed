@@ -70,7 +70,11 @@ Gjenstår:
    Deling-siden (eget behandlingsgrunnlagskrav) og bestilles separat
    der når de trengs. Lav prioritet: begge er kryssjekker, ikke
    forutsetninger.
-3. Altinn 3-tilgangen for mva-melding-INNSENDING
+3. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
+   2026-08-11**: `altinn:instances.read`/`write` bestilles i Digdirs
+   registreringsskjema for sluttbrukersystem, ikke hos Skatteetaten.
+   Den opprinnelige noten sto slik, og var riktig om skjemaet vi da
+   så på:
    (`altinn:instances.read`/`write` mot mva-melding-appen) hadde ikke
    noe felt i skjemaet — still spørsmålet som oppfølging på SSV-5760
    når saken får en behandler.
@@ -190,9 +194,16 @@ tilgang, akkurat som for Skatteetaten-scopene (verifisert 2026-07-28:
 klienten fikk dem lagt til, og portalen svarte «Det er lagt til scopes
 på klienten som virksomheten din ikke har tilgang til»).
 
+**LØST 2026-08-11.** Skatteetaten bekreftet på SSV-5760 at innsending
+krever nettopp `altinn:instances.write` / `.read`, og bestillingsveien
+er Digdirs **registreringsskjema for sluttbrukersystem** (steg 1.1 i
+deres onboarding) — funksjonsområdet «Innsending av skjema/data» ER
+`altinn:instances.write`. Altså samme skjema som systembruker-scopene,
+ikke en egen kanal. Avsnittet under sto som åpent spørsmål til da:
+
 Altinns egen dokumentasjon beskriver bare hvordan **tjenesteeiere** får
 disse scopene delegert, ikke hvordan et sluttbrukersystem får dem. Vi
-har altså **ingen verifisert bestillingsvei** for dem ennå — ikke skriv
+hadde altså **ingen verifisert bestillingsvei** for dem — ikke skriv
 en inn her før den er prøvd. Det praktiske første forsøket er å spørre i
 samme henvendelse til Skatteetatens brukerstøtte: innsendingsflyten er
 deres, så de vet hvilken delegering den krever.
@@ -339,6 +350,46 @@ A-meldingen sier det rett ut, og er derfor kilden til hele
 konklusjonen: *«Tokenet mangler informasjon om systembruker i
 `authorization_details`»*.
 
+### Skatteetatens svar (SSV-5760, 2026-08-11): det er loven, ikke etterslep
+
+Vi spurte, og svaret er entydig — og viktigere enn selve blokkeringen:
+
+> «Støtte for Maskinporten er IKKE på veikartet pga lovregulering.
+> MVA-loven krever å vite hvem (fnr) som har sendt inn melding (noe
+> maskinporten ikke støtter — maskinporten oppgir kun orgnr)»
+
+**Dette er altså ikke et hull som tettes senere.** Den eldre
+dokumentasjonen sa «vi ser på Maskinporten, det kommer» — det er
+foreldet, og premisset er nå navngitt: mva-meldingen må kunne
+tilskrives et **menneske**, og Maskinporten bærer per konstruksjon bare
+et organisasjonsnummer. Ingen tidsplan kan endre det; det ville krevd
+en lovendring.
+
+Skatteetaten bekreftet samtidig de tre andre punktene: at vi leste
+utgått GitHub-dokumentasjon (fasiten er
+`skatteetaten.github.io/api-dokumentasjon`), at valideringsverten er
+`idporten-api-test.sits.no` — nøyaktig den vi selv fant og rettet til
+2026-08-10 — og at innsending krever `altinn:instances.write`/`.read`.
+
+**Konsekvensen er en ren linje gjennom hele regjeringsskinnen**, og den
+er verdt å holde fast ved når nye API-er dukker opp:
+
+| Familie | Tilskrives | Skinne | Kan automatiseres? |
+| --- | --- | --- | --- |
+| **Fastsetting** — mva-melding, skattemelding | et **menneske** (fnr) | ID-porten | **Nei.** En innlogget person, hver gang |
+| **Innrapportering** — a-melding, skattekort, RF-1086 | en **virksomhet** (orgnr) | Maskinporten + systembruker | Ja |
+
+Den linjen faller heldigvis sammen med hvordan regnmed alt er bygget:
+utsendelse, betaling og attestering er allerede uttrykkelige
+menneskehandlinger, aldri CronJobs. En mva-melding som sendes inn av
+seg selv klokka 03:00 ville vært feil design uansett hva loven sa —
+her sier loven det samme.
+
+**#8 er derfor permanent nedstrøms #26**, ikke midlertidig. Det samme
+gjelder #11 (docs/skattemelding.md). Valideringsklienten er ikke
+bortkastet: formen på kallet er bekreftet riktig, og den venter bare på
+en token-kilde vi skal bygge uansett.
+
 **Altså: ÉN ting låser opp tre av fire — Altinn systembruker.** Det er
 Digdirs nyere mekanisme, den samme docs/aksjonaer.md alt hadde notert
 for RF-1086, og den gjelder hele den reetablerte Altinn-generasjonen av
@@ -351,8 +402,8 @@ systemregisteret knyttet til vår klient-id, og oppgi tilgangspakkene
 API-ene krever. Det er nå det høyest prioriterte neste steget på denne
 skinnen — ikke fordi det haster mest, men fordi det låser opp mest.
 
-Den fjerde, mva-valideringen, låses ikke opp av systembruker og venter
-på #26.
+Den fjerde, mva-valideringen, låses ikke opp av systembruker i det hele
+tatt — den er fastsetting, og venter på #26 for godt (se over).
 
 **Lærdommen, to hakk dypere enn den forrige i dette dokumentet:**
 katalogen viser hva som *finnes*, tildelingen avgjør hva som kan
