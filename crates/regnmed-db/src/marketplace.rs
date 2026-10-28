@@ -82,6 +82,7 @@ pub async fn onboard_company(
         None,
         facts.orgform.as_deref(),
         facts.email.as_deref(),
+        None,
     )
     .await?;
     sqlx::query(

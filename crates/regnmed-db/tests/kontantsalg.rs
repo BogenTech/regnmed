@@ -76,6 +76,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
         None,
         Some("AS"),
         None,
+        None,
     )
     .await
     .unwrap();

@@ -109,6 +109,7 @@ pub async fn gjor_fakturaklar(pool: &sqlx::PgPool, company_id: Uuid) {
         None,
         Some("AS"),
         None,
+        None,
     )
     .await
     .unwrap();

@@ -512,6 +512,7 @@ async fn put_company_settings(
         request.bank_account.as_deref(),
         request.orgform.as_deref(),
         request.email.as_deref(),
+        None,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
