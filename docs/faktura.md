@@ -75,6 +75,10 @@ lastet det ned.
 
 Det samme oppslaget styrer `cac:PartyTaxScheme` i EHF-en.
 
+Fra #99 styrer det også om en mva-kode kan brukes i det hele tatt —
+ikke bare hva dokumentet SIER, men hva det får gjøre. Regelen står i
+docs/mva.md.
+
 ### Leveringstidspunkt (§5-1-1 nr. 4, #81)
 
 The forskrift requires *when* the ytelse was delivered on every

@@ -84,6 +84,13 @@ pub async fn create_salgsdokument(
         matches!(kind, "tilbud" | "ordre"),
         "kind must be tilbud or ordre"
     );
+    if lines.iter().any(|l| {
+        l.vat_code
+            .as_deref()
+            .is_some_and(crate::settings::krever_mva_registrering)
+    }) {
+        crate::settings::krev_mva_registrert(pool, company_id, doc_date).await?;
+    }
     let party_id: Uuid = sqlx::query_scalar(
         "select id from party where company_id = $1 and party_no = $2 and kind = 'kunde'",
     )
@@ -131,8 +138,8 @@ pub async fn update_tilbud(
     lines: Option<&[SalgsLineDraft]>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let status: String = sqlx::query_scalar(
-        "select status from salgsdokument
+    let row = sqlx::query(
+        "select status, doc_date from salgsdokument
          where id = $1 and company_id = $2 and kind = 'tilbud' for update",
     )
     .bind(tilbud_id)
@@ -140,10 +147,23 @@ pub async fn update_tilbud(
     .fetch_optional(&mut *tx)
     .await?
     .context("no such tilbud")?;
+    let status: String = row.get("status");
     ensure!(
         tilbud_editable(&status),
         "tilbudet er {status} og kan ikke lenger endres"
     );
+    // The rewritten lines are checked against the date the tilbud will
+    // CARRY, which may be the one being set in this same call (#99).
+    if lines.is_some_and(|l| {
+        l.iter().any(|line| {
+            line.vat_code
+                .as_deref()
+                .is_some_and(crate::settings::krever_mva_registrering)
+        })
+    }) {
+        let dato = doc_date.unwrap_or(row.get::<NaiveDate, _>("doc_date"));
+        crate::settings::krev_mva_registrert(pool, company_id, dato).await?;
+    }
     sqlx::query(
         "update salgsdokument set doc_date = coalesce($3, doc_date), updated_at = now()
          where id = $1 and company_id = $2",
