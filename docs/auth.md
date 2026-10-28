@@ -343,8 +343,19 @@ sin — altså unionen, som er mer tilgang enn noen av dem ba om. Testene
 står i `tests/grupper/tilgang.rs` og er sett feile uten rettingen.
 
 Integrasjoner går gjennom samme oppslag, så en maskin kan få en
-egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer. At
-`admin` ikke er grantbart til en maskin står fortsatt.
+egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
+
+> **OPPHEVET 2026-10-28 — se #101.** Her sto det at `admin` ikke er
+> grantbart til en maskin. Det gjelder ikke lenger som endelig
+> avgjørelse: en agent skal kunne tildeles tilgang som en bruker, også
+> migrering, når eieren bestemmer det. Grunnen er at regelen var
+> strengest der brukeren er mest hjelpeløs — en ny kunde står foran
+> migreringen, den vanskeligste oppgaven i systemet, og det var nettopp
+> der ingen agent slapp til. Grensen som BESTÅR er
+> `Rett::kan_delegeres`: en maskin kan gjøre jobben, men aldri utvide
+> sin egen eller andres tilgang. Teksten under blir stående til #101 er
+> implementert, slik at koden og dokumentet sier det samme så lenge
+> `integration_grant.access` fortsatt er `les`/`bokforing`.
 
 ## 7. Medlemsadministrasjon
 

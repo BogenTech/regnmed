@@ -733,11 +733,17 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    --confidential`, slik at en vanlig konfidensiell webklient ikke
    stilltiende blir en maskinaktør. Verifisert på tvers 2026-07-27 —
    ekte regnid-token → regnmed `/me` svarer 200 med sub = client_id og
-   companies: []. Gjenstår bare utrulling av regnid med 0007.
+   companies: []. regnids 0007 er applyert i prod (verifisert
+   2026-10-28), så client_credentials virker der nå.
    regnmed-siden virker med et hvilket som helst token fra issueren der
    sub = client_id. `integration_grant` er
    modellert som oppdrag (valid_to EKSKLUSIV → tilbakekalling virker
-   straks); admin er bevisst ikke grantbart til en maskin; en
+   straks); admin var bevisst ikke grantbart til en maskin — **OPPHEVET
+   2026-10-28, se #101**: en agent skal kunne tildeles tilgang som en
+   bruker, også migrering, når eieren bestemmer det, fordi regelen var
+   strengest der en ny kunde er mest hjelpeløs; grensen som består er
+   `Rett::kan_delegeres` (en maskin gjør jobben, men utvider aldri
+   tilgang). Koden er uendret til #101 er implementert. En
    klient-id som tilhører et menneske MED tilgang kan ikke kapres
    (tomt person-skall kan konverteres). created_by = integrasjonens
    navn, satt ved registrering — tokenet kan ikke døpe om roboten.

@@ -52,10 +52,11 @@ har gitt det.
 identiteten bevist og ingen tilgang før noen gir den, som er hele
 poenget med modellen. Et ugyldig token gir 401.
 
-Gjenstår før dette virker i produksjon: regnid må rulles ut med sin
-migrasjon 0007. Klientadministrasjonen i regnids admin-UI oppretter
-fortsatt bare innloggingsklienter — maskinklienter registreres med
-CLI-en, bevisst en mer overveid handling.
+**I produksjon siden:** regnids migrasjon 0007 «grant types» er
+applyert i prod (verifisert 2026-10-28), så `client_credentials` virker
+der nå. Klientadministrasjonen i regnids admin-UI oppretter fortsatt
+bare innloggingsklienter — maskinklienter registreres med CLI-en,
+bevisst en mer overveid handling.
 
 ## Tilgangen
 
@@ -64,8 +65,17 @@ CLI-en, bevisst en mer overveid handling.
 | `les` | Alt en revisor kan lese: rapporter, reskontro, bilag |
 | `bokforing` | I tillegg: bokføre, fakturere, laste opp i innboksen |
 
-`admin` er bevisst ikke mulig å gi en maskin. Å endre hvem som har
-tilgang er en menneskelig beslutning.
+> **OPPHEVET 2026-10-28 — se #101.** Her sto det at `admin` ikke er
+> mulig å gi en maskin. Tabellen over er fortsatt sann for koden
+> (`integration_grant.access` er `les`/`bokforing`), men ikke lenger
+> fordi vi vil det: #101 erstatter de to nivåene med rollene mennesker
+> alt bruker, innebygde og egendefinerte. Da kan en agent få
+> migreringstilgang hvis eieren gir den.
+>
+> Det som ikke endres: å endre HVEM SOM HAR TILGANG forblir en
+> menneskelig beslutning. `Rett::kan_delegeres` er grensen — en maskin
+> kan gjøre arbeidet, men ikke dele ut tilgang, heller ikke til seg
+> selv.
 
 Grantet er modellert som et oppdrag (docs/auth.md): `valid_to` er
 **eksklusiv**, så en tilbakekalling virker i samme øyeblikk — ikke ved
