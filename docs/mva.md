@@ -12,6 +12,39 @@ Every code has a **rate class**: `regular` (25 %), `middle` (15 %,
 næringsmidler), `low` (12 %), `raw_fish` (11,11 %), `zero`. A code is a
 stable identity; a rate is a dated fact.
 
+## Registreringen avgjør om en kode i det hele tatt kan brukes (#99)
+
+Utgående mva kan bare kreves inn av en registrert selger (mval. §15-11
+andre ledd), og inngående mva bare fradragsføres av en registrert
+kjøper (§8-1). Registreringsstatusen er lagret og datert i
+`company_registrering` (§5-1-2, #81 — se docs/faktura.md); fram til #99
+STYRTE den bare påtegningene på dokumentet, mens beløpene gikk sin
+egen vei. Et uregistrert selskap kunne altså utstede en faktura med
+25 % mva og fradragsføre inngående mva på et utlegg, uten innsigelse.
+
+Vakten er `settings::krev_mva_registrert`, slått opp på **dokumentets
+dato** — aldri dagens, ellers endrer et gammelt bilag seg når noen
+laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen:
+
+| Vei | Hva som skjer uten registrering |
+| --- | --- |
+| faktura, kreditnota, repeterende (`invoice::resolve_lines`) | nektes |
+| tilbud og ordre (`create_salgsdokument`, `update_tilbud`) | nektes der linjene SKRIVES |
+| utlegg (`approve_expense`) | nektes; hele brutto er kostnaden |
+| abonnementsskinnen (`abonnement::utgaende_mva`) | velger kode `7` selv |
+
+Kodene `0`, `6` og `7` slipper alltid gjennom: de sier at transaksjonen
+ligger *utenfor* mva-systemet, og det er nettopp det et uregistrert
+selskap skal si. Kode `5` gjør det ikke, selv om den også er nullsats —
+den betyr en REGISTRERT selgers fritatte omsetning (mval. kap. 6), en
+påstand et uregistrert selskap ikke kan fremsette. Forskjellen er null
+kroner og to helt ulike utsagn i hovedboken og SAF-T-en.
+
+Et uregistrert selskap fakturerer altså uten kode. Den inngående
+avgiften det ikke får fradrag for er en reell kostnad, og skal derfor
+dekkes av prisen — men prisen er bare en pris, og kan ikke føres opp
+som avgift.
+
 ## Dated rates
 
 `vat_rate` (migration 0006) stores rates in **basis points** with

@@ -44,6 +44,50 @@ pub async fn registrering_on(
     }))
 }
 
+/// SAF-T codes that assert nothing inside the VAT system: no treatment
+/// on the purchase side, turnover outside the act, no treatment on the
+/// income side. These are what an unregistered company's lines carry —
+/// `abonnement::utgaende_mva` picks `7` for exactly that reason — so
+/// they are the only codes the guard below lets through.
+///
+/// Code `5` is deliberately NOT here. It is zero-rated too, but it
+/// means a REGISTERED seller's exempt sale (mval. kap. 6), which is a
+/// claim an unregistered company cannot make even at rate 0: the
+/// hovedbok and the SAF-T would say something untrue about what
+/// happened.
+const UTENFOR_MVA: [&str; 3] = ["0", "6", "7"];
+
+/// Whether this code requires the company to be mva-registered.
+pub fn krever_mva_registrering(code: &str) -> bool {
+    !UTENFOR_MVA.contains(&code)
+}
+
+/// Refuses a VAT code the company has no right to use on `dato`.
+///
+/// Output VAT may only be charged by a registered seller (mval. §15-11
+/// second paragraph) and input VAT only deducted by one (§8-1). A code
+/// on a document from an unregistered company is therefore an error,
+/// never a silent zero: the amounts the user asked for and the amounts
+/// posted would differ without anyone being told.
+///
+/// Dated on the DOCUMENT, never today — a company that registers
+/// mid-year must leave its earlier documents as they were, the same
+/// rule the påtegning follows (#81).
+///
+/// Callers that DERIVE a code instead of taking one from a person use
+/// code 7 and rate 0 rather than this guard; see
+/// `abonnement::utgaende_mva`.
+pub async fn krev_mva_registrert(pool: &PgPool, company_id: Uuid, dato: NaiveDate) -> Result<()> {
+    let reg = registrering_on(pool, company_id, dato).await?;
+    ensure!(
+        reg.mva_registrert,
+        "selskapet var ikke mva-registrert {dato} og kan ikke bruke mva-koder — \
+         fjern mva-koden, eller oppdater registreringsstatusen under \
+         firmaopplysninger hvis selskapet faktisk er registrert"
+    );
+    Ok(())
+}
+
 /// Records a registration observation. Insert-only: a correction is a
 /// NEW row, and re-recording the same day replaces that day's row
 /// (the observation is about the day, not about the moment we asked).

@@ -289,3 +289,243 @@ async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
         .await
         .expect("kjeden skal verifisere med de tillagte linjene");
 }
+
+/// A company that is not mva-registered may not charge output VAT
+/// (mval. §15-11 second paragraph) — and must be told so, not quietly
+/// handed a zero.
+///
+/// This is the case the ledger met first in real use: BOGENTECH AS is
+/// registered in Foretaksregisteret but NOT in Merverdiavgiftsregisteret,
+/// so the invoice path's silent acceptance of a vat code would have
+/// issued a document demanding tax the seller has no right to collect
+/// (#99). The second half matters as much as the first: once the
+/// registration IS recorded, the very same draft must go through, or
+/// the guard is just a wall.
+#[tokio::test]
+async fn an_unregistered_company_cannot_charge_output_vat() {
+    let Some(pool) = pool().await else { return };
+    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Uregistrert AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [
+        ("1500", "Kundefordringer"),
+        ("2700", "Utgående mva"),
+        ("3000", "Salgsinntekt"),
+    ] {
+        regnmed_db::ensure_account(&pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    regnmed_db::update_company_settings(
+        &pool,
+        company,
+        Some("Øvre Bogenvei 67, 3152 Tolvsrød"),
+        None,
+        Some("AS"),
+        None,
+    )
+    .await
+    .unwrap();
+    let (party_id, party_no) =
+        regnmed_db::create_party(&pool, company, "kunde", "Kunden", None, None)
+            .await
+            .unwrap();
+    regnmed_db::update_party_contact(
+        &pool,
+        company,
+        party_id,
+        Some("Torget 2, 0155 Oslo"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let dato = date(2026, 10, 28);
+    let draft = regnmed_db::InvoiceDraft {
+        kontant_betalingsmiddel: None,
+        party_no: party_no.clone(),
+        invoice_date: dato,
+        due_date: dato,
+        delivery_date: dato,
+        delivery_place: None,
+        journal_code: "GL".into(),
+        receivable_account: "1500".into(),
+        vat_account: "2700".into(),
+        valuta: None,
+        valuta_kurs_micro: None,
+        lines: vec![regnmed_db::InvoiceLineDraft {
+            description: "Serverleie".into(),
+            account_number: "3000".into(),
+            quantity_milli: 1000,
+            unit_price_ore: 5_565_29,
+            vat_code: Some("3".into()),
+            avdeling: None,
+            prosjekt: None,
+            product_id: None,
+        }],
+    };
+
+    let err = regnmed_db::create_invoice(&pool, company, &draft, "test", None)
+        .await
+        .expect_err("an unregistered seller must not be able to charge mva");
+    assert!(
+        err.to_string().contains("ikke mva-registrert"),
+        "the refusal must name the reason, got: {err}"
+    );
+
+    // Same door, same guard: a tilbud is where the number is first
+    // promised to the customer.
+    let tilbud = regnmed_db::create_salgsdokument(
+        &pool,
+        company,
+        "tilbud",
+        &party_no,
+        dato,
+        &[regnmed_db::SalgsLineDraft {
+            description: "Serverleie".into(),
+            account_number: "3000".into(),
+            quantity_milli: 1000,
+            unit_price_ore: 5_565_29,
+            vat_code: Some("3".into()),
+            avdeling: None,
+            prosjekt: None,
+            product_id: None,
+        }],
+        "test",
+    )
+    .await;
+    assert!(
+        tilbud.is_err(),
+        "a tilbud may not promise mva the seller cannot charge"
+    );
+
+    // Uncoded lines were always legitimate: this is exactly how an
+    // unregistered company invoices, with the unrecoverable input VAT
+    // carried in the price and never named as tax.
+    let mut uten_kode = draft.clone();
+    uten_kode.lines[0].vat_code = None;
+    let utstedt = regnmed_db::create_invoice(&pool, company, &uten_kode, "test", None)
+        .await
+        .expect("an unregistered company must still be able to invoice");
+    assert_eq!(utstedt.gross_ore, 5_565_29, "no VAT may be added");
+
+    // Code 7 ("ingen mva-behandling", income side) is how an
+    // unregistered company's line is CORRECTLY coded, and the
+    // abonnement rail picks it on purpose — so the guard must let it
+    // through. Refusing every code broke that rail; this pins it.
+    let mut kode_sju = draft.clone();
+    kode_sju.lines[0].vat_code = Some("7".into());
+    let utenfor = regnmed_db::create_invoice(&pool, company, &kode_sju, "test", None)
+        .await
+        .expect("code 7 says the sale is outside the vat act — always allowed");
+    assert_eq!(utenfor.gross_ore, 5_565_29, "code 7 adds no tax");
+
+    // And once the registration is on record, the original draft stands.
+    regnmed_db::record_registrering(
+        &pool,
+        company,
+        date(2026, 10, 1),
+        regnmed_db::Registrering {
+            mva_registrert: true,
+            foretaksregistrert: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
+    regnmed_db::create_invoice(&pool, company, &draft, "test", None)
+        .await
+        .expect("a registered seller charges mva as before");
+}
+
+/// The deduction side of the same rule: input VAT is only deductible by
+/// a registered buyer (mval. §8-1).
+///
+/// Left unguarded, approving an utlegg would split the receipt into net
+/// plus a deduction that does not exist, which understates the cost and
+/// puts a claim against the state in the ledger. For an unregistered
+/// company the whole gross is the cost — which is also why the
+/// on-charge has to cover it (#99).
+#[tokio::test]
+async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
+    let Some(pool) = pool().await else { return };
+    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Utlegg Uregistrert AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nr, navn) in [
+        ("2710", "Inngående mva"),
+        ("2910", "Mellomregning ansatte"),
+        ("6420", "Leie datasystemer"),
+    ] {
+        regnmed_db::ensure_account(&pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
+    let person = regnmed_db::ensure_person(&pool, "sub-utlegg-mva", Some("André"), None)
+        .await
+        .unwrap();
+    let dato = date(2026, 10, 2);
+    let krav = regnmed_db::create_utlegg(
+        &pool,
+        company,
+        person,
+        dato,
+        "ServeTheWorld faktura 1202053",
+        397_50,
+        "stw.pdf",
+        "application/pdf",
+        b"%PDF-1.4 kvittering",
+        "test",
+    )
+    .await
+    .unwrap();
+
+    let err = regnmed_db::approve_expense(
+        &pool,
+        company,
+        krav,
+        "6420",
+        Some("1"),
+        "2710",
+        "2910",
+        "test",
+        person,
+    )
+    .await
+    .expect_err("an unregistered buyer must not deduct inngående mva");
+    assert!(
+        err.to_string().contains("ikke mva-registrert"),
+        "the refusal must name the reason, got: {err}"
+    );
+
+    // Without a code the claim posts at its gross amount: the VAT is a
+    // real cost, so it belongs on the cost account.
+    regnmed_db::approve_expense(
+        &pool, company, krav, "6420", None, "2710", "2910", "test", person,
+    )
+    .await
+    .expect("approval without a vat code must still work");
+    let kostnad = sqlx::query_scalar::<_, Option<i64>>(
+        "select sum(e.amount_ore)::bigint from entry e
+         join account a on a.id = e.account_id
+         where a.company_id = $1 and a.number = '6420'",
+    )
+    .bind(company)
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .unwrap_or(0);
+    assert_eq!(kostnad, 397_50, "the whole gross is the cost");
+}

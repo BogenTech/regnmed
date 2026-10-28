@@ -82,9 +82,19 @@ pub struct IssuedInvoice {
 /// the pure computation input. Zero-rate/uncoded lines get rate 0.
 async fn resolve_lines(
     pool: &PgPool,
+    company_id: Uuid,
     invoice_date: NaiveDate,
     lines: &[InvoiceLineDraft],
 ) -> Result<Vec<InvoiceLineInput>> {
+    // Refused before any rate is looked up: an unregistered seller may
+    // not charge output VAT at all (#99).
+    if lines.iter().any(|l| {
+        l.vat_code
+            .as_deref()
+            .is_some_and(crate::settings::krever_mva_registrering)
+    }) {
+        crate::settings::krev_mva_registrert(pool, company_id, invoice_date).await?;
+    }
     let rates = load_vat_rates(pool).await?;
     let mut resolved = Vec::with_capacity(lines.len());
     for (i, line) in lines.iter().enumerate() {
@@ -207,7 +217,7 @@ pub async fn create_invoice_in(
         None => None,
     };
 
-    let lines = resolve_lines(pool, draft.invoice_date, &draft.lines).await?;
+    let lines = resolve_lines(pool, company_id, draft.invoice_date, &draft.lines).await?;
     let computed = compute(&lines);
     if credits_invoice_id.is_none() && computed.gross_ore <= 0 {
         bail!("invoice total must be positive (use a kreditnota to credit)");

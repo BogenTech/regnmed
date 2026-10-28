@@ -282,6 +282,12 @@ pub async fn approve_expense(
     let mut warning = None;
     match kind.as_str() {
         "utlegg" => {
+            // Deducting input VAT needs the registration too (#99) —
+            // otherwise approval quietly books a deduction the company
+            // has no right to, and the cost comes out too low.
+            if mva_kode.is_some_and(crate::settings::krever_mva_registrering) {
+                crate::settings::krev_mva_registrert(pool, company_id, dato).await?;
+            }
             let (netto, mva) = match mva_kode {
                 Some(code) => {
                     let rate_class: String =

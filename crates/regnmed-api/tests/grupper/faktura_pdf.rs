@@ -495,7 +495,12 @@ async fn a_document_predating_the_registration_carries_no_note() {
                 account_number: "3000".into(),
                 quantity_milli: 1_000,
                 unit_price_ore: 5_000_00,
-                vat_code: Some("5".into()),
+                // Uncoded, because the seller was not registered yet:
+                // code 5 is a REGISTERED seller's exemption, and using
+                // it here would be the very document #99 refuses. The
+                // påtegning this test is about depends on the date, not
+                // on the line's code.
+                vat_code: None,
                 avdeling: None,
                 prosjekt: None,
                 product_id: None,
