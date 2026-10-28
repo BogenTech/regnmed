@@ -415,7 +415,8 @@ pub struct PurringDokument {
     /// The interest spesifikasjon when interest is claimed; empty otherwise.
     pub rente: RenteBeregning,
     pub gebyr_ore: i64,
-    pub kid: String,
+    /// None when the seller has no KID/OCR agreement (#104).
+    pub kid: Option<String>,
 }
 
 fn prosent(bp: i64) -> String {
@@ -478,7 +479,9 @@ pub fn render_dokument(dok: &PurringDokument) -> String {
         Ore(total).to_string()
     ));
     line(&format!("Betales innen:  {}", dok.frist_date));
-    line(&format!("KID:            {}", dok.kid));
+    if let Some(kid) = &dok.kid {
+        line(&format!("KID:            {kid}"));
+    }
     if dok.steg == Steg::Inkassovarsel {
         line("");
         line("Dette er et inkassovarsel etter inkassoloven §9. Betales ikke");
@@ -811,7 +814,7 @@ mod tests {
             rente: forsinkelsesrente(1_000_000, date(2025, 6, 15), date(2025, 7, 15), &satser())
                 .unwrap(),
             gebyr_ore: 3500,
-            kid: "000000071".into(),
+            kid: Some("000000071".into()),
         }
     }
 

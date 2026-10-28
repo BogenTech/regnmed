@@ -54,7 +54,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
                 (select k.invoice_no from invoice k where k.id = i.credits_invoice_id)
                     as krediterer_nr,
                 c.name as selger_navn, c.orgnr as selger_orgnr, c.address as selger_adresse,
-                c.bank_account, c.email as selger_epost,
+                c.bank_account, c.email as selger_epost, c.kid_avtale,
                 p.name as kjoper_navn, p.orgnr as kjoper_orgnr, p.address as kjoper_adresse,
                 p.email as kjoper_epost, p.party_no
          from invoice i
@@ -162,7 +162,12 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             epost: head.get("kjoper_epost"),
         },
         kontonummer: head.get("bank_account"),
-        kid: head.get::<Option<String>, _>("kid"),
+        // cbc:PaymentID tells the payer how to mark the payment, so it
+        // follows the bank agreement exactly as the printed KID does (#104).
+        kid: head
+            .get::<bool, _>("kid_avtale")
+            .then(|| head.get::<Option<String>, _>("kid"))
+            .flatten(),
         linjer,
     };
     Ok(regnmed_core::ehf::render(&doc))

@@ -79,6 +79,37 @@ Fra #99 styrer det også om en mva-kode kan brukes i det hele tatt —
 ikke bare hva dokumentet SIER, men hva det får gjøre. Regelen står i
 docs/mva.md.
 
+### KID krever bankavtale (#104)
+
+KID er ikke en egenskap ved fakturanummeret, men ved en **OCR-/KID-avtale
+med banken**. regnmed regnet før ut en KID for hver faktura og trykte
+den alltid — og en KID på et salgsdokument er en INSTRUKS til betaleren
+om hvordan betalingen skal merkes. Uten avtale kan den instruksen ikke
+følges: betalerens bank tilbyr ikke KID mot kontoen, eller avviser
+betalingen.
+
+Det traff det første ekte selskapet som fakturerte i regnmed — et
+nystartet AS har sjelden OCR-avtale fra dag én.
+
+Statusen er lagret på selskapet (`company.kid_avtale`, migrasjon 0061),
+redigerbar stamdata ved siden av `bank_account`, og **av som standard**:
+vi hevder ikke en bankavtale vi ikke har belegg for, samme regel som
+registreringsstatusen over. Uten avtale:
+
+- faktura- og kreditnota-PDF-en skriver ingen KID-linje
+  (`FakturaPdfInput.kid` er `Option<String>`),
+- purringen gjentar ingen KID,
+- EHF-en bærer ingen `cbc:PaymentID`.
+
+`invoice.kid` BEREGNES OG LAGRES uansett: OCR-importen slår opp faktura
+*på* KID (#7), så verdien må finnes selv når dokumentet ikke viser den.
+Det samme gjelder den lagrede purreraden — det er gjengivelsen som
+utelater KID-en, ikke regnskapet som glemmer den.
+
+Dokumentet er låst ved utstedelse, så en faktura utstedt før avtalen
+kom får aldri KID påtrykt i ettertid. Avtalen krysses av i
+Firmaopplysninger, og bør settes FØR første faktura.
+
 ### Leveringstidspunkt (§5-1-1 nr. 4, #81)
 
 The forskrift requires *when* the ytelse was delivered on every

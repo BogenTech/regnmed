@@ -329,6 +329,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         None,
         Some("AS"),
         None,
+        None,
     )
     .await
     .unwrap();

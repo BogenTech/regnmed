@@ -324,6 +324,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
         None,
         Some("ENK"),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -449,6 +450,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
         None,
         Some("AS"),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -524,5 +526,135 @@ async fn a_document_predating_the_registration_carries_no_note() {
     assert!(
         find(&pdf, b"Foretaksregisteret").is_none(),
         "dokumentet er datert før registreringen"
+    );
+}
+
+/// KID hører til en BANKAVTALE, ikke til fakturanummeret (#104).
+///
+/// Et selskap uten KID-/OCR-avtale kan ikke ta imot en KID: betalerens
+/// bank tilbyr den ikke mot kontoen, eller avviser betalingen. En KID
+/// på dokumentet er derfor en instruks som ikke kan følges — og den
+/// traff det første ekte selskapet som fakturerte i regnmed.
+///
+/// Begge retninger står her: uten avtale skal linjen VÆRE BORTE, med
+/// avtale skal den stå. En vakt som bare fjerner noe er ikke verifisert.
+#[tokio::test]
+async fn kid_is_printed_only_when_the_bank_agreement_exists() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Uten avtale"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Bankavtalelos AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    // Kontonummer, men ingen KID-avtale — nettopp kombinasjonen et
+    // nystartet AS har.
+    regnmed_db::update_company_settings(
+        &state.pool,
+        company,
+        Some("Storgata 1, 0155 Oslo"),
+        Some("60750595270"),
+        Some("AS"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let (_, party_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunden", None, None)
+            .await
+            .unwrap();
+    gi_partene_adresse(&state.pool, company).await;
+    let token = idp.token(&sub, "Uten avtale");
+
+    let dato = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+    let utsted = |n: i64| regnmed_db::InvoiceDraft {
+        kontant_betalingsmiddel: None,
+        party_no: party_no.clone(),
+        invoice_date: dato,
+        due_date: dato,
+        delivery_date: dato,
+        delivery_place: None,
+        journal_code: "GL".into(),
+        receivable_account: "1500".into(),
+        vat_account: "2700".into(),
+        valuta: None,
+        valuta_kurs_micro: None,
+        lines: vec![regnmed_db::InvoiceLineDraft {
+            description: format!("Serverleie {n}"),
+            account_number: "3000".into(),
+            quantity_milli: 1_000,
+            unit_price_ore: 1_000_00,
+            vat_code: None,
+            avdeling: None,
+            prosjekt: None,
+            product_id: None,
+        }],
+    };
+
+    let uten = regnmed_db::create_invoice(&state.pool, company, &utsted(1), "test", None)
+        .await
+        .unwrap();
+    let (status, pdf) = send(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{}/pdf", uten.invoice_id),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        find(&pdf, b"Kontonummer").is_some(),
+        "betalingsinformasjonen skal stå — det er bare KID-en som mangler avtale"
+    );
+    assert!(
+        find(&pdf, b"KID").is_none(),
+        "uten bankavtale er en KID en instruks betaleren ikke kan følge"
+    );
+    // Verdien lagres likevel: OCR-importen slår opp faktura PÅ KID (#7).
+    assert!(!uten.kid.is_empty(), "KID-en beregnes og lagres uansett");
+
+    // Avtalen kommer: fra nå skal den stå.
+    regnmed_db::update_company_settings(&state.pool, company, None, None, None, None, Some(true))
+        .await
+        .unwrap();
+    let med = regnmed_db::create_invoice(&state.pool, company, &utsted(2), "test", None)
+        .await
+        .unwrap();
+    let (status, pdf) = send(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{}/pdf", med.invoice_id),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        find(&pdf, b"KID").is_some(),
+        "med avtale er KID-en nettopp det betaleren skal bruke"
     );
 }

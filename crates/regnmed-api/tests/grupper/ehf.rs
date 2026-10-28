@@ -128,10 +128,13 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    // Company details: EHF needs an address and an account number.
+    // Company details: EHF needs an address and an account number. The
+    // KID agreement is set because this test asserts cbc:PaymentID —
+    // without it the KID is deliberately absent (#104).
     sqlx::query(
         "update company set address = 'Storgata 1, 0155 Oslo', bank_account = '86011117947',
-                            orgform = 'AS', email = 'post@sender.no' where id = $1",
+                            orgform = 'AS', email = 'post@sender.no', kid_avtale = true
+         where id = $1",
     )
     .bind(company)
     .execute(&state.pool)

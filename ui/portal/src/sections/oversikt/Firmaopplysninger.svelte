@@ -20,6 +20,9 @@
   let email = $state(untrack(() => settings.email || ""));
   let bankAccount = $state(untrack(() => settings.bank_account || ""));
   let orgform = $state(untrack(() => settings.orgform || ""));
+  // KID hører til bankavtalen, ikke til fakturanummeret (#104): uten
+  // avtale trykkes ingen KID, for betaleren kan ikke bruke den.
+  let kidAvtale = $state(untrack(() => !!settings.kid_avtale));
 
   let mva = $state(untrack(() => !!settings.mva_registrert));
   let freg = $state(untrack(() => !!settings.foretaksregistrert));
@@ -38,6 +41,7 @@
         bank_account: bankAccount,
         orgform,
         email,
+        kid_avtale: kidAvtale,
       });
       toast("Firmaopplysninger lagret", true);
       onDone();
@@ -86,6 +90,13 @@
         {/each}
       </select>
     </div>
+    <label class="label cursor-pointer justify-start gap-2">
+      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={kidAvtale} />
+      <span class="label-text">
+        Vi har KID-/OCR-avtale med banken
+        <span class="opacity-60">— uten avtale trykkes ingen KID på faktura og purring</span>
+      </span>
+    </label>
     <button class="btn btn-sm" onclick={save}>Lagre</button>
   </div>
 </Card>

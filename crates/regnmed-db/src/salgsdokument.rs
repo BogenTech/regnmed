@@ -529,7 +529,7 @@ pub async fn salgsdokument_pdf(
         // and stating one would be a promise we did not make.
         leveringsdato: None,
         leveringssted: None,
-        kid: String::new(),
+        kid: None,
         valuta: None,
         motverdi_nok_ore: None,
         linjer: pdf_linjer,

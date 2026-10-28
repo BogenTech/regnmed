@@ -186,7 +186,8 @@ pub async fn create_invoice_in(
         draft.party_no
     );
     let company = sqlx::query(
-        "select name, orgnr, address, bank_account, orgform from company where id = $1",
+        "select name, orgnr, address, bank_account, orgform, kid_avtale
+         from company where id = $1",
     )
     .bind(company_id)
     .fetch_one(pool)
@@ -375,7 +376,9 @@ pub async fn create_invoice_in(
         forfallsdato: draft.due_date,
         leveringsdato: Some(draft.delivery_date),
         leveringssted: draft.delivery_place.clone(),
-        kid: kid.clone(),
+        // Stored on the invoice either way (OCR resolves payments BY
+        // kid, #7) — but only PRINTED when the bank can honour it (#104).
+        kid: company.get::<bool, _>("kid_avtale").then(|| kid.clone()),
         valuta: draft.valuta.clone(),
         motverdi_nok_ore: draft.valuta.as_ref().map(|_| gross_nok_ore),
         linjer: lines

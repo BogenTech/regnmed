@@ -99,7 +99,10 @@ pub struct FakturaPdfInput {
     pub leveringsdato: Option<NaiveDate>,
     /// Leveringssted, same hjemmel — "der det er relevant".
     pub leveringssted: Option<String>,
-    pub kid: String,
+    /// None when the seller has no KID/OCR agreement with the bank: a
+    /// KID the payer's bank cannot accept is a false instruction, not a
+    /// harmless extra line (#104).
+    pub kid: Option<String>,
     /// How a kontantfaktura was settled ("Kort", "Vipps", "Kontant").
     /// Ignored on every other dokumenttype.
     pub betalingsmiddel: Option<String>,
@@ -369,14 +372,10 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             );
             ly += 13.0;
         }
-        pdf.text(
-            MARGIN,
-            ly,
-            9.0,
-            Font::Regular,
-            &format!("KID: {}", input.kid),
-        );
-        ly += 13.0;
+        if let Some(kid) = &input.kid {
+            pdf.text(MARGIN, ly, 9.0, Font::Regular, &format!("KID: {kid}"));
+            ly += 13.0;
+        }
         pdf.text(
             MARGIN,
             ly,
@@ -434,7 +433,7 @@ mod tests {
             forfallsdato: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
             leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 20),
             leveringssted: None,
-            kid: "000000071".into(),
+            kid: Some("000000071".into()),
             betalingsmiddel: None,
             linjer: vec![
                 PdfLinje {

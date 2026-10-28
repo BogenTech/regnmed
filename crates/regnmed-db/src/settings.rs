@@ -163,11 +163,15 @@ pub struct CompanySettings {
     pub orgform: Option<String>,
     /// Reply-to for utsendelser — the company's address, never regnmed's.
     pub email: Option<String>,
+    /// Has the company a KID/OCR agreement with its bank? Governs
+    /// whether a KID is printed at all (#104).
+    pub kid_avtale: bool,
 }
 
 pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<CompanySettings> {
     let row = sqlx::query(
-        "select name, orgnr, address, bank_account, orgform, email from company where id = $1",
+        "select name, orgnr, address, bank_account, orgform, email, kid_avtale
+         from company where id = $1",
     )
     .bind(company_id)
     .fetch_one(pool)
@@ -179,6 +183,7 @@ pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<Company
         bank_account: row.get("bank_account"),
         orgform: row.get("orgform"),
         email: row.get("email"),
+        kid_avtale: row.get("kid_avtale"),
     })
 }
 
@@ -190,6 +195,7 @@ pub async fn update_company_settings(
     bank_account: Option<&str>,
     orgform: Option<&str>,
     email: Option<&str>,
+    kid_avtale: Option<bool>,
 ) -> Result<()> {
     if let Some(email) = email {
         let email = email.trim();
@@ -204,6 +210,7 @@ pub async fn update_company_settings(
     let updated = sqlx::query(
         "update company set
              address = case when $2 then $3 else address end,
+             kid_avtale = coalesce($10, kid_avtale),
              bank_account = case when $4 then $5 else bank_account end,
              orgform = case when $6 then $7 else orgform end,
              email = case when $8 then $9 else email end
@@ -218,6 +225,7 @@ pub async fn update_company_settings(
     .bind(clear(orgform))
     .bind(email.is_some())
     .bind(clear(email))
+    .bind(kid_avtale)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no such company");

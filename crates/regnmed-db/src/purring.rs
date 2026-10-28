@@ -126,6 +126,8 @@ struct InvoiceFacts {
     invoice_date: NaiveDate,
     due_date: NaiveDate,
     kid: String,
+    /// Whether the KID may be shown at all (#104).
+    kid_avtale: bool,
     party_no: String,
     party_name: String,
     company_name: String,
@@ -140,7 +142,7 @@ async fn invoice_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Res
     let row = sqlx::query(
         "select i.invoice_no, i.invoice_date, i.due_date, i.kid,
                 p.party_no, p.name as party_name,
-                c.name as company_name, c.orgnr,
+                c.name as company_name, c.orgnr, c.kid_avtale,
                 j.code as journal_code,
                 (select a.number from entry x join account a on a.id = x.account_id
                  where x.id = i.receivable_entry_id) as receivable_account,
@@ -185,6 +187,7 @@ async fn invoice_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Res
         invoice_date: row.get("invoice_date"),
         due_date: row.get("due_date"),
         kid: row.get("kid"),
+        kid_avtale: row.get("kid_avtale"),
         party_no: row.get("party_no"),
         party_name: row.get("party_name"),
         company_name: row.get("company_name"),
@@ -273,7 +276,7 @@ async fn prepare(
         restbelop_ore: facts.remaining_ore,
         rente: rente.clone(),
         gebyr_ore: draft.gebyr_ore,
-        kid: facts.kid.clone(),
+        kid: facts.kid_avtale.then(|| facts.kid.clone()),
     });
     Ok(PreparedReminder {
         facts,
