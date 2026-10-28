@@ -372,10 +372,25 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             );
             ly += 13.0;
         }
-        if let Some(kid) = &input.kid {
-            pdf.text(MARGIN, ly, 9.0, Font::Regular, &format!("KID: {kid}"));
-            ly += 13.0;
+        // With a KID the payer has a machine-readable reference. Without
+        // one they need to be TOLD what to write, or the payment arrives
+        // with an empty message and someone has to guess which claim it
+        // settles (#104).
+        match &input.kid {
+            Some(kid) => {
+                pdf.text(MARGIN, ly, 9.0, Font::Regular, &format!("KID: {kid}"));
+            }
+            None => {
+                pdf.text(
+                    MARGIN,
+                    ly,
+                    9.0,
+                    Font::Regular,
+                    &format!("Merk betalingen med fakturanummer {}", input.fakturanr),
+                );
+            }
         }
+        ly += 13.0;
         pdf.text(
             MARGIN,
             ly,

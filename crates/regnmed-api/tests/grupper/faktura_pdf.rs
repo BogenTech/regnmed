@@ -634,6 +634,12 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         find(&pdf, b"KID").is_none(),
         "uten bankavtale er en KID en instruks betaleren ikke kan følge"
     );
+    // Men betaleren trenger fortsatt å vite hva som skal stå i meldingen,
+    // ellers kommer innbetalingen uten referanse og noen må gjette.
+    assert!(
+        find(&pdf, "Merk betalingen med fakturanummer".as_bytes()).is_some(),
+        "uten KID må dokumentet si hva betalingen skal merkes med"
+    );
     // Verdien lagres likevel: OCR-importen slår opp faktura PÅ KID (#7).
     assert!(!uten.kid.is_empty(), "KID-en beregnes og lagres uansett");
 
