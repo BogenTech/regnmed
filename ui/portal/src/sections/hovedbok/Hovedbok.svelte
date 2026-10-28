@@ -673,7 +673,13 @@
           {/if}
         </p>
       {:else}
-        {#each posteringer.vouchers as v (v.voucher)}
+        <!-- Keyed on voucher_id, NOT on v.voucher: bilagsnummeret er
+             gap-fritt per JOURNAL og regnskapsår, så "2025-1" finnes
+             både i IMP og GL så snart et selskap både har importert
+             historikk og fører selv. Like nøkler kaster i Svelte, og et
+             ukastet unntak i en mal fryser komponenten — hele året ble
+             blankt (#108). -->
+        {#each posteringer.vouchers as v (v.voucher_id)}
           <div class="mb-3">
             <span class="font-semibold">{v.journal}-{v.voucher}</span>
             <span class="opacity-70 text-sm">{v.date} — {v.description}</span>
