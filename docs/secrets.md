@@ -72,9 +72,9 @@ curl -s -X POST "$REGNMED_AGENT_ISSUER/token" \
 Merk: regnids token-endepunkt krever `client_id`/`client_secret` i
 KROPPEN. HTTP Basic (`client_secret_basic`) svarer 422 «missing field
 client_id» — et avvik fra RFC 6749 §2.3.1, som sier at en server MÅ
-støtte Basic for klienter som har fått en hemmelighet. Verdt å rette i
-regnid før OIDC-konformanstesten, siden et hvilket som helst
-standardbibliotek prøver Basic først.
+støtte Basic for klienter som har fått en hemmelighet. Filed som
+BogenTech/regnid#2; til det er rettet må alle klienter mot denne
+issueren sende legitimasjonen i kroppen.
 
 ## Handling
 
