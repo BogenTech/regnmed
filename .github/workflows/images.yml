@@ -7,12 +7,11 @@
 # directory — and pushing needs no local registry credential, because
 # GITHUB_TOKEN already has package write for repositories in this org.
 #
-# The build runs inside a digest-pinned rust:alpine container, where musl
-# is the HOST libc — so `x86_64-unknown-linux-musl` is a native build with
-# Alpine's own gcc, and no musl wrapper or cross-toolchain is involved.
-# The pin exists because a runner migration once changed the compiler
-# under us and shipped an AVX2 binary to a node without AVX2; see the
-# comments on the job below.
+# The runner is x86_64, so `x86_64-unknown-linux-musl` is a native build
+# with musl-gcc rather than a cross-compile; only musl-tools is needed.
+# The runner image itself is NOT pinned, which is why the build pins its
+# own instruction-set baseline instead — see the comments on the build
+# step below.
 #
 # Tags: every build gets an immutable `sha-<short>` tag, which is what the
 # deploy overlays should pin (deploy/prod and deploy/test both say
@@ -45,21 +44,6 @@ env:
 jobs:
   image:
     runs-on: ubuntu-latest
-    # Build inside a PINNED Alpine image rather than on the runner.
-    #
-    # The runner is not a stable build environment: when `ubuntu-latest`
-    # migrated to Ubuntu 26 (2026-10-19) its C compiler began
-    # auto-vectorising ring's portable Curve25519 into AVX2, and every
-    # image built after that died with SIGILL on `andor` (i7-3770, no
-    # AVX2) during TLS setup. Same source, same Cargo.lock — only the
-    # runner moved, and nothing in git recorded it.
-    #
-    # A digest-pinned container makes the toolchain a thing we change in
-    # a commit. It also pins the Rust version, which this repo otherwise
-    # never pinned, and gives a NATIVE musl target: Alpine's gcc is musl,
-    # so musl-tools and the musl-gcc wrapper are gone.
-    container:
-      image: rust:alpine@sha256:b1d5dd5a22a09404d3e798c0cf051b689077360374eb505fa5bb93c479693d87
     permissions:
       # contents: write so the final step can commit the new image tag into
       # deploy/test. That commit is the deploy: Flux watches main and
@@ -69,18 +53,18 @@ jobs:
       contents: write
       packages: write
     steps:
-      # Installed BEFORE checkout: without git in the image,
-      # actions/checkout downloads a tarball instead of cloning, and the
-      # tags `git describe` needs would silently be gone.
-      - name: Build dependencies
-        run: apk add --no-cache git musl-dev make perl bash tar
-
       # Full history: the version baked into main builds is
       # `git describe --tags` ("v0.2.5-2-g40e9a7a" = 2 commits after
       # v0.2.5), which needs the tags a shallow clone lacks.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools
+          rustup target add x86_64-unknown-linux-musl
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -108,9 +92,11 @@ jobs:
           # same Cargo.lock; only the runner changed.
           #
           # Rust already defaults to the x86-64 baseline, so the stray
-          # instructions came from the C half. Both are pinned anyway:
-          # a default is not a guarantee, and a pinned image only fixes
-          # WHEN the compiler changes, never what it decides to emit.
+          # instructions came from the C half. Both are set anyway: a
+          # default is not a guarantee, and whatever the runner does
+          # next, the floor is now written down here.
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
           CFLAGS_x86_64_unknown_linux_musl: -march=x86-64 -mtune=generic
           RUSTFLAGS: -C target-cpu=x86-64
         run: |
