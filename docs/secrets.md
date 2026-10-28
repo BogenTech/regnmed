@@ -10,14 +10,15 @@ like configuration mostly is configuration:
 | What | Where | Secret? |
 | --- | --- | --- |
 | `DATABASE_URL`, `OIDC_ISSUER`, `OIDC_AUDIENCE`, `BIND_ADDR` | `.env`, from `.env.example` | **No.** Localhost, throwaway dev password. Committed as an example on purpose. |
-| Maskinporten test key + client id | `~/.config/regnmed/` (see below) | **Yes** — the only one. |
+| Maskinporten test key + client id | `~/.config/regnmed/` (see below) | **Yes.** |
+| `regnmed-agent` client secret (maskinaktør i prod) | `~/.config/regnmed/` (see below) | **Yes.** |
 | Production database credentials | Created in the cluster, out-of-band | **Yes.** `deploy/prod` is built so no credential appears in any rendered manifest (docs/deploy.md). |
 
 A new machine gets a working dev environment with
 `cp .env.example .env` and `docker compose up -d`. Nothing needs to be
 carried across.
 
-## Where the one real secret is
+## Where the real secrets are
 
 A secret correctly kept out of the repo is a secret nobody can find
 again. Recording the *location* is not recording the secret:
@@ -42,6 +43,38 @@ set -a; . ~/.config/regnmed/maskinporten-test.env; set +a
 
 The production key does not exist yet; it is blocked on the scope grant
 (docs/gov.md).
+
+### regnmed-agent (maskintilgang til prod-API-et)
+
+En `client_credentials`-klient i PROD-regnid, registrert 2026-10-28 for
+å prøve ut agent-tilgang (#101–#103). Den er en integrasjon som alle
+andre: tilgangen ligger i regnmeds base, ikke i tokenet, og trekkes
+tilbake i portalen under Administrasjon → Oppdrag og integrasjoner.
+
+```
+~/.config/regnmed/regnmed-agent.env   client id + secret, mode 600
+```
+
+**regnid lagrer bare hashen av hemmeligheten.** Filen over er den
+eneste kopien — mistes den, finnes ingen gjenoppretting, bare en ny
+klient. Ingen backup, av samme grunn som for Maskinporten-nøkkelen: en
+ny maskin lager sin egen klient, og en tapt maskin håndteres ved å
+trekke tilbake tilgangen i portalen og slette klienten i regnid.
+
+```bash
+set -a; . ~/.config/regnmed/regnmed-agent.env; set +a
+curl -s -X POST "$REGNMED_AGENT_ISSUER/token" \
+  -d grant_type=client_credentials \
+  -d client_id="$REGNMED_AGENT_CLIENT_ID" \
+  --data-urlencode client_secret="$REGNMED_AGENT_CLIENT_SECRET"
+```
+
+Merk: regnids token-endepunkt krever `client_id`/`client_secret` i
+KROPPEN. HTTP Basic (`client_secret_basic`) svarer 422 «missing field
+client_id» — et avvik fra RFC 6749 §2.3.1, som sier at en server MÅ
+støtte Basic for klienter som har fått en hemmelighet. Verdt å rette i
+regnid før OIDC-konformanstesten, siden et hvilket som helst
+standardbibliotek prøver Basic først.
 
 ## Handling
 

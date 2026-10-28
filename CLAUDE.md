@@ -153,9 +153,10 @@ That is affordable because there is almost nothing to protect: `.env` is
 localhost config (committed as `.env.example`), and a new machine is set
 up with `cp .env.example .env` + `docker compose up -d`.
 
-The one real secret is the Maskinporten test key, in
-`~/.config/regnmed/` (paths listed in docs/secrets.md — the location is
-recorded, the secret is not). It is deliberately **not** backed up: a
+The real secrets are the Maskinporten test key and the
+`regnmed-agent` client secret (maskinaktør mot prod-API-et, lagt til
+2026-10-28), both in `~/.config/regnmed/` (paths listed in
+docs/secrets.md — the location is recorded, the secret is not). It is deliberately **not** backed up: a
 second machine runs `scripts/maskinporten-key.sh` to generate its **own**
 keypair and registers that public key on the same client
 (`MASKINPORTEN_KID` selects between them), and a lost machine is handled
