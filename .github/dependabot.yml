@@ -1,0 +1,19 @@
+# Pinning a toolchain is only honest if something keeps proposing the
+# newer one. images.yml builds inside a digest-pinned rust:alpine
+# container (see the comments there: an unpinned runner once changed the
+# C compiler under us and shipped an AVX2 binary to a node without
+# AVX2). A pin nobody bumps is a toolchain frozen forever, so Dependabot
+# opens the bump as a PR — the update arrives as a reviewed commit
+# instead of as a surprise on a Tuesday.
+#
+# github-actions covers BOTH the `uses:` actions and the container image
+# referenced by `container:` in a workflow.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "build"
