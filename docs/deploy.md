@@ -526,6 +526,61 @@ required, move Postgres to the CloudNativePG operator with WAL
 archiving to object storage — true PITR. The dump+verify drill stays
 even then; PITR replaces the nightly granularity, not the verification.
 
+## Hendelse 2026-10-29: proben som spiste databasen
+
+**Symptom:** alt som leser databasen hang; `/health` og et `401` svarte
+på millisekunder. Prod, test OG et tredje, urelatert Postgres på samme
+cluster — alle tre samtidig.
+
+**Årsak:** kl. 01:43:52 installerte unattended-upgrades en ny kjerne
+(7.0.0-38 → 7.0.0-42) og nodene startet på nytt. Postgres stengte pent
+01:44:35 og kom opp 01:45:11. **Kl. 01:53:26 var den full.**
+
+Åtte minutter, og tallet forklarer seg selv: `readinessProbe` kjørte
+hvert 5. sekund, og hver kjøring etterlot én backend som aldri døde.
+100 × 5 sekunder = 8 minutter = `max_connections`.
+
+**Hvorfor proben etterlot noe:** `pg_isready` fullfører med vilje ikke
+håndtrykket. Den sender oppstartspakken, leser serverens
+autentiseringsutfordring og legger på — uten å autentisere og uten en
+Terminate-melding. Backenden den etterlater står og venter på klientens
+neste melding, og har bare to veier ut: en EOF fra kjernen, eller
+`authentication_timeout`. Etter kjerneoppgraderingen kom EOF-en aldri —
+og tidsavbruddet slo heller ikke inn (backendene var tre timer gamle med
+60-sekundersstandarden). Begge utgangene var stengt samtidig.
+
+**Hvorfor ingen overvåking så det:** en forbindelse som ikke har
+fullført autentisering står **ikke i `pg_stat_activity`**. Den holder en
+slot og er usynlig for enhver spørring vi kunne finne på å kjøre. Bare
+prosesstabellen viste dem:
+
+```
+postgres: regnmed regnmed [local] authentication
+```
+
+**Fiksen er vår, ikke kjernens.** Proben er nå
+`psql -U regnmed -d regnmed -qtAXc 'select 1'`. Den fullfører
+protokollen og sender Terminate, så backenden avslutter fordi den **ble
+bedt om det** — en vei ut som verken trenger en EOF eller en timer. Den
+beviser dessuten at serveren faktisk kan svare på en spørring, som er
+det «klar» var ment å bety. `authentication_timeout=10s` er lagt til som
+belte: det binder en eventuell henger til et par slots i stedet for
+alle. Beltet er **ikke** bevist mot kjernen som utløste dette — timeren
+slo som nevnt ikke inn der — og det er grunnen til at proben er fiksen
+og timeouten bare beltet.
+
+**Å rulle kjernen tilbake ble vurdert og forkastet.** 7.0.0-38 lå
+fortsatt på alle fem nodene, så det var lett. Men en nedgradering
+hadde gjort sikkerhetsoppdateringer til noe vi skyver foran oss, og
+problemet var uansett vårt: en probe som er avhengig av at kjernen
+oppdager at en klient gikk sin vei, er skjør uavhengig av hvilken
+kjerne som kjører.
+
+**Merk ved endring:** et strategic-merge-patch **erstatter**
+`args`-lista. `authentication_timeout` står derfor i base OG i begge
+overlayene — et flagg bare i base ville blitt stilletiende borte i prod
+og test.
+
 ## Observability, within the frugality budget
 
 No metrics stack by default — the budget (docs/frugality.md) is spent
