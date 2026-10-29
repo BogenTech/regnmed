@@ -25,6 +25,10 @@ pub struct Integration {
     pub rate_limit_min: i32,
     pub registrert_av: String,
     pub created_at: DateTime<Utc>,
+    /// The face, docs/agent.md §8.1: a daisyUI colour and an icon name.
+    /// Plain metadata -- never hashed, never part of authorization.
+    pub avatar_farge: Option<String>,
+    pub avatar_ikon: Option<String>,
 }
 
 fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
@@ -37,11 +41,14 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         rate_limit_min: r.get("rate_limit_min"),
         registrert_av: r.get("registrert_av"),
         created_at: r.get("created_at"),
+        avatar_farge: r.get("avatar_farge"),
+        avatar_ikon: r.get("avatar_ikon"),
     }
 }
 
 const SELECT: &str = "select i.id, i.person_id, p.oidc_sub as client_id, i.navn, i.kontakt,
-                             i.rate_limit_min, i.registrert_av, i.created_at
+                             i.rate_limit_min, i.registrert_av, i.created_at,
+                             i.avatar_farge, i.avatar_ikon
                       from integration i join person p on p.id = i.person_id";
 
 /// The integration behind a token subject, if that subject is one.
@@ -164,6 +171,82 @@ pub async fn grant_integration(
     Ok(integration_id)
 }
 
+/// The colours an agent's face may use (docs/agent.md §8.1). These are
+/// daisyUI's own semantic names, so a face follows the theme like
+/// everything else. The list is here rather than in the portal because
+/// the portal has to spell each class literally for Tailwind to emit it:
+/// that table is a renderer, this is the gate.
+pub const AVATAR_FARGER: [&str; 8] = [
+    "primary",
+    "secondary",
+    "accent",
+    "info",
+    "success",
+    "warning",
+    "error",
+    "neutral",
+];
+
+/// Renames an agent and sets its face. The access level is deliberately
+/// NOT editable here: a grant is immutable by design (0033), so a role
+/// change is a revoke plus a new grant, which leaves the dated trail
+/// that makes the old role still true for the time it applied.
+///
+/// `navn` is the integration's own and is shared by every grant it has,
+/// exactly as `person.name` is the person's rather than per company —
+/// the model from docs/agent.md §1, where an agent is a user. The
+/// company in the path is therefore an authorization scope, not an
+/// owner: the caller must have something to do with this integration.
+pub async fn update_integration(
+    pool: &PgPool,
+    company_id: Uuid,
+    integration_id: Uuid,
+    navn: &str,
+    kontakt: Option<&str>,
+    avatar_farge: Option<&str>,
+    avatar_ikon: Option<&str>,
+) -> Result<()> {
+    let navn = navn.trim();
+    ensure!(!navn.is_empty(), "integrasjonen trenger et navn");
+    fn tom(v: Option<&str>) -> Option<&str> {
+        v.map(str::trim).filter(|t| !t.is_empty())
+    }
+    let kontakt = tom(kontakt);
+    let farge = tom(avatar_farge);
+    let ikon = tom(avatar_ikon);
+    if let Some(farge) = farge {
+        ensure!(
+            AVATAR_FARGER.contains(&farge),
+            "ukjent farge «{farge}» — gyldige er {}",
+            AVATAR_FARGER.join(", ")
+        );
+    }
+    if let Some(ikon) = ikon {
+        // The icon set belongs to the portal (`ikoner.js`), which falls
+        // back when it does not know a name, so this only keeps the
+        // column from becoming a place to put prose.
+        ensure!(ikon.chars().count() <= 40, "ikonnavnet er for langt");
+    }
+
+    let updated = sqlx::query(
+        "update integration set navn = $3, kontakt = $4, avatar_farge = $5, avatar_ikon = $6
+         where id = $1
+           and exists (select 1 from integration_grant g
+                       where g.integration_id = $1 and g.company_id = $2)",
+    )
+    .bind(integration_id)
+    .bind(company_id)
+    .bind(navn)
+    .bind(kontakt)
+    .bind(farge)
+    .bind(ikon)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    ensure!(updated == 1, "ingen slik integrasjon på dette selskapet");
+    Ok(())
+}
+
 /// Revokes access with immediate effect: `valid_to` is exclusive, so
 /// setting it to today ends access now — not at midnight.
 pub async fn revoke_integration(
@@ -200,18 +283,31 @@ pub struct GrantRow {
     pub rate_limit_min: i32,
     /// Calls today, from the usage counter.
     pub kall_i_dag: i64,
+    pub avatar_farge: Option<String>,
+    pub avatar_ikon: Option<String>,
+    /// The governing LLM provider and model, when one is active
+    /// (docs/agent.md §8). Joined here rather than fetched per row:
+    /// the card lists agents, and one query is one query.
+    pub llm: Option<(String, String)>,
 }
 
 pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<GrantRow>> {
     let rows = sqlx::query(
         "select i.id as integration_id, p.oidc_sub as client_id, i.navn, i.kontakt,
-                i.rate_limit_min, g.access, g.valid_from, g.valid_to, g.created_by, g.revoked_by,
+                i.rate_limit_min, i.avatar_farge, i.avatar_ikon,
+                g.access, g.valid_from, g.valid_to, g.created_by, g.revoked_by,
                 coalesce((select u.kall from integration_usage u
                           where u.integration_id = i.id and u.company_id = g.company_id
-                            and u.dag = current_date), 0) as kall_i_dag
+                            and u.dag = current_date), 0) as kall_i_dag,
+                llm.leverandor as llm_leverandor, llm.modell as llm_modell
          from integration_grant g
          join integration i on i.id = g.integration_id
          join person p on p.id = i.person_id
+         left join lateral (
+             select l.leverandor, l.modell from agent_llm l
+             where l.integration_id = i.id and l.company_id = g.company_id and l.aktiv
+             order by l.created_at desc, l.id desc limit 1
+         ) llm on true
          where g.company_id = $1
          order by (g.valid_to is null) desc, i.navn",
     )
@@ -232,6 +328,11 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             revoked_by: r.get("revoked_by"),
             rate_limit_min: r.get("rate_limit_min"),
             kall_i_dag: r.get("kall_i_dag"),
+            avatar_farge: r.get("avatar_farge"),
+            avatar_ikon: r.get("avatar_ikon"),
+            llm: r
+                .get::<Option<String>, _>("llm_leverandor")
+                .zip(r.get::<Option<String>, _>("llm_modell")),
         })
         .collect())
 }

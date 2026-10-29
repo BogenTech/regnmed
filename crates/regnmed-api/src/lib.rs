@@ -77,6 +77,12 @@ pub struct AppState {
     /// the request's Host header: a mail we send must not be addressable
     /// by whoever made the request.
     pub portal_base: Option<String>,
+    /// Seals the customer's own LLM key at rest (AGENT_NOKKEL, 64 hex
+    /// characters — docs/agent.md §8). None when it is unset, and then
+    /// the hosted-agent endpoints say so rather than storing a key we
+    /// cannot protect. It is configuration on the process, never a row:
+    /// the database holds ciphertext and nothing in it can open that.
+    pub agent_nokkel: Option<regnmed_core::hemmelig::Nokkel>,
 }
 
 #[derive(Clone)]
@@ -168,6 +174,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar",
             axum::routing::post(agentoppgave::svar),
+        )
+        .route(
+            "/companies/{company_id}/integrations/{integration_id}",
+            axum::routing::put(integrasjon::endre),
+        )
+        // Vertsagent: kundens egen LLM-leverandør (docs/agent.md §8).
+        // Nøkkelen går inn forseglet og har ingen vei ut herfra.
+        .route(
+            "/companies/{company_id}/integrations/{integration_id}/llm",
+            get(integrasjon::llm)
+                .put(integrasjon::sett_llm)
+                .delete(integrasjon::fjern_llm),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",

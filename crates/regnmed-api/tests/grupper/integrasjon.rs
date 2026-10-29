@@ -199,6 +199,191 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
         "også lesingene telles: {entry}"
     );
 
+    // ---- An agent has a name and a face (docs/agent.md §8.1) ----
+    assert!(
+        listing["farger"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f == "primary"),
+        "fargene serveres fra koden som validerer dem: {listing}"
+    );
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &admin_token,
+        Some(
+            json!({"navn": "Kari Bokfører", "avatar_farge": "primary", "avatar_ikon": "bilag"})
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    let entry = &listing["integrasjoner"][0];
+    assert_eq!(entry["navn"], "Kari Bokfører");
+    assert_eq!(entry["avatar_farge"], "primary");
+    assert_eq!(entry["avatar_ikon"], "bilag");
+    assert_eq!(
+        entry["access"], "bokforing",
+        "ansiktet rører ikke tilgangen"
+    );
+
+    // A colour the renderer has no class for must not reach the column:
+    // the server's list is the gate, the portal's table only draws.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &admin_token,
+        Some(json!({"navn": "Kari Bokfører", "avatar_farge": "bg-[url(evil)]"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // Renaming an agent is administering machine access, so the machine
+    // itself may not do it — not even to itself.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &machine_token,
+        Some(json!({"navn": "Jeg Bestemmer Selv"}).to_string()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "en maskin døper ikke om seg selv"
+    );
+
+    // ---- The customer's own LLM provider (docs/agent.md §8) ----
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(llm["tilgjengelig"], true, "testnøkkelen er satt: {llm}");
+    assert!(llm["oppsett"].is_null(), "ingen leverandør ennå: {llm}");
+
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        Some(
+            json!({
+                "leverandor": "openrouter",
+                "modell": "qwen/qwen3-8b",
+                "api_nokkel": "sk-or-hemmelig-verdi"
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(llm["oppsett"]["leverandor"], "openrouter");
+    assert_eq!(llm["oppsett"]["base_url"], "https://openrouter.ai/api/v1");
+    assert_eq!(llm["oppsett"]["modell"], "qwen/qwen3-8b");
+    assert_eq!(llm["oppsett"]["nokkel_lagret"], true);
+    // THE rule: the key has no way back out. Checked against the whole
+    // response rather than a field, because a leak would arrive as a
+    // field nobody thought about.
+    assert!(
+        !llm.to_string().contains("sk-or-hemmelig-verdi"),
+        "nøkkelen lekket ut igjen: {llm}"
+    );
+
+    // Nor is it in the database in the clear.
+    let lagret: Vec<u8> = sqlx::query_scalar(
+        "select nokkel from agent_llm where integration_id = $1 order by created_at desc limit 1",
+    )
+    .bind(integration_id.parse::<uuid::Uuid>().unwrap())
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&lagret).contains("sk-or-hemmelig-verdi"),
+        "nøkkelen ligger i klartekst i databasen"
+    );
+
+    // http:// is refused: the ledger and the key travel over it.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        Some(
+            json!({
+                "leverandor": "annet",
+                "base_url": "http://gateway.invalid/v1",
+                "modell": "m",
+                "api_nokkel": "x"
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // The machine may not choose its own provider or pay with someone
+    // else's key: that is administering machine access.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &machine_token,
+        Some(json!({"leverandor": "openai", "modell": "m", "api_nokkel": "x"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Turning it off keeps the record of what it was.
+    let (status, _) = request(
+        &state,
+        "DELETE",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert!(llm["oppsett"].is_null(), "modellen er av: {llm}");
+    let rader: i64 = sqlx::query_scalar("select count(*) from agent_llm where integration_id = $1")
+        .bind(integration_id.parse::<uuid::Uuid>().unwrap())
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(rader, 2, "sporet beholder leverandøren som var valgt");
+
     // ---- An integration cannot give itself more ----
     let (status, _) = request(
         &state,

@@ -53,6 +53,18 @@ async fn main() -> Result<()> {
         println!("kortskinnen er på (Stripe)");
     }
 
+    // A malformed AGENT_NOKKEL stops the process rather than quietly
+    // leaving the rail off: a key that is almost right is a
+    // configuration mistake someone would otherwise find weeks later,
+    // when an agent silently has no model.
+    let agent_nokkel = match std::env::var("AGENT_NOKKEL") {
+        Ok(hex) => Some(regnmed_core::hemmelig::Nokkel::fra_hex(&hex)?),
+        Err(_) => None,
+    };
+    if agent_nokkel.is_some() {
+        println!("vertsagenter kan lagre leverandørnøkkel (AGENT_NOKKEL satt)");
+    }
+
     let app = router(AppState {
         pool,
         verifier,
@@ -61,6 +73,7 @@ async fn main() -> Result<()> {
         stripe,
         drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
         portal_base: std::env::var("PORTAL_BASE_URL").ok(),
+        agent_nokkel,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the
