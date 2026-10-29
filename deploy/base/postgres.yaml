@@ -107,7 +107,7 @@ spec:
           # processes and the ones the kubelet execs into it, which
           # broke PostgreSQL's SIGURG latch wakeups and its ability to
           # reap backends (containerd/containerd#14485; fixed by the
-          # host profile in deploy/host/).
+          # host AppArmor profile — see deploy/host/README.md).
           #
           # But pg_isready made us fragile to it. It deliberately
           # ABANDONS the handshake: it sends the startup packet, reads

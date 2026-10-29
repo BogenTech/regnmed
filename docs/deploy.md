@@ -539,10 +539,32 @@ ett millisekund og nådde så **aldri** «ready to accept connections».
 
 Begge er samme feil.
 
+### Hvem startet nodene på nytt
+
+Ikke unattended-upgrades: `apt-config dump` på noden viser
+`Unattended-Upgrade::Automatic-Reboot "false"`, og homelab-repoet slår
+fast at den innstillingen er bevisst og må stå — en omstart her krever
+drain først, og unattended-upgrades vet ingenting om Longhorn-replikaer
+eller etcd-quorum.
+
+Det var **den nattlige vedlikeholdsjobben** i `bisand/homelab`
+(`daily-homelab-update`, kl. 01:20Z): den kjørte `maintain.sh apt`, som
+hentet 7.0.0-42, og deretter sin egen drain-og-omstart-runde node for
+node over Tailscale — joda → obiwan → andor → mando → luke. Sporet på
+mando er entydig: `Accepted publickey for bisand from 100.117.182.8`
+(Mac-en, over tailnettet) kl. 01:43:45–01:45:25, så
+`systemd-logind: The system will reboot now!` kl. 01:45:26. luke hadde
+alt fått kjernen av unattended-upgrade dagen før.
+
+**Prosedyren var altså riktig** — hver node ble drenert først, `gate` var
+OK før runden startet, og hver node kom opp Ready med alle pods Running.
+Det som gikk galt lå i kjernen, ikke i framgangsmåten, og ingenting i
+passet kunne sett det: feilen rammer bare signaler *inne i* containere.
+
 ### Rotårsaken
 
-Kl. 01:43:52 installerte unattended-upgrades kjerne 7.0.0-38 → 7.0.0-42
-og nodene startet på nytt. Ubuntu setter
+Kl. 01:43–01:45 startet alle fem noder på nytt på kjerne 7.0.0-38 →
+7.0.0-42. Ubuntu setter
 `kernel.apparmor_restrict_unprivileged_unconfined=1`, og kjernen gjør da
 om et uprivilegert `change_profile` til unconfined til en **STABEL**. En
 prosess kubelet exec-er inn i en container — altså en probe — bærer
@@ -581,8 +603,12 @@ containerd v2.3.4.
 
 ### Fiksen
 
-`deploy/host/cri-containerd.apparmor.d` — containerds egen mal, rendret
-med nodens egne verdier, pluss to regler:
+Containerds egen mal, rendret med nodens egne verdier, pluss to regler
+(oppskriften og grensene står i
+[../deploy/host/README.md](../deploy/host/README.md); den utrullede kopien
+for vår homelab ligger i `bisand/homelab` under
+`nodes/common/cri-containerd.apparmor.d`, siden en rendret profil er
+vertsspesifikk og hører til vertsrepoet):
 
 ```
 signal (send,receive) peer=cri-containerd.apparmor.d//&unconfined,
