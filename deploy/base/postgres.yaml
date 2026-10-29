@@ -37,6 +37,14 @@ spec:
       containers:
         - name: postgres
           image: postgres:18-alpine
+          # Always, ikke IfNotPresent: taggen FLYTER. Under hendelsen
+          # 2026-10-29 viste det seg at andor kjørte PostgreSQL 18.6 mens
+          # luke og mando kjørte 18.4 — samme manifest, samme tag, ulik
+          # programvare, fordi hver node brukte det den tilfeldigvis
+          # hadde hentet. Always holder nodene LIKE uten å pinne en
+          # versjon, som er det vi vil: oppdateringer skal flyte inn,
+          # men likt overalt. (docs/deploy.md)
+          imagePullPolicy: Always
           # uid 70 is `postgres` in the alpine image. Without this the
           # container runs as ROOT — the image drops privileges itself,
           # but nothing was making it, and an image change would have

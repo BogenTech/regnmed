@@ -646,6 +646,57 @@ Et strategic-merge-patch **erstatter** `args`-lista.
 `authentication_timeout` står derfor i base OG i begge overlayene — et
 flagg bare i base ville blitt stilletiende borte i prod og test.
 
+## Oppetidssjekk: utenfor clusteret, og mot databasen
+
+`.github/workflows/oppetid.yml`, hvert tiende minutt.
+
+Hendelsen 2026-10-29 varte i fire timer og ble oppdaget ved at eieren
+prøvde å bruke systemet. Overvåkingen sviktet ikke — den fantes ikke.
+Og det er verre enn det: det ene endepunktet man instinktivt ville satt
+en vakt på, var det ene som ikke kunne se feilen.
+
+| endepunkt | under nedetiden | hvorfor |
+| --- | --- | --- |
+| `/health` | **200 hele veien** | rører ikke databasen |
+| `/me` uten token | **401 på millisekunder** | svarer før tilgangsoppslaget |
+| `/portal-config` | hang for alltid | leser `platform_setting` |
+| `/anchors` | hang for alltid | leser forankringstabellen |
+
+`/health` er en **liveness-løgn**. Jobben sjekker derfor bare endepunkter
+som faktisk går i databasen, og den behandler **treghet som feil** — ti
+sekunders frist, for symptomet var henging, ikke 5xx.
+
+Den kjører i GitHub Actions og ikke i clusteret med vilje: en vaktpost
+inne i clusteret går ned sammen med det den vokter. Den er gratis, den
+ligger utenfor, og den bor allerede der slippene bor — altså innenfor
+frugalitetsbudsjettet (docs/frugality.md), som er grunnen til at det
+ikke står en Prometheus-stack her.
+
+Den åpner én issue med merkelappen `oppetid` når prod ikke svarer,
+kommenterer på den hvis det vedvarer, og **lukker den selv** når prod
+svarer igjen — så en natt med nedetid ikke blir tolv like varsler.
+
+**Den dekker ikke test.** Det er et valg: et varsel som går av for
+testmiljøet blir et varsel ingen leser.
+
+## Images: flytende tagger må hentes
+
+`postgres:18-alpine` og `nats:alpine` flyter, og uten `imagePullPolicy`
+bruker hver node det den tilfeldigvis har hentet. 2026-10-29 kjørte
+andor PostgreSQL **18.6** mens luke og mando kjørte **18.4** — samme
+manifest, samme tag, ulik programvare. Det var ikke årsaken til
+hendelsen, men det kostet en feilaktig diagnose underveis.
+
+Begge står nå på `imagePullPolicy: Always`. Det er med vilje IKKE en
+pinning: oppdateringer skal fortsatt flyte inn, men likt på alle noder.
+Prisen er at en node ikke kan starte podden hvis registeret er
+utilgjengelig — en avveining vi tar, siden alternativet er at nodene
+stilletiende divergerer.
+
+`regnmed`- og `regnid`-imagene er unntatt: overlayene gir dem
+uforanderlige tagger (`v0.6.4`, `sha-…`), så `IfNotPresent` er riktig
+der.
+
 ## Observability, within the frugality budget
 
 No metrics stack by default — the budget (docs/frugality.md) is spent
