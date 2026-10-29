@@ -68,6 +68,18 @@ spec:
             # Set it only once its MX delivers into regnid's receiver.
             - name: MAIL_IN_DOMAIN
               value: bilag.test.regnmed.no
+            # Opens the customer's stored provider key (docs/agent.md
+            # §8.2). The worker has had this since the CronJob shipped;
+            # the API never did, so every hosted-agent form was off in
+            # test and said so -- correctly, but for a reason nobody had
+            # noticed. Same secret, same key: the two processes seal and
+            # open the same bytes, and a mismatch would mean keys stored
+            # by one that the other cannot read.
+            - name: AGENT_SEALING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-credentials
+                  key: sealing-key
             # Self-service agents (docs/agent.md §8.6). regnmed asks
             # regnid to create the agent's OIDC identity, so a customer
             # never sees a client_id. The client_id below must be on
