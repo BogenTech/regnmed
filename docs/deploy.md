@@ -154,6 +154,19 @@ være releasen, og hver release skal forklare seg):
    `curl -s https://regnmed.no/portal-config` skal bære
    `"versjon": "vX.Y.Z"`.
 
+**En pinne-commit alene bygger ikke noe image.** `images.yml` har
+`paths-ignore` på `deploy/**`, `docs/**` og `*.md` — satt for at
+workflowens egen tagg-bump i `deploy/test` ikke skal utløse en ny runde av
+seg selv. Den filtreringen gjelder også TAGG-pusher, så en commit som bare
+flytter pinnen (nøyaktig det steg 2 ber om) kan tagges uten at noe image
+blir bygget, og Flux blir stående og vente på et image som aldri kommer.
+v0.6.7 skjulte det fordi den commiten også rørte `.github/`. Skjer det,
+er fluktluken den workflowen alt dokumenterer:
+
+```sh
+gh workflow run images.yml --ref vX.Y.Z
+```
+
 **Hvorfor steg 2 er en port (funnet 2026-10-29).** Prod kjørte image
 `v0.6.4` mens både `v0.6.5` og `v0.6.6` var sluppet. Begge taggene bar et
 `deploy/prod` som fortsatt sa `v0.6.4`, så Flux gikk pliktskyldig til
