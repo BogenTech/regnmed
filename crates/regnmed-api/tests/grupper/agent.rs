@@ -466,7 +466,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     .await;
 
     let modell = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
-    let utfall = regnmed_agent::kjor_sloyfe(
+    let utfall = regnmed_agent::run_loop(
         &modell,
         &server,
         "bokforing",
@@ -578,7 +578,7 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
             tekst: "Bruk 6800.".into(),
         },
     ];
-    regnmed_agent::kjor_sloyfe(
+    regnmed_agent::run_loop(
         &modell,
         &server,
         "bokforing",
@@ -609,4 +609,98 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     );
     assert_eq!(meldinger[3]["role"], "user");
     assert_eq!(meldinger[3]["content"], "Bruk 6800.");
+}
+
+/// Exactly one worker gets a task, however many ask at once
+/// (docs/agent.md §8.7).
+///
+/// This is the guard that replaces `concurrencyPolicy: Forbid`. The old
+/// CronJob could not run two tasks at all, which was a capacity ceiling
+/// of one for the whole platform but did mean nothing could race. With
+/// N workers on a queue that accident is gone, and this takes its place
+/// — because the thing two workers would race on is posting vouchers.
+#[tokio::test]
+async fn only_one_worker_can_hold_a_task() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Køselskapet AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let oppgave = regnmed_db::agentoppgave::opprett_oppgave(
+        &state.pool,
+        company,
+        None,
+        "Avstem banken.",
+        None,
+        "Aud Admin",
+    )
+    .await
+    .unwrap();
+
+    // Ten workers reaching for the same task in the same instant. The
+    // claim is one statement, so no interleaving of readers can let two
+    // of them both conclude they won.
+    let forsok = futures_util::future::join_all((0..10).map(|i| {
+        let pool = state.pool.clone();
+        async move {
+            regnmed_db::agentoppgave::claim_task(&pool, oppgave, &format!("worker-{i}"))
+                .await
+                .unwrap()
+        }
+    }))
+    .await;
+    assert_eq!(
+        forsok.iter().filter(|v| **v).count(),
+        1,
+        "nøyaktig én vinner: {forsok:?}"
+    );
+
+    // And a second pass while the first holder is still working gets
+    // nothing — this is the redelivery case, where JetStream hands the
+    // nudge out again after ack_wait on a task that is still running.
+    assert!(
+        !regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "sent-ute")
+            .await
+            .unwrap(),
+        "en levende lås slipper ingen andre inn"
+    );
+
+    // Releasing opens it again: a failed run must not lock the task out
+    // of a retry, so the lease is dropped whatever the outcome was.
+    regnmed_db::agentoppgave::release_task(&state.pool, oppgave)
+        .await
+        .unwrap();
+    assert!(
+        regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "neste")
+            .await
+            .unwrap(),
+        "etter slipp kan neste worker ta den"
+    );
+
+    // A claim older than its lifetime is abandoned, not permanent: a
+    // worker killed mid-task would otherwise park its task forever.
+    sqlx::query(
+        "update agent_task_claim set claimed_at = now() - ($2 || ' minutes')::interval
+         where oppgave_id = $1",
+    )
+    .bind(oppgave)
+    .bind((regnmed_db::agentoppgave::CLAIM_TTL_MINUTES + 1).to_string())
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    assert!(
+        regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "overtar")
+            .await
+            .unwrap(),
+        "en forlatt lås kan overtas"
+    );
 }

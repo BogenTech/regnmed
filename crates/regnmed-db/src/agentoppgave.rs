@@ -221,3 +221,46 @@ pub async fn svar(
     .await?;
     Ok(())
 }
+
+/// How long a claim is honoured before another worker may take over.
+///
+/// It has to outlast the slowest honest run: twelve turns against a slow
+/// provider, each with tool calls. Too short and two workers post the
+/// same voucher; too long and a crashed worker's task sits idle. Fifteen
+/// minutes is comfortably past the worker's own deadline, so a task is
+/// only ever re-claimed after the first attempt is genuinely gone.
+pub const CLAIM_TTL_MINUTES: i64 = 15;
+
+/// Takes the lease on a task, or returns false if somebody else holds a
+/// live one (docs/agent.md §8.7).
+///
+/// ONE statement, so no two workers can both conclude they won: the
+/// insert either creates the row or collides, and the `do update` only
+/// fires for a claim old enough to be considered abandoned. `returning`
+/// is empty when the conflicting row was still fresh.
+pub async fn claim_task(pool: &PgPool, oppgave_id: Uuid, worker: &str) -> Result<bool> {
+    let tatt: Option<Uuid> = sqlx::query_scalar(
+        "insert into agent_task_claim (oppgave_id, worker)
+         values ($1, $2)
+         on conflict (oppgave_id) do update
+            set worker = excluded.worker, claimed_at = now()
+          where agent_task_claim.claimed_at < now() - ($3 || ' minutes')::interval
+         returning oppgave_id",
+    )
+    .bind(oppgave_id)
+    .bind(worker)
+    .bind(CLAIM_TTL_MINUTES.to_string())
+    .fetch_optional(pool)
+    .await?;
+    Ok(tatt.is_some())
+}
+
+/// Releases the lease. Called whatever the outcome — the trail of what
+/// happened lives in the hendelser, not here.
+pub async fn release_task(pool: &PgPool, oppgave_id: Uuid) -> Result<()> {
+    sqlx::query("delete from agent_task_claim where oppgave_id = $1")
+        .bind(oppgave_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

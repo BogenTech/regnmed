@@ -98,6 +98,7 @@ pub async fn opprett(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    nudge(&state, company_id, id).await;
     Ok(Json(json!({ "oppgave_id": id })))
 }
 
@@ -176,5 +177,27 @@ pub async fn svar(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    // A human answering a question puts the task back in play, so it
+    // deserves the same nudge as a new one -- otherwise the reply waits
+    // for the backstop sweep, which is the slow path we are leaving.
+    // An agent's own answer never does: it is reporting, not asking.
+    if person.integration.is_none() && !matches!(request.status.as_str(), "utfort" | "avvist") {
+        nudge(&state, company_id, oppgave_id).await;
+    }
     Ok(Json(json!({ "status": request.status })))
+}
+
+/// Rings the doorbell, and shrugs if the queue is down.
+///
+/// The task is already in the database, which is what makes this safe
+/// to ignore: the backstop sweep finds it regardless. A queue outage
+/// must never fail the request that created the work -- that would turn
+/// a slow agent into a broken portal.
+async fn nudge(state: &AppState, company_id: Uuid, oppgave_id: Uuid) {
+    let Some(js) = state.mailq.as_ref() else {
+        return;
+    };
+    if let Err(e) = regnmed_mail::taskqueue::nudge(js, company_id, oppgave_id).await {
+        eprintln!("agentkøen tok ikke imot varselet for {oppgave_id}: {e:#}");
+    }
 }

@@ -18,12 +18,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run every open task that is addressed to an agent with a model.
-    Kjor {
+    /// Run every open task that is addressed to an agent with a model,
+    /// then exit. The backstop sweep: it catches tasks whose nudge was
+    /// never published or was lost, so a queue outage costs latency
+    /// rather than work.
+    Run {
         /// Only this company's tasks.
         #[arg(long)]
-        selskap: Option<uuid::Uuid>,
+        company: Option<uuid::Uuid>,
     },
+    /// Consume the work queue until stopped (docs/agent.md §8.7).
+    ///
+    /// This is the normal way agents run. Every replica joins the same
+    /// durable pull consumer, so adding a replica adds throughput --
+    /// which the CronJob could not do: `concurrencyPolicy: Forbid` held
+    /// the whole platform to one task at a time.
+    Listen,
 }
 
 #[tokio::main]
@@ -43,25 +53,162 @@ async fn main() -> Result<()> {
     let api = std::env::var("REGNMED_API").unwrap_or_else(|_| "https://api.regnmed.no".into());
 
     match cli.command {
-        Command::Kjor { selskap } => {
-            let oppgaver = regnmed_db::agentllm::apne_agentoppgaver(&pool, selskap).await?;
+        Command::Run { company } => {
+            let oppgaver = regnmed_db::agentllm::apne_agentoppgaver(&pool, company).await?;
             if oppgaver.is_empty() {
                 println!("ingen åpne agentoppgaver");
                 return Ok(());
             }
+            let navn = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
             for (company_id, oppgave_id) in oppgaver {
+                // The sweep takes the same lease the queue workers take.
+                // Without it this would be the one place two processes
+                // could run a task at once -- precisely when a backlog
+                // makes that most likely.
+                match regnmed_db::agentoppgave::claim_task(&pool, oppgave_id, &navn).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        println!("{oppgave_id} arbeides alt på, hopper over");
+                        continue;
+                    }
+                    Err(feil) => {
+                        eprintln!("kunne ikke ta {oppgave_id}: {feil:#}");
+                        continue;
+                    }
+                }
                 // One task's failure must not stop the rest: the outcome
                 // is written into that task's own trail either way.
-                match regnmed_agent::kjor_oppgave(
-                    &pool, &nokkel, company_id, oppgave_id, &issuer, &api,
-                )
-                .await
-                {
+                let utfall =
+                    regnmed_agent::run_task(&pool, &nokkel, company_id, oppgave_id, &issuer, &api)
+                        .await;
+                if let Err(feil) = regnmed_db::agentoppgave::release_task(&pool, oppgave_id).await {
+                    eprintln!("klarte ikke slippe {oppgave_id}: {feil:#}");
+                }
+                match utfall {
                     Ok(utfall) => println!("{oppgave_id} {} {}", utfall.status(), utfall.notat()),
                     Err(feil) => eprintln!("{oppgave_id} feilet: {feil:#}"),
                 }
             }
         }
+        Command::Listen => {
+            let url = std::env::var("NATS_URL")
+                .context("NATS_URL mangler — uten kø finnes det ingenting å lytte på")?;
+            let js = regnmed_mail::connect(
+                &url,
+                std::env::var("NATS_USER").ok(),
+                std::env::var("NATS_PASSWORD").ok(),
+            )
+            .await?;
+            regnmed_mail::taskqueue::ensure_stream(&js).await?;
+            listen(&pool, &nokkel, &js, &issuer, &api).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Consumes the work queue until the process is stopped.
+///
+/// Every replica joins the SAME durable pull consumer, which is what
+/// makes a replica worth adding: JetStream hands each message to one of
+/// them. Tasks therefore run in parallel across workers while each task
+/// stays sequential within itself -- which is the only shape that works,
+/// since a turn's input is the previous turn's output.
+async fn listen(
+    pool: &sqlx::PgPool,
+    nokkel: &Nokkel,
+    js: &regnmed_mail::jetstream::Context,
+    issuer: &str,
+    api: &str,
+) -> Result<()> {
+    use futures_util::StreamExt;
+    use regnmed_mail::jetstream;
+
+    // Named after the pod so a stuck claim in the database points at a
+    // process an operator can actually go and look at.
+    let navn = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
+
+    let consumer = js
+        .get_stream(regnmed_mail::taskqueue::STREAM)
+        .await?
+        .get_or_create_consumer(
+            regnmed_mail::taskqueue::CONSUMER,
+            jetstream::consumer::pull::Config {
+                durable_name: Some(regnmed_mail::taskqueue::CONSUMER.into()),
+                // A model turn takes minutes and a task runs up to
+                // twelve of them, so a short ack_wait would redeliver
+                // work that is still running. The database claim is
+                // what makes that safe anyway; this just keeps it rare.
+                ack_wait: std::time::Duration::from_secs(20 * 60),
+                // Two attempts, not endless: a task that kills its
+                // worker twice is a task that needs a human, and the
+                // trail already says so.
+                max_deliver: 2,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    println!("{navn} lytter på {}", regnmed_mail::taskqueue::SUBJECT);
+    let mut meldinger = consumer.messages().await?;
+    while let Some(melding) = meldinger.next().await {
+        let melding = match melding {
+            Ok(m) => m,
+            Err(feil) => {
+                eprintln!("køen ga en feil: {feil:#}");
+                continue;
+            }
+        };
+        let varsel: regnmed_mail::taskqueue::TaskNudge =
+            match serde_json::from_slice(&melding.payload) {
+                Ok(v) => v,
+                // Unreadable payloads are acked: redelivering something we
+                // cannot parse only burns the queue.
+                Err(feil) => {
+                    eprintln!("ubrukelig varsel, hopper over: {feil:#}");
+                    let _ = melding.ack().await;
+                    continue;
+                }
+            };
+
+        // The claim, not the queue, is what guarantees one worker per
+        // task (docs/agent.md §8.7). A redelivery after ack_wait, or a
+        // backstop sweep running at the same moment, stops here.
+        match regnmed_db::agentoppgave::claim_task(pool, varsel.oppgave_id, &navn).await {
+            Ok(true) => {}
+            Ok(false) => {
+                println!("{} arbeides alt på, hopper over", varsel.oppgave_id);
+                let _ = melding.ack().await;
+                continue;
+            }
+            Err(feil) => {
+                eprintln!("kunne ikke ta {}: {feil:#}", varsel.oppgave_id);
+                let _ = melding.ack().await;
+                continue;
+            }
+        }
+
+        let utfall = regnmed_agent::run_task(
+            pool,
+            nokkel,
+            varsel.company_id,
+            varsel.oppgave_id,
+            issuer,
+            api,
+        )
+        .await;
+        // Released whatever happened: the lease is not evidence, and a
+        // failed run must not lock the task out of a later retry.
+        if let Err(feil) = regnmed_db::agentoppgave::release_task(pool, varsel.oppgave_id).await {
+            eprintln!("klarte ikke slippe {}: {feil:#}", varsel.oppgave_id);
+        }
+        match utfall {
+            Ok(u) => println!("{} {} {}", varsel.oppgave_id, u.status(), u.notat()),
+            Err(feil) => eprintln!("{} feilet: {feil:#}", varsel.oppgave_id),
+        }
+        // Acked either way: the outcome is written into the task's own
+        // trail, so a redelivery would only repeat work somebody can
+        // already read about.
+        let _ = melding.ack().await;
     }
     Ok(())
 }

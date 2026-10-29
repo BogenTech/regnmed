@@ -23,6 +23,13 @@ async fn main() -> Result<()> {
     // E-post-inn (docs/epost-inn.md, #35) rides the same rail: with a
     // mail queue configured we consume received mail into the innboks
     // in the background; without one, reception simply does not exist.
+    // The agent work queue rides the same connection (docs/agent.md
+    // §8.7). Ensured here so a misconfigured stream fails at startup
+    // rather than at the first task somebody creates.
+    if let Some(js) = mailq.as_ref() {
+        regnmed_mail::taskqueue::ensure_stream(js).await?;
+        println!("agentkøen er klar ({})", regnmed_mail::taskqueue::SUBJECT);
+    }
     if let Some(js) = mailq.clone() {
         let pool = pool.clone();
         tokio::spawn(async move {

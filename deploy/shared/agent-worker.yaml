@@ -1,39 +1,102 @@
-# Vertsagenten (docs/agent.md §8.3): kjører åpne agentoppgaver med
-# kundens egen modell.
+# Vertsagentene: en Deployment som lytter på arbeidskøen, og en time-
+# lig CronJob som feiebrett (docs/agent.md §8.7).
 #
-# EGEN CronJob, ikke en tråd i regnmed-api: én modelltur kan ta
-# minutter, og API-ets minnebudsjett måles under forespørselslast
-# (docs/frugality.md). Samme begrunnelse som mail-workeren har.
+# HVORFOR IKKE CRONJOB LENGER. Den forrige kjørte hvert femte minutt med
+# `concurrencyPolicy: Forbid`, og det betydde ÉN oppgave om gangen for
+# HELE plattformen -- ikke én per selskap. En agent som malte seg
+# gjennom tolv turer blokkerte alle andres agenter til den var ferdig
+# eller traff 900-sekundersgrensen. Det er ikke en forsinkelse man
+# justerer bort; det er et tak på én.
 #
-# `Forbid` er ikke pynt. Oppgavene er ikke låst mens de kjøres, så to
-# samtidige kjøringer kunne plukket samme oppgave og kjørt modellen to
-# ganger på kundens regning. Sporet ville vist det etterpå; regningen
-# ville vært betalt.
-#
-# Hvert femte minutt framfor nattlig: en agent man snakker med skal
-# svare mens man sitter der. Uten åpne oppgaver gjør kjøringen ingenting
-# og avslutter straks — den spør databasen, ikke leverandøren.
+# Køen løser begge deler: oppgaven plukkes med én gang den finnes, og
+# hver replika tar sin egen. Flere agenter samtidig = flere replikaer.
 #
 # AGENT_SEALING_KEY er HEMMELIG og må finnes FØR første apply, ellers
 # står poden i CreateContainerConfigError (samme felle som
 # stripe-credentials, se .env.example). Uten den kan ingenting åpnes, og
 # workeren sier det framfor å feile oppgave for oppgave.
-apiVersion: batch/v1
-kind: CronJob
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: regnmed-agent
   namespace: regnmed
 spec:
-  schedule: "*/5 * * * *"
+  # Overlayene bestemmer tallet. Hver replika er én samtidig oppgave.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: regnmed-agent
+  template:
+    metadata:
+      labels:
+        app: regnmed-agent
+    spec:
+      containers:
+        - name: agent
+          image: regnmed:dev
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["/app/regnmed-agent", "listen"]
+          env:
+            # Hvor agenten når OSS. Den autentiserer SOM seg selv med
+            # sin egen klientlegitimasjon — ingen ny vei inn i
+            # hovedboken for workeren (docs/agent.md §8.3).
+            - name: REGNMED_API
+              value: "sett-meg-i-overlayet"
+            - name: REGNMED_ISSUER
+              value: "sett-meg-i-overlayet"
+            # Uten kø finnes det ingenting å lytte på, og `listen`
+            # nekter å starte framfor å stå stille og se frisk ut.
+            - name: NATS_URL
+              value: nats://nats:4222
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+            - name: AGENT_SEALING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-credentials
+                  key: sealing-key
+          resources:
+            requests:
+              memory: 16Mi
+            limits:
+              # Romsligere enn de andre jobbene: svaret fra en modell
+              # kan være stort, og verktøysvar kuttes først på 8 kB
+              # hver. Målt forbruk hører i frugality.md når den har
+              # kjørt nok til at tallet betyr noe.
+              memory: 96Mi
+---
+# Feiebrettet. Køen er en dørklokke, ikke fasiten: databasen vet hvilke
+# oppgaver som står åpne. Denne finner dem som aldri fikk et varsel, 
+# eller hvis varsel gikk tapt — så en NATS-nedetid koster ventetid og
+# ikke arbeid. Den tar samme lås som workerne, så den kan aldri kjøre
+# en oppgave noen alt holder på med.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-agent-sweep
+  namespace: regnmed
+spec:
+  schedule: "17 * * * *"
   concurrencyPolicy: Forbid
-  # En kjøring som henger på en treg leverandør skal ikke bli stående for
-  # alltid: MAKS_TURER begrenser turene, dette begrenser klokketiden.
-  startingDeadlineSeconds: 120
-  successfulJobsHistoryLimit: 2
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 900
+      activeDeadlineSeconds: 1800
       backoffLimit: 1
       template:
         spec:
@@ -52,7 +115,7 @@ spec:
                   drop: [ALL]
                 seccompProfile:
                   type: RuntimeDefault
-              command: ["/app/regnmed-agent", "kjor"]
+              command: ["/app/regnmed-agent", "run"]
               env:
                 # Hvor agenten når OSS. Den autentiserer SOM seg selv med
                 # sin egen klientlegitimasjon — ingen ny vei inn i
@@ -61,6 +124,10 @@ spec:
                   value: "sett-meg-i-overlayet"
                 - name: REGNMED_ISSUER
                   value: "sett-meg-i-overlayet"
+                # Uten kø finnes det ingenting å lytte på, og `listen`
+                # nekter å starte framfor å stå stille og se frisk ut.
+                - name: NATS_URL
+                  value: nats://nats:4222
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:
@@ -75,8 +142,4 @@ spec:
                 requests:
                   memory: 16Mi
                 limits:
-                  # Romsligere enn de andre jobbene: svaret fra en modell
-                  # kan være stort, og verktøysvar kuttes først på 8 kB
-                  # hver. Målt forbruk hører i frugality.md når den har
-                  # kjørt mot ekte oppgaver.
                   memory: 96Mi

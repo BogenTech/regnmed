@@ -83,7 +83,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
     let modell =
         regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
-    let utfall = regnmed_agent::kjor_sloyfe(
+    let utfall = regnmed_agent::run_loop(
         &modell,
         &server,
         "bokforing",
@@ -182,7 +182,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     let modell =
         regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
-    let utfall = regnmed_agent::kjor_sloyfe(
+    let utfall = regnmed_agent::run_loop(
         &modell,
         &server,
         "bokforing",
