@@ -559,6 +559,17 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
   `regnmed-agent` har eget budsjett i [frugality.md](frugality.md)
   (8 MB, målt 5,4). Uten åpne oppgaver spør kjøringen databasen og
   avslutter; den rører ikke leverandøren.
+
+  To ting å vite fra selve utrullingen. (a) `.dockerignore` ekskluderer
+  alt og slipper inn navngitte stier, så en ny `COPY` i Dockerfile uten
+  en tilsvarende linje der feiler bygget på en fil som nettopp ble
+  kompilert — fila gjør jobben sin, men feilmeldingen peker på Docker
+  framfor på `.dockerignore`. (b) **Manifestet nådde test før imaget som
+  inneholdt binæret**: Flux applyer `deploy/test` fra main med den
+  image-pinnen som står der NÅ, så tre planlagte kjøringer feilet på et
+  image uten `/app/regnmed-agent` før neste pin kom. Vinduet lukker seg
+  selv, men en ny CronJob for et nytt binær bør ikke landes før imaget
+  som bærer det.
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives. Chat-flaten
   (steg 4) vil ville ha delsvar.
 - **Ingen kostnadsgrense.** `MAKS_TURER` begrenser antall turer, ikke antall
@@ -644,6 +655,15 @@ oppgave som venter på deg er synlig uten å leses.
 Verifisert i nettleseren hele veien: agenten spør, svaret sendes fra
 kortet, nyeste status blir `pagar`, og oppgaven er plukkbar av workeren
 igjen (sjekket i databasen, ikke i UI-et).
+
+#### Aldri kjørt ende-til-ende i clusteret
+
+Workeren STARTER i test, leser den forseglede nøkkelen, spør databasen og
+avslutter rent — det er verifisert. Det som ikke er verifisert er en agent
+som faktisk ARBEIDER der: det krever en `client_credentials`-klient i test
+sin regnid og at noen logger inn i portalen og setter opp agenten, og begge
+delene er menneskearbeid som ikke kan gjøres herfra. Sløyfen selv er kjørt
+mot ekte modeller (§8.4), men ikke med token hentet i clusteret.
 
 #### Fortsatt ikke gjort
 
