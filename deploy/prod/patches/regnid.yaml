@@ -19,3 +19,17 @@ spec:
                   key: regnid-url
             - name: ISSUER
               value: https://id.regnmed.no
+            # The clients allowed to call POST /provision/machine-client
+            # (regnid src/provision.rs). This list IS the authorization
+            # rule for that endpoint, and it is empty wherever it is not
+            # set -- so the endpoint exists in the image but does
+            # nothing until a line like this names someone.
+            #
+            # What such a client can create is narrow by construction:
+            # client_credentials only, confidential only, no redirect
+            # URIs. It can never mint a client people log in through, so
+            # a leak of the provisioning secret cannot become a phishing
+            # endpoint on id.regnmed.no -- only robots, which still need
+            # a grant from a company admin before they can do anything.
+            - name: PROVISION_CLIENTS
+              value: regnmed-provisioner
