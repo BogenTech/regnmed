@@ -81,6 +81,10 @@ jobs:
           DETALJ: ${{ steps.sjekk.outputs.detalj }}
         run: |
           set -eu
+          # `gh issue create --label` FEILER på en ukjent merkelapp, og da
+          # ville varselet dødd nøyaktig når det trengtes. Merkelappen
+          # finnes i repoet, men en vaktpost skal ikke stole på det.
+          gh label create oppetid --description "Ekstern oppetidssjekk: produksjon svarer ikke" --color B60205 2>/dev/null || true
           EKSISTERENDE=$(gh issue list --label oppetid --state open --json number -q '.[0].number')
           KROPP="Den eksterne oppetidssjekken når ikke produksjon.
 
