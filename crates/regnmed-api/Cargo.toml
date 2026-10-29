@@ -32,6 +32,9 @@ tower-http.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+# The hosted agent worker is exercised end to end in tests/grupper/agent.rs:
+# its loop must drive the SAME tools against the real router.
+regnmed-agent = { path = "../regnmed-agent" }
 chrono.workspace = true
 futures-util.workspace = true
 rand.workspace = true

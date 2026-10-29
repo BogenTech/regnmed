@@ -477,3 +477,160 @@ portalen. Det er levelig nå — ingen agenter er i drift — og det blir
 dyrere jo lenger vi venter. Den riktige veien er en nøkkel-id per rad og
 en omforsegling som leser med den gamle og skriver med den nye; det er
 ikke bygget, og det hører sammen med steg 3.
+
+### 8.3 Workeren (levert)
+
+`crates/regnmed-agent` — eget binær, `regnmed-agent kjor`. Den tar åpne
+agentoppgaver som er stilet til en agent med aktiv modell, kjører dem, og
+skriver utfallet i `agent_oppgave_hendelse`.
+
+**Avgjørelsen §8 lot stå åpen er tatt: ingen ny autentiseringsvei.**
+Vertsagenten henter token med `client_credentials` som seg selv, nøyaktig
+som en agent på kundens egen maskin. `integration_grant`, maskintaket og
+attesteringsreglene gjelder uendret, håndhevet der de alltid var. Workeren
+kjører sløyfen og holder modellnøkkelen; den holder ingen myndighet.
+Alternativet — å la workeren handle «på vegne av» en agent fordi den er
+innenfor tillitsgrensen vår — ville lagt en andre dør inn i hovedboken, og
+hele §1 finnes for å slippe det.
+
+Prisen er at agenten trenger en klienthemmelighet. Migrasjon 0067 legger den
+på `integration`, forseglet med samme nøkkel som modellnøkkelen.
+Oppdaterbar, ikke innsettings-bar som `agent_llm`: et spor over forkastede
+leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
+en forpliktelse.
+
+**Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
+systemprompten av `rolle::prompt`, og kallet går gjennom
+`Server::utfor_verktoy` — samme dispatcher som MCP-serveren. Transporten
+skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
+oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
+nøyaktig like mange verktøy som tabellen.
+
+Sløyfen stopper etter `MAKS_TURER` (12) og SIER at den stoppet. En sløyfe
+som ikke stopper bruker kundens penger; en agent som stille gir opp er verre
+enn en som melder fra om en vegg.
+
+Modellen avslutter med en markør — `FERDIG:`, `SPØRSMÅL:` eller `AVVIST:` —
+som blir statusen køen alt kjenner (#103). Workeren finner ikke opp egne.
+Tekst uten markør leses som utført: en liten modell som gjorde jobben og
+glemte prefikset skal ikke få arbeidet sitt journalført som en nektelse, og
+notatet bærer råteksten uansett. `sporsmal` er ikke terminal i 0064-vakten,
+nettopp fordi agenten skal kunne fortsette når noen har svart.
+
+Leverandøren er OpenAI-kompatibel `/chat/completions` med `tools` —
+grunnen til at dette ble lite. OpenAI, OpenRouter og de fleste
+selvhostede gatewayer snakker samme protokoll, så én klient dekker det
+kunden sannsynligvis tar med, og `annet` dekker resten uten en ny versjon
+fra oss. Felter vi ikke modellerer ignoreres framfor å avvises: dette er en
+wire vi ikke eier.
+
+**Verifisert end-to-end mot en falsk leverandør** (`agent.rs`): modellen ber
+om `saldobalanse`, workeren kjører det mot det EKTE routeren med agentens
+eget token, mater svaret tilbake og rapporterer `utfort`. Testen sjekker at
+verktøysvaret bærer data fra API-et — og den er **sett feile**: med
+dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
+
+#### Ærlige begrensninger
+
+- **Kjørt mot ekte leverandør 2026-10-29**, og det fant to feil den falske
+  ikke kunne finne (se §8.4). Lærdommen fra Stripe-integrasjonen (punkt 56 i
+  CLAUDE.md) holdt: payloads skrevet ut fra hva koden LESER bekrefter bare
+  kodens egen antakelse.
+- **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_NOKKEL` i
+  `deploy/`, og `regnmed-agent` har ikke noe budsjett i
+  [frugality.md](frugality.md). Alt tre hører sammen og kommer når
+  workeren har kjørt mot en ekte leverandør.
+- **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives. Chat-flaten
+  (steg 4) vil ville ha delsvar.
+- **Ingen kostnadsgrense.** `MAKS_TURER` begrenser antall turer, ikke antall
+  tokens. `integration.rate_limit_min` begrenser kall mot VÅRT API, ikke mot
+  leverandøren.
+- **Selvbetjent klientregistrering mangler fortsatt.** Klienthemmeligheten
+  må komme fra en operatør som kjørte `regnid add-client`. Det er samme hull
+  §8 åpnet med, og det er nå i veien for den vanlige kunden.
+
+### 8.4 Hva den ekte leverandøren fant
+
+`crates/regnmed-api/tests/ekte_leverandor.rs` er en håndkjørt prøvebenk mot
+OpenRouter — no-op uten `OPEN_ROUTER_KEY`, siden den koster penger. Den fant
+to feil som den falske leverandøren ikke kunne finne, og det er grunnen til
+at den finnes.
+
+**(a) Et ubesvart spørsmål lukket oppgaven.** `gemini-2.5-flash-lite` spurte
+hvilken dato i 2026 som var ment, uten `SPØRSMÅL:`-prefikset. Fallbacken
+leste umerket tekst som utført — og `utfort` er TERMINAL i 0064-vakten, så
+oppgaven ble lukket og spørsmålet forsvant med den. Umerket tekst som ender
+med spørsmålstegn tolkes nå som `sporsmal`. Asymmetrien avgjør regelen: å
+være feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet
+og lukker), å være feilaktig terminal er det ikke.
+
+**(b) En bokfører kunne ikke føre et bilag.** Bedt om å bokføre en kontant
+utgift svarte `gpt-4o-mini`: «Jeg kan ikke bokføre bilaget fordi jeg ikke
+har et vedlegg tilgjengelig for opplasting.» Den hadde rett — tabellens
+eneste posteringsverktøy var `bilag_bokfor`, som bokfører et
+INNBOKSDOKUMENT. Ruten for manuell føring (#70, `POST …/vouchers`) fantes i
+API-et og manglet i tabellen. Det er kostnaden ved en KURATERT liste (§3),
+og `agent.rs` kunne ikke se den: den sjekker at verktøyene i tabellen
+treffer API-et, ikke at API-ets viktige ruter er i tabellen. Nytt verktøy
+`bilag_for`, og det UTØVES i `agent.rs` framfor å stå på unntakslisten —
+det skriver til hovedboken, det ene stedet et sklidd verktøy gjør skade i
+stedet for bare å feile.
+
+Verifisert etterpå, mot ekte modell: bilag 2026-1 bokført, 50 000 øre debet,
+lest tilbake FRA HOVEDBOKEN og ikke fra modellens egen påstand.
+
+Observert underveis, ikke feil: to 8B-modeller er borte fra OpenRouter
+(`qwen/qwen3-8b` avviklet 9. okt 2026, `mistralai/ministral-8b` uten
+leverandør). Leverandørens egen feilmelding gikk uendret ut i oppgavens
+notat, som er oppførselen §8.3 lover — kunden leser «was deprecated», ikke
+«noe gikk galt».
+
+Kjente modeller som gjorde jobben: `openai/gpt-4o-mini`,
+`qwen/qwen3.7-flash`, `meta-llama/llama-3.1-8b-instruct`,
+`google/gemini-2.5-flash-lite` (som spør oftere enn den gjør).
+
+### 8.5 Samtalen (levert) — steg 4
+
+Chat-flaten er en VISNING av `agent_oppgave_hendelse`, ikke en ny
+datamodell. Tråden fantes fra #103, fordi `sporsmal` med vilje ikke er
+terminal i 0064-vakten. Derfor finnes det ingen «slett melding» her:
+sporet er innsettings-bart, og et svar kan ikke trekkes tilbake.
+
+**Ingen ny status.** §8 noterte at tråden mangler en egen «svar»-status, og
+at et menneskes svar lander som `pagar` med notat. Det viste seg å være
+RIKTIG framfor et hull: `pagar` sier at arbeidet fortsetter, notatet er det
+som ble sagt, og `av` sier hvem som sa det — alt vi trenger for å tegne to
+sider. Og det gjør oppgaven plukkbar igjen for workeren, som hopper over
+`sporsmal`. En ny status ville kostet en migrasjon og et nytt tilfelle i
+hver match, for ingenting.
+
+**Tråden mates tilbake til modellen.** Dette var det virkelige hullet, og
+det var ikke i UI-et: `kjor_sloyfe` fikk bare bestillingen, så en agent som
+hadde spurt og ble plukket opp igjen ville spurt om det samme for alltid —
+og da hadde det ikke hjulpet at `sporsmal` er ikke-terminal.
+`kjor_oppgave` bygger nå replikkene av historikken: hendelser skrevet av
+agentens eget navn blir `assistant`, resten `user`, og en bar `pagar` uten
+notat («begynte å arbeide») er ingen replikk. Testfestet i `agent.rs`:
+systemprompt, bestilling, agentens eget spørsmål som `assistant`, og
+menneskets svar som `user` — i den rekkefølgen.
+
+**Boblene er håndrullet.** daisyUIs `chat`-komponent kostet ~2,3 KB i dist
+for ren utsmykking, og budsjettet (frugality.md) hadde 7 KB igjen; flex og
+`rounded-box` gjør samme jobb med klasser bundelen alt har. Samme avveining
+som ikonene (#67): vi skriver markupen, temaet eier fargene. Fargene er
+`bg-primary` for mennesket, `bg-base-200` for agenten, `bg-warning` for et
+spørsmål og `bg-error` for en avvisning — statusen bærer fargen, så en
+oppgave som venter på deg er synlig uten å leses.
+
+Verifisert i nettleseren hele veien: agenten spør, svaret sendes fra
+kortet, nyeste status blir `pagar`, og oppgaven er plukkbar av workeren
+igjen (sjekket i databasen, ikke i UI-et).
+
+#### Fortsatt ikke gjort
+
+- **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives, så et svar
+  dukker opp i ett stykke. Det merkes mest på en lang oppgave.
+- **Ingen varsling.** Et spørsmål venter til noen åpner kortet. Mail-skinnen
+  finnes (#32/#35) og er den åpenbare veien, men den er ikke koblet.
+- **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
+  hva som er nytt siden sist.

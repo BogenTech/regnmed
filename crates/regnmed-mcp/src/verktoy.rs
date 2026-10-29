@@ -288,6 +288,35 @@ pub const VERKTOY: &[Verktoy] = &[
             "additionalProperties":false}"#,
     },
     Verktoy {
+        navn: "bilag_for",
+        beskrivelse: "Fører et bilag MANUELT, uten noe dokument i innboksen — en kontant \
+                      utgift, en omføring, en avsetning. Summen av linjene MÅ være null \
+                      (debet positiv, kredit negativ). Bruk denne når oppgaven gir deg tallene \
+                      direkte; har du et dokument, bruk bilag_bokfor så dokumentet blir vedlegg. \
+                      En aktiv attesteringspolicy over beløpsgrensen NEKTER manuell føring og \
+                      viser til innboksen — sjekk attesteringspolicy først. \
+                      FØR IKKE noe du er usikker på: svar på oppgaven med status «sporsmal».",
+        metode: "POST",
+        sti: "/companies/{selskap}/vouchers",
+        kropp: Kropp::Json,
+        skjema: r#"{"type":"object","required":["journal_code","date","description","lines"],
+            "properties":{SELSKAP,
+            "journal_code":{"type":"string","description":"Vanligvis GL"},
+            "date":{"type":"string","description":"Bilagsdato, YYYY-MM-DD — bilagets dato, ikke dagens"},
+            "description":{"type":"string","description":"Kort bilagstekst"},
+            "lines":{"type":"array","minItems":2,"items":{"type":"object",
+                "required":["account","amount_ore"],
+                "properties":{
+                    "account":{"type":"string","description":"Kontonummer"},
+                    "amount_ore":{"type":"integer","description":"Heltall øre. Positivt = debet, negativt = kredit."},
+                    "vat_code":{"type":"string","description":"Mva-kode. Utelat helt hvis selskapet ikke er mva-registrert."},
+                    "description":{"type":"string"},
+                    "party_no":{"type":"string","description":"Kunde-/leverandørnummer. Påkrevd på reskontrokontoer."},
+                    "avdeling":{"type":"string"},
+                    "prosjekt":{"type":"string"}}}}},
+            "additionalProperties":false}"#,
+    },
+    Verktoy {
         navn: "bilag_avvis",
         beskrivelse: "Avviser et innboksdokument. Begrunnelsen er obligatorisk og blir stående: \
                       bruk denne når dokumentet ikke hører i dette regnskapet, ikke når du bare \

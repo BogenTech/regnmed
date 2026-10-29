@@ -100,6 +100,36 @@ impl Klient {
         })
     }
 
+    /// A client for one agent's own credentials — the hosted worker
+    /// (docs/agent.md §8.3), which holds many agents' secrets and so
+    /// cannot read them from process-global environment variables.
+    /// Same `client_credentials` flow as the customer's own MCP server:
+    /// one authentication path, used by both rails.
+    pub async fn med_klientlegitimasjon(
+        base: &str,
+        selskap: Option<String>,
+        issuer: &str,
+        client_id: &str,
+        secret: &str,
+    ) -> Result<Self> {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()?;
+        let token_url = oppdag_token_endepunkt(&http, issuer.trim_end_matches('/')).await?;
+        Ok(Self {
+            http,
+            base: base.trim_end_matches('/').to_string(),
+            selskap,
+            auth: Auth::Klient {
+                token_url,
+                client_id: client_id.to_string(),
+                secret: secret.to_string(),
+                scope: None,
+            },
+            cache: tokio::sync::Mutex::new(None),
+        })
+    }
+
     /// An explicitly configured client. Used by the end-to-end test,
     /// which must not go through process-global environment variables:
     /// tests in one binary share them, and a flaky configuration is

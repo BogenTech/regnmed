@@ -1,0 +1,23 @@
+[package]
+name = "regnmed-agent"
+description = "Hosted agent worker: runs a customer's own model against the agent task queue"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+regnmed-core.workspace = true
+regnmed-db.workspace = true
+# The tool table, the role prompts and the API client are the SAME ones
+# the customer's own MCP server uses. Only the transport differs.
+regnmed-mcp = { path = "../regnmed-mcp" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true
