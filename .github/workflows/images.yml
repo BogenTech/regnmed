@@ -60,6 +60,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A release must pin ITS OWN image, and nothing checked that until
+      # 2026-10-29 — when prod was found running v0.6.4 while the v0.6.5 and
+      # v0.6.6 tags had both shipped, because each of their prod overlays
+      # still said v0.6.4. Flux moved to the newest tag and applied the
+      # manifests from it faithfully; the manifests simply named an older
+      # image. Nothing was broken, nothing was loud, and two releases
+      # delivered no application code at all.
+      #
+      # docs/deploy.md step 2 already said to set newTag to the COMING tag in
+      # the commit you tag. This is that sentence as a gate. Failing here
+      # means a mispinned tag builds no image, which is the safe direction:
+      # prod keeps running what it already had, and the mistake is visible
+      # in Actions instead of in a version string nobody reads.
+      - name: A release pins its own image
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          pinned=$(awk '/name: regnmed$/{f=1} f && /newTag:/{print $2; exit}' \
+                   deploy/prod/kustomization.yaml)
+          echo "tag=$tag  deploy/prod pins=$pinned"
+          if [ "$pinned" != "$tag" ]; then
+            echo "::error::$tag pins image $pinned, not itself. Prod would keep" \
+                 "running $pinned. Set newTag: $tag in deploy/prod/kustomization.yaml," \
+                 "put it in the commit you tag, and cut a higher release" \
+                 "(deleting a tag does not roll back — docs/deploy.md)."
+            exit 1
+          fi
+
       - name: Install musl toolchain
         run: |
           sudo apt-get update -qq
