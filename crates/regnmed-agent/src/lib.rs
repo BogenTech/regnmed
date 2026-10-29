@@ -87,17 +87,28 @@ impl Utfall {
 fn avslutning() -> String {
     "Når du er ferdig, svar med vanlig tekst som starter med FERDIG: og en kort \
      oppsummering av hva du gjorde.\n\
-     Trenger du en avgjørelse et menneske må ta, svar med tekst som starter med \
-     SPØRSMÅL: og still ett konkret spørsmål. Ikke gjett.\n\
+     Trenger du en avgjørelse et menneske må ta, eller mangler du en opplysning, \
+     svar med tekst som starter med SPØRSMÅL: og still ett konkret spørsmål. \
+     Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør.\n\
      Kan oppgaven ikke gjøres, svar med tekst som starter med AVVIST: og si hvorfor.\n\
      Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven."
         .to_string()
 }
 
-/// Reads the marker off the model's closing text. Unmarked text is
-/// treated as done rather than as failure: a small model that did the
-/// work and forgot the prefix should not have its work recorded as a
-/// refusal, and the note carries the raw text either way.
+/// Reads the marker off the model's closing text.
+///
+/// Unmarked text that ENDS IN A QUESTION MARK is a question, whatever
+/// prefix the model forgot. Found with a real provider
+/// (gemini-2.5-flash-lite, 2026-10-29): it asked which date in 2026 was
+/// meant, and without this it was recorded `utfort` -- which is
+/// TERMINAL in the 0064 guard, so the task closed and the question was
+/// lost with it. The asymmetry decides the rule: being wrongly
+/// non-terminal is recoverable, because a human reads the note and
+/// closes it; being wrongly terminal is not.
+///
+/// Other unmarked text is still treated as done. A small model that did
+/// the work and forgot the prefix should not have its work recorded as
+/// a refusal, and the note carries the raw text either way.
 fn tolk(tekst: &str) -> Utfall {
     let t = tekst.trim();
     let etter = |p: &str| t[p.len()..].trim().to_string();
@@ -108,6 +119,8 @@ fn tolk(tekst: &str) -> Utfall {
         Utfall::Avvist(etter("AVVIST:"))
     } else if u.starts_with("FERDIG:") {
         Utfall::Utfort(etter("FERDIG:"))
+    } else if t.ends_with('?') {
+        Utfall::Sporsmal(t.to_string())
     } else {
         Utfall::Utfort(t.to_string())
     }
@@ -282,6 +295,22 @@ mod tests {
         assert_eq!(
             tolk("jeg bokførte alt sammen"),
             Utfall::Utfort("jeg bokførte alt sammen".into())
+        );
+    }
+
+    #[test]
+    fn an_unmarked_question_does_not_close_the_task() {
+        // Verbatim from gemini-2.5-flash-lite through OpenRouter,
+        // 2026-10-29. Recorded as `utfort` it would have CLOSED the
+        // task — terminal in the 0064 guard — and taken the question
+        // with it.
+        let ekte = "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
+                    du er interessert i. Kan du vennligst oppgi en spesifikk dato?";
+        assert_eq!(tolk(ekte).status(), "sporsmal");
+        // A statement that merely mentions a question is still done.
+        assert_eq!(
+            tolk("Jeg svarte på spørsmålet ditt og bokførte bilaget.").status(),
+            "utfort"
         );
     }
 

@@ -101,6 +101,14 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         .execute(&state.pool)
         .await
         .unwrap();
+    // A chart to post against: `bilag_for` is exercised for real below,
+    // and without accounts it would fail for a reason that says nothing
+    // about whether the tool matches the API.
+    for (nr, navn) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+            .await
+            .unwrap();
+    }
 
     let base = tjen(state.clone()).await;
     let server = Server::new(Klient::ny(
@@ -158,9 +166,37 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         );
     }
 
+    // Manual posting (#70's route, added to the table 2026-10-29 after a
+    // real model could not do a bokfører's job without it: the only
+    // posting tool needed an inbox document). Exercised rather than
+    // exempted — it writes to the ledger, which is the one place a
+    // drifted tool does damage instead of just failing.
+    let (feilet, tekst) = kall(
+        &server,
+        "bilag_for",
+        json!({
+            "journal_code": "GL",
+            "date": "2026-03-15",
+            "description": "Kontorrekvisita",
+            "lines": [
+                {"account": "6800", "amount_ore": 50000},
+                {"account": "1920", "amount_ore": -50000}
+            ]
+        }),
+    )
+    .await;
+    assert!(!feilet, "bilag_for nådde ikke fram: {tekst}");
+    let bokfort: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
+        .bind(company)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(bokfort, 1, "bilaget havnet ikke i hovedboken");
+
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.
-    let dekket: Vec<&str> = argumenter.keys().copied().collect();
+    let mut dekket: Vec<&str> = argumenter.keys().copied().collect();
+    dekket.push("bilag_for");
     // Exercised further down instead, where there is a real document,
     // a real file or a real task to act on.
     let senere = [

@@ -532,11 +532,10 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
 
 #### Ærlige begrensninger
 
-- **Payloadene er ikke fanget fra ekte trafikk.** Lærdommen fra
-  Stripe-integrasjonen (punkt 56 i CLAUDE.md) var at payloads skrevet ut fra
-  hva koden LESER bare bekrefter kodens egen antakelse. Disse er skrevet fra
-  leverandørenes dokumentasjon. Første ekte kjøring mot OpenRouter er den
-  virkelige prøven, og den har ikke vært.
+- **Kjørt mot ekte leverandør 2026-10-29**, og det fant to feil den falske
+  ikke kunne finne (se §8.4). Lærdommen fra Stripe-integrasjonen (punkt 56 i
+  CLAUDE.md) holdt: payloads skrevet ut fra hva koden LESER bekrefter bare
+  kodens egen antakelse.
 - **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_NOKKEL` i
   `deploy/`, og `regnmed-agent` har ikke noe budsjett i
   [frugality.md](frugality.md). Alt tre hører sammen og kommer når
@@ -549,3 +548,43 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
 - **Selvbetjent klientregistrering mangler fortsatt.** Klienthemmeligheten
   må komme fra en operatør som kjørte `regnid add-client`. Det er samme hull
   §8 åpnet med, og det er nå i veien for den vanlige kunden.
+
+### 8.4 Hva den ekte leverandøren fant
+
+`crates/regnmed-api/tests/ekte_leverandor.rs` er en håndkjørt prøvebenk mot
+OpenRouter — no-op uten `OPEN_ROUTER_KEY`, siden den koster penger. Den fant
+to feil som den falske leverandøren ikke kunne finne, og det er grunnen til
+at den finnes.
+
+**(a) Et ubesvart spørsmål lukket oppgaven.** `gemini-2.5-flash-lite` spurte
+hvilken dato i 2026 som var ment, uten `SPØRSMÅL:`-prefikset. Fallbacken
+leste umerket tekst som utført — og `utfort` er TERMINAL i 0064-vakten, så
+oppgaven ble lukket og spørsmålet forsvant med den. Umerket tekst som ender
+med spørsmålstegn tolkes nå som `sporsmal`. Asymmetrien avgjør regelen: å
+være feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet
+og lukker), å være feilaktig terminal er det ikke.
+
+**(b) En bokfører kunne ikke føre et bilag.** Bedt om å bokføre en kontant
+utgift svarte `gpt-4o-mini`: «Jeg kan ikke bokføre bilaget fordi jeg ikke
+har et vedlegg tilgjengelig for opplasting.» Den hadde rett — tabellens
+eneste posteringsverktøy var `bilag_bokfor`, som bokfører et
+INNBOKSDOKUMENT. Ruten for manuell føring (#70, `POST …/vouchers`) fantes i
+API-et og manglet i tabellen. Det er kostnaden ved en KURATERT liste (§3),
+og `agent.rs` kunne ikke se den: den sjekker at verktøyene i tabellen
+treffer API-et, ikke at API-ets viktige ruter er i tabellen. Nytt verktøy
+`bilag_for`, og det UTØVES i `agent.rs` framfor å stå på unntakslisten —
+det skriver til hovedboken, det ene stedet et sklidd verktøy gjør skade i
+stedet for bare å feile.
+
+Verifisert etterpå, mot ekte modell: bilag 2026-1 bokført, 50 000 øre debet,
+lest tilbake FRA HOVEDBOKEN og ikke fra modellens egen påstand.
+
+Observert underveis, ikke feil: to 8B-modeller er borte fra OpenRouter
+(`qwen/qwen3-8b` avviklet 9. okt 2026, `mistralai/ministral-8b` uten
+leverandør). Leverandørens egen feilmelding gikk uendret ut i oppgavens
+notat, som er oppførselen §8.3 lover — kunden leser «was deprecated», ikke
+«noe gikk galt».
+
+Kjente modeller som gjorde jobben: `openai/gpt-4o-mini`,
+`qwen/qwen3.7-flash`, `meta-llama/llama-3.1-8b-instruct`,
+`google/gemini-2.5-flash-lite` (som spør oftere enn den gjør).
