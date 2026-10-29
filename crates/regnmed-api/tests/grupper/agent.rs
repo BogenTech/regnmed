@@ -471,6 +471,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
         &server,
         "bokforing",
         "Hent saldobalansen for 2026 og avstem den.",
+        &[],
     )
     .await
     .unwrap();
@@ -514,4 +515,86 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
         !tekst.contains("404") && !tekst.to_lowercase().contains("not found"),
         "verktøyet traff en rute som ikke finnes: {tekst}"
     );
+}
+
+/// An agent that asked a question and is picked up again must SEE its
+/// own question and the answer. Without this it asks the same thing
+/// forever, and `sporsmal` being non-terminal (0064) would buy nothing.
+#[tokio::test]
+async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Trådagent AS")
+        .await
+        .unwrap();
+    let client_id = format!("tradagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Kari Bokfører",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let base = tjen(state.clone()).await;
+    let server = Server::new(Klient::ny(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+
+    let mock = FalskLeverandor::default();
+    let leverandor = tjen_leverandor(
+        mock.clone(),
+        vec![json!({"choices":[{"message":{"role":"assistant",
+            "content":"FERDIG: brukte svaret ditt"}}]})],
+    )
+    .await;
+    let modell = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+
+    let historikk = vec![
+        regnmed_agent::Replikk {
+            fra_agenten: true,
+            tekst: "Hvilken konto skal kontorrekvisita på?".into(),
+        },
+        regnmed_agent::Replikk {
+            fra_agenten: false,
+            tekst: "Bruk 6800.".into(),
+        },
+    ];
+    regnmed_agent::kjor_sloyfe(
+        &modell,
+        &server,
+        "bokforing",
+        "Bokfør kontorrekvisita.",
+        &historikk,
+    )
+    .await
+    .unwrap();
+
+    let sett = mock.sett.lock().unwrap().clone();
+    let meldinger = sett[0]["messages"].as_array().unwrap();
+    // system, order, the agent's own question, the human's answer.
+    assert_eq!(
+        meldinger.len(),
+        4,
+        "hele tråden skal være med: {meldinger:?}"
+    );
+    assert_eq!(meldinger[1]["role"], "user");
+    assert_eq!(meldinger[1]["content"], "Bokfør kontorrekvisita.");
+    assert_eq!(
+        meldinger[2]["role"], "assistant",
+        "agentens eget spørsmål må komme tilbake som agentens, ikke som brukerens"
+    );
+    assert_eq!(
+        meldinger[2]["content"],
+        "Hvilken konto skal kontorrekvisita på?"
+    );
+    assert_eq!(meldinger[3]["role"], "user");
+    assert_eq!(meldinger[3]["content"], "Bruk 6800.");
 }

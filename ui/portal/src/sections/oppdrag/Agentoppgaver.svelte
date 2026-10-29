@@ -6,16 +6,20 @@
   import { post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
+  import Samtale from "./Samtale.svelte";
 
   let { companyId, integrasjoner, oppgaver, onDone } = $props();
 
   let melding = $state("");
+  // Hvilken oppgave som er åpnet i samtalevisningen. Null = ingen.
+  let apnet = $state(null);
   let mottaker = $state("");
   let frist = $state("");
 
   const aktive = $derived(integrasjoner.filter((i) => i.aktiv));
   const apne = $derived(oppgaver.filter((o) => !o.avsluttet));
   const lukkede = $derived(oppgaver.filter((o) => o.avsluttet));
+  const valgt = $derived(oppgaver.find((o) => o.oppgave_id === apnet) || null);
 
   // Spørsmål venter på et menneske, så det er den statusen som skal
   // være lettest å se.
@@ -96,6 +100,12 @@
               {/if}
             </td>
             <td>
+              <button
+                class="btn btn-xs {apnet === o.oppgave_id ? '' : 'btn-ghost'}"
+                onclick={() => (apnet = apnet === o.oppgave_id ? null : o.oppgave_id)}
+              >
+                Samtale
+              </button>
               <button class="btn btn-xs btn-ghost" onclick={() => avslutt(o)}>Trekk tilbake</button>
             </td>
           </tr>
@@ -104,6 +114,17 @@
     </table>
   {:else}
     <p class="text-sm opacity-70 mb-3">Ingen åpne oppgaver.</p>
+  {/if}
+
+  {#if valgt}
+    <div class="mb-3">
+      <Samtale
+        {companyId}
+        oppgave={valgt}
+        agent={integrasjoner.find((i) => i.navn === valgt.agent) || null}
+        onDone={onDone}
+      />
+    </div>
   {/if}
 
   <div class="flex gap-2 items-end flex-wrap">
@@ -136,7 +157,12 @@
     {#each lukkede.slice(0, 10) as o (o.oppgave_id)}
       <div class="text-xs opacity-70 py-0.5">
         <span class="badge badge-xs {MERKE[o.status] || 'badge-ghost'}">{TEKST[o.status] || o.status}</span>
-        {o.melding}
+        <button
+          class="link"
+          onclick={() => (apnet = apnet === o.oppgave_id ? null : o.oppgave_id)}
+        >
+          {o.melding}
+        </button>
         {#if o.siste_notat}· {o.siste_notat}{/if}
       </div>
     {/each}

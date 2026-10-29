@@ -588,3 +588,49 @@ notat, som er oppførselen §8.3 lover — kunden leser «was deprecated», ikke
 Kjente modeller som gjorde jobben: `openai/gpt-4o-mini`,
 `qwen/qwen3.7-flash`, `meta-llama/llama-3.1-8b-instruct`,
 `google/gemini-2.5-flash-lite` (som spør oftere enn den gjør).
+
+### 8.5 Samtalen (levert) — steg 4
+
+Chat-flaten er en VISNING av `agent_oppgave_hendelse`, ikke en ny
+datamodell. Tråden fantes fra #103, fordi `sporsmal` med vilje ikke er
+terminal i 0064-vakten. Derfor finnes det ingen «slett melding» her:
+sporet er innsettings-bart, og et svar kan ikke trekkes tilbake.
+
+**Ingen ny status.** §8 noterte at tråden mangler en egen «svar»-status, og
+at et menneskes svar lander som `pagar` med notat. Det viste seg å være
+RIKTIG framfor et hull: `pagar` sier at arbeidet fortsetter, notatet er det
+som ble sagt, og `av` sier hvem som sa det — alt vi trenger for å tegne to
+sider. Og det gjør oppgaven plukkbar igjen for workeren, som hopper over
+`sporsmal`. En ny status ville kostet en migrasjon og et nytt tilfelle i
+hver match, for ingenting.
+
+**Tråden mates tilbake til modellen.** Dette var det virkelige hullet, og
+det var ikke i UI-et: `kjor_sloyfe` fikk bare bestillingen, så en agent som
+hadde spurt og ble plukket opp igjen ville spurt om det samme for alltid —
+og da hadde det ikke hjulpet at `sporsmal` er ikke-terminal.
+`kjor_oppgave` bygger nå replikkene av historikken: hendelser skrevet av
+agentens eget navn blir `assistant`, resten `user`, og en bar `pagar` uten
+notat («begynte å arbeide») er ingen replikk. Testfestet i `agent.rs`:
+systemprompt, bestilling, agentens eget spørsmål som `assistant`, og
+menneskets svar som `user` — i den rekkefølgen.
+
+**Boblene er håndrullet.** daisyUIs `chat`-komponent kostet ~2,3 KB i dist
+for ren utsmykking, og budsjettet (frugality.md) hadde 7 KB igjen; flex og
+`rounded-box` gjør samme jobb med klasser bundelen alt har. Samme avveining
+som ikonene (#67): vi skriver markupen, temaet eier fargene. Fargene er
+`bg-primary` for mennesket, `bg-base-200` for agenten, `bg-warning` for et
+spørsmål og `bg-error` for en avvisning — statusen bærer fargen, så en
+oppgave som venter på deg er synlig uten å leses.
+
+Verifisert i nettleseren hele veien: agenten spør, svaret sendes fra
+kortet, nyeste status blir `pagar`, og oppgaven er plukkbar av workeren
+igjen (sjekket i databasen, ikke i UI-et).
+
+#### Fortsatt ikke gjort
+
+- **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives, så et svar
+  dukker opp i ett stykke. Det merkes mest på en lang oppgave.
+- **Ingen varsling.** Et spørsmål venter til noen åpner kortet. Mail-skinnen
+  finnes (#32/#35) og er den åpenbare veien, men den er ikke koblet.
+- **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
+  hva som er nytt siden sist.

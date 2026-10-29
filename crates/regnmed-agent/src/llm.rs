@@ -35,6 +35,10 @@ impl Melding {
     pub fn bruker(tekst: impl Into<String>) -> Self {
         Self::enkel("user", tekst)
     }
+    /// A turn the agent itself took earlier, replayed from the trail.
+    pub fn assistent(tekst: impl Into<String>) -> Self {
+        Self::enkel("assistant", tekst)
+    }
     fn enkel(role: &'static str, tekst: impl Into<String>) -> Self {
         Melding {
             role,

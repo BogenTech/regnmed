@@ -55,6 +55,15 @@ pub fn verktoykatalog() -> Value {
     )
 }
 
+/// One turn of the recorded conversation, read back out of
+/// `agent_oppgave_hendelse`. `fra_agenten` is decided by who wrote it,
+/// which is the only thing the trail actually knows.
+#[derive(Debug, Clone)]
+pub struct Replikk {
+    pub fra_agenten: bool,
+    pub tekst: String,
+}
+
 /// What one task run ended as. These are the statuses
 /// `agent_oppgave_hendelse` already knows (#103) -- the worker invents
 /// none of its own.
@@ -134,6 +143,7 @@ pub async fn kjor_sloyfe(
     server: &Server,
     rollenavn: &str,
     oppgave: &str,
+    historikk: &[Replikk],
 ) -> Result<Utfall> {
     let systemprompt = rolle::prompt(rollenavn)
         .unwrap_or_else(|| rolle::prompt("ansatt").expect("ansatt-prompten finnes"));
@@ -142,6 +152,15 @@ pub async fn kjor_sloyfe(
         Melding::system(format!("{systemprompt}\n\n{}", avslutning())),
         Melding::bruker(oppgave.to_string()),
     ];
+    // The trail IS the conversation (docs/agent.md §8.4): an agent that
+    // asked a question and is picked up again must see its own question
+    // and the answer, or it asks the same thing forever.
+    for replikk in historikk {
+        meldinger.push(match replikk.fra_agenten {
+            true => Melding::assistent(replikk.tekst.clone()),
+            false => Melding::bruker(replikk.tekst.clone()),
+        });
+    }
 
     for _ in 0..MAKS_TURER {
         let svar = modell.tur(&meldinger, &katalog).await?;
@@ -231,7 +250,22 @@ pub async fn kjor_oppgave(
     let navn = oppgave.agent.clone().unwrap_or_else(|| "agenten".into());
     regnmed_db::agentoppgave::svar(pool, company_id, oppgave_id, "pagar", None, &navn).await?;
 
-    let utfall = match kjor_sloyfe(&modell, &server, &rollenavn, &oppgave.melding).await {
+    let historikk: Vec<Replikk> = regnmed_db::agentoppgave::historikk(pool, company_id, oppgave_id)
+        .await?
+        .into_iter()
+        .filter_map(|h| {
+            // A bare `pagar` with no note is "started working", not
+            // something anybody said.
+            let tekst = h.notat.filter(|t| !t.trim().is_empty())?;
+            Some(Replikk {
+                fra_agenten: h.av == navn,
+                tekst,
+            })
+        })
+        .collect();
+
+    let utfall = match kjor_sloyfe(&modell, &server, &rollenavn, &oppgave.melding, &historikk).await
+    {
         Ok(u) => u,
         // A failure is the agent's own report, not a silent stop: the
         // customer must be able to read why in the same place they read
