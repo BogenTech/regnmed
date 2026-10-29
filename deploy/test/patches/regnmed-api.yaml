@@ -68,6 +68,42 @@ spec:
             # Set it only once its MX delivers into regnid's receiver.
             - name: MAIL_IN_DOMAIN
               value: bilag.test.regnmed.no
+            # Self-service agents (docs/agent.md §8.6). regnmed asks
+            # regnid to create the agent's OIDC identity, so a customer
+            # never sees a client_id. The client_id below must be on
+            # regnid's own PROVISION_CLIENTS (patches/regnid.yaml), or
+            # every call is refused with 403 — which is the point of
+            # that allowlist.
+            #
+            # Created out-of-band, like the database and Stripe
+            # credentials. `add-client` prints the secret once:
+            #
+            #   kubectl -n regnmed-test exec deploy/regnid -- \
+            #     /app/regnid add-client --client-id regnmed-provisioner \
+            #     --name "regnmed agent provisioning" \
+            #     --grant-type client_credentials --confidential
+            #   kubectl -n regnmed-test create secret generic regnid-provisioning \
+            #     --from-literal=client-id=regnmed-provisioner \
+            #     --from-file=client-secret=<the printed secret>
+            #
+            # BOTH or neither: regnmed-api refuses to start on half of
+            # it. Without them the portal asks for a client_id as before.
+            - name: REGNID_PROVISION_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: regnid-provisioning
+                  key: client-id
+            - name: REGNID_PROVISION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: regnid-provisioning
+                  key: client-secret
+            # In-cluster, unlike OIDC_ISSUER above. Validating a token
+            # needs the issuer URL the token actually carries; asking
+            # regnid to create a client does not, and the public host
+            # would hairpin out through the proxy and back.
+            - name: REGNID_BASE_URL
+              value: http://regnid:8081
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
