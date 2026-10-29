@@ -526,60 +526,125 @@ required, move Postgres to the CloudNativePG operator with WAL
 archiving to object storage — true PITR. The dump+verify drill stays
 even then; PITR replaces the nightly granularity, not the verification.
 
-## Hendelse 2026-10-29: proben som spiste databasen
+## Hendelse 2026-10-29: AppArmor sluttet å slippe gjennom signaler
 
-**Symptom:** alt som leser databasen hang; `/health` og et `401` svarte
-på millisekunder. Prod, test OG et tredje, urelatert Postgres på samme
-cluster — alle tre samtidig.
+**Symptom, runde 1:** alt som leser databasen hang; `/health` og et `401`
+svarte på millisekunder. Prod, test OG et tredje, urelatert Postgres på
+samme cluster — alle tre samtidig. Postgres hadde 100 forbindelser som
+sto fast i `authentication` og aldri ble ryddet.
 
-**Årsak:** kl. 01:43:52 installerte unattended-upgrades en ny kjerne
-(7.0.0-38 → 7.0.0-42) og nodene startet på nytt. Postgres stengte pent
-01:44:35 og kom opp 01:45:11. **Kl. 01:53:26 var den full.**
+**Symptom, runde 2:** etter omstart fullførte Postgres recovery på under
+ett millisekund og nådde så **aldri** «ready to accept connections».
+`startup` og `checkpointer` sto parkert i `S`, uten CPU, i det uendelige.
 
-Åtte minutter, og tallet forklarer seg selv: `readinessProbe` kjørte
-hvert 5. sekund, og hver kjøring etterlot én backend som aldri døde.
-100 × 5 sekunder = 8 minutter = `max_connections`.
+Begge er samme feil.
 
-**Hvorfor proben etterlot noe:** `pg_isready` fullfører med vilje ikke
-håndtrykket. Den sender oppstartspakken, leser serverens
-autentiseringsutfordring og legger på — uten å autentisere og uten en
-Terminate-melding. Backenden den etterlater står og venter på klientens
-neste melding, og har bare to veier ut: en EOF fra kjernen, eller
-`authentication_timeout`. Etter kjerneoppgraderingen kom EOF-en aldri —
-og tidsavbruddet slo heller ikke inn (backendene var tre timer gamle med
-60-sekundersstandarden). Begge utgangene var stengt samtidig.
+### Rotårsaken
 
-**Hvorfor ingen overvåking så det:** en forbindelse som ikke har
-fullført autentisering står **ikke i `pg_stat_activity`**. Den holder en
-slot og er usynlig for enhver spørring vi kunne finne på å kjøre. Bare
-prosesstabellen viste dem:
+Kl. 01:43:52 installerte unattended-upgrades kjerne 7.0.0-38 → 7.0.0-42
+og nodene startet på nytt. Ubuntu setter
+`kernel.apparmor_restrict_unprivileged_unconfined=1`, og kjernen gjør da
+om et uprivilegert `change_profile` til unconfined til en **STABEL**. En
+prosess kubelet exec-er inn i en container — altså en probe — bærer
+derfor etiketten
 
 ```
-postgres: regnmed regnmed [local] authentication
+cri-containerd.apparmor.d//&unconfined
 ```
 
-**Fiksen er vår, ikke kjernens.** Proben er nå
-`psql -U regnmed -d regnmed -qtAXc 'select 1'`. Den fullfører
+mens containerens egne prosesser bærer det bare navnet. containerds
+profilmal tillater signaler bare til det *bare* navnet:
+
+```
+signal (send,receive) peer={{.Name}},
+```
+
+Så signaler mellom dem ble **nektet**. 425 avslag på to noder: 234
+SIGURG, 147 SIGTERM, 44 SIGKILL.
+
+**Hvorfor det lammer Postgres:** fra PG 16 vekkes latcher med **SIGURG**.
+Nektes den, venter en prosess som venter på en latch for alltid — det er
+runde 2, `startup` som venter på `checkpointer`. Og nektes SIGTERM, kan
+postmasteren ikke rydde backender — det er runde 1, der
+`authentication_timeout` *fyrte av* men signalet aldri kom fram.
+
+På 7.0.0-38 ble stablingen logget, men slo sjelden inn. På 7.0.0-42
+rammer den hver uprivilegert container. Det er grunnen til at dette
+traff i det sekundet nodene kom opp igjen.
+
+**Dette er ikke vårt**, men vi må leve med det:
+[containerd#14485](https://github.com/containerd/containerd/issues/14485)
+(åpen, ingen release), [k3s#13625](https://github.com/k3s-io/k3s/issues/13625)
+(lukket, «nothing actionable on our side»). Rapporten der har nøyaktig
+vår stack: Ubuntu 26.04, 7.0.0-42-generic, k3s v1.36.5+k3s1,
+containerd v2.3.4.
+
+### Fiksen
+
+`deploy/host/cri-containerd.apparmor.d` — containerds egen mal, rendret
+med nodens egne verdier, pluss to regler:
+
+```
+signal (send,receive) peer=cri-containerd.apparmor.d//&unconfined,
+ptrace (trace,tracedby,read,readby) peer=cri-containerd.apparmor.d//&unconfined,
+```
+
+**Dette svekker ingenting.** Det lar en containers prosesser signalere
+prosesser i SIN EGEN container som kjernen tilfeldigvis merket som en
+stabel — nøyaktig det containerd alt har tenkt. All annen innestenging
+står. De to alternativene er begge dårligere: `appArmorProfile:
+Unconfined` fjerner *all* innestenging fra produksjonsdatabasen, og
+`sysctl ...=0` slår av herdingen på hele verten.
+
+Verifisert: 0 nye avslag på alle fem noder, `kill -TERM` virker igjen
+(det svarte «Permission denied» før), og avstanden fra `redo done` til
+`ready to accept connections` gikk fra **5 minutter til 29
+millisekunder**.
+
+### Det vi endret hos oss også
+
+`readinessProbe` var `pg_isready`, som med vilje **ikke** fullfører
+håndtrykket: den sender oppstartspakken, leser utfordringen og legger på
+uten å autentisere og uten Terminate. Backenden den etterlater kommer
+bare ut via en EOF eller `authentication_timeout` — to utganger som
+begge var stengt her. Proben er nå
+`psql -U regnmed -d regnmed -qtAXc 'select 1'`, som fullfører
 protokollen og sender Terminate, så backenden avslutter fordi den **ble
-bedt om det** — en vei ut som verken trenger en EOF eller en timer. Den
-beviser dessuten at serveren faktisk kan svare på en spørring, som er
-det «klar» var ment å bety. `authentication_timeout=10s` er lagt til som
-belte: det binder en eventuell henger til et par slots i stedet for
-alle. Beltet er **ikke** bevist mot kjernen som utløste dette — timeren
-slo som nevnt ikke inn der — og det er grunnen til at proben er fiksen
-og timeouten bare beltet.
+bedt om det**. `authentication_timeout=10s` er lagt til ved siden av.
 
-**Å rulle kjernen tilbake ble vurdert og forkastet.** 7.0.0-38 lå
-fortsatt på alle fem nodene, så det var lett. Men en nedgradering
-hadde gjort sikkerhetsoppdateringer til noe vi skyver foran oss, og
-problemet var uansett vårt: en probe som er avhengig av at kjernen
-oppdager at en klient gikk sin vei, er skjør uavhengig av hvilken
-kjerne som kjører.
+Vær tydelig på hva dette er: **ikke rotårsaken**, men dybdeforsvar. Med
+AppArmor-feilen på plass hadde begge vært maktesløse. Uten den er de
+likevel verdt å ha, for en probe som er avhengig av at noen oppdager at
+en klient gikk sin vei, er skjør uansett.
 
-**Merk ved endring:** et strategic-merge-patch **erstatter**
-`args`-lista. `authentication_timeout` står derfor i base OG i begge
-overlayene — et flagg bare i base ville blitt stilletiende borte i prod
-og test.
+### Det som gjorde feilsøkingen vanskelig
+
+- **En uferdig autentisert forbindelse står IKKE i `pg_stat_activity`.**
+  Den holder en slot og er usynlig for enhver spørring vi kunne skrevet.
+  Bare prosesstabellen viste dem, som `[local] authentication`. Ingen
+  overvåking vi kunne lagt på ville sett det.
+- **Nodene kjørte forskjellige images under samme tag.** `postgres:18-alpine`
+  flyter og `imagePullPolicy` er ikke satt, så andor kjørte 18.6 mens
+  luke og mando kjørte 18.4. Det var ikke årsaken her, men det er en
+  ekte feil: samme manifest ga forskjellig programvare per node.
+  Oppfølger: `imagePullPolicy: Always`, som holder nodene like UTEN å
+  pinne en versjon.
+- **`ps | grep authentication` treffer postmasteren** så snart
+  `authentication_timeout` står på kommandolinjen. Et `kill` på det
+  treffet tar ned hele databasen. Bruk `grep "postgres: .* authentication"`.
+
+### Hvorfor vi ikke rullet kjernen tilbake
+
+7.0.0-38 lå fortsatt på alle fem nodene, så det var lett. Men en
+nedgradering gjør sikkerhetsoppdateringer til noe vi skyver foran oss,
+og feilen ville kommet tilbake ved neste oppgradering. Profilen retter
+årsaken og holder nodene oppdatert.
+
+### Merk ved endring
+
+Et strategic-merge-patch **erstatter** `args`-lista.
+`authentication_timeout` står derfor i base OG i begge overlayene — et
+flagg bare i base ville blitt stilletiende borte i prod og test.
 
 ## Observability, within the frugality budget
 

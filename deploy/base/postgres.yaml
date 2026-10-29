@@ -62,13 +62,15 @@ spec:
             - shared_buffers=32MB
             - -c
             - max_connections=50
-            # Belt to the readinessProbe's braces below. A connection that
-            # never finishes authenticating holds a slot but is INVISIBLE
-            # to pg_stat_activity, so nothing we monitor would show it
-            # piling up. 10s bounds that to a couple of slots instead of
-            # every one. Unproven against the kernel that caused
-            # 2026-10-29 — the timer demonstrably did not fire there at
-            # the 60s default — which is why it is the belt, not the fix.
+            # A connection that never finishes authenticating holds a
+            # slot but is INVISIBLE to pg_stat_activity, so nothing we
+            # monitor would show it piling up. 10s bounds that to a
+            # couple of slots instead of every one.
+            #
+            # On 2026-10-29 the 60s default appeared not to fire. It DID
+            # fire — AppArmor was dropping the signal (docs/deploy.md).
+            # With the host profile fixed this works again, and the log
+            # says so: "canceling authentication due to timeout".
             - -c
             - authentication_timeout=10s
           env:
@@ -92,23 +94,25 @@ spec:
               memory: 256Mi
           # NOT pg_isready (outage 2026-10-29, docs/deploy.md).
           #
-          # pg_isready deliberately ABANDONS the handshake: it sends the
-          # startup packet, reads the server's auth challenge and hangs
-          # up without authenticating and without a Terminate message.
-          # The backend it leaves behind is then blocked reading the
-          # client's next message, and its only ways out are an EOF from
-          # the kernel or authentication_timeout. On 2026-10-29 a kernel
-          # upgrade (7.0.0-38 -> 7.0.0-42) stopped delivering that EOF,
-          # the timeout did not fire either, and one probe every five
-          # seconds filled max_connections in eight minutes — in prod,
-          # test and a third, unrelated Postgres on the same cluster.
+          # The outage's ROOT CAUSE was not this probe: a kernel upgrade
+          # made AppArmor deny signals between a container's own
+          # processes and the ones the kubelet execs into it, which
+          # broke PostgreSQL's SIGURG latch wakeups and its ability to
+          # reap backends (containerd/containerd#14485; fixed by the
+          # host profile in deploy/host/).
+          #
+          # But pg_isready made us fragile to it. It deliberately
+          # ABANDONS the handshake: it sends the startup packet, reads
+          # the auth challenge and hangs up without authenticating and
+          # without a Terminate message. The backend it leaves behind
+          # can only exit on an EOF from the kernel or on
+          # authentication_timeout — and both of those were shut.
           #
           # `psql -c 'select 1'` completes the protocol and sends
-          # Terminate, so the backend exits because it was TOLD to. That
-          # path needs neither an EOF nor a timer, which is the point:
-          # the probe no longer depends on the kernel noticing that a
-          # client went away. It also actually proves the server can
-          # answer a query, which is what "ready" was meant to mean.
+          # Terminate, so the backend exits because it was TOLD to,
+          # needing neither an EOF nor a timer. It also proves the
+          # server can answer a query, which is what "ready" was meant
+          # to mean. Defence in depth, not the fix.
           readinessProbe:
             exec:
               command: ["psql", "-U", "regnmed", "-d", "regnmed", "-qtAXc", "select 1"]
