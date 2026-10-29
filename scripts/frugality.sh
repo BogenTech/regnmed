@@ -27,6 +27,13 @@ cd "$(dirname "$0")/.."
 # kjøring; se avveiningen i Cargo.toml.)
 API_BIN_BUDGET_MB=20
 CLI_BIN_BUDGET_MB=12
+# The hosted agent worker (docs/agent.md §8.3). It runs in the cluster as
+# its own CronJob, so it gets a budget like the other two — measured
+# 5,4 MB on 2026-10-29, and the gap is for the provider client, not for
+# drift. It links regnmed-db and reqwest and little else; if it starts
+# approaching the API's size, something has been pulled in that belongs
+# behind the API rather than beside it.
+AGENT_BIN_BUDGET_MB=8
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
 # The compiled Svelte portal (#76) ships inside the binary; its own
 # budget keeps the SPA from quietly absorbing heavy dependencies.
@@ -58,7 +65,7 @@ PORTAL_DIST_BUDGET_KB=544
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 
 echo "==> building release binaries"
-cargo build --release -p regnmed-api -p regnmed-cli
+cargo build --release -p regnmed-api -p regnmed-cli -p regnmed-agent
 
 fail=0
 report() { # name value budget unit
@@ -78,6 +85,7 @@ size_mb() { # path -> MB rounded up
 
 report "regnmed-api binary" "$(size_mb target/release/regnmed-api)" "$API_BIN_BUDGET_MB" MB
 report "regnmed cli binary" "$(size_mb target/release/regnmed)" "$CLI_BIN_BUDGET_MB" MB
+report "regnmed-agent binary" "$(size_mb target/release/regnmed-agent)" "$AGENT_BIN_BUDGET_MB" MB
 
 dist_kb() { # dir -> KB rounded up, summed over all files
   local bytes

@@ -473,9 +473,19 @@ kubectl -n regnmed create secret generic agent-credentials \
   --from-literal=sealing-key=<verdien>
 ```
 
-Den er med vilje **ikke** koblet inn i `deploy/` ennå: uten workeren
-(steg 3) er det ingenting som bruker den, og en `secretKeyRef` til et
-secret som ikke finnes stopper poden. Koblingen hører i steg 3.
+Secretet må finnes **FØR** første apply: en `secretKeyRef` til et secret
+som ikke finnes gir CreateContainerConfigError, synlig bare i
+pod-hendelsene (samme felle som `stripe-credentials`, se `.env.example`).
+Prod og test har **hver sin** nøkkel — et brudd i test skal ikke åpne
+prods rader. Opprettet i begge 2026-10-29.
+
+**Ta vare på den.** Verdien ble generert rett inn i clusteret og finnes
+ingen andre steder. Les den ut og legg den i passordhvelvet:
+
+```sh
+kubectl -n regnmed get secret agent-credentials \
+  -o jsonpath='{.data.sealing-key}' | base64 -d
+```
 
 **ROTASJON FINNES IKKE.** Byttes nøkkelen, er hver lagret
 leverandørnøkkel uåpnelig, og hver agent må få sin på nytt gjennom
@@ -542,10 +552,13 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
   ikke kunne finne (se §8.4). Lærdommen fra Stripe-integrasjonen (punkt 56 i
   CLAUDE.md) holdt: payloads skrevet ut fra hva koden LESER bekrefter bare
   kodens egen antakelse.
-- **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_SEALING_KEY` i
-  `deploy/`, og `regnmed-agent` har ikke noe budsjett i
-  [frugality.md](frugality.md). Alt tre hører sammen og kommer når
-  workeren har kjørt mot en ekte leverandør.
+- **Utrullet 2026-10-29** som CronJob hvert femte minutt
+  (`deploy/shared/agent-worker.yaml`), `concurrencyPolicy: Forbid` fordi
+  oppgavene ikke låses mens de kjøres — to samtidige kjøringer kunne
+  plukket samme oppgave og kjørt modellen to ganger på kundens regning.
+  `regnmed-agent` har eget budsjett i [frugality.md](frugality.md)
+  (8 MB, målt 5,4). Uten åpne oppgaver spør kjøringen databasen og
+  avslutter; den rører ikke leverandøren.
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives. Chat-flaten
   (steg 4) vil ville ha delsvar.
 - **Ingen kostnadsgrense.** `MAKS_TURER` begrenser antall turer, ikke antall

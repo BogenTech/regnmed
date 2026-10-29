@@ -1,0 +1,82 @@
+# Vertsagenten (docs/agent.md §8.3): kjører åpne agentoppgaver med
+# kundens egen modell.
+#
+# EGEN CronJob, ikke en tråd i regnmed-api: én modelltur kan ta
+# minutter, og API-ets minnebudsjett måles under forespørselslast
+# (docs/frugality.md). Samme begrunnelse som mail-workeren har.
+#
+# `Forbid` er ikke pynt. Oppgavene er ikke låst mens de kjøres, så to
+# samtidige kjøringer kunne plukket samme oppgave og kjørt modellen to
+# ganger på kundens regning. Sporet ville vist det etterpå; regningen
+# ville vært betalt.
+#
+# Hvert femte minutt framfor nattlig: en agent man snakker med skal
+# svare mens man sitter der. Uten åpne oppgaver gjør kjøringen ingenting
+# og avslutter straks — den spør databasen, ikke leverandøren.
+#
+# AGENT_SEALING_KEY er HEMMELIG og må finnes FØR første apply, ellers
+# står poden i CreateContainerConfigError (samme felle som
+# stripe-credentials, se .env.example). Uten den kan ingenting åpnes, og
+# workeren sier det framfor å feile oppgave for oppgave.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-agent
+  namespace: regnmed
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  # En kjøring som henger på en treg leverandør skal ikke bli stående for
+  # alltid: MAKS_TURER begrenser turene, dette begrenser klokketiden.
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: agent
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+              command: ["/app/regnmed-agent", "kjor"]
+              env:
+                # Hvor agenten når OSS. Den autentiserer SOM seg selv med
+                # sin egen klientlegitimasjon — ingen ny vei inn i
+                # hovedboken for workeren (docs/agent.md §8.3).
+                - name: REGNMED_API
+                  value: "sett-meg-i-overlayet"
+                - name: REGNMED_ISSUER
+                  value: "sett-meg-i-overlayet"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
+                - name: AGENT_SEALING_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-credentials
+                      key: sealing-key
+              resources:
+                requests:
+                  memory: 16Mi
+                limits:
+                  # Romsligere enn de andre jobbene: svaret fra en modell
+                  # kan være stort, og verktøysvar kuttes først på 8 kB
+                  # hver. Målt forbruk hører i frugality.md når den har
+                  # kjørt mot ekte oppgaver.
+                  memory: 96Mi

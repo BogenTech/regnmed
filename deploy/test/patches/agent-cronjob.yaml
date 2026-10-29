@@ -1,0 +1,27 @@
+# Vertsagenten (docs/agent.md §8.3).
+#
+# REGNMED_API går IN-CLUSTER: workeren og API-et står i samme namespace,
+# og å sende kallene ut gjennom nginx-proxy-manager og inn igjen ville
+# lagt ingressen i veien for agentens arbeid uten å gi noe tilbake.
+#
+# REGNMED_ISSUER må derimot være den PUBLIKE adressen: den er `iss` i
+# tokenet regnmed-api validerer, og et token utstedt av et annet navn
+# enn det API-et venter blir avvist uten spor noe sted (samme felle som
+# den manglende --audience i CLAUDE.md punkt 56).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-agent
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: agent
+              env:
+                - name: REGNMED_API
+                  value: http://regnmed-api:8080
+                - name: REGNMED_ISSUER
+                  value: https://id.test.regnmed.no
