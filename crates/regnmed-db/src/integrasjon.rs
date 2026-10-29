@@ -29,6 +29,9 @@ pub struct Integration {
     /// Plain metadata -- never hashed, never part of authorization.
     pub avatar_farge: Option<String>,
     pub avatar_ikon: Option<String>,
+    /// Extra instructions for THIS agent, appended to the role prompt
+    /// (docs/agent.md §8.6). Text for a model, never authorization.
+    pub systemprompt: Option<String>,
 }
 
 fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
@@ -43,12 +46,13 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         created_at: r.get("created_at"),
         avatar_farge: r.get("avatar_farge"),
         avatar_ikon: r.get("avatar_ikon"),
+        systemprompt: r.get("systemprompt"),
     }
 }
 
 const SELECT: &str = "select i.id, i.person_id, p.oidc_sub as client_id, i.navn, i.kontakt,
                              i.rate_limit_min, i.registrert_av, i.created_at,
-                             i.avatar_farge, i.avatar_ikon
+                             i.avatar_farge, i.avatar_ikon, i.systemprompt
                       from integration i join person p on p.id = i.person_id";
 
 /// The integration behind a token subject, if that subject is one.
@@ -197,6 +201,7 @@ pub const AVATAR_FARGER: [&str; 8] = [
 /// the model from docs/agent.md §1, where an agent is a user. The
 /// company in the path is therefore an authorization scope, not an
 /// owner: the caller must have something to do with this integration.
+#[allow(clippy::too_many_arguments)]
 pub async fn update_integration(
     pool: &PgPool,
     company_id: Uuid,
@@ -205,6 +210,7 @@ pub async fn update_integration(
     kontakt: Option<&str>,
     avatar_farge: Option<&str>,
     avatar_ikon: Option<&str>,
+    systemprompt: Option<&str>,
 ) -> Result<()> {
     let navn = navn.trim();
     ensure!(!navn.is_empty(), "integrasjonen trenger et navn");
@@ -214,6 +220,17 @@ pub async fn update_integration(
     let kontakt = tom(kontakt);
     let farge = tom(avatar_farge);
     let ikon = tom(avatar_ikon);
+    let prompt = tom(systemprompt);
+    if let Some(prompt) = prompt {
+        // A cap, not a judgement of content: the whole prompt is sent
+        // with every single model turn, so a novel pasted in here is
+        // the customer's own bill, turn after turn.
+        ensure!(
+            prompt.chars().count() <= 4000,
+            "instruksjonen er for lang ({} tegn, maks 4000)",
+            prompt.chars().count()
+        );
+    }
     if let Some(farge) = farge {
         ensure!(
             AVATAR_FARGER.contains(&farge),
@@ -229,7 +246,8 @@ pub async fn update_integration(
     }
 
     let updated = sqlx::query(
-        "update integration set navn = $3, kontakt = $4, avatar_farge = $5, avatar_ikon = $6
+        "update integration set navn = $3, kontakt = $4, avatar_farge = $5, avatar_ikon = $6,
+                                systemprompt = $7
          where id = $1
            and exists (select 1 from integration_grant g
                        where g.integration_id = $1 and g.company_id = $2)",
@@ -240,6 +258,7 @@ pub async fn update_integration(
     .bind(kontakt)
     .bind(farge)
     .bind(ikon)
+    .bind(prompt)
     .execute(pool)
     .await?
     .rows_affected();
@@ -269,8 +288,71 @@ pub async fn revoke_integration(
     Ok(())
 }
 
+/// Changes an agent's role the way the UI reads it: one control, one
+/// action. Underneath it is still revoke plus a new grant, because a
+/// grant is immutable (0033) — so the old role stays true for the days
+/// it applied, and the trail says who changed it and when.
+///
+/// Both rows in ONE transaction: the halves must not be separable, or a
+/// failure between them leaves the agent with no access at all while
+/// the portal shows it as merely re-roled.
+pub async fn endre_integrasjonsrolle(
+    pool: &PgPool,
+    company_id: Uuid,
+    integration_id: Uuid,
+    access: &str,
+    changed_by: &str,
+) -> Result<()> {
+    // The role name is validated by the caller, where the vocabulary
+    // lives — the same split as `grant_integration`.
+    ensure!(!access.trim().is_empty(), "rollen mangler");
+    let mut tx = pool.begin().await?;
+    let gammel: Option<String> = sqlx::query_scalar(
+        "select access from integration_grant
+         where integration_id = $1 and company_id = $2 and valid_to is null
+         for update",
+    )
+    .bind(integration_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let gammel = gammel.context("ingen aktiv tilgang å endre")?;
+    ensure!(
+        gammel != access.trim(),
+        "agenten har allerede rollen «{access}»"
+    );
+
+    sqlx::query(
+        "update integration_grant set valid_to = current_date, revoked_by = $3
+         where integration_id = $1 and company_id = $2 and valid_to is null",
+    )
+    .bind(integration_id)
+    .bind(company_id)
+    .bind(changed_by)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "insert into integration_grant (id, integration_id, company_id, access, created_by)
+         values ($1, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(integration_id)
+    .bind(company_id)
+    .bind(access.trim())
+    .bind(changed_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct GrantRow {
+    /// The GRANT's id, not the integration's. One integration has one
+    /// row per grant it has ever held in this company, so a listing can
+    /// show the same agent twice — once active, once ended. The caller
+    /// needs a key that is unique per ROW.
+    pub grant_id: Uuid,
     pub integration_id: Uuid,
     pub client_id: String,
     pub navn: String,
@@ -285,6 +367,7 @@ pub struct GrantRow {
     pub kall_i_dag: i64,
     pub avatar_farge: Option<String>,
     pub avatar_ikon: Option<String>,
+    pub systemprompt: Option<String>,
     /// The governing LLM provider and model, when one is active
     /// (docs/agent.md §8). Joined here rather than fetched per row:
     /// the card lists agents, and one query is one query.
@@ -293,8 +376,9 @@ pub struct GrantRow {
 
 pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<GrantRow>> {
     let rows = sqlx::query(
-        "select i.id as integration_id, p.oidc_sub as client_id, i.navn, i.kontakt,
-                i.rate_limit_min, i.avatar_farge, i.avatar_ikon,
+        "select g.id as grant_id, i.id as integration_id, p.oidc_sub as client_id,
+                i.navn, i.kontakt,
+                i.rate_limit_min, i.avatar_farge, i.avatar_ikon, i.systemprompt,
                 g.access, g.valid_from, g.valid_to, g.created_by, g.revoked_by,
                 coalesce((select u.kall from integration_usage u
                           where u.integration_id = i.id and u.company_id = g.company_id
@@ -317,6 +401,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
     Ok(rows
         .iter()
         .map(|r| GrantRow {
+            grant_id: r.get("grant_id"),
             integration_id: r.get("integration_id"),
             client_id: r.get("client_id"),
             navn: r.get("navn"),
@@ -330,6 +415,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             kall_i_dag: r.get("kall_i_dag"),
             avatar_farge: r.get("avatar_farge"),
             avatar_ikon: r.get("avatar_ikon"),
+            systemprompt: r.get("systemprompt"),
             llm: r
                 .get::<Option<String>, _>("llm_leverandor")
                 .zip(r.get::<Option<String>, _>("llm_modell")),

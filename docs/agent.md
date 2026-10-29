@@ -353,20 +353,11 @@ tokens: `integration.rate_limit_min` er den ene spaken som finnes i dag.
 
 ### Kjente hull, ikke skjult
 
-- **Selvbetjent klientregistrering mangler fortsatt.** En agent trenger
-  en `client_id` fra regnid, og det finnes ingen selvbetjent vei dit:
-  regnids admin-konsoll lager med vilje bare interaktive klienter
-  (`INTERACTIVE_GRANTS`, med kommentaren at maskinklienter er «en egen,
-  mer overveid handling»), så en maskinklient krever
-  `regnid add-client --grant-type client_credentials --confidential`
-  kjørt av en operatør. Konstanten `MACHINE_GRANTS` finnes i regnid, men
-  bare CLI-en bruker den. En selvbetjent vei krever et NYTT endepunkt i
-  regnid med sin egen autorisasjonsregel, og det hører i regnid-repoet —
-  ikke som en hale på en regnmed-endring. **En vertsagent trenger
-  strengt tatt ingen OIDC-klient** (workeren er innenfor vår
-  tillitsgrense), men å la den slippe tokenet ville lagt en andre
-  autentiseringsvei inn i hovedboken, og det er nettopp det §1 og §2
-  unngår. Avgjørelsen står åpen.
+- ~~**Selvbetjent klientregistrering mangler fortsatt.**~~ **LUKKET
+  2026-10-29, se §8.6.** Avgjørelsen som sto åpen er tatt: identiteten
+  blir fortsatt per agent, og regnmed utsteder fortsatt ingenting selv —
+  men PROVISJONERINGEN flyttet bak et nytt, smalt endepunkt i regnid,
+  slik at kunden aldri ser en client_id.
 - **Meldingstråden har ingen egen «svar»-status.** Et menneskes svar på
   et `sporsmal` legges inn som `pagar` med notat. Det virker, men tråden
   leses som statusoverganger framfor meldinger. En `svar`-status eller en
@@ -673,3 +664,116 @@ mot ekte modeller (§8.4), men ikke med token hentet i clusteret.
   finnes (#32/#35) og er den åpenbare veien, men den er ikke koblet.
 - **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
   hva som er nytt siden sist.
+
+### 8.6 Agenten opprettes i portalen (levert 2026-10-29)
+
+Fram til nå endte hver agent med det samme: «kjør denne kommandoen på
+serveren vår». Det er ikke en liten friksjon, det er en sperre — en
+regnskapsfører som vil ha en robot kan ikke bes om å skrive
+`regnid add-client --grant-type client_credentials --confidential`, og
+en funksjon ingen tar i bruk er ikke levert.
+
+**Innsigelsen mot å fjerne CLI-en var feil på ett punkt.** Den var at
+klientregistrering er «en egen, mer overveid handling». Det stemmer
+fortsatt. Men handlingen er overveid fordi NOEN HAR BESTEMT at den skal
+kunne skje — ikke fordi et menneske skriver den inn hver gang. Så
+overveielsen flyttet opp ett nivå: regnid stoler på nøyaktig de
+klientene som står i `PROVISION_CLIENTS`, og ingen andre. Det er
+driftskonfigurasjon, ikke data; en angriper som kommer inn i databasen
+når den ikke.
+
+Dette er samme form som LLM-nøkkelen alt hadde. Den er også en
+systemlegitimasjon brukeren limer inn i et skjema og aldri tenker på
+igjen. Klient-id-en var det samme slaget ting, og ble behandlet som noe
+kunden måtte forstå.
+
+#### Det som IKKE endret seg
+
+Mest av alt dette: **agenten har fortsatt sin egen identitet.** Den
+henter token som seg selv, med `client_credentials`, og går gjennom
+`integration_grant`, maskintaket (`Rett::kan_delegeres`) og
+attesteringsreglene som før. Snarveien vi vurderte og forkastet —
+ÉN privilegert legitimasjon som workeren bruker til å opptre som hvilken
+som helst agent — ville gjort én lekkasje til alle agenter i alle
+selskaper. Den står fortsatt forkastet.
+
+#### regnid: `POST /provision/machine-client`
+
+Autentisert med HTTP Basic (klient-id + hemmelighet), og kalleren må stå
+i `PROVISION_CLIENTS`. Listen sjekkes FØR hemmeligheten, så en klient som
+ikke får provisjonere lærer ikke om den gjettet riktig.
+
+Det den kan lage er smalt ved konstruksjon: `client_credentials` bare,
+konfidensiell bare, ingen redirect-URI-er. En stjålet
+provisjoneringshemmelighet kan altså ikke bli et innloggingsendepunkt —
+den kan bare lage roboter, som relying party-en så må gi tilgang før de
+kan noe som helst. `tests/provision.rs` i regnid fester alle fire
+avslagene, og allowlist-vakten er SETT FEILE.
+
+`audience` følger med fra regnmeds egen `OIDC_AUDIENCE`, lest gjennom
+`Verifier::audience()` i stedet for en konstant: en klient uten riktig
+`aud` logger seg pent inn og får så 401 på hvert eneste kall, uten spor
+noe sted (CLAUDE.md punkt 56).
+
+#### regnmed: `POST /companies/{id}/agents`
+
+Ett kall lager hele agenten — identitet, tilgang, ansikt, instrukser og
+modell. `client_id` er valgfri: oppgis den, brukes den (agenten kunden
+kjører selv, skinne 1), ellers lages den.
+
+Rekkefølgen er valgt etter hva et halvferdig kjør etterlater seg.
+IdP-klienten lages FØRST, fordi en maskinklient uten grant kan hente
+token og ikke gjøre noe som helst — den er inert. Motsatt rekkefølge
+ville etterlatt kunden med en agent i sin egen liste som aldri kan
+autentisere.
+
+Konfigurasjon: `REGNID_PROVISION_CLIENT_ID` + `REGNID_PROVISION_SECRET`
+(begge eller ingen, kortskinne-regelen), og `REGNID_BASE_URL` når IdP-en
+ikke nås på issuer-adressen. Uten dem spør portalen om en client_id som
+før — den gamle veien er fortsatt der, bare ikke lenger normalen.
+
+#### Egne instrukser per agent (migrasjon 0068)
+
+`integration.systemprompt`: tekst som legges til ETTER rolleprompten og
+FØR avslutningsreglene. Rekkefølgen betyr én ting og bare én — den lar
+instruksene spesialisere («strøm bokføres på 6340», «spør Aud ved tvil»)
+uten å fortrenge hverken rollens regler eller markørene `tolk()` leser.
+
+Den betyr IKKE noe for tilgang. Hva en eier enn skriver her, er rollen
+på grantet det `tilgang::krev` håndhever på hvert kall agenten gjør: det
+verste en dårlig instruks får til er en agent som prøver ting den blir
+nektet. Grensen ligger i oppslaget, aldri i prompten.
+
+Taket er 4000 tegn, og det er en kostnadsgrense, ikke en smaksdom: hele
+prompten sendes med HVER modelltur, så en roman her er kundens egen
+regning, tur etter tur.
+
+#### Agentene står i Brukere og roller
+
+Kortet flyttet fra Oppdrag til Administrasjon → Brukere og roller.
+Begrunnelsen er §1s egen setning: en agent ER en bruker. Da er «hvem har
+tilgang her, og som hva?» det samme spørsmålet for en robot som for en
+ansatt, og det skal stilles på én side.
+
+Rollen kan endres der den vises (`PUT …/integrations/{iid}/rolle`).
+Under panseret er det fortsatt tilbakekalling pluss et nytt grant, i ÉN
+transaksjon — et grant er uforanderlig (0033), så den gamle rollen blir
+stående sann for dagene den gjaldt. Samme rolle to ganger avvises: ellers
+ville hver lagring lagt på en rad og sporet sluttet å bety noe.
+
+**Funnet i nettleseren, ikke i testene:** etter et rollebytte står samme
+agent med to rader, og tabellen var nøklet på `integration_id`. To like
+nøkler kaster i en Svelte-mal, og et ukastet unntak der FRYSER
+komponentens reaktivitet — kortet ble dødt, ikke feil (CLAUDE.md punkt
+68, andre gang). Listen bærer nå `grant_id`, og testen fester at hver
+rad har sin egen nøkkel mens `integration_id` er felles.
+
+#### Fortsatt ikke gjort
+
+- **Ingen nøkkelrotasjon for provisjoneringshemmeligheten.** Byttes den,
+  må `PROVISION_CLIENTS` og regnmeds config endres sammen.
+- **En mislykket provisjonering etterlater ingenting hos kunden, men kan
+  etterlate en ubrukt klient i regnid.** Den er inert (ingen grant),
+  og `[provision]`-loggen navngir den, men ingen rydder den bort.
+- **Ingen agent har kjørt en oppgave ende til ende i et cluster.**
+  Uendret fra §8.3. Det som er nytt her er hvordan agenten BLIR til.

@@ -65,6 +65,28 @@ async fn main() -> Result<()> {
         println!("vertsagenter kan lagre leverandørnøkkel (AGENT_SEALING_KEY satt)");
     }
 
+    // Self-service agents (docs/agent.md §8.6): both credentials or
+    // neither, the kortskinnen rule. Without them the portal still
+    // creates agents — it just asks for a client_id, as before.
+    let regnid = match (
+        std::env::var("REGNID_PROVISION_CLIENT_ID").ok(),
+        std::env::var("REGNID_PROVISION_SECRET").ok(),
+    ) {
+        (Some(client_id), Some(client_secret)) => Some(regnmed_api::RegnidCfg {
+            client_id,
+            client_secret,
+            base_url: std::env::var("REGNID_BASE_URL").ok(),
+        }),
+        (None, None) => None,
+        _ => anyhow::bail!(
+            "REGNID_PROVISION_CLIENT_ID og REGNID_PROVISION_SECRET må settes sammen \
+             (docs/agent.md §8.6)"
+        ),
+    };
+    if regnid.is_some() {
+        println!("agenter kan opprettes fra portalen (regnid-provisjonering satt)");
+    }
+
     let app = router(AppState {
         pool,
         verifier,
@@ -74,6 +96,7 @@ async fn main() -> Result<()> {
         drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
         portal_base: std::env::var("PORTAL_BASE_URL").ok(),
         forseglingsnokkel,
+        regnid,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

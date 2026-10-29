@@ -135,6 +135,31 @@ fn tolk(tekst: &str) -> Utfall {
     }
 }
 
+/// The agent's whole system message: the role prompt, then this
+/// agent's own instructions, then the protocol.
+///
+/// Order matters, and only in one direction. The extra text comes AFTER
+/// the role so it can specialise — this company's account numbers, who
+/// to ask, which suppliers are routine — and the protocol comes last so
+/// the closing markers [`tolk`] reads cannot be talked away.
+///
+/// What the order does NOT do is decide access. Whatever an owner
+/// writes here, the role on the grant is what `tilgang::krev` enforces
+/// on every call the agent makes, so the worst a bad instruction can do
+/// is make the agent attempt things it will be refused.
+fn systemprompt(rollenavn: &str, ekstra: Option<&str>) -> String {
+    let rolleprompt = rolle::prompt(rollenavn)
+        .unwrap_or_else(|| rolle::prompt("ansatt").expect("ansatt-prompten finnes"));
+    let mut ut = rolleprompt.to_string();
+    if let Some(ekstra) = ekstra.map(str::trim).filter(|t| !t.is_empty()) {
+        ut.push_str("\n\nSÆRSKILTE INSTRUKSER FOR DEG:\n");
+        ut.push_str(ekstra);
+    }
+    ut.push_str("\n\n");
+    ut.push_str(&avslutning());
+    ut
+}
+
 /// Runs one task to a conclusion and returns it. Writing the result is
 /// the caller's job ([`kjor_oppgave`]), so this stays testable without
 /// a database.
@@ -142,14 +167,13 @@ pub async fn kjor_sloyfe(
     modell: &Llm,
     server: &Server,
     rollenavn: &str,
+    ekstra: Option<&str>,
     oppgave: &str,
     historikk: &[Replikk],
 ) -> Result<Utfall> {
-    let systemprompt = rolle::prompt(rollenavn)
-        .unwrap_or_else(|| rolle::prompt("ansatt").expect("ansatt-prompten finnes"));
     let katalog = verktoykatalog();
     let mut meldinger = vec![
-        Melding::system(format!("{systemprompt}\n\n{}", avslutning())),
+        Melding::system(systemprompt(rollenavn, ekstra)),
         Melding::bruker(oppgave.to_string()),
     ];
     // The trail IS the conversation (docs/agent.md §8.4): an agent that
@@ -227,11 +251,10 @@ pub async fn kjor_oppgave(
     // The role on the grant is the agent's authority, and the prompt it
     // is given must match it: telling a `les` agent it is a bokfører
     // only produces an agent that keeps being refused.
-    let rollenavn = regnmed_db::list_integrations(pool, company_id)
+    let grant = regnmed_db::list_integrations(pool, company_id)
         .await?
         .into_iter()
         .find(|g| g.integration_id == integration_id && g.valid_to.is_none())
-        .map(|g| g.access)
         .context("agenten har ingen aktiv tilgang til selskapet")?;
 
     let klient = Klient::med_klientlegitimasjon(
@@ -264,7 +287,15 @@ pub async fn kjor_oppgave(
         })
         .collect();
 
-    let utfall = match kjor_sloyfe(&modell, &server, &rollenavn, &oppgave.melding, &historikk).await
+    let utfall = match kjor_sloyfe(
+        &modell,
+        &server,
+        &grant.access,
+        grant.systemprompt.as_deref(),
+        &oppgave.melding,
+        &historikk,
+    )
+    .await
     {
         Ok(u) => u,
         // A failure is the agent's own report, not a silent stop: the
@@ -308,6 +339,24 @@ mod tests {
             );
         }
         assert!(navn.contains(&"saldobalanse"));
+    }
+
+    #[test]
+    fn the_extra_instructions_sit_between_the_role_and_the_protocol() {
+        let uten = systemprompt("bokforer", None);
+        let med = systemprompt("bokforer", Some("Strøm bokføres på 6340."));
+        // The role still opens the message, so nothing an owner writes
+        // displaces the rules the role carries.
+        let rolleprompt = rolle::prompt("bokforer").unwrap();
+        assert!(med.starts_with(&rolleprompt));
+        assert!(med.contains("Strøm bokføres på 6340."));
+        // And the protocol still closes it: the markers `tolk` reads
+        // must be the last thing the model is told.
+        let protokoll = avslutning();
+        assert!(med.trim_end().ends_with(protokoll.trim_end()));
+        assert!(uten.trim_end().ends_with(protokoll.trim_end()));
+        // Empty instructions add nothing at all -- no stray heading.
+        assert_eq!(systemprompt("bokforer", Some("   ")), uten);
     }
 
     #[test]

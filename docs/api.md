@@ -41,6 +41,10 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/attestering/policy` | GET POST |
 | `/companies/{company_id}/integrations` | GET POST |
 | `/companies/{company_id}/integrations/log` | GET |
+| `/companies/{company_id}/agents` | POST |
+| `/companies/{company_id}/integrations/{integration_id}` | PUT |
+| `/companies/{company_id}/integrations/{integration_id}/llm` | GET PUT DELETE |
+| `/companies/{company_id}/integrations/{integration_id}/rolle` | PUT |
 | `/companies/{company_id}/integrations/{integration_id}/revoke` | POST |
 | `/companies/{company_id}/agent/oppgaver` | GET POST |
 | `/companies/{company_id}/agent/oppgaver/{oppgave_id}` | GET |

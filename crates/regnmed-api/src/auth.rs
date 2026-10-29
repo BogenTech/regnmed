@@ -103,6 +103,21 @@ impl Verifier {
         })
     }
 
+    /// The issuer this API validates tokens from. Also the address of
+    /// the IdP itself, which is why provisioning an agent's identity
+    /// does not need a second URL to be configured and kept in step.
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    /// The audience this API REQUIRES, when it requires one. A client
+    /// created without it authenticates and then gets 401 on every
+    /// call, so whoever creates one must read it from here rather than
+    /// from a constant that can drift (CLAUDE.md point 56).
+    pub fn audience(&self) -> Option<&str> {
+        self.audience.as_deref()
+    }
+
     pub fn from_jwks(issuer: &str, audience: Option<String>, jwks: JwkSet) -> Self {
         Self {
             issuer: issuer.to_string(),

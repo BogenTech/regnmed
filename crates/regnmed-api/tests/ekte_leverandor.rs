@@ -87,6 +87,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         &modell,
         &server,
         "bokforing",
+        None,
         "Hent saldobalansen for 2026 og fortell meg kort hva den viser. \
          Hovedboken er tom, så si det hvis den er tom.",
         &[],
@@ -185,6 +186,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         &modell,
         &server,
         "bokforing",
+        None,
         "Bokfør et bilag datert 2026-03-15 i journalen GL: kontorrekvisita kjøpt \
          kontant for 500 kroner. Debet konto 6800, kredit konto 1920. \
          Beløpene er uten mva. Bruk teksten «Kontorrekvisita».",

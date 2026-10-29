@@ -17,5 +17,6 @@ pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod mvamelding;
 pub mod norgesbank;
+pub mod regnid;
 pub mod stripe;
 pub mod tsa;

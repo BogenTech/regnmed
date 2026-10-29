@@ -83,6 +83,23 @@ pub struct AppState {
     /// cannot protect. It is configuration on the process, never a row:
     /// the database holds ciphertext and nothing in it can open that.
     pub forseglingsnokkel: Option<regnmed_core::hemmelig::Nokkel>,
+    /// Lets the portal create an agent's OIDC identity instead of
+    /// asking the customer to run a CLI command (docs/agent.md §8.6).
+    /// None when it is unconfigured, and then the agent form says a
+    /// client_id is needed — the old path still works, it just is not
+    /// the only one.
+    pub regnid: Option<RegnidCfg>,
+}
+
+/// regnmed's own credentials at the IdP, for provisioning agent
+/// identities. Both or neither: half of this is a mistake, not a mode.
+#[derive(Clone)]
+pub struct RegnidCfg {
+    pub client_id: String,
+    pub client_secret: String,
+    /// Overridable so tests can point at a mock; defaults to the
+    /// configured OIDC issuer, which is the same service.
+    pub base_url: Option<String>,
 }
 
 #[derive(Clone)]
@@ -160,6 +177,14 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/integrations/log",
             get(integrasjon::log),
         )
+        // One call creates the whole agent — identity included
+        // (docs/agent.md §8.6). `POST /integrations` above still takes
+        // an existing client_id, for an agent the customer runs
+        // themselves.
+        .route(
+            "/companies/{company_id}/agents",
+            axum::routing::post(integrasjon::opprett_agent),
+        )
         // Oppgaver til en agent (#103): the owner says what to do, the
         // agent reports back, and the trail outlives the chat it was
         // asked in.
@@ -186,6 +211,10 @@ pub fn router(state: AppState) -> Router {
             get(integrasjon::llm)
                 .put(integrasjon::sett_llm)
                 .delete(integrasjon::fjern_llm),
+        )
+        .route(
+            "/companies/{company_id}/integrations/{integration_id}/rolle",
+            axum::routing::put(integrasjon::rolle),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",
