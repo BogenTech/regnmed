@@ -15,6 +15,11 @@ spec:
             - shared_buffers=128MB
             - -c
             - max_connections=100
+            # Repeated from base on purpose: a strategic-merge patch
+            # REPLACES the args list, so a flag only in base would be
+            # silently dropped here (docs/deploy.md).
+            - -c
+            - authentication_timeout=10s
           env:
             - name: POSTGRES_USER
               value: regnmed
