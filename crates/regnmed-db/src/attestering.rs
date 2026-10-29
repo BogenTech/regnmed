@@ -20,6 +20,10 @@ pub struct AttestationPolicy {
     pub belopsgrense_ore: Option<i64>,
     /// The designated attestant; None = anyone with posting access.
     pub attestant_person_id: Option<Uuid>,
+    /// When true, a bilag posted by an INTEGRATION requires an approved
+    /// attestering by a human regardless of the amount (#101, migration
+    /// 0063). None = not chosen; the beløpsgrense alone governs.
+    pub krev_for_maskin: Option<bool>,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
 }
@@ -29,6 +33,7 @@ fn policy_from_row(row: &sqlx::postgres::PgRow) -> AttestationPolicy {
         aktiv: row.get("aktiv"),
         belopsgrense_ore: row.get("belopsgrense_ore"),
         attestant_person_id: row.get("attestant_person_id"),
+        krev_for_maskin: row.get("krev_for_maskin"),
         created_by: row.get("created_by"),
         created_at: row.get("created_at"),
     }
@@ -43,7 +48,8 @@ where
     E: sqlx::PgExecutor<'e>,
 {
     let row = sqlx::query(
-        "select aktiv, belopsgrense_ore, attestant_person_id, created_by, created_at
+        "select aktiv, belopsgrense_ore, attestant_person_id, krev_for_maskin,
+                created_by, created_at
          from attestation_policy where company_id = $1
          order by created_at desc, id desc limit 1",
     )
@@ -55,7 +61,8 @@ where
 
 pub async fn policy_history(pool: &PgPool, company_id: Uuid) -> Result<Vec<AttestationPolicy>> {
     let rows = sqlx::query(
-        "select aktiv, belopsgrense_ore, attestant_person_id, created_by, created_at
+        "select aktiv, belopsgrense_ore, attestant_person_id, krev_for_maskin,
+                created_by, created_at
          from attestation_policy where company_id = $1
          order by created_at desc, id desc",
     )
@@ -74,6 +81,7 @@ pub async fn set_policy(
     aktiv: bool,
     belopsgrense_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
+    krev_for_maskin: Option<bool>,
     created_by: &str,
 ) -> Result<()> {
     if let Some(grense) = belopsgrense_ore {
@@ -92,14 +100,16 @@ pub async fn set_policy(
     }
     sqlx::query(
         "insert into attestation_policy
-             (id, company_id, aktiv, belopsgrense_ore, attestant_person_id, created_by)
-         values ($1, $2, $3, $4, $5, $6)",
+             (id, company_id, aktiv, belopsgrense_ore, attestant_person_id,
+              krev_for_maskin, created_by)
+         values ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(Uuid::now_v7())
     .bind(company_id)
     .bind(aktiv)
     .bind(belopsgrense_ore)
     .bind(attestant_person_id)
+    .bind(krev_for_maskin)
     .bind(created_by)
     .execute(pool)
     .await?;

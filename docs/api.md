@@ -42,6 +42,9 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/integrations` | GET POST |
 | `/companies/{company_id}/integrations/log` | GET |
 | `/companies/{company_id}/integrations/{integration_id}/revoke` | POST |
+| `/companies/{company_id}/agent/oppgaver` | GET POST |
+| `/companies/{company_id}/agent/oppgaver/{oppgave_id}` | GET |
+| `/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar` | POST |
 | `/companies/{company_id}/members` | GET |
 | `/companies/{company_id}/access` | GET |
 | `/companies/{company_id}/access/history` | GET |

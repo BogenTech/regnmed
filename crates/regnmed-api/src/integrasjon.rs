@@ -9,6 +9,12 @@
 //! Granting and revoking require admin — that is letting a robot into the
 //! company's books. Reading the list and the log requires only access: a
 //! revisor must be able to see which machines have written.
+//!
+//! Since #101 the grant carries a ROLE NAME, the same vocabulary a
+//! member gets, `admin` included when the owner decides it. The ceiling
+//! is `Rett::kan_delegeres`, enforced where access is resolved
+//! (`tilgang::slaa_opp`) rather than by a shorter list of roles here: a
+//! machine does the work, but never widens anyone's access.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -18,7 +24,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
+use crate::tilgang::{Rett, Rolle, krev};
 
 pub async fn list(
     State(state): State<AppState>,
@@ -51,9 +57,44 @@ pub struct GrantRequest {
     client_id: String,
     navn: String,
     kontakt: Option<String>,
-    /// "les" or "bokforing"; admin is deliberately not grantable to a
-    /// machine — changing who has access stays a human decision.
+    /// A role name, exactly as a member gets one: a built-in role or one
+    /// of the company's own (#101). `revisor` is not assignable here any
+    /// more than it is to a person — it follows a revisjonsoppdrag.
     access: String,
+}
+
+/// The roles an owner may hand a machine.
+///
+/// `revisor` is absent for the same reason it is absent for people: it
+/// comes from an oppdrag, never from an assignment. `ukjent` is not a
+/// role. Everything else is on the table — including `admin`, which is
+/// the revision #101 made explicitly: the ceiling is
+/// [`Rett::kan_delegeres`], enforced in the access lookup, not a
+/// shorter list of roles here.
+const TILDELBARE: [Rolle; 4] = [Rolle::Ansatt, Rolle::Les, Rolle::Bokforing, Rolle::Admin];
+
+/// Refuses a role name that is neither built-in nor one of the
+/// company's own ACTIVE roles. Without this a typo would be stored and
+/// then resolve to `Rolle::Ukjent` — an integration with a grant and no
+/// access, which looks like a bug in the API rather than in the request.
+async fn krev_gyldig_rolle(state: &AppState, company_id: Uuid, navn: &str) -> Result<(), ApiError> {
+    let navn = navn.trim();
+    if TILDELBARE.iter().any(|r| r.slug() == navn) {
+        return Ok(());
+    }
+    let egne = regnmed_db::roller::list_roller(&state.pool, company_id).await?;
+    if egne.iter().any(|r| r.aktiv && r.navn == navn) {
+        return Ok(());
+    }
+    let valg: Vec<&str> = TILDELBARE
+        .iter()
+        .map(|r| r.slug())
+        .chain(egne.iter().filter(|r| r.aktiv).map(|r| r.navn.as_str()))
+        .collect();
+    Err(ApiError::BadRequest(format!(
+        "«{navn}» er ingen rolle i dette selskapet — velg en av: {}",
+        valg.join(", ")
+    )))
 }
 
 pub async fn grant(
@@ -63,6 +104,7 @@ pub async fn grant(
     Json(request): Json<GrantRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    krev_gyldig_rolle(&state, company_id, &request.access).await?;
     let by = person.display().to_string();
     let id = regnmed_db::grant_integration(
         &state.pool,

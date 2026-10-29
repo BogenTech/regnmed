@@ -860,10 +860,22 @@ pub struct Tilgang {
     /// Rettigheter from the company's OWN roles (#60), already filtered
     /// against the vocabulary and against [`Rett::kan_delegeres`].
     egendefinerte: Vec<Rett>,
+    /// The caller got here as a machine (an `integration_grant`, #45).
+    ///
+    /// Since #101 an integration holds a REAL role — `admin` included,
+    /// when the owner decides it — so the ceiling cannot live at grant
+    /// time any more. It lives here instead: whatever the role says, a
+    /// machine never holds a rettighet that governs WHO HAS ACCESS.
+    /// One seam, so it covers roles added later and rows written before
+    /// the rule existed.
+    maskin: bool,
 }
 
 impl Tilgang {
     pub fn har(&self, rett: Rett) -> bool {
+        if self.maskin && !rett.kan_delegeres() {
+            return false;
+        }
         // The implication (`_ALLE` medfører `_EGNE`) is a property of the
         // rettighet, not of the role kind — a custom role holding
         // TIMER_SKRIV_ALLE can correct everyone's hours and therefore
@@ -873,6 +885,12 @@ impl Tilgang {
                 .egendefinerte
                 .iter()
                 .any(|r| *r == rett || r.medforer().contains(&rett))
+    }
+
+    /// Whether this is a machine caller — the attestering policy and the
+    /// portal both want to know.
+    pub fn er_maskin(&self) -> bool {
+        self.maskin
     }
 
     pub fn er_admin(&self) -> bool {
@@ -899,6 +917,9 @@ impl Tilgang {
                     .iter()
                     .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied())),
             )
+            // Same filter as `har`, or `/me` would promise a machine
+            // controls that are going to fail.
+            .filter(|r| !self.maskin || r.kan_delegeres())
             .map(|r| r.slug())
             .collect();
         ut.sort_unstable();
@@ -915,10 +936,22 @@ pub async fn slaa_opp(
     person_id: Uuid,
     company_id: Uuid,
 ) -> Result<Option<Tilgang>, ApiError> {
-    let navn = regnmed_db::company_roles(&state.pool, person_id, company_id).await?;
-    if navn.is_empty() {
+    // `company_access_for_person` rather than `company_roles`, because
+    // the route in (`via`) decides the machine ceiling below and comes
+    // out of the same single query — no extra cost on the hot path.
+    let tilganger: Vec<regnmed_db::CompanyAccess> =
+        regnmed_db::company_access_for_person(&state.pool, person_id)
+            .await?
+            .into_iter()
+            .filter(|a| a.company_id == company_id)
+            .collect();
+    if tilganger.is_empty() {
         return Ok(None);
     }
+    let maskin = tilganger.iter().any(|a| a.via == "integrasjon");
+    let mut navn: Vec<String> = tilganger.into_iter().map(|a| a.access).collect();
+    navn.sort();
+    navn.dedup();
     let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
     let ukjente: Vec<String> = navn
         .iter()
@@ -939,6 +972,7 @@ pub async fn slaa_opp(
     Ok(Some(Tilgang {
         roller,
         egendefinerte,
+        maskin,
     }))
 }
 

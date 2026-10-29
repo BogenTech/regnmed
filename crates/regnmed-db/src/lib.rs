@@ -6,6 +6,7 @@
 
 pub mod abonnement;
 pub mod abonnement_oppfolging;
+pub mod agentoppgave;
 pub mod aksjebok;
 pub mod anchor;
 pub mod arsavslutning;

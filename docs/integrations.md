@@ -58,24 +58,68 @@ der nå. Klientadministrasjonen i regnids admin-UI oppretter fortsatt
 bare innloggingsklienter — maskinklienter registreres med CLI-en,
 bevisst en mer overveid handling.
 
-## Tilgangen
+## Tilgangen: en rolle, som for et menneske
 
-| Nivå | Kan |
+**Gjennomført 2026-10-28 (#101, migrasjon 0062).** `integration_grant.access`
+var en to-verdis enum, `les` eller `bokforing`. Den er erstattet med
+rollenavnet — innebygde roller (`les`, `bokforing`, `ansatt`, `admin`)
+og selskapets egne (#60) — tildelt en integrasjon på samme måte som til
+et medlem.
+
+| Rolle | Kan |
 | --- | --- |
-| `les` | Alt en revisor kan lese: rapporter, reskontro, bilag |
+| `ansatt` | Egne timer og egne utlegg. Ikke hovedboken. |
+| `les` | Alt en revisor kan lese: rapporter, reskontro, bilag. Ikke lønn. |
 | `bokforing` | I tillegg: bokføre, fakturere, laste opp i innboksen |
+| `admin` | I tillegg det som styrer selskapet — inkludert **migrering** |
+| egendefinert | Det selskapet selv har satt sammen av vokabularet |
 
-> **OPPHEVET 2026-10-28 — se #101.** Her sto det at `admin` ikke er
-> mulig å gi en maskin. Tabellen over er fortsatt sann for koden
-> (`integration_grant.access` er `les`/`bokforing`), men ikke lenger
-> fordi vi vil det: #101 erstatter de to nivåene med rollene mennesker
-> alt bruker, innebygde og egendefinerte. Da kan en agent få
-> migreringstilgang hvis eieren gir den.
->
-> Det som ikke endres: å endre HVEM SOM HAR TILGANG forblir en
-> menneskelig beslutning. `Rett::kan_delegeres` er grensen — en maskin
-> kan gjøre arbeidet, men ikke dele ut tilgang, heller ikke til seg
-> selv.
+`revisor` kan ikke tildeles her, av samme grunn som den ikke kan
+tildeles et menneske: den følger et revisjonsoppdrag.
+
+**Hvorfor den gamle regelen var feil:** ikke på prinsippet, men på
+utfallet. Et nytt kundeforløp står foran MIGRERINGEN — den vanskeligste
+oppgaven i systemet, der hjelp er verdt mest — og `import_saft` krever
+`MIGRERING_ADMIN`, som ingen maskin kunne få. Sperren var altså
+strengest der brukeren er mest hjelpeløs. En SAF-T-import er dessuten
+alt-eller-ingenting inn i en tom hovedbok, loggført med innholdshash og
+`created_by`, og døren lukkes ved første ordinære bilag: fullt
+attribuerbar og avgrenset i tid. Det som gjensto var aldri risikoen —
+det var vokabularet.
+
+### Grensen som består: `Rett::kan_delegeres`
+
+En maskin får **aldri** en rettighet som styrer hvem som har tilgang,
+uansett hvilken rolle den bærer:
+
+| Nektet en maskin | Hva det er |
+| --- | --- |
+| `MEDLEM_ADMIN` | Medlemmer, invitasjoner, roller |
+| `OPPDRAG_ADMIN` | Oppdrag til byråer |
+| `INTEGRASJON_ADMIN` | Andre integrasjoners tilgang — og sin egen |
+| `SELSKAP_ADMIN` | Firmaopplysninger, registreringsstatus |
+
+Filtreringen ligger **i tilgangsoppslaget** (`tilgang::slaa_opp`), ikke
+ved tildelingen. Det er en avgjørelse: da gjelder den også for roller
+som kommer til senere, og for rader som ble skrevet før regelen fantes.
+Vakten, `/me` og `company_access` er ellers urørt — en integrasjon er
+fortsatt en `person` med `kind='integrasjon'`, så oppslag, attribusjon
+og revisjonsspor er identiske for robot og menneske.
+
+Sagt kort: **en maskin gjør jobben, men utvider aldri tilgang.**
+#57/#63-grensen står urørt.
+
+### Attestering: mennesket som andre øye
+
+`attestation_policy.krev_for_maskin` (migrasjon 0063) gjør
+forslagsdoktrinen håndhevbar: når den er satt, krever **alt** en
+integrasjon bokfører godkjent attestering av et **menneske**, uavhengig
+av beløpsgrensen — og en agent kan ikke attestere en annen agents bilag.
+Beløpsgrensen er den gale aksen for en maskin: det som gjør et
+maskinbokført bilag verdt et blikk er ikke beløpet, men at ingen så det.
+
+`NULL` = ikke valgt, og da gjelder beløpsgrensen alene; 0030-oppførselen
+er urørt for alle eksisterende rader.
 
 Grantet er modellert som et oppdrag (docs/auth.md): `valid_to` er
 **eksklusiv**, så en tilbakekalling virker i samme øyeblikk — ikke ved
@@ -117,7 +161,9 @@ tilgang til selskapet.
 ## Endpoints
 
 - `GET  /companies/{id}/integrations` — tilganger, status, kall i dag
-- `POST /companies/{id}/integrations` — `{client_id, navn, kontakt?, access}` (admin)
+- `POST /companies/{id}/integrations` — `{client_id, navn, kontakt?, access}` (admin).
+  `access` er et rollenavn; et navn som ikke er en rolle i selskapet gir
+  `400` med listen over de gyldige.
 - `POST /companies/{id}/integrations/{iid}/revoke` (admin)
 - `GET  /companies/{id}/integrations/log` — de endrende kallene
 
@@ -126,7 +172,7 @@ tilgang til selskapet.
 1. Integrasjonen registreres som klient i regnid og får `client_id` +
    `client_secret` (regnids sak).
 2. Selskapets admin gir tilgang i portalen: lim inn `client_id`, gi den
-   et navn, velg nivå.
+   et navn, velg rolle.
 3. Integrasjonen henter token med `client_credentials` og kaller API-et
    med `Authorization: Bearer …` — samme endepunkter som portalen
    bruker.

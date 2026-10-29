@@ -9,7 +9,8 @@ CLAUDE.md).
 | Document | Covers |
 | --- | --- |
 | [api.md](api.md) | Den offentlige API-referansen: alle endepunkter, felles regler, stabilitet |
-| [integrations.md](integrations.md) | Maskin-tilgang: client_credentials-identitet, grant per selskap, attribusjon, ratebegrensning |
+| [integrations.md](integrations.md) | Maskin-tilgang: client_credentials-identitet, rolle per selskap, attribusjon, ratebegrensning |
+| [agent.md](agent.md) | Ta med din egen agent: MCP-serveren, verktøytabellen, rollepromptene, oppgaver til en agent |
 | [ledger.md](ledger.md) | The append-only, hash-chained ledger: the three immutability layers, verification, and the trust model |
 | [anchoring.md](anchoring.md) | External anchoring: Merkle snapshots of chain heads, the public root feed, RFC 3161 witnesses |
 | [mva.md](mva.md) | VAT: standard codes, dated rates, beregning rules, mva-spesifikasjon, mva-melding |
