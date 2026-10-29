@@ -344,6 +344,7 @@ tokens: `integration.rate_limit_min` er den ene spaken som finnes i dag.
 
 1. **Agentidentitet** — navn og ansikt. *Levert 2026-10-29.*
 2. **Leverandørkonfigurasjon** med kryptering og dataflyt-opplysning.
+   *Levert 2026-10-29, se §8.2.*
 3. **Workeren** — gjenbruker `VERKTOY` og `rolle.rs`, skriver hendelser.
    Egen deployment, ikke inne i API-ets 64 MB (frugality.md); NATS
    JetStream finnes alt for denne formen for arbeid (mail-skinnen, og
@@ -372,6 +373,9 @@ tokens: `integration.rate_limit_min` er den ene spaken som finnes i dag.
   egen meldingstabell retter det når chat-flaten bygges.
 - **Ingen bildeopplasting.** Ansiktet er initialer, farge og et ikon fra
   `ikoner.js` — ikke et opplastet bilde. Grunnen står i §8.1.
+- **Ingen nøkkelrotasjon.** Byttes `AGENT_NOKKEL`, lar ingen lagret
+  leverandørnøkkel seg åpne mer, og hver agent må få nøkkelen sin på nytt.
+  Se §8.2 — det er en kjent begrensning, ikke en forglemmelse.
 
 ### 8.1 Agentidentitet (levert)
 
@@ -409,3 +413,67 @@ Endepunkt: `PUT /companies/{id}/integrations/{iid}` (`IntegrasjonAdmin`)
 — navn, kontakt, farge og ikon. Tilgangsnivået endres ikke her: en
 rolle byttes ved å trekke tilbake og gi en ny, fordi
 `integration_grant` er uforanderlig med vilje (0033-vakten).
+
+### 8.2 Leverandørkonfigurasjon (levert)
+
+Migrasjon 0066 gir `agent_llm`: leverandør, adresse, modell og den
+forseglede nøkkelen, per **(integrasjon, selskap)**.
+
+Ikke per integrasjon alene. En integrasjon er ÉN identitet som kan ha
+oppdrag i flere selskaper, og navnet deles mellom dem (§8.1) — men en
+leverandørnøkkel er noens REGNING og noens valg av databehandler.
+Selskap A skal ikke kunne bestemme hvilken modell selskap B-s arbeid
+kjører på, og enda mindre sende B sin egen faktura.
+
+Tabellen er **innsettings-bar, nyeste rad gjelder** — samme daterte
+mønster som `attestation_policy`, `abonnement_pris` og `sats`. Det
+koster ingen ekstra tabell og svarer på spørsmålet som betyr noe
+etterpå: hvilken leverandør ble hovedboken vår sendt til, når, og hvem
+bestemte det. Å slå av modellen er en ny rad (`aktiv = false`), ikke en
+sletting, så sporet fortsetter å si hva som var sant før.
+
+**Nøkkelen har ingen vei ut.** `GET …/integrations/{iid}/llm` svarer med
+leverandør, modell og `nokkel_lagret: true` — aldri verdien.
+`hent_llm_nokkel` er en egen funksjon fra `hent_llm` nettopp slik at det
+å lese oppsettet for visning ikke kan bli kallet som dekrypterer. Testen
+sjekker mot HELE svarkroppen, ikke mot et felt: en lekkasje kommer som
+et felt ingen tenkte på. Begge vaktene er **sett feile** — med
+klartekstlagring svarer databasesjekken, og med nøkkelen lagt i svaret
+svarer lekkasjesjekken.
+
+Forseglingen er `regnmed-core::hemmelig`: XChaCha20-Poly1305, tilfeldig
+nonce per forsegling lagret foran chifferteksten. Autentisert, så en rad
+noen har endret i databasen FEILER framfor å dekryptere til noe annet —
+en forfalsket rad blir en feilmelding, ikke en tulle-API-nøkkel sendt
+til en leverandør. Dette er det ene stedet i arbeidsområdet som ikke
+håndruller formatet sitt; begrunnelsen står i modulens egen toppkommentar.
+
+`https` kreves på adressen: kundens nøkkel og hovedbokslinjer går over
+den. `annet` finnes så en kunde kan peke på sin egen gateway uten at vi
+slipper en ny versjon.
+
+**Nøkkelen vår er konfigurasjon, aldri en rad.** `AGENT_NOKKEL`, 64
+hex-tegn. Mangler den, er skinnen AV og portalen sier det framfor å
+tilby et skjema som ville lagret en nøkkel vi ikke kan beskytte; er den
+ugyldig, STARTER IKKE prosessen — en nesten-riktig nøkkel er en
+konfigurasjonsfeil noen ellers finner uker senere, når en agent stille
+står uten modell.
+
+Lag den og legg den inn utenfor git (docs/secrets.md er absolutt):
+
+```sh
+openssl rand -hex 32
+kubectl -n regnmed create secret generic agent-credentials \
+  --from-literal=agent-nokkel=<verdien>
+```
+
+Den er med vilje **ikke** koblet inn i `deploy/` ennå: uten workeren
+(steg 3) er det ingenting som bruker den, og en `secretKeyRef` til et
+secret som ikke finnes stopper poden. Koblingen hører i steg 3.
+
+**ROTASJON FINNES IKKE.** Byttes nøkkelen, er hver lagret
+leverandørnøkkel uåpnelig, og hver agent må få sin på nytt gjennom
+portalen. Det er levelig nå — ingen agenter er i drift — og det blir
+dyrere jo lenger vi venter. Den riktige veien er en nøkkel-id per rad og
+en omforsegling som leser med den gamle og skriver med den nye; det er
+ikke bygget, og det hører sammen med steg 3.

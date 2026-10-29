@@ -29,7 +29,7 @@ export function bekreft(melding, valg = {}) {
 // required unless `valgfri`; OK stays disabled until every required
 // field has content — validation prompt() never had.
 // felt: { navn, etikett, standard, valgfri, hjelp,
-//         type: text|date|textarea|select|checkbox,
+//         type: text|password|date|textarea|select|checkbox,
 //         valg: select options as [verdi, etikett] pairs }
 export function skjema(tittel, felter, valg = {}) {
   return new Promise((resolve) => {

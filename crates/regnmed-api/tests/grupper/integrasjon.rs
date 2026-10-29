@@ -265,6 +265,125 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
         "en maskin døper ikke om seg selv"
     );
 
+    // ---- The customer's own LLM provider (docs/agent.md §8) ----
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(llm["tilgjengelig"], true, "testnøkkelen er satt: {llm}");
+    assert!(llm["oppsett"].is_null(), "ingen leverandør ennå: {llm}");
+
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        Some(
+            json!({
+                "leverandor": "openrouter",
+                "modell": "qwen/qwen3-8b",
+                "api_nokkel": "sk-or-hemmelig-verdi"
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(llm["oppsett"]["leverandor"], "openrouter");
+    assert_eq!(llm["oppsett"]["base_url"], "https://openrouter.ai/api/v1");
+    assert_eq!(llm["oppsett"]["modell"], "qwen/qwen3-8b");
+    assert_eq!(llm["oppsett"]["nokkel_lagret"], true);
+    // THE rule: the key has no way back out. Checked against the whole
+    // response rather than a field, because a leak would arrive as a
+    // field nobody thought about.
+    assert!(
+        !llm.to_string().contains("sk-or-hemmelig-verdi"),
+        "nøkkelen lekket ut igjen: {llm}"
+    );
+
+    // Nor is it in the database in the clear.
+    let lagret: Vec<u8> = sqlx::query_scalar(
+        "select nokkel from agent_llm where integration_id = $1 order by created_at desc limit 1",
+    )
+    .bind(integration_id.parse::<uuid::Uuid>().unwrap())
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&lagret).contains("sk-or-hemmelig-verdi"),
+        "nøkkelen ligger i klartekst i databasen"
+    );
+
+    // http:// is refused: the ledger and the key travel over it.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        Some(
+            json!({
+                "leverandor": "annet",
+                "base_url": "http://gateway.invalid/v1",
+                "modell": "m",
+                "api_nokkel": "x"
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // The machine may not choose its own provider or pay with someone
+    // else's key: that is administering machine access.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &machine_token,
+        Some(json!({"leverandor": "openai", "modell": "m", "api_nokkel": "x"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Turning it off keeps the record of what it was.
+    let (status, _) = request(
+        &state,
+        "DELETE",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, llm) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations/{integration_id}/llm"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert!(llm["oppsett"].is_null(), "modellen er av: {llm}");
+    let rader: i64 = sqlx::query_scalar("select count(*) from agent_llm where integration_id = $1")
+        .bind(integration_id.parse::<uuid::Uuid>().unwrap())
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(rader, 2, "sporet beholder leverandøren som var valgt");
+
     // ---- An integration cannot give itself more ----
     let (status, _) = request(
         &state,

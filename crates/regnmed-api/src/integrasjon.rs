@@ -49,10 +49,20 @@ pub async fn list(
             "kall_i_dag": g.kall_i_dag,
             "avatar_farge": g.avatar_farge,
             "avatar_ikon": g.avatar_ikon,
+            "llm": g.llm.as_ref().map(|(lev, modell)| json!({
+                "leverandor": lev, "modell": modell
+            })),
         })).collect::<Vec<_>>(),
         // The face's colours are served from the code that validates
         // them, so the picker cannot offer one the server rejects.
         "farger": regnmed_db::AVATAR_FARGER,
+        // Whether this installation can store a provider key at all
+        // (docs/agent.md §8) — the portal offers the form only then.
+        "llm_tilgjengelig": state.agent_nokkel.is_some(),
+        "leverandorer": regnmed_db::agentllm::LEVERANDORER
+            .iter()
+            .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
+            .collect::<Vec<_>>(),
     })))
 }
 
@@ -187,4 +197,90 @@ pub async fn log(
             "tidspunkt": c.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))
+}
+
+// ---- Vertsagent: kundens egen LLM-leverandør (docs/agent.md §8) ----
+
+#[derive(Deserialize)]
+pub struct LlmRequest {
+    leverandor: String,
+    base_url: Option<String>,
+    modell: String,
+    /// The customer's own key. Goes in sealed and never comes back out:
+    /// [`llm`] reports whether one is set, never what it is.
+    api_nokkel: String,
+}
+
+/// The provider this agent uses, and whether a key is stored. The key
+/// itself has no route out of here — see docs/agent.md §8.
+pub async fn llm(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    let oppsett = regnmed_db::agentllm::hent_llm(&state.pool, company_id, integration_id).await?;
+    Ok(Json(json!({
+        // Without a sealing key the rail is off, and the portal says so
+        // rather than offering a form that would store a key we cannot
+        // protect.
+        "tilgjengelig": state.agent_nokkel.is_some(),
+        "leverandorer": regnmed_db::agentllm::LEVERANDORER
+            .iter()
+            .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
+            .collect::<Vec<_>>(),
+        "oppsett": oppsett.filter(|o| o.aktiv).map(|o| json!({
+            "leverandor": o.leverandor,
+            "base_url": o.base_url,
+            "modell": o.modell,
+            "satt_av": o.satt_av,
+            "satt_at": o.created_at.to_rfc3339(),
+            "nokkel_lagret": true,
+        })),
+    })))
+}
+
+/// Records the provider and seals the key. Takes `IntegrasjonAdmin`:
+/// this decides which company the ledger's contents are sent to, and
+/// whose bill they are sent on.
+pub async fn sett_llm(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<LlmRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    let Some(nokkel) = state.agent_nokkel.as_ref() else {
+        return Err(ApiError::BadRequest(
+            "vertsagenter er ikke satt opp på denne installasjonen (AGENT_NOKKEL mangler)".into(),
+        ));
+    };
+    regnmed_db::agentllm::sett_llm(
+        &state.pool,
+        nokkel,
+        company_id,
+        integration_id,
+        &request.leverandor,
+        request.base_url.as_deref(),
+        &request.modell,
+        &request.api_nokkel,
+        person.display(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({ "leverandor": request.leverandor })))
+}
+
+/// Turns the agent's model off. The row stays: which provider held this
+/// company's data, and when, outlives the decision to stop using it.
+pub async fn fjern_llm(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    regnmed_db::agentllm::fjern_llm(&state.pool, company_id, integration_id, person.display())
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({ "aktiv": false })))
 }

@@ -24,6 +24,7 @@ pub mod error;
 pub mod fakturapdf;
 pub mod fnr;
 pub mod hash;
+pub mod hemmelig;
 pub mod invoice;
 pub mod kassa;
 pub mod kid;

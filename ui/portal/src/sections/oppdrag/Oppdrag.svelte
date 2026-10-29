@@ -30,6 +30,8 @@
       firms: firms.firms,
       integrasjoner: integrasjoner.integrasjoner,
       farger: integrasjoner.farger || [],
+      llmTilgjengelig: !!integrasjoner.llm_tilgjengelig,
+      leverandorer: integrasjoner.leverandorer || [],
       integrasjonskall: log.kall,
       roller,
       oppgaver: oppgaver.oppgaver,
@@ -59,6 +61,8 @@
     kall={data.integrasjonskall}
     roller={data.roller}
     farger={data.farger}
+    llmTilgjengelig={data.llmTilgjengelig}
+    leverandorer={data.leverandorer}
     onDone={reload}
   />
 

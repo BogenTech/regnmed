@@ -8,7 +8,16 @@
   import Card from "../../components/Card.svelte";
   import Agentansikt from "../../components/Agentansikt.svelte";
 
-  let { companyId, integrasjoner, kall, roller, farger = [], onDone } = $props();
+  let {
+    companyId,
+    integrasjoner,
+    kall,
+    roller,
+    farger = [],
+    llmTilgjengelig = false,
+    leverandorer = [],
+    onDone,
+  } = $props();
 
   // Icons an agent can wear: the sections whose work it would do. The
   // set is the portal's own (ikoner.js) — no icon library, same rule as
@@ -99,6 +108,76 @@
     }
   }
 
+  // Vertsagent (docs/agent.md §8). Leverandøren blir underdatabehandler
+  // for selskapets regnskapsdata, så valget tas her, synlig, og ikke i
+  // en avtaletekst — derfor står det i dialogen og ikke bare i doksene.
+  async function settModell(i) {
+    const svar = await skjema(
+      "Modell for " + i.navn,
+      [
+        {
+          navn: "leverandor",
+          etikett: "Leverandør",
+          type: "select",
+          standard: i.llm?.leverandor || "openai",
+          valg: leverandorer.map((l) => [l.navn, l.navn]),
+        },
+        {
+          navn: "base_url",
+          etikett: "Adresse (kreves for «annet»)",
+          standard: "",
+          valgfri: true,
+          hjelp: "Må være https. Tom bruker leverandørens egen adresse.",
+        },
+        { navn: "modell", etikett: "Modell", standard: i.llm?.modell || "" },
+        {
+          navn: "api_nokkel",
+          etikett: "API-nøkkel",
+          type: "password",
+          standard: "",
+          hjelp: "Lagres kryptert og vises aldri igjen.",
+        },
+      ],
+      {
+        melding:
+          "Agenten sender regnskapsdata til leverandøren du velger, med din egen nøkkel og " +
+          "på din egen regning. Leverandøren blir databehandler for de dataene. " +
+          "Nøkkelen lagres kryptert og kan ikke leses ut igjen — bare erstattes.",
+        ok: "Lagre",
+      },
+    );
+    if (!svar) return;
+    try {
+      await send("PUT", "/companies/" + companyId + "/integrations/" + i.integration_id + "/llm", svar);
+      toast("Modellen er lagret", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function fjernModell(i) {
+    if (
+      !(await bekreft("Slå av modellen for " + i.navn + "? Agenten slutter å arbeide selv.", {
+        tittel: "Slå av modellen",
+        ok: "Slå av",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
+    try {
+      await send(
+        "DELETE",
+        "/companies/" + companyId + "/integrations/" + i.integration_id + "/llm",
+      );
+      toast("Modellen er slått av", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
   async function trekkTilbake(i) {
     if (
       !(await bekreft("Trekke tilbake tilgangen? Den slutter å virke med én gang.", {
@@ -135,7 +214,7 @@
     <table class="table table-sm mb-3">
       <thead>
         <tr>
-          <th>Integrasjon</th><th>Rolle</th><th>Status</th>
+          <th>Integrasjon</th><th>Rolle</th><th>Modell</th><th>Status</th>
           <th class="text-right">Kall i dag</th><th></th>
         </tr>
       </thead>
@@ -157,6 +236,13 @@
             </td>
             <td>{i.access}</td>
             <td>
+              {#if i.llm}
+                <span class="text-xs">{i.llm.leverandor}<br />{i.llm.modell}</span>
+              {:else}
+                <span class="text-xs opacity-50">egen agent</span>
+              {/if}
+            </td>
+            <td>
               {#if i.aktiv}
                 <span class="badge badge-success badge-sm">aktiv</span>
               {:else}
@@ -167,6 +253,16 @@
             <td>
               {#if i.aktiv}
                 <button class="btn btn-xs btn-ghost" onclick={() => endre(i)}>Endre</button>
+                {#if llmTilgjengelig}
+                  <button class="btn btn-xs btn-ghost" onclick={() => settModell(i)}>
+                    {i.llm ? "Bytt modell" : "Gi modell"}
+                  </button>
+                  {#if i.llm}
+                    <button class="btn btn-xs btn-ghost" onclick={() => fjernModell(i)}>
+                      Slå av
+                    </button>
+                  {/if}
+                {/if}
                 <button class="btn btn-xs btn-ghost" onclick={() => trekkTilbake(i)}>
                   Trekk tilbake
                 </button>

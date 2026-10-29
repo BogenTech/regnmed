@@ -285,6 +285,10 @@ pub struct GrantRow {
     pub kall_i_dag: i64,
     pub avatar_farge: Option<String>,
     pub avatar_ikon: Option<String>,
+    /// The governing LLM provider and model, when one is active
+    /// (docs/agent.md §8). Joined here rather than fetched per row:
+    /// the card lists agents, and one query is one query.
+    pub llm: Option<(String, String)>,
 }
 
 pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<GrantRow>> {
@@ -294,10 +298,16 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
                 g.access, g.valid_from, g.valid_to, g.created_by, g.revoked_by,
                 coalesce((select u.kall from integration_usage u
                           where u.integration_id = i.id and u.company_id = g.company_id
-                            and u.dag = current_date), 0) as kall_i_dag
+                            and u.dag = current_date), 0) as kall_i_dag,
+                llm.leverandor as llm_leverandor, llm.modell as llm_modell
          from integration_grant g
          join integration i on i.id = g.integration_id
          join person p on p.id = i.person_id
+         left join lateral (
+             select l.leverandor, l.modell from agent_llm l
+             where l.integration_id = i.id and l.company_id = g.company_id and l.aktiv
+             order by l.created_at desc, l.id desc limit 1
+         ) llm on true
          where g.company_id = $1
          order by (g.valid_to is null) desc, i.navn",
     )
@@ -320,6 +330,9 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             kall_i_dag: r.get("kall_i_dag"),
             avatar_farge: r.get("avatar_farge"),
             avatar_ikon: r.get("avatar_ikon"),
+            llm: r
+                .get::<Option<String>, _>("llm_leverandor")
+                .zip(r.get::<Option<String>, _>("llm_modell")),
         })
         .collect())
 }
