@@ -142,6 +142,29 @@ jobs:
             --target x86_64-unknown-linux-musl \
             -p regnmed-api -p regnmed-cli -p regnmed-agent
 
+      # The flags above, CHECKED rather than trusted. They were added
+      # 2026-10-19 after the Ubuntu 26 runner auto-vectorised ring past
+      # the baseline; nothing asserted they kept working, and on
+      # 2026-10-29 regnid shipped the identical bug because its build
+      # never got them at all. A default nobody verifies is not a floor.
+      #
+      # `andn` is BMI1 (Haswell, 2013) and andor is Ivy Bridge (2012).
+      # ring emits four behind runtime dispatch, which is fine; the
+      # auto-vectorised regnid build had 53 and crashlooped during TLS
+      # setup, before a single log line.
+      - name: The binaries stay within the oldest node's instruction set
+        run: |
+          for bin in regnmed-api regnmed regnmed-agent; do
+            path="target/x86_64-unknown-linux-musl/release/$bin"
+            n=$(objdump -d --no-show-raw-insn "$path" | grep -cE '\bandnq?\b' || true)
+            echo "$bin: $n andn (BMI1)"
+            if [ "$n" -gt 8 ]; then
+              echo "::error::$bin has $n BMI1 instructions — past the x86-64"
+              echo "baseline, and it will SIGILL on pre-Haswell nodes."
+              exit 1
+            fi
+          done
+
       # The portal dist is checked in (#76) so the Rust build never needs
       # Node. The `portal` job in ci.yml is what proves it still matches its
       # source; this job only consumes it, and would happily ship a stale one.
