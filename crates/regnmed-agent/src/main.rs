@@ -36,7 +36,8 @@ async fn main() -> Result<()> {
     // no useful work to do: say that rather than looping over tasks and
     // failing one by one.
     let nokkel = Nokkel::fra_hex(
-        &std::env::var("AGENT_NOKKEL").context("AGENT_NOKKEL mangler — vertsagenter er av")?,
+        &std::env::var("AGENT_SEALING_KEY")
+            .context("AGENT_SEALING_KEY mangler — vertsagenter er av")?,
     )?;
     let issuer = std::env::var("REGNMED_ISSUER").unwrap_or_else(|_| "https://id.regnmed.no".into());
     let api = std::env::var("REGNMED_API").unwrap_or_else(|_| "https://api.regnmed.no".into());
