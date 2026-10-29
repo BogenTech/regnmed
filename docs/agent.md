@@ -373,7 +373,7 @@ tokens: `integration.rate_limit_min` er den ene spaken som finnes i dag.
   egen meldingstabell retter det når chat-flaten bygges.
 - **Ingen bildeopplasting.** Ansiktet er initialer, farge og et ikon fra
   `ikoner.js` — ikke et opplastet bilde. Grunnen står i §8.1.
-- **Ingen nøkkelrotasjon.** Byttes `AGENT_NOKKEL`, lar ingen lagret
+- **Ingen nøkkelrotasjon.** Byttes `AGENT_SEALING_KEY`, lar ingen lagret
   leverandørnøkkel seg åpne mer, og hver agent må få nøkkelen sin på nytt.
   Se §8.2 — det er en kjent begrensning, ikke en forglemmelse.
 
@@ -452,10 +452,16 @@ håndruller formatet sitt; begrunnelsen står i modulens egen toppkommentar.
 den. `annet` finnes så en kunde kan peke på sin egen gateway uten at vi
 slipper en ny versjon.
 
-**Nøkkelen vår er konfigurasjon, aldri en rad.** `AGENT_NOKKEL`, 64
-hex-tegn. Mangler den, er skinnen AV og portalen sier det framfor å
-tilby et skjema som ville lagret en nøkkel vi ikke kan beskytte; er den
-ugyldig, STARTER IKKE prosessen — en nesten-riktig nøkkel er en
+**Nøkkelen vår er konfigurasjon, aldri en rad.** `AGENT_SEALING_KEY`, 64
+hex-tegn. Navnet er valgt med vilje: den er ikke agentens nøkkel, den er
+nøkkelen som FORSEGLER agentens — både leverandørnøkkelen her og
+klienthemmeligheten i §8.3. Den het `AGENT_NOKKEL` fram til 2026-10-29,
+og det navnet leste som «agentens nøkkel», altså som den ene tingen den
+ikke er.
+
+Mangler den, er skinnen AV og portalen sier det framfor å tilby et
+skjema som ville lagret en nøkkel vi ikke kan beskytte; er den ugyldig,
+STARTER IKKE prosessen — en nesten-riktig nøkkel er en
 konfigurasjonsfeil noen ellers finner uker senere, når en agent stille
 står uten modell.
 
@@ -464,7 +470,7 @@ Lag den og legg den inn utenfor git (docs/secrets.md er absolutt):
 ```sh
 openssl rand -hex 32
 kubectl -n regnmed create secret generic agent-credentials \
-  --from-literal=agent-nokkel=<verdien>
+  --from-literal=sealing-key=<verdien>
 ```
 
 Den er med vilje **ikke** koblet inn i `deploy/` ennå: uten workeren
@@ -536,7 +542,7 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
   ikke kunne finne (se §8.4). Lærdommen fra Stripe-integrasjonen (punkt 56 i
   CLAUDE.md) holdt: payloads skrevet ut fra hva koden LESER bekrefter bare
   kodens egen antakelse.
-- **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_NOKKEL` i
+- **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_SEALING_KEY` i
   `deploy/`, og `regnmed-agent` har ikke noe budsjett i
   [frugality.md](frugality.md). Alt tre hører sammen og kommer når
   workeren har kjørt mot en ekte leverandør.

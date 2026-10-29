@@ -77,12 +77,12 @@ pub struct AppState {
     /// the request's Host header: a mail we send must not be addressable
     /// by whoever made the request.
     pub portal_base: Option<String>,
-    /// Seals the customer's own LLM key at rest (AGENT_NOKKEL, 64 hex
+    /// Seals the customer's own LLM key at rest (AGENT_SEALING_KEY, 64 hex
     /// characters — docs/agent.md §8). None when it is unset, and then
     /// the hosted-agent endpoints say so rather than storing a key we
     /// cannot protect. It is configuration on the process, never a row:
     /// the database holds ciphertext and nothing in it can open that.
-    pub agent_nokkel: Option<regnmed_core::hemmelig::Nokkel>,
+    pub forseglingsnokkel: Option<regnmed_core::hemmelig::Nokkel>,
 }
 
 #[derive(Clone)]
