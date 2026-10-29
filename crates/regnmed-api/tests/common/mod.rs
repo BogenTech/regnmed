@@ -95,6 +95,10 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
             )
             .unwrap(),
         ),
+        // Provisioning is OFF in tests: the agent endpoint must work
+        // with a client_id the caller supplies, which is the path that
+        // does not depend on another service being up.
+        regnid: None,
     })
 }
 

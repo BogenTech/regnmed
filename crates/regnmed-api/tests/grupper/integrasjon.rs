@@ -639,3 +639,219 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
         );
     }
 }
+
+/// One call creates the whole agent, and the role can be changed from
+/// the same place it is shown (docs/agent.md §8.6).
+///
+/// Provisioning is off in tests (`regnid: None`), so this exercises the
+/// path that does not depend on the IdP being up: a client_id the
+/// caller supplies. What the test is really for is the two things the
+/// portal now depends on — that the extra instructions and the face
+/// survive one POST, and that a role change leaves a dated trail
+/// instead of editing a grant.
+#[tokio::test]
+async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Byrået AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let admin_token = idp.token(&sub, "Aud Admin");
+    let base = format!("/companies/{company}");
+
+    // Without provisioning configured the endpoint must SAY so rather
+    // than inventing an identity — a customer on such an installation
+    // has to be told what to do instead.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/agents"),
+        &admin_token,
+        Some(json!({"navn": "Uten id", "access": "les"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("client_id"),
+        "feilen må si hva som mangler: {body}"
+    );
+
+    let client_id = format!("agent-{}", Uuid::new_v4().simple());
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/agents"),
+        &admin_token,
+        Some(
+            json!({
+                "client_id": client_id,
+                "navn": "Kari Bokfører",
+                "access": "bokforing",
+                "systemprompt": "Strøm bokføres på 6340. Spør Aud ved tvil.",
+                "avatar_farge": "primary",
+                "avatar_ikon": "bilag",
+                "leverandor": "openrouter",
+                "modell": "google/gemini-2.5-flash-lite",
+                "api_nokkel": "sk-test-ikke-ekte",
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["klar"], true, "modell og nøkkel i samme kall: {body}");
+    assert_eq!(
+        body["advarsler"].as_array().unwrap().len(),
+        0,
+        "ingen halvferdige steg: {body}"
+    );
+    let integration_id = body["integration_id"].as_str().unwrap().to_string();
+
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    let entry = &listing["integrasjoner"][0];
+    assert_eq!(entry["navn"], "Kari Bokfører");
+    assert_eq!(entry["access"], "bokforing");
+    assert_eq!(entry["avatar_ikon"], "bilag");
+    assert_eq!(
+        entry["systemprompt"],
+        "Strøm bokføres på 6340. Spør Aud ved tvil."
+    );
+    assert_eq!(entry["llm"]["modell"], "google/gemini-2.5-flash-lite");
+
+    // The key went in sealed and has no route back out: the listing
+    // says there is a model, never what pays for it.
+    assert!(
+        !listing.to_string().contains("sk-test-ikke-ekte"),
+        "nøkkelen må ikke kunne leses ut: {listing}"
+    );
+
+    // ---- Rollen er sikkerhetsgrensen, så den kan endres ----
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/rolle"),
+        &admin_token,
+        Some(json!({"access": "les"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A grant is immutable, so this must be revoke PLUS a new grant:
+    // two rows, and the old role still true for the day it applied.
+    let rader: Vec<(String, Option<chrono::NaiveDate>)> = sqlx::query_as(
+        "select access, valid_to from integration_grant
+         where company_id = $1 order by valid_from, access",
+    )
+    .bind(company)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(rader.len(), 2, "sporet beholdes: {rader:?}");
+    let aktiv: Vec<&(String, Option<chrono::NaiveDate>)> =
+        rader.iter().filter(|r| r.1.is_none()).collect();
+    assert_eq!(aktiv.len(), 1, "én levende tilgang: {rader:?}");
+    assert_eq!(aktiv[0].0, "les");
+    assert!(
+        rader.iter().any(|r| r.0 == "bokforing" && r.1.is_some()),
+        "den gamle rollen står med sluttdato: {rader:?}"
+    );
+
+    // After a role change the SAME agent appears twice in the listing
+    // — once active, once ended — so every row must carry a key of its
+    // own. Keyed on the integration, the portal rendered duplicate keys,
+    // and an uncaught error in a Svelte template freezes the whole
+    // component (CLAUDE.md point 68): the card went dead, not wrong.
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    let rader = listing["integrasjoner"].as_array().unwrap();
+    assert_eq!(rader.len(), 2, "begge grantene står i listen: {listing}");
+    let nokler: std::collections::HashSet<&str> = rader
+        .iter()
+        .map(|r| r["grant_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(nokler.len(), 2, "hver rad har sin egen nøkkel: {listing}");
+    assert_eq!(
+        rader
+            .iter()
+            .map(|r| r["integration_id"].as_str().unwrap())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        1,
+        "det er samme agent: {listing}"
+    );
+
+    // The same role twice is a no-op worth refusing: otherwise every
+    // save would add a row and the trail would stop meaning anything.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/rolle"),
+        &admin_token,
+        Some(json!({"access": "les"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // And a name that is not a role gets nowhere, as on the grant.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}/rolle"),
+        &admin_token,
+        Some(json!({"access": "sjef"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // Instructions are editable, and clearing them is a real action.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &admin_token,
+        Some(json!({"navn": "Kari Bokfører", "systemprompt": ""}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert!(
+        listing["integrasjoner"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["systemprompt"].is_null()),
+        "tom tekst fjerner instruksene: {listing}"
+    );
+}

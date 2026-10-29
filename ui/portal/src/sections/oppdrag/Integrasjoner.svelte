@@ -16,6 +16,7 @@
     farger = [],
     llmTilgjengelig = false,
     leverandorer = [],
+    kanOpprette = false,
     onDone,
   } = $props();
 
@@ -36,9 +37,52 @@
     ["oppdrag", "Oppdrag"],
   ];
 
+  // Den gamle veien inn — en agent kunden kjører selv og alt har en
+  // klient-id for — er fortsatt her, men skjult når serveren kan lage
+  // identiteten selv: den er unntaket nå, ikke normalen.
+  let viserEgen = $state(false);
+  // Feltene begge dialogene spør om, ett sted: nytt ansikt og endret
+  // ansikt er samme spørsmål, og to kopier ville svart ulikt før eller
+  // senere.
+  const ansiktsfelt = (i = {}) => [
+    {
+      navn: "avatar_farge",
+      etikett: "Farge",
+      type: "select",
+      standard: i.avatar_farge || "",
+      valg: [["", "Standard"], ...farger.map((f) => [f, f])],
+    },
+    { navn: "avatar_ikon", etikett: "Ansikt", type: "select", standard: i.avatar_ikon || "", valg: IKONVALG },
+  ];
+  // Instruksene hører sammen med rollen, ikke med ansiktet: de to
+  // avgjør hva agenten gjør, resten er utseende.
+  const instruksfelt = (i = {}) => ({
+    navn: "systemprompt",
+    etikett: "Særskilte instrukser",
+    type: "textarea",
+    standard: i.systemprompt || "",
+    valgfri: true,
+    hjelp: INSTRUKSHJELP,
+  });
+  const rollefelt = (standard) => ({
+    navn: "access",
+    etikett: "Rolle",
+    type: "select",
+    standard,
+    valg: valg.map((r) => [r.navn, r.navn]),
+  });
+
+  const INSTRUKSHJELP =
+    "Legges til rollens egne regler — kontoene dere bruker, hvem agenten skal spørre. " +
+    "Rollen bestemmer fortsatt hva agenten FÅR gjøre.";
   let clientId = $state("");
   let navn = $state("");
   let access = $state("les");
+
+  // Ny agent i ETT skjema (docs/agent.md §8.6). Identiteten lager
+  // serveren — brukeren skal ikke trenge å vite at agenten har en
+  // klient-id i det hele tatt, like lite som en ansatt trenger å vite
+  // hvordan innloggingen virker.
 
   // #101: en agent er en bruker, så den får en ROLLE — også admin, hvis
   // eieren vil det. `revisor` står ikke her av samme grunn som den ikke
@@ -79,24 +123,83 @@
     }
   }
 
+  async function nyAgent() {
+    const svar = await skjema(
+      "Ny agent",
+      [
+        { navn: "navn", etikett: "Navn", standard: "" },
+        rollefelt("bokforing"),
+        instruksfelt(),
+        {
+          navn: "leverandor",
+          etikett: "Leverandør",
+          type: "select",
+          standard: "openrouter",
+          valg: leverandorer.map((l) => [l.navn, l.navn]),
+        },
+        {
+          navn: "base_url",
+          etikett: "Adresse (kreves for «annet»)",
+          standard: "",
+          valgfri: true,
+          hjelp: "Må være https. Tom bruker leverandørens egen adresse.",
+        },
+        { navn: "modell", etikett: "Modell", standard: "", valgfri: true },
+        {
+          navn: "api_nokkel",
+          etikett: "API-nøkkel",
+          type: "password",
+          standard: "",
+          valgfri: true,
+          hjelp: "Lagres kryptert, vises aldri igjen. Tom: modell senere.",
+        },
+        ...ansiktsfelt(),
+      ],
+      {
+        melding:
+          "Agenten blir en bruker med den rollen du gir den, og rollen er grensen: " +
+          "den kan ikke gjøre noe utenfor den, og aldri endre hvem som har tilgang. " +
+          "Med modell og nøkkel sender den regnskapsdata til leverandøren du velger, " +
+          "på din egen regning.",
+        ok: "Opprett",
+      },
+    );
+    if (!svar) return;
+    try {
+      const resultat = await post("/companies/" + companyId + "/agents", svar);
+      for (const advarsel of resultat.advarsler || []) toast(advarsel, false);
+      toast(resultat.klar ? "Agenten er klar til å arbeide" : "Agenten er opprettet", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  // Rollen er sikkerhetsgrensen, så den skal kunne endres der den
+  // vises. Under panseret er det fortsatt tilbakekalling + nytt grant
+  // (et grant er uforanderlig), så det daterte sporet består.
+  async function byttRolle(i) {
+    const svar = await skjema("Rolle for " + i.navn, [rollefelt(i.access)]);
+    if (!svar || svar.access === i.access) return;
+    try {
+      await send(
+        "PUT",
+        "/companies/" + companyId + "/integrations/" + i.integration_id + "/rolle",
+        svar,
+      );
+      toast("Rollen er endret", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
   async function endre(i) {
     const svar = await skjema("Endre " + i.navn, [
       { navn: "navn", etikett: "Navn", standard: i.navn },
       { navn: "kontakt", etikett: "Kontakt", standard: i.kontakt || "", valgfri: true },
-      {
-        navn: "avatar_farge",
-        etikett: "Farge",
-        type: "select",
-        standard: i.avatar_farge || "",
-        valg: [["", "Standard"], ...farger.map((f) => [f, f])],
-      },
-      {
-        navn: "avatar_ikon",
-        etikett: "Ansikt",
-        type: "select",
-        standard: i.avatar_ikon || "",
-        valg: IKONVALG,
-      },
+      instruksfelt(i),
+      ...ansiktsfelt(i),
     ]);
     if (!svar) return;
     try {
@@ -208,12 +311,12 @@
   }
 </script>
 
-<Card title="Integrasjoner (maskin-tilgang)">
+<Card title="Agenter og integrasjoner">
   <p class="text-sm opacity-70 mb-2">
-    Et kassasystem, en nettbutikk eller en agent kaller API-et med sin egen identitet fra
-    påloggingstjenesten. Du gir den en rolle, akkurat som du gir et menneske en, og kan trekke
-    tilgangen tilbake når som helst — den slutter å virke i samme øyeblikk. Alt den bokfører bærer
-    navnet dens.
+    En agent er en bruker som ikke er et menneske. Den får et navn, et ansikt og en rolle,
+    akkurat som en ansatt eller en regnskapsfører, og du kan trekke tilgangen tilbake når som
+    helst — den slutter å virke i samme øyeblikk. Alt den bokfører bærer navnet dens. Det samme
+    kortet styrer et kassasystem eller en nettbutikk som kaller API-et.
   </p>
   <p class="text-sm opacity-70 mb-2">
     Én grense gjelder uansett rolle: en maskin kan aldri endre hvem som har tilgang — verken
@@ -229,7 +332,10 @@
         </tr>
       </thead>
       <tbody>
-        {#each integrasjoner as i (i.integration_id)}
+        <!-- Nøkkelen er GRANTET, ikke agenten: etter et rollebytte står
+             samme agent med én avsluttet og én aktiv rad, og to like
+             nøkler fryser komponentens reaktivitet (CLAUDE.md punkt 68). -->
+        {#each integrasjoner as i (i.grant_id)}
           <tr class={i.aktiv ? "" : "opacity-50"}>
             <td>
               <div class="flex items-center gap-2">
@@ -244,7 +350,14 @@
                 </span>
               </div>
             </td>
-            <td>{i.access}</td>
+            <td>
+              {i.access}
+              {#if i.systemprompt}
+                <br /><span class="text-xs opacity-60" title={i.systemprompt}>
+                  + egne instrukser
+                </span>
+              {/if}
+            </td>
             <td>
               {#if i.llm}
                 <span class="text-xs">{i.llm.leverandor}<br />{i.llm.modell}</span>
@@ -262,6 +375,9 @@
             <td class="text-right">{i.kall_i_dag} / {i.rate_limit_min}/min</td>
             <td>
               {#if i.aktiv}
+                <button class="btn btn-xs btn-ghost" onclick={() => byttRolle(i)}>
+                  Bytt rolle
+                </button>
                 <button class="btn btn-xs btn-ghost" onclick={() => endre(i)}>Endre</button>
                 {#if llmTilgjengelig}
                   <button class="btn btn-xs btn-ghost" onclick={() => settModell(i)}>
@@ -287,22 +403,34 @@
   {:else}
     <p class="text-sm opacity-70 mb-3">Ingen integrasjoner ennå.</p>
   {/if}
-  <div class="flex gap-2 items-center flex-wrap">
-    <input
-      class="input input-sm w-56"
-      placeholder="client_id fra regnid"
-      bind:value={clientId}
-    />
-    <input class="input input-sm w-40" placeholder="Navn" bind:value={navn} />
-    <select class="select select-sm" bind:value={access}>
-      {#each valg as r (r.navn)}
-        <option value={r.navn}>{r.navn}</option>
-      {/each}
-    </select>
-    <button class="btn btn-sm" onclick={giTilgang}>Gi tilgang</button>
-  </div>
-  {#if valgtBeskrivelse}
-    <p class="text-xs opacity-60 mt-1">{valgtBeskrivelse}</p>
+  {#if kanOpprette}
+    <button class="btn btn-sm btn-primary" onclick={nyAgent}>Ny agent</button>
+    <p class="text-xs opacity-60 mt-1">
+      Agenten får sin egen identitet automatisk. Har du alt en agent som kjører på din egen
+      maskin, kan du
+      <button class="link" onclick={() => (viserEgen = !viserEgen)}>
+        gi den tilgang i stedet
+      </button>.
+    </p>
+  {/if}
+  {#if !kanOpprette || viserEgen}
+    <div class="flex gap-2 items-center flex-wrap {kanOpprette ? 'mt-2' : ''}">
+      <input
+        class="input input-sm w-56"
+        placeholder="client_id fra regnid"
+        bind:value={clientId}
+      />
+      <input class="input input-sm w-40" placeholder="Navn" bind:value={navn} />
+      <select class="select select-sm" bind:value={access}>
+        {#each valg as r (r.navn)}
+          <option value={r.navn}>{r.navn}</option>
+        {/each}
+      </select>
+      <button class="btn btn-sm" onclick={giTilgang}>Gi tilgang</button>
+    </div>
+    {#if valgtBeskrivelse}
+      <p class="text-xs opacity-60 mt-1">{valgtBeskrivelse}</p>
+    {/if}
   {/if}
   {#if kall.length}
     <h3 class="font-semibold text-sm mt-3 mb-1">Siste endringer</h3>

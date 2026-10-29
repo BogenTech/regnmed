@@ -35,6 +35,7 @@ pub async fn list(
     let rows = regnmed_db::list_integrations(&state.pool, company_id).await?;
     Ok(Json(json!({
         "integrasjoner": rows.iter().map(|g| json!({
+            "grant_id": g.grant_id,
             "integration_id": g.integration_id,
             "client_id": g.client_id,
             "navn": g.navn,
@@ -49,6 +50,7 @@ pub async fn list(
             "kall_i_dag": g.kall_i_dag,
             "avatar_farge": g.avatar_farge,
             "avatar_ikon": g.avatar_ikon,
+            "systemprompt": g.systemprompt,
             "llm": g.llm.as_ref().map(|(lev, modell)| json!({
                 "leverandor": lev, "modell": modell
             })),
@@ -59,6 +61,10 @@ pub async fn list(
         // Whether this installation can store a provider key at all
         // (docs/agent.md §8) — the portal offers the form only then.
         "llm_tilgjengelig": state.forseglingsnokkel.is_some(),
+        // Whether this installation can create an agent's identity for
+        // the customer (docs/agent.md §8.6). False means the portal has
+        // to ask for a client_id, as it always did.
+        "kan_opprette": state.regnid.is_some() && state.forseglingsnokkel.is_some(),
         "leverandorer": regnmed_db::agentllm::LEVERANDORER
             .iter()
             .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
@@ -136,11 +142,209 @@ pub async fn grant(
 }
 
 #[derive(Deserialize)]
+pub struct AgentRequest {
+    navn: String,
+    /// A role name, exactly as a member gets one.
+    access: String,
+    kontakt: Option<String>,
+    avatar_farge: Option<String>,
+    avatar_ikon: Option<String>,
+    /// Extra instructions on top of the role prompt.
+    systemprompt: Option<String>,
+    /// An EXISTING client_id, for an agent the customer runs themselves
+    /// (docs/agent.md §8, the first rail). Left out, the identity is
+    /// created for them — which is the whole point of this endpoint.
+    client_id: Option<String>,
+    /// The model. Optional: an agent may be created now and given a
+    /// provider later, and an agent on the customer's own machine never
+    /// needs one here at all.
+    leverandor: Option<String>,
+    base_url: Option<String>,
+    modell: Option<String>,
+    api_nokkel: Option<String>,
+}
+
+/// Creates an agent in one call: identity, access, face, instructions
+/// and model (docs/agent.md §8.6).
+///
+/// This is the same thing `grant` does, plus the two steps a customer
+/// could not do for themselves — registering the OIDC client and
+/// storing its secret. Nothing about the authorization model changes:
+/// the agent is still a `person` with a grant, and the role on that
+/// grant is still what every call it makes is checked against.
+///
+/// Order matters for what a half-finished run leaves behind. The IdP
+/// client is created FIRST, because a machine client with no grant can
+/// get a token and do nothing at all — it is inert. The reverse order
+/// would leave the customer looking at an agent in their own list that
+/// can never authenticate.
+pub async fn opprett_agent(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<AgentRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    krev_gyldig_rolle(&state, company_id, &request.access).await?;
+    let by = person.display().to_string();
+
+    let oppgitt = request
+        .client_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty());
+
+    // Provision only when no client_id was given. A customer bringing
+    // their own agent keeps the identity they already have.
+    let (client_id, hemmelighet) = match oppgitt {
+        Some(client_id) => (client_id.to_string(), None),
+        None => {
+            let Some(cfg) = state.regnid.as_ref() else {
+                return Err(ApiError::BadRequest(
+                    "denne installasjonen kan ikke opprette agentidentiteter selv —                      oppgi en client_id fra påloggingstjenesten (docs/agent.md §8.6)"
+                        .into(),
+                ));
+            };
+            // The secret has to be stored sealed, so refuse before
+            // creating anything we would then have to throw away.
+            if state.forseglingsnokkel.is_none() {
+                return Err(ApiError::BadRequest(
+                    "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
+                        .into(),
+                ));
+            }
+            let client_id = format!("agent-{}", Uuid::now_v7().simple());
+            let klient = regnmed_gov::regnid::Regnid::new(
+                cfg.base_url
+                    .as_deref()
+                    .unwrap_or_else(|| state.verifier.issuer()),
+                &cfg.client_id,
+                &cfg.client_secret,
+            )
+            .opprett_maskinklient(
+                &client_id,
+                request.navn.trim(),
+                state.verifier.audience().unwrap_or_default(),
+            )
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+            (klient.client_id, Some(klient.client_secret))
+        }
+    };
+
+    let integration_id = regnmed_db::grant_integration(
+        &state.pool,
+        company_id,
+        &client_id,
+        &request.navn,
+        request.kontakt.as_deref(),
+        &request.access,
+        &by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+
+    // The face and the instructions are one update, and a failure here
+    // is not worth losing the agent over: it is editable afterwards
+    // from the same card, so say what went wrong and keep the agent.
+    let mut advarsler: Vec<String> = Vec::new();
+    let har_metadata = request.avatar_farge.is_some()
+        || request.avatar_ikon.is_some()
+        || request.systemprompt.is_some()
+        || request.kontakt.is_some();
+    if har_metadata
+        && let Err(e) = regnmed_db::update_integration(
+            &state.pool,
+            company_id,
+            integration_id,
+            &request.navn,
+            request.kontakt.as_deref(),
+            request.avatar_farge.as_deref(),
+            request.avatar_ikon.as_deref(),
+            request.systemprompt.as_deref(),
+        )
+        .await
+    {
+        advarsler.push(format!("agenten ble opprettet, men {e:#}"));
+    }
+
+    if let Some(hemmelighet) = hemmelighet {
+        let nokkel = state
+            .forseglingsnokkel
+            .as_ref()
+            .expect("sjekket før klienten ble opprettet");
+        regnmed_db::agentllm::sett_klienthemmelighet(
+            &state.pool,
+            nokkel,
+            company_id,
+            integration_id,
+            &hemmelighet,
+        )
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    }
+
+    // The model, when the form carried one. Partial model fields are a
+    // mistake worth naming rather than storing half of.
+    let modell = request
+        .modell
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty());
+    let api_nokkel = request
+        .api_nokkel
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty());
+    match (modell, api_nokkel) {
+        (Some(modell), Some(api_nokkel)) => {
+            let Some(nokkel) = state.forseglingsnokkel.as_ref() else {
+                return Err(ApiError::BadRequest(
+                    "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
+                        .into(),
+                ));
+            };
+            regnmed_db::agentllm::sett_llm(
+                &state.pool,
+                nokkel,
+                company_id,
+                integration_id,
+                request.leverandor.as_deref().unwrap_or("openai"),
+                request.base_url.as_deref(),
+                modell,
+                api_nokkel,
+                &by,
+            )
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        }
+        (None, None) => {}
+        _ => {
+            advarsler.push(
+                "agenten ble opprettet uten modell — både modell og API-nøkkel må oppgis".into(),
+            );
+        }
+    }
+
+    Ok(Json(json!({
+        "integration_id": integration_id,
+        "client_id": client_id,
+        // Whether this agent can work on its own, or is waiting for
+        // somebody to finish setting it up.
+        "klar": modell.is_some() && api_nokkel.is_some(),
+        "advarsler": advarsler,
+    })))
+}
+
+#[derive(Deserialize)]
 pub struct EndreRequest {
     navn: String,
     kontakt: Option<String>,
     avatar_farge: Option<String>,
     avatar_ikon: Option<String>,
+    /// Extra instructions for this agent, on top of the role prompt
+    /// (docs/agent.md §8.6). Empty clears them.
+    systemprompt: Option<String>,
 }
 
 /// Rename an agent and give it a face (docs/agent.md §8.1). Takes
@@ -162,10 +366,39 @@ pub async fn endre(
         request.kontakt.as_deref(),
         request.avatar_farge.as_deref(),
         request.avatar_ikon.as_deref(),
+        request.systemprompt.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({ "navn": request.navn.trim() })))
+}
+
+#[derive(Deserialize)]
+pub struct RolleRequest {
+    access: String,
+}
+
+/// Changes an agent's role. One call, because that is how the user
+/// thinks about it; underneath it is still revoke plus a new grant, so
+/// the dated trail keeps the old role true for the time it applied.
+pub async fn rolle(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RolleRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    krev_gyldig_rolle(&state, company_id, &request.access).await?;
+    regnmed_db::endre_integrasjonsrolle(
+        &state.pool,
+        company_id,
+        integration_id,
+        &request.access,
+        person.display(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({ "access": request.access.trim() })))
 }
 
 pub async fn revoke(

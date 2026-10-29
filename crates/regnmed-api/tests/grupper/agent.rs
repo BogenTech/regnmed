@@ -470,6 +470,8 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
         &modell,
         &server,
         "bokforing",
+        // The agent's own extra instructions (docs/agent.md §8.6).
+        Some("Strøm bokføres på 6340."),
         "Hent saldobalansen for 2026 og avstem den.",
         &[],
     )
@@ -495,6 +497,15 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     assert!(
         system.contains("FERDIG:") && system.contains("SPØRSMÅL:"),
         "avslutningsreglene mangler i systemprompten"
+    );
+    // And so did this agent's own instructions — between the role and
+    // the protocol, so they specialise without displacing either.
+    let rolle = system
+        .find("Strøm bokføres på 6340.")
+        .expect("instruksene mangler");
+    assert!(
+        rolle < system.find("FERDIG:").unwrap(),
+        "instruksene må stå FØR avslutningsreglene: {system}"
     );
 
     // THE assertion: the second turn carries a tool result that came
@@ -571,6 +582,7 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
         &modell,
         &server,
         "bokforing",
+        None,
         "Bokfør kontorrekvisita.",
         &historikk,
     )
