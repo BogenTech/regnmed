@@ -15,4 +15,8 @@ ARG TARGET
 WORKDIR /app
 COPY target/${TARGET}/release/regnmed-api /app/regnmed-api
 COPY target/${TARGET}/release/regnmed /app/regnmed
+# The hosted agent worker (docs/agent.md §8.3) runs as its own CronJob
+# from this same image — one model turn can take minutes, and the API's
+# memory budget is measured under request load (docs/frugality.md).
+COPY target/${TARGET}/release/regnmed-agent /app/regnmed-agent
 ENTRYPOINT ["/app/regnmed-api"]

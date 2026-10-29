@@ -16,3 +16,4 @@ resources:
   - backup.yaml
   - abonnement-faktura.yaml
   - abonnement-oppfolging.yaml
+  - agent-worker.yaml

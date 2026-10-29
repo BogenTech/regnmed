@@ -37,7 +37,7 @@ if ! command -v "$ARCH-linux-musl-gcc" >/dev/null 2>&1; then
 fi
 
 echo "==> building regnmed (api + cli) for $TARGET"
-cargo build --release --target "$TARGET" -p regnmed-api -p regnmed-cli
+cargo build --release --target "$TARGET" -p regnmed-api -p regnmed-cli -p regnmed-agent
 
 echo "==> building regnid for $TARGET"
 (cd ../regnid && cargo build --release --target "$TARGET")

@@ -140,7 +140,7 @@ jobs:
           echo "REGNMED_VERSION=$REGNMED_VERSION"
           cargo build --release --locked \
             --target x86_64-unknown-linux-musl \
-            -p regnmed-api -p regnmed-cli
+            -p regnmed-api -p regnmed-cli -p regnmed-agent
 
       # The portal dist is checked in (#76) so the Rust build never needs
       # Node. The `portal` job in ci.yml is what proves it still matches its
