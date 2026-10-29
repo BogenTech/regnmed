@@ -132,7 +132,10 @@ være releasen, og hver release skal forklare seg):
    test automatisk ved push til main).
 2. Sett `newTag: vX.Y.Z` (den KOMMENDE taggen) for regnmed i
    `deploy/prod/kustomization.yaml`, commit («Prod: roll to vX.Y.Z»),
-   **tagg samme commit** `vX.Y.Z`, push begge. Tag-pushen bygger imaget
+   **tagg samme commit** `vX.Y.Z`, push begge. **Dette steget er nå en
+   port**, ikke bare en setning: `images.yml` nekter å bygge et image for
+   en tagg hvis `deploy/prod` ikke peker på taggen selv (se nedenfor om
+   hvorfor). Tag-pushen bygger imaget
    med `REGNMED_VERSION=vX.Y.Z` bakt inn — Flux kan stå i
    ImagePullBackOff i ~4 minutter til imaget finnes, og henter seg inn
    selv. Kodeekvivalensen sha == tag holder fordi pin-commiten bare
@@ -150,6 +153,22 @@ være releasen, og hver release skal forklare seg):
 4. Verifiser at prod svarer med releasen:
    `curl -s https://regnmed.no/portal-config` skal bære
    `"versjon": "vX.Y.Z"`.
+
+**Hvorfor steg 2 er en port (funnet 2026-10-29).** Prod kjørte image
+`v0.6.4` mens både `v0.6.5` og `v0.6.6` var sluppet. Begge taggene bar et
+`deploy/prod` som fortsatt sa `v0.6.4`, så Flux gikk pliktskyldig til
+nyeste tagg og applyerte manifestene derfra — og manifestene navnga et
+eldre image. Imagene `v0.6.5` og `v0.6.6` BLE bygget og ligger i
+registeret; de ble bare aldri tatt i bruk. Ingenting var ødelagt,
+ingenting var høylytt, og to releaser leverte ingen applikasjonskode.
+
+Det er samme felle som nesten-tabben i CLAUDE.md punkt 56, og den kom
+igjen fordi «tagg» og «oppdater pinnen» er to handlinger og ingenting
+sjekket at de var enige. Nå gjør `images.yml` det: på en `v*`-tagg
+sammenlignes taggen med regnmeds `newTag` i `deploy/prod`, og bygget
+feiler hvis de spriker. En feilpinnet tagg bygger da ikke noe image, som
+er riktig retning — prod blir stående på det den alt kjørte, og feilen
+er synlig i Actions i stedet for i et versjonsnummer ingen leser.
 
 Forhåndsutgaver (`v1.2.3-rc1`) er utenfor semver-området, så en
 release-kandidat kan tagges og inspiseres uten å røre produksjon.
