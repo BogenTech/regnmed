@@ -2,12 +2,30 @@
   // Maskin-tilgang: en integrasjon er en person av typen «integrasjon»,
   // så tilgangsoppslag og revisjonsspor er de samme som for mennesker.
   // Tilbakekalling virker straks (valid_to er eksklusiv).
-  import { post } from "../../lib/api.js";
+  import { post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import { bekreft } from "../../lib/dialog.svelte.js";
+  import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
+  import Agentansikt from "../../components/Agentansikt.svelte";
 
-  let { companyId, integrasjoner, kall, roller, onDone } = $props();
+  let { companyId, integrasjoner, kall, roller, farger = [], onDone } = $props();
+
+  // Icons an agent can wear: the sections whose work it would do. The
+  // set is the portal's own (ikoner.js) — no icon library, same rule as
+  // everywhere else. The server only caps the length; an unknown name
+  // falls back to initials.
+  const IKONVALG = [
+    ["", "Initialer"],
+    ["bilag", "Bilag"],
+    ["hovedbok", "Hovedbok"],
+    ["rapporter", "Rapporter"],
+    ["faktura", "Faktura"],
+    ["bank", "Bank"],
+    ["mva", "MVA"],
+    ["lonn", "Lønn"],
+    ["timer", "Timer"],
+    ["oppdrag", "Oppdrag"],
+  ];
 
   let clientId = $state("");
   let navn = $state("");
@@ -46,6 +64,35 @@
       toast("Integrasjonen har fått tilgang", true);
       clientId = "";
       navn = "";
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function endre(i) {
+    const svar = await skjema("Endre " + i.navn, [
+      { navn: "navn", etikett: "Navn", standard: i.navn },
+      { navn: "kontakt", etikett: "Kontakt", standard: i.kontakt || "", valgfri: true },
+      {
+        navn: "avatar_farge",
+        etikett: "Farge",
+        type: "select",
+        standard: i.avatar_farge || "",
+        valg: [["", "Standard"], ...farger.map((f) => [f, f])],
+      },
+      {
+        navn: "avatar_ikon",
+        etikett: "Ansikt",
+        type: "select",
+        standard: i.avatar_ikon || "",
+        valg: IKONVALG,
+      },
+    ]);
+    if (!svar) return;
+    try {
+      await send("PUT", "/companies/" + companyId + "/integrations/" + i.integration_id, svar);
+      toast("Endringen er lagret", true);
       onDone();
     } catch (error) {
       toast(error.message, false);
@@ -96,7 +143,17 @@
         {#each integrasjoner as i (i.integration_id)}
           <tr class={i.aktiv ? "" : "opacity-50"}>
             <td>
-              {i.navn}<br /><span class="text-xs opacity-60 font-mono">{i.client_id}</span>
+              <div class="flex items-center gap-2">
+                <Agentansikt
+                  navn={i.navn}
+                  farge={i.avatar_farge}
+                  ikon={i.avatar_ikon}
+                  storrelse="w-8"
+                />
+                <span>
+                  {i.navn}<br /><span class="text-xs opacity-60 font-mono">{i.client_id}</span>
+                </span>
+              </div>
             </td>
             <td>{i.access}</td>
             <td>
@@ -109,6 +166,7 @@
             <td class="text-right">{i.kall_i_dag} / {i.rate_limit_min}/min</td>
             <td>
               {#if i.aktiv}
+                <button class="btn btn-xs btn-ghost" onclick={() => endre(i)}>Endre</button>
                 <button class="btn btn-xs btn-ghost" onclick={() => trekkTilbake(i)}>
                   Trekk tilbake
                 </button>

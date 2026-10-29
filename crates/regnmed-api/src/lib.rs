@@ -170,6 +170,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(agentoppgave::svar),
         )
         .route(
+            "/companies/{company_id}/integrations/{integration_id}",
+            axum::routing::put(integrasjon::endre),
+        )
+        .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",
             axum::routing::post(integrasjon::revoke),
         )

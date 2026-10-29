@@ -47,7 +47,12 @@ pub async fn list(
             "revoked_by": g.revoked_by,
             "rate_limit_min": g.rate_limit_min,
             "kall_i_dag": g.kall_i_dag,
+            "avatar_farge": g.avatar_farge,
+            "avatar_ikon": g.avatar_ikon,
         })).collect::<Vec<_>>(),
+        // The face's colours are served from the code that validates
+        // them, so the picker cannot offer one the server rejects.
+        "farger": regnmed_db::AVATAR_FARGER,
     })))
 }
 
@@ -118,6 +123,39 @@ pub async fn grant(
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({ "integration_id": id })))
+}
+
+#[derive(Deserialize)]
+pub struct EndreRequest {
+    navn: String,
+    kontakt: Option<String>,
+    avatar_farge: Option<String>,
+    avatar_ikon: Option<String>,
+}
+
+/// Rename an agent and give it a face (docs/agent.md §8.1). Takes
+/// `IntegrasjonAdmin` like the grant itself: a name is what the trail
+/// shows for everything the robot does, so changing it is administering
+/// machine access, not decoration.
+pub async fn endre(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<EndreRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    regnmed_db::update_integration(
+        &state.pool,
+        company_id,
+        integration_id,
+        &request.navn,
+        request.kontakt.as_deref(),
+        request.avatar_farge.as_deref(),
+        request.avatar_ikon.as_deref(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({ "navn": request.navn.trim() })))
 }
 
 pub async fn revoke(

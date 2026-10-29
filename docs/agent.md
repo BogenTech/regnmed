@@ -240,7 +240,10 @@ fra `Tilgang::har` inviterer roboten medlemmer inn i selskapet, og med
 
 ## 7. Bevisst utenfor
 
-- **Vi hoster ingen modell.** Ingen tokensalg, ingen prompt-proxy.
+- **Vi selger ingen tokens.** Kunden bringer modellen og regningen.
+  Setningen «vi hoster ingen modell» sto her til 2026-10-29; den er nå
+  avgrenset til én av to skinner, se §8. Vi blir en prompt-proxy for
+  vertsagenten — vi blir ikke en modellselger.
 - **Ingen lagret agentbegrunnelse ennå.** #103 pekte på at et
   agentforslag er en PÅSTAND fra en identifiserbar aktør på et
   tidspunkt, og derfor hører i sporet framfor i en gjenutledning. I dag
@@ -256,3 +259,153 @@ fra `Tilgang::har` inviterer roboten medlemmer inn i selskapet, og med
   finnes ikke.
 - **Ingen paginering lagt til.** Flere listeendepunkter henter alt. Det
   er et åpent punkt fra #102, ikke en avgjørelse.
+
+## 8. Vertsagent — den andre skinnen (besluttet 2026-10-29)
+
+Kunden skal kunne opprette en agent **i portalen**, gi den navn og
+ansikt, legge inn legitimasjonen til sin egen LLM-leverandør
+(OpenAI-kompatibelt endepunkt eller OpenRouter), og snakke med den der —
+og agenten skal arbeide med den tilgangen rollen gir den, som en ansatt
+eller en regnskapsfører. Målet er at en leder kan sette sammen sin egen
+arbeidsstokk.
+
+**Dette er et TILLEGG, ikke en erstatning.** Vi har nå to skinner, og
+begge består:
+
+| | Egen agent (§2–§4) | Vertsagent (§8) |
+| --- | --- | --- |
+| Hvor løkken kjører | kundens maskin | vår worker |
+| Hvem ser prompten | bare kunden | vi, i transitt |
+| LLM-nøkkel | kundens konfigurasjon | lagret hos oss, kryptert |
+| Transport | MCP over stdio | HTTP i portalen |
+| Personvern | maksimalt | avhenger av leverandøravtale |
+
+Egen agent blir **ikke** avviklet: den er den personvernmaksimale veien,
+og for en kunde som ikke vil at bokføringsdata skal passere oss i det
+hele tatt, er den det eneste riktige svaret.
+
+### Hvorfor dette er mindre enn det ser ut
+
+Den dyre halvdelen av «agent som ansatt» var aldri praten — den var å
+gjøre en robot trygg å gi ekte tilgang. Den er bygget og i drift:
+rollen på `integration_grant` (#101), maskintaket
+(`Rett::kan_delegeres`), `krev_for_maskin` i attesteringen, 33 kuraterte
+verktøy med JSON Schema (`VERKTOY`) og fire rolleprompter skrevet for
+små modeller (`rolle.rs`). En vertsagent arver alt dette uendret, fordi
+håndhevingen ligger i transaksjonene og i tilgangsoppslaget — ikke i
+klienten.
+
+To ting gjenbrukes mer direkte enn ventet:
+
+- **`VERKTOY` ER funksjonskatalogen.** `skjema()` leverer allerede JSON
+  Schema per verktøy, som er nøyaktig formatet
+  OpenAI/OpenRouter-funksjonskall vil ha. Ingen ny verktøydefinisjon.
+- **`agent_oppgave_hendelse` ER meldingstråden.** `sporsmal` er med
+  vilje ikke terminal — vakten låser bare etter `utfort`/`avvist` — og
+  check-constrainten krever `notat` på den. Agenten spør, mennesket
+  svarer, arbeidet fortsetter. Et chat-vindu er en presentasjon av en
+  tabell som finnes, ikke en ny datamodell.
+
+### Det som faktisk er nytt
+
+1. **Agentidentitet** — navn (finnes: `integration.navn`) og et ansikt.
+2. **Leverandørkonfigurasjon per agent** — endepunkt, modell, nøkkel.
+3. **Løkken**, som en worker: hent oppgave → bygg meldinger → kall
+   modellen → utfør verktøykall mot vårt eget API med agentens egen
+   identitet → skriv `agent_oppgave_hendelse`.
+4. **Chat-flaten** over tråden som finnes.
+
+### Tre avgjørelser tatt nå
+
+**Nøkkelen lagres kryptert, og det er et bevisst nytt ansvar.** Det
+finnes ingen krypteringsprimitiv i repoet i dag — Stripe-nøkkelen er en
+miljøvariabel, ikke en rad. En kundenøkkel per selskap er en ny
+ressursklasse og et nytt bruddmål. Alternativene er dårligere: å ikke
+lagre den betyr at ingen worker kan arbeide når kunden ikke ser på,
+som er hele poenget med en arbeidsstokk; og å bruke vår egen nøkkel og
+måle forbruk er tokensalg, som §7 avviser. Valget er derfor kryptert
+lagring, med nøkkelen utenfor databasen.
+
+**Leverandøren velges av kunden, og det skal stå i UI-et.** Å sende
+hovedbokslinjer til en LLM-leverandør gjør leverandøren til
+underdatabehandler for kundens regnskapsdata. OpenRouter er her
+*dårligere* enn å gå rett til en leverandør, fordi den kan fordele
+videre til mange. Kunden må velge leverandør og se hvor dataene går, på
+det tidspunktet agenten opprettes — ikke i en avtaletekst.
+
+**Vertsagent krever attestering som standard.** Et hallusinert bilag i
+en append-only kjede ligger der for alltid; det kan bare rettes med et
+motbilag, som er riktig men støyende. `krev_for_maskin` ble bygget for
+akkurat dette (#47, §5), og for en vertsagent står det PÅ med mindre
+eieren uttrykkelig slår det av. En agent bør også ha et tak på kall og
+tokens: `integration.rate_limit_min` er den ene spaken som finnes i dag.
+
+### Rekkefølge
+
+1. **Agentidentitet** — navn og ansikt. *Levert 2026-10-29.*
+2. **Leverandørkonfigurasjon** med kryptering og dataflyt-opplysning.
+3. **Workeren** — gjenbruker `VERKTOY` og `rolle.rs`, skriver hendelser.
+   Egen deployment, ikke inne i API-ets 64 MB (frugality.md); NATS
+   JetStream finnes alt for denne formen for arbeid (mail-skinnen, og
+   `regnid-mail-worker` er mønsteret).
+4. **Chat-flaten**.
+
+### Kjente hull, ikke skjult
+
+- **Selvbetjent klientregistrering mangler fortsatt.** En agent trenger
+  en `client_id` fra regnid, og det finnes ingen selvbetjent vei dit:
+  regnids admin-konsoll lager med vilje bare interaktive klienter
+  (`INTERACTIVE_GRANTS`, med kommentaren at maskinklienter er «en egen,
+  mer overveid handling»), så en maskinklient krever
+  `regnid add-client --grant-type client_credentials --confidential`
+  kjørt av en operatør. Konstanten `MACHINE_GRANTS` finnes i regnid, men
+  bare CLI-en bruker den. En selvbetjent vei krever et NYTT endepunkt i
+  regnid med sin egen autorisasjonsregel, og det hører i regnid-repoet —
+  ikke som en hale på en regnmed-endring. **En vertsagent trenger
+  strengt tatt ingen OIDC-klient** (workeren er innenfor vår
+  tillitsgrense), men å la den slippe tokenet ville lagt en andre
+  autentiseringsvei inn i hovedboken, og det er nettopp det §1 og §2
+  unngår. Avgjørelsen står åpen.
+- **Meldingstråden har ingen egen «svar»-status.** Et menneskes svar på
+  et `sporsmal` legges inn som `pagar` med notat. Det virker, men tråden
+  leses som statusoverganger framfor meldinger. En `svar`-status eller en
+  egen meldingstabell retter det når chat-flaten bygges.
+- **Ingen bildeopplasting.** Ansiktet er initialer, farge og et ikon fra
+  `ikoner.js` — ikke et opplastet bilde. Grunnen står i §8.1.
+
+### 8.1 Agentidentitet (levert)
+
+Et ansikt er **initialer + en farge + et ikon**, ikke et opplastet
+bilde. Tre grunner, i vekt:
+
+1. **Mennesker i regnmed har ikke profilbilde.** `UserMenu.svelte`
+   tegner initialer, fordi identitetsdata eies av regnid og speiles ved
+   innlogging (#68). En agent med opplastet bilde der et menneske har
+   initialer er inkonsekvent i den retningen som er vanskeligst å
+   forsvare.
+2. **Opplastede bilder er en ny flate å tjene brukerinnhold fra** —
+   størrelse, innholdstype, sniffing, hasj-sjekk ved nedlasting. Vi har
+   mønsteret (vedlegg, innboks, kvitteringer), men det er en egen
+   kostnad for et ansikt.
+3. **Gjenkjennelighet er det faktiske kravet**, og farge + ikon +
+   initialer gir fem agenter fem tydelig ulike ansikter uten en byte
+   bildedata.
+
+Fargen er daisyUI-ens egne semantiske farger, så ansiktet følger temaet
+som alt annet (temakontrakten). Den **valideres mot en kjent liste i
+Rust** — ikke fordi et fritekstfelt ville vært utrygt i databasen, men
+fordi verdien ender som et CSS-klassenavn i portalen, og Tailwind v4
+genererer bare klasser den finner i kilden: en dynamisk `bg-{farge}`
+ville ikke eksistert i CSS-en. Portalen har derfor en statisk tabell
+farge → klassestreng, og serveren slipper ingenting gjennom som ikke
+står i den.
+
+Navnet er integrasjonens eget og deles av alle dens oppdrag — akkurat
+som `person.name` er personens, ikke per selskap. Redigeres det fra
+selskap A, endres det også for selskap B. Det er modellen fra §1 (en
+agent er en bruker), ikke en forglemmelse.
+
+Endepunkt: `PUT /companies/{id}/integrations/{iid}` (`IntegrasjonAdmin`)
+— navn, kontakt, farge og ikon. Tilgangsnivået endres ikke her: en
+rolle byttes ved å trekke tilbake og gi en ny, fordi
+`integration_grant` er uforanderlig med vilje (0033-vakten).

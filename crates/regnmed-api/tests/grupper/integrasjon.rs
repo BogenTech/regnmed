@@ -199,6 +199,72 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
         "også lesingene telles: {entry}"
     );
 
+    // ---- An agent has a name and a face (docs/agent.md §8.1) ----
+    assert!(
+        listing["farger"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f == "primary"),
+        "fargene serveres fra koden som validerer dem: {listing}"
+    );
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &admin_token,
+        Some(
+            json!({"navn": "Kari Bokfører", "avatar_farge": "primary", "avatar_ikon": "bilag"})
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    let entry = &listing["integrasjoner"][0];
+    assert_eq!(entry["navn"], "Kari Bokfører");
+    assert_eq!(entry["avatar_farge"], "primary");
+    assert_eq!(entry["avatar_ikon"], "bilag");
+    assert_eq!(
+        entry["access"], "bokforing",
+        "ansiktet rører ikke tilgangen"
+    );
+
+    // A colour the renderer has no class for must not reach the column:
+    // the server's list is the gate, the portal's table only draws.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &admin_token,
+        Some(json!({"navn": "Kari Bokfører", "avatar_farge": "bg-[url(evil)]"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    // Renaming an agent is administering machine access, so the machine
+    // itself may not do it — not even to itself.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/integrations/{integration_id}"),
+        &machine_token,
+        Some(json!({"navn": "Jeg Bestemmer Selv"}).to_string()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "en maskin døper ikke om seg selv"
+    );
+
     // ---- An integration cannot give itself more ----
     let (status, _) = request(
         &state,
