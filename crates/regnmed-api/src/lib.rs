@@ -2,6 +2,7 @@
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
 pub mod abonnement;
+pub mod agentoppgave;
 pub mod aksjebok;
 pub mod anchor;
 pub mod arsavslutning;
@@ -152,6 +153,21 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/integrations/log",
             get(integrasjon::log),
+        )
+        // Oppgaver til en agent (#103): the owner says what to do, the
+        // agent reports back, and the trail outlives the chat it was
+        // asked in.
+        .route(
+            "/companies/{company_id}/agent/oppgaver",
+            get(agentoppgave::list).post(agentoppgave::opprett),
+        )
+        .route(
+            "/companies/{company_id}/agent/oppgaver/{oppgave_id}",
+            get(agentoppgave::hent),
+        )
+        .route(
+            "/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar",
+            axum::routing::post(agentoppgave::svar),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",

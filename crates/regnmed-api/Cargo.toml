@@ -35,5 +35,6 @@ uuid.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 rand.workspace = true
+regnmed-mcp = { path = "../regnmed-mcp" }
 rsa.workspace = true
 tower.workspace = true

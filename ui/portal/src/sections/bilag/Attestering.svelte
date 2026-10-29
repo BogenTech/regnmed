@@ -22,6 +22,10 @@
       ? kr(policy.belopsgrense_ore)
       : "",));
   let attestant = $state(untrack(() => policy?.attestant_person_id || ""));
+  // #101: beløpsgrensen er den gale aksen for en agent. Det som gjør et
+  // maskinbokført bilag verdt et blikk er ikke beløpet, men at ingen så
+  // det — derfor er dette en egen bryter, ikke en lavere grense.
+  let krevForMaskin = $state(untrack(() => !!policy?.krev_for_maskin));
 
   async function godkjenn(d) {
     try {
@@ -60,6 +64,7 @@
         aktiv,
         belopsgrense_ore: grense.trim() ? parseKr(grense) : null,
         attestant_person_id: attestant || null,
+        krev_for_maskin: krevForMaskin,
       });
       toast("Policy lagret", true);
       onDone();
@@ -118,6 +123,10 @@
         <option value={m.person_id}>{m.name}</option>
       {/each}
     </select>
+    <label class="label cursor-pointer gap-2">
+      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={krevForMaskin} />
+      <span>Alt en agent bokfører må attesteres av et menneske</span>
+    </label>
     <button class="btn btn-sm" onclick={lagrePolicy}>Lagre policy</button>
   </div>
   {#if policy}

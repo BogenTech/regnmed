@@ -740,11 +740,9 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    sub = client_id. `integration_grant` er
    modellert som oppdrag (valid_to EKSKLUSIV → tilbakekalling virker
    straks); admin var bevisst ikke grantbart til en maskin — **OPPHEVET
-   2026-10-28, se #101**: en agent skal kunne tildeles tilgang som en
-   bruker, også migrering, når eieren bestemmer det, fordi regelen var
-   strengest der en ny kunde er mest hjelpeløs; grensen som består er
-   `Rett::kan_delegeres` (en maskin gjør jobben, men utvider aldri
-   tilgang). Koden er uendret til #101 er implementert. En
+   OG GJENNOMFØRT 2026-10-28 (#101, punkt 72)**: `integration_grant.access`
+   bærer nå et ROLLENAVN, og taket er `Rett::kan_delegeres` håndhevet i
+   tilgangsoppslaget. En
    klient-id som tilhører et menneske MED tilgang kan ikke kapres
    (tomt person-skall kan konverteres). created_by = integrasjonens
    navn, satt ved registrering — tokenet kan ikke døpe om roboten.
@@ -1413,6 +1411,77 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    m/ FULLE hasher + nytt steg 4 i etterprøvingsprosedyren (hash
    kildefilene, sammenlign) — historikk importert FØR loggen fantes
    sies fra om, aldri skjult (informasjonskontroll, ikke AVVIK).
+72. ✅ Ta med din egen agent (docs/agent.md, closed #101 #102 #103):
+   kundens eget LLM som ansatt eller regnskapsfører. Vi hoster ingen
+   modell og selger ingen tokens — kunden bringer agenten og nøklene,
+   vi stiller skinnen.
+   **#101 — en agent ER en bruker.** Migrasjon 0062 fjerner den
+   to-verdis `integration_grant.access`; grantet bærer nå et ROLLENAVN,
+   innebygd eller selskapets eget (#60), tildelt som til et medlem
+   (`revisor` er ikke tildelbart, som for mennesker). Begrunnelsen for
+   #45s gamle regel holdt, UTFALLET ikke: `import_saft` krever
+   `MIGRERING_ADMIN`, så sperren var strengest der en ny kunde er mest
+   hjelpeløs — og en SAF-T-import er alt-eller-ingenting inn i en tom
+   hovedbok, hashlogget og tidsavgrenset, altså fullt attribuerbar.
+   TAKET er flyttet fra tildelingen til OPPSLAGET: `Tilgang::har`
+   returnerer false for `!rett.kan_delegeres()` når prinsipalen er en
+   maskin (`via='integrasjon'` fra samme spørring — ingen ekstra
+   kostnad), og `rettighet_slugs` filtrerer det samme så `/me` ikke
+   lover knapper som vil feile. Ett sted, så regelen gjelder også
+   roller som kommer til senere OG rader skrevet før den fantes.
+   MEDLEM/OPPDRAG/INTEGRASJON/SELSKAP_ADMIN er uendret nektet, så
+   matrisen i docs/auth.md står urørt — dette er et tak oppå
+   vokabularet, ikke en ny rettighet. Migrasjon 0063 gir
+   `attestation_policy.krev_for_maskin`: alt en integrasjon bokfører
+   krever attestering av et MENNESKE uansett beløp (beløpsgrensen er
+   den gale aksen for en maskin — det som gjør bilaget verdt et blikk
+   er at ingen så det), og to agenter er ikke fire øyne. Begge vaktene
+   SETT FEILE.
+   **#102 — MCP-serveren er TRANSPORT, ikke autorisasjon.** Ny crate
+   `regnmed-mcp`: JSON-RPC 2.0 over stdio, håndrullet (samme valg som
+   PDF/pain001/EHF/SAF-T), NULL nye avhengigheter, og bevisst UTEN
+   `regnmed-db` — en MCP-server med databasetilgang ville vært en ny vei
+   inn i hovedboken. Agenten bærer kundens egen
+   `client_credentials`-klient; serveren henter token og glemmer det.
+   Verktøytabellen er KURATERT (~30), ikke generert fra rutetabellen
+   som #102 foreslo: en verktøyliste ER en prompt, og to hundre verktøy
+   er den sikreste måten å få en liten modell til å velge galt. Den
+   ærlige kostnaden er drift, og vakten er
+   `tests/grupper/agent.rs` — serverer den ekte ruteren på en ekte
+   socket, peker en ekte MCP-klient mot den og kaller HVERT verktøy med
+   et ekte maskintoken (fant én med én gang: `/settings/registrering`
+   er POST-only). Filer går som STI, ikke base64 (serveren kjører der
+   agenten kjører; en base64-PDF gjennom en modellkontekst er dyrt og
+   formålsløst), og binære opplastinger bærer `?sha256=` så en retry
+   etter tapt svar blir no-op i stedet for et andre bilag. En feilet
+   VERKTØYKALL er `isError`-innhold med regnmeds egen prosa + statusen,
+   ikke en JSON-RPC-kode: API-ets meldinger sier hva man skal gjøre, og
+   koden kaster bort den eneste delen en agent kan bruke.
+   **#103 — rollene og jobben.** Fire prompter over `prompts/get`
+   (`regnskapsforer`, `bokforer`, `ansatt`, `migrering`) = felles
+   grunnregler + rollen. Skrevet for en LITEN modell, og det avgjør
+   formen: imperativt, NEVER-ene først og uten forbehold, fast
+   arbeidsrekkefølge, verktøy navngitt presist, enheter gjentatt ved
+   hvert bruk (øre og kroner er ett sifferskift fra hverandre), og
+   «jeg vet ikke» har en KONKRET handling (`oppgave_svar` status
+   `sporsmal`) — en modell uten et sted å legge usikkerhet dikter opp
+   sikkerhet. Innholdet er de to doktrinene vi alt har bygget to
+   ganger: bilagstolkning foreslår og bokfører aldri (#34), attestering
+   betyr at et menneske godkjenner (#47). Standarden er derfor
+   FORSLAGSRETT, ikke bokføringsrett. Migrasjon 0064 `agent_oppgave` +
+   `agent_oppgave_hendelse`: bestillingen uforanderlig (en endret
+   oppgave er en ny — ellers kan ingen se hva agenten BLE BEDT OM),
+   sporet innsettings-bart, statusen BEREGNET; `utfort`/`avvist`
+   endelige (trigger), `sporsmal` med vilje IKKE endelig fordi
+   alternativet er at agenten gjetter. Å GI en oppgave krever
+   `INTEGRASJON_ADMIN` som `kan_delegeres` nekter en maskin — en agent
+   kan ikke skrive sine egne ordrer, og det er det som gjør sporet
+   verdt å lese; å SVARE krever å VÆRE agenten oppgaven er stilt til.
+   Portal: rollevelger på Integrasjoner-kortet,
+   «Oppgaver til en agent»-kort, maskin-avhuking i attesteringspolicyen.
+   IKKE bygget: lagret agentbegrunnelse som egen forslagsflate i
+   innboksen, hevet ratebegrensning for bulk, paginering, ferdigbygde
+   `regnmed-mcp`-binærer i releasene.
 4. Portal UI, then marketplace features (BRREG onboarding, Finanstilsynet
    autorisasjon checks, accountant directory). Payroll (a-melding)
    deliberately deferred for years.

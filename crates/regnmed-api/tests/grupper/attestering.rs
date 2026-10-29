@@ -495,3 +495,186 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
     assert_eq!(policy["policy"]["belopsgrense_ore"], 5_000_00);
     assert_eq!(policy["history"].as_array().unwrap().len(), 1);
 }
+
+/// #101/#103: `krev_for_maskin` makes "a human sees everything the robot
+/// posts" enforceable, and the amount is the wrong axis for a machine.
+///
+/// **Seen failing**: with `maskinkrav` removed from the OR in
+/// `bokfor_inbox_document`, the agent's 49-kroner bilag posts
+/// unattested — it is far under the threshold, which is exactly the hole
+/// the flag exists to close. And with the human check removed, one agent
+/// attests the other's bilag and the four eyes are two robots.
+#[tokio::test]
+async fn a_human_must_attest_what_a_machine_posts() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let leder_sub = format!("test|{}", Uuid::new_v4());
+    let leder = regnmed_db::ensure_person(&state.pool, &leder_sub, Some("Lise Leder"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Maskinkontroll AS")
+        .await
+        .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, leder, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (nummer, navn) in [("6300", "Leie"), ("1920", "Bank")] {
+        regnmed_db::ensure_account(&state.pool, company, nummer, navn)
+            .await
+            .unwrap();
+    }
+    let leder_token = idp.token(&leder_sub, "Lise Leder");
+
+    // Two agents, both with bokføring: one to post, one to try to be the
+    // second pair of eyes.
+    let agent_sub = format!("agent-{}", Uuid::new_v4());
+    let annen_sub = format!("agent-{}", Uuid::new_v4());
+    for (sub, navn) in [
+        (&agent_sub, "Bokføringsagenten"),
+        (&annen_sub, "Hjelpeagenten"),
+    ] {
+        regnmed_db::grant_integration(
+            &state.pool,
+            company,
+            sub,
+            navn,
+            None,
+            "bokforing",
+            "Lise Leder",
+        )
+        .await
+        .unwrap();
+    }
+    let agent_token = idp.token(&agent_sub, "");
+    let annen_token = idp.token(&annen_sub, "");
+
+    // A policy with a HIGH threshold: nothing a human posts below it
+    // needs attestering, and that is the point — the machine rule is a
+    // separate axis, not a lower limit.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/attestering/policy"),
+        &leder_token,
+        Some("application/json"),
+        Some(
+            json!({"aktiv": true, "belopsgrense_ore": 10_000_00, "krev_for_maskin": true})
+                .to_string()
+                .into_bytes(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let lite = json!({
+        "journal_code": "GL", "date": "2026-07-10", "description": "Kaffe",
+        "lines": [
+            {"account": "6300", "amount_ore": 4900},
+            {"account": "1920", "amount_ore": -4900},
+        ],
+    })
+    .to_string()
+    .into_bytes();
+
+    // ---- A human posts 49 kroner without attestering, as before ----
+    let menneskets = upload(&state, company, &leder_token, "menneske.pdf").await;
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{menneskets}/bokfor"),
+        &leder_token,
+        Some("application/json"),
+        Some(lite.clone()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "beløpsgrensen gjelder uendret for mennesker: {body}"
+    );
+
+    // ---- The agent cannot, however small the amount ----
+    let maskinens = upload(&state, company, &agent_token, "maskin.pdf").await;
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{maskinens}/bokfor"),
+        &agent_token,
+        Some("application/json"),
+        Some(lite.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("attestering"),
+        "{body}"
+    );
+
+    // ---- And another agent is not the second pair of eyes ----
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{maskinens}/attester"),
+        &annen_token,
+        Some("application/json"),
+        Some(json!({"godkjent": true}).to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{maskinens}/bokfor"),
+        &agent_token,
+        Some("application/json"),
+        Some(lite.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("krever at et menneske"),
+        "to agenter er ikke fire øyne: {body}"
+    );
+
+    // ---- The human attests, and the agent posts ----
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{maskinens}/attester"),
+        &leder_token,
+        Some("application/json"),
+        Some(json!({"godkjent": true}).to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{maskinens}/bokfor"),
+        &agent_token,
+        Some("application/json"),
+        Some(lite),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The bilag names the agent; the attestering names the human. Both
+    // are in the trail, which is the whole arrangement.
+    let created_by: String = sqlx::query_scalar(
+        "select created_by from voucher where company_id = $1 order by created_at desc limit 1",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(created_by, "Bokføringsagenten");
+}

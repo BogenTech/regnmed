@@ -318,3 +318,139 @@ async fn the_rate_limit_stops_a_runaway_integration() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// #101: an agent is a USER. The owner may give it a real role —
+/// `admin` included — and then the only thing it still cannot do is
+/// change who has access.
+///
+/// **Seen failing**: with the `maskin` filter removed from
+/// `Tilgang::har`, the two FORBIDDEN assertions below return 200 and
+/// the robot invites members into the company. That is what this test
+/// is here for; the migration assertion only proves the point of the
+/// revision (the old two-value grant could not express it at all).
+#[tokio::test]
+async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Eier Eiersen"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Agentselskapet AS")
+        .await
+        .unwrap();
+    gjor_fakturaklar(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let admin_token = idp.token(&sub, "Eier Eiersen");
+    let base = format!("/companies/{company}");
+
+    let client_id = format!("regnskapsagent-{}", Uuid::new_v4());
+    let agent_token = idp.token(&client_id, "");
+
+    // ---- A role name that is not a role is refused, with the choices ----
+    let (status, feil) = request(
+        &state,
+        "POST",
+        &format!("{base}/integrations"),
+        &admin_token,
+        Some(
+            json!({"client_id": client_id, "navn": "Agenten", "access": "regnskapsforer"})
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{feil}");
+    let melding = feil["error"].as_str().unwrap();
+    assert!(
+        melding.contains("bokforing") && melding.contains("admin"),
+        "feilen sier hva man kan velge: {melding}"
+    );
+
+    // ---- The owner grants admin, as #101 decided she may ----
+    let (status, granted) = request(
+        &state,
+        "POST",
+        &format!("{base}/integrations"),
+        &admin_token,
+        Some(json!({"client_id": client_id, "navn": "Agenten", "access": "admin"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{granted}");
+
+    // ---- MIGRERING_ADMIN works: this is the whole point of #101 ----
+    let (status, svar) = request(
+        &state,
+        "GET",
+        &format!("{base}/import/saft/log"),
+        &agent_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{svar}");
+    let (status, svar) = request(
+        &state,
+        "POST",
+        &format!("{base}/import/saft/analyze"),
+        &agent_token,
+        Some("ikke en saft-fil".to_string()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "agenten slipper gjennom vakten og feiler på INNHOLDET, ikke på tilgangen: {svar}"
+    );
+
+    // ---- But access control is not hers, whatever the role says ----
+    for (method, uri, body) in [
+        (
+            "POST",
+            format!("{base}/integrations"),
+            Some(json!({"client_id": "enda-en", "navn": "Enda en", "access": "les"}).to_string()),
+        ),
+        (
+            "POST",
+            format!("{base}/invitations"),
+            Some(json!({"epost": "ny@example.com", "rolle": "admin"}).to_string()),
+        ),
+    ] {
+        let (status, svar) = request(&state, method, &uri, &agent_token, body).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{uri} styrer hvem som har tilgang og kan ikke delegeres til en maskin: {svar}"
+        );
+    }
+
+    // ---- /me must not promise what the guard will refuse ----
+    let (status, me) = request(&state, "GET", "/me", &agent_token, None).await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    let selskap = me["companies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["company_id"].as_str() == Some(&company.to_string()))
+        .expect("agenten ser selskapet");
+    let rettigheter: Vec<&str> = selskap["rettigheter"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.as_str().unwrap())
+        .collect();
+    assert!(rettigheter.contains(&"MIGRERING_ADMIN"), "{rettigheter:?}");
+    for nektet in [
+        "MEDLEM_ADMIN",
+        "OPPDRAG_ADMIN",
+        "INTEGRASJON_ADMIN",
+        "SELSKAP_ADMIN",
+    ] {
+        assert!(
+            !rettigheter.contains(&nektet),
+            "{nektet} skal ikke stå i /me for en maskin: {rettigheter:?}"
+        );
+    }
+}

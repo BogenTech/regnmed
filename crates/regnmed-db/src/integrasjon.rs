@@ -69,10 +69,13 @@ pub async fn grant_integration(
     let client_id = client_id.trim();
     ensure!(!client_id.is_empty(), "client_id mangler");
     ensure!(!navn.trim().is_empty(), "integrasjonen trenger et navn");
-    ensure!(
-        access == "les" || access == "bokforing",
-        "tilgangsnivået må være 'les' eller 'bokforing'"
-    );
+    // The role NAME is validated by the caller, where the vocabulary
+    // lives (`regnmed-api::tilgang`): this crate does not know which
+    // names are roles, and a second list here would be a second truth.
+    // What the grant cannot give is enforced in the access lookup
+    // instead of here — `Rett::kan_delegeres` applies to every row,
+    // including the ones written before it (#101).
+    ensure!(!access.trim().is_empty(), "rollen mangler");
 
     let mut tx = pool.begin().await?;
     // Any valid token provisions a person row on first sight, so a

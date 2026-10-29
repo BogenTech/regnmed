@@ -1718,6 +1718,7 @@ dependencies = [
  "regnmed-db",
  "regnmed-gov",
  "regnmed-mail",
+ "regnmed-mcp",
  "reqwest",
  "rsa",
  "serde",
@@ -1805,6 +1806,19 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "regnmed-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
 ]
 
 [[package]]

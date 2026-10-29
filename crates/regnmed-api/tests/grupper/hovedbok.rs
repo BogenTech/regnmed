@@ -283,9 +283,17 @@ async fn manual_posting_respects_the_attestering_policy() {
             .await
             .unwrap();
     }
-    regnmed_db::set_policy(&state.pool, company, true, Some(10_000_00), None, "test")
-        .await
-        .unwrap();
+    regnmed_db::set_policy(
+        &state.pool,
+        company,
+        true,
+        Some(10_000_00),
+        None,
+        None,
+        "test",
+    )
+    .await
+    .unwrap();
     let token = idp.token(&sub, "Attestert Ane");
     let base = format!("/companies/{company}");
 

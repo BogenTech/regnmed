@@ -650,6 +650,45 @@ Tilgang er ett lag av flere, og de gjør forskjellige ting:
 | **Periodelås / timelås** | tidssperrer, ikke tilgangssperrer: en admin med all verdens rettigheter kan ikke bokføre i en låst periode |
 | **Abonnementssperren** (docs/abonnement.md) | en betalingssperre, håndhevet i samme vakt: et sperret abonnement stopper endrende rettigheter (`Rett::endrer`), aldri lesing, eksport eller styringen av selskapet |
 | **Append-only-hovedboken** (docs/ledger.md) | gjelder uansett rolle. En admin kan heller ikke endre eller slette et bilag — korreksjon er et reverserende bilag |
+| **Maskintaket** (#101, docs/agent.md) | en annen akse enn rollen: en integrasjon får aldri en rettighet som styrer hvem som har tilgang, uansett hvilken rolle eieren ga den |
+
+### Maskintaket (#101)
+
+**Revisjon 2026-10-28, tatt uttrykkelig.** #45 skrev at `admin` bevisst
+ikke var grantbart til en maskin. Prinsippet bak holdt; utfallet gjorde
+det ikke — `MIGRERING_ADMIN` var dermed utenfor rekkevidde for en agent,
+og sperren var strengest der en ny kunde er mest hjelpeløs
+(docs/integrations.md har hele begrunnelsen).
+
+Siden migrasjon 0062 bærer `integration_grant.access` et **rollenavn**,
+innebygd eller selskapets eget, tildelt som til et medlem. Taket er
+flyttet fra tildelingen til **oppslaget**:
+
+```rust
+// tilgang.rs — Tilgang::har
+if self.maskin && !rett.kan_delegeres() {
+    return false;
+}
+```
+
+Det er ett sted, og det er valgt: da gjelder regelen også for roller som
+kommer til senere og for rader som ble skrevet før den fantes.
+`rettighet_slugs` filtrerer det samme, så `/me` ikke lover en maskin
+knapper som kommer til å feile.
+
+`maskin` er sann når minst én av veiene inn til selskapet er et
+`integration_grant` (`via = 'integrasjon'` fra
+`company_access_for_person` — samme spørring, ingen ekstra kostnad på
+forespørselsveien).
+
+De fire rettighetene `kan_delegeres` nekter er uendret: `MEDLEM_ADMIN`,
+`OPPDRAG_ADMIN`, `INTEGRASJON_ADMIN`, `SELSKAP_ADMIN`. Matrisen under §5
+er derfor også uendret — dette er ingen ny rettighet, det er et tak oppå
+de som finnes.
+
+Festet i `tests/grupper/integrasjon.rs`
+(`an_agent_with_admin_may_migrate_but_never_widen_access`), **sett
+feile**: uten filteret inviterer roboten medlemmer inn i selskapet.
 
 Det siste punktet er verdt å si tydelig: **ingen rolle i dette
 dokumentet gir rett til å endre historikk.** Tilgangsmodellen avgjør hvem

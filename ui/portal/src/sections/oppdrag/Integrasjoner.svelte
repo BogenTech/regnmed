@@ -7,11 +7,34 @@
   import { bekreft } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, integrasjoner, kall, onDone } = $props();
+  let { companyId, integrasjoner, kall, roller, onDone } = $props();
 
   let clientId = $state("");
   let navn = $state("");
   let access = $state("les");
+
+  // #101: en agent er en bruker, så den får en ROLLE — også admin, hvis
+  // eieren vil det. `revisor` står ikke her av samme grunn som den ikke
+  // står i medlemsvelgeren: den følger et revisjonsoppdrag, den tildeles
+  // ikke. Grensen som består er serverens: en maskin får aldri en
+  // rettighet som styrer hvem som har tilgang.
+  // Uten MEDLEM_ADMIN svarer /roles 403, og da står de innebygde navnene
+  // her: serveren avviser likevel et navn som ikke er en rolle, så
+  // reservelisten kan ikke gi mer tilgang enn den skal.
+  const RESERVE = ["les", "bokforing", "ansatt", "admin"];
+  const valg = $derived(
+    roller
+      ? [
+          ...roller.innebygde
+            .filter((r) => r.navn !== "revisor")
+            .map((r) => ({ navn: r.navn, beskrivelse: r.beskrivelse })),
+          ...roller.egne
+            .filter((r) => r.aktiv)
+            .map((r) => ({ navn: r.navn, beskrivelse: "Egendefinert rolle" })),
+        ]
+      : RESERVE.map((navn) => ({ navn, beskrivelse: "" })),
+  );
+  const valgtBeskrivelse = $derived(valg.find((r) => r.navn === access)?.beskrivelse || "");
 
   async function giTilgang() {
     try {
@@ -51,15 +74,21 @@
 
 <Card title="Integrasjoner (maskin-tilgang)">
   <p class="text-sm opacity-70 mb-2">
-    Et kassasystem eller en nettbutikk kan kalle API-et med sin egen identitet fra
-    påloggingstjenesten. Du gir tilgangen, på det nivået du vil, og kan trekke den tilbake når som
-    helst — den slutter å virke i samme øyeblikk. Alt roboten bokfører bærer navnet dens.
+    Et kassasystem, en nettbutikk eller en agent kaller API-et med sin egen identitet fra
+    påloggingstjenesten. Du gir den en rolle, akkurat som du gir et menneske en, og kan trekke
+    tilgangen tilbake når som helst — den slutter å virke i samme øyeblikk. Alt den bokfører bærer
+    navnet dens.
+  </p>
+  <p class="text-sm opacity-70 mb-2">
+    Én grense gjelder uansett rolle: en maskin kan aldri endre hvem som har tilgang — verken
+    medlemmer, oppdrag, integrasjoner eller firmaopplysninger. Den gjør jobben, men utvider ikke
+    tilgang.
   </p>
   {#if integrasjoner.length}
     <table class="table table-sm mb-3">
       <thead>
         <tr>
-          <th>Integrasjon</th><th>Nivå</th><th>Status</th>
+          <th>Integrasjon</th><th>Rolle</th><th>Status</th>
           <th class="text-right">Kall i dag</th><th></th>
         </tr>
       </thead>
@@ -102,11 +131,15 @@
     />
     <input class="input input-sm w-40" placeholder="Navn" bind:value={navn} />
     <select class="select select-sm" bind:value={access}>
-      <option value="les">les</option>
-      <option value="bokforing">bokføring</option>
+      {#each valg as r (r.navn)}
+        <option value={r.navn}>{r.navn}</option>
+      {/each}
     </select>
     <button class="btn btn-sm" onclick={giTilgang}>Gi tilgang</button>
   </div>
+  {#if valgtBeskrivelse}
+    <p class="text-xs opacity-60 mt-1">{valgtBeskrivelse}</p>
+  {/if}
   {#if kall.length}
     <h3 class="font-semibold text-sm mt-3 mb-1">Siste endringer</h3>
     {#each kall.slice(0, 10) as k, i (i)}

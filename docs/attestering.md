@@ -22,6 +22,19 @@ gjaldt da et bilag ble bokført.
 | `aktiv` | Slår kontrollen på. Av = v1-oppførselen, uendret. |
 | `belopsgrense_ore` | Innboksbilag med **debetsum ≥ grensen** krever attestering. `NULL` = alle bilag. |
 | `attestant_person_id` | Utpekt attestant. `NULL` = alle med bokføringstilgang kan attestere. |
+| `krev_for_maskin` | Bilag bokført av en **integrasjon** krever godkjent attestering av et **menneske**, uavhengig av beløpsgrensen (#101, migrasjon 0063). `NULL` = ikke valgt; grensen gjelder alene. |
+
+**Hvorfor beløpsgrensen ikke holder for en maskin:** for et menneske er
+grensen riktig — en ansatt som bokfører en kaffekvittering trenger ingen
+attestant. For en agent er beløpet den gale aksen. Det som gjør et
+maskinbokført bilag verdt et blikk er ikke hvor stort det er, men at
+ingen så det. Derfor er `krev_for_maskin` OR-et med grensen, ikke foldet
+inn i den.
+
+Fire øyne virket allerede uten flagget: en agent er sin egen
+`person`-rad, så nekten mot å attestere og bokføre selv treffer en agent
+presist. Det flagget legger til er at **mennesket** må være det andre
+øyet — en agent kan ikke attestere en annen agents bilag.
 
 Bare admin kan sette policyen (`POST …/attestering/policy`); alle med
 tilgang kan lese den, inkludert revisor.
@@ -46,7 +59,10 @@ som gjør arbeidet — aldri bare i portalen:
    policy krever et bilag på eller over beløpsgrensen en gjeldende
    `godkjent`-attestering. Mangler den, avvises bokføringen; er
    nyeste beslutning `avvist`, avvises den med begrunnelsen. Og den
-   som attesterte kan **ikke selv bokføre** — fire øyne.
+   som attesterte kan **ikke selv bokføre** — fire øyne. Er
+   `krev_for_maskin` satt og bokføreren en integrasjon, kreves
+   attestering uansett beløp, og attestanten må være et menneske
+   (`person.kind`, slått opp i samme transaksjon).
 2. **Betalingsliste** (`approve_run`): godkjenneren må være en annen
    person enn oppretteren. Kjøringen bærer nå `created_by_person`
    (identitet, ikke bare visningsnavn); kjøringer opprettet før
@@ -65,7 +81,8 @@ bokføres.
 ## Endpoints
 
 - `GET  /companies/{id}/attestering/policy` — gjeldende policy + full historikk
-- `POST /companies/{id}/attestering/policy` — ny policyrad (admin)
+- `POST /companies/{id}/attestering/policy` — ny policyrad (admin);
+  `{aktiv, belopsgrense_ore?, attestant_person_id?, krev_for_maskin?}`
 - `GET  /companies/{id}/members` — attestant-kandidater (admin)
 - `POST /companies/{id}/inbox/{doc}/attester` — `{godkjent, note?}`
   (bokføringstilgang; avvisning krever notat)

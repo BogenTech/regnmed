@@ -7,23 +7,31 @@
   import Oppdragsliste from "./Oppdragsliste.svelte";
   import Byraliste from "./Byraliste.svelte";
   import Integrasjoner from "./Integrasjoner.svelte";
+  import Agentoppgaver from "./Agentoppgaver.svelte";
 
   let { companyId } = $props();
 
   let data = $state(null);
 
   async function load(id) {
-    const [engagements, firms, integrasjoner, log] = await Promise.all([
+    const [engagements, firms, integrasjoner, log, roller, oppgaver] = await Promise.all([
       api("/companies/" + id + "/engagements"),
       api("/directory/firms"),
       api("/companies/" + id + "/integrations").catch(() => ({ integrasjoner: [] })),
       api("/companies/" + id + "/integrations/log").catch(() => ({ kall: [] })),
+      // Rollevokabularet: integrasjoner får nå en ekte rolle (#101).
+      // Krever MEDLEM_ADMIN, så en rolle med bare IntegrasjonAdmin
+      // faller tilbake på de innebygde navnene velgeren kjenner.
+      api("/companies/" + id + "/roles").catch(() => null),
+      api("/companies/" + id + "/agent/oppgaver?apne=false").catch(() => ({ oppgaver: [] })),
     ]);
     data = {
       engagements: engagements.engagements,
       firms: firms.firms,
       integrasjoner: integrasjoner.integrasjoner,
       integrasjonskall: log.kall,
+      roller,
+      oppgaver: oppgaver.oppgaver,
     };
   }
 
@@ -48,6 +56,14 @@
     {companyId}
     integrasjoner={data.integrasjoner}
     kall={data.integrasjonskall}
+    roller={data.roller}
+    onDone={reload}
+  />
+
+  <Agentoppgaver
+    {companyId}
+    integrasjoner={data.integrasjoner}
+    oppgaver={data.oppgaver}
     onDone={reload}
   />
 {/if}

@@ -1,0 +1,24 @@
+[package]
+name = "regnmed-mcp"
+description = "MCP-server: regnmeds API som verktøy for agenten kunden tar med selv"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "regnmed-mcp"
+path = "src/main.rs"
+
+# NO regnmed-db, and that is the point (#102): an MCP server with
+# database access would be a new road into the hovedbok, with its own
+# rules to get wrong. This one speaks HTTP to the same API a human uses,
+# and the grant in regnmed's own base decides what it may do.
+[dependencies]
+anyhow.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true

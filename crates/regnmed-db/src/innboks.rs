@@ -186,9 +186,19 @@ pub async fn bokfor_inbox_document(
         && policy.aktiv
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
-        if policy
-            .belopsgrense_ore
-            .is_none_or(|grense| debetsum >= grense)
+        // An agent's bilag is worth a look because nobody saw it, not
+        // because of its size (#101, migration 0063) — so the machine
+        // rule is OR'ed with the threshold, never folded into it.
+        let maskin_bokforer: bool =
+            sqlx::query_scalar("select kind = 'integrasjon' from person where id = $1")
+                .bind(decided_by_person)
+                .fetch_one(&mut *tx)
+                .await?;
+        let maskinkrav = maskin_bokforer && policy.krev_for_maskin == Some(true);
+        if maskinkrav
+            || policy
+                .belopsgrense_ore
+                .is_none_or(|grense| debetsum >= grense)
         {
             let state = crate::attestering::attestation_state(
                 &mut *tx,
@@ -207,6 +217,21 @@ pub async fn bokfor_inbox_document(
                 Some(a) if a.decided_by_person == decided_by_person => bail!(
                     "attestert og bokført av samme person — bokføringen må gjøres av en annen (fire øyne)"
                 ),
+                // Two agents are not two pairs of eyes: the point of the
+                // flag is that a HUMAN saw it.
+                Some(a) if maskinkrav => {
+                    let menneske: bool =
+                        sqlx::query_scalar("select kind = 'menneske' from person where id = $1")
+                            .bind(a.decided_by_person)
+                            .fetch_one(&mut *tx)
+                            .await?;
+                    ensure!(
+                        menneske,
+                        "bilaget er attestert av en integrasjon ({}) — \
+                         policyen krever at et menneske attesterer det en maskin bokfører",
+                        a.decided_by
+                    );
+                }
                 Some(_) => {}
             }
         }
