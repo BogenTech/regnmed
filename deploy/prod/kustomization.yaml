@@ -53,13 +53,13 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: v0.6.8
+    newTag: v0.6.9
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     # A RELEASE tag, like regnmed's above: regnid started cutting
     # releases with v0.1.0, and the number an operator reads here should
     # be the one whose notes say what it contains.
-    newTag: v0.1.1
+    newTag: v0.1.2
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml

@@ -79,6 +79,56 @@ spec:
               value: "935115086"
             - name: MAIL_IN_DOMAIN
               value: bilag.regnmed.no
+            # Opens the customer's stored provider key (docs/agent.md
+            # §8.2). The same secret and the same key as the agent
+            # CronJob uses: the two processes seal and open the same
+            # bytes, and two different keys would mean a key stored by
+            # the API that the worker cannot read -- failing at the
+            # worst moment, when an agent finally has work to do.
+            #
+            # Without this the hosted-agent forms are off and the portal
+            # says so, which is how it went unnoticed in test for a
+            # while: correct, and silent.
+            - name: AGENT_SEALING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-credentials
+                  key: sealing-key
+            # Self-service agents (docs/agent.md §8.6). regnmed asks
+            # regnid to create the agent's OIDC identity, so a customer
+            # never sees a client_id. This client_id must be on regnid's
+            # own PROVISION_CLIENTS (patches/regnid.yaml) or every call
+            # is refused with 403 -- which is the point of that list.
+            #
+            # Created out-of-band like the database credentials.
+            # `add-client` prints the secret exactly once:
+            #
+            #   kubectl -n regnmed exec deploy/regnid -- \
+            #     /app/regnid add-client --client-id regnmed-provisioner \
+            #     --name "regnmed agent provisioning" \
+            #     --grant-type client_credentials --confidential
+            #   kubectl -n regnmed create secret generic regnid-provisioning \
+            #     --from-literal=client-id=regnmed-provisioner \
+            #     --from-file=client-secret=<the printed secret>
+            #
+            # BOTH or neither: regnmed-api refuses to start on half of
+            # it. Without them the portal asks for a client_id as before.
+            - name: REGNID_PROVISION_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: regnid-provisioning
+                  key: client-id
+            - name: REGNID_PROVISION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: regnid-provisioning
+                  key: client-secret
+            # In-cluster, unlike OIDC_ISSUER. Validating a token needs
+            # the issuer URL the token actually carries; asking regnid to
+            # create a client does not, and the public host would hairpin
+            # out through nginx-proxy-manager and back in.
+            - name: REGNID_BASE_URL
+              value: http://regnid:8081
             # STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are deliberately
             # ABSENT: the card rail is off in production for now, and the
             # portal says so rather than pretending. Everything else works
