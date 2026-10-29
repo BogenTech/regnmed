@@ -1,4 +1,4 @@
-# The build context is FOUR FILES — two binaries per supported target.
+# The build context is SIX FILES — three binaries per supported target.
 # Everything else is excluded.
 #
 # Without this, `docker build` uploads the whole working tree to the
@@ -10,7 +10,8 @@
 #
 # The binaries are cross-compiled on the HOST by scripts/build-images.sh
 # (static musl); nothing compiles in Docker, so nothing else belongs in the
-# context. Two targets are readmitted because the two clusters differ:
+# context. The third is the hosted agent worker (docs/agent.md §8.3), which
+# runs as its own CronJob from this same image. Two targets are readmitted because the two clusters differ:
 # aarch64 for the colima dev cluster on the Mac, x86_64 for the homelab
 # nodes. The Dockerfile's TARGET build-arg selects which one is copied.
 #
@@ -21,5 +22,7 @@
 
 !target/aarch64-unknown-linux-musl/release/regnmed-api
 !target/aarch64-unknown-linux-musl/release/regnmed
+!target/aarch64-unknown-linux-musl/release/regnmed-agent
 !target/x86_64-unknown-linux-musl/release/regnmed-api
 !target/x86_64-unknown-linux-musl/release/regnmed
+!target/x86_64-unknown-linux-musl/release/regnmed-agent
