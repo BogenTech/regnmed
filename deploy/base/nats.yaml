@@ -34,6 +34,11 @@ spec:
       containers:
         - name: nats
           image: nats:alpine
+          # Always, ikke IfNotPresent: `nats:alpine` flyter, og da avgjør
+          # det hver node tilfeldigvis har hentet hvilken versjon som
+          # kjører. Samme felle som postgres gikk i 2026-10-29
+          # (docs/deploy.md) — Always holder nodene like UTEN å pinne.
+          imagePullPolicy: Always
           # -m 8222 is the monitoring endpoint, and it is here for the
           # readiness probe: without one, a client can be routed to a
           # nats that has not finished opening its JetStream store.

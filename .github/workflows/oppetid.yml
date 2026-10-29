@@ -1,0 +1,114 @@
+# Ekstern oppetidssjekk.
+#
+# Hendelsen 2026-10-29 varte i fire timer og ble oppdaget ved at eieren
+# prøvde å bruke systemet. Det var ikke fordi overvåkingen sviktet — det
+# var fordi den ikke fantes, og fordi det ene endepunktet man ville
+# overvåket var det ene som ikke kunne se feilen:
+#
+#   /health                200 hele veien   (rører ikke databasen)
+#   /portal-config         hang for alltid  (leser platform_setting)
+#
+# `/health` er en liveness-løgn. Derfor sjekker denne jobben endepunkter
+# som FAKTISK GÅR I DATABASEN, og behandler en treg respons som en feil:
+# symptomet var henging, ikke 5xx.
+#
+# Den kjører HER og ikke i clusteret med vilje. En vaktpost inne i
+# clusteret går ned sammen med det den vokter. GitHub Actions er gratis,
+# ligger utenfor, og bor allerede der slippene bor.
+#
+# Den åpner en issue når prod er nede, og lukker den igjen når prod er
+# oppe — så en natt med nedetid ikke blir tolv identiske varsler.
+
+name: oppetid
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  prod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sjekk endepunktene
+        id: sjekk
+        run: |
+          set -u
+          # Hvert endepunkt leser databasen. /health står med vilje IKKE
+          # her: den svarte 200 gjennom hele nedetiden.
+          ENDEPUNKTER="
+          https://api.regnmed.no/portal-config
+          https://api.regnmed.no/anchors
+          https://regnmed.no/portal-config
+          https://id.regnmed.no/.well-known/openid-configuration
+          "
+          FEIL=""
+          for u in $ENDEPUNKTER; do
+            # ÉN forespørsel, begge tallene: to kall kunne gitt to svar,
+            # og det er nøyaktig den tvetydigheten en vaktpost ikke skal ha.
+            # --max-time 10: en hengende forespørsel ER feilen vi leter
+            # etter. Uten en frist ville jobben hengt i stedet for å si fra.
+            RES=$(curl -s -o /dev/null --max-time 10 -w "%{http_code} %{time_total}" "$u") || true
+            RES=${RES:-000 0}
+            KODE=${RES%% *}
+            TID=${RES##* }
+            if [ "$KODE" != "200" ]; then
+              echo "NEDE  $u -> $KODE (${TID}s)"
+              FEIL="$FEIL
+          - \`$u\` svarte **$KODE** etter ${TID}s"
+            else
+              echo "OK    $u -> $KODE (${TID}s)"
+            fi
+          done
+          if [ -n "$FEIL" ]; then
+            {
+              echo "nede=true"
+              echo "detalj<<EOF"
+              echo "$FEIL"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "nede=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Åpne eller oppdater varsel
+        if: steps.sjekk.outputs.nede == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DETALJ: ${{ steps.sjekk.outputs.detalj }}
+        run: |
+          set -eu
+          # `gh issue create --label` FEILER på en ukjent merkelapp, og da
+          # ville varselet dødd nøyaktig når det trengtes. Merkelappen
+          # finnes i repoet, men en vaktpost skal ikke stole på det.
+          gh label create oppetid --description "Ekstern oppetidssjekk: produksjon svarer ikke" --color B60205 2>/dev/null || true
+          EKSISTERENDE=$(gh issue list --label oppetid --state open --json number -q '.[0].number')
+          KROPP="Den eksterne oppetidssjekken når ikke produksjon.
+
+          $DETALJ
+
+          Sjekket $(date -u +'%Y-%m-%d %H:%M UTC') fra GitHub Actions.
+
+          Endepunktene over leser databasen. \`/health\` er bevisst utelatt:
+          under hendelsen 2026-10-29 svarte den 200 gjennom hele nedetiden
+          (docs/deploy.md).
+
+          Denne saken lukkes automatisk når prod svarer igjen."
+          if [ -n "$EKSISTERENDE" ]; then
+            gh issue comment "$EKSISTERENDE" --body "Fortsatt nede $(date -u +'%H:%M UTC').$DETALJ"
+          else
+            gh issue create --title "Produksjon svarer ikke" --label oppetid --body "$KROPP"
+          fi
+
+      - name: Lukk varselet når prod er oppe igjen
+        if: steps.sjekk.outputs.nede == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for n in $(gh issue list --label oppetid --state open --json number -q '.[].number'); do
+            gh issue close "$n" --comment "Prod svarer igjen $(date -u +'%Y-%m-%d %H:%M UTC'). Lukket av oppetidssjekken."
+          done
