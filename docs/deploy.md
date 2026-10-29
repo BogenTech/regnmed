@@ -154,14 +154,17 @@ være releasen, og hver release skal forklare seg):
    `curl -s https://regnmed.no/portal-config` skal bære
    `"versjon": "vX.Y.Z"`.
 
-**En pinne-commit alene bygger ikke noe image.** `images.yml` har
-`paths-ignore` på `deploy/**`, `docs/**` og `*.md` — satt for at
-workflowens egen tagg-bump i `deploy/test` ikke skal utløse en ny runde av
-seg selv. Den filtreringen gjelder også TAGG-pusher, så en commit som bare
-flytter pinnen (nøyaktig det steg 2 ber om) kan tagges uten at noe image
-blir bygget, og Flux blir stående og vente på et image som aldri kommer.
-v0.6.7 skjulte det fordi den commiten også rørte `.github/`. Skjer det,
-er fluktluken den workflowen alt dokumenterer:
+**`paths-ignore` gjelder IKKE tagg-pusher.** `images.yml` ignorerer
+`deploy/**`, `docs/**` og `*.md` på main, så workflowens egen tagg-bump i
+`deploy/test` ikke utløser en ny runde av seg selv. Det er lett å tro at
+filteret også gjelder tagger — og da ville en commit som BARE flytter
+pinnen (nøyaktig det steg 2 ber om) kunne tagges uten at noe image ble
+bygget. **Den frykten er ubegrunnet**, prøvd 2026-10-29: v0.6.8-commiten
+rørte bare `deploy/` og `docs/`, og tagg-pushen bygget imaget. GitHub
+evaluerer ikke sti-filtre for tagger.
+
+Skulle et bygg likevel utebli (Actions-hendelser kan droppes), er
+fluktluken den workflowen alt dokumenterer:
 
 ```sh
 gh workflow run images.yml --ref vX.Y.Z
