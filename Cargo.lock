@@ -1772,6 +1772,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "regnmed-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "regnmed-core",
+ "regnmed-db",
+ "regnmed-mcp",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "regnmed-api"
 version = "0.1.0"
 dependencies = [
@@ -1786,6 +1804,7 @@ dependencies = [
  "include_dir",
  "jsonwebtoken",
  "rand 0.8.7",
+ "regnmed-agent",
  "regnmed-core",
  "regnmed-db",
  "regnmed-gov",

@@ -477,3 +477,75 @@ portalen. Det er levelig nå — ingen agenter er i drift — og det blir
 dyrere jo lenger vi venter. Den riktige veien er en nøkkel-id per rad og
 en omforsegling som leser med den gamle og skriver med den nye; det er
 ikke bygget, og det hører sammen med steg 3.
+
+### 8.3 Workeren (levert)
+
+`crates/regnmed-agent` — eget binær, `regnmed-agent kjor`. Den tar åpne
+agentoppgaver som er stilet til en agent med aktiv modell, kjører dem, og
+skriver utfallet i `agent_oppgave_hendelse`.
+
+**Avgjørelsen §8 lot stå åpen er tatt: ingen ny autentiseringsvei.**
+Vertsagenten henter token med `client_credentials` som seg selv, nøyaktig
+som en agent på kundens egen maskin. `integration_grant`, maskintaket og
+attesteringsreglene gjelder uendret, håndhevet der de alltid var. Workeren
+kjører sløyfen og holder modellnøkkelen; den holder ingen myndighet.
+Alternativet — å la workeren handle «på vegne av» en agent fordi den er
+innenfor tillitsgrensen vår — ville lagt en andre dør inn i hovedboken, og
+hele §1 finnes for å slippe det.
+
+Prisen er at agenten trenger en klienthemmelighet. Migrasjon 0067 legger den
+på `integration`, forseglet med samme nøkkel som modellnøkkelen.
+Oppdaterbar, ikke innsettings-bar som `agent_llm`: et spor over forkastede
+leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
+en forpliktelse.
+
+**Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
+systemprompten av `rolle::prompt`, og kallet går gjennom
+`Server::utfor_verktoy` — samme dispatcher som MCP-serveren. Transporten
+skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
+oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
+nøyaktig like mange verktøy som tabellen.
+
+Sløyfen stopper etter `MAKS_TURER` (12) og SIER at den stoppet. En sløyfe
+som ikke stopper bruker kundens penger; en agent som stille gir opp er verre
+enn en som melder fra om en vegg.
+
+Modellen avslutter med en markør — `FERDIG:`, `SPØRSMÅL:` eller `AVVIST:` —
+som blir statusen køen alt kjenner (#103). Workeren finner ikke opp egne.
+Tekst uten markør leses som utført: en liten modell som gjorde jobben og
+glemte prefikset skal ikke få arbeidet sitt journalført som en nektelse, og
+notatet bærer råteksten uansett. `sporsmal` er ikke terminal i 0064-vakten,
+nettopp fordi agenten skal kunne fortsette når noen har svart.
+
+Leverandøren er OpenAI-kompatibel `/chat/completions` med `tools` —
+grunnen til at dette ble lite. OpenAI, OpenRouter og de fleste
+selvhostede gatewayer snakker samme protokoll, så én klient dekker det
+kunden sannsynligvis tar med, og `annet` dekker resten uten en ny versjon
+fra oss. Felter vi ikke modellerer ignoreres framfor å avvises: dette er en
+wire vi ikke eier.
+
+**Verifisert end-to-end mot en falsk leverandør** (`agent.rs`): modellen ber
+om `saldobalanse`, workeren kjører det mot det EKTE routeren med agentens
+eget token, mater svaret tilbake og rapporterer `utfort`. Testen sjekker at
+verktøysvaret bærer data fra API-et — og den er **sett feile**: med
+dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
+
+#### Ærlige begrensninger
+
+- **Payloadene er ikke fanget fra ekte trafikk.** Lærdommen fra
+  Stripe-integrasjonen (punkt 56 i CLAUDE.md) var at payloads skrevet ut fra
+  hva koden LESER bare bekrefter kodens egen antakelse. Disse er skrevet fra
+  leverandørenes dokumentasjon. Første ekte kjøring mot OpenRouter er den
+  virkelige prøven, og den har ikke vært.
+- **Ingen deployment ennå.** Ingen CronJob, ingen `AGENT_NOKKEL` i
+  `deploy/`, og `regnmed-agent` har ikke noe budsjett i
+  [frugality.md](frugality.md). Alt tre hører sammen og kommer når
+  workeren har kjørt mot en ekte leverandør.
+- **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives. Chat-flaten
+  (steg 4) vil ville ha delsvar.
+- **Ingen kostnadsgrense.** `MAKS_TURER` begrenser antall turer, ikke antall
+  tokens. `integration.rate_limit_min` begrenser kall mot VÅRT API, ikke mot
+  leverandøren.
+- **Selvbetjent klientregistrering mangler fortsatt.** Klienthemmeligheten
+  må komme fra en operatør som kjørte `regnid add-client`. Det er samme hull
+  §8 åpnet med, og det er nå i veien for den vanlige kunden.

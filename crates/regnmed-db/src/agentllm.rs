@@ -213,3 +213,101 @@ pub async fn hent_llm_nokkel(
         klar,
     )))
 }
+
+// ---- Agentens egen klienthemmelighet (docs/agent.md §8.3) ----
+
+/// Stores the agent's OIDC client secret, sealed. The client_id is the
+/// integration's `oidc_sub` and is already here; this is the other half,
+/// and it exists so the worker can get a token as the agent itself
+/// rather than acting on its behalf through some second door.
+pub async fn sett_klienthemmelighet(
+    pool: &PgPool,
+    nokkel: &Nokkel,
+    company_id: Uuid,
+    integration_id: Uuid,
+    hemmelighet: &str,
+) -> Result<()> {
+    let hemmelighet = hemmelighet.trim();
+    ensure!(!hemmelighet.is_empty(), "klienthemmeligheten mangler");
+    let oppdatert = sqlx::query(
+        "update integration set klient_hemmelighet = $3
+         where id = $1
+           and exists (select 1 from integration_grant g
+                       where g.integration_id = $1 and g.company_id = $2)",
+    )
+    .bind(integration_id)
+    .bind(company_id)
+    .bind(forsegl(nokkel, hemmelighet.as_bytes())?)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    ensure!(oppdatert == 1, "ingen slik integrasjon på dette selskapet");
+    Ok(())
+}
+
+/// The agent's client_id and secret, opened — for the worker that is
+/// about to ask the IdP for a token as this agent.
+pub async fn hent_klientlegitimasjon(
+    pool: &PgPool,
+    nokkel: &Nokkel,
+    integration_id: Uuid,
+) -> Result<Option<(String, String)>> {
+    let row = sqlx::query(
+        "select p.oidc_sub, i.klient_hemmelighet
+         from integration i join person p on p.id = i.person_id
+         where i.id = $1",
+    )
+    .bind(integration_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    let Some(sealed) = row.get::<Option<Vec<u8>>, _>("klient_hemmelighet") else {
+        return Ok(None);
+    };
+    Ok(Some((
+        row.get("oidc_sub"),
+        String::from_utf8(apne(nokkel, &sealed)?)?,
+    )))
+}
+
+/// Whether a secret is stored, for display. Never the value.
+pub async fn har_klienthemmelighet(pool: &PgPool, integration_id: Uuid) -> Result<bool> {
+    Ok(
+        sqlx::query_scalar("select klient_hemmelighet is not null from integration where id = $1")
+            .bind(integration_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false),
+    )
+}
+
+/// Open tasks that a hosted agent can actually pick up: addressed to an
+/// integration, not yet finished, and that integration has an active
+/// model. Tasks for an agent on the customer's own machine are left
+/// alone — that agent fetches its own queue.
+pub async fn apne_agentoppgaver(
+    pool: &PgPool,
+    company_id: Option<Uuid>,
+) -> Result<Vec<(Uuid, Uuid)>> {
+    let rows = sqlx::query(
+        "select o.company_id, o.id
+         from agent_oppgave o
+         join integration i on i.id = o.integration_id
+         where ($1::uuid is null or o.company_id = $1)
+           and coalesce((select h.status from agent_oppgave_hendelse h
+                         where h.oppgave_id = o.id
+                         order by h.created_at desc, h.id desc limit 1), 'ny')
+               not in ('utfort', 'avvist', 'sporsmal')
+           and exists (select 1 from agent_llm l
+                       where l.integration_id = i.id and l.company_id = o.company_id
+                         and l.aktiv
+                         and l.created_at = (select max(created_at) from agent_llm l2
+                                             where l2.integration_id = l.integration_id
+                                               and l2.company_id = l.company_id))
+         order by o.created_at",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+}

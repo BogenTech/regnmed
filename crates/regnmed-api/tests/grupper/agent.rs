@@ -329,3 +329,153 @@ fn skriv_midlertidig(navn: &str, innhold: &[u8]) -> String {
     std::fs::write(&sti, innhold).unwrap();
     sti.to_string_lossy().to_string()
 }
+
+// ---- Vertsagenten: hele sløyfen mot en falsk leverandør (§8.3) ----
+
+/// A stand-in for the customer's model provider. It answers
+/// `/chat/completions` from a script and records what it was sent, so
+/// the test can assert that the tool actually ran against the real API
+/// rather than that the loop merely claimed it did.
+#[derive(Clone, Default)]
+struct FalskLeverandor {
+    sett: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
+}
+
+async fn tjen_leverandor(mock: FalskLeverandor, svar: Vec<Value>) -> String {
+    let svar = std::sync::Arc::new(std::sync::Mutex::new(svar.into_iter()));
+    let app =
+        axum::Router::new().route(
+            "/chat/completions",
+            axum::routing::post(move |axum::Json(kropp): axum::Json<Value>| {
+                let mock = mock.clone();
+                let svar = svar.clone();
+                async move {
+                    mock.sett.lock().unwrap().push(kropp);
+                    let neste = svar.lock().unwrap().next();
+                    axum::Json(neste.unwrap_or_else(
+                        || json!({"choices":[{"message":{"content":"FERDIG: tom"}}]}),
+                    ))
+                }
+            }),
+        );
+    let lytter = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = lytter.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(lytter, app).await;
+    });
+    format!("http://{addr}")
+}
+
+/// The hosted rail end to end: a model asks for a tool, the worker runs
+/// it against the REAL router with the agent's own token, feeds the
+/// answer back, and records the outcome the task queue understands.
+///
+/// What this is really testing is that the two rails cannot drift: the
+/// worker builds its tool catalogue from the same `VERKTOY` table the
+/// MCP server serves, and executes through the same dispatcher.
+#[tokio::test]
+async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let eier_sub = format!("test|{}", Uuid::new_v4());
+    let eier = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Vertsagent AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    let client_id = format!("vertsagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Kari Bokfører",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+
+    let base = tjen(state.clone()).await;
+    let server = Server::new(Klient::ny(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+
+    let mock = FalskLeverandor::default();
+    let leverandor = tjen_leverandor(
+        mock.clone(),
+        vec![
+            // Turn 1: ask for a real tool with real arguments.
+            json!({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{
+            "id":"call_1","type":"function","function":{
+                "name":"saldobalanse",
+                "arguments":"{\"from\":\"2026-01-01\",\"to\":\"2026-12-31\"}"
+            }}]}}]}),
+            // Turn 2: finish.
+            json!({"choices":[{"message":{"role":"assistant",
+                "content":"FERDIG: saldobalansen er hentet og avstemt"}}]}),
+        ],
+    )
+    .await;
+
+    let modell = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+    let utfall = regnmed_agent::kjor_sloyfe(
+        &modell,
+        &server,
+        "bokforing",
+        "Hent saldobalansen for 2026 og avstem den.",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        utfall,
+        regnmed_agent::Utfall::Utfort("saldobalansen er hentet og avstemt".into()),
+        "sluttmarkøren avgjør statusen oppgavekøen får"
+    );
+
+    let sett = mock.sett.lock().unwrap().clone();
+    assert_eq!(sett.len(), 2, "to turer: ett verktøykall, så svaret");
+
+    // The catalogue the model was offered is the real one.
+    let verktoy = sett[0]["tools"].as_array().unwrap();
+    assert_eq!(verktoy.len(), regnmed_mcp::verktoy::VERKTOY.len());
+
+    // The role prompt went with it — a `bokforing` agent must not be
+    // told it is something else, or it spends its turns being refused.
+    let system = sett[0]["messages"][0]["content"].as_str().unwrap();
+    assert!(
+        system.contains("FERDIG:") && system.contains("SPØRSMÅL:"),
+        "avslutningsreglene mangler i systemprompten"
+    );
+
+    // THE assertion: the second turn carries a tool result that came
+    // from the real endpoint, not from the loop's imagination. An
+    // unauthorised or missing route would show up here as an error text.
+    let meldinger = sett[1]["messages"].as_array().unwrap();
+    let verktoysvar = meldinger
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .expect("verktøysvaret er med videre");
+    assert_eq!(verktoysvar["tool_call_id"], "call_1");
+    let tekst = verktoysvar["content"].as_str().unwrap();
+    assert!(
+        tekst.contains("linjer") || tekst.contains("konto") || tekst.starts_with('{'),
+        "verktøyet svarte ikke med data fra API-et: {tekst}"
+    );
+    assert!(
+        !tekst.contains("404") && !tekst.to_lowercase().contains("not found"),
+        "verktøyet traff en rute som ikke finnes: {tekst}"
+    );
+}

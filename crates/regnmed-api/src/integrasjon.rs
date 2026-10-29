@@ -209,6 +209,11 @@ pub struct LlmRequest {
     /// The customer's own key. Goes in sealed and never comes back out:
     /// [`llm`] reports whether one is set, never what it is.
     api_nokkel: String,
+    /// The agent's own OIDC client secret (docs/agent.md §8.3). The
+    /// worker needs it to get a token AS THE AGENT -- there is no
+    /// second way into the ledger for it. Optional here so a key can be
+    /// replaced without re-entering this one.
+    klient_hemmelighet: Option<String>,
 }
 
 /// The provider this agent uses, and whether a key is stored. The key
@@ -229,6 +234,11 @@ pub async fn llm(
             .iter()
             .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
             .collect::<Vec<_>>(),
+        // Whether the worker can authenticate AS this agent at all.
+        // Without it a model is configured but nothing can run it, and
+        // the portal must be able to say which half is missing.
+        "klient_lagret": regnmed_db::agentllm::har_klienthemmelighet(
+            &state.pool, integration_id).await?,
         "oppsett": oppsett.filter(|o| o.aktiv).map(|o| json!({
             "leverandor": o.leverandor,
             "base_url": o.base_url,
@@ -268,6 +278,19 @@ pub async fn sett_llm(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    if let Some(hemmelighet) = request.klient_hemmelighet.as_deref().map(str::trim)
+        && !hemmelighet.is_empty()
+    {
+        regnmed_db::agentllm::sett_klienthemmelighet(
+            &state.pool,
+            nokkel,
+            company_id,
+            integration_id,
+            hemmelighet,
+        )
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    }
     Ok(Json(json!({ "leverandor": request.leverandor })))
 }
 

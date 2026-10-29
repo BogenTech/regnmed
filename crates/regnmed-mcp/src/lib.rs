@@ -98,10 +98,20 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
-        Ok(match self.utfor(verktoy, args).await {
-            Ok(tekst) => tekstsvar(&tekst, false),
-            Err(feil) => tekstsvar(&format!("{feil:#}"), true),
-        })
+        let (tekst, feilet) = self.utfor_verktoy(verktoy, args).await;
+        Ok(tekstsvar(&tekst, feilet))
+    }
+
+    /// Runs a tool and returns its text plus whether it failed. Public
+    /// because the hosted agent worker (docs/agent.md §8.3) executes the
+    /// same tools over HTTP instead of over stdio: the transport differs,
+    /// the dispatch must not, or the two rails would drift apart in
+    /// exactly the place where that is hardest to notice.
+    pub async fn utfor_verktoy(&self, v: &Verktoy, args: Map<String, Value>) -> (String, bool) {
+        match self.utfor(v, args).await {
+            Ok(tekst) => (tekst, false),
+            Err(feil) => (format!("{feil:#}"), true),
+        }
     }
 
     async fn utfor(&self, v: &Verktoy, mut args: Map<String, Value>) -> Result<String> {

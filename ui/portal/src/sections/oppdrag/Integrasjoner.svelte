@@ -137,6 +137,16 @@
           standard: "",
           hjelp: "Lagres kryptert og vises aldri igjen.",
         },
+        {
+          navn: "klient_hemmelighet",
+          etikett: "Klienthemmelighet fra regnid",
+          type: "password",
+          standard: "",
+          valgfri: true,
+          hjelp:
+            "Trengs for at agenten skal kunne arbeide selv — den logger inn som seg selv, " +
+            "med samme klient som en agent på din egen maskin. Tom lar den som er lagret stå.",
+        },
       ],
       {
         melding:
