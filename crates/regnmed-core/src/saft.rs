@@ -517,7 +517,7 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                     x.open(tax_side);
                     x.leaf(
                         "Amount",
-                        &amount(crate::mva::vat_of_base(line.amount_ore, bp)),
+                        &amount(crate::vat::vat_of_base(line.amount_ore, bp)),
                     );
                     x.close(tax_side);
                     x.close("TaxInformation");

@@ -8,7 +8,7 @@
 use chrono::NaiveDate;
 
 use crate::kid::check_digit_mod10;
-use crate::mva::vat_of_base;
+use crate::vat::vat_of_base;
 use crate::voucher::{EntryDraft, VoucherDraft};
 use crate::{LedgerError, Ore};
 

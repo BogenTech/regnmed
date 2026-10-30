@@ -227,6 +227,25 @@ literal, so a moved file breaks it, and the wire check caught
 `merk_utsendelse` and `frist_date` leaving two request structs (now
 pinned).
 
+`mva`->`vat` and `mvamelding`->`vat_return` moved next (modules in
+core, db and gov; `Termin`->`vat::Period`,
+`Terminordning`->`PeriodScheme`, `SpesLine`->`SpecLine`,
+`avgift`->`tax`, `frist`->`deadline`). Two passes again, because
+`termin` also appears in `accrual`, `avgift` is
+`arbeidsgiveravgift` in `lonn`, and `frist` is a deadline in
+`purring`, `agent_task` and `subscription`.
+
+**A clap enum variant IS a CLI command name.** Renaming `MvaReport`
+and `MvaMelding` silently turned `regnmed mva-report` and
+`regnmed mva-melding` into `vat-report`/`vat-return`, and the field
+`termin` turned `--termin` into `--period`. Nothing in `deploy/`,
+`scripts/` or CI calls them, but `docs/` documents them and an
+operator types them. The surface is therefore PINNED the same way the
+JSON is -- `#[command(name = "mva-report")]`, `#[arg(long = "termin")]`
+-- so the ops interface did not move; translating it is a separate,
+user-facing decision. Verify with `regnmed mva-melding --help`, not by
+reading the enum.
+
 **Still Norwegian**, deliberately: the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),

@@ -164,8 +164,9 @@ enum Command {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
-    /// Mva-spesifikasjon: grunnlag and computed avgift per standard code
-    MvaReport {
+    /// The mva-spesifikasjon: basis and computed tax per standard code
+    #[command(name = "mva-report")]
+    VatReport {
         /// Company id (or use --orgnr)
         #[arg(long, conflicts_with = "orgnr")]
         company: Option<Uuid>,
@@ -175,25 +176,26 @@ enum Command {
         /// Year to report
         #[arg(long)]
         year: i32,
-        /// Termin 1-6 (two-month period); whole year when omitted
-        #[arg(long)]
-        termin: Option<u8>,
+        /// VAT period 1-6 (two months); whole year when omitted
+        #[arg(long = "termin")]
+        period: Option<u8>,
     },
-    /// Generate the mva-melding XML for a termin; optionally validate it
-    /// against Skatteetaten's API (requires Maskinporten env, see docs/gov.md)
-    MvaMelding {
+    /// Generate the mva-melding XML for a VAT period; optionally validate
+    /// it against Skatteetaten's API (Maskinporten env, see docs/gov.md)
+    #[command(name = "mva-melding")]
+    VatReturn {
         /// Company id (or use --orgnr)
         #[arg(long, conflicts_with = "orgnr")]
         company: Option<Uuid>,
         /// Organization number of the company
         #[arg(long)]
         orgnr: Option<String>,
-        /// Year of the termin
+        /// Year of the VAT period
         #[arg(long)]
         year: i32,
-        /// Termin 1-6 (two-month period)
-        #[arg(long)]
-        termin: u8,
+        /// VAT period 1-6 (two months)
+        #[arg(long = "termin")]
+        period: u8,
         /// Output file; "-" writes to stdout
         #[arg(long)]
         out: Option<std::path::PathBuf>,
@@ -740,20 +742,20 @@ async fn main() -> Result<()> {
             contact,
             out,
         } => saft_export(&pool, company, orgnr, year, from, to, &contact, out).await?,
-        Command::MvaReport {
+        Command::VatReport {
             company,
             orgnr,
             year,
-            termin,
-        } => mva_report(&pool, company, orgnr, year, termin).await?,
-        Command::MvaMelding {
+            period,
+        } => vat_report(&pool, company, orgnr, year, period).await?,
+        Command::VatReturn {
             company,
             orgnr,
             year,
-            termin,
+            period,
             out,
             validate,
-        } => mva_melding(&pool, company, orgnr, year, termin, out, validate).await?,
+        } => vat_return(&pool, company, orgnr, year, period, out, validate).await?,
     }
     Ok(())
 }
@@ -789,26 +791,26 @@ async fn anchor(pool: &sqlx::PgPool) -> Result<()> {
     Ok(())
 }
 
-async fn mva_melding(
+async fn vat_return(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
     orgnr: Option<String>,
     year: i32,
-    termin: u8,
+    period: u8,
     out: Option<std::path::PathBuf>,
     validate: bool,
 ) -> Result<()> {
     let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
-    let ordning = regnmed_db::terminordning_on(
+    let ordning = regnmed_db::period_scheme_on(
         pool,
         company_id,
         chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("valid year")?,
     )
     .await?;
-    let termin = ordning.ny_periode(year, termin).with_context(|| {
+    let period = ordning.new_period(year, period).with_context(|| {
         format!(
             "--termin must be 1-{} under ordningen {}",
-            ordning.antall_perioder(),
+            ordning.period_count(),
             ordning.as_str()
         )
     })?;
@@ -818,24 +820,24 @@ async fn mva_melding(
         .fetch_one(pool)
         .await?;
     let spes =
-        regnmed_db::mva_spesifikasjon(pool, company_id, ordning.start(termin), ordning.end(termin))
+        regnmed_db::vat_specification(pool, company_id, ordning.start(period), ordning.end(period))
             .await?;
     anyhow::ensure!(
         !spes.is_empty(),
         "no VAT postings in {} — nothing to report",
-        ordning.label(termin)
+        ordning.label(period)
     );
 
-    let referanse = format!("regnmed-{}-{}-{}", orgnr, termin.year, termin.number);
-    let melding = regnmed_core::mvamelding::build(
+    let referanse = format!("regnmed-{}-{}-{}", orgnr, period.year, period.number);
+    let melding = regnmed_core::vat_return::build(
         &orgnr,
-        termin,
+        period,
         ordning,
         &referanse,
         env!("CARGO_PKG_VERSION"),
         &spes,
     );
-    let xml = regnmed_core::mvamelding::render(&melding);
+    let xml = regnmed_core::vat_return::render(&melding);
 
     match out.as_deref() {
         Some(path) if path == std::path::Path::new("-") => {
@@ -846,7 +848,7 @@ async fn mva_melding(
             let path = maybe_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
                 format!(
                     "mva-melding_{}_{}-termin{}.xml",
-                    orgnr, termin.year, termin.number
+                    orgnr, period.year, period.number
                 )
                 .into()
             });
@@ -863,7 +865,7 @@ async fn mva_melding(
     if validate {
         let config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
         let tokens = regnmed_gov::maskinporten::TokenProvider::new(config);
-        let client = regnmed_gov::mvamelding::MvaMeldingClient::from_env();
+        let client = regnmed_gov::vat_return::VatReturnClient::from_env();
         let outcome = client.validate(&tokens, &xml).await?;
         if outcome.valid {
             println!("Skatteetaten: melding validert uten avvik");
@@ -878,28 +880,28 @@ async fn mva_melding(
     Ok(())
 }
 
-async fn mva_report(
+async fn vat_report(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
     orgnr: Option<String>,
     year: i32,
-    termin: Option<u8>,
+    period: Option<u8>,
 ) -> Result<()> {
-    use regnmed_core::mva::{Direction, direction};
+    use regnmed_core::vat::{Direction, direction};
 
     let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
-    let ordning = regnmed_db::terminordning_on(
+    let ordning = regnmed_db::period_scheme_on(
         pool,
         company_id,
         chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,
     )
     .await?;
-    let (start, end, label) = match termin {
+    let (start, end, label) = match period {
         Some(n) => {
-            let t = ordning.ny_periode(year, n).with_context(|| {
+            let t = ordning.new_period(year, n).with_context(|| {
                 format!(
                     "--termin must be 1-{} under ordningen {}",
-                    ordning.antall_perioder(),
+                    ordning.period_count(),
                     ordning.as_str()
                 )
             })?;
@@ -912,7 +914,7 @@ async fn mva_report(
         ),
     };
 
-    let lines = regnmed_db::mva_spesifikasjon(pool, company_id, start, end).await?;
+    let lines = regnmed_db::vat_specification(pool, company_id, start, end).await?;
     if lines.is_empty() {
         println!("ingen mva-posteringer i perioden {start} – {end}");
         return Ok(());
@@ -929,7 +931,7 @@ async fn mva_report(
             "{:<5} {:>15} {:>15} {:>7}%  {}",
             line.code,
             Ore(line.grunnlag_ore).to_string(),
-            Ore(line.avgift_ore).to_string(),
+            Ore(line.tax_ore).to_string(),
             fmt_bp(line.rate_bp),
             line.description
         );
@@ -940,12 +942,12 @@ async fn mva_report(
     let utgaende: i64 = lines
         .iter()
         .filter(|l| direction(&l.code) == Direction::Utgaende)
-        .map(|l| -l.avgift_ore)
+        .map(|l| -l.tax_ore)
         .sum();
     let inngaende: i64 = lines
         .iter()
         .filter(|l| direction(&l.code) == Direction::Inngaende)
-        .map(|l| l.avgift_ore)
+        .map(|l| l.tax_ore)
         .sum();
     let netto = utgaende - inngaende;
 

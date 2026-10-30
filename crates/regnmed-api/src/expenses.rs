@@ -173,9 +173,11 @@ pub struct ApproveRequest {
     #[serde(rename = "konto")]
     account: Option<String>,
     /// SAF-T code for inngående mva on utlegg (e.g. "1").
-    mva_kode: Option<String>,
+    #[serde(rename = "mva_kode")]
+    vat_code: Option<String>,
     /// Inngående mva-konto, default 2710.
-    mva_konto: Option<String>,
+    #[serde(rename = "mva_konto")]
+    vat_account: Option<String>,
     /// Mellomregning account, default 2910 (owed to employees).
     #[serde(rename = "motkonto")]
     contra_account: Option<String>,
@@ -206,8 +208,8 @@ pub async fn approve(
         company_id,
         expense_id,
         request.account.as_deref().unwrap_or(default_account),
-        request.mva_kode.as_deref(),
-        request.mva_konto.as_deref().unwrap_or("2710"),
+        request.vat_code.as_deref(),
+        request.vat_account.as_deref().unwrap_or("2710"),
         request.contra_account.as_deref().unwrap_or("2910"),
         decided_by,
         person.person_id,

@@ -53,7 +53,7 @@ pub async fn registry_preview(
         "navn": enhet.navn,
         "organisasjonsform": enhet.organisasjonsform.as_ref().map(|k| k.code.clone()),
         "naeringskode": enhet.naeringskode1.as_ref().map(|k| format!("{} {}", k.code, k.description)),
-        "mva_registrert": enhet.registrert_i_mvaregisteret,
+        "mva_registrert": enhet.registered_in_vat_register,
         "foretaksregistrert": enhet.registrert_i_foretaksregisteret,
         "adresse": enhet.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         "konkurs": enhet.konkurs,

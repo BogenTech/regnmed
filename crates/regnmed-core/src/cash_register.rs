@@ -12,7 +12,7 @@
 //! this module only splits and arranges.
 
 use crate::Ore;
-use crate::mva::split_gross;
+use crate::vat::split_gross;
 use crate::voucher::{EntryDraft, VoucherDraft};
 
 /// One line of the day's sales, as the register reports it: gross, on an
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn the_settlement_balances_and_splits_mva_per_rate() {
+    fn the_settlement_balances_and_splits_vat_per_rate() {
         let v = build_settlement(&day()).unwrap();
         assert_eq!(
             v.entries.iter().map(|e| e.amount.0).sum::<i64>(),

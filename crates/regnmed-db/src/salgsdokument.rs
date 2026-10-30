@@ -9,12 +9,12 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::fakturapdf::{Dokumenttype, FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::compute;
-use regnmed_core::mva::rate_on;
+use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::invoice::{InvoiceDraft, InvoiceLineDraft, IssuedInvoice, create_invoice_in};
-use crate::mva::load_vat_rates;
+use crate::vat::load_vat_rates;
 
 pub use crate::invoice_template::TemplateLineDraft as SalgsLineDraft;
 
@@ -87,9 +87,9 @@ pub async fn create_salgsdokument(
     if lines.iter().any(|l| {
         l.vat_code
             .as_deref()
-            .is_some_and(crate::settings::krever_mva_registrering)
+            .is_some_and(crate::settings::requires_vat_registration)
     }) {
-        crate::settings::krev_mva_registrert(pool, company_id, doc_date).await?;
+        crate::settings::require_vat_registered(pool, company_id, doc_date).await?;
     }
     let party_id: Uuid = sqlx::query_scalar(
         "select id from party where company_id = $1 and party_no = $2 and kind = 'kunde'",
@@ -158,11 +158,11 @@ pub async fn update_tilbud(
         l.iter().any(|line| {
             line.vat_code
                 .as_deref()
-                .is_some_and(crate::settings::krever_mva_registrering)
+                .is_some_and(crate::settings::requires_vat_registration)
         })
     }) {
         let date = doc_date.unwrap_or(row.get::<NaiveDate, _>("doc_date"));
-        crate::settings::krev_mva_registrert(pool, company_id, date).await?;
+        crate::settings::require_vat_registered(pool, company_id, date).await?;
     }
     sqlx::query(
         "update salgsdokument set doc_date = coalesce($3, doc_date), updated_at = now()
@@ -491,9 +491,9 @@ pub async fn salgsdokument_pdf(
             beskrivelse: line.description.clone(),
             antall_milli: line.quantity_milli,
             enhetspris_ore: line.unit_price_ore,
-            mva_sats_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
+            vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
             netto_ore: amounts.net_ore,
-            mva_ore: amounts.vat_ore,
+            vat_ore: amounts.vat_ore,
         });
     }
 
@@ -514,7 +514,7 @@ pub async fn salgsdokument_pdf(
         selger_navn: doc.get("company_name"),
         selger_orgnr: doc.get("orgnr"),
         selger_adresse: doc.get("address"),
-        selger_mva_registrert: reg.mva_registrert,
+        seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: None,
         kjoper_navn: doc.get("party_name"),

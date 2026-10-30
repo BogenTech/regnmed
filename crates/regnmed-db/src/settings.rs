@@ -14,7 +14,7 @@ use uuid::Uuid;
 /// never derived from the document being rendered.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Registrering {
-    pub mva_registrert: bool,
+    pub vat_registered: bool,
     pub foretaksregistrert: bool,
 }
 
@@ -39,7 +39,7 @@ pub async fn registrering_on(
     .fetch_optional(pool)
     .await?;
     Ok(row.map_or(Registrering::default(), |r| Registrering {
-        mva_registrert: r.get("mva_registrert"),
+        vat_registered: r.get("mva_registrert"),
         foretaksregistrert: r.get("foretaksregistrert"),
     }))
 }
@@ -55,11 +55,11 @@ pub async fn registrering_on(
 /// claim an unregistered company cannot make even at rate 0: the
 /// hovedbok and the SAF-T would say something untrue about what
 /// happened.
-const UTENFOR_MVA: [&str; 3] = ["0", "6", "7"];
+const OUTSIDE_VAT: [&str; 3] = ["0", "6", "7"];
 
 /// Whether this code requires the company to be mva-registered.
-pub fn krever_mva_registrering(code: &str) -> bool {
-    !UTENFOR_MVA.contains(&code)
+pub fn requires_vat_registration(code: &str) -> bool {
+    !OUTSIDE_VAT.contains(&code)
 }
 
 /// Refuses a VAT code the company has no right to use on `dato`.
@@ -77,10 +77,14 @@ pub fn krever_mva_registrering(code: &str) -> bool {
 /// Callers that DERIVE a code instead of taking one from a person use
 /// code 7 and rate 0 rather than this guard; see
 /// `abonnement::utgaende_mva`.
-pub async fn krev_mva_registrert(pool: &PgPool, company_id: Uuid, date: NaiveDate) -> Result<()> {
+pub async fn require_vat_registered(
+    pool: &PgPool,
+    company_id: Uuid,
+    date: NaiveDate,
+) -> Result<()> {
     let reg = registrering_on(pool, company_id, date).await?;
     ensure!(
-        reg.mva_registrert,
+        reg.vat_registered,
         "selskapet var ikke mva-registrert {date} og kan ikke bruke mva-koder — \
          fjern mva-koden, eller oppdater registreringsstatusen under \
          firmaopplysninger hvis selskapet faktisk er registrert"
@@ -114,7 +118,7 @@ pub async fn record_registrering(
     .bind(Uuid::now_v7())
     .bind(company_id)
     .bind(valid_from)
-    .bind(reg.mva_registrert)
+    .bind(reg.vat_registered)
     .bind(reg.foretaksregistrert)
     .bind(kilde)
     .bind(notat)
@@ -144,7 +148,7 @@ pub async fn registrering_history(
             (
                 r.get("valid_from"),
                 Registrering {
-                    mva_registrert: r.get("mva_registrert"),
+                    vat_registered: r.get("mva_registrert"),
                     foretaksregistrert: r.get("foretaksregistrert"),
                 },
                 r.get("kilde"),

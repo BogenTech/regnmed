@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 
 use crate::maskinporten::TokenProvider;
 
-pub struct MvaMeldingClient {
+pub struct VatReturnClient {
     /// Full URL of the validation endpoint.
     pub validation_url: String,
     http: reqwest::Client,
@@ -41,7 +41,7 @@ pub struct ValidationOutcome {
     pub findings: Vec<String>,
 }
 
-impl MvaMeldingClient {
+impl VatReturnClient {
     pub fn new(validation_url: impl Into<String>) -> Self {
         Self {
             validation_url: validation_url.into(),

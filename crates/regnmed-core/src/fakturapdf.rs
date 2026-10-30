@@ -23,9 +23,9 @@ pub struct PdfLinje {
     pub antall_milli: i64,
     pub enhetspris_ore: i64,
     /// Basis points; None for lines without an mva code.
-    pub mva_sats_bp: Option<i64>,
+    pub vat_rate_bp: Option<i64>,
     pub netto_ore: i64,
-    pub mva_ore: i64,
+    pub vat_ore: i64,
 }
 
 /// The document kinds this layout renders. Faktura and Kreditnota are
@@ -77,7 +77,7 @@ pub struct FakturaPdfInput {
     pub selger_navn: String,
     pub selger_orgnr: String,
     pub selger_adresse: Option<String>,
-    pub selger_mva_registrert: bool,
+    pub seller_vat_registered: bool,
     /// "Foretaksregisteret" is added for entities registered there (AS/ASA,
     /// foretaksregisterloven §10-2).
     pub selger_foretaksregistrert: bool,
@@ -176,7 +176,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         y += 12.0;
     }
     let mut orglinje = format!("Org.nr {}", orgnr_display(&input.selger_orgnr));
-    if input.selger_mva_registrert {
+    if input.seller_vat_registered {
         orglinje.push_str(" MVA");
     }
     pdf.text(MARGIN, y, 9.0, Font::Regular, &orglinje);
@@ -264,14 +264,14 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     // Line table. Columns: description | antall | pris | mva | beløp.
     let col_antall = 330.0;
     let col_pris = 405.0;
-    let col_mva = 460.0;
+    let col_vat = 460.0;
     let table_top = 210.0;
     let mut ly = table_top;
     let header = |pdf: &mut Pdf, y: f32| {
         pdf.text(MARGIN, y, 8.0, Font::Bold, "Beskrivelse");
         pdf.text_right(col_antall, y, 8.0, Font::Bold, "Antall");
         pdf.text_right(col_pris, y, 8.0, Font::Bold, "Pris");
-        pdf.text_right(col_mva, y, 8.0, Font::Bold, "Mva");
+        pdf.text_right(col_vat, y, 8.0, Font::Bold, "Mva");
         pdf.text_right(RIGHT, y, 8.0, Font::Bold, "Beløp");
         pdf.rule(MARGIN, RIGHT, y + 5.0, 0.7);
     };
@@ -293,8 +293,8 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             &antall(linje.antall_milli),
         );
         pdf.text_right(col_pris, ly, 9.0, Font::Regular, &kr(linje.enhetspris_ore));
-        if let Some(bp) = linje.mva_sats_bp {
-            pdf.text_right(col_mva, ly, 9.0, Font::Regular, &prosent(bp));
+        if let Some(bp) = linje.vat_rate_bp {
+            pdf.text_right(col_vat, ly, 9.0, Font::Regular, &prosent(bp));
         }
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(linje.netto_ore));
         ly += 15.0;
@@ -304,26 +304,26 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
 
     // Totals + mva spesifisert i NOK per sats (§5-1-1 nr. 6).
     let netto: i64 = input.linjer.iter().map(|l| l.netto_ore).sum();
-    let mva: i64 = input.linjer.iter().map(|l| l.mva_ore).sum();
-    let brutto = netto + mva;
+    let vat: i64 = input.linjer.iter().map(|l| l.vat_ore).sum();
+    let brutto = netto + vat;
     pdf.text_right(RIGHT - 110.0, ly, 9.0, Font::Regular, "Netto");
     pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(netto));
     ly += 14.0;
-    let mut satser: Vec<i64> = input.linjer.iter().filter_map(|l| l.mva_sats_bp).collect();
+    let mut satser: Vec<i64> = input.linjer.iter().filter_map(|l| l.vat_rate_bp).collect();
     satser.sort_unstable();
     satser.dedup();
     for sats in satser {
         let grunnlag: i64 = input
             .linjer
             .iter()
-            .filter(|l| l.mva_sats_bp == Some(sats))
+            .filter(|l| l.vat_rate_bp == Some(sats))
             .map(|l| l.netto_ore)
             .sum();
         let avgift: i64 = input
             .linjer
             .iter()
-            .filter(|l| l.mva_sats_bp == Some(sats))
-            .map(|l| l.mva_ore)
+            .filter(|l| l.vat_rate_bp == Some(sats))
+            .map(|l| l.vat_ore)
             .sum();
         pdf.text_right(
             RIGHT - 110.0,
@@ -436,7 +436,7 @@ mod tests {
             selger_navn: "Demo & Sønn AS".into(),
             selger_orgnr: "999888777".into(),
             selger_adresse: Some("Storgata 1, 0155 Oslo".into()),
-            selger_mva_registrert: true,
+            seller_vat_registered: true,
             selger_foretaksregistrert: true,
             seller_account_number: Some("1234.56.78903".into()),
             kjoper_navn: "Kunde & Co AS".into(),
@@ -455,17 +455,17 @@ mod tests {
                     beskrivelse: "Konsulentbistand".into(),
                     antall_milli: 2500,
                     enhetspris_ore: 4_000_00,
-                    mva_sats_bp: Some(2500),
+                    vat_rate_bp: Some(2500),
                     netto_ore: 10_000_00,
-                    mva_ore: 2_500_00,
+                    vat_ore: 2_500_00,
                 },
                 PdfLinje {
                     beskrivelse: "Bøker".into(),
                     antall_milli: 1000,
                     enhetspris_ore: 500_00,
-                    mva_sats_bp: None,
+                    vat_rate_bp: None,
                     netto_ore: 500_00,
-                    mva_ore: 0,
+                    vat_ore: 0,
                 },
             ],
             currency: None,
@@ -531,7 +531,7 @@ mod tests {
         for linje in &mut i.linjer {
             linje.antall_milli = -linje.antall_milli;
             linje.netto_ore = -linje.netto_ore;
-            linje.mva_ore = -linje.mva_ore;
+            linje.vat_ore = -linje.vat_ore;
         }
         let bytes = render_faktura_pdf(&i);
         assert!(find(&bytes, b"KREDITNOTA").is_some());

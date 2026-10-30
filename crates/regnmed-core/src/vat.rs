@@ -6,26 +6,26 @@
 
 use chrono::{Datelike, NaiveDate};
 
-/// A standard two-month mva-termin (1 = januar–februar … 6 = november–
+/// A standard two-month VAT period (1 = januar–februar … 6 = november–
 /// desember). Årstermin and other special schemes are mva-melding
 /// concerns, not ledger concerns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Termin {
+pub struct Period {
     pub year: i32,
     /// 1–6.
     pub number: u8,
 }
 
-impl Termin {
-    pub fn of(date: NaiveDate) -> Termin {
-        Termin {
+impl Period {
+    pub fn of(date: NaiveDate) -> Period {
+        Period {
             year: date.year(),
             number: ((date.month() + 1) / 2) as u8,
         }
     }
 
-    pub fn new(year: i32, number: u8) -> Option<Termin> {
-        (1..=6).contains(&number).then_some(Termin { year, number })
+    pub fn new(year: i32, number: u8) -> Option<Period> {
+        (1..=6).contains(&number).then_some(Period { year, number })
     }
 
     pub fn start(self) -> NaiveDate {
@@ -33,7 +33,7 @@ impl Termin {
             .expect("termin start is a valid date")
     }
 
-    /// Last day of the termin's second month.
+    /// Last day of the period's second month.
     pub fn end(self) -> NaiveDate {
         let next_month_start = if self.number == 6 {
             NaiveDate::from_ymd_opt(self.year + 1, 1, 1)
@@ -44,7 +44,7 @@ impl Termin {
     }
 }
 
-impl std::fmt::Display for Termin {
+impl std::fmt::Display for Period {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}. termin {}", self.number, self.year)
     }
@@ -56,77 +56,77 @@ impl std::fmt::Display for Termin {
 /// Skatteetaten has GRANTED is recorded per company with valid_from —
 /// eligibility is never auto-detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Terminordning {
+pub enum PeriodScheme {
     ToManeder,
     Arlig,
     Primaernaering,
 }
 
-impl Terminordning {
-    pub fn parse(s: &str) -> Option<Terminordning> {
+impl PeriodScheme {
+    pub fn parse(s: &str) -> Option<PeriodScheme> {
         match s {
-            "to-maneder" => Some(Terminordning::ToManeder),
-            "arlig" => Some(Terminordning::Arlig),
-            "primaernaering" => Some(Terminordning::Primaernaering),
+            "to-maneder" => Some(PeriodScheme::ToManeder),
+            "arlig" => Some(PeriodScheme::Arlig),
+            "primaernaering" => Some(PeriodScheme::Primaernaering),
             _ => None,
         }
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Terminordning::ToManeder => "to-maneder",
-            Terminordning::Arlig => "arlig",
-            Terminordning::Primaernaering => "primaernaering",
+            PeriodScheme::ToManeder => "to-maneder",
+            PeriodScheme::Arlig => "arlig",
+            PeriodScheme::Primaernaering => "primaernaering",
         }
     }
 
     /// Periods per year: 6 two-month terminer, otherwise a single årstermin.
-    pub fn antall_perioder(self) -> u8 {
+    pub fn period_count(self) -> u8 {
         match self {
-            Terminordning::ToManeder => 6,
+            PeriodScheme::ToManeder => 6,
             _ => 1,
         }
     }
 
-    pub fn periode_of(self, date: NaiveDate) -> Termin {
+    pub fn period_of(self, date: NaiveDate) -> Period {
         match self {
-            Terminordning::ToManeder => Termin::of(date),
-            _ => Termin {
+            PeriodScheme::ToManeder => Period::of(date),
+            _ => Period {
                 year: date.year(),
                 number: 1,
             },
         }
     }
 
-    pub fn ny_periode(self, year: i32, number: u8) -> Option<Termin> {
-        (1..=self.antall_perioder())
+    pub fn new_period(self, year: i32, number: u8) -> Option<Period> {
+        (1..=self.period_count())
             .contains(&number)
-            .then_some(Termin { year, number })
+            .then_some(Period { year, number })
     }
 
-    pub fn start(self, t: Termin) -> NaiveDate {
+    pub fn start(self, t: Period) -> NaiveDate {
         match self {
-            Terminordning::ToManeder => t.start(),
+            PeriodScheme::ToManeder => t.start(),
             _ => NaiveDate::from_ymd_opt(t.year, 1, 1).expect("valid date"),
         }
     }
 
-    pub fn end(self, t: Termin) -> NaiveDate {
+    pub fn end(self, t: Period) -> NaiveDate {
         match self {
-            Terminordning::ToManeder => t.end(),
+            PeriodScheme::ToManeder => t.end(),
             _ => NaiveDate::from_ymd_opt(t.year, 12, 31).expect("valid date"),
         }
     }
 
     /// The filing deadline for the period (skatteforvaltningsforskriften
     /// §8-3): two-month = 1 month and 10 days after the end of the
-    /// termin, with the special rule of 31 August for the 3rd termin;
+    /// period, with the special rule of 31 August for the 3rd period;
     /// årstermin = 10 March the following year; primærnæring = 10 April
     /// the following year.
-    pub fn frist(self, t: Termin) -> NaiveDate {
+    pub fn deadline(self, t: Period) -> NaiveDate {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).expect("valid frist");
         match self {
-            Terminordning::ToManeder => match t.number {
+            PeriodScheme::ToManeder => match t.number {
                 1 => date(t.year, 4, 10),
                 2 => date(t.year, 6, 10),
                 3 => date(t.year, 8, 31),
@@ -134,17 +134,17 @@ impl Terminordning {
                 5 => date(t.year, 12, 10),
                 _ => date(t.year + 1, 2, 10),
             },
-            Terminordning::Arlig => date(t.year + 1, 3, 10),
-            Terminordning::Primaernaering => date(t.year + 1, 4, 10),
+            PeriodScheme::Arlig => date(t.year + 1, 3, 10),
+            PeriodScheme::Primaernaering => date(t.year + 1, 4, 10),
         }
     }
 
     /// Human label for the periode under this ordning.
-    pub fn label(self, t: Termin) -> String {
+    pub fn label(self, t: Period) -> String {
         match self {
-            Terminordning::ToManeder => t.to_string(),
-            Terminordning::Arlig => format!("Årstermin {}", t.year),
-            Terminordning::Primaernaering => format!("Årstermin {} (primærnæring)", t.year),
+            PeriodScheme::ToManeder => t.to_string(),
+            PeriodScheme::Arlig => format!("Årstermin {}", t.year),
+            PeriodScheme::Primaernaering => format!("Årstermin {} (primærnæring)", t.year),
         }
     }
 }
@@ -185,19 +185,19 @@ pub fn split_gross(gross_ore: i64, rate_bp: i64) -> (i64, i64) {
     (base, gross_ore - base)
 }
 
-/// One line of the mva-spesifikasjon: grunnlag and beregnet avgift for a
+/// One line of the mva-spesifikasjon: basis and computed tax for a
 /// standard code at one rate, in ledger signs (positive = debit). Built
 /// by regnmed-db from the ledger; consumed by reports and the
 /// mva-melding builder.
 #[derive(Debug, Clone)]
-pub struct SpesLine {
+pub struct SpecLine {
     pub code: String,
     pub description: String,
     pub rate_bp: i64,
     pub grunnlag_ore: i64,
     /// `vat_of_base(grunnlag, rate)` — beregnet, not posted; comparing it
     /// against the posted VAT accounts is the accountant's control.
-    pub avgift_ore: i64,
+    pub tax_ore: i64,
 }
 
 /// How a standard code participates in the mva-oppgjør.
@@ -271,7 +271,7 @@ pub fn direction(code: &str) -> Direction {
 ///   part of what the thing cost, not a separate expense.
 ///
 /// Returns empty for every other code, so callers can apply it blindly.
-pub fn omvendt_entries(
+pub fn reverse_charge_entries(
     basis: &crate::voucher::EntryDraft,
     rate_bp: i64,
     output_account: &str,
@@ -288,8 +288,8 @@ pub fn omvendt_entries(
         return Vec::new();
     }
     // Sign-preserving: a reversing voucher reverses the tax with it.
-    let avgift = vat_of_base(basis.amount.0, rate_bp);
-    if avgift == 0 {
+    let tax = vat_of_base(basis.amount.0, rate_bp);
+    if tax == 0 {
         return Vec::new();
     }
     let entry = |account: &str, amount: i64, tekst: &str, dims: bool| crate::voucher::EntryDraft {
@@ -307,14 +307,14 @@ pub fn omvendt_entries(
     };
     let mut ut = vec![entry(
         output_account,
-        -avgift,
+        -tax,
         "Beregnet mva, omvendt avgiftsplikt/innførsel",
         false,
     )];
     match retning {
         Direction::OmvendtMedFradrag => ut.push(entry(
             deduction_account,
-            avgift,
+            tax,
             "Fradrag for beregnet mva",
             false,
         )),
@@ -322,7 +322,7 @@ pub fn omvendt_entries(
         // and therefore under the same avdeling/prosjekt as the basis.
         _ => ut.push(entry(
             &basis.account_number,
-            avgift,
+            tax,
             "Ikke-fradragsberettiget beregnet mva",
             true,
         )),
@@ -340,20 +340,20 @@ mod tests {
 
     #[test]
     fn termin_boundaries() {
-        assert_eq!(Termin::of(date(2026, 1, 1)).number, 1);
-        assert_eq!(Termin::of(date(2026, 2, 28)).number, 1);
-        assert_eq!(Termin::of(date(2026, 3, 1)).number, 2);
-        assert_eq!(Termin::of(date(2026, 12, 31)).number, 6);
+        assert_eq!(Period::of(date(2026, 1, 1)).number, 1);
+        assert_eq!(Period::of(date(2026, 2, 28)).number, 1);
+        assert_eq!(Period::of(date(2026, 3, 1)).number, 2);
+        assert_eq!(Period::of(date(2026, 12, 31)).number, 6);
 
-        let t1 = Termin::new(2024, 1).unwrap();
+        let t1 = Period::new(2024, 1).unwrap();
         assert_eq!(t1.start(), date(2024, 1, 1));
         assert_eq!(t1.end(), date(2024, 2, 29), "leap year");
-        let t6 = Termin::new(2026, 6).unwrap();
+        let t6 = Period::new(2026, 6).unwrap();
         assert_eq!(t6.start(), date(2026, 11, 1));
         assert_eq!(t6.end(), date(2026, 12, 31));
 
-        assert!(Termin::new(2026, 0).is_none());
-        assert!(Termin::new(2026, 7).is_none());
+        assert!(Period::new(2026, 0).is_none());
+        assert!(Period::new(2026, 7).is_none());
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
         };
 
         // Full deduction right: liability and deduction, both visible.
-        let med = omvendt_entries(&basis("86"), 2500, "2701", "2711");
+        let med = reverse_charge_entries(&basis("86"), 2500, "2701", "2711");
         assert_eq!(med.len(), 2);
         assert_eq!(med[0].account_number, "2701");
         assert_eq!(med[0].amount.0, -25_000_00, "beregnet utgående avgift");
@@ -456,7 +456,7 @@ mod tests {
 
         // No deduction right: the tax is part of what it cost, so it
         // lands on the basis account — and carries its prosjekt.
-        let uten = omvendt_entries(&basis("87"), 2500, "2701", "2711");
+        let uten = reverse_charge_entries(&basis("87"), 2500, "2701", "2711");
         assert_eq!(uten[1].account_number, "6800");
         assert_eq!(uten[1].project.as_deref(), Some("P1"));
         assert_eq!(uten.iter().map(|e| e.amount.0).sum::<i64>(), 0);
@@ -464,29 +464,29 @@ mod tests {
         // A reversing voucher reverses the tax with it.
         let mut kreditert = basis("86");
         kreditert.amount = crate::Ore(-100_000_00);
-        let rev = omvendt_entries(&kreditert, 2500, "2701", "2711");
+        let rev = reverse_charge_entries(&kreditert, 2500, "2701", "2711");
         assert_eq!(rev[0].amount.0, 25_000_00);
 
         // Everything else is untouched — callers apply this blindly.
-        assert!(omvendt_entries(&basis("1"), 2500, "2701", "2711").is_empty());
-        assert!(omvendt_entries(&basis("21"), 2500, "2701", "2711").is_empty());
+        assert!(reverse_charge_entries(&basis("1"), 2500, "2701", "2711").is_empty());
+        assert!(reverse_charge_entries(&basis("21"), 2500, "2701", "2711").is_empty());
     }
 
     #[test]
-    fn terminordning_periods_and_deadlines() {
+    fn period_scheme_periods_and_deadlines() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
-        let to = Terminordning::ToManeder;
-        assert_eq!(to.antall_perioder(), 6);
-        assert_eq!(to.periode_of(date(2026, 7, 25)).number, 4);
+        let to = PeriodScheme::ToManeder;
+        assert_eq!(to.period_count(), 6);
+        assert_eq!(to.period_of(date(2026, 7, 25)).number, 4);
         assert_eq!(
-            to.frist(Termin {
+            to.deadline(Period {
                 year: 2026,
                 number: 1
             }),
             date(2026, 4, 10)
         );
         assert_eq!(
-            to.frist(Termin {
+            to.deadline(Period {
                 year: 2026,
                 number: 3
             }),
@@ -494,31 +494,34 @@ mod tests {
             "saerregelen for 3. termin"
         );
         assert_eq!(
-            to.frist(Termin {
+            to.deadline(Period {
                 year: 2026,
                 number: 6
             }),
             date(2027, 2, 10)
         );
 
-        let ar = Terminordning::Arlig;
-        assert_eq!(ar.antall_perioder(), 1);
-        let periode = ar.periode_of(date(2026, 11, 3));
+        let ar = PeriodScheme::Arlig;
+        assert_eq!(ar.period_count(), 1);
+        let periode = ar.period_of(date(2026, 11, 3));
         assert_eq!(periode.number, 1);
         assert_eq!(ar.start(periode), date(2026, 1, 1));
         assert_eq!(ar.end(periode), date(2026, 12, 31));
-        assert_eq!(ar.frist(periode), date(2027, 3, 10));
+        assert_eq!(ar.deadline(periode), date(2027, 3, 10));
         assert_eq!(ar.label(periode), "\u{c5}rstermin 2026");
         assert!(
-            ar.ny_periode(2026, 2).is_none(),
+            ar.new_period(2026, 2).is_none(),
             "aarstermin har ingen 2. periode"
         );
 
-        let pn = Terminordning::Primaernaering;
-        assert_eq!(pn.frist(pn.periode_of(date(2026, 5, 1))), date(2027, 4, 10));
+        let pn = PeriodScheme::Primaernaering;
+        assert_eq!(
+            pn.deadline(pn.period_of(date(2026, 5, 1))),
+            date(2027, 4, 10)
+        );
 
-        assert_eq!(Terminordning::parse("arlig"), Some(Terminordning::Arlig));
-        assert_eq!(Terminordning::parse("kvartal"), None);
-        assert_eq!(Terminordning::Primaernaering.as_str(), "primaernaering");
+        assert_eq!(PeriodScheme::parse("arlig"), Some(PeriodScheme::Arlig));
+        assert_eq!(PeriodScheme::parse("kvartal"), None);
+        assert_eq!(PeriodScheme::Primaernaering.as_str(), "primaernaering");
     }
 }

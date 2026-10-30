@@ -38,7 +38,8 @@ pub struct DagsoppgjorRequest {
     z_nummer: String,
     salg: Vec<SalgLinje>,
     betaling: Vec<BetalingLinje>,
-    mva_konto: Option<String>,
+    #[serde(rename = "mva_konto")]
+    vat_account: Option<String>,
     /// The cash account and what was counted in it. Omitted = the till
     /// was not counted, and no difference voucher is posted — we do not
     /// infer that a missing count means it agreed.
@@ -64,7 +65,7 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
             .into_iter()
             .map(|b| (b.account, b.amount_ore))
             .collect(),
-        mva_konto: request.mva_konto.unwrap_or_else(|| "2700".into()),
+        vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
         cash_account: request.cash_account,
         opptalt_kontant_ore: request.opptalt_kontant_ore,
         difference_account: request.difference_account.unwrap_or_else(|| "7830".into()),

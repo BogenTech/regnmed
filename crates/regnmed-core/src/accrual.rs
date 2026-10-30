@@ -9,7 +9,7 @@
 //!
 //! **Periodisering moves cost and income, NEVER merverdiavgift.** The
 //! tax point follows the sales document (mval. §15-9): a year's rent
-//! paid up front is deductible in full in the termin the invoice belongs
+//! paid up front is deductible in full in the VAT period the invoice belongs
 //! to, however the cost is spread in the resultat. Spread the tax along
 //! with it and the mva-melding is wrong — silently wrong, because the
 //! resultat looks more correct than before. So the functions here take a

@@ -62,7 +62,7 @@ pub enum Rett {
 
     // Rapporter
     RapportLes,
-    MvaOrdningAdmin,
+    VatSchemeAdmin,
 
     // Faktura and sales
     FakturaLes,
@@ -175,7 +175,7 @@ static ALLE_RETTIGHETER: [Rett; 73] = [
     Rett::BilagBokfor,
     Rett::PeriodeLaas,
     Rett::RapportLes,
-    Rett::MvaOrdningAdmin,
+    Rett::VatSchemeAdmin,
     Rett::FakturaLes,
     Rett::FakturaSkriv,
     Rett::FakturaSend,
@@ -256,7 +256,7 @@ impl Rett {
             BilagBokfor => "BILAG_BOKFOR",
             PeriodeLaas => "PERIODE_LAAS",
             RapportLes => "RAPPORT_LES",
-            MvaOrdningAdmin => "MVA_ORDNING_ADMIN",
+            VatSchemeAdmin => "MVA_ORDNING_ADMIN",
             FakturaLes => "FAKTURA_LES",
             FakturaSkriv => "FAKTURA_SKRIV",
             FakturaSend => "FAKTURA_SEND",
@@ -373,7 +373,7 @@ impl Rett {
             VedleggSkriv => false,
 
             // Everything that carries the accounts forward — blocked.
-            BilagLastOpp | BilagBokfor | PeriodeLaas | MvaOrdningAdmin | FakturaSkriv
+            BilagLastOpp | BilagBokfor | PeriodeLaas | VatSchemeAdmin | FakturaSkriv
             | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv | ReskontroSkriv
             | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett | BetalingGodkjenn
             | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv | AnleggSkriv
@@ -420,7 +420,7 @@ impl Rett {
             BilagBokfor => "Bilag",
             PeriodeLaas => "Bilag",
             RapportLes => "Rapporter",
-            MvaOrdningAdmin => "Rapporter",
+            VatSchemeAdmin => "Rapporter",
             FakturaLes => "Faktura",
             FakturaSkriv => "Faktura",
             FakturaSend => "Faktura",
@@ -505,7 +505,7 @@ impl Rett {
             BilagBokfor => "Bokføre fra innboksen",
             PeriodeLaas => "Låse en periode",
             RapportLes => "Se regnskapsrapportene",
-            MvaOrdningAdmin => "Endre mva-terminordning",
+            VatSchemeAdmin => "Endre mva-terminordning",
             FakturaLes => "Se fakturaer",
             FakturaSkriv => "Utstede faktura og kreditnota",
             FakturaSend => "Sende faktura på e-post",
@@ -735,7 +735,7 @@ const BOKFORING_BUNT: &[Rett] = &[
 
 /// What admin adds: governing the company and who gets in.
 const ADMIN_BUNT: &[Rett] = &[
-    Rett::MvaOrdningAdmin,
+    Rett::VatSchemeAdmin,
     Rett::TimerSkrivAlle,
     Rett::TimerLaas,
     Rett::AttesteringAdmin,

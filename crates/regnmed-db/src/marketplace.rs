@@ -98,13 +98,13 @@ pub async fn onboard_company(
     // One row per registration change, with the register's OWN dates —
     // a company that entered Merverdiavgiftsregisteret in 2019 must not
     // carry the "MVA" note on a document dated 2018 (#81).
-    for (fra, mva, foretak) in &facts.registreringer {
+    for (fra, vat, foretak) in &facts.registreringer {
         crate::settings::record_registrering(
             pool,
             company_id,
             *fra,
             crate::settings::Registrering {
-                mva_registrert: *mva,
+                vat_registered: *vat,
                 foretaksregistrert: *foretak,
             },
             "brreg",

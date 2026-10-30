@@ -5,13 +5,13 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::fakturapdf::{Dokumenttype, FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::{InvoiceLineInput, build_voucher, compute, invoice_kid};
-use regnmed_core::mva::rate_on;
+use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::attachment::add_attachment_in;
 use crate::ledger::post_voucher_in;
-use crate::mva::load_vat_rates;
+use crate::vat::load_vat_rates;
 
 #[derive(Debug, Clone)]
 pub struct InvoiceLineDraft {
@@ -91,9 +91,9 @@ async fn resolve_lines(
     if lines.iter().any(|l| {
         l.vat_code
             .as_deref()
-            .is_some_and(crate::settings::krever_mva_registrering)
+            .is_some_and(crate::settings::requires_vat_registration)
     }) {
-        crate::settings::krev_mva_registrert(pool, company_id, invoice_date).await?;
+        crate::settings::require_vat_registered(pool, company_id, invoice_date).await?;
     }
     let rates = load_vat_rates(pool).await?;
     let mut resolved = Vec::with_capacity(lines.len());
@@ -364,7 +364,7 @@ pub async fn create_invoice_in(
         selger_navn: company.get("name"),
         selger_orgnr: company.get("orgnr"),
         selger_adresse: company.get("address"),
-        selger_mva_registrert: reg.mva_registrert,
+        seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: company.get("bank_account"),
         kjoper_navn: party.get("name"),
@@ -388,9 +388,9 @@ pub async fn create_invoice_in(
                 beskrivelse: line.description.clone(),
                 antall_milli: line.quantity_milli,
                 enhetspris_ore: line.unit_price_ore,
-                mva_sats_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
+                vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
                 netto_ore: amounts.net_ore,
-                mva_ore: amounts.vat_ore,
+                vat_ore: amounts.vat_ore,
             })
             .collect(),
     });

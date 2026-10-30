@@ -28,7 +28,7 @@ async fn get(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, Vec<u8>)
     (status, bytes.to_vec())
 }
 
-/// A client company with one posted sale in termin 1 2026, and an
+/// A client company with one posted sale in VAT period 1 2026, and an
 /// accountant reaching it through a firm engagement.
 async fn seed(state: &AppState, sub: &str) -> Uuid {
     let person = regnmed_db::ensure_person(&state.pool, sub, Some("Kari Kontrolldame"), None)
@@ -177,7 +177,7 @@ async fn no_engagement_means_404_and_bad_params_400() {
         "no access must read as not-found"
     );
 
-    // Bad termin from an authorized user: 400.
+    // Bad period from an authorized user: 400.
     let owner = idp.token(&owner_sub, "Kari Kontrolldame");
     let (status, _) = get(
         &state,
