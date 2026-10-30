@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::attachment::add_attachment_in;
 use crate::ledger::post_voucher_in;
-use crate::rates::load_satser;
+use crate::rates::load_rates;
 use crate::vat::load_vat_rates;
 
 /// Registers an utlegg with its receipt. The receipt is immutable from
@@ -76,7 +76,7 @@ pub async fn create_kjoring(
     created_by: &str,
 ) -> Result<(Uuid, i64, i64)> {
     ensure!(km > 0, "km må være positivt");
-    let satser = load_satser(pool).await?;
+    let satser = load_rates(pool).await?;
     let sats = value_on(&satser, "km_godtgjorelse", date)
         .with_context(|| format!("ingen km-sats for {date} i satsregisteret"))?;
     let trekkfri_sats = value_on(&satser, "km_godtgjorelse_trekkfri", date)

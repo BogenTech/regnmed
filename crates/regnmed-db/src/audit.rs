@@ -19,16 +19,16 @@
 //!    regelverksrevisjon (docs/regelverk.md).
 
 use anyhow::Result;
-use regnmed_core::revisjon::{AnkerInfo, Kontroll, ReskontroKonto, RevisjonInput};
+use regnmed_core::audit::{AnchorInfo, AuditInput, Check, ReskontroKonto};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-pub async fn build_revisjon_report(
+pub async fn build_audit_report(
     pool: &PgPool,
     company_id: Uuid,
     generated_by: &str,
     app_version: &str,
-) -> Result<RevisjonInput> {
+) -> Result<AuditInput> {
     let company = sqlx::query("select orgnr, name from company where id = $1")
         .bind(company_id)
         .fetch_one(pool)
@@ -38,11 +38,11 @@ pub async fn build_revisjon_report(
         .fetch_one(pool)
         .await?;
 
-    let mut kontroller = Vec::new();
+    let mut checks = Vec::new();
 
     // 1. Chain re-walk — an error is a finding, not a crash.
-    kontroller.push(match crate::verify_chain(pool, company_id).await {
-        Ok(report) => Kontroll {
+    checks.push(match crate::verify_chain(pool, company_id).await {
+        Ok(report) => Check {
             navn: "Hash-kjede fra genesis".into(),
             ok: true,
             detalj: format!(
@@ -50,7 +50,7 @@ pub async fn build_revisjon_report(
                 report.vouchers_checked
             ),
         },
-        Err(e) => Kontroll {
+        Err(e) => Check {
             navn: "Hash-kjede fra genesis".into(),
             ok: false,
             detalj: e.to_string(),
@@ -58,13 +58,13 @@ pub async fn build_revisjon_report(
     });
 
     // 2. Attachment content hashes.
-    kontroller.push(match crate::verify_attachments(pool, company_id).await {
-        Ok(count) => Kontroll {
+    checks.push(match crate::verify_attachments(pool, company_id).await {
+        Ok(count) => Check {
             navn: "Bilagsvedlegg".into(),
             ok: true,
             detalj: format!("{count} vedlegg re-hashet mot lagret SHA-256"),
         },
-        Err(e) => Kontroll {
+        Err(e) => Check {
             navn: "Bilagsvedlegg".into(),
             ok: false,
             detalj: e.to_string(),
@@ -73,7 +73,7 @@ pub async fn build_revisjon_report(
 
     // 3. External anchors.
     let anchor_check = crate::verify_company_anchors(pool, company_id).await?;
-    kontroller.push(Kontroll {
+    checks.push(Check {
         navn: "Ekstern forankring".into(),
         ok: anchor_check.problems.is_empty(),
         detalj: if anchor_check.problems.is_empty() {
@@ -89,7 +89,7 @@ pub async fn build_revisjon_report(
     // 4. Reskontro mot hovedbok — the real tie-out: per account, the sum
     // of the parties' own postings against the account's saldo. Both
     // sides are pure SUM queries over the same entries; the
-    // reconciliation is `regnmed_core::revisjon::reskontro_kontroll`.
+    // reconciliation is `regnmed_core::audit::reskontro_check`.
     //
     // The account list is every flagged account PLUS every unflagged
     // account that carries party postings — an amount in a party's
@@ -131,17 +131,17 @@ pub async fn build_revisjon_report(
             ReskontroKonto {
                 account: r.get("number"),
                 flagg: r.get("reskontro_kind"),
-                hovedbok_ore: r.get("hovedbok_ore"),
+                general_ledger_ore: r.get("hovedbok_ore"),
                 reskontro_ore: r.get("reskontro_ore"),
-                uten_part_antall: r.get("uten_part_antall"),
-                med_part_antall: r.get("med_part_antall"),
-                feil_kind_antall: r.get("feil_kind_antall"),
+                without_party_count: r.get("uten_part_antall"),
+                with_party_count: r.get("med_part_antall"),
+                wrong_kind_count: r.get("feil_kind_antall"),
                 feil_kind_ore: r.get("feil_kind_ore"),
                 part_kinds,
             }
         })
         .collect();
-    kontroller.push(regnmed_core::revisjon::reskontro_kontroll(&accounts));
+    checks.push(regnmed_core::audit::reskontro_check(&accounts));
 
     // 5. Balansekontroll.
     let total: i64 = sqlx::query_scalar(
@@ -152,7 +152,7 @@ pub async fn build_revisjon_report(
     .bind(company_id)
     .fetch_one(pool)
     .await?;
-    kontroller.push(Kontroll {
+    checks.push(Check {
         navn: "Balansekontroll".into(),
         ok: total == 0,
         detalj: if total == 0 {
@@ -172,7 +172,7 @@ pub async fn build_revisjon_report(
             .bind(company_id)
             .fetch_one(pool)
             .await?;
-    kontroller.push(Kontroll {
+    checks.push(Check {
         navn: "Periodelåsing".into(),
         ok: true,
         detalj: match lock {
@@ -183,17 +183,17 @@ pub async fn build_revisjon_report(
         },
     });
 
-    // 7. Regelverkssatser (docs/regelverk.md): outdated satser would
+    // 7. Regelverkssatser (docs/regelverk.md): outdated rates would
     // silently produce unlawful gebyrer/renter — surfaced here so the
     // yearly regelverksrevisjon is verified, not remembered.
-    let satser = crate::load_satser(pool).await?;
-    let foreldede = regnmed_core::rates::stale_domains(&satser, chrono::Utc::now().date_naive());
-    kontroller.push(Kontroll {
+    let rates = crate::load_rates(pool).await?;
+    let foreldede = regnmed_core::rates::stale_domains(&rates, chrono::Utc::now().date_naive());
+    checks.push(Check {
         navn: "Regelverkssatser".into(),
         ok: foreldede.is_empty(),
         detalj: if foreldede.is_empty() {
             let domener: std::collections::HashSet<_> =
-                satser.iter().map(|s| s.domain.as_str()).collect();
+                rates.iter().map(|s| s.domain.as_str()).collect();
             format!(
                 "{} satsdomener i registeret; ingen overvåket sats er eldre enn sin kadens",
                 domener.len()
@@ -223,7 +223,7 @@ pub async fn build_revisjon_report(
     // Bilag that carry their documentation BY CONSTRUCTION are not
     // counted: faktura and innboks copy the document onto the voucher in
     // the issuing transaction, so they simply have one. Importjournalen
-    // is documented by its source files, which kontroll 8 hashes.
+    // is documented by its source files, which check 8 hashes.
     let udokumenterte: i64 = sqlx::query_scalar(
         "select count(*)::bigint from voucher v
          where v.company_id = $1
@@ -266,7 +266,7 @@ pub async fn build_revisjon_report(
         )
     })
     .collect();
-    kontroller.push(Kontroll {
+    checks.push(Check {
         navn: "Dokumentasjon".into(),
         ok: true,
         detalj: if udokumenterte == 0 {
@@ -285,7 +285,7 @@ pub async fn build_revisjon_report(
     // 10. Balansedokumentasjon (#88): bokføringsloven §11 wants
     // documentation of what each balance post CONSISTS OF at period end.
     //
-    // Unlike kontroll 9 this IS an avvik. The difference is what the law
+    // Unlike check 9 this IS a deviation. The difference is what the law
     // asks of each: §10 says booked information shall be documented, and
     // the documentation may lawfully live in another oppbevaringsmedium
     // — so a missing attachment is not proof of anything. §11 says the
@@ -299,8 +299,8 @@ pub async fn build_revisjon_report(
         .bind(company_id)
         .fetch_one(pool)
         .await?;
-    kontroller.push(match siste_las {
-        None => Kontroll {
+    checks.push(match siste_las {
+        None => Check {
             navn: "Balansedokumentasjon".into(),
             ok: true,
             detalj: "ingen periode er låst ennå — balansepostene dokumenteres ved periodeslutt \
@@ -308,11 +308,11 @@ pub async fn build_revisjon_report(
                 .into(),
         },
         Some(periode) => {
-            let linjer =
-                crate::balance_documentation::balanse_status(pool, company_id, periode).await?;
+            let lines =
+                crate::balance_documentation::balance_status(pool, company_id, periode).await?;
             let udokumentert: Vec<&crate::balance_documentation::BalanseLinje> =
-                linjer.iter().filter(|l| l.avstemt.is_none()).collect();
-            let flyttet: Vec<(&str, i64)> = linjer
+                lines.iter().filter(|l| l.avstemt.is_none()).collect();
+            let flyttet: Vec<(&str, i64)> = lines
                 .iter()
                 .filter_map(|l| l.avvik_ore().map(|d| (l.account.as_str(), d)))
                 .collect();
@@ -321,7 +321,7 @@ pub async fn build_revisjon_report(
                 deler.push(format!(
                     "{} av {} balansekontoer med saldo mangler dokumentasjon per {periode}: {}",
                     udokumentert.len(),
-                    linjer.len(),
+                    lines.len(),
                     udokumentert
                         .iter()
                         .take(10)
@@ -343,13 +343,13 @@ pub async fn build_revisjon_report(
                         .join(", ")
                 ));
             }
-            Kontroll {
+            Check {
                 navn: "Balansedokumentasjon".into(),
                 ok: deler.is_empty(),
                 detalj: if deler.is_empty() {
                     format!(
                         "alle {} balansekontoer med saldo er dokumentert per {periode}",
-                        linjer.len()
+                        lines.len()
                     )
                 } else {
                     deler.join("; ")
@@ -371,13 +371,13 @@ pub async fn build_revisjon_report(
     .bind(company_id)
     .fetch_one(pool)
     .await?;
-    let importlogg = crate::saft_import_log(pool, company_id).await?;
-    kontroller.push(Kontroll {
+    let import_log = crate::saft_import_log(pool, company_id).await?;
+    checks.push(Check {
         navn: "Importert historikk".into(),
         ok: true,
         detalj: if imp_vouchers == 0 {
             "ingen importert historikk — hovedboken er ført i sin helhet i regnmed".into()
-        } else if importlogg.is_empty() {
+        } else if import_log.is_empty() {
             format!(
                 "{imp_vouchers} bilag i importjournalen uten dokumenterte kildefiler \
                  (importert før importloggen fantes)"
@@ -385,8 +385,8 @@ pub async fn build_revisjon_report(
         } else {
             format!(
                 "{imp_vouchers} bilag i importjournalen fra {} fil(er): {}",
-                importlogg.len(),
-                importlogg
+                import_log.len(),
+                import_log
                     .iter()
                     .map(|r| format!(
                         "sha256 {} ({} bilag, importert {} av {})",
@@ -401,10 +401,10 @@ pub async fn build_revisjon_report(
         },
     });
 
-    let ankere = crate::company_anchors(pool, company_id)
+    let anchors = crate::company_anchors(pool, company_id)
         .await?
         .into_iter()
-        .map(|a| AnkerInfo {
+        .map(|a| AnchorInfo {
             tidspunkt: a.created_at.to_rfc3339(),
             root_hex: hex::encode(a.root_hash),
             siste_sekvens: a.last_seq,
@@ -423,15 +423,15 @@ pub async fn build_revisjon_report(
         })
         .collect();
 
-    Ok(RevisjonInput {
+    Ok(AuditInput {
         orgnr: company.get("orgnr"),
         selskap: company.get("name"),
         generert: chrono::Utc::now().to_rfc3339(),
         generert_av: generated_by.to_string(),
         programversjon: app_version.to_string(),
-        kjede_sekvens: head.get("last_seq"),
-        kjede_hode_hex: hex::encode(head.get::<Vec<u8>, _>("last_hash")),
-        kontroller,
-        ankere,
+        chain_sequence: head.get("last_seq"),
+        chain_head_hex: hex::encode(head.get::<Vec<u8>, _>("last_hash")),
+        checks,
+        anchors,
     })
 }

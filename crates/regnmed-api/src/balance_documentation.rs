@@ -52,7 +52,7 @@ pub async fn status(
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     let periode = periode_or_lock(&state, company_id, query.periode).await?;
     let linjer =
-        regnmed_db::balance_documentation::balanse_status(&state.pool, company_id, periode).await?;
+        regnmed_db::balance_documentation::balance_status(&state.pool, company_id, periode).await?;
     Ok(Json(json!({
         "periode": periode.to_string(),
         "kontoer": linjer.iter().map(|l| json!({

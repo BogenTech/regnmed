@@ -81,9 +81,9 @@ pub struct VoucherListQuery {
     /// Include each voucher's lines (the hovedbok browsing view).
     lines: Option<bool>,
     /// Only bilag without an attachment (#85) — the working list behind
-    /// the revisjonsrapport's Dokumentasjon-kontroll, so whoever is
+    /// the audit report's Dokumentasjon check, so whoever is
     /// tidying can see exactly which ones. Importjournalen is left out:
-    /// its documentation is the source file, hashed in kontroll 8.
+    /// its documentation is the source file, hashed in check 8.
     uten_vedlegg: Option<bool>,
 }
 

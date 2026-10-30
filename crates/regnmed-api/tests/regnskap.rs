@@ -1,4 +1,4 @@
-//! The accounts out: reports, revisjon, budget, kontoplan and migration.
+//! The accounts out: reports, audit, budget, chart of accounts and migration.
 //!
 //! One binary for several test files: each tests/*.rs links separately,
 //! and 33 of them held a single test. nextest runs every test in its own
@@ -6,6 +6,8 @@
 
 mod common;
 
+#[path = "grupper/audit.rs"]
+mod audit;
 #[path = "grupper/budsjett.rs"]
 mod budsjett;
 #[path = "grupper/kontoplan.rs"]
@@ -20,7 +22,5 @@ mod nokkeltall;
 mod regnskap;
 #[path = "grupper/reports.rs"]
 mod reports;
-#[path = "grupper/revisjon.rs"]
-mod revisjon;
 #[path = "grupper/saft_migration.rs"]
 mod saft_migration;

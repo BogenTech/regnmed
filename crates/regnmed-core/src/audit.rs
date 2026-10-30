@@ -2,11 +2,11 @@
 //! checked against the live ledger and stated in one document.
 //!
 //! This module holds the pure side of the report over data the
-//! persistence layer assembles (`regnmed-db::revisjon`): a list of
-//! kontroller (each with outcome and detail), the chain head, and the
+//! persistence layer assembles (`regnmed-db::audit`): a list of
+//! checks (each with outcome and detail), the chain head, and the
 //! external anchors with their witnesses. The text rendering is
 //! deterministic — same input, same bytes — so a report can be archived,
-//! diffed and re-generated. The reskontro tie-out (kontroll 4) also
+//! diffed and re-generated. The reskontro tie-out (check 4) also
 //! reconciles here, over sums the database hands over, so its findings
 //! can be tested without a database.
 //!
@@ -20,15 +20,15 @@ use crate::Ore;
 /// One verification: what was checked, whether it held, and the numbers.
 ///
 /// `detalj` may hold several lines separated by `\n` — one per finding.
-/// The text rendering indents every line under the kontroll.
+/// The text rendering indents every line under the check.
 #[derive(Debug, Clone)]
-pub struct Kontroll {
+pub struct Check {
     pub navn: String,
     pub ok: bool,
     pub detalj: String,
 }
 
-/// One account as the reskontro tie-out sees it. `regnmed-db::revisjon`
+/// One account as the reskontro tie-out sees it. `regnmed-db::audit`
 /// assembles these with pure SUM queries; the reconciliation itself is
 /// the function below, so it can be tested without a database.
 #[derive(Debug, Clone)]
@@ -39,14 +39,14 @@ pub struct ReskontroKonto {
     /// because postings on it carry a party anyway.
     pub flagg: Option<String>,
     /// SUM(amount_ore) over every entry on the account: the hovedbok saldo.
-    pub hovedbok_ore: i64,
+    pub general_ledger_ore: i64,
     /// SUM(amount_ore) over the entries that carry a party: what the
     /// subledger holds for this account.
     pub reskontro_ore: i64,
-    pub uten_part_antall: i64,
-    pub med_part_antall: i64,
+    pub without_party_count: i64,
+    pub with_party_count: i64,
     /// Postings whose party is of a different kind than the flag.
-    pub feil_kind_antall: i64,
+    pub wrong_kind_count: i64,
     pub feil_kind_ore: i64,
     /// Party kinds actually seen on the account, sorted and deduplicated.
     pub part_kinds: Vec<String>,
@@ -68,7 +68,7 @@ fn reskontrokontoer(n: usize) -> String {
     }
 }
 
-/// Kontroll 4: **Σ reskontro = hovedbokskonto, konto for konto.**
+/// Check 4: **Σ reskontro = hovedbokskonto, konto for konto.**
 ///
 /// The subledger is not a second bookkeeping — it is the same entries
 /// seen per party — so the two can only diverge in three ways, and all
@@ -87,61 +87,61 @@ fn reskontrokontoer(n: usize) -> String {
 ///    state is reachable without anything in the ledger being edited.
 ///
 /// Findings become AVVIK lines, never errors — the report reports.
-pub fn reskontro_kontroll(accounts: &[ReskontroKonto]) -> Kontroll {
-    let mut avvik: Vec<String> = Vec::new();
+pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
+    let mut deviations: Vec<String> = Vec::new();
     let mut flagget = 0usize;
-    let mut sum_reskontro = 0i64;
+    let mut reskontro_sum = 0i64;
 
     for account in accounts {
         let Some(flagg) = account.flagg.as_deref() else {
             // 3. Party postings outside every reskontro account.
             let kinds = account.part_kinds.join("/");
-            avvik.push(format!(
+            deviations.push(format!(
                 "konto {} er ikke merket som reskontrokonto, men {} bærer part ({}, {}) — \
                  beløpet står i spesifikasjonen uten å stå på en reskontrokonto i hovedboken",
                 account.account,
-                posteringer(account.med_part_antall),
+                posteringer(account.with_party_count),
                 Ore(account.reskontro_ore),
                 if kinds.is_empty() { "ukjent" } else { &kinds },
             ));
             continue;
         };
         flagget += 1;
-        sum_reskontro += account.reskontro_ore;
+        reskontro_sum += account.reskontro_ore;
 
         // 1. The tie-out itself.
-        let differanse = account.hovedbok_ore - account.reskontro_ore;
+        let differanse = account.general_ledger_ore - account.reskontro_ore;
         if differanse != 0 {
-            avvik.push(format!(
+            deviations.push(format!(
                 "konto {}: hovedbok {} mot reskontro {} — differanse {} ({} øre), {} uten part",
                 account.account,
-                Ore(account.hovedbok_ore),
+                Ore(account.general_ledger_ore),
                 Ore(account.reskontro_ore),
                 Ore(differanse),
                 differanse,
-                posteringer(account.uten_part_antall),
+                posteringer(account.without_party_count),
             ));
-        } else if account.uten_part_antall > 0 {
-            avvik.push(format!(
+        } else if account.without_party_count > 0 {
+            deviations.push(format!(
                 "konto {}: {} uten part — de summerer til null, så saldoen stemmer, \
                  men beløpene står ikke i noen partsspesifikasjon",
                 account.account,
-                posteringer(account.uten_part_antall),
+                posteringer(account.without_party_count),
             ));
         }
 
         // 2. Parties of the wrong kind.
-        if account.feil_kind_antall > 0 {
+        if account.wrong_kind_count > 0 {
             let feil: Vec<&str> = account
                 .part_kinds
                 .iter()
                 .map(String::as_str)
                 .filter(|kind| *kind != flagg)
                 .collect();
-            avvik.push(format!(
+            deviations.push(format!(
                 "konto {} er merket {flagg}, men {} bærer part av typen {} ({})",
                 account.account,
-                posteringer(account.feil_kind_antall),
+                posteringer(account.wrong_kind_count),
                 if feil.is_empty() {
                     "en annen".to_string()
                 } else {
@@ -152,25 +152,25 @@ pub fn reskontro_kontroll(accounts: &[ReskontroKonto]) -> Kontroll {
         }
     }
 
-    Kontroll {
+    Check {
         navn: "Reskontro mot hovedbok".into(),
-        ok: avvik.is_empty(),
-        detalj: if avvik.is_empty() {
+        ok: deviations.is_empty(),
+        detalj: if deviations.is_empty() {
             format!(
                 "{} avstemt mot hovedboken: summen av partenes poster er lik kontosaldoen \
                  øre for øre (til sammen {}); ingen part av feil type, og ingen part \
                  utenfor en reskontrokonto",
                 reskontrokontoer(flagget),
-                Ore(sum_reskontro),
+                Ore(reskontro_sum),
             )
         } else {
-            avvik.join("\n")
+            deviations.join("\n")
         },
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct AnkerInfo {
+pub struct AnchorInfo {
     /// RFC 3339 timestamp of the snapshot.
     pub tidspunkt: String,
     pub root_hex: String,
@@ -180,28 +180,28 @@ pub struct AnkerInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct RevisjonInput {
+pub struct AuditInput {
     pub orgnr: String,
     pub selskap: String,
     /// RFC 3339; passed in, never read from a clock here.
     pub generert: String,
     pub generert_av: String,
     pub programversjon: String,
-    pub kjede_sekvens: i64,
-    pub kjede_hode_hex: String,
-    pub kontroller: Vec<Kontroll>,
-    pub ankere: Vec<AnkerInfo>,
+    pub chain_sequence: i64,
+    pub chain_head_hex: String,
+    pub checks: Vec<Check>,
+    pub anchors: Vec<AnchorInfo>,
 }
 
-impl RevisjonInput {
+impl AuditInput {
     pub fn alle_ok(&self) -> bool {
-        self.kontroller.iter().all(|k| k.ok)
+        self.checks.iter().all(|k| k.ok)
     }
 }
 
 /// Deterministic plain-text rendering, suitable for archiving next to
 /// the regnskapsmateriale it attests.
-pub fn render_text(input: &RevisjonInput) -> String {
+pub fn render_text(input: &AuditInput) -> String {
     let mut out = String::with_capacity(2048);
     let mut line = |s: &str| {
         out.push_str(s);
@@ -219,7 +219,7 @@ pub fn render_text(input: &RevisjonInput) -> String {
     line(&format!("Programversjon: regnmed {}", input.programversjon));
     line(&format!(
         "Kjedehode:      sekvens {}, hash {}",
-        input.kjede_sekvens, input.kjede_hode_hex
+        input.chain_sequence, input.chain_head_hex
     ));
     line("");
     line(&format!(
@@ -233,30 +233,30 @@ pub fn render_text(input: &RevisjonInput) -> String {
     line("");
     line("Kontroller");
     line("----------");
-    for kontroll in &input.kontroller {
+    for check in &input.checks {
         line(&format!(
             "[{}] {}",
-            if kontroll.ok { "OK" } else { "AVVIK" },
-            kontroll.navn
+            if check.ok { "OK" } else { "AVVIK" },
+            check.navn
         ));
-        // A kontroll may report several findings; each gets its own
+        // A check may report several findings; each gets its own
         // indented line so the archived text stays readable.
-        for detalj in kontroll.detalj.lines() {
+        for detalj in check.detalj.lines() {
             line(&format!("       {detalj}"));
         }
     }
     line("");
     line("Eksterne forankringer");
     line("---------------------");
-    if input.ankere.is_empty() {
+    if input.anchors.is_empty() {
         line("(ingen forankringer omfatter dette selskapet ennå)");
     }
-    for anker in &input.ankere {
+    for anchor in &input.anchors {
         line(&format!(
             "{}  sekvens {}  rot {}",
-            anker.tidspunkt, anker.siste_sekvens, anker.root_hex
+            anchor.tidspunkt, anchor.siste_sekvens, anchor.root_hex
         ));
-        for vitne in &anker.vitner {
+        for vitne in &anchor.vitner {
             line(&format!("    bevitnet: {vitne}"));
         }
     }
@@ -278,28 +278,28 @@ pub fn render_text(input: &RevisjonInput) -> String {
 mod tests {
     use super::*;
 
-    fn sample() -> RevisjonInput {
-        RevisjonInput {
+    fn sample() -> AuditInput {
+        AuditInput {
             orgnr: "999888777".into(),
             selskap: "Demo AS".into(),
             generert: "2026-07-23T12:00:00+00:00".into(),
             generert_av: "Randi Revisor".into(),
             programversjon: "0.1.0".into(),
-            kjede_sekvens: 13,
-            kjede_hode_hex: "ab".repeat(32),
-            kontroller: vec![
-                Kontroll {
+            chain_sequence: 13,
+            chain_head_hex: "ab".repeat(32),
+            checks: vec![
+                Check {
                     navn: "Hash-kjede fra genesis".into(),
                     ok: true,
                     detalj: "13 bilag verifisert".into(),
                 },
-                Kontroll {
+                Check {
                     navn: "Reskontro mot hovedbok".into(),
                     ok: true,
                     detalj: "1 reskontrokonto avstemt".into(),
                 },
             ],
-            ankere: vec![AnkerInfo {
+            anchors: vec![AnchorInfo {
                 tidspunkt: "2026-07-23T02:00:00+00:00".into(),
                 root_hex: "1c".repeat(32),
                 siste_sekvens: 13,
@@ -319,10 +319,10 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_kontroll_flips_the_verdict() {
+    fn a_failed_check_flips_the_verdict() {
         let mut input = sample();
-        input.kontroller[1].ok = false;
-        input.kontroller[1].detalj = "konto 1500 avviker med 100,00".into();
+        input.checks[1].ok = false;
+        input.checks[1].detalj = "konto 1500 avviker med 100,00".into();
         assert!(!input.alle_ok());
         let text = render_text(&input);
         assert!(text.contains("AVVIK FUNNET"));
@@ -332,40 +332,40 @@ mod tests {
     #[test]
     fn no_anchors_is_stated_not_hidden() {
         let mut input = sample();
-        input.ankere.clear();
+        input.anchors.clear();
         assert!(render_text(&input).contains("ingen forankringer"));
     }
 
     #[test]
     fn every_finding_gets_its_own_line_in_the_text() {
         let mut input = sample();
-        input.kontroller[1].ok = false;
-        input.kontroller[1].detalj = "konto 1500 avviker\nkonto 2400 avviker".into();
+        input.checks[1].ok = false;
+        input.checks[1].detalj = "konto 1500 avviker\nkonto 2400 avviker".into();
         let text = render_text(&input);
         assert!(text.contains("       konto 1500 avviker\n       konto 2400 avviker\n"));
     }
 
     /// A flagged account whose every posting carries a party.
-    fn avstemt(account: &str, kind: &str, ore: i64, antall: i64) -> ReskontroKonto {
+    fn avstemt(account: &str, kind: &str, ore: i64, count: i64) -> ReskontroKonto {
         ReskontroKonto {
             account: account.into(),
             flagg: Some(kind.into()),
-            hovedbok_ore: ore,
+            general_ledger_ore: ore,
             reskontro_ore: ore,
-            uten_part_antall: 0,
-            med_part_antall: antall,
-            feil_kind_antall: 0,
+            without_party_count: 0,
+            with_party_count: count,
+            wrong_kind_count: 0,
             feil_kind_ore: 0,
             part_kinds: vec![kind.into()],
         }
     }
 
     #[test]
-    fn a_reskontro_account_whose_parties_sum_to_the_saldo_ties_out() {
-        let kontroll = reskontro_kontroll(&[avstemt("1500", "kunde", 12_500_00, 2)]);
-        assert!(kontroll.ok, "{}", kontroll.detalj);
-        assert!(kontroll.detalj.contains("1 reskontrokonto avstemt"));
-        assert!(kontroll.detalj.contains("12500,00"));
+    fn a_reskontro_account_whose_parties_sum_to_the_balance_ties_out() {
+        let check = reskontro_check(&[avstemt("1500", "kunde", 12_500_00, 2)]);
+        assert!(check.ok, "{}", check.detalj);
+        assert!(check.detalj.contains("1 reskontrokonto avstemt"));
+        assert!(check.detalj.contains("12500,00"));
     }
 
     #[test]
@@ -373,26 +373,22 @@ mod tests {
         // Zero is a saldo like any other: nothing on either side, no
         // finding. (Counting rows instead of amounts once made an
         // untouched account look like it held a party-less posting.)
-        let kontroll = reskontro_kontroll(&[avstemt("2400", "leverandor", 0, 0)]);
-        assert!(kontroll.ok, "{}", kontroll.detalj);
+        let check = reskontro_check(&[avstemt("2400", "leverandor", 0, 0)]);
+        assert!(check.ok, "{}", check.detalj);
     }
 
     #[test]
     fn a_posting_without_a_party_breaks_the_tie_out_by_its_amount() {
         let mut account = avstemt("1500", "kunde", 12_500_00, 1);
-        account.hovedbok_ore = 15_000_00; // 2 500,00 posted without a party
-        account.uten_part_antall = 1;
-        let kontroll = reskontro_kontroll(&[account]);
-        assert!(!kontroll.ok);
-        assert!(
-            kontroll.detalj.contains("konto 1500"),
-            "{}",
-            kontroll.detalj
-        );
-        assert!(kontroll.detalj.contains("hovedbok 15000,00"));
-        assert!(kontroll.detalj.contains("reskontro 12500,00"));
-        assert!(kontroll.detalj.contains("differanse 2500,00 (250000 øre)"));
-        assert!(kontroll.detalj.contains("1 postering uten part"));
+        account.general_ledger_ore = 15_000_00; // 2 500,00 posted without a party
+        account.without_party_count = 1;
+        let check = reskontro_check(&[account]);
+        assert!(!check.ok);
+        assert!(check.detalj.contains("konto 1500"), "{}", check.detalj);
+        assert!(check.detalj.contains("hovedbok 15000,00"));
+        assert!(check.detalj.contains("reskontro 12500,00"));
+        assert!(check.detalj.contains("differanse 2500,00 (250000 øre)"));
+        assert!(check.detalj.contains("1 postering uten part"));
     }
 
     #[test]
@@ -400,68 +396,68 @@ mod tests {
         // The saldo ties out, but two amounts are in no spesifikasjon —
         // reporting only the difference would let that pass silently.
         let mut account = avstemt("1500", "kunde", 12_500_00, 1);
-        account.uten_part_antall = 2;
-        let kontroll = reskontro_kontroll(&[account]);
-        assert!(!kontroll.ok);
+        account.without_party_count = 2;
+        let check = reskontro_check(&[account]);
+        assert!(!check.ok);
         assert!(
-            kontroll.detalj.contains("2 posteringer uten part"),
+            check.detalj.contains("2 posteringer uten part"),
             "{}",
-            kontroll.detalj
+            check.detalj
         );
-        assert!(kontroll.detalj.contains("summerer til null"));
+        assert!(check.detalj.contains("summerer til null"));
     }
 
     #[test]
     fn a_party_of_the_wrong_kind_on_the_account_is_reported() {
         let mut account = avstemt("2400", "leverandor", -8_000_00, 2);
-        account.feil_kind_antall = 1;
+        account.wrong_kind_count = 1;
         account.feil_kind_ore = -3_000_00;
         account.part_kinds = vec!["kunde".into(), "leverandor".into()];
-        let kontroll = reskontro_kontroll(&[account]);
-        assert!(!kontroll.ok);
+        let check = reskontro_check(&[account]);
+        assert!(!check.ok);
         assert!(
-            kontroll
+            check
                 .detalj
                 .contains("konto 2400 er merket leverandor, men 1 postering bærer part av typen kunde (-3000,00)"),
             "{}",
-            kontroll.detalj
+            check.detalj
         );
     }
 
     #[test]
     fn a_party_on_an_unflagged_account_is_reported() {
-        let kontroll = reskontro_kontroll(&[ReskontroKonto {
+        let check = reskontro_check(&[ReskontroKonto {
             account: "1500".into(),
             flagg: None,
-            hovedbok_ore: 12_500_00,
+            general_ledger_ore: 12_500_00,
             reskontro_ore: 12_500_00,
-            uten_part_antall: 0,
-            med_part_antall: 3,
-            feil_kind_antall: 0,
+            without_party_count: 0,
+            with_party_count: 3,
+            wrong_kind_count: 0,
             feil_kind_ore: 0,
             part_kinds: vec!["kunde".into()],
         }]);
-        assert!(!kontroll.ok);
+        assert!(!check.ok);
         assert!(
-            kontroll
+            check
                 .detalj
                 .contains("konto 1500 er ikke merket som reskontrokonto"),
             "{}",
-            kontroll.detalj
+            check.detalj
         );
-        assert!(kontroll.detalj.contains("3 posteringer bærer part"));
-        assert!(kontroll.detalj.contains("(12500,00, kunde)"));
+        assert!(check.detalj.contains("3 posteringer bærer part"));
+        assert!(check.detalj.contains("(12500,00, kunde)"));
     }
 
     #[test]
     fn several_accounts_yield_one_finding_line_each() {
         let mut uten_part = avstemt("1500", "kunde", 12_500_00, 1);
-        uten_part.hovedbok_ore = 15_000_00;
-        uten_part.uten_part_antall = 1;
+        uten_part.general_ledger_ore = 15_000_00;
+        uten_part.without_party_count = 1;
         let mut ikke_flagget = avstemt("2400", "leverandor", -8_000_00, 1);
         ikke_flagget.flagg = None;
-        let kontroll = reskontro_kontroll(&[uten_part, ikke_flagget]);
-        assert!(!kontroll.ok);
-        assert_eq!(kontroll.detalj.lines().count(), 2, "{}", kontroll.detalj);
+        let check = reskontro_check(&[uten_part, ikke_flagget]);
+        assert!(!check.ok);
+        assert_eq!(check.detalj.lines().count(), 2, "{}", check.detalj);
     }
 }

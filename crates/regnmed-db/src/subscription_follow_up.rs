@@ -19,7 +19,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::purring::{ReminderDraft, create_reminder};
-use crate::rates::load_satser;
+use crate::rates::load_rates;
 
 pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
 
@@ -111,7 +111,7 @@ pub async fn purr(
     let gebyr_ore = if neste.med_gebyr {
         // Abonnement customers are companies: the næringsdrivende
         // ceiling (standardkompensasjon) applies, and we charge it.
-        let satser = load_satser(pool).await?;
+        let satser = load_rates(pool).await?;
         value_on(&satser, "standardkompensasjon", idag)
             .context("standardkompensasjon mangler i satsregisteret")?
     } else {
