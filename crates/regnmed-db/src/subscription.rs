@@ -548,8 +548,8 @@ pub async fn post_stripe_payment(
     // split_gross here (rather than trusting Stripe) keeps one authority
     // for Norwegian mva: ours. An unregistered ops company splits at 0,
     // i.e. the whole charge is the base — same code path, no special case.
-    let (mva_kode, rate_bp) = utgaende_mva(pool, drift_company_id, idag).await?;
-    let (netto, _mva) = regnmed_core::mva::split_gross(brutto_ore, rate_bp);
+    let (vat_code, rate_bp) = output_vat(pool, drift_company_id, idag).await?;
+    let (netto, _mva) = regnmed_core::vat::split_gross(brutto_ore, rate_bp);
 
     let mut tx = pool.begin().await?;
 
@@ -587,7 +587,7 @@ pub async fn post_stripe_payment(
             account_number: "3000".into(),
             quantity_milli: 1000,
             unit_price_ore: netto,
-            vat_code: Some(mva_kode),
+            vat_code: Some(vat_code),
             department: None,
             project: None,
             product_id: None,
@@ -831,8 +831,8 @@ pub async fn brutto_for(
         None if interval == "year" => price_on(pool, plan, date).await? * 12,
         None => price_on(pool, plan, date).await?,
     };
-    let (_kode, rate_bp) = utgaende_mva(pool, drift_company_id, date).await?;
-    Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
+    let (_kode, rate_bp) = output_vat(pool, drift_company_id, date).await?;
+    Ok(netto + regnmed_core::vat::vat_of_base(netto, rate_bp))
 }
 
 /// The utgående mva code for OUR OWN subscription invoices, and the rate
@@ -855,17 +855,17 @@ pub async fn brutto_for(
 /// law. The seller is simply below the threshold. Both are zero-rated,
 /// so this changes nothing about the amounts — only about what the
 /// hovedbok and the SAF-T say happened.
-pub async fn utgaende_mva(
+pub async fn output_vat(
     pool: &PgPool,
     drift_company_id: Uuid,
     date: NaiveDate,
 ) -> Result<(String, i64)> {
     let reg = crate::settings::registrering_on(pool, drift_company_id, date).await?;
-    if !reg.mva_registrert {
+    if !reg.vat_registered {
         return Ok(("7".into(), 0));
     }
-    let rates = crate::mva::load_vat_rates(pool).await?;
-    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", date)
+    let rates = crate::vat::load_vat_rates(pool).await?;
+    let rate_bp = regnmed_core::vat::rate_on(&rates, "regular", date)
         .context("ingen ordinær mva-sats for datoen — satsregisteret må dekke den")?;
     Ok(("3".into(), rate_bp))
 }
@@ -1091,7 +1091,7 @@ async fn fakturer_en(
         return Ok(None);
     }
 
-    let (mva_kode, _rate_bp) = utgaende_mva(pool, drift, idag).await?;
+    let (vat_code, _rate_bp) = output_vat(pool, drift, idag).await?;
 
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
@@ -1117,7 +1117,7 @@ async fn fakturer_en(
             account_number: "3000".into(),
             quantity_milli: 1000,
             unit_price_ore: price,
-            vat_code: Some(mva_kode),
+            vat_code: Some(vat_code),
             department: None,
             project: None,
             product_id: None,

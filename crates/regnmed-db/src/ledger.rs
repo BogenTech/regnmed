@@ -149,7 +149,7 @@ async fn expand_omvendt(
     company_id: Uuid,
     draft: &VoucherDraft,
 ) -> Result<Option<VoucherDraft>> {
-    use regnmed_core::mva::{Direction, direction};
+    use regnmed_core::vat::{Direction, direction};
     let treffer = |e: &regnmed_core::voucher::EntryDraft| {
         matches!(
             e.vat_code.as_deref().map_or(Direction::Ingen, direction),
@@ -183,7 +183,7 @@ async fn expand_omvendt(
                 draft.voucher_date
             )
         })?;
-        entries.extend(regnmed_core::mva::omvendt_entries(
+        entries.extend(regnmed_core::vat::reverse_charge_entries(
             entry,
             rate_bp,
             OMVENDT_UTGAENDE.0,

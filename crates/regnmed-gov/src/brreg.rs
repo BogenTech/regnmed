@@ -17,7 +17,7 @@ pub struct BrregEntity {
     #[serde(default)]
     pub naeringskode1: Option<Code>,
     #[serde(default, rename = "registrertIMvaregisteret")]
-    pub registrert_i_mvaregisteret: bool,
+    pub registered_in_vat_register: bool,
     /// Registrert i Foretaksregisteret. Governs the "Foretaksregisteret"
     /// note on the salgsdokument (§5-1-2) — which covers more than
     /// AS/ASA: ANS/DA, NUF and næringsdrivende ENK register too, so it
@@ -150,7 +150,7 @@ impl BrregEntity {
             NaiveDate::parse_from_str(raw.as_deref()?.trim(), "%Y-%m-%d").ok()
         }
         let mut hendelser: Vec<(NaiveDate, bool)> = Vec::new();
-        if self.registrert_i_mvaregisteret {
+        if self.registered_in_vat_register {
             hendelser.push((date(&self.mva_registration_date).unwrap_or(i_dag), true));
         }
         if self.registrert_i_foretaksregisteret {
@@ -165,18 +165,18 @@ impl BrregEntity {
             return vec![(i_dag, false, false)];
         }
         hendelser.sort_by_key(|(d, _)| *d);
-        let (mut mva, mut foretak) = (false, false);
+        let (mut vat, mut foretak) = (false, false);
         let mut rader: Vec<(NaiveDate, bool, bool)> = Vec::new();
-        for (d, er_mva) in hendelser {
-            if er_mva {
-                mva = true;
+        for (d, is_vat) in hendelser {
+            if is_vat {
+                vat = true;
             } else {
                 foretak = true;
             }
             match rader.last_mut() {
                 // Both registers on the same day collapse into one row.
-                Some(siste) if siste.0 == d => *siste = (d, mva, foretak),
-                _ => rader.push((d, mva, foretak)),
+                Some(siste) if siste.0 == d => *siste = (d, vat, foretak),
+                _ => rader.push((d, vat, foretak)),
             }
         }
         rader
@@ -251,7 +251,7 @@ mod tests {
         .unwrap();
         assert_eq!(entity.navn, "EQUINOR ASA");
         assert_eq!(entity.organisasjonsform.unwrap().code, "ASA");
-        assert!(entity.registrert_i_mvaregisteret);
+        assert!(entity.registered_in_vat_register);
         assert!(entity.registrert_i_foretaksregisteret);
         assert_eq!(
             entity.forretningsadresse.unwrap().one_line().unwrap(),

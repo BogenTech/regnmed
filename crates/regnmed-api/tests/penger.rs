@@ -14,7 +14,7 @@ mod currency;
 mod ocr;
 #[path = "grupper/payments.rs"]
 mod payments;
+#[path = "grupper/terminordning.rs"]
+mod period_scheme;
 #[path = "grupper/reskontro.rs"]
 mod reskontro;
-#[path = "grupper/terminordning.rs"]
-mod terminordning;

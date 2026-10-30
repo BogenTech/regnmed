@@ -406,7 +406,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
 }
 
 /// A faktura-ready company whose mva registration we choose.
-async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, mva_registrert: bool) -> Uuid {
+async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, vat_registered: bool) -> Uuid {
     let id = regnmed_db::create_company(pool, &unique_orgnr(), navn)
         .await
         .unwrap();
@@ -420,7 +420,7 @@ async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, mva_registrert: bool) ->
         id,
         chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
         regnmed_db::Registrering {
-            mva_registrert,
+            vat_registered,
             foretaksregistrert: true,
         },
         "manuell",
@@ -442,7 +442,7 @@ async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, mva_registrert: bool) ->
 /// makes: the code on the line, the mva on the faktura, and the gross the
 /// card rail would charge.
 #[tokio::test]
-async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
+async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
     let Some((state, _idp, kunde_a, _admin)) = oppsett().await else {
         return;
     };
@@ -496,17 +496,17 @@ async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
         .await
         .unwrap();
 
-    let (kode, mva, netto) = linje(registrert, kunde_a).await;
+    let (kode, vat, netto) = linje(registrert, kunde_a).await;
     assert_eq!(kode, "3", "registrert selger fakturerer utgående mva");
     assert_eq!(netto, price);
-    assert!(mva > 0, "25 % skulle vært beregnet, men mva_ore = {mva}");
+    assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
 
-    let (kode, mva, netto) = linje(utenfor, kunde_b).await;
+    let (kode, vat, netto) = linje(utenfor, kunde_b).await;
     assert_eq!(
         kode, "7",
         "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
     );
-    assert_eq!(mva, 0, "mval. §11-4: ingen mva skal oppgis");
+    assert_eq!(vat, 0, "mval. §11-4: ingen mva skal oppgis");
     assert_eq!(
         netto, price,
         "prisen er den samme — bare avgiften faller bort"

@@ -85,7 +85,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
         company,
         d(2000, 1, 1),
         regnmed_db::Registrering {
-            mva_registrert: true,
+            vat_registered: true,
             foretaksregistrert: true,
         },
         "manuell",
@@ -232,7 +232,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
                 ("3010".into(), Some("31".into()), 2_300_00),
             ],
             betaling: vec![("1900".into(), 4_800_00), ("1571".into(), 10_000_00)],
-            mva_konto: "2700".into(),
+            vat_account: "2700".into(),
             cash_account: Some("1900".into()),
             // 50 kr short in the till.
             opptalt_kontant_ore: Some(4_750_00),

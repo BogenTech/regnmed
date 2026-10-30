@@ -86,7 +86,7 @@ async fn seed_browser_demo() {
         company,
         chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
         regnmed_db::Registrering {
-            mva_registrert: true,
+            vat_registered: true,
             foretaksregistrert: true,
         },
         "brreg",

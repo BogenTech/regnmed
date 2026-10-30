@@ -85,7 +85,7 @@ fn salg(date: chrono::NaiveDate, netto: i64) -> VoucherDraft {
 }
 
 #[tokio::test]
-async fn the_terminordning_governs_periods_and_the_melding() {
+async fn the_period_scheme_governs_periods_and_the_return() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;

@@ -24,7 +24,7 @@ pub struct DagsoppgjorInn {
     pub z_nummer: String,
     pub salg: Vec<(String, Option<String>, i64)>,
     pub betaling: Vec<(String, i64)>,
-    pub mva_konto: String,
+    pub vat_account: String,
     /// The cash account, and what was counted in it. Both or neither —
     /// a counted amount without an account cannot be posted anywhere.
     pub cash_account: Option<String>,
@@ -91,7 +91,7 @@ pub async fn bokfor_dagsoppgjor(
                 amount_ore: *amount_ore,
             })
             .collect(),
-        vat_account: inn.mva_konto.clone(),
+        vat_account: inn.vat_account.clone(),
     };
     let draft = build_settlement(&oppgjor).map_err(|e| anyhow::anyhow!("{e}"))?;
 

@@ -80,11 +80,11 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
     // The rate that applied on the invoice date — the same dated lookup
     // the posting used, so the document cannot drift from the ledger.
     let invoice_date: chrono::NaiveDate = head.get("invoice_date");
-    let rates = crate::mva::load_vat_rates(pool).await?;
+    let rates = crate::vat::load_vat_rates(pool).await?;
     let mut linjer = Vec::with_capacity(lines.len());
     for line in &lines {
         let vat_code: Option<String> = line.get("vat_code");
-        let mva_sats_bp = match &vat_code {
+        let vat_rate_bp = match &vat_code {
             Some(code) => {
                 let rate_class: Option<String> =
                     sqlx::query_scalar("select rate_class from vat_code where code = $1")
@@ -92,7 +92,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
                         .fetch_optional(pool)
                         .await?;
                 rate_class
-                    .and_then(|class| regnmed_core::mva::rate_on(&rates, &class, invoice_date))
+                    .and_then(|class| regnmed_core::vat::rate_on(&rates, &class, invoice_date))
             }
             None => None,
         };
@@ -104,8 +104,8 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             enhet: "EA".into(),
             enhetspris_ore: line.get("unit_price_ore"),
             netto_ore: line.get("net_ore"),
-            mva_sats_bp,
-            mva_ore: line.get("vat_ore"),
+            vat_rate_bp,
+            vat_ore: line.get("vat_ore"),
         });
     }
 
@@ -144,7 +144,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             // Registreringsstatus på fakturadatoen, ikke «bar dette
             // dokumentet mva» — en eksportfaktura fra en registrert
             // selger skal fortsatt ha PartyTaxScheme (#81).
-            mva_registrert: reg.mva_registrert,
+            vat_registered: reg.vat_registered,
             epost: head.get("selger_epost"),
         },
         kjoper: EhfPart {
@@ -158,7 +158,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             postnr: kjoper_postnr,
             poststed: kjoper_poststed,
             land: "NO".into(),
-            mva_registrert: false,
+            vat_registered: false,
             epost: head.get("kjoper_epost"),
         },
         account_number: head.get("bank_account"),
@@ -225,10 +225,10 @@ pub async fn inbox_ehf_forslag(
             (None, None)
         }
     };
-    if mottatt.netto_ore + mottatt.mva_ore != mottatt.brutto_ore {
+    if mottatt.netto_ore + mottatt.vat_ore != mottatt.brutto_ore {
         advarsler.push(format!(
             "netto + mva ({}) stemmer ikke med forfalt beløp ({}) — kontroller dokumentet",
-            mottatt.netto_ore + mottatt.mva_ore,
+            mottatt.netto_ore + mottatt.vat_ore,
             mottatt.brutto_ore
         ));
     }
@@ -262,7 +262,7 @@ pub struct Bokforingsforslag {
     pub kid: Option<String>,
     pub account_number: Option<String>,
     pub netto_ore: Option<i64>,
-    pub mva_ore: Option<i64>,
+    pub vat_ore: Option<i64>,
     pub brutto_ore: Option<i64>,
     pub leverandor_no: Option<String>,
     pub leverandor_navn: Option<String>,
@@ -294,7 +294,7 @@ pub async fn inbox_forslag(
         kid: None,
         account_number: None,
         netto_ore: None,
-        mva_ore: None,
+        vat_ore: None,
         brutto_ore: None,
         leverandor_no: None,
         leverandor_navn: None,
@@ -320,7 +320,7 @@ pub async fn inbox_forslag(
         forslag.kid = m.kid.clone();
         forslag.account_number = m.account_number.clone();
         forslag.netto_ore = Some(m.netto_ore);
-        forslag.mva_ore = Some(m.mva_ore);
+        forslag.vat_ore = Some(m.vat_ore);
         forslag.brutto_ore = Some(m.brutto_ore);
         forslag
             .begrunnelser
@@ -383,11 +383,11 @@ pub async fn inbox_forslag(
                     note("brutto", &f.reason);
                 }
                 if let Some(f) = &t.vat_ore {
-                    forslag.mva_ore = Some(f.value);
+                    forslag.vat_ore = Some(f.value);
                     note("mva", &f.reason);
                 }
-                if let (Some(brutto), Some(mva)) = (forslag.brutto_ore, forslag.mva_ore) {
-                    forslag.netto_ore = Some(brutto - mva);
+                if let (Some(brutto), Some(vat)) = (forslag.brutto_ore, forslag.vat_ore) {
+                    forslag.netto_ore = Some(brutto - vat);
                 }
             }
         }

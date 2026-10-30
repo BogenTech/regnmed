@@ -7,11 +7,11 @@
 //!
 //! Sign and unit conventions differ from the ledger and are converted
 //! here, in one place:
-//! - The ledger is signed øre, positive = debit (so utgående avgift is
+//! - The ledger is signed øre, positive = debit (so output tax is
 //!   negative, deductible inngående positive).
 //! - The melding is **whole kroner**, signed by effect on the amount
 //!   payable: utgående positive, fradrag negative. Both grunnlag and
-//!   avgift therefore negate on the way in, and øre round half away from
+//!   tax therefore negate on the way in, and øre round half away from
 //!   zero to kroner.
 //!
 //! Per Skatteetaten's rules: utgående and omsetning codes report
@@ -26,19 +26,19 @@
 //! carry the deduction is not our judgement; it is stated per code in
 //! Skatteetaten's own code list, quoted in `mva::direction`.
 
-use crate::mva::{Direction, SpesLine, Termin, Terminordning, direction};
+use crate::vat::{Direction, Period, PeriodScheme, SpecLine, direction};
 use crate::xml::Xml;
 
 pub const NAMESPACE: &str =
     "no:skatteetaten:fastsetting:avgift:mva:skattemeldingformerverdiavgift:v1.0";
 
 #[derive(Debug)]
-pub struct MvaMelding {
+pub struct VatReturn {
     pub orgnr: String,
-    pub termin: Termin,
+    pub period: Period,
     /// The company's terminordning (docs/mva.md, #51): decides which
     /// skattleggingsperiode element the XML carries.
-    pub ordning: Terminordning,
+    pub ordning: PeriodScheme,
     /// Reference into our own system, echoed back in feedback
     /// (regnskapssystemsreferanse).
     pub referanse: String,
@@ -55,7 +55,7 @@ pub struct MeldingLine {
     pub grunnlag_kr: Option<i64>,
     pub sats_bp: Option<i64>,
     /// The code's own booked tax, melding signs.
-    pub mva_kr: i64,
+    pub vat_kr: i64,
     /// The deduction the SAME code carries (reverse charge / import with
     /// full deduction right); 0 for every other code. Signed opposite
     /// `mva_kr`, so the pair sums to the line's net effect.
@@ -71,19 +71,19 @@ fn kroner(ore: i64) -> i64 {
 /// Code 0 has no place in the melding and is skipped.
 pub fn build(
     orgnr: &str,
-    termin: Termin,
-    ordning: Terminordning,
+    period: Period,
+    ordning: PeriodScheme,
     referanse: &str,
     system_version: &str,
-    spes: &[SpesLine],
-) -> MvaMelding {
+    spes: &[SpecLine],
+) -> VatReturn {
     let mut lines = Vec::new();
     for line in spes {
         if line.code == "0" {
             continue;
         }
         // Ledger → melding: negate (payable-positive) and round to kroner.
-        let mva_kr = kroner(-line.avgift_ore);
+        let vat_kr = kroner(-line.tax_ore);
         let grunnlag_kr = kroner(-line.grunnlag_ore);
         let retning = direction(&line.code);
         // Cost markers are not tax calculations, and using them is not
@@ -109,7 +109,7 @@ pub fn build(
             description: line.description.clone(),
             grunnlag_kr: grunnlag,
             sats_bp: sats,
-            mva_kr,
+            vat_kr,
             // The deduction the same code carries. Kept beside the line
             // rather than folded into `mva_kr`, because the two are
             // different statements: `merverdiavgift` is the code's OWN
@@ -117,7 +117,7 @@ pub fn build(
             // merverdiavgift»), while the fastsatte total is the net
             // effect on what is payable.
             fradrag_kr: match retning {
-                Direction::OmvendtMedFradrag => -mva_kr,
+                Direction::OmvendtMedFradrag => -vat_kr,
                 _ => 0,
             },
         });
@@ -126,10 +126,10 @@ pub fn build(
     // ALSO deducts it when the deduction right is full. Summing only the
     // computed side billed every such customer 25 % of a basis they owed
     // nothing on.
-    let fastsatt_kr = lines.iter().map(|l| l.mva_kr + l.fradrag_kr).sum();
-    MvaMelding {
+    let fastsatt_kr = lines.iter().map(|l| l.vat_kr + l.fradrag_kr).sum();
+    VatReturn {
         orgnr: orgnr.to_string(),
-        termin,
+        period,
         ordning,
         referanse: referanse.to_string(),
         system_version: system_version.to_string(),
@@ -138,9 +138,9 @@ pub fn build(
     }
 }
 
-/// The XSD's two-month period names, indexed by termin number.
-fn periode_name(termin: Termin) -> &'static str {
-    match termin.number {
+/// The XSD's two-month period names, indexed by period number.
+fn periode_name(period: Period) -> &'static str {
+    match period.number {
         1 => "januar-februar",
         2 => "mars-april",
         3 => "mai-juni",
@@ -159,7 +159,7 @@ fn sats(bp: i64) -> String {
     }
 }
 
-pub fn render(melding: &MvaMelding) -> String {
+pub fn render(melding: &VatReturn) -> String {
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(&format!(r#"<mvaMeldingDto xmlns="{NAMESPACE}">"#));
@@ -177,19 +177,19 @@ pub fn render(melding: &MvaMelding) -> String {
     x.open("skattleggingsperiode");
     x.open("periode");
     match melding.ordning {
-        Terminordning::ToManeder => x.leaf(
+        PeriodScheme::ToManeder => x.leaf(
             "skattleggingsperiodeToMaaneder",
-            periode_name(melding.termin),
+            periode_name(melding.period),
         ),
         // Both yearly ordninger are skattleggingsperiodeAar in the
         // schema; primærnæring is a registration matter, not a
         // structural one (docs/mva.md).
-        Terminordning::Arlig | Terminordning::Primaernaering => {
+        PeriodScheme::Arlig | PeriodScheme::Primaernaering => {
             x.leaf("skattleggingsperiodeAar", "aarlig")
         }
     }
     x.close("periode");
-    x.leaf("aar", &melding.termin.year.to_string());
+    x.leaf("aar", &melding.period.year.to_string());
     x.close("skattleggingsperiode");
     x.leaf("fastsattMerverdiavgift", &melding.fastsatt_kr.to_string());
     for line in &melding.lines {
@@ -202,7 +202,7 @@ pub fn render(melding: &MvaMelding) -> String {
         if let Some(bp) = line.sats_bp {
             x.leaf("sats", &sats(bp));
         }
-        x.leaf("merverdiavgift", &line.mva_kr.to_string());
+        x.leaf("merverdiavgift", &line.vat_kr.to_string());
         x.close("mvaSpesifikasjonslinje");
     }
     x.close("skattegrunnlagOgBeregnetSkatt");
@@ -222,37 +222,37 @@ pub fn render(melding: &MvaMelding) -> String {
 mod tests {
     use super::*;
 
-    fn spes() -> Vec<SpesLine> {
+    fn spes() -> Vec<SpecLine> {
         vec![
-            SpesLine {
+            SpecLine {
                 code: "1".into(),
                 description: "Inngående mva, alminnelig sats".into(),
                 rate_bp: 2500,
                 grunnlag_ore: 8_000_00,
-                avgift_ore: 2_000_00,
+                tax_ore: 2_000_00,
             },
-            SpesLine {
+            SpecLine {
                 code: "3".into(),
                 description: "Utgående mva, alminnelig sats".into(),
                 rate_bp: 2500,
                 grunnlag_ore: -10_000_49, // odd øre to prove rounding
-                avgift_ore: -2_500_12,
+                tax_ore: -2_500_12,
             },
-            SpesLine {
+            SpecLine {
                 code: "0".into(),
                 description: "Ingen mva-behandling".into(),
                 rate_bp: 0,
                 grunnlag_ore: 5_000_00,
-                avgift_ore: 0,
+                tax_ore: 0,
             },
         ]
     }
 
-    fn melding() -> MvaMelding {
+    fn melding() -> VatReturn {
         build(
             "999888777",
-            Termin::new(2026, 1).unwrap(),
-            Terminordning::ToManeder,
+            Period::new(2026, 1).unwrap(),
+            PeriodScheme::ToManeder,
             "regnmed-2026-1",
             "0.1.0",
             &spes(),
@@ -266,14 +266,14 @@ mod tests {
 
         let utg = m.lines.iter().find(|l| l.code == "3").unwrap();
         assert_eq!(
-            utg.mva_kr, 2500,
+            utg.vat_kr, 2500,
             "utgående: ledger credit → payable positive, kroner"
         );
         assert_eq!(utg.grunnlag_kr, Some(10_000), "10000,49 rounds to 10000");
         assert_eq!(utg.sats_bp, Some(2500));
 
         let inn = m.lines.iter().find(|l| l.code == "1").unwrap();
-        assert_eq!(inn.mva_kr, -2000, "fradrag is negative in the melding");
+        assert_eq!(inn.vat_kr, -2000, "fradrag is negative in the melding");
         assert_eq!(inn.grunnlag_kr, None, "inngående lines carry no grunnlag");
         assert_eq!(inn.sats_bp, None);
 
@@ -295,21 +295,21 @@ mod tests {
     #[test]
     fn reverse_charge_with_full_deduction_is_a_wash() {
         let kjop = |code: &str| {
-            vec![SpesLine {
+            vec![SpecLine {
                 code: code.into(),
                 description: "Tjenester kjøpt fra utlandet".into(),
                 rate_bp: 2500,
                 // A purchase basis posts as a debit; the computed tax is
                 // an output tax, i.e. a credit in the ledger.
                 grunnlag_ore: 100_000_00,
-                avgift_ore: -25_000_00,
+                tax_ore: -25_000_00,
             }]
         };
         let melding = |code: &str| {
             build(
                 "999888777",
-                Termin::new(2026, 1).unwrap(),
-                Terminordning::ToManeder,
+                Period::new(2026, 1).unwrap(),
+                PeriodScheme::ToManeder,
                 "r",
                 "0.1.0",
                 &kjop(code),
@@ -317,7 +317,7 @@ mod tests {
         };
 
         let med = melding("86");
-        assert_eq!(med.lines[0].mva_kr, 25_000, "beregnet utgående avgift");
+        assert_eq!(med.lines[0].vat_kr, 25_000, "beregnet utgående avgift");
         assert_eq!(med.lines[0].fradrag_kr, -25_000, "og fradraget for den");
         assert_eq!(
             med.fastsatt_kr, 0,
@@ -407,10 +407,10 @@ mod tests {
     /// Årstermin (and primærnæring) render skattleggingsperiodeAar —
     /// and the result stays schema-valid. Skips without xmllint.
     #[test]
-    fn aarstermin_renders_skattleggingsperiode_aar() {
+    fn yearly_period_renders_skattleggingsperiode_aar() {
         let mut melding = melding();
-        melding.ordning = Terminordning::Arlig;
-        melding.termin = Termin {
+        melding.ordning = PeriodScheme::Arlig;
+        melding.period = Period {
             year: 2026,
             number: 1,
         };

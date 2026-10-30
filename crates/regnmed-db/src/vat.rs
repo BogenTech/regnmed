@@ -1,5 +1,5 @@
-//! Mva-spesifikasjon: grunnlag and beregnet avgift per standard code,
-//! aggregated from the ledger for a period (typically a termin).
+//! The mva-spesifikasjon: basis and computed tax per standard code,
+//! aggregated from the ledger for a date range (typically a VAT period).
 //!
 //! The beregning uses the rate valid on each voucher's date (dated
 //! `vat_rate` table), then sums per (code, rate) — so a period spanning a
@@ -8,7 +8,7 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::mva::{RatePeriod, SpesLine, vat_of_base};
+use regnmed_core::vat::{RatePeriod, SpecLine, vat_of_base};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -28,12 +28,12 @@ pub async fn load_vat_rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
         .collect())
 }
 
-pub async fn mva_spesifikasjon(
+pub async fn vat_specification(
     pool: &PgPool,
     company_id: Uuid,
     start: NaiveDate,
     end: NaiveDate,
-) -> Result<Vec<SpesLine>> {
+) -> Result<Vec<SpecLine>> {
     let rows = sqlx::query(
         "select e.vat_code as code, vc.description, r.rate_bp,
                 sum(e.amount_ore)::bigint as grunnlag_ore
@@ -68,12 +68,12 @@ pub async fn mva_spesifikasjon(
                 })?;
             let grunnlag_ore: i64 = row.get("grunnlag_ore");
             ensure!(!code.is_empty(), "empty vat code in ledger");
-            Ok(SpesLine {
+            Ok(SpecLine {
                 code,
                 description: row.get("description"),
                 rate_bp,
                 grunnlag_ore,
-                avgift_ore: vat_of_base(grunnlag_ore, rate_bp),
+                tax_ore: vat_of_base(grunnlag_ore, rate_bp),
             })
         })
         .collect()
@@ -82,11 +82,11 @@ pub async fn mva_spesifikasjon(
 /// The company's terminordning valid on `dato` (docs/mva.md, #51):
 /// the newest registered row on or before the date; to-måneder when
 /// none is registered — the lawful default needs no row.
-pub async fn terminordning_on(
+pub async fn period_scheme_on(
     pool: &PgPool,
     company_id: uuid::Uuid,
     date: chrono::NaiveDate,
-) -> Result<regnmed_core::mva::Terminordning> {
+) -> Result<regnmed_core::vat::PeriodScheme> {
     let row: Option<String> = sqlx::query_scalar(
         "select ordning from mva_terminordning
          where company_id = $1 and valid_from <= $2
@@ -98,22 +98,22 @@ pub async fn terminordning_on(
     .await?;
     Ok(row
         .as_deref()
-        .and_then(regnmed_core::mva::Terminordning::parse)
-        .unwrap_or(regnmed_core::mva::Terminordning::ToManeder))
+        .and_then(regnmed_core::vat::PeriodScheme::parse)
+        .unwrap_or(regnmed_core::vat::PeriodScheme::ToManeder))
 }
 
 #[derive(Debug)]
-pub struct TerminordningRow {
+pub struct PeriodSchemeRow {
     pub valid_from: chrono::NaiveDate,
     pub ordning: String,
     pub note: Option<String>,
     pub created_by: String,
 }
 
-pub async fn list_terminordninger(
+pub async fn list_period_schemes(
     pool: &PgPool,
     company_id: uuid::Uuid,
-) -> Result<Vec<TerminordningRow>> {
+) -> Result<Vec<PeriodSchemeRow>> {
     let rows = sqlx::query(
         "select valid_from, ordning, note, created_by from mva_terminordning
          where company_id = $1 order by valid_from desc",
@@ -123,7 +123,7 @@ pub async fn list_terminordninger(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| TerminordningRow {
+        .map(|r| PeriodSchemeRow {
             valid_from: r.get("valid_from"),
             ordning: r.get("ordning"),
             note: r.get("note"),
@@ -134,11 +134,11 @@ pub async fn list_terminordninger(
 
 /// Records the ordning Skatteetaten has granted, effective from a
 /// date. Append-only: a change back is a new row.
-pub async fn set_terminordning(
+pub async fn set_period_scheme(
     pool: &PgPool,
     company_id: uuid::Uuid,
     valid_from: chrono::NaiveDate,
-    ordning: regnmed_core::mva::Terminordning,
+    ordning: regnmed_core::vat::PeriodScheme,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<()> {

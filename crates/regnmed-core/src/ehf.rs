@@ -67,7 +67,7 @@ pub struct EhfPart {
     /// ISO 3166-1 alpha-2; "NO" when unknown.
     pub land: String,
     /// Registered in Merverdiavgiftsregisteret (yields PartyTaxScheme).
-    pub mva_registrert: bool,
+    pub vat_registered: bool,
     pub epost: Option<String>,
 }
 
@@ -81,8 +81,8 @@ pub struct EhfLinje {
     pub enhetspris_ore: i64,
     pub netto_ore: i64,
     /// Basis points; None = no mva code on the line.
-    pub mva_sats_bp: Option<i64>,
-    pub mva_ore: i64,
+    pub vat_rate_bp: Option<i64>,
+    pub vat_ore: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -167,8 +167,8 @@ fn quantity(milli: i64) -> String {
 /// EN 16931 tax category (UNCL5305). Standard rate → S, zero rate → Z.
 /// Exemption (E) and reverse charge (AE) require a reason and are not
 /// derived automatically — see docs/ehf.md.
-fn tax_category(mva_sats_bp: Option<i64>) -> (&'static str, i64) {
-    match mva_sats_bp {
+fn tax_category(vat_rate_bp: Option<i64>) -> (&'static str, i64) {
+    match vat_rate_bp {
         Some(bp) if bp > 0 => ("S", bp),
         _ => ("Z", 0),
     }
@@ -257,7 +257,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.leaf("cbc:IdentificationCode", &part.land);
     w.close("cac:Country");
     w.close("cac:PostalAddress");
-    if part.mva_registrert {
+    if part.vat_registered {
         w.open("cac:PartyTaxScheme");
         // A Norwegian mva id is the orgnr plus MVA.
         w.leaf("cbc:CompanyID", &format!("NO{}MVA", part.orgnr));
@@ -292,7 +292,7 @@ pub fn render(doc: &EhfDokument) -> String {
     let attr = format!("currencyID=\"{}\"", esc(currency));
 
     let netto_sum: i64 = doc.linjer.iter().map(|l| l.netto_ore).sum();
-    let mva_sum: i64 = doc.linjer.iter().map(|l| l.mva_ore).sum();
+    let vat_sum: i64 = doc.linjer.iter().map(|l| l.vat_ore).sum();
 
     let mut w = Writer::new();
     w.out
@@ -369,25 +369,25 @@ pub fn render(doc: &EhfDokument) -> String {
     // One TaxSubtotal per rate — the recipient reconciles per rate.
     let mut satser: Vec<(&'static str, i64)> = Vec::new();
     for linje in &doc.linjer {
-        let key = tax_category(linje.mva_sats_bp);
+        let key = tax_category(linje.vat_rate_bp);
         if !satser.contains(&key) {
             satser.push(key);
         }
     }
     w.open("cac:TaxTotal");
-    w.leaf_attr("cbc:TaxAmount", &attr, &money(mva_sum));
+    w.leaf_attr("cbc:TaxAmount", &attr, &money(vat_sum));
     for (kategori, bp) in &satser {
         let grunnlag: i64 = doc
             .linjer
             .iter()
-            .filter(|l| tax_category(l.mva_sats_bp) == (*kategori, *bp))
+            .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
             .map(|l| l.netto_ore)
             .sum();
         let avgift: i64 = doc
             .linjer
             .iter()
-            .filter(|l| tax_category(l.mva_sats_bp) == (*kategori, *bp))
-            .map(|l| l.mva_ore)
+            .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
+            .map(|l| l.vat_ore)
             .sum();
         w.open("cac:TaxSubtotal");
         w.leaf_attr("cbc:TaxableAmount", &attr, &money(grunnlag));
@@ -406,8 +406,8 @@ pub fn render(doc: &EhfDokument) -> String {
     w.open("cac:LegalMonetaryTotal");
     w.leaf_attr("cbc:LineExtensionAmount", &attr, &money(netto_sum));
     w.leaf_attr("cbc:TaxExclusiveAmount", &attr, &money(netto_sum));
-    w.leaf_attr("cbc:TaxInclusiveAmount", &attr, &money(netto_sum + mva_sum));
-    w.leaf_attr("cbc:PayableAmount", &attr, &money(netto_sum + mva_sum));
+    w.leaf_attr("cbc:TaxInclusiveAmount", &attr, &money(netto_sum + vat_sum));
+    w.leaf_attr("cbc:PayableAmount", &attr, &money(netto_sum + vat_sum));
     w.close("cac:LegalMonetaryTotal");
 
     let line_tag = match doc.dokumenttype {
@@ -419,7 +419,7 @@ pub fn render(doc: &EhfDokument) -> String {
         Dokumenttype::Kreditnota => "cbc:CreditedQuantity",
     };
     for (i, linje) in doc.linjer.iter().enumerate() {
-        let (kategori, bp) = tax_category(linje.mva_sats_bp);
+        let (kategori, bp) = tax_category(linje.vat_rate_bp);
         w.open(line_tag);
         w.leaf("cbc:ID", &(i + 1).to_string());
         w.leaf_attr(
@@ -452,7 +452,7 @@ pub fn render(doc: &EhfDokument) -> String {
 mod tests {
     use super::*;
 
-    fn part(navn: &str, orgnr: &str, mva: bool) -> EhfPart {
+    fn part(navn: &str, orgnr: &str, vat: bool) -> EhfPart {
         EhfPart {
             navn: navn.into(),
             orgnr: orgnr.into(),
@@ -460,7 +460,7 @@ mod tests {
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
             land: "NO".into(),
-            mva_registrert: mva,
+            vat_registered: vat,
             epost: Some("post@example.no".into()),
         }
     }
@@ -487,8 +487,8 @@ mod tests {
                     enhet: "HUR".into(),
                     enhetspris_ore: 1_250_00,
                     netto_ore: 2_500_00,
-                    mva_sats_bp: Some(2500),
-                    mva_ore: 625_00,
+                    vat_rate_bp: Some(2500),
+                    vat_ore: 625_00,
                 },
                 EhfLinje {
                     beskrivelse: "Utlegg uten mva".into(),
@@ -496,8 +496,8 @@ mod tests {
                     enhet: "EA".into(),
                     enhetspris_ore: 500_00,
                     netto_ore: 500_00,
-                    mva_sats_bp: None,
-                    mva_ore: 0,
+                    vat_rate_bp: None,
+                    vat_ore: 0,
                 },
             ],
         }

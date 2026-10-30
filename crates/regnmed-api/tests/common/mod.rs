@@ -130,7 +130,7 @@ pub async fn gjor_fakturaklar(pool: &sqlx::PgPool, company_id: Uuid) {
         company_id,
         chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         regnmed_db::Registrering {
-            mva_registrert: true,
+            vat_registered: true,
             foretaksregistrert: true,
         },
         "manuell",

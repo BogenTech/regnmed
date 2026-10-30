@@ -42,11 +42,11 @@ pub async fn get_settings(
         "kid_avtale": s.kid_avtale,
         // Registreringsstatus (§5-1-2, #81): lagret og datert, aldri
         // utledet av dokumentet som rendres.
-        "mva_registrert": reg.mva_registrert,
+        "mva_registrert": reg.vat_registered,
         "foretaksregistrert": reg.foretaksregistrert,
         "registrering_historikk": historikk.iter().map(|(date, r, kilde, notat)| json!({
             "valid_from": date.to_string(),
-            "mva_registrert": r.mva_registrert,
+            "mva_registrert": r.vat_registered,
             "foretaksregistrert": r.foretaksregistrert,
             "kilde": kilde,
             "notat": notat,
@@ -86,7 +86,8 @@ pub async fn update_settings(
 
 #[derive(Deserialize)]
 pub struct RegistreringRequest {
-    mva_registrert: bool,
+    #[serde(rename = "mva_registrert")]
+    vat_registered: bool,
     foretaksregistrert: bool,
     /// The date the status took effect. Omitted = today; a registration
     /// that happened earlier should say so, since documents dated
@@ -118,7 +119,7 @@ pub async fn set_registrering(
         company_id,
         valid_from,
         regnmed_db::Registrering {
-            mva_registrert: request.mva_registrert,
+            vat_registered: request.vat_registered,
             foretaksregistrert: request.foretaksregistrert,
         },
         "manuell",

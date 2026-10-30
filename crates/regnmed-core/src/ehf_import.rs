@@ -32,7 +32,7 @@ pub struct MottattLinje {
     pub beskrivelse: String,
     pub netto_ore: i64,
     /// Basis points from ClassifiedTaxCategory when present.
-    pub mva_sats_bp: Option<i64>,
+    pub vat_rate_bp: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub struct MottattFaktura {
     pub kid: Option<String>,
     pub account_number: Option<String>,
     pub netto_ore: i64,
-    pub mva_ore: i64,
+    pub vat_ore: i64,
     /// PayableAmount — what the supplier actually claims.
     pub brutto_ore: i64,
     pub linjer: Vec<MottattLinje>,
@@ -122,7 +122,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
         kid: None,
         account_number: None,
         netto_ore: 0,
-        mva_ore: 0,
+        vat_ore: 0,
         brutto_ore: 0,
         linjer: Vec::new(),
     };
@@ -166,7 +166,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                     faktura.linjer.push(MottattLinje {
                         beskrivelse: std::mem::take(&mut line_name),
                         netto_ore: line_net,
-                        mva_sats_bp: line_bp,
+                        vat_rate_bp: line_bp,
                     });
                     in_line = false;
                 }
@@ -229,7 +229,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                     }
                     "PayableAmount" => faktura.brutto_ore = amount(&value)?,
                     "TaxAmount" if ends_with(&path, &["TaxTotal", "TaxAmount"]) => {
-                        faktura.mva_ore = amount(&value)?;
+                        faktura.vat_ore = amount(&value)?;
                     }
                     "LineExtensionAmount" if in_line => line_net = amount(&value)?,
                     "LineExtensionAmount" if faktura.netto_ore == 0 => {
@@ -253,7 +253,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
         faktura.netto_ore = faktura.linjer.iter().map(|l| l.netto_ore).sum();
     }
     if faktura.brutto_ore == 0 {
-        faktura.brutto_ore = faktura.netto_ore + faktura.mva_ore;
+        faktura.brutto_ore = faktura.netto_ore + faktura.vat_ore;
     }
     Ok(faktura)
 }
@@ -271,7 +271,7 @@ mod tests {
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
             land: "NO".into(),
-            mva_registrert: true,
+            vat_registered: true,
             epost: None,
         }
     }
@@ -298,8 +298,8 @@ mod tests {
                     enhet: "EA".into(),
                     enhetspris_ore: 400_00,
                     netto_ore: 1_200_00,
-                    mva_sats_bp: Some(2500),
-                    mva_ore: 300_00,
+                    vat_rate_bp: Some(2500),
+                    vat_ore: 300_00,
                 },
                 EhfLinje {
                     beskrivelse: "Frakt".into(),
@@ -307,8 +307,8 @@ mod tests {
                     enhet: "EA".into(),
                     enhetspris_ore: 100_00,
                     netto_ore: 100_00,
-                    mva_sats_bp: Some(2500),
-                    mva_ore: 25_00,
+                    vat_rate_bp: Some(2500),
+                    vat_ore: 25_00,
                 },
             ],
         }
@@ -336,12 +336,12 @@ mod tests {
         assert_eq!(mottatt.kid.as_deref(), Some("1234567897"));
         assert_eq!(mottatt.account_number.as_deref(), Some("86011117947"));
         assert_eq!(mottatt.netto_ore, 1_300_00);
-        assert_eq!(mottatt.mva_ore, 325_00);
+        assert_eq!(mottatt.vat_ore, 325_00);
         assert_eq!(mottatt.brutto_ore, 1_625_00);
         assert_eq!(mottatt.linjer.len(), 2);
         assert_eq!(mottatt.linjer[0].beskrivelse, "Varekjøp");
         assert_eq!(mottatt.linjer[0].netto_ore, 1_200_00);
-        assert_eq!(mottatt.linjer[0].mva_sats_bp, Some(2500));
+        assert_eq!(mottatt.linjer[0].vat_rate_bp, Some(2500));
     }
 
     #[test]
@@ -414,10 +414,10 @@ mod tests {
         assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
         assert_eq!(mottatt.kid.as_deref(), Some("0000000123456"));
         assert_eq!(mottatt.netto_ore, 2_000_00);
-        assert_eq!(mottatt.mva_ore, 500_00);
+        assert_eq!(mottatt.vat_ore, 500_00);
         assert_eq!(mottatt.brutto_ore, 2_500_00);
         assert_eq!(mottatt.linjer[0].beskrivelse, "Kontorstoler");
-        assert_eq!(mottatt.linjer[0].mva_sats_bp, None, "ingen sats på linjen");
+        assert_eq!(mottatt.linjer[0].vat_rate_bp, None, "ingen sats på linjen");
     }
 
     #[test]

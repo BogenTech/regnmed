@@ -10,16 +10,16 @@ use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::expenses::mileage_allowance;
 use regnmed_core::hash::sha256;
-use regnmed_core::mva::{rate_on, split_gross};
 use regnmed_core::rates::value_on;
+use regnmed_core::vat::{rate_on, split_gross};
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::attachment::add_attachment_in;
 use crate::ledger::post_voucher_in;
-use crate::mva::load_vat_rates;
 use crate::rates::load_satser;
+use crate::vat::load_vat_rates;
 
 /// Registers an utlegg with its receipt. The receipt is immutable from
 /// this moment (SHA-256 stored, trigger + grants) and follows the
@@ -239,8 +239,8 @@ pub async fn approve_expense(
     company_id: Uuid,
     expense_id: Uuid,
     account: &str,
-    mva_kode: Option<&str>,
-    mva_konto: &str,
+    vat_code: Option<&str>,
+    vat_account: &str,
     contra_account: &str,
     decided_by: &str,
     decided_by_person: Uuid,
@@ -285,10 +285,10 @@ pub async fn approve_expense(
             // Deducting input VAT needs the registration too (#99) —
             // otherwise approval quietly books a deduction the company
             // has no right to, and the cost comes out too low.
-            if mva_kode.is_some_and(crate::settings::krever_mva_registrering) {
-                crate::settings::krev_mva_registrert(pool, company_id, date).await?;
+            if vat_code.is_some_and(crate::settings::requires_vat_registration) {
+                crate::settings::require_vat_registered(pool, company_id, date).await?;
             }
-            let (netto, mva) = match mva_kode {
+            let (netto, vat) = match vat_code {
                 Some(code) => {
                     let rate_class: String =
                         sqlx::query_scalar("select rate_class from vat_code where code = $1")
@@ -306,17 +306,17 @@ pub async fn approve_expense(
             entries.push(EntryDraft {
                 account_number: account.to_string(),
                 amount: Ore(netto),
-                vat_code: mva_kode.map(str::to_string),
+                vat_code: vat_code.map(str::to_string),
                 description: Some(beskrivelse.clone()),
                 party_no: None,
                 department: None,
                 project: None,
                 currency: None,
             });
-            if mva != 0 {
+            if vat != 0 {
                 entries.push(EntryDraft {
-                    account_number: mva_konto.to_string(),
-                    amount: Ore(mva),
+                    account_number: vat_account.to_string(),
+                    amount: Ore(vat),
                     vat_code: None,
                     description: Some("Inngående mva".into()),
                     party_no: None,
@@ -327,7 +327,7 @@ pub async fn approve_expense(
             }
         }
         _ => {
-            ensure!(mva_kode.is_none(), "kjøregodtgjørelse har ingen mva");
+            ensure!(vat_code.is_none(), "kjøregodtgjørelse har ingen mva");
             let km: i64 = expense.get::<Option<i64>, _>("km").unwrap_or(0);
             let sats: i64 = expense
                 .get::<Option<i64>, _>("sats_ore_per_km")

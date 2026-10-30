@@ -271,15 +271,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/mva",
-            get(reports::mva_report),
+            get(reports::vat_report),
         )
         .route(
             "/companies/{company_id}/mva/terminordning",
-            get(reports::terminordning).post(reports::set_terminordning),
+            get(reports::period_scheme).post(reports::set_period_scheme),
         )
         .route(
             "/companies/{company_id}/reports/mva-melding",
-            get(reports::mva_melding),
+            get(reports::vat_return),
         )
         .route(
             "/companies/{company_id}/reports/saft",
