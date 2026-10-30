@@ -105,7 +105,7 @@ pub async fn import_open_items(
             "preview": true,
             "kind": kind.as_str(),
             "konto": account,
-            "antall": plan.antall,
+            "antall": plan.count,
             "sum_ore": plan.sum_ore,
             "konto_saldo_ore": plan.account_balance_ore,
             "kan_importeres": plan.account_balance_ore == 0,
@@ -136,7 +136,7 @@ pub async fn import_open_items(
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({
         "voucher": format!("{}-{}", report.posted.fiscal_year, report.posted.voucher_number),
-        "antall": report.antall,
+        "antall": report.count,
         "sum_ore": report.sum_ore,
         "opprettede_parter": report.opprettede_parter,
         "warnings": report.advarsler,

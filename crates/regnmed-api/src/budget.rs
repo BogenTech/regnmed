@@ -180,7 +180,7 @@ pub async fn delete_budget(
 }
 
 #[derive(Deserialize)]
-pub struct AvvikQuery {
+pub struct VarianceQuery {
     year: Option<i32>,
     budget_id: Option<Uuid>,
     /// How far "hittil" reaches; defaults to today's month for the
@@ -188,11 +188,11 @@ pub struct AvvikQuery {
     t_o_m: Option<u32>,
 }
 
-pub async fn avvik(
+pub async fn variance(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<AvvikQuery>,
+    Query(query): Query<VarianceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BudgetRead).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")

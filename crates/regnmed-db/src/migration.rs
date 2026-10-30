@@ -157,7 +157,7 @@ async fn find_party(
 
 #[derive(Debug)]
 pub struct OpenItemsPlan {
-    pub antall: usize,
+    pub count: usize,
     /// Signed as it will hit the reskontro account.
     pub sum_ore: i64,
     /// Parties the file references that do not exist yet — they will be
@@ -224,7 +224,7 @@ pub async fn plan_open_items(
         ));
     }
     Ok(OpenItemsPlan {
-        antall: rader.len(),
+        count: rader.len(),
         sum_ore: rader.iter().map(|r| line_amount(kind, r.amount_ore)).sum(),
         nye_parter,
         account_balance_ore,
@@ -235,7 +235,7 @@ pub async fn plan_open_items(
 #[derive(Debug)]
 pub struct OpenItemsReport {
     pub posted: PostedVoucher,
-    pub antall: usize,
+    pub count: usize,
     pub sum_ore: i64,
     pub opprettede_parter: usize,
     pub advarsler: Vec<String>,
@@ -369,7 +369,7 @@ pub async fn import_open_items(
     }
     Ok(OpenItemsReport {
         posted,
-        antall: rader.len(),
+        count: rader.len(),
         sum_ore,
         opprettede_parter,
         advarsler,

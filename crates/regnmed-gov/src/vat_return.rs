@@ -2,7 +2,7 @@
 //!
 //! The melding XML (built by `regnmed_core::mvamelding`) is POSTed to the
 //! validation endpoint before submission; Skatteetaten replies with a
-//! `valideringsresultat` naming every avvik.
+//! `valideringsresultat` naming every deviation.
 //!
 //! **This API wants an ID-porten token, not a Maskinporten one** —
 //! established empirically 2026-08-10, and the reason this client cannot
@@ -32,7 +32,7 @@ pub struct VatReturnClient {
 
 #[derive(Debug)]
 pub struct ValidationOutcome {
-    /// HTTP-level success and no avvik in the result document.
+    /// HTTP-level success and no deviation in the result document.
     pub valid: bool,
     /// The raw `valideringsresultat` XML, stored alongside the melding as
     /// documentation of the control.
@@ -95,7 +95,7 @@ impl VatReturnClient {
     }
 }
 
-/// Pulls avvik descriptions out of a valideringsresultat without a full
+/// Pulls deviation descriptions out of a valideringsresultat without a full
 /// XML parser: robust enough for reporting, while the raw XML is kept.
 fn extract_findings(xml: &str) -> Vec<String> {
     let mut findings = Vec::new();
@@ -126,7 +126,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_avvik_descriptions() {
+    fn extracts_deviation_descriptions() {
         let xml = r#"<valideringsresultat>
             <avvik><avviksnavn>x</avviksnavn><description>fastsattMerverdiavgift stemmer ikke</description></avvik>
             <avvik><description>ugyldig sats</description></avvik>

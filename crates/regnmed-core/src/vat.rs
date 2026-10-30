@@ -204,9 +204,9 @@ pub struct SpecLine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     /// Output VAT, payable (codes 3, 31, 32, 33).
-    Utgaende,
+    Output,
     /// Input VAT, deductible (codes 1, 11, 12, 13, 14, 15).
-    Inngaende,
+    Input,
     /// Reverse charge / import basis, WITH deduction right (81, 83, 86,
     /// 88, 91). The buyer both computes the output tax and deducts it —
     /// mval. §11-1 (2) and (3), jf. §3-30 — so the net effect on the
@@ -246,8 +246,8 @@ pub enum Direction {
 /// property of the CODE and carries into the code-based melding.
 pub fn direction(code: &str) -> Direction {
     match code {
-        "3" | "31" | "32" | "33" => Direction::Utgaende,
-        "1" | "11" | "12" | "13" | "14" | "15" => Direction::Inngaende,
+        "3" | "31" | "32" | "33" => Direction::Output,
+        "1" | "11" | "12" | "13" | "14" | "15" => Direction::Input,
         "81" | "83" | "86" | "88" | "91" => Direction::OmvendtMedFradrag,
         "82" | "84" | "87" | "89" | "92" => Direction::OmvendtUtenFradrag,
         "20" | "21" | "22" => Direction::Kostnadsmarkor,
@@ -408,8 +408,8 @@ mod tests {
 
     #[test]
     fn directions_classify_the_standard_codes() {
-        assert_eq!(direction("3"), Direction::Utgaende);
-        assert_eq!(direction("1"), Direction::Inngaende);
+        assert_eq!(direction("3"), Direction::Output);
+        assert_eq!(direction("1"), Direction::Input);
         // The deduction right is in the code, and it decides whether the
         // computed tax is payable or a wash.
         assert_eq!(direction("86"), Direction::OmvendtMedFradrag);
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(direction("21"), Direction::Kostnadsmarkor);
         // A zero-rated import basis is still a basis, not a marker.
         assert_eq!(direction("85"), Direction::Ingen);
-        assert_eq!(direction("14"), Direction::Inngaende, "fradragssiden alene");
+        assert_eq!(direction("14"), Direction::Input, "fradragssiden alene");
         assert_eq!(direction("5"), Direction::Ingen);
         assert_eq!(direction("0"), Direction::Ingen);
     }

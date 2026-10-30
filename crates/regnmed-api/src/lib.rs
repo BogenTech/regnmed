@@ -325,7 +325,10 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/reports/nokkeltall",
             get(reports::nokkeltall),
         )
-        .route("/companies/{company_id}/reports/avvik", get(budget::avvik))
+        .route(
+            "/companies/{company_id}/reports/avvik",
+            get(budget::variance),
+        )
         .route(
             "/companies/{company_id}/budgets",
             get(budget::list_budgets).post(budget::create_budget),

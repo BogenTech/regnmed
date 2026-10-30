@@ -527,10 +527,10 @@ mod tests {
     #[test]
     fn every_tool_is_described_and_uniquely_named() {
         let mut name: Vec<&str> = TOOLS.iter().map(|v| v.name).collect();
-        let antall = name.len();
+        let count = name.len();
         name.sort_unstable();
         name.dedup();
-        assert_eq!(name.len(), antall, "to verktøy med samme navn");
+        assert_eq!(name.len(), count, "to verktøy med samme navn");
         for v in TOOLS {
             assert!(
                 v.description.len() > 40,

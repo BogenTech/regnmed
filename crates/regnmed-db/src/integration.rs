@@ -81,7 +81,7 @@ pub async fn grant_integration(
     ensure!(!client_id.is_empty(), "client_id mangler");
     ensure!(!name.trim().is_empty(), "integrasjonen trenger et navn");
     // The role NAME is validated by the caller, where the vocabulary
-    // lives (`regnmed-api::tilgang`): this crate does not know which
+    // lives (`regnmed-api::access`): this crate does not know which
     // names are roles, and a second list here would be a second truth.
     // What the grant cannot give is enforced in the access lookup
     // instead of here — `Rett::kan_delegeres` applies to every row,
@@ -105,9 +105,9 @@ pub async fn grant_integration(
     .fetch_optional(&mut *tx)
     .await?;
     let person_id = match existing {
-        Some((id, kind, har_tilgang)) => {
+        Some((id, kind, has_access)) => {
             ensure!(
-                kind == "integrasjon" || !har_tilgang,
+                kind == "integrasjon" || !has_access,
                 "{client_id} tilhører allerede en innlogget bruker — \
                  en integrasjon må ha sin egen klient-id"
             );

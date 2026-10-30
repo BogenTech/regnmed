@@ -1,6 +1,6 @@
 //! Custom roles (#60, docs/auth.md).
 //!
-//! The built-in roles live in the code (`regnmed-api::tilgang`). This
+//! The built-in roles live in the code (`regnmed-api::access`). This
 //! module holds only what a company has composed itself, out of the
 //! rettigheter that already exist.
 //!

@@ -96,9 +96,9 @@ pub fn build(
         }
         let (grunnlag, rate) = match retning {
             // Fradrag lines carry only the deducted amount.
-            Direction::Inngaende => (None, None),
+            Direction::Input => (None, None),
             // Everything else reports grunnlag + sats.
-            Direction::Utgaende
+            Direction::Output
             | Direction::Ingen
             | Direction::Kostnadsmarkor
             | Direction::OmvendtMedFradrag

@@ -118,7 +118,7 @@ pub async fn list_runs(
             "status": r.status,
             "execution_date": r.execution_date.to_string(),
             "sum_ore": r.sum_ore,
-            "antall": r.antall,
+            "antall": r.count,
             "created_by": r.created_by,
             "approved_by": r.approved_by,
             "settled_voucher": r.settled_voucher,

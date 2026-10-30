@@ -2,7 +2,7 @@
 //!
 //! This test is written as a **regression guard on authorization**, not
 //! as a functional test. When the 22 copies of `require_access` were
-//! merged into one guard (`regnmed_api::tilgang`) there was no test that
+//! merged into one guard (`regnmed_api::access`) there was no test that
 //! would have said anything if one of them had been translated wrong — a
 //! `false` that became `Krav::Bokfor` would have closed an endpoint, a
 //! `true` that became `Krav::Les` would have opened one.

@@ -131,8 +131,9 @@ pub async fn post_voucher(
 
 /// Konti for the computed tax. Created on demand like the rest of the
 /// self-configuring chart — a company that never imports never sees them.
-const OMVENDT_UTGAENDE: (&str, &str) = ("2701", "Beregnet mva, omvendt avgiftsplikt og innførsel");
-const OMVENDT_FRADRAG: (&str, &str) = (
+const REVERSE_CHARGE_OUTPUT: (&str, &str) =
+    ("2701", "Beregnet mva, omvendt avgiftsplikt og innførsel");
+const REVERSE_CHARGE_DEDUCTION: (&str, &str) = (
     "2711",
     "Fradrag beregnet mva, omvendt avgiftsplikt og innførsel",
 );
@@ -186,11 +187,11 @@ async fn expand_omvendt(
         entries.extend(regnmed_core::vat::reverse_charge_entries(
             entry,
             rate_bp,
-            OMVENDT_UTGAENDE.0,
-            OMVENDT_FRADRAG.0,
+            REVERSE_CHARGE_OUTPUT.0,
+            REVERSE_CHARGE_DEDUCTION.0,
         ));
     }
-    for (number, name) in [OMVENDT_UTGAENDE, OMVENDT_FRADRAG] {
+    for (number, name) in [REVERSE_CHARGE_OUTPUT, REVERSE_CHARGE_DEDUCTION] {
         sqlx::query(
             "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
              on conflict (company_id, number) do nothing",

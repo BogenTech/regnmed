@@ -71,14 +71,14 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<EntryRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = require_write(&state, person.person_id, company_id).await?;
+    let access = require_write(&state, person.person_id, company_id).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_time_entry(
         &state.pool,
         company_id,
         person.person_id,
         &request.draft(),
-        tilgang.has(Right::TimesheetRateWrite),
+        access.has(Right::TimesheetRateWrite),
         created_by,
     )
     .await
@@ -92,15 +92,15 @@ pub async fn update(
     Path((company_id, entry_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<EntryRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = require_write(&state, person.person_id, company_id).await?;
+    let access = require_write(&state, person.person_id, company_id).await?;
     regnmed_db::update_time_entry(
         &state.pool,
         company_id,
         entry_id,
         person.person_id,
-        !tilgang.has(Right::TimesheetWriteAll),
+        !access.has(Right::TimesheetWriteAll),
         &request.draft(),
-        tilgang.has(Right::TimesheetRateWrite),
+        access.has(Right::TimesheetRateWrite),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -112,13 +112,13 @@ pub async fn delete(
     person: AuthPerson,
     Path((company_id, entry_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = require_write(&state, person.person_id, company_id).await?;
+    let access = require_write(&state, person.person_id, company_id).await?;
     regnmed_db::delete_time_entry(
         &state.pool,
         company_id,
         entry_id,
         person.person_id,
-        !tilgang.has(Right::TimesheetWriteAll),
+        !access.has(Right::TimesheetWriteAll),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -137,7 +137,7 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
     Query(range): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = require(
+    let access = require(
         &state,
         person.person_id,
         company_id,
@@ -148,7 +148,7 @@ pub async fn list(
         &state.pool,
         company_id,
         person.person_id,
-        !tilgang.has(Right::TimesheetReadAll),
+        !access.has(Right::TimesheetReadAll),
         range.from,
         range.to,
     )

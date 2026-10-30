@@ -73,15 +73,15 @@ pub async fn create_periodisering(
     );
     let from = first_of(draft.from.0, draft.from.1)?;
     let to = first_of(draft.to.0, draft.to.1)?;
-    let antall = regnmed_core::accrual::month_count(draft.from, draft.to);
+    let count = regnmed_core::accrual::month_count(draft.from, draft.to);
     ensure!(
-        antall > 0,
+        count > 0,
         "til-måneden kan ikke være før fra-måneden ({from} → {to})"
     );
     // A plan whose parts round to nothing is a mistake, not a plan.
     ensure!(
-        draft.total_ore.abs() >= i64::from(antall),
-        "{} øre fordelt på {antall} måneder gir under ett øre i måneden",
+        draft.total_ore.abs() >= i64::from(count),
+        "{} øre fordelt på {count} måneder gir under ett øre i måneden",
         draft.total_ore.abs()
     );
 
@@ -291,7 +291,7 @@ pub async fn periodiser_plan(
         (from.year(), from.month()),
         (to.year(), to.month()),
     );
-    let antall = rader.len();
+    let count = rader.len();
 
     let ferdige: Vec<NaiveDate> = sqlx::query_scalar(
         "select period from periodisering_run
@@ -325,7 +325,7 @@ pub async fn periodiser_plan(
                 department.as_deref(),
                 project.as_deref(),
                 i + 1,
-                antall,
+                count,
             )
             .await?,
         );
@@ -347,7 +347,7 @@ async fn post_en_maned(
     department: Option<&str>,
     project: Option<&str>,
     nr: usize,
-    antall: usize,
+    count: usize,
 ) -> Result<PeriodiseringUtfall> {
     let mut tx = pool.begin().await?;
     let result = async {
@@ -356,7 +356,7 @@ async fn post_en_maned(
             amount: Ore(amount),
             // No vat_code, ever: the tax belongs to the source bilag.
             vat_code: None,
-            description: Some(format!("Periodisering måned {nr}/{antall}")),
+            description: Some(format!("Periodisering måned {nr}/{count}")),
             party_no: None,
             department: if dims {
                 department.map(str::to_owned)

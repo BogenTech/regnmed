@@ -943,21 +943,21 @@ async fn vat_report(
 
     // Sales bases post as credits (negative), so payable output VAT is the
     // negated sum; deductible input VAT posts as debits (positive).
-    let utgaende: i64 = lines
+    let output: i64 = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Utgaende)
+        .filter(|l| direction(&l.code) == Direction::Output)
         .map(|l| -l.tax_ore)
         .sum();
-    let inngaende: i64 = lines
+    let input: i64 = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Inngaende)
+        .filter(|l| direction(&l.code) == Direction::Input)
         .map(|l| l.tax_ore)
         .sum();
-    let net = utgaende - inngaende;
+    let net = output - input;
 
     println!();
-    println!("Utgående avgift:  {:>15}", Ore(utgaende).to_string());
-    println!("Inngående avgift: {:>15}", Ore(inngaende).to_string());
+    println!("Utgående avgift:  {:>15}", Ore(output).to_string());
+    println!("Inngående avgift: {:>15}", Ore(input).to_string());
     if net >= 0 {
         println!("Å betale:         {:>15}", Ore(net).to_string());
     } else {

@@ -330,7 +330,7 @@ async fn overview(
     State(state): State<AppState>,
     Extension(_ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tall = regnmed_db::platform_overview(&state.pool).await?;
+    let figures = regnmed_db::platform_overview(&state.pool).await?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
     let today = chrono::Utc::now().date_naive();
     let mut fordeling = std::collections::BTreeMap::new();
@@ -340,11 +340,11 @@ async fn overview(
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
-        "selskaper": tall.selskaper,
-        "byraer": tall.byraer,
-        "brukere": tall.brukere,
-        "integrasjoner": tall.integrasjoner,
-        "plattformbrukere": tall.plattformbrukere,
+        "selskaper": figures.selskaper,
+        "byraer": figures.byraer,
+        "brukere": figures.brukere,
+        "integrasjoner": figures.integrasjoner,
+        "plattformbrukere": figures.plattformbrukere,
         "abonnement": fordeling,
     })))
 }

@@ -44,7 +44,7 @@ impl BalanceSheetLine {
     /// Documented, and for the saldo the account actually has. A
     /// difference is not "undocumented" — it is documented and then
     /// moved, which is a different thing to tell the reader.
-    pub fn avvik_ore(&self) -> Option<i64> {
+    pub fn discrepancy_ore(&self) -> Option<i64> {
         self.avstemt
             .as_ref()
             .map(|a| self.balance_ore - a.balance_ore)

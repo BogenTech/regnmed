@@ -349,11 +349,12 @@ pub async fn delete_budget(pool: &PgPool, company_id: Uuid, budget_id: Uuid) -> 
 }
 
 fn account_entry<'a>(
-    tall: &'a mut std::collections::BTreeMap<String, AccountFigures>,
+    figures: &'a mut std::collections::BTreeMap<String, AccountFigures>,
     number: &str,
     name: String,
 ) -> &'a mut AccountFigures {
-    tall.entry(number.to_string())
+    figures
+        .entry(number.to_string())
         .or_insert_with(|| AccountFigures {
             number: number.to_string(),
             name,
@@ -363,7 +364,7 @@ fn account_entry<'a>(
 }
 
 #[derive(Debug)]
-pub struct AvvikMedBudsjett {
+pub struct VarianceWithBudget {
     /// Which budget the numbers were compared against — None when the
     /// year has none, and then everything budgeted reads zero.
     pub budsjett: Option<BudgetRow>,
@@ -380,7 +381,7 @@ pub async fn avviksrapport(
     year: i32,
     budget_id: Option<Uuid>,
     t_o_m_maned: u32,
-) -> Result<AvvikMedBudsjett> {
+) -> Result<VarianceWithBudget> {
     let budsjett = match budget_id {
         Some(id) => Some(get_budget(pool, company_id, id).await?),
         None => default_budget(pool, company_id, year).await?,
@@ -393,7 +394,7 @@ pub async fn avviksrapport(
         );
     }
 
-    let mut tall: std::collections::BTreeMap<String, AccountFigures> =
+    let mut figures: std::collections::BTreeMap<String, AccountFigures> =
         std::collections::BTreeMap::new();
 
     // Faktisk: hovedbokens egne summer, per konto per måned.
@@ -416,21 +417,21 @@ pub async fn avviksrapport(
         let number: String = r.get("number");
         let month: i32 = r.get("maned");
         let amount: i64 = r.get("belop");
-        let account = account_entry(&mut tall, &number, r.get("name"));
+        let account = account_entry(&mut figures, &number, r.get("name"));
         account.actual[(month - 1) as usize] += presentation_ore(&number, amount);
     }
 
     // Budsjett: allerede i presentasjonsfortegn.
     if let Some(b) = &budsjett {
         for line in budget_lines(pool, company_id, b.id).await? {
-            let account = account_entry(&mut tall, &line.account_number, line.account_name);
+            let account = account_entry(&mut figures, &line.account_number, line.account_name);
             account.budget[(line.month - 1) as usize] += line.amount_ore;
         }
     }
 
-    let tall: Vec<AccountFigures> = tall.into_values().collect();
-    Ok(AvvikMedBudsjett {
+    let figures: Vec<AccountFigures> = figures.into_values().collect();
+    Ok(VarianceWithBudget {
         budsjett,
-        rapport: variance(&tall, t_o_m_maned),
+        rapport: variance(&figures, t_o_m_maned),
     })
 }

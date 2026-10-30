@@ -134,7 +134,7 @@ fn kr(ore: i64) -> String {
     format!("{sign}{grouped},{rest}")
 }
 
-fn antall(milli: i64) -> String {
+fn quantity(milli: i64) -> String {
     if milli % 1000 == 0 {
         format!("{}", milli / 1000)
     } else {
@@ -266,16 +266,16 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         &format!("Kundenr {}", input.kjoper_nr),
     );
 
-    // Line table. Columns: description | antall | pris | mva | beløp.
-    let col_antall = 330.0;
-    let col_pris = 405.0;
+    // Line table. Columns: description | quantity | price | VAT | amount.
+    let col_quantity = 330.0;
+    let col_price = 405.0;
     let col_vat = 460.0;
     let table_top = 210.0;
     let mut ly = table_top;
     let header = |pdf: &mut Pdf, y: f32| {
         pdf.text(MARGIN, y, 8.0, Font::Bold, "Beskrivelse");
-        pdf.text_right(col_antall, y, 8.0, Font::Bold, "Antall");
-        pdf.text_right(col_pris, y, 8.0, Font::Bold, "Pris");
+        pdf.text_right(col_quantity, y, 8.0, Font::Bold, "Antall");
+        pdf.text_right(col_price, y, 8.0, Font::Bold, "Pris");
         pdf.text_right(col_vat, y, 8.0, Font::Bold, "Mva");
         pdf.text_right(RIGHT, y, 8.0, Font::Bold, "Beløp");
         pdf.rule(MARGIN, RIGHT, y + 5.0, 0.7);
@@ -291,13 +291,13 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         }
         pdf.text(MARGIN, ly, 9.0, Font::Regular, &linje.description);
         pdf.text_right(
-            col_antall,
+            col_quantity,
             ly,
             9.0,
             Font::Regular,
-            &antall(linje.quantity_milli),
+            &quantity(linje.quantity_milli),
         );
-        pdf.text_right(col_pris, ly, 9.0, Font::Regular, &kr(linje.enhetspris_ore));
+        pdf.text_right(col_price, ly, 9.0, Font::Regular, &kr(linje.enhetspris_ore));
         if let Some(bp) = linje.vat_rate_bp {
             pdf.text_right(col_vat, ly, 9.0, Font::Regular, &prosent(bp));
         }
@@ -577,9 +577,9 @@ mod tests {
         assert_eq!(kr(123_456_789), "1 234 567,89");
         assert_eq!(kr(-50), "-0,50");
         assert_eq!(kr(100_00), "100,00");
-        assert_eq!(antall(2500), "2,5");
-        assert_eq!(antall(1000), "1");
-        assert_eq!(antall(333), "0,333");
+        assert_eq!(quantity(2500), "2,5");
+        assert_eq!(quantity(1000), "1");
+        assert_eq!(quantity(333), "0,333");
         assert_eq!(prosent(2500), "25 %");
         assert_eq!(prosent(1150), "11,50 %");
     }

@@ -116,7 +116,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     let a = linjer[0].avstemt.as_ref().expect("avstemt");
     assert_eq!(a.balance_ore, 50_000_00, "saldoen lagres slik den var");
     assert_eq!(a.avstemt_av, "Rev Isor");
-    assert_eq!(linjer[0].avvik_ore(), None, "ingen bevegelse etterpå");
+    assert_eq!(linjer[0].discrepancy_ore(), None, "ingen bevegelse etterpå");
 }
 
 /// The reason the saldo is stored: posting to the account after it was
@@ -171,7 +171,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
 
     let linjer = balance_status(&pool, company, period).await.unwrap();
     assert_eq!(
-        linjer[0].avvik_ore(),
+        linjer[0].discrepancy_ore(),
         Some(2_500_00),
         "differansen skal være synlig, ikke skjult"
     );
@@ -190,7 +190,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     .await
     .unwrap();
     let linjer = balance_status(&pool, company, period).await.unwrap();
-    assert_eq!(linjer[0].avvik_ore(), None);
+    assert_eq!(linjer[0].discrepancy_ore(), None);
     let history = regnmed_db::balance_documentation::history(&pool, company, "1920", period)
         .await
         .unwrap();
