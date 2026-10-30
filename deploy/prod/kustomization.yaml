@@ -72,4 +72,4 @@ patches:
   - path: patches/periodiser-cronjob.yaml
   - path: patches/abonnement-cronjob.yaml
   - path: patches/abonnement-oppfolging-cronjob.yaml
-  - path: patches/agent-cronjob.yaml
+  - path: patches/agent-worker.yaml

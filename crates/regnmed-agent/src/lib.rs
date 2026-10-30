@@ -19,6 +19,7 @@
 pub mod llm;
 
 use anyhow::{Context, Result, bail};
+use futures_util::{StreamExt, stream};
 use regnmed_core::hemmelig::Nokkel;
 use regnmed_mcp::klient::Klient;
 use regnmed_mcp::{Server, rolle, verktoy};
@@ -31,6 +32,12 @@ use llm::{Llm, Melding};
 /// How many model turns one task may take. A loop that never stops
 /// spends the customer's money, so it stops and SAYS it stopped --
 /// an agent that quietly gave up is worse than one that reports a wall.
+/// Tool calls from one turn run this many at a time. Four is a guess
+/// with a reason: the models in use rarely ask for more in a single
+/// turn, and the API's per-integration rate limit is what punishes a
+/// bigger burst.
+pub const CONCURRENT_TOOLS: usize = 4;
+
 pub const MAKS_TURER: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
@@ -161,9 +168,9 @@ fn systemprompt(rollenavn: &str, ekstra: Option<&str>) -> String {
 }
 
 /// Runs one task to a conclusion and returns it. Writing the result is
-/// the caller's job ([`kjor_oppgave`]), so this stays testable without
+/// the caller's job ([`run_task`]), so this stays testable without
 /// a database.
-pub async fn kjor_sloyfe(
+pub async fn run_loop(
     modell: &Llm,
     server: &Server,
     rollenavn: &str,
@@ -202,14 +209,32 @@ pub async fn kjor_sloyfe(
         meldinger.push(Melding::assistent_verktoy(
             svar.raa_tool_calls.unwrap_or_else(|| json!([])),
         ));
-        for kall in svar.kall {
+        // Tool calls in ONE turn are independent of each other -- the
+        // model asked for all of them before seeing any answer -- so
+        // they run together. This is the only parallelism a single task
+        // can have: turns themselves cannot overlap, because a turn's
+        // input is the previous turn's output. Concurrency ACROSS tasks
+        // is what the work queue is for (docs/agent.md §8.7).
+        //
+        // Bounded, because the API rate-limits per integration
+        // (docs/integrations.md): an unbounded burst would earn the
+        // agent a 429 and spend a turn being told off.
+        let svar_tekster = stream::iter(svar.kall.into_iter().map(|kall| async move {
             let tekst = match verktoy::finn(&kall.navn) {
                 Some(v) => server.utfor_verktoy(v, kall.argumenter).await.0,
                 // An invented tool is the model's mistake, and it is told
                 // so in the same channel as a real result.
                 None => format!("ukjent verktøy «{}»", kall.navn),
             };
-            meldinger.push(Melding::verktoysvar(kall.id, llm::kutt(&tekst, 8000)));
+            (kall.id, tekst)
+        }))
+        .buffered(CONCURRENT_TOOLS)
+        .collect::<Vec<_>>()
+        .await;
+        // `buffered` preserves the order they were asked in, which some
+        // providers check when matching results to calls.
+        for (id, tekst) in svar_tekster {
+            meldinger.push(Melding::verktoysvar(id, llm::kutt(&tekst, 8000)));
         }
     }
 
@@ -221,7 +246,7 @@ pub async fn kjor_sloyfe(
 
 /// One task, end to end: build the agent's own API client from its
 /// stored credentials, run the loop, and record the outcome.
-pub async fn kjor_oppgave(
+pub async fn run_task(
     pool: &PgPool,
     nokkel: &Nokkel,
     company_id: Uuid,
@@ -287,7 +312,7 @@ pub async fn kjor_oppgave(
         })
         .collect();
 
-    let utfall = match kjor_sloyfe(
+    let utfall = match run_loop(
         &modell,
         &server,
         &grant.access,

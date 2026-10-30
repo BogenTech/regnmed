@@ -1,4 +1,4 @@
-# Vertsagenten (docs/agent.md §8.3).
+# Vertsagentene (docs/agent.md §8.3, §8.7).
 #
 # REGNMED_API går IN-CLUSTER: workeren og API-et står i samme namespace,
 # og å sende kallene ut gjennom nginx-proxy-manager og inn igjen ville
@@ -8,10 +8,32 @@
 # tokenet regnmed-api validerer, og et token utstedt av et annet navn
 # enn det API-et venter blir avvist uten spor noe sted (samme felle som
 # den manglende --audience i CLAUDE.md punkt 56).
+#
+# REPLIKAER er taket på hvor mange agentoppgaver som kan kjøre samtidig
+# på hele plattformen. Test beviser oppførsel, ikke kapasitet --
+# én holder, og da ser man også at køen faktisk serialiserer.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-agent
+  namespace: regnmed
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: agent
+          env:
+            - name: REGNMED_API
+              value: http://regnmed-api:8080
+            - name: REGNMED_ISSUER
+              value: https://id.test.regnmed.no
+---
+# Feiebrettet arver de samme adressene.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: regnmed-agent
+  name: regnmed-agent-sweep
   namespace: regnmed
 spec:
   jobTemplate:

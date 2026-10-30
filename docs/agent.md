@@ -777,3 +777,88 @@ rad har sin egen nøkkel mens `integration_id` er felles.
   og `[provision]`-loggen navngir den, men ingen rydder den bort.
 - **Ingen agent har kjørt en oppgave ende til ende i et cluster.**
   Uendret fra §8.3. Det som er nytt her er hvordan agenten BLIR til.
+
+### 8.7 Arbeidskø i stedet for CronJob (levert 2026-10-29)
+
+CronJobben kjørte hvert femte minutt med `concurrencyPolicy: Forbid`.
+Det betydde ÉN agentoppgave om gangen for HELE plattformen — ikke én per
+selskap. En bokfører som malte seg gjennom tolv turer blokkerte alle
+andres agenter til den var ferdig eller traff 900-sekundersgrensen.
+
+Det er ikke en forsinkelse man justerer bort. Det er et tak på én, og
+«hvert femte minutt» var aldri den egentlige kostnaden.
+
+NATS JetStream stod alt i begge clusterne og var alt en avhengighet
+(`regnmed-mail`), så dette krevde ingen ny infrastruktur.
+
+#### Køen er en DØRKLOKKE, ikke fasiten
+
+`agent_oppgave` i databasen er fortsatt autoritativ: den vet hvilke
+oppgaver som står åpne og hva som skjedde med dem. En melding på
+`regnmed.agent.oppgave` sier bare «se nå» i stedet for «se innen fem
+minutter». To konsekvenser, begge med vilje:
+
+1. **En tapt melding koster VENTETID, ikke arbeid.** Feiebrettet —
+   `regnmed-agent run`, timelig CronJob — finner oppgaven uansett. En
+   NATS-nedetid setter altså agentene tilbake til oppførselen de hadde
+   før køen fantes, framfor å stoppe dem.
+2. **En duplisert melding koster INGENTING**, fordi workeren tar en lås
+   i databasen før den gjør noe. At-least-once er greit når det som
+   leveres er et puff.
+
+Meldingen bærer bare id-er. Hva agenten leser og skriver blir mellom
+workeren og API-et; å legge regnskapsdata på en delt strøm ville utvidet
+hvor de dataene ligger lagret uten å gi noe — workeren må slå opp i
+databasen uansett.
+
+#### Låsen (migrasjon 0069)
+
+Hvorfor en lås når en work queue alt leverer til én konsument? Fordi
+`ack_wait` må være lang — en modelltur tar minutter — og en
+re-levering etter at den utløper ville satt worker nummer to på en
+oppgave worker nummer én fortsatt kjører. **Den oppgaven bokfører
+bilag.** At-least-once pluss en ubeskyttet hovedbokskriving er nøyaktig
+kombinasjonen dette systemet finnes for å hindre.
+
+`agent_task_claim` er derfor et LEIEFORHOLD, ikke et spor: raden
+slettes når oppgaven er ferdig. Hva agenten gjorde står i
+`agent_oppgave_hendelse`, som er innsettings-bar og forblir det.
+
+Å ta låsen er ÉN setning (`insert … on conflict do update … where
+claimed_at < now() - interval`), altså atomisk: enten holder du raden
+eller så gjør noen andre det, og ingen rekkefølge av lesere kan få to
+til å tro de vant. Testen kjører ti samtidige forsøk og krever nøyaktig
+én vinner — **sett feile** med den åpenbare lese-så-skrive-varianten.
+En lås eldre enn `CLAIM_TTL_MINUTES` (15) kan overtas, ellers ville en
+worker som ble drept parkert oppgaven for alltid.
+
+Feiebrettet tar samme lås. Uten det ville nettopp det stedet vært det
+ene som kunne kjøre en oppgave to ganger — og helst når et etterslep
+gjør det mest sannsynlig.
+
+#### Samtidige verktøykall i én tur
+
+Verktøykall fra ÉN tur er uavhengige av hverandre: modellen ba om alle
+før den så noe svar. De kjører nå fire om gangen (`CONCURRENT_TOOLS`),
+bundet fordi API-et ratebegrenser per integrasjon — et ubundet byks
+ville gitt agenten en 429 og brukt en tur på å bli irettesatt.
+
+Dette er den ENESTE parallelliteten én oppgave kan ha. Turer kan ikke
+overlappe, for en turs inndata ER forrige turs utdata; å sende turer på
+en kø ville bare vært stafett mellom workere, med samme klokketid og
+regnskapsdata på kjøpet. Samtidighet PÅ TVERS av oppgaver er det køen
+gir: ti agenter for ti selskaper kjører faktisk samtidig.
+
+Stafetten finnes forresten alt, der den lønner seg: når agenten stiller
+et spørsmål, slippes workeren, og hvilken som helst worker kan ta
+oppgaven igjen når et menneske svarer — tråden bygges opp fra
+`agent_oppgave_hendelse`, ikke fra minnet. Overleveringen skjer altså
+når man venter på et MENNESKE, som tar timer, ikke på en modell, som
+tar sekunder.
+
+#### Drift
+
+`regnmed-agent listen` er en Deployment; replikatallet er taket på
+samtidige agentoppgaver (test 1, prod 3). `regnmed-agent run` er
+feiebrettet, timelig. Workeren krever `NATS_URL` og nekter å starte uten
+— en lytter uten kø ser frisk ut og gjør ingenting.

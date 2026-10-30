@@ -17,6 +17,8 @@ use anyhow::{Context as _, Result};
 // Re-exported so callers can name the context type without their own
 // async-nats dependency.
 pub use async_nats::jetstream;
+
+pub mod taskqueue;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use uuid::Uuid;

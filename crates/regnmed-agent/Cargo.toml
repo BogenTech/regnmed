@@ -10,10 +10,12 @@ repository.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 dotenvy.workspace = true
+futures-util.workspace = true
 regnmed-core.workspace = true
 regnmed-db.workspace = true
 # The tool table, the role prompts and the API client are the SAME ones
 # the customer's own MCP server uses. Only the transport differs.
+regnmed-mail.workspace = true
 regnmed-mcp = { path = "../regnmed-mcp" }
 reqwest.workspace = true
 serde.workspace = true
