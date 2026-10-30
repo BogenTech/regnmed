@@ -146,7 +146,7 @@ pub async fn avslutt_ar(
         "{year} har verken resultat eller skattekostnad å disponere"
     );
 
-    for (nr, name) in [
+    for (number, name) in [
         (SKATTEKOSTNAD_KONTO, "Skattekostnad"),
         (BETALBAR_SKATT_KONTO, "Betalbar skatt"),
         (
@@ -155,7 +155,7 @@ pub async fn avslutt_ar(
         ),
         (OPPTJENT_EK_KONTO, "Annen egenkapital"),
     ] {
-        crate::ensure_account(pool, company_id, nr, name).await?;
+        crate::ensure_account(pool, company_id, number, name).await?;
     }
 
     let draft = VoucherDraft {

@@ -247,11 +247,11 @@ mod tests {
         assert!(v.description.contains("Z-0042"), "{}", v.description);
 
         // 12 500 incl. 25 % = 10 000 + 2 500; 2 300 incl. 15 % = 2 000 + 300.
-        let account = |nr: &str| {
+        let account = |number: &str| {
             v.entries
                 .iter()
-                .find(|e| e.account_number == nr)
-                .unwrap_or_else(|| panic!("mangler {nr}"))
+                .find(|e| e.account_number == number)
+                .unwrap_or_else(|| panic!("mangler {number}"))
                 .amount
                 .0
         };

@@ -143,8 +143,8 @@ pub async fn run(js: jetstream::Context, pool: PgPool) -> Result<()> {
                     eprintln!("e-post-inn ({}): {advarsel}", mail.message_id);
                 }
                 match regnmed_db::receive_mail(&pool, &db_mail).await {
-                    Ok(utfall) => println!(
-                        "e-post-inn: {} fra {} → {utfall:?}",
+                    Ok(outcome) => println!(
+                        "e-post-inn: {} fra {} → {outcome:?}",
                         mail.message_id, mail.from
                     ),
                     Err(e) => {

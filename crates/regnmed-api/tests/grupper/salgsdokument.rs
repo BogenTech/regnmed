@@ -58,7 +58,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 #[tokio::test]
-async fn tilbud_ordre_faktura_chain() {
+async fn quote_ordre_invoice_chain() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;

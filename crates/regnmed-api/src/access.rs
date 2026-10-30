@@ -701,7 +701,7 @@ pub const AUDITOR_BUNDLE: &[Right] = &[
 ];
 
 /// What bokføring adds: everything that changes the hovedbok or ends there.
-const BOKFORING_BUNT: &[Right] = &[
+const BOOKKEEPING_BUNDLE: &[Right] = &[
     Right::AttachmentWrite,
     Right::VoucherUpload,
     Right::VoucherPost,
@@ -824,8 +824,8 @@ impl Role {
             Self::Employee => &[EMPLOYEE_BUNDLE],
             Self::Read => &[LES_BUNT],
             Self::Auditor => &[LES_BUNT, AUDITOR_BUNDLE],
-            Self::Bookkeeping => &[LES_BUNT, BOKFORING_BUNT],
-            Self::Admin => &[LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT],
+            Self::Bookkeeping => &[LES_BUNT, BOOKKEEPING_BUNDLE],
+            Self::Admin => &[LES_BUNT, BOOKKEEPING_BUNDLE, ADMIN_BUNT],
         }
     }
 
@@ -1052,7 +1052,7 @@ mod tests {
         let mut v: Vec<Right> = LES_BUNT
             .iter()
             .chain(AUDITOR_BUNDLE)
-            .chain(BOKFORING_BUNT)
+            .chain(BOOKKEEPING_BUNDLE)
             .chain(ADMIN_BUNT)
             .flat_map(|r| std::iter::once(*r).chain(r.implies().iter().copied()))
             .collect();
@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn the_bundles_do_not_overlap() {
         let mut sett = std::collections::BTreeSet::new();
-        for bunt in [LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT] {
+        for bunt in [LES_BUNT, BOOKKEEPING_BUNDLE, ADMIN_BUNT] {
             for r in bunt {
                 assert!(sett.insert(*r), "{} er i mer enn én bunt", r.slug());
             }
@@ -1170,7 +1170,7 @@ mod tests {
         for r in LES_BUNT {
             assert!(Role::Read.has(*r), "les mangler {}", r.slug());
         }
-        for r in BOKFORING_BUNT {
+        for r in BOOKKEEPING_BUNDLE {
             assert!(!Role::Read.has(*r), "les skulle ikke hatt {}", r.slug());
             assert!(Role::Bookkeeping.has(*r), "bokforing mangler {}", r.slug());
         }

@@ -213,7 +213,7 @@ async fn seed_browser_demo() {
             utenlandsk_id: None,
             address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
-            poststed: Some("OSLO".into()),
+            postal_city: Some("OSLO".into()),
             landkode: None,
             note: None,
         },
@@ -232,7 +232,7 @@ async fn seed_browser_demo() {
             utenlandsk_id: None,
             address: None,
             postnummer: None,
-            poststed: None,
+            postal_city: None,
             landkode: None,
             note: None,
         },
@@ -410,7 +410,7 @@ async fn seed_browser_demo() {
                 description: "Konsulentarbeid".into(),
                 project: None,
                 billable: Some(true),
-                timesats_ore: Some(120_000),
+                hourly_rate_ore: Some(120_000),
             },
             true,
             "Demo Bruker",
@@ -447,10 +447,10 @@ async fn seed_browser_demo() {
     .unwrap();
     // A platform systemadmin (docs/auth.md §8) with no company access —
     // the Plattform view is only reachable with an active platform role.
-    let plattform_sub = format!("browser|{}", Uuid::new_v4());
-    let plattform_person = regnmed_db::ensure_person(
+    let platform_sub = format!("browser|{}", Uuid::new_v4());
+    let platform_person = regnmed_db::ensure_person(
         &state.pool,
-        &plattform_sub,
+        &platform_sub,
         Some("Plattform Demo"),
         Some("plattform@test.invalid"),
     )
@@ -458,7 +458,7 @@ async fn seed_browser_demo() {
     .unwrap();
     regnmed_db::grant_platform_role(
         &state.pool,
-        plattform_person,
+        platform_person,
         "systemadmin",
         (chrono::Utc::now() + chrono::Duration::days(90)).date_naive(),
         "demo",
@@ -468,7 +468,7 @@ async fn seed_browser_demo() {
     .unwrap();
     std::fs::write(
         format!("{out_dir}/token-plattform.txt"),
-        idp.token(&plattform_sub, "Plattform Demo"),
+        idp.token(&platform_sub, "Plattform Demo"),
     )
     .unwrap();
     std::fs::write(format!("{out_dir}/company.txt"), company.to_string()).unwrap();

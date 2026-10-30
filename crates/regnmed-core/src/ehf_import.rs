@@ -36,7 +36,7 @@ pub struct MottattLinje {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MottattFaktura {
+pub struct ReceivedInvoice {
     /// True for CreditNote — the amounts flip when the bilag is proposed.
     pub er_kreditnota: bool,
     pub fakturanr: String,
@@ -102,7 +102,7 @@ fn ends_with(path: &[String], tail: &[&str]) -> bool {
     path.len() >= tail.len() && path[path.len() - tail.len()..] == *tail
 }
 
-pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
+pub fn parse(xml: &str) -> Result<ReceivedInvoice, EhfImportError> {
     use quick_xml::Reader;
     use quick_xml::events::Event;
 
@@ -110,7 +110,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
     reader.config_mut().trim_text(true);
 
     let mut path: Vec<String> = Vec::new();
-    let mut invoice = MottattFaktura {
+    let mut invoice = ReceivedInvoice {
         er_kreditnota: false,
         fakturanr: String::new(),
         invoice_date: None,
@@ -270,7 +270,7 @@ mod tests {
             orgnumber: orgnumber.into(),
             address: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
-            poststed: Some("Oslo".into()),
+            postal_city: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: true,
             email: None,
@@ -318,7 +318,7 @@ mod tests {
     /// Round-trip against our own renderer, the same guarantee the SAF-T
     /// importer carries: what we write, we can read.
     #[test]
-    fn reads_our_own_faktura_back() {
+    fn reads_our_own_invoice_back() {
         let xml = render(&document(DocumentType::Invoice));
         let received = parse(&xml).unwrap();
         assert!(!received.er_kreditnota);

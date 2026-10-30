@@ -89,12 +89,12 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("2050", "Annen egenkapital"),
         ("2800", "Avsatt utbytte"),
         ("1920", "Bankinnskudd"),
     ] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
@@ -356,7 +356,7 @@ async fn events_cannot_be_changed_or_deleted() {
             utenlandsk_id: None,
             address: None,
             postnummer: None,
-            poststed: None,
+            postal_city: None,
             landkode: None,
             note: None,
         },

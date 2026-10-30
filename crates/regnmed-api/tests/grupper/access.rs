@@ -172,19 +172,23 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String, String, String)> {
         .await
         .unwrap();
     let admin = person_with_role(&state, &idp, company, "admin").await;
-    let bokforing = person_with_role(&state, &idp, company, "bokforing").await;
+    let bookkeeping = person_with_role(&state, &idp, company, "bokforing").await;
     let les = person_with_role(&state, &idp, company, "les").await;
-    Some((state, idp, company, admin, bokforing, les))
+    Some((state, idp, company, admin, bookkeeping, les))
 }
 
 #[tokio::test]
 async fn every_role_may_read() {
-    let Some((state, _idp, company, admin, bokforing, les)) = setup().await else {
+    let Some((state, _idp, company, admin, bookkeeping, les)) = setup().await else {
         return;
     };
     for uri in LESING {
         let uri = uri.replace("{c}", &company.to_string());
-        for (name, token) in [("admin", &admin), ("bokforing", &bokforing), ("les", &les)] {
+        for (name, token) in [
+            ("admin", &admin),
+            ("bokforing", &bookkeeping),
+            ("les", &les),
+        ] {
             let s = status(&state, "GET", &uri, token, "").await;
             assert_ne!(s, StatusCode::FORBIDDEN, "{name} nektet lesing av {uri}");
             assert_ne!(s, StatusCode::NOT_FOUND, "{name} fikk 404 på {uri}");
@@ -196,7 +200,7 @@ async fn every_role_may_read() {
 /// oppdrag) must not be able to change anything at all.
 #[tokio::test]
 async fn read_access_cannot_change_anything() {
-    let Some((state, _idp, company, _admin, _bokforing, les)) = setup().await else {
+    let Some((state, _idp, company, _admin, _bookkeeping, les)) = setup().await else {
         return;
     };
     for (method, uri, body) in SKRIVING {
@@ -213,14 +217,14 @@ async fn read_access_cannot_change_anything() {
 /// not be able to change company details, let in an integration, or set
 /// the attestering policy that is meant to check them.
 #[tokio::test]
-async fn bokforing_is_not_administration() {
-    let Some((state, _idp, company, admin, bokforing, les)) = setup().await else {
+async fn bookkeeping_is_not_administration() {
+    let Some((state, _idp, company, admin, bookkeeping, les)) = setup().await else {
         return;
     };
     for (method, uri, body) in ADMIN {
         let uri = uri.replace("{c}", &company.to_string());
         assert_eq!(
-            status(&state, method, &uri, &bokforing, body).await,
+            status(&state, method, &uri, &bookkeeping, body).await,
             StatusCode::FORBIDDEN,
             "bokforing skulle vært nektet {method} {uri}"
         );
@@ -244,7 +248,7 @@ async fn bokforing_is_not_administration() {
 /// is a customer of ours.
 #[tokio::test]
 async fn an_outsider_gets_404_not_403() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, _admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let sub = format!("fremmed|{}", Uuid::new_v4());
@@ -327,7 +331,7 @@ const ALLOWED_FOR_EMPLOYEE: &[&str] = &[
 
 #[tokio::test]
 async fn an_employee_cannot_reach_the_hovedbok() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, _admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
@@ -344,7 +348,7 @@ async fn an_employee_cannot_reach_the_hovedbok() {
 
 #[tokio::test]
 async fn an_employee_may_do_their_own() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, _admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
@@ -388,7 +392,7 @@ async fn an_employee_may_do_their_own() {
 /// reaches neither the innboks nor the posting.
 #[tokio::test]
 async fn an_employee_may_upload_but_not_post() {
-    let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, _admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
@@ -433,10 +437,10 @@ async fn an_employee_may_upload_but_not_post() {
 /// would grant either everything or nothing.
 #[tokio::test]
 async fn an_employee_gets_only_their_own_payslip() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
-    for (nr, name) in [
+    for (number, name) in [
         ("5000", "Lønn"),
         ("5090", "Feriepenger"),
         ("5400", "Aga"),
@@ -445,7 +449,7 @@ async fn an_employee_gets_only_their_own_payslip() {
         ("2930", "Skyldig lønn"),
         ("2940", "Skyldige feriepenger"),
     ] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
@@ -565,7 +569,7 @@ async fn an_employee_gets_only_their_own_payslip() {
 /// not.
 #[tokio::test]
 async fn lonn_is_not_general_reading() {
-    let Some((state, idp, company, admin, bokforing, les)) = setup().await else {
+    let Some((state, idp, company, admin, bookkeeping, les)) = setup().await else {
         return;
     };
 
@@ -599,7 +603,7 @@ async fn lonn_is_not_general_reading() {
         // Allowed: revisor (audit duty), bokføring and admin.
         for (name, token) in [
             ("revisor", &auditor),
-            ("bokforing", &bokforing),
+            ("bokforing", &bookkeeping),
             ("admin", &admin),
         ] {
             assert_ne!(
@@ -634,7 +638,7 @@ async fn lonn_is_not_general_reading() {
 /// the company itself, and it works.
 #[tokio::test]
 async fn a_custom_role_grants_exactly_what_it_says() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
 
@@ -692,7 +696,7 @@ async fn a_custom_role_grants_exactly_what_it_says() {
 /// the role is created, not merely ignored on lookup.
 #[tokio::test]
 async fn access_governing_rights_cannot_be_delegated() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     for farlig in [
@@ -745,7 +749,7 @@ async fn access_governing_rights_cannot_be_delegated() {
 /// what they are granting.
 #[tokio::test]
 async fn every_builtin_role_describes_itself() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let (code, response) = json_call(
@@ -773,7 +777,7 @@ async fn every_builtin_role_describes_itself() {
 /// without losing the history of who held it.
 #[tokio::test]
 async fn a_deactivated_role_grants_no_access() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let (_, response) = json_call(
@@ -835,7 +839,7 @@ async fn a_deactivated_role_grants_no_access() {
 /// and docs/auth.md §8 along with it.
 #[tokio::test]
 async fn an_admin_crosses_no_company_boundary() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let nabo = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Naboselskapet AS")
@@ -890,7 +894,7 @@ async fn an_admin_crosses_no_company_boundary() {
 /// log could lie about the very entry it exists to catch.
 #[tokio::test]
 async fn the_emergency_procedure_requires_a_reference_and_names_itself() {
-    let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let sub = format!("gjenoppretting|{}", Uuid::new_v4());
@@ -899,7 +903,7 @@ async fn the_emergency_procedure_requires_a_reference_and_names_itself() {
         .unwrap();
 
     // Without a reference: refused by the check constraint.
-    let uten = sqlx::query(
+    let without = sqlx::query(
         "insert into company_member_change
              (id, company_id, person_id, endring, til_rolle, kilde)
          values ($1,$2,$3,'lagt_til','admin','nodprosedyre')",
@@ -910,7 +914,7 @@ async fn the_emergency_procedure_requires_a_reference_and_names_itself() {
     .execute(&state.pool)
     .await;
     assert!(
-        uten.is_err(),
+        without.is_err(),
         "et nødinnslag uten samtykkereferanse skulle vært avvist"
     );
 
@@ -992,7 +996,7 @@ async fn the_emergency_procedure_requires_a_reference_and_names_itself() {
 /// rettigheter have been written.
 #[tokio::test]
 async fn a_role_without_a_log_row_never_comes_into_being() {
-    let Some((state, _idp, company, _admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, _admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let spokelse = Uuid::new_v4();
@@ -1031,7 +1035,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
 /// both fail here.
 #[tokio::test]
 async fn rights_are_never_read_half_written() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let (code, response) = json_call(
@@ -1110,7 +1114,7 @@ async fn rights_are_never_read_half_written() {
 /// rename in a later migration cannot turn the message into a 500.
 #[tokio::test]
 async fn a_duplicate_role_name_says_the_name_is_taken() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let body = r#"{"navn":"Kontrollør","rettigheter":["FAKTURA_LES"]}"#;
@@ -1146,7 +1150,7 @@ async fn a_duplicate_role_name_says_the_name_is_taken() {
 /// real one.
 #[tokio::test]
 async fn built_in_role_names_are_reserved() {
-    let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
+    let Some((state, _idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     for name in ["admin", "les", "bokforing", "ansatt", "revisor"] {

@@ -91,8 +91,8 @@ pub struct Address {
     pub address: Vec<String>,
     #[serde(default)]
     pub postnummer: Option<String>,
-    #[serde(default)]
-    pub poststed: Option<String>,
+    #[serde(default, rename = "poststed")]
+    pub postal_city: Option<String>,
 }
 
 impl Address {
@@ -107,10 +107,10 @@ impl Address {
             .filter(|l| !l.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-        let sted = match (&self.postnummer, &self.poststed) {
-            (Some(nr), Some(sted)) => format!("{} {}", nr.trim(), sted.trim()),
+        let sted = match (&self.postnummer, &self.postal_city) {
+            (Some(number), Some(sted)) => format!("{} {}", number.trim(), sted.trim()),
             (None, Some(sted)) => sted.trim().to_string(),
-            (Some(nr), None) => nr.trim().to_string(),
+            (Some(number), None) => number.trim().to_string(),
             (None, None) => String::new(),
         };
         match (gate.is_empty(), sted.is_empty()) {
@@ -176,7 +176,7 @@ impl BrregEntity {
             }
             match rader.last_mut() {
                 // Both registers on the same day collapse into one row.
-                Some(siste) if siste.0 == d => *siste = (d, vat, foretak),
+                Some(last) if last.0 == d => *last = (d, vat, foretak),
                 _ => rader.push((d, vat, foretak)),
             }
         }
@@ -372,13 +372,13 @@ mod tests {
         let tom = Address {
             address: vec![String::new()],
             postnummer: None,
-            poststed: None,
+            postal_city: None,
         };
         assert!(tom.one_line().is_none());
         let bare_sted = Address {
             address: vec![],
             postnummer: Some("0155".into()),
-            poststed: Some("Oslo".into()),
+            postal_city: Some("Oslo".into()),
         };
         assert_eq!(bare_sted.one_line().unwrap(), "0155 Oslo");
     }

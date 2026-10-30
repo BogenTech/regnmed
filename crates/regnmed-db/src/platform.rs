@@ -52,7 +52,7 @@ pub async fn active_platform_role(
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformMedlem {
+pub struct PlatformMember {
     pub id: Uuid,
     pub person_id: Uuid,
     pub name: String,
@@ -64,7 +64,7 @@ pub struct PlattformMedlem {
     pub active: bool,
 }
 
-pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>> {
+pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlatformMember>> {
     let rows = sqlx::query(
         "select m.id, m.person_id, coalesce(p.name, p.oidc_sub) as navn, p.email,
                 m.rolle, m.valid_from, m.valid_to, m.notat,
@@ -77,7 +77,7 @@ pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>
     .await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformMedlem {
+        .map(|r| PlatformMember {
             id: r.get("id"),
             person_id: r.get("person_id"),
             name: r.get("navn"),
@@ -201,7 +201,7 @@ pub async fn log_platform_access(
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformInnsyn {
+pub struct PlatformAccessLog {
     pub name: String,
     pub role: String,
     pub method: String,
@@ -209,7 +209,7 @@ pub struct PlattformInnsyn {
     pub created_at: DateTime<Utc>,
 }
 
-async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlattformInnsyn>> {
+async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlatformAccessLog>> {
     // `column` is one of two literals below — never caller input.
     let sql = format!(
         "select coalesce(p.name, p.oidc_sub) as navn, l.rolle, l.method, l.path, l.created_at
@@ -222,7 +222,7 @@ async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlattformIn
     let rows = sqlx::query(&sql).bind(id).fetch_all(pool).await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformInnsyn {
+        .map(|r| PlatformAccessLog {
             name: r.get("navn"),
             role: r.get("rolle"),
             method: r.get("method"),
@@ -238,19 +238,19 @@ async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlattformIn
 pub async fn platform_access_for_company(
     pool: &PgPool,
     company_id: Uuid,
-) -> Result<Vec<PlattformInnsyn>> {
+) -> Result<Vec<PlatformAccessLog>> {
     innsyn(pool, "company_id", company_id).await
 }
 
 pub async fn platform_access_for_firm(
     pool: &PgPool,
     firm_id: Uuid,
-) -> Result<Vec<PlattformInnsyn>> {
+) -> Result<Vec<PlatformAccessLog>> {
     innsyn(pool, "firm_id", firm_id).await
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformSelskap {
+pub struct PlatformCompany {
     pub id: Uuid,
     pub orgnumber: String,
     pub name: String,
@@ -259,7 +259,7 @@ pub struct PlattformSelskap {
 pub async fn platform_list_companies(
     pool: &PgPool,
     sok: Option<&str>,
-) -> Result<Vec<PlattformSelskap>> {
+) -> Result<Vec<PlatformCompany>> {
     let rows = sqlx::query(
         "select id, orgnr, name from company
          where $1::text is null or name ilike '%' || $1 || '%' or orgnr like $1 || '%'
@@ -271,7 +271,7 @@ pub async fn platform_list_companies(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformSelskap {
+        .map(|r| PlatformCompany {
             id: r.get("id"),
             orgnumber: r.get("orgnr"),
             name: r.get("name"),
@@ -280,14 +280,14 @@ pub async fn platform_list_companies(
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformByra {
+pub struct PlatformFirm {
     pub id: Uuid,
     pub orgnumber: String,
     pub name: String,
     pub kind: String,
 }
 
-pub async fn platform_list_firms(pool: &PgPool, sok: Option<&str>) -> Result<Vec<PlattformByra>> {
+pub async fn platform_list_firms(pool: &PgPool, sok: Option<&str>) -> Result<Vec<PlatformFirm>> {
     let rows = sqlx::query(
         "select id, orgnr, name, kind from firm
          where $1::text is null or name ilike '%' || $1 || '%' or orgnr like $1 || '%'
@@ -299,7 +299,7 @@ pub async fn platform_list_firms(pool: &PgPool, sok: Option<&str>) -> Result<Vec
     .await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformByra {
+        .map(|r| PlatformFirm {
             id: r.get("id"),
             orgnumber: r.get("orgnr"),
             name: r.get("name"),
@@ -309,7 +309,7 @@ pub async fn platform_list_firms(pool: &PgPool, sok: Option<&str>) -> Result<Vec
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformTilknytning {
+pub struct PlatformAffiliation {
     /// "selskap" or "byra".
     pub slag: String,
     pub id: Uuid,
@@ -320,18 +320,18 @@ pub struct PlattformTilknytning {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformBruker {
+pub struct PlatformUser {
     pub person_id: Uuid,
     pub name: String,
     pub email: Option<String>,
     pub kind: String,
-    pub tilknytninger: Vec<PlattformTilknytning>,
+    pub tilknytninger: Vec<PlatformAffiliation>,
 }
 
 /// Users across the whole platform, each with the connections that answer
 /// "where does this person belong?" — company memberships and byrå
 /// memberships. Master data only; nothing here reads a ledger.
-pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec<PlattformBruker>> {
+pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec<PlatformUser>> {
     let persons = sqlx::query(
         "select id, coalesce(name, oidc_sub) as navn, email, kind from person
          where $1::text is null
@@ -365,7 +365,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
         .iter()
         .map(|p| {
             let person_id: Uuid = p.get("id");
-            PlattformBruker {
+            PlatformUser {
                 person_id,
                 name: p.get("navn"),
                 email: p.get("email"),
@@ -373,7 +373,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
                 tilknytninger: connections
                     .iter()
                     .filter(|c| c.get::<Uuid, _>("person_id") == person_id)
-                    .map(|c| PlattformTilknytning {
+                    .map(|c| PlatformAffiliation {
                         slag: c.get("slag"),
                         id: c.get("id"),
                         name: c.get("navn"),
@@ -388,7 +388,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
 }
 
 #[derive(Debug, Clone)]
-pub struct PlattformKunde {
+pub struct PlatformCustomer {
     pub party_id: Uuid,
     pub party_no: String,
     pub name: String,
@@ -406,7 +406,7 @@ pub struct PlattformKunde {
 pub async fn platform_list_customers(
     pool: &PgPool,
     sok: Option<&str>,
-) -> Result<Vec<PlattformKunde>> {
+) -> Result<Vec<PlatformCustomer>> {
     let rows = sqlx::query(
         "select pa.id, pa.party_no, pa.name as navn, pa.orgnr, pa.email,
                 c.id as company_id, c.name as company_navn, c.orgnr as company_orgnr
@@ -426,7 +426,7 @@ pub async fn platform_list_customers(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformKunde {
+        .map(|r| PlatformCustomer {
             party_id: r.get("id"),
             party_no: r.get("party_no"),
             name: r.get("navn"),
@@ -616,7 +616,7 @@ pub async fn platform_assign_firm(
 /// Counts for the platform console's dashboard. Cheap aggregates over
 /// administrative master data — nothing here reads any ledger.
 #[derive(Debug, Clone)]
-pub struct PlattformOversikt {
+pub struct PlatformOverview {
     pub selskaper: i64,
     pub byraer: i64,
     pub brukere: i64,
@@ -624,7 +624,7 @@ pub struct PlattformOversikt {
     pub plattformbrukere: i64,
 }
 
-pub async fn platform_overview(pool: &PgPool) -> Result<PlattformOversikt> {
+pub async fn platform_overview(pool: &PgPool) -> Result<PlatformOverview> {
     let row = sqlx::query(
         "select
             (select count(*) from company) as selskaper,
@@ -637,7 +637,7 @@ pub async fn platform_overview(pool: &PgPool) -> Result<PlattformOversikt> {
     )
     .fetch_one(pool)
     .await?;
-    Ok(PlattformOversikt {
+    Ok(PlatformOverview {
         selskaper: row.get("selskaper"),
         byraer: row.get("byraer"),
         brukere: row.get("brukere"),
@@ -657,7 +657,7 @@ pub struct PlatformSubscription {
     pub name: String,
     pub opprettet: NaiveDate,
     pub dekket_i_dag: bool,
-    pub siste_slutt: Option<NaiveDate>,
+    pub last_end: Option<NaiveDate>,
     /// Plan on the row covering today, if any.
     pub plan: Option<String>,
     /// The current coverage's end, when an oppsigelse has set one.
@@ -693,7 +693,7 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlatformSu
             name: r.get("name"),
             opprettet: r.get("opprettet"),
             dekket_i_dag: r.get("dekket"),
-            siste_slutt: r.get("siste_slutt"),
+            last_end: r.get("siste_slutt"),
             plan: r.get("plan"),
             valid_to: r.get("valid_to"),
         })

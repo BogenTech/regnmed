@@ -30,9 +30,9 @@ pub struct Oppgave {
     pub created_at: DateTime<Utc>,
     /// Newest event's status, or "ny" when nothing has happened.
     pub status: String,
-    pub siste_notat: Option<String>,
+    pub last_note: Option<String>,
     pub last_by: Option<String>,
-    pub siste_tidspunkt: Option<DateTime<Utc>>,
+    pub last_timestamp: Option<DateTime<Utc>>,
 }
 
 /// Records an order. The content is immutable once given (0064): an
@@ -109,9 +109,9 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Oppgave {
         status: r
             .get::<Option<String>, _>("status")
             .unwrap_or_else(|| "ny".to_string()),
-        siste_notat: r.get("siste_notat"),
+        last_note: r.get("siste_notat"),
         last_by: r.get("siste_av"),
-        siste_tidspunkt: r.get("siste_tidspunkt"),
+        last_timestamp: r.get("siste_tidspunkt"),
     }
 }
 

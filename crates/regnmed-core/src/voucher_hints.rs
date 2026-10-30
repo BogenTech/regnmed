@@ -244,8 +244,8 @@ pub fn read(text: &str) -> Hints {
             ("sum inkl", "«sum inkl. mva»"),
             ("totalsum", "«totalsum»"),
         ];
-        for (nokkel, vist) in amount_keyword {
-            if lower.contains(nokkel)
+        for (key, vist) in amount_keyword {
+            if lower.contains(key)
                 && let Some(amount) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
                 && amount > 0
             {
@@ -287,7 +287,7 @@ fn keyword(lower: &str) -> &'static str {
 mod tests {
     use super::*;
 
-    const FAKTURA: &str = "\
+    const INVOICE: &str = "\
 Handelshuset AS
 Orgnr 974760673 MVA
 Storgata 1, 0155 Oslo
@@ -308,8 +308,8 @@ KID: 1234567897
 ";
 
     #[test]
-    fn reads_an_ordinary_norwegian_faktura() {
-        let f = read(FAKTURA);
+    fn reads_an_ordinary_norwegian_invoice() {
+        let f = read(INVOICE);
         assert_eq!(f.orgnumber.as_ref().unwrap().value, "974760673");
         assert_eq!(f.invoice_number.as_ref().unwrap().value, "90210");
         assert_eq!(
@@ -328,7 +328,7 @@ KID: 1234567897
 
     #[test]
     fn every_finding_says_why() {
-        let f = read(FAKTURA);
+        let f = read(INVOICE);
         assert!(
             f.amount_ore.as_ref().unwrap().reason.contains("å betale"),
             "{:?}",

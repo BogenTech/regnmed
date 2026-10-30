@@ -48,18 +48,18 @@ fn standard_url(supplier: &str) -> Option<&'static str> {
 /// on the way in. Replacing the configuration is a new row.
 pub async fn sett_llm(
     pool: &PgPool,
-    nokkel: &SealingKey,
+    key: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
     supplier: &str,
     base_url: Option<&str>,
     modell: &str,
-    api_nokkel: &str,
+    api_key: &str,
     set_by: &str,
 ) -> Result<()> {
     let supplier = supplier.trim();
     let modell = modell.trim();
-    let api_nokkel = api_nokkel.trim();
+    let api_key = api_key.trim();
     let standard = standard_url(supplier);
     ensure!(
         standard.is_some(),
@@ -71,7 +71,7 @@ pub async fn sett_llm(
             .join(", ")
     );
     ensure!(!modell.is_empty(), "modellen mangler");
-    ensure!(!api_nokkel.is_empty(), "API-nøkkelen mangler");
+    ensure!(!api_key.is_empty(), "API-nøkkelen mangler");
 
     // A given base_url wins, so `annet` works and a customer can point a
     // known provider at a proxy; otherwise the provider's own.
@@ -112,7 +112,7 @@ pub async fn sett_llm(
     .bind(supplier)
     .bind(url)
     .bind(modell)
-    .bind(seal(nokkel, api_nokkel.as_bytes())?)
+    .bind(seal(key, api_key.as_bytes())?)
     .bind(set_by)
     .execute(pool)
     .await?;
@@ -178,9 +178,9 @@ pub async fn hent_llm(
 /// (docs/agent.md §8, step 3). Separate from [`hent_llm`] so that
 /// reading the configuration for display cannot accidentally be the
 /// call that decrypts.
-pub async fn hent_llm_nokkel(
+pub async fn fetch_llm_key(
     pool: &PgPool,
-    nokkel: &SealingKey,
+    key: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
 ) -> Result<Option<(LlmOppsett, String)>> {
@@ -200,7 +200,7 @@ pub async fn hent_llm_nokkel(
         return Ok(None);
     }
     let sealed: Vec<u8> = row.get::<Option<Vec<u8>>, _>("nokkel").unwrap_or_default();
-    let klar = String::from_utf8(open(nokkel, &sealed)?)?;
+    let klar = String::from_utf8(open(key, &sealed)?)?;
     Ok(Some((
         LlmOppsett {
             supplier: row.get("leverandor"),
@@ -222,7 +222,7 @@ pub async fn hent_llm_nokkel(
 /// rather than acting on its behalf through some second door.
 pub async fn sett_klienthemmelighet(
     pool: &PgPool,
-    nokkel: &SealingKey,
+    key: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
     hemmelighet: &str,
@@ -237,7 +237,7 @@ pub async fn sett_klienthemmelighet(
     )
     .bind(integration_id)
     .bind(company_id)
-    .bind(seal(nokkel, hemmelighet.as_bytes())?)
+    .bind(seal(key, hemmelighet.as_bytes())?)
     .execute(pool)
     .await?
     .rows_affected();
@@ -249,7 +249,7 @@ pub async fn sett_klienthemmelighet(
 /// about to ask the IdP for a token as this agent.
 pub async fn hent_klientlegitimasjon(
     pool: &PgPool,
-    nokkel: &SealingKey,
+    key: &SealingKey,
     integration_id: Uuid,
 ) -> Result<Option<(String, String)>> {
     let row = sqlx::query(
@@ -266,7 +266,7 @@ pub async fn hent_klientlegitimasjon(
     };
     Ok(Some((
         row.get("oidc_sub"),
-        String::from_utf8(open(nokkel, &sealed)?)?,
+        String::from_utf8(open(key, &sealed)?)?,
     )))
 }
 

@@ -872,7 +872,7 @@ pub fn router(state: AppState) -> Router {
         )
         // The /platform sub-router (docs/auth.md §8) — its own guard + log
         // middleware; nothing here reaches any company's ledger.
-        .merge(platform::plattform_router(state.clone()))
+        .merge(platform::platform_router(state.clone()))
         // Attachments and statement uploads need more than axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
         // Hardening on EVERY response (#64): nosniff and Referrer-Policy

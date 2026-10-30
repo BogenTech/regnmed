@@ -271,7 +271,7 @@ async fn assets_depreciate_and_dispose() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {balance}");
-    let gruppe = |g: &str| {
+    let group = |g: &str| {
         balance["grupper"]
             .as_array()
             .unwrap()
@@ -280,12 +280,12 @@ async fn assets_depreciate_and_dispose() {
             .unwrap()
             .clone()
     };
-    let a = gruppe("a");
+    let a = group("a");
     assert_eq!(a["grunnlag_ore"], 12_000_00);
     assert_eq!(a["sats_bp"], 3000);
     assert_eq!(a["avskrivning_ore"], 3_600_00);
     assert_eq!(a["utgaende_ore"], 8_400_00);
-    let d = gruppe("d");
+    let d = group("d");
     assert_eq!(d["tilgang_ore"], 36_000_00);
     assert_eq!(d["vederlag_ore"], 33_000_00);
     assert_eq!(d["grunnlag_ore"], 3_000_00);

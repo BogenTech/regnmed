@@ -36,7 +36,7 @@ pub async fn list(
             "fakturerbar_default": d.fakturerbar_default,
             // The CALLER's effective rate today — what their grid rows
             // will bill at. Not other people's rates.
-            "min_timesats_ore": d.min_timesats_ore,
+            "min_timesats_ore": d.min_hourly_rate_ore,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -127,7 +127,7 @@ pub async fn list_satser(
         "satser": rows.iter().map(|r| json!({
             "person_id": r.person_id,
             "person_navn": r.person_name,
-            "timesats_ore": r.timesats_ore,
+            "timesats_ore": r.hourly_rate_ore,
             "valid_from": r.valid_from.to_string(),
             "created_by": r.created_by,
         })).collect::<Vec<_>>(),
@@ -138,7 +138,8 @@ pub async fn list_satser(
 pub struct SatsRequest {
     /// None sets the project's default rate.
     person_id: Option<Uuid>,
-    timesats_ore: i64,
+    #[serde(rename = "timesats_ore")]
+    hourly_rate_ore: i64,
     /// Defaults to today. A rate change is one INSERT — history stays,
     /// and already-recorded hours keep the rate they were logged at.
     valid_from: Option<chrono::NaiveDate>,
@@ -166,7 +167,7 @@ pub async fn set_sats(
         company_id,
         &code,
         request.person_id,
-        request.timesats_ore,
+        request.hourly_rate_ore,
         valid_from,
         created_by,
     )

@@ -413,9 +413,9 @@ async fn main() -> Result<()> {
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let utfall =
+            let outcome =
                 regnmed_db::subscription::fakturer_maned(&pool, drift, today, bare).await?;
-            if utfall.is_empty() {
+            if outcome.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }
             // The card rail (#74): charge the card for every newly
@@ -428,7 +428,7 @@ async fn main() -> Result<()> {
                     std::env::var("STRIPE_API_BASE").ok().as_deref(),
                 )
             });
-            for u in &utfall {
+            for u in &outcome {
                 match (&u.invoice_no, &u.detail) {
                     (Some(no), _) => {
                         println!("{}: faktura {no}", u.company_name);
@@ -465,7 +465,7 @@ async fn main() -> Result<()> {
                     (None, None) => {}
                 }
             }
-            if utfall
+            if outcome
                 .iter()
                 .any(|u| u.invoice_no.is_none() && u.detail.as_deref() != Some("hoppet over"))
             {
@@ -655,11 +655,11 @@ async fn main() -> Result<()> {
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let utfall = regnmed_db::accrual::periodiser_all(&pool, today).await?;
-            if utfall.is_empty() {
+            let outcome = regnmed_db::accrual::periodiser_all(&pool, today).await?;
+            if outcome.is_empty() {
                 println!("ingen periodiseringer forfalt");
             }
-            for u in &utfall {
+            for u in &outcome {
                 match (&u.voucher, &u.detail) {
                     (Some((year, no)), _) => println!(
                         "{}: {}-{:02} bokfort som bilag {}-{} ({} ore)",

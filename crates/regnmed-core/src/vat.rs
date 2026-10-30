@@ -221,7 +221,7 @@ pub enum Direction {
     /// melding line here would charge it a second time.
     Kostnadsmarkor,
     /// No VAT effect (codes 0, 5, 51, 52, 6, 7, 85).
-    Ingen,
+    None,
 }
 
 /// How a standard code participates in the oppgjør.
@@ -251,7 +251,7 @@ pub fn direction(code: &str) -> Direction {
         "81" | "83" | "86" | "88" | "91" => Direction::OmvendtMedFradrag,
         "82" | "84" | "87" | "89" | "92" => Direction::OmvendtUtenFradrag,
         "20" | "21" | "22" => Direction::Kostnadsmarkor,
-        _ => Direction::Ingen,
+        _ => Direction::None,
     }
 }
 
@@ -277,10 +277,7 @@ pub fn reverse_charge_entries(
     output_account: &str,
     deduction_account: &str,
 ) -> Vec<crate::voucher::EntryDraft> {
-    let retning = basis
-        .vat_code
-        .as_deref()
-        .map_or(Direction::Ingen, direction);
+    let retning = basis.vat_code.as_deref().map_or(Direction::None, direction);
     if !matches!(
         retning,
         Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
@@ -420,10 +417,10 @@ mod tests {
         // Import COST markers compute nothing — 81/14 do.
         assert_eq!(direction("21"), Direction::Kostnadsmarkor);
         // A zero-rated import basis is still a basis, not a marker.
-        assert_eq!(direction("85"), Direction::Ingen);
+        assert_eq!(direction("85"), Direction::None);
         assert_eq!(direction("14"), Direction::Input, "fradragssiden alene");
-        assert_eq!(direction("5"), Direction::Ingen);
-        assert_eq!(direction("0"), Direction::Ingen);
+        assert_eq!(direction("5"), Direction::None);
+        assert_eq!(direction("0"), Direction::None);
     }
 
     /// The computed tax must reach the hovedbok, and the voucher must
@@ -456,10 +453,10 @@ mod tests {
 
         // No deduction right: the tax is part of what it cost, so it
         // lands on the basis account — and carries its prosjekt.
-        let uten = reverse_charge_entries(&basis("87"), 2500, "2701", "2711");
-        assert_eq!(uten[1].account_number, "6800");
-        assert_eq!(uten[1].project.as_deref(), Some("P1"));
-        assert_eq!(uten.iter().map(|e| e.amount.0).sum::<i64>(), 0);
+        let without = reverse_charge_entries(&basis("87"), 2500, "2701", "2711");
+        assert_eq!(without[1].account_number, "6800");
+        assert_eq!(without[1].project.as_deref(), Some("P1"));
+        assert_eq!(without.iter().map(|e| e.amount.0).sum::<i64>(), 0);
 
         // A reversing voucher reverses the tax with it.
         let mut kreditert = basis("86");

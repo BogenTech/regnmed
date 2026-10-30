@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn the_step_rules_enforce_the_statutory_requirements() {
-        let ingen = &[][..];
+        let none = &[][..];
         // A reminder the day after the due date, without a fee: fine.
         assert_eq!(
             ok_steps(
@@ -633,13 +633,13 @@ mod tests {
                 date(2026, 1, 11),
                 date(2026, 1, 25),
                 0,
-                ingen
+                none
             ),
             Ok(())
         );
         // Not yet due.
         assert!(matches!(
-            ok_steps(Step::Demand, date(2026, 1, 10), date(2026, 1, 30), 0, ingen),
+            ok_steps(Step::Demand, date(2026, 1, 10), date(2026, 1, 30), 0, none),
             Err(ReminderError::NotDue { .. })
         ));
         // A fee on a reminder is not a thing.
@@ -649,7 +649,7 @@ mod tests {
                 date(2026, 1, 25),
                 date(2026, 2, 10),
                 3500,
-                ingen
+                none
             ),
             Err(ReminderError::FeeOnReminder)
         );
@@ -660,7 +660,7 @@ mod tests {
                 date(2026, 1, 20),
                 date(2026, 2, 5),
                 3500,
-                ingen
+                none
             ),
             Err(ReminderError::FeeTooEarly {
                 earliest: date(2026, 1, 24)
@@ -673,7 +673,7 @@ mod tests {
                 date(2026, 1, 24),
                 date(2026, 2, 10),
                 3900,
-                ingen
+                none
             ),
             Err(ReminderError::FeeAboveMax { max_ore: 3800 })
         );

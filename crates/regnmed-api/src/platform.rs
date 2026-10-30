@@ -62,7 +62,7 @@ impl PlatformContext {
 
 /// The `/platform` sub-router, merged into the main router. The state is
 /// applied here so the middleware can carry it.
-pub fn plattform_router(state: AppState) -> Router<AppState> {
+pub fn platform_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/platform/members", get(list_members).post(grant_member))
         .route("/platform/members/{member_id}", delete(end_member))
@@ -337,7 +337,7 @@ async fn overview(
     let mut fordeling = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
-            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, today);
+            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.last_end, today);
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
@@ -365,7 +365,7 @@ async fn list_subscriptions(
         "abonnementer": abo.iter().map(|a| {
             use regnmed_core::subscription::Status;
             let status =
-                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, today);
+                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.last_end, today);
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
                 Status::Aktiv => a.valid_to,
@@ -662,7 +662,7 @@ async fn assign_firm(
     Ok(Json(json!({ "tildelt": true })))
 }
 
-fn innsyn_json(rader: &[regnmed_db::PlattformInnsyn]) -> serde_json::Value {
+fn innsyn_json(rader: &[regnmed_db::PlatformAccessLog]) -> serde_json::Value {
     json!({
         "innsyn": rader.iter().map(|r| json!({
             "navn": r.name,

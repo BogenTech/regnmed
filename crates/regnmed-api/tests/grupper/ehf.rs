@@ -93,7 +93,7 @@ fn validate_ubl(xml: &str, schema: &str) {
 }
 
 #[tokio::test]
-async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
+async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -143,7 +143,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     .await
     .unwrap();
 
-    let (kunde_id, kunde_no) = regnmed_db::create_party(
+    let (customer_id, customer_no) = regnmed_db::create_party(
         &state.pool,
         company,
         "kunde",
@@ -157,7 +157,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     regnmed_db::update_party_contact(
         &state.pool,
         company,
-        kunde_id,
+        customer_id,
         Some("Lilleveien 3, 5003 Bergen"),
         Some("faktura@mottaker.no"),
         None,
@@ -170,7 +170,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
         company,
         &regnmed_db::InvoiceDraft {
             kontant_betalingsmiddel: None,
-            party_no: kunde_no.clone(),
+            party_no: customer_no.clone(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
             // Delivered before it was invoiced, so the rendered EHF

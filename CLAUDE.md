@@ -514,24 +514,61 @@ Rust identifier. Reverted; the schema property stays `dokument` exactly
 as `selskap` stays `selskap`. Second time that guard has paid for itself,
 which settles it: it is not a one-off.
 
-**BARE `nr` WAS DEFERRED, and the reason is a NEW CLASS of hazard.**
-Every collision this conversion has hit so far was a COMPILE ERROR --
-the `rate_on` trap, `OppgaveQuery`, `Bevegelse`/`Movement`, the `svar`
-boundary. `nr`->`number` is the first that would compile and be WRONG:
-nine files bind both `nr` and a `number` in overlapping scopes
-(`chart_of_accounts`, `reports`, `ledger`, `statements`, `vat`,
-`migration_csv` and three test files), so the rename would SHADOW rather
-than clash and nothing would say a word. Only the compounds were taken
-(`krediterer_nr`->`credits_number`, `kjoper_nr`->`buyer_number`,
-`maned_nr`->`month_number`). The lesson for the rest of the tail: before
-sweeping a short generic word, check whether its TARGET is already bound
-nearby -- a map entry whose target already exists in scope is a silent
-rename, not a loud one.
+**BARE `nr` WAS DEFERRED on a measurement that turned out to be WRONG,
+and the correction is the lesson.** The claim was that nine files bind
+both `nr` and a `number` in overlapping scopes, so `nr`->`number` would
+SHADOW rather than clash -- the first collision in this conversion that
+would compile and be wrong, since every earlier one (`rate_on`,
+`OppgaveQuery`, `Bevegelse`/`Movement`, the `svar` boundary) was a build
+error. That came from `grep -rlE '\bnr\b'` over RAW files, which counted
+`bokføringsforskriften §3-1 nr. 8` in COMMENTS. Code-only, it is five
+files, not nine, and all five are disjoint `for (nr, name)` /
+`for (number, name)` loops in different test functions -- the same idiom
+named inconsistently. `nr`->`number` was safe all along and was taken in
+the next batch.
 
-**6 920 -> 5 719 of 187 739 segments (3,7 % -> 3,0 %), 875 -> 850
-distinct.** Nothing above 63: `nr` 63 (deferred above), `timesats` 44,
-`poststed` 43, `ingen` 43, `bokforing` 39, `faktura` 38, `nokkel` 37,
-`gruppe` 37, `plattform` 37, `feriepenger` 36.
+**This is the SECOND time a deferral was justified from a dirtier
+instrument than the tool's own** (the first was `ar`/`fra`/`til`, called
+too short to sweep because a SUBSTRING scan matched `chars`). So the
+check stopped being advice and became code: `shadows()` in
+`scripts/rename-identifiers.py` blanks literals and comments, then
+reports every pair whose TARGET already appears in that file's code,
+with line numbers. Reported, never refused -- a target that is a module
+path (`crate::email::`) or in another function is usually fine, and only
+a human can tell which. Its first run disproved the finding it was built
+for, which is the best thing a guard can do. The hazard CLASS is still
+real and still invisible to the compiler; this repo just has no instance
+of it. 13 reports in the next batch, all benign on inspection:
+`Ingen`->`None` next to `Option::None` (the variants are always
+qualified), `update_tilbud`->`update_quote` where the api handler was
+ALREADY `update_quote` and calls it, and `utfall`->`outcome` in a cli
+match arm whose siblings were already `outcome`.
+
+Sixth sweep took everything the fifth left above 30, `nr` included:
+`timesats`->`hourly_rate`, `poststed`->`postal_city`,
+`Ingen`->`None` (`Body`, `vat::Direction`, `Withholding` -- all
+qualified, so `Option::None` is untouched), `bokforing`->`bookkeeping`,
+`nokkel`->`key`, `gruppe`->`group`, `utfall`->`outcome`,
+`periodisering`->`accrual` (the module was already `accrual`),
+`siste_*`->`last_*`, `tilbud`->`quote`, `kunde`->`customer`,
+`Plattform*`->`Platform*`, `feriepenger`->`holiday_pay` with its four
+`KONTO_*` constants, `uten`->`without`, and the `faktura` types
+(`FakturaPdfInput`->`InvoicePdfInput`,
+`render_faktura_pdf`->`render_invoice_pdf`). 71 files, zero compile
+errors, one wire diff that is a struct NAME
+(`PeriodiseringRequest`->`AccrualRequest`, 13 fields identical).
+
+Bare `plattform` was LEFT: `mod plattform;` in the test group binary
+carries `#[path = "grupper/plattform.rs"]`, and the test tree is
+deferred, so the group binary was excluded from the pass. The two in
+`api::lib` are a local in the `/me` handler that would sit next to the
+`platform` module path.
+
+**6 920 -> 5 024 of 187 895 segments (3,7 % -> 2,7 %), 875 -> 830
+distinct** over the two sweeps. Nothing above 32 now: `vedlegg` 32,
+`salg` 32, `kontant` 31, `prosjekt` 31, `betalingsmiddel` 31,
+`oppgave` 30, `intervall` 30, `fodselsnummer` 29, `endring` 28,
+`postnummer` 28.
 
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every

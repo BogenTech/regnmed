@@ -19,10 +19,10 @@ use crate::ledger::post_voucher_in;
 
 /// NS 4102 accounts for payroll. Overridable per run.
 pub const KONTO_LONN: &str = "5000";
-pub const KONTO_FERIEPENGER_KOSTNAD: &str = "5090";
+pub const ACCOUNT_HOLIDAY_PAY_COST: &str = "5090";
 pub const KONTO_AGA_KOSTNAD: &str = "5400";
 pub const KONTO_FORSKUDDSTREKK: &str = "2600";
-pub const KONTO_SKYLDIG_FERIEPENGER: &str = "2940";
+pub const ACCOUNT_HOLIDAY_PAY_OWED: &str = "2940";
 pub const KONTO_SKYLDIG_AGA: &str = "2770";
 pub const KONTO_SKYLDIG_LONN: &str = "2930";
 /// Aga on feriepenger that are accrued but not paid out. The account
@@ -31,8 +31,8 @@ pub const KONTO_SKYLDIG_LONN: &str = "2930";
 /// on 5400 (Arbeidsgiveravgift) and 2780 on 2770 (Skyldig
 /// arbeidsgiveravgift). 2785 would have landed on 2790 "Andre offentlige
 /// avgifter" instead.
-pub const KONTO_AGA_FERIEPENGER_KOSTNAD: &str = "5405";
-pub const KONTO_PAALOPT_AGA_FERIEPENGER: &str = "2780";
+pub const ACCOUNT_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY_COST: &str = "5405";
+pub const ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY: &str = "2780";
 
 #[derive(Debug, Clone)]
 pub struct NewEmployee {
@@ -82,7 +82,7 @@ impl Employee {
         match self.withholding_type.as_str() {
             "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
             "tabell" => Withholding::Table(self.withholding_table.unwrap_or(0)),
-            _ => Withholding::Ingen,
+            _ => Withholding::None,
         }
     }
 
@@ -417,7 +417,7 @@ pub async fn run_payroll(
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         sum.gross_ore += calculation.gross_ore;
-        sum.feriepenger_utbetalt_ore += calculation.holiday_pay_ore;
+        sum.holiday_pay_paid_ore += calculation.holiday_pay_ore;
         sum.withholding_ore += calculation.withholding_ore;
         sum.net_ore += calculation.net_ore;
         // The accrual on unpaid feriepenger is a TARGET, not an
@@ -428,19 +428,20 @@ pub async fn run_payroll(
         // the first run instead of standing uncovered.
         let hist = history.get(&employee.id).copied().unwrap_or_default();
         let skyldig_etter = hist.skyldig_ore + avsetning - post.holiday_pay_ore;
-        let aga_feriepenger = payroll::employer_contribution_accrual_target(skyldig_etter, aga_bp)
-            - hist.avsatt_aga_ore;
+        let employer_contribution_holiday_pay =
+            payroll::employer_contribution_accrual_target(skyldig_etter, aga_bp)
+                - hist.avsatt_aga_ore;
 
         sum.holiday_pay_accrual_ore += avsetning;
         sum.employer_contribution_ore += aga;
-        sum.employer_contribution_holiday_pay_ore += aga_feriepenger;
+        sum.employer_contribution_holiday_pay_ore += employer_contribution_holiday_pay;
 
         lines.push(Lonnslinje {
             employee_id: employee.id,
             name: employee.name.clone(),
             calculation,
             holiday_pay_accrual_ore: avsetning,
-            employer_contribution_holiday_pay_ore: aga_feriepenger,
+            employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
         });
     }
 
@@ -488,10 +489,10 @@ pub async fn run_payroll(
 
     // Feriepenger paid out are NOT a new cost — they draw down the
     // liability accrued in the year they were earned.
-    if sum.feriepenger_utbetalt_ore != 0 {
+    if sum.holiday_pay_paid_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_SKYLDIG_FERIEPENGER.into(),
-            amount: Ore(sum.feriepenger_utbetalt_ore),
+            account_number: ACCOUNT_HOLIDAY_PAY_OWED.into(),
+            amount: Ore(sum.holiday_pay_paid_ore),
             vat_code: None,
             description: Some("Utbetalte feriepenger".into()),
             party_no: None,
@@ -502,7 +503,7 @@ pub async fn run_payroll(
     }
     if sum.holiday_pay_accrual_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_FERIEPENGER_KOSTNAD.into(),
+            account_number: ACCOUNT_HOLIDAY_PAY_COST.into(),
             amount: Ore(sum.holiday_pay_accrual_ore),
             vat_code: None,
             description: Some("Feriepengeavsetning".into()),
@@ -512,7 +513,7 @@ pub async fn run_payroll(
             currency: None,
         });
         entries.push(EntryDraft {
-            account_number: KONTO_SKYLDIG_FERIEPENGER.into(),
+            account_number: ACCOUNT_HOLIDAY_PAY_OWED.into(),
             amount: Ore(-sum.holiday_pay_accrual_ore),
             vat_code: None,
             description: Some("Avsatte feriepenger".into()),
@@ -552,7 +553,7 @@ pub async fn run_payroll(
     // the aga line above.
     if sum.employer_contribution_holiday_pay_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_AGA_FERIEPENGER_KOSTNAD.into(),
+            account_number: ACCOUNT_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY_COST.into(),
             amount: Ore(sum.employer_contribution_holiday_pay_ore),
             vat_code: None,
             description: Some("Arbeidsgiveravgift av påløpne feriepenger".into()),
@@ -562,7 +563,7 @@ pub async fn run_payroll(
             currency: None,
         });
         entries.push(EntryDraft {
-            account_number: KONTO_PAALOPT_AGA_FERIEPENGER.into(),
+            account_number: ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY.into(),
             amount: Ore(-sum.employer_contribution_holiday_pay_ore),
             vat_code: None,
             description: Some("Påløpt arbeidsgiveravgift av feriepenger".into()),
@@ -591,14 +592,14 @@ pub async fn run_payroll(
         crate::ledger::ensure_account(
             pool,
             company_id,
-            KONTO_AGA_FERIEPENGER_KOSTNAD,
+            ACCOUNT_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY_COST,
             "Arbeidsgiveravgift av påløpne feriepenger",
         )
         .await?;
         crate::ledger::ensure_account(
             pool,
             company_id,
-            KONTO_PAALOPT_AGA_FERIEPENGER,
+            ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY,
             "Påløpt arbeidsgiveravgift av feriepenger",
         )
         .await?;
@@ -622,7 +623,7 @@ pub async fn run_payroll(
     .bind(paid_date)
     .bind(zone_slug)
     .bind(sum.gross_ore)
-    .bind(sum.feriepenger_utbetalt_ore)
+    .bind(sum.holiday_pay_paid_ore)
     .bind(sum.withholding_ore)
     .bind(sum.net_ore)
     .bind(sum.holiday_pay_accrual_ore)
@@ -701,7 +702,7 @@ pub async fn run_payroll(
 /// either ignoring it or inventing an accrual for a liability we cannot
 /// attribute to anyone.
 async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<String>> {
-    let i_hovedboken = -account_balance(pool, company_id, KONTO_SKYLDIG_FERIEPENGER).await?;
+    let i_hovedboken = -account_balance(pool, company_id, ACCOUNT_HOLIDAY_PAY_OWED).await?;
     let fra_lonn: i64 = feriepengehistorikk(pool, company_id)
         .await?
         .values()
@@ -711,10 +712,10 @@ async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<Strin
         return Ok(None);
     }
     Ok(Some(format!(
-        "Konto {KONTO_SKYLDIG_FERIEPENGER} viser {} kr skyldige feriepenger, men \
+        "Konto {ACCOUNT_HOLIDAY_PAY_OWED} viser {} kr skyldige feriepenger, men \
          lønnshistorikken forklarer {} kr. Differansen på {} kr har ingen ansatt å \
          knyttes til, så det er ikke beregnet arbeidsgiveravgift på den — \
-         avsetningen på konto {KONTO_PAALOPT_AGA_FERIEPENGER} må i så fall føres manuelt.",
+         avsetningen på konto {ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY} må i så fall føres manuelt.",
         kroner(i_hovedboken),
         kroner(fra_lonn),
         kroner(i_hovedboken - fra_lonn),
@@ -752,7 +753,7 @@ pub async fn list_kjoringer(
             zone: r.get("sone"),
             sum: PayrollTotals {
                 gross_ore: r.get("brutto_ore"),
-                feriepenger_utbetalt_ore: r.get("feriepenger_utbetalt_ore"),
+                holiday_pay_paid_ore: r.get("feriepenger_utbetalt_ore"),
                 withholding_ore: r.get("forskuddstrekk_ore"),
                 net_ore: r.get("netto_ore"),
                 holiday_pay_accrual_ore: r.get("feriepengeavsetning_ore"),
@@ -896,7 +897,7 @@ pub async fn payslip(
         holiday_pay_bp: row.get::<i32, _>("feriepenger_bp") as i64,
         hittil_brutto_ore: hittil.get("brutto"),
         hittil_trekk_ore: hittil.get("trekk"),
-        hittil_feriepenger_ore: hittil.get("feriepenger"),
+        ytd_holiday_pay_ore: hittil.get("feriepenger"),
     })
 }
 
@@ -922,7 +923,7 @@ pub async fn employee_person(
 #[derive(Debug, Clone, Copy)]
 pub struct Timegrunnlag {
     pub minutes: i64,
-    pub timesats_ore: i64,
+    pub hourly_rate_ore: i64,
     pub amount_ore: i64,
     /// The timesheet is locked through the end of this month.
     pub laast: bool,
@@ -964,7 +965,7 @@ pub async fn timegrunnlag(
     let person_id = person_id.with_context(|| {
         format!("{name} er ikke koblet til en portalbruker — timeføringen vet ikke hvem det er")
     })?;
-    let timesats: i64 = employee
+    let hourly_rate: i64 = employee
         .get::<Option<i64>, _>("timelonn_ore")
         .with_context(|| format!("{name} har ingen timelønn"))?;
 
@@ -986,8 +987,8 @@ pub async fn timegrunnlag(
 
     Ok(Timegrunnlag {
         minutes,
-        timesats_ore: timesats,
-        amount_ore: regnmed_core::payroll::hourly_pay(minutes, timesats),
+        hourly_rate_ore: hourly_rate,
+        amount_ore: regnmed_core::payroll::hourly_pay(minutes, hourly_rate),
         laast,
     })
 }

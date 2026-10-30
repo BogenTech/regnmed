@@ -472,7 +472,7 @@ async fn the_rate_limit_stops_a_runaway_integration() {
         .await
         .unwrap();
 
-    let mut siste = StatusCode::OK;
+    let mut last = StatusCode::OK;
     for _ in 0..6 {
         let (status, _) = request(
             &state,
@@ -482,13 +482,13 @@ async fn the_rate_limit_stops_a_runaway_integration() {
             None,
         )
         .await;
-        siste = status;
+        last = status;
         if status == StatusCode::TOO_MANY_REQUESTS {
             break;
         }
     }
     assert_eq!(
-        siste,
+        last,
         StatusCode::TOO_MANY_REQUESTS,
         "budsjettet tar slutt, og API-et sier det tydelig"
     );

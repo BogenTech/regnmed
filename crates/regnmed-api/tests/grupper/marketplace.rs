@@ -239,7 +239,7 @@ async fn onboarding_from_registries_end_to_end() {
         .expect("creator has access");
     assert_eq!(mine["access"], "admin");
 
-    let kunde_flag: Option<String> = sqlx::query_scalar(
+    let customer_flag: Option<String> = sqlx::query_scalar(
         "select reskontro_kind from account
          where company_id = $1::uuid and number = '1500'",
     )
@@ -247,7 +247,7 @@ async fn onboarding_from_registries_end_to_end() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(kunde_flag.as_deref(), Some("kunde"));
+    assert_eq!(customer_flag.as_deref(), Some("kunde"));
 
     // Double onboarding and deleted enheter are rejected.
     let (status, _) = request(

@@ -29,7 +29,7 @@ laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen:
 | Vei | Hva som skjer uten registrering |
 | --- | --- |
 | faktura, kreditnota, repeterende (`invoice::resolve_lines`) | nektes |
-| tilbud og ordre (`create_salgsdokument`, `update_tilbud`) | nektes der linjene SKRIVES |
+| tilbud og ordre (`create_salgsdokument`, `update_quote`) | nektes der linjene SKRIVES |
 | utlegg (`approve_expense`) | nektes; hele brutto er kostnaden |
 | abonnementsskinnen (`abonnement::utgaende_mva`) | velger kode `7` selv |
 

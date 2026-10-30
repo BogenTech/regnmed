@@ -37,7 +37,7 @@ pub struct PdfLinje {
 pub enum DocumentType {
     Invoice,
     CreditNote,
-    Tilbud,
+    Quote,
     Ordrebekreftelse,
     /// Kontantfaktura (bokføringsforskriften §5-3): the ytelse was paid
     /// on delivery. Carries NO KID, NO forfallsdato and no payment
@@ -51,7 +51,7 @@ impl DocumentType {
         match self {
             DocumentType::Invoice => "FAKTURA",
             DocumentType::CreditNote => "KREDITNOTA",
-            DocumentType::Tilbud => "TILBUD",
+            DocumentType::Quote => "TILBUD",
             DocumentType::Ordrebekreftelse => "ORDREBEKREFTELSE",
             DocumentType::Kontantfaktura => "KONTANTFAKTURA",
         }
@@ -61,7 +61,7 @@ impl DocumentType {
         match self {
             DocumentType::Invoice => "Fakturanr",
             DocumentType::CreditNote => "Kreditnotanr",
-            DocumentType::Tilbud => "Tilbudsnr",
+            DocumentType::Quote => "Tilbudsnr",
             DocumentType::Ordrebekreftelse => "Ordrenr",
             DocumentType::Kontantfaktura => "Fakturanr",
         }
@@ -69,7 +69,7 @@ impl DocumentType {
 }
 
 #[derive(Debug, Clone)]
-pub struct FakturaPdfInput {
+pub struct InvoicePdfInput {
     pub document_type: DocumentType,
     /// The invoice number of the faktura this one credits.
     pub credits_number: Option<i64>,
@@ -168,7 +168,7 @@ fn orgnumber_display(orgnumber: &str) -> String {
     }
 }
 
-pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
+pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
     let tittel = input.document_type.tittel();
     let kreditnota = input.document_type == DocumentType::CreditNote;
@@ -217,8 +217,8 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     if let Some(levering) = input.delivery_date {
         fakta.push(("Levering".into(), levering.to_string()));
     }
-    if let Some(nr) = input.credits_number {
-        fakta.push(("Krediterer faktura".into(), nr.to_string()));
+    if let Some(number) = input.credits_number {
+        fakta.push(("Krediterer faktura".into(), number.to_string()));
     }
     let mut fy = 82.0;
     for (label, value) in &fakta {
@@ -434,8 +434,8 @@ mod tests {
         haystack.windows(needle.len()).position(|w| w == needle)
     }
 
-    pub(super) fn input() -> FakturaPdfInput {
-        FakturaPdfInput {
+    pub(super) fn input() -> InvoicePdfInput {
+        InvoicePdfInput {
             document_type: DocumentType::Invoice,
             credits_number: None,
             seller_name: "Demo & Sønn AS".into(),
@@ -479,8 +479,8 @@ mod tests {
     }
 
     #[test]
-    fn faktura_carries_the_lovpalagte_contents() {
-        let bytes = render_faktura_pdf(&input());
+    fn invoice_carries_the_lovpalagte_contents() {
+        let bytes = render_invoice_pdf(&input());
         for expected in [
             &b"FAKTURA"[..],
             b"Org.nr 999 888 777 MVA",
@@ -509,7 +509,7 @@ mod tests {
                 String::from_utf8_lossy(expected)
             );
         }
-        assert_eq!(bytes, render_faktura_pdf(&input()), "deterministic");
+        assert_eq!(bytes, render_invoice_pdf(&input()), "deterministic");
     }
 
     /// Leveringsstedet er fri tekst av ukjent lengde. Faktablokken gir
@@ -521,7 +521,7 @@ mod tests {
     fn the_delivery_place_is_one_line_not_a_label_value_pair() {
         let mut i = input();
         i.leveringssted = Some("Lagerveien 3, 0666 Oslo".into());
-        let bytes = render_faktura_pdf(&i);
+        let bytes = render_invoice_pdf(&i);
         assert!(find(&bytes, b"Leveringssted: Lagerveien 3, 0666 Oslo").is_some());
         // Etiketten skal ikke også stå alene et sted — da ville den
         // ligget i faktablokken, der adressen kolliderer med den.
@@ -538,7 +538,7 @@ mod tests {
             linje.net_ore = -linje.net_ore;
             linje.vat_ore = -linje.vat_ore;
         }
-        let bytes = render_faktura_pdf(&i);
+        let bytes = render_invoice_pdf(&i);
         assert!(find(&bytes, b"KREDITNOTA").is_some());
         assert!(find(&bytes, b"Krediterer faktura").is_some());
         assert!(
@@ -554,7 +554,7 @@ mod tests {
         let mut i = input();
         let linje = i.linjer[0].clone();
         i.linjer = (0..60).map(|_| linje.clone()).collect();
-        let bytes = render_faktura_pdf(&i);
+        let bytes = render_invoice_pdf(&i);
         assert!(find(&bytes, b"/Count 2").is_some(), "two pages");
     }
 
@@ -589,7 +589,7 @@ mod tests {
 mod kontant_tests {
     use super::*;
 
-    fn input(document_type: DocumentType) -> FakturaPdfInput {
+    fn input(document_type: DocumentType) -> InvoicePdfInput {
         let mut i = super::tests::input();
         i.document_type = document_type;
         i.betalingsmiddel = Some("Kort".into());
@@ -601,7 +601,7 @@ mod kontant_tests {
     /// cosmetic slip; it is a demand for a second payment.
     #[test]
     fn a_kontantfaktura_carries_no_kid_and_no_due_date() {
-        let pdf = render_faktura_pdf(&input(DocumentType::Kontantfaktura));
+        let pdf = render_invoice_pdf(&input(DocumentType::Kontantfaktura));
         let text = String::from_utf8_lossy(&pdf).to_string();
         assert!(text.contains("KONTANTFAKTURA"), "tittelen");
         assert!(text.contains("Betalt"), "at den er gjort opp");
@@ -615,7 +615,7 @@ mod kontant_tests {
         // An ordinary faktura still carries all of it — the guard is the
         // dokumenttype, not a global removal.
         let vanlig =
-            String::from_utf8_lossy(&render_faktura_pdf(&input(DocumentType::Invoice))).to_string();
+            String::from_utf8_lossy(&render_invoice_pdf(&input(DocumentType::Invoice))).to_string();
         assert!(vanlig.contains("KID"));
         assert!(vanlig.contains("Betales innen"));
     }

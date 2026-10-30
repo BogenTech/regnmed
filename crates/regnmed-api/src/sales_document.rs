@@ -98,7 +98,7 @@ async fn list_kind(
             "doc_date": d.doc_date.to_string(),
             "status": d.status,
             "netto_ore": d.net_ore,
-            "tilbud_no": d.tilbud_no,
+            "tilbud_no": d.quote_no,
             "invoice_no": d.invoice_no,
         })).collect::<Vec<_>>(),
     })))
@@ -137,7 +137,7 @@ pub async fn update_quote(
         Some(lines) => Some(resolve_lines(&state, company_id, lines).await?),
         None => None,
     };
-    regnmed_db::update_tilbud(
+    regnmed_db::update_quote(
         &state.pool,
         company_id,
         quote_id,
@@ -161,7 +161,7 @@ pub async fn quote_status(
     Json(request): Json<StatusRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::QuoteWrite).await?;
-    regnmed_db::set_tilbud_status(&state.pool, company_id, quote_id, &request.status)
+    regnmed_db::set_quote_status(&state.pool, company_id, quote_id, &request.status)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "status": request.status })))
@@ -189,7 +189,7 @@ pub async fn quote_to_order(
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let (ordre_id, doc_no) =
-        regnmed_db::tilbud_to_ordre(&state.pool, company_id, quote_id, doc_date, created_by)
+        regnmed_db::quote_to_ordre(&state.pool, company_id, quote_id, doc_date, created_by)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "order_id": ordre_id, "doc_no": doc_no })))

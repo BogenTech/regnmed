@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::accrual::{PeriodiseringDraft, create_periodisering, periodiser_plan};
+use regnmed_db::accrual::{AccrualDraft, create_accrual, periodiser_plan};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -53,12 +53,12 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1700", "Forskuddsbetalt kostnad"),
         ("1920", "Bank"),
         ("6300", "Leie lokale"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
@@ -102,10 +102,10 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     .await
     .unwrap();
 
-    let plan = create_periodisering(
+    let plan = create_accrual(
         &pool,
         company,
-        &PeriodiseringDraft {
+        &AccrualDraft {
             kilde_voucher: Some(source.id),
             description: "Husleie 2026".into(),
             income_account: "6300".into(),
@@ -123,11 +123,11 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     .unwrap();
 
     // Run as if it were 31 March: three months are due, nine are not.
-    let utfall = periodiser_plan(&pool, company, plan, d(2026, 3, 31))
+    let outcome = periodiser_plan(&pool, company, plan, d(2026, 3, 31))
         .await
         .unwrap();
-    assert_eq!(utfall.len(), 3, "{utfall:?}");
-    assert!(utfall.iter().all(|u| u.voucher.is_some()), "{utfall:?}");
+    assert_eq!(outcome.len(), 3, "{outcome:?}");
+    assert!(outcome.iter().all(|u| u.voucher.is_some()), "{outcome:?}");
     assert_eq!(balance(&pool, company, "6300").await, 249_999, "3 × 833,33");
     assert_eq!(
         balance(&pool, company, "1700").await,
@@ -163,15 +163,15 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+    for (number, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
-    let plan = create_periodisering(
+    let plan = create_accrual(
         &pool,
         company,
-        &PeriodiseringDraft {
+        &AccrualDraft {
             kilde_voucher: None,
             description: "Forsikring".into(),
             income_account: "6300".into(),
@@ -192,7 +192,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         .unwrap();
     assert_eq!(balance(&pool, company, "6300").await, 20_000);
 
-    regnmed_db::accrual::stopp_periodisering(&pool, company, plan, d(2026, 3, 1))
+    regnmed_db::accrual::stop_accrual(&pool, company, plan, d(2026, 3, 1))
         .await
         .unwrap();
     // Even asked for the whole year, nothing more is posted.
@@ -219,15 +219,15 @@ async fn a_started_plan_cannot_be_rewritten() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+    for (number, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
-    let plan = create_periodisering(
+    let plan = create_accrual(
         &pool,
         company,
-        &PeriodiseringDraft {
+        &AccrualDraft {
             kilde_voucher: None,
             description: "Abonnement".into(),
             income_account: "6300".into(),
@@ -258,7 +258,7 @@ async fn a_started_plan_cannot_be_rewritten() {
     );
 
     // …but stopping it is still allowed, or a plan could never be ended.
-    regnmed_db::accrual::stopp_periodisering(&pool, company, plan, d(2026, 2, 1))
+    regnmed_db::accrual::stop_accrual(&pool, company, plan, d(2026, 2, 1))
         .await
         .unwrap();
 }
@@ -275,12 +275,12 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1500", "Kundefordringer"),
         ("1700", "Forskuddsbetalt"),
         ("6300", "Leie"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
@@ -288,7 +288,7 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         .await
         .unwrap();
 
-    let plan = |result: &str, balance_sheet: &str| PeriodiseringDraft {
+    let plan = |result: &str, balance_sheet: &str| AccrualDraft {
         kilde_voucher: None,
         description: "Husleie".into(),
         income_account: result.into(),
@@ -301,18 +301,18 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         note: None,
     };
 
-    let error = create_periodisering(&pool, company, &plan("6300", "1500"), "test")
+    let error = create_accrual(&pool, company, &plan("6300", "1500"), "test")
         .await
         .expect_err("reskontrokonto kan aldri lykkes uten part");
     assert!(error.to_string().contains("reskontrokonto"), "{error}");
 
-    let error = create_periodisering(&pool, company, &plan("6300", "9999"), "test")
+    let error = create_accrual(&pool, company, &plan("6300", "9999"), "test")
         .await
         .expect_err("ukjent konto");
     assert!(error.to_string().contains("finnes ikke"), "{error}");
 
     // The good one still works.
-    create_periodisering(&pool, company, &plan("6300", "1700"), "test")
+    create_accrual(&pool, company, &plan("6300", "1700"), "test")
         .await
         .unwrap();
 }
