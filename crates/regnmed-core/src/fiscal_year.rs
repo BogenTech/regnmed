@@ -26,13 +26,13 @@ use chrono::{Datelike, NaiveDate};
 /// keyed by (`voucher_counter(journal_id, fiscal_year)`), so changing
 /// it changes which counter a voucher draws its number from — never do
 /// it for a company that already has vouchers in the affected period.
-pub fn regnskapsar(dato: NaiveDate) -> i32 {
-    dato.year()
+pub fn of(date: NaiveDate) -> i32 {
+    date.year()
 }
 
 /// First and last day of a fiscal year, inclusive — the period a
 /// year-based report covers.
-pub fn regnskapsar_periode(ar: i32) -> Option<(NaiveDate, NaiveDate)> {
+pub fn period(ar: i32) -> Option<(NaiveDate, NaiveDate)> {
     Some((
         NaiveDate::from_ymd_opt(ar, 1, 1)?,
         NaiveDate::from_ymd_opt(ar, 12, 31)?,
@@ -48,23 +48,23 @@ mod tests {
     /// because a date happened to fall on the wrong side of something.
     #[test]
     fn the_fiscal_year_is_the_calendar_year() {
-        let dato = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
-        assert_eq!(regnskapsar(dato(2026, 1, 1)), 2026);
-        assert_eq!(regnskapsar(dato(2026, 12, 31)), 2026);
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(of(date(2026, 1, 1)), 2026);
+        assert_eq!(of(date(2026, 12, 31)), 2026);
         // New Year's Eve and New Year's Day belong to different years,
         // and to different voucher-number runs.
-        assert_eq!(regnskapsar(dato(2027, 1, 1)), 2027);
+        assert_eq!(of(date(2027, 1, 1)), 2027);
     }
 
     #[test]
     fn the_period_covers_the_whole_year() {
-        let (start, slutt) = regnskapsar_periode(2026).unwrap();
+        let (start, end) = period(2026).unwrap();
         assert_eq!(start, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
-        assert_eq!(slutt, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
-        assert_eq!(regnskapsar(start), 2026);
-        assert_eq!(regnskapsar(slutt), 2026);
+        assert_eq!(end, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
+        assert_eq!(of(start), 2026);
+        assert_eq!(of(end), 2026);
         // A leap year has its extra day inside the period.
-        let (_, slutt) = regnskapsar_periode(2028).unwrap();
-        assert_eq!(slutt.ordinal(), 366);
+        let (_, end) = period(2028).unwrap();
+        assert_eq!(end.ordinal(), 366);
     }
 }

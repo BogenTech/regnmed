@@ -96,7 +96,7 @@ pub async fn create_ansatt(
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(
-        regnmed_core::fnr::is_valid(&ny.fodselsnummer),
+        regnmed_core::nin::is_valid(&ny.fodselsnummer),
         "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
     );
     ensure!(
@@ -181,7 +181,7 @@ trait Fodselsdato {
 }
 impl Fodselsdato for &str {
     fn pipe_fodselsdato(&self) -> Option<NaiveDate> {
-        regnmed_core::fnr::fodselsdato(self)
+        regnmed_core::nin::birth_date(self)
     }
 }
 

@@ -19,7 +19,7 @@ use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
 fn validate_orgnr(orgnr: &str) -> Result<(), ApiError> {
-    if !regnmed_core::orgnr::is_valid(orgnr) {
+    if !regnmed_core::orgnumber::is_valid(orgnr) {
         return Err(ApiError::BadRequest(format!(
             "{orgnr} er ikke et gyldig organisasjonsnummer"
         )));

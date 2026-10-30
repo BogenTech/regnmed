@@ -98,7 +98,7 @@ pub async fn create_aksjonaer(
                 .as_deref()
                 .context("personlig aksjonær må ha fødselsnummer")?;
             ensure!(
-                regnmed_core::fnr::is_valid(fnr),
+                regnmed_core::nin::is_valid(fnr),
                 "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
             );
         }
@@ -108,7 +108,7 @@ pub async fn create_aksjonaer(
                 .as_deref()
                 .context("selskapsaksjonær må ha organisasjonsnummer")?;
             ensure!(
-                regnmed_core::orgnr::is_valid(orgnr),
+                regnmed_core::orgnumber::is_valid(orgnr),
                 "ugyldig organisasjonsnummer (kontrollsifferet stemmer ikke)"
             );
         }
@@ -221,7 +221,7 @@ pub async fn aksjeeierbok(
                 fodselsdato: r
                     .get::<Option<String>, _>("fodselsnummer")
                     .as_deref()
-                    .and_then(regnmed_core::fnr::fodselsdato),
+                    .and_then(regnmed_core::nin::birth_date),
                 orgnr: r.get("orgnr"),
                 utenlandsk_id: r.get("utenlandsk_id"),
                 adresse: r.get("adresse"),

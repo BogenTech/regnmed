@@ -33,7 +33,7 @@ hører til en valgfri sidecar priset mot ressursbudsjettet
 
 ## Tekstlaget ut av PDF-en
 
-`regnmed-core::pdftekst` leser PDF-ens egne innholdsstrømmer (rå eller
+`regnmed-core::pdftext` leser PDF-ens egne innholdsstrømmer (rå eller
 Flate-komprimerte), plukker ut de tekstvisende operatorene og dekoder
 WinAnsi. Det er et bevisst lite utsnitt av PDF-formatet — nok til
 genererte fakturaer, som er de aller fleste.
@@ -88,7 +88,7 @@ leverandørreskontroen»), ikke en stille opprettelse.
 
 ## Tester
 
-- `regnmed-core/src/pdftekst.rs` — round-trip mot vår egen
+- `regnmed-core/src/pdftext.rs` — round-trip mot vår egen
   PDF-generator, escapede parenteser, Flate-strøm, «ikke en PDF»,
   bilde-PDF og mojibake (begge gir None).
 - `regnmed-core/src/bilagstolk.rs` — en vanlig norsk faktura leses

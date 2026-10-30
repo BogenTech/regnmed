@@ -82,7 +82,7 @@ pub struct AppState {
     /// the hosted-agent endpoints say so rather than storing a key we
     /// cannot protect. It is configuration on the process, never a row:
     /// the database holds ciphertext and nothing in it can open that.
-    pub forseglingsnokkel: Option<regnmed_core::hemmelig::Nokkel>,
+    pub sealing_key: Option<regnmed_core::secret::SealingKey>,
     /// Lets the portal create an agent's OIDC identity instead of
     /// asking the customer to run a CLI command (docs/agent.md §8.6).
     /// None when it is unconfigured, and then the agent form says a

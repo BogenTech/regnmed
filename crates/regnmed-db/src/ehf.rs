@@ -333,7 +333,7 @@ pub async fn inbox_forslag(
     } else {
         // 2. A PDF text layer, or a plain-text document.
         let tekst = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
-            regnmed_core::pdftekst::extract(&content).inspect(|_| forslag.kilde = "pdf-tekst")
+            regnmed_core::pdftext::extract(&content).inspect(|_| forslag.kilde = "pdf-tekst")
         } else {
             text.filter(|t| t.len() > 20)
                 .inspect(|_| forslag.kilde = "tekst")

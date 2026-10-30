@@ -269,9 +269,9 @@ pub async fn post_voucher_in(
             .get("id");
 
     // Which fiscal year the bilag belongs to — the assumption (calendar
-    // year) lives in one place, see regnmed-core::regnskapsar and
+    // year) lives in one place, see regnmed-core::fiscal_year and
     // docs/regelverk.md.
-    let fiscal_year = regnmed_core::regnskapsar::regnskapsar(draft.voucher_date);
+    let fiscal_year = regnmed_core::fiscal_year::of(draft.voucher_date);
     let voucher_number: i64 = sqlx::query(
         "insert into voucher_counter (journal_id, fiscal_year, last_number) values ($1, $2, 1)
          on conflict (journal_id, fiscal_year)

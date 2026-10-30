@@ -89,8 +89,8 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         portal_base: None,
         // A fixed test key: the sealing is exercised for real, and a
         // test that needs the rail OFF rebuilds the state without it.
-        forseglingsnokkel: Some(
-            regnmed_core::hemmelig::Nokkel::fra_hex(
+        sealing_key: Some(
+            regnmed_core::secret::SealingKey::from_hex(
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             )
             .unwrap(),

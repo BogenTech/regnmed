@@ -37,10 +37,10 @@ pub struct Arsavslutning {
 }
 
 /// The fiscal year's span — the calendar-year assumption lives in ONE
-/// place (`regnmed_core::regnskapsar`, docs/regelverk.md), and this goes
+/// place (`regnmed_core::fiscal_year`, docs/regelverk.md), and this goes
 /// through that seam like the posting and the SAF-T export do.
 fn periode(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
-    regnmed_core::regnskapsar::regnskapsar_periode(ar).with_context(|| format!("ugyldig år {ar}"))
+    regnmed_core::fiscal_year::period(ar).with_context(|| format!("ugyldig år {ar}"))
 }
 
 /// The year's result before tax, from the ledger — presentation sign,

@@ -13,7 +13,7 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Utc};
-use regnmed_core::epost::{avsender_tillatt, local_part, normaliser_avsender};
+use regnmed_core::email::{local_part, normalize_sender, sender_allowed};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -138,7 +138,7 @@ pub async fn allow_sender(
     note: Option<&str>,
     created_by: &str,
 ) -> Result<()> {
-    let sender = normaliser_avsender(sender);
+    let sender = normalize_sender(sender);
     ensure!(
         sender.contains('@') && !sender.starts_with("@@"),
         "oppgi en e-postadresse (post@firma.no) eller et domene (@firma.no)"
@@ -193,13 +193,13 @@ pub async fn receive_mail(pool: &PgPool, mail: &MottattEpost) -> Result<Mottak> 
     .await?
     .with_context(|| format!("ingen aktiv mottaksadresse for «{local}»"))?;
 
-    let from = normaliser_avsender(&mail.from);
+    let from = normalize_sender(&mail.from);
     let allowed: Vec<String> =
         sqlx::query_scalar("select sender from mail_sender_allow where company_id = $1 and active")
             .bind(company_id)
             .fetch_all(pool)
             .await?;
-    let tillatt = avsender_tillatt(&from, &allowed);
+    let tillatt = sender_allowed(&from, &allowed);
 
     let vedlegg: Vec<&MottattVedlegg> = mail
         .attachments

@@ -73,11 +73,11 @@ Aksjeeierboken skal etter §4-5 være tilgjengelig for enhver. Loven ber
 der om fødselsdato, ikke fødselsnummer. Derfor lagrer vi nummeret fordi
 innrapporteringen krever det, mens `Aksjonaer`-strukturen som portalen
 og API-et ser bare bærer **fødselsdatoen**, utledet av
-`regnmed-core::fnr`. Nummeret leses ett sted — når oppgaven bygges — og
+`regnmed-core::nin`. Nummeret leses ett sted — når oppgaven bygges — og
 integrasjonstesten fester det: aksjeeierbok-svaret skal ikke inneholde
 nummeret, innsendingen skal.
 
-`regnmed-core::fnr` validerer også kontrollsifrene (MOD11, to runder) og
+`regnmed-core::nin` validerer også kontrollsifrene (MOD11, to runder) og
 leser ut fødselsdatoen med de tre forskyvningene som finnes i omløp:
 
 - **D-nummer**: dagen + 40 (utenlandsk aksjonær uten personnummer).
@@ -212,7 +212,7 @@ aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
 
 ## Testet
 
-- `regnmed-core::fnr` — kontrollsiffer, D-/H-/syntetisk nummer,
+- `regnmed-core::nin` — kontrollsiffer, D-/H-/syntetisk nummer,
   århundreregelen, og at et ugyldig individnummerintervall gir *ingen*
   dato.
 - `regnmed-core::aksjebok` — foldingen, at retningen ligger i typen, at

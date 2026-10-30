@@ -472,10 +472,8 @@ async fn reconcile_openings(
         .selection_start
         .or_else(|| file.transactions.iter().map(|t| t.date).min())
         .context("oppfølgingsfilen har verken periodestart eller daterte transaksjoner")?;
-    let (year_start, _) = regnmed_core::regnskapsar::regnskapsar_periode(
-        regnmed_core::regnskapsar::regnskapsar(start),
-    )
-    .context("regnskapsår utenfor gyldig datoområde")?;
+    let (year_start, _) = regnmed_core::fiscal_year::period(regnmed_core::fiscal_year::of(start))
+        .context("regnskapsår utenfor gyldig datoområde")?;
 
     // (all-time balance, balance within the file's fiscal year) per account.
     let booked: HashMap<String, (i64, i64)> = sqlx::query_as::<_, (String, i64, i64)>(

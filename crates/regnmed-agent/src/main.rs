@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use regnmed_core::hemmelig::Nokkel;
+use regnmed_core::secret::SealingKey;
 
 #[derive(Parser)]
 #[command(name = "regnmed-agent", version, about)]
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     // Without the sealing key nothing stored can be opened, so there is
     // no useful work to do: say that rather than looping over tasks and
     // failing one by one.
-    let key = Nokkel::fra_hex(
+    let key = SealingKey::from_hex(
         &std::env::var("AGENT_SEALING_KEY")
             .context("AGENT_SEALING_KEY is not set — hosted agents are off")?,
     )?;
@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
 /// since a turn's input is the previous turn's output.
 async fn listen(
     pool: &sqlx::PgPool,
-    key: &Nokkel,
+    key: &SealingKey,
     js: &regnmed_mail::jetstream::Context,
     issuer: &str,
     api: &str,

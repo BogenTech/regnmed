@@ -3,11 +3,11 @@
 //! accepts — companies, firms, parties — should pass this before any
 //! registry lookup.
 
-pub fn is_valid(orgnr: &str) -> bool {
-    if orgnr.len() != 9 || !orgnr.chars().all(|c| c.is_ascii_digit()) {
+pub fn is_valid(orgnumber: &str) -> bool {
+    if orgnumber.len() != 9 || !orgnumber.chars().all(|c| c.is_ascii_digit()) {
         return false;
     }
-    let digits: Vec<u32> = orgnr.chars().map(|c| c.to_digit(10).unwrap()).collect();
+    let digits: Vec<u32> = orgnumber.chars().map(|c| c.to_digit(10).unwrap()).collect();
     const WEIGHTS: [u32; 8] = [3, 2, 7, 6, 5, 4, 3, 2];
     let sum: u32 = digits[..8].iter().zip(WEIGHTS).map(|(d, w)| d * w).sum();
     let check = match sum % 11 {

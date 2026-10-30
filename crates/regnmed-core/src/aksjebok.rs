@@ -313,7 +313,7 @@ pub fn aarsbevegelse<'a>(
 ) -> Aarsbevegelse {
     let mut b = Aarsbevegelse::default();
     for h in hendelser {
-        let hendelse_ar = crate::regnskapsar::regnskapsar(h.dato);
+        let hendelse_ar = crate::fiscal_year::of(h.dato);
         if hendelse_ar < ar {
             b.inngaende += h.delta();
         } else if hendelse_ar == ar {
