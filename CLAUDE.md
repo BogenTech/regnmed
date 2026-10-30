@@ -420,6 +420,37 @@ crate, not a single sweep. `regnmed-api` has to move in lockstep with
 the portal: `dato`, `rolle`, `beskrivelse` and `belop_ore` are JSON
 field names the Svelte app reads, not internal names.
 
+**THE CONVERSION CORRUPTED SHIPPED PROMPT TEXT, and it took eight
+batches to notice.** #134 (the first batch, before the tokenizer had
+the guards below) rewrote Norwegian words INSIDE string literals in
+`regnmed-mcp`: `dato`->`date`, `ny`->`new`, `rolle`->`role`,
+`navn`->`name`, `kode`->`code` and `kall`->`call` reached into the
+agent system prompts and the MCP tool descriptions and left prose like
+"en new forsøk", "hvilken role du har", "DOKUMENTETS date" and "call
+`bilag_bokfor`" in the text a CUSTOMER'S OWN LLM reads. 20 words
+across `role.rs` and `tool.rs`. It compiled, every test passed, and it
+shipped in v0.2.x.
+
+Found by diffing every string literal in `crates/` between the commit
+BEFORE #134 and HEAD, pairing them positionally per file (git's own
+rename detection supplies the file mapping) and ignoring changes that
+are only inside `{captures}`. Worth knowing for next time: the
+legitimate differences that scan turns up are inline format captures,
+the `SELSKAP`->`COMPANY` placeholder pair, error messages deliberately
+translated for operators, and serde pins added since -- everything
+else is damage. The current tool does NOT reproduce it (verified by
+re-running it on the pre-#134 file), so this was #134's method, not a
+live bug.
+
+The guard is now a TEST, not a procedure:
+`role::tests::the_prompts_and_descriptions_stay_norwegian` scans every
+role prompt and every tool description for an English word standing
+alone in Norwegian prose, with `code spans` stripped because
+`vat_code` and `bilag_bokfor` are wire names that belong in a prompt.
+It was seen to fail on a reintroduced `DOKUMENTETS date`. It also
+caught one bare `vat_code`, now backticked like every other field name
+in those strings.
+
 `scripts/rename-identifiers.py` does the mechanical part with the
 guards each past breakage earned: string literals must come out
 byte-identical, serde fields are reported rather than renamed, inline

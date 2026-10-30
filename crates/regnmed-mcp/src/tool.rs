@@ -56,9 +56,9 @@ pub const TOOLS: &[Tool] = &[
     // ---------- Orientering ----------
     Tool {
         name: "selskaper",
-        description: "Hvilke selskaper du kan arbeide for, hvilken role du har i hvert, \
+        description: "Hvilke selskaper du kan arbeide for, hvilken rolle du har i hvert, \
                       hvilke rettigheter rollen gir, og abonnementsstatus. Kall denne FØRST \
-                      i en new samtale: den sier hva du har lov til, så du ikke prøver noe som blir nektet.",
+                      i en ny samtale: den sier hva du har lov til, så du ikke prøver noe som blir nektet.",
         method: "GET",
         sti: "/me",
         kropp: Body::Ingen,
@@ -66,10 +66,10 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "firmaopplysninger",
-        description: "Selskapets name, organisasjonsnummer, adresse, kontonummer, selskapsform, \
+        description: "Selskapets navn, organisasjonsnummer, adresse, kontonummer, selskapsform, \
                       om det har KID-avtale med banken, OG om det er mva-registrert og \
                       registrert i Foretaksregisteret (med historikk). \
-                      KALL DENNE FØR du bruker en mva-code: et selskap som ikke er \
+                      KALL DENNE FØR du bruker en mva-kode: et selskap som ikke er \
                       mva-registrert kan ikke legge mva på noe, og forsøket blir avvist.",
         method: "GET",
         sti: "/companies/{selskap}/settings",
@@ -88,7 +88,7 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "periodestatus",
-        description: "Til og med hvilken date regnskapet er låst. Et bilag med date i en låst \
+        description: "Til og med hvilken dato regnskapet er låst. Et bilag med dato i en låst \
                       periode blir avvist; be et menneske om å åpne perioden, gjør det ikke selv.",
         method: "GET",
         sti: "/companies/{selskap}/period-lock",
@@ -109,7 +109,7 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "bilag_liste",
         description: "Bokførte bilag med linjer, nyeste først. `sok` søker fritt i bilagsnummer, \
-                      date, tekst og kontonummer/-name.",
+                      dato, tekst og kontonummer/-navn.",
         method: "GET",
         sti: "/companies/{selskap}/vouchers",
         kropp: Body::Ingen,
@@ -181,7 +181,7 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "nokkeltall",
-        description: "Resultat hittil i år mot samme date i fjor, månedskolonner, likviditet \
+        description: "Resultat hittil i år mot samme dato i fjor, månedskolonner, likviditet \
                       og de to neste mva-fristene. Bruk denne når noen spør «hvordan går det».",
         method: "GET",
         sti: "/companies/{selskap}/reports/nokkeltall",
@@ -250,7 +250,7 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "bilag_last_opp",
         description: "Laster en fil fra disk opp i bilagsinnboksen (kvittering, faktura, EHF). \
-                      Filen hashes før sending, så en new forsøk etter et tapt svar ikke blir to bilag.",
+                      Filen hashes før sending, så en ny forsøk etter et tapt svar ikke blir to bilag.",
         method: "POST",
         sti: "/companies/{selskap}/inbox",
         kropp: Body::FilBinaer,
@@ -361,9 +361,9 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "faktura_opprett",
         description: "Utsteder en faktura. Fakturaen er UFORANDERLIG straks den er utstedt — en \
-                      feil rettes med kreditnota og new faktura, aldri ved endring. Kontroller \
+                      feil rettes med kreditnota og ny faktura, aldri ved endring. Kontroller \
                       derfor beløp, kunde og mva FØR du kaller denne. Er selskapet ikke \
-                      mva-registrert, utelat vat_code helt.",
+                      mva-registrert, utelat `vat_code` helt.",
         method: "POST",
         sti: "/companies/{selskap}/invoices",
         kropp: Body::Json,
