@@ -221,7 +221,7 @@ pub async fn balance(
             "tilgang_ore": g.tilgang_ore,
             "vederlag_ore": g.vederlag_ore,
             "grunnlag_ore": g.grunnlag_ore,
-            "sats_bp": g.sats_bp,
+            "sats_bp": g.rate_bp,
             "avskrivning_ore": g.avskrivning_ore,
             "utgaende_ore": g.closing_ore,
         })).collect::<Vec<_>>(),

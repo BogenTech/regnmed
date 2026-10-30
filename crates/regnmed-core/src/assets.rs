@@ -68,12 +68,12 @@ pub fn tax_depreciation_year(
     opening_ore: i64,
     additions_ore: i64,
     proceeds_ore: i64,
-    sats_bp: i64,
+    rate_bp: i64,
 ) -> TaxDepreciationYear {
     let basis = opening_ore + additions_ore - proceeds_ore;
     let depreciation = if basis > 0 {
         // Half away from zero; the basis is positive here.
-        (basis as i128 * sats_bp as i128 + 5_000) / 10_000
+        (basis as i128 * rate_bp as i128 + 5_000) / 10_000
     } else {
         0
     } as i64;

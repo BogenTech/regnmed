@@ -53,7 +53,7 @@ pub struct MeldingLine {
     pub code: String,
     pub description: String,
     pub grunnlag_kr: Option<i64>,
-    pub sats_bp: Option<i64>,
+    pub rate_bp: Option<i64>,
     /// The code's own booked tax, melding signs.
     pub vat_kr: i64,
     /// The deduction the SAME code carries (reverse charge / import with
@@ -108,7 +108,7 @@ pub fn build(
             code: line.code.clone(),
             description: line.description.clone(),
             grunnlag_kr: grunnlag,
-            sats_bp: sats,
+            rate_bp: sats,
             vat_kr,
             // The deduction the same code carries. Kept beside the line
             // rather than folded into `mva_kr`, because the two are
@@ -199,7 +199,7 @@ pub fn render(melding: &VatReturn) -> String {
         if let Some(grunnlag) = line.grunnlag_kr {
             x.leaf("grunnlag", &grunnlag.to_string());
         }
-        if let Some(bp) = line.sats_bp {
+        if let Some(bp) = line.rate_bp {
             x.leaf("sats", &sats(bp));
         }
         x.leaf("merverdiavgift", &line.vat_kr.to_string());
@@ -270,12 +270,12 @@ mod tests {
             "utgående: ledger credit → payable positive, kroner"
         );
         assert_eq!(utg.grunnlag_kr, Some(10_000), "10000,49 rounds to 10000");
-        assert_eq!(utg.sats_bp, Some(2500));
+        assert_eq!(utg.rate_bp, Some(2500));
 
         let inn = m.lines.iter().find(|l| l.code == "1").unwrap();
         assert_eq!(inn.vat_kr, -2000, "fradrag is negative in the melding");
         assert_eq!(inn.grunnlag_kr, None, "inngående lines carry no grunnlag");
-        assert_eq!(inn.sats_bp, None);
+        assert_eq!(inn.rate_bp, None);
 
         assert_eq!(m.fastsatt_kr, 500, "fastsatt = sum of line effects");
     }

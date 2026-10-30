@@ -383,7 +383,7 @@ pub struct UnbilledGroup {
     /// invoice recipient. A suggestion only: billing still takes an
     /// explicit party_no from the caller.
     pub kunde: Option<String>,
-    pub kunde_navn: Option<String>,
+    pub customer_name: Option<String>,
     pub timesats_ore: i64,
     pub minutter: i64,
     pub entry_ids: Vec<Uuid>,
@@ -406,7 +406,7 @@ struct UnbilledRow {
     person_navn: String,
     project: Option<String>,
     kunde: Option<String>,
-    kunde_navn: Option<String>,
+    customer_name: Option<String>,
     timesats_ore: i64,
     minutter: i64,
     /// The day the work was done — the leveringstidspunkt of an hours
@@ -446,7 +446,7 @@ async fn unbilled_rows(
             person_navn: row.get("person_navn"),
             project: row.get("prosjekt"),
             kunde: row.get("kunde"),
-            kunde_navn: row.get("kunde_navn"),
+            customer_name: row.get("kunde_navn"),
             timesats_ore: row.get("timesats_ore"),
             minutter: i64::from(row.get::<i32, _>("minutter")),
             date: row.get("dato"),
@@ -474,7 +474,7 @@ fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
                 groups.push(UnbilledGroup {
                     project: row.project.clone(),
                     kunde: row.kunde.clone(),
-                    kunde_navn: row.kunde_navn.clone(),
+                    customer_name: row.customer_name.clone(),
                     timesats_ore: row.timesats_ore,
                     minutter: 0,
                     entry_ids: Vec::new(),

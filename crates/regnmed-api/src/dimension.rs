@@ -32,7 +32,7 @@ pub async fn list(
             "name": d.name,
             "active": d.active,
             "kunde": d.kunde,
-            "kunde_navn": d.kunde_navn,
+            "kunde_navn": d.customer_name,
             "fakturerbar_default": d.fakturerbar_default,
             // The CALLER's effective rate today — what their grid rows
             // will bill at. Not other people's rates.

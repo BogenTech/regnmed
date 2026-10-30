@@ -608,13 +608,13 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             .is_none()
     );
     // 14 days later: purring, with the standardkompensasjon gebyr.
-    let (purring_id, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(17))
+    let (reminder_id, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(17))
         .await
         .unwrap()
         .expect("purring");
     assert_eq!(steg, "purring");
     let gebyr: i64 = sqlx::query_scalar("select gebyr_ore from invoice_reminder where id = $1")
-        .bind(purring_id)
+        .bind(reminder_id)
         .fetch_one(&state.pool)
         .await
         .unwrap();

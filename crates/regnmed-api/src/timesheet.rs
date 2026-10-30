@@ -208,7 +208,7 @@ pub async fn unbilled(
         "groups": groups.iter().map(|g| json!({
             "prosjekt": g.project,
             "kunde": g.kunde,
-            "kunde_navn": g.kunde_navn,
+            "kunde_navn": g.customer_name,
             "timesats_ore": g.timesats_ore,
             "minutter": g.minutter,
             "entries": g.entry_ids.len(),

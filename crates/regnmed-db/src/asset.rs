@@ -547,7 +547,7 @@ pub struct DepreciationGroupRow {
     pub tilgang_ore: i64,
     pub vederlag_ore: i64,
     pub grunnlag_ore: i64,
-    pub sats_bp: i64,
+    pub rate_bp: i64,
     pub avskrivning_ore: i64,
     pub closing_ore: i64,
 }
@@ -610,11 +610,11 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 continue;
             }
             let jan1 = NaiveDate::from_ymd_opt(y, 1, 1).unwrap();
-            let sats_bp = value_on(&satser, &format!("saldogruppe_{gruppe}"), jan1)
+            let rate_bp = value_on(&satser, &format!("saldogruppe_{gruppe}"), jan1)
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
-            let ar = tax_depreciation_year(inngaende, tilgang, vederlag, sats_bp);
+            let ar = tax_depreciation_year(inngaende, tilgang, vederlag, rate_bp);
             rad = Some(DepreciationGroupRow {
                 gruppe: (*gruppe).to_string(),
                 beskrivelse: (*beskrivelse).to_string(),
@@ -622,7 +622,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 tilgang_ore: tilgang,
                 vederlag_ore: vederlag,
                 grunnlag_ore: ar.basis_ore,
-                sats_bp,
+                rate_bp,
                 avskrivning_ore: ar.depreciation_ore,
                 closing_ore: ar.closing_ore,
             });

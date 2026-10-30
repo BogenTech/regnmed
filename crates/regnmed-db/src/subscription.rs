@@ -887,7 +887,7 @@ pub async fn price_on(pool: &PgPool, plan: &str, date: NaiveDate) -> Result<i64>
 #[derive(Debug)]
 pub struct InvoiceOutcome {
     pub company_id: Uuid,
-    pub company_navn: String,
+    pub company_name: String,
     /// Invoice number in the ops company when the faktura was issued;
     /// None with `detail` when the company was skipped or failed.
     pub invoice_no: Option<i64>,
@@ -967,7 +967,7 @@ pub async fn fakturer_maned(
         utfall.push(match result {
             Ok(Some((nr, id, gross))) => InvoiceOutcome {
                 company_id,
-                company_navn: navn,
+                company_name: navn,
                 invoice_no: Some(nr),
                 invoice_id: Some(id),
                 gross_ore: Some(gross),
@@ -977,7 +977,7 @@ pub async fn fakturer_maned(
             // plan costs nothing.
             Ok(None) => InvoiceOutcome {
                 company_id,
-                company_navn: navn,
+                company_name: navn,
                 invoice_no: None,
                 invoice_id: None,
                 gross_ore: None,
@@ -985,7 +985,7 @@ pub async fn fakturer_maned(
             },
             Err(e) => InvoiceOutcome {
                 company_id,
-                company_navn: navn,
+                company_name: navn,
                 invoice_no: None,
                 invoice_id: None,
                 gross_ore: None,
