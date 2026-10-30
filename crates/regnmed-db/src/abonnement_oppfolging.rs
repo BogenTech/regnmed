@@ -14,7 +14,7 @@ use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
 use regnmed_core::abonnement::SPERR_ETTER_FORFALL_DAGER;
 use regnmed_core::purring::{Steg, neste_skritt};
-use regnmed_core::sats::sats_on;
+use regnmed_core::rates::value_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -112,7 +112,7 @@ pub async fn purr(
         // Abonnement customers are companies: the næringsdrivende
         // ceiling (standardkompensasjon) applies, and we charge it.
         let satser = load_satser(pool).await?;
-        sats_on(&satser, "standardkompensasjon", idag)
+        value_on(&satser, "standardkompensasjon", idag)
             .context("standardkompensasjon mangler i satsregisteret")?
     } else {
         0

@@ -12,7 +12,7 @@ use regnmed_core::Ore;
 use regnmed_core::assets::{
     DEPRECIATION_GROUPS, is_valid_depreciation_group, monthly_amount, tax_depreciation_year,
 };
-use regnmed_core::sats::sats_on;
+use regnmed_core::rates::value_on;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -102,7 +102,7 @@ pub async fn create_asset(
     }
 
     let satser = load_satser(pool).await?;
-    let grense = sats_on(&satser, "aktiveringsgrense", draft.anskaffelsesdato);
+    let grense = value_on(&satser, "aktiveringsgrense", draft.anskaffelsesdato);
     let mut warning = None;
     if let Some(grense) = grense
         && draft.kostpris_ore < grense
@@ -610,7 +610,7 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
                 continue;
             }
             let jan1 = NaiveDate::from_ymd_opt(y, 1, 1).unwrap();
-            let sats_bp = sats_on(&satser, &format!("saldogruppe_{gruppe}"), jan1)
+            let sats_bp = value_on(&satser, &format!("saldogruppe_{gruppe}"), jan1)
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;

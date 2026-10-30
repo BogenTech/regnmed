@@ -45,7 +45,7 @@ Bilder hoppes over uten forsøk.
 
 ## Heuristikken: kontrollsifrene gjør jobben
 
-`regnmed-core::bilagstolk` leser teksten linje for linje. Det som gjør
+`regnmed-core::voucher_hints` leser teksten linje for linje. Det som gjør
 den tålelig presis uten modeller er **kontrollsifrene vi allerede har
 validatorer for**:
 
@@ -91,7 +91,7 @@ leverandørreskontroen»), ikke en stille opprettelse.
 - `regnmed-core/src/pdftext.rs` — round-trip mot vår egen
   PDF-generator, escapede parenteser, Flate-strøm, «ikke en PDF»,
   bilde-PDF og mojibake (begge gir None).
-- `regnmed-core/src/bilagstolk.rs` — en vanlig norsk faktura leses
+- `regnmed-core/src/voucher_hints.rs` — en vanlig norsk faktura leses
   komplett; ugyldige kontrollsifre foreslås ikke; verdi under etikett;
   «å betale» slår andre summer; beløpsformater.
 - `regnmed-api/tests/grupper/bilagstolkning.rs` (ekte Postgres, også CI): en

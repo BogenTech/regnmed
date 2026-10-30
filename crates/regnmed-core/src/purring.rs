@@ -2,7 +2,7 @@
 //! deterministic document rendering (docs/purring.md).
 //!
 //! All regelverk is pulled as data from the satsregister
-//! ([`crate::sats`]) — this module knows *how* the rules are applied
+//! ([`crate::rates`]) — this module knows *how* the rules are applied
 //! (forsinkelsesrenteloven, inkassoforskriften, inkassoloven §9), never
 //! which numbers are in force. Interest is computed in integer øre, and
 //! the document renders deterministically so an archived claim can be
@@ -12,7 +12,7 @@ use std::fmt;
 
 use chrono::NaiveDate;
 
-use crate::sats::{SatsPeriode, sats_on};
+use crate::rates::{RatePeriod, value_on};
 use crate::voucher::{EntryDraft, VoucherDraft};
 use crate::{LedgerError, Ore};
 
@@ -169,7 +169,7 @@ pub fn forsinkelsesrente(
     belop_ore: i64,
     forfall: NaiveDate,
     til: NaiveDate,
-    satser: &[SatsPeriode],
+    satser: &[RatePeriod],
 ) -> Result<RenteBeregning, PurringError> {
     if belop_ore < 0 {
         return Err(PurringError::NegativtBelop);
@@ -178,11 +178,11 @@ pub fn forsinkelsesrente(
     let mut sum: i64 = 0;
     let mut dag = forfall.succ_opt().expect("date in range");
     while dag <= til {
-        let sats = sats_on(satser, "forsinkelsesrente", dag)
+        let sats = value_on(satser, "forsinkelsesrente", dag)
             .ok_or(PurringError::ManglerRentesats { dato: dag })?;
         let neste_skifte = satser
             .iter()
-            .filter(|s| s.domene == "forsinkelsesrente" && s.valid_from > dag)
+            .filter(|s| s.domain == "forsinkelsesrente" && s.valid_from > dag)
             .map(|s| s.valid_from)
             .min();
         let slutt = match neste_skifte {
@@ -541,17 +541,17 @@ mod tests {
         );
     }
 
-    fn satser() -> Vec<SatsPeriode> {
+    fn satser() -> Vec<RatePeriod> {
         [
             (date(2025, 1, 1), 1250),
             (date(2025, 7, 1), 1225),
             (date(2026, 1, 1), 1200),
         ]
         .into_iter()
-        .map(|(valid_from, verdi)| SatsPeriode {
-            domene: "forsinkelsesrente".into(),
+        .map(|(valid_from, verdi)| RatePeriod {
+            domain: "forsinkelsesrente".into(),
             valid_from,
-            verdi,
+            value: verdi,
         })
         .collect()
     }

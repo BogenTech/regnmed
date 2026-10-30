@@ -12,7 +12,9 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::hash::{sha256, truncate_to_micros};
-use regnmed_core::pain001::{Betaling, Pain001Input, gyldig_kontonummer, normaliser_kontonummer};
+use regnmed_core::pain001::{
+    Pain001Input, Payment, is_valid_account_number, normalize_account_number,
+};
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -103,7 +105,7 @@ pub async fn create_run(
 ) -> Result<Uuid> {
     ensure!(!items.is_empty(), "betalingslisten er tom");
     let debitor = match debitor_konto {
-        Some(konto) => normaliser_kontonummer(konto),
+        Some(konto) => normalize_account_number(konto),
         None => {
             let konto: Option<String> =
                 sqlx::query_scalar("select bank_account from company where id = $1")
@@ -111,12 +113,12 @@ pub async fn create_run(
                     .fetch_one(pool)
                     .await?;
             konto
-                .map(|k| normaliser_kontonummer(&k))
+                .map(|k| normalize_account_number(&k))
                 .context("selskapet mangler kontonummer — sett det under Firmaopplysninger")?
         }
     };
     ensure!(
-        gyldig_kontonummer(&debitor),
+        is_valid_account_number(&debitor),
         "debitorkonto {debitor} er ikke et gyldig kontonummer"
     );
 
@@ -151,8 +153,8 @@ pub async fn create_run(
         let konto = open
             .bank_account
             .as_deref()
-            .map(normaliser_kontonummer)
-            .filter(|k| gyldig_kontonummer(k))
+            .map(normalize_account_number)
+            .filter(|k| is_valid_account_number(k))
             .with_context(|| {
                 format!(
                     "linje {}: leverandør {} mangler gyldig kontonummer",
@@ -242,10 +244,10 @@ pub async fn approve_run(
     let input = Pain001Input {
         msg_id: format!("regnmed-{run_id}"),
         created: approved_at,
-        avsender_navn: run.get("company_name"),
-        debitor_konto: run.get("debitor_konto"),
+        sender_name: run.get("company_name"),
+        debtor_account: run.get("debitor_konto"),
         execution_date: run.get("execution_date"),
-        betalinger: items,
+        payments: items,
     };
     let xml = regnmed_core::pain001::render(&input);
     let digest = sha256(xml.as_bytes());
@@ -269,7 +271,7 @@ pub async fn approve_run(
 async fn run_items(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     run_id: Uuid,
-) -> Result<Vec<Betaling>> {
+) -> Result<Vec<Payment>> {
     let rows = sqlx::query(
         "select id, belop_ore, kreditor_navn, kreditor_konto, kid, melding
          from payment_run_item where run_id = $1 order by created_at, id",
@@ -279,13 +281,13 @@ async fn run_items(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Betaling {
+        .map(|r| Payment {
             end_to_end_id: format!("regnmed-{}", r.get::<Uuid, _>("id")),
-            belop_ore: r.get("belop_ore"),
-            kreditor_navn: r.get("kreditor_navn"),
-            kreditor_konto: r.get("kreditor_konto"),
+            amount_ore: r.get("belop_ore"),
+            creditor_name: r.get("kreditor_navn"),
+            creditor_account: r.get("kreditor_konto"),
             kid: r.get("kid"),
-            melding: r.get("melding"),
+            message: r.get("melding"),
         })
         .collect())
 }

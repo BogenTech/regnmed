@@ -135,7 +135,7 @@ PowerOffice, Conta) krever avtale og nøkler per leverandør og er
 dokumentert som neste steg, ikke lovet her.
 
 Layouten leses av **kolonneoverskriftene**, ikke av en profil per
-leverandør (`regnmed-core::migreringcsv`, samme grep som bank-CSV):
+leverandør (`regnmed-core::migration_csv`, samme grep som bank-CSV):
 overskriftsvokabularet endrer seg langsommere enn produktnavnene, og
 en fil vi ikke forstår feiler høyt med kolonnene vi faktisk så.
 
@@ -196,7 +196,7 @@ så bokfør).
   truncation, padding, name match, no-suggestion) and mapping
   application (rewrite, merge with summed openings, 4-digit target
   validation).
-- `regnmed-core/src/migreringcsv.rs` — per-layout parser tests
+- `regnmed-core/src/migration_csv.rs` — per-layout parser tests
   (Tripletex-style semicolon export with quoted delimiters, English
   export where a type column beats the caller's default, restbeløp
   winning over beløp, credit notes keeping their sign, settled items

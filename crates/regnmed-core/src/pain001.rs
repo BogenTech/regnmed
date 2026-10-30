@@ -20,28 +20,28 @@ use crate::xml::Xml;
 /// A Norwegian kontonummer: 11 digits with a MOD11 check digit (the same
 /// cyclic weights as KID MOD11). Dots and spaces are accepted in the
 /// input; validate the NORMALISED form.
-pub fn normaliser_kontonummer(s: &str) -> String {
+pub fn normalize_account_number(s: &str) -> String {
     s.chars().filter(|c| c.is_ascii_digit()).collect()
 }
 
-pub fn gyldig_kontonummer(s: &str) -> bool {
-    let digits = normaliser_kontonummer(s);
+pub fn is_valid_account_number(s: &str) -> bool {
+    let digits = normalize_account_number(s);
     digits.len() == 11 && is_valid_mod11(&digits)
 }
 
 #[derive(Debug, Clone)]
-pub struct Betaling {
+pub struct Payment {
     /// EndToEndId — comes back on the kontoutskrift, ties the debit to
     /// the run item.
     pub end_to_end_id: String,
-    pub belop_ore: i64,
-    pub kreditor_navn: String,
+    pub amount_ore: i64,
+    pub creditor_name: String,
     /// Normalized 11-digit BBAN.
-    pub kreditor_konto: String,
+    pub creditor_account: String,
     /// KID → structured creditor reference (SCOR).
     pub kid: Option<String>,
     /// Fri melding when there is no KID.
-    pub melding: Option<String>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,11 +49,11 @@ pub struct Pain001Input {
     /// MsgId + PmtInfId — the betalingskjøring's id.
     pub msg_id: String,
     pub created: DateTime<Utc>,
-    pub avsender_navn: String,
+    pub sender_name: String,
     /// Normalized 11-digit BBAN the payments debit.
-    pub debitor_konto: String,
+    pub debtor_account: String,
     pub execution_date: NaiveDate,
-    pub betalinger: Vec<Betaling>,
+    pub payments: Vec<Payment>,
 }
 
 /// "1234.56" from øre — integer arithmetic only.
@@ -61,7 +61,7 @@ fn amount(ore: i64) -> String {
     format!("{}.{:02}", ore / 100, ore % 100)
 }
 
-fn konto(x: &mut Xml, tag: &str, bban: &str) {
+fn account(x: &mut Xml, tag: &str, bban: &str) {
     x.open(tag);
     x.open("Id");
     x.open("Othr");
@@ -75,8 +75,8 @@ fn konto(x: &mut Xml, tag: &str, bban: &str) {
 }
 
 pub fn render(input: &Pain001Input) -> String {
-    let sum: i64 = input.betalinger.iter().map(|b| b.belop_ore).sum();
-    let count = input.betalinger.len();
+    let sum: i64 = input.payments.iter().map(|b| b.amount_ore).sum();
+    let count = input.payments.len();
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03">"#);
@@ -92,7 +92,7 @@ pub fn render(input: &Pain001Input) -> String {
     x.leaf("NbOfTxs", &count.to_string());
     x.leaf("CtrlSum", &amount(sum));
     x.open("InitgPty");
-    x.leaf("Nm", &input.avsender_navn);
+    x.leaf("Nm", &input.sender_name);
     x.close("InitgPty");
     x.close("GrpHdr");
 
@@ -103,14 +103,14 @@ pub fn render(input: &Pain001Input) -> String {
     x.leaf("CtrlSum", &amount(sum));
     x.leaf("ReqdExctnDt", &input.execution_date.to_string());
     x.open("Dbtr");
-    x.leaf("Nm", &input.avsender_navn);
+    x.leaf("Nm", &input.sender_name);
     x.close("Dbtr");
-    konto(&mut x, "DbtrAcct", &input.debitor_konto);
+    account(&mut x, "DbtrAcct", &input.debtor_account);
     x.open("DbtrAgt");
     x.empty("FinInstnId");
     x.close("DbtrAgt");
 
-    for betaling in &input.betalinger {
+    for betaling in &input.payments {
         x.open("CdtTrfTxInf");
         x.open("PmtId");
         x.leaf("EndToEndId", &betaling.end_to_end_id);
@@ -119,14 +119,14 @@ pub fn render(input: &Pain001Input) -> String {
         x.raw(&format!(
             "{}<InstdAmt Ccy=\"NOK\">{}</InstdAmt>",
             "  ".repeat(x.depth),
-            amount(betaling.belop_ore)
+            amount(betaling.amount_ore)
         ));
         x.close("Amt");
         x.open("Cdtr");
-        x.leaf("Nm", &betaling.kreditor_navn);
+        x.leaf("Nm", &betaling.creditor_name);
         x.close("Cdtr");
-        konto(&mut x, "CdtrAcct", &betaling.kreditor_konto);
-        match (&betaling.kid, &betaling.melding) {
+        account(&mut x, "CdtrAcct", &betaling.creditor_account);
+        match (&betaling.kid, &betaling.message) {
             (Some(kid), _) => {
                 x.open("RmtInf");
                 x.open("Strd");
@@ -141,9 +141,9 @@ pub fn render(input: &Pain001Input) -> String {
                 x.close("Strd");
                 x.close("RmtInf");
             }
-            (None, Some(melding)) => {
+            (None, Some(message)) => {
                 x.open("RmtInf");
-                x.leaf("Ustrd", melding);
+                x.leaf("Ustrd", message);
                 x.close("RmtInf");
             }
             (None, None) => {}
@@ -166,25 +166,25 @@ mod tests {
         Pain001Input {
             msg_id: "regnmed-run-1".into(),
             created: DateTime::from_timestamp(1_800_000_000, 0).unwrap(),
-            avsender_navn: "Utlegg & Handel AS".into(),
-            debitor_konto: "86011117947".into(),
+            sender_name: "Utlegg & Handel AS".into(),
+            debtor_account: "86011117947".into(),
             execution_date: NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
-            betalinger: vec![
-                Betaling {
+            payments: vec![
+                Payment {
                     end_to_end_id: "regnmed-run-1-1".into(),
-                    belop_ore: 12_500_00,
-                    kreditor_navn: "Leverandør A/S".into(),
-                    kreditor_konto: "86011117947".into(),
+                    amount_ore: 12_500_00,
+                    creditor_name: "Leverandør A/S".into(),
+                    creditor_account: "86011117947".into(),
                     kid: Some("001234567891".into()),
-                    melding: None,
+                    message: None,
                 },
-                Betaling {
+                Payment {
                     end_to_end_id: "regnmed-run-1-2".into(),
-                    belop_ore: 999,
-                    kreditor_navn: "Enkeltmann".into(),
-                    kreditor_konto: "86011117947".into(),
+                    amount_ore: 999,
+                    creditor_name: "Enkeltmann".into(),
+                    creditor_account: "86011117947".into(),
                     kid: None,
-                    melding: Some("Faktura 42".into()),
+                    message: Some("Faktura 42".into()),
                 },
             ],
         }
@@ -192,12 +192,15 @@ mod tests {
 
     #[test]
     fn kontonummer_mod11() {
-        assert!(gyldig_kontonummer("86011117947"));
-        assert!(gyldig_kontonummer("8601.11.17947"), "punktum godtas");
-        assert!(gyldig_kontonummer("8601 11 17947"));
-        assert!(!gyldig_kontonummer("86011117948"), "feil kontrollsiffer");
-        assert!(!gyldig_kontonummer("8601111794"), "for kort");
-        assert!(!gyldig_kontonummer(""));
+        assert!(is_valid_account_number("86011117947"));
+        assert!(is_valid_account_number("8601.11.17947"), "punktum godtas");
+        assert!(is_valid_account_number("8601 11 17947"));
+        assert!(
+            !is_valid_account_number("86011117948"),
+            "feil kontrollsiffer"
+        );
+        assert!(!is_valid_account_number("8601111794"), "for kort");
+        assert!(!is_valid_account_number(""));
     }
 
     #[test]

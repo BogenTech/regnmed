@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::lonn::{self, Lonnsberegning, Lonnsgrunnlag, Lonnssum, Sone, Trekk};
-use regnmed_core::sats::SatsPeriode;
+use regnmed_core::rates::RatePeriod;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -282,16 +282,16 @@ async fn konto_saldo(pool: &PgPool, company_id: Uuid, konto: &str) -> Result<i64
     Ok(saldo)
 }
 
-async fn satser(pool: &PgPool) -> Result<Vec<SatsPeriode>> {
+async fn satser(pool: &PgPool) -> Result<Vec<RatePeriod>> {
     let rows = sqlx::query("select domene, valid_from, verdi from sats")
         .fetch_all(pool)
         .await?;
     Ok(rows
         .iter()
-        .map(|r| SatsPeriode {
-            domene: r.get("domene"),
+        .map(|r| RatePeriod {
+            domain: r.get("domene"),
             valid_from: r.get("valid_from"),
-            verdi: r.get("verdi"),
+            value: r.get("verdi"),
         })
         .collect())
 }
@@ -335,8 +335,8 @@ pub async fn kjor_lonn(
 
     let alle_satser = satser(pool).await?;
     let aga_domene = sone.sats_domene();
-    let aga_bp =
-        regnmed_core::sats::sats_on(&alle_satser, &aga_domene, utbetalt_dato).ok_or_else(|| {
+    let aga_bp = regnmed_core::rates::value_on(&alle_satser, &aga_domene, utbetalt_dato)
+        .ok_or_else(|| {
             anyhow::anyhow!(
                 "{}",
                 lonn::LonnError::ManglerSats(aga_domene.clone(), utbetalt_dato)

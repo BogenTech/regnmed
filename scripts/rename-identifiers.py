@@ -23,7 +23,11 @@ Three things it does NOT know, which are yours to check:
 
   - Cross-crate names. A map applied to a dependent will happily rename
     a function that belongs to a crate you have not converted yet. Build
-    after every run.
+    after every run. And NEVER fix up call sites with a bare
+    `\bname\b` sweep over crates/: `rate_on -> value_on` for the
+    satsregister also renamed `mva::rate_on`, which is a different
+    function (the VAT rate) that happened to share the name. Rewrite
+    QUALIFIED paths, or name the files.
   - Database columns. Applied migrations are append-only, so a column
     keeps its name; map it to an English field with `r.get("old_name")`.
   - Whether the new name is right. It only guarantees the rename is
