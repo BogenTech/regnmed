@@ -4,7 +4,7 @@
 //! lists vouchers in posting order, and resultat/balanse balance to the
 //! øre. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -93,7 +93,7 @@ async fn statutory_reports_reconcile_to_the_ore() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Rapport AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "les")
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "les")
         .await
         .unwrap();
@@ -297,7 +297,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
             .await
             .unwrap();
     gi_partene_adresse(&state.pool, company).await;
-    let (_, leverandor) =
+    let (_, supplier) =
         regnmed_db::create_party(&state.pool, company, "leverandor", "Grossisten", None, None)
             .await
             .unwrap();
@@ -345,7 +345,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
         "Varekjøp",
         vec![
             entry("4300", 8_000_00),
-            party_entry("2400", -8_000_00, &leverandor),
+            party_entry("2400", -8_000_00, &supplier),
         ],
     )
     .await;
@@ -404,7 +404,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
     let parties = ls["parties"].as_array().unwrap();
     assert_eq!(parties.len(), 1);
     let g = &parties[0];
-    assert_eq!(g["party_no"], leverandor);
+    assert_eq!(g["party_no"], supplier);
     assert_eq!(g["inngaende_ore"], 0);
     assert_eq!(g["utgaende_ore"], -8_000_00);
     let posts = g["posts"].as_array().unwrap();

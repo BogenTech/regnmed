@@ -40,12 +40,12 @@ use crate::auth::{ApiError, AuthPerson};
 #[derive(Clone)]
 pub struct PlattformKontekst {
     pub person_id: Uuid,
-    pub rolle: String,
+    pub role: String,
 }
 
 impl PlattformKontekst {
     fn er_systemadmin(&self) -> bool {
-        self.rolle == "systemadmin"
+        self.role == "systemadmin"
     }
 
     /// Support may look and assign new memberships; everything else —
@@ -138,8 +138,8 @@ async fn vakt(State(state): State<AppState>, req: Request, next: Next) -> Respon
     if person.integration.is_some() {
         return ApiError::NotFound.into_response();
     }
-    let rolle = match regnmed_db::active_platform_role(&state.pool, person.person_id).await {
-        Ok(Some(r)) => r.rolle,
+    let role = match regnmed_db::active_platform_role(&state.pool, person.person_id).await {
+        Ok(Some(r)) => r.role,
         Ok(None) => return ApiError::NotFound.into_response(),
         Err(e) => return ApiError::from(e).into_response(),
     };
@@ -148,7 +148,7 @@ async fn vakt(State(state): State<AppState>, req: Request, next: Next) -> Respon
     if let Err(e) = regnmed_db::log_platform_access(
         &state.pool,
         person.person_id,
-        &rolle,
+        &role,
         parts.method.as_str(),
         &path,
         company_id,
@@ -162,7 +162,7 @@ async fn vakt(State(state): State<AppState>, req: Request, next: Next) -> Respon
     }
     parts.extensions.insert(PlattformKontekst {
         person_id: person.person_id,
-        rolle,
+        role,
     });
     next.run(Request::from_parts(parts, body)).await
 }
@@ -184,7 +184,7 @@ async fn list_members(
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
-            "rolle": m.rolle,
+            "rolle": m.role,
             "valid_from": m.valid_from.to_string(),
             "valid_to": m.valid_to.to_string(),
             "notat": m.note,
@@ -196,7 +196,8 @@ async fn list_members(
 #[derive(Deserialize)]
 pub struct GrantRequest {
     epost: String,
-    rolle: String,
+    #[serde(rename = "rolle")]
+    role: String,
     valid_to: NaiveDate,
     #[serde(rename = "notat")]
     note: String,
@@ -219,7 +220,7 @@ async fn grant_member(
     let id = regnmed_db::grant_platform_role(
         &state.pool,
         person_id,
-        &body.rolle,
+        &body.role,
         body.valid_to,
         &body.note,
         Some(ctx.person_id),
@@ -289,7 +290,7 @@ async fn list_users(
                 "id": t.id,
                 "navn": t.name,
                 "orgnr": t.orgnr,
-                "rolle": t.rolle,
+                "rolle": t.role,
                 "aktiv": t.active,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
@@ -331,11 +332,11 @@ async fn overview(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let tall = regnmed_db::platform_overview(&state.pool).await?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
-    let idag = chrono::Utc::now().date_naive();
+    let today = chrono::Utc::now().date_naive();
     let mut fordeling = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
-            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, today);
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
@@ -358,12 +359,12 @@ async fn list_subscriptions(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
-    let idag = chrono::Utc::now().date_naive();
+    let today = chrono::Utc::now().date_naive();
     Ok(Json(json!({
         "abonnementer": abo.iter().map(|a| {
             use regnmed_core::subscription::Status;
             let status =
-                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, today);
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
                 Status::Aktiv => a.valid_to,
@@ -463,7 +464,7 @@ async fn company_detail(
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
-            "rolle": m.rolle,
+            "rolle": m.role,
             "aktiv": m.active,
             "via": m.via,
             "kan_endres": m.kan_endres,
@@ -471,7 +472,7 @@ async fn company_detail(
         "invitasjoner": invitasjoner.iter().map(|i| json!({
             "id": i.id,
             "epost": i.epost,
-            "rolle": i.rolle,
+            "rolle": i.role,
             "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
         "abonnement": {
@@ -578,7 +579,7 @@ async fn start_coverage(
     Json(request): Json<CoverageRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
-    let idag = chrono::Utc::now().date_naive();
+    let today = chrono::Utc::now().date_naive();
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     if matches!(status, regnmed_core::subscription::Status::Aktiv) {
         return Err(ApiError::BadRequest(
@@ -589,7 +590,7 @@ async fn start_coverage(
         &state.pool,
         company_id,
         &request.plan,
-        idag,
+        today,
         None,
         &format!("plattform: {}", request.note),
         &format!("plattform:{}", ctx.person_id),
@@ -609,8 +610,8 @@ async fn end_coverage(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
-    let idag = chrono::Utc::now().date_naive();
-    regnmed_db::subscription::close_coverage(&state.pool, company_id, idag)
+    let today = chrono::Utc::now().date_naive();
+    regnmed_db::subscription::close_coverage(&state.pool, company_id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "avsluttet": true })))
@@ -618,7 +619,8 @@ async fn end_coverage(
 
 #[derive(Deserialize)]
 pub struct AssignRequest {
-    rolle: String,
+    #[serde(rename = "rolle")]
+    role: String,
 }
 
 async fn assign_company(
@@ -631,7 +633,7 @@ async fn assign_company(
         &state.pool,
         company_id,
         person_id,
-        &body.rolle,
+        &body.role,
         ctx.person_id,
         ctx.er_systemadmin(),
     )
@@ -650,7 +652,7 @@ async fn assign_firm(
         &state.pool,
         firm_id,
         person_id,
-        &body.rolle,
+        &body.role,
         ctx.person_id,
         ctx.er_systemadmin(),
     )
@@ -663,7 +665,7 @@ fn innsyn_json(rader: &[regnmed_db::PlattformInnsyn]) -> serde_json::Value {
     json!({
         "innsyn": rader.iter().map(|r| json!({
             "navn": r.name,
-            "rolle": r.rolle,
+            "rolle": r.role,
             "method": r.method,
             "path": r.path,
             "tidspunkt": r.created_at.to_rfc3339(),

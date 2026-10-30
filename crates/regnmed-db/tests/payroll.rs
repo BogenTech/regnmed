@@ -503,9 +503,9 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     // And it renders to a PDF that explains the trekkfrihet.
     let pdf = regnmed_core::payslip::render_payslip(&slipp);
     assert!(pdf.starts_with(b"%PDF-1.4"));
-    let tekst = String::from_utf8_lossy(&pdf).to_string();
-    assert!(tekst.contains("uten forskuddstrekk"), "{tekst}");
-    assert!(!tekst.contains("26829398612"), "fnr skal ikke i slippen");
+    let text = String::from_utf8_lossy(&pdf).to_string();
+    assert!(text.contains("uten forskuddstrekk"), "{text}");
+    assert!(!text.contains("26829398612"), "fnr skal ikke i slippen");
 
     // The May slip sees only May in the year-to-date figures.
     let mai_id = payroll::list_kjoringer(&pool, company, Some(2026))
@@ -575,7 +575,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             &regnmed_db::timesheet::TimeEntryDraft {
                 date: date(2026, 3, dag),
                 minutter: 400,
-                beskrivelse: "Arbeid".into(),
+                description: "Arbeid".into(),
                 project: None,
                 fakturerbar: Some(false),
                 timesats_ore: None,

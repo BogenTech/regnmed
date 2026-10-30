@@ -170,14 +170,14 @@ impl Client {
                 if let Some(scope) = scope {
                     form.push(("scope", scope.as_str()));
                 }
-                let svar = self.http.post(token_url).form(&form).send().await?;
-                let status = svar.status();
-                let tekst = svar.text().await?;
+                let response = self.http.post(token_url).form(&form).send().await?;
+                let status = response.status();
+                let text = response.text().await?;
                 if !status.is_success() {
-                    bail!("tokenet ble nektet av {token_url} ({status}): {tekst}");
+                    bail!("tokenet ble nektet av {token_url} ({status}): {text}");
                 }
-                let json: Value = serde_json::from_str(&tekst)
-                    .with_context(|| format!("uventet svar fra {token_url}: {tekst}"))?;
+                let json: Value = serde_json::from_str(&text)
+                    .with_context(|| format!("uventet svar fra {token_url}: {text}"))?;
                 let token = json["access_token"]
                     .as_str()
                     .ok_or_else(|| anyhow!("svaret fra {token_url} har ingen access_token"))?
@@ -203,11 +203,11 @@ impl Client {
     pub async fn call(
         &self,
         method: &str,
-        sti: &str,
+        path: &str,
         query: &[(String, String)],
-        kropp: Option<Body>,
+        body: Option<Body>,
     ) -> Result<(u16, String)> {
-        let url = format!("{}{sti}", self.base);
+        let url = format!("{}{path}", self.base);
         let mut req = match method {
             "GET" => self.http.get(&url),
             "POST" => self.http.post(&url),
@@ -219,7 +219,7 @@ impl Client {
             req = req.query(query);
         }
         req = req.bearer_auth(self.token().await?);
-        req = match kropp {
+        req = match body {
             None => req,
             Some(Body::Json(v)) => req.json(&v),
             Some(Body::Raa {
@@ -229,9 +229,9 @@ impl Client {
                 .header(reqwest::header::CONTENT_TYPE, content_type)
                 .body(bytes),
         };
-        let svar = req.send().await?;
-        let status = svar.status().as_u16();
-        Ok((status, svar.text().await?))
+        let response = req.send().await?;
+        let status = response.status().as_u16();
+        Ok((status, response.text().await?))
     }
 }
 

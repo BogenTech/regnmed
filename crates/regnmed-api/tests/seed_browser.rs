@@ -407,7 +407,7 @@ async fn seed_browser_demo() {
             &regnmed_db::timesheet::TimeEntryDraft {
                 date: date(2026, 7, dag),
                 minutter,
-                beskrivelse: "Konsulentarbeid".into(),
+                description: "Konsulentarbeid".into(),
                 project: None,
                 fakturerbar: Some(true),
                 timesats_ore: Some(120_000),

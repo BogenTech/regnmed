@@ -488,7 +488,7 @@ pub async fn salgsdokument_pdf(
     let computed = compute(&inputs);
     for (line, amounts) in inputs.iter().zip(&computed.lines) {
         pdf_linjer.push(PdfLinje {
-            beskrivelse: line.description.clone(),
+            description: line.description.clone(),
             antall_milli: line.quantity_milli,
             enhetspris_ore: line.unit_price_ore,
             vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),

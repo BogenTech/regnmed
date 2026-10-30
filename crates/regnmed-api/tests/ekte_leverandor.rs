@@ -20,7 +20,7 @@
 
 mod common;
 
-use common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -135,7 +135,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Bokforende Agent AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
         .await
         .unwrap();

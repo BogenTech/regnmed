@@ -25,7 +25,7 @@ pub const BYRAROLLER: [&str; 2] = ["admin", "ansatt"];
 
 #[derive(Debug, Clone)]
 pub struct AktivPlattformRolle {
-    pub rolle: String,
+    pub role: String,
     pub valid_to: NaiveDate,
 }
 
@@ -46,7 +46,7 @@ pub async fn active_platform_role(
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| AktivPlattformRolle {
-        rolle: r.get("rolle"),
+        role: r.get("rolle"),
         valid_to: r.get("valid_to"),
     }))
 }
@@ -57,7 +57,7 @@ pub struct PlattformMedlem {
     pub person_id: Uuid,
     pub name: String,
     pub epost: Option<String>,
-    pub rolle: String,
+    pub role: String,
     pub valid_from: NaiveDate,
     pub valid_to: NaiveDate,
     pub note: String,
@@ -82,7 +82,7 @@ pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>
             person_id: r.get("person_id"),
             name: r.get("navn"),
             epost: r.get("email"),
-            rolle: r.get("rolle"),
+            role: r.get("rolle"),
             valid_from: r.get("valid_from"),
             valid_to: r.get("valid_to"),
             note: r.get("notat"),
@@ -97,14 +97,14 @@ pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>
 pub async fn grant_platform_role(
     pool: &PgPool,
     person_id: Uuid,
-    rolle: &str,
+    role: &str,
     valid_to: NaiveDate,
     note: &str,
     granted_by: Option<Uuid>,
 ) -> Result<Uuid> {
     ensure!(
-        rolle == "systemadmin" || rolle == "support",
-        "ukjent plattformrolle «{rolle}» — gyldige er systemadmin og support"
+        role == "systemadmin" || role == "support",
+        "ukjent plattformrolle «{role}» — gyldige er systemadmin og support"
     );
     ensure!(
         valid_to > Utc::now().date_naive(),
@@ -133,7 +133,7 @@ pub async fn grant_platform_role(
     )
     .bind(id)
     .bind(person_id)
-    .bind(rolle)
+    .bind(role)
     .bind(valid_to)
     .bind(note.trim())
     .bind(granted_by)
@@ -178,7 +178,7 @@ pub async fn person_by_email(pool: &PgPool, epost: &str) -> Result<Option<Uuid>>
 pub async fn log_platform_access(
     pool: &PgPool,
     person_id: Uuid,
-    rolle: &str,
+    role: &str,
     method: &str,
     path: &str,
     company_id: Option<Uuid>,
@@ -190,7 +190,7 @@ pub async fn log_platform_access(
          values ($1, $2, $3, $4, $5, $6)",
     )
     .bind(person_id)
-    .bind(rolle)
+    .bind(role)
     .bind(method)
     .bind(path)
     .bind(company_id)
@@ -203,7 +203,7 @@ pub async fn log_platform_access(
 #[derive(Debug, Clone)]
 pub struct PlattformInnsyn {
     pub name: String,
-    pub rolle: String,
+    pub role: String,
     pub method: String,
     pub path: String,
     pub created_at: DateTime<Utc>,
@@ -224,7 +224,7 @@ async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlattformIn
         .iter()
         .map(|r| PlattformInnsyn {
             name: r.get("navn"),
-            rolle: r.get("rolle"),
+            role: r.get("rolle"),
             method: r.get("method"),
             path: r.get("path"),
             created_at: r.get("created_at"),
@@ -315,7 +315,7 @@ pub struct PlattformTilknytning {
     pub id: Uuid,
     pub name: String,
     pub orgnr: String,
-    pub rolle: String,
+    pub role: String,
     pub active: bool,
 }
 
@@ -378,7 +378,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
                         id: c.get("id"),
                         name: c.get("navn"),
                         orgnr: c.get("orgnr"),
-                        rolle: c.get("rolle"),
+                        role: c.get("rolle"),
                         active: c.get("aktiv"),
                     })
                     .collect(),
@@ -462,13 +462,13 @@ pub async fn platform_assign_company(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
-    rolle: &str,
+    role: &str,
     utfort_av: Uuid,
     systemadmin: bool,
 ) -> Result<()> {
     ensure!(
-        SELSKAPSROLLER.contains(&rolle),
-        "ukjent rolle «{rolle}» — plattformen tildeler bare de innebygde"
+        SELSKAPSROLLER.contains(&role),
+        "ukjent rolle «{role}» — plattformen tildeler bare de innebygde"
     );
     krev_menneske(pool, person_id).await?;
     let mut tx = pool.begin().await?;
@@ -489,7 +489,7 @@ pub async fn platform_assign_company(
             )
             .bind(company_id)
             .bind(person_id)
-            .bind(rolle)
+            .bind(role)
             .execute(&mut *tx)
             .await?;
             ensure!(inserted.rows_affected() == 1, "ukjent selskap");
@@ -508,7 +508,7 @@ pub async fn platform_assign_company(
             )
             .bind(company_id)
             .bind(person_id)
-            .bind(rolle)
+            .bind(role)
             .execute(&mut *tx)
             .await?;
             (
@@ -527,7 +527,7 @@ pub async fn platform_assign_company(
     .bind(person_id)
     .bind(endring)
     .bind(fra.as_deref())
-    .bind(rolle)
+    .bind(role)
     .bind(utfort_av)
     .execute(&mut *tx)
     .await?;
@@ -540,13 +540,13 @@ pub async fn platform_assign_firm(
     pool: &PgPool,
     firm_id: Uuid,
     person_id: Uuid,
-    rolle: &str,
+    role: &str,
     utfort_av: Uuid,
     systemadmin: bool,
 ) -> Result<()> {
     ensure!(
-        BYRAROLLER.contains(&rolle),
-        "ukjent byrårolle «{rolle}» — gyldige er admin og ansatt"
+        BYRAROLLER.contains(&role),
+        "ukjent byrårolle «{role}» — gyldige er admin og ansatt"
     );
     krev_menneske(pool, person_id).await?;
     let mut tx = pool.begin().await?;
@@ -567,7 +567,7 @@ pub async fn platform_assign_firm(
             )
             .bind(firm_id)
             .bind(person_id)
-            .bind(rolle)
+            .bind(role)
             .execute(&mut *tx)
             .await?;
             ensure!(inserted.rows_affected() == 1, "ukjent byrå");
@@ -586,7 +586,7 @@ pub async fn platform_assign_firm(
             )
             .bind(firm_id)
             .bind(person_id)
-            .bind(rolle)
+            .bind(role)
             .execute(&mut *tx)
             .await?;
             (
@@ -605,7 +605,7 @@ pub async fn platform_assign_firm(
     .bind(person_id)
     .bind(endring)
     .bind(fra.as_deref())
-    .bind(rolle)
+    .bind(role)
     .bind(utfort_av)
     .execute(&mut *tx)
     .await?;

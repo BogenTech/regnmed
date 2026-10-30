@@ -4,7 +4,7 @@
 //! ordinary invoice with the prosjekt dimension — hours marked
 //! fakturert one-way. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -53,7 +53,7 @@ async fn hours_lock_and_bill() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timer AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -360,7 +360,7 @@ async fn timer_rights_mean_what_they_say() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timevakt AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -552,7 +552,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Utvalg AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, a, "admin")
         .await
         .unwrap();
@@ -700,7 +700,7 @@ async fn the_project_owns_the_rate_and_the_default() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Satseiere AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
@@ -744,7 +744,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         serde_json::json!({ "person_id": ansatt, "timesats_ore": 800_00,
                             "valid_from": "2026-01-01" }),
     ] {
-        let (status, svar) = request(
+        let (status, response) = request(
             &state,
             "POST",
             &satser,
@@ -752,7 +752,7 @@ async fn the_project_owns_the_rate_and_the_default() {
             Some(body.to_string()),
         )
         .await;
-        assert_eq!(status, StatusCode::OK, "body: {svar}");
+        assert_eq!(status, StatusCode::OK, "body: {response}");
     }
 
     // Espen logs an hour WITHOUT saying fakturerbar and WITH a bogus
@@ -893,7 +893,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kombinert AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();

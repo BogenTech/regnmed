@@ -34,7 +34,8 @@ pub struct UploadQuery {
     date: chrono::NaiveDate,
     #[serde(rename = "belop_ore")]
     amount_ore: i64,
-    beskrivelse: String,
+    #[serde(rename = "beskrivelse")]
+    description: String,
 }
 
 pub async fn create_utlegg(
@@ -57,7 +58,7 @@ pub async fn create_utlegg(
         company_id,
         person.person_id,
         query.date,
-        &query.beskrivelse,
+        &query.description,
         query.amount_ore,
         &query.filename,
         &content_type,
@@ -74,7 +75,8 @@ pub struct KjoringRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     /// Route and purpose, e.g. "Oslo–Drammen t/r, kundemøte".
-    beskrivelse: String,
+    #[serde(rename = "beskrivelse")]
+    description: String,
     km: i64,
 }
 
@@ -91,7 +93,7 @@ pub async fn create_kjoring(
         company_id,
         person.person_id,
         request.date,
-        &request.beskrivelse,
+        &request.description,
         request.km,
         created_by,
     )
@@ -112,8 +114,8 @@ pub async fn list(
     // En ansatt ser sine egne krav; alle andre ser selskapets. Omfanget
     // decided by the rettighet, not by the role — then it moves by
     // itself when roles are recomposed (#60).
-    let rolle = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    let bare_egne = !rolle.has(Right::ExpenseReadAll);
+    let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
+    let bare_egne = !role.has(Right::ExpenseReadAll);
     let expenses =
         regnmed_db::list_expenses(&state.pool, company_id, person.person_id, bare_egne).await?;
     Ok(Json(json!({
@@ -123,7 +125,7 @@ pub async fn list(
             "own": e.own,
             "kind": e.kind,
             "dato": e.date.to_string(),
-            "beskrivelse": e.beskrivelse,
+            "beskrivelse": e.description,
             "belop_ore": e.amount_ore,
             "km": e.km,
             "sats_ore_per_km": e.sats_ore_per_km,
@@ -141,8 +143,8 @@ pub async fn receipt(
     person: AuthPerson,
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    let rolle = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    if !rolle.has(Right::ExpenseReadAll) {
+    let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
+    if !role.has(Right::ExpenseReadAll) {
         // The receipt is a picture of something private. Without
         // UTLEGG_LES_ALLE you get only your own — and a claim belonging
         // to someone else must answer as though it does not exist.

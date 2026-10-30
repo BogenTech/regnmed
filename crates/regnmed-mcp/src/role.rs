@@ -25,7 +25,7 @@
 pub struct RolePrompt {
     pub name: &'static str,
     pub description: &'static str,
-    pub tekst: &'static str,
+    pub text: &'static str,
 }
 
 /// Shared ground rules. Prepended to every role, because every one of
@@ -212,25 +212,25 @@ pub const ROLES: &[RolePrompt] = &[
         name: "regnskapsforer",
         description: "Systemprompt for en agent som skal være selskapets regnskapsfører: \
                       fører, avstemmer og står inne for tallene.",
-        tekst: ACCOUNTANT,
+        text: ACCOUNTANT,
     },
     RolePrompt {
         name: "bokforer",
         description: "Systemprompt for en agent som tar den daglige bokføringen: innboks, \
                       faktura, reskontro — og spør framfor å gjette.",
-        tekst: BOOKKEEPER,
+        text: BOOKKEEPER,
     },
     RolePrompt {
         name: "ansatt",
         description: "Systemprompt for en agent som er ansatt: egne timer og egne utlegg, \
                       ingen hovedbok.",
-        tekst: EMPLOYEE,
+        text: EMPLOYEE,
     },
     RolePrompt {
         name: "migrering",
         description: "Oppgaveprompt for å flytte et regnskap inn i regnmed fra et annet \
                       system — SAF-T per år, kontoavstemming, åpne poster, avstemming.",
-        tekst: MIGRATION,
+        text: MIGRATION,
     },
 ];
 
@@ -239,7 +239,7 @@ pub fn prompt(name: &str) -> Option<String> {
     ROLES
         .iter()
         .find(|r| r.name == name)
-        .map(|r| format!("{GROUND_RULES}\n{}", r.tekst))
+        .map(|r| format!("{GROUND_RULES}\n{}", r.text))
 }
 
 #[cfg(test)]
@@ -256,7 +256,7 @@ mod tests {
             assert!(full.contains("GJETT ALDRI ET TALL"), "{}", r.name);
             assert!(full.contains("BELØP ER HELTALL ØRE"), "{}", r.name);
             assert!(full.contains("ER DU USIKKER, SPØR"), "{}", r.name);
-            assert!(full.contains(r.tekst), "{}", r.name);
+            assert!(full.contains(r.text), "{}", r.name);
         }
         assert!(prompt("ukjent").is_none());
     }

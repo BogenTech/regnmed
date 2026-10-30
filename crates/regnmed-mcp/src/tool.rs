@@ -42,8 +42,8 @@ pub struct Tool {
     pub name: &'static str,
     pub description: &'static str,
     pub method: &'static str,
-    pub sti: &'static str,
-    pub kropp: Body,
+    pub path: &'static str,
+    pub body: Body,
     /// JSON Schema, written out rather than built: the wording is the
     /// prompt a small model reads before choosing, and a builder would
     /// hide it.
@@ -60,8 +60,8 @@ pub const TOOLS: &[Tool] = &[
                       hvilke rettigheter rollen gir, og abonnementsstatus. Kall denne FØRST \
                       i en ny samtale: den sier hva du har lov til, så du ikke prøver noe som blir nektet.",
         method: "GET",
-        sti: "/me",
-        kropp: Body::Ingen,
+        path: "/me",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#,
     },
     Tool {
@@ -72,8 +72,8 @@ pub const TOOLS: &[Tool] = &[
                       KALL DENNE FØR du bruker en mva-kode: et selskap som ikke er \
                       mva-registrert kan ikke legge mva på noe, og forsøket blir avvist.",
         method: "GET",
-        sti: "/companies/{selskap}/settings",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/settings",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -82,8 +82,8 @@ pub const TOOLS: &[Tool] = &[
                       å velge fra. Bruk denne for å finne riktig kontonummer før du foreslår \
                       et bilag — ikke gjett et kontonummer.",
         method: "GET",
-        sti: "/companies/{selskap}/accounts",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/accounts",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -91,8 +91,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Til og med hvilken dato regnskapet er låst. Et bilag med dato i en låst \
                       periode blir avvist; be et menneske om å åpne perioden, gjør det ikke selv.",
         method: "GET",
-        sti: "/companies/{selskap}/period-lock",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/period-lock",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -101,8 +101,8 @@ pub const TOOLS: &[Tool] = &[
                       hvilket beløp. Hvis krev_for_maskin er true må ALT du bokfører attesteres \
                       av et menneske først.",
         method: "GET",
-        sti: "/companies/{selskap}/attestering/policy",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/attestering/policy",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     // ---------- Lese hovedboken ----------
@@ -111,8 +111,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Bokførte bilag med linjer, nyeste først. `sok` søker fritt i bilagsnummer, \
                       dato, tekst og kontonummer/-navn.",
         method: "GET",
-        sti: "/companies/{selskap}/vouchers",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/vouchers",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "from":{"type":"string","description":"Fra dato, YYYY-MM-DD"},
             "to":{"type":"string","description":"Til dato, YYYY-MM-DD"},
@@ -125,8 +125,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Saldo per konto for en periode — bruk denne til å avstemme mot et \
                       godkjent årsregnskap eller en tidligere rapport.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/saldobalanse",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/saldobalanse",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"}},"additionalProperties":false}"#,
@@ -136,8 +136,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Alle posteringer på én konto i en periode, med løpende saldo og \
                       bilagshenvisning. Dette er rapporten du bruker når et tall ser rart ut.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/kontospesifikasjon",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/kontospesifikasjon",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"},
@@ -149,8 +149,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Resultatregnskap gruppert etter NS 4102 for en periode, med \
                       presentasjonsfortegn (inntekt positiv).",
         method: "GET",
-        sti: "/companies/{selskap}/reports/resultat",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/resultat",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"},
@@ -161,8 +161,8 @@ pub const TOOLS: &[Tool] = &[
         name: "balanse",
         description: "Balanse per en dato, gruppert etter NS 4102.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/balanse",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/balanse",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["date"],"properties":{COMPANY,
             "date":{"type":"string","description":"YYYY-MM-DD"}},"additionalProperties":false}"#,
     },
@@ -172,8 +172,8 @@ pub const TOOLS: &[Tool] = &[
                       Terminnummereringen følger selskapets terminordning — oppgi feil nummer og \
                       du får en tydelig feilmelding, ikke et galt tall.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/mva",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/mva",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["year","termin"],"properties":{COMPANY,
             "year":{"type":"integer"},
             "termin":{"type":"integer","description":"Terminnummer i selskapets ordning"}},
@@ -184,8 +184,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Resultat hittil i år mot samme dato i fjor, månedskolonner, likviditet \
                       og de to neste mva-fristene. Bruk denne når noen spør «hvordan går det».",
         method: "GET",
-        sti: "/companies/{selskap}/reports/nokkeltall",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/nokkeltall",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "year":{"type":"integer"}},"additionalProperties":false}"#,
     },
@@ -193,8 +193,8 @@ pub const TOOLS: &[Tool] = &[
         name: "kundespesifikasjon",
         description: "Kundereskontro: hva hver kunde skylder, med åpne poster.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/kundespesifikasjon",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/kundespesifikasjon",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string"},"to":{"type":"string"}},"additionalProperties":false}"#,
     },
@@ -202,8 +202,8 @@ pub const TOOLS: &[Tool] = &[
         name: "leverandorspesifikasjon",
         description: "Leverandørreskontro: hva selskapet skylder hver leverandør.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/leverandorspesifikasjon",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/leverandorspesifikasjon",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string"},"to":{"type":"string"}},"additionalProperties":false}"#,
     },
@@ -215,8 +215,8 @@ pub const TOOLS: &[Tool] = &[
                       bokført noe større — den sier om arbeidet ditt holder, og avvik kommer \
                       som AVVIK-linjer, ikke som skjulte feil.",
         method: "GET",
-        sti: "/companies/{selskap}/reports/revisjon",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/reports/revisjon",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     // ---------- Bilag: foreslå, så bokfør ----------
@@ -225,8 +225,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Dokumenter som venter på å bli bokført, med attesteringsstatus. \
                       Dette er arbeidskøen din.",
         method: "GET",
-        sti: "/companies/{selskap}/inbox",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/inbox",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "status":{"type":"string","enum":["ny","bokfort","avvist"],"description":"Standard: alle"}},
             "additionalProperties":false}"#,
@@ -241,8 +241,8 @@ pub const TOOLS: &[Tool] = &[
                       leverandør sist ble bokført på. Er kilden «ingen», ikke dikt opp tall — \
                       si at dokumentet må leses av et menneske.",
         method: "GET",
-        sti: "/companies/{selskap}/inbox/{dokument}/forslag",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/inbox/{dokument}/forslag",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["dokument"],"properties":{COMPANY,
             "dokument":{"type":"string","description":"document_id fra innboks"}},
             "additionalProperties":false}"#,
@@ -252,8 +252,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Laster en fil fra disk opp i bilagsinnboksen (kvittering, faktura, EHF). \
                       Filen hashes før sending, så en ny forsøk etter et tapt svar ikke blir to bilag.",
         method: "POST",
-        sti: "/companies/{selskap}/inbox",
-        kropp: Body::FilBinaer,
+        path: "/companies/{selskap}/inbox",
+        body: Body::FilBinaer,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til filen på denne maskinen"},
             "filename":{"type":"string","description":"Navnet dokumentet skal lagres med. Standard: filnavnet."}},
@@ -267,8 +267,8 @@ pub const TOOLS: &[Tool] = &[
                       policyen sier det — sjekk attesteringspolicy først. \
                       BOKFØR IKKE noe du er usikker på: svar på oppgaven med status «sporsmal» i stedet.",
         method: "POST",
-        sti: "/companies/{selskap}/inbox/{dokument}/bokfor",
-        kropp: Body::Json,
+        path: "/companies/{selskap}/inbox/{dokument}/bokfor",
+        body: Body::Json,
         schema: r#"{"type":"object","required":["dokument","journal_code","date","description","lines"],
             "properties":{COMPANY,
             "dokument":{"type":"string","description":"document_id fra innboks"},
@@ -297,8 +297,8 @@ pub const TOOLS: &[Tool] = &[
                       viser til innboksen — sjekk attesteringspolicy først. \
                       FØR IKKE noe du er usikker på: svar på oppgaven med status «sporsmal».",
         method: "POST",
-        sti: "/companies/{selskap}/vouchers",
-        kropp: Body::Json,
+        path: "/companies/{selskap}/vouchers",
+        body: Body::Json,
         schema: r#"{"type":"object","required":["journal_code","date","description","lines"],
             "properties":{COMPANY,
             "journal_code":{"type":"string","description":"Vanligvis GL"},
@@ -322,8 +322,8 @@ pub const TOOLS: &[Tool] = &[
                       bruk denne når dokumentet ikke hører i dette regnskapet, ikke når du bare \
                       er usikker på konteringen.",
         method: "POST",
-        sti: "/companies/{selskap}/inbox/{dokument}/avvis",
-        kropp: Body::Json,
+        path: "/companies/{selskap}/inbox/{dokument}/avvis",
+        body: Body::Json,
         schema: r#"{"type":"object","required":["dokument","note"],"properties":{COMPANY,
             "dokument":{"type":"string"},
             "note":{"type":"string","description":"Hvorfor dokumentet avvises"}},
@@ -335,8 +335,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Kunder og leverandører med nummer — `party_no` du trenger på en faktura \
                       eller en reskontrolinje.",
         method: "GET",
-        sti: "/companies/{selskap}/parties",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/parties",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "kind":{"type":"string","enum":["kunde","leverandor"]}},"additionalProperties":false}"#,
     },
@@ -344,8 +344,8 @@ pub const TOOLS: &[Tool] = &[
         name: "fakturaer",
         description: "Utstedte fakturaer med restbeløp. `open: true` gir bare de med noe utestående.",
         method: "GET",
-        sti: "/companies/{selskap}/invoices",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/invoices",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "open":{"type":"boolean"}},"additionalProperties":false}"#,
     },
@@ -354,8 +354,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Forfalte fakturaer med antall dager over forfall og foreslått neste \
                       purreskritt etter inkassoregelverket.",
         method: "GET",
-        sti: "/companies/{selskap}/invoices/overdue",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/invoices/overdue",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -365,8 +365,8 @@ pub const TOOLS: &[Tool] = &[
                       derfor beløp, kunde og mva FØR du kaller denne. Er selskapet ikke \
                       mva-registrert, utelat `vat_code` helt.",
         method: "POST",
-        sti: "/companies/{selskap}/invoices",
-        kropp: Body::Json,
+        path: "/companies/{selskap}/invoices",
+        body: Body::Json,
         schema: r#"{"type":"object","required":["party_no","invoice_date","due_date","lines"],
             "properties":{COMPANY,
             "party_no":{"type":"string","description":"Kundenummer fra «kunder»"},
@@ -391,8 +391,8 @@ pub const TOOLS: &[Tool] = &[
                       til et menneske, og importer deretter. Svaret sier needs_mapping hvis \
                       kontoplanen må avstemmes.",
         method: "POST",
-        sti: "/companies/{selskap}/import/saft/analyze",
-        kropp: Body::Fil,
+        path: "/companies/{selskap}/import/saft/analyze",
+        body: Body::Fil,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"}},
             "additionalProperties":false}"#,
@@ -405,8 +405,8 @@ pub const TOOLS: &[Tool] = &[
                       historikken, ett år per fil i rekkefølge, før noe annet bokføres. Samme \
                       fil kan ikke importeres to ganger (innholdet hashes).",
         method: "POST",
-        sti: "/companies/{selskap}/import/saft",
-        kropp: Body::Fil,
+        path: "/companies/{selskap}/import/saft",
+        body: Body::Fil,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"},
             "mapping":{"type":"object","description":"Kontoavstemming fra saft_analyser: {\"gammel konto\": \"NS 4102-konto\"}. Utelates = filens egne kontonummer brukes.",
@@ -418,8 +418,8 @@ pub const TOOLS: &[Tool] = &[
         description: "Hvilke SAF-T-filer historikken er bygget av, med innholds-hash og hvem som \
                       importerte. Sjekk denne før du importerer, så du ikke importerer det samme igjen.",
         method: "GET",
-        sti: "/companies/{selskap}/import/saft/log",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/import/saft/log",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -428,8 +428,8 @@ pub const TOOLS: &[Tool] = &[
                       Layouten leses av overskriftene; ukjente overskrifter gir en tydelig feil \
                       som lister det som ble funnet. Idempotent på organisasjonsnummer.",
         method: "POST",
-        sti: "/companies/{selskap}/import/contacts",
-        kropp: Body::Fil,
+        path: "/companies/{selskap}/import/contacts",
+        body: Body::Fil,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]}},
@@ -441,8 +441,8 @@ pub const TOOLS: &[Tool] = &[
                       med preview: true — svaret sier om reskontrokontoen har en saldo som er i \
                       veien, og hvilke kunder som vil bli opprettet.",
         method: "POST",
-        sti: "/companies/{selskap}/import/open-items",
-        kropp: Body::Fil,
+        path: "/companies/{selskap}/import/open-items",
+        body: Body::Fil,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]},
@@ -459,8 +459,8 @@ pub const TOOLS: &[Tool] = &[
                       og arbeid deg gjennom køen. Du ser bare oppgaver som er stilt til deg \
                       eller til ingen bestemt.",
         method: "GET",
-        sti: "/companies/{selskap}/agent/oppgaver",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/agent/oppgaver",
+        body: Body::Ingen,
         schema: r#"{"type":"object","properties":{COMPANY,
             "apne":{"type":"boolean","description":"Standard true. false gir også de avsluttede."}},
             "additionalProperties":false}"#,
@@ -469,8 +469,8 @@ pub const TOOLS: &[Tool] = &[
         name: "oppgave",
         description: "Én oppgave med hele sporet av hva som er svart på den.",
         method: "GET",
-        sti: "/companies/{selskap}/agent/oppgaver/{oppgave}",
-        kropp: Body::Ingen,
+        path: "/companies/{selskap}/agent/oppgaver/{oppgave}",
+        body: Body::Ingen,
         schema: r#"{"type":"object","required":["oppgave"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"}},"additionalProperties":false}"#,
     },
@@ -483,8 +483,8 @@ pub const TOOLS: &[Tool] = &[
                       ENDELIGE og kan ikke trekkes tilbake. Begrunnelse er obligatorisk for \
                       `sporsmal` og `avvist`.",
         method: "POST",
-        sti: "/companies/{selskap}/agent/oppgaver/{oppgave}/svar",
-        kropp: Body::Json,
+        path: "/companies/{selskap}/agent/oppgaver/{oppgave}/svar",
+        body: Body::Json,
         schema: r#"{"type":"object","required":["oppgave","status"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"},
             "status":{"type":"string","enum":["pagar","sporsmal","utfort","avvist"]},
@@ -552,7 +552,7 @@ mod tests {
     fn every_path_placeholder_is_a_declared_property() {
         for v in TOOLS {
             let utvidet = schema(v);
-            let mut rest = v.sti;
+            let mut rest = v.path;
             while let Some(start) = rest.find('{') {
                 let end = rest[start..].find('}').expect("ubalansert sti") + start;
                 let felt = &rest[start + 1..end];

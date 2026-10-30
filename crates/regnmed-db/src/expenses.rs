@@ -31,7 +31,7 @@ pub async fn create_utlegg(
     company_id: Uuid,
     person_id: Uuid,
     date: NaiveDate,
-    beskrivelse: &str,
+    description: &str,
     amount_ore: i64,
     filename: &str,
     content_type: &str,
@@ -51,7 +51,7 @@ pub async fn create_utlegg(
     .bind(company_id)
     .bind(person_id)
     .bind(date)
-    .bind(beskrivelse)
+    .bind(description)
     .bind(amount_ore)
     .bind(filename)
     .bind(content_type)
@@ -71,7 +71,7 @@ pub async fn create_kjoring(
     company_id: Uuid,
     person_id: Uuid,
     date: NaiveDate,
-    beskrivelse: &str,
+    description: &str,
     km: i64,
     created_by: &str,
 ) -> Result<(Uuid, i64, i64)> {
@@ -92,7 +92,7 @@ pub async fn create_kjoring(
     .bind(company_id)
     .bind(person_id)
     .bind(date)
-    .bind(beskrivelse)
+    .bind(description)
     .bind(beregnet.amount_ore)
     .bind(km)
     .bind(sats)
@@ -111,7 +111,7 @@ pub struct ExpenseRow {
     pub own: bool,
     pub kind: String,
     pub date: NaiveDate,
-    pub beskrivelse: String,
+    pub description: String,
     pub amount_ore: i64,
     pub km: Option<i64>,
     pub sats_ore_per_km: Option<i64>,
@@ -158,7 +158,7 @@ pub async fn list_expenses(
             own: r.get("own"),
             kind: r.get("kind"),
             date: r.get("dato"),
-            beskrivelse: r.get("beskrivelse"),
+            description: r.get("beskrivelse"),
             amount_ore: r.get("belop_ore"),
             km: r.get("km"),
             sats_ore_per_km: r.get("sats_ore_per_km"),
@@ -275,7 +275,7 @@ pub async fn approve_expense(
     let kind: String = expense.get("kind");
     let date: NaiveDate = expense.get("dato");
     let amount: i64 = expense.get("belop_ore");
-    let beskrivelse: String = expense.get("beskrivelse");
+    let description: String = expense.get("beskrivelse");
     let name: String = expense.get("navn");
 
     let mut entries = Vec::new();
@@ -307,7 +307,7 @@ pub async fn approve_expense(
                 account_number: account.to_string(),
                 amount: Ore(netto),
                 vat_code: vat_code.map(str::to_string),
-                description: Some(beskrivelse.clone()),
+                description: Some(description.clone()),
                 party_no: None,
                 department: None,
                 project: None,
@@ -337,7 +337,7 @@ pub async fn approve_expense(
                 amount: Ore(amount),
                 vat_code: None,
                 description: Some(format!(
-                    "{beskrivelse} — {km} km à {},{:02} kr",
+                    "{description} — {km} km à {},{:02} kr",
                     sats / 100,
                     sats % 100
                 )),
@@ -377,7 +377,7 @@ pub async fn approve_expense(
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: date,
-        description: format!("{label} {name}: {beskrivelse}"),
+        description: format!("{label} {name}: {description}"),
         reverses: None,
         entries,
     };

@@ -166,7 +166,8 @@ pub struct AgentRequest {
     /// The model. Optional: an agent may be created now and given a
     /// provider later, and an agent on the customer's own machine never
     /// needs one here at all.
-    leverandor: Option<String>,
+    #[serde(rename = "leverandor")]
+    supplier: Option<String>,
     base_url: Option<String>,
     modell: Option<String>,
     api_nokkel: Option<String>,
@@ -323,7 +324,7 @@ pub async fn opprett_agent(
                 nokkel,
                 company_id,
                 integration_id,
-                request.leverandor.as_deref().unwrap_or("openai"),
+                request.supplier.as_deref().unwrap_or("openai"),
                 request.base_url.as_deref(),
                 modell,
                 api_nokkel,
@@ -402,7 +403,7 @@ pub struct RolleRequest {
 /// Changes an agent's role. One call, because that is how the user
 /// thinks about it; underneath it is still revoke plus a new grant, so
 /// the dated trail keeps the old role true for the time it applied.
-pub async fn rolle(
+pub async fn role(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
@@ -469,7 +470,8 @@ pub async fn log(
 
 #[derive(Deserialize)]
 pub struct LlmRequest {
-    leverandor: String,
+    #[serde(rename = "leverandor")]
+    supplier: String,
     base_url: Option<String>,
     modell: String,
     /// The customer's own key. Goes in sealed and never comes back out:
@@ -506,7 +508,7 @@ pub async fn llm(
         "klient_lagret": regnmed_db::agentllm::har_klienthemmelighet(
             &state.pool, integration_id).await?,
         "oppsett": oppsett.filter(|o| o.active).map(|o| json!({
-            "leverandor": o.leverandor,
+            "leverandor": o.supplier,
             "base_url": o.base_url,
             "modell": o.modell,
             "satt_av": o.satt_av,
@@ -543,7 +545,7 @@ pub async fn sett_llm(
         nokkel,
         company_id,
         integration_id,
-        &request.leverandor,
+        &request.supplier,
         request.base_url.as_deref(),
         &request.modell,
         &request.api_nokkel,
@@ -564,7 +566,7 @@ pub async fn sett_llm(
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     }
-    Ok(Json(json!({ "leverandor": request.leverandor })))
+    Ok(Json(json!({ "leverandor": request.supplier })))
 }
 
 /// Turns the agent's model off. The row stays: which provider held this

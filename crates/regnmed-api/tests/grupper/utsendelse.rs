@@ -8,7 +8,7 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
@@ -118,7 +118,7 @@ async fn invoice_mail_rides_the_shared_rail() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Utsendelse AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -296,7 +296,7 @@ async fn the_invitation_mail_goes_out_and_carries_no_token() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Invitasjon AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();

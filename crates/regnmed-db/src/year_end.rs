@@ -103,11 +103,11 @@ pub async fn avslutt_ar(
     let result_before_tax_ore = result_for_the_year(pool, company_id, ar).await?;
     let disponert_ore = result_before_tax_ore - skattekostnad_ore;
 
-    let linje = |account: &str, amount: i64, tekst: &str| EntryDraft {
+    let linje = |account: &str, amount: i64, text: &str| EntryDraft {
         account_number: account.to_string(),
         amount: Ore(amount),
         vat_code: None,
-        description: Some(tekst.to_string()),
+        description: Some(text.to_string()),
         party_no: None,
         department: None,
         project: None,

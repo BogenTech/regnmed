@@ -422,16 +422,32 @@ pin that is correct by construction. 21 fields pinned, zero by hand.
 one pin deleted it reported `budget.rs:CreateBudgetRequest` carrying
 `name` where the baseline said `navn`.
 
+Second sweep, with `svar` SPLIT BY MEANING: it is a RESPONSE body
+throughout the tests and MCP client and an ANSWER in the agent task
+queue, so `svar`->`response` ran everywhere except `agent_task.rs`,
+where `Svar`->`Answer` and `svar`->`answer`. The boundary cost exactly
+three compile errors -- call sites in `regnmed-agent` and the api
+route table that landed on the `response` side of a function now
+called `answer`. That is what the split looks like when it works: the
+compiler names every crossing. With it went `idag`->`today`,
+`tekst`->`text`, `beskrivelse`->`description`, `rolle`->`role`,
+`kunde`->`customer`, `leverandor`->`supplier`, `sti`->`path`,
+`kropp`->`body`, `enhet`->`unit` and the `gjor_fakturaklar` test
+helper. 103 files; `pin-wire.py` pinned 14 serde fields and the wire
+diff shows only `Svar`->`Answer`, a struct NAME, whose fields are
+identical.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~4 300
-Norwegian identifier occurrences, 539 distinct names, 191 files --
-2,8 % of all identifiers**, down from 7 494 / 667 / 4,8 % five batches
-ago. Per crate: api 1 884, db 1 557, core 634, cli 109, mcp 68,
-gov 29, agent 7, mail 0. The biggest remaining tokens are `orgnr` 230
-(+ `unique_orgnr` 170, a test helper), `svar` 149, `rolle` 117,
-`gjor_fakturaklar` 116, `idag` 99, `kunde` 88, `beskrivelse` 73.
-`svar` is the one to be careful with: it is a RESPONSE body in the
-tests and an ANSWER in the agent task queue.
+a Norwegian word list, strings and comments excluded): **~3 500
+Norwegian identifier occurrences, 530 distinct names -- 2,3 % of all
+identifiers**, down from 7 494 / 667 / 4,8 % seven batches ago. Per
+crate: api 1 412, db 1 372, core 589, cli 92, gov 26, mcp 20,
+agent 5, mail 0. The biggest remaining tokens are `orgnr` 230 (plus
+`unique_orgnr` 170, one test helper), then nothing above 80: `ar` 77,
+`periode` 54, `faktura` 54, `mottatt` 53, `fra` 53, `til` 49,
+`forfall` 42, `ny` 41. `ar`, `fra` and `til` are two and three letters
+long and appear inside English words, so they need the narrow pass or
+a word-boundary map, not a sweep.
 
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider

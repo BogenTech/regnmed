@@ -139,7 +139,7 @@ pub async fn hent(
 }
 
 #[derive(Deserialize)]
-pub struct Svar {
+pub struct Answer {
     /// `pagar`, `sporsmal`, `utfort` or `avvist`. The last two are
     /// final — see migration 0064.
     status: String,
@@ -147,11 +147,11 @@ pub struct Svar {
     note: Option<String>,
 }
 
-pub async fn svar(
+pub async fn answer(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<Svar>,
+    Json(request): Json<Answer>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let tilgang = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
@@ -175,7 +175,7 @@ pub async fn svar(
             }
         }
     }
-    regnmed_db::agent_task::svar(
+    regnmed_db::agent_task::answer(
         &state.pool,
         company_id,
         oppgave_id,

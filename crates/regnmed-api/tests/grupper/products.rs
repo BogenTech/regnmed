@@ -5,7 +5,7 @@
 //! layer, and varetelling adjusts quantities AND posts the value change
 //! as an ordinary voucher. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -63,7 +63,7 @@ async fn products_stock_and_count() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Handel AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

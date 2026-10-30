@@ -198,7 +198,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar",
-            axum::routing::post(agent_task::svar),
+            axum::routing::post(agent_task::answer),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}",
@@ -214,7 +214,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/rolle",
-            axum::routing::put(integration::rolle),
+            axum::routing::put(integration::role),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",
@@ -987,7 +987,7 @@ async fn me(
         "name": person.name,
         "email": person.email,
         "plattform": plattform.map(|p| json!({
-            "rolle": p.rolle,
+            "rolle": p.role,
             "valid_to": p.valid_to.to_string(),
         })),
         "companies": access

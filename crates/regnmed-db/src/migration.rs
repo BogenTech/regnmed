@@ -315,18 +315,18 @@ pub async fn import_open_items(
                 no
             }
         };
-        let mut tekst = rad.document.clone().unwrap_or_else(|| "Åpen post".into());
+        let mut text = rad.document.clone().unwrap_or_else(|| "Åpen post".into());
         if let Some(kid) = &rad.kid {
-            tekst = format!("{tekst} (KID {kid})");
+            text = format!("{text} (KID {kid})");
         }
         if let Some(forfall) = rad.due_date {
-            tekst = format!("{tekst} forfall {forfall}");
+            text = format!("{text} forfall {forfall}");
         }
         entries.push(EntryDraft {
             account_number: account.to_string(),
             amount: Ore(line_amount(kind, rad.amount_ore)),
             vat_code: None,
-            description: Some(tekst),
+            description: Some(text),
             party_no: Some(party_no),
             department: None,
             project: None,

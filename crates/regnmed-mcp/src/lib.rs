@@ -52,7 +52,7 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
-        let svar = match method {
+        let response = match method {
             "initialize" => Ok(json!({
                 "protocolVersion": PROTOCOL,
                 "capabilities": { "tools": {}, "prompts": {} },
@@ -67,7 +67,7 @@ impl Server {
             annet => Err(ProtocolError::UkjentMetode(annet.to_string())),
         };
 
-        Some(match svar {
+        Some(match response {
             Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
             Err(error) => json!({
                 "jsonrpc": "2.0", "id": id,
@@ -98,8 +98,8 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
-        let (tekst, feilet) = self.execute_tool(tool, args).await;
-        Ok(text_response(&tekst, feilet))
+        let (text, feilet) = self.execute_tool(tool, args).await;
+        Ok(text_response(&text, feilet))
     }
 
     /// Runs a tool and returns its text plus whether it failed. Public
@@ -109,30 +109,30 @@ impl Server {
     /// exactly the place where that is hardest to notice.
     pub async fn execute_tool(&self, v: &Tool, args: Map<String, Value>) -> (String, bool) {
         match self.execute(v, args).await {
-            Ok(tekst) => (tekst, false),
+            Ok(text) => (text, false),
             Err(error) => (format!("{error:#}"), true),
         }
     }
 
     async fn execute(&self, v: &Tool, mut args: Map<String, Value>) -> Result<String> {
-        let sti = fill_path(v.sti, &mut args, self.client.selskap.as_deref())?;
-        let (kropp, query) = build_body(v, args)?;
-        let (status, tekst) = self
+        let path = fill_path(v.path, &mut args, self.client.selskap.as_deref())?;
+        let (body, query) = build_body(v, args)?;
+        let (status, text) = self
             .client
-            .call(v.method, &sti, &query, kropp)
+            .call(v.method, &path, &query, body)
             .await
-            .with_context(|| format!("kallet til {} {sti} nådde ikke fram", v.method))?;
+            .with_context(|| format!("kallet til {} {path} nådde ikke fram", v.method))?;
         if (200..300).contains(&status) {
-            return Ok(if tekst.is_empty() {
+            return Ok(if text.is_empty() {
                 "{}".to_string()
             } else {
-                tekst
+                text
             });
         }
         // The status is part of the message: 404 means "no access or no
         // such thing" (the API never distinguishes, by design), 403 means
         // "you have access but not enough", 429 means slow down.
-        bail!("{} {sti} svarte {status}: {tekst}", v.method)
+        bail!("{} {path} svarte {status}: {text}", v.method)
     }
 }
 
@@ -145,9 +145,9 @@ const INSTRUCTIONS: &str = "regnmed er et norsk regnskapssystem. Hovedboken er a
     til, og `oppgaver` for å se hva du er bedt om. Hent prompten for rollen din med prompts/get \
     (regnskapsforer, bokforer, ansatt, migrering) før du gjør noe annet.";
 
-fn text_response(tekst: &str, error: bool) -> Value {
+fn text_response(text: &str, error: bool) -> Value {
     json!({
-        "content": [{ "type": "text", "text": tekst }],
+        "content": [{ "type": "text", "text": text }],
         "isError": error,
     })
 }
@@ -181,7 +181,7 @@ fn get_prompt(params: &Map<String, Value>) -> Result<Value, ProtocolError> {
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| ProtocolError::UgyldigParam("mangler «name»".into()))?;
-    let tekst = role::prompt(name).ok_or_else(|| {
+    let text = role::prompt(name).ok_or_else(|| {
         let valg: Vec<&str> = role::ROLES.iter().map(|r| r.name).collect();
         ProtocolError::UgyldigParam(format!(
             "ingen rolle «{name}» — velg en av: {}",
@@ -192,7 +192,7 @@ fn get_prompt(params: &Map<String, Value>) -> Result<Value, ProtocolError> {
         "description": role::ROLES.iter().find(|r| r.name == name).map(|r| r.description),
         "messages": [{
             "role": "user",
-            "content": { "type": "text", "text": tekst },
+            "content": { "type": "text", "text": text },
         }],
     }))
 }
@@ -206,13 +206,13 @@ fn fill_path(
     args: &mut Map<String, Value>,
     standard_selskap: Option<&str>,
 ) -> Result<String> {
-    let mut sti = mal.to_string();
-    while let Some(start) = sti.find('{') {
-        let slutt = sti[start..]
+    let mut path = mal.to_string();
+    while let Some(start) = path.find('{') {
+        let slutt = path[start..]
             .find('}')
             .ok_or_else(|| anyhow!("ubalansert sti-mal: {mal}"))?
             + start;
-        let felt = sti[start + 1..slutt].to_string();
+        let felt = path[start + 1..slutt].to_string();
         let verdi = match args.remove(&felt) {
             Some(Value::String(s)) => s,
             Some(Value::Null) | None if felt == "selskap" => {
@@ -226,9 +226,9 @@ fn fill_path(
             Some(annet) if !annet.is_null() => annet.to_string(),
             _ => bail!("«{felt}» mangler i kallet"),
         };
-        sti.replace_range(start..=slutt, &verdi);
+        path.replace_range(start..=slutt, &verdi);
     }
-    Ok(sti)
+    Ok(path)
 }
 
 /// A request body and the query parameters that go with it.
@@ -236,35 +236,35 @@ type Foresporsel = (Option<Body>, Vec<(String, String)>);
 
 /// Turns the remaining arguments into a body and a query string.
 fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
-    match v.kropp {
+    match v.body {
         KroppMeny::Ingen => Ok((None, query(args))),
         KroppMeny::Json => Ok((Some(Body::Json(Value::Object(args))), Vec::new())),
         KroppMeny::Fil => {
-            let sti = filepath(&mut args)?;
-            let tekst =
-                std::fs::read_to_string(&sti).with_context(|| format!("kunne ikke lese {sti}"))?;
+            let path = filepath(&mut args)?;
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("kunne ikke lese {path}"))?;
             // The one endpoint that takes both a file and structured
             // data: the SAF-T import's `{file, mapping}` envelope.
             match args.remove("mapping") {
                 Some(mapping) if !mapping.is_null() => Ok((
-                    Some(Body::Json(json!({ "file": tekst, "mapping": mapping }))),
+                    Some(Body::Json(json!({ "file": text, "mapping": mapping }))),
                     query(args),
                 )),
                 _ => Ok((
                     Some(Body::Raa {
-                        bytes: tekst.into_bytes(),
-                        content_type: content_type(&sti).to_string(),
+                        bytes: text.into_bytes(),
+                        content_type: content_type(&path).to_string(),
                     }),
                     query(args),
                 )),
             }
         }
         KroppMeny::FilBinaer => {
-            let sti = filepath(&mut args)?;
-            let bytes = std::fs::read(&sti).with_context(|| format!("kunne ikke lese {sti}"))?;
+            let path = filepath(&mut args)?;
+            let bytes = std::fs::read(&path).with_context(|| format!("kunne ikke lese {path}"))?;
             let mut q = query(args);
             if !q.iter().any(|(k, _)| k == "filename") {
-                q.push(("filename".to_string(), filename(&sti)));
+                q.push(("filename".to_string(), filename(&path)));
             }
             // The hash the API verifies and dedupes on: a retry after a
             // lost reply is then a no-op instead of a second bilag.
@@ -273,7 +273,7 @@ fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
             Ok((
                 Some(Body::Raa {
                     bytes,
-                    content_type: content_type(&sti).to_string(),
+                    content_type: content_type(&path).to_string(),
                 }),
                 q,
             ))
@@ -288,8 +288,8 @@ fn filepath(args: &mut Map<String, Value>) -> Result<String> {
     }
 }
 
-fn filename(sti: &str) -> String {
-    std::path::Path::new(sti)
+fn filename(path: &str) -> String {
+    std::path::Path::new(path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "vedlegg".to_string())
@@ -298,8 +298,8 @@ fn filename(sti: &str) -> String {
 /// The API stores an inbox document with the type it arrived as, and
 /// decides whether an import body is XML or a JSON envelope from the
 /// same header — so this is not cosmetic.
-fn content_type(sti: &str) -> &'static str {
-    let lav = sti.to_ascii_lowercase();
+fn content_type(path: &str) -> &'static str {
+    let lav = path.to_ascii_lowercase();
     match lav.rsplit('.').next() {
         Some("xml") => "application/xml",
         Some("csv") => "text/csv",
@@ -364,13 +364,13 @@ mod tests {
     #[test]
     fn the_path_takes_its_values_from_the_arguments() {
         let mut a = args(json!({"selskap": "abc", "dokument": "doc-1", "status": "ny"}));
-        let sti = fill_path(
+        let path = fill_path(
             "/companies/{selskap}/inbox/{dokument}/forslag",
             &mut a,
             None,
         )
         .unwrap();
-        assert_eq!(sti, "/companies/abc/inbox/doc-1/forslag");
+        assert_eq!(path, "/companies/abc/inbox/doc-1/forslag");
         // What the path consumed is gone; the rest becomes the query.
         assert_eq!(a.len(), 1);
         assert_eq!(query(a), vec![("status".to_string(), "ny".to_string())]);
@@ -379,8 +379,8 @@ mod tests {
     #[test]
     fn the_company_falls_back_to_the_one_the_server_was_started_for() {
         let mut a = Map::new();
-        let sti = fill_path("/companies/{selskap}/vouchers", &mut a, Some("fast-id")).unwrap();
-        assert_eq!(sti, "/companies/fast-id/vouchers");
+        let path = fill_path("/companies/{selskap}/vouchers", &mut a, Some("fast-id")).unwrap();
+        assert_eq!(path, "/companies/fast-id/vouchers");
 
         // And says so when there is none, rather than calling
         // /companies//vouchers and reporting a 404 the agent cannot act on.
@@ -419,52 +419,52 @@ mod tests {
     #[tokio::test]
     async fn initialize_lists_what_we_can_do() {
         let server = Server::new(probe_client().await);
-        let svar = server
+        let response = server
             .handle(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                             "params": {"protocolVersion": "2024-11-05"}}))
             .await
             .unwrap();
-        assert_eq!(svar["result"]["protocolVersion"], PROTOCOL);
-        assert!(svar["result"]["capabilities"]["tools"].is_object());
-        assert!(svar["result"]["capabilities"]["prompts"].is_object());
+        assert_eq!(response["result"]["protocolVersion"], PROTOCOL);
+        assert!(response["result"]["capabilities"]["tools"].is_object());
+        assert!(response["result"]["capabilities"]["prompts"].is_object());
 
-        let svar = server
+        let response = server
             .handle(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
             .await
             .unwrap();
-        let tool = svar["result"]["tools"].as_array().unwrap();
+        let tool = response["result"]["tools"].as_array().unwrap();
         assert_eq!(tool.len(), tool::TOOLS.len());
         // Every schema reached the wire as an object, not as the fallback.
         for v in tool {
             assert_eq!(v["inputSchema"]["type"], "object", "{v}");
         }
 
-        let svar = server
+        let response = server
             .handle(json!({"jsonrpc": "2.0", "id": 3, "method": "prompts/get",
                             "params": {"name": "migrering"}}))
             .await
             .unwrap();
-        let tekst = svar["result"]["messages"][0]["content"]["text"]
+        let text = response["result"]["messages"][0]["content"]["text"]
             .as_str()
             .unwrap();
-        assert!(tekst.contains("GJETT ALDRI ET TALL"));
+        assert!(text.contains("GJETT ALDRI ET TALL"));
 
         // An unknown method is a JSON-RPC error, not a tool error.
-        let svar = server
+        let response = server
             .handle(json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list"}))
             .await
             .unwrap();
-        assert_eq!(svar["error"]["code"], -32601);
+        assert_eq!(response["error"]["code"], -32601);
 
         // An unknown TOOL is a parameter error with the name in it.
-        let svar = server
+        let response = server
             .handle(json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
                             "params": {"name": "slett_hovedboken"}}))
             .await
             .unwrap();
-        assert_eq!(svar["error"]["code"], -32602);
+        assert_eq!(response["error"]["code"], -32602);
         assert!(
-            svar["error"]["message"]
+            response["error"]["message"]
                 .as_str()
                 .unwrap()
                 .contains("slett_hovedboken")

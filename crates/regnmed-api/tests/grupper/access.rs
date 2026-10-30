@@ -16,7 +16,7 @@
 //!
 //! Requires DATABASE_URL; skips otherwise.
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -72,15 +72,15 @@ async fn status(state: &AppState, method: &str, uri: &str, bearer: &str, body: &
 }
 
 /// A person with the given role on a fresh company.
-async fn person_with_role(state: &AppState, idp: &TestIdp, company: Uuid, rolle: &str) -> String {
-    let sub = format!("{rolle}|{}", Uuid::new_v4());
-    let person = regnmed_db::ensure_person(&state.pool, &sub, Some(rolle), None)
+async fn person_with_role(state: &AppState, idp: &TestIdp, company: Uuid, role: &str) -> String {
+    let sub = format!("{role}|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some(role), None)
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, person, rolle)
+    regnmed_db::ensure_company_member(&state.pool, company, person, role)
         .await
         .unwrap();
-    idp.token(&sub, rolle)
+    idp.token(&sub, role)
 }
 
 /// One **reading** endpoint per group. All three roles must get in; it is
@@ -167,7 +167,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String, String, String)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgangstest AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
@@ -638,7 +638,7 @@ async fn a_custom_role_grants_exactly_what_it_says() {
         return;
     };
 
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
@@ -647,7 +647,7 @@ async fn a_custom_role_grants_exactly_what_it_says() {
             "rettigheter":["FAKTURA_LES","FAKTURA_SKRIV","RESKONTRO_LES"]}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
 
     // Give the role to somebody.
     let sub = format!("faktura|{}", Uuid::new_v4());
@@ -701,7 +701,7 @@ async fn access_governing_rettigheter_cannot_be_delegated() {
         "OPPDRAG_ADMIN",
         "INTEGRASJON_ADMIN",
     ] {
-        let (code, svar) = json_call(
+        let (code, response) = json_call(
             &state,
             "POST",
             &format!("/companies/{company}/roles"),
@@ -709,20 +709,20 @@ async fn access_governing_rettigheter_cannot_be_delegated() {
             &format!(r#"{{"navn":"Farlig {farlig}","rettigheter":["{farlig}"]}}"#),
         )
         .await;
-        assert_eq!(code, StatusCode::BAD_REQUEST, "{farlig}: {svar}");
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{farlig}: {response}");
         assert!(
-            svar["error"]
+            response["error"]
                 .as_str()
                 .unwrap_or_default()
                 .contains("hvem som har tilgang"),
-            "{svar}"
+            "{response}"
         );
     }
 
     // And a name that is not in the vocabulary is refused loudly here —
     // a human is writing, and a role that silently lacks half its
     // contents is worse than an error message.
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
@@ -730,13 +730,13 @@ async fn access_governing_rettigheter_cannot_be_delegated() {
         r#"{"navn":"Tullerolle","rettigheter":["FAKTURA_ALT"]}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
     assert!(
-        svar["error"]
+        response["error"]
             .as_str()
             .unwrap_or_default()
             .contains("ukjent rettighet"),
-        "{svar}"
+        "{response}"
     );
 }
 
@@ -748,7 +748,7 @@ async fn every_builtin_role_describes_itself() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "GET",
         &format!("/companies/{company}/roles"),
@@ -756,15 +756,15 @@ async fn every_builtin_role_describes_itself() {
         "",
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    let innebygde = svar["innebygde"].as_array().unwrap();
+    assert_eq!(code, StatusCode::OK, "{response}");
+    let innebygde = response["innebygde"].as_array().unwrap();
     assert!(!innebygde.is_empty());
-    for rolle in innebygde {
-        let beskrivelse = rolle["beskrivelse"].as_str().unwrap_or_default();
+    for role in innebygde {
+        let description = role["beskrivelse"].as_str().unwrap_or_default();
         assert!(
-            !beskrivelse.is_empty(),
+            !description.is_empty(),
             "rollen {} mangler beskrivelse",
-            rolle["navn"]
+            role["navn"]
         );
     }
 }
@@ -776,7 +776,7 @@ async fn a_deactivated_role_grants_no_access() {
     let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let (_, svar) = json_call(
+    let (_, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
@@ -784,7 +784,7 @@ async fn a_deactivated_role_grants_no_access() {
         r#"{"navn":"Midlertidig","rettigheter":["FAKTURA_LES"]}"#,
     )
     .await;
-    let role_id = svar["role_id"].as_str().unwrap().to_string();
+    let role_id = response["role_id"].as_str().unwrap().to_string();
 
     let sub = format!("midl|{}", Uuid::new_v4());
     let p = regnmed_db::ensure_person(&state.pool, &sub, Some("Midl"), None)
@@ -1034,7 +1034,7 @@ async fn rettigheter_are_never_read_half_written() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
@@ -1042,8 +1042,8 @@ async fn rettigheter_are_never_read_half_written() {
         r#"{"navn":"Kasserer","rettigheter":["FAKTURA_LES","FAKTURA_SKRIV"]}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    let role_id: Uuid = svar["role_id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(code, StatusCode::OK, "{response}");
+    let role_id: Uuid = response["role_id"].as_str().unwrap().parse().unwrap();
     let name = vec!["Kasserer".to_string()];
 
     let sortert = |mut r: Vec<String>| {
@@ -1113,32 +1113,32 @@ async fn a_duplicate_role_name_says_the_name_is_taken() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let kropp = r#"{"navn":"Kontrollør","rettigheter":["FAKTURA_LES"]}"#;
-    let (code, svar) = json_call(
+    let body = r#"{"navn":"Kontrollør","rettigheter":["FAKTURA_LES"]}"#;
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
         &admin,
-        kropp,
+        body,
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
 
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
         &admin,
-        kropp,
+        body,
     )
     .await;
-    assert_eq!(code, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
     assert!(
-        svar["error"]
+        response["error"]
             .as_str()
             .unwrap_or_default()
             .contains("allerede en rolle"),
-        "{svar}"
+        "{response}"
     );
 }
 
@@ -1150,7 +1150,7 @@ async fn built_in_role_names_are_reserved() {
         return;
     };
     for name in ["admin", "les", "bokforing", "ansatt", "revisor"] {
-        let (code, svar) = json_call(
+        let (code, response) = json_call(
             &state,
             "POST",
             &format!("/companies/{company}/roles"),
@@ -1158,6 +1158,6 @@ async fn built_in_role_names_are_reserved() {
             &format!(r#"{{"navn":"{name}","rettigheter":["FAKTURA_LES"]}}"#),
         )
         .await;
-        assert_eq!(code, StatusCode::BAD_REQUEST, "{name}: {svar}");
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{name}: {response}");
     }
 }

@@ -3,7 +3,7 @@
 //! the bilag's created_by, revocation takes effect at once, and the rate
 //! limit kicks in. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -53,7 +53,7 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Butikken AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -449,7 +449,7 @@ async fn the_rate_limit_stops_a_runaway_integration() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Grense AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -526,7 +526,7 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Agentselskapet AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -567,7 +567,7 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     assert_eq!(status, StatusCode::OK, "{granted}");
 
     // ---- MIGRERING_ADMIN works: this is the whole point of #101 ----
-    let (status, svar) = request(
+    let (status, response) = request(
         &state,
         "GET",
         &format!("{base}/import/saft/log"),
@@ -575,8 +575,8 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
-    let (status, svar) = request(
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let (status, response) = request(
         &state,
         "POST",
         &format!("{base}/import/saft/analyze"),
@@ -587,7 +587,7 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
-        "agenten slipper gjennom vakten og feiler på INNHOLDET, ikke på tilgangen: {svar}"
+        "agenten slipper gjennom vakten og feiler på INNHOLDET, ikke på tilgangen: {response}"
     );
 
     // ---- But access control is not hers, whatever the role says ----
@@ -603,11 +603,11 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
             Some(json!({"epost": "ny@example.com", "rolle": "admin"}).to_string()),
         ),
     ] {
-        let (status, svar) = request(&state, method, &uri, &agent_token, body).await;
+        let (status, response) = request(&state, method, &uri, &agent_token, body).await;
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,
-            "{uri} styrer hvem som har tilgang og kan ikke delegeres til en maskin: {svar}"
+            "{uri} styrer hvem som har tilgang og kan ikke delegeres til en maskin: {response}"
         );
     }
 

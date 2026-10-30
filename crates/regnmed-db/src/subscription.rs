@@ -17,7 +17,7 @@ use uuid::Uuid;
 async fn fakta(
     pool: &PgPool,
     company_id: Uuid,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<(NaiveDate, bool, Option<NaiveDate>)> {
     let row = sqlx::query(
         "select c.created_at::date as opprettet,
@@ -31,7 +31,7 @@ async fn fakta(
          from company c where c.id = $1",
     )
     .bind(company_id)
-    .bind(idag)
+    .bind(today)
     .fetch_optional(pool)
     .await?
     .context("ukjent selskap")?;
@@ -44,13 +44,13 @@ async fn fakta(
 
 /// Today's status for one company.
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
-    let idag = Utc::now().date_naive();
-    let (opprettet, dekket, siste_slutt) = fakta(pool, company_id, idag).await?;
+    let today = Utc::now().date_naive();
+    let (opprettet, dekket, siste_slutt) = fakta(pool, company_id, today).await?;
     Ok(regnmed_core::subscription::status(
         opprettet,
         dekket,
         siste_slutt,
-        idag,
+        today,
     ))
 }
 
@@ -207,7 +207,7 @@ pub async fn register_card_payment(
 
     // The customer company is identified by the run log (the faktura was
     // created by fakturer_maned with a run row in the same tx).
-    let kunde: Uuid =
+    let customer: Uuid =
         sqlx::query_scalar("select company_id from abonnement_faktura_run where invoice_id = $1")
             .bind(invoice_id)
             .fetch_optional(pool)
@@ -215,7 +215,7 @@ pub async fn register_card_payment(
             .context("fakturaen er ikke en abonnementsfaktura (ingen kjøringsrad)")?;
 
     crate::ensure_account(pool, drift_company_id, "1570", "Kortoppgjør").await?;
-    let idag: NaiveDate = sqlx::query_scalar("select current_date")
+    let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(pool)
         .await?;
 
@@ -227,7 +227,7 @@ pub async fn register_card_payment(
          on conflict (payment_intent_id) do nothing",
     )
     .bind(Uuid::new_v4())
-    .bind(kunde)
+    .bind(customer)
     .bind(invoice_id)
     .bind(payment_intent_id)
     .bind(if succeeded { "succeeded" } else { "failed" })
@@ -251,7 +251,7 @@ pub async fn register_card_payment(
 
     let draft = regnmed_core::voucher::VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: idag,
+        voucher_date: today,
         description: format!("Kortbetaling faktura {invoice_no}"),
         reverses: None,
         entries: vec![
@@ -303,7 +303,8 @@ pub async fn register_card_payment(
     // Best effort after the payment is safely booked: a failure here
     // must not fail the webhook, the sweep will catch it.
     if let Err(e) =
-        crate::subscription_follow_up::restore_if_paid(pool, drift_company_id, kunde, idag).await
+        crate::subscription_follow_up::restore_if_paid(pool, drift_company_id, customer, today)
+            .await
     {
         eprintln!("gjenoppretting etter kortbetaling feilet (sweep tar den): {e:#}");
     }
@@ -507,13 +508,13 @@ pub async fn end_stripe_subscription(
 pub async fn post_stripe_payment(
     pool: &PgPool,
     drift_company_id: Uuid,
-    kunde: Uuid,
+    customer: Uuid,
     stripe_invoice_id: &str,
     payment_intent_id: &str,
     gross_ore: i64,
     plan: &str,
     periode: &str,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<bool> {
     ensure!(gross_ore > 0, "betalingen må være positiv");
 
@@ -531,13 +532,13 @@ pub async fn post_stripe_payment(
 
     let (customer_orgnumber, customer_name): (String, String) =
         sqlx::query_as("select orgnr, name from company where id = $1")
-            .bind(kunde)
+            .bind(customer)
             .fetch_one(pool)
             .await?;
     let party_no = party_for_customer(
         pool,
         drift_company_id,
-        kunde,
+        customer,
         &customer_orgnumber,
         &customer_name,
     )
@@ -548,7 +549,7 @@ pub async fn post_stripe_payment(
     // split_gross here (rather than trusting Stripe) keeps one authority
     // for Norwegian mva: ours. An unregistered ops company splits at 0,
     // i.e. the whole charge is the base — same code path, no special case.
-    let (vat_code, rate_bp) = output_vat(pool, drift_company_id, idag).await?;
+    let (vat_code, rate_bp) = output_vat(pool, drift_company_id, today).await?;
     let (netto, _mva) = regnmed_core::vat::split_gross(gross_ore, rate_bp);
 
     let mut tx = pool.begin().await?;
@@ -571,11 +572,11 @@ pub async fn post_stripe_payment(
     let draft = crate::invoice::InvoiceDraft {
         kontant_betalingsmiddel: None,
         party_no,
-        invoice_date: idag,
-        due_date: idag,
+        invoice_date: today,
+        due_date: today,
         // Stripe has already collected for the period that starts now;
         // the abonnementet is delivered from this date.
-        delivery_date: idag,
+        delivery_date: today,
         delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
@@ -606,7 +607,7 @@ pub async fn post_stripe_payment(
     let gross = utstedt.gross_ore;
     let voucher = regnmed_core::voucher::VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: idag,
+        voucher_date: today,
         description: format!("Kortbetaling abonnement, faktura {}", utstedt.invoice_no),
         reverses: None,
         entries: vec![
@@ -675,7 +676,7 @@ pub async fn post_stripe_payment(
          values ($1,$2,$3,$4,'succeeded',$5,$6)",
     )
     .bind(Uuid::new_v4())
-    .bind(kunde)
+    .bind(customer)
     .bind(utstedt.invoice_id)
     .bind(payment_intent_id)
     .bind(gross)
@@ -691,9 +692,9 @@ pub async fn post_stripe_payment(
          on conflict (company_id, ar, maned) do nothing",
     )
     .bind(Uuid::new_v4())
-    .bind(kunde)
-    .bind(idag.year())
-    .bind(idag.month() as i32)
+    .bind(customer)
+    .bind(today.year())
+    .bind(today.month() as i32)
     .bind(utstedt.invoice_id)
     .execute(&mut *tx)
     .await?;
@@ -906,10 +907,10 @@ pub struct InvoiceOutcome {
 pub async fn fakturer_maned(
     pool: &PgPool,
     drift_company_id: Uuid,
-    idag: NaiveDate,
+    today: NaiveDate,
     bare: Option<Uuid>,
 ) -> Result<Vec<InvoiceOutcome>> {
-    let forste = NaiveDate::from_ymd_opt(idag.year(), idag.month(), 1).unwrap();
+    let forste = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
 
     // The ops company needs an account and a journal for the sale;
     // ensure is idempotent and makes the first run self-configuring.
@@ -951,17 +952,17 @@ pub async fn fakturer_maned(
     .await?;
 
     let mut utfall = Vec::new();
-    for kunde in &kunder {
-        let company_id: Uuid = kunde.get("id");
-        let name: String = kunde.get("name");
+    for customer in &kunder {
+        let company_id: Uuid = customer.get("id");
+        let name: String = customer.get("name");
         let result = fakturer_en(
             pool,
             drift_company_id,
             company_id,
-            kunde.get("orgnr"),
+            customer.get("orgnr"),
             &name,
-            kunde.get("plan"),
-            idag,
+            customer.get("plan"),
+            today,
         )
         .await;
         utfall.push(match result {
@@ -1003,7 +1004,7 @@ pub async fn fakturer_maned(
 async fn party_for_customer(
     pool: &PgPool,
     drift: Uuid,
-    kunde: Uuid,
+    customer: Uuid,
     customer_orgnumber: &str,
     customer_name: &str,
 ) -> Result<String> {
@@ -1015,7 +1016,7 @@ async fn party_for_customer(
     .fetch_optional(pool)
     .await?;
     let adresse: Option<String> = sqlx::query_scalar("select address from company where id = $1")
-        .bind(kunde)
+        .bind(customer)
         .fetch_one(pool)
         .await?;
     let (party_id, party_no) = match eksisterende {
@@ -1060,17 +1061,17 @@ async fn party_for_customer(
 async fn fakturer_en(
     pool: &PgPool,
     drift: Uuid,
-    kunde: Uuid,
+    customer: Uuid,
     customer_orgnumber: String,
     customer_name: &str,
     plan: String,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<Option<(i64, Uuid, i64)>> {
     // The customer party in the ops company's reskontro, keyed on orgnr.
     let party_no =
-        party_for_customer(pool, drift, kunde, &customer_orgnumber, customer_name).await?;
+        party_for_customer(pool, drift, customer, &customer_orgnumber, customer_name).await?;
 
-    let price = price_on(pool, &plan, idag).await?;
+    let price = price_on(pool, &plan, today).await?;
     if price == 0 {
         return Ok(None); // en gratisplan fakturerer ingenting
     }
@@ -1082,26 +1083,26 @@ async fn fakturer_en(
         "select invoice_id from abonnement_faktura_run
          where company_id = $1 and ar = $2 and maned = $3",
     )
-    .bind(kunde)
-    .bind(idag.year())
-    .bind(idag.month() as i32)
+    .bind(customer)
+    .bind(today.year())
+    .bind(today.month() as i32)
     .fetch_optional(pool)
     .await?;
     if finnes.is_some() {
         return Ok(None);
     }
 
-    let (vat_code, _rate_bp) = output_vat(pool, drift, idag).await?;
+    let (vat_code, _rate_bp) = output_vat(pool, drift, today).await?;
 
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
         kontant_betalingsmiddel: None,
         party_no,
-        invoice_date: idag,
-        due_date: idag + chrono::Days::new(14),
+        invoice_date: today,
+        due_date: today + chrono::Days::new(14),
         // The monthly run bills the month it runs in — that month is
         // the period being delivered.
-        delivery_date: idag,
+        delivery_date: today,
         delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
@@ -1111,8 +1112,8 @@ async fn fakturer_en(
         lines: vec![crate::invoice::InvoiceLineDraft {
             description: format!(
                 "regnmed {plan} — {} {}",
-                regnmed_core::invoice::month_name(idag.month()),
-                idag.year()
+                regnmed_core::invoice::month_name(today.month()),
+                today.year()
             ),
             account_number: "3000".into(),
             quantity_milli: 1000,
@@ -1141,9 +1142,9 @@ async fn fakturer_en(
          values ($1, $2, $3, $4, $5)",
     )
     .bind(Uuid::new_v4())
-    .bind(kunde)
-    .bind(idag.year())
-    .bind(idag.month() as i32)
+    .bind(customer)
+    .bind(today.year())
+    .bind(today.month() as i32)
     .bind(utstedt.invoice_id)
     .execute(&mut *tx)
     .await;

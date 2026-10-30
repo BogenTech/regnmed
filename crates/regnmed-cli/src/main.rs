@@ -111,7 +111,7 @@ enum Command {
         epost: String,
         /// "systemadmin" or "support"
         #[arg(long)]
-        rolle: String,
+        role: String,
         /// Expiry date (YYYY-MM-DD, EXCLUSIVE) — platform roles always end
         #[arg(long)]
         til: chrono::NaiveDate,
@@ -291,7 +291,7 @@ async fn main() -> Result<()> {
         Command::Anchor => anchor(&pool).await?,
         Command::PlatformGrant {
             epost,
-            rolle,
+            role,
             til,
             note,
         } => {
@@ -299,8 +299,8 @@ async fn main() -> Result<()> {
                 .await?
                 .context("no person with that e-mail — they must log in once first")?;
             let id =
-                regnmed_db::grant_platform_role(&pool, person_id, &rolle, til, &note, None).await?;
-            println!("granted {rolle} to {epost} until {til} (membership {id})");
+                regnmed_db::grant_platform_role(&pool, person_id, &role, til, &note, None).await?;
+            println!("granted {role} to {epost} until {til} (membership {id})");
         }
         Command::PlatformList => {
             let medlemmer = regnmed_db::list_platform_members(&pool).await?;
@@ -314,7 +314,7 @@ async fn main() -> Result<()> {
                     if m.active { "AKTIV " } else { "avsluttet" },
                     m.name,
                     m.epost.as_deref().unwrap_or("-"),
-                    m.rolle,
+                    m.role,
                     format_args!("{} → {}", m.valid_from, m.valid_to),
                     m.note,
                 );
@@ -333,7 +333,7 @@ async fn main() -> Result<()> {
             note,
         } => {
             let company_id = resolve_company(&pool, company, orgnr.as_deref()).await?;
-            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
             match aksjon.as_str() {
@@ -345,16 +345,16 @@ async fn main() -> Result<()> {
                         &pool,
                         company_id,
                         &plan,
-                        idag,
+                        today,
                         None,
                         note,
                         "regnmed abonnement",
                     )
                     .await?;
-                    println!("abonnement «{plan}» tegnet fra {idag} (til videre)");
+                    println!("abonnement «{plan}» tegnet fra {today} (til videre)");
                 }
                 "avslutt" => {
-                    let til = til.unwrap_or(idag);
+                    let til = til.unwrap_or(today);
                     regnmed_db::subscription::close_coverage(&pool, company_id, til).await?;
                     println!("åpen dekning avsluttet — siste dag med dekning er dagen før {til}");
                 }
@@ -373,10 +373,10 @@ async fn main() -> Result<()> {
                 let source = source
                     .as_deref()
                     .context("en ny pris krever --kilde med vedtaksreferansen")?;
-                let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                     .fetch_one(&pool)
                     .await?;
-                let fra = fra.unwrap_or(idag);
+                let fra = fra.unwrap_or(today);
                 regnmed_db::subscription::set_price(&pool, plan, pris_ore, fra, source).await?;
                 println!(
                     "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {fra}",
@@ -407,10 +407,11 @@ async fn main() -> Result<()> {
                 Some(o) => Some(resolve_company(&pool, None, Some(o)).await?),
                 None => None,
             };
-            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let utfall = regnmed_db::subscription::fakturer_maned(&pool, drift, idag, bare).await?;
+            let utfall =
+                regnmed_db::subscription::fakturer_maned(&pool, drift, today, bare).await?;
             if utfall.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }
@@ -474,7 +475,7 @@ async fn main() -> Result<()> {
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
             let drift = resolve_company(&pool, None, Some(&orgnr)).await?;
-            let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
             let mailq = regnmed_mail::connect_from_env().await?;
@@ -501,7 +502,7 @@ async fn main() -> Result<()> {
                     error += 1;
                     continue;
                 }
-                match opf::purr(&pool, drift, f, idag).await {
+                match opf::purr(&pool, drift, f, today).await {
                     Ok(Some((_, step))) => {
                         println!("{}: faktura {} → {step}", f.company_name, f.invoice_no)
                     }
@@ -589,7 +590,7 @@ async fn main() -> Result<()> {
             // 3) End coverage on prolonged non-payment (the pre-purring
             // snapshot gates this on a purring from an earlier run).
             for f in &apne {
-                match opf::sperr_om_moden(&pool, f, idag).await {
+                match opf::sperr_om_moden(&pool, f, today).await {
                     Ok(true) => println!(
                         "{}: dekningen avsluttet — faktura {} ubetalt siden {}",
                         f.company_name, f.invoice_no, f.due_date
@@ -606,7 +607,7 @@ async fn main() -> Result<()> {
             // only for coverage the machine itself ended (the trail is
             // the memory; an oppsigelse is never resurrected).
             for company in opf::auto_sperrede(&pool).await? {
-                match opf::restore_if_paid(&pool, drift, company, idag).await {
+                match opf::restore_if_paid(&pool, drift, company, today).await {
                     Ok(true) => println!("{company}: dekningen gjenopprettet"),
                     Ok(false) => {}
                     Err(e) => {
@@ -659,7 +660,7 @@ async fn main() -> Result<()> {
                 match (&u.voucher, &u.detail) {
                     (Some((year, no)), _) => println!(
                         "{}: {}-{:02} bokfort som bilag {}-{} ({} ore)",
-                        u.beskrivelse,
+                        u.description,
                         u.period.format("%Y"),
                         chrono::Datelike::month(&u.period),
                         year,
@@ -668,7 +669,7 @@ async fn main() -> Result<()> {
                     ),
                     (None, Some(detail)) => println!(
                         "{}: {}-{:02} FEILET: {detail}",
-                        u.beskrivelse,
+                        u.description,
                         u.period.format("%Y"),
                         chrono::Datelike::month(&u.period)
                     ),

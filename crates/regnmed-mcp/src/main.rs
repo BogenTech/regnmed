@@ -29,8 +29,8 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        if let Some(svar) = server.handle(message).await {
-            ut.write_all(serde_json::to_string(&svar)?.as_bytes())
+        if let Some(response) = server.handle(message).await {
+            ut.write_all(serde_json::to_string(&response)?.as_bytes())
                 .await?;
             ut.write_all(b"\n").await?;
             ut.flush().await?;

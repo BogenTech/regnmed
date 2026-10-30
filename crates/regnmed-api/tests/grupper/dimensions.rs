@@ -4,7 +4,7 @@
 //! dimension, and the SAF-T export carries Analysis elements.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -66,16 +66,16 @@ async fn a_prosjekt_carries_its_kunde() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kundekobling AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
-    let (_, kunde) =
+    let (_, customer) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
     gi_partene_adresse(&state.pool, company).await;
-    let (_, leverandor) = regnmed_db::create_party(
+    let (_, supplier) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -89,15 +89,15 @@ async fn a_prosjekt_carries_its_kunde() {
     let base = format!("/companies/{company}/dimensions");
 
     // Created with the link; the listing carries number and name.
-    let (status, svar) = request(
+    let (status, response) = request(
         &state,
         "POST",
         &base,
         &token,
-        Some(serde_json::json!({"kind": "prosjekt", "code": "P9", "name": "Leveransen", "kunde": kunde}).to_string()),
+        Some(serde_json::json!({"kind": "prosjekt", "code": "P9", "name": "Leveransen", "kunde": customer}).to_string()),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {svar}");
+    assert_eq!(status, StatusCode::OK, "body: {response}");
     let (_, liste) = request(&state, "GET", &base, &token, None).await;
     let p9 = liste["dimensions"]
         .as_array()
@@ -105,18 +105,18 @@ async fn a_prosjekt_carries_its_kunde() {
         .iter()
         .find(|d| d["code"] == "P9")
         .unwrap();
-    assert_eq!(p9["kunde"], kunde.as_str());
+    assert_eq!(p9["kunde"], customer.as_str());
     assert_eq!(p9["kunde_navn"], "Kunden AS");
 
     // An avdeling cannot have a customer; a supplier and an unknown
     // number are not customers.
     for (body, error) in [
         (
-            serde_json::json!({"kind": "avdeling", "code": "A9", "name": "Feil", "kunde": kunde}),
+            serde_json::json!({"kind": "avdeling", "code": "A9", "name": "Feil", "kunde": customer}),
             "bare prosjekter",
         ),
         (
-            serde_json::json!({"kind": "prosjekt", "code": "P10", "name": "Feil", "kunde": leverandor}),
+            serde_json::json!({"kind": "prosjekt", "code": "P10", "name": "Feil", "kunde": supplier}),
             "ingen kunde",
         ),
         (
@@ -124,11 +124,12 @@ async fn a_prosjekt_carries_its_kunde() {
             "ingen kunde",
         ),
     ] {
-        let (status, svar) = request(&state, "POST", &base, &token, Some(body.to_string())).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "body: {svar}");
+        let (status, response) =
+            request(&state, "POST", &base, &token, Some(body.to_string())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "body: {response}");
         assert!(
-            svar["error"].as_str().unwrap_or("").contains(error),
-            "expected «{error}»: {svar}"
+            response["error"].as_str().unwrap_or("").contains(error),
+            "expected «{error}»: {response}"
         );
     }
 
@@ -156,7 +157,7 @@ async fn a_prosjekt_carries_its_kunde() {
         "PUT",
         &format!("{base}/prosjekt/P9"),
         &token,
-        Some(serde_json::json!({"kunde": kunde}).to_string()),
+        Some(serde_json::json!({"kunde": customer}).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -181,7 +182,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Lønnsomhet AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -280,7 +281,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     let time = |date: chrono::NaiveDate| regnmed_db::timesheet::TimeEntryDraft {
         date,
         minutter: 60,
-        beskrivelse: "Prosjektarbeid".into(),
+        description: "Prosjektarbeid".into(),
         project: Some("PL1".into()),
         fakturerbar: Some(true),
         timesats_ore: Some(100_000),
@@ -386,7 +387,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Dimensjon AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

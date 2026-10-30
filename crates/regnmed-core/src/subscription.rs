@@ -71,18 +71,18 @@ pub fn status(
     opprettet: NaiveDate,
     dekket_i_dag: bool,
     siste_slutt: Option<NaiveDate>,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Status {
     if dekket_i_dag {
         return Status::Aktiv;
     }
     let trial_until = opprettet + chrono::Days::new(TRIAL_DAYS as u64);
-    if siste_slutt.is_none() && idag < trial_until {
+    if siste_slutt.is_none() && today < trial_until {
         return Status::Trial { til: trial_until };
     }
     let grunnlag = siste_slutt.map_or(trial_until, |s| s.max(trial_until));
     let sperres = grunnlag + chrono::Days::new(GRACE_DAYS as u64);
-    if idag < sperres {
+    if today < sperres {
         Status::Grace { sperres }
     } else {
         Status::Blocked { siden: sperres }

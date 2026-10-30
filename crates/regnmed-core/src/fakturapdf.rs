@@ -18,7 +18,7 @@ const RIGHT: f32 = 545.0;
 
 #[derive(Debug, Clone)]
 pub struct PdfLinje {
-    pub beskrivelse: String,
+    pub description: String,
     /// Tusendeler: 1 stk = 1000.
     pub antall_milli: i64,
     pub enhetspris_ore: i64,
@@ -284,7 +284,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             header(&mut pdf, ly);
             ly += 20.0;
         }
-        pdf.text(MARGIN, ly, 9.0, Font::Regular, &linje.beskrivelse);
+        pdf.text(MARGIN, ly, 9.0, Font::Regular, &linje.description);
         pdf.text_right(
             col_antall,
             ly,
@@ -452,7 +452,7 @@ mod tests {
             betalingsmiddel: None,
             linjer: vec![
                 PdfLinje {
-                    beskrivelse: "Konsulentbistand".into(),
+                    description: "Konsulentbistand".into(),
                     antall_milli: 2500,
                     enhetspris_ore: 4_000_00,
                     vat_rate_bp: Some(2500),
@@ -460,7 +460,7 @@ mod tests {
                     vat_ore: 2_500_00,
                 },
                 PdfLinje {
-                    beskrivelse: "Bøker".into(),
+                    description: "Bøker".into(),
                     antall_milli: 1000,
                     enhetspris_ore: 500_00,
                     vat_rate_bp: None,

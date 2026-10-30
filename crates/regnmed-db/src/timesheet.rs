@@ -16,7 +16,7 @@ use crate::invoice::{InvoiceDraft, InvoiceLineDraft, IssuedInvoice, create_invoi
 pub struct TimeEntryDraft {
     pub date: NaiveDate,
     pub minutter: i32,
-    pub beskrivelse: String,
+    pub description: String,
     /// Prosjekt dimension CODE (resolved against the registry).
     pub project: Option<String>,
     /// None = the project's fakturerbar_default (false without a
@@ -143,7 +143,7 @@ pub async fn create_time_entry(
     .bind(person_id)
     .bind(draft.date)
     .bind(draft.minutter)
-    .bind(&draft.beskrivelse)
+    .bind(&draft.description)
     .bind(prosjekt_id)
     .bind(fakturerbar)
     .bind(timesats_ore)
@@ -190,7 +190,7 @@ pub async fn update_time_entry(
     .bind(if own_only { Some(person_id) } else { None })
     .bind(draft.date)
     .bind(draft.minutter)
-    .bind(&draft.beskrivelse)
+    .bind(&draft.description)
     .bind(prosjekt_id)
     .bind(fakturerbar)
     .bind(timesats_ore)
@@ -235,7 +235,7 @@ pub struct TimeEntryRow {
     pub own: bool,
     pub date: NaiveDate,
     pub minutter: i32,
-    pub beskrivelse: String,
+    pub description: String,
     pub project: Option<String>,
     pub fakturerbar: bool,
     pub timesats_ore: Option<i64>,
@@ -279,7 +279,7 @@ pub async fn list_time_entries(
             own: r.get("own"),
             date: r.get("dato"),
             minutter: r.get("minutter"),
-            beskrivelse: r.get("beskrivelse"),
+            description: r.get("beskrivelse"),
             project: r.get("prosjekt"),
             fakturerbar: r.get("fakturerbar"),
             timesats_ore: r.get("timesats_ore"),
@@ -382,7 +382,7 @@ pub struct UnbilledGroup {
     /// The customer the prosjekt is linked to (#80) — the SUGGESTED
     /// invoice recipient. A suggestion only: billing still takes an
     /// explicit party_no from the caller.
-    pub kunde: Option<String>,
+    pub customer: Option<String>,
     pub customer_name: Option<String>,
     pub timesats_ore: i64,
     pub minutter: i64,
@@ -405,7 +405,7 @@ struct UnbilledRow {
     person_id: Uuid,
     person_name: String,
     project: Option<String>,
-    kunde: Option<String>,
+    customer: Option<String>,
     customer_name: Option<String>,
     timesats_ore: i64,
     minutter: i64,
@@ -445,7 +445,7 @@ async fn unbilled_rows(
             person_id: row.get("person_id"),
             person_name: row.get("person_navn"),
             project: row.get("prosjekt"),
-            kunde: row.get("kunde"),
+            customer: row.get("kunde"),
             customer_name: row.get("kunde_navn"),
             timesats_ore: row.get("timesats_ore"),
             minutter: i64::from(row.get::<i32, _>("minutter")),
@@ -473,7 +473,7 @@ fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
             None => {
                 groups.push(UnbilledGroup {
                     project: row.project.clone(),
-                    kunde: row.kunde.clone(),
+                    customer: row.customer.clone(),
                     customer_name: row.customer_name.clone(),
                     timesats_ore: row.timesats_ore,
                     minutter: 0,

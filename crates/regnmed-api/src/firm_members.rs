@@ -48,7 +48,7 @@ pub async fn list_access(
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
-            "rolle": m.rolle,
+            "rolle": m.role,
             "aktiv": m.active,
         })).collect::<Vec<_>>(),
     })))
@@ -56,7 +56,8 @@ pub async fn list_access(
 
 #[derive(Deserialize)]
 pub struct RolleRequest {
-    rolle: String,
+    #[serde(rename = "rolle")]
+    role: String,
 }
 
 pub async fn set_role(
@@ -70,7 +71,7 @@ pub async fn set_role(
         &state.pool,
         firm_id,
         person_id,
-        &request.rolle,
+        &request.role,
         person.person_id,
     )
     .await
@@ -133,7 +134,7 @@ pub async fn list_invitations(
         "invitasjoner": rader.iter().map(|i| json!({
             "id": i.id,
             "epost": i.epost,
-            "rolle": i.rolle,
+            "rolle": i.role,
             "invitert_av": i.invitert_av,
             "tidspunkt": i.created_at.to_rfc3339(),
             "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
@@ -144,7 +145,8 @@ pub async fn list_invitations(
 #[derive(Deserialize)]
 pub struct InviteRequest {
     epost: String,
-    rolle: String,
+    #[serde(rename = "rolle")]
+    role: String,
 }
 
 /// Invites an e-mail address into the firm. As on the company side, the
@@ -162,7 +164,7 @@ pub async fn invite(
         &state.pool,
         firm_id,
         &request.epost,
-        &request.rolle,
+        &request.role,
         person.person_id,
     )
     .await

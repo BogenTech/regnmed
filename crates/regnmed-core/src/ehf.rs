@@ -73,11 +73,11 @@ pub struct EhfPart {
 
 #[derive(Debug, Clone)]
 pub struct EhfLinje {
-    pub beskrivelse: String,
+    pub description: String,
     /// Thousandths: 1 unit = 1000.
     pub antall_milli: i64,
     /// UN/ECE Rec 20 unit code; "EA" (each) by default.
-    pub enhet: String,
+    pub unit: String,
     pub enhetspris_ore: i64,
     pub net_ore: i64,
     /// Basis points; None = no mva code on the line.
@@ -424,12 +424,12 @@ pub fn render(doc: &EhfDokument) -> String {
         w.leaf("cbc:ID", &(i + 1).to_string());
         w.leaf_attr(
             quantity_tag,
-            &format!("unitCode=\"{}\"", esc(&linje.enhet)),
+            &format!("unitCode=\"{}\"", esc(&linje.unit)),
             &quantity(linje.antall_milli),
         );
         w.leaf_attr("cbc:LineExtensionAmount", &attr, &money(linje.net_ore));
         w.open("cac:Item");
-        w.leaf("cbc:Name", &linje.beskrivelse);
+        w.leaf("cbc:Name", &linje.description);
         w.open("cac:ClassifiedTaxCategory");
         w.leaf("cbc:ID", kategori);
         w.leaf("cbc:Percent", &percent(bp));
@@ -482,18 +482,18 @@ mod tests {
             kid: Some("1234567897".into()),
             linjer: vec![
                 EhfLinje {
-                    beskrivelse: "Konsulentbistand".into(),
+                    description: "Konsulentbistand".into(),
                     antall_milli: 2_000,
-                    enhet: "HUR".into(),
+                    unit: "HUR".into(),
                     enhetspris_ore: 1_250_00,
                     net_ore: 2_500_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 625_00,
                 },
                 EhfLinje {
-                    beskrivelse: "Utlegg uten mva".into(),
+                    description: "Utlegg uten mva".into(),
                     antall_milli: 1_000,
-                    enhet: "EA".into(),
+                    unit: "EA".into(),
                     enhetspris_ore: 500_00,
                     net_ore: 500_00,
                     vat_rate_bp: None,

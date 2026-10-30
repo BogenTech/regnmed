@@ -113,7 +113,7 @@ pub fn unique_orgnr() -> String {
 /// only post vouchers do not. Onboarding through `POST /companies` does
 /// it from Enhetsregisteret — this is the shortcut for fixtures that
 /// call `create_company` directly.
-pub async fn gjor_fakturaklar(pool: &sqlx::PgPool, company_id: Uuid) {
+pub async fn make_invoiceable(pool: &sqlx::PgPool, company_id: Uuid) {
     regnmed_db::update_company_settings(
         pool,
         company_id,
