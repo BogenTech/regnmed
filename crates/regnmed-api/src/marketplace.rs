@@ -234,7 +234,7 @@ fn parse_import_body(
         .map_err(|e| ApiError::BadRequest(format!("ugyldig konvolutt: {e}")))?;
     let mut file = regnmed_core::saft_import::parse(&envelope.file)
         .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
-    regnmed_core::kontoplan::apply_mapping(&mut file, &envelope.mapping)
+    regnmed_core::chart_of_accounts::apply_mapping(&mut file, &envelope.mapping)
         .map_err(ApiError::BadRequest)?;
     Ok((file, envelope.file))
 }
@@ -305,7 +305,7 @@ pub async fn analyze_saft(
         .iter()
         .map(|a| (a.account_id.clone(), a.name.clone()))
         .collect();
-    let suggestions = regnmed_core::kontoplan::suggest(&accounts);
+    let suggestions = regnmed_core::chart_of_accounts::suggest(&accounts);
     let needs_mapping = suggestions.iter().any(|s| s.reason != "allerede NS 4102");
     Ok(Json(json!({
         "needs_mapping": needs_mapping,

@@ -209,32 +209,32 @@ pub async fn avvik(
     let r = &result.rapport;
     Ok(Json(json!({
         "year": year,
-        "t_o_m_maned": r.t_o_m_maned,
+        "t_o_m_maned": r.through_month,
         // Which plan these numbers are measured against — never "the
         // budget", always a named version.
         "budsjett": result.budsjett.as_ref().map(budget_json),
-        "seksjoner": r.seksjoner.iter().map(|s| json!({
+        "seksjoner": r.sections.iter().map(|s| json!({
             "heading": s.heading,
-            "budsjett_hittil_ore": s.budsjett_hittil_ore,
-            "faktisk_hittil_ore": s.faktisk_hittil_ore,
-            "avvik_hittil_ore": s.avvik_hittil_ore,
-            "budsjett_ar_ore": s.budsjett_ar_ore,
-            "linjer": s.linjer.iter().map(|l| json!({
+            "budsjett_hittil_ore": s.budget_ytd_ore,
+            "faktisk_hittil_ore": s.actual_ytd_ore,
+            "avvik_hittil_ore": s.variance_ytd_ore,
+            "budsjett_ar_ore": s.budget_year_ore,
+            "linjer": s.lines.iter().map(|l| json!({
                 "account": l.number,
                 "name": l.name,
-                "budsjett_hittil_ore": l.budsjett_hittil_ore,
-                "faktisk_hittil_ore": l.faktisk_hittil_ore,
-                "avvik_hittil_ore": l.avvik_hittil_ore,
-                "budsjett_ar_ore": l.budsjett_ar_ore,
-                "budsjett_maaneder": l.budsjett_maaneder,
-                "faktisk_maaneder": l.faktisk_maaneder,
+                "budsjett_hittil_ore": l.budget_ytd_ore,
+                "faktisk_hittil_ore": l.actual_ytd_ore,
+                "avvik_hittil_ore": l.variance_ytd_ore,
+                "budsjett_ar_ore": l.budget_year_ore,
+                "budsjett_maaneder": l.budget_months,
+                "faktisk_maaneder": l.actual_months,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
-        "resultat_budsjett_hittil_ore": r.resultat_budsjett_hittil_ore,
-        "resultat_faktisk_hittil_ore": r.resultat_faktisk_hittil_ore,
-        "resultat_avvik_hittil_ore": r.resultat_avvik_hittil_ore,
-        "resultat_budsjett_ar_ore": r.resultat_budsjett_ar_ore,
-        "resultat_budsjett_maaneder": r.resultat_budsjett_maaneder,
-        "resultat_faktisk_maaneder": r.resultat_faktisk_maaneder,
+        "resultat_budsjett_hittil_ore": r.result_budget_ytd_ore,
+        "resultat_faktisk_hittil_ore": r.result_actual_ytd_ore,
+        "resultat_avvik_hittil_ore": r.result_variance_ytd_ore,
+        "resultat_budsjett_ar_ore": r.result_budget_year_ore,
+        "resultat_budsjett_maaneder": r.result_budget_months,
+        "resultat_faktisk_maaneder": r.result_actual_months,
     })))
 }

@@ -44,7 +44,7 @@ bevisst utenfor v1.
 ## Avviksrapporten
 
 `avvik = faktisk − budsjett` per konto, gruppert i de samme NS
-4102-seksjonene som resultatregnskapet (`regnmed-core::budsjett`, ren
+4102-seksjonene som resultatregnskapet (`regnmed-core::budget`, ren
 funksjon med enhetstester). Rapporten viser hittil i år (t.o.m. valgt
 måned — som standard inneværende måned for det løpende året, 12 for et
 avsluttet), hele det budsjetterte året, og de tolv månedene per konto.
@@ -68,7 +68,7 @@ helst budsjett kan velges eksplisitt med `budget_id`.
 
 `fra_ar` + `justering_bp` sår linjene fra det årets FAKTISKE tall,
 skalert i basispunkter (500 = +5 %), avrundet halve øre bort fra null
-(`regnmed_core::budsjett::juster_ore` — heltallsaritmetikk, ingen
+(`regnmed-core::budget::scale_ore` — heltallsaritmetikk, ingen
 flyttall nær penger). Resultatet er et **startpunkt**: et utkast
 mennesket redigerer videre, ikke en prognose systemet står inne for.
 
@@ -96,7 +96,7 @@ måler mot.
 
 ## Tester
 
-`crates/regnmed-core/src/budsjett.rs` har enhetstestene for regningen
+`crates/regnmed-core/src/budget.rs` har enhetstestene for regningen
 (hittil-grensen, resultatfortegn, konto på bare én side, NS
 4102-seksjonene, avrunding av justeringen).
 `crates/regnmed-api/tests/grupper/budsjett.rs` kjører hele historien mot en

@@ -29,7 +29,7 @@ tillatt.
 Samme mønster som repeterende faktura: **systemarbeid med
 menneskesynlig logg**.
 
-- Planen er ren funksjon (`regnmed-core::anlegg::manedsbelop`): det
+- Planen er ren funksjon (`regnmed-core::assets::monthly_amount`): det
   avskrivbare beløpet (kostpris − restverdi) fordeles i faste
   månedsbeløp; siste måned tar resten, så planen summerer EKSAKT.
   Registrering krever minst 1 øre per måned, så en generert periode
@@ -96,7 +96,7 @@ driftsmiddel og saldotabellen med midlertidige forskjeller.
 
 ## Where it is tested
 
-- `regnmed-core/src/anlegg.rs` — planen summerer eksakt, saldoår
+- `regnmed-core/src/assets.rs` — planen summerer eksakt, saldoår
   (grunnlag/avskrivning/utgående, negativt grunnlag, avrunding),
   gevinst/tap.
 - `crates/regnmed-api/tests/grupper/assets.rs` — end to end: warning under

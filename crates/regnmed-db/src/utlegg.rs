@@ -8,10 +8,10 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
+use regnmed_core::expenses::mileage_allowance;
 use regnmed_core::hash::sha256;
 use regnmed_core::mva::{rate_on, split_gross};
 use regnmed_core::sats::sats_on;
-use regnmed_core::utlegg::kjoregodtgjorelse;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -81,7 +81,7 @@ pub async fn create_kjoring(
         .with_context(|| format!("ingen km-sats for {dato} i satsregisteret"))?;
     let trekkfri_sats = sats_on(&satser, "km_godtgjorelse_trekkfri", dato)
         .with_context(|| format!("ingen trekkfri km-sats for {dato} i satsregisteret"))?;
-    let beregnet = kjoregodtgjorelse(km, sats, trekkfri_sats);
+    let beregnet = mileage_allowance(km, sats, trekkfri_sats);
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore,
@@ -93,15 +93,15 @@ pub async fn create_kjoring(
     .bind(person_id)
     .bind(dato)
     .bind(beskrivelse)
-    .bind(beregnet.belop_ore)
+    .bind(beregnet.amount_ore)
     .bind(km)
     .bind(sats)
-    .bind(beregnet.trekkfri_ore)
-    .bind(beregnet.trekkpliktig_ore)
+    .bind(beregnet.tax_free_ore)
+    .bind(beregnet.taxable_ore)
     .bind(created_by)
     .execute(pool)
     .await?;
-    Ok((id, beregnet.belop_ore, beregnet.trekkpliktig_ore))
+    Ok((id, beregnet.amount_ore, beregnet.taxable_ore))
 }
 
 #[derive(Debug)]

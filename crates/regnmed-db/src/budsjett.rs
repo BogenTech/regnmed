@@ -11,7 +11,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
-use regnmed_core::budsjett::{Avviksrapport, KontoTall, avvik, juster_ore};
+use regnmed_core::budget::{AccountFigures, VarianceReport, scale_ore, variance};
 use regnmed_core::regnskap::{class_of, presentasjon_ore};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -186,7 +186,7 @@ pub async fn create_budget(
     if let Some(fra) = fra_ar {
         let rows = monthly_actuals(&mut tx, company_id, fra).await?;
         for (account_id, number, maned, ledger_ore) in rows {
-            let belop = juster_ore(presentasjon_ore(&number, ledger_ore), justering_bp);
+            let belop = scale_ore(presentasjon_ore(&number, ledger_ore), justering_bp);
             if belop == 0 {
                 continue;
             }
@@ -349,16 +349,17 @@ pub async fn delete_budget(pool: &PgPool, company_id: Uuid, budget_id: Uuid) -> 
 }
 
 fn konto_entry<'a>(
-    tall: &'a mut std::collections::BTreeMap<String, KontoTall>,
+    tall: &'a mut std::collections::BTreeMap<String, AccountFigures>,
     number: &str,
     name: String,
-) -> &'a mut KontoTall {
-    tall.entry(number.to_string()).or_insert_with(|| KontoTall {
-        number: number.to_string(),
-        name,
-        budsjett: [0; 12],
-        faktisk: [0; 12],
-    })
+) -> &'a mut AccountFigures {
+    tall.entry(number.to_string())
+        .or_insert_with(|| AccountFigures {
+            number: number.to_string(),
+            name,
+            budget: [0; 12],
+            actual: [0; 12],
+        })
 }
 
 #[derive(Debug)]
@@ -366,10 +367,10 @@ pub struct AvvikMedBudsjett {
     /// Which budget the numbers were compared against — None when the
     /// year has none, and then everything budgeted reads zero.
     pub budsjett: Option<BudgetRow>,
-    pub rapport: Avviksrapport,
+    pub rapport: VarianceReport,
 }
 
-/// Avviksrapport for a year: the budget's months against the ledger's,
+/// VarianceReport for a year: the budget's months against the ledger's,
 /// per konto and per NS 4102-seksjon. `t_o_m_maned` decides how far
 /// "hittil" reaches (the caller passes the current month for a running
 /// year, 12 for a finished one).
@@ -392,7 +393,8 @@ pub async fn avviksrapport(
         );
     }
 
-    let mut tall: std::collections::BTreeMap<String, KontoTall> = std::collections::BTreeMap::new();
+    let mut tall: std::collections::BTreeMap<String, AccountFigures> =
+        std::collections::BTreeMap::new();
 
     // Faktisk: hovedbokens egne summer, per konto per måned.
     let rows = sqlx::query(
@@ -415,20 +417,20 @@ pub async fn avviksrapport(
         let maned: i32 = r.get("maned");
         let belop: i64 = r.get("belop");
         let konto = konto_entry(&mut tall, &number, r.get("name"));
-        konto.faktisk[(maned - 1) as usize] += presentasjon_ore(&number, belop);
+        konto.actual[(maned - 1) as usize] += presentasjon_ore(&number, belop);
     }
 
     // Budsjett: allerede i presentasjonsfortegn.
     if let Some(b) = &budsjett {
         for line in budget_lines(pool, company_id, b.id).await? {
             let konto = konto_entry(&mut tall, &line.account_number, line.account_name);
-            konto.budsjett[(line.maned - 1) as usize] += line.belop_ore;
+            konto.budget[(line.maned - 1) as usize] += line.belop_ore;
         }
     }
 
-    let tall: Vec<KontoTall> = tall.into_values().collect();
+    let tall: Vec<AccountFigures> = tall.into_values().collect();
     Ok(AvvikMedBudsjett {
         budsjett,
-        rapport: avvik(&tall, t_o_m_maned),
+        rapport: variance(&tall, t_o_m_maned),
     })
 }

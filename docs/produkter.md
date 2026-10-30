@@ -54,7 +54,7 @@ invoice line quantities. Beholdning per product =
 
 ### Verdsettelse: gjennomsnittsmetoden
 
-`regnmed-core::lager` is a pure fold over the movements in
+`regnmed-core::inventory` is a pure fold over the movements in
 chronological order, integer øre, half-away-from-zero rounding per
 movement (unit tested, deterministic anywhere it runs):
 
@@ -108,7 +108,7 @@ supplies price and mva unless overridden).
 
 ## Where it is tested
 
-- `regnmed-core/src/lager.rs` — valuation unit tests (rounding, count
+- `regnmed-core/src/inventory.rs` — valuation unit tests (rounding, count
   at average, oversell, exact depletion).
 - `crates/regnmed-api/tests/grupper/products.rs` — end to end: copy-at-issue
   (register edits and deactivation vs issued documents), automatic

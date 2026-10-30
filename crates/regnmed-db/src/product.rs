@@ -15,7 +15,7 @@
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
-use regnmed_core::lager::{Bevegelse, LagerStatus, verdsett};
+use regnmed_core::inventory::{Movement, Stock, value_stock};
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -307,7 +307,7 @@ pub async fn register_movement(
 
 /// Movements in valuation order for one product. Runs on the pool or
 /// inside a transaction (varetelling must see its own justeringer).
-async fn product_status<'e, E>(executor: E, product_id: Uuid) -> Result<LagerStatus>
+async fn product_status<'e, E>(executor: E, product_id: Uuid) -> Result<Stock>
 where
     E: sqlx::PgExecutor<'e>,
 {
@@ -318,14 +318,14 @@ where
     .bind(product_id)
     .fetch_all(executor)
     .await?;
-    let bevegelser: Vec<Bevegelse> = rows
+    let bevegelser: Vec<Movement> = rows
         .iter()
-        .map(|r| Bevegelse {
-            antall_milli: r.get("antall_milli"),
-            kostpris_ore: r.get("kostpris_ore"),
+        .map(|r| Movement {
+            quantity_milli: r.get("antall_milli"),
+            cost_ore: r.get("kostpris_ore"),
         })
         .collect();
-    Ok(verdsett(&bevegelser))
+    Ok(value_stock(&bevegelser))
 }
 
 #[derive(Debug)]
@@ -354,9 +354,9 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
         rows.push(InventoryRow {
             nummer: p.get("nummer"),
             navn: p.get("navn"),
-            antall_milli: status.antall_milli,
-            verdi_ore: status.verdi_ore,
-            gjennomsnitt_ore: status.gjennomsnitt_ore(),
+            antall_milli: status.quantity_milli,
+            verdi_ore: status.value_ore,
+            gjennomsnitt_ore: status.average_ore(),
         });
     }
     Ok(rows)
@@ -473,7 +473,7 @@ pub async fn varetelling(
         );
         let product_id: Uuid = product.get("id");
         let status = product_status(&mut *tx, product_id).await?;
-        let diff = linje.talt_milli - status.antall_milli;
+        let diff = linje.talt_milli - status.quantity_milli;
         if diff != 0 {
             sqlx::query(
                 "insert into inventory_movement
@@ -492,7 +492,7 @@ pub async fn varetelling(
         }
         justeringer.push(TellingJustering {
             nummer: linje.nummer.clone(),
-            bokfort_milli: status.antall_milli,
+            bokfort_milli: status.quantity_milli,
             talt_milli: linje.talt_milli,
         });
     }
@@ -505,7 +505,7 @@ pub async fn varetelling(
             .await?;
     let mut verdi_ore = 0i64;
     for id in product_ids {
-        verdi_ore += product_status(&mut *tx, id).await?.verdi_ore;
+        verdi_ore += product_status(&mut *tx, id).await?.value_ore;
     }
 
     let mut bokfort_ore = None;

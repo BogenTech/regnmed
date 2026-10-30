@@ -25,7 +25,7 @@ Derfor:
 - Planen har ingen mva-kolonne. Avgiften finnes på KILDEBILAGET, som er
   ført på vanlig måte med hele beløpet.
 
-Dette står både i `regnmed-core::periodisering`, i
+Dette står både i `regnmed-core::accrual`, i
 `regnmed-db::periodisering` og i migrasjonen, fordi det er den ene
 tingen som blir gjort feil hvis den ikke står noe sted.
 
@@ -60,7 +60,7 @@ en konto.
 
 ## 3. Fordelingen summerer EKSAKT
 
-`regnmed-core::periodisering::manedsbelop` har samme kontrakt som
+`regnmed-core::accrual::monthly_amount` har samme kontrakt som
 `anlegg::manedsbelop`: alle månedene unntatt den siste får det avrundede
 grunnbeløpet, og den siste tar resten. Et øre oppfunnet her ville havnet
 i resultatet og aldri gått opp mot kildebilaget.
@@ -104,7 +104,7 @@ nå, stopp, med ført/gjenstående per plan).
 
 ## 6. Hvor det er testet
 
-- `regnmed-core::periodisering` — fordelingen, uttømmende.
+- `regnmed-core::accrual` — fordelingen, uttømmende.
 - `crates/regnmed-db/tests/periodisering.rs` — et helt år fordelt fra et
   ekte kildebilag (balansekontoen tømmes på øret), at samme måned ikke
   kan føres to ganger, at stopping lar det førte stå, og at en påbegynt

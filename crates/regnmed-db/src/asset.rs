@@ -9,7 +9,9 @@
 use anyhow::{Context, Result, ensure};
 use chrono::{Datelike, NaiveDate};
 use regnmed_core::Ore;
-use regnmed_core::anlegg::{SALDOGRUPPER, gyldig_saldogruppe, manedsbelop, saldo_ar};
+use regnmed_core::assets::{
+    DEPRECIATION_GROUPS, is_valid_depreciation_group, monthly_amount, tax_depreciation_year,
+};
 use regnmed_core::sats::sats_on;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
@@ -62,7 +64,7 @@ pub async fn create_asset(
     created_by: &str,
 ) -> Result<(Uuid, Option<String>)> {
     ensure!(
-        gyldig_saldogruppe(&draft.saldogruppe),
+        is_valid_depreciation_group(&draft.saldogruppe),
         "ukjent saldogruppe {} (a–j)",
         draft.saldogruppe
     );
@@ -305,7 +307,7 @@ async fn depreciate_next(
     }
 
     // create_asset guarantees ≥1 øre per month, so amount > 0 always.
-    let amount = manedsbelop(
+    let amount = monthly_amount(
         asset.get("kostpris_ore"),
         asset.get("restverdi_ore"),
         levetid,
@@ -583,7 +585,7 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
         .min()
         .unwrap_or(year);
     let mut grupper = Vec::new();
-    for (gruppe, beskrivelse) in SALDOGRUPPER {
+    for (gruppe, beskrivelse) in DEPRECIATION_GROUPS {
         let mut inngaende = 0i64;
         let mut rad: Option<SaldoGruppeRad> = None;
         for y in first_year..=year {
@@ -612,19 +614,19 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
-            let ar = saldo_ar(inngaende, tilgang, vederlag, sats_bp);
+            let ar = tax_depreciation_year(inngaende, tilgang, vederlag, sats_bp);
             rad = Some(SaldoGruppeRad {
                 gruppe: (*gruppe).to_string(),
                 beskrivelse: (*beskrivelse).to_string(),
                 inngaende_ore: inngaende,
                 tilgang_ore: tilgang,
                 vederlag_ore: vederlag,
-                grunnlag_ore: ar.grunnlag_ore,
+                grunnlag_ore: ar.basis_ore,
                 sats_bp,
-                avskrivning_ore: ar.avskrivning_ore,
-                utgaende_ore: ar.utgaende_ore,
+                avskrivning_ore: ar.depreciation_ore,
+                utgaende_ore: ar.closing_ore,
             });
-            inngaende = ar.utgaende_ore;
+            inngaende = ar.closing_ore;
         }
         if let Some(rad) = rad {
             grupper.push(rad);
