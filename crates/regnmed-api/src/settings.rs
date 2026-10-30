@@ -35,7 +35,7 @@ pub async fn get_settings(
         "orgnr": s.orgnumber,
         "address": s.address,
         "bank_account": s.bank_account,
-        "orgform": s.orgform,
+        "orgform": s.org_form,
         "email": s.email,
         // KID is a bank agreement, not a property of the invoice number
         // (#104): off means the document carries no KID at all.
@@ -43,11 +43,11 @@ pub async fn get_settings(
         // Registreringsstatus (§5-1-2, #81): lagret og datert, aldri
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.vat_registered,
-        "foretaksregistrert": reg.foretaksregistrert,
+        "foretaksregistrert": reg.business_registered,
         "registrering_historikk": history.iter().map(|(date, r, source, note)| json!({
             "valid_from": date.to_string(),
             "mva_registrert": r.vat_registered,
-            "foretaksregistrert": r.foretaksregistrert,
+            "foretaksregistrert": r.business_registered,
             "kilde": source,
             "notat": note,
         })).collect::<Vec<_>>(),
@@ -58,7 +58,8 @@ pub async fn get_settings(
 pub struct UpdateSettingsRequest {
     address: Option<String>,
     bank_account: Option<String>,
-    orgform: Option<String>,
+    #[serde(rename = "orgform")]
+    org_form: Option<String>,
     email: Option<String>,
     kid_avtale: Option<bool>,
 }
@@ -75,7 +76,7 @@ pub async fn update_settings(
         company_id,
         request.address.as_deref(),
         request.bank_account.as_deref(),
-        request.orgform.as_deref(),
+        request.org_form.as_deref(),
         request.email.as_deref(),
         request.kid_avtale,
     )
@@ -88,7 +89,8 @@ pub async fn update_settings(
 pub struct RegistreringRequest {
     #[serde(rename = "mva_registrert")]
     vat_registered: bool,
-    foretaksregistrert: bool,
+    #[serde(rename = "foretaksregistrert")]
+    business_registered: bool,
     /// The date the status took effect. Omitted = today; a registration
     /// that happened earlier should say so, since documents dated
     /// before it must not carry the påtegning.
@@ -121,7 +123,7 @@ pub async fn set_registrering(
         valid_from,
         regnmed_db::Registrering {
             vat_registered: request.vat_registered,
-            foretaksregistrert: request.foretaksregistrert,
+            business_registered: request.business_registered,
         },
         "manuell",
         request.note.as_deref(),

@@ -126,7 +126,7 @@ pub async fn kjor(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let outcome = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, today)
+    let outcome = regnmed_db::accrual::accrue_plan(&state.pool, company_id, id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({

@@ -30,7 +30,8 @@ pub struct CreateAssetRequest {
     cost_price_ore: i64,
     #[serde(default)]
     restverdi_ore: i64,
-    levetid_maneder: i32,
+    #[serde(rename = "levetid_maneder")]
+    lifetime_months: i32,
     /// Defaults: balanse 1250, avskrivning 6000.
     #[serde(rename = "balansekonto")]
     balance_account: Option<String>,
@@ -57,7 +58,7 @@ pub async fn create(
             acquisition_date: request.acquisition_date,
             cost_price_ore: request.cost_price_ore,
             restverdi_ore: request.restverdi_ore,
-            levetid_maneder: request.levetid_maneder,
+            lifetime_months: request.lifetime_months,
             balance_account: request.balance_account.unwrap_or_else(|| "1250".into()),
             depreciation_account: request
                 .depreciation_account
@@ -86,7 +87,7 @@ pub async fn list(
             "anskaffelsesdato": a.acquisition_date.to_string(),
             "kostpris_ore": a.cost_price_ore,
             "restverdi_ore": a.restverdi_ore,
-            "levetid_maneder": a.levetid_maneder,
+            "levetid_maneder": a.lifetime_months,
             "balansekonto": a.balance_account,
             "avskrivningskonto": a.depreciation_account,
             "saldogruppe": a.depreciation_group,

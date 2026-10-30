@@ -66,7 +66,7 @@ pub async fn create_utlegg(
 /// Registers one kjøring. The satser valid on `dato` are resolved from
 /// the satsregister NOW and stored on the row — a claim outside the
 /// register's coverage is refused loudly, never guessed.
-pub async fn create_kjoring(
+pub async fn create_expense_run(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,

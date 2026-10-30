@@ -456,7 +456,7 @@ async fn an_employee_gets_only_their_own_payslip() {
 
     // Two employees, each linked to their own portal user.
     let mut employees = Vec::new();
-    for (fnr, name) in [("03048810003", "Ansatt En"), ("03048810194", "Ansatt To")] {
+    for (nin, name) in [("03048810003", "Ansatt En"), ("03048810194", "Ansatt To")] {
         let sub = format!("{name}|{}", Uuid::new_v4());
         let person = regnmed_db::ensure_person(&state.pool, &sub, Some(name), None)
             .await
@@ -468,12 +468,12 @@ async fn an_employee_gets_only_their_own_payslip() {
             &state.pool,
             company,
             &regnmed_db::payroll::NewEmployee {
-                nin: fnr.into(),
+                nin: nin.into(),
                 name: name.into(),
                 stilling: None,
                 employed_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                manedslonn_ore: Some(5_000_000),
-                timelonn_ore: None,
+                monthly_salary_ore: Some(5_000_000),
+                hourly_wage_ore: None,
                 withholding_type: "prosent".into(),
                 withholding_percent_bp: Some(3000),
                 withholding_table: None,
@@ -494,7 +494,7 @@ async fn an_employee_gets_only_their_own_payslip() {
         employees.push((employee, idp.token(&sub, name)));
     }
 
-    let kjoring = regnmed_db::payroll::run_payroll(
+    let payroll_run = regnmed_db::payroll::run_payroll(
         &state.pool,
         company,
         2026,
@@ -517,7 +517,7 @@ async fn an_employee_gets_only_their_own_payslip() {
 
     let (en_id, en_token) = &employees[0];
     let (to_id, _) = &employees[1];
-    let run = kjoring.id;
+    let run = payroll_run.id;
 
     // Their own: yes.
     assert_eq!(

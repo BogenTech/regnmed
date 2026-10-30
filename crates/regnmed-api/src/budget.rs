@@ -35,8 +35,8 @@ fn budget_json(b: &regnmed_db::BudgetRow) -> serde_json::Value {
         "sum_ore": b.sum_ore,
         "created_by": b.created_by,
         "created_at": b.created_at.to_rfc3339(),
-        "fastsatt_by": b.fastsatt_by,
-        "fastsatt_at": b.fastsatt_at.map(|t| t.to_rfc3339()),
+        "fastsatt_by": b.adopted_by,
+        "fastsatt_at": b.adopted_at.map(|t| t.to_rfc3339()),
     })
 }
 

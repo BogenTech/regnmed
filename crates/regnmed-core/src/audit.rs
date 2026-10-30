@@ -346,7 +346,7 @@ mod tests {
     }
 
     /// A flagged account whose every posting carries a party.
-    fn avstemt(account: &str, kind: &str, ore: i64, count: i64) -> SubledgerAccount {
+    fn reconciled(account: &str, kind: &str, ore: i64, count: i64) -> SubledgerAccount {
         SubledgerAccount {
             account: account.into(),
             flagg: Some(kind.into()),
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn a_reskontro_account_whose_parties_sum_to_the_balance_ties_out() {
-        let check = subledger_check(&[avstemt("1500", "kunde", 12_500_00, 2)]);
+        let check = subledger_check(&[reconciled("1500", "kunde", 12_500_00, 2)]);
         assert!(check.ok, "{}", check.detail);
         assert!(check.detail.contains("1 reskontrokonto avstemt"));
         assert!(check.detail.contains("12500,00"));
@@ -373,13 +373,13 @@ mod tests {
         // Zero is a saldo like any other: nothing on either side, no
         // finding. (Counting rows instead of amounts once made an
         // untouched account look like it held a party-less posting.)
-        let check = subledger_check(&[avstemt("2400", "leverandor", 0, 0)]);
+        let check = subledger_check(&[reconciled("2400", "leverandor", 0, 0)]);
         assert!(check.ok, "{}", check.detail);
     }
 
     #[test]
     fn a_posting_without_a_party_breaks_the_tie_out_by_its_amount() {
-        let mut account = avstemt("1500", "kunde", 12_500_00, 1);
+        let mut account = reconciled("1500", "kunde", 12_500_00, 1);
         account.general_ledger_ore = 15_000_00; // 2 500,00 posted without a party
         account.without_party_count = 1;
         let check = subledger_check(&[account]);
@@ -395,7 +395,7 @@ mod tests {
     fn party_less_postings_that_net_to_zero_are_reported_anyway() {
         // The saldo ties out, but two amounts are in no spesifikasjon —
         // reporting only the difference would let that pass silently.
-        let mut account = avstemt("1500", "kunde", 12_500_00, 1);
+        let mut account = reconciled("1500", "kunde", 12_500_00, 1);
         account.without_party_count = 2;
         let check = subledger_check(&[account]);
         assert!(!check.ok);
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn a_party_of_the_wrong_kind_on_the_account_is_reported() {
-        let mut account = avstemt("2400", "leverandor", -8_000_00, 2);
+        let mut account = reconciled("2400", "leverandor", -8_000_00, 2);
         account.wrong_kind_count = 1;
         account.feil_kind_ore = -3_000_00;
         account.part_kinds = vec!["kunde".into(), "leverandor".into()];
@@ -451,10 +451,10 @@ mod tests {
 
     #[test]
     fn several_accounts_yield_one_finding_line_each() {
-        let mut without_party = avstemt("1500", "kunde", 12_500_00, 1);
+        let mut without_party = reconciled("1500", "kunde", 12_500_00, 1);
         without_party.general_ledger_ore = 15_000_00;
         without_party.without_party_count = 1;
-        let mut ikke_flagget = avstemt("2400", "leverandor", -8_000_00, 1);
+        let mut ikke_flagget = reconciled("2400", "leverandor", -8_000_00, 1);
         ikke_flagget.flagg = None;
         let check = subledger_check(&[without_party, ikke_flagget]);
         assert!(!check.ok);

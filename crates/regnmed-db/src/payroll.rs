@@ -40,8 +40,8 @@ pub struct NewEmployee {
     pub name: String,
     pub stilling: Option<String>,
     pub employed_from: NaiveDate,
-    pub manedslonn_ore: Option<i64>,
-    pub timelonn_ore: Option<i64>,
+    pub monthly_salary_ore: Option<i64>,
+    pub hourly_wage_ore: Option<i64>,
     pub withholding_type: String,
     pub withholding_percent_bp: Option<i32>,
     pub withholding_table: Option<i32>,
@@ -62,8 +62,8 @@ pub struct Employee {
     pub birth_date: Option<NaiveDate>,
     pub employed_from: NaiveDate,
     pub employed_to: Option<NaiveDate>,
-    pub manedslonn_ore: Option<i64>,
-    pub timelonn_ore: Option<i64>,
+    pub monthly_salary_ore: Option<i64>,
+    pub hourly_wage_ore: Option<i64>,
     pub withholding_type: String,
     pub withholding_percent_bp: Option<i32>,
     pub withholding_table: Option<i32>,
@@ -86,8 +86,8 @@ impl Employee {
         }
     }
 
-    fn employed_in(&self, maned_slutt: NaiveDate, maned_start: NaiveDate) -> bool {
-        self.employed_from <= maned_slutt && self.employed_to.is_none_or(|t| t >= maned_start)
+    fn employed_in(&self, month_end: NaiveDate, maned_start: NaiveDate) -> bool {
+        self.employed_from <= month_end && self.employed_to.is_none_or(|t| t >= maned_start)
     }
 }
 
@@ -123,8 +123,8 @@ pub async fn create_employee(
     .bind(&new.name)
     .bind(&new.stilling)
     .bind(new.employed_from)
-    .bind(new.manedslonn_ore)
-    .bind(new.timelonn_ore)
+    .bind(new.monthly_salary_ore)
+    .bind(new.hourly_wage_ore)
     .bind(&new.withholding_type)
     .bind(new.withholding_percent_bp)
     .bind(new.withholding_table)
@@ -167,8 +167,8 @@ fn employee_from_row(r: &sqlx::postgres::PgRow) -> Employee {
             .pipe_birth_date(),
         employed_from: r.get("ansatt_fra"),
         employed_to: r.get("ansatt_til"),
-        manedslonn_ore: r.get("manedslonn_ore"),
-        timelonn_ore: r.get("timelonn_ore"),
+        monthly_salary_ore: r.get("manedslonn_ore"),
+        hourly_wage_ore: r.get("timelonn_ore"),
         withholding_type: r.get("trekk_type"),
         withholding_percent_bp: r.get("trekk_prosent_bp"),
         withholding_table: r.get("trekk_tabell"),
@@ -350,7 +350,7 @@ pub async fn run_payroll(
 
     let employees = list_ansatte(pool, company_id).await?;
     let maned_start = NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")?;
-    let maned_slutt = maned_start
+    let month_end = maned_start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
@@ -366,7 +366,7 @@ pub async fn run_payroll(
             .find(|a| a.id == post.employee_id)
             .with_context(|| format!("ukjent ansatt {}", post.employee_id))?;
         ensure!(
-            employee.employed_in(maned_slutt, maned_start),
+            employee.employed_in(month_end, maned_start),
             "{} var ikke ansatt i {month}/{year}",
             employee.name
         );
@@ -389,7 +389,7 @@ pub async fn run_payroll(
             basis.amount_ore
         } else {
             post.gross_ore
-                .or(employee.manedslonn_ore)
+                .or(employee.monthly_salary_ore)
                 .with_context(|| {
                     format!(
                         "{} har verken månedslønn eller oppgitt beløp",
@@ -841,7 +841,7 @@ pub async fn payslip(
     let holiday_pay: i64 = row.get("feriepenger_ore");
 
     // Year to date, through this run.
-    let hittil = sqlx::query(
+    let year_to_date = sqlx::query(
         "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint as brutto,
                 coalesce(sum(l.forskuddstrekk_ore), 0)::bigint as trekk,
                 coalesce(sum(l.feriepengeavsetning_ore), 0)::bigint as feriepenger
@@ -895,9 +895,9 @@ pub async fn payslip(
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
         holiday_pay_bp: row.get::<i32, _>("feriepenger_bp") as i64,
-        hittil_brutto_ore: hittil.get("brutto"),
-        hittil_trekk_ore: hittil.get("trekk"),
-        ytd_holiday_pay_ore: hittil.get("feriepenger"),
+        year_to_date_gross_ore: year_to_date.get("brutto"),
+        year_to_date_withholding_ore: year_to_date.get("trekk"),
+        ytd_holiday_pay_ore: year_to_date.get("feriepenger"),
     })
 }
 
@@ -947,7 +947,7 @@ pub async fn timegrunnlag(
     month: u32,
 ) -> Result<Timegrunnlag> {
     let start = NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")?;
-    let slutt = start
+    let end = start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
@@ -976,14 +976,14 @@ pub async fn timegrunnlag(
     .bind(company_id)
     .bind(person_id)
     .bind(start)
-    .bind(slutt)
+    .bind(end)
     .fetch_one(pool)
     .await?;
     let minutes = minutes.unwrap_or(0);
 
     let laast = crate::timesheet::timesheet_lock(pool, company_id)
         .await?
-        .is_some_and(|through| through >= slutt);
+        .is_some_and(|through| through >= end);
 
     Ok(Timegrunnlag {
         minutes,

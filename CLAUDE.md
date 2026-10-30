@@ -636,10 +636,64 @@ With them went the last three small clusters: `prosjekt`->`project`
 88 + 13 files in all, zero compile errors, six wire diffs that are
 all struct NAMES with identical fields.
 
-Nothing above 19 remains, and the top of the list is now mostly
-statutory: `foretaksregistrert` 24, `nyemisjon` 23 and
-`kontinuitet` 20 (both Skatteetatens, they stay), `html` 21,
-`argang` 20, `skattefri` 19, `aksjekapital` 18, `annen` 18.
+Eighth sweep took the 24-to-15 band: `aksjekapital`->`share_capital`,
+`annen`->`other`, `apne`->`open`, `ukjent`->`unknown`,
+`fastsatt_at`/`_by`->`adopted_*` (budget) while `fastsatt_kr`->
+`assessed_kr` (the vat return's `fastsattMerverdiavgift` -- one word,
+two meanings, separated for free because the compounds differ),
+`farge`/`ikon`->`color`/`icon`, `leveringssted`->`delivery_place`,
+`Utenlandsk`->`Foreign`, `totalt`->`total`,
+`palydende_ore`->`nominal_value_ore`, `fnr`->`nin`,
+`avstem`/`avstemt`->`reconcile`/`reconciled`,
+`hemmelighet`->`secret`, `klient`->`client`,
+`manedslonn_ore`/`timelonn_ore`->`monthly_salary_ore`/
+`hourly_wage_ore`, `referanse`->`reference`,
+`grunnlegger`->`founder`, `postnr`->`postal_code`, `slutt`->`end`,
+`levetid`->`lifetime`, `kjoring`->`run`, `lagerfort`->`stocked`,
+`brutto_*`->`gross_*`, `forste`->`first`, `hittil`->`year_to_date`,
+`periodiser`->`accrue`, `orgform`->`org_form`,
+`foretaksregistrert`->`business_registered`. 75 files, 17 serde
+fields pinned, two wire diffs that are struct NAMES.
+
+**THE SHADOW HAZARD FINALLY MATERIALIZED, and the guard had already
+named the file.** `shadows()` was written for a `nr` finding that
+turned out to be wrong, and its first two runs reported nothing but
+benign targets -- module paths, handlers that were already renamed.
+This sweep produced a real one. `tests/grupper/migrering.rs` held
+`let apne = "Kundenr;Navn;Fakturanr;..."` (the CSV body, used three
+times) and, between the second and third use, `let open: Vec<_>` (the
+open items read back from the API). `apne`->`open` made the CSV
+variable shadow-collide with the list, and the THIRD call site then
+passed the `Vec` where the CSV `&str` belonged.
+
+The compiler caught it -- but ONLY because the two types differ. Had
+both been `&str`, it would have compiled, posted the wrong body, and
+the assertion that follows (`400`, account has a balance) might well
+still have held. That is exactly the failure mode the guard exists
+for, and the guard reported the file BEFORE the run. Fixed by naming
+the CSV `open_items_csv`: the collision was a bad name on both sides,
+not a bad rename.
+
+Two of the other 13 reports were worth tidying rather than reverting:
+`postal_code: postal_code` (clippy's redundant field name, now
+shorthand) and `let run = run.id` in access.rs, which compiles and is
+correct but reads as a mistake (now `payroll_run.id`). The rest were
+module paths (`regnmed_core::secret`, `regnmed_core::nin`), format
+captures the tool moved with their identifier, and struct-field inits
+whose left side merely spells the same word.
+
+**ALSO a real collision the compiler caught**, the `rate_on` trap
+again: `create_kjoring`->`create_run` landed on `payments::create_run`,
+which already existed, and the glob re-export made
+`regnmed_db::create_run` ambiguous. The expense payout run is now
+`create_expense_run` -- and its route-table entry had to move with it,
+which the compiler named too.
+
+Nothing above 23 remains, and the top of the list is statutory:
+`nyemisjon` 23, `kontinuitet` 20, `skattefri` 19, `stiftelse` 15,
+`likvidasjon` 15 -- all `TransactionType` variants that stay. Then
+`argang` 20, `verdi` 14, `skattekostnad` 14, `beregning` 14,
+`fusjon`/`fisjon` 14.
 
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every
@@ -652,13 +706,14 @@ identifier segment that is not English -- and lives in
 `scripts/norwegian-left.py` so the series is reproducible instead of
 depending on a file in someone's scratchpad:
 
-**4 162 of 188 137 identifier segments (2,2 %), 791 distinct**
-(2026-10-30, after the seventh sweep; the first reading of this
-instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 1 372,
-core 1 196, db 1 147, gov 216, mcp 86, agent 81, cli 63, mail 1.
-`counterparty` and `subledger` joined the STOP set: they are English
-names this conversion INTRODUCED that `/usr/share/dict/words` does
-not carry, so the instrument counted its own output as Norwegian. Per crate: db 2 371, api 2 289, core 1 708, gov 235,
+**3 575 of 188 408 identifier segments (1,9 %), 752 distinct**
+(2026-10-30, after the eighth sweep; the first reading of this
+instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 1 128,
+core 1 094, db 944, gov 212, agent 79, mcp 65, cli 52, mail 1.
+`counterparty` and `subledger` joined the STOP set -- English names
+this conversion INTRODUCED that `/usr/share/dict/words` does not
+carry, so the instrument counted its own output as Norwegian -- and
+`html`, `addr` and `ct` followed, which were never Norwegian at all. Per crate: db 2 371, api 2 289, core 1 708, gov 235,
 mcp 113, cli 111, agent 92, mail 1. It OVERCOUNTS by a few percent
 (residual abbreviations like `rfind`, `hexdigit`, `x86`), which is the
 right direction for a gate: it can only claim done when it is near

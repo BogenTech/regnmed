@@ -131,7 +131,7 @@ pub async fn make_invoiceable(pool: &sqlx::PgPool, company_id: Uuid) {
         chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "manuell",
         Some("testfixtur"),

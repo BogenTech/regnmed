@@ -64,7 +64,7 @@ impl Server {
             "prompts/list" => Ok(json!({ "prompts": prompt_list() })),
             "prompts/get" => get_prompt(&params),
             "tools/call" => self.call(&params).await,
-            annet => Err(ProtocolError::UkjentMetode(annet.to_string())),
+            annet => Err(ProtocolError::UnknownMethod(annet.to_string())),
         };
 
         Some(match response {
@@ -90,8 +90,7 @@ impl Server {
             .get("name")
             .and_then(Value::as_str)
             .ok_or_else(|| ProtocolError::UgyldigParam("mangler «name»".into()))?;
-        let tool =
-            tool::find(name).ok_or_else(|| ProtocolError::UkjentVerktoy(name.to_string()))?;
+        let tool = tool::find(name).ok_or_else(|| ProtocolError::UnknownTool(name.to_string()))?;
         let args = params
             .get("arguments")
             .and_then(Value::as_object)
@@ -208,11 +207,11 @@ fn fill_path(
 ) -> Result<String> {
     let mut path = mal.to_string();
     while let Some(start) = path.find('{') {
-        let slutt = path[start..]
+        let end = path[start..]
             .find('}')
             .ok_or_else(|| anyhow!("ubalansert sti-mal: {mal}"))?
             + start;
-        let felt = path[start + 1..slutt].to_string();
+        let felt = path[start + 1..end].to_string();
         let verdi = match args.remove(&felt) {
             Some(Value::String(s)) => s,
             Some(Value::Null) | None if felt == "selskap" => {
@@ -226,7 +225,7 @@ fn fill_path(
             Some(annet) if !annet.is_null() => annet.to_string(),
             _ => bail!("«{felt}» mangler i kallet"),
         };
-        path.replace_range(start..=slutt, &verdi);
+        path.replace_range(start..=end, &verdi);
     }
     Ok(path)
 }
@@ -327,8 +326,8 @@ fn query(args: Map<String, Value>) -> Vec<(String, String)> {
 }
 
 enum ProtocolError {
-    UkjentMetode(String),
-    UkjentVerktoy(String),
+    UnknownMethod(String),
+    UnknownTool(String),
     UgyldigParam(String),
 }
 
@@ -337,8 +336,8 @@ impl ProtocolError {
         match self {
             // JSON-RPC's own codes: an unknown method is -32601, bad
             // parameters are -32602.
-            Self::UkjentMetode(_) => -32601,
-            Self::UkjentVerktoy(_) | Self::UgyldigParam(_) => -32602,
+            Self::UnknownMethod(_) => -32601,
+            Self::UnknownTool(_) | Self::UgyldigParam(_) => -32602,
         }
     }
 }
@@ -346,8 +345,8 @@ impl ProtocolError {
 impl std::fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UkjentMetode(m) => write!(f, "ukjent metode «{m}»"),
-            Self::UkjentVerktoy(n) => write!(f, "ukjent verktøy «{n}»"),
+            Self::UnknownMethod(m) => write!(f, "ukjent metode «{m}»"),
+            Self::UnknownTool(n) => write!(f, "ukjent verktøy «{n}»"),
             Self::UgyldigParam(m) => write!(f, "{m}"),
         }
     }

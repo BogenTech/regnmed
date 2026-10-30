@@ -41,7 +41,7 @@ pub async fn payable(
             "party_name": i.party_name,
             "bank_account": i.bank_account,
             "belop_ore": i.amount_ore,
-            "i_kjoring": i.i_kjoring,
+            "i_kjoring": i.in_run,
         })).collect::<Vec<_>>(),
     })))
 }

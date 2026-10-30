@@ -71,7 +71,7 @@ pub async fn create_utlegg(
 }
 
 #[derive(Deserialize)]
-pub struct KjoringRequest {
+pub struct RunRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     /// Route and purpose, e.g. "Oslo–Drammen t/r, kundemøte".
@@ -80,15 +80,15 @@ pub struct KjoringRequest {
     km: i64,
 }
 
-pub async fn create_kjoring(
+pub async fn create_expense_run(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<KjoringRequest>,
+    Json(request): Json<RunRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let (id, amount_ore, trekkpliktig_ore) = regnmed_db::create_kjoring(
+    let (id, amount_ore, trekkpliktig_ore) = regnmed_db::create_expense_run(
         &state.pool,
         company_id,
         person.person_id,

@@ -57,17 +57,17 @@ async fn company(pool: &PgPool) -> Uuid {
     company
 }
 
-async fn employee(pool: &PgPool, company: Uuid, fnr: &str, name: &str, lonn: i64) -> Uuid {
+async fn employee(pool: &PgPool, company: Uuid, nin: &str, name: &str, lonn: i64) -> Uuid {
     payroll::create_employee(
         pool,
         company,
         &NewEmployee {
-            nin: fnr.into(),
+            nin: nin.into(),
             name: name.into(),
             stilling: Some("Utvikler".into()),
             employed_from: date(2025, 1, 1),
-            manedslonn_ore: Some(lonn),
-            timelonn_ore: None,
+            monthly_salary_ore: Some(lonn),
+            hourly_wage_ore: None,
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3500),
             withholding_table: None,
@@ -297,8 +297,8 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
             name: "Tabell Trekksen".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),
-            manedslonn_ore: Some(5_000_000),
-            timelonn_ore: None,
+            monthly_salary_ore: Some(5_000_000),
+            hourly_wage_ore: None,
             withholding_type: "tabell".into(),
             withholding_percent_bp: None,
             withholding_table: Some(7100),
@@ -346,7 +346,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
         }]
     };
 
-    let forste = payroll::run_payroll(
+    let first = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -376,14 +376,14 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
 
     // The database itself refuses to change or delete a run.
     let err = sqlx::query("update payroll_run set brutto_ore = 1 where id = $1")
-        .bind(forste.id)
+        .bind(first.id)
         .execute(&pool)
         .await
         .unwrap_err();
     assert!(err.to_string().contains("innsettings-bare"), "{err}");
 
     let err = sqlx::query("delete from payroll_line where run_id = $1")
-        .bind(forste.id)
+        .bind(first.id)
         .execute(&pool)
         .await
         .unwrap_err();
@@ -427,8 +427,8 @@ async fn an_invalid_nin_is_rejected_at_registration() {
             name: "Feil Nummer".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),
-            manedslonn_ore: Some(1),
-            timelonn_ore: None,
+            monthly_salary_ore: Some(1),
+            hourly_wage_ore: None,
             withholding_type: "ingen".into(),
             withholding_percent_bp: None,
             withholding_table: None,
@@ -496,8 +496,8 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     assert_eq!(slipp.net_ore, 7_250_000);
     assert_eq!(slipp.withholding_percent_bp, Some(3500));
     // Year to date through June: two months of pay + June's feriepenger.
-    assert_eq!(slipp.hittil_brutto_ore, 5_000_000 + 9_000_000);
-    assert_eq!(slipp.hittil_trekk_ore, 3_500_000);
+    assert_eq!(slipp.year_to_date_gross_ore, 5_000_000 + 9_000_000);
+    assert_eq!(slipp.year_to_date_withholding_ore, 3_500_000);
     assert_eq!(slipp.ytd_holiday_pay_ore, 1_020_000);
 
     // And it renders to a PDF that explains the trekkfrihet.
@@ -518,7 +518,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     let mai = payroll::payslip(&pool, company, mai_id.id, a)
         .await
         .unwrap();
-    assert_eq!(mai.hittil_brutto_ore, 5_000_000);
+    assert_eq!(mai.year_to_date_gross_ore, 5_000_000);
 }
 
 /// Hourly pay from the timesheet. The important part here is the
@@ -546,8 +546,8 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             name: "Timelønnet".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),
-            manedslonn_ore: None,
-            timelonn_ore: Some(45_000), // 450 kr/t
+            monthly_salary_ore: None,
+            hourly_wage_ore: Some(45_000), // 450 kr/t
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3000),
             withholding_table: None,

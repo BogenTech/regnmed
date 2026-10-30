@@ -81,8 +81,8 @@ pub struct CreateProductRequest {
     /// Defaults to 3000.
     #[serde(rename = "konto")]
     account: Option<String>,
-    #[serde(default)]
-    lagerfort: bool,
+    #[serde(default, rename = "lagerfort")]
+    stocked: bool,
 }
 
 pub async fn create(
@@ -101,7 +101,7 @@ pub async fn create(
             salgspris_ore: request.salgspris_ore,
             vat_code: request.vat_code,
             account: request.account.unwrap_or_else(|| "3000".into()),
-            lagerfort: request.lagerfort,
+            stocked: request.stocked,
         },
     )
     .await
@@ -124,7 +124,7 @@ pub async fn list(
             "vat_code": p.vat_code,
             "konto": p.account,
             "aktiv": p.active,
-            "lagerfort": p.lagerfort,
+            "lagerfort": p.stocked,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -149,7 +149,8 @@ pub struct UpdateProductRequest {
     account: Option<String>,
     #[serde(rename = "aktiv")]
     active: Option<bool>,
-    lagerfort: Option<bool>,
+    #[serde(rename = "lagerfort")]
+    stocked: Option<bool>,
 }
 
 pub async fn update(
@@ -168,7 +169,7 @@ pub async fn update(
         request.vat_code.as_ref().map(|v| v.as_deref()),
         request.account.as_deref(),
         request.active,
-        request.lagerfort,
+        request.stocked,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

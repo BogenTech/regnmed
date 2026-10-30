@@ -86,7 +86,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
         d(2000, 1, 1),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "manuell",
         Some("testfixtur"),

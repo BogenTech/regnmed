@@ -39,13 +39,13 @@ pub struct OnboardedCompany {
 /// required on one (#81).
 #[derive(Debug, Default)]
 pub struct RegistryFacts {
-    pub orgform: Option<String>,
+    pub org_form: Option<String>,
     pub address: Option<String>,
     pub email: Option<String>,
     pub naeringskode: Option<String>,
     /// Registered share capital in øre, and the share count — control
     /// figures for the aksjeeierbok (#43), never posted.
-    pub aksjekapital_ore: Option<i64>,
+    pub share_capital_ore: Option<i64>,
     pub share_count: Option<i64>,
     /// The registration history `(fra og med, mva, foretaksregister)`,
     /// oldest first — the two registers have independent dates, so this
@@ -80,7 +80,7 @@ pub async fn onboard_company(
         company_id,
         facts.address.as_deref(),
         None,
-        facts.orgform.as_deref(),
+        facts.org_form.as_deref(),
         facts.email.as_deref(),
         None,
     )
@@ -91,7 +91,7 @@ pub async fn onboard_company(
     )
     .bind(company_id)
     .bind(&facts.naeringskode)
-    .bind(facts.aksjekapital_ore)
+    .bind(facts.share_capital_ore)
     .bind(facts.share_count)
     .execute(pool)
     .await?;
@@ -105,7 +105,7 @@ pub async fn onboard_company(
             *from,
             crate::settings::Registrering {
                 vat_registered: *vat,
-                foretaksregistrert: *foretak,
+                business_registered: *foretak,
             },
             "brreg",
             Some("Hentet fra Enhetsregisteret ved onboarding"),

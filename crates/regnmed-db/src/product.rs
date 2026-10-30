@@ -30,7 +30,7 @@ pub struct ProductDraft {
     pub salgspris_ore: i64,
     pub vat_code: Option<String>,
     pub account: String,
-    pub lagerfort: bool,
+    pub stocked: bool,
 }
 
 pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraft) -> Result<Uuid> {
@@ -47,7 +47,7 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     .bind(draft.salgspris_ore)
     .bind(&draft.vat_code)
     .bind(&draft.account)
-    .bind(draft.lagerfort)
+    .bind(draft.stocked)
     .execute(pool)
     .await
     .with_context(|| {
@@ -71,7 +71,7 @@ pub async fn update_product(
     vat_code: Option<Option<&str>>,
     account: Option<&str>,
     active: Option<bool>,
-    lagerfort: Option<bool>,
+    stocked: Option<bool>,
 ) -> Result<()> {
     let updated = sqlx::query(
         "update product set
@@ -92,7 +92,7 @@ pub async fn update_product(
     .bind(vat_code.flatten())
     .bind(account)
     .bind(active)
-    .bind(lagerfort)
+    .bind(stocked)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no product {number}");
@@ -107,7 +107,7 @@ pub struct ProductRow {
     pub vat_code: Option<String>,
     pub account: String,
     pub active: bool,
-    pub lagerfort: bool,
+    pub stocked: bool,
 }
 
 pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<ProductRow>> {
@@ -127,7 +127,7 @@ pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<Produc
             vat_code: r.get("vat_code"),
             account: r.get("konto"),
             active: r.get("aktiv"),
-            lagerfort: r.get("lagerfort"),
+            stocked: r.get("lagerfort"),
         })
         .collect())
 }
@@ -227,14 +227,14 @@ pub(crate) async fn record_sales_in(
         if line.quantity_milli == 0 {
             continue;
         }
-        let lagerfort: bool =
+        let stocked: bool =
             sqlx::query_scalar("select lagerfort from product where id = $1 and company_id = $2")
                 .bind(product_id)
                 .bind(company_id)
                 .fetch_optional(&mut **tx)
                 .await?
                 .context("line references a product from another company")?;
-        if !lagerfort {
+        if !stocked {
             continue;
         }
         sqlx::query(

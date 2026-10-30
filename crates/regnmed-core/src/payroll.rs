@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn percentage_withholding_is_plain_percent_of_brutto() {
+    fn percentage_withholding_is_plain_percent_of_gross() {
         // 50 000 kr brutto, 35 % trekk.
         let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 3).unwrap();
         assert_eq!(b.withholding_ore, 1_750_000);
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn timelonn_is_computed_from_minutes() {
+    fn hourly_wage_is_computed_from_minutes() {
         // 160 hours at 450 kr.
         assert_eq!(hourly_pay(160 * 60, 45_000), 7_200_000);
         // Half hours are exact.

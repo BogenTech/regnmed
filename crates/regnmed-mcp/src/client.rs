@@ -183,13 +183,13 @@ impl Client {
                     .ok_or_else(|| anyhow!("svaret fra {token_url} har ingen access_token"))?
                     .to_string();
                 // A minute's margin, so a token never expires in flight.
-                let levetid = json["expires_in"]
+                let lifetime = json["expires_in"]
                     .as_u64()
                     .unwrap_or(300)
                     .saturating_sub(60);
                 *cache = Some((
                     token.clone(),
-                    Instant::now() + Duration::from_secs(levetid.max(5)),
+                    Instant::now() + Duration::from_secs(lifetime.max(5)),
                 ));
                 Ok(token)
             }

@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::balance_documentation::{avstem, balance_status, fetch_attachment};
+use regnmed_db::balance_documentation::{balance_status, fetch_attachment, reconcile};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -90,17 +90,17 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     assert_eq!(linjer.len(), 1, "{linjer:?}");
     assert_eq!(linjer[0].account, "1920");
     assert_eq!(linjer[0].balance_ore, 50_000_00);
-    assert!(linjer[0].avstemt.is_none());
+    assert!(linjer[0].reconciled.is_none());
 
     // A resultatkonto cannot be reconciled here at all.
-    let error = avstem(
+    let error = reconcile(
         &pool, company, "3000", period, "forsøk", None, person, period,
     )
     .await
     .expect_err("§11 gjelder balansepostene");
     assert!(error.to_string().contains("balansekonto"), "{error}");
 
-    avstem(
+    reconcile(
         &pool,
         company,
         "1920",
@@ -113,7 +113,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     .await
     .unwrap();
     let linjer = balance_status(&pool, company, period).await.unwrap();
-    let a = linjer[0].avstemt.as_ref().expect("avstemt");
+    let a = linjer[0].reconciled.as_ref().expect("avstemt");
     assert_eq!(a.balance_ore, 50_000_00, "saldoen lagres slik den var");
     assert_eq!(a.reconciled_by, "Rev Isor");
     assert_eq!(linjer[0].discrepancy_ore(), None, "ingen bevegelse etterpå");
@@ -140,7 +140,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     )
     .await
     .unwrap();
-    avstem(
+    reconcile(
         &pool,
         company,
         "1920",
@@ -177,7 +177,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     );
 
     // Re-reconciling is a NEW row, and the newest one applies.
-    avstem(
+    reconcile(
         &pool,
         company,
         "1920",
@@ -220,7 +220,7 @@ async fn the_attachment_round_trips_and_its_hash_is_verified() {
     )
     .await
     .unwrap();
-    let id = avstem(
+    let id = reconcile(
         &pool,
         company,
         "1920",

@@ -807,7 +807,7 @@ pub async fn save_stripe_price(
 /// asserts the charge equals the faktura's gross. An unregistered seller
 /// whose Stripe Price still carried 25 % would fail that assertion on
 /// every single payment.
-pub async fn brutto_for(
+pub async fn gross_before(
     pool: &PgPool,
     drift_company_id: Uuid,
     plan: &str,
@@ -907,7 +907,7 @@ pub async fn fakturer_maned(
     today: NaiveDate,
     bare: Option<Uuid>,
 ) -> Result<Vec<InvoiceOutcome>> {
-    let forste = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+    let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
 
     // The ops company needs an account and a journal for the sale;
     // ensure is idempotent and makes the first run self-configuring.
@@ -943,7 +943,7 @@ pub async fn fakturer_maned(
          order by c.name",
     )
     .bind(drift_company_id)
-    .bind(forste)
+    .bind(first)
     .bind(bare)
     .fetch_all(pool)
     .await?;

@@ -33,7 +33,7 @@ pub struct PayableItem {
     /// What we owe on this post (positive).
     pub amount_ore: i64,
     /// Already part of an utkast/godkjent run.
-    pub i_kjoring: bool,
+    pub in_run: bool,
 }
 
 /// Open leverandør-poster: credit remainders on leverandør-reskontro
@@ -77,7 +77,7 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
             party_name: r.get("party_name"),
             bank_account: r.get("bank_account"),
             amount_ore: -r.get::<i64, _>("remaining_ore"),
-            i_kjoring: r.get("i_kjoring"),
+            in_run: r.get("i_kjoring"),
         })
         .collect())
 }

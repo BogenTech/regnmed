@@ -15,7 +15,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Registrering {
     pub vat_registered: bool,
-    pub foretaksregistrert: bool,
+    pub business_registered: bool,
 }
 
 /// Registration status in force on `dato` — newest row at or before it.
@@ -40,7 +40,7 @@ pub async fn registrering_on(
     .await?;
     Ok(row.map_or(Registrering::default(), |r| Registrering {
         vat_registered: r.get("mva_registrert"),
-        foretaksregistrert: r.get("foretaksregistrert"),
+        business_registered: r.get("foretaksregistrert"),
     }))
 }
 
@@ -119,7 +119,7 @@ pub async fn record_registrering(
     .bind(company_id)
     .bind(valid_from)
     .bind(reg.vat_registered)
-    .bind(reg.foretaksregistrert)
+    .bind(reg.business_registered)
     .bind(source)
     .bind(note)
     .bind(recorded_by)
@@ -149,7 +149,7 @@ pub async fn registrering_history(
                 r.get("valid_from"),
                 Registrering {
                     vat_registered: r.get("mva_registrert"),
-                    foretaksregistrert: r.get("foretaksregistrert"),
+                    business_registered: r.get("foretaksregistrert"),
                 },
                 r.get("kilde"),
                 r.get("notat"),
@@ -164,7 +164,7 @@ pub struct CompanySettings {
     pub orgnumber: String,
     pub address: Option<String>,
     pub bank_account: Option<String>,
-    pub orgform: Option<String>,
+    pub org_form: Option<String>,
     /// Reply-to for utsendelser — the company's address, never regnmed's.
     pub email: Option<String>,
     /// Has the company a KID/OCR agreement with its bank? Governs
@@ -185,7 +185,7 @@ pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<Company
         orgnumber: row.get("orgnr"),
         address: row.get("address"),
         bank_account: row.get("bank_account"),
-        orgform: row.get("orgform"),
+        org_form: row.get("orgform"),
         email: row.get("email"),
         kid_avtale: row.get("kid_avtale"),
     })
@@ -197,7 +197,7 @@ pub async fn update_company_settings(
     company_id: Uuid,
     address: Option<&str>,
     bank_account: Option<&str>,
-    orgform: Option<&str>,
+    org_form: Option<&str>,
     email: Option<&str>,
     kid_avtale: Option<bool>,
 ) -> Result<()> {
@@ -225,8 +225,8 @@ pub async fn update_company_settings(
     .bind(clear(address))
     .bind(bank_account.is_some())
     .bind(clear(bank_account))
-    .bind(orgform.is_some())
-    .bind(clear(orgform))
+    .bind(org_form.is_some())
+    .bind(clear(org_form))
     .bind(email.is_some())
     .bind(clear(email))
     .bind(kid_avtale)

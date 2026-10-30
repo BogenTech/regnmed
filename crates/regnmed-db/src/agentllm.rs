@@ -225,10 +225,10 @@ pub async fn sett_klienthemmelighet(
     key: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
-    hemmelighet: &str,
+    secret: &str,
 ) -> Result<()> {
-    let hemmelighet = hemmelighet.trim();
-    ensure!(!hemmelighet.is_empty(), "klienthemmeligheten mangler");
+    let secret = secret.trim();
+    ensure!(!secret.is_empty(), "klienthemmeligheten mangler");
     let oppdatert = sqlx::query(
         "update integration set klient_hemmelighet = $3
          where id = $1
@@ -237,7 +237,7 @@ pub async fn sett_klienthemmelighet(
     )
     .bind(integration_id)
     .bind(company_id)
-    .bind(seal(key, hemmelighet.as_bytes())?)
+    .bind(seal(key, secret.as_bytes())?)
     .execute(pool)
     .await?
     .rows_affected();
@@ -285,7 +285,7 @@ pub async fn har_klienthemmelighet(pool: &PgPool, integration_id: Uuid) -> Resul
 /// integration, not yet finished, and that integration has an active
 /// model. Tasks for an agent on the customer's own machine are left
 /// alone — that agent fetches its own queue.
-pub async fn apne_agentoppgaver(
+pub async fn open_agent_tasks(
     pool: &PgPool,
     company_id: Option<Uuid>,
 ) -> Result<Vec<(Uuid, Uuid)>> {

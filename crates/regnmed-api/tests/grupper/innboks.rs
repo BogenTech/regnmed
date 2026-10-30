@@ -51,8 +51,8 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     };
 
     // Klient (company admin), regnskapsfører (engagement), revisor (les).
-    let klient_sub = format!("test|{}", Uuid::new_v4());
-    let klient = regnmed_db::ensure_person(&state.pool, &klient_sub, Some("Kari Klient"), None)
+    let client_sub = format!("test|{}", Uuid::new_v4());
+    let client = regnmed_db::ensure_person(&state.pool, &client_sub, Some("Kari Klient"), None)
         .await
         .unwrap();
     let forer_sub = format!("test|{}", Uuid::new_v4());
@@ -67,7 +67,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
-    regnmed_db::ensure_company_member(&state.pool, company, klient, "admin")
+    regnmed_db::ensure_company_member(&state.pool, company, client, "admin")
         .await
         .unwrap();
     let byra = regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Byrået AS", "regnskap")
@@ -97,7 +97,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
             .await
             .unwrap();
     }
-    let klient_token = idp.token(&klient_sub, "Kari Klient");
+    let client_token = idp.token(&client_sub, "Kari Klient");
     let forer_token = idp.token(&forer_sub, "Frida Fører");
     let revisor_token = idp.token(&auditor_sub, "Randi Revisor");
 
@@ -107,7 +107,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         &state,
         "POST",
         &format!("/companies/{company}/inbox?filename=husleie-juli.pdf"),
-        &klient_token,
+        &client_token,
         Some("application/pdf"),
         Some(receipt.clone()),
     )
@@ -243,7 +243,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         &state,
         "POST",
         &format!("/companies/{company}/inbox?filename=uleselig.jpg"),
-        &klient_token,
+        &client_token,
         Some("image/jpeg"),
         Some(b"blur".to_vec()),
     )

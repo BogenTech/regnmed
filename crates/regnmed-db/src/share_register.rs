@@ -31,7 +31,7 @@ pub struct Shareholder {
     /// number itself never leaves this module.
     pub birth_date: Option<NaiveDate>,
     pub orgnumber: Option<String>,
-    pub utenlandsk_id: Option<String>,
+    pub foreign_id: Option<String>,
     pub address: Option<String>,
     pub postal_code: Option<String>,
     pub postal_city: Option<String>,
@@ -62,7 +62,7 @@ pub struct DividendResolution {
     pub id: Uuid,
     pub decided_date: NaiveDate,
     pub per_share_ore: i64,
-    pub totalt_ore: i64,
+    pub total_ore: i64,
     pub voucher_id: Option<Uuid>,
     pub note: Option<String>,
     pub created_by: String,
@@ -74,7 +74,7 @@ pub struct NewShareholder {
     pub name: String,
     pub nin: Option<String>,
     pub orgnumber: Option<String>,
-    pub utenlandsk_id: Option<String>,
+    pub foreign_id: Option<String>,
     pub address: Option<String>,
     pub postal_code: Option<String>,
     pub postal_city: Option<String>,
@@ -93,12 +93,12 @@ pub async fn create_shareholder(
 ) -> Result<Uuid> {
     match new.kind.as_str() {
         "person" => {
-            let fnr = new
+            let nin = new
                 .nin
                 .as_deref()
                 .context("personlig aksjonær må ha fødselsnummer")?;
             ensure!(
-                regnmed_core::nin::is_valid(fnr),
+                regnmed_core::nin::is_valid(nin),
                 "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
             );
         }
@@ -114,7 +114,7 @@ pub async fn create_shareholder(
         }
         "utenlandsk" => {
             let id = new
-                .utenlandsk_id
+                .foreign_id
                 .as_deref()
                 .context("utenlandsk aksjonær må ha aksjonær-ID (UTL…)")?;
             ensure!(
@@ -139,7 +139,7 @@ pub async fn create_shareholder(
     .bind(&new.kind)
     .bind(&new.nin)
     .bind(&new.orgnumber)
-    .bind(&new.utenlandsk_id)
+    .bind(&new.foreign_id)
     .bind(&new.name)
     .bind(&new.address)
     .bind(&new.postal_code)
@@ -223,7 +223,7 @@ pub async fn aksjeeierbok(
                     .as_deref()
                     .and_then(regnmed_core::nin::birth_date),
                 orgnumber: r.get("orgnr"),
-                utenlandsk_id: r.get("utenlandsk_id"),
+                foreign_id: r.get("utenlandsk_id"),
                 address: r.get("adresse"),
                 postal_code: r.get("postnummer"),
                 postal_city: r.get("poststed"),
@@ -482,7 +482,7 @@ pub async fn create_utbytte(
         quantity > 0,
         "aksjeeierboken er tom den {decided_date} — registrer stiftelsen først"
     );
-    let totalt_ore = quantity
+    let total_ore = quantity
         .checked_mul(per_share_ore)
         .context("utbyttebeløpet er urimelig stort")?;
 
@@ -495,7 +495,7 @@ pub async fn create_utbytte(
         entries: vec![
             EntryDraft {
                 account_number: ACCOUNT_OTHER_EQUITY.into(),
-                amount: Ore(totalt_ore),
+                amount: Ore(total_ore),
                 vat_code: None,
                 description: Some("Avsatt utbytte".into()),
                 party_no: None,
@@ -505,7 +505,7 @@ pub async fn create_utbytte(
             },
             EntryDraft {
                 account_number: ACCOUNT_DIVIDEND_PAYABLE.into(),
-                amount: Ore(-totalt_ore),
+                amount: Ore(-total_ore),
                 vat_code: None,
                 description: None,
                 party_no: None,
@@ -539,7 +539,7 @@ pub async fn create_utbytte(
         id,
         decided_date,
         per_share_ore,
-        totalt_ore,
+        total_ore,
         voucher_id: Some(posted.id),
         note: note.map(str::to_string),
         created_by: created_by.to_string(),
@@ -574,7 +574,7 @@ pub async fn list_utbytte(
             id: r.get("id"),
             decided_date: date,
             per_share_ore: per_aksje,
-            totalt_ore: quantity * per_aksje,
+            total_ore: quantity * per_aksje,
             voucher_id: r.get("voucher_id"),
             note: r.get("note"),
             created_by: r.get("created_by"),
@@ -602,7 +602,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     let orgnumber: String = company.get("orgnr");
     // The address is free text with us; the oppgave wants it split. The
     // same rule EHF uses, in one place.
-    let (gate, postnr, postal_city) = crate::ehf::split_address(company.get("address"));
+    let (gate, postal_code, postal_city) = crate::ehf::split_address(company.get("address"));
 
     // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
     // for the aksjonærregisteroppgave it is the inntektsår that governs
@@ -626,7 +626,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     // registered the stiftelse with an amount; otherwise it stands at
     // zero and the company must fill it in. The share capital is derived
     // from count x nominal value.
-    let palydende_ore = palydende_ore(pool, company_id).await?;
+    let nominal_value_ore = nominal_value_ore(pool, company_id).await?;
 
     for a in &bok {
         let events = hendelser_for(pool, a.id).await?;
@@ -652,7 +652,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                     type_: h.type_,
                     new_shares: h.quantity,
                     shares_after: 0, // fylles når totalen er kjent
-                    palydende_ore,
+                    nominal_value_ore,
                     overkurs_ore: 0,
                 });
             }
@@ -703,9 +703,9 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
             .sum();
     }
 
-    let aksjekapital = tax_return::PriorYear {
-        last_year: shares_last_year * palydende_ore,
-        this_year: shares_this_year * palydende_ore,
+    let share_capital = tax_return::PriorYear {
+        last_year: shares_last_year * nominal_value_ore,
+        this_year: shares_this_year * nominal_value_ore,
     };
 
     Ok(ReturnSet {
@@ -714,29 +714,29 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 orgnumber,
                 name: company.get("name"),
                 address: gate,
-                postal_code: postnr,
+                postal_code,
                 postal_city,
                 contact_name: None,
                 contact_email: company.get("email"),
             },
             inntektsar: year,
-            aksjekapital,
-            palydende_ore: tax_return::PriorYear {
-                last_year: palydende_ore,
-                this_year: palydende_ore,
+            share_capital,
+            nominal_value_ore: tax_return::PriorYear {
+                last_year: nominal_value_ore,
+                this_year: nominal_value_ore,
             },
             share_count: tax_return::PriorYear {
                 last_year: shares_last_year,
                 this_year: shares_this_year,
             },
-            innbetalt_aksjekapital: aksjekapital,
+            paid_in_share_capital: share_capital,
             overkurs: tax_return::PriorYear::default(),
             dividend: utbytte_rader
                 .iter()
                 .map(|u| tax_return::Distribution {
                     date: u.decided_date,
                     per_share_ore: u.per_share_ore,
-                    totalt_ore: u.totalt_ore,
+                    total_ore: u.total_ore,
                 })
                 .collect(),
             nyutstedelser,
@@ -757,21 +757,21 @@ async fn aksjonaerid(pool: &PgPool, a: &Shareholder) -> Result<Option<tax_return
             orgnumber.clone(),
         )));
     }
-    if let Some(utl) = &a.utenlandsk_id {
-        return Ok(Some(tax_return::ShareholderId::Utenlandsk(utl.clone())));
+    if let Some(utl) = &a.foreign_id {
+        return Ok(Some(tax_return::ShareholderId::Foreign(utl.clone())));
     }
-    let fnr: Option<String> =
+    let nin: Option<String> =
         sqlx::query_scalar("select fodselsnummer from shareholder where id = $1")
             .bind(a.id)
             .fetch_one(pool)
             .await?;
-    Ok(fnr.map(tax_return::ShareholderId::Nin))
+    Ok(nin.map(tax_return::ShareholderId::Nin))
 }
 
 /// Pålydende per aksje, derived from the founding event when it carries
 /// an amount. Zero when unknown — better an obvious zero the filer must
 /// correct than an invented number.
-async fn palydende_ore(pool: &PgPool, company_id: Uuid) -> Result<i64> {
+async fn nominal_value_ore(pool: &PgPool, company_id: Uuid) -> Result<i64> {
     let row = sqlx::query(
         "select antall, belop_ore from share_event
          where company_id = $1 and type = 'stiftelse' and belop_ore is not null

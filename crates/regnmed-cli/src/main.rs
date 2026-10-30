@@ -36,7 +36,7 @@ enum Command {
     Depreciate,
     /// Post every due month of every periodisering across all companies
     /// (docs/periodisering.md, #87). Run monthly (cron/CronJob).
-    Periodiser,
+    Accrue,
     /// Start or end a company's abonnement (ops, docs/abonnement.md,
     /// #65). There is no API route for this — the abonnement is driven by
     /// ops, like migrate and anchor.
@@ -491,12 +491,12 @@ async fn main() -> Result<()> {
             // gate ("a purring has been sent") therefore only sees steps
             // from EARLIER runs — a purring never triggers the sperre on
             // the day it goes out.
-            let apne = opf::open_invoices(&pool, drift).await?;
+            let open = opf::open_invoices(&pool, drift).await?;
 
             // 1) Next purring step where the cadence says one is due. A
             // purring must reach somebody: no e-mail address, no step —
             // reported loudly instead, until a human fixes the address.
-            for f in &apne {
+            for f in &open {
                 if f.email.is_none() {
                     println!(
                         "{}: faktura {} — selskapet mangler e-postadresse, purres ikke",
@@ -525,7 +525,7 @@ async fn main() -> Result<()> {
             // without an utsendelse row. The utsendelse id doubles as
             // Nats-Msg-Id, so a retried send cannot double-deliver.
             if let Some(js) = &mailq {
-                for f in apne.iter().filter(|f| !f.sent) {
+                for f in open.iter().filter(|f| !f.sent) {
                     let Some(email) = &f.email else {
                         // Already counted above.
                         continue;
@@ -585,14 +585,14 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-            } else if apne.iter().any(|f| !f.sent) {
+            } else if open.iter().any(|f| !f.sent) {
                 println!("usendte fakturaer venter på NATS_URL");
                 error += 1;
             }
 
             // 3) End coverage on prolonged non-payment (the pre-purring
             // snapshot gates this on a purring from an earlier run).
-            for f in &apne {
+            for f in &open {
                 match opf::sperr_om_moden(&pool, f, today).await {
                     Ok(true) => println!(
                         "{}: dekningen avsluttet — faktura {} ubetalt siden {}",
@@ -651,11 +651,11 @@ async fn main() -> Result<()> {
                 anyhow::bail!("one or more templates failed to generate");
             }
         }
-        Command::Periodiser => {
+        Command::Accrue => {
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let outcome = regnmed_db::accrual::periodiser_all(&pool, today).await?;
+            let outcome = regnmed_db::accrual::accrue_all(&pool, today).await?;
             if outcome.is_empty() {
                 println!("ingen periodiseringer forfalt");
             }
@@ -832,12 +832,12 @@ async fn vat_return(
         scheme.label(period)
     );
 
-    let referanse = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
+    let reference = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
     let message = regnmed_core::vat_return::build(
         &orgnumber,
         period,
         scheme,
-        &referanse,
+        &reference,
         env!("CARGO_PKG_VERSION"),
         &spes,
     );
@@ -861,7 +861,7 @@ async fn vat_return(
                 "wrote {} ({} linjer, fastsatt merverdiavgift {} kr)",
                 path.display(),
                 message.lines.len(),
-                message.fastsatt_kr
+                message.assessed_kr
             );
         }
     }

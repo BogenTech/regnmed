@@ -171,7 +171,7 @@ async fn sync_price(
     interval: &str,
     today: chrono::NaiveDate,
 ) -> Result<String, ApiError> {
-    let gross = regnmed_db::subscription::brutto_for(
+    let gross = regnmed_db::subscription::gross_before(
         &state.pool,
         drift_company(state).await?,
         plan,

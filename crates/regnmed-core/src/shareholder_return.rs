@@ -82,7 +82,7 @@ pub struct PriorYear {
 pub struct Distribution {
     pub date: NaiveDate,
     pub per_share_ore: i64,
-    pub totalt_ore: i64,
+    pub total_ore: i64,
 }
 
 /// Shares issued during the year, reported at company level.
@@ -93,7 +93,7 @@ pub struct NewIssue {
     pub new_shares: i64,
     /// Total share count after the event.
     pub shares_after: i64,
-    pub palydende_ore: i64,
+    pub nominal_value_ore: i64,
     pub overkurs_ore: i64,
 }
 
@@ -101,10 +101,10 @@ pub struct NewIssue {
 pub struct MainForm {
     pub company: Company,
     pub inntektsar: i32,
-    pub aksjekapital: PriorYear,
-    pub palydende_ore: PriorYear,
+    pub share_capital: PriorYear,
+    pub nominal_value_ore: PriorYear,
     pub share_count: PriorYear,
-    pub innbetalt_aksjekapital: PriorYear,
+    pub paid_in_share_capital: PriorYear,
     pub overkurs: PriorYear,
     pub dividend: Vec<Distribution>,
     pub nyutstedelser: Vec<NewIssue>,
@@ -116,7 +116,7 @@ pub enum ShareholderId {
     Organisasjonsnummer(String),
     /// `UTLxxxxxxxxx`, assigned by Aksjonærregisteret to shareholders
     /// with no Norwegian identifier.
-    Utenlandsk(String),
+    Foreign(String),
 }
 
 #[derive(Debug, Clone)]
@@ -310,12 +310,12 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalFjoraret-datadef-7129",
         7129,
-        &amount(h.aksjekapital.last_year),
+        &amount(h.share_capital.last_year),
     );
     w.felt(
         "Aksjekapital-datadef-87",
         87,
-        &amount(h.aksjekapital.this_year),
+        &amount(h.share_capital.this_year),
     );
     w.close("AksjekapitalForHeleSelskapet-grp-3443");
     // One share class in v1: the class's figures are the company's.
@@ -323,24 +323,24 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalISINAksjetypeFjoraret-datadef-17663",
         17663,
-        &amount(h.aksjekapital.last_year),
+        &amount(h.share_capital.last_year),
     );
     w.felt(
         "AksjekapitalISINAksjetype-datadef-17664",
         17664,
-        &amount(h.aksjekapital.this_year),
+        &amount(h.share_capital.this_year),
     );
     w.close("AksjekapitalIDenneAksjeklassen-grp-3444");
     w.group("PalydendePerAksje-grp-3447", 3447);
     w.felt(
         "AksjeMvPalydendeFjoraret-datadef-23944",
         23944,
-        &amount(h.palydende_ore.last_year),
+        &amount(h.nominal_value_ore.last_year),
     );
     w.felt(
         "AksjeMvPalydende-datadef-23945",
         23945,
-        &amount(h.palydende_ore.this_year),
+        &amount(h.nominal_value_ore.this_year),
     );
     w.close("PalydendePerAksje-grp-3447");
     w.group("AntallAksjerIDenneAksjeklassen-grp-3445", 3445);
@@ -359,12 +359,12 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalInnbetaltFjoraret-datadef-8020",
         8020,
-        &amount(h.innbetalt_aksjekapital.last_year),
+        &amount(h.paid_in_share_capital.last_year),
     );
     w.felt(
         "AksjekapitalInnbetalt-datadef-5867",
         5867,
-        &amount(h.innbetalt_aksjekapital.this_year),
+        &amount(h.paid_in_share_capital.this_year),
     );
     w.close("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446");
     w.group("InnbetaltOverkursIDenneAksjeklassen-grp-3448", 3448);
@@ -391,7 +391,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjeUtbytteISINAksjetype-datadef-17665",
                 17665,
-                &amount(u.totalt_ore),
+                &amount(u.total_ore),
             );
             w.felt(
                 "AksjeUtbyttePerAksje-datadef-23946",
@@ -435,7 +435,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjerNyutstedteStiftelseMvPalydende-datadef-23947",
                 23947,
-                &amount(n.palydende_ore),
+                &amount(n.nominal_value_ore),
             );
             w.felt(
                 "AksjerNyutstedteStiftelseMvOverkurs-datadef-23948",
@@ -484,7 +484,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         ShareholderId::Organisasjonsnummer(o) => {
             w.felt("AksjonarOrganisasjonsnummer-datadef-7597", 7597, o)
         }
-        ShareholderId::Utenlandsk(x) => w.felt(
+        ShareholderId::Foreign(x) => w.felt(
             "AksjonarUtenlandskIdenifikasjonsnummer-datadef-26626",
             26626,
             x,
@@ -641,11 +641,11 @@ mod tests {
         MainForm {
             company: company(),
             inntektsar: 2026,
-            aksjekapital: PriorYear {
+            share_capital: PriorYear {
                 last_year: 0,
                 this_year: 10_000_000,
             },
-            palydende_ore: PriorYear {
+            nominal_value_ore: PriorYear {
                 last_year: 0,
                 this_year: 100_000,
             },
@@ -653,7 +653,7 @@ mod tests {
                 last_year: 0,
                 this_year: 100,
             },
-            innbetalt_aksjekapital: PriorYear {
+            paid_in_share_capital: PriorYear {
                 last_year: 0,
                 this_year: 10_000_000,
             },
@@ -661,14 +661,14 @@ mod tests {
             dividend: vec![Distribution {
                 date: d(2026, 5, 20),
                 per_share_ore: 50_000,
-                totalt_ore: 5_000_000,
+                total_ore: 5_000_000,
             }],
             nyutstedelser: vec![NewIssue {
                 date: d(2026, 1, 2),
                 type_: TransactionType::Stiftelse,
                 new_shares: 100,
                 shares_after: 100,
-                palydende_ore: 100_000,
+                nominal_value_ore: 100_000,
                 overkurs_ore: 0,
             }],
         }
@@ -776,7 +776,7 @@ mod tests {
         );
 
         let mut u = underskjema();
-        u.id = Some(ShareholderId::Utenlandsk("UTL000000123".into()));
+        u.id = Some(ShareholderId::Foreign("UTL000000123".into()));
         u.country_code = Some("SE".into());
         valider(
             &render_sub_form(&u).unwrap(),

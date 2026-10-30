@@ -26,8 +26,8 @@ pub struct BudgetRow {
     pub note: Option<String>,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
-    pub fastsatt_by: Option<String>,
-    pub fastsatt_at: Option<DateTime<Utc>>,
+    pub adopted_by: Option<String>,
+    pub adopted_at: Option<DateTime<Utc>>,
     pub sum_ore: i64,
 }
 
@@ -50,8 +50,8 @@ fn budget_from_row(r: &sqlx::postgres::PgRow) -> BudgetRow {
         note: r.get("note"),
         created_by: r.get("created_by"),
         created_at: r.get("created_at"),
-        fastsatt_by: r.get("fastsatt_by"),
-        fastsatt_at: r.get("fastsatt_at"),
+        adopted_by: r.get("fastsatt_by"),
+        adopted_at: r.get("fastsatt_at"),
         sum_ore: r.get("sum_ore"),
     }
 }
@@ -317,7 +317,7 @@ pub async fn fastsett_budget(
     pool: &PgPool,
     company_id: Uuid,
     budget_id: Uuid,
-    fastsatt_by: &str,
+    adopted_by: &str,
 ) -> Result<()> {
     let updated = sqlx::query(
         "update budget set status = 'fastsatt', fastsatt_by = $3, fastsatt_at = now()
@@ -325,7 +325,7 @@ pub async fn fastsett_budget(
     )
     .bind(budget_id)
     .bind(company_id)
-    .bind(fastsatt_by)
+    .bind(adopted_by)
     .execute(pool)
     .await?
     .rows_affected();

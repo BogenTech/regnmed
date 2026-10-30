@@ -87,7 +87,7 @@ async fn seed_browser_demo() {
         chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "brreg",
         Some("demo"),
@@ -164,7 +164,7 @@ async fn seed_browser_demo() {
             salgspris_ore: 149_00,
             vat_code: Some("3".into()),
             account: "3000".into(),
-            lagerfort: true,
+            stocked: true,
         },
     )
     .await
@@ -210,7 +210,7 @@ async fn seed_browser_demo() {
             name: "Kari Nordmann".into(),
             nin: Some("26829398612".into()),
             orgnumber: None,
-            utenlandsk_id: None,
+            foreign_id: None,
             address: Some("Haråsveien 13E".into()),
             postal_code: Some("0283".into()),
             postal_city: Some("OSLO".into()),
@@ -229,7 +229,7 @@ async fn seed_browser_demo() {
             name: "Investor AS".into(),
             nin: None,
             orgnumber: Some("923609016".into()),
-            utenlandsk_id: None,
+            foreign_id: None,
             address: None,
             postal_code: None,
             postal_city: None,
@@ -283,7 +283,7 @@ async fn seed_browser_demo() {
     .unwrap();
 
     // Employees + one month run, so the Lønn section has something to show.
-    for (fnr, name, stilling, lonn, trekk_bp, fp_bp) in [
+    for (nin, name, stilling, lonn, trekk_bp, fp_bp) in [
         (
             "26829398612",
             "Kari Utvikler",
@@ -305,12 +305,12 @@ async fn seed_browser_demo() {
             &state.pool,
             company,
             &regnmed_db::payroll::NewEmployee {
-                nin: fnr.into(),
+                nin: nin.into(),
                 name: name.into(),
                 stilling: Some(stilling.into()),
                 employed_from: date(2025, 1, 1),
-                manedslonn_ore: Some(lonn),
-                timelonn_ore: None,
+                monthly_salary_ore: Some(lonn),
+                hourly_wage_ore: None,
                 withholding_type: "prosent".into(),
                 withholding_percent_bp: Some(trekk_bp),
                 withholding_table: None,
@@ -380,8 +380,8 @@ async fn seed_browser_demo() {
             name: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),
             employed_from: date(2025, 1, 1),
-            manedslonn_ore: None,
-            timelonn_ore: Some(45_000),
+            monthly_salary_ore: None,
+            hourly_wage_ore: Some(45_000),
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3000),
             withholding_table: None,

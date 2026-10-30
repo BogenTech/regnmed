@@ -225,15 +225,15 @@ mod tests {
             account("6400", [0; 12], [0; 12]),
         ];
         let report = variance(&figures, 12);
-        let annen = report
+        let other = report
             .sections
             .iter()
             .find(|s| s.heading == "Annen driftskostnad")
             .unwrap();
-        assert_eq!(annen.lines.len(), 2);
-        assert_eq!(annen.lines[0].number, "6300");
-        assert_eq!(annen.lines[0].actual_ytd_ore, 0);
-        assert_eq!(annen.lines[1].variance_ytd_ore, 60_00);
+        assert_eq!(other.lines.len(), 2);
+        assert_eq!(other.lines[0].number, "6300");
+        assert_eq!(other.lines[0].actual_ytd_ore, 0);
+        assert_eq!(other.lines[1].variance_ytd_ore, 60_00);
     }
 
     #[test]
