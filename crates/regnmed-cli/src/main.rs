@@ -40,7 +40,7 @@ enum Command {
     /// Start or end a company's abonnement (ops, docs/abonnement.md,
     /// #65). There is no API route for this — the abonnement is driven by
     /// ops, like migrate and anchor.
-    Abonnement {
+    Subscription {
         /// Company id (or use --orgnr)
         #[arg(long)]
         company: Option<Uuid>,
@@ -65,7 +65,7 @@ enum Command {
     /// (docs/abonnement.md §4). The price is data: a change is a new row
     /// with its kilde, never a rewrite — existing rows stand as history,
     /// and the faktura uses the price in force on the invoicing day.
-    AbonnementPris {
+    SubscriptionPrice {
         /// Plan (omit everything to just show the price list)
         #[arg(long)]
         plan: Option<String>,
@@ -83,7 +83,7 @@ enum Command {
     /// the OPS COMPANY's hovedbok (docs/abonnement.md, #65). Idempotent;
     /// run monthly (cron/CronJob). The ops company is named by --orgnr or
     /// REGNMED_DRIFT_ORGNR.
-    AbonnementFaktura {
+    SubscriptionInvoice {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
         #[arg(long)]
         orgnr: Option<String>,
@@ -97,7 +97,7 @@ enum Command {
     /// it when the payment lands. Idempotent; run daily (CronJob).
     /// Sending needs NATS_URL — without it the bookkeeping steps still
     /// run and the unsent mail is reported as failure.
-    AbonnementOppfolging {
+    SubscriptionFollowUp {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
         #[arg(long)]
         orgnr: Option<String>,
@@ -229,7 +229,7 @@ async fn send_epost(
     let id = Uuid::now_v7();
     let mail = regnmed_mail::OutboundMail::from_payload(id, &payload);
     regnmed_mail::publish(js, &mail).await?;
-    regnmed_db::log_utsendelse(
+    regnmed_db::log_dispatch(
         pool,
         id,
         drift,
@@ -238,7 +238,7 @@ async fn send_epost(
         payload.invitation_id,
         &payload.to,
         &payload.subject,
-        regnmed_db::abonnement_oppfolging::UTFORT_AV,
+        regnmed_db::subscription_follow_up::UTFORT_AV,
     )
     .await?;
     Ok(())
@@ -322,7 +322,7 @@ async fn main() -> Result<()> {
             regnmed_db::end_platform_member(&pool, id).await?;
             println!("membership {id} ended (effective immediately)");
         }
-        Command::Abonnement {
+        Command::Subscription {
             company,
             orgnr,
             aksjon,
@@ -339,7 +339,7 @@ async fn main() -> Result<()> {
                     let note = note
                         .as_deref()
                         .context("tegning krever --note med avtale-/vedtaksreferansen")?;
-                    regnmed_db::abonnement::tegn(
+                    regnmed_db::subscription::open_coverage(
                         &pool,
                         company_id,
                         &plan,
@@ -353,15 +353,15 @@ async fn main() -> Result<()> {
                 }
                 "avslutt" => {
                     let til = til.unwrap_or(idag);
-                    regnmed_db::abonnement::avslutt(&pool, company_id, til).await?;
+                    regnmed_db::subscription::close_coverage(&pool, company_id, til).await?;
                     println!("åpen dekning avsluttet — siste dag med dekning er dagen før {til}");
                 }
                 annet => anyhow::bail!("ukjent --aksjon «{annet}» (bruk tegn eller avslutt)"),
             }
-            let status = regnmed_db::abonnement::status_for(&pool, company_id).await?;
+            let status = regnmed_db::subscription::status_for(&pool, company_id).await?;
             println!("status nå: {}", status.slug());
         }
-        Command::AbonnementPris {
+        Command::SubscriptionPrice {
             plan,
             pris_ore,
             fra,
@@ -375,7 +375,7 @@ async fn main() -> Result<()> {
                     .fetch_one(&pool)
                     .await?;
                 let fra = fra.unwrap_or(idag);
-                regnmed_db::abonnement::sett_pris(&pool, plan, pris_ore, fra, kilde).await?;
+                regnmed_db::subscription::set_price(&pool, plan, pris_ore, fra, kilde).await?;
                 println!(
                     "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {fra}",
                     pris_ore / 100,
@@ -385,18 +385,18 @@ async fn main() -> Result<()> {
                 anyhow::bail!("en ny pris krever både --plan, --pris-ore og --kilde");
             }
             println!("prislisten (nyeste rad per plan gjelder fra sin dato):");
-            for p in regnmed_db::abonnement::list_priser(&pool).await? {
+            for p in regnmed_db::subscription::list_prices(&pool).await? {
                 println!(
                     "  {:10} {:>8},{:02} kr/mnd  fra {}  — {}",
                     p.plan,
-                    p.pris_ore_per_mnd / 100,
-                    p.pris_ore_per_mnd % 100,
+                    p.price_ore_per_month / 100,
+                    p.price_ore_per_month % 100,
                     p.valid_from,
                     p.kilde
                 );
             }
         }
-        Command::AbonnementFaktura { orgnr, bare_orgnr } => {
+        Command::SubscriptionInvoice { orgnr, bare_orgnr } => {
             let orgnr = orgnr
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
@@ -408,7 +408,7 @@ async fn main() -> Result<()> {
             let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let utfall = regnmed_db::abonnement::fakturer_maned(&pool, drift, idag, bare).await?;
+            let utfall = regnmed_db::subscription::fakturer_maned(&pool, drift, idag, bare).await?;
             if utfall.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }
@@ -431,15 +431,15 @@ async fn main() -> Result<()> {
                         else {
                             continue;
                         };
-                        let kort = regnmed_db::abonnement::kort_for(&pool, u.company_id).await?;
-                        let Some(kort) = kort.filter(|k| k.aktiv) else {
+                        let card = regnmed_db::subscription::card_for(&pool, u.company_id).await?;
+                        let Some(card) = card.filter(|k| k.aktiv) else {
                             continue;
                         };
                         match stripe
                             .charge_invoice(
                                 gross,
-                                &kort.stripe_customer_id,
-                                &kort.payment_method_id,
+                                &card.stripe_customer_id,
+                                &card.payment_method_id,
                                 &invoice_id.to_string(),
                                 &u.company_id.to_string(),
                                 &format!("regnmed abonnement, faktura {no}"),
@@ -466,8 +466,8 @@ async fn main() -> Result<()> {
                 anyhow::bail!("en eller flere abonnementsfakturaer feilet");
             }
         }
-        Command::AbonnementOppfolging { orgnr } => {
-            use regnmed_db::abonnement_oppfolging as opf;
+        Command::SubscriptionFollowUp { orgnr } => {
+            use regnmed_db::subscription_follow_up as opf;
             let orgnr = orgnr
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
@@ -485,7 +485,7 @@ async fn main() -> Result<()> {
             // gate ("a purring has been sent") therefore only sees steps
             // from EARLIER runs — a purring never triggers the sperre on
             // the day it goes out.
-            let apne = opf::apne_fakturaer(&pool, drift).await?;
+            let apne = opf::open_invoices(&pool, drift).await?;
 
             // 1) Next purring step where the cadence says one is due. A
             // purring must reach somebody: no e-mail address, no step —
@@ -549,7 +549,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-                for p in opf::usendte_purringer(&pool, drift).await? {
+                for p in opf::unsent_reminders(&pool, drift).await? {
                     let Some(epost) = &p.epost else {
                         continue;
                     };
@@ -604,7 +604,7 @@ async fn main() -> Result<()> {
             // only for coverage the machine itself ended (the trail is
             // the memory; an oppsigelse is never resurrected).
             for company in opf::auto_sperrede(&pool).await? {
-                match opf::gjenopprett_om_betalt(&pool, drift, company, idag).await {
+                match opf::restore_if_paid(&pool, drift, company, idag).await {
                     Ok(true) => println!("{company}: dekningen gjenopprettet"),
                     Ok(false) => {}
                     Err(e) => {

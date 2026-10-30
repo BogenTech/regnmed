@@ -4,8 +4,6 @@
 //! live database. Once the dev database is a fixture of CI, migrate hot
 //! paths to `sqlx::query!` + `cargo sqlx prepare` for compile-time checking.
 
-pub mod abonnement;
-pub mod abonnement_oppfolging;
 pub mod accrual;
 pub mod agent_task;
 pub mod agentllm;
@@ -21,6 +19,7 @@ pub mod cash_register;
 pub mod chart_of_accounts;
 pub mod currency;
 pub mod dimension;
+pub mod dispatch;
 pub mod ehf;
 pub mod email;
 pub mod engagement;
@@ -52,9 +51,10 @@ pub mod saft;
 pub mod saft_import;
 pub mod salgsdokument;
 pub mod settings;
+pub mod subscription;
+pub mod subscription_follow_up;
 pub mod tenancy;
 pub mod timesheet;
-pub mod utsendelse;
 pub mod year_end;
 
 pub use anchor::*;
@@ -66,6 +66,7 @@ pub use budget::*;
 pub use chart_of_accounts::*;
 pub use currency::*;
 pub use dimension::*;
+pub use dispatch::*;
 pub use ehf::*;
 pub use email::*;
 pub use engagement::*;
@@ -95,7 +96,6 @@ pub use salgsdokument::*;
 pub use settings::*;
 pub use tenancy::*;
 pub use timesheet::*;
-pub use utsendelse::*;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;

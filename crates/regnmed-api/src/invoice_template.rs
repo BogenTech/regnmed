@@ -37,7 +37,8 @@ pub struct CreateTemplateRequest {
     forfall_dager: Option<i32>,
     /// Mark generated invoices for sending (a human still sends).
     #[serde(default)]
-    merk_utsendelse: bool,
+    #[serde(rename = "merk_utsendelse")]
+    mark_dispatch: bool,
     #[serde(default)]
     lines: Vec<DocLineRequest>,
 }
@@ -59,7 +60,7 @@ pub async fn create(
                 &request.intervall,
                 request.next_date,
                 request.forfall_dager.unwrap_or(14),
-                request.merk_utsendelse,
+                request.mark_dispatch,
                 created_by,
             )
             .await
@@ -77,7 +78,7 @@ pub async fn create(
                     next_date: request.next_date,
                     end_date: request.end_date,
                     forfall_dager: request.forfall_dager.unwrap_or(14),
-                    merk_utsendelse: request.merk_utsendelse,
+                    mark_dispatch: request.mark_dispatch,
                     lines: resolve_lines(&state, company_id, request.lines).await?,
                 },
                 created_by,
@@ -105,7 +106,7 @@ pub async fn list(
             "neste_dato": t.next_date.to_string(),
             "slutt_dato": t.end_date.map(|d| d.to_string()),
             "forfall_dager": t.forfall_dager,
-            "merk_utsendelse": t.merk_utsendelse,
+            "merk_utsendelse": t.mark_dispatch,
             "active": t.active,
             "sum_netto_ore": t.sum_netto_ore,
             "runs": t.runs,
@@ -123,7 +124,8 @@ pub struct UpdateTemplateRequest {
     #[serde(rename = "slutt_dato")]
     end_date: Option<Option<chrono::NaiveDate>>,
     forfall_dager: Option<i32>,
-    merk_utsendelse: Option<bool>,
+    #[serde(rename = "merk_utsendelse")]
+    mark_dispatch: Option<bool>,
     active: Option<bool>,
     lines: Option<Vec<DocLineRequest>>,
 }
@@ -160,7 +162,7 @@ pub async fn update(
         request.next_date,
         request.end_date,
         request.forfall_dager,
-        request.merk_utsendelse,
+        request.mark_dispatch,
         request.active,
         lines.as_deref(),
     )
@@ -218,7 +220,7 @@ pub async fn runs(
         "runs": rows.iter().map(|r| json!({
             "generated_for": r.generated_for.to_string(),
             "invoice_no": r.invoice_no,
-            "til_utsendelse": r.til_utsendelse,
+            "til_utsendelse": r.for_dispatch,
             "detail": r.detail,
             "at": r.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),

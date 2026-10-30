@@ -645,7 +645,7 @@ pub async fn platform_overview(pool: &PgPool) -> Result<PlattformOversikt> {
 /// same three facts as `abonnement::fakta`, just set-wise, and the API
 /// layer folds them into statuses. Billing master data, never balances.
 #[derive(Debug, Clone)]
-pub struct PlattformAbonnement {
+pub struct PlatformSubscription {
     pub company_id: Uuid,
     pub orgnr: String,
     pub name: String,
@@ -658,7 +658,7 @@ pub struct PlattformAbonnement {
     pub valid_to: Option<NaiveDate>,
 }
 
-pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlattformAbonnement>> {
+pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlatformSubscription>> {
     let rows = sqlx::query(
         "select c.id, c.orgnr, c.name, c.created_at::date as opprettet,
                 d.plan, d.valid_to,
@@ -681,7 +681,7 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlattformA
     .await?;
     Ok(rows
         .iter()
-        .map(|r| PlattformAbonnement {
+        .map(|r| PlatformSubscription {
             company_id: r.get("id"),
             orgnr: r.get("orgnr"),
             name: r.get("name"),

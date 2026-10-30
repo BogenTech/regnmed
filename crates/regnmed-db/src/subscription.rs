@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::{Datelike, NaiveDate, Utc};
-use regnmed_core::abonnement::Status;
+use regnmed_core::subscription::Status;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -46,7 +46,7 @@ async fn fakta(
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     let idag = Utc::now().date_naive();
     let (opprettet, dekket, siste_slutt) = fakta(pool, company_id, idag).await?;
-    Ok(regnmed_core::abonnement::status(
+    Ok(regnmed_core::subscription::status(
         opprettet,
         dekket,
         siste_slutt,
@@ -56,12 +56,12 @@ pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
 
 /// Should writing actions be refused? Called from the access guard on
 /// changing rettigheter — one seam, like the rest of the guard.
-pub async fn sperret(pool: &PgPool, company_id: Uuid) -> Result<bool> {
-    Ok(status_for(pool, company_id).await?.sperret())
+pub async fn blocked(pool: &PgPool, company_id: Uuid) -> Result<bool> {
+    Ok(status_for(pool, company_id).await?.blocked())
 }
 
 /// Starts coverage from `fra`. Open-ended when `til` is None.
-pub async fn tegn(
+pub async fn open_coverage(
     pool: &PgPool,
     company_id: Uuid,
     plan: &str,
@@ -96,7 +96,7 @@ pub async fn tegn(
 /// also the truthful one: a subscription cancelled the day it was taken
 /// out DID cover that day, and was paid for it. Hence `greatest`, rather
 /// than refusing to close the row and leaving access open forever.
-pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<()> {
+pub async fn close_coverage(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<()> {
     let n = sqlx::query(
         "update abonnement set valid_to = greatest($2, valid_from + 1)
          where company_id = $1 and valid_to is null",
@@ -115,7 +115,7 @@ pub async fn avslutt(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<
 // ---------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct Kort {
+pub struct Card {
     pub stripe_customer_id: String,
     pub payment_method_id: String,
     pub brand: String,
@@ -123,7 +123,7 @@ pub struct Kort {
     pub aktiv: bool,
 }
 
-pub async fn kort_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Kort>> {
+pub async fn card_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Card>> {
     let row = sqlx::query(
         "select stripe_customer_id, payment_method_id, brand, last4, aktiv
          from betalingskort where company_id = $1",
@@ -131,7 +131,7 @@ pub async fn kort_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Kort>> {
     .bind(company_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| Kort {
+    Ok(row.map(|r| Card {
         stripe_customer_id: r.get("stripe_customer_id"),
         payment_method_id: r.get("payment_method_id"),
         brand: r.get("brand"),
@@ -142,7 +142,7 @@ pub async fn kort_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Kort>> {
 
 /// Stores (or replaces) the company's card. A new card takes over —
 /// state, not evidence; the charge log (`kortbetaling`) is the evidence.
-pub async fn lagre_kort(
+pub async fn save_card(
     pool: &PgPool,
     company_id: Uuid,
     stripe_customer_id: &str,
@@ -175,7 +175,7 @@ pub async fn lagre_kort(
 /// bilag is posted in the OPS COMPANY's hovedbok (1570 Kortoppgjør
 /// against 1500 with a party) and the reskontro item is closed — all in
 /// ONE transaction with the log row.
-pub async fn registrer_kortbetaling(
+pub async fn register_card_payment(
     pool: &PgPool,
     drift_company_id: Uuid,
     invoice_id: Uuid,
@@ -279,7 +279,7 @@ pub async fn registrer_kortbetaling(
     };
     let posted =
         crate::post_voucher_in(&mut tx, drift_company_id, &draft, "kortskinnen (webhook)").await?;
-    let betalings_entry: Uuid =
+    let payment_entry: Uuid =
         sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
             .bind(posted.id)
             .fetch_one(&mut *tx)
@@ -293,7 +293,7 @@ pub async fn registrer_kortbetaling(
     )
     .bind(Uuid::now_v7())
     .bind(receivable_entry)
-    .bind(betalings_entry)
+    .bind(payment_entry)
     .bind(gross)
     .execute(&mut *tx)
     .await?;
@@ -303,8 +303,7 @@ pub async fn registrer_kortbetaling(
     // Best effort after the payment is safely booked: a failure here
     // must not fail the webhook, the sweep will catch it.
     if let Err(e) =
-        crate::abonnement_oppfolging::gjenopprett_om_betalt(pool, drift_company_id, kunde, idag)
-            .await
+        crate::subscription_follow_up::restore_if_paid(pool, drift_company_id, kunde, idag).await
     {
         eprintln!("gjenoppretting etter kortbetaling feilet (sweep tar den): {e:#}");
     }
@@ -378,7 +377,7 @@ pub async fn stripe_abo_by_subscription(
 /// Records a subscription created at Stripe, and opens coverage in the
 /// same transaction. Coverage is OPEN-ENDED: it recurs until cancelled,
 /// so there is no end date to write until somebody cancels.
-pub async fn lagre_stripe_abo(
+pub async fn save_stripe_subscription(
     pool: &PgPool,
     company_id: Uuid,
     subscription_id: &str,
@@ -457,7 +456,7 @@ pub async fn oppdater_stripe_status(
 
 /// The subscription ended at Stripe: close the row AND the coverage, in
 /// one transaction. `til` is exclusive, as everywhere else.
-pub async fn avslutt_stripe_abo(
+pub async fn end_stripe_subscription(
     pool: &PgPool,
     subscription_id: &str,
     til: NaiveDate,
@@ -475,7 +474,7 @@ pub async fn avslutt_stripe_abo(
     let Some(company) = company else {
         return Ok(None); // already closed — replay
     };
-    // `greatest` for the same reason as in `avslutt`: a subscription taken
+    // `greatest` for the same reason as in `close_coverage`: a subscription taken
     // out and cancelled the same day still covered that day. Without it the
     // CHECK (valid_to > valid_from) made the update match nothing, the
     // coverage row stayed open — and since `canceled_at` is now set, a
@@ -505,7 +504,7 @@ pub async fn avslutt_stripe_abo(
 /// Idempotent on the Stripe invoice id: a redelivered webhook returns
 /// `false` and changes nothing.
 #[allow(clippy::too_many_arguments)]
-pub async fn bokfor_stripe_betaling(
+pub async fn post_stripe_payment(
     pool: &PgPool,
     drift_company_id: Uuid,
     kunde: Uuid,
@@ -530,13 +529,19 @@ pub async fn bokfor_stripe_betaling(
     }
     crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
 
-    let (kunde_orgnr, kunde_navn): (String, String) =
+    let (customer_orgnumber, customer_name): (String, String) =
         sqlx::query_as("select orgnr, name from company where id = $1")
             .bind(kunde)
             .fetch_one(pool)
             .await?;
-    let party_no =
-        party_for_kunde(pool, drift_company_id, kunde, &kunde_orgnr, &kunde_navn).await?;
+    let party_no = party_for_customer(
+        pool,
+        drift_company_id,
+        kunde,
+        &customer_orgnumber,
+        &customer_name,
+    )
+    .await?;
 
     // The Stripe price is GROSS; the faktura line wants the base, and the
     // engine adds mva back at the rate valid on the invoice date. Using
@@ -648,7 +653,7 @@ pub async fn bokfor_stripe_betaling(
             .bind(utstedt.invoice_id)
             .fetch_one(&mut *tx)
             .await?;
-    let betalings_entry: Uuid =
+    let payment_entry: Uuid =
         sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
             .bind(posted.id)
             .fetch_one(&mut *tx)
@@ -659,7 +664,7 @@ pub async fn bokfor_stripe_betaling(
     )
     .bind(Uuid::now_v7())
     .bind(receivable_entry)
-    .bind(betalings_entry)
+    .bind(payment_entry)
     .bind(gross)
     .execute(&mut *tx)
     .await?;
@@ -699,21 +704,21 @@ pub async fn bokfor_stripe_betaling(
 
 /// A new row in the price list (the price is dated data — a change is a
 /// new row with its kilde, never a rewrite; docs/abonnement.md §4).
-pub async fn sett_pris(
+pub async fn set_price(
     pool: &PgPool,
     plan: &str,
-    pris_ore_per_mnd: i64,
+    price_ore_per_month: i64,
     fra: NaiveDate,
     kilde: &str,
 ) -> Result<()> {
     ensure!(!kilde.trim().is_empty(), "prisraden må ha en kilde");
-    ensure!(pris_ore_per_mnd >= 0, "prisen kan ikke være negativ");
+    ensure!(price_ore_per_month >= 0, "prisen kan ikke være negativ");
     sqlx::query(
         "insert into abonnement_pris (plan, pris_ore_per_mnd, valid_from, kilde)
          values ($1,$2,$3,$4)",
     )
     .bind(plan)
-    .bind(pris_ore_per_mnd)
+    .bind(price_ore_per_month)
     .bind(fra)
     .bind(kilde.trim())
     .execute(pool)
@@ -722,15 +727,15 @@ pub async fn sett_pris(
 }
 
 #[derive(Debug)]
-pub struct Prisrad {
+pub struct PriceRow {
     pub plan: String,
-    pub pris_ore_per_mnd: i64,
+    pub price_ore_per_month: i64,
     pub valid_from: NaiveDate,
     pub kilde: String,
 }
 
 /// The whole price list, newest first per plan.
-pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
+pub async fn list_prices(pool: &PgPool) -> Result<Vec<PriceRow>> {
     let rows = sqlx::query(
         "select plan, pris_ore_per_mnd, valid_from, kilde
          from abonnement_pris order by plan, valid_from desc",
@@ -739,9 +744,9 @@ pub async fn list_priser(pool: &PgPool) -> Result<Vec<Prisrad>> {
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Prisrad {
+        .map(|r| PriceRow {
             plan: r.get("plan"),
-            pris_ore_per_mnd: r.get("pris_ore_per_mnd"),
+            price_ore_per_month: r.get("pris_ore_per_mnd"),
             valid_from: r.get("valid_from"),
             kilde: r.get("kilde"),
         })
@@ -768,7 +773,7 @@ pub async fn stripe_price_for(
 }
 
 /// Records a Stripe Price created from our price list.
-pub async fn lagre_stripe_price(
+pub async fn save_stripe_price(
     pool: &PgPool,
     plan: &str,
     interval: &str,
@@ -800,7 +805,7 @@ pub async fn lagre_stripe_price(
 /// code.
 ///
 /// The mva added on top is the ops company's own (`utgaende_mva`): the
-/// card is charged this exact amount, and `bokfor_stripe_betaling`
+/// card is charged this exact amount, and `post_stripe_payment`
 /// asserts the charge equals the faktura's gross. An unregistered seller
 /// whose Stripe Price still carried 25 % would fail that assertion on
 /// every single payment.
@@ -823,8 +828,8 @@ pub async fn brutto_for(
     .await?;
     let netto = match egen {
         Some(n) => n,
-        None if interval == "year" => pris_pa(pool, plan, date).await? * 12,
-        None => pris_pa(pool, plan, date).await?,
+        None if interval == "year" => price_on(pool, plan, date).await? * 12,
+        None => price_on(pool, plan, date).await?,
     };
     let (_kode, rate_bp) = utgaende_mva(pool, drift_company_id, date).await?;
     Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
@@ -866,8 +871,8 @@ pub async fn utgaende_mva(
 }
 
 /// The price in force on a date, in øre per month excl. mva.
-pub async fn pris_pa(pool: &PgPool, plan: &str, date: NaiveDate) -> Result<i64> {
-    let pris: Option<i64> = sqlx::query_scalar(
+pub async fn price_on(pool: &PgPool, plan: &str, date: NaiveDate) -> Result<i64> {
+    let price: Option<i64> = sqlx::query_scalar(
         "select pris_ore_per_mnd from abonnement_pris
          where plan = $1 and valid_from <= $2
          order by valid_from desc limit 1",
@@ -876,11 +881,11 @@ pub async fn pris_pa(pool: &PgPool, plan: &str, date: NaiveDate) -> Result<i64> 
     .bind(date)
     .fetch_optional(pool)
     .await?;
-    pris.with_context(|| format!("ingen pris for planen «{plan}» per {date} — prislisten er data (abonnement_pris) og må dekke datoen"))
+    price.with_context(|| format!("ingen pris for planen «{plan}» per {date} — prislisten er data (abonnement_pris) og må dekke datoen"))
 }
 
 #[derive(Debug)]
-pub struct FakturaUtfall {
+pub struct InvoiceOutcome {
     pub company_id: Uuid,
     pub company_navn: String,
     /// Invoice number in the ops company when the faktura was issued;
@@ -903,7 +908,7 @@ pub async fn fakturer_maned(
     drift_company_id: Uuid,
     idag: NaiveDate,
     bare: Option<Uuid>,
-) -> Result<Vec<FakturaUtfall>> {
+) -> Result<Vec<InvoiceOutcome>> {
     let forste = NaiveDate::from_ymd_opt(idag.year(), idag.month(), 1).unwrap();
 
     // The ops company needs an account and a journal for the sale;
@@ -960,7 +965,7 @@ pub async fn fakturer_maned(
         )
         .await;
         utfall.push(match resultat {
-            Ok(Some((nr, id, gross))) => FakturaUtfall {
+            Ok(Some((nr, id, gross))) => InvoiceOutcome {
                 company_id,
                 company_navn: navn,
                 invoice_no: Some(nr),
@@ -970,7 +975,7 @@ pub async fn fakturer_maned(
             },
             // The harmless cases: the month is already invoiced, or the
             // plan costs nothing.
-            Ok(None) => FakturaUtfall {
+            Ok(None) => InvoiceOutcome {
                 company_id,
                 company_navn: navn,
                 invoice_no: None,
@@ -978,7 +983,7 @@ pub async fn fakturer_maned(
                 gross_ore: None,
                 detail: Some("hoppet over".into()),
             },
-            Err(e) => FakturaUtfall {
+            Err(e) => InvoiceOutcome {
                 company_id,
                 company_navn: navn,
                 invoice_no: None,
@@ -995,18 +1000,18 @@ pub async fn fakturer_maned(
 /// company, so it inherits that company's address — the salgsdokument
 /// needs one (§5-1-2, #81) and inventing a second source for the same
 /// legal entity's address would let the two drift apart.
-async fn party_for_kunde(
+async fn party_for_customer(
     pool: &PgPool,
     drift: Uuid,
     kunde: Uuid,
-    kunde_orgnr: &str,
-    kunde_navn: &str,
+    customer_orgnumber: &str,
+    customer_name: &str,
 ) -> Result<String> {
     let eksisterende: Option<String> = sqlx::query_scalar(
         "select party_no from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
     )
     .bind(drift)
-    .bind(kunde_orgnr)
+    .bind(customer_orgnumber)
     .fetch_optional(pool)
     .await?;
     let adresse: Option<String> = sqlx::query_scalar("select address from company where id = $1")
@@ -1019,7 +1024,7 @@ async fn party_for_kunde(
                 "select id from party where company_id = $1 and kind = 'kunde' and orgnr = $2",
             )
             .bind(drift)
-            .bind(kunde_orgnr)
+            .bind(customer_orgnumber)
             .fetch_one(pool)
             .await?;
             (id, no)
@@ -1029,8 +1034,8 @@ async fn party_for_kunde(
                 pool,
                 drift,
                 "kunde",
-                kunde_navn,
-                Some(kunde_orgnr),
+                customer_name,
+                Some(customer_orgnumber),
                 None,
             )
             .await?
@@ -1056,16 +1061,17 @@ async fn fakturer_en(
     pool: &PgPool,
     drift: Uuid,
     kunde: Uuid,
-    kunde_orgnr: String,
-    kunde_navn: &str,
+    customer_orgnumber: String,
+    customer_name: &str,
     plan: String,
     idag: NaiveDate,
 ) -> Result<Option<(i64, Uuid, i64)>> {
     // The customer party in the ops company's reskontro, keyed on orgnr.
-    let party_no = party_for_kunde(pool, drift, kunde, &kunde_orgnr, kunde_navn).await?;
+    let party_no =
+        party_for_customer(pool, drift, kunde, &customer_orgnumber, customer_name).await?;
 
-    let pris = pris_pa(pool, &plan, idag).await?;
-    if pris == 0 {
+    let price = price_on(pool, &plan, idag).await?;
+    if price == 0 {
         return Ok(None); // en gratisplan fakturerer ingenting
     }
 
@@ -1110,7 +1116,7 @@ async fn fakturer_en(
             ),
             account_number: "3000".into(),
             quantity_milli: 1000,
-            unit_price_ore: pris,
+            unit_price_ore: price,
             vat_code: Some(mva_kode),
             department: None,
             project: None,

@@ -73,7 +73,7 @@ pub async fn list_reminders(
             "reminder_id": r.reminder_id,
             "steg": r.steg,
             "sent_date": r.sent_date.to_string(),
-            "frist_date": r.frist_date.to_string(),
+            "frist_date": r.grace_date.to_string(),
             "remaining_ore": r.remaining_ore,
             "gebyr_ore": r.gebyr_ore,
             "rente_ore": r.rente_ore,
@@ -89,7 +89,8 @@ pub struct CreateReminderRequest {
     steg: String,
     /// Defaults to today.
     sent_date: Option<chrono::NaiveDate>,
-    frist_date: chrono::NaiveDate,
+    #[serde(rename = "frist_date")]
+    grace_date: chrono::NaiveDate,
     /// Defaults to 0 (gebyrfritt skritt).
     gebyr_ore: Option<i64>,
     /// Krev påløpt forsinkelsesrente. Defaults to false.
@@ -115,7 +116,7 @@ fn result_json(r: &regnmed_db::ReminderResult) -> serde_json::Value {
         "reminder_id": r.reminder_id,
         "steg": r.steg,
         "sent_date": r.sent_date.to_string(),
-        "frist_date": r.frist_date.to_string(),
+        "frist_date": r.grace_date.to_string(),
         "remaining_ore": r.remaining_ore,
         "gebyr_ore": r.gebyr_ore,
         "maks_gebyr_ore": r.maks_gebyr_ore,
@@ -138,7 +139,7 @@ pub async fn create_reminder(
     let draft = regnmed_db::ReminderDraft {
         steg: request.steg,
         sent_date: request.sent_date,
-        frist_date: request.frist_date,
+        grace_date: request.grace_date,
         gebyr_ore: request.gebyr_ore.unwrap_or(0),
         med_rente: request.med_rente,
         naeringsdrivende: request.naeringsdrivende,

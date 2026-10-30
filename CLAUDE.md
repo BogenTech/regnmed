@@ -212,6 +212,21 @@ became `currency_amount_*`; and `let dato = date(...)` in
 `regnmed-db::mva`'s tests would have shadowed the test's own `date()`
 helper.
 
+`abonnement`->`subscription` and `utsendelse`->`dispatch` moved next
+(modules in core, db and api, plus `Prove`/`Frist`/`Sperret` ->
+`Trial`/`Grace`/`Blocked` and the Stripe/card functions). Done in TWO
+passes, which is the pattern for any batch whose words are not unique:
+the unambiguous tokens over the whole workspace, then the generic ones
+(`pris`, `kort`, `tegn`, `avslutt`) over the subscription modules and
+their callers ONLY. `regnmed-api::lib` was deliberately left out of the
+second pass because it holds `year_end::avslutt`, a different function
+of the same name -- the `rate_on` trap again. Two things the string
+guard protects but a human must still fix: `#[path =
+"grupper/abonnement.rs"]` in the test group binary is a PATH in a
+literal, so a moved file breaks it, and the wire check caught
+`merk_utsendelse` and `frist_date` leaving two request structs (now
+pinned).
+
 **Still Norwegian**, deliberately: the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),

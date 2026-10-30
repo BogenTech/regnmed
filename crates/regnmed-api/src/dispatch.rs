@@ -44,7 +44,7 @@ async fn send_payload(
         .await
         .map_err(|e| ApiError::BadRequest(format!("kunne ikke legge i utsendelseskøen: {e:#}")))?;
     let sent_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::log_utsendelse(
+    regnmed_db::log_dispatch(
         &state.pool,
         id,
         company_id,
@@ -102,13 +102,13 @@ pub async fn send_reminder(
     send_payload(&state, &person, company_id, payload).await
 }
 
-pub async fn list_utsendelser(
+pub async fn list_dispatches(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::FakturaLes).await?;
-    let rows = regnmed_db::list_utsendelser(&state.pool, company_id, invoice_id).await?;
+    let rows = regnmed_db::list_dispatches(&state.pool, company_id, invoice_id).await?;
     Ok(Json(json!({
         "utsendelser": rows.iter().map(|u| json!({
             "utsendelse_id": u.id,
@@ -153,7 +153,7 @@ pub async fn try_send_invitation(
         .await
         .map_err(|e| format!("kunne ikke legge i utsendelseskøen: {e:#}"))?;
     let sent_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::log_utsendelse(
+    regnmed_db::log_dispatch(
         &state.pool,
         id,
         company_id,

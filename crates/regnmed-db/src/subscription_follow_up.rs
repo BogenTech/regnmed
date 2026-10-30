@@ -12,9 +12,9 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::abonnement::SPERR_ETTER_FORFALL_DAGER;
 use regnmed_core::purring::{Steg, neste_skritt};
 use regnmed_core::rates::value_on;
+use regnmed_core::subscription::SPERR_ETTER_FORFALL_DAGER;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
 /// One abonnement invoice in the drift company, joined to the customer
 /// company it bills (via the run log — the only invoice→customer link).
 #[derive(Debug)]
-pub struct AbonnementFaktura {
+pub struct SubscriptionInvoice {
     pub company_id: Uuid,
     pub company_navn: String,
     /// The customer company's own e-mail (Firmaopplysninger) — the
@@ -44,7 +44,7 @@ pub struct AbonnementFaktura {
 
 /// Open (unpaid) abonnement invoices, newest reminder step included.
 /// Kreditnotaer and paid invoices are not follow-up material.
-pub async fn apne_fakturaer(pool: &PgPool, drift: Uuid) -> Result<Vec<AbonnementFaktura>> {
+pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<SubscriptionInvoice>> {
     let rows = sqlx::query(
         "select r.company_id, c.name as company_navn, c.email as epost,
                 i.id as invoice_id, i.invoice_no, i.due_date,
@@ -73,7 +73,7 @@ pub async fn apne_fakturaer(pool: &PgPool, drift: Uuid) -> Result<Vec<Abonnement
     Ok(rows
         .iter()
         .filter(|r| r.get::<i64, _>("remaining_ore") > 0)
-        .map(|r| AbonnementFaktura {
+        .map(|r| SubscriptionInvoice {
             company_id: r.get("company_id"),
             company_navn: r.get("company_navn"),
             epost: r.get("epost"),
@@ -95,7 +95,7 @@ pub async fn apne_fakturaer(pool: &PgPool, drift: Uuid) -> Result<Vec<Abonnement
 pub async fn purr(
     pool: &PgPool,
     drift: Uuid,
-    faktura: &AbonnementFaktura,
+    faktura: &SubscriptionInvoice,
     idag: NaiveDate,
 ) -> Result<Option<(Uuid, String)>> {
     let siste = match (&faktura.last_steg, faktura.last_sent) {
@@ -127,7 +127,7 @@ pub async fn purr(
     let draft = ReminderDraft {
         steg: neste.steg.as_str().into(),
         sent_date: Some(idag),
-        frist_date: idag + chrono::Days::new(neste.frist_dager as u64),
+        grace_date: idag + chrono::Days::new(neste.grace_days as u64),
         gebyr_ore,
         med_rente: neste.med_rente,
         naeringsdrivende: true,
@@ -149,15 +149,15 @@ pub async fn purr(
 /// alone.
 pub async fn sperr_om_moden(
     pool: &PgPool,
-    faktura: &AbonnementFaktura,
+    faktura: &SubscriptionInvoice,
     idag: NaiveDate,
 ) -> Result<bool> {
-    let purret = faktura
+    let reminded = faktura
         .last_steg
         .as_deref()
         .and_then(Steg::parse)
         .is_some_and(|s| s >= Steg::Purring);
-    if !purret || idag < faktura.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
+    if !reminded || idag < faktura.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
         return Ok(false);
     }
     let apen: bool = sqlx::query_scalar(
@@ -170,7 +170,7 @@ pub async fn sperr_om_moden(
     if !apen {
         return Ok(false);
     }
-    crate::abonnement::avslutt(pool, faktura.company_id, idag).await?;
+    crate::subscription::close_coverage(pool, faktura.company_id, idag).await?;
     logg(
         pool,
         faktura.company_id,
@@ -209,7 +209,7 @@ pub async fn auto_sperrede(pool: &PgPool) -> Result<Vec<Uuid>> {
 /// trail is the memory). An oppsigelse looks identical in the
 /// abonnement table and must never be resurrected by a paid final
 /// invoice. The plan continues as it was.
-pub async fn gjenopprett_om_betalt(
+pub async fn restore_if_paid(
     pool: &PgPool,
     drift: Uuid,
     company_id: Uuid,
@@ -225,7 +225,7 @@ pub async fn gjenopprett_om_betalt(
     if siste.as_deref() != Some("sperret") {
         return Ok(false);
     }
-    let utestaaende = apne_fakturaer(pool, drift)
+    let utestaaende = open_invoices(pool, drift)
         .await?
         .into_iter()
         .any(|f| f.company_id == company_id);
@@ -240,7 +240,7 @@ pub async fn gjenopprett_om_betalt(
     .fetch_optional(pool)
     .await?;
     let plan = plan.context("selskapet har aldri hatt en dekningsrad")?;
-    crate::abonnement::tegn(
+    crate::subscription::open_coverage(
         pool,
         company_id,
         &plan,
@@ -264,7 +264,7 @@ pub async fn gjenopprett_om_betalt(
 /// Reminders on abonnement invoices that never went out (no utsendelse
 /// row) — the daily retry, same dedup discipline as the invoices.
 #[derive(Debug)]
-pub struct UsendtPurring {
+pub struct UnsentReminder {
     pub company_id: Uuid,
     pub company_navn: String,
     pub epost: Option<String>,
@@ -274,7 +274,7 @@ pub struct UsendtPurring {
     pub steg: String,
 }
 
-pub async fn usendte_purringer(pool: &PgPool, drift: Uuid) -> Result<Vec<UsendtPurring>> {
+pub async fn unsent_reminders(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentReminder>> {
     let rows = sqlx::query(
         "select r.company_id, c.name as company_navn, c.email as epost,
                 i.id as invoice_id, i.invoice_no, ir.id as reminder_id, ir.steg
@@ -291,7 +291,7 @@ pub async fn usendte_purringer(pool: &PgPool, drift: Uuid) -> Result<Vec<UsendtP
     .await?;
     Ok(rows
         .iter()
-        .map(|r| UsendtPurring {
+        .map(|r| UnsentReminder {
             company_id: r.get("company_id"),
             company_navn: r.get("company_navn"),
             epost: r.get("epost"),

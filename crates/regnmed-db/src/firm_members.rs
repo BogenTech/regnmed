@@ -497,7 +497,7 @@ pub async fn firm_invitation_email_payload(
 /// Logs a firm-invitation mail in the shared `utsendelse` log. The row
 /// has no company — the constraint from 0046 demands the firm
 /// invitation reference instead.
-pub async fn log_firm_utsendelse(
+pub async fn log_firm_dispatch(
     pool: &PgPool,
     id: Uuid,
     firm_invitation_id: Uuid,

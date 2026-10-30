@@ -221,7 +221,7 @@ async fn try_send_firm_invitation(
         .await
         .map_err(|e| format!("kunne ikke legge i utsendelseskøen: {e:#}"))?;
     let sent_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::firm_members::log_firm_utsendelse(
+    regnmed_db::firm_members::log_firm_dispatch(
         &state.pool,
         id,
         invitasjon_id,

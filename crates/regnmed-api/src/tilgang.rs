@@ -1003,7 +1003,7 @@ pub async fn krev(
     // check, so an outsider still gets 404 and never learns anything
     // about the company's abonnement. Only changing rettigheter
     // costs the lookup; reading and export always go through.
-    if rett.endrer() && regnmed_db::abonnement::sperret(&state.pool, company_id).await? {
+    if rett.endrer() && regnmed_db::subscription::blocked(&state.pool, company_id).await? {
         return Err(ApiError::Forbidden(
             "abonnementet er utløpt — lesing og eksport virker som før, men endringer er sperret til abonnementet er i orden (docs/abonnement.md)",
         ));
