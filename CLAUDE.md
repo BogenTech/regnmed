@@ -791,6 +791,14 @@ formats. Patterns in use:
   postgres:18 service (locally: `scripts/dev-db.sh` + `regnmed migrate`).
 - SAF-T output is validated against Skatteetaten's official XSD
   (vendored in `docs/saft/`) with xmllint, in unit tests and CI.
+- **An assertion on a fire-and-forget write must POLL, never assume.**
+  `integrasjonslogg` is written from a detached `tokio::spawn` in
+  `auth.rs` so logging never sits on the request path, which makes the
+  read eventually consistent. `a_machine_token_gets_only_what_an_admin_granted`
+  asserted on it immediately and went green 15 runs in a row before CI's
+  loaded postgres lost the race -- the same test passing locally in 3 s
+  took 17,8 s there. It now polls for 5 s; seen to fail (sabotaged
+  predicate) and pass again.
 - **API-integrasjonstestene er GRUPPERT** (2026-07-29): filene ligger i
   `crates/regnmed-api/tests/grupper/` og samles av sju binærer i
   `tests/` — salg, regnskap, penger, drift, personal,
