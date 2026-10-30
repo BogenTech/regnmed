@@ -278,7 +278,7 @@ pub async fn list_hendelser(
                 id: r.get("id"),
                 shareholder_id: r.get("shareholder_id"),
                 aksjonaer: r.get("aksjonaer"),
-                type_navn: Transaksjonstype::fra_slug(&slug)
+                type_navn: Transaksjonstype::from_slug(&slug)
                     .map(|t| t.navn().to_string())
                     .unwrap_or_else(|| slug.clone()),
                 type_: slug,
@@ -310,7 +310,7 @@ pub async fn record_hendelse(
     note: Option<&str>,
     created_by: &str,
 ) -> Result<Uuid> {
-    let type_ = Transaksjonstype::fra_slug(type_slug)
+    let type_ = Transaksjonstype::from_slug(type_slug)
         .with_context(|| format!("ukjent transaksjonstype «{type_slug}»"))?;
     ensure!(antall > 0, "antall aksjer må være positivt");
 
@@ -352,7 +352,7 @@ pub async fn record_hendelse(
 
     // The counterparty, when the transfer has a known other side.
     if let (Some(motpart_id), Some(motpart_slug)) = (motpart_id, motpart_type_slug) {
-        let motpart_type = Transaksjonstype::fra_slug(motpart_slug)
+        let motpart_type = Transaksjonstype::from_slug(motpart_slug)
             .with_context(|| format!("ukjent transaksjonstype «{motpart_slug}»"))?;
         ensure!(
             motpart_type.er_tilgang() != type_.er_tilgang(),
@@ -452,7 +452,7 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Hendel
             let slug: String = r.get("type");
             Some(Hendelse {
                 date: r.get("dato"),
-                type_: Transaksjonstype::fra_slug(&slug)?,
+                type_: Transaksjonstype::from_slug(&slug)?,
                 antall: r.get("antall"),
                 vederlag_ore: r.get("belop_ore"),
             })

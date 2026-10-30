@@ -30,7 +30,7 @@ pub enum EhfImportError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MottattLinje {
     pub beskrivelse: String,
-    pub netto_ore: i64,
+    pub net_ore: i64,
     /// Basis points from ClassifiedTaxCategory when present.
     pub vat_rate_bp: Option<i64>,
 }
@@ -49,10 +49,10 @@ pub struct MottattFaktura {
     pub kjoper_orgnr: Option<String>,
     pub kid: Option<String>,
     pub account_number: Option<String>,
-    pub netto_ore: i64,
+    pub net_ore: i64,
     pub vat_ore: i64,
     /// PayableAmount — what the supplier actually claims.
-    pub brutto_ore: i64,
+    pub gross_ore: i64,
     pub linjer: Vec<MottattLinje>,
 }
 
@@ -121,9 +121,9 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
         kjoper_orgnr: None,
         kid: None,
         account_number: None,
-        netto_ore: 0,
+        net_ore: 0,
         vat_ore: 0,
-        brutto_ore: 0,
+        gross_ore: 0,
         linjer: Vec::new(),
     };
     let mut root_seen = false;
@@ -165,7 +165,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                 if local == "InvoiceLine" || local == "CreditNoteLine" {
                     faktura.linjer.push(MottattLinje {
                         beskrivelse: std::mem::take(&mut line_name),
-                        netto_ore: line_net,
+                        net_ore: line_net,
                         vat_rate_bp: line_bp,
                     });
                     in_line = false;
@@ -223,17 +223,17 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                     "ID" if ends_with(&path, &["PayeeFinancialAccount", "ID"]) => {
                         faktura.account_number = Some(value);
                     }
-                    "TaxExclusiveAmount" => faktura.netto_ore = amount(&value)?,
-                    "TaxInclusiveAmount" if faktura.brutto_ore == 0 => {
-                        faktura.brutto_ore = amount(&value)?;
+                    "TaxExclusiveAmount" => faktura.net_ore = amount(&value)?,
+                    "TaxInclusiveAmount" if faktura.gross_ore == 0 => {
+                        faktura.gross_ore = amount(&value)?;
                     }
-                    "PayableAmount" => faktura.brutto_ore = amount(&value)?,
+                    "PayableAmount" => faktura.gross_ore = amount(&value)?,
                     "TaxAmount" if ends_with(&path, &["TaxTotal", "TaxAmount"]) => {
                         faktura.vat_ore = amount(&value)?;
                     }
                     "LineExtensionAmount" if in_line => line_net = amount(&value)?,
-                    "LineExtensionAmount" if faktura.netto_ore == 0 => {
-                        faktura.netto_ore = amount(&value)?;
+                    "LineExtensionAmount" if faktura.net_ore == 0 => {
+                        faktura.net_ore = amount(&value)?;
                     }
                     "Name" if in_line && ends_with(&path, &["Item", "Name"]) => line_name = value,
                     "Description" if in_line && line_name.is_empty() => line_name = value,
@@ -249,11 +249,11 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
     if !root_seen {
         return Err(EhfImportError::NotEhf);
     }
-    if faktura.netto_ore == 0 && !faktura.linjer.is_empty() {
-        faktura.netto_ore = faktura.linjer.iter().map(|l| l.netto_ore).sum();
+    if faktura.net_ore == 0 && !faktura.linjer.is_empty() {
+        faktura.net_ore = faktura.linjer.iter().map(|l| l.net_ore).sum();
     }
-    if faktura.brutto_ore == 0 {
-        faktura.brutto_ore = faktura.netto_ore + faktura.vat_ore;
+    if faktura.gross_ore == 0 {
+        faktura.gross_ore = faktura.net_ore + faktura.vat_ore;
     }
     Ok(faktura)
 }
@@ -297,7 +297,7 @@ mod tests {
                     antall_milli: 3_000,
                     enhet: "EA".into(),
                     enhetspris_ore: 400_00,
-                    netto_ore: 1_200_00,
+                    net_ore: 1_200_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 300_00,
                 },
@@ -306,7 +306,7 @@ mod tests {
                     antall_milli: 1_000,
                     enhet: "EA".into(),
                     enhetspris_ore: 100_00,
-                    netto_ore: 100_00,
+                    net_ore: 100_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 25_00,
                 },
@@ -335,12 +335,12 @@ mod tests {
         assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
         assert_eq!(mottatt.kid.as_deref(), Some("1234567897"));
         assert_eq!(mottatt.account_number.as_deref(), Some("86011117947"));
-        assert_eq!(mottatt.netto_ore, 1_300_00);
+        assert_eq!(mottatt.net_ore, 1_300_00);
         assert_eq!(mottatt.vat_ore, 325_00);
-        assert_eq!(mottatt.brutto_ore, 1_625_00);
+        assert_eq!(mottatt.gross_ore, 1_625_00);
         assert_eq!(mottatt.linjer.len(), 2);
         assert_eq!(mottatt.linjer[0].beskrivelse, "Varekjøp");
-        assert_eq!(mottatt.linjer[0].netto_ore, 1_200_00);
+        assert_eq!(mottatt.linjer[0].net_ore, 1_200_00);
         assert_eq!(mottatt.linjer[0].vat_rate_bp, Some(2500));
     }
 
@@ -350,7 +350,7 @@ mod tests {
         let mottatt = parse(&xml).unwrap();
         assert!(mottatt.er_kreditnota);
         assert_eq!(mottatt.linjer.len(), 2);
-        assert_eq!(mottatt.brutto_ore, 1_625_00);
+        assert_eq!(mottatt.gross_ore, 1_625_00);
     }
 
     /// A real EHF from another system: different prefixes, extra
@@ -413,9 +413,9 @@ mod tests {
         assert_eq!(mottatt.selger_orgnr.as_deref(), Some("974760673"));
         assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
         assert_eq!(mottatt.kid.as_deref(), Some("0000000123456"));
-        assert_eq!(mottatt.netto_ore, 2_000_00);
+        assert_eq!(mottatt.net_ore, 2_000_00);
         assert_eq!(mottatt.vat_ore, 500_00);
-        assert_eq!(mottatt.brutto_ore, 2_500_00);
+        assert_eq!(mottatt.gross_ore, 2_500_00);
         assert_eq!(mottatt.linjer[0].beskrivelse, "Kontorstoler");
         assert_eq!(mottatt.linjer[0].vat_rate_bp, None, "ingen sats på linjen");
     }

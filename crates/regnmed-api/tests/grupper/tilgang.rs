@@ -460,20 +460,20 @@ async fn an_ansatt_gets_only_their_own_payslip() {
         regnmed_db::ensure_company_member(&state.pool, company, person, "ansatt")
             .await
             .unwrap();
-        let employee = regnmed_db::lonn::create_ansatt(
+        let employee = regnmed_db::payroll::create_ansatt(
             &state.pool,
             company,
-            &regnmed_db::lonn::NyAnsatt {
+            &regnmed_db::payroll::NyAnsatt {
                 fodselsnummer: fnr.into(),
                 navn: navn.into(),
                 stilling: None,
                 ansatt_fra: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                 manedslonn_ore: Some(5_000_000),
                 timelonn_ore: None,
-                trekk_type: "prosent".into(),
-                trekk_prosent_bp: Some(3000),
+                withholding_type: "prosent".into(),
+                withholding_percent_bp: Some(3000),
                 trekk_tabell: None,
-                feriepenger_bp: 1020,
+                holiday_pay_bp: 1020,
                 bank_account: None,
                 note: None,
             },
@@ -490,7 +490,7 @@ async fn an_ansatt_gets_only_their_own_payslip() {
         employees.push((employee, idp.token(&sub, navn)));
     }
 
-    let kjoring = regnmed_db::lonn::kjor_lonn(
+    let kjoring = regnmed_db::payroll::run_payroll(
         &state.pool,
         company,
         2026,
@@ -499,11 +499,11 @@ async fn an_ansatt_gets_only_their_own_payslip() {
         "I",
         &employees
             .iter()
-            .map(|(id, _)| regnmed_db::lonn::Lonnspost {
+            .map(|(id, _)| regnmed_db::payroll::PayrollEntry {
                 employee_id: *id,
-                brutto_ore: None,
-                feriepenger_ore: 0,
-                fra_timer: false,
+                gross_ore: None,
+                holiday_pay_ore: 0,
+                from_timesheet: false,
             })
             .collect::<Vec<_>>(),
         "Test",

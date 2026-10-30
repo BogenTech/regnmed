@@ -79,7 +79,7 @@ pub struct EhfLinje {
     /// UN/ECE Rec 20 unit code; "EA" (each) by default.
     pub enhet: String,
     pub enhetspris_ore: i64,
-    pub netto_ore: i64,
+    pub net_ore: i64,
     /// Basis points; None = no mva code on the line.
     pub vat_rate_bp: Option<i64>,
     pub vat_ore: i64,
@@ -291,7 +291,7 @@ pub fn render(doc: &EhfDokument) -> String {
     let money = |ore: i64| -> String { amount(ore) };
     let attr = format!("currencyID=\"{}\"", esc(currency));
 
-    let netto_sum: i64 = doc.linjer.iter().map(|l| l.netto_ore).sum();
+    let netto_sum: i64 = doc.linjer.iter().map(|l| l.net_ore).sum();
     let vat_sum: i64 = doc.linjer.iter().map(|l| l.vat_ore).sum();
 
     let mut w = Writer::new();
@@ -381,7 +381,7 @@ pub fn render(doc: &EhfDokument) -> String {
             .linjer
             .iter()
             .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
-            .map(|l| l.netto_ore)
+            .map(|l| l.net_ore)
             .sum();
         let avgift: i64 = doc
             .linjer
@@ -427,7 +427,7 @@ pub fn render(doc: &EhfDokument) -> String {
             &format!("unitCode=\"{}\"", esc(&linje.enhet)),
             &quantity(linje.antall_milli),
         );
-        w.leaf_attr("cbc:LineExtensionAmount", &attr, &money(linje.netto_ore));
+        w.leaf_attr("cbc:LineExtensionAmount", &attr, &money(linje.net_ore));
         w.open("cac:Item");
         w.leaf("cbc:Name", &linje.beskrivelse);
         w.open("cac:ClassifiedTaxCategory");
@@ -486,7 +486,7 @@ mod tests {
                     antall_milli: 2_000,
                     enhet: "HUR".into(),
                     enhetspris_ore: 1_250_00,
-                    netto_ore: 2_500_00,
+                    net_ore: 2_500_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 625_00,
                 },
@@ -495,7 +495,7 @@ mod tests {
                     antall_milli: 1_000,
                     enhet: "EA".into(),
                     enhetspris_ore: 500_00,
-                    netto_ore: 500_00,
+                    net_ore: 500_00,
                     vat_rate_bp: None,
                     vat_ore: 0,
                 },

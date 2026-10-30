@@ -191,7 +191,7 @@ async fn a_conflicting_link_never_blocks_the_login() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    regnmed_db::lonn::link_ansatt_person(&state.pool, company, forste, person_id, admin_person)
+    regnmed_db::payroll::link_ansatt_person(&state.pool, company, forste, person_id, admin_person)
         .await
         .unwrap();
 

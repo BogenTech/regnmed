@@ -20,7 +20,8 @@ pub struct SalgLinje {
     #[serde(rename = "konto")]
     account: String,
     vat_code: Option<String>,
-    brutto_ore: i64,
+    #[serde(rename = "brutto_ore")]
+    gross_ore: i64,
 }
 
 #[derive(Deserialize)]
@@ -58,7 +59,7 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
         salg: request
             .salg
             .into_iter()
-            .map(|l| (l.account, l.vat_code, l.brutto_ore))
+            .map(|l| (l.account, l.vat_code, l.gross_ore))
             .collect(),
         betaling: request
             .betaling

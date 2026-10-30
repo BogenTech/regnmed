@@ -303,12 +303,50 @@ have been worse. With it: `PurringError`->`ReminderError`,
 is worse than renaming none. `tilgang.rs` was excluded from the pass
 by hand.
 
+`lonn`->`payroll` moved next, the biggest coherent batch left
+(~880 Norwegian identifier occurrences in five files). Modules
+`lonn`->`payroll` and `lonnsslipp`->`payslip` in core, db and api;
+`Sone`->`Zone`, `Trekk`->`Withholding`, `Lonnsgrunnlag`->
+`PayrollBasis`, `Lonnsberegning`->`PayrollCalculation`,
+`forskuddstrekk_ore`->`withholding_ore`, `feriepenger`->`holiday_pay`,
+`arbeidsgiveravgift`/`aga`->`employer_contribution`,
+`brutto_ore`/`netto_ore`->`gross_ore`/`net_ore`.
+
+Three findings worth keeping. (a) `Sone::fra_slug`->`from_slug` ALSO
+hit `Rett::fra_slug`, whose file was excluded on purpose -- the
+`rate_on` trap, caught by the compiler, reverted at the one call site
+in `roles.rs`. (It also moved `Transaksjonstype::fra_slug` in
+`aksjebok`, definition and call sites together, which is consistent
+and was kept.) (b) `minutter`->`minutes` in the narrow pass reached
+`TimeEntryDraft.minutter`, which belongs to the timesheet batch:
+reverted at the one site. (c) Ten serde fields needed pins
+(`trekk_type`, `trekk_prosent_bp`, `feriepenger_bp`, `feriepenger_ore`,
+`brutto_ore`, `fra_timer`, `maned`, `sone`, `linjer`, plus
+`brutto_ore` on `cash_register`), and `wire-names.py` proved the rest
+unchanged.
+
+The COMMENTS needed almost nothing, and the reason generalizes: 86
+comment lines mention a Norwegian payroll word, but all except two
+were English prose carrying a STATUTORY noun -- `arbeidsgiveravgift`,
+`feriepenger`, `forskuddstrekk`, `skattekort`, `fribeløp`,
+`tabelltrekk`, `ferieloven` -- which is the same treatment
+`inkassoforskriften` got. A statutory name in a comment is a
+citation, not untranslated prose. Measured with a Norwegian-stopword
+ratio per comment line rather than by eye.
+
+**How much is left** (measured 2026-10-30, segment-level match against
+a Norwegian word list, strings and comments excluded): **~7 500
+Norwegian identifier occurrences, 667 distinct names, 201 files --
+4,8 % of all identifiers.** Per crate: api 3 777, db 2 398, core
+1 046, cli 138, mcp 81, gov 43, agent 9, mail 2. The heaviest single
+file is `tilgang.rs` at 806, of which `Rett` alone is 507.
+
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
 still.
 
 **Still Norwegian**, deliberately: the modules whose core and db halves are
-both unconverted (`mva`, `lonn`,
+both unconverted (`mva`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
 `regnmed-api::tilgang` (the single access guard, named all through
 docs/auth.md) and the test tree (`tests/grupper/`, the seven group

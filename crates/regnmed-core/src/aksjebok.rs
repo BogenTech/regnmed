@@ -160,7 +160,7 @@ impl Transaksjonstype {
         }
     }
 
-    pub fn fra_slug(slug: &str) -> Option<Self> {
+    pub fn from_slug(slug: &str) -> Option<Self> {
         ALLE.iter().copied().find(|t| t.slug() == slug)
     }
 
@@ -387,9 +387,9 @@ mod tests {
         let mut sett = std::collections::HashSet::new();
         for t in ALLE {
             assert!(sett.insert(t.slug()), "duplikat slug: {}", t.slug());
-            assert_eq!(Transaksjonstype::fra_slug(t.slug()), Some(t));
+            assert_eq!(Transaksjonstype::from_slug(t.slug()), Some(t));
         }
-        assert_eq!(Transaksjonstype::fra_slug("finnes-ikke"), None);
+        assert_eq!(Transaksjonstype::from_slug("finnes-ikke"), None);
     }
 
     /// Pins the honest limitation: we have verified the code only for

@@ -32,7 +32,7 @@ fn bp_av(amount_ore: i64, rate_bp: i64) -> i64 {
 
 /// Arbeidsgiveravgift-soner (Skattedirektoratets melding, årlig).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Sone {
+pub enum Zone {
     I,
     Ia,
     II,
@@ -43,44 +43,44 @@ pub enum Sone {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LonnError {
+pub enum PayrollError {
     /// Tabelltrekk needs Skatteetatens published tables.
-    TabelltrekkIkkeStottet(i32),
+    TableWithholdingUnsupported(i32),
     /// Sone Ia's reduced rate is bounded by a yearly fribeløp.
-    SoneIaKreverFribelopsberegning,
+    ZoneIaRequiresExemptionCalculation,
     /// The satsregister has no verified rate covering this date.
-    ManglerSats(String, NaiveDate),
+    MissingRate(String, NaiveDate),
 }
 
-impl std::fmt::Display for LonnError {
+impl std::fmt::Display for PayrollError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TabelltrekkIkkeStottet(tabell) => write!(
+            Self::TableWithholdingUnsupported(table) => write!(
                 f,
-                "tabelltrekk (tabell {tabell}) er ikke støttet: trekktabellene er \
+                "tabelltrekk (tabell {table}) er ikke støttet: trekktabellene er \
                  Skatteetatens datafiler, og regnmed tilnærmer dem ikke — bruk \
                  prosenttrekk fra skattekortet inntil tabellene er vendored \
                  (se docs/lonn.md)"
             ),
-            Self::SoneIaKreverFribelopsberegning => write!(
+            Self::ZoneIaRequiresExemptionCalculation => write!(
                 f,
                 "sone Ia er ikke støttet: den reduserte satsen gjelder bare til \
                  fribeløpet er brukt opp, og fribeløpet er bagatellmessig støtte \
                  som også forbrukes utenfor regnmed — å regne redusert sats uten \
                  hele bildet ville underrapportert avgift (se docs/lonn.md)"
             ),
-            Self::ManglerSats(domene, date) => write!(
+            Self::MissingRate(domain, date) => write!(
                 f,
-                "satsregisteret har ingen verifisert «{domene}» som dekker {date} \
+                "satsregisteret har ingen verifisert «{domain}» som dekker {date} \
                  — legg inn satsen med kilde før lønnskjøringen"
             ),
         }
     }
 }
 
-impl std::error::Error for LonnError {}
+impl std::error::Error for PayrollError {}
 
-impl Sone {
+impl Zone {
     pub fn slug(self) -> &'static str {
         match self {
             Self::I => "I",
@@ -93,7 +93,7 @@ impl Sone {
         }
     }
 
-    pub fn fra_slug(slug: &str) -> Option<Self> {
+    pub fn from_slug(slug: &str) -> Option<Self> {
         [
             Self::I,
             Self::Ia,
@@ -108,43 +108,43 @@ impl Sone {
     }
 
     /// The satsregister domain carrying this zone's rate.
-    pub fn sats_domene(self) -> String {
+    pub fn rate_domain(self) -> String {
         format!("aga_sone_{}", self.slug().to_lowercase())
     }
 }
 
 /// How the skattekort says to withhold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Trekk {
+pub enum Withholding {
     /// Percentage in basis points (35 % = 3500).
-    Prosent(i64),
+    Percent(i64),
     /// Table number — refused, see [`LonnError::TabelltrekkIkkeStottet`].
-    Tabell(i32),
+    Table(i32),
     /// Frikort or otherwise exempt.
     Ingen,
 }
 
 /// One employee's pay for one month.
 #[derive(Debug, Clone)]
-pub struct Lonnsgrunnlag {
+pub struct PayrollBasis {
     /// Ordinary pay for the month (fastlønn, timelønn, tillegg).
-    pub brutto_ore: i64,
+    pub gross_ore: i64,
     /// Feriepenger paid out this month. Kept separate because they are
     /// **trekkfrie** — see [`beregn`].
-    pub feriepenger_ore: i64,
-    pub trekk: Trekk,
+    pub holiday_pay_ore: i64,
+    pub withholding: Withholding,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Lonnsberegning {
-    pub brutto_ore: i64,
-    pub feriepenger_ore: i64,
+pub struct PayrollCalculation {
+    pub gross_ore: i64,
+    pub holiday_pay_ore: i64,
     /// Base the withholding was actually computed on.
-    pub trekkgrunnlag_ore: i64,
-    pub forskuddstrekk_ore: i64,
-    pub netto_ore: i64,
+    pub withholding_basis_ore: i64,
+    pub withholding_ore: i64,
+    pub net_ore: i64,
     /// True when December's half withholding was applied.
-    pub halv_trekk: bool,
+    pub half_withholding: bool,
 }
 
 /// Forskuddstrekk for one month.
@@ -160,26 +160,30 @@ pub struct Lonnsberegning {
 ///   regnmed does December, the common choice, and says so).
 ///
 /// Rounding is half away from zero, on the month's whole trekkgrunnlag.
-pub fn beregn(grunnlag: &Lonnsgrunnlag, maned: u32) -> Result<Lonnsberegning, LonnError> {
-    let rate_bp = match grunnlag.trekk {
-        Trekk::Tabell(nr) => return Err(LonnError::TabelltrekkIkkeStottet(nr)),
-        Trekk::Ingen => 0,
-        Trekk::Prosent(bp) => bp,
+pub fn calculate(basis: &PayrollBasis, month: u32) -> Result<PayrollCalculation, PayrollError> {
+    let rate_bp = match basis.withholding {
+        Withholding::Table(nr) => return Err(PayrollError::TableWithholdingUnsupported(nr)),
+        Withholding::Ingen => 0,
+        Withholding::Percent(bp) => bp,
     };
 
     // Feriepenger never carry trekk; only ordinary pay does.
-    let trekkgrunnlag = grunnlag.brutto_ore;
-    let halv_trekk = maned == 12;
-    let effektiv_bp = if halv_trekk { rate_bp / 2 } else { rate_bp };
+    let trekkgrunnlag = basis.gross_ore;
+    let half_withholding = month == 12;
+    let effektiv_bp = if half_withholding {
+        rate_bp / 2
+    } else {
+        rate_bp
+    };
     let forskuddstrekk = bp_av(trekkgrunnlag, effektiv_bp);
 
-    Ok(Lonnsberegning {
-        brutto_ore: grunnlag.brutto_ore,
-        feriepenger_ore: grunnlag.feriepenger_ore,
-        trekkgrunnlag_ore: trekkgrunnlag,
-        forskuddstrekk_ore: forskuddstrekk,
-        netto_ore: grunnlag.brutto_ore + grunnlag.feriepenger_ore - forskuddstrekk,
-        halv_trekk,
+    Ok(PayrollCalculation {
+        gross_ore: basis.gross_ore,
+        holiday_pay_ore: basis.holiday_pay_ore,
+        withholding_basis_ore: trekkgrunnlag,
+        withholding_ore: forskuddstrekk,
+        net_ore: basis.gross_ore + basis.holiday_pay_ore - forskuddstrekk,
+        half_withholding,
     })
 }
 
@@ -187,11 +191,15 @@ pub fn beregn(grunnlag: &Lonnsgrunnlag, maned: u32) -> Result<Lonnsberegning, Lo
 ///
 /// `sats_bp` comes from the satsregister — this function never knows a
 /// rate itself. Sone Ia is refused; see [`LonnError`].
-pub fn arbeidsgiveravgift(grunnlag_ore: i64, sone: Sone, rate_bp: i64) -> Result<i64, LonnError> {
-    if sone == Sone::Ia {
-        return Err(LonnError::SoneIaKreverFribelopsberegning);
+pub fn employer_contribution(
+    basis_ore: i64,
+    zone: Zone,
+    rate_bp: i64,
+) -> Result<i64, PayrollError> {
+    if zone == Zone::Ia {
+        return Err(PayrollError::ZoneIaRequiresExemptionCalculation);
     }
-    Ok(bp_av(grunnlag_ore, rate_bp))
+    Ok(bp_av(basis_ore, rate_bp))
 }
 
 /// Pay for logged hours: minutes at an hourly rate, in øre.
@@ -200,8 +208,8 @@ pub fn arbeidsgiveravgift(grunnlag_ore: i64, sone: Sone, rate_bp: i64) -> Result
 /// them (docs/timer.md) — converting to fractional hours first would
 /// introduce a rounding step that serves no one. One division, rounded
 /// half away from zero, and the result is exact for whole hours.
-pub fn timelonn(minutter: i64, timesats_ore: i64) -> i64 {
-    let n = minutter as i128 * timesats_ore as i128;
+pub fn hourly_pay(minutes: i64, timesats_ore: i64) -> i64 {
+    let n = minutes as i128 * timesats_ore as i128;
     let d = 60i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
     (sign * ((n.abs() + d / 2) / d)) as i64
@@ -230,8 +238,8 @@ pub fn timelonn(minutter: i64, timesats_ore: i64) -> i64 {
 /// opening balance — accrues **nothing** rather than a negative avgift.
 /// There is no such thing as owing negative arbeidsgiveravgift, and
 /// booking one would turn a bookkeeping gap into income.
-pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, rate_bp: i64) -> i64 {
-    bp_av(skyldige_feriepenger_ore.max(0), rate_bp)
+pub fn employer_contribution_accrual_target(holiday_pay_owed_ore: i64, rate_bp: i64) -> i64 {
+    bp_av(holiday_pay_owed_ore.max(0), rate_bp)
 }
 
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
@@ -240,29 +248,29 @@ pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, rate_bp: i64) -> i64 {
 /// turns 60 (§10 nr. 3 adds 2,3 prosentpoeng), and tariff agreements
 /// commonly raise it to 12 % / 14,3 % for five weeks' holiday. Which
 /// one applies is the caller's decision, recorded per employee.
-pub fn feriepengeavsetning(grunnlag_ore: i64, rate_bp: i64) -> i64 {
-    bp_av(grunnlag_ore, rate_bp)
+pub fn holiday_pay_accrual(basis_ore: i64, rate_bp: i64) -> i64 {
+    bp_av(basis_ore, rate_bp)
 }
 
 /// What a month's payroll costs and owes, per employee, summed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Lonnssum {
-    pub brutto_ore: i64,
+pub struct PayrollTotals {
+    pub gross_ore: i64,
     pub feriepenger_utbetalt_ore: i64,
-    pub forskuddstrekk_ore: i64,
-    pub netto_ore: i64,
-    pub feriepengeavsetning_ore: i64,
+    pub withholding_ore: i64,
+    pub net_ore: i64,
+    pub holiday_pay_accrual_ore: i64,
     /// aga on this month's pay.
-    pub aga_ore: i64,
+    pub employer_contribution_ore: i64,
     /// Change in the accrued aga on unpaid feriepenger — what this run
     /// posted to reach [`aga_avsetning_mal`]. Negative when feriepenger
     /// were paid out and the accrual is drawn back down.
-    pub aga_feriepenger_ore: i64,
+    pub employer_contribution_holiday_pay_ore: i64,
 }
 
-impl Lonnssum {
-    pub fn total_aga_ore(&self) -> i64 {
-        self.aga_ore + self.aga_feriepenger_ore
+impl PayrollTotals {
+    pub fn total_employer_contribution_ore(&self) -> i64 {
+        self.employer_contribution_ore + self.employer_contribution_holiday_pay_ore
     }
 
     /// What the run costs the employer.
@@ -272,8 +280,8 @@ impl Lonnssum {
     /// counting them here would expense them twice. What the month
     /// genuinely costs is the ordinary pay plus everything accrued on
     /// it — the new feriepenger obligation and both avgifter.
-    pub fn lonnskostnad_ore(&self) -> i64 {
-        self.brutto_ore + self.feriepengeavsetning_ore + self.total_aga_ore()
+    pub fn payroll_cost_ore(&self) -> i64 {
+        self.gross_ore + self.holiday_pay_accrual_ore + self.total_employer_contribution_ore()
     }
 }
 
@@ -281,63 +289,63 @@ impl Lonnssum {
 mod tests {
     use super::*;
 
-    fn grunnlag(brutto: i64, trekk: Trekk) -> Lonnsgrunnlag {
-        Lonnsgrunnlag {
-            brutto_ore: brutto,
-            feriepenger_ore: 0,
-            trekk,
+    fn basis(brutto: i64, withholding: Withholding) -> PayrollBasis {
+        PayrollBasis {
+            gross_ore: brutto,
+            holiday_pay_ore: 0,
+            withholding,
         }
     }
 
     #[test]
     fn percentage_withholding_is_plain_percent_of_brutto() {
         // 50 000 kr brutto, 35 % trekk.
-        let b = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 3).unwrap();
-        assert_eq!(b.forskuddstrekk_ore, 1_750_000);
-        assert_eq!(b.netto_ore, 3_250_000);
-        assert!(!b.halv_trekk);
+        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 3).unwrap();
+        assert_eq!(b.withholding_ore, 1_750_000);
+        assert_eq!(b.net_ore, 3_250_000);
+        assert!(!b.half_withholding);
     }
 
     /// Feriepenger are paid without withholding — but they are still
     /// part of what the employee receives.
     #[test]
     fn feriepenger_carry_no_withholding() {
-        let g = Lonnsgrunnlag {
-            brutto_ore: 1_000_000,
-            feriepenger_ore: 4_000_000,
-            trekk: Trekk::Prosent(3500),
+        let g = PayrollBasis {
+            gross_ore: 1_000_000,
+            holiday_pay_ore: 4_000_000,
+            withholding: Withholding::Percent(3500),
         };
-        let b = beregn(&g, 6).unwrap();
-        assert_eq!(b.trekkgrunnlag_ore, 1_000_000, "ordinary pay only");
-        assert_eq!(b.forskuddstrekk_ore, 350_000);
-        assert_eq!(b.netto_ore, 1_000_000 + 4_000_000 - 350_000);
+        let b = calculate(&g, 6).unwrap();
+        assert_eq!(b.withholding_basis_ore, 1_000_000, "ordinary pay only");
+        assert_eq!(b.withholding_ore, 350_000);
+        assert_eq!(b.net_ore, 1_000_000 + 4_000_000 - 350_000);
     }
 
     /// Half tax in December. The skattekort percentage is calculated
     /// over 10,5 months precisely so that this works out.
     #[test]
     fn december_withholds_half() {
-        let b = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 12).unwrap();
-        assert!(b.halv_trekk);
-        assert_eq!(b.forskuddstrekk_ore, 875_000);
+        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 12).unwrap();
+        assert!(b.half_withholding);
+        assert_eq!(b.withholding_ore, 875_000);
         // November is an entirely ordinary month.
-        let nov = beregn(&grunnlag(5_000_000, Trekk::Prosent(3500)), 11).unwrap();
-        assert_eq!(nov.forskuddstrekk_ore, 1_750_000);
+        let nov = calculate(&basis(5_000_000, Withholding::Percent(3500)), 11).unwrap();
+        assert_eq!(nov.withholding_ore, 1_750_000);
     }
 
     #[test]
     fn frikort_withholds_nothing() {
-        let b = beregn(&grunnlag(1_000_000, Trekk::Ingen), 5).unwrap();
-        assert_eq!(b.forskuddstrekk_ore, 0);
-        assert_eq!(b.netto_ore, 1_000_000);
+        let b = calculate(&basis(1_000_000, Withholding::Ingen), 5).unwrap();
+        assert_eq!(b.withholding_ore, 0);
+        assert_eq!(b.net_ore, 1_000_000);
     }
 
     /// The honest refusal: without Skatteetaten's tables we do not
     /// compute tabelltrekk, we say so.
     #[test]
     fn tabelltrekk_is_refused_loudly() {
-        let feil = beregn(&grunnlag(5_000_000, Trekk::Tabell(7100)), 3).unwrap_err();
-        assert_eq!(feil, LonnError::TabelltrekkIkkeStottet(7100));
+        let feil = calculate(&basis(5_000_000, Withholding::Table(7100)), 3).unwrap_err();
+        assert_eq!(feil, PayrollError::TableWithholdingUnsupported(7100));
         assert!(feil.to_string().contains("tilnærmer dem ikke"), "{feil}");
     }
 
@@ -345,48 +353,48 @@ mod tests {
     fn aga_is_the_rate_times_the_grunnlag() {
         // Sone I: 14,1 % of 50 000 kr.
         assert_eq!(
-            arbeidsgiveravgift(5_000_000, Sone::I, 1410).unwrap(),
+            employer_contribution(5_000_000, Zone::I, 1410).unwrap(),
             705_000
         );
         // Sone V is a zero rate — an answer, not a missing rate.
-        assert_eq!(arbeidsgiveravgift(5_000_000, Sone::V, 0).unwrap(), 0);
+        assert_eq!(employer_contribution(5_000_000, Zone::V, 0).unwrap(), 0);
     }
 
     #[test]
     fn sone_ia_is_refused_because_the_fribelop_is_invisible_here() {
-        let feil = arbeidsgiveravgift(5_000_000, Sone::Ia, 1060).unwrap_err();
-        assert_eq!(feil, LonnError::SoneIaKreverFribelopsberegning);
+        let feil = employer_contribution(5_000_000, Zone::Ia, 1060).unwrap_err();
+        assert_eq!(feil, PayrollError::ZoneIaRequiresExemptionCalculation);
         assert!(feil.to_string().contains("fribeløpet"), "{feil}");
     }
 
     #[test]
     fn feriepenger_by_ferieloven_and_by_tariff() {
         // §10: 10,2 % of the grunnlag.
-        assert_eq!(feriepengeavsetning(50_000_000, 1020), 5_100_000);
+        assert_eq!(holiday_pay_accrual(50_000_000, 1020), 5_100_000);
         // From the year the employee turns 60: +2,3 percentage points.
-        assert_eq!(feriepengeavsetning(50_000_000, 1250), 6_250_000);
+        assert_eq!(holiday_pay_accrual(50_000_000, 1250), 6_250_000);
         // Tariff agreement, five weeks.
-        assert_eq!(feriepengeavsetning(50_000_000, 1200), 6_000_000);
+        assert_eq!(holiday_pay_accrual(50_000_000, 1200), 6_000_000);
     }
 
     #[test]
     fn timelonn_is_computed_from_minutes() {
         // 160 hours at 450 kr.
-        assert_eq!(timelonn(160 * 60, 45_000), 7_200_000);
+        assert_eq!(hourly_pay(160 * 60, 45_000), 7_200_000);
         // Half hours are exact.
-        assert_eq!(timelonn(30, 45_000), 22_500);
+        assert_eq!(hourly_pay(30, 45_000), 22_500);
         // An awkward minute count rounds half away from zero, once.
         // 7 min at 450 kr = 52,50 kr = 5250 øre.
-        assert_eq!(timelonn(7, 45_000), 5_250);
+        assert_eq!(hourly_pay(7, 45_000), 5_250);
         // 1 min at 100,01 kr → 166,68333… øre → 167.
-        assert_eq!(timelonn(1, 10_001), 167);
-        assert_eq!(timelonn(0, 45_000), 0);
+        assert_eq!(hourly_pay(1, 10_001), 167);
+        assert_eq!(hourly_pay(0, 45_000), 0);
     }
 
     #[test]
     fn rounding_is_half_away_from_zero_and_deterministic() {
         // 1234,55 kr * 10,2 % = 125,9241 -> 125,92
-        assert_eq!(feriepengeavsetning(123_455, 1020), 12_592);
+        assert_eq!(holiday_pay_accrual(123_455, 1020), 12_592);
         // Exactly one half rounds up in absolute value.
         assert_eq!(bp_av(50_000, 1), 5);
         assert_eq!(bp_av(-50_000, 1), -5);
@@ -396,40 +404,40 @@ mod tests {
 
     #[test]
     fn sone_slug_round_trips() {
-        for sone in [
-            Sone::I,
-            Sone::Ia,
-            Sone::II,
-            Sone::III,
-            Sone::IV,
-            Sone::IVa,
-            Sone::V,
+        for zone in [
+            Zone::I,
+            Zone::Ia,
+            Zone::II,
+            Zone::III,
+            Zone::IV,
+            Zone::IVa,
+            Zone::V,
         ] {
-            assert_eq!(Sone::fra_slug(sone.slug()), Some(sone));
+            assert_eq!(Zone::from_slug(zone.slug()), Some(zone));
         }
-        assert_eq!(Sone::fra_slug("VI"), None);
-        assert_eq!(Sone::I.sats_domene(), "aga_sone_i");
-        assert_eq!(Sone::IVa.sats_domene(), "aga_sone_iva");
+        assert_eq!(Zone::from_slug("VI"), None);
+        assert_eq!(Zone::I.rate_domain(), "aga_sone_i");
+        assert_eq!(Zone::IVa.rate_domain(), "aga_sone_iva");
     }
 
     #[test]
     fn lonnssum_sums_cost_and_avgift() {
-        let sum = Lonnssum {
-            brutto_ore: 5_000_000,
+        let sum = PayrollTotals {
+            gross_ore: 5_000_000,
             feriepenger_utbetalt_ore: 1_000_000,
-            forskuddstrekk_ore: 1_750_000,
-            netto_ore: 4_250_000,
-            feriepengeavsetning_ore: 510_000,
-            aga_ore: 705_000,
-            aga_feriepenger_ore: 71_910,
+            withholding_ore: 1_750_000,
+            net_ore: 4_250_000,
+            holiday_pay_accrual_ore: 510_000,
+            employer_contribution_ore: 705_000,
+            employer_contribution_holiday_pay_ore: 71_910,
         };
-        assert_eq!(sum.total_aga_ore(), 776_910);
+        assert_eq!(sum.total_employer_contribution_ore(), 776_910);
         // The cost is ordinary pay plus what accrues on it. The
         // feriepenger paid out are NOT included: they were expensed in
         // the year they were earned, and counting them here would
         // expense them twice.
         assert_eq!(
-            sum.lonnskostnad_ore(),
+            sum.payroll_cost_ore(),
             5_000_000 + 510_000 + 705_000 + 71_910
         );
     }
@@ -439,11 +447,14 @@ mod tests {
     #[test]
     fn aga_accrual_is_the_rate_times_feriepenger_owed() {
         // 51 000 kr of feriepenger owed, sone I at 14,1 %.
-        assert_eq!(aga_avsetning_mal(5_100_000, 1410), 719_100);
+        assert_eq!(
+            employer_contribution_accrual_target(5_100_000, 1410),
+            719_100
+        );
         // No liability, no accrual.
-        assert_eq!(aga_avsetning_mal(0, 1410), 0);
+        assert_eq!(employer_contribution_accrual_target(0, 1410), 0);
         // Sone V is a zero rate all the way through.
-        assert_eq!(aga_avsetning_mal(5_100_000, 0), 0);
+        assert_eq!(employer_contribution_accrual_target(5_100_000, 0), 0);
     }
 
     /// If more feriepenger are paid out than the payroll history ever
@@ -452,7 +463,7 @@ mod tests {
     /// one would turn a gap in the books into income.
     #[test]
     fn negative_liability_accrues_nothing_rather_than_a_negative_avgift() {
-        assert_eq!(aga_avsetning_mal(-3_694_000, 1410), 0);
+        assert_eq!(employer_contribution_accrual_target(-3_694_000, 1410), 0);
     }
 
     /// The life of one feriepenge krone: accrued, held, paid out. What
@@ -462,17 +473,17 @@ mod tests {
     fn the_accrual_builds_up_and_draws_back_down_to_zero() {
         let sats = 1410;
         // Year 1: 51 000 kr of feriepenger earned, nothing accrued before.
-        let mal1 = aga_avsetning_mal(5_100_000, sats);
+        let mal1 = employer_contribution_accrual_target(5_100_000, sats);
         let delta1 = mal1 - 0;
         assert_eq!(delta1, 719_100);
 
         // Year 2, half is paid out: the liability is now 25 500 kr.
-        let mal2 = aga_avsetning_mal(2_550_000, sats);
+        let mal2 = employer_contribution_accrual_target(2_550_000, sats);
         let delta2 = mal2 - mal1;
         assert!(delta2 < 0, "a payout draws the accrual down");
 
         // The rest is paid out: the liability is zero, and so is the accrual.
-        let mal3 = aga_avsetning_mal(0, sats);
+        let mal3 = employer_contribution_accrual_target(0, sats);
         let delta3 = mal3 - mal2;
         assert_eq!(mal3, 0);
         assert_eq!(delta1 + delta2 + delta3, 0, "the whole life sums to zero");
@@ -482,11 +493,11 @@ mod tests {
     /// next run instead of lingering as a residue.
     #[test]
     fn a_rate_change_corrects_itself_on_the_next_run() {
-        let avsatt = aga_avsetning_mal(5_100_000, 1410);
+        let accrued = employer_contribution_accrual_target(5_100_000, 1410);
         // The rate is lowered the year after; the liability is unchanged.
-        let mal = aga_avsetning_mal(5_100_000, 1400);
-        let delta = mal - avsatt;
+        let mal = employer_contribution_accrual_target(5_100_000, 1400);
+        let delta = mal - accrued;
         assert_eq!(delta, -5_100, "the difference is exactly the rate change");
-        assert_eq!(avsatt + delta, mal, "and afterwards the accrual is right");
+        assert_eq!(accrued + delta, mal, "and afterwards the accrual is right");
     }
 }

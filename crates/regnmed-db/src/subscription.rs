@@ -510,12 +510,12 @@ pub async fn post_stripe_payment(
     kunde: Uuid,
     stripe_invoice_id: &str,
     payment_intent_id: &str,
-    brutto_ore: i64,
+    gross_ore: i64,
     plan: &str,
     periode: &str,
     idag: NaiveDate,
 ) -> Result<bool> {
-    ensure!(brutto_ore > 0, "betalingen må være positiv");
+    ensure!(gross_ore > 0, "betalingen må være positiv");
 
     // Same self-configuring setup the monthly run does.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
@@ -549,7 +549,7 @@ pub async fn post_stripe_payment(
     // for Norwegian mva: ours. An unregistered ops company splits at 0,
     // i.e. the whole charge is the base — same code path, no special case.
     let (vat_code, rate_bp) = output_vat(pool, drift_company_id, idag).await?;
-    let (netto, _mva) = regnmed_core::vat::split_gross(brutto_ore, rate_bp);
+    let (netto, _mva) = regnmed_core::vat::split_gross(gross_ore, rate_bp);
 
     let mut tx = pool.begin().await?;
 
@@ -777,7 +777,7 @@ pub async fn save_stripe_price(
     pool: &PgPool,
     plan: &str,
     interval: &str,
-    brutto_ore: i64,
+    gross_ore: i64,
     stripe_price_id: &str,
     kilde: &str,
 ) -> Result<()> {
@@ -788,7 +788,7 @@ pub async fn save_stripe_price(
     )
     .bind(plan)
     .bind(interval)
-    .bind(brutto_ore)
+    .bind(gross_ore)
     .bind(stripe_price_id)
     .bind(kilde)
     .execute(pool)

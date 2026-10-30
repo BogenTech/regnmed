@@ -22,7 +22,7 @@ use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
 use crate::tilgang::{Rett, krev};
 
-fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
+fn ansatt_json(a: &regnmed_db::payroll::Ansatt) -> serde_json::Value {
     json!({
         "id": a.id,
         "navn": a.navn,
@@ -33,10 +33,10 @@ fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
         "ansatt_til": a.ansatt_til,
         "manedslonn_ore": a.manedslonn_ore,
         "timelonn_ore": a.timelonn_ore,
-        "trekk_type": a.trekk_type,
-        "trekk_prosent_bp": a.trekk_prosent_bp,
+        "trekk_type": a.withholding_type,
+        "trekk_prosent_bp": a.withholding_percent_bp,
         "trekk_tabell": a.trekk_tabell,
-        "feriepenger_bp": a.feriepenger_bp,
+        "feriepenger_bp": a.holiday_pay_bp,
         "bank_account": a.bank_account,
         "note": a.note,
         // The linked portal user (docs/lonn.md, 0050) — null when the
@@ -55,9 +55,9 @@ pub async fn list_employees(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
-    let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company_id).await?;
+    let employees = regnmed_db::payroll::list_ansatte(&state.pool, company_id).await?;
     Ok(Json(json!({
-        "ansatte": ansatte.iter().map(ansatt_json).collect::<Vec<_>>()
+        "ansatte": employees.iter().map(ansatt_json).collect::<Vec<_>>()
     })))
 }
 
@@ -70,13 +70,16 @@ pub struct CreateEmployeeRequest {
     manedslonn_ore: Option<i64>,
     timelonn_ore: Option<i64>,
     #[serde(default = "prosent")]
-    trekk_type: String,
-    trekk_prosent_bp: Option<i32>,
+    #[serde(rename = "trekk_type")]
+    withholding_type: String,
+    #[serde(rename = "trekk_prosent_bp")]
+    withholding_percent_bp: Option<i32>,
     trekk_tabell: Option<i32>,
     /// Ferieloven §10: 1020 as a minimum, 1250 from the year the
     /// employee turns 60, higher on tariff.
     #[serde(default = "lovens_minimum")]
-    feriepenger_bp: i32,
+    #[serde(rename = "feriepenger_bp")]
+    holiday_pay_bp: i32,
     bank_account: Option<String>,
     note: Option<String>,
 }
@@ -95,20 +98,20 @@ pub async fn create_employee(
     Json(request): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
-    let id = regnmed_db::lonn::create_ansatt(
+    let id = regnmed_db::payroll::create_ansatt(
         &state.pool,
         company_id,
-        &regnmed_db::lonn::NyAnsatt {
+        &regnmed_db::payroll::NyAnsatt {
             fodselsnummer: request.fodselsnummer,
             navn: request.navn,
             stilling: request.stilling,
             ansatt_fra: request.ansatt_fra,
             manedslonn_ore: request.manedslonn_ore,
             timelonn_ore: request.timelonn_ore,
-            trekk_type: request.trekk_type,
-            trekk_prosent_bp: request.trekk_prosent_bp,
+            withholding_type: request.withholding_type,
+            withholding_percent_bp: request.withholding_percent_bp,
             trekk_tabell: request.trekk_tabell,
-            feriepenger_bp: request.feriepenger_bp,
+            holiday_pay_bp: request.holiday_pay_bp,
             bank_account: request.bank_account,
             note: request.note,
         },
@@ -124,23 +127,23 @@ pub struct YearQuery {
     year: Option<i32>,
 }
 
-fn kjoring_json(k: &regnmed_db::lonn::Lonnskjoring) -> serde_json::Value {
+fn kjoring_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
     json!({
         "id": k.id,
         "ar": k.ar,
-        "maned": k.maned,
+        "maned": k.month,
         "utbetalt_dato": k.paid_date,
-        "sone": k.sone,
-        "brutto_ore": k.sum.brutto_ore,
+        "sone": k.zone,
+        "brutto_ore": k.sum.gross_ore,
         "feriepenger_utbetalt_ore": k.sum.feriepenger_utbetalt_ore,
-        "forskuddstrekk_ore": k.sum.forskuddstrekk_ore,
-        "netto_ore": k.sum.netto_ore,
-        "feriepengeavsetning_ore": k.sum.feriepengeavsetning_ore,
-        "aga_ore": k.sum.aga_ore,
-        "aga_feriepenger_ore": k.sum.aga_feriepenger_ore,
-        "lonnskostnad_ore": k.sum.lonnskostnad_ore(),
+        "forskuddstrekk_ore": k.sum.withholding_ore,
+        "netto_ore": k.sum.net_ore,
+        "feriepengeavsetning_ore": k.sum.holiday_pay_accrual_ore,
+        "aga_ore": k.sum.employer_contribution_ore,
+        "aga_feriepenger_ore": k.sum.employer_contribution_holiday_pay_ore,
+        "lonnskostnad_ore": k.sum.payroll_cost_ore(),
         "voucher_id": k.voucher_id,
-        "ansatte": k.ansatte.iter().map(|(id, navn)| json!({
+        "ansatte": k.employees.iter().map(|(id, navn)| json!({
             "employee_id": id, "navn": navn,
         })).collect::<Vec<_>>(),
     })
@@ -153,7 +156,7 @@ pub async fn list_payroll(
     Query(q): Query<YearQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
-    let runs = regnmed_db::lonn::list_kjoringer(&state.pool, company_id, q.year).await?;
+    let runs = regnmed_db::payroll::list_kjoringer(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "kjoringer": runs.iter().map(kjoring_json).collect::<Vec<_>>()
     })))
@@ -163,26 +166,32 @@ pub async fn list_payroll(
 pub struct PayrollLine {
     employee_id: Uuid,
     /// Omitted uses the employee's månedslønn.
-    brutto_ore: Option<i64>,
+    #[serde(rename = "brutto_ore")]
+    gross_ore: Option<i64>,
     #[serde(default)]
-    feriepenger_ore: i64,
+    #[serde(rename = "feriepenger_ore")]
+    holiday_pay_ore: i64,
     /// Pay from hours logged this month instead. The timesheet month
     /// must be locked first (docs/lonn.md).
     #[serde(default)]
-    fra_timer: bool,
+    #[serde(rename = "fra_timer")]
+    from_timesheet: bool,
 }
 
 #[derive(Deserialize)]
 pub struct RunPayrollRequest {
     ar: i32,
-    maned: u32,
+    #[serde(rename = "maned")]
+    month: u32,
     #[serde(rename = "utbetalt_dato")]
     paid_date: chrono::NaiveDate,
     /// Arbeidsgiveravgiftssone: I, II, III, IV, IVa or V. Ia is refused
     /// — its reduced rate is bounded by a yearly fribeløp regnmed
     /// cannot see in full (docs/lonn.md).
-    sone: String,
-    linjer: Vec<PayrollLine>,
+    #[serde(rename = "sone")]
+    zone: String,
+    #[serde(rename = "linjer")]
+    lines: Vec<PayrollLine>,
 }
 
 pub async fn run_payroll(
@@ -193,22 +202,22 @@ pub async fn run_payroll(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnKjor).await?;
     let poster: Vec<_> = request
-        .linjer
+        .lines
         .iter()
-        .map(|l| regnmed_db::lonn::Lonnspost {
+        .map(|l| regnmed_db::payroll::PayrollEntry {
             employee_id: l.employee_id,
-            brutto_ore: l.brutto_ore,
-            feriepenger_ore: l.feriepenger_ore,
-            fra_timer: l.fra_timer,
+            gross_ore: l.gross_ore,
+            holiday_pay_ore: l.holiday_pay_ore,
+            from_timesheet: l.from_timesheet,
         })
         .collect();
-    let kjoring = regnmed_db::lonn::kjor_lonn(
+    let run = regnmed_db::payroll::run_payroll(
         &state.pool,
         company_id,
         request.ar,
-        request.maned,
+        request.month,
         request.paid_date,
-        &request.sone,
+        &request.zone,
         &poster,
         person.display(),
     )
@@ -216,19 +225,19 @@ pub async fn run_payroll(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     Ok(Json(json!({
-        "kjoring": kjoring_json(&kjoring),
-        "linjer": kjoring.linjer.iter().map(|l| json!({
+        "kjoring": kjoring_json(&run),
+        "linjer": run.lines.iter().map(|l| json!({
             "employee_id": l.employee_id,
             "navn": l.navn,
-            "brutto_ore": l.beregning.brutto_ore,
-            "feriepenger_ore": l.beregning.feriepenger_ore,
-            "forskuddstrekk_ore": l.beregning.forskuddstrekk_ore,
-            "netto_ore": l.beregning.netto_ore,
-            "feriepengeavsetning_ore": l.feriepengeavsetning_ore,
-            "aga_feriepenger_ore": l.aga_feriepenger_ore,
-            "halv_trekk": l.beregning.halv_trekk,
+            "brutto_ore": l.calculation.gross_ore,
+            "feriepenger_ore": l.calculation.holiday_pay_ore,
+            "forskuddstrekk_ore": l.calculation.withholding_ore,
+            "netto_ore": l.calculation.net_ore,
+            "feriepengeavsetning_ore": l.holiday_pay_accrual_ore,
+            "aga_feriepenger_ore": l.employer_contribution_holiday_pay_ore,
+            "halv_trekk": l.calculation.half_withholding,
         })).collect::<Vec<_>>(),
-        "advarsler": kjoring.advarsler,
+        "advarsler": run.advarsler,
     })))
 }
 
@@ -256,23 +265,24 @@ pub async fn payslip_pdf(
     )
     .await?;
     if !rolle.har(Rett::LonnsslippLesAlle) {
-        let eier = regnmed_db::lonn::ansatt_person(&state.pool, company_id, employee_id).await?;
+        let eier = regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
         if eier != Some(person.person_id) {
             return Err(ApiError::NotFound);
         }
     }
-    let input = regnmed_db::lonn::lonnsslipp(&state.pool, company_id, run_id, employee_id)
+    let input = regnmed_db::payroll::payslip(&state.pool, company_id, run_id, employee_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
-    let filnavn = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.maned);
-    let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&input);
+    let filnavn = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.month);
+    let pdf = regnmed_core::payslip::render_payslip(&input);
     Ok(file_response(Vis::Inline, &filnavn, "application/pdf", pdf))
 }
 
 #[derive(Deserialize)]
 pub struct HoursQuery {
     ar: i32,
-    maned: u32,
+    #[serde(rename = "maned")]
+    month: u32,
 }
 
 /// What an employee's logged hours come to for a month, and whether the
@@ -285,11 +295,11 @@ pub async fn payroll_hours(
     Query(q): Query<HoursQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
-    let g = regnmed_db::lonn::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.maned)
+    let g = regnmed_db::payroll::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.month)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "minutter": g.minutter,
+        "minutter": g.minutes,
         "timesats_ore": g.timesats_ore,
         "belop_ore": g.amount_ore,
         "laast": g.laast,
@@ -313,7 +323,7 @@ pub async fn link_employee(
     Json(request): Json<LinkRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
-    regnmed_db::lonn::link_ansatt_person(
+    regnmed_db::payroll::link_ansatt_person(
         &state.pool,
         company_id,
         employee_id,
@@ -332,9 +342,14 @@ pub async fn unlink_employee(
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
-    regnmed_db::lonn::unlink_ansatt_person(&state.pool, company_id, employee_id, person.person_id)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    regnmed_db::payroll::unlink_ansatt_person(
+        &state.pool,
+        company_id,
+        employee_id,
+        person.person_id,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "frakoblet": true })))
 }
 
@@ -346,7 +361,7 @@ pub async fn employee_link_history(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
     let rader =
-        regnmed_db::lonn::ansatt_link_historikk(&state.pool, company_id, employee_id).await?;
+        regnmed_db::payroll::ansatt_link_historikk(&state.pool, company_id, employee_id).await?;
     Ok(Json(json!({
         "historikk": rader.iter().map(|h| json!({
             "endring": h.endring,
