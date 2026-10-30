@@ -22,7 +22,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
-use regnmed_core::migreringcsv::{ApenPostRad, KontaktRad, PartKind};
+use regnmed_core::migration_csv::{ContactRow, OpenItemRow, PartyKind};
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -44,7 +44,7 @@ pub struct ContactsReport {
 pub async fn import_contacts(
     pool: &PgPool,
     company_id: Uuid,
-    rader: &[KontaktRad],
+    rader: &[ContactRow],
 ) -> Result<ContactsReport> {
     let mut report = ContactsReport::default();
     for rad in rader {
@@ -53,9 +53,9 @@ pub async fn import_contacts(
             pool,
             company_id,
             kind,
-            rad.nummer.as_deref(),
-            &rad.navn,
-            rad.orgnr.as_deref(),
+            rad.number.as_deref(),
+            &rad.name,
+            rad.orgnumber.as_deref(),
         )
         .await?;
         let party_id = match existing {
@@ -68,15 +68,15 @@ pub async fn import_contacts(
                 // else (S-1, L-9) gets our own numbering, and the name
                 // stays the link back.
                 let party_no = rad
-                    .nummer
+                    .number
                     .as_deref()
                     .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
                 let created = crate::reskontro::create_party(
                     pool,
                     company_id,
                     kind,
-                    &rad.navn,
-                    rad.orgnr.as_deref(),
+                    &rad.name,
+                    rad.orgnumber.as_deref(),
                     party_no,
                 )
                 .await;
@@ -88,28 +88,28 @@ pub async fn import_contacts(
                     Err(e) => {
                         report
                             .advarsler
-                            .push(format!("{}: kunne ikke opprettes ({e})", rad.navn));
+                            .push(format!("{}: kunne ikke opprettes ({e})", rad.name));
                         continue;
                     }
                 }
             }
         };
-        if rad.adresse.is_none() && rad.epost.is_none() && rad.kontonummer.is_none() {
+        if rad.address.is_none() && rad.email.is_none() && rad.bank_account.is_none() {
             continue;
         }
         let full = crate::settings::update_party_contact(
             pool,
             company_id,
             party_id,
-            rad.adresse.as_deref(),
-            rad.epost.as_deref(),
-            rad.kontonummer.as_deref(),
+            rad.address.as_deref(),
+            rad.email.as_deref(),
+            rad.bank_account.as_deref(),
         )
         .await;
         if let Err(e) = full {
             report.advarsler.push(format!(
                 "{}: kontaktinfo delvis hoppet over ({e})",
-                rad.navn
+                rad.name
             ));
             // Retry without the fields most likely to be at fault, so a
             // bad kontonummer does not also lose the e-mail address.
@@ -117,7 +117,7 @@ pub async fn import_contacts(
                 pool,
                 company_id,
                 party_id,
-                rad.adresse.as_deref(),
+                rad.address.as_deref(),
                 None,
                 None,
             )
@@ -168,12 +168,12 @@ pub struct OpenItemsPlan {
     pub advarsler: Vec<String>,
 }
 
-fn line_amount(kind: PartKind, belop_ore: i64) -> i64 {
+fn line_amount(kind: PartyKind, belop_ore: i64) -> i64 {
     match kind {
         // A customer owing us is a debit; a supplier we owe is a credit.
         // Credit notes keep their own sign through the negation.
-        PartKind::Kunde => belop_ore,
-        PartKind::Leverandor => -belop_ore,
+        PartyKind::Customer => belop_ore,
+        PartyKind::Supplier => -belop_ore,
     }
 }
 
@@ -182,9 +182,9 @@ fn line_amount(kind: PartKind, belop_ore: i64) -> i64 {
 pub async fn plan_open_items(
     pool: &PgPool,
     company_id: Uuid,
-    kind: PartKind,
+    kind: PartyKind,
     konto: &str,
-    rader: &[ApenPostRad],
+    rader: &[OpenItemRow],
 ) -> Result<OpenItemsPlan> {
     let saldo: Option<i64> = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
@@ -204,13 +204,13 @@ pub async fn plan_open_items(
             pool,
             company_id,
             kind.as_str(),
-            Some(rad.part.as_str()),
-            rad.part_navn.as_deref().unwrap_or(&rad.part),
+            Some(rad.party.as_str()),
+            rad.party_name.as_deref().unwrap_or(&rad.party),
             None,
         )
         .await?;
         if found.is_none() {
-            let navn = rad.part_navn.clone().unwrap_or_else(|| rad.part.clone());
+            let navn = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
             if !nye_parter.contains(&navn) {
                 nye_parter.push(navn);
             }
@@ -225,7 +225,7 @@ pub async fn plan_open_items(
     }
     Ok(OpenItemsPlan {
         antall: rader.len(),
-        sum_ore: rader.iter().map(|r| line_amount(kind, r.belop_ore)).sum(),
+        sum_ore: rader.iter().map(|r| line_amount(kind, r.amount_ore)).sum(),
         nye_parter,
         konto_saldo_ore,
         advarsler,
@@ -247,11 +247,11 @@ pub struct OpenItemsReport {
 pub async fn import_open_items(
     pool: &PgPool,
     company_id: Uuid,
-    kind: PartKind,
+    kind: PartyKind,
     konto: &str,
     motkonto: &str,
     dato: NaiveDate,
-    rader: &[ApenPostRad],
+    rader: &[OpenItemRow],
     created_by: &str,
 ) -> Result<OpenItemsReport> {
     ensure!(!rader.is_empty(), "filen inneholder ingen åpne poster");
@@ -297,12 +297,12 @@ pub async fn import_open_items(
     let mut opprettede_parter = 0usize;
     let mut entries = Vec::with_capacity(rader.len() + 1);
     for rad in rader {
-        let navn = rad.part_navn.clone().unwrap_or_else(|| rad.part.clone());
+        let navn = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
         let found = find_party_in(
             &mut tx,
             company_id,
             kind.as_str(),
-            Some(rad.part.as_str()),
+            Some(rad.party.as_str()),
             &navn,
         )
         .await?;
@@ -310,21 +310,21 @@ pub async fn import_open_items(
             Some(no) => no,
             None => {
                 let no =
-                    create_party_in(&mut tx, company_id, kind.as_str(), &navn, &rad.part).await?;
+                    create_party_in(&mut tx, company_id, kind.as_str(), &navn, &rad.party).await?;
                 opprettede_parter += 1;
                 no
             }
         };
-        let mut tekst = rad.dokument.clone().unwrap_or_else(|| "Åpen post".into());
+        let mut tekst = rad.document.clone().unwrap_or_else(|| "Åpen post".into());
         if let Some(kid) = &rad.kid {
             tekst = format!("{tekst} (KID {kid})");
         }
-        if let Some(forfall) = rad.forfall {
+        if let Some(forfall) = rad.due_date {
             tekst = format!("{tekst} forfall {forfall}");
         }
         entries.push(EntryDraft {
             account_number: konto.to_string(),
-            amount: Ore(line_amount(kind, rad.belop_ore)),
+            amount: Ore(line_amount(kind, rad.amount_ore)),
             vat_code: None,
             description: Some(tekst),
             party_no: Some(party_no),
@@ -351,8 +351,8 @@ pub async fn import_open_items(
         description: format!(
             "Åpne poster {} ved migrering",
             match kind {
-                PartKind::Kunde => "kunder",
-                PartKind::Leverandor => "leverandører",
+                PartyKind::Customer => "kunder",
+                PartyKind::Supplier => "leverandører",
             }
         ),
         reverses: None,

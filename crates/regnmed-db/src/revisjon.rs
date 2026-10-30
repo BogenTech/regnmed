@@ -187,13 +187,13 @@ pub async fn build_revisjon_report(
     // silently produce unlawful gebyrer/renter — surfaced here so the
     // yearly regelverksrevisjon is verified, not remembered.
     let satser = crate::load_satser(pool).await?;
-    let foreldede = regnmed_core::sats::foreldede_domener(&satser, chrono::Utc::now().date_naive());
+    let foreldede = regnmed_core::rates::stale_domains(&satser, chrono::Utc::now().date_naive());
     kontroller.push(Kontroll {
         navn: "Regelverkssatser".into(),
         ok: foreldede.is_empty(),
         detalj: if foreldede.is_empty() {
             let domener: std::collections::HashSet<_> =
-                satser.iter().map(|s| s.domene.as_str()).collect();
+                satser.iter().map(|s| s.domain.as_str()).collect();
             format!(
                 "{} satsdomener i registeret; ingen overvåket sats er eldre enn sin kadens",
                 domener.len()
@@ -201,9 +201,9 @@ pub async fn build_revisjon_report(
         } else {
             foreldede
                 .iter()
-                .map(|f| match f.siste {
-                    Some(date) => format!("{} sist oppdatert {date}", f.domene),
-                    None => format!("{} mangler i satsregisteret", f.domene),
+                .map(|f| match f.latest {
+                    Some(date) => format!("{} sist oppdatert {date}", f.domain),
+                    None => format!("{} mangler i satsregisteret", f.domain),
                 })
                 .collect::<Vec<_>>()
                 .join("; ")

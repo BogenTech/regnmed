@@ -11,7 +11,7 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use regnmed_core::migreringcsv::{PartKind, parse_apne_poster, parse_kontakter};
+use regnmed_core::migration_csv::{PartyKind, parse_contacts, parse_open_items};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -20,10 +20,10 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-fn kind_from(raw: Option<&str>) -> Result<PartKind, ApiError> {
+fn kind_from(raw: Option<&str>) -> Result<PartyKind, ApiError> {
     match raw.map(str::trim) {
-        Some("kunde") => Ok(PartKind::Kunde),
-        Some("leverandor") | Some("leverandør") => Ok(PartKind::Leverandor),
+        Some("kunde") => Ok(PartyKind::Customer),
+        Some("leverandor") | Some("leverandør") => Ok(PartyKind::Supplier),
         _ => Err(ApiError::BadRequest(
             "kind må være 'kunde' eller 'leverandor'".into(),
         )),
@@ -44,7 +44,7 @@ pub async fn import_contacts(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
     let kind = kind_from(query.kind.as_deref())?;
-    let rader = parse_kontakter(&body, kind).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let rader = parse_contacts(&body, kind).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if rader.is_empty() {
         return Err(ApiError::BadRequest("filen inneholder ingen rader".into()));
     }
@@ -82,12 +82,12 @@ pub async fn import_open_items(
     let kind = kind_from(query.kind.as_deref())?;
     let konto = query.konto.unwrap_or_else(|| {
         match kind {
-            PartKind::Kunde => "1500",
-            PartKind::Leverandor => "2400",
+            PartyKind::Customer => "1500",
+            PartyKind::Supplier => "2400",
         }
         .to_string()
     });
-    let rader = parse_apne_poster(&body).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let rader = parse_open_items(&body).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if rader.is_empty() {
         return Err(ApiError::BadRequest(
             "filen inneholder ingen åpne poster".into(),

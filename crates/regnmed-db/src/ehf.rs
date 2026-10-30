@@ -348,43 +348,43 @@ pub async fn inbox_forslag(
                 return Ok(forslag);
             }
             Some(tekst) => {
-                let t = regnmed_core::bilagstolk::tolk(&tekst);
+                let t = regnmed_core::voucher_hints::read(&tekst);
                 let mut note = |felt: &str, begrunnelse: &str| {
                     forslag
                         .begrunnelser
                         .push((felt.to_string(), begrunnelse.to_string()));
                 };
-                if let Some(f) = &t.orgnr {
-                    forslag.orgnr = Some(f.verdi.clone());
-                    note("orgnr", &f.begrunnelse);
+                if let Some(f) = &t.orgnumber {
+                    forslag.orgnr = Some(f.value.clone());
+                    note("orgnr", &f.reason);
                 }
-                if let Some(f) = &t.fakturanr {
-                    forslag.fakturanr = Some(f.verdi.clone());
-                    note("fakturanr", &f.begrunnelse);
+                if let Some(f) = &t.invoice_number {
+                    forslag.fakturanr = Some(f.value.clone());
+                    note("fakturanr", &f.reason);
                 }
                 if let Some(f) = &t.kid {
-                    forslag.kid = Some(f.verdi.clone());
-                    note("kid", &f.begrunnelse);
+                    forslag.kid = Some(f.value.clone());
+                    note("kid", &f.reason);
                 }
-                if let Some(f) = &t.kontonummer {
-                    forslag.kontonummer = Some(f.verdi.clone());
-                    note("kontonummer", &f.begrunnelse);
+                if let Some(f) = &t.account_number {
+                    forslag.kontonummer = Some(f.value.clone());
+                    note("kontonummer", &f.reason);
                 }
-                if let Some(f) = &t.dato {
-                    forslag.dato = Some(f.verdi);
-                    note("dato", &f.begrunnelse);
+                if let Some(f) = &t.date {
+                    forslag.dato = Some(f.value);
+                    note("dato", &f.reason);
                 }
-                if let Some(f) = &t.forfall {
-                    forslag.forfall = Some(f.verdi);
-                    note("forfall", &f.begrunnelse);
+                if let Some(f) = &t.due_date {
+                    forslag.forfall = Some(f.value);
+                    note("forfall", &f.reason);
                 }
-                if let Some(f) = &t.belop_ore {
-                    forslag.brutto_ore = Some(f.verdi);
-                    note("brutto", &f.begrunnelse);
+                if let Some(f) = &t.amount_ore {
+                    forslag.brutto_ore = Some(f.value);
+                    note("brutto", &f.reason);
                 }
-                if let Some(f) = &t.mva_ore {
-                    forslag.mva_ore = Some(f.verdi);
-                    note("mva", &f.begrunnelse);
+                if let Some(f) = &t.vat_ore {
+                    forslag.mva_ore = Some(f.value);
+                    note("mva", &f.reason);
                 }
                 if let (Some(brutto), Some(mva)) = (forslag.brutto_ore, forslag.mva_ore) {
                     forslag.netto_ore = Some(brutto - mva);

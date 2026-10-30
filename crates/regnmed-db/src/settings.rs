@@ -254,9 +254,9 @@ pub async fn update_party_contact(
     }
     let normalized_konto = match clear(bank_account) {
         Some(konto) => {
-            let normalized = regnmed_core::pain001::normaliser_kontonummer(konto);
+            let normalized = regnmed_core::pain001::normalize_account_number(konto);
             ensure!(
-                regnmed_core::pain001::gyldig_kontonummer(&normalized),
+                regnmed_core::pain001::is_valid_account_number(&normalized),
                 "ugyldig kontonummer (11 siffer, MOD11)"
             );
             Some(normalized)

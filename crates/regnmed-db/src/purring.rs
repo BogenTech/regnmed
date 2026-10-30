@@ -10,7 +10,7 @@ use regnmed_core::purring::{
     PurringDokument, RenteBeregning, Steg, TidligereSkritt, build_krav_voucher, forsinkelsesrente,
     render_dokument, valider_steg,
 };
-use regnmed_core::sats::sats_on;
+use regnmed_core::rates::value_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -242,7 +242,7 @@ async fn prepare(
     } else {
         "purregebyr_maks"
     };
-    let maks_gebyr_ore = sats_on(&satser, gebyr_domene, sent_date).unwrap_or(0);
+    let maks_gebyr_ore = value_on(&satser, gebyr_domene, sent_date).unwrap_or(0);
 
     let rente = if draft.med_rente {
         forsinkelsesrente(facts.remaining_ore, facts.due_date, sent_date, &satser)?

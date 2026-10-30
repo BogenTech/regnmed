@@ -11,7 +11,7 @@ use regnmed_core::Ore;
 use regnmed_core::expenses::mileage_allowance;
 use regnmed_core::hash::sha256;
 use regnmed_core::mva::{rate_on, split_gross};
-use regnmed_core::sats::sats_on;
+use regnmed_core::rates::value_on;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -77,9 +77,9 @@ pub async fn create_kjoring(
 ) -> Result<(Uuid, i64, i64)> {
     ensure!(km > 0, "km må være positivt");
     let satser = load_satser(pool).await?;
-    let sats = sats_on(&satser, "km_godtgjorelse", dato)
+    let sats = value_on(&satser, "km_godtgjorelse", dato)
         .with_context(|| format!("ingen km-sats for {dato} i satsregisteret"))?;
-    let trekkfri_sats = sats_on(&satser, "km_godtgjorelse_trekkfri", dato)
+    let trekkfri_sats = value_on(&satser, "km_godtgjorelse_trekkfri", dato)
         .with_context(|| format!("ingen trekkfri km-sats for {dato} i satsregisteret"))?;
     let beregnet = mileage_allowance(km, sats, trekkfri_sats);
     let id = Uuid::now_v7();

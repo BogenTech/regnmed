@@ -169,7 +169,11 @@ far (all 2026-10-30): `regnmed-agent` and the task queue,
 `fnr`->`nin`, `regnskapsar`->`fiscal_year`, `pdftekst`->`pdftext`,
 `anlegg`->`assets`, `lager`->`inventory`, `utlegg`->`expenses`,
 `periodisering`->`accrual`, `budsjett`->`budget`,
-`kontoplan`->`chart_of_accounts`, `kassa`->`cash_register`.
+`kontoplan`->`chart_of_accounts`, `kassa`->`cash_register`,
+`sats`->`rates`, `migreringcsv`->`migration_csv`,
+`bilagstolk`->`voucher_hints`, plus `pain001`'s Norwegian fields.
+`bank`, `camt053`, `ocr`, `pdf`, `anchor`, `money`, `error`, `xml`,
+`csvutil` and `kid` were already English.
 The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
 Norwegian identifiers, and converting them is its own work, crate by
 crate, not a single sweep. `regnmed-api` has to move in lockstep with
@@ -422,7 +426,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    seeded w/ verified 2025–2026 values (forsinkelsesrente,
    standardkompensasjon, inkassosats, purregebyr 1/20, statens
    km-satser, terskler). Pure `sats_on` + `foreldede_domener` in
-   `regnmed-core::sats` (cadence table; thresholds exempt); the
+   `regnmed-core::rates` (cadence table; thresholds exempt); the
    revisjonsrapport gained kontroll 7 "Regelverkssatser" so the yearly
    regelverksrevisjon is machine-verified. Consumers: #29/#40/#42/#46.
 24. ✅ Per-inntektsår kodelister (docs/regelverk.md, closed #50):
@@ -688,7 +692,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    profil per leverandør) — bankcsv-mønsteret, med de delte
    primitivene løftet ut i `regnmed-core::csvutil` (bankcsv bruker nå
    samme kode; testene beviste at oppførselen står). Nytt:
-   `regnmed-core::migreringcsv` (kontakter + åpne poster;
+   `regnmed-core::migration_csv` (kontakter + åpne poster;
    `find_column_ranked` = prioritert kolonnevalg, så **restbeløp
    vinner over fakturabeløp** — bruttoimport ville blåst opp
    reskontroen i stillhet). Retningen bestemmes av parts-typen (kunde
@@ -732,7 +736,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    INGENTING og sier fra). Nytt: `regnmed-core::pdftekst` (PDF-ens
    egne innholdsstrømmer, rå + Flate via ny dep flate2/rust_backend,
    Tj/TJ-strenger, WinAnsi; returnerer None på mojibake — testet med
-   søppel-PDF) og `regnmed-core::bilagstolk` (heuristikk avgjort av
+   søppel-PDF) og `regnmed-core::voucher_hints` (heuristikk avgjort av
    KONTROLLSIFRENE vi allerede validerer: orgnr-MOD11, KID-MOD10/11,
    kontonummer-MOD11; «å betale» slår «sum»; en linje MED tall holder
    seg til sin egen linje — ellers leses totalen under «mva» som

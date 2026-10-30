@@ -21,32 +21,32 @@ use chrono::NaiveDate;
 
 /// One suggested value with the reason we believe it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Funn<T> {
-    pub verdi: T,
+pub struct Finding<T> {
+    pub value: T,
     /// Human-readable provenance, shown in the UI next to the value.
-    pub begrunnelse: String,
+    pub reason: String,
 }
 
-impl<T> Funn<T> {
-    fn new(verdi: T, begrunnelse: impl Into<String>) -> Self {
+impl<T> Finding<T> {
+    fn new(value: T, reason: impl Into<String>) -> Self {
         Self {
-            verdi,
-            begrunnelse: begrunnelse.into(),
+            value,
+            reason: reason.into(),
         }
     }
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Forslag {
-    pub orgnr: Option<Funn<String>>,
-    pub fakturanr: Option<Funn<String>>,
-    pub kid: Option<Funn<String>>,
-    pub kontonummer: Option<Funn<String>>,
-    pub dato: Option<Funn<NaiveDate>>,
-    pub forfall: Option<Funn<NaiveDate>>,
+pub struct Hints {
+    pub orgnumber: Option<Finding<String>>,
+    pub invoice_number: Option<Finding<String>>,
+    pub kid: Option<Finding<String>>,
+    pub account_number: Option<Finding<String>>,
+    pub date: Option<Finding<NaiveDate>>,
+    pub due_date: Option<Finding<NaiveDate>>,
     /// Gross amount to pay.
-    pub belop_ore: Option<Funn<i64>>,
-    pub mva_ore: Option<Funn<i64>>,
+    pub amount_ore: Option<Finding<i64>>,
+    pub vat_ore: Option<Finding<i64>>,
 }
 
 fn digits_only(s: &str) -> String {
@@ -76,7 +76,7 @@ fn number_tokens(line: &str) -> Vec<String> {
 
 /// "1 234,50" / "1.234,50" / "1234.50" / "1234" → øre. Refuses anything
 /// with more than two decimals — an invoice line is not a rate.
-fn parse_belop(token: &str) -> Option<i64> {
+fn parse_amount(token: &str) -> Option<i64> {
     let cleaned: String = token.chars().filter(|c| !c.is_whitespace()).collect();
     if cleaned.is_empty() {
         return None;
@@ -107,7 +107,7 @@ fn parse_belop(token: &str) -> Option<i64> {
     Some(whole * 100 + frac)
 }
 
-fn parse_dato(token: &str) -> Option<NaiveDate> {
+fn parse_date(token: &str) -> Option<NaiveDate> {
     let t = token.trim();
     for format in ["%d.%m.%Y", "%Y-%m-%d", "%d.%m.%y", "%d/%m/%Y", "%d.%m.%Y."] {
         if let Ok(date) = NaiveDate::parse_from_str(t, format) {
@@ -129,7 +129,7 @@ fn date_candidates(line: &str) -> Vec<NaiveDate> {
                 i += 1;
             }
             let token: String = chars[start..i].iter().collect();
-            if let Some(date) = parse_dato(token.trim_end_matches(['.', '/', '-'])) {
+            if let Some(date) = parse_date(token.trim_end_matches(['.', '/', '-'])) {
                 out.push(date);
             }
         } else {
@@ -147,8 +147,8 @@ fn normalized(line: &str) -> String {
 }
 
 /// Reads a document's text and proposes what it can defend.
-pub fn tolk(text: &str) -> Forslag {
-    let mut forslag = Forslag::default();
+pub fn read(text: &str) -> Hints {
+    let mut hints = Hints::default();
     let lines: Vec<&str> = text.lines().collect();
 
     for (i, line) in lines.iter().enumerate() {
@@ -157,41 +157,41 @@ pub fn tolk(text: &str) -> Forslag {
         // so an empty line falls through to the next one — but a line
         // that HAS numbers keeps to its own: reading across would let
         // the total below «mva» masquerade as the tax.
-        let neste = lines.get(i + 1).copied().unwrap_or("");
-        let egne = number_tokens(line);
-        let tokens: Vec<String> = if egne.is_empty() {
-            number_tokens(neste)
+        let next_line = lines.get(i + 1).copied().unwrap_or("");
+        let own_numbers = number_tokens(line);
+        let tokens: Vec<String> = if own_numbers.is_empty() {
+            number_tokens(next_line)
         } else {
-            egne
+            own_numbers
         };
 
         // --- Identifiers, decided by check digit ---
         for token in &tokens {
             let digits = digits_only(token);
-            if forslag.orgnr.is_none()
+            if hints.orgnumber.is_none()
                 && digits.len() == 9
                 && crate::orgnumber::is_valid(&digits)
                 && (lower.contains("org")
                     || lower.contains("foretaksregister")
                     || lower.contains("mva"))
             {
-                forslag.orgnr = Some(Funn::new(
+                hints.orgnumber = Some(Finding::new(
                     digits.clone(),
                     format!(
                         "ni siffer med gyldig kontrollsiffer nær «{}»",
-                        stikkord(&lower)
+                        keyword(&lower)
                     ),
                 ));
             }
-            if forslag.kid.is_none() && lower.contains("kid") && crate::kid::is_valid(&digits) {
-                forslag.kid = Some(Funn::new(digits.clone(), "gyldig KID nær «KID»"));
+            if hints.kid.is_none() && lower.contains("kid") && crate::kid::is_valid(&digits) {
+                hints.kid = Some(Finding::new(digits.clone(), "gyldig KID nær «KID»"));
             }
-            if forslag.kontonummer.is_none()
+            if hints.account_number.is_none()
                 && digits.len() == 11
-                && crate::pain001::gyldig_kontonummer(&digits)
+                && crate::pain001::is_valid_account_number(&digits)
                 && (lower.contains("konto") || lower.contains("bank"))
             {
-                forslag.kontonummer = Some(Funn::new(
+                hints.account_number = Some(Finding::new(
                     digits.clone(),
                     "elleve siffer med gyldig kontrollsiffer nær «konto»",
                 ));
@@ -199,7 +199,7 @@ pub fn tolk(text: &str) -> Forslag {
         }
 
         // --- Invoice number ---
-        if forslag.fakturanr.is_none()
+        if hints.invoice_number.is_none()
             && (lower.contains("fakturanr")
                 || lower.contains("faktura nr")
                 || lower.contains("fakturanummer"))
@@ -208,29 +208,29 @@ pub fn tolk(text: &str) -> Forslag {
                 (1..=20).contains(&d.len()) && !d.is_empty()
             })
         {
-            forslag.fakturanr = Some(Funn::new(digits_only(token), "etter «fakturanr»"));
+            hints.invoice_number = Some(Finding::new(digits_only(token), "etter «fakturanr»"));
         }
 
         // --- Dates ---
-        let datoer = {
+        let dates = {
             let d = date_candidates(line);
             if d.is_empty() {
-                date_candidates(neste)
+                date_candidates(next_line)
             } else {
                 d
             }
         };
-        if forslag.forfall.is_none()
+        if hints.due_date.is_none()
             && (lower.contains("forfall") || lower.contains("betalingsfrist"))
-            && let Some(dato) = datoer.first()
+            && let Some(date) = dates.first()
         {
-            forslag.forfall = Some(Funn::new(*dato, "etter «forfall»"));
+            hints.due_date = Some(Finding::new(*date, "etter «forfall»"));
         }
-        if forslag.dato.is_none()
+        if hints.date.is_none()
             && (lower.contains("fakturadato") || lower.contains("bilagsdato"))
-            && let Some(dato) = datoer.first()
+            && let Some(date) = dates.first()
         {
-            forslag.dato = Some(Funn::new(*dato, "etter «fakturadato»"));
+            hints.date = Some(Finding::new(*date, "etter «fakturadato»"));
         }
 
         // --- Amounts ---
@@ -246,34 +246,34 @@ pub fn tolk(text: &str) -> Forslag {
         ];
         for (nokkel, vist) in belop_stikkord {
             if lower.contains(nokkel)
-                && let Some(belop) = tokens.iter().filter_map(|t| parse_belop(t)).next_back()
+                && let Some(belop) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
                 && belop > 0
             {
-                let sterkere = forslag
-                    .belop_ore
+                let stronger = hints
+                    .amount_ore
                     .as_ref()
-                    .is_none_or(|f| !f.begrunnelse.contains("å betale"));
-                if sterkere {
-                    forslag.belop_ore = Some(Funn::new(belop, format!("etter {vist}")));
+                    .is_none_or(|f| !f.reason.contains("å betale"));
+                if stronger {
+                    hints.amount_ore = Some(Finding::new(belop, format!("etter {vist}")));
                 }
                 break;
             }
         }
-        if forslag.mva_ore.is_none()
+        if hints.vat_ore.is_none()
             && (lower.contains("mva") || lower.contains("merverdiavgift"))
             && !lower.contains("orgnr")
             && !lower.contains("inkl")
-            && let Some(belop) = tokens.iter().filter_map(|t| parse_belop(t)).next_back()
+            && let Some(belop) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
             && belop > 0
         {
-            forslag.mva_ore = Some(Funn::new(belop, "etter «mva»"));
+            hints.vat_ore = Some(Finding::new(belop, "etter «mva»"));
         }
     }
-    forslag
+    hints
 }
 
 /// The keyword we matched, for the provenance string.
-fn stikkord(lower: &str) -> &'static str {
+fn keyword(lower: &str) -> &'static str {
     if lower.contains("orgnr") || lower.contains("organisasjonsnummer") {
         "orgnr"
     } else if lower.contains("foretaksregister") {
@@ -309,83 +309,86 @@ KID: 1234567897
 
     #[test]
     fn reads_an_ordinary_norwegian_faktura() {
-        let f = tolk(FAKTURA);
-        assert_eq!(f.orgnr.as_ref().unwrap().verdi, "974760673");
-        assert_eq!(f.fakturanr.as_ref().unwrap().verdi, "90210");
+        let f = read(FAKTURA);
+        assert_eq!(f.orgnumber.as_ref().unwrap().value, "974760673");
+        assert_eq!(f.invoice_number.as_ref().unwrap().value, "90210");
         assert_eq!(
-            f.dato.as_ref().unwrap().verdi,
+            f.date.as_ref().unwrap().value,
             NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()
         );
         assert_eq!(
-            f.forfall.as_ref().unwrap().verdi,
+            f.due_date.as_ref().unwrap().value,
             NaiveDate::from_ymd_opt(2026, 7, 30).unwrap()
         );
-        assert_eq!(f.belop_ore.as_ref().unwrap().verdi, 2_812_50);
-        assert_eq!(f.mva_ore.as_ref().unwrap().verdi, 562_50);
-        assert_eq!(f.kontonummer.as_ref().unwrap().verdi, "86011117947");
-        assert_eq!(f.kid.as_ref().unwrap().verdi, "1234567897");
+        assert_eq!(f.amount_ore.as_ref().unwrap().value, 2_812_50);
+        assert_eq!(f.vat_ore.as_ref().unwrap().value, 562_50);
+        assert_eq!(f.account_number.as_ref().unwrap().value, "86011117947");
+        assert_eq!(f.kid.as_ref().unwrap().value, "1234567897");
     }
 
     #[test]
     fn every_finding_says_why() {
-        let f = tolk(FAKTURA);
+        let f = read(FAKTURA);
         assert!(
-            f.belop_ore
-                .as_ref()
-                .unwrap()
-                .begrunnelse
-                .contains("å betale"),
+            f.amount_ore.as_ref().unwrap().reason.contains("å betale"),
             "{:?}",
-            f.belop_ore
+            f.amount_ore
         );
-        assert!(f.kid.as_ref().unwrap().begrunnelse.contains("KID"));
+        assert!(f.kid.as_ref().unwrap().reason.contains("KID"));
         assert!(
-            f.orgnr
+            f.orgnumber
                 .as_ref()
                 .unwrap()
-                .begrunnelse
+                .reason
                 .contains("kontrollsiffer")
         );
     }
 
     #[test]
     fn numbers_without_a_valid_check_digit_are_not_suggested() {
-        let tekst = "Orgnr 123456789\nKID: 1111111111\nKontonummer: 12345678901\nBeskrivelse";
-        let f = tolk(tekst);
-        assert!(f.orgnr.is_none(), "ugyldig orgnr skal ikke foreslås");
+        let text = "Orgnr 123456789\nKID: 1111111111\nKontonummer: 12345678901\nBeskrivelse";
+        let f = read(text);
+        assert!(
+            f.orgnumber.is_none(),
+            "an invalid orgnr must not be suggested"
+        );
         assert!(f.kid.is_none());
-        assert!(f.kontonummer.is_none());
+        assert!(f.account_number.is_none());
     }
 
     #[test]
     fn a_value_on_the_line_below_its_label_is_found_too() {
-        let tekst = "Fakturanr\n55512\nForfallsdato\n01.09.2026\nÅ betale\n1 000,00";
-        let f = tolk(tekst);
-        assert_eq!(f.fakturanr.unwrap().verdi, "55512");
+        let text = "Fakturanr\n55512\nForfallsdato\n01.09.2026\nÅ betale\n1 000,00";
+        let f = read(text);
+        assert_eq!(f.invoice_number.unwrap().value, "55512");
         assert_eq!(
-            f.forfall.unwrap().verdi,
+            f.due_date.unwrap().value,
             NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()
         );
-        assert_eq!(f.belop_ore.unwrap().verdi, 1_000_00);
+        assert_eq!(f.amount_ore.unwrap().value, 1_000_00);
     }
 
     #[test]
     fn a_betale_beats_the_other_totals() {
-        let tekst = "Sum inkl mva 9 999,00\nÅ betale 1 234,50\nTotalsum 8 888,00";
-        let f = tolk(tekst).belop_ore.unwrap();
-        assert_eq!(f.verdi, 1_234_50);
-        assert!(f.begrunnelse.contains("å betale"));
+        let text = "Sum inkl mva 9 999,00\nÅ betale 1 234,50\nTotalsum 8 888,00";
+        let f = read(text).amount_ore.unwrap();
+        assert_eq!(f.value, 1_234_50);
+        assert!(f.reason.contains("å betale"));
     }
 
     #[test]
     fn amount_formats() {
-        assert_eq!(parse_belop("1 234,50"), Some(123_450));
-        assert_eq!(parse_belop("1.234,50"), Some(123_450));
-        assert_eq!(parse_belop("1234.50"), Some(123_450));
-        assert_eq!(parse_belop("1234"), Some(123_400));
-        assert_eq!(parse_belop("1.234"), Some(123_400), "tusenskille, ikke øre");
+        assert_eq!(parse_amount("1 234,50"), Some(123_450));
+        assert_eq!(parse_amount("1.234,50"), Some(123_450));
+        assert_eq!(parse_amount("1234.50"), Some(123_450));
+        assert_eq!(parse_amount("1234"), Some(123_400));
         assert_eq!(
-            parse_belop("12,345"),
+            parse_amount("1.234"),
+            Some(123_400),
+            "thousands separator, not øre"
+        );
+        assert_eq!(
+            parse_amount("12,345"),
             None,
             "tre desimaler er ikke et beløp"
         );
@@ -393,7 +396,7 @@ KID: 1234567897
 
     #[test]
     fn empty_text_yields_an_empty_suggestion() {
-        let f = tolk("");
-        assert!(f.orgnr.is_none() && f.belop_ore.is_none() && f.dato.is_none());
+        let f = read("");
+        assert!(f.orgnumber.is_none() && f.amount_ore.is_none() && f.date.is_none());
     }
 }

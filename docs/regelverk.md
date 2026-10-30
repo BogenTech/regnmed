@@ -25,7 +25,7 @@ data with validity periods — never code branches on a year**:
 | Rule | Mechanism | Location |
 | --- | --- | --- |
 | Mva-satser (alle klasser) | dated table | migration 0006 `vat_rate` |
-| Forsinkelsesrente, standardkompensasjon, inkassosats, purregebyr, statens km-satser, terskelverdier | **satsregisteret**: dated table w/ kilde per row, staleness-overvåket i revisjonsrapporten | migration 0016 `sats`, `regnmed-core::sats` |
+| Forsinkelsesrente, standardkompensasjon, inkassosats, purregebyr, statens km-satser, terskelverdier | **satsregisteret**: dated table w/ kilde per row, staleness-overvåket i revisjonsrapporten | migration 0016 `sats`, `regnmed-core::rates` |
 | Saldogruppesatser a–j (sktl. §14-43) | satsregisteret (`saldogruppe_*`, bp) — lovfestet, endres sjelden, unntatt kadens som tersklene | migration 0025, consumed by `regnmed-db::asset::saldo_rapport` |
 | Arbeidsgiveravgift per sone, feriepengesatser | satsregisteret (`aga_sone_*`, `feriepenger_*`) — aga fastsettes årlig i statsbudsjettet | migration 0035, `regnmed-core::lonn` (docs/lonn.md) |
 | Valutakurser | global datert tabell m/ kilde per rad, matet fra Norges Banks åpne API eller manuelt | migration 0027 `valutakurs`, `regnmed-gov::norgesbank` (docs/valuta.md) |
