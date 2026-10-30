@@ -21,8 +21,8 @@ pub mod llm;
 use anyhow::{Context, Result, bail};
 use futures_util::{StreamExt, stream};
 use regnmed_core::hemmelig::Nokkel;
-use regnmed_mcp::klient::Klient;
-use regnmed_mcp::{Server, rolle, verktoy};
+use regnmed_mcp::client::Client;
+use regnmed_mcp::{Server, role, tool};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -41,19 +41,19 @@ pub const CONCURRENT_TOOLS: usize = 4;
 pub const MAX_TURNS: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
-/// `VERKTOY` table the MCP server serves, so an agent can never be
+/// `TOOLS` table the MCP server serves, so an agent can never be
 /// offered a tool over one rail that does not exist on the other.
 pub fn tool_catalogue() -> Value {
     Value::Array(
-        verktoy::VERKTOY
+        tool::TOOLS
             .iter()
             .map(|v| {
                 json!({
                     "type": "function",
                     "function": {
-                        "name": v.navn,
-                        "description": v.beskrivelse,
-                        "parameters": serde_json::from_str::<Value>(&verktoy::skjema(v))
+                        "name": v.name,
+                        "description": v.description,
+                        "parameters": serde_json::from_str::<Value>(&tool::schema(v))
                             .unwrap_or_else(|_| json!({"type": "object"})),
                     }
                 })
@@ -155,8 +155,8 @@ fn interpret(text: &str) -> Outcome {
 /// on every call the agent makes, so the worst a bad instruction can do
 /// is make the agent attempt things it will be refused.
 fn system_prompt(role_name: &str, ekstra: Option<&str>) -> String {
-    let role_prompt = rolle::prompt(role_name)
-        .unwrap_or_else(|| rolle::prompt("ansatt").expect("ansatt-prompten finnes"));
+    let role_prompt = role::prompt(role_name)
+        .unwrap_or_else(|| role::prompt("ansatt").expect("ansatt-prompten finnes"));
     let mut ut = role_prompt.to_string();
     if let Some(ekstra) = ekstra.map(str::trim).filter(|t| !t.is_empty()) {
         ut.push_str("\n\nSÆRSKILTE INSTRUKSER FOR DEG:\n");
@@ -220,8 +220,8 @@ pub async fn run_loop(
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
-            let text = match verktoy::finn(&calls.name) {
-                Some(v) => server.utfor_verktoy(v, calls.arguments).await.0,
+            let text = match tool::find(&calls.name) {
+                Some(v) => server.execute_tool(v, calls.arguments).await.0,
                 // An invented tool is the model's mistake, and it is told
                 // so in the same channel as a real result.
                 None => format!("ukjent verktøy «{}»", calls.name),
@@ -282,7 +282,7 @@ pub async fn run_task(
         .find(|g| g.integration_id == integration_id && g.valid_to.is_none())
         .context("the agent has no active access to the company")?;
 
-    let klient = Klient::med_klientlegitimasjon(
+    let client = Client::with_client_credentials(
         api_base,
         Some(company_id.to_string()),
         issuer,
@@ -290,8 +290,8 @@ pub async fn run_task(
         &secret,
     )
     .await?;
-    let server = Server::new(klient);
-    let model = Llm::ny(&settings.base_url, &settings.modell, &model_key)?;
+    let server = Server::new(client);
+    let model = Llm::new(&settings.base_url, &settings.modell, &model_key)?;
 
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.
@@ -353,7 +353,7 @@ mod tests {
             .iter()
             .map(|v| v["function"]["name"].as_str().unwrap())
             .collect();
-        assert_eq!(name.len(), verktoy::VERKTOY.len());
+        assert_eq!(name.len(), tool::TOOLS.len());
         // Every tool carries a schema the provider can read; a tool
         // whose parameters did not parse would silently become
         // unusable rather than loudly missing.
@@ -372,7 +372,7 @@ mod tests {
         let med = system_prompt("bokforer", Some("Strøm bokføres på 6340."));
         // The role still opens the message, so nothing an owner writes
         // displaces the rules the role carries.
-        let role_prompt = rolle::prompt("bokforer").unwrap();
+        let role_prompt = role::prompt("bokforer").unwrap();
         assert!(med.starts_with(&role_prompt));
         assert!(med.contains("Strøm bokføres på 6340."));
         // And the protocol still closes it: the markers `interpret` reads

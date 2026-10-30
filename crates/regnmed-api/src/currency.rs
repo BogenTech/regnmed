@@ -93,15 +93,15 @@ pub async fn fetch_rates(
         .collect();
     let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
     let noteringer = client
-        .hent_kurser(&valutaer, request.days.unwrap_or(10))
+        .fetch_rates(&valutaer, request.days.unwrap_or(10))
         .await
         .map_err(|e| ApiError::BadRequest(format!("Norges Bank: {e:#}")))?;
     for n in &noteringer {
         regnmed_db::insert_kurs(
             &state.pool,
-            &n.valuta,
-            n.dato,
-            n.kurs_micro,
+            &n.currency,
+            n.date,
+            n.rate_micro,
             "Norges Bank EXR",
         )
         .await?;

@@ -1,8 +1,8 @@
-//! Norges Banks åpne valutakurs-API (docs/valuta.md, #44).
+//! Norges Banks åpne valutakurs-API (docs/currency.md, #44).
 //!
 //! `GET {base}/api/data/EXR/B.{VALUTAER}.NOK.SP?format=sdmx-json` — daily
 //! quotes (banking days) in SDMX-JSON. The parser is pure and is tested
-//! against a vendored sample (docs/valuta/norges-bank-exr-sample.json);
+//! against a vendored sample (docs/currency/norges-bank-exr-sample.json);
 //! fetching live is the same code path with the network in the middle.
 //!
 //! Two traps the parser handles explicitly:
@@ -10,7 +10,7 @@
 //!   published number must be divided accordingly, or every SEK beløp
 //!   is wrong by two orders of magnitude.
 //! - Values parse as DECIMAL STRINGS into mikro-NOK
-//!   (`regnmed_core::valuta::parse_kurs`) — floats never touch rates.
+//!   (`regnmed_core::currency::parse_kurs`) — floats never touch rates.
 
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
@@ -18,10 +18,10 @@ use regnmed_core::valuta::parse_kurs;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Notering {
-    pub valuta: String,
-    pub dato: NaiveDate,
-    pub kurs_micro: i64,
+pub struct Quote {
+    pub currency: String,
+    pub date: NaiveDate,
+    pub rate_micro: i64,
 }
 
 pub struct NorgesBankClient {
@@ -46,7 +46,7 @@ impl NorgesBankClient {
     }
 
     /// The last `last_n` noteringer for each currency.
-    pub async fn hent_kurser(&self, valutaer: &[String], last_n: u32) -> Result<Vec<Notering>> {
+    pub async fn fetch_rates(&self, valutaer: &[String], last_n: u32) -> Result<Vec<Quote>> {
         if valutaer.is_empty() {
             return Ok(Vec::new());
         }
@@ -75,7 +75,7 @@ impl NorgesBankClient {
 /// Parses the SDMX-JSON body into noteringer. Pure; fails loudly on
 /// any structural surprise — a half-parsed rate table is worse than
 /// none.
-pub fn parse_sdmx(body: &Value) -> Result<Vec<Notering>> {
+pub fn parse_sdmx(body: &Value) -> Result<Vec<Quote>> {
     let data = &body["data"];
     let structure = &data["structure"];
     let series_dims = structure["dimensions"]["series"]
@@ -120,7 +120,7 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Notering>> {
             .split(':')
             .map(|part| part.parse().context("ugyldig serienøkkel"))
             .collect::<Result<_>>()?;
-        let valuta = currency_of(
+        let currency = currency_of(
             *indexes
                 .get(base_cur_pos)
                 .context("serienøkkel kortere enn dimensjonene")?,
@@ -149,7 +149,7 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Notering>> {
             .context("serie uten observations")?;
         for (obs_key, obs_value) in observations {
             let date_index: usize = obs_key.parse().context("ugyldig observasjonsnøkkel")?;
-            let dato = *dates
+            let date = *dates
                 .get(date_index)
                 .context("observasjonsindeks utenfor datolisten")?;
             let raw = match &obs_value[0] {
@@ -157,16 +157,16 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Notering>> {
                 Value::Number(n) => n.to_string(),
                 other => bail!("uventet observasjonsverdi {other}"),
             };
-            let kurs =
-                parse_kurs(&raw).with_context(|| format!("uparselig kurs {raw:?} for {valuta}"))?;
-            noteringer.push(Notering {
-                valuta: valuta.clone(),
-                dato,
-                kurs_micro: kurs / divisor,
+            let kurs = parse_kurs(&raw)
+                .with_context(|| format!("uparselig kurs {raw:?} for {currency}"))?;
+            noteringer.push(Quote {
+                currency: currency.clone(),
+                date,
+                rate_micro: kurs / divisor,
             });
         }
     }
-    noteringer.sort_by(|a, b| (&a.valuta, a.dato).cmp(&(&b.valuta, b.dato)));
+    noteringer.sort_by(|a, b| (&a.currency, a.date).cmp(&(&b.currency, b.date)));
     Ok(noteringer)
 }
 
@@ -181,14 +181,14 @@ mod tests {
         ))
         .unwrap();
         let noteringer = parse_sdmx(&sample).unwrap();
-        let eur: Vec<_> = noteringer.iter().filter(|n| n.valuta == "EUR").collect();
-        let sek: Vec<_> = noteringer.iter().filter(|n| n.valuta == "SEK").collect();
+        let eur: Vec<_> = noteringer.iter().filter(|n| n.currency == "EUR").collect();
+        let sek: Vec<_> = noteringer.iter().filter(|n| n.currency == "SEK").collect();
         assert_eq!(eur.len(), 2);
-        assert_eq!(eur[0].dato, NaiveDate::from_ymd_opt(2026, 7, 23).unwrap());
-        assert_eq!(eur[0].kurs_micro, 11_648_500);
-        assert_eq!(eur[1].kurs_micro, 11_654_300);
+        assert_eq!(eur[0].date, NaiveDate::from_ymd_opt(2026, 7, 23).unwrap());
+        assert_eq!(eur[0].rate_micro, 11_648_500);
+        assert_eq!(eur[1].rate_micro, 11_654_300);
         // SEK quotes per 100 (UNIT_MULT 2): 94.35 → 0,9435 kr.
         assert_eq!(sek.len(), 2);
-        assert_eq!(sek[1].kurs_micro, 943_500);
+        assert_eq!(sek[1].rate_micro, 943_500);
     }
 }

@@ -14,7 +14,7 @@ use serde_json::Value;
 /// decides what a body IS from that header: XML is a SAF-T file, JSON is
 /// an envelope, and an inbox upload is stored with the type it arrived
 /// as.
-pub enum Kropp {
+pub enum Body {
     Json(Value),
     Raa {
         bytes: Vec<u8>,
@@ -26,7 +26,7 @@ enum Auth {
     /// A token someone else obtained — for a test run, or an agent that
     /// already holds one.
     Statisk(String),
-    Klient {
+    Client {
         token_url: String,
         client_id: String,
         secret: String,
@@ -34,7 +34,7 @@ enum Auth {
     },
 }
 
-pub struct Klient {
+pub struct Client {
     http: reqwest::Client,
     base: String,
     /// The company the tools act for when a call does not name one.
@@ -43,18 +43,18 @@ pub struct Klient {
     cache: tokio::sync::Mutex<Option<(String, Instant)>>,
 }
 
-fn miljo(navn: &str) -> Option<String> {
-    std::env::var(navn).ok().filter(|v| !v.trim().is_empty())
+fn env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.trim().is_empty())
 }
 
-impl Klient {
+impl Client {
     /// Reads the configuration from the environment, the way every MCP
     /// server is configured. Fails LOUDLY and says which variable is
     /// missing: a server that starts without credentials only fails
     /// later, inside a tool call, where the agent cannot tell a
     /// configuration error from a permission one.
-    pub async fn fra_miljo() -> Result<Self> {
-        let base = miljo("REGNMED_API")
+    pub async fn from_env() -> Result<Self> {
+        let base = env("REGNMED_API")
             .unwrap_or_else(|| "https://api.regnmed.no".to_string())
             .trim_end_matches('/')
             .to_string();
@@ -63,25 +63,25 @@ impl Klient {
             .build()?;
 
         let auth = match (
-            miljo("REGNMED_TOKEN"),
-            miljo("REGNMED_CLIENT_ID"),
-            miljo("REGNMED_CLIENT_SECRET"),
+            env("REGNMED_TOKEN"),
+            env("REGNMED_CLIENT_ID"),
+            env("REGNMED_CLIENT_SECRET"),
         ) {
             (Some(token), _, _) => Auth::Statisk(token),
             (None, Some(client_id), Some(secret)) => {
-                let token_url = match miljo("REGNMED_TOKEN_URL") {
+                let token_url = match env("REGNMED_TOKEN_URL") {
                     Some(url) => url,
                     None => {
-                        let issuer = miljo("REGNMED_ISSUER")
+                        let issuer = env("REGNMED_ISSUER")
                             .unwrap_or_else(|| "https://id.regnmed.no".to_string());
-                        oppdag_token_endepunkt(&http, issuer.trim_end_matches('/')).await?
+                        discover_token_endpoint(&http, issuer.trim_end_matches('/')).await?
                     }
                 };
-                Auth::Klient {
+                Auth::Client {
                     token_url,
                     client_id,
                     secret,
-                    scope: miljo("REGNMED_SCOPE"),
+                    scope: env("REGNMED_SCOPE"),
                 }
             }
             _ => bail!(
@@ -94,7 +94,7 @@ impl Klient {
         Ok(Self {
             http,
             base,
-            selskap: miljo("REGNMED_COMPANY"),
+            selskap: env("REGNMED_COMPANY"),
             auth,
             cache: tokio::sync::Mutex::new(None),
         })
@@ -105,7 +105,7 @@ impl Klient {
     /// cannot read them from process-global environment variables.
     /// Same `client_credentials` flow as the customer's own MCP server:
     /// one authentication path, used by both rails.
-    pub async fn med_klientlegitimasjon(
+    pub async fn with_client_credentials(
         base: &str,
         selskap: Option<String>,
         issuer: &str,
@@ -115,12 +115,12 @@ impl Klient {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .build()?;
-        let token_url = oppdag_token_endepunkt(&http, issuer.trim_end_matches('/')).await?;
+        let token_url = discover_token_endpoint(&http, issuer.trim_end_matches('/')).await?;
         Ok(Self {
             http,
             base: base.trim_end_matches('/').to_string(),
             selskap,
-            auth: Auth::Klient {
+            auth: Auth::Client {
                 token_url,
                 client_id: client_id.to_string(),
                 secret: secret.to_string(),
@@ -134,7 +134,7 @@ impl Klient {
     /// which must not go through process-global environment variables:
     /// tests in one binary share them, and a flaky configuration is
     /// worse than no test.
-    pub fn ny(base: &str, selskap: Option<String>, token: &str) -> Self {
+    pub fn new(base: &str, selskap: Option<String>, token: &str) -> Self {
         Self {
             http: reqwest::Client::new(),
             base: base.trim_end_matches('/').to_string(),
@@ -147,7 +147,7 @@ impl Klient {
     async fn token(&self) -> Result<String> {
         match &self.auth {
             Auth::Statisk(t) => Ok(t.clone()),
-            Auth::Klient {
+            Auth::Client {
                 token_url,
                 client_id,
                 secret,
@@ -200,29 +200,29 @@ impl Klient {
     /// caller turns a 4xx into something the agent can read, because
     /// regnmed's error messages say what to do and swallowing them would
     /// leave the agent guessing.
-    pub async fn kall(
+    pub async fn call(
         &self,
-        metode: &str,
+        method: &str,
         sti: &str,
-        sporring: &[(String, String)],
-        kropp: Option<Kropp>,
+        query: &[(String, String)],
+        kropp: Option<Body>,
     ) -> Result<(u16, String)> {
         let url = format!("{}{sti}", self.base);
-        let mut req = match metode {
+        let mut req = match method {
             "GET" => self.http.get(&url),
             "POST" => self.http.post(&url),
             "PUT" => self.http.put(&url),
             "DELETE" => self.http.delete(&url),
             annet => bail!("ukjent metode {annet}"),
         };
-        if !sporring.is_empty() {
-            req = req.query(sporring);
+        if !query.is_empty() {
+            req = req.query(query);
         }
         req = req.bearer_auth(self.token().await?);
         req = match kropp {
             None => req,
-            Some(Kropp::Json(v)) => req.json(&v),
-            Some(Kropp::Raa {
+            Some(Body::Json(v)) => req.json(&v),
+            Some(Body::Raa {
                 bytes,
                 content_type,
             }) => req
@@ -235,7 +235,7 @@ impl Klient {
     }
 }
 
-async fn oppdag_token_endepunkt(http: &reqwest::Client, issuer: &str) -> Result<String> {
+async fn discover_token_endpoint(http: &reqwest::Client, issuer: &str) -> Result<String> {
     let url = format!("{issuer}/.well-known/openid-configuration");
     let json: Value = http
         .get(&url)

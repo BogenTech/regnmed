@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use regnmed_api::{AppState, router};
-use regnmed_mcp::{Server, klient::Klient};
+use regnmed_mcp::{Server, client::Client};
 
 /// Serves the router on an ephemeral port and returns its base URL.
 /// The task is left running for the test's lifetime; the process ends
@@ -39,7 +39,7 @@ async fn tjen(state: AppState) -> String {
 
 async fn calls(server: &Server, name: &str, args: Value) -> (bool, String) {
     let reply = server
-        .handter(json!({
+        .handle(json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": { "name": name, "arguments": args },
         }))
@@ -111,7 +111,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     }
 
     let base = tjen(state.clone()).await;
-    let server = Server::new(Klient::ny(
+    let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
@@ -211,11 +211,11 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "apne_poster_importer",
         "oppgave_svar",
     ];
-    for v in regnmed_mcp::verktoy::VERKTOY {
+    for v in regnmed_mcp::tool::TOOLS {
         assert!(
-            dekket.contains(&v.navn) || senere.contains(&v.navn),
+            dekket.contains(&v.name) || senere.contains(&v.name),
             "verktøyet «{}» er ikke dekket av denne testen",
-            v.navn
+            v.name
         );
     }
 
@@ -407,7 +407,7 @@ async fn tjen_leverandor(mock: FalskLeverandor, reply: Vec<Value>) -> String {
 /// answer back, and records the outcome the task queue understands.
 ///
 /// What this is really testing is that the two rails cannot drift: the
-/// worker builds its tool catalogue from the same `VERKTOY` table the
+/// worker builds its tool catalogue from the same `TOOLS` table the
 /// MCP server serves, and executes through the same dispatcher.
 #[tokio::test]
 async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
@@ -442,7 +442,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     .unwrap();
 
     let base = tjen(state.clone()).await;
-    let server = Server::new(Klient::ny(
+    let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
@@ -465,7 +465,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     )
     .await;
 
-    let model = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+    let model = regnmed_agent::llm::Llm::new(&leverandor, "testmodell", "sk-test").unwrap();
     let outcome = regnmed_agent::run_loop(
         &model,
         &server,
@@ -489,7 +489,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
 
     // The catalogue the model was offered is the real one.
     let tools = sett[0]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), regnmed_mcp::verktoy::VERKTOY.len());
+    assert_eq!(tools.len(), regnmed_mcp::tool::TOOLS.len());
 
     // The role prompt went with it — a `bokforing` agent must not be
     // told it is something else, or it spends its turns being refused.
@@ -553,7 +553,7 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     .await
     .unwrap();
     let base = tjen(state.clone()).await;
-    let server = Server::new(Klient::ny(
+    let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
@@ -566,7 +566,7 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
             "content":"FERDIG: brukte svaret ditt"}}]})],
     )
     .await;
-    let model = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+    let model = regnmed_agent::llm::Llm::new(&leverandor, "testmodell", "sk-test").unwrap();
 
     let history = vec![
         regnmed_agent::HistoryLine {

@@ -17,14 +17,17 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct Virksomhet {
+struct Business {
     #[serde(default)]
-    autorisasjoner: Vec<Autorisasjon>,
+    autorisasjoner: Vec<Authorisation>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Autorisasjon {
-    kode: String,
+struct Authorisation {
+    // Finanstilsynet's own field name; an external schema is not ours
+    // to translate, and not a reason to name our fields after it.
+    #[serde(rename = "kode")]
+    code: String,
     #[serde(default)]
     aktiv: bool,
 }
@@ -45,7 +48,7 @@ impl FinanstilsynetClient {
     /// True when the orgnr holds an active autorisasjon of the kind
     /// ('regnskap' or 'revisjon'). Fails closed: no configured register,
     /// unreachable register, or unknown orgnr all mean "not verified".
-    pub async fn has_autorisasjon(&self, orgnr: &str, kind: &str) -> Result<bool> {
+    pub async fn has_authorisation(&self, orgnr: &str, kind: &str) -> Result<bool> {
         let Some(base) = &self.base_url else {
             bail!(
                 "FINANSTILSYNET_API_URL is not configured — autorisasjon \
@@ -66,7 +69,7 @@ impl FinanstilsynetClient {
         if !response.status().is_success() {
             bail!("Finanstilsynets register returned {}", response.status());
         }
-        let virksomhet: Virksomhet = response
+        let virksomhet: Business = response
             .json()
             .await
             .context("parsing Finanstilsynet response")?;
@@ -78,7 +81,7 @@ impl FinanstilsynetClient {
         Ok(virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.kode.to_lowercase().contains(needle)))
+            .any(|a| a.aktiv && a.code.to_lowercase().contains(needle)))
     }
 }
 
@@ -88,7 +91,7 @@ mod tests {
 
     #[test]
     fn parses_and_matches_kinds() {
-        let virksomhet: Virksomhet = serde_json::from_str(
+        let virksomhet: Business = serde_json::from_str(
             r#"{"autorisasjoner": [
                 {"kode": "Regnskapsforerselskap", "aktiv": true},
                 {"kode": "Eiendomsmegling", "aktiv": true},
@@ -99,11 +102,11 @@ mod tests {
         let active_regnskap = virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.kode.to_lowercase().contains("regnskap"));
+            .any(|a| a.aktiv && a.code.to_lowercase().contains("regnskap"));
         let active_revisjon = virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.kode.to_lowercase().contains("revisj"));
+            .any(|a| a.aktiv && a.code.to_lowercase().contains("revisj"));
         assert!(active_regnskap);
         assert!(!active_revisjon, "inactive licenses do not count");
     }

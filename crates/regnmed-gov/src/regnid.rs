@@ -30,7 +30,7 @@ pub struct Regnid {
 /// its hash is stored there, so a caller that drops it has to create a
 /// new client.
 #[derive(Debug)]
-pub struct Maskinklient {
+pub struct MachineClient {
     pub client_id: String,
     pub client_secret: String,
 }
@@ -56,12 +56,12 @@ impl Regnid {
     /// so a client created without it authenticates perfectly and then
     /// gets 401 on every single API call, with nothing in any log to
     /// say why (the trap recorded in CLAUDE.md point 56).
-    pub async fn opprett_maskinklient(
+    pub async fn create_machine_client(
         &self,
         client_id: &str,
         navn: &str,
         audience: &str,
-    ) -> Result<Maskinklient> {
+    ) -> Result<MachineClient> {
         ensure!(!client_id.trim().is_empty(), "client_id mangler");
         ensure!(!navn.trim().is_empty(), "navnet mangler");
         let svar = self
@@ -92,7 +92,7 @@ impl Regnid {
             .as_str()
             .filter(|s| !s.is_empty())
             .context("påloggingstjenesten svarte uten klienthemmelighet")?;
-        Ok(Maskinklient {
+        Ok(MachineClient {
             client_id: kropp["client_id"].as_str().unwrap_or(client_id).to_string(),
             client_secret: hemmelighet.to_string(),
         })

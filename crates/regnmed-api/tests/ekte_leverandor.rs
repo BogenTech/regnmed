@@ -75,13 +75,13 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
     });
     let base = format!("http://{addr}");
 
-    let server = regnmed_mcp::Server::new(regnmed_mcp::klient::Klient::ny(
+    let server = regnmed_mcp::Server::new(regnmed_mcp::client::Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,
@@ -174,13 +174,13 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         let _ = axum::serve(lytter, regnmed_api::router(serve_state)).await;
     });
 
-    let server = regnmed_mcp::Server::new(regnmed_mcp::klient::Klient::ny(
+    let server = regnmed_mcp::Server::new(regnmed_mcp::client::Client::new(
         &format!("http://{addr}"),
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,

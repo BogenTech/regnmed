@@ -10,8 +10,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let klient = regnmed_mcp::klient::Klient::fra_miljo().await?;
-    let server = regnmed_mcp::Server::new(klient);
+    let client = regnmed_mcp::client::Client::from_env().await?;
+    let server = regnmed_mcp::Server::new(client);
 
     let mut inn = BufReader::new(tokio::io::stdin()).lines();
     let mut ut = tokio::io::stdout();
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        if let Some(svar) = server.handter(melding).await {
+        if let Some(svar) = server.handle(melding).await {
             ut.write_all(serde_json::to_string(&svar)?.as_bytes())
                 .await?;
             ut.write_all(b"\n").await?;
