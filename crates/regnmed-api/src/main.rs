@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     // rather than at the first task somebody creates.
     if let Some(js) = mailq.as_ref() {
         regnmed_mail::taskqueue::ensure_stream(js).await?;
-        println!("agentkøen er klar ({})", regnmed_mail::taskqueue::SUBJECT);
+        println!("agent queue ready ({})", regnmed_mail::taskqueue::SUBJECT);
     }
     if let Some(js) = mailq.clone() {
         let pool = pool.clone();
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
     if forseglingsnokkel.is_some() {
-        println!("vertsagenter kan lagre leverandørnøkkel (AGENT_SEALING_KEY satt)");
+        println!("hosted agents can store a provider key (AGENT_SEALING_KEY set)");
     }
 
     // Self-service agents (docs/agent.md §8.6): both credentials or
@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
         ),
     };
     if regnid.is_some() {
-        println!("agenter kan opprettes fra portalen (regnid-provisjonering satt)");
+        println!("agents can be created from the portal (regnid provisioning set)");
     }
 
     let app = router(AppState {

@@ -80,11 +80,11 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
-    let modell =
+    let model =
         regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
-    let utfall = regnmed_agent::run_loop(
-        &modell,
+    let outcome = regnmed_agent::run_loop(
+        &model,
         &server,
         "bokforing",
         None,
@@ -96,18 +96,18 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
     .expect("sløyfen skal ikke feile mot en ekte leverandør");
 
     println!("modell:  {modellnavn}");
-    println!("status:  {}", utfall.status());
-    println!("notat:   {}", utfall.notat());
+    println!("status:  {}", outcome.status());
+    println!("notat:   {}", outcome.note());
 
     // The point is not WHAT it concluded — a model may word an empty
     // ledger many ways — but that the whole wire held: our tool schemas
     // were accepted, a tool_call came back in the shape we parse, the
     // call reached the real router, and the answer got home.
     assert_ne!(
-        utfall.status(),
+        outcome.status(),
         "avvist",
         "en ekte leverandør avviste hele oppgaven: {}",
-        utfall.notat()
+        outcome.note()
     );
 }
 
@@ -144,8 +144,8 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         .unwrap();
     // A company has a chart of accounts; without these the agent is
     // right to refuse, and the test would be measuring the fixture.
-    for (nr, navn) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+    for (nr, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -179,11 +179,11 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
-    let modell =
+    let model =
         regnmed_agent::llm::Llm::ny("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
 
-    let utfall = regnmed_agent::run_loop(
-        &modell,
+    let outcome = regnmed_agent::run_loop(
+        &model,
         &server,
         "bokforing",
         None,
@@ -196,8 +196,8 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     .expect("sløyfen skal ikke feile mot en ekte leverandør");
 
     println!("modell:  {modellnavn}");
-    println!("status:  {}", utfall.status());
-    println!("notat:   {}", utfall.notat());
+    println!("status:  {}", outcome.status());
+    println!("notat:   {}", outcome.note());
 
     // The ledger is the only honest witness. A model that says it
     // posted and did not must fail here, which is exactly the claim an
@@ -220,7 +220,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         bilag,
         1,
         "agenten bokførte ikke bilaget: {}",
-        utfall.notat()
+        outcome.note()
     );
     assert_eq!(debet, Some(50_000), "feil beløp bokført");
 }

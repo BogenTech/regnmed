@@ -50,7 +50,7 @@ pub async fn list(
             "kall_i_dag": g.kall_i_dag,
             "avatar_farge": g.avatar_farge,
             "avatar_ikon": g.avatar_ikon,
-            "systemprompt": g.systemprompt,
+            "system_prompt": g.system_prompt,
             "llm": g.llm.as_ref().map(|(lev, modell)| json!({
                 "leverandor": lev, "modell": modell
             })),
@@ -150,7 +150,7 @@ pub struct AgentRequest {
     avatar_farge: Option<String>,
     avatar_ikon: Option<String>,
     /// Extra instructions on top of the role prompt.
-    systemprompt: Option<String>,
+    system_prompt: Option<String>,
     /// An EXISTING client_id, for an agent the customer runs themselves
     /// (docs/agent.md §8, the first rail). Left out, the identity is
     /// created for them — which is the whole point of this endpoint.
@@ -250,7 +250,7 @@ pub async fn opprett_agent(
     let mut advarsler: Vec<String> = Vec::new();
     let har_metadata = request.avatar_farge.is_some()
         || request.avatar_ikon.is_some()
-        || request.systemprompt.is_some()
+        || request.system_prompt.is_some()
         || request.kontakt.is_some();
     if har_metadata
         && let Err(e) = regnmed_db::update_integration(
@@ -261,7 +261,7 @@ pub async fn opprett_agent(
             request.kontakt.as_deref(),
             request.avatar_farge.as_deref(),
             request.avatar_ikon.as_deref(),
-            request.systemprompt.as_deref(),
+            request.system_prompt.as_deref(),
         )
         .await
     {
@@ -344,7 +344,7 @@ pub struct EndreRequest {
     avatar_ikon: Option<String>,
     /// Extra instructions for this agent, on top of the role prompt
     /// (docs/agent.md §8.6). Empty clears them.
-    systemprompt: Option<String>,
+    system_prompt: Option<String>,
 }
 
 /// Rename an agent and give it a face (docs/agent.md §8.1). Takes
@@ -366,7 +366,7 @@ pub async fn endre(
         request.kontakt.as_deref(),
         request.avatar_farge.as_deref(),
         request.avatar_ikon.as_deref(),
-        request.systemprompt.as_deref(),
+        request.system_prompt.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

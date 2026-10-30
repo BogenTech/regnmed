@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 /// One message in the conversation we send to the model.
 #[derive(Debug, Clone, Serialize)]
-pub struct Melding {
+pub struct Message {
     pub role: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
@@ -28,21 +28,21 @@ pub struct Melding {
     pub tool_call_id: Option<String>,
 }
 
-impl Melding {
-    pub fn system(tekst: impl Into<String>) -> Self {
-        Self::enkel("system", tekst)
+impl Message {
+    pub fn system(text: impl Into<String>) -> Self {
+        Self::enkel("system", text)
     }
-    pub fn bruker(tekst: impl Into<String>) -> Self {
-        Self::enkel("user", tekst)
+    pub fn bruker(text: impl Into<String>) -> Self {
+        Self::enkel("user", text)
     }
     /// A turn the agent itself took earlier, replayed from the trail.
-    pub fn assistent(tekst: impl Into<String>) -> Self {
-        Self::enkel("assistant", tekst)
+    pub fn assistant(text: impl Into<String>) -> Self {
+        Self::enkel("assistant", text)
     }
-    fn enkel(role: &'static str, tekst: impl Into<String>) -> Self {
-        Melding {
+    fn enkel(role: &'static str, text: impl Into<String>) -> Self {
+        Message {
             role,
-            content: Some(tekst.into()),
+            content: Some(text.into()),
             tool_calls: None,
             tool_call_id: None,
         }
@@ -51,18 +51,18 @@ impl Melding {
     /// Providers validate that every tool result answers a call in the
     /// preceding assistant message, so this must be what they sent --
     /// not something we rebuilt from it.
-    pub fn assistent_verktoy(tool_calls: Value) -> Self {
-        Melding {
+    pub fn assistant_tools(tool_calls: Value) -> Self {
+        Message {
             role: "assistant",
             content: None,
             tool_calls: Some(tool_calls),
             tool_call_id: None,
         }
     }
-    pub fn verktoysvar(tool_call_id: String, tekst: String) -> Self {
-        Melding {
+    pub fn tool_result(tool_call_id: String, text: String) -> Self {
+        Message {
             role: "tool",
-            content: Some(tekst),
+            content: Some(text),
             tool_calls: None,
             tool_call_id: Some(tool_call_id),
         }
@@ -71,19 +71,19 @@ impl Melding {
 
 /// One tool the model asked us to run.
 #[derive(Debug, Clone)]
-pub struct Verktoykall {
+pub struct ToolCall {
     pub id: String,
-    pub navn: String,
-    pub argumenter: Map<String, Value>,
+    pub name: String,
+    pub arguments: Map<String, Value>,
 }
 
 /// What came back from one turn.
 #[derive(Debug)]
 pub struct Svar {
-    pub tekst: Option<String>,
-    pub kall: Vec<Verktoykall>,
+    pub text: Option<String>,
+    pub calls: Vec<ToolCall>,
     /// The assistant message exactly as the provider sent it.
-    pub raa_tool_calls: Option<Value>,
+    pub raw_tool_calls: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -120,33 +120,33 @@ struct RaaFunksjon {
 pub struct Llm {
     http: reqwest::Client,
     base_url: String,
-    modell: String,
-    nokkel: String,
+    model: String,
+    key: String,
 }
 
 impl Llm {
-    pub fn ny(base_url: &str, modell: &str, nokkel: &str) -> Result<Self> {
+    pub fn ny(base_url: &str, model: &str, key: &str) -> Result<Self> {
         Ok(Self {
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(180))
                 .build()?,
             base_url: base_url.trim_end_matches('/').to_string(),
-            modell: modell.to_string(),
-            nokkel: nokkel.to_string(),
+            model: model.to_string(),
+            key: key.to_string(),
         })
     }
 
-    /// One turn. `verktoy` is the tool catalogue in the provider's
-    /// format, built once per task by [`crate::verktoykatalog`].
-    pub async fn tur(&self, meldinger: &[Melding], verktoy: &Value) -> Result<Svar> {
-        let svar = self
+    /// One turn. `tools` is the tool catalogue in the provider's
+    /// format, built once per task by [`crate::tool_catalogue`].
+    pub async fn tur(&self, messages: &[Message], tools: &Value) -> Result<Svar> {
+        let reply = self
             .http
             .post(format!("{}/chat/completions", self.base_url))
-            .bearer_auth(&self.nokkel)
+            .bearer_auth(&self.key)
             .json(&json!({
-                "model": self.modell,
-                "messages": meldinger,
-                "tools": verktoy,
+                "model": self.model,
+                "messages": messages,
+                "tools": tools,
                 // Let the model decide when it is done. Forcing a tool
                 // would stop it ever answering, and forcing none would
                 // stop it ever working.
@@ -156,17 +156,21 @@ impl Llm {
             .await
             .context("nådde ikke modelleverandøren")?;
 
-        let status = svar.status();
-        let kropp = svar.text().await.unwrap_or_default();
+        let status = reply.status();
+        let kropp = reply.text().await.unwrap_or_default();
         if !status.is_success() {
             // The provider's own message is the useful part: a wrong key,
             // a model the account cannot reach, a spent budget. Passing
             // it through means the task's trail says WHY.
-            bail!("modelleverandøren svarte {status}: {}", kutt(&kropp, 400));
+            bail!(
+                "modelleverandøren svarte {status}: {}",
+                truncate(&kropp, 400)
+            );
         }
 
-        let respons: Respons = serde_json::from_str(&kropp)
-            .with_context(|| format!("uventet svar fra leverandøren: {}", kutt(&kropp, 400)))?;
+        let respons: Respons = serde_json::from_str(&kropp).with_context(|| {
+            format!("uventet reply fra leverandøren: {}", truncate(&kropp, 400))
+        })?;
         let Some(valg) = respons.choices.into_iter().next() else {
             bail!("leverandøren svarte uten noe valg");
         };
@@ -176,30 +180,30 @@ impl Llm {
             .and_then(|v| v["choices"][0]["message"]["tool_calls"].as_array().cloned())
             .map(Value::Array);
 
-        let mut kall = Vec::new();
+        let mut calls = Vec::new();
         for rå in valg.message.tool_calls.unwrap_or_default() {
             // An unparseable argument list is the model's mistake, and
             // the loop hands it back as a tool error so it can correct
             // itself — exactly what a human tool user would get.
-            let argumenter = serde_json::from_str::<Map<String, Value>>(&rå.function.arguments)
+            let arguments = serde_json::from_str::<Map<String, Value>>(&rå.function.arguments)
                 .unwrap_or_default();
-            kall.push(Verktoykall {
+            calls.push(ToolCall {
                 id: rå.id,
-                navn: rå.function.name,
-                argumenter,
+                name: rå.function.name,
+                arguments,
             });
         }
         Ok(Svar {
-            tekst: valg.message.content,
-            kall,
-            raa_tool_calls: raa,
+            text: valg.message.content,
+            calls,
+            raw_tool_calls: raa,
         })
     }
 }
 
 /// Keeps a provider's error readable in a task note without pasting a
 /// whole HTML error page into the ledger's trail.
-pub fn kutt(s: &str, maks: usize) -> String {
+pub fn truncate(s: &str, maks: usize) -> String {
     let s = s.trim();
     if s.chars().count() <= maks {
         return s.to_string();
@@ -230,9 +234,9 @@ mod tests {
         })
         .to_string();
         let respons: Respons = serde_json::from_str(&kropp).unwrap();
-        let kall = &respons.choices[0].message.tool_calls.as_ref().unwrap()[0];
-        assert_eq!(kall.function.name, "saldobalanse");
-        let args: Map<String, Value> = serde_json::from_str(&kall.function.arguments).unwrap();
+        let calls = &respons.choices[0].message.tool_calls.as_ref().unwrap()[0];
+        assert_eq!(calls.function.name, "saldobalanse");
+        let args: Map<String, Value> = serde_json::from_str(&calls.function.arguments).unwrap();
         assert_eq!(args["year"], 2026);
     }
 
@@ -258,7 +262,7 @@ mod tests {
     #[test]
     fn a_long_provider_error_is_cut_before_it_reaches_the_trail() {
         let lang = "x".repeat(900);
-        assert_eq!(kutt(&lang, 400).chars().count(), 401);
-        assert_eq!(kutt("kort", 400), "kort");
+        assert_eq!(truncate(&lang, 400).chars().count(), 401);
+        assert_eq!(truncate("kort", 400), "kort");
     }
 }

@@ -193,11 +193,11 @@ pub async fn svar(
 /// to ignore: the backstop sweep finds it regardless. A queue outage
 /// must never fail the request that created the work -- that would turn
 /// a slow agent into a broken portal.
-async fn nudge(state: &AppState, company_id: Uuid, oppgave_id: Uuid) {
+async fn nudge(state: &AppState, company_id: Uuid, task_id: Uuid) {
     let Some(js) = state.mailq.as_ref() else {
         return;
     };
-    if let Err(e) = regnmed_mail::taskqueue::nudge(js, company_id, oppgave_id).await {
-        eprintln!("agentkøen tok ikke imot varselet for {oppgave_id}: {e:#}");
+    if let Err(e) = regnmed_mail::taskqueue::nudge(js, company_id, task_id).await {
+        eprintln!("the agent queue rejected the nudge for {task_id}: {e:#}");
     }
 }

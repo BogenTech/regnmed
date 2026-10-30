@@ -699,7 +699,7 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
                 "client_id": client_id,
                 "navn": "Kari Bokfører",
                 "access": "bokforing",
-                "systemprompt": "Strøm bokføres på 6340. Spør Aud ved tvil.",
+                "system_prompt": "Strøm bokføres på 6340. Spør Aud ved tvil.",
                 "avatar_farge": "primary",
                 "avatar_ikon": "bilag",
                 "leverandor": "openrouter",
@@ -732,7 +732,7 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
     assert_eq!(entry["access"], "bokforing");
     assert_eq!(entry["avatar_ikon"], "bilag");
     assert_eq!(
-        entry["systemprompt"],
+        entry["system_prompt"],
         "Strøm bokføres på 6340. Spør Aud ved tvil."
     );
     assert_eq!(entry["llm"]["modell"], "google/gemini-2.5-flash-lite");
@@ -834,7 +834,7 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
         "PUT",
         &format!("{base}/integrations/{integration_id}"),
         &admin_token,
-        Some(json!({"navn": "Kari Bokfører", "systemprompt": ""}).to_string()),
+        Some(json!({"navn": "Kari Bokfører", "system_prompt": ""}).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -851,7 +851,7 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
             .as_array()
             .unwrap()
             .iter()
-            .all(|i| i["systemprompt"].is_null()),
+            .all(|i| i["system_prompt"].is_null()),
         "tom tekst fjerner instruksene: {listing}"
     );
 }

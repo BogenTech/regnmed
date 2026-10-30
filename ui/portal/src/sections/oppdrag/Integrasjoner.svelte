@@ -57,10 +57,10 @@
   // Instruksene hører sammen med rollen, ikke med ansiktet: de to
   // avgjør hva agenten gjør, resten er utseende.
   const instruksfelt = (i = {}) => ({
-    navn: "systemprompt",
+    navn: "system_prompt",
     etikett: "Særskilte instrukser",
     type: "textarea",
-    standard: i.systemprompt || "",
+    standard: i.system_prompt || "",
     valgfri: true,
     hjelp: INSTRUKSHJELP,
   });
@@ -352,8 +352,8 @@
             </td>
             <td>
               {i.access}
-              {#if i.systemprompt}
-                <br /><span class="text-xs opacity-60" title={i.systemprompt}>
+              {#if i.system_prompt}
+                <br /><span class="text-xs opacity-60" title={i.system_prompt}>
                   + egne instrukser
                 </span>
               {/if}

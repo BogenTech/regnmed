@@ -11,8 +11,8 @@
 //! apply to it unchanged, enforced where they always were. The worker
 //! runs the loop and holds the model key. It holds no authority.
 //!
-//! Tools come from `regnmed_mcp::verktoy` and the system prompt from
-//! `regnmed_mcp::rolle`, both unchanged: the two rails must behave the
+//! Tools come from `regnmed_mcp::tools` and the system prompt from
+//! `regnmed_mcp::role`, both unchanged: the two rails must behave the
 //! same, and the surest way to make them behave the same is to give
 //! them the same code.
 
@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use llm::{Llm, Melding};
+use llm::{Llm, Message};
 
 /// How many model turns one task may take. A loop that never stops
 /// spends the customer's money, so it stops and SAYS it stopped --
@@ -38,12 +38,12 @@ use llm::{Llm, Melding};
 /// bigger burst.
 pub const CONCURRENT_TOOLS: usize = 4;
 
-pub const MAKS_TURER: usize = 12;
+pub const MAX_TURNS: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
 /// `VERKTOY` table the MCP server serves, so an agent can never be
 /// offered a tool over one rail that does not exist on the other.
-pub fn verktoykatalog() -> Value {
+pub fn tool_catalogue() -> Value {
     Value::Array(
         verktoy::VERKTOY
             .iter()
@@ -63,35 +63,35 @@ pub fn verktoykatalog() -> Value {
 }
 
 /// One turn of the recorded conversation, read back out of
-/// `agent_oppgave_hendelse`. `fra_agenten` is decided by who wrote it,
+/// `agent_oppgave_hendelse`. `from_agent` is decided by who wrote it,
 /// which is the only thing the trail actually knows.
 #[derive(Debug, Clone)]
-pub struct Replikk {
-    pub fra_agenten: bool,
-    pub tekst: String,
+pub struct HistoryLine {
+    pub from_agent: bool,
+    pub text: String,
 }
 
 /// What one task run ended as. These are the statuses
 /// `agent_oppgave_hendelse` already knows (#103) -- the worker invents
 /// none of its own.
 #[derive(Debug, PartialEq)]
-pub enum Utfall {
-    Utfort(String),
-    Sporsmal(String),
-    Avvist(String),
+pub enum Outcome {
+    Done(String),
+    Question(String),
+    Refused(String),
 }
 
-impl Utfall {
+impl Outcome {
     pub fn status(&self) -> &'static str {
         match self {
-            Utfall::Utfort(_) => "utfort",
-            Utfall::Sporsmal(_) => "sporsmal",
-            Utfall::Avvist(_) => "avvist",
+            Outcome::Done(_) => "utfort",
+            Outcome::Question(_) => "sporsmal",
+            Outcome::Refused(_) => "avvist",
         }
     }
-    pub fn notat(&self) -> &str {
+    pub fn note(&self) -> &str {
         match self {
-            Utfall::Utfort(t) | Utfall::Sporsmal(t) | Utfall::Avvist(t) => t,
+            Outcome::Done(t) | Outcome::Question(t) | Outcome::Refused(t) => t,
         }
     }
 }
@@ -100,13 +100,13 @@ impl Utfall {
 /// back. The role prompt (#103) says how to do the work; this says how
 /// to finish, and it is deliberately short: a small model follows two
 /// rules better than eight.
-fn avslutning() -> String {
-    "Når du er ferdig, svar med vanlig tekst som starter med FERDIG: og en kort \
+fn closing_rules() -> String {
+    "Når du er ferdig, reply med vanlig text som starter med FERDIG: og en kort \
      oppsummering av hva du gjorde.\n\
      Trenger du en avgjørelse et menneske må ta, eller mangler du en opplysning, \
-     svar med tekst som starter med SPØRSMÅL: og still ett konkret spørsmål. \
+     reply med text som starter med SPØRSMÅL: og still ett konkret spørsmål. \
      Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør.\n\
-     Kan oppgaven ikke gjøres, svar med tekst som starter med AVVIST: og si hvorfor.\n\
+     Kan oppgaven ikke gjøres, reply med text som starter med AVVIST: og si hvorfor.\n\
      Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven."
         .to_string()
 }
@@ -125,20 +125,20 @@ fn avslutning() -> String {
 /// Other unmarked text is still treated as done. A small model that did
 /// the work and forgot the prefix should not have its work recorded as
 /// a refusal, and the note carries the raw text either way.
-fn tolk(tekst: &str) -> Utfall {
-    let t = tekst.trim();
+fn interpret(text: &str) -> Outcome {
+    let t = text.trim();
     let etter = |p: &str| t[p.len()..].trim().to_string();
     let u = t.to_uppercase();
     if u.starts_with("SPØRSMÅL:") || u.starts_with("SPORSMAL:") {
-        Utfall::Sporsmal(etter("SPØRSMÅL:"))
+        Outcome::Question(etter("SPØRSMÅL:"))
     } else if u.starts_with("AVVIST:") {
-        Utfall::Avvist(etter("AVVIST:"))
+        Outcome::Refused(etter("AVVIST:"))
     } else if u.starts_with("FERDIG:") {
-        Utfall::Utfort(etter("FERDIG:"))
+        Outcome::Done(etter("FERDIG:"))
     } else if t.ends_with('?') {
-        Utfall::Sporsmal(t.to_string())
+        Outcome::Question(t.to_string())
     } else {
-        Utfall::Utfort(t.to_string())
+        Outcome::Done(t.to_string())
     }
 }
 
@@ -148,22 +148,22 @@ fn tolk(tekst: &str) -> Utfall {
 /// Order matters, and only in one direction. The extra text comes AFTER
 /// the role so it can specialise — this company's account numbers, who
 /// to ask, which suppliers are routine — and the protocol comes last so
-/// the closing markers [`tolk`] reads cannot be talked away.
+/// the closing markers [`interpret`] reads cannot be talked away.
 ///
 /// What the order does NOT do is decide access. Whatever an owner
 /// writes here, the role on the grant is what `tilgang::krev` enforces
 /// on every call the agent makes, so the worst a bad instruction can do
 /// is make the agent attempt things it will be refused.
-fn systemprompt(rollenavn: &str, ekstra: Option<&str>) -> String {
-    let rolleprompt = rolle::prompt(rollenavn)
+fn system_prompt(role_name: &str, ekstra: Option<&str>) -> String {
+    let role_prompt = rolle::prompt(role_name)
         .unwrap_or_else(|| rolle::prompt("ansatt").expect("ansatt-prompten finnes"));
-    let mut ut = rolleprompt.to_string();
+    let mut ut = role_prompt.to_string();
     if let Some(ekstra) = ekstra.map(str::trim).filter(|t| !t.is_empty()) {
         ut.push_str("\n\nSÆRSKILTE INSTRUKSER FOR DEG:\n");
         ut.push_str(ekstra);
     }
     ut.push_str("\n\n");
-    ut.push_str(&avslutning());
+    ut.push_str(&closing_rules());
     ut
 }
 
@@ -171,43 +171,43 @@ fn systemprompt(rollenavn: &str, ekstra: Option<&str>) -> String {
 /// the caller's job ([`run_task`]), so this stays testable without
 /// a database.
 pub async fn run_loop(
-    modell: &Llm,
+    model: &Llm,
     server: &Server,
-    rollenavn: &str,
+    role_name: &str,
     ekstra: Option<&str>,
-    oppgave: &str,
-    historikk: &[Replikk],
-) -> Result<Utfall> {
-    let katalog = verktoykatalog();
-    let mut meldinger = vec![
-        Melding::system(systemprompt(rollenavn, ekstra)),
-        Melding::bruker(oppgave.to_string()),
+    task: &str,
+    history: &[HistoryLine],
+) -> Result<Outcome> {
+    let katalog = tool_catalogue();
+    let mut messages = vec![
+        Message::system(system_prompt(role_name, ekstra)),
+        Message::bruker(task.to_string()),
     ];
     // The trail IS the conversation (docs/agent.md §8.4): an agent that
     // asked a question and is picked up again must see its own question
     // and the answer, or it asks the same thing forever.
-    for replikk in historikk {
-        meldinger.push(match replikk.fra_agenten {
-            true => Melding::assistent(replikk.tekst.clone()),
-            false => Melding::bruker(replikk.tekst.clone()),
+    for replikk in history {
+        messages.push(match replikk.from_agent {
+            true => Message::assistant(replikk.text.clone()),
+            false => Message::bruker(replikk.text.clone()),
         });
     }
 
-    for _ in 0..MAKS_TURER {
-        let svar = modell.tur(&meldinger, &katalog).await?;
+    for _ in 0..MAX_TURNS {
+        let reply = model.tur(&messages, &katalog).await?;
 
-        if svar.kall.is_empty() {
-            let tekst = svar.tekst.unwrap_or_default();
-            if tekst.trim().is_empty() {
+        if reply.calls.is_empty() {
+            let text = reply.text.unwrap_or_default();
+            if text.trim().is_empty() {
                 bail!("modellen svarte uten innhold og uten verktøykall");
             }
-            return Ok(tolk(&tekst));
+            return Ok(interpret(&text));
         }
 
         // Echo the assistant turn back exactly as it came: providers
         // check that each tool result answers a call in it.
-        meldinger.push(Melding::assistent_verktoy(
-            svar.raa_tool_calls.unwrap_or_else(|| json!([])),
+        messages.push(Message::assistant_tools(
+            reply.raw_tool_calls.unwrap_or_else(|| json!([])),
         ));
         // Tool calls in ONE turn are independent of each other -- the
         // model asked for all of them before seeing any answer -- so
@@ -219,27 +219,27 @@ pub async fn run_loop(
         // Bounded, because the API rate-limits per integration
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
-        let svar_tekster = stream::iter(svar.kall.into_iter().map(|kall| async move {
-            let tekst = match verktoy::finn(&kall.navn) {
-                Some(v) => server.utfor_verktoy(v, kall.argumenter).await.0,
+        let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
+            let text = match verktoy::finn(&calls.name) {
+                Some(v) => server.utfor_verktoy(v, calls.arguments).await.0,
                 // An invented tool is the model's mistake, and it is told
                 // so in the same channel as a real result.
-                None => format!("ukjent verktøy «{}»", kall.navn),
+                None => format!("ukjent verktøy «{}»", calls.name),
             };
-            (kall.id, tekst)
+            (calls.id, text)
         }))
         .buffered(CONCURRENT_TOOLS)
         .collect::<Vec<_>>()
         .await;
         // `buffered` preserves the order they were asked in, which some
         // providers check when matching results to calls.
-        for (id, tekst) in svar_tekster {
-            meldinger.push(Melding::verktoysvar(id, llm::kutt(&tekst, 8000)));
+        for (id, text) in tool_results {
+            messages.push(Message::tool_result(id, llm::truncate(&text, 8000)));
         }
     }
 
-    Ok(Utfall::Sporsmal(format!(
-        "Jeg brukte {MAKS_TURER} steg uten å bli ferdig, og stoppet framfor å fortsette. \
+    Ok(Outcome::Question(format!(
+        "Jeg brukte {MAX_TURNS} steg uten å bli ferdig, og stoppet framfor å fortsette. \
          Si gjerne hva jeg skal prioritere."
     )))
 }
@@ -248,30 +248,30 @@ pub async fn run_loop(
 /// stored credentials, run the loop, and record the outcome.
 pub async fn run_task(
     pool: &PgPool,
-    nokkel: &Nokkel,
+    key: &Nokkel,
     company_id: Uuid,
-    oppgave_id: Uuid,
+    task_id: Uuid,
     issuer: &str,
     api_base: &str,
-) -> Result<Utfall> {
-    let oppgave = regnmed_db::agentoppgave::hent_oppgave(pool, company_id, oppgave_id)
+) -> Result<Outcome> {
+    let task = regnmed_db::agentoppgave::hent_oppgave(pool, company_id, task_id)
         .await?
-        .context("ingen slik oppgave")?;
-    let Some(integration_id) = oppgave.integration_id else {
-        bail!("oppgaven er ikke stilet til en agent");
+        .context("no such task")?;
+    let Some(integration_id) = task.integration_id else {
+        bail!("the task is not addressed to an agent");
     };
-    if matches!(oppgave.status.as_str(), "utfort" | "avvist") {
-        bail!("oppgaven er avsluttet ({})", oppgave.status);
+    if matches!(task.status.as_str(), "utfort" | "avvist") {
+        bail!("the task is closed ({})", task.status);
     }
 
-    let (oppsett, modellnokkel) =
-        regnmed_db::agentllm::hent_llm_nokkel(pool, nokkel, company_id, integration_id)
+    let (settings, model_key) =
+        regnmed_db::agentllm::hent_llm_nokkel(pool, key, company_id, integration_id)
             .await?
-            .context("agenten har ingen aktiv modell")?;
-    let (client_id, hemmelighet) =
-        regnmed_db::agentllm::hent_klientlegitimasjon(pool, nokkel, integration_id)
+            .context("the agent has no active model")?;
+    let (client_id, secret) =
+        regnmed_db::agentllm::hent_klientlegitimasjon(pool, key, integration_id)
             .await?
-            .context("agenten har ingen lagret klienthemmelighet")?;
+            .context("the agent has no stored client secret")?;
 
     // The role on the grant is the agent's authority, and the prompt it
     // is given must match it: telling a `les` agent it is a bokfører
@@ -280,45 +280,45 @@ pub async fn run_task(
         .await?
         .into_iter()
         .find(|g| g.integration_id == integration_id && g.valid_to.is_none())
-        .context("agenten har ingen aktiv tilgang til selskapet")?;
+        .context("the agent has no active access to the company")?;
 
     let klient = Klient::med_klientlegitimasjon(
         api_base,
         Some(company_id.to_string()),
         issuer,
         &client_id,
-        &hemmelighet,
+        &secret,
     )
     .await?;
     let server = Server::new(klient);
-    let modell = Llm::ny(&oppsett.base_url, &oppsett.modell, &modellnokkel)?;
+    let model = Llm::ny(&settings.base_url, &settings.modell, &model_key)?;
 
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.
-    let navn = oppgave.agent.clone().unwrap_or_else(|| "agenten".into());
-    regnmed_db::agentoppgave::svar(pool, company_id, oppgave_id, "pagar", None, &navn).await?;
+    let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
+    regnmed_db::agentoppgave::svar(pool, company_id, task_id, "pagar", None, &name).await?;
 
-    let historikk: Vec<Replikk> = regnmed_db::agentoppgave::historikk(pool, company_id, oppgave_id)
+    let history: Vec<HistoryLine> = regnmed_db::agentoppgave::historikk(pool, company_id, task_id)
         .await?
         .into_iter()
         .filter_map(|h| {
             // A bare `pagar` with no note is "started working", not
             // something anybody said.
-            let tekst = h.notat.filter(|t| !t.trim().is_empty())?;
-            Some(Replikk {
-                fra_agenten: h.av == navn,
-                tekst,
+            let text = h.notat.filter(|t| !t.trim().is_empty())?;
+            Some(HistoryLine {
+                from_agent: h.av == name,
+                text,
             })
         })
         .collect();
 
-    let utfall = match run_loop(
-        &modell,
+    let outcome = match run_loop(
+        &model,
         &server,
         &grant.access,
-        grant.systemprompt.as_deref(),
-        &oppgave.melding,
-        &historikk,
+        grant.system_prompt.as_deref(),
+        &task.melding,
+        &history,
     )
     .await
     {
@@ -326,18 +326,18 @@ pub async fn run_task(
         // A failure is the agent's own report, not a silent stop: the
         // customer must be able to read why in the same place they read
         // everything else about the task.
-        Err(feil) => Utfall::Avvist(llm::kutt(&format!("{feil:#}"), 1000)),
+        Err(error) => Outcome::Refused(llm::truncate(&format!("{error:#}"), 1000)),
     };
     regnmed_db::agentoppgave::svar(
         pool,
         company_id,
-        oppgave_id,
-        utfall.status(),
-        Some(utfall.notat()),
-        &navn,
+        task_id,
+        outcome.status(),
+        Some(outcome.note()),
+        &name,
     )
     .await?;
-    Ok(utfall)
+    Ok(outcome)
 }
 
 #[cfg(test)]
@@ -346,14 +346,14 @@ mod tests {
 
     #[test]
     fn the_catalogue_matches_the_tools_the_other_rail_serves() {
-        let katalog = verktoykatalog();
-        let navn: Vec<&str> = katalog
+        let katalog = tool_catalogue();
+        let name: Vec<&str> = katalog
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["function"]["name"].as_str().unwrap())
             .collect();
-        assert_eq!(navn.len(), verktoy::VERKTOY.len());
+        assert_eq!(name.len(), verktoy::VERKTOY.len());
         // Every tool carries a schema the provider can read; a tool
         // whose parameters did not parse would silently become
         // unusable rather than loudly missing.
@@ -363,46 +363,46 @@ mod tests {
                 "verktøy uten brukbart skjema: {v}"
             );
         }
-        assert!(navn.contains(&"saldobalanse"));
+        assert!(name.contains(&"saldobalanse"));
     }
 
     #[test]
     fn the_extra_instructions_sit_between_the_role_and_the_protocol() {
-        let uten = systemprompt("bokforer", None);
-        let med = systemprompt("bokforer", Some("Strøm bokføres på 6340."));
+        let uten = system_prompt("bokforer", None);
+        let med = system_prompt("bokforer", Some("Strøm bokføres på 6340."));
         // The role still opens the message, so nothing an owner writes
         // displaces the rules the role carries.
-        let rolleprompt = rolle::prompt("bokforer").unwrap();
-        assert!(med.starts_with(&rolleprompt));
+        let role_prompt = rolle::prompt("bokforer").unwrap();
+        assert!(med.starts_with(&role_prompt));
         assert!(med.contains("Strøm bokføres på 6340."));
-        // And the protocol still closes it: the markers `tolk` reads
+        // And the protocol still closes it: the markers `interpret` reads
         // must be the last thing the model is told.
-        let protokoll = avslutning();
+        let protokoll = closing_rules();
         assert!(med.trim_end().ends_with(protokoll.trim_end()));
         assert!(uten.trim_end().ends_with(protokoll.trim_end()));
         // Empty instructions add nothing at all -- no stray heading.
-        assert_eq!(systemprompt("bokforer", Some("   ")), uten);
+        assert_eq!(system_prompt("bokforer", Some("   ")), uten);
     }
 
     #[test]
     fn the_closing_marker_decides_the_status() {
         assert_eq!(
-            tolk("FERDIG: bokførte 3 bilag"),
-            Utfall::Utfort("bokførte 3 bilag".into())
+            interpret("FERDIG: bokførte 3 bilag"),
+            Outcome::Done("bokførte 3 bilag".into())
         );
         assert_eq!(
-            tolk("SPØRSMÅL: hvilken konto?"),
-            Utfall::Sporsmal("hvilken konto?".into())
+            interpret("SPØRSMÅL: hvilken konto?"),
+            Outcome::Question("hvilken konto?".into())
         );
         assert_eq!(
-            tolk("AVVIST: mangler bilag"),
-            Utfall::Avvist("mangler bilag".into())
+            interpret("AVVIST: mangler bilag"),
+            Outcome::Refused("mangler bilag".into())
         );
         // A small model that forgot the prefix still gets its work
         // recorded as work, with its own words kept.
         assert_eq!(
-            tolk("jeg bokførte alt sammen"),
-            Utfall::Utfort("jeg bokførte alt sammen".into())
+            interpret("jeg bokførte alt sammen"),
+            Outcome::Done("jeg bokførte alt sammen".into())
         );
     }
 
@@ -414,10 +414,10 @@ mod tests {
         // with it.
         let ekte = "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
                     du er interessert i. Kan du vennligst oppgi en spesifikk dato?";
-        assert_eq!(tolk(ekte).status(), "sporsmal");
+        assert_eq!(interpret(ekte).status(), "sporsmal");
         // A statement that merely mentions a question is still done.
         assert_eq!(
-            tolk("Jeg svarte på spørsmålet ditt og bokførte bilaget.").status(),
+            interpret("Jeg svarte på spørsmålet ditt og bokførte bilaget.").status(),
             "utfort"
         );
     }
@@ -427,8 +427,8 @@ mod tests {
         // The guard in 0064 locks a task after utfort/avvist only, and
         // the worker depends on that: an agent that asks must be able to
         // continue once somebody answers.
-        assert_eq!(Utfall::Sporsmal(String::new()).status(), "sporsmal");
-        assert_eq!(Utfall::Utfort(String::new()).status(), "utfort");
-        assert_eq!(Utfall::Avvist(String::new()).status(), "avvist");
+        assert_eq!(Outcome::Question(String::new()).status(), "sporsmal");
+        assert_eq!(Outcome::Done(String::new()).status(), "utfort");
+        assert_eq!(Outcome::Refused(String::new()).status(), "avvist");
     }
 }
