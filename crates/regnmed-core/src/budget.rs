@@ -160,12 +160,12 @@ pub fn variance(figures: &[AccountFigures], through_month: u32) -> VarianceRepor
 /// integer arithmetic — no floats near money, ever.
 pub fn scale_ore(amount_ore: i64, scale_bp: i64) -> i64 {
     let faktor = 10_000 + scale_bp;
-    let produkt = (amount_ore as i128) * (faktor as i128);
+    let product = (amount_ore as i128) * (faktor as i128);
     let half = 10_000i128 / 2;
-    let rounded = if produkt >= 0 {
-        (produkt + half) / 10_000
+    let rounded = if product >= 0 {
+        (product + half) / 10_000
     } else {
-        (produkt - half) / 10_000
+        (product - half) / 10_000
     };
     rounded as i64
 }

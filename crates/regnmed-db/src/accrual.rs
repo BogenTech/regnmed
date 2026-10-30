@@ -55,8 +55,8 @@ pub struct Periodisering {
     pub forte_maneder: i64,
 }
 
-fn first_of(ar: i32, maned: u32) -> Result<NaiveDate> {
-    NaiveDate::from_ymd_opt(ar, maned, 1).context("ugyldig måned")
+fn first_of(ar: i32, month: u32) -> Result<NaiveDate> {
+    NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")
 }
 
 /// Creates a plan. The accounts are the caller's — we never guess one.
@@ -230,7 +230,7 @@ pub async fn stopp_periodisering(
 
 #[derive(Debug)]
 pub struct PeriodiseringUtfall {
-    pub periodisering_id: Uuid,
+    pub accrual_id: Uuid,
     pub description: String,
     pub period: NaiveDate,
     pub amount_ore: i64,
@@ -260,7 +260,7 @@ pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Per
 pub async fn periodiser_plan(
     pool: &PgPool,
     company_id: Uuid,
-    periodisering_id: Uuid,
+    accrual_id: Uuid,
     through: NaiveDate,
 ) -> Result<Vec<PeriodiseringUtfall>> {
     let plan = sqlx::query(
@@ -272,7 +272,7 @@ pub async fn periodiser_plan(
          left join dimension dp on dp.id = p.prosjekt_id
          where p.id = $1 and p.company_id = $2",
     )
-    .bind(periodisering_id)
+    .bind(accrual_id)
     .bind(company_id)
     .fetch_optional(pool)
     .await?
@@ -297,7 +297,7 @@ pub async fn periodiser_plan(
         "select period from periodisering_run
          where periodisering_id = $1 and voucher_id is not null",
     )
-    .bind(periodisering_id)
+    .bind(accrual_id)
     .fetch_all(pool)
     .await?;
 
@@ -315,7 +315,7 @@ pub async fn periodiser_plan(
             post_en_maned(
                 pool,
                 company_id,
-                periodisering_id,
+                accrual_id,
                 period,
                 rad.date,
                 rad.amount_ore,
@@ -337,7 +337,7 @@ pub async fn periodiser_plan(
 async fn post_en_maned(
     pool: &PgPool,
     company_id: Uuid,
-    periodisering_id: Uuid,
+    accrual_id: Uuid,
     period: NaiveDate,
     voucher_date: NaiveDate,
     amount_ore: i64,
@@ -391,7 +391,7 @@ async fn post_en_maned(
              values ($1,$2,$3,$4,$5)",
         )
         .bind(Uuid::now_v7())
-        .bind(periodisering_id)
+        .bind(accrual_id)
         .bind(period)
         .bind(amount_ore)
         .bind(posted.id)
@@ -405,7 +405,7 @@ async fn post_en_maned(
         Ok(posted) => {
             tx.commit().await?;
             Ok(PeriodiseringUtfall {
-                periodisering_id,
+                accrual_id,
                 description: description.to_string(),
                 period,
                 amount_ore,
@@ -421,14 +421,14 @@ async fn post_en_maned(
                  values ($1,$2,$3,$4,$5)",
             )
             .bind(Uuid::now_v7())
-            .bind(periodisering_id)
+            .bind(accrual_id)
             .bind(period)
             .bind(amount_ore)
             .bind(&detail)
             .execute(pool)
             .await?;
             Ok(PeriodiseringUtfall {
-                periodisering_id,
+                accrual_id,
                 description: description.to_string(),
                 period,
                 amount_ore,
@@ -444,12 +444,12 @@ async fn post_en_maned(
 pub async fn list_runs(
     pool: &PgPool,
     company_id: Uuid,
-    periodisering_id: Uuid,
+    accrual_id: Uuid,
 ) -> Result<Vec<(NaiveDate, i64, Option<String>)>> {
     let finnes: bool = sqlx::query_scalar(
         "select exists(select 1 from periodisering where id = $1 and company_id = $2)",
     )
-    .bind(periodisering_id)
+    .bind(accrual_id)
     .bind(company_id)
     .fetch_one(pool)
     .await?;
@@ -460,7 +460,7 @@ pub async fn list_runs(
         "select period, belop_ore, detail from periodisering_run
          where periodisering_id = $1 order by period desc",
     )
-    .bind(periodisering_id)
+    .bind(accrual_id)
     .fetch_all(pool)
     .await?
     .iter()

@@ -3,7 +3,7 @@
 //! and upcoming mva deadlines under the company's terminordning — all
 //! plain queries. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -67,7 +67,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Nøkkel Tall"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oversikt AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Oversikt AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -222,8 +222,8 @@ async fn key_figures_result_liquidity_and_deadlines() {
     // Deadlines: the next two mva deadlines under the ordning, never in the past.
     let frister = tall["frister"].as_array().unwrap();
     assert_eq!(frister.len(), 2);
-    for frist in frister {
-        assert_eq!(frist["type"], "mva");
-        assert!(frist["frist"].as_str().unwrap() >= today.to_string().as_str());
+    for deadline in frister {
+        assert_eq!(deadline["type"], "mva");
+        assert!(deadline["frist"].as_str().unwrap() >= today.to_string().as_str());
     }
 }

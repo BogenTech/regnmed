@@ -5,7 +5,7 @@
 //! with permission and duplicate checks along the way.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -63,17 +63,17 @@ async fn directory_request_accept_work_end() {
         regnmed_db::ensure_person(&state.pool, &accountant_sub, Some("Kari Bokfører"), None)
             .await
             .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oppdragsklient AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Oppdragsklient AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
         .await
         .unwrap();
-    let firm_name = format!("Direktoratet Regnskap {} AS", &unique_orgnr()[..4]);
+    let firm_name = format!("Direktoratet Regnskap {} AS", &unique_orgnumber()[..4]);
     let firm_id = regnmed_db::create_verified_firm(
         &state.pool,
-        &unique_orgnr(),
+        &unique_orgnumber(),
         &firm_name,
         "regnskap",
         "test-verifisering",

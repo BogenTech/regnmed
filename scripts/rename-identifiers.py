@@ -99,7 +99,21 @@ def captures(seg, pairs):
     """Inline format captures -- `{name}` -- live INSIDE a string literal,
     so the literal guard protects them while the identifier they name
     moves out from under them. They are the one thing in a string that
-    must be renamed with the code."""
+    must be renamed with the code.
+
+    AND THE ONE THING THAT GOES WRONG WHEN A `{...}` IS NOT A FORMAT
+    CAPTURE. `regnmed-mcp`'s tool table holds paths like
+    `"/companies/{selskap}/invoices"`, where the placeholder is
+    substituted at RUNTIME against the tool schema's own property name
+    -- a Norwegian WIRE name that must not move. Renaming `selskap`
+    rewrote 32 of them to `{company}` while the schemas kept saying
+    `"selskap"`, and every affected tool would have failed for an
+    agent. Nothing in this script can tell the two apart, so the guard
+    is a test in that crate:
+    `tool::tests::every_path_placeholder_is_a_declared_property`, which
+    is what caught it. If a crate builds strings with its own
+    placeholder syntax, it needs a test of that shape before you run a
+    rename through it."""
     lookup = dict(pairs)
     return CAPTURE.sub(lambda m: "{%s%s" % (lookup.get(m.group(1), m.group(1)), m.group(2)), seg)
 

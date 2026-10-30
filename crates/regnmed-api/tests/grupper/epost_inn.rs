@@ -7,7 +7,7 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
@@ -124,7 +124,7 @@ async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Ingrid Innboks"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mottak AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Mottak AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -248,14 +248,14 @@ async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
             .unwrap_or_else(|| panic!("mangler {id}"))
             .clone()
     };
-    let mottatt = by_id("<msg-1@grossisten.no>");
-    assert_eq!(mottatt["status"], "mottatt");
+    let received = by_id("<msg-1@grossisten.no>");
+    assert_eq!(received["status"], "mottatt");
     assert_eq!(
-        mottatt["fra"], "post@grossisten.no",
+        received["fra"], "post@grossisten.no",
         "visningsnavn strippet"
     );
     assert_eq!(
-        mottatt["tekst"], "Hei, her kommer fakturaen. Mvh Grossisten",
+        received["tekst"], "Hei, her kommer fakturaen. Mvh Grossisten",
         "brødteksten er lagret som dokumentasjon av opprinnelse"
     );
     let karantene = by_id("<msg-2@annetsted.no>");
@@ -352,8 +352,8 @@ async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
         None,
     )
     .await;
-    let ny = rotated["local_part"].as_str().unwrap().to_string();
-    assert_ne!(ny, local);
+    let new = rotated["local_part"].as_str().unwrap().to_string();
+    assert_ne!(new, local);
     publish(mail(
         &format!("{local}@mottak.regnmed.no"),
         "post@grossisten.no",

@@ -115,7 +115,7 @@ impl Server {
     }
 
     async fn execute(&self, v: &Tool, mut args: Map<String, Value>) -> Result<String> {
-        let path = fill_path(v.path, &mut args, self.client.selskap.as_deref())?;
+        let path = fill_path(v.path, &mut args, self.client.company.as_deref())?;
         let (body, query) = build_body(v, args)?;
         let (status, text) = self
             .client

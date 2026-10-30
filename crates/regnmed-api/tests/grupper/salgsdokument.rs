@@ -4,7 +4,7 @@
 //! akseptert, double ordre, double faktura). Requires DATABASE_URL
 //! (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -65,7 +65,7 @@ async fn tilbud_ordre_faktura_chain() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilbud & Co AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Tilbud & Co AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

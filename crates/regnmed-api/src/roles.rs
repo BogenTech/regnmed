@@ -172,13 +172,13 @@ pub async fn history(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let rader = regnmed_db::roles::historikk(&state.pool, company_id).await?;
+    let rader = regnmed_db::roles::history(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.name,
             "endring": e.endring,
             "rettigheter": e.rights,
-            "utfort_av": e.utfort_av,
+            "utfort_av": e.performed_by,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))

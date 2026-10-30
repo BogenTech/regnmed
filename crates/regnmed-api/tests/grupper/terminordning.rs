@@ -4,7 +4,7 @@
 //! (skattleggingsperiodeAar in the XML), and periode numbers outside
 //! the ordning are refused. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -60,7 +60,7 @@ async fn body_text(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, St
     (status, String::from_utf8_lossy(&bytes).to_string())
 }
 
-fn salg(date: chrono::NaiveDate, netto: i64) -> VoucherDraft {
+fn salg(date: chrono::NaiveDate, net: i64) -> VoucherDraft {
     let entry = |account: &str, amount: i64, vat: Option<&str>| EntryDraft {
         account_number: account.into(),
         amount: Ore(amount),
@@ -77,9 +77,9 @@ fn salg(date: chrono::NaiveDate, netto: i64) -> VoucherDraft {
         description: format!("Salg {date}"),
         reverses: None,
         entries: vec![
-            entry("1920", netto + netto / 4, None),
-            entry("3000", -netto, Some("3")),
-            entry("2700", -netto / 4, None),
+            entry("1920", net + net / 4, None),
+            entry("3000", -net, Some("3")),
+            entry("2700", -net / 4, None),
         ],
     }
 }
@@ -94,9 +94,10 @@ async fn the_period_scheme_governs_periods_and_the_return() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Termin Ansvarlig"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Liten Omsetning AS")
-        .await
-        .unwrap();
+    let company =
+        regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Liten Omsetning AS")
+            .await
+            .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await

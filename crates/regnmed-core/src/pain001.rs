@@ -110,23 +110,23 @@ pub fn render(input: &Pain001Input) -> String {
     x.empty("FinInstnId");
     x.close("DbtrAgt");
 
-    for betaling in &input.payments {
+    for payment in &input.payments {
         x.open("CdtTrfTxInf");
         x.open("PmtId");
-        x.leaf("EndToEndId", &betaling.end_to_end_id);
+        x.leaf("EndToEndId", &payment.end_to_end_id);
         x.close("PmtId");
         x.open("Amt");
         x.raw(&format!(
             "{}<InstdAmt Ccy=\"NOK\">{}</InstdAmt>",
             "  ".repeat(x.depth),
-            amount(betaling.amount_ore)
+            amount(payment.amount_ore)
         ));
         x.close("Amt");
         x.open("Cdtr");
-        x.leaf("Nm", &betaling.creditor_name);
+        x.leaf("Nm", &payment.creditor_name);
         x.close("Cdtr");
-        account(&mut x, "CdtrAcct", &betaling.creditor_account);
-        match (&betaling.kid, &betaling.message) {
+        account(&mut x, "CdtrAcct", &payment.creditor_account);
+        match (&payment.kid, &payment.message) {
             (Some(kid), _) => {
                 x.open("RmtInf");
                 x.open("Strd");

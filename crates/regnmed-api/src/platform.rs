@@ -38,12 +38,12 @@ use crate::auth::{ApiError, AuthPerson};
 /// receive it as an `Extension` — its presence proves the call went
 /// through the guard and was logged.
 #[derive(Clone)]
-pub struct PlattformKontekst {
+pub struct PlatformContext {
     pub person_id: Uuid,
     pub role: String,
 }
 
-impl PlattformKontekst {
+impl PlatformContext {
     fn er_systemadmin(&self) -> bool {
         self.role == "systemadmin"
     }
@@ -160,7 +160,7 @@ async fn vakt(State(state): State<AppState>, req: Request, next: Next) -> Respon
         // must not happen, so the call does not happen.
         return ApiError::from(e).into_response();
     }
-    parts.extensions.insert(PlattformKontekst {
+    parts.extensions.insert(PlatformContext {
         person_id: person.person_id,
         role,
     });
@@ -174,12 +174,12 @@ pub struct SokQuery {
 
 async fn list_members(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
-    let medlemmer = regnmed_db::list_platform_members(&state.pool).await?;
+    let members = regnmed_db::list_platform_members(&state.pool).await?;
     Ok(Json(json!({
-        "medlemmer": medlemmer.iter().map(|m| json!({
+        "medlemmer": members.iter().map(|m| json!({
             "id": m.id,
             "person_id": m.person_id,
             "navn": m.name,
@@ -205,7 +205,7 @@ pub struct GrantRequest {
 
 async fn grant_member(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Json(body): Json<GrantRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -232,7 +232,7 @@ async fn grant_member(
 
 async fn end_member(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path(member_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -244,14 +244,14 @@ async fn end_member(
 
 async fn list_companies(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let selskaper = regnmed_db::platform_list_companies(&state.pool, query.sok.as_deref()).await?;
     Ok(Json(json!({
         "selskaper": selskaper.iter().map(|c| json!({
             "company_id": c.id,
-            "orgnr": c.orgnr,
+            "orgnr": c.orgnumber,
             "name": c.name,
         })).collect::<Vec<_>>(),
     })))
@@ -259,14 +259,14 @@ async fn list_companies(
 
 async fn list_firms(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let byraer = regnmed_db::platform_list_firms(&state.pool, query.sok.as_deref()).await?;
     Ok(Json(json!({
         "byraer": byraer.iter().map(|f| json!({
             "firm_id": f.id,
-            "orgnr": f.orgnr,
+            "orgnr": f.orgnumber,
             "name": f.name,
             "kind": f.kind,
         })).collect::<Vec<_>>(),
@@ -275,7 +275,7 @@ async fn list_firms(
 
 async fn list_users(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let brukere = regnmed_db::platform_list_users(&state.pool, query.sok.as_deref()).await?;
@@ -289,7 +289,7 @@ async fn list_users(
                 "slag": t.slag,
                 "id": t.id,
                 "navn": t.name,
-                "orgnr": t.orgnr,
+                "orgnr": t.orgnumber,
                 "rolle": t.role,
                 "aktiv": t.active,
             })).collect::<Vec<_>>(),
@@ -302,7 +302,7 @@ async fn list_users(
 /// Admins that have access to ALL customers".
 async fn list_customers(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -312,7 +312,7 @@ async fn list_customers(
             "party_id": k.party_id,
             "party_no": k.party_no,
             "navn": k.name,
-            "orgnr": k.orgnr,
+            "orgnr": k.orgnumber,
             "epost": k.epost,
             "selskap": {
                 "company_id": k.company_id,
@@ -328,7 +328,7 @@ async fn list_customers(
 /// per-company beyond what `/platform/companies` shows.
 async fn overview(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let tall = regnmed_db::platform_overview(&state.pool).await?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
@@ -355,7 +355,7 @@ async fn overview(
 /// nothing is stored and no company ledger is read.
 async fn list_subscriptions(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
@@ -374,7 +374,7 @@ async fn list_subscriptions(
             };
             json!({
                 "company_id": a.company_id,
-                "orgnr": a.orgnr,
+                "orgnr": a.orgnumber,
                 "name": a.name,
                 "opprettet": a.opprettet.to_string(),
                 "plan": a.plan,
@@ -399,7 +399,7 @@ const IKONSTILER: [&str; 4] = ["linje", "kraftig", "emoji", "ingen"];
 
 async fn get_settings(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let ikonstil = regnmed_db::platform_setting(&state.pool, "ikonstil").await?;
     Ok(Json(
@@ -414,7 +414,7 @@ pub struct SettingsRequest {
 
 async fn put_settings(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Json(body): Json<SettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -436,11 +436,11 @@ async fn put_settings(
 /// admin sees about itself); editing is systemadmin, guarded per action.
 async fn company_detail(
     State(state): State<AppState>,
-    Extension(_ctx): Extension<PlattformKontekst>,
+    Extension(_ctx): Extension<PlatformContext>,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
-    let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
+    let members = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
     let invitasjoner = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
@@ -454,13 +454,13 @@ async fn company_detail(
     Ok(Json(json!({
         "settings": {
             "name": s.name,
-            "orgnr": s.orgnr,
+            "orgnr": s.orgnumber,
             "address": s.address,
             "bank_account": s.bank_account,
             "orgform": s.orgform,
             "email": s.email,
         },
-        "medlemmer": medlemmer.iter().map(|m| json!({
+        "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
@@ -502,7 +502,7 @@ pub struct CompanySettingsRequest {
 /// here touches the ledger or anything hashed.
 async fn put_company_settings(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path(company_id): Path<Uuid>,
     Json(request): Json<CompanySettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -526,7 +526,7 @@ async fn put_company_settings(
 /// here too: the platform must not orphan a company either.
 async fn deactivate_member(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -545,7 +545,7 @@ async fn deactivate_member(
 
 async fn restore_member(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -574,7 +574,7 @@ pub struct CoverageRequest {
 /// machinery does not fit. The row carries the reason and who did it.
 async fn start_coverage(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path(company_id): Path<Uuid>,
     Json(request): Json<CoverageRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -606,7 +606,7 @@ async fn start_coverage(
 /// existed, and this call is in the platform access log.
 async fn end_coverage(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
@@ -625,7 +625,7 @@ pub struct AssignRequest {
 
 async fn assign_company(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path((person_id, company_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<AssignRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -644,7 +644,7 @@ async fn assign_company(
 
 async fn assign_firm(
     State(state): State<AppState>,
-    Extension(ctx): Extension<PlattformKontekst>,
+    Extension(ctx): Extension<PlatformContext>,
     Path((person_id, firm_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<AssignRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {

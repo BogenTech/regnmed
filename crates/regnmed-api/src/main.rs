@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
         mailq,
         rate: Default::default(),
         stripe,
-        drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
+        ops_orgnumber: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
         portal_base: std::env::var("PORTAL_BASE_URL").ok(),
         sealing_key,
         regnid,

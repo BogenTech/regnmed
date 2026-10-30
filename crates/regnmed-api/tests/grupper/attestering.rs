@@ -7,7 +7,7 @@
 //! insert-only and is read by a revisor. Requires DATABASE_URL (skips
 //! otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -87,7 +87,7 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
     let forer = regnmed_db::ensure_person(&state.pool, &forer_sub, Some("Frida Fører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kontroll AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kontroll AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -366,14 +366,14 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
         None,
     )
     .await;
-    let bokfort = listing["documents"]
+    let posted = listing["documents"]
         .as_array()
         .unwrap()
         .iter()
         .find(|d| d["filename"] == "stort.pdf")
         .unwrap();
-    assert_eq!(bokfort["attestering"], "godkjent");
-    assert_eq!(bokfort["attestert_av"], "Lise Leder");
+    assert_eq!(posted["attestering"], "godkjent");
+    assert_eq!(posted["attestert_av"], "Lise Leder");
 
     // ---- Payment list: four eyes on money going out ----
     let (status, payable) = request(
@@ -514,7 +514,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
     let leder = regnmed_db::ensure_person(&state.pool, &leder_sub, Some("Lise Leder"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Maskinkontroll AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Maskinkontroll AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

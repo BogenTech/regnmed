@@ -58,7 +58,7 @@ pub struct InvoiceDraft {
     pub currency: Option<String>,
     /// Forces the booking rate (kreditnota reverses at the ORIGINAL
     /// kurs so the NOK zeroes exactly). None = resolve by invoice date.
-    pub valuta_kurs_micro: Option<i64>,
+    pub exchange_rate_micro: Option<i64>,
     pub lines: Vec<InvoiceLineDraft>,
 }
 
@@ -250,8 +250,8 @@ pub async fn create_invoice_in(
             &computed,
         )?,
         Some(code) => {
-            let rate_micro = match draft.valuta_kurs_micro {
-                Some(kurs) => kurs,
+            let rate_micro = match draft.exchange_rate_micro {
+                Some(exchange_rate) => exchange_rate,
                 None => {
                     crate::currency::require_kurs(pool, code, draft.invoice_date)
                         .await?
@@ -353,23 +353,23 @@ pub async fn create_invoice_in(
     let reg = crate::settings::registrering_on(pool, company_id, draft.invoice_date).await?;
     let pdf = render_faktura_pdf(&FakturaPdfInput {
         dokumenttype: if credits_invoice_id.is_some() {
-            Dokumenttype::Kreditnota
+            Dokumenttype::CreditNote
         } else if draft.kontant_betalingsmiddel.is_some() {
             Dokumenttype::Kontantfaktura
         } else {
-            Dokumenttype::Faktura
+            Dokumenttype::Invoice
         },
         betalingsmiddel: draft.kontant_betalingsmiddel.clone(),
         krediterer_nr: credited_invoice_no,
         seller_name: company.get("name"),
-        selger_orgnr: company.get("orgnr"),
+        seller_orgnumber: company.get("orgnr"),
         selger_adresse: company.get("address"),
         seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: company.get("bank_account"),
         buyer_name: party.get("name"),
         kjoper_nr: draft.party_no.clone(),
-        kjoper_orgnr: party.get("orgnr"),
+        buyer_orgnumber: party.get("orgnr"),
         kjoper_adresse: party.get("address"),
         fakturanr: invoice_no,
         invoice_date: draft.invoice_date,
@@ -386,7 +386,7 @@ pub async fn create_invoice_in(
             .zip(&computed.lines)
             .map(|(line, amounts)| PdfLinje {
                 description: line.description.clone(),
-                antall_milli: line.quantity_milli,
+                quantity_milli: line.quantity_milli,
                 enhetspris_ore: line.unit_price_ore,
                 vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
                 net_ore: amounts.net_ore,
@@ -580,7 +580,7 @@ pub async fn credit_invoice(
         // A kreditnota reverses at the ORIGINAL kurs, so the NOK side
         // zeroes exactly — no fake agio out of a correction.
         currency: original.get("valuta"),
-        valuta_kurs_micro: original.get("kurs_micro"),
+        exchange_rate_micro: original.get("kurs_micro"),
         lines: line_rows
             .iter()
             .map(|r| InvoiceLineDraft {

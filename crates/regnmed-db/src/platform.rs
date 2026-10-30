@@ -252,7 +252,7 @@ pub async fn platform_access_for_firm(
 #[derive(Debug, Clone)]
 pub struct PlattformSelskap {
     pub id: Uuid,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
 }
 
@@ -273,7 +273,7 @@ pub async fn platform_list_companies(
         .iter()
         .map(|r| PlattformSelskap {
             id: r.get("id"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             name: r.get("name"),
         })
         .collect())
@@ -282,7 +282,7 @@ pub async fn platform_list_companies(
 #[derive(Debug, Clone)]
 pub struct PlattformByra {
     pub id: Uuid,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
     pub kind: String,
 }
@@ -301,7 +301,7 @@ pub async fn platform_list_firms(pool: &PgPool, sok: Option<&str>) -> Result<Vec
         .iter()
         .map(|r| PlattformByra {
             id: r.get("id"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             name: r.get("name"),
             kind: r.get("kind"),
         })
@@ -314,7 +314,7 @@ pub struct PlattformTilknytning {
     pub slag: String,
     pub id: Uuid,
     pub name: String,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub role: String,
     pub active: bool,
 }
@@ -377,7 +377,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
                         slag: c.get("slag"),
                         id: c.get("id"),
                         name: c.get("navn"),
-                        orgnr: c.get("orgnr"),
+                        orgnumber: c.get("orgnr"),
                         role: c.get("rolle"),
                         active: c.get("aktiv"),
                     })
@@ -392,7 +392,7 @@ pub struct PlattformKunde {
     pub party_id: Uuid,
     pub party_no: String,
     pub name: String,
-    pub orgnr: Option<String>,
+    pub orgnumber: Option<String>,
     pub epost: Option<String>,
     pub company_id: Uuid,
     pub company_name: String,
@@ -430,7 +430,7 @@ pub async fn platform_list_customers(
             party_id: r.get("id"),
             party_no: r.get("party_no"),
             name: r.get("navn"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             epost: r.get("email"),
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),
@@ -463,7 +463,7 @@ pub async fn platform_assign_company(
     company_id: Uuid,
     person_id: Uuid,
     role: &str,
-    utfort_av: Uuid,
+    performed_by: Uuid,
     systemadmin: bool,
 ) -> Result<()> {
     ensure!(
@@ -528,7 +528,7 @@ pub async fn platform_assign_company(
     .bind(endring)
     .bind(fra.as_deref())
     .bind(role)
-    .bind(utfort_av)
+    .bind(performed_by)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -541,7 +541,7 @@ pub async fn platform_assign_firm(
     firm_id: Uuid,
     person_id: Uuid,
     role: &str,
-    utfort_av: Uuid,
+    performed_by: Uuid,
     systemadmin: bool,
 ) -> Result<()> {
     ensure!(
@@ -606,7 +606,7 @@ pub async fn platform_assign_firm(
     .bind(endring)
     .bind(fra.as_deref())
     .bind(role)
-    .bind(utfort_av)
+    .bind(performed_by)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -653,7 +653,7 @@ pub async fn platform_overview(pool: &PgPool) -> Result<PlattformOversikt> {
 #[derive(Debug, Clone)]
 pub struct PlatformSubscription {
     pub company_id: Uuid,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
     pub opprettet: NaiveDate,
     pub dekket_i_dag: bool,
@@ -689,7 +689,7 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlatformSu
         .iter()
         .map(|r| PlatformSubscription {
             company_id: r.get("id"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             name: r.get("name"),
             opprettet: r.get("opprettet"),
             dekket_i_dag: r.get("dekket"),

@@ -5,7 +5,7 @@
 //! last year ±X %" seeds the lines from reality.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -44,7 +44,7 @@ async fn request(
     )
 }
 
-fn salg(date: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
+fn salg(date: chrono::NaiveDate, net: i64, kostnad: i64) -> VoucherDraft {
     let entry = |account: &str, amount: i64| EntryDraft {
         account_number: account.into(),
         amount: Ore(amount),
@@ -61,8 +61,8 @@ fn salg(date: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
         description: format!("Drift {date}"),
         reverses: None,
         entries: vec![
-            entry("1920", netto - kostnad),
-            entry("3000", -netto),
+            entry("1920", net - kostnad),
+            entry("3000", -net),
             entry("6300", kostnad),
         ],
     }
@@ -78,7 +78,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Bea Budsjett"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Plan AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Plan AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -161,11 +161,11 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     let lines = budget["lines"].as_array().unwrap();
     // 3000 and 6300 for January and February — in presentation sign,
     // 10 % above last year.
-    let line = |account: &str, maned: i64| {
+    let line = |account: &str, month: i64| {
         lines
             .iter()
-            .find(|l| l["account"] == account && l["maned"] == maned)
-            .unwrap_or_else(|| panic!("mangler {account} måned {maned}"))["belop_ore"]
+            .find(|l| l["account"] == account && l["maned"] == month)
+            .unwrap_or_else(|| panic!("mangler {account} måned {month}"))["belop_ore"]
             .as_i64()
             .unwrap()
     };
@@ -174,9 +174,9 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
 
     // The draft is freely editable: replace the lines entirely.
     let mut nye = Vec::new();
-    for maned in 1..=12 {
-        nye.push(json!({"account": "3000", "maned": maned, "belop_ore": 10_000_00}));
-        nye.push(json!({"account": "6300", "maned": maned, "belop_ore": 2_000_00}));
+    for month in 1..=12 {
+        nye.push(json!({"account": "3000", "maned": month, "belop_ore": 10_000_00}));
+        nye.push(json!({"account": "6300", "maned": month, "belop_ore": 2_000_00}));
     }
     let (status, body) = request(
         &state,

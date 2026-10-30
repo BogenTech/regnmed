@@ -28,30 +28,30 @@ const PROFILE_ID: &str = "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dokumenttype {
-    Faktura,
-    Kreditnota,
+    Invoice,
+    CreditNote,
 }
 
 impl Dokumenttype {
     fn root(self) -> &'static str {
         match self {
-            Self::Faktura => "Invoice",
-            Self::Kreditnota => "CreditNote",
+            Self::Invoice => "Invoice",
+            Self::CreditNote => "CreditNote",
         }
     }
 
     fn namespace(self) -> &'static str {
         match self {
-            Self::Faktura => "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
-            Self::Kreditnota => "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2",
+            Self::Invoice => "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
+            Self::CreditNote => "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2",
         }
     }
 
     /// UNCL1001: 380 commercial invoice, 381 credit note.
     fn type_code(self) -> &'static str {
         match self {
-            Self::Faktura => "380",
-            Self::Kreditnota => "381",
+            Self::Invoice => "380",
+            Self::CreditNote => "381",
         }
     }
 }
@@ -59,7 +59,7 @@ impl Dokumenttype {
 #[derive(Debug, Clone)]
 pub struct EhfPart {
     pub name: String,
-    pub orgnr: String,
+    pub orgnumber: String,
     /// Street address; EHF requires an address with a country code.
     pub adresse: Option<String>,
     pub postnr: Option<String>,
@@ -75,7 +75,7 @@ pub struct EhfPart {
 pub struct EhfLinje {
     pub description: String,
     /// Thousandths: 1 unit = 1000.
-    pub antall_milli: i64,
+    pub quantity_milli: i64,
     /// UN/ECE Rec 20 unit code; "EA" (each) by default.
     pub unit: String,
     pub enhetspris_ore: i64,
@@ -231,13 +231,13 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.leaf_attr(
         "cbc:EndpointID",
         &format!("schemeID=\"{SCHEME_ORGNR}\""),
-        &part.orgnr,
+        &part.orgnumber,
     );
     w.open("cac:PartyIdentification");
     w.leaf_attr(
         "cbc:ID",
         &format!("schemeID=\"{SCHEME_ORGNR}\""),
-        &part.orgnr,
+        &part.orgnumber,
     );
     w.close("cac:PartyIdentification");
     w.open("cac:PartyName");
@@ -260,7 +260,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     if part.vat_registered {
         w.open("cac:PartyTaxScheme");
         // A Norwegian mva id is the orgnr plus MVA.
-        w.leaf("cbc:CompanyID", &format!("NO{}MVA", part.orgnr));
+        w.leaf("cbc:CompanyID", &format!("NO{}MVA", part.orgnumber));
         w.open("cac:TaxScheme");
         w.leaf("cbc:ID", "VAT");
         w.close("cac:TaxScheme");
@@ -271,7 +271,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.leaf_attr(
         "cbc:CompanyID",
         &format!("schemeID=\"{SCHEME_ORGNR}\""),
-        &part.orgnr,
+        &part.orgnumber,
     );
     w.close("cac:PartyLegalEntity");
     if let Some(epost) = &part.epost {
@@ -309,14 +309,14 @@ pub fn render(doc: &EhfDokument) -> String {
     w.leaf("cbc:ProfileID", PROFILE_ID);
     w.leaf("cbc:ID", &doc.fakturanr);
     w.leaf("cbc:IssueDate", &doc.invoice_date.to_string());
-    if doc.dokumenttype == Dokumenttype::Faktura
-        && let Some(forfall) = doc.due_date
+    if doc.dokumenttype == Dokumenttype::Invoice
+        && let Some(due_date) = doc.due_date
     {
-        w.leaf("cbc:DueDate", &forfall.to_string());
+        w.leaf("cbc:DueDate", &due_date.to_string());
     }
     match doc.dokumenttype {
-        Dokumenttype::Faktura => w.leaf("cbc:InvoiceTypeCode", doc.dokumenttype.type_code()),
-        Dokumenttype::Kreditnota => w.leaf("cbc:CreditNoteTypeCode", doc.dokumenttype.type_code()),
+        Dokumenttype::Invoice => w.leaf("cbc:InvoiceTypeCode", doc.dokumenttype.type_code()),
+        Dokumenttype::CreditNote => w.leaf("cbc:CreditNoteTypeCode", doc.dokumenttype.type_code()),
     }
     w.leaf("cbc:DocumentCurrencyCode", currency);
     if let Some(referanse) = &doc.kjopers_referanse {
@@ -351,7 +351,7 @@ pub fn render(doc: &EhfDokument) -> String {
         w.close("cac:Delivery");
     }
 
-    if doc.dokumenttype == Dokumenttype::Faktura
+    if doc.dokumenttype == Dokumenttype::Invoice
         && let Some(account) = &doc.account_number
     {
         w.open("cac:PaymentMeans");
@@ -367,16 +367,16 @@ pub fn render(doc: &EhfDokument) -> String {
     }
 
     // One TaxSubtotal per rate — the recipient reconciles per rate.
-    let mut satser: Vec<(&'static str, i64)> = Vec::new();
+    let mut rates: Vec<(&'static str, i64)> = Vec::new();
     for linje in &doc.linjer {
         let key = tax_category(linje.vat_rate_bp);
-        if !satser.contains(&key) {
-            satser.push(key);
+        if !rates.contains(&key) {
+            rates.push(key);
         }
     }
     w.open("cac:TaxTotal");
     w.leaf_attr("cbc:TaxAmount", &attr, &money(vat_sum));
-    for (kategori, bp) in &satser {
+    for (kategori, bp) in &rates {
         let grunnlag: i64 = doc
             .linjer
             .iter()
@@ -411,12 +411,12 @@ pub fn render(doc: &EhfDokument) -> String {
     w.close("cac:LegalMonetaryTotal");
 
     let line_tag = match doc.dokumenttype {
-        Dokumenttype::Faktura => "cac:InvoiceLine",
-        Dokumenttype::Kreditnota => "cac:CreditNoteLine",
+        Dokumenttype::Invoice => "cac:InvoiceLine",
+        Dokumenttype::CreditNote => "cac:CreditNoteLine",
     };
     let quantity_tag = match doc.dokumenttype {
-        Dokumenttype::Faktura => "cbc:InvoicedQuantity",
-        Dokumenttype::Kreditnota => "cbc:CreditedQuantity",
+        Dokumenttype::Invoice => "cbc:InvoicedQuantity",
+        Dokumenttype::CreditNote => "cbc:CreditedQuantity",
     };
     for (i, linje) in doc.linjer.iter().enumerate() {
         let (kategori, bp) = tax_category(linje.vat_rate_bp);
@@ -425,7 +425,7 @@ pub fn render(doc: &EhfDokument) -> String {
         w.leaf_attr(
             quantity_tag,
             &format!("unitCode=\"{}\"", esc(&linje.unit)),
-            &quantity(linje.antall_milli),
+            &quantity(linje.quantity_milli),
         );
         w.leaf_attr("cbc:LineExtensionAmount", &attr, &money(linje.net_ore));
         w.open("cac:Item");
@@ -452,10 +452,10 @@ pub fn render(doc: &EhfDokument) -> String {
 mod tests {
     use super::*;
 
-    fn part(name: &str, orgnr: &str, vat: bool) -> EhfPart {
+    fn part(name: &str, orgnumber: &str, vat: bool) -> EhfPart {
         EhfPart {
             name: name.into(),
-            orgnr: orgnr.into(),
+            orgnumber: orgnumber.into(),
             adresse: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
@@ -469,7 +469,7 @@ mod tests {
         EhfDokument {
             dokumenttype,
             fakturanr: "1001".into(),
-            krediterer: (dokumenttype == Dokumenttype::Kreditnota).then(|| "1000".to_string()),
+            krediterer: (dokumenttype == Dokumenttype::CreditNote).then(|| "1000".to_string()),
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
@@ -483,7 +483,7 @@ mod tests {
             linjer: vec![
                 EhfLinje {
                     description: "Konsulentbistand".into(),
-                    antall_milli: 2_000,
+                    quantity_milli: 2_000,
                     unit: "HUR".into(),
                     enhetspris_ore: 1_250_00,
                     net_ore: 2_500_00,
@@ -492,7 +492,7 @@ mod tests {
                 },
                 EhfLinje {
                     description: "Utlegg uten mva".into(),
-                    antall_milli: 1_000,
+                    quantity_milli: 1_000,
                     unit: "EA".into(),
                     enhetspris_ore: 500_00,
                     net_ore: 500_00,
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn the_invoice_carries_the_peppol_profile_and_a_norwegian_participant_id() {
-        let xml = render(&dokument(Dokumenttype::Faktura));
+        let xml = render(&dokument(Dokumenttype::Invoice));
         assert!(xml.contains(CUSTOMIZATION_ID));
         assert!(xml.contains(PROFILE_ID));
         assert!(xml.contains("<cbc:EndpointID schemeID=\"0192\">915933149</cbc:EndpointID>"));
@@ -521,7 +521,7 @@ mod tests {
     /// bundet, og XSD-testen under fanger feil plassering.
     #[test]
     fn the_delivery_date_is_carried_on_both_document_kinds() {
-        for kind in [Dokumenttype::Faktura, Dokumenttype::Kreditnota] {
+        for kind in [Dokumenttype::Invoice, Dokumenttype::CreditNote] {
             let xml = render(&dokument(kind));
             assert!(
                 xml.contains("<cbc:ActualDeliveryDate>2026-06-28</cbc:ActualDeliveryDate>"),
@@ -540,7 +540,7 @@ mod tests {
     /// the element entirely rather than shipping an empty one.
     #[test]
     fn a_document_without_a_delivery_omits_the_element() {
-        let mut doc = dokument(Dokumenttype::Faktura);
+        let mut doc = dokument(Dokumenttype::Invoice);
         doc.delivery_date = None;
         doc.leveringssted = None;
         let xml = render(&doc);
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn amounts_are_integer_ore_with_a_dot_and_a_currency_code() {
-        let xml = render(&dokument(Dokumenttype::Faktura));
+        let xml = render(&dokument(Dokumenttype::Invoice));
         assert!(xml.contains(
             "<cbc:TaxInclusiveAmount currencyID=\"NOK\">3625.00</cbc:TaxInclusiveAmount>"
         ));
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn one_tax_group_per_rate() {
-        let xml = render(&dokument(Dokumenttype::Faktura));
+        let xml = render(&dokument(Dokumenttype::Invoice));
         assert_eq!(xml.matches("<cac:TaxSubtotal>").count(), 2);
         assert!(xml.contains("<cbc:TaxableAmount currencyID=\"NOK\">2500.00</cbc:TaxableAmount>"));
         assert!(xml.contains("<cbc:Percent>25.00</cbc:Percent>"));
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn a_kreditnota_uses_its_own_element_names_and_points_at_the_faktura() {
-        let xml = render(&dokument(Dokumenttype::Kreditnota));
+        let xml = render(&dokument(Dokumenttype::CreditNote));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CreditNote "));
         assert!(xml.contains("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>"));
         assert!(xml.contains("<cac:CreditNoteLine>"));
@@ -610,15 +610,15 @@ mod tests {
 
     #[test]
     fn characters_needing_escaping_never_leak_through() {
-        let xml = render(&dokument(Dokumenttype::Faktura));
+        let xml = render(&dokument(Dokumenttype::Invoice));
         assert!(xml.contains("Kjøper &amp; Sønn AS"));
         assert!(!xml.contains("Kjøper & Sønn"));
     }
 
     #[test]
     fn the_same_faktura_yields_identical_xml() {
-        let a = render(&dokument(Dokumenttype::Faktura));
-        let b = render(&dokument(Dokumenttype::Faktura));
+        let a = render(&dokument(Dokumenttype::Invoice));
+        let b = render(&dokument(Dokumenttype::Invoice));
         assert_eq!(a, b, "renderen er deterministisk");
     }
 
@@ -626,8 +626,8 @@ mod tests {
     #[test]
     fn validates_against_the_ubl_schema() {
         for (dokumenttype, schema) in [
-            (Dokumenttype::Faktura, "maindoc/UBL-Invoice-2.1.xsd"),
-            (Dokumenttype::Kreditnota, "maindoc/UBL-CreditNote-2.1.xsd"),
+            (Dokumenttype::Invoice, "maindoc/UBL-Invoice-2.1.xsd"),
+            (Dokumenttype::CreditNote, "maindoc/UBL-CreditNote-2.1.xsd"),
         ] {
             let xml = render(&dokument(dokumenttype));
             let dir = std::env::temp_dir().join(format!("regnmed-ehf-{}", std::process::id()));

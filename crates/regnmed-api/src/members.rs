@@ -28,9 +28,9 @@ pub async fn list_access(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
+    let members = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
     Ok(Json(json!({
-        "medlemmer": medlemmer.iter().map(|m| json!({
+        "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
@@ -138,7 +138,7 @@ pub async fn access_history(
             "endring": e.endring,
             "fra_rolle": e.fra_rolle,
             "til_rolle": e.til_rolle,
-            "utfort_av": e.utfort_av,
+            "utfort_av": e.performed_by,
             "kilde": e.source,
             "notat": e.note,
             "tidspunkt": e.created_at.to_rfc3339(),

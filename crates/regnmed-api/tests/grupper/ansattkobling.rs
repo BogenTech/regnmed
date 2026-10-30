@@ -10,7 +10,7 @@
 
 use sqlx::Row;
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -54,7 +54,7 @@ async fn json_call(
 async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Koblingstest AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Koblingstest AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -318,10 +318,10 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     let (code, response) =
         json_call(&state, "GET", &format!("{link_uri}/history"), &admin, "").await;
     assert_eq!(code, StatusCode::OK);
-    let historikk = response["historikk"].as_array().unwrap();
-    assert_eq!(historikk.len(), 2);
-    assert_eq!(historikk[0]["endring"], "frakoblet");
-    assert_eq!(historikk[1]["endring"], "koblet");
-    assert_eq!(historikk[1]["kilde"], "admin");
-    assert_eq!(historikk[1]["utfort_av"], "Admin");
+    let history = response["historikk"].as_array().unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0]["endring"], "frakoblet");
+    assert_eq!(history[1]["endring"], "koblet");
+    assert_eq!(history[1]["kilde"], "admin");
+    assert_eq!(history[1]["utfort_av"], "Admin");
 }

@@ -57,7 +57,7 @@ impl Step {
 pub enum ReminderError {
     /// The send date is not after the due date — the claim is not yet due.
     NotDue {
-        forfall: NaiveDate,
+        due_date: NaiveDate,
     },
     /// No late-payment interest rate covers this day (before the earliest
     /// verified period) — we never guess a rate.
@@ -92,8 +92,8 @@ pub enum ReminderError {
 impl fmt::Display for ReminderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReminderError::NotDue { forfall } => {
-                write!(f, "fakturaen forfaller {forfall} og er ikke forfalt")
+            ReminderError::NotDue { due_date } => {
+                write!(f, "fakturaen forfaller {due_date} og er ikke forfalt")
             }
             ReminderError::MissingInterestRate { date } => {
                 write!(f, "ingen forsinkelsesrentesats dekker {date}")
@@ -167,7 +167,7 @@ fn interest_for_segment(amount_ore: i64, rate_bp: i64, days: i64) -> Option<i64>
 /// total.
 pub fn late_payment_interest(
     amount_ore: i64,
-    forfall: NaiveDate,
+    due_date: NaiveDate,
     to: NaiveDate,
     rates: &[RatePeriod],
 ) -> Result<InterestCalculation, ReminderError> {
@@ -176,7 +176,7 @@ pub fn late_payment_interest(
     }
     let mut periods = Vec::new();
     let mut sum: i64 = 0;
-    let mut day = forfall.succ_opt().expect("date in range");
+    let mut day = due_date.succ_opt().expect("date in range");
     while day <= to {
         let rate = value_on(rates, "forsinkelsesrente", day)
             .ok_or(ReminderError::MissingInterestRate { date: day })?;
@@ -244,11 +244,11 @@ pub const STEP_INTERVAL_DAYS: i64 = 14;
 /// after the inkassovarsel the machine's job is blocking, not nagging.
 pub fn next_step(
     last: Option<(Step, NaiveDate)>,
-    forfall: NaiveDate,
+    due_date: NaiveDate,
     today: NaiveDate,
 ) -> Option<NextStep> {
     match last {
-        None if today >= forfall + chrono::Days::new(REMINDER_AFTER_DAYS as u64) => {
+        None if today >= due_date + chrono::Days::new(REMINDER_AFTER_DAYS as u64) => {
             Some(NextStep {
                 step: Step::Reminder,
                 with_fee: false,
@@ -256,8 +256,8 @@ pub fn next_step(
                 grace_days: STEP_INTERVAL_DAYS,
             })
         }
-        Some((Step::Reminder, sendt))
-            if today >= sendt + chrono::Days::new(STEP_INTERVAL_DAYS as u64) =>
+        Some((Step::Reminder, sent))
+            if today >= sent + chrono::Days::new(STEP_INTERVAL_DAYS as u64) =>
         {
             Some(NextStep {
                 step: Step::Demand,
@@ -266,8 +266,8 @@ pub fn next_step(
                 grace_days: STEP_INTERVAL_DAYS,
             })
         }
-        Some((Step::Demand, sendt))
-            if today >= sendt + chrono::Days::new(STEP_INTERVAL_DAYS as u64) =>
+        Some((Step::Demand, sent))
+            if today >= sent + chrono::Days::new(STEP_INTERVAL_DAYS as u64) =>
         {
             Some(NextStep {
                 step: Step::CollectionNotice,
@@ -288,7 +288,7 @@ pub fn validate_step(
     step: Step,
     sent_date: NaiveDate,
     grace_date: NaiveDate,
-    forfall: NaiveDate,
+    due_date: NaiveDate,
     fee_ore: i64,
     max_fee_ore: i64,
     history: &[PreviousStep],
@@ -296,8 +296,8 @@ pub fn validate_step(
     if fee_ore < 0 {
         return Err(ReminderError::NegativeAmount);
     }
-    if sent_date <= forfall {
-        return Err(ReminderError::NotDue { forfall });
+    if sent_date <= due_date {
+        return Err(ReminderError::NotDue { due_date });
     }
     if let Some(last) = history.iter().map(|s| s.step).max()
         && step < last
@@ -320,7 +320,7 @@ pub fn validate_step(
         if step == Step::Reminder {
             return Err(ReminderError::FeeOnReminder);
         }
-        let earliest = forfall + chrono::Days::new(14);
+        let earliest = due_date + chrono::Days::new(14);
         if sent_date < earliest {
             return Err(ReminderError::FeeTooEarly { earliest });
         }
@@ -406,12 +406,12 @@ pub fn build_claim_voucher(
 pub struct ReminderDocument {
     pub step: Step,
     pub company: String,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub customer_name: String,
     pub customer_no: String,
     pub invoice_no: i64,
     pub invoice_date: NaiveDate,
-    pub forfall: NaiveDate,
+    pub due_date: NaiveDate,
     pub sent_date: NaiveDate,
     pub grace_date: NaiveDate,
     pub remaining_amount_ore: i64,
@@ -438,7 +438,7 @@ pub fn render_document(doc: &ReminderDocument) -> String {
     line(&title);
     line(&"=".repeat(title.chars().count()));
     line("");
-    line(&format!("Fra:    {} ({})", doc.company, doc.orgnr));
+    line(&format!("Fra:    {} ({})", doc.company, doc.orgnumber));
     line(&format!(
         "Til:    {} (kunde {})",
         doc.customer_name, doc.customer_no
@@ -447,7 +447,7 @@ pub fn render_document(doc: &ReminderDocument) -> String {
     line("");
     line(&format!(
         "Faktura {} av {} forfalt {}.",
-        doc.invoice_no, doc.invoice_date, doc.forfall
+        doc.invoice_no, doc.invoice_date, doc.due_date
     ));
     line("");
     let mut total = doc.remaining_amount_ore;
@@ -505,27 +505,27 @@ mod tests {
 
     #[test]
     fn the_ladder_walks_reminder_demand_collection_notice_then_stops() {
-        let forfall = date(2026, 3, 1);
+        let due_date = date(2026, 3, 1);
         // Too early: the transfer may be in flight.
-        assert_eq!(next_step(None, forfall, date(2026, 3, 3)), None);
+        assert_eq!(next_step(None, due_date, date(2026, 3, 3)), None);
         // Day 3: the free reminder.
-        let p = next_step(None, forfall, date(2026, 3, 4)).unwrap();
+        let p = next_step(None, due_date, date(2026, 3, 4)).unwrap();
         assert_eq!(p.step, Step::Reminder);
         assert!(!p.with_fee && !p.with_interest);
         // 14 days after the reminder: a demand, now with a fee.
-        let sendt = date(2026, 3, 4);
+        let sent = date(2026, 3, 4);
         assert_eq!(
-            next_step(Some((Step::Reminder, sendt)), forfall, date(2026, 3, 17)),
+            next_step(Some((Step::Reminder, sent)), due_date, date(2026, 3, 17)),
             None,
             "not before the frist has run out"
         );
-        let p = next_step(Some((Step::Reminder, sendt)), forfall, date(2026, 3, 18)).unwrap();
+        let p = next_step(Some((Step::Reminder, sent)), due_date, date(2026, 3, 18)).unwrap();
         assert_eq!(p.step, Step::Demand);
         assert!(p.with_fee);
         // 14 more: collection notice with interest and the statutory deadline.
         let p = next_step(
             Some((Step::Demand, date(2026, 3, 18))),
-            forfall,
+            due_date,
             date(2026, 4, 1),
         )
         .unwrap();
@@ -537,7 +537,7 @@ mod tests {
         assert_eq!(
             next_step(
                 Some((Step::CollectionNotice, date(2026, 4, 1))),
-                forfall,
+                due_date,
                 date(2026, 12, 31)
             ),
             None
@@ -613,14 +613,14 @@ mod tests {
         );
     }
 
-    fn ok_steg(
+    fn ok_steps(
         step: Step,
         sent: NaiveDate,
-        frist: NaiveDate,
+        deadline: NaiveDate,
         fee: i64,
         history: &[PreviousStep],
     ) -> Result<(), ReminderError> {
-        validate_step(step, sent, frist, date(2026, 1, 10), fee, 3800, history)
+        validate_step(step, sent, deadline, date(2026, 1, 10), fee, 3800, history)
     }
 
     #[test]
@@ -628,7 +628,7 @@ mod tests {
         let ingen = &[][..];
         // A reminder the day after the due date, without a fee: fine.
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::Reminder,
                 date(2026, 1, 11),
                 date(2026, 1, 25),
@@ -639,12 +639,12 @@ mod tests {
         );
         // Not yet due.
         assert!(matches!(
-            ok_steg(Step::Demand, date(2026, 1, 10), date(2026, 1, 30), 0, ingen),
+            ok_steps(Step::Demand, date(2026, 1, 10), date(2026, 1, 30), 0, ingen),
             Err(ReminderError::NotDue { .. })
         ));
         // A fee on a reminder is not a thing.
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::Reminder,
                 date(2026, 1, 25),
                 date(2026, 2, 10),
@@ -655,7 +655,7 @@ mod tests {
         );
         // A fee before 14 days after the due date (inkassoforskriften §1-2).
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::Demand,
                 date(2026, 1, 20),
                 date(2026, 2, 5),
@@ -668,7 +668,7 @@ mod tests {
         );
         // Gebyr over maksimalsatsen.
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::Demand,
                 date(2026, 1, 24),
                 date(2026, 2, 10),
@@ -683,7 +683,7 @@ mod tests {
             fee_ore: 0,
         }][..];
         assert!(matches!(
-            ok_steg(
+            ok_steps(
                 Step::Demand,
                 date(2026, 2, 1),
                 date(2026, 2, 15),
@@ -704,7 +704,7 @@ mod tests {
             },
         ][..];
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::CollectionNotice,
                 date(2026, 3, 1),
                 date(2026, 3, 16),
@@ -715,7 +715,7 @@ mod tests {
         );
         // A third step without a fee is still allowed.
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::CollectionNotice,
                 date(2026, 3, 1),
                 date(2026, 3, 16),
@@ -729,7 +729,7 @@ mod tests {
     #[test]
     fn an_inkassovarsel_requires_at_least_a_14_day_deadline() {
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::CollectionNotice,
                 date(2026, 2, 1),
                 date(2026, 2, 14),
@@ -741,7 +741,7 @@ mod tests {
             })
         );
         assert_eq!(
-            ok_steg(
+            ok_steps(
                 Step::CollectionNotice,
                 date(2026, 2, 1),
                 date(2026, 2, 15),
@@ -755,7 +755,7 @@ mod tests {
     #[test]
     fn a_deadline_before_the_send_date_is_rejected() {
         assert_eq!(
-            ok_steg(Step::Demand, date(2026, 2, 1), date(2026, 2, 1), 0, &[]),
+            ok_steps(Step::Demand, date(2026, 2, 1), date(2026, 2, 1), 0, &[]),
             Err(ReminderError::DeadlineBeforeSendDate)
         );
     }
@@ -801,12 +801,12 @@ mod tests {
         ReminderDocument {
             step,
             company: "Demo AS".into(),
-            orgnr: "999888777".into(),
+            orgnumber: "999888777".into(),
             customer_name: "Kari Kunde".into(),
             customer_no: "10000".into(),
             invoice_no: 7,
             invoice_date: date(2025, 6, 1),
-            forfall: date(2025, 6, 15),
+            due_date: date(2025, 6, 15),
             sent_date: date(2025, 7, 15),
             grace_date: date(2025, 7, 29),
             remaining_amount_ore: 1_000_000,

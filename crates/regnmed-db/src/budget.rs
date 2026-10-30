@@ -35,7 +35,7 @@ pub struct BudgetRow {
 pub struct BudgetLine {
     pub account_number: String,
     pub account_name: String,
-    pub maned: i32,
+    pub month: i32,
     /// Presentasjonsfortegn: inntekt positiv, kostnad positiv.
     pub amount_ore: i64,
 }
@@ -113,7 +113,7 @@ pub async fn budget_lines(
         .map(|r| BudgetLine {
             account_number: r.get("number"),
             account_name: r.get("name"),
-            maned: r.get("maned"),
+            month: r.get("maned"),
             amount_ore: r.get("belop_ore"),
         })
         .collect())
@@ -185,7 +185,7 @@ pub async fn create_budget(
 
     if let Some(fra) = fra_ar {
         let rows = monthly_actuals(&mut tx, company_id, fra).await?;
-        for (account_id, number, maned, ledger_ore) in rows {
+        for (account_id, number, month, ledger_ore) in rows {
             let amount = scale_ore(presentation_ore(&number, ledger_ore), justering_bp);
             if amount == 0 {
                 continue;
@@ -197,7 +197,7 @@ pub async fn create_budget(
             .bind(Uuid::now_v7())
             .bind(id)
             .bind(account_id)
-            .bind(maned)
+            .bind(month)
             .bind(amount)
             .execute(&mut *tx)
             .await?;
@@ -238,7 +238,7 @@ async fn monthly_actuals(
 #[derive(Debug)]
 pub struct BudgetLineDraft {
     pub account_number: String,
-    pub maned: i32,
+    pub month: i32,
     pub amount_ore: i64,
 }
 
@@ -271,7 +271,7 @@ pub async fn set_budget_lines(
         .await?;
     for (i, line) in lines.iter().enumerate() {
         ensure!(
-            (1..=12).contains(&line.maned),
+            (1..=12).contains(&line.month),
             "linje {}: måned må være 1–12",
             i + 1
         );
@@ -301,7 +301,7 @@ pub async fn set_budget_lines(
         .bind(Uuid::now_v7())
         .bind(budget_id)
         .bind(account_id)
-        .bind(line.maned)
+        .bind(line.month)
         .bind(line.amount_ore)
         .execute(&mut *tx)
         .await?;
@@ -414,17 +414,17 @@ pub async fn avviksrapport(
     .await?;
     for r in &rows {
         let number: String = r.get("number");
-        let maned: i32 = r.get("maned");
+        let month: i32 = r.get("maned");
         let amount: i64 = r.get("belop");
         let account = account_entry(&mut tall, &number, r.get("name"));
-        account.actual[(maned - 1) as usize] += presentation_ore(&number, amount);
+        account.actual[(month - 1) as usize] += presentation_ore(&number, amount);
     }
 
     // Budsjett: allerede i presentasjonsfortegn.
     if let Some(b) = &budsjett {
         for line in budget_lines(pool, company_id, b.id).await? {
             let account = account_entry(&mut tall, &line.account_number, line.account_name);
-            account.budget[(line.maned - 1) as usize] += line.amount_ore;
+            account.budget[(line.month - 1) as usize] += line.amount_ore;
         }
     }
 

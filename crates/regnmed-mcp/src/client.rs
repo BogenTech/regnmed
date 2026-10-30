@@ -38,7 +38,7 @@ pub struct Client {
     http: reqwest::Client,
     base: String,
     /// The company the tools act for when a call does not name one.
-    pub selskap: Option<String>,
+    pub company: Option<String>,
     auth: Auth,
     cache: tokio::sync::Mutex<Option<(String, Instant)>>,
 }
@@ -94,7 +94,7 @@ impl Client {
         Ok(Self {
             http,
             base,
-            selskap: env("REGNMED_COMPANY"),
+            company: env("REGNMED_COMPANY"),
             auth,
             cache: tokio::sync::Mutex::new(None),
         })
@@ -107,7 +107,7 @@ impl Client {
     /// one authentication path, used by both rails.
     pub async fn with_client_credentials(
         base: &str,
-        selskap: Option<String>,
+        company: Option<String>,
         issuer: &str,
         client_id: &str,
         secret: &str,
@@ -119,7 +119,7 @@ impl Client {
         Ok(Self {
             http,
             base: base.trim_end_matches('/').to_string(),
-            selskap,
+            company,
             auth: Auth::Client {
                 token_url,
                 client_id: client_id.to_string(),
@@ -134,11 +134,11 @@ impl Client {
     /// which must not go through process-global environment variables:
     /// tests in one binary share them, and a flaky configuration is
     /// worse than no test.
-    pub fn new(base: &str, selskap: Option<String>, token: &str) -> Self {
+    pub fn new(base: &str, company: Option<String>, token: &str) -> Self {
         Self {
             http: reqwest::Client::new(),
             base: base.trim_end_matches('/').to_string(),
-            selskap,
+            company,
             auth: Auth::Statisk(token.to_string()),
             cache: tokio::sync::Mutex::new(None),
         }

@@ -27,7 +27,8 @@ use crate::auth::{ApiError, AuthPerson};
 /// the caller leaves out. Shared by faktura, tilbud/ordre and maler.
 #[derive(Deserialize)]
 pub struct DocLineRequest {
-    pub produkt: Option<String>,
+    #[serde(rename = "produkt")]
+    pub product: Option<String>,
     pub description: Option<String>,
     /// Revenue account; defaults to the product's konto, else 3000.
     pub account: Option<String>,
@@ -52,7 +53,7 @@ pub async fn resolve_lines(
             &state.pool,
             company_id,
             regnmed_db::ProductLineSpec {
-                produkt: line.produkt,
+                product: line.product,
                 description: line.description,
                 account: line.account,
                 quantity_milli: line.quantity_milli.unwrap_or(1000),
@@ -185,7 +186,7 @@ pub async fn inventory(
         "inventory": rows.iter().map(|r| json!({
             "nummer": r.number,
             "navn": r.name,
-            "antall_milli": r.antall_milli,
+            "antall_milli": r.quantity_milli,
             "verdi_ore": r.verdi_ore,
             "gjennomsnitt_ore": r.gjennomsnitt_ore,
         })).collect::<Vec<_>>(),
@@ -195,7 +196,8 @@ pub async fn inventory(
 
 #[derive(Deserialize)]
 pub struct MovementsQuery {
-    produkt: String,
+    #[serde(rename = "produkt")]
+    product: String,
 }
 
 pub async fn movements(
@@ -205,12 +207,12 @@ pub async fn movements(
     Query(query): Query<MovementsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InventoryRead).await?;
-    let rows = regnmed_db::list_movements(&state.pool, company_id, &query.produkt).await?;
+    let rows = regnmed_db::list_movements(&state.pool, company_id, &query.product).await?;
     Ok(Json(json!({
         "movements": rows.iter().map(|m| json!({
             "dato": m.date.to_string(),
             "kind": m.kind,
-            "antall_milli": m.antall_milli,
+            "antall_milli": m.quantity_milli,
             "kostpris_ore": m.kostpris_ore,
             "note": m.note,
             "invoice_no": m.invoice_no,
@@ -221,12 +223,14 @@ pub async fn movements(
 
 #[derive(Deserialize)]
 pub struct MovementRequest {
-    produkt: String,
+    #[serde(rename = "produkt")]
+    product: String,
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     /// kjop | justering (salg only ever comes from invoicing).
     kind: String,
-    antall_milli: i64,
+    #[serde(rename = "antall_milli")]
+    quantity_milli: i64,
     /// Anskaffelseskost per unit (øre) — expected on kjøp.
     kostpris_ore: Option<i64>,
     note: Option<String>,
@@ -243,10 +247,10 @@ pub async fn register_movement(
     regnmed_db::register_movement(
         &state.pool,
         company_id,
-        &request.produkt,
+        &request.product,
         request.date,
         &request.kind,
-        request.antall_milli,
+        request.quantity_milli,
         request.kostpris_ore,
         request.note.as_deref(),
         created_by,
@@ -258,7 +262,8 @@ pub async fn register_movement(
 
 #[derive(Deserialize)]
 pub struct CountLine {
-    produkt: String,
+    #[serde(rename = "produkt")]
+    product: String,
     talt_milli: i64,
 }
 
@@ -295,7 +300,7 @@ pub async fn count(
         .linjer
         .iter()
         .map(|l| regnmed_db::TellingLinje {
-            number: l.produkt.clone(),
+            number: l.product.clone(),
             talt_milli: l.talt_milli,
         })
         .collect();
@@ -316,7 +321,7 @@ pub async fn count(
             "talt_milli": j.talt_milli,
         })).collect::<Vec<_>>(),
         "verdi_ore": result.verdi_ore,
-        "bokfort_ore": result.bokfort_ore,
+        "bokfort_ore": result.posted_ore,
         "voucher": result.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))
 }

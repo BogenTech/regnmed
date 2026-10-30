@@ -133,7 +133,7 @@ async fn find_party(
     kind: &str,
     number: Option<&str>,
     name: &str,
-    orgnr: Option<&str>,
+    orgnumber: Option<&str>,
 ) -> Result<Option<(Uuid, String)>> {
     let row = sqlx::query(
         "select id, name from party
@@ -147,7 +147,7 @@ async fn find_party(
     )
     .bind(company_id)
     .bind(kind)
-    .bind(orgnr.filter(|o| !o.is_empty()))
+    .bind(orgnumber.filter(|o| !o.is_empty()))
     .bind(number.filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty()))
     .bind(name)
     .fetch_optional(pool)
@@ -319,8 +319,8 @@ pub async fn import_open_items(
         if let Some(kid) = &rad.kid {
             text = format!("{text} (KID {kid})");
         }
-        if let Some(forfall) = rad.due_date {
-            text = format!("{text} forfall {forfall}");
+        if let Some(due_date) = rad.due_date {
+            text = format!("{text} forfall {due_date}");
         }
         entries.push(EntryDraft {
             account_number: account.to_string(),

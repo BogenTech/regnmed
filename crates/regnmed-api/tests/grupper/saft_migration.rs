@@ -8,7 +8,7 @@
 //! and one ordinary voucher closes the import door for good.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -44,7 +44,7 @@ fn foreign_saft() -> String {
             rate_micro: None,
         };
     let input = SaftInput {
-        orgnr: "923609016".into(),
+        orgnumber: "923609016".into(),
         company_name: "Gammelt System AS".into(),
         contact_first_name: "Kari".into(),
         contact_last_name: "Nordmann".into(),
@@ -99,7 +99,7 @@ fn foreign_saft() -> String {
         customers: vec![SaftParty {
             party_no: "10042".into(),
             name: "Gammel Kunde AS".into(),
-            orgnr: Some("911111111".into()),
+            orgnumber: Some("911111111".into()),
             balance_account: Some("1500".into()),
             opening_ore: 2_000_00,
             closing_ore: 14_500_00,
@@ -190,7 +190,7 @@ async fn migrates_a_foreign_saft_file_into_an_empty_company() {
     let viewer = regnmed_db::ensure_person(&state.pool, &viewer_sub, Some("Lars Leser"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Migrert AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Migrert AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -307,7 +307,7 @@ fn year_saft(
     transactions: Vec<SaftTransaction>,
 ) -> String {
     let input = SaftInput {
-        orgnr: "923609016".into(),
+        orgnumber: "923609016".into(),
         company_name: "Gammelt System AS".into(),
         contact_first_name: "Kari".into(),
         contact_last_name: "Nordmann".into(),
@@ -381,7 +381,7 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Milla Migrerer"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Flerårig AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Flerårig AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

@@ -22,7 +22,8 @@ use crate::auth::{ApiError, AuthPerson};
 pub struct PeriodeQuery {
     /// Period end. Defaults to the latest closed period — the one the
     /// revisjonsrapport measures, so the two never disagree by accident.
-    periode: Option<chrono::NaiveDate>,
+    #[serde(rename = "periode")]
+    period: Option<chrono::NaiveDate>,
 }
 
 async fn periode_or_lock(
@@ -50,11 +51,11 @@ pub async fn status(
     Query(query): Query<PeriodeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let periode = periode_or_lock(&state, company_id, query.periode).await?;
+    let period = periode_or_lock(&state, company_id, query.period).await?;
     let linjer =
-        regnmed_db::balance_documentation::balance_status(&state.pool, company_id, periode).await?;
+        regnmed_db::balance_documentation::balance_status(&state.pool, company_id, period).await?;
     Ok(Json(json!({
-        "periode": periode.to_string(),
+        "periode": period.to_string(),
         "kontoer": linjer.iter().map(|l| json!({
             "konto": l.account,
             "kontonavn": l.account_name,
@@ -80,7 +81,8 @@ pub async fn status(
 pub struct AvstemRequest {
     #[serde(rename = "konto")]
     account: String,
-    periode: chrono::NaiveDate,
+    #[serde(rename = "periode")]
+    period: chrono::NaiveDate,
     forklaring: String,
 }
 
@@ -99,7 +101,7 @@ pub async fn avstem(
         &state.pool,
         company_id,
         &request.account,
-        request.periode,
+        request.period,
         &request.forklaring,
         None,
         person.person_id,
@@ -114,7 +116,8 @@ pub async fn avstem(
 pub struct VedleggQuery {
     #[serde(rename = "konto")]
     account: String,
-    periode: chrono::NaiveDate,
+    #[serde(rename = "periode")]
+    period: chrono::NaiveDate,
     forklaring: String,
     filename: String,
 }
@@ -144,7 +147,7 @@ pub async fn avstem_med_vedlegg(
         &state.pool,
         company_id,
         &query.account,
-        query.periode,
+        query.period,
         &query.forklaring,
         Some((&query.filename, &content_type, &body)),
         person.person_id,
@@ -181,21 +184,22 @@ pub async fn vedlegg(
 pub struct HistorikkQuery {
     #[serde(rename = "konto")]
     account: String,
-    periode: chrono::NaiveDate,
+    #[serde(rename = "periode")]
+    period: chrono::NaiveDate,
 }
 
-pub async fn historikk(
+pub async fn history(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
     Query(query): Query<HistorikkQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let rader = regnmed_db::balance_documentation::historikk(
+    let rader = regnmed_db::balance_documentation::history(
         &state.pool,
         company_id,
         &query.account,
-        query.periode,
+        query.period,
     )
     .await?;
     Ok(Json(json!({

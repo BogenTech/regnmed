@@ -38,7 +38,8 @@ pub struct DagsoppgjorRequest {
     date: chrono::NaiveDate,
     z_nummer: String,
     salg: Vec<SalgLinje>,
-    betaling: Vec<BetalingLinje>,
+    #[serde(rename = "betaling")]
+    payment: Vec<BetalingLinje>,
     #[serde(rename = "mva_konto")]
     vat_account: Option<String>,
     /// The cash account and what was counted in it. Omitted = the till
@@ -61,8 +62,8 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
             .into_iter()
             .map(|l| (l.account, l.vat_code, l.gross_ore))
             .collect(),
-        betaling: request
-            .betaling
+        payment: request
+            .payment
             .into_iter()
             .map(|b| (b.account, b.amount_ore))
             .collect(),
@@ -73,11 +74,11 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
     }
 }
 
-fn response(bokfort: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
+fn response(posted: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
     Json(json!({
-        "bilag": format!("{}-{}", bokfort.voucher.0, bokfort.voucher.1),
-        "differanse_ore": bokfort.difference_ore,
-        "differansebilag": bokfort.difference.map(|(y, n)| format!("{y}-{n}")),
+        "bilag": format!("{}-{}", posted.voucher.0, posted.voucher.1),
+        "differanse_ore": posted.difference_ore,
+        "differansebilag": posted.difference.map(|(y, n)| format!("{y}-{n}")),
     }))
 }
 
@@ -89,7 +90,7 @@ pub async fn dagsoppgjor(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &state.pool,
         company_id,
         &til_inn(request),
@@ -98,7 +99,7 @@ pub async fn dagsoppgjor(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(response(bokfort))
+    Ok(response(posted))
 }
 
 #[derive(Deserialize)]
@@ -132,7 +133,7 @@ pub async fn dagsoppgjor_med_rapport(
         .unwrap_or("application/octet-stream")
         .to_string();
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &state.pool,
         company_id,
         &til_inn(request),
@@ -141,5 +142,5 @@ pub async fn dagsoppgjor_med_rapport(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(response(bokfort))
+    Ok(response(posted))
 }

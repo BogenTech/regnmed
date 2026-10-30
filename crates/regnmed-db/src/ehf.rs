@@ -98,7 +98,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         };
         linjer.push(EhfLinje {
             description: line.get("description"),
-            antall_milli: line.get("quantity_milli"),
+            quantity_milli: line.get("quantity_milli"),
             // Our quantities are unitless counts; EN 16931 wants a UN/ECE
             // Rec 20 code, and "EA" (each) is the honest default.
             unit: "EA".into(),
@@ -116,9 +116,9 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
 
     let doc = EhfDokument {
         dokumenttype: if head.get::<Option<Uuid>, _>("credits_invoice_id").is_some() {
-            Dokumenttype::Kreditnota
+            Dokumenttype::CreditNote
         } else {
-            Dokumenttype::Faktura
+            Dokumenttype::Invoice
         },
         fakturanr: head.get::<i64, _>("invoice_no").to_string(),
         krediterer: krediterer_nr.map(|no| no.to_string()),
@@ -136,7 +136,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         leveringssted: head.get("delivery_place"),
         selger: EhfPart {
             name: head.get("selger_navn"),
-            orgnr: head.get("selger_orgnr"),
+            orgnumber: head.get("selger_orgnr"),
             adresse: selger_gate,
             postnr: selger_postnr,
             poststed: selger_poststed,
@@ -151,7 +151,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             name: head.get("kjoper_navn"),
             // Without an orgnr we cannot address the receiver in Peppol;
             // the endpoint says so rather than shipping a blank id.
-            orgnr: head
+            orgnumber: head
                 .get::<Option<String>, _>("kjoper_orgnr")
                 .context("kjøperen mangler organisasjonsnummer — EHF krever mottakerens orgnr")?,
             adresse: kjoper_gate,
@@ -175,10 +175,10 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
 
 #[derive(Debug)]
 pub struct EhfForslag {
-    pub mottatt: MottattFaktura,
+    pub received: MottattFaktura,
     /// The supplier in our register, matched on orgnr — None means the
     /// import would have to create one.
-    pub leverandor_no: Option<String>,
+    pub supplier_no: Option<String>,
     pub supplier_name: Option<String>,
     pub advarsler: Vec<String>,
 }
@@ -193,17 +193,17 @@ pub async fn inbox_ehf_forslag(
 ) -> Result<EhfForslag> {
     let (_, _, content) = crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
     let xml = String::from_utf8(content).context("dokumentet er ikke tekst — er det en EHF?")?;
-    let mottatt = parse(&xml).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let received = parse(&xml).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let mut advarsler = Vec::new();
-    let (leverandor_no, supplier_name) = match &mottatt.selger_orgnr {
-        Some(orgnr) => {
+    let (supplier_no, supplier_name) = match &received.seller_orgnumber {
+        Some(orgnumber) => {
             let row = sqlx::query(
                 "select party_no, name from party
                  where company_id = $1 and kind = 'leverandor' and orgnr = $2 limit 1",
             )
             .bind(company_id)
-            .bind(orgnr)
+            .bind(orgnumber)
             .fetch_optional(pool)
             .await?;
             match row {
@@ -213,8 +213,8 @@ pub async fn inbox_ehf_forslag(
                 ),
                 None => {
                     advarsler.push(format!(
-                        "leverandøren {} (orgnr {orgnr}) finnes ikke i reskontroen ennå",
-                        mottatt.seller_name
+                        "leverandøren {} (orgnr {orgnumber}) finnes ikke i reskontroen ennå",
+                        received.seller_name
                     ));
                     (None, None)
                 }
@@ -225,22 +225,22 @@ pub async fn inbox_ehf_forslag(
             (None, None)
         }
     };
-    if mottatt.net_ore + mottatt.vat_ore != mottatt.gross_ore {
+    if received.net_ore + received.vat_ore != received.gross_ore {
         advarsler.push(format!(
             "netto + mva ({}) stemmer ikke med forfalt beløp ({}) — kontroller dokumentet",
-            mottatt.net_ore + mottatt.vat_ore,
-            mottatt.gross_ore
+            received.net_ore + received.vat_ore,
+            received.gross_ore
         ));
     }
-    if mottatt.currency != "NOK" {
+    if received.currency != "NOK" {
         advarsler.push(format!(
             "fakturaen er i {} — bokfør med valuta (docs/valuta.md)",
-            mottatt.currency
+            received.currency
         ));
     }
     Ok(EhfForslag {
-        mottatt,
-        leverandor_no,
+        received,
+        supplier_no,
         supplier_name,
         advarsler,
     })
@@ -255,16 +255,16 @@ pub struct Bokforingsforslag {
     /// "ehf" | "pdf-tekst" | "tekst" | "ingen"
     pub source: &'static str,
     pub seller_name: Option<String>,
-    pub orgnr: Option<String>,
+    pub orgnumber: Option<String>,
     pub fakturanr: Option<String>,
     pub date: Option<chrono::NaiveDate>,
-    pub forfall: Option<chrono::NaiveDate>,
+    pub due_date: Option<chrono::NaiveDate>,
     pub kid: Option<String>,
     pub account_number: Option<String>,
     pub net_ore: Option<i64>,
     pub vat_ore: Option<i64>,
     pub gross_ore: Option<i64>,
-    pub leverandor_no: Option<String>,
+    pub supplier_no: Option<String>,
     pub supplier_name: Option<String>,
     /// The account this supplier was posted to last time — the single
     /// most useful suggestion we can make, and it comes from the
@@ -287,16 +287,16 @@ pub async fn inbox_forslag(
     let mut forslag = Bokforingsforslag {
         source: "ingen",
         seller_name: None,
-        orgnr: None,
+        orgnumber: None,
         fakturanr: None,
         date: None,
-        forfall: None,
+        due_date: None,
         kid: None,
         account_number: None,
         net_ore: None,
         vat_ore: None,
         gross_ore: None,
-        leverandor_no: None,
+        supplier_no: None,
         supplier_name: None,
         account: None,
         account_reason: None,
@@ -313,10 +313,10 @@ pub async fn inbox_forslag(
     {
         forslag.source = "ehf";
         forslag.seller_name = Some(m.seller_name.clone());
-        forslag.orgnr = m.selger_orgnr.clone();
+        forslag.orgnumber = m.seller_orgnumber.clone();
         forslag.fakturanr = Some(m.fakturanr.clone());
         forslag.date = m.invoice_date;
-        forslag.forfall = m.due_date;
+        forslag.due_date = m.due_date;
         forslag.kid = m.kid.clone();
         forslag.account_number = m.account_number.clone();
         forslag.net_ore = Some(m.net_ore);
@@ -355,7 +355,7 @@ pub async fn inbox_forslag(
                         .push((felt.to_string(), begrunnelse.to_string()));
                 };
                 if let Some(f) = &t.orgnumber {
-                    forslag.orgnr = Some(f.value.clone());
+                    forslag.orgnumber = Some(f.value.clone());
                     note("orgnr", &f.reason);
                 }
                 if let Some(f) = &t.invoice_number {
@@ -375,7 +375,7 @@ pub async fn inbox_forslag(
                     note("dato", &f.reason);
                 }
                 if let Some(f) = &t.due_date {
-                    forslag.forfall = Some(f.value);
+                    forslag.due_date = Some(f.value);
                     note("forfall", &f.reason);
                 }
                 if let Some(f) = &t.amount_ore {
@@ -386,21 +386,21 @@ pub async fn inbox_forslag(
                     forslag.vat_ore = Some(f.value);
                     note("mva", &f.reason);
                 }
-                if let (Some(brutto), Some(vat)) = (forslag.gross_ore, forslag.vat_ore) {
-                    forslag.net_ore = Some(brutto - vat);
+                if let (Some(gross), Some(vat)) = (forslag.gross_ore, forslag.vat_ore) {
+                    forslag.net_ore = Some(gross - vat);
                 }
             }
         }
     }
 
     // 3. The supplier, and what we posted for them last time.
-    if let Some(orgnr) = &forslag.orgnr {
+    if let Some(orgnumber) = &forslag.orgnumber {
         let row = sqlx::query(
             "select party_no, name from party
              where company_id = $1 and kind = 'leverandor' and orgnr = $2 limit 1",
         )
         .bind(company_id)
-        .bind(orgnr)
+        .bind(orgnumber)
         .fetch_optional(pool)
         .await?;
         match row {
@@ -415,10 +415,10 @@ pub async fn inbox_forslag(
                     ));
                     forslag.account = Some(account);
                 }
-                forslag.leverandor_no = Some(party_no);
+                forslag.supplier_no = Some(party_no);
             }
             None => forslag.advarsler.push(format!(
-                "orgnr {orgnr} finnes ikke i leverandørreskontroen — opprett parten først"
+                "orgnr {orgnumber} finnes ikke i leverandørreskontroen — opprett parten først"
             )),
         }
     }

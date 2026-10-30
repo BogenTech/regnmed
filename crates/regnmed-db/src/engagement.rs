@@ -11,7 +11,7 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct DirectoryFirm {
     pub firm_id: Uuid,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
     pub kind: String,
     pub client_count: i64,
@@ -36,7 +36,7 @@ pub async fn list_verified_firms(pool: &PgPool, kind: Option<&str>) -> Result<Ve
         .iter()
         .map(|r| DirectoryFirm {
             firm_id: r.get("id"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             name: r.get("name"),
             kind: r.get("kind"),
             client_count: r.get("client_count"),

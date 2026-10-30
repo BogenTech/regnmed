@@ -90,7 +90,7 @@ pub async fn list(
             "avskrivningskonto": a.depreciation_account,
             "saldogruppe": a.depreciation_group,
             "akkumulert_ore": a.akkumulert_ore,
-            "bokfort_ore": a.bokfort_ore,
+            "bokfort_ore": a.posted_ore,
             "avhendet_dato": a.disposed_date.map(|d| d.to_string()),
             "vederlag_ore": a.consideration_ore,
         })).collect::<Vec<_>>(),
@@ -172,7 +172,7 @@ pub async fn dispose(
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "bokfort_ore": disposal.bokfort_ore,
+        "bokfort_ore": disposal.posted_ore,
         "gevinst_ore": disposal.gevinst_ore,
         "voucher": disposal.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))
@@ -221,12 +221,12 @@ pub async fn balance(
             "inngaende_ore": g.opening_ore,
             "tilgang_ore": g.tilgang_ore,
             "vederlag_ore": g.consideration_ore,
-            "grunnlag_ore": g.grunnlag_ore,
+            "grunnlag_ore": g.basis_ore,
             "sats_bp": g.rate_bp,
             "avskrivning_ore": g.avskrivning_ore,
             "utgaende_ore": g.closing_ore,
         })).collect::<Vec<_>>(),
-        "bokfort_ore": rapport.bokfort_ore,
+        "bokfort_ore": rapport.posted_ore,
         "skattemessig_ore": rapport.skattemessig_ore,
         "forskjell_ore": rapport.forskjell_ore,
     })))

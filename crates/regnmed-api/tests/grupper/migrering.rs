@@ -5,7 +5,7 @@
 //! a balance is refused with the figure in the error message.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -85,7 +85,7 @@ async fn contacts_and_open_items_from_an_old_system() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Mia Migrering"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Flytter AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Flytter AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

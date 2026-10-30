@@ -71,7 +71,7 @@ pub(crate) async fn logg(
     endring: &str,
     fra: Option<&str>,
     til: Option<&str>,
-    utfort_av: Option<Uuid>,
+    performed_by: Option<Uuid>,
     source: &str,
 ) -> Result<()> {
     sqlx::query(
@@ -85,7 +85,7 @@ pub(crate) async fn logg(
     .bind(endring)
     .bind(fra)
     .bind(til)
-    .bind(utfort_av)
+    .bind(performed_by)
     .bind(source)
     .execute(&mut **tx)
     .await?;
@@ -123,7 +123,7 @@ pub async fn sett_rolle(
     firm_id: Uuid,
     person_id: Uuid,
     ny_rolle: &str,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     krev_rolle(ny_rolle)?;
     let mut tx = pool.begin().await?;
@@ -156,7 +156,7 @@ pub async fn sett_rolle(
         "rolle_endret",
         Some(&fra),
         Some(ny_rolle),
-        Some(utfort_av),
+        Some(performed_by),
         "admin",
     )
     .await?;
@@ -171,7 +171,7 @@ pub async fn sett_aktiv(
     firm_id: Uuid,
     person_id: Uuid,
     active: bool,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, firm_id).await?;
@@ -203,7 +203,7 @@ pub async fn sett_aktiv(
         if active { "reaktivert" } else { "deaktivert" },
         Some(&role),
         Some(&role),
-        Some(utfort_av),
+        Some(performed_by),
         "admin",
     )
     .await?;
@@ -388,7 +388,7 @@ pub struct Byraendring {
     pub endring: String,
     pub fra_rolle: Option<String>,
     pub til_rolle: Option<String>,
-    pub utfort_av: Option<String>,
+    pub performed_by: Option<String>,
     pub source: String,
     pub created_at: DateTime<Utc>,
 }
@@ -415,7 +415,7 @@ pub async fn tilgangshistorikk(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrae
             endring: r.get("endring"),
             fra_rolle: r.get("fra_rolle"),
             til_rolle: r.get("til_rolle"),
-            utfort_av: r.get("utfort_av"),
+            performed_by: r.get("utfort_av"),
             source: r.get("kilde"),
             created_at: r.get("created_at"),
         })

@@ -4,7 +4,7 @@
 //! because a phone without coverage retries. Requires DATABASE_URL for
 //! the upload half (skips that part otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -104,7 +104,7 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Kvittering"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Feltarbeid AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Feltarbeid AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

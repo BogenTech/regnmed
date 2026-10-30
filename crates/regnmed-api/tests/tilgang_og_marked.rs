@@ -23,7 +23,7 @@ mod matrix;
 #[path = "grupper/me_endpoint.rs"]
 mod me_endpoint;
 #[path = "grupper/medlemmer.rs"]
-mod medlemmer;
+mod members;
 #[path = "grupper/plattform.rs"]
 mod plattform;
 #[path = "grupper/subscription.rs"]

@@ -34,7 +34,8 @@ pub struct CreateTemplateRequest {
     #[serde(rename = "slutt_dato")]
     end_date: Option<chrono::NaiveDate>,
     /// Days from fakturadato to forfall; default 14.
-    forfall_dager: Option<i32>,
+    #[serde(rename = "forfall_dager")]
+    due_days: Option<i32>,
     /// Mark generated invoices for sending (a human still sends).
     #[serde(default)]
     #[serde(rename = "merk_utsendelse")]
@@ -65,7 +66,7 @@ pub async fn create(
                 invoice_id,
                 &request.intervall,
                 request.next_date,
-                request.forfall_dager.unwrap_or(14),
+                request.due_days.unwrap_or(14),
                 request.mark_dispatch,
                 created_by,
             )
@@ -83,7 +84,7 @@ pub async fn create(
                     intervall: request.intervall,
                     next_date: request.next_date,
                     end_date: request.end_date,
-                    forfall_dager: request.forfall_dager.unwrap_or(14),
+                    due_days: request.due_days.unwrap_or(14),
                     mark_dispatch: request.mark_dispatch,
                     lines: resolve_lines(&state, company_id, request.lines).await?,
                 },
@@ -117,7 +118,7 @@ pub async fn list(
             "intervall": t.intervall,
             "neste_dato": t.next_date.to_string(),
             "slutt_dato": t.end_date.map(|d| d.to_string()),
-            "forfall_dager": t.forfall_dager,
+            "forfall_dager": t.due_days,
             "merk_utsendelse": t.mark_dispatch,
             "active": t.active,
             "sum_netto_ore": t.sum_netto_ore,
@@ -135,7 +136,8 @@ pub struct UpdateTemplateRequest {
     #[serde(default, with = "double_option")]
     #[serde(rename = "slutt_dato")]
     end_date: Option<Option<chrono::NaiveDate>>,
-    forfall_dager: Option<i32>,
+    #[serde(rename = "forfall_dager")]
+    due_days: Option<i32>,
     #[serde(rename = "merk_utsendelse")]
     mark_dispatch: Option<bool>,
     active: Option<bool>,
@@ -179,7 +181,7 @@ pub async fn update(
         request.intervall.as_deref(),
         request.next_date,
         request.end_date,
-        request.forfall_dager,
+        request.due_days,
         request.mark_dispatch,
         request.active,
         lines.as_deref(),

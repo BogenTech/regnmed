@@ -6,7 +6,7 @@
 //! ourselves — plus the account that supplier was last posted to.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -75,7 +75,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Tolke Toril"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mottaker AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Mottaker AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -100,7 +100,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
         .await
         .unwrap();
     // The supplier exists with an orgnr — that is the key the interpretation uses.
-    let (_, leverandor_no) = regnmed_db::create_party(
+    let (_, supplier_no) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -136,7 +136,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
                     amount: Ore(-10_000_00),
                     vat_code: None,
                     description: None,
-                    party_no: Some(leverandor_no.clone()),
+                    party_no: Some(supplier_no.clone()),
                     department: None,
                     project: None,
                     currency: None,
@@ -200,7 +200,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
     assert_eq!(f["kontonummer"], "86011117947");
     // The supplier is recognised, and the account comes from the
     // company's OWN history — not from a model.
-    assert_eq!(f["leverandor_no"], leverandor_no);
+    assert_eq!(f["leverandor_no"], supplier_no);
     assert_eq!(f["leverandor_navn"], "Utleiebygg AS");
     assert_eq!(f["konto"], "6300");
     assert!(

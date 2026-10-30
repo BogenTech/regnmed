@@ -2,7 +2,7 @@
 //! KID-tagged payments, duplicate upload rejected, permissions enforced.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -109,7 +109,7 @@ async fn upload_list_duplicate_and_permissions() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "OCR Klient AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "OCR Klient AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

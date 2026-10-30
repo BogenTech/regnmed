@@ -18,10 +18,10 @@ use crate::AppState;
 use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
-fn validate_orgnr(orgnr: &str) -> Result<(), ApiError> {
-    if !regnmed_core::orgnumber::is_valid(orgnr) {
+fn validate_orgnr(orgnumber: &str) -> Result<(), ApiError> {
+    if !regnmed_core::orgnumber::is_valid(orgnumber) {
         return Err(ApiError::BadRequest(format!(
-            "{orgnr} er ikke et gyldig organisasjonsnummer"
+            "{orgnumber} er ikke et gyldig organisasjonsnummer"
         )));
     }
     Ok(())
@@ -29,22 +29,22 @@ fn validate_orgnr(orgnr: &str) -> Result<(), ApiError> {
 
 pub async fn registry_preview(
     _person: AuthPerson,
-    Path(orgnr): Path<String>,
+    Path(orgnumber): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&orgnr)?;
+    validate_orgnr(&orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
-        .entity(&orgnr)
+        .entity(&orgnumber)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or(ApiError::NotFound)?;
 
     let finanstilsynet = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env();
     let statements = finanstilsynet
-        .has_authorisation(&orgnr, "regnskap")
+        .has_authorisation(&orgnumber, "regnskap")
         .await
         .unwrap_or(false);
     let audit = finanstilsynet
-        .has_authorisation(&orgnr, "revisjon")
+        .has_authorisation(&orgnumber, "revisjon")
         .await
         .unwrap_or(false);
 
@@ -65,7 +65,8 @@ pub async fn registry_preview(
 
 #[derive(Deserialize)]
 pub struct OnboardRequest {
-    orgnr: String,
+    #[serde(rename = "orgnr")]
+    orgnumber: String,
 }
 
 pub async fn onboard_company(
@@ -73,9 +74,9 @@ pub async fn onboard_company(
     person: AuthPerson,
     Json(request): Json<OnboardRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&request.orgnr)?;
+    validate_orgnr(&request.orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
-        .entity(&request.orgnr)
+        .entity(&request.orgnumber)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
@@ -117,7 +118,7 @@ pub async fn onboard_company(
     };
     let onboarded = regnmed_db::onboard_company(
         &state.pool,
-        &request.orgnr,
+        &request.orgnumber,
         &unit.name,
         person.person_id,
         &facts,
@@ -126,7 +127,7 @@ pub async fn onboard_company(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "company_id": onboarded.company_id,
-        "orgnr": request.orgnr,
+        "orgnr": request.orgnumber,
         "navn": onboarded.name,
         "seeded_accounts": onboarded.seeded_accounts,
     })))
@@ -134,7 +135,8 @@ pub async fn onboard_company(
 
 #[derive(Deserialize)]
 pub struct FirmRequest {
-    orgnr: String,
+    #[serde(rename = "orgnr")]
+    orgnumber: String,
     /// 'regnskap' or 'revisjon'.
     kind: String,
 }
@@ -144,9 +146,9 @@ pub async fn create_firm(
     person: AuthPerson,
     Json(request): Json<FirmRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&request.orgnr)?;
+    validate_orgnr(&request.orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
-        .entity(&request.orgnr)
+        .entity(&request.orgnumber)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
@@ -172,7 +174,7 @@ pub async fn create_firm(
     }
 
     let verified = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env()
-        .has_authorisation(&request.orgnr, &request.kind)
+        .has_authorisation(&request.orgnumber, &request.kind)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if !verified {
@@ -183,7 +185,7 @@ pub async fn create_firm(
 
     let firm_id = regnmed_db::create_verified_firm(
         &state.pool,
-        &request.orgnr,
+        &request.orgnumber,
         &unit.name,
         &request.kind,
         "finanstilsynet-virksomhetsregister",
@@ -193,7 +195,7 @@ pub async fn create_firm(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "firm_id": firm_id,
-        "orgnr": request.orgnr,
+        "orgnr": request.orgnumber,
         "navn": unit.name,
         "kind": request.kind,
         "autorisasjon_verified": true,

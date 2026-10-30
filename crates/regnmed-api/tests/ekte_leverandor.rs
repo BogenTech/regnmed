@@ -20,7 +20,7 @@
 
 mod common;
 
-use common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -37,13 +37,13 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         return;
     };
     let eier_sub = format!("test|{}", Uuid::new_v4());
-    let eier = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Ekte Agent AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Ekte Agent AS")
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
@@ -129,14 +129,15 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         return;
     };
     let eier_sub = format!("test|{}", Uuid::new_v4());
-    let eier = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Bokforende Agent AS")
-        .await
-        .unwrap();
+    let company =
+        regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Bokforende Agent AS")
+            .await
+            .unwrap();
     make_invoiceable(&state.pool, company).await;
-    regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")

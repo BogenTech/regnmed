@@ -24,7 +24,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -33,8 +33,8 @@ fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
-async fn selskap(pool: &PgPool) -> Uuid {
-    let company = regnmed_db::create_company(pool, &unique_orgnr(), "Lønnstest AS")
+async fn company(pool: &PgPool) -> Uuid {
+    let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Lønnstest AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
@@ -65,12 +65,12 @@ async fn employee(pool: &PgPool, company: Uuid, fnr: &str, name: &str, lonn: i64
             fodselsnummer: fnr.into(),
             name: name.into(),
             stilling: Some("Utvikler".into()),
-            ansatt_fra: date(2025, 1, 1),
+            employed_from: date(2025, 1, 1),
             manedslonn_ore: Some(lonn),
             timelonn_ore: None,
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3500),
-            trekk_tabell: None,
+            withholding_table: None,
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
@@ -108,7 +108,7 @@ async fn account_amount(pool: &PgPool, voucher_id: Uuid, account: &str) -> i64 {
 #[tokio::test]
 async fn a_payroll_run_posts_as_one_balanced_bilag() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     // 50 000 kr, 35 % trekk, sone I (14,1 %).
     let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
 
@@ -171,7 +171,7 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
 #[tokio::test]
 async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
 
     let run = payroll::run_payroll(
@@ -214,7 +214,7 @@ async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
 #[tokio::test]
 async fn december_withholds_half() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
 
     let run = payroll::run_payroll(
@@ -241,7 +241,7 @@ async fn december_withholds_half() {
 #[tokio::test]
 async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Finnmarking", 4_000_000).await;
 
     let run = payroll::run_payroll(
@@ -288,7 +288,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
 #[tokio::test]
 async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = payroll::create_ansatt(
         &pool,
         company,
@@ -296,12 +296,12 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
             fodselsnummer: "08888797336".into(),
             name: "Tabell Trekksen".into(),
             stilling: None,
-            ansatt_fra: date(2025, 1, 1),
+            employed_from: date(2025, 1, 1),
             manedslonn_ore: Some(5_000_000),
             timelonn_ore: None,
             withholding_type: "tabell".into(),
             withholding_percent_bp: None,
-            trekk_tabell: Some(7100),
+            withholding_table: Some(7100),
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
@@ -335,7 +335,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
 #[tokio::test]
 async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Kari", 4_000_000).await;
     let post = || {
         vec![PayrollEntry {
@@ -403,7 +403,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
 #[tokio::test]
 async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
 
     let employees = payroll::list_ansatte(&pool, company).await.unwrap();
@@ -418,7 +418,7 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 #[tokio::test]
 async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let error = payroll::create_ansatt(
         &pool,
         company,
@@ -426,12 +426,12 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
             fodselsnummer: "26829398613".into(),
             name: "Feil Nummer".into(),
             stilling: None,
-            ansatt_fra: date(2025, 1, 1),
+            employed_from: date(2025, 1, 1),
             manedslonn_ore: Some(1),
             timelonn_ore: None,
             withholding_type: "ingen".into(),
             withholding_percent_bp: None,
-            trekk_tabell: None,
+            withholding_table: None,
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
@@ -449,7 +449,7 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
 #[tokio::test]
 async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
     let post = |fp: i64| {
         vec![PayrollEntry {
@@ -528,7 +528,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
 #[tokio::test]
 async fn hourly_pay_requires_the_month_to_be_locked() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
 
     let person = regnmed_db::ensure_person(
         &pool,
@@ -545,12 +545,12 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             fodselsnummer: "25927898821".into(),
             name: "Timelønnet".into(),
             stilling: None,
-            ansatt_fra: date(2025, 1, 1),
+            employed_from: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000), // 450 kr/t
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3000),
-            trekk_tabell: None,
+            withholding_table: None,
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
@@ -574,10 +574,10 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             person,
             &regnmed_db::timesheet::TimeEntryDraft {
                 date: date(2026, 3, dag),
-                minutter: 400,
+                minutes: 400,
                 description: "Arbeid".into(),
                 project: None,
-                fakturerbar: Some(false),
+                billable: Some(false),
                 timesats_ore: None,
             },
             false,
@@ -649,7 +649,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
 #[tokio::test]
 async fn an_employee_without_a_portal_user_fails_clearly() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
 
     let error = payroll::timegrunnlag(&pool, company, a, 2026, 3)
@@ -687,7 +687,7 @@ async fn kjor(
     a: Uuid,
     month: u32,
     zone: &str,
-    brutto: Option<i64>,
+    gross: Option<i64>,
     holiday_pay: i64,
 ) -> payroll::Lonnskjoring {
     payroll::run_payroll(
@@ -699,7 +699,7 @@ async fn kjor(
         zone,
         &[PayrollEntry {
             employee_id: a,
-            gross_ore: brutto,
+            gross_ore: gross,
             holiday_pay_ore: holiday_pay,
             from_timesheet: false,
         }],
@@ -712,7 +712,7 @@ async fn kjor(
 #[tokio::test]
 async fn the_accrual_on_unpaid_feriepenger_is_posted() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
 
     let k = kjor(&pool, company, a, 3, "I", None, 0).await;
@@ -734,7 +734,7 @@ async fn the_accrual_on_unpaid_feriepenger_is_posted() {
 #[tokio::test]
 async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
 
     let opptjening = kjor(&pool, company, a, 3, "I", None, 0).await;
@@ -764,7 +764,7 @@ async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
 #[tokio::test]
 async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
 
     // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
@@ -789,7 +789,7 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
 #[tokio::test]
 async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
     let b = employee(&pool, company, "03048810194", "Per Invariant", 2_777_700).await;
 
@@ -858,7 +858,7 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
 #[tokio::test]
 async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent() {
     let Some(pool) = pool().await else { return };
-    let company = selskap(&pool).await;
+    let company = company(&pool).await;
     let a = employee(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;
 
     // The regnskapsfører accrues feriepenger manually, with no employee link.

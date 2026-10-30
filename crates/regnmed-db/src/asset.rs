@@ -101,8 +101,8 @@ pub async fn create_asset(
         ensure!(ok.is_some(), "anskaffelsesbilaget finnes ikke");
     }
 
-    let satser = load_rates(pool).await?;
-    let grense = value_on(&satser, "aktiveringsgrense", draft.acquisition_date);
+    let rates = load_rates(pool).await?;
+    let grense = value_on(&rates, "aktiveringsgrense", draft.acquisition_date);
     let mut warning = None;
     if let Some(grense) = grense
         && draft.kostpris_ore < grense
@@ -151,7 +151,7 @@ pub struct AssetRow {
     pub depreciation_account: String,
     pub depreciation_group: String,
     pub akkumulert_ore: i64,
-    pub bokfort_ore: i64,
+    pub posted_ore: i64,
     pub disposed_date: Option<NaiveDate>,
     pub consideration_ore: Option<i64>,
 }
@@ -187,7 +187,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 depreciation_account: r.get("avskrivningskonto"),
                 depreciation_group: r.get("saldogruppe"),
                 akkumulert_ore: akkumulert,
-                bokfort_ore: if avhendet.is_some() {
+                posted_ore: if avhendet.is_some() {
                     0
                 } else {
                     kostpris - akkumulert
@@ -413,7 +413,7 @@ pub async fn depreciate_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Dep
 
 #[derive(Debug)]
 pub struct Disposal {
-    pub bokfort_ore: i64,
+    pub posted_ore: i64,
     pub gevinst_ore: i64,
     pub voucher: Option<(i32, i64)>,
 }
@@ -452,8 +452,8 @@ pub async fn dispose_asset(
         asset.get::<Option<NaiveDate>, _>("avhendet_dato").is_none(),
         "driftsmidlet er allerede avhendet"
     );
-    let bokfort = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
-    let gevinst = consideration_ore - bokfort;
+    let posted = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
+    let gevinst = consideration_ore - posted;
 
     let mut entries = Vec::new();
     if consideration_ore != 0 {
@@ -468,10 +468,10 @@ pub async fn dispose_asset(
             currency: None,
         });
     }
-    if bokfort != 0 {
+    if posted != 0 {
         entries.push(EntryDraft {
             account_number: asset.get("balansekonto"),
-            amount: Ore(-bokfort),
+            amount: Ore(-posted),
             vat_code: None,
             description: Some("Utgang bokført verdi".into()),
             party_no: None,
@@ -533,7 +533,7 @@ pub async fn dispose_asset(
     .await?;
     tx.commit().await?;
     Ok(Disposal {
-        bokfort_ore: bokfort,
+        posted_ore: posted,
         gevinst_ore: gevinst,
         voucher: voucher.map(|p| (p.fiscal_year, p.voucher_number)),
     })
@@ -546,7 +546,7 @@ pub struct DepreciationGroupRow {
     pub opening_ore: i64,
     pub tilgang_ore: i64,
     pub consideration_ore: i64,
-    pub grunnlag_ore: i64,
+    pub basis_ore: i64,
     pub rate_bp: i64,
     pub avskrivning_ore: i64,
     pub closing_ore: i64,
@@ -557,7 +557,7 @@ pub struct BalanceReport {
     pub year: i32,
     pub grupper: Vec<DepreciationGroupRow>,
     /// Regnskapsmessig bokført verdi ved årets utgang.
-    pub bokfort_ore: i64,
+    pub posted_ore: i64,
     /// Sum utgående skattemessig saldo.
     pub skattemessig_ore: i64,
     /// Midlertidig forskjell: bokført − skattemessig.
@@ -577,7 +577,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    let satser = load_rates(pool).await?;
+    let rates = load_rates(pool).await?;
 
     let first_year = assets
         .iter()
@@ -610,7 +610,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 continue;
             }
             let jan1 = NaiveDate::from_ymd_opt(y, 1, 1).unwrap();
-            let rate_bp = value_on(&satser, &format!("saldogruppe_{gruppe}"), jan1)
+            let rate_bp = value_on(&rates, &format!("saldogruppe_{gruppe}"), jan1)
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
@@ -621,7 +621,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 opening_ore: inngaende,
                 tilgang_ore: tilgang,
                 consideration_ore: vederlag,
-                grunnlag_ore: ar.basis_ore,
+                basis_ore: ar.basis_ore,
                 rate_bp,
                 avskrivning_ore: ar.depreciation_ore,
                 closing_ore: ar.closing_ore,
@@ -636,7 +636,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
     // Regnskapsmessig bokført verdi ved årsslutt: kostpris − posted
     // depreciation dated within the year, for assets owned at year end.
     let year_end = NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
-    let bokfort: i64 = sqlx::query_scalar(
+    let posted: i64 = sqlx::query_scalar(
         "select coalesce(sum(a.kostpris_ore
                     - coalesce((select sum(d.amount_ore) from asset_depreciation d
                                 where d.asset_id = a.id and d.voucher_id is not null
@@ -653,9 +653,9 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
     Ok(BalanceReport {
         year,
         grupper,
-        bokfort_ore: bokfort,
+        posted_ore: posted,
         skattemessig_ore: skattemessig,
-        forskjell_ore: bokfort - skattemessig,
+        forskjell_ore: posted - skattemessig,
     })
 }
 

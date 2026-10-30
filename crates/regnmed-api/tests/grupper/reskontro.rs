@@ -3,7 +3,7 @@
 //! party (hash v2), match them, verify the chain still holds, and check
 //! the enforcement rules. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -83,7 +83,7 @@ async fn full_reskontro_flow_with_hash_v2() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Reskontro AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -314,7 +314,7 @@ async fn supplier_subledger_matches_payment_against_invoice() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Leif Leverandør"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innkjøp AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Innkjøp AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

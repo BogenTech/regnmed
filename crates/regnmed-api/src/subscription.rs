@@ -129,14 +129,14 @@ pub async fn card_setup(
     let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
         Some(card) => card.stripe_customer_id,
         None => {
-            let (name, orgnr): (String, String) =
+            let (name, orgnumber): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
                     .bind(company_id)
                     .fetch_one(&state.pool)
                     .await
                     .map_err(anyhow::Error::from)?;
             stripe
-                .create_customer(&company_id.to_string(), &name, &orgnr)
+                .create_customer(&company_id.to_string(), &name, &orgnumber)
                 .await?
         }
     };
@@ -171,7 +171,7 @@ async fn sync_price(
     interval: &str,
     today: chrono::NaiveDate,
 ) -> Result<String, ApiError> {
-    let brutto = regnmed_db::subscription::brutto_for(
+    let gross = regnmed_db::subscription::brutto_for(
         &state.pool,
         drift_company(state).await?,
         plan,
@@ -182,19 +182,19 @@ async fn sync_price(
     if let Some((price_id, kjent)) =
         regnmed_db::subscription::stripe_price_for(&state.pool, plan, interval).await?
     {
-        if kjent == brutto {
+        if kjent == gross {
             return Ok(price_id);
         }
     }
     let name = format!("regnmed {plan}");
     let price_id = client(cfg)
-        .create_price(&name, brutto, interval, plan)
+        .create_price(&name, gross, interval, plan)
         .await?;
     regnmed_db::subscription::save_stripe_price(
         &state.pool,
         plan,
         interval,
-        brutto,
+        gross,
         &price_id,
         &format!("synkronisert fra prislisten {today}"),
     )
@@ -268,14 +268,14 @@ pub async fn start_subscription(
     let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
         Some(card) => card.stripe_customer_id,
         None => {
-            let (name, orgnr): (String, String) =
+            let (name, orgnumber): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
                     .bind(company_id)
                     .fetch_one(&state.pool)
                     .await
                     .map_err(anyhow::Error::from)?;
             stripe
-                .create_customer(&company_id.to_string(), &name, &orgnr)
+                .create_customer(&company_id.to_string(), &name, &orgnumber)
                 .await?
         }
     };
@@ -379,7 +379,7 @@ pub async fn stripe_webhook(
                 object["amount"].as_i64().unwrap_or(0)
             };
             let detail = object["last_payment_error"]["message"].as_str();
-            let ny = regnmed_db::subscription::register_card_payment(
+            let new = regnmed_db::subscription::register_card_payment(
                 &state.pool,
                 drift,
                 invoice_id,
@@ -390,7 +390,7 @@ pub async fn stripe_webhook(
             )
             .await?;
             Ok(Json(
-                json!({ "handled": if ny { "bokfort" } else { "replay" } }),
+                json!({ "handled": if new { "bokfort" } else { "replay" } }),
             ))
         }
         // --- Stripe Subscriptions: the abonnement paid to US ---------
@@ -412,7 +412,7 @@ pub async fn stripe_webhook(
             let plan = price["metadata"]["regnmed_plan"].as_str().unwrap_or("");
 
             if let Some(company) = company {
-                let ny = regnmed_db::subscription::save_stripe_subscription(
+                let new = regnmed_db::subscription::save_stripe_subscription(
                     &state.pool,
                     company,
                     sub_id,
@@ -423,7 +423,7 @@ pub async fn stripe_webhook(
                     "Stripe (webhook)",
                 )
                 .await?;
-                if ny {
+                if new {
                     return Ok(Json(json!({ "handled": "abonnement_opprettet" })));
                 }
             }
@@ -463,31 +463,31 @@ pub async fn stripe_webhook(
                 return Ok(Json(json!({ "handled": "ukjent_abonnement" })));
             };
             let drift = drift_company(&state).await?;
-            let brutto = object["amount_paid"].as_i64().unwrap_or(0);
+            let gross = object["amount_paid"].as_i64().unwrap_or(0);
             // `invoice.payment_intent` is gone in the same API revision, so
             // the invoice id IS the dedup key now rather than a fallback.
             // That is sound: kortbetaling.stripe_invoice_id carries its own
             // unique index, so a redelivery is a no-op either way.
             let intent = object["payment_intent"].as_str().unwrap_or(stripe_invoice);
-            let periode = object["lines"]["data"][0]["description"]
+            let period = object["lines"]["data"][0]["description"]
                 .as_str()
                 .unwrap_or("abonnement")
                 .to_string();
             let today = chrono::Utc::now().date_naive();
-            let ny = regnmed_db::subscription::post_stripe_payment(
+            let new = regnmed_db::subscription::post_stripe_payment(
                 &state.pool,
                 drift,
                 abo.company_id,
                 stripe_invoice,
                 intent,
-                brutto,
+                gross,
                 &abo.plan,
-                &periode,
+                &period,
                 today,
             )
             .await?;
             Ok(Json(
-                json!({ "handled": if ny { "bokfort" } else { "replay" } }),
+                json!({ "handled": if new { "bokfort" } else { "replay" } }),
             ))
         }
         "invoice.payment_failed" => {
@@ -564,7 +564,7 @@ fn invoice_subscription(object: &serde_json::Value) -> &str {
 }
 
 async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {
-    let Some(orgnr) = &state.drift_orgnr else {
+    let Some(orgnumber) = &state.ops_orgnumber else {
         return Err(ApiError::BadRequest(
             "REGNMED_DRIFT_ORGNR er ikke satt — da vet vi verken hvilken hovedbok \
              trekket hører hjemme i eller hvilken mva-registrering prisen skal følge"
@@ -572,7 +572,7 @@ async fn drift_company(state: &AppState) -> Result<Uuid, ApiError> {
         ));
     };
     let id: Option<Uuid> = sqlx::query_scalar("select id from company where orgnr = $1")
-        .bind(orgnr)
+        .bind(orgnumber)
         .fetch_optional(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;

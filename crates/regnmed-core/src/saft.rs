@@ -21,7 +21,7 @@ use chrono::{DateTime, Datelike, NaiveDate, Utc};
 /// (regnmed-db for real exports, test fixtures here).
 #[derive(Debug)]
 pub struct SaftInput {
-    pub orgnr: String,
+    pub orgnumber: String,
     pub company_name: String,
     /// Norwegian SAF-T requires a contact person in the header.
     pub contact_first_name: String,
@@ -56,7 +56,7 @@ pub struct SaftAnalysisType {
 pub struct SaftParty {
     pub party_no: String,
     pub name: String,
-    pub orgnr: Option<String>,
+    pub orgnumber: Option<String>,
     /// The reskontro account the party posts to (1500/2400), when known.
     pub balance_account: Option<String>,
     pub opening_ore: i64,
@@ -299,7 +299,7 @@ fn header(x: &mut Xml, input: &SaftInput) {
     x.leaf("SoftwareID", "regnmed");
     x.leaf("SoftwareVersion", &trunc(&input.software_version, 18));
     x.open("Company");
-    x.leaf("RegistrationNumber", &input.orgnr);
+    x.leaf("RegistrationNumber", &input.orgnumber);
     x.leaf("Name", &trunc(&input.company_name, 256));
     x.open("Contact");
     x.open("ContactPerson");
@@ -409,8 +409,8 @@ fn render_parties(x: &mut Xml, outer: &str, item: &str, id_tag: &str, parties: &
     x.open(outer);
     for party in parties {
         x.open(item);
-        if let Some(orgnr) = &party.orgnr {
-            x.leaf("RegistrationNumber", orgnr);
+        if let Some(orgnumber) = &party.orgnumber {
+            x.leaf("RegistrationNumber", orgnumber);
         }
         x.leaf("Name", &trunc(&party.name, 256));
         x.leaf(id_tag, &party.party_no);
@@ -494,10 +494,14 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 if let (Some(code), Some(cent)) = (&line.currency, line.currency_amount_cent) {
                     x.leaf("CurrencyCode", code);
                     x.leaf("CurrencyAmount", &amount(cent));
-                    if let Some(kurs) = line.rate_micro {
+                    if let Some(exchange_rate) = line.rate_micro {
                         x.leaf(
                             "ExchangeRate",
-                            &format!("{}.{:06}", kurs / 1_000_000, kurs % 1_000_000),
+                            &format!(
+                                "{}.{:06}",
+                                exchange_rate / 1_000_000,
+                                exchange_rate % 1_000_000
+                            ),
                         );
                     }
                 }
@@ -579,7 +583,7 @@ mod tests {
     fn fixture() -> SaftInput {
         let created_at = Utc.with_ymd_and_hms(2026, 3, 5, 12, 30, 45).unwrap();
         SaftInput {
-            orgnr: "999888777".into(),
+            orgnumber: "999888777".into(),
             company_name: "Demo & Sønn AS".into(),
             contact_first_name: "Kari".into(),
             contact_last_name: "Nordmann".into(),
@@ -613,7 +617,7 @@ mod tests {
             customers: vec![SaftParty {
                 party_no: "10001".into(),
                 name: "Kunde & Co AS".into(),
-                orgnr: Some("911111111".into()),
+                orgnumber: Some("911111111".into()),
                 balance_account: Some("1500".into()),
                 opening_ore: 0,
                 closing_ore: 1_250_000,

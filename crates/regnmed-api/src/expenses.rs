@@ -148,10 +148,10 @@ pub async fn receipt(
         // The receipt is a picture of something private. Without
         // UTLEGG_LES_ALLE you get only your own — and a claim belonging
         // to someone else must answer as though it does not exist.
-        let eier = regnmed_db::expense_owner(&state.pool, company_id, expense_id)
+        let owner = regnmed_db::expense_owner(&state.pool, company_id, expense_id)
             .await
             .map_err(|_| ApiError::NotFound)?;
-        if eier != person.person_id {
+        if owner != person.person_id {
             return Err(ApiError::NotFound);
         }
     }

@@ -113,7 +113,7 @@ async fn logg(
     endring: &str,
     fra: Option<&str>,
     til: Option<&str>,
-    utfort_av: Option<Uuid>,
+    performed_by: Option<Uuid>,
     source: &str,
 ) -> Result<()> {
     sqlx::query(
@@ -127,7 +127,7 @@ async fn logg(
     .bind(endring)
     .bind(fra)
     .bind(til)
-    .bind(utfort_av)
+    .bind(performed_by)
     .bind(source)
     .execute(&mut **tx)
     .await?;
@@ -173,7 +173,7 @@ pub async fn sett_rolle(
     company_id: Uuid,
     person_id: Uuid,
     ny_rolle: &str,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     krev_tildelbar(ny_rolle)?;
     let mut tx = pool.begin().await?;
@@ -209,7 +209,7 @@ pub async fn sett_rolle(
         "rolle_endret",
         Some(&fra),
         Some(ny_rolle),
-        Some(utfort_av),
+        Some(performed_by),
         "admin",
     )
     .await?;
@@ -224,7 +224,7 @@ pub async fn sett_aktiv(
     company_id: Uuid,
     person_id: Uuid,
     active: bool,
-    utfort_av: Uuid,
+    performed_by: Uuid,
     // 'admin' for the company's own administration, 'plattform' when a
     // platform role does it (docs/auth.md §8) — the company's change log
     // must name the source truthfully.
@@ -264,7 +264,7 @@ pub async fn sett_aktiv(
         if active { "reaktivert" } else { "deaktivert" },
         Some(&role),
         Some(&role),
-        Some(utfort_av),
+        Some(performed_by),
         source,
     )
     .await?;
@@ -538,7 +538,7 @@ pub struct Tilgangsendring {
     pub endring: String,
     pub fra_rolle: Option<String>,
     pub til_rolle: Option<String>,
-    pub utfort_av: Option<String>,
+    pub performed_by: Option<String>,
     pub source: String,
     /// Reference to the consent when `kilde = 'nodprosedyre'` (#57);
     /// otherwise normally empty.
@@ -569,7 +569,7 @@ pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ti
             endring: r.get("endring"),
             fra_rolle: r.get("fra_rolle"),
             til_rolle: r.get("til_rolle"),
-            utfort_av: r.get("utfort_av"),
+            performed_by: r.get("utfort_av"),
             source: r.get("kilde"),
             note: r.get("notat"),
             created_at: r.get("created_at"),

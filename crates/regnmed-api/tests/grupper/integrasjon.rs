@@ -3,7 +3,7 @@
 //! the bilag's created_by, revocation takes effect at once, and the rate
 //! limit kicks in. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -50,7 +50,7 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Butikken AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Butikken AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -446,7 +446,7 @@ async fn the_rate_limit_stops_a_runaway_integration() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Grense AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Grense AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -523,7 +523,7 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Agentselskapet AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Agentselskapet AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -614,13 +614,13 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     // ---- /me must not promise what the guard will refuse ----
     let (status, me) = request(&state, "GET", "/me", &agent_token, None).await;
     assert_eq!(status, StatusCode::OK, "{me}");
-    let selskap = me["companies"]
+    let company = me["companies"]
         .as_array()
         .unwrap()
         .iter()
         .find(|c| c["company_id"].as_str() == Some(&company.to_string()))
         .expect("agenten ser selskapet");
-    let rights: Vec<&str> = selskap["rettigheter"]
+    let rights: Vec<&str> = company["rettigheter"]
         .as_array()
         .unwrap()
         .iter()
@@ -659,7 +659,7 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Byrået AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Byrået AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")

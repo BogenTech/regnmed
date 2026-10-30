@@ -108,7 +108,7 @@ async fn logg(
     role_id: Uuid,
     endring: &str,
     rights: Option<&str>,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     sqlx::query(
         "insert into company_role_change
@@ -120,7 +120,7 @@ async fn logg(
     .bind(role_id)
     .bind(endring)
     .bind(rights)
-    .bind(utfort_av)
+    .bind(performed_by)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -279,11 +279,11 @@ pub struct Rolleendring {
     pub name: String,
     pub endring: String,
     pub rights: Option<String>,
-    pub utfort_av: Option<String>,
+    pub performed_by: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
-pub async fn historikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendring>> {
+pub async fn history(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendring>> {
     let rows = sqlx::query(
         "select r.navn, c.endring, c.rettigheter, c.created_at,
                 coalesce(p.name, p.oidc_sub) as utfort_av
@@ -303,7 +303,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendri
             name: r.get("navn"),
             endring: r.get("endring"),
             rights: r.get("rettigheter"),
-            utfort_av: r.get("utfort_av"),
+            performed_by: r.get("utfort_av"),
             created_at: r.get("created_at"),
         })
         .collect())

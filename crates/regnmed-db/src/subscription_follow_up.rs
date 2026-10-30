@@ -37,7 +37,7 @@ pub struct SubscriptionInvoice {
     pub due_date: NaiveDate,
     pub remaining_ore: i64,
     /// At least one mail about this invoice has gone out.
-    pub sendt: bool,
+    pub sent: bool,
     pub last_steg: Option<String>,
     pub last_sent: Option<NaiveDate>,
 }
@@ -81,7 +81,7 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
             invoice_no: r.get("invoice_no"),
             due_date: r.get("due_date"),
             remaining_ore: r.get("remaining_ore"),
-            sendt: r.get("sendt"),
+            sent: r.get("sendt"),
             last_steg: r.get("last_steg"),
             last_sent: r.get("last_sent"),
         })
@@ -95,17 +95,17 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
 pub async fn purr(
     pool: &PgPool,
     drift: Uuid,
-    faktura: &SubscriptionInvoice,
+    invoice: &SubscriptionInvoice,
     today: NaiveDate,
 ) -> Result<Option<(Uuid, String)>> {
-    let last = match (&faktura.last_steg, faktura.last_sent) {
+    let last = match (&invoice.last_steg, invoice.last_sent) {
         (Some(s), Some(d)) => Some((
             Step::parse(s).with_context(|| format!("ukjent steg «{s}» i historikken"))?,
             d,
         )),
         _ => None,
     };
-    let Some(neste) = next_step(last, faktura.due_date, today) else {
+    let Some(neste) = next_step(last, invoice.due_date, today) else {
         return Ok(None);
     };
     let fee_ore = if neste.with_fee {
@@ -134,7 +134,7 @@ pub async fn purr(
         fee_account: "3950".into(),
         interest_account: "8050".into(),
     };
-    let result = create_reminder(pool, drift, faktura.invoice_id, &draft, UTFORT_AV).await?;
+    let result = create_reminder(pool, drift, invoice.invoice_id, &draft, UTFORT_AV).await?;
     let reminder_id = result.reminder_id.context("purringen fikk ingen id")?;
     Ok(Some((reminder_id, result.step)))
 }
@@ -149,38 +149,38 @@ pub async fn purr(
 /// alone.
 pub async fn sperr_om_moden(
     pool: &PgPool,
-    faktura: &SubscriptionInvoice,
+    invoice: &SubscriptionInvoice,
     today: NaiveDate,
 ) -> Result<bool> {
-    let reminded = faktura
+    let reminded = invoice
         .last_steg
         .as_deref()
         .and_then(Step::parse)
         .is_some_and(|s| s >= Step::Demand);
-    if !reminded || today < faktura.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
+    if !reminded || today < invoice.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
         return Ok(false);
     }
     let apen: bool = sqlx::query_scalar(
         "select exists(select 1 from abonnement
          where company_id = $1 and valid_to is null)",
     )
-    .bind(faktura.company_id)
+    .bind(invoice.company_id)
     .fetch_one(pool)
     .await?;
     if !apen {
         return Ok(false);
     }
-    crate::subscription::close_coverage(pool, faktura.company_id, today).await?;
+    crate::subscription::close_coverage(pool, invoice.company_id, today).await?;
     logg(
         pool,
-        faktura.company_id,
-        Some(faktura.invoice_id),
+        invoice.company_id,
+        Some(invoice.invoice_id),
         "sperret",
         &format!(
             "faktura {} ubetalt {} dager etter forfall ({}) — dekningen avsluttet",
-            faktura.invoice_no,
-            (today - faktura.due_date).num_days(),
-            faktura.due_date
+            invoice.invoice_no,
+            (today - invoice.due_date).num_days(),
+            invoice.due_date
         ),
     )
     .await?;

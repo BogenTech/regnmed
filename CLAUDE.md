@@ -437,8 +437,37 @@ helper. 103 files; `pin-wire.py` pinned 14 serde fields and the wire
 diff shows only `Svar`->`Answer`, a struct NAME, whose fields are
 identical.
 
+Third sweep, 48 words over 141 files, ZERO compile errors -- and then
+THREE FAILING TESTS, which is the finding. `selskap`->`company` reached
+`regnmed-mcp`'s tool table, where `"/companies/{selskap}/invoices"` is
+NOT a Rust format string: the placeholder is substituted at runtime
+against the tool schema's own property name, a Norwegian WIRE name
+that must not move. The tool's `captures()` feature, which exists so
+`format!("{navn}")` moves with its identifier, rewrote 32 of them to
+`{company}` while the schemas kept saying `"selskap"`. Every affected
+tool would have failed for an agent, the compiler saw nothing, and the
+literal guard saw nothing because a capture rewrite is what it is
+there to allow. `tool::tests::every_path_placeholder_is_a_declared_property`
+caught it. Recorded in the script's own docstring: a crate that builds
+strings with its own placeholder syntax needs a test of that shape
+BEFORE a rename runs through it.
+
+`ny`->`new` was in this sweep deliberately -- it is the word that
+corrupted the prompts in #134 -- and the prompt test stayed green.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~3 500
+a Norwegian word list, strings and comments excluded): **~2 100
+Norwegian identifier occurrences, 482 distinct names -- 1,3 % of all
+identifiers**, down from 7 494 / 667 / 4,8 % eight batches ago. Per
+crate: db 886, api 843, core 281, cli 37, gov 20, mcp 13, agent 4,
+mail 0. What is left is almost entirely the DELIBERATE remainder:
+`ar`/`fra`/`til` (short words needing a narrow pass),
+`set_account_reskontro` and `reskontro` 21, `tilgang` 18 (a local
+variable name, the module is `access`), `avvik` 18 (two meanings),
+`bilag` 17, and the unconverted modules `salgsdokument` and
+`saft_import`.
+
+SUPERSEDED, kept for the delta: **~3 500
 Norwegian identifier occurrences, 530 distinct names -- 2,3 % of all
 identifiers**, down from 7 494 / 667 / 4,8 % seven batches ago. Per
 crate: api 1 412, db 1 372, core 589, cli 92, gov 26, mcp 20,

@@ -60,8 +60,8 @@ pub fn parse_rate(s: &str) -> Option<i64> {
     for _ in frac.len()..6 {
         frac_val *= 10;
     }
-    let kurs = whole.checked_mul(1_000_000)?.checked_add(frac_val)?;
-    (kurs > 0).then_some(kurs)
+    let exchange_rate = whole.checked_mul(1_000_000)?.checked_add(frac_val)?;
+    (exchange_rate > 0).then_some(exchange_rate)
 }
 
 /// Formats micro-NOK back to a decimal string ("11.654300").

@@ -12,7 +12,7 @@
 use chrono::{Duration, Utc};
 use sqlx::Row;
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -78,7 +78,7 @@ async fn platform_person(state: &AppState, idp: &TestIdp, role: &str) -> (Uuid, 
 async fn setup() -> Option<(AppState, TestIdp, Uuid)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Plattformtest AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Plattformtest AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

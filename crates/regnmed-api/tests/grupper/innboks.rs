@@ -5,7 +5,7 @@
 //! re-deciding is refused; the revisor may look but not decide.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -59,18 +59,18 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     let forer = regnmed_db::ensure_person(&state.pool, &forer_sub, Some("Frida Fører"), None)
         .await
         .unwrap();
-    let revisor_sub = format!("test|{}", Uuid::new_v4());
-    let revisor = regnmed_db::ensure_person(&state.pool, &revisor_sub, Some("Randi Revisor"), None)
+    let auditor_sub = format!("test|{}", Uuid::new_v4());
+    let auditor = regnmed_db::ensure_person(&state.pool, &auditor_sub, Some("Randi Revisor"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innboks AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Innboks AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, klient, "admin")
         .await
         .unwrap();
-    let byra = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Byrået AS", "regnskap")
+    let byra = regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Byrået AS", "regnskap")
         .await
         .unwrap();
     regnmed_db::ensure_firm_member(&state.pool, byra, forer, "ansatt")
@@ -80,10 +80,10 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         .await
         .unwrap();
     let revisjonsfirma =
-        regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon AS", "revisjon")
+        regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Revisjon AS", "revisjon")
             .await
             .unwrap();
-    regnmed_db::ensure_firm_member(&state.pool, revisjonsfirma, revisor, "ansatt")
+    regnmed_db::ensure_firm_member(&state.pool, revisjonsfirma, auditor, "ansatt")
         .await
         .unwrap();
     regnmed_db::ensure_engagement(&state.pool, revisjonsfirma, company, "revisjon")
@@ -99,7 +99,7 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     }
     let klient_token = idp.token(&klient_sub, "Kari Klient");
     let forer_token = idp.token(&forer_sub, "Frida Fører");
-    let revisor_token = idp.token(&revisor_sub, "Randi Revisor");
+    let revisor_token = idp.token(&auditor_sub, "Randi Revisor");
 
     // Klienten laster opp kvitteringen.
     let receipt = b"kvittering: husleie juli, 12 500,00".to_vec();
@@ -312,7 +312,7 @@ async fn an_uploaded_html_file_is_neither_served_as_html_nor_trusted_in_the_head
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Ola Opplaster"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Herding AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Herding AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

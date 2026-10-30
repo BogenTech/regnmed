@@ -48,14 +48,14 @@ impl FinanstilsynetClient {
     /// True when the orgnr holds an active autorisasjon of the kind
     /// ('regnskap' or 'revisjon'). Fails closed: no configured register,
     /// unreachable register, or unknown orgnr all mean "not verified".
-    pub async fn has_authorisation(&self, orgnr: &str, kind: &str) -> Result<bool> {
+    pub async fn has_authorisation(&self, orgnumber: &str, kind: &str) -> Result<bool> {
         let Some(base) = &self.base_url else {
             bail!(
                 "FINANSTILSYNET_API_URL is not configured — autorisasjon \
                  cannot be verified (see docs/marketplace.md)"
             );
         };
-        let url = format!("{}/virksomheter/{orgnr}", base.trim_end_matches('/'));
+        let url = format!("{}/virksomheter/{orgnumber}", base.trim_end_matches('/'));
         let response = self
             .http
             .get(&url)

@@ -42,9 +42,9 @@ pub async fn list_access(
     Path(firm_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    let medlemmer = regnmed_db::firm_members::list_medlemmer(&state.pool, firm_id).await?;
+    let members = regnmed_db::firm_members::list_medlemmer(&state.pool, firm_id).await?;
     Ok(Json(json!({
-        "medlemmer": medlemmer.iter().map(|m| json!({
+        "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
             "navn": m.name,
             "epost": m.epost,
@@ -116,7 +116,7 @@ pub async fn access_history(
             "endring": e.endring,
             "fra_rolle": e.fra_rolle,
             "til_rolle": e.til_rolle,
-            "utfort_av": e.utfort_av,
+            "utfort_av": e.performed_by,
             "kilde": e.source,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),

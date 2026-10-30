@@ -92,7 +92,7 @@ impl Stripe {
         &self,
         company_id: &str,
         name: &str,
-        orgnr: &str,
+        orgnumber: &str,
     ) -> Result<String> {
         let body = self
             .post_form(
@@ -100,7 +100,7 @@ impl Stripe {
                 &[
                     ("name", name),
                     ("metadata[regnmed_company_id]", company_id),
-                    ("metadata[orgnr]", orgnr),
+                    ("metadata[orgnr]", orgnumber),
                 ],
                 None,
             )

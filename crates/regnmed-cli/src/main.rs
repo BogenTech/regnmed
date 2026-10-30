@@ -46,7 +46,7 @@ enum Command {
         company: Option<Uuid>,
         /// Organization number of the company
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
         /// "tegn" starts coverage from today; "avslutt" sets the end
         /// date (exclusive) on the open coverage
         #[arg(long)]
@@ -86,7 +86,7 @@ enum Command {
     SubscriptionInvoice {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
         /// Invoice only this customer company (orgnr) — back-billing
         #[arg(long)]
         bare_orgnr: Option<String>,
@@ -100,7 +100,7 @@ enum Command {
     SubscriptionFollowUp {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
     },
     /// Grant a platform role (docs/auth.md §8). This is the BOOTSTRAP
     /// path: the first systemadmin cannot arrive through an API only
@@ -145,7 +145,7 @@ enum Command {
         company: Option<Uuid>,
         /// Organization number of the company to export
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
         /// Fiscal year to export (whole calendar year)
         #[arg(long, conflicts_with_all = ["from", "to"])]
         year: Option<i32>,
@@ -172,7 +172,7 @@ enum Command {
         company: Option<Uuid>,
         /// Organization number of the company
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
         /// Year to report
         #[arg(long)]
         year: i32,
@@ -189,7 +189,7 @@ enum Command {
         company: Option<Uuid>,
         /// Organization number of the company
         #[arg(long)]
-        orgnr: Option<String>,
+        orgnumber: Option<String>,
         /// Year of the VAT period
         #[arg(long)]
         year: i32,
@@ -208,13 +208,13 @@ enum Command {
 async fn resolve_company(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
-    orgnr: Option<&str>,
+    orgnumber: Option<&str>,
 ) -> Result<Uuid> {
-    match (company, orgnr) {
+    match (company, orgnumber) {
         (Some(id), _) => Ok(id),
-        (None, Some(orgnr)) => regnmed_db::find_company_by_orgnr(pool, orgnr)
+        (None, Some(orgnumber)) => regnmed_db::find_company_by_orgnr(pool, orgnumber)
             .await?
-            .with_context(|| format!("no company with orgnr {orgnr}")),
+            .with_context(|| format!("no company with orgnr {orgnumber}")),
         (None, None) => anyhow::bail!("pass --company or --orgnr"),
     }
 }
@@ -303,11 +303,11 @@ async fn main() -> Result<()> {
             println!("granted {role} to {epost} until {til} (membership {id})");
         }
         Command::PlatformList => {
-            let medlemmer = regnmed_db::list_platform_members(&pool).await?;
-            if medlemmer.is_empty() {
+            let members = regnmed_db::list_platform_members(&pool).await?;
+            if members.is_empty() {
                 println!("no platform memberships");
             }
-            for m in medlemmer {
+            for m in members {
                 println!(
                     "{} {} {} ({}) {} — {}  [{}]",
                     m.id,
@@ -326,13 +326,13 @@ async fn main() -> Result<()> {
         }
         Command::Subscription {
             company,
-            orgnr,
+            orgnumber,
             aksjon,
             plan,
             til,
             note,
         } => {
-            let company_id = resolve_company(&pool, company, orgnr.as_deref()).await?;
+            let company_id = resolve_company(&pool, company, orgnumber.as_deref()).await?;
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
@@ -398,11 +398,14 @@ async fn main() -> Result<()> {
                 );
             }
         }
-        Command::SubscriptionInvoice { orgnr, bare_orgnr } => {
-            let orgnr = orgnr
+        Command::SubscriptionInvoice {
+            orgnumber,
+            bare_orgnr,
+        } => {
+            let orgnumber = orgnumber
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
-            let drift = resolve_company(&pool, None, Some(&orgnr)).await?;
+            let drift = resolve_company(&pool, None, Some(&orgnumber)).await?;
             let bare = match bare_orgnr.as_deref() {
                 Some(o) => Some(resolve_company(&pool, None, Some(o)).await?),
                 None => None,
@@ -469,12 +472,12 @@ async fn main() -> Result<()> {
                 anyhow::bail!("en eller flere abonnementsfakturaer feilet");
             }
         }
-        Command::SubscriptionFollowUp { orgnr } => {
+        Command::SubscriptionFollowUp { orgnumber } => {
             use regnmed_db::subscription_follow_up as opf;
-            let orgnr = orgnr
+            let orgnumber = orgnumber
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
-            let drift = resolve_company(&pool, None, Some(&orgnr)).await?;
+            let drift = resolve_company(&pool, None, Some(&orgnumber)).await?;
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
@@ -522,12 +525,12 @@ async fn main() -> Result<()> {
             // without an utsendelse row. The utsendelse id doubles as
             // Nats-Msg-Id, so a retried send cannot double-deliver.
             if let Some(js) = &mailq {
-                for f in apne.iter().filter(|f| !f.sendt) {
+                for f in apne.iter().filter(|f| !f.sent) {
                     let Some(epost) = &f.epost else {
                         // Already counted above.
                         continue;
                     };
-                    let sendt = async {
+                    let sent = async {
                         let payload = regnmed_db::invoice_email_payload(
                             &pool,
                             drift,
@@ -538,7 +541,7 @@ async fn main() -> Result<()> {
                         send_epost(&pool, js, drift, payload).await
                     }
                     .await;
-                    match sendt {
+                    match sent {
                         Ok(()) => println!(
                             "{}: faktura {} sendt til {epost}",
                             f.company_name, f.invoice_no
@@ -556,7 +559,7 @@ async fn main() -> Result<()> {
                     let Some(epost) = &p.epost else {
                         continue;
                     };
-                    let sendt = async {
+                    let sent = async {
                         let payload = regnmed_db::reminder_email_payload(
                             &pool,
                             drift,
@@ -568,7 +571,7 @@ async fn main() -> Result<()> {
                         send_epost(&pool, js, drift, payload).await
                     }
                     .await;
-                    match sendt {
+                    match sent {
                         Ok(()) => println!(
                             "{}: {} for faktura {} sendt til {epost}",
                             p.company_name, p.step, p.invoice_no
@@ -582,7 +585,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-            } else if apne.iter().any(|f| !f.sendt) {
+            } else if apne.iter().any(|f| !f.sent) {
                 println!("usendte fakturaer venter på NATS_URL");
                 error += 1;
             }
@@ -736,27 +739,27 @@ async fn main() -> Result<()> {
         }
         Command::SaftExport {
             company,
-            orgnr,
+            orgnumber,
             year,
             from,
             to,
             contact,
             out,
-        } => saft_export(&pool, company, orgnr, year, from, to, &contact, out).await?,
+        } => saft_export(&pool, company, orgnumber, year, from, to, &contact, out).await?,
         Command::VatReport {
             company,
-            orgnr,
+            orgnumber,
             year,
             period,
-        } => vat_report(&pool, company, orgnr, year, period).await?,
+        } => vat_report(&pool, company, orgnumber, year, period).await?,
         Command::VatReturn {
             company,
-            orgnr,
+            orgnumber,
             year,
             period,
             out,
             validate,
-        } => vat_return(&pool, company, orgnr, year, period, out, validate).await?,
+        } => vat_return(&pool, company, orgnumber, year, period, out, validate).await?,
     }
     Ok(())
 }
@@ -795,13 +798,13 @@ async fn anchor(pool: &sqlx::PgPool) -> Result<()> {
 async fn vat_return(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
-    orgnr: Option<String>,
+    orgnumber: Option<String>,
     year: i32,
     period: u8,
     out: Option<std::path::PathBuf>,
     validate: bool,
 ) -> Result<()> {
-    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
     let ordning = regnmed_db::period_scheme_on(
         pool,
         company_id,
@@ -816,7 +819,7 @@ async fn vat_return(
         )
     })?;
 
-    let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
+    let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_one(pool)
         .await?;
@@ -829,9 +832,9 @@ async fn vat_return(
         ordning.label(period)
     );
 
-    let referanse = format!("regnmed-{}-{}-{}", orgnr, period.year, period.number);
+    let referanse = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
     let message = regnmed_core::vat_return::build(
-        &orgnr,
+        &orgnumber,
         period,
         ordning,
         &referanse,
@@ -849,7 +852,7 @@ async fn vat_return(
             let path = maybe_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
                 format!(
                     "mva-melding_{}_{}-termin{}.xml",
-                    orgnr, period.year, period.number
+                    orgnumber, period.year, period.number
                 )
                 .into()
             });
@@ -884,13 +887,13 @@ async fn vat_return(
 async fn vat_report(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
-    orgnr: Option<String>,
+    orgnumber: Option<String>,
     year: i32,
     period: Option<u8>,
 ) -> Result<()> {
     use regnmed_core::vat::{Direction, direction};
 
-    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
     let ordning = regnmed_db::period_scheme_on(
         pool,
         company_id,
@@ -931,7 +934,7 @@ async fn vat_report(
         println!(
             "{:<5} {:>15} {:>15} {:>7}%  {}",
             line.code,
-            Ore(line.grunnlag_ore).to_string(),
+            Ore(line.basis_ore).to_string(),
             Ore(line.tax_ore).to_string(),
             fmt_bp(line.rate_bp),
             line.description
@@ -950,15 +953,15 @@ async fn vat_report(
         .filter(|l| direction(&l.code) == Direction::Inngaende)
         .map(|l| l.tax_ore)
         .sum();
-    let netto = utgaende - inngaende;
+    let net = utgaende - inngaende;
 
     println!();
     println!("Utgående avgift:  {:>15}", Ore(utgaende).to_string());
     println!("Inngående avgift: {:>15}", Ore(inngaende).to_string());
-    if netto >= 0 {
-        println!("Å betale:         {:>15}", Ore(netto).to_string());
+    if net >= 0 {
+        println!("Å betale:         {:>15}", Ore(net).to_string());
     } else {
-        println!("Til gode:         {:>15}", Ore(-netto).to_string());
+        println!("Til gode:         {:>15}", Ore(-net).to_string());
     }
 
     if lines.iter().any(|l| {
@@ -987,7 +990,7 @@ fn fmt_bp(bp: i64) -> String {
 async fn saft_export(
     pool: &sqlx::PgPool,
     company: Option<Uuid>,
-    orgnr: Option<String>,
+    orgnumber: Option<String>,
     year: Option<i32>,
     from: Option<chrono::NaiveDate>,
     to: Option<chrono::NaiveDate>,
@@ -996,7 +999,7 @@ async fn saft_export(
 ) -> Result<()> {
     use chrono::NaiveDate;
 
-    let company_id = resolve_company(pool, company, orgnr.as_deref()).await?;
+    let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
 
     let (start, end) = match (year, from, to) {
         (Some(y), _, _) => (
@@ -1053,7 +1056,7 @@ async fn saft_export(
             let path = maybe_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
                 format!(
                     "SAF-T Financial_{}_{}.xml",
-                    input.orgnr,
+                    input.orgnumber,
                     Utc::now().format("%Y%m%d%H%M%S")
                 )
                 .into()
@@ -1076,10 +1079,10 @@ async fn saft_export(
 async fn demo(pool: &sqlx::PgPool) -> Result<()> {
     regnmed_db::MIGRATOR.run(pool).await?;
 
-    let orgnr = "999888777";
-    let company = match regnmed_db::find_company_by_orgnr(pool, orgnr).await? {
+    let orgnumber = "999888777";
+    let company = match regnmed_db::find_company_by_orgnr(pool, orgnumber).await? {
         Some(id) => id,
-        None => regnmed_db::create_company(pool, orgnr, "Demo AS").await?,
+        None => regnmed_db::create_company(pool, orgnumber, "Demo AS").await?,
     };
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok").await?;
     regnmed_db::ensure_account(pool, company, "1920", "Bankinnskudd").await?;
@@ -1285,7 +1288,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
     for access in regnmed_db::company_access_for_person(pool, kari).await? {
         println!(
             "kari may act for {} ({}) with access '{}' via {}",
-            access.name, access.orgnr, access.access, access.via
+            access.name, access.orgnumber, access.access, access.via
         );
     }
 

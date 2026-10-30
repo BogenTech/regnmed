@@ -324,7 +324,7 @@ pub async fn ordre_to_invoice(
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: lines
             .iter()
             .map(|l| InvoiceLineDraft {
@@ -489,7 +489,7 @@ pub async fn salgsdokument_pdf(
     for (line, amounts) in inputs.iter().zip(&computed.lines) {
         pdf_linjer.push(PdfLinje {
             description: line.description.clone(),
-            antall_milli: line.quantity_milli,
+            quantity_milli: line.quantity_milli,
             enhetspris_ore: line.unit_price_ore,
             vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
             net_ore: amounts.net_ore,
@@ -512,14 +512,14 @@ pub async fn salgsdokument_pdf(
         dokumenttype,
         krediterer_nr: None,
         seller_name: doc.get("company_name"),
-        selger_orgnr: doc.get("orgnr"),
+        seller_orgnumber: doc.get("orgnr"),
         selger_adresse: doc.get("address"),
         seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: None,
         buyer_name: doc.get("party_name"),
         kjoper_nr: doc.get("party_no"),
-        kjoper_orgnr: doc.get("party_orgnr"),
+        buyer_orgnumber: doc.get("party_orgnr"),
         kjoper_adresse: doc.get("party_address"),
         fakturanr: doc.get("doc_no"),
         invoice_date: doc_date,

@@ -33,7 +33,7 @@ fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
         "integration_id": o.integration_id,
         "agent": o.agent,
         "melding": o.message,
-        "frist": o.frist.map(|d| d.to_string()),
+        "frist": o.deadline.map(|d| d.to_string()),
         "opprettet_av": o.opprettet_av,
         "opprettet": o.created_at.to_rfc3339(),
         "status": o.status,
@@ -79,7 +79,8 @@ pub struct NyOppgave {
     integration_id: Option<Uuid>,
     #[serde(rename = "melding")]
     message: String,
-    frist: Option<chrono::NaiveDate>,
+    #[serde(rename = "frist")]
+    deadline: Option<chrono::NaiveDate>,
 }
 
 pub async fn opprett(
@@ -100,7 +101,7 @@ pub async fn opprett(
         company_id,
         request.integration_id,
         &request.message,
-        request.frist,
+        request.deadline,
         person.display(),
     )
     .await
@@ -112,10 +113,10 @@ pub async fn opprett(
 pub async fn hent(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
+    Path((company_id, task_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
-    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
+    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     // Another agent's order is not this agent's business.
@@ -126,7 +127,7 @@ pub async fn hent(
     {
         return Err(ApiError::NotFound);
     }
-    let trail = regnmed_db::agent_task::historikk(&state.pool, company_id, oppgave_id).await?;
+    let trail = regnmed_db::agent_task::history(&state.pool, company_id, task_id).await?;
     Ok(Json(json!({
         "oppgave": oppgave_json(&oppgave),
         "historikk": trail.iter().map(|h| json!({
@@ -150,11 +151,11 @@ pub struct Answer {
 pub async fn answer(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
+    Path((company_id, task_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<Answer>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let tilgang = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
-    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
+    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     match person.integration.as_ref() {
@@ -178,7 +179,7 @@ pub async fn answer(
     regnmed_db::agent_task::answer(
         &state.pool,
         company_id,
-        oppgave_id,
+        task_id,
         &request.status,
         request.note.as_deref(),
         person.display(),
@@ -190,7 +191,7 @@ pub async fn answer(
     // for the backstop sweep, which is the slow path we are leaving.
     // An agent's own answer never does: it is reporting, not asking.
     if person.integration.is_none() && !matches!(request.status.as_str(), "utfort" | "avvist") {
-        nudge(&state, company_id, oppgave_id).await;
+        nudge(&state, company_id, task_id).await;
     }
     Ok(Json(json!({ "status": request.status })))
 }

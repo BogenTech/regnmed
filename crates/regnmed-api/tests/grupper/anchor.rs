@@ -5,7 +5,7 @@
 //! chain — and detects a mismatching anchor when one is planted.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use regnmed_core::Ore;
@@ -92,7 +92,7 @@ async fn anchors_publish_roots_and_proofs_and_detect_rewrites() {
     // Two companies with history, so the Merkle tree has real siblings.
     let mut company_ids = Vec::new();
     for _ in 0..2 {
-        let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Forankret AS")
+        let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Forankret AS")
             .await
             .unwrap();
         make_invoiceable(&state.pool, company).await;

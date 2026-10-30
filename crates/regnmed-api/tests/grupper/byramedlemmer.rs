@@ -9,7 +9,7 @@
 //! check pins the difference: the same request answers 400 (handler,
 //! unknown id) for an admin and 404 (guard) for an ansatt.
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -74,7 +74,7 @@ async fn byra_members_are_invited_never_coregistered() {
     )
     .await
     .unwrap();
-    let firm_orgnr = unique_orgnr();
+    let firm_orgnr = unique_orgnumber();
     let firm_id = regnmed_db::create_verified_firm(
         &state.pool,
         &firm_orgnr,
@@ -106,12 +106,12 @@ async fn byra_members_are_invited_never_coregistered() {
         error.to_string().contains("allerede registrert"),
         "refusal names the reason: {error}"
     );
-    let medlemmer: i64 = sqlx::query_scalar("select count(*) from firm_member where firm_id = $1")
+    let members: i64 = sqlx::query_scalar("select count(*) from firm_member where firm_id = $1")
         .bind(firm_id)
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    assert_eq!(medlemmer, 1, "the stranger did not become a member");
+    assert_eq!(members, 1, "the stranger did not become a member");
 
     // The founder's arrival is on the record.
     let source: String = sqlx::query_scalar(
@@ -125,7 +125,7 @@ async fn byra_members_are_invited_never_coregistered() {
     assert_eq!(source, "registrering");
 
     // A client company with an open engagement — what membership reaches.
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Klientselskap AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Klientselskap AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -177,8 +177,8 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // The invitee logs in: /me redeems the invitation and the client
     // portfolio is already in the same response.
-    let ansatt_token = idp.token(&ansatt_sub, "Ansatt Anne");
-    let (status, me) = request(&state, "GET", "/me", &ansatt_token, None).await;
+    let employee_token = idp.token(&ansatt_sub, "Ansatt Anne");
+    let (status, me) = request(&state, "GET", "/me", &employee_token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(me["nye_tilganger"], 1, "body: {me}");
     let klient = me["companies"]
@@ -189,7 +189,7 @@ async fn byra_members_are_invited_never_coregistered() {
         .expect("firm membership reaches the client");
     assert_eq!(klient["access"], "bokforing");
     assert_eq!(klient["via"], "BYRÅTEST AS");
-    let (_, mine) = request(&state, "GET", "/firms/mine", &ansatt_token, None).await;
+    let (_, mine) = request(&state, "GET", "/firms/mine", &employee_token, None).await;
     assert_eq!(mine["firms"][0]["role"], "ansatt");
 
     // Everything administrative is 404 for an ansatt — valid bodies, so
@@ -198,7 +198,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
-        &ansatt_token,
+        &employee_token,
         Some(serde_json::json!({ "epost": "x@y.no", "rolle": "ansatt" })),
     )
     .await;
@@ -207,7 +207,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "GET",
         &format!("/firms/{firm_id}/access"),
-        &ansatt_token,
+        &employee_token,
         None,
     )
     .await;
@@ -230,7 +230,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/requests/{bogus}/decision"),
-        &ansatt_token,
+        &employee_token,
         Some(serde_json::json!({ "accept": true })),
     )
     .await;
@@ -291,16 +291,16 @@ async fn byra_members_are_invited_never_coregistered() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "another admin exists now");
-    let (status, historikk) = request(
+    let (status, history) = request(
         &state,
         "GET",
         &format!("/firms/{firm_id}/access/history"),
-        &ansatt_token,
+        &employee_token,
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let endringer: Vec<&str> = historikk["endringer"]
+    let endringer: Vec<&str> = history["endringer"]
         .as_array()
         .unwrap()
         .iter()
@@ -319,7 +319,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
-        &ansatt_token,
+        &employee_token,
         Some(serde_json::json!({ "epost": epost_for(&tredje_sub), "rolle": "ansatt" })),
     )
     .await;
@@ -329,7 +329,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "DELETE",
         &format!("/firms/{firm_id}/invitations/{invitasjon_id}"),
-        &ansatt_token,
+        &employee_token,
         None,
     )
     .await;

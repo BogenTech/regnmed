@@ -107,7 +107,7 @@ pub async fn create_invoice(
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
         currency: request.currency.map(|v| v.to_uppercase()),
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: resolve_lines(&state, company_id, request.lines).await?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);

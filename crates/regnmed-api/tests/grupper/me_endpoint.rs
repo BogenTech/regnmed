@@ -4,7 +4,7 @@
 //! malformed tokens must be rejected. Requires DATABASE_URL (skips
 //! otherwise) — `scripts/dev-db.sh` + `regnmed migrate` provides it.
 
-use crate::common::{AUDIENCE, ISSUER, KID, TestIdp, test_state, unique_orgnr};
+use crate::common::{AUDIENCE, ISSUER, KID, TestIdp, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use jsonwebtoken::{Algorithm, Header, encode};
@@ -45,19 +45,24 @@ async fn valid_token_resolves_engagement_access() {
         .await
         .unwrap();
 
-    let client = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Klientfirma AS")
+    let client = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Klientfirma AS")
         .await
         .unwrap();
-    let own = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Eget Selskap AS")
+    let own = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Eget Selskap AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, own, person, "admin")
         .await
         .unwrap();
 
-    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Tall & Orden AS", "regnskap")
-        .await
-        .unwrap();
+    let firm = regnmed_db::ensure_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Tall & Orden AS",
+        "regnskap",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_firm_member(&state.pool, firm, person, "ansatt")
         .await
         .unwrap();

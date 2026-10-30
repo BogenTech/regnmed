@@ -4,7 +4,7 @@
 //! kreditnotaer get their own document, and purringer render to PDF on
 //! demand. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -65,7 +65,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "PDF & Co AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "PDF & Co AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -295,7 +295,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Eksportøren"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Eksport ENK")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Eksport ENK")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
@@ -370,7 +370,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
             currency: None,
-            valuta_kurs_micro: None,
+            exchange_rate_micro: None,
             lines: vec![regnmed_db::InvoiceLineDraft {
                 description: "Eksportsalg".into(),
                 account_number: "3000".into(),
@@ -422,7 +422,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Nyregistrert"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Fersk AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Fersk AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
@@ -491,7 +491,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
             currency: None,
-            valuta_kurs_micro: None,
+            exchange_rate_micro: None,
             lines: vec![regnmed_db::InvoiceLineDraft {
                 description: "Salg før registrering".into(),
                 account_number: "3000".into(),
@@ -548,7 +548,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Uten avtale"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Bankavtalelos AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Bankavtalelos AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
@@ -601,7 +601,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: vec![regnmed_db::InvoiceLineDraft {
             description: format!("Serverleie {n}"),
             account_number: "3000".into(),
