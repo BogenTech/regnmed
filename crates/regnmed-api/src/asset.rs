@@ -217,7 +217,7 @@ pub async fn balance(
         "year": rapport.year,
         "grupper": rapport.grupper.iter().map(|g| json!({
             "gruppe": g.gruppe,
-            "beskrivelse": g.beskrivelse,
+            "beskrivelse": g.description,
             "inngaende_ore": g.opening_ore,
             "tilgang_ore": g.tilgang_ore,
             "vederlag_ore": g.consideration_ore,

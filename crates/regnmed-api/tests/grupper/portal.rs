@@ -58,11 +58,11 @@ async fn the_portal_is_served_from_the_binary() {
     // and the callback address must complete the PKCE flow in the app.
     let mut index = String::new();
     for uri in ["/", "/callback"] {
-        let svar = get(&state, uri).await;
-        assert_eq!(svar.status, StatusCode::OK, "{uri}");
-        assert!(svar.content_type.starts_with("text/html"), "{uri}");
-        assert!(svar.body.contains("<div id=\"app\">"), "{uri}");
-        index = svar.body;
+        let response = get(&state, uri).await;
+        assert_eq!(response.status, StatusCode::OK, "{uri}");
+        assert!(response.content_type.starts_with("text/html"), "{uri}");
+        assert!(response.body.contains("<div id=\"app\">"), "{uri}");
+        index = response.body;
     }
 
     // Vite writes content-hashed file names — find them in index.html and
@@ -73,14 +73,17 @@ async fn the_portal_is_served_from_the_binary() {
         if !del.starts_with("/assets/") {
             continue;
         }
-        let svar = get(&state, del).await;
-        assert_eq!(svar.status, StatusCode::OK, "{del}");
-        assert!(svar.cache_control.contains("immutable"), "{del}");
+        let response = get(&state, del).await;
+        assert_eq!(response.status, StatusCode::OK, "{del}");
+        assert!(response.cache_control.contains("immutable"), "{del}");
         if del.ends_with(".js") {
-            assert!(svar.content_type.starts_with("text/javascript"), "{del}");
+            assert!(
+                response.content_type.starts_with("text/javascript"),
+                "{del}"
+            );
         }
         if del.ends_with(".css") {
-            assert!(svar.content_type.starts_with("text/css"), "{del}");
+            assert!(response.content_type.starts_with("text/css"), "{del}");
         }
         assets += 1;
     }
@@ -88,14 +91,14 @@ async fn the_portal_is_served_from_the_binary() {
 
     // An unknown asset is an ERROR, not the app again: a 200 with HTML
     // where the JS should be fails silently in the browser.
-    let svar = get(&state, "/assets/finnes-ikke.js").await;
-    assert_eq!(svar.status, StatusCode::NOT_FOUND);
+    let response = get(&state, "/assets/finnes-ikke.js").await;
+    assert_eq!(response.status, StatusCode::NOT_FOUND);
 
     // /ny was the portal's address during the migration — old bookmarks
     // and open tabs must land on the portal, not in a 404.
-    let svar = get(&state, "/ny").await;
-    assert_eq!(svar.status, StatusCode::PERMANENT_REDIRECT);
-    assert_eq!(svar.location, "/");
+    let response = get(&state, "/ny").await;
+    assert_eq!(response.status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(response.location, "/");
 
     // The framework-free portal is gone for good.
     for gammel in ["/app.js", "/app.css", "/theme.js"] {

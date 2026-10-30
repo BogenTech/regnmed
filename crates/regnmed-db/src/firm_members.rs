@@ -20,10 +20,10 @@ use crate::members::normaliser_epost;
 /// The firm roles (0005): `admin` runs the byrå, `ansatt` works in it.
 pub const ROLES: [&str; 2] = ["admin", "ansatt"];
 
-fn krev_rolle(rolle: &str) -> Result<()> {
+fn krev_rolle(role: &str) -> Result<()> {
     ensure!(
-        ROLES.contains(&rolle),
-        "«{rolle}» er ikke en byrårolle — velg admin eller ansatt"
+        ROLES.contains(&role),
+        "«{role}» er ikke en byrårolle — velg admin eller ansatt"
     );
     Ok(())
 }
@@ -33,7 +33,7 @@ pub struct Byramedlem {
     pub person_id: Uuid,
     pub name: String,
     pub epost: Option<String>,
-    pub rolle: String,
+    pub role: String,
     pub active: bool,
 }
 
@@ -58,7 +58,7 @@ pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedl
             person_id: r.get("person_id"),
             name: r.get("navn"),
             epost: r.get("epost"),
-            rolle: r.get("rolle"),
+            role: r.get("rolle"),
             active: r.get("aktiv"),
         })
         .collect())
@@ -183,7 +183,7 @@ pub async fn sett_aktiv(
             .fetch_optional(&mut *tx)
             .await?
             .context("personen er ikke medlem av byrået")?;
-    let rolle: String = rad.get("role");
+    let role: String = rad.get("role");
     if rad.get::<bool, _>("active") == active {
         tx.commit().await?;
         return Ok(());
@@ -201,8 +201,8 @@ pub async fn sett_aktiv(
         firm_id,
         person_id,
         if active { "reaktivert" } else { "deaktivert" },
-        Some(&rolle),
-        Some(&rolle),
+        Some(&role),
+        Some(&role),
         Some(utfort_av),
         "admin",
     )
@@ -215,7 +215,7 @@ pub async fn sett_aktiv(
 pub struct Byrainvitasjon {
     pub id: Uuid,
     pub epost: String,
-    pub rolle: String,
+    pub role: String,
     pub invitert_av: String,
     pub created_at: DateTime<Utc>,
     pub sist_sendt: Option<DateTime<Utc>>,
@@ -228,10 +228,10 @@ pub async fn inviter(
     pool: &PgPool,
     firm_id: Uuid,
     epost: &str,
-    rolle: &str,
+    role: &str,
     invited_by: Uuid,
 ) -> Result<Uuid> {
-    krev_rolle(rolle)?;
+    krev_rolle(role)?;
     let epost = normaliser_epost(epost);
     ensure!(
         epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),
@@ -246,7 +246,7 @@ pub async fn inviter(
     .bind(id)
     .bind(firm_id)
     .bind(&epost)
-    .bind(rolle)
+    .bind(role)
     .bind(invited_by)
     .execute(pool)
     .await;
@@ -280,7 +280,7 @@ pub async fn list_invitasjoner(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrai
         .map(|r| Byrainvitasjon {
             id: r.get("id"),
             epost: r.get("epost"),
-            rolle: r.get("role"),
+            role: r.get("role"),
             invitert_av: r.get("invitert_av"),
             created_at: r.get("created_at"),
             sist_sendt: r.get("sist_sendt"),
@@ -338,7 +338,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
     let mut antall = 0;
     for rad in &rader {
         let firm_id: Uuid = rad.get("firm_id");
-        let rolle: String = rad.get("role");
+        let role: String = rad.get("role");
         let invitasjon_id: Uuid = rad.get("id");
 
         let fantes: Option<String> = sqlx::query_scalar(
@@ -353,7 +353,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
             sqlx::query("insert into firm_member (firm_id, person_id, role) values ($1,$2,$3)")
                 .bind(firm_id)
                 .bind(person_id)
-                .bind(&rolle)
+                .bind(&role)
                 .execute(&mut *tx)
                 .await?;
             logg(
@@ -362,7 +362,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
                 person_id,
                 "lagt_til",
                 None,
-                Some(&rolle),
+                Some(&role),
                 None,
                 "invitasjon",
             )
@@ -461,13 +461,13 @@ pub async fn firm_invitation_email_payload(
     .context("ingen åpen invitasjon med den id-en")?;
 
     let epost: String = row.get("epost");
-    let rolle: String = row.get("role");
+    let role: String = row.get("role");
     let firm_name: String = row.get("firm_name");
     let invited_by: String = row.get("invited_by");
 
     let mut text = format!(
         "Hei,\n\n{invited_by} har invitert deg inn i byrået {firm_name} i \
-         regnmed, med rollen «{rolle}».\n\n"
+         regnmed, med rollen «{role}».\n\n"
     );
     match portal_base {
         Some(base) => text.push_str(&format!(

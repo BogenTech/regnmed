@@ -183,7 +183,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<
 /// Appends an event. Terminality and "a note is required unless the
 /// status is pagar/utfort" are both enforced in the database (0064); the
 /// error that comes back says what to do.
-pub async fn svar(
+pub async fn answer(
     pool: &PgPool,
     company_id: Uuid,
     oppgave_id: Uuid,

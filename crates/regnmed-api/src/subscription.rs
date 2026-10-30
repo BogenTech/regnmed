@@ -52,11 +52,11 @@ pub async fn subscription_status(
     let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;
     let prices = regnmed_db::subscription::list_prices(&state.pool).await?;
     // Newest price in force per plan.
-    let idag = chrono::Utc::now().date_naive();
+    let today = chrono::Utc::now().date_naive();
     let mut sett: Vec<&str> = Vec::new();
     let planer: Vec<serde_json::Value> = prices
         .iter()
-        .filter(|p| p.valid_from <= idag)
+        .filter(|p| p.valid_from <= today)
         .filter(|p| {
             if sett.contains(&p.plan.as_str()) {
                 false
@@ -169,14 +169,14 @@ async fn sync_price(
     cfg: &StripeCfg,
     plan: &str,
     interval: &str,
-    idag: chrono::NaiveDate,
+    today: chrono::NaiveDate,
 ) -> Result<String, ApiError> {
     let brutto = regnmed_db::subscription::brutto_for(
         &state.pool,
         drift_company(state).await?,
         plan,
         interval,
-        idag,
+        today,
     )
     .await?;
     if let Some((price_id, kjent)) =
@@ -196,7 +196,7 @@ async fn sync_price(
         interval,
         brutto,
         &price_id,
-        &format!("synkronisert fra prislisten {idag}"),
+        &format!("synkronisert fra prislisten {today}"),
     )
     .await?;
     Ok(price_id)
@@ -218,14 +218,14 @@ pub async fn start_subscription(
     Json(request): Json<StartRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
-    let idag = chrono::Utc::now().date_naive();
+    let today = chrono::Utc::now().date_naive();
     let interval = request.interval.as_deref().unwrap_or("month");
     if interval != "month" && interval != "year" {
         return Err(ApiError::BadRequest(
             "intervallet må være «month» eller «year»".into(),
         ));
     }
-    regnmed_db::subscription::price_on(&state.pool, &request.plan, idag)
+    regnmed_db::subscription::price_on(&state.pool, &request.plan, today)
         .await
         .map_err(|_| ApiError::BadRequest("ukjent plan".into()))?;
 
@@ -254,7 +254,7 @@ pub async fn start_subscription(
             &state.pool,
             company_id,
             &request.plan,
-            idag,
+            today,
             None,
             &format!("selvbetjent i portalen av {name}"),
             name,
@@ -263,7 +263,7 @@ pub async fn start_subscription(
         return Ok(Json(json!({ "status": "aktiv" })));
     };
 
-    let price_id = sync_price(&state, cfg, &request.plan, interval, idag).await?;
+    let price_id = sync_price(&state, cfg, &request.plan, interval, today).await?;
     let stripe = client(cfg);
     let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
         Some(card) => card.stripe_customer_id,
@@ -442,8 +442,8 @@ pub async fn stripe_webhook(
         }
         "customer.subscription.deleted" => {
             let sub_id = object["id"].as_str().unwrap_or_default();
-            let idag = chrono::Utc::now().date_naive();
-            match regnmed_db::subscription::end_stripe_subscription(&state.pool, sub_id, idag)
+            let today = chrono::Utc::now().date_naive();
+            match regnmed_db::subscription::end_stripe_subscription(&state.pool, sub_id, today)
                 .await?
             {
                 Some(_) => Ok(Json(json!({ "handled": "abonnement_avsluttet" }))),
@@ -473,7 +473,7 @@ pub async fn stripe_webhook(
                 .as_str()
                 .unwrap_or("abonnement")
                 .to_string();
-            let idag = chrono::Utc::now().date_naive();
+            let today = chrono::Utc::now().date_naive();
             let ny = regnmed_db::subscription::post_stripe_payment(
                 &state.pool,
                 drift,
@@ -483,7 +483,7 @@ pub async fn stripe_webhook(
                 brutto,
                 &abo.plan,
                 &periode,
-                idag,
+                today,
             )
             .await?;
             Ok(Json(

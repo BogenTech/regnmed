@@ -854,12 +854,12 @@ pub async fn payslip(
     .await?;
 
     let mut lines = vec![PayslipLine {
-        tekst: "Fastlønn".into(),
+        text: "Fastlønn".into(),
         amount_ore: brutto,
     }];
     if holiday_pay != 0 {
         lines.push(PayslipLine {
-            tekst: "Feriepenger".into(),
+            text: "Feriepenger".into(),
             amount_ore: holiday_pay,
         });
     }

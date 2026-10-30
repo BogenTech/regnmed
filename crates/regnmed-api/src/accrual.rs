@@ -20,7 +20,8 @@ use crate::auth::{ApiError, AuthPerson};
 #[derive(Deserialize)]
 pub struct PeriodiseringRequest {
     kilde_voucher: Option<Uuid>,
-    beskrivelse: String,
+    #[serde(rename = "beskrivelse")]
+    description: String,
     #[serde(rename = "resultatkonto")]
     income_account: String,
     #[serde(rename = "balansekonto")]
@@ -50,7 +51,7 @@ pub async fn list(
     Ok(Json(json!({
         "periodiseringer": planer.iter().map(|p| json!({
             "id": p.id,
-            "beskrivelse": p.beskrivelse,
+            "beskrivelse": p.description,
             "resultatkonto": p.income_account,
             "balansekonto": p.balance_account,
             "total_ore": p.total_ore,
@@ -80,7 +81,7 @@ pub async fn create(
         company_id,
         &regnmed_db::accrual::PeriodiseringDraft {
             kilde_voucher: request.kilde_voucher,
-            beskrivelse: request.beskrivelse,
+            description: request.description,
             income_account: request.income_account,
             balance_account: request.balance_account,
             total_ore: request.total_ore,
@@ -103,14 +104,14 @@ pub async fn stopp(
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
-    let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    regnmed_db::accrual::stopp_periodisering(&state.pool, company_id, id, idag)
+    regnmed_db::accrual::stopp_periodisering(&state.pool, company_id, id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(Json(json!({ "stoppet": idag.to_string() })))
+    Ok(Json(json!({ "stoppet": today.to_string() })))
 }
 
 /// Runs every due month for one plan now, rather than waiting for the
@@ -121,11 +122,11 @@ pub async fn kjor(
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
-    let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let utfall = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, idag)
+    let utfall = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({

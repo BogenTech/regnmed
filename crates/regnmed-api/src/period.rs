@@ -54,14 +54,14 @@ pub async fn set_period_lock(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // Locking requires bokføring; REOPENING requires admin, and that is
     // decided inside set_period_lock — hence the role comes along.
-    let rolle = require(&state, person.person_id, company_id, Right::PeriodLock).await?;
+    let role = require(&state, person.person_id, company_id, Right::PeriodLock).await?;
     let set_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_period_lock(
         &state.pool,
         company_id,
         request.locked_through,
         set_by,
-        rolle.is_admin(),
+        role.is_admin(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

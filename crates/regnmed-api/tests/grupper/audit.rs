@@ -4,7 +4,7 @@
 //! planted anchor mismatch turns the verdict; the text download renders;
 //! outsiders get 404. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -66,7 +66,7 @@ async fn revisor_generates_the_verification_report() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kontrollert AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_engagement(&state.pool, firm, company, "revisjon")
         .await
         .unwrap();
@@ -268,7 +268,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Avstemt AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();

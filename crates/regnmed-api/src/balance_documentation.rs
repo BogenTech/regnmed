@@ -91,7 +91,7 @@ pub async fn avstem(
     Json(request): Json<AvstemRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
-    let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
@@ -103,7 +103,7 @@ pub async fn avstem(
         &request.forklaring,
         None,
         person.person_id,
-        idag,
+        today,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -136,7 +136,7 @@ pub async fn avstem_med_vedlegg(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
-    let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+    let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
@@ -148,7 +148,7 @@ pub async fn avstem_med_vedlegg(
         &query.forklaring,
         Some((&query.filename, &content_type, &body)),
         person.person_id,
-        idag,
+        today,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

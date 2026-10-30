@@ -39,8 +39,8 @@ pub struct EntryRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     minutter: i32,
-    #[serde(default)]
-    beskrivelse: String,
+    #[serde(default, rename = "beskrivelse")]
+    description: String,
     #[serde(rename = "prosjekt")]
     project: Option<String>,
     /// Absent = the project's fakturerbar_default.
@@ -55,7 +55,7 @@ impl EntryRequest {
         regnmed_db::TimeEntryDraft {
             date: self.date,
             minutter: self.minutter,
-            beskrivelse: self.beskrivelse,
+            description: self.description,
             project: self.project,
             fakturerbar: self.fakturerbar,
             timesats_ore: self.timesats_ore,
@@ -160,7 +160,7 @@ pub async fn list(
             "own": e.own,
             "dato": e.date.to_string(),
             "minutter": e.minutter,
-            "beskrivelse": e.beskrivelse,
+            "beskrivelse": e.description,
             "prosjekt": e.project,
             "fakturerbar": e.fakturerbar,
             "timesats_ore": e.timesats_ore,
@@ -225,7 +225,7 @@ pub async fn unbilled(
     Ok(Json(json!({
         "groups": groups.iter().map(|g| json!({
             "prosjekt": g.project,
-            "kunde": g.kunde,
+            "kunde": g.customer,
             "kunde_navn": g.customer_name,
             "timesats_ore": g.timesats_ore,
             "minutter": g.minutter,

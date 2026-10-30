@@ -67,8 +67,8 @@ fn matrix() -> String {
 
 #[test]
 fn the_matrix_in_docs_matches_the_code() {
-    let sti = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/auth.md");
-    let doc = std::fs::read_to_string(sti).expect("docs/auth.md");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/auth.md");
+    let doc = std::fs::read_to_string(path).expect("docs/auth.md");
     let forventet = matrix();
 
     if !doc.contains(&forventet) {

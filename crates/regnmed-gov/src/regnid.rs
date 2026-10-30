@@ -64,7 +64,7 @@ impl Regnid {
     ) -> Result<MachineClient> {
         ensure!(!client_id.trim().is_empty(), "client_id mangler");
         ensure!(!name.trim().is_empty(), "navnet mangler");
-        let svar = self
+        let response = self
             .http
             .post(format!("{}/provision/machine-client", self.base))
             .basic_auth(&self.client_id, Some(&self.client_secret))
@@ -76,24 +76,24 @@ impl Regnid {
             .send()
             .await
             .context("nådde ikke påloggingstjenesten")?;
-        let status = svar.status();
-        let kropp: serde_json::Value = svar.json().await.unwrap_or(serde_json::Value::Null);
+        let status = response.status();
+        let body: serde_json::Value = response.json().await.unwrap_or(serde_json::Value::Null);
         if !status.is_success() {
             // regnid's own description, verbatim: it is written for
             // whoever has to fix the configuration, and paraphrasing it
             // would throw away the only useful part.
-            let hvorfor = kropp["error_description"]
+            let hvorfor = body["error_description"]
                 .as_str()
-                .or_else(|| kropp["error"].as_str())
+                .or_else(|| body["error"].as_str())
                 .unwrap_or("ukjent feil");
             bail!("påloggingstjenesten avviste registreringen ({status}): {hvorfor}");
         }
-        let hemmelighet = kropp["client_secret"]
+        let hemmelighet = body["client_secret"]
             .as_str()
             .filter(|s| !s.is_empty())
             .context("påloggingstjenesten svarte uten klienthemmelighet")?;
         Ok(MachineClient {
-            client_id: kropp["client_id"].as_str().unwrap_or(client_id).to_string(),
+            client_id: body["client_id"].as_str().unwrap_or(client_id).to_string(),
             client_secret: hemmelighet.to_string(),
         })
     }

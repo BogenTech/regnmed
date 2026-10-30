@@ -292,14 +292,14 @@ pub fn reverse_charge_entries(
     if tax == 0 {
         return Vec::new();
     }
-    let entry = |account: &str, amount: i64, tekst: &str, dims: bool| crate::voucher::EntryDraft {
+    let entry = |account: &str, amount: i64, text: &str, dims: bool| crate::voucher::EntryDraft {
         account_number: account.to_string(),
         amount: crate::Ore(amount),
         // Uncoded, exactly like the invoice engine's mva entry: the
         // spesifikasjon derives grunnlag from the CODED lines, and a code
         // here would count the same basis twice.
         vat_code: None,
-        description: Some(tekst.to_string()),
+        description: Some(text.to_string()),
         party_no: None,
         department: if dims { basis.department.clone() } else { None },
         project: if dims { basis.project.clone() } else { None },

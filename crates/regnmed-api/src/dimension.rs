@@ -31,7 +31,7 @@ pub async fn list(
             "code": d.code,
             "name": d.name,
             "active": d.active,
-            "kunde": d.kunde,
+            "kunde": d.customer,
             "kunde_navn": d.customer_name,
             "fakturerbar_default": d.fakturerbar_default,
             // The CALLER's effective rate today — what their grid rows
@@ -47,7 +47,8 @@ pub struct CreateRequest {
     code: String,
     name: String,
     /// Customer party_no for a prosjekt (#80). Optional.
-    kunde: Option<String>,
+    #[serde(rename = "kunde")]
+    customer: Option<String>,
 }
 
 pub async fn create(
@@ -63,7 +64,7 @@ pub async fn create(
         &request.kind,
         &request.code,
         &request.name,
-        request.kunde.as_deref(),
+        request.customer.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -76,7 +77,8 @@ pub struct UpdateRequest {
     active: Option<bool>,
     /// Customer link (#80): absent = unchanged, "" = clear,
     /// party_no = point the prosjekt at that customer.
-    kunde: Option<String>,
+    #[serde(rename = "kunde")]
+    customer: Option<String>,
     /// Whether hours on the prosjekt are billable unless the entry says
     /// otherwise (migration 0052).
     fakturerbar_default: Option<bool>,
@@ -96,7 +98,7 @@ pub async fn update(
         &code,
         request.name.as_deref(),
         request.active,
-        request.kunde.as_deref(),
+        request.customer.as_deref(),
         request.fakturerbar_default,
     )
     .await

@@ -20,7 +20,7 @@ use uuid::Uuid;
 /// What a caller may see. Deliberately has no field for the key.
 #[derive(Debug)]
 pub struct LlmOppsett {
-    pub leverandor: String,
+    pub supplier: String,
     pub base_url: String,
     pub modell: String,
     pub active: bool,
@@ -37,10 +37,10 @@ pub const LEVERANDORER: [(&str, &str); 3] = [
     ("annet", ""),
 ];
 
-fn standard_url(leverandor: &str) -> Option<&'static str> {
+fn standard_url(supplier: &str) -> Option<&'static str> {
     LEVERANDORER
         .iter()
-        .find(|(name, _)| *name == leverandor)
+        .find(|(name, _)| *name == supplier)
         .map(|(_, url)| *url)
 }
 
@@ -51,19 +51,19 @@ pub async fn sett_llm(
     nokkel: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
-    leverandor: &str,
+    supplier: &str,
     base_url: Option<&str>,
     modell: &str,
     api_nokkel: &str,
     satt_av: &str,
 ) -> Result<()> {
-    let leverandor = leverandor.trim();
+    let supplier = supplier.trim();
     let modell = modell.trim();
     let api_nokkel = api_nokkel.trim();
-    let standard = standard_url(leverandor);
+    let standard = standard_url(supplier);
     ensure!(
         standard.is_some(),
-        "ukjent leverandør «{leverandor}» — gyldige er {}",
+        "ukjent leverandør «{supplier}» — gyldige er {}",
         LEVERANDORER
             .iter()
             .map(|(n, _)| *n)
@@ -81,7 +81,7 @@ pub async fn sett_llm(
         .unwrap_or_else(|| standard.unwrap_or(""));
     ensure!(
         !url.is_empty(),
-        "leverandøren «{leverandor}» trenger en adresse (base_url)"
+        "leverandøren «{supplier}» trenger en adresse (base_url)"
     );
     ensure!(
         url.starts_with("https://"),
@@ -109,7 +109,7 @@ pub async fn sett_llm(
     .bind(Uuid::now_v7())
     .bind(integration_id)
     .bind(company_id)
-    .bind(leverandor)
+    .bind(supplier)
     .bind(url)
     .bind(modell)
     .bind(seal(nokkel, api_nokkel.as_bytes())?)
@@ -139,7 +139,7 @@ pub async fn fjern_llm(
     .bind(Uuid::now_v7())
     .bind(integration_id)
     .bind(company_id)
-    .bind(forrige.leverandor)
+    .bind(forrige.supplier)
     .bind(forrige.base_url)
     .bind(forrige.modell)
     .bind(satt_av)
@@ -165,7 +165,7 @@ pub async fn hent_llm(
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|r| LlmOppsett {
-        leverandor: r.get("leverandor"),
+        supplier: r.get("leverandor"),
         base_url: r.get("base_url"),
         modell: r.get("modell"),
         active: r.get("aktiv"),
@@ -203,7 +203,7 @@ pub async fn hent_llm_nokkel(
     let klar = String::from_utf8(open(nokkel, &sealed)?)?;
     Ok(Some((
         LlmOppsett {
-            leverandor: row.get("leverandor"),
+            supplier: row.get("leverandor"),
             base_url: row.get("base_url"),
             modell: row.get("modell"),
             active,

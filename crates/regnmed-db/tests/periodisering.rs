@@ -107,7 +107,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         company,
         &PeriodiseringDraft {
             kilde_voucher: Some(source.id),
-            beskrivelse: "Husleie 2026".into(),
+            description: "Husleie 2026".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: total,
@@ -173,7 +173,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         company,
         &PeriodiseringDraft {
             kilde_voucher: None,
-            beskrivelse: "Forsikring".into(),
+            description: "Forsikring".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: 120_000,
@@ -229,7 +229,7 @@ async fn a_started_plan_cannot_be_rewritten() {
         company,
         &PeriodiseringDraft {
             kilde_voucher: None,
-            beskrivelse: "Abonnement".into(),
+            description: "Abonnement".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: 60_000,
@@ -290,7 +290,7 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
 
     let plan = |result: &str, balance_sheet: &str| PeriodiseringDraft {
         kilde_voucher: None,
-        beskrivelse: "Husleie".into(),
+        description: "Husleie".into(),
         income_account: result.into(),
         balance_account: balance_sheet.into(),
         total_ore: 30_000,

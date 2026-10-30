@@ -38,7 +38,7 @@ const MANEDER: [&str; 12] = [
 /// One line on the slip: a pay element or a deduction.
 #[derive(Debug, Clone)]
 pub struct PayslipLine {
-    pub tekst: String,
+    pub text: String,
     /// Positive adds to what is paid, negative is a deduction.
     pub amount_ore: i64,
 }
@@ -165,7 +165,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     ly += 16.0;
 
     for line in &input.lines {
-        pdf.text(MARGIN, ly, 10.0, Font::Regular, &line.tekst);
+        pdf.text(MARGIN, ly, 10.0, Font::Regular, &line.text);
         pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(line.amount_ore));
         ly += 15.0;
     }
@@ -251,12 +251,12 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         &format!("HITTIL I {}", input.ar),
     );
     ly += 14.0;
-    for (tekst, amount) in [
+    for (text, amount) in [
         ("Bruttolønn", input.hittil_brutto_ore),
         ("Forskuddstrekk", input.hittil_trekk_ore),
         ("Feriepenger opptjent", input.hittil_feriepenger_ore),
     ] {
-        pdf.text(MARGIN, ly, 9.0, Font::Regular, tekst);
+        pdf.text(MARGIN, ly, 9.0, Font::Regular, text);
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(amount));
         ly += 13.0;
     }
@@ -284,7 +284,7 @@ mod tests {
             month: 3,
             paid_date: date(2026, 3, 25),
             lines: vec![PayslipLine {
-                tekst: "Fastlønn".into(),
+                text: "Fastlønn".into(),
                 amount_ore: 5_000_000,
             }],
             gross_ore: 5_000_000,
@@ -320,9 +320,9 @@ mod tests {
     /// as it did, and why the feriepenger were not withheld from.
     #[test]
     fn the_slip_explains_the_withholding() {
-        let tekst = String::from_utf8_lossy(&render_payslip(&input())).to_string();
-        assert!(tekst.contains("Forskuddstrekk"), "{tekst}");
-        assert!(tekst.contains("35 %"), "trekksatsen skal stå");
+        let text = String::from_utf8_lossy(&render_payslip(&input())).to_string();
+        assert!(text.contains("Forskuddstrekk"), "{text}");
+        assert!(text.contains("35 %"), "trekksatsen skal stå");
 
         let mut juni = input();
         juni.month = 6;
@@ -332,29 +332,29 @@ mod tests {
         juni.withholding_basis_ore = 3_000_000;
         juni.withholding_ore = 1_050_000;
         juni.lines.push(PayslipLine {
-            tekst: "Feriepenger".into(),
+            text: "Feriepenger".into(),
             amount_ore: 4_000_000,
         });
         juni.net_ore = 5_950_000;
-        let tekst = String::from_utf8_lossy(&render_payslip(&juni)).to_string();
+        let text = String::from_utf8_lossy(&render_payslip(&juni)).to_string();
         assert!(
-            tekst.contains("uten forskuddstrekk"),
+            text.contains("uten forskuddstrekk"),
             "feriepengenes trekkfrihet skal forklares"
         );
 
         let mut desember = input();
         desember.month = 12;
         desember.half_withholding = true;
-        let tekst = String::from_utf8_lossy(&render_payslip(&desember)).to_string();
-        assert!(tekst.contains("Halvt forskuddstrekk"), "{tekst}");
+        let text = String::from_utf8_lossy(&render_payslip(&desember)).to_string();
+        assert!(text.contains("Halvt forskuddstrekk"), "{text}");
     }
 
     /// The fødselsnummer must never end up in a document that travels.
     #[test]
     fn the_slip_shows_the_birth_date_not_the_fodselsnummer() {
-        let tekst = String::from_utf8_lossy(&render_payslip(&input())).to_string();
-        assert!(tekst.contains("1993-02-26"));
-        assert!(!tekst.contains("26829398612"));
+        let text = String::from_utf8_lossy(&render_payslip(&input())).to_string();
+        assert!(text.contains("1993-02-26"));
+        assert!(!text.contains("26829398612"));
     }
 
     #[test]
@@ -363,8 +363,8 @@ mod tests {
         fri.withholding_percent_bp = None;
         fri.withholding_ore = 0;
         fri.net_ore = 5_000_000;
-        let tekst = String::from_utf8_lossy(&render_payslip(&fri)).to_string();
-        assert!(tekst.contains("frikort"), "{tekst}");
+        let text = String::from_utf8_lossy(&render_payslip(&fri)).to_string();
+        assert!(text.contains("frikort"), "{text}");
     }
 
     #[test]

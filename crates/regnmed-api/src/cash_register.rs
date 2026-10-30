@@ -73,7 +73,7 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
     }
 }
 
-fn svar(bokfort: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
+fn response(bokfort: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
     Json(json!({
         "bilag": format!("{}-{}", bokfort.voucher.0, bokfort.voucher.1),
         "differanse_ore": bokfort.difference_ore,
@@ -98,7 +98,7 @@ pub async fn dagsoppgjor(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(svar(bokfort))
+    Ok(response(bokfort))
 }
 
 #[derive(Deserialize)]
@@ -141,5 +141,5 @@ pub async fn dagsoppgjor_med_rapport(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(svar(bokfort))
+    Ok(response(bokfort))
 }

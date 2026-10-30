@@ -3,7 +3,7 @@
 //! and upcoming mva deadlines under the company's terminordning — all
 //! plain queries. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -70,7 +70,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oversikt AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -94,12 +94,12 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    let (_, kunde) =
+    let (_, customer) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
     gi_partene_adresse(&state.pool, company).await;
-    let (_, leverandor) = regnmed_db::create_party(
+    let (_, supplier) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -125,7 +125,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
         &bilag(
             date(year - 1, 1, 15),
             vec![
-                entry("1500", 20_000_00, Some(&kunde)),
+                entry("1500", 20_000_00, Some(&customer)),
                 entry("3000", -20_000_00, None),
             ],
         ),
@@ -155,7 +155,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
         &bilag(
             date(year, 1, 10),
             vec![
-                entry("1500", 50_000_00, Some(&kunde)),
+                entry("1500", 50_000_00, Some(&customer)),
                 entry("3000", -50_000_00, None),
             ],
         ),
@@ -170,7 +170,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
             date(year, 2, 10),
             vec![
                 entry("4300", 10_000_00, None),
-                entry("2400", -10_000_00, Some(&leverandor)),
+                entry("2400", -10_000_00, Some(&supplier)),
             ],
         ),
         "test",
@@ -184,7 +184,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
             date(year, 1, 20),
             vec![
                 entry("1920", 5_000_00, None),
-                entry("1500", -5_000_00, Some(&kunde)),
+                entry("1500", -5_000_00, Some(&customer)),
             ],
         ),
         "test",

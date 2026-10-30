@@ -3,7 +3,7 @@
 //! party (hash v2), match them, verify the chain still holds, and check
 //! the enforcement rules. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -86,7 +86,7 @@ async fn full_reskontro_flow_with_hash_v2() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -317,7 +317,7 @@ async fn supplier_subledger_matches_payment_against_invoice() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innkjøp AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
@@ -362,7 +362,7 @@ async fn supplier_subledger_matches_payment_against_invoice() {
 
     // A customer may not be posted on a supplier account: the kinds must
     // match, not merely be present.
-    let (_, kunde) = request(
+    let (_, customer) = request(
         &state,
         "POST",
         &format!("/companies/{company}/parties"),
@@ -378,7 +378,11 @@ async fn supplier_subledger_matches_payment_against_invoice() {
             "Kunde på leverandørkonto",
             vec![
                 entry("4300", 1_000_00, None),
-                entry("2400", -1_000_00, Some(kunde["party_no"].as_str().unwrap())),
+                entry(
+                    "2400",
+                    -1_000_00,
+                    Some(customer["party_no"].as_str().unwrap()),
+                ),
             ],
         ),
         "test",

@@ -29,7 +29,7 @@ pub enum EhfImportError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MottattLinje {
-    pub beskrivelse: String,
+    pub description: String,
     pub net_ore: i64,
     /// Basis points from ClassifiedTaxCategory when present.
     pub vat_rate_bp: Option<i64>,
@@ -164,7 +164,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                 let local = String::from_utf8_lossy(end.local_name().as_ref()).into_owned();
                 if local == "InvoiceLine" || local == "CreditNoteLine" {
                     faktura.linjer.push(MottattLinje {
-                        beskrivelse: std::mem::take(&mut line_name),
+                        description: std::mem::take(&mut line_name),
                         net_ore: line_net,
                         vat_rate_bp: line_bp,
                     });
@@ -293,18 +293,18 @@ mod tests {
             kid: Some("1234567897".into()),
             linjer: vec![
                 EhfLinje {
-                    beskrivelse: "Varekjøp".into(),
+                    description: "Varekjøp".into(),
                     antall_milli: 3_000,
-                    enhet: "EA".into(),
+                    unit: "EA".into(),
                     enhetspris_ore: 400_00,
                     net_ore: 1_200_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 300_00,
                 },
                 EhfLinje {
-                    beskrivelse: "Frakt".into(),
+                    description: "Frakt".into(),
                     antall_milli: 1_000,
-                    enhet: "EA".into(),
+                    unit: "EA".into(),
                     enhetspris_ore: 100_00,
                     net_ore: 100_00,
                     vat_rate_bp: Some(2500),
@@ -339,7 +339,7 @@ mod tests {
         assert_eq!(mottatt.vat_ore, 325_00);
         assert_eq!(mottatt.gross_ore, 1_625_00);
         assert_eq!(mottatt.linjer.len(), 2);
-        assert_eq!(mottatt.linjer[0].beskrivelse, "Varekjøp");
+        assert_eq!(mottatt.linjer[0].description, "Varekjøp");
         assert_eq!(mottatt.linjer[0].net_ore, 1_200_00);
         assert_eq!(mottatt.linjer[0].vat_rate_bp, Some(2500));
     }
@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(mottatt.net_ore, 2_000_00);
         assert_eq!(mottatt.vat_ore, 500_00);
         assert_eq!(mottatt.gross_ore, 2_500_00);
-        assert_eq!(mottatt.linjer[0].beskrivelse, "Kontorstoler");
+        assert_eq!(mottatt.linjer[0].description, "Kontorstoler");
         assert_eq!(mottatt.linjer[0].vat_rate_bp, None, "ingen sats på linjen");
     }
 

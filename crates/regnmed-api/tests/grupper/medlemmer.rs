@@ -7,7 +7,7 @@
 //!
 //! Krever DATABASE_URL; hopper over ellers.
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -72,7 +72,7 @@ async fn company_with_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, Str
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgang AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     let (admin_id, admin_token) = innlogget(state, idp, "Admin").await;
     regnmed_db::ensure_company_member(&state.pool, company, admin_id, "admin")
         .await
@@ -91,7 +91,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (_, epost, ny_token) = kommende(&idp, "Nyansatt");
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -100,7 +100,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
         Some(json!({"epost": format!("  {} ", epost.to_uppercase()), "rolle": "bokforing"})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
+    assert_eq!(status, StatusCode::OK, "{response}");
 
     // The address is normalised, so the invitation reads in lower case.
     let (_, liste) = call(
@@ -148,7 +148,7 @@ async fn the_invitation_response_does_not_reveal_whether_the_user_exists() {
     let (company, _, admin) = company_with_admin(&state, &idp).await;
     innlogget(&state, &idp, "Finnes").await;
 
-    let (s1, svar1) = call(
+    let (s1, response1) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -156,7 +156,7 @@ async fn the_invitation_response_does_not_reveal_whether_the_user_exists() {
         Some(json!({"epost": "finnes@test.invalid", "rolle": "les"})),
     )
     .await;
-    let (s2, svar2) = call(
+    let (s2, response2) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -167,10 +167,10 @@ async fn the_invitation_response_does_not_reveal_whether_the_user_exists() {
 
     assert_eq!(s1, s2);
     // Bare id-en skiller svarene.
-    assert_eq!(svar1["epost_sendt"], svar2["epost_sendt"]);
+    assert_eq!(response1["epost_sendt"], response2["epost_sendt"]);
     assert_eq!(
-        svar1.as_object().unwrap().keys().collect::<Vec<_>>(),
-        svar2.as_object().unwrap().keys().collect::<Vec<_>>()
+        response1.as_object().unwrap().keys().collect::<Vec<_>>(),
+        response2.as_object().unwrap().keys().collect::<Vec<_>>()
     );
 }
 
@@ -184,7 +184,7 @@ async fn the_last_administrator_cannot_remove_themselves() {
     };
     let (company, admin_id, admin) = company_with_admin(&state, &idp).await;
 
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "PUT",
         &format!("/companies/{company}/access/{admin_id}"),
@@ -192,13 +192,13 @@ async fn the_last_administrator_cannot_remove_themselves() {
         Some(json!({"rolle": "les"})),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
     assert!(
-        svar["error"]
+        response["error"]
             .as_str()
             .unwrap_or_default()
             .contains("uten administrator"),
-        "{svar}"
+        "{response}"
     );
 
     let (status, _) = call(
@@ -216,7 +216,7 @@ async fn the_last_administrator_cannot_remove_themselves() {
     regnmed_db::ensure_company_member(&state.pool, company, nr2, "admin")
         .await
         .unwrap();
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "PUT",
         &format!("/companies/{company}/access/{admin_id}"),
@@ -224,7 +224,7 @@ async fn the_last_administrator_cannot_remove_themselves() {
         Some(json!({"rolle": "les"})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
+    assert_eq!(status, StatusCode::OK, "{response}");
 }
 
 /// Access through an oppdrag is governed by the engagement. An attempt to
@@ -268,7 +268,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
     assert_eq!(via_oppdrag["rolle"], "bokforing");
 
     // And an attempt to change it is refused with an explanation.
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "PUT",
         &format!("/companies/{company}/access/{accountant}"),
@@ -276,13 +276,13 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
         Some(json!({"rolle": "les"})),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
     assert!(
-        svar["error"]
+        response["error"]
             .as_str()
             .unwrap_or_default()
             .contains("oppdrag"),
-        "{svar}"
+        "{response}"
     );
 }
 
@@ -309,8 +309,8 @@ async fn bokforing_cannot_grant_others_access() {
         ("GET", format!("/companies/{company}/access"), None),
         ("GET", format!("/companies/{company}/access/history"), None),
     ] {
-        let (status, svar) = call(&state, method, &uri, &bokforer, body).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}: {svar}");
+        let (status, response) = call(&state, method, &uri, &bokforer, body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}: {response}");
     }
 }
 
@@ -355,7 +355,7 @@ async fn the_trail_shows_who_granted_whom_access() {
     )
     .await;
 
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "GET",
         &format!("/companies/{company}/access/history"),
@@ -363,8 +363,8 @@ async fn the_trail_shows_who_granted_whom_access() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
-    let endringer = svar["endringer"].as_array().unwrap();
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let endringer = response["endringer"].as_array().unwrap();
     // Nyeste først.
     assert_eq!(endringer[0]["endring"], "deaktivert");
     assert_eq!(endringer[0]["utfort_av"], "Admin");
@@ -392,7 +392,7 @@ async fn a_revoked_invitation_grants_no_access() {
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
     let (_, angret_epost, angret_token) = kommende(&idp, "Angret");
-    let (_, svar) = call(
+    let (_, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -400,7 +400,7 @@ async fn a_revoked_invitation_grants_no_access() {
         Some(json!({"epost": angret_epost, "rolle": "admin"})),
     )
     .await;
-    let id = svar["invitasjon_id"].as_str().unwrap();
+    let id = response["invitasjon_id"].as_str().unwrap();
 
     let (status, _) = call(
         &state,
@@ -434,7 +434,7 @@ async fn an_invitation_to_a_deactivated_role_yields_membership_without_access() 
     };
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/roles"),
@@ -442,11 +442,11 @@ async fn an_invitation_to_a_deactivated_role_yields_membership_without_access() 
         Some(json!({"navn": "Midlertidig", "rettigheter": ["FAKTURA_LES"]})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
-    let role_id = svar["role_id"].as_str().unwrap().to_string();
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let role_id = response["role_id"].as_str().unwrap().to_string();
 
     let (_, epost, ny_token) = kommende(&idp, "Vikar");
-    let (status, svar) = call(
+    let (status, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -454,7 +454,7 @@ async fn an_invitation_to_a_deactivated_role_yields_membership_without_access() 
         Some(json!({"epost": epost, "rolle": "Midlertidig"})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{svar}");
+    assert_eq!(status, StatusCode::OK, "{response}");
 
     // Rollen trekkes tilbake mens invitasjonen ligger ute.
     let (status, _) = call(

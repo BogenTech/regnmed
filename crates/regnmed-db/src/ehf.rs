@@ -97,11 +97,11 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             None => None,
         };
         linjer.push(EhfLinje {
-            beskrivelse: line.get("description"),
+            description: line.get("description"),
             antall_milli: line.get("quantity_milli"),
             // Our quantities are unitless counts; EN 16931 wants a UN/ECE
             // Rec 20 code, and "EA" (each) is the honest default.
-            enhet: "EA".into(),
+            unit: "EA".into(),
             enhetspris_ore: line.get("unit_price_ore"),
             net_ore: line.get("net_ore"),
             vat_rate_bp,
@@ -332,13 +332,13 @@ pub async fn inbox_forslag(
         }
     } else {
         // 2. A PDF text layer, or a plain-text document.
-        let tekst = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
+        let text = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
             regnmed_core::pdftext::extract(&content).inspect(|_| forslag.source = "pdf-tekst")
         } else {
             text.filter(|t| t.len() > 20)
                 .inspect(|_| forslag.source = "tekst")
         };
-        match tekst {
+        match text {
             None => {
                 forslag.advarsler.push(
                     "fant ingen lesbar tekst i dokumentet — et skannet bilde må bokføres manuelt \
@@ -347,8 +347,8 @@ pub async fn inbox_forslag(
                 );
                 return Ok(forslag);
             }
-            Some(tekst) => {
-                let t = regnmed_core::voucher_hints::read(&tekst);
+            Some(text) => {
+                let t = regnmed_core::voucher_hints::read(&text);
                 let mut note = |felt: &str, begrunnelse: &str| {
                     forslag
                         .begrunnelser

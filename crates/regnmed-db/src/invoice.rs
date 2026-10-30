@@ -385,7 +385,7 @@ pub async fn create_invoice_in(
             .iter()
             .zip(&computed.lines)
             .map(|(line, amounts)| PdfLinje {
-                beskrivelse: line.description.clone(),
+                description: line.description.clone(),
                 antall_milli: line.quantity_milli,
                 enhetspris_ore: line.unit_price_ore,
                 vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),

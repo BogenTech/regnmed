@@ -9,7 +9,7 @@
 //! check pins the difference: the same request answers 400 (handler,
 //! unknown id) for an admin and 404 (guard) for an ansatt.
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -128,7 +128,7 @@ async fn byra_members_are_invited_never_coregistered() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Klientselskap AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     let klientadmin =
         regnmed_db::ensure_person(&state.pool, &format!("test|{}", Uuid::new_v4()), None, None)
             .await
@@ -148,7 +148,7 @@ async fn byra_members_are_invited_never_coregistered() {
     // mail rail is configured in tests.
     let ansatt_sub = format!("test|{}", Uuid::new_v4());
     let ansatt_epost = epost_for(&ansatt_sub);
-    let (status, svar) = request(
+    let (status, response) = request(
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
@@ -156,9 +156,9 @@ async fn byra_members_are_invited_never_coregistered() {
         Some(serde_json::json!({ "epost": ansatt_epost, "rolle": "ansatt" })),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {svar}");
+    assert_eq!(status, StatusCode::OK, "body: {response}");
     assert_eq!(
-        svar["epost_sendt"], false,
+        response["epost_sendt"], false,
         "no NATS in tests — said honestly"
     );
     let (status, _) = request(
@@ -237,7 +237,7 @@ async fn byra_members_are_invited_never_coregistered() {
     assert_eq!(status, StatusCode::NOT_FOUND, "ansatt never reaches it");
 
     // The last admin can neither demote nor deactivate themselves.
-    let (status, svar) = request(
+    let (status, response) = request(
         &state,
         "PUT",
         &format!("/firms/{firm_id}/access/{grunnlegger}"),
@@ -245,9 +245,9 @@ async fn byra_members_are_invited_never_coregistered() {
         Some(serde_json::json!({ "rolle": "ansatt" })),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {svar}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {response}");
     assert!(
-        svar["error"]
+        response["error"]
             .as_str()
             .unwrap()
             .contains("uten administrator")
@@ -315,7 +315,7 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // A revoked invitation grants nothing at login.
     let tredje_sub = format!("test|{}", Uuid::new_v4());
-    let (status, svar) = request(
+    let (status, response) = request(
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
@@ -323,8 +323,8 @@ async fn byra_members_are_invited_never_coregistered() {
         Some(serde_json::json!({ "epost": epost_for(&tredje_sub), "rolle": "ansatt" })),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {svar}");
-    let invitasjon_id = svar["invitasjon_id"].as_str().unwrap().to_string();
+    assert_eq!(status, StatusCode::OK, "body: {response}");
+    let invitasjon_id = response["invitasjon_id"].as_str().unwrap().to_string();
     let (status, _) = request(
         &state,
         "DELETE",

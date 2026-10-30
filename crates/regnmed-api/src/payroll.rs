@@ -258,8 +258,8 @@ pub async fn payslip_pdf(
     // Note this is NOT #55: that issue takes LONNSSLIPP_LES_ALLE OUT of
     // the reading bundle. Here only the scope is added, without changing
     // who has what.
-    let rolle = require(&state, person.person_id, company_id, Right::PayslipReadOwn).await?;
-    if !rolle.has(Right::PayslipReadAll) {
+    let role = require(&state, person.person_id, company_id, Right::PayslipReadOwn).await?;
+    if !role.has(Right::PayslipReadAll) {
         let eier = regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
         if eier != Some(person.person_id) {
             return Err(ApiError::NotFound);

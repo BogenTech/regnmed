@@ -221,14 +221,14 @@ pub async fn invitation_email_payload(
     .context("ingen åpen invitasjon med den id-en")?;
 
     let epost: String = row.get("epost");
-    let rolle: String = row.get("role");
+    let role: String = row.get("role");
     let company_name: String = row.get("company_name");
     let company_email: Option<String> = row.get("company_email");
     let invited_by: String = row.get("invited_by");
 
     let mut text = format!(
         "Hei,\n\n{invited_by} har gitt deg tilgang til regnskapet til \
-         {company_name} i regnmed, med rollen «{rolle}».\n\n"
+         {company_name} i regnmed, med rollen «{role}».\n\n"
     );
     match portal_base {
         Some(base) => text.push_str(&format!(

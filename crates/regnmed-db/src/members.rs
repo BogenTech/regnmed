@@ -15,8 +15,8 @@ use uuid::Uuid;
 /// almost nothing.
 pub const ROLES: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
-fn krev_tildelbar(rolle: &str) -> Result<()> {
-    if rolle == "revisor" {
+fn krev_tildelbar(role: &str) -> Result<()> {
+    if role == "revisor" {
         // Not a typo to reject silently: 'revisor' is a real role in
         // the system, it just arrives from somewhere else.
         bail!(
@@ -44,7 +44,7 @@ pub struct Medlem {
     pub person_id: Uuid,
     pub name: String,
     pub epost: Option<String>,
-    pub rolle: String,
+    pub role: String,
     pub active: bool,
     /// "direkte", or the name of the byrå the oppdrag runs through.
     pub via: String,
@@ -98,7 +98,7 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
             person_id: r.get("person_id"),
             name: r.get("navn"),
             epost: r.get("epost"),
-            rolle: r.get("rolle"),
+            role: r.get("rolle"),
             active: r.get("aktiv"),
             via: r.get("via"),
             kan_endres: r.get("kan_endres"),
@@ -244,7 +244,7 @@ pub async fn sett_aktiv(
         "personen er ikke et direkte medlem her — tilgang gjennom et oppdrag \
          fjernes ved å avslutte oppdraget",
     )?;
-    let rolle: String = rad.get("role");
+    let role: String = rad.get("role");
     if rad.get::<bool, _>("active") == active {
         tx.commit().await?;
         return Ok(());
@@ -262,8 +262,8 @@ pub async fn sett_aktiv(
         company_id,
         person_id,
         if active { "reaktivert" } else { "deaktivert" },
-        Some(&rolle),
-        Some(&rolle),
+        Some(&role),
+        Some(&role),
         Some(utfort_av),
         source,
     )
@@ -276,7 +276,7 @@ pub async fn sett_aktiv(
 pub struct Invitasjon {
     pub id: Uuid,
     pub epost: String,
-    pub rolle: String,
+    pub role: String,
     pub invitert_av: String,
     pub created_at: DateTime<Utc>,
     /// When the invitation mail last went out (#66), or None if it never
@@ -301,11 +301,11 @@ pub async fn inviter(
     pool: &PgPool,
     company_id: Uuid,
     epost: &str,
-    rolle: &str,
+    role: &str,
     invited_by: Uuid,
     employee_id: Option<Uuid>,
 ) -> Result<Uuid> {
-    krev_tildelbar(rolle)?;
+    krev_tildelbar(role)?;
     let epost = normaliser_epost(epost);
     ensure!(
         epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),
@@ -350,7 +350,7 @@ pub async fn inviter(
     .bind(id)
     .bind(company_id)
     .bind(&epost)
-    .bind(rolle)
+    .bind(role)
     .bind(invited_by)
     .bind(employee_id)
     .execute(pool)
@@ -383,7 +383,7 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
         .map(|r| Invitasjon {
             id: r.get("id"),
             epost: r.get("epost"),
-            rolle: r.get("role"),
+            role: r.get("role"),
             invitert_av: r.get("invitert_av"),
             created_at: r.get("created_at"),
             sist_sendt: r.get("sist_sendt"),
@@ -451,7 +451,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
     let mut antall = 0;
     for rad in &rader {
         let company_id: Uuid = rad.get("company_id");
-        let rolle: String = rad.get("role");
+        let role: String = rad.get("role");
         let invitasjon_id: Uuid = rad.get("id");
         let employee_id: Option<Uuid> = rad.get("employee_id");
 
@@ -469,7 +469,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
             )
             .bind(company_id)
             .bind(person_id)
-            .bind(&rolle)
+            .bind(&role)
             .execute(&mut *tx)
             .await?;
             logg(
@@ -478,7 +478,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
                 person_id,
                 "lagt_til",
                 None,
-                Some(&rolle),
+                Some(&role),
                 None,
                 "invitasjon",
             )

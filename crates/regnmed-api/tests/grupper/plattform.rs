@@ -12,7 +12,7 @@
 use chrono::{Duration, Utc};
 use sqlx::Row;
 
-use crate::common::{TestIdp, gi_partene_adresse, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -66,10 +66,10 @@ async fn person(state: &AppState, idp: &TestIdp, name: &str) -> (Uuid, String, S
 
 /// A person holding an active platform role, granted directly in the
 /// database (the CLI bootstrap path).
-async fn platform_person(state: &AppState, idp: &TestIdp, rolle: &str) -> (Uuid, String) {
-    let (id, _, token) = person(state, idp, rolle).await;
+async fn platform_person(state: &AppState, idp: &TestIdp, role: &str) -> (Uuid, String) {
+    let (id, _, token) = person(state, idp, role).await;
     let til = (Utc::now() + Duration::days(30)).date_naive();
-    regnmed_db::grant_platform_role(&state.pool, id, rolle, til, "test", None)
+    regnmed_db::grant_platform_role(&state.pool, id, role, til, "test", None)
         .await
         .unwrap();
     (id, token)
@@ -81,7 +81,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Plattformtest AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     Some((state, idp, company))
 }
 
@@ -180,7 +180,7 @@ async fn support_sees_master_data_but_neither_customers_nor_member_admin() {
 
     // A new membership: allowed, and the target actually gains access.
     let (target, _, target_token) = person(&state, &idp, "Ny Bruker").await;
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/platform/users/{target}/companies/{company}"),
@@ -188,13 +188,13 @@ async fn support_sees_master_data_but_neither_customers_nor_member_admin() {
         r#"{"rolle":"les"}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
     let (_, me) = json_call(&state, "GET", "/me", &target_token, "").await;
     assert_eq!(me["companies"][0]["company_id"], company.to_string());
 
     // Changing the existing membership: refused for support, allowed for
     // systemadmin — "only System Admins set roles on every user".
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/platform/users/{target}/companies/{company}"),
@@ -203,7 +203,7 @@ async fn support_sees_master_data_but_neither_customers_nor_member_admin() {
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(svar["error"].as_str().unwrap().contains("systemadmin"));
+    assert!(response["error"].as_str().unwrap().contains("systemadmin"));
 
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
     let (code, _) = json_call(
@@ -268,7 +268,7 @@ async fn platform_access_is_logged_and_visible_to_the_company() {
     .await;
     assert_eq!(code, StatusCode::OK);
 
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "GET",
         &format!("/companies/{company}/platform-access"),
@@ -277,11 +277,11 @@ async fn platform_access_is_logged_and_visible_to_the_company() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let innsyn = svar["innsyn"].as_array().unwrap();
+    let innsyn = response["innsyn"].as_array().unwrap();
     assert_eq!(
         innsyn.len(),
         1,
-        "the assignment call must be visible: {svar}"
+        "the assignment call must be visible: {response}"
     );
     assert_eq!(innsyn[0]["rolle"], "support");
     assert_eq!(innsyn[0]["method"], "POST");
@@ -332,7 +332,7 @@ async fn revocation_of_a_platform_role_is_immediate() {
     let (_, epost, token) = person(&state, &idp, "Ny Support").await;
 
     let til = (Utc::now() + Duration::days(14)).date_naive();
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         "/platform/members",
@@ -340,8 +340,8 @@ async fn revocation_of_a_platform_role_is_immediate() {
         &format!(r#"{{"epost":"{epost}","rolle":"support","valid_to":"{til}","notat":"sak 42"}}"#),
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    let member_id = svar["id"].as_str().unwrap().to_string();
+    assert_eq!(code, StatusCode::OK, "{response}");
+    let member_id = response["id"].as_str().unwrap().to_string();
     assert_eq!(
         status(&state, "GET", "/platform/companies", &token, "").await,
         StatusCode::OK
@@ -380,7 +380,7 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
             .unwrap();
     gi_partene_adresse(&state.pool, company).await;
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "GET",
         &format!("/platform/customers?sok={name}"),
@@ -389,15 +389,15 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let kunder = svar["kunder"].as_array().unwrap();
-    let kunde = kunder
+    let kunder = response["kunder"].as_array().unwrap();
+    let customer = kunder
         .iter()
         .find(|k| k["party_id"] == party_id.to_string())
         .expect("the seeded customer must be findable");
-    assert_eq!(kunde["selskap"]["company_id"], company.to_string());
-    assert_eq!(kunde["selskap"]["navn"], "Plattformtest AS");
+    assert_eq!(customer["selskap"]["company_id"], company.to_string());
+    assert_eq!(customer["selskap"]["navn"], "Plattformtest AS");
     assert!(
-        kunde.get("saldo_ore").is_none(),
+        customer.get("saldo_ore").is_none(),
         "master data only — no balances on the platform path"
     );
 }
@@ -423,13 +423,13 @@ async fn the_overview_is_shared_but_subscriptions_are_systemadmin_territory() {
     }
 
     let (_, support) = platform_person(&state, &idp, "support").await;
-    let (code, svar) = json_call(&state, "GET", "/platform/overview", &support, "").await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    assert!(svar["selskaper"].as_i64().unwrap() >= 1);
-    assert!(svar["brukere"].as_i64().unwrap() >= 1);
+    let (code, response) = json_call(&state, "GET", "/platform/overview", &support, "").await;
+    assert_eq!(code, StatusCode::OK, "{response}");
+    assert!(response["selskaper"].as_i64().unwrap() >= 1);
+    assert!(response["brukere"].as_i64().unwrap() >= 1);
     assert!(
-        svar["abonnement"].is_object(),
-        "the status distribution must be present: {svar}"
+        response["abonnement"].is_object(),
+        "the status distribution must be present: {response}"
     );
     assert_eq!(
         status(&state, "GET", "/platform/subscriptions", &support, "").await,
@@ -438,9 +438,9 @@ async fn the_overview_is_shared_but_subscriptions_are_systemadmin_territory() {
     );
 
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
-    let (code, svar) = json_call(&state, "GET", "/platform/subscriptions", &sysadmin, "").await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    let rad = svar["abonnementer"]
+    let (code, response) = json_call(&state, "GET", "/platform/subscriptions", &sysadmin, "").await;
+    assert_eq!(code, StatusCode::OK, "{response}");
+    let rad = response["abonnementer"]
         .as_array()
         .unwrap()
         .iter()
@@ -534,7 +534,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
     // Coverage by hand: refuses without an active-status check bypass,
     // carries the mandatory note, and ending it flips the status off
     // aktiv again.
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/platform/companies/{company}/subscription"),
@@ -542,7 +542,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
         r#"{"plan":"standard","note":"supportsak 42"}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
     let (_, detalj) = json_call(
         &state,
         "GET",
@@ -616,7 +616,7 @@ async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
         .unwrap();
 
     // The only active admin: refused.
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "DELETE",
         &format!("/platform/companies/{company}/members/{admin_id}"),
@@ -624,7 +624,7 @@ async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
         "",
     )
     .await;
-    assert_eq!(code, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
 
     // An ordinary member: deactivated, logged as plattform, access gone.
     let (medlem_id, _, medlem_token) = person(&state, &idp, "Medlem").await;
@@ -682,7 +682,7 @@ async fn the_icon_style_is_validated_and_served_platform_wide() {
     };
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
 
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "PUT",
         "/platform/settings",
@@ -690,7 +690,7 @@ async fn the_icon_style_is_validated_and_served_platform_wide() {
         r#"{"ikonstil":"comic-sans"}"#,
     )
     .await;
-    assert_eq!(code, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
 
     let (code, _) = json_call(
         &state,

@@ -95,10 +95,9 @@ pub fn month_name(month: u32) -> &'static str {
 /// `{år}` in a template line's description become the generated
 /// period's month name and year — "Husleie {måned} {år}" → "Husleie
 /// august 2026".
-pub fn interpoler_periodetekst(tekst: &str, date: NaiveDate) -> String {
+pub fn interpoler_periodetekst(text: &str, date: NaiveDate) -> String {
     use chrono::Datelike;
-    tekst
-        .replace("{måned}", month_name(date.month()))
+    text.replace("{måned}", month_name(date.month()))
         .replace("{år}", &date.year().to_string())
 }
 

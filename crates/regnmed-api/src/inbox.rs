@@ -230,7 +230,7 @@ pub async fn ehf_forslag(
         "mva_ore": m.vat_ore,
         "brutto_ore": m.gross_ore,
         "linjer": m.linjer.iter().map(|l| json!({
-            "beskrivelse": l.beskrivelse,
+            "beskrivelse": l.description,
             "netto_ore": l.net_ore,
             "mva_sats_bp": l.vat_rate_bp,
         })).collect::<Vec<_>>(),

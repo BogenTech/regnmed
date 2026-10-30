@@ -7,7 +7,7 @@
 //! insert-only and is read by a revisor. Requires DATABASE_URL (skips
 //! otherwise).
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -90,7 +90,7 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kontroll AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, leder, "admin")
         .await
         .unwrap();
@@ -517,7 +517,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Maskinkontroll AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, leder, "admin")
         .await
         .unwrap();

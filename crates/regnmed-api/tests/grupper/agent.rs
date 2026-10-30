@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -72,7 +72,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Agentverktoy AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
         .await
         .unwrap();
@@ -361,9 +361,9 @@ async fn every_tool_in_the_table_still_matches_the_api() {
 /// the agent, and a base64 PDF through a model's context is both
 /// expensive and pointless.
 fn skriv_midlertidig(name: &str, innhold: &[u8]) -> String {
-    let sti = std::env::temp_dir().join(format!("regnmed-{}-{name}", Uuid::new_v4()));
-    std::fs::write(&sti, innhold).unwrap();
-    sti.to_string_lossy().to_string()
+    let path = std::env::temp_dir().join(format!("regnmed-{}-{name}", Uuid::new_v4()));
+    std::fs::write(&path, innhold).unwrap();
+    path.to_string_lossy().to_string()
 }
 
 // ---- Vertsagenten: hele sløyfen mot en falsk leverandør (§8.3) ----
@@ -382,11 +382,11 @@ async fn tjen_leverandor(mock: FalskLeverandor, reply: Vec<Value>) -> String {
     let app =
         axum::Router::new().route(
             "/chat/completions",
-            axum::routing::post(move |axum::Json(kropp): axum::Json<Value>| {
+            axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
                 let mock = mock.clone();
                 let reply = reply.clone();
                 async move {
-                    mock.sett.lock().unwrap().push(kropp);
+                    mock.sett.lock().unwrap().push(body);
                     let neste = reply.lock().unwrap().next();
                     axum::Json(neste.unwrap_or_else(
                         || json!({"choices":[{"message":{"content":"FERDIG: tom"}}]}),
@@ -449,7 +449,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     ));
 
     let mock = FalskLeverandor::default();
-    let leverandor = tjen_leverandor(
+    let supplier = tjen_leverandor(
         mock.clone(),
         vec![
             // Turn 1: ask for a real tool with real arguments.
@@ -465,7 +465,7 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     )
     .await;
 
-    let model = regnmed_agent::llm::Llm::new(&leverandor, "testmodell", "sk-test").unwrap();
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
     let outcome = regnmed_agent::run_loop(
         &model,
         &server,
@@ -500,11 +500,11 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     );
     // And so did this agent's own instructions — between the role and
     // the protocol, so they specialise without displacing either.
-    let rolle = system
+    let role = system
         .find("Strøm bokføres på 6340.")
         .expect("instruksene mangler");
     assert!(
-        rolle < system.find("FERDIG:").unwrap(),
+        role < system.find("FERDIG:").unwrap(),
         "instruksene må stå FØR avslutningsreglene: {system}"
     );
 
@@ -512,12 +512,12 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     // from the real endpoint, not from the loop's imagination. An
     // unauthorised or missing route would show up here as an error text.
     let messages = sett[1]["messages"].as_array().unwrap();
-    let verktoysvar = messages
+    let tool_response = messages
         .iter()
         .find(|m| m["role"] == "tool")
         .expect("verktøysvaret er med videre");
-    assert_eq!(verktoysvar["tool_call_id"], "call_1");
-    let text = verktoysvar["content"].as_str().unwrap();
+    assert_eq!(tool_response["tool_call_id"], "call_1");
+    let text = tool_response["content"].as_str().unwrap();
     assert!(
         text.contains("linjer") || text.contains("konto") || text.starts_with('{'),
         "verktøyet svarte ikke med data fra API-et: {text}"
@@ -560,13 +560,13 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     ));
 
     let mock = FalskLeverandor::default();
-    let leverandor = tjen_leverandor(
+    let supplier = tjen_leverandor(
         mock.clone(),
         vec![json!({"choices":[{"message":{"role":"assistant",
             "content":"FERDIG: brukte svaret ditt"}}]})],
     )
     .await;
-    let model = regnmed_agent::llm::Llm::new(&leverandor, "testmodell", "sk-test").unwrap();
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
 
     let history = vec![
         regnmed_agent::HistoryLine {

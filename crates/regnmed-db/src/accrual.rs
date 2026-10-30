@@ -24,7 +24,7 @@ use crate::ledger::post_voucher_in;
 #[derive(Debug)]
 pub struct PeriodiseringDraft {
     pub kilde_voucher: Option<Uuid>,
-    pub beskrivelse: String,
+    pub description: String,
     pub income_account: String,
     pub balance_account: String,
     /// Net amount in øre, ledger signs: a prepaid COST is positive.
@@ -39,7 +39,7 @@ pub struct PeriodiseringDraft {
 #[derive(Debug)]
 pub struct Periodisering {
     pub id: Uuid,
-    pub beskrivelse: String,
+    pub description: String,
     pub income_account: String,
     pub balance_account: String,
     pub total_ore: i64,
@@ -68,7 +68,7 @@ pub async fn create_periodisering(
 ) -> Result<Uuid> {
     ensure!(draft.total_ore != 0, "beløpet kan ikke være null");
     ensure!(
-        !draft.beskrivelse.trim().is_empty(),
+        !draft.description.trim().is_empty(),
         "periodiseringen må ha en beskrivelse"
     );
     let fra = first_of(draft.fra.0, draft.fra.1)?;
@@ -90,7 +90,7 @@ pub async fn create_periodisering(
     // for a year. Found in browser verification — 1500 is a reskontro
     // account, the plan was accepted, and all three months then failed
     // with "requires a party" where only the run log could see it.
-    for (account, rolle) in [
+    for (account, role) in [
         (&draft.income_account, "resultatkontoen"),
         (&draft.balance_account, "balansekontoen"),
     ] {
@@ -102,13 +102,13 @@ pub async fn create_periodisering(
         .fetch_optional(pool)
         .await?;
         let (active, reskontro) =
-            funnet.with_context(|| format!("{rolle} {account} finnes ikke i kontoplanen"))?;
-        ensure!(active, "{rolle} {account} er deaktivert");
+            funnet.with_context(|| format!("{role} {account} finnes ikke i kontoplanen"))?;
+        ensure!(active, "{role} {account} er deaktivert");
         // Periodisering posts without a party, so a reskontro account
         // could never succeed — refusing now beats refusing monthly.
         ensure!(
             reskontro.is_none(),
-            "{rolle} {account} er en reskontrokonto og krever part på hver postering. \
+            "{role} {account} er en reskontrokonto og krever part på hver postering. \
              Periodisering fører uten part, så velg en annen konto"
         );
     }
@@ -150,7 +150,7 @@ pub async fn create_periodisering(
     .bind(id)
     .bind(company_id)
     .bind(draft.kilde_voucher)
-    .bind(draft.beskrivelse.trim())
+    .bind(draft.description.trim())
     .bind(&draft.income_account)
     .bind(&draft.balance_account)
     .bind(draft.total_ore)
@@ -189,7 +189,7 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
         .iter()
         .map(|r| Periodisering {
             id: r.get("id"),
-            beskrivelse: r.get("beskrivelse"),
+            description: r.get("beskrivelse"),
             income_account: r.get("resultatkonto"),
             balance_account: r.get("balansekonto"),
             total_ore: r.get("total_ore"),
@@ -231,7 +231,7 @@ pub async fn stopp_periodisering(
 #[derive(Debug)]
 pub struct PeriodiseringUtfall {
     pub periodisering_id: Uuid,
-    pub beskrivelse: String,
+    pub description: String,
     pub period: NaiveDate,
     pub amount_ore: i64,
     pub voucher: Option<(i32, i64)>,
@@ -281,7 +281,7 @@ pub async fn periodiser_plan(
     let fra: NaiveDate = plan.get("fra_maned");
     let til: NaiveDate = plan.get("til_maned");
     let stoppet: Option<NaiveDate> = plan.get("stoppet_dato");
-    let beskrivelse: String = plan.get("beskrivelse");
+    let description: String = plan.get("beskrivelse");
     let income_account: String = plan.get("resultatkonto");
     let balance_account: String = plan.get("balansekonto");
     let department: Option<String> = plan.get("avdeling");
@@ -319,7 +319,7 @@ pub async fn periodiser_plan(
                 period,
                 rad.date,
                 rad.amount_ore,
-                &beskrivelse,
+                &description,
                 &income_account,
                 &balance_account,
                 department.as_deref(),
@@ -341,7 +341,7 @@ async fn post_en_maned(
     period: NaiveDate,
     voucher_date: NaiveDate,
     amount_ore: i64,
-    beskrivelse: &str,
+    description: &str,
     income_account: &str,
     balance_account: &str,
     department: Option<&str>,
@@ -374,7 +374,7 @@ async fn post_en_maned(
             journal_code: "GL".into(),
             voucher_date,
             description: format!(
-                "Periodisering {beskrivelse} {}-{:02}",
+                "Periodisering {description} {}-{:02}",
                 period.year(),
                 period.month()
             ),
@@ -406,7 +406,7 @@ async fn post_en_maned(
             tx.commit().await?;
             Ok(PeriodiseringUtfall {
                 periodisering_id,
-                beskrivelse: beskrivelse.to_string(),
+                description: description.to_string(),
                 period,
                 amount_ore,
                 voucher: Some((posted.fiscal_year, posted.voucher_number)),
@@ -429,7 +429,7 @@ async fn post_en_maned(
             .await?;
             Ok(PeriodiseringUtfall {
                 periodisering_id,
-                beskrivelse: beskrivelse.to_string(),
+                description: description.to_string(),
                 period,
                 amount_ore,
                 voucher: None,

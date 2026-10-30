@@ -19,7 +19,7 @@ pub struct DimensionRow {
     pub active: bool,
     /// The customer a prosjekt is for (#80) — party_no + name, None for
     /// avdelinger and unlinked projects.
-    pub kunde: Option<String>,
+    pub customer: Option<String>,
     pub customer_name: Option<String>,
     /// Whether hours on the prosjekt are billable unless the entry says
     /// otherwise (migration 0052). Always false for avdelinger.
@@ -58,7 +58,7 @@ pub async fn list_dimensions(
             code: r.get("code"),
             name: r.get("name"),
             active: r.get("active"),
-            kunde: r.get("kunde"),
+            customer: r.get("kunde"),
             customer_name: r.get("kunde_navn"),
             fakturerbar_default: r.get("fakturerbar_default"),
             min_timesats_ore: r.get("min_timesats_ore"),
@@ -86,7 +86,7 @@ pub async fn create_dimension(
     kind: &str,
     code: &str,
     name: &str,
-    kunde: Option<&str>,
+    customer: Option<&str>,
 ) -> Result<()> {
     ensure!(
         kind == "avdeling" || kind == "prosjekt",
@@ -100,7 +100,7 @@ pub async fn create_dimension(
         code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
         "code must be alphanumeric (A-Z, 0-9, -)"
     );
-    let party_id = match kunde.filter(|k| !k.is_empty()) {
+    let party_id = match customer.filter(|k| !k.is_empty()) {
         Some(party_no) => {
             ensure!(
                 kind == "prosjekt",
@@ -138,7 +138,7 @@ pub async fn update_dimension(
     code: &str,
     name: Option<&str>,
     active: Option<bool>,
-    kunde: Option<&str>,
+    customer: Option<&str>,
     fakturerbar_default: Option<bool>,
 ) -> Result<()> {
     if fakturerbar_default == Some(true) {
@@ -147,7 +147,7 @@ pub async fn update_dimension(
             "bare prosjekter kan være fakturerbare som standard"
         );
     }
-    let (sett_kunde, party_id) = match kunde {
+    let (sett_kunde, party_id) = match customer {
         None => (false, None),
         Some("") => (true, None),
         Some(party_no) => {

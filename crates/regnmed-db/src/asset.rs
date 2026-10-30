@@ -542,7 +542,7 @@ pub async fn dispose_asset(
 #[derive(Debug)]
 pub struct DepreciationGroupRow {
     pub gruppe: String,
-    pub beskrivelse: String,
+    pub description: String,
     pub opening_ore: i64,
     pub tilgang_ore: i64,
     pub consideration_ore: i64,
@@ -585,7 +585,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
         .min()
         .unwrap_or(year);
     let mut grupper = Vec::new();
-    for (gruppe, beskrivelse) in DEPRECIATION_GROUPS {
+    for (gruppe, description) in DEPRECIATION_GROUPS {
         let mut inngaende = 0i64;
         let mut rad: Option<DepreciationGroupRow> = None;
         for y in first_year..=year {
@@ -617,7 +617,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
             let ar = tax_depreciation_year(inngaende, tilgang, vederlag, rate_bp);
             rad = Some(DepreciationGroupRow {
                 gruppe: (*gruppe).to_string(),
-                beskrivelse: (*beskrivelse).to_string(),
+                description: (*description).to_string(),
                 opening_ore: inngaende,
                 tilgang_ore: tilgang,
                 consideration_ore: vederlag,

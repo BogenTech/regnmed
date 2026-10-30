@@ -10,7 +10,7 @@
 
 use sqlx::Row;
 
-use crate::common::{TestIdp, gjor_fakturaklar, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -57,7 +57,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Koblingstest AS")
         .await
         .unwrap();
-    gjor_fakturaklar(&state.pool, company).await;
+    make_invoiceable(&state.pool, company).await;
     let sub = format!("admin|{}", Uuid::new_v4());
     let admin_id = regnmed_db::ensure_person(&state.pool, &sub, Some("Admin"), None)
         .await
@@ -70,7 +70,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
 }
 
 async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, name: &str, fnr: &str) -> Uuid {
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         state,
         "POST",
         &format!("/companies/{company}/employees"),
@@ -81,8 +81,8 @@ async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, name: &str, fnr
         ),
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
-    svar["employee_id"].as_str().unwrap().parse().unwrap()
+    assert_eq!(code, StatusCode::OK, "{response}");
+    response["employee_id"].as_str().unwrap().parse().unwrap()
 }
 
 async fn ansatt_person_json(
@@ -91,7 +91,7 @@ async fn ansatt_person_json(
     admin: &str,
     employee_id: Uuid,
 ) -> serde_json::Value {
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         state,
         "GET",
         &format!("/companies/{company}/employees"),
@@ -100,7 +100,7 @@ async fn ansatt_person_json(
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    svar["ansatte"]
+    response["ansatte"]
         .as_array()
         .unwrap()
         .iter()
@@ -124,7 +124,7 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     // so the /me redemption matches.
     let sub = format!("ansatt|{}", Uuid::new_v4());
     let epost = format!("{}@test.invalid", sub.replace('|', "."));
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -132,10 +132,10 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
         &format!(r#"{{"epost":"{epost}","rolle":"ansatt","employee_id":"{employee}"}}"#),
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
 
     // Only one open invitation may promise an employee.
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -144,7 +144,12 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(svar["error"].as_str().unwrap().contains("åpen invitasjon"));
+    assert!(
+        response["error"]
+            .as_str()
+            .unwrap()
+            .contains("åpen invitasjon")
+    );
 
     // First login: membership AND link arrive together.
     let token = idp.token(&sub, "Kari Kobling");
@@ -234,7 +239,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         .await
         .unwrap();
 
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &link_uri,
@@ -242,7 +247,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         &format!(r#"{{"person_id":"{medlem}"}}"#),
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{response}");
 
     // Relinking to someone else without unlinking first is refused.
     let annen = regnmed_db::ensure_person(
@@ -253,7 +258,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     )
     .await
     .unwrap();
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &link_uri,
@@ -262,11 +267,16 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(svar["error"].as_str().unwrap().contains("koble fra først"));
+    assert!(
+        response["error"]
+            .as_str()
+            .unwrap()
+            .contains("koble fra først")
+    );
 
     // The same person cannot be a second employee in the company.
     let tvilling = ny_ansatt(&state, company, &admin, "Tvilling", FNR[0]).await;
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/employees/{tvilling}/link"),
@@ -275,7 +285,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(svar["error"].as_str().unwrap().contains("annen ansatt"));
+    assert!(response["error"].as_str().unwrap().contains("annen ansatt"));
 
     // A machine identity is never a lønnsmottaker.
     let robot = regnmed_db::ensure_person(
@@ -291,7 +301,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         .execute(&state.pool)
         .await
         .unwrap();
-    let (code, svar) = json_call(
+    let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/employees/{tvilling}/link"),
@@ -300,14 +310,15 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(svar["error"].as_str().unwrap().contains("integrasjon"));
+    assert!(response["error"].as_str().unwrap().contains("integrasjon"));
 
     // Unlink, then the history names both events.
     let (code, _) = json_call(&state, "DELETE", &link_uri, &admin, "").await;
     assert_eq!(code, StatusCode::OK);
-    let (code, svar) = json_call(&state, "GET", &format!("{link_uri}/history"), &admin, "").await;
+    let (code, response) =
+        json_call(&state, "GET", &format!("{link_uri}/history"), &admin, "").await;
     assert_eq!(code, StatusCode::OK);
-    let historikk = svar["historikk"].as_array().unwrap();
+    let historikk = response["historikk"].as_array().unwrap();
     assert_eq!(historikk.len(), 2);
     assert_eq!(historikk[0]["endring"], "frakoblet");
     assert_eq!(historikk[1]["endring"], "koblet");
