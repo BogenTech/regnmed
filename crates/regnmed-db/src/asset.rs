@@ -419,7 +419,7 @@ pub struct Disposal {
 }
 
 /// Avhending (salg/utrangering) in ONE transaction: the remaining
-/// bokført verdi leaves the balansekonto, vederlaget enters motkonto,
+/// bokført verdi leaves the balansekonto, the consideration enters motkonto,
 /// and the difference posts as gevinst (credit) or tap (debit). The
 /// asset is closed one-way; no voucher when there is nothing to post.
 #[allow(clippy::too_many_arguments)]
@@ -544,7 +544,7 @@ pub struct DepreciationGroupRow {
     pub gruppe: String,
     pub description: String,
     pub opening_ore: i64,
-    pub tilgang_ore: i64,
+    pub additions_ore: i64,
     pub consideration_ore: i64,
     pub basis_ore: i64,
     pub rate_bp: i64,
@@ -565,7 +565,7 @@ pub struct BalanceReport {
 }
 
 /// Skattemessig saldoavskrivning per gruppe for `year`, computed from
-/// scratch over the whole register (tilganger and vederlag per year,
+/// scratch over the whole register (additions and consideration per year,
 /// rates from the satsregister per year) — nothing stored, identical
 /// re-runs forever. Assets acquired before the register's rate
 /// coverage make the year fail loudly rather than guess.
@@ -586,10 +586,10 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
         .unwrap_or(year);
     let mut grupper = Vec::new();
     for (gruppe, description) in DEPRECIATION_GROUPS {
-        let mut inngaende = 0i64;
+        let mut opening = 0i64;
         let mut rad: Option<DepreciationGroupRow> = None;
         for y in first_year..=year {
-            let tilgang: i64 = assets
+            let addition: i64 = assets
                 .iter()
                 .filter(|r| {
                     r.get::<String, _>("saldogruppe") == *gruppe
@@ -597,7 +597,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 })
                 .map(|r| r.get::<i64, _>("kostpris_ore"))
                 .sum();
-            let vederlag: i64 = assets
+            let consideration: i64 = assets
                 .iter()
                 .filter(|r| {
                     r.get::<String, _>("saldogruppe") == *gruppe
@@ -606,7 +606,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 })
                 .map(|r| r.get::<Option<i64>, _>("vederlag_ore").unwrap_or(0))
                 .sum();
-            if inngaende == 0 && tilgang == 0 && vederlag == 0 {
+            if opening == 0 && addition == 0 && consideration == 0 {
                 continue;
             }
             let jan1 = NaiveDate::from_ymd_opt(y, 1, 1).unwrap();
@@ -614,19 +614,19 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
-            let year = tax_depreciation_year(inngaende, tilgang, vederlag, rate_bp);
+            let year = tax_depreciation_year(opening, addition, consideration, rate_bp);
             rad = Some(DepreciationGroupRow {
                 gruppe: (*gruppe).to_string(),
                 description: (*description).to_string(),
-                opening_ore: inngaende,
-                tilgang_ore: tilgang,
-                consideration_ore: vederlag,
+                opening_ore: opening,
+                additions_ore: addition,
+                consideration_ore: consideration,
                 basis_ore: year.basis_ore,
                 rate_bp,
                 avskrivning_ore: year.depreciation_ore,
                 closing_ore: year.closing_ore,
             });
-            inngaende = year.closing_ore;
+            opening = year.closing_ore;
         }
         if let Some(rad) = rad {
             grupper.push(rad);

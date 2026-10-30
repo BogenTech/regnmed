@@ -63,7 +63,7 @@ pub async fn status(
             // Computed, never stored — a difference means the account was
             // posted to AFTER it was reconciled, which is worth saying
             // out loud rather than quietly re-baselining.
-            "avvik_ore": l.avvik_ore(),
+            "avvik_ore": l.discrepancy_ore(),
             "avstemt": l.avstemt.as_ref().map(|a| json!({
                 "id": a.id,
                 "saldo_ore": a.balance_ore,

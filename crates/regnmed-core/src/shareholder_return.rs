@@ -90,9 +90,9 @@ pub struct Distribution {
 pub struct NewIssue {
     pub date: NaiveDate,
     pub type_: TransactionType,
-    pub antall_nye: i64,
+    pub new_shares: i64,
     /// Total share count after the event.
-    pub antall_etter: i64,
+    pub shares_after: i64,
     pub palydende_ore: i64,
     pub overkurs_ore: i64,
 }
@@ -419,12 +419,12 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjerNyutstedteStiftelseMvAntall-datadef-17668",
                 17668,
-                &n.antall_nye.to_string(),
+                &n.new_shares.to_string(),
             );
             w.felt(
                 "AksjerStiftelseMvAntall-datadef-17669",
                 17669,
-                &n.antall_etter.to_string(),
+                &n.shares_after.to_string(),
             );
             w.felt("AksjerNyutstedteStiftelseMvType-datadef-17670", 17670, code);
             w.felt(
@@ -658,8 +658,8 @@ mod tests {
             nyutstedelser: vec![NewIssue {
                 date: d(2026, 1, 2),
                 type_: TransactionType::Stiftelse,
-                antall_nye: 100,
-                antall_etter: 100,
+                new_shares: 100,
+                shares_after: 100,
                 palydende_ore: 100_000,
                 overkurs_ore: 0,
             }],

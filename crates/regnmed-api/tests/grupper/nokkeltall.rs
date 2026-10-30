@@ -193,26 +193,26 @@ async fn key_figures_result_liquidity_and_deadlines() {
     .unwrap();
 
     let token = idp.token(&sub, "Nøkkel Tall");
-    let (status, tall) = request(
+    let (status, figures) = request(
         &state,
         &format!("/companies/{company}/reports/nokkeltall"),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {tall}");
+    assert_eq!(status, StatusCode::OK, "body: {figures}");
 
     // Result year to date: 50 000 − 10 000; last year to the same date:
     // 20 000 (the December sale does NOT count).
-    assert_eq!(tall["resultat_hittil_ore"], 40_000_00);
-    assert_eq!(tall["resultat_fjor_ore"], 20_000_00);
-    assert_eq!(tall["maaneder"][0], 50_000_00, "januar");
-    assert_eq!(tall["maaneder"][1], -10_000_00, "februar er kostnad");
-    assert_eq!(tall["maaneder"][11], 0);
+    assert_eq!(figures["resultat_hittil_ore"], 40_000_00);
+    assert_eq!(figures["resultat_fjor_ore"], 20_000_00);
+    assert_eq!(figures["maaneder"][0], 50_000_00, "januar");
+    assert_eq!(figures["maaneder"][1], -10_000_00, "februar er kostnad");
+    assert_eq!(figures["maaneder"][11], 0);
 
     // Likviditet: bank 104 000 (99 000 fra i fjor + 5 000 innbetalt),
     // kunder 65 000 åpent (20+50−5), leverandører 10 000, mva 0 →
     // disponibelt 159 000.
-    let likv = &tall["likviditet"];
+    let likv = &figures["likviditet"];
     assert_eq!(likv["bank_ore"], 104_000_00);
     assert_eq!(likv["kundefordringer_ore"], 65_000_00);
     assert_eq!(likv["leverandorgjeld_ore"], 10_000_00);
@@ -220,7 +220,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     assert_eq!(likv["disponibelt_ore"], 159_000_00);
 
     // Deadlines: the next two mva deadlines under the ordning, never in the past.
-    let frister = tall["frister"].as_array().unwrap();
+    let frister = figures["frister"].as_array().unwrap();
     assert_eq!(frister.len(), 2);
     for deadline in frister {
         assert_eq!(deadline["type"], "mva");

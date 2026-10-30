@@ -219,7 +219,7 @@ pub async fn balance(
             "gruppe": g.gruppe,
             "beskrivelse": g.description,
             "inngaende_ore": g.opening_ore,
-            "tilgang_ore": g.tilgang_ore,
+            "tilgang_ore": g.additions_ore,
             "vederlag_ore": g.consideration_ore,
             "grunnlag_ore": g.basis_ore,
             "sats_bp": g.rate_bp,

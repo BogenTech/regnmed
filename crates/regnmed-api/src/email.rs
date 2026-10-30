@@ -154,7 +154,7 @@ pub async fn list_mail(
             "fra": m.from_address,
             "emne": m.subject,
             "tekst": m.body,
-            "antall_vedlegg": m.antall_vedlegg,
+            "antall_vedlegg": m.attachment_count,
             "mottatt": m.received_at.to_rfc3339(),
             "status": m.status,
             "note": m.note,
@@ -185,7 +185,7 @@ pub async fn release(
     .await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let by = person.name.as_deref().unwrap_or(&person.sub);
-    let antall = regnmed_db::release_mail(
+    let count = regnmed_db::release_mail(
         &state.pool,
         company_id,
         mail_id,
@@ -194,7 +194,7 @@ pub async fn release(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    Ok(Json(json!({ "dokumenter": antall })))
+    Ok(Json(json!({ "dokumenter": count })))
 }
 
 #[derive(Deserialize)]

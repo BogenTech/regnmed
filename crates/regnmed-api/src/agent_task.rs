@@ -154,7 +154,7 @@ pub async fn answer(
     Path((company_id, task_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<Answer>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
+    let access = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -171,7 +171,7 @@ pub async fn answer(
         // A human closing or withdrawing an order is administering a
         // machine's access to the books, so it takes that rettighet.
         None => {
-            if !tilgang.has(Right::IntegrationAdmin) {
+            if !access.has(Right::IntegrationAdmin) {
                 return Err(ApiError::Forbidden("INTEGRASJON_ADMIN"));
             }
         }

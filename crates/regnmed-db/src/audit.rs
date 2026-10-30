@@ -314,7 +314,7 @@ pub async fn build_audit_report(
                 lines.iter().filter(|l| l.avstemt.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = lines
                 .iter()
-                .filter_map(|l| l.avvik_ore().map(|d| (l.account.as_str(), d)))
+                .filter_map(|l| l.discrepancy_ore().map(|d| (l.account.as_str(), d)))
                 .collect();
             let mut deler = Vec::new();
             if !udokumentert.is_empty() {

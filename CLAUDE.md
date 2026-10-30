@@ -472,23 +472,46 @@ Worth keeping because the two risks look identical in a summary and
 are not: a word-boundary rename of a short word is safe, while a
 SUBSTRING scan of one is noise.
 
-`avvik` turned out to carry THREE meanings, not the two recorded
-earlier: an audit FINDING, a budget VARIANCE, and -- in
-`under_avvikling`, `under_tvangsavvikling`, `AVVIKLING_ORGNR` -- BRREG's
-LIQUIDATION status, which is a different word that merely starts the
-same. Word-boundary matching separates the third for free; the first
-two still need splitting, so `avvik` is still deferred.
+The five two-meaning words were split next, and all three splits came
+out where `svar` did -- the ambiguity was real but narrow, and naming
+the files was enough. `antall` -> `count` went WIDE because every bare
+`antall` left in code is a count: the SHARE sense survives only as SQL
+columns and `json!` keys (which the literal guard protects) and the
+QUANTITY sense only in `fakturapdf`, done as its own pass. `avvik` ->
+`variance` likewise went wide -- the audit sense is spelled `avvik_ore`
+(-> `discrepancy_ore`), a different token, and `avvikling` (BRREG
+liquidation) a third. `Inngaende`/`Utgaende` -> `Input`/`Output`
+covered the `vat::Direction` variants wide, while the lowercase locals
+needed two narrow passes with OPPOSITE answers: `input`/`output` in the
+mva report, `opening` in `asset`'s saldogruppe table. `tilgang` split
+the same way -- `access` in the guard and the task/timesheet handlers,
+`addition` in `asset`, where tilgang means an acquisition during the
+year. Also taken: `tall` -> `figures`, `vederlag` -> `consideration`,
+`har_tilgang` -> `has_access`, `OMVENDT_UTGAENDE/FRADRAG` ->
+`REVERSE_CHARGE_OUTPUT/DEDUCTION`.
 
-**How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~1 700
-Norwegian identifier occurrences, 460 distinct names -- 1,1 % of all
-identifiers**, down from 7 494 / 667 / 4,8 % nine batches ago. Per
-crate: api 731, db 711, core 236, cli 24, gov 20, mcp 13, agent 4,
-mail 0. Nothing above 35 remains: `antall` 33 (COUNT in most places,
-QUANTITY in product/inventory -- a split), `tall` 33, `tilgang` 18 (a
-local variable; the module is `access`), `avvik` 18, `inngaende` 13
-(OPENING balance vs INPUT vat -- a split), and a long tail of
-one-offs.
+**THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
+while 875 distinct Norwegian segments were still in the tree.** Every
+figure above counted occurrences of a HAND-KEPT LIST of Norwegian
+words -- so it only ever measured the words already identified, and
+fell towards zero as that list was worked through no matter what was
+left outside it. The instrument and the thing measured were the same
+object. The honest version counts the other way round -- every
+identifier segment that is not English -- and lives in
+`scripts/norwegian-left.py` so the series is reproducible instead of
+depending on a file in someone's scratchpad:
+
+**6 920 of 187 624 identifier segments (3,7 %), 875 distinct**
+(2026-10-30). Per crate: db 2 371, api 2 289, core 1 708, gov 235,
+mcp 113, cli 111, agent 92, mail 1. It OVERCOUNTS by a few percent
+(residual abbreviations like `rfind`, `hexdigit`, `x86`), which is the
+right direction for a gate: it can only claim done when it is near
+zero. The leaders are a long tail nobody had enumerated -- `epost` 131,
+`adresse` 120, `dokumenttype` 96, `ansatt` 80, `nr` 78, `av` 77,
+`ordning` 68, `forslag` 67, `detalj` 67, `orgnr` 54, `uten` 48,
+`rolle` 48 (api renamed `Rolle` -> `Role`; db's half did not move),
+`advarsler` 45, `krev` 44 (same: the api guard is `require`, db's
+copies are not).
 
 SUPERSEDED, kept for the delta: **~2 100
 Norwegian identifier occurrences, 482 distinct names -- 1,3 % of all
@@ -516,8 +539,7 @@ a word-boundary map, not a sweep.
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
 still.
 
-**Still Norwegian**, deliberately: the modules whose core and db halves
-are both unconverted (`saft_import`, `salgsdokument`, `reskontro`),
+**Still Norwegian**, deliberately: `saft_import`,
 `regnmed-db::agentllm`, `regnmed-api::herding` and the test tree
 (`tests/grupper/`, the seven group binaries -- their `#[path]`
 entries move with each batch, the binary filenames have not).

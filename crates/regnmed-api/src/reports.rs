@@ -71,14 +71,14 @@ pub async fn vat_report(
     )
     .await?;
 
-    let utgaende: i64 = lines
+    let output: i64 = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Utgaende)
+        .filter(|l| direction(&l.code) == Direction::Output)
         .map(|l| -l.tax_ore)
         .sum();
-    let inngaende: i64 = lines
+    let input: i64 = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Inngaende)
+        .filter(|l| direction(&l.code) == Direction::Input)
         .map(|l| l.tax_ore)
         .sum();
 
@@ -98,9 +98,9 @@ pub async fn vat_report(
             "grunnlag_ore": l.basis_ore,
             "avgift_ore": l.tax_ore,
         })).collect::<Vec<_>>(),
-        "utgaende_ore": utgaende,
-        "inngaende_ore": inngaende,
-        "netto_ore": utgaende - inngaende,
+        "utgaende_ore": output,
+        "inngaende_ore": input,
+        "netto_ore": output - input,
     })))
 }
 
@@ -693,7 +693,7 @@ pub async fn nokkeltall(
         .await
         .map_err(anyhow::Error::from)?;
     let year = query.year.unwrap_or(chrono::Datelike::year(&today));
-    let tall = regnmed_db::nokkeltall(&state.pool, company_id, year, today).await?;
+    let figures = regnmed_db::nokkeltall(&state.pool, company_id, year, today).await?;
 
     // Mva owed for the current period (net computed so far) and the next
     // deadlines, under the company's ordning.
@@ -706,19 +706,17 @@ pub async fn nokkeltall(
         ordning.end(naa).min(today),
     )
     .await?;
-    let utgaende: i64 = spes
+    let output: i64 = spes
         .iter()
-        .filter(|l| regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Utgaende)
+        .filter(|l| regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Output)
         .map(|l| -l.tax_ore)
         .sum();
-    let inngaende: i64 = spes
+    let input: i64 = spes
         .iter()
-        .filter(|l| {
-            regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Inngaende
-        })
+        .filter(|l| regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Input)
         .map(|l| l.tax_ore)
         .sum();
-    let vat_net = utgaende - inngaende;
+    let vat_net = output - input;
 
     let this_year = chrono::Datelike::year(&today);
     let mut frister = Vec::new();
@@ -737,17 +735,18 @@ pub async fn nokkeltall(
         }
     }
 
-    let disponibelt =
-        tall.bank_ore + tall.kundefordringer_ore - tall.leverandorgjeld_ore - vat_net.max(0);
+    let disponibelt = figures.bank_ore + figures.kundefordringer_ore
+        - figures.leverandorgjeld_ore
+        - vat_net.max(0);
     Ok(Json(json!({
-        "year": tall.year,
-        "resultat_hittil_ore": tall.result_ytd_ore,
-        "resultat_fjor_ore": tall.result_last_year_ore,
-        "maaneder": tall.maaneder,
+        "year": figures.year,
+        "resultat_hittil_ore": figures.result_ytd_ore,
+        "resultat_fjor_ore": figures.result_last_year_ore,
+        "maaneder": figures.maaneder,
         "likviditet": {
-            "bank_ore": tall.bank_ore,
-            "kundefordringer_ore": tall.kundefordringer_ore,
-            "leverandorgjeld_ore": tall.leverandorgjeld_ore,
+            "bank_ore": figures.bank_ore,
+            "kundefordringer_ore": figures.kundefordringer_ore,
+            "leverandorgjeld_ore": figures.leverandorgjeld_ore,
             "mva_netto_ore": vat_net,
             "disponibelt_ore": disponibelt,
         },

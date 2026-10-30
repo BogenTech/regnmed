@@ -462,7 +462,7 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<ShareE
 
 /// Registers an utbytte decision and posts it in ONE transaction.
 ///
-/// The per-shareholder split is never stored: it is antall aksjer on the
+/// The per-shareholder split is never stored: it is the share count on the
 /// decision date times utbytte per aksje, so the parts always sum to the
 /// whole.
 pub async fn create_utbytte(
@@ -615,8 +615,8 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
 
     let utbytte_rader = list_utbytte(pool, company_id, Some(year)).await?;
 
-    let mut antall_i_ar = 0i64;
-    let mut antall_i_fjor = 0i64;
+    let mut shares_this_year = 0i64;
+    let mut shares_last_year = 0i64;
     let mut nyutstedelser: Vec<tax_return::NewIssue> = Vec::new();
     let mut underskjemaer = Vec::new();
 
@@ -629,8 +629,8 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     for a in &bok {
         let events = hendelser_for(pool, a.id).await?;
         let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, year);
-        antall_i_ar += bevegelse.closing;
-        antall_i_fjor += bevegelse.opening;
+        shares_this_year += bevegelse.closing;
+        shares_last_year += bevegelse.opening;
 
         let mut bevegelser = Vec::new();
         for h in events.iter().filter(|h| h.date.year() == year) {
@@ -648,8 +648,8 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 nyutstedelser.push(tax_return::NewIssue {
                     date: h.date,
                     type_: h.type_,
-                    antall_nye: h.quantity,
-                    antall_etter: 0, // fylles når totalen er kjent
+                    new_shares: h.quantity,
+                    shares_after: 0, // fylles når totalen er kjent
                     palydende_ore,
                     overkurs_ore: 0,
                 });
@@ -694,7 +694,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     // number; with two, the year-end total would be wrong for the first.
     nyutstedelser.sort_by_key(|n| n.date);
     for n in &mut nyutstedelser {
-        n.antall_etter = aksjeeierbok(pool, company_id, n.date)
+        n.shares_after = aksjeeierbok(pool, company_id, n.date)
             .await?
             .iter()
             .map(|a| a.share_count)
@@ -702,8 +702,8 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     }
 
     let aksjekapital = tax_return::PriorYear {
-        fjoraret: antall_i_fjor * palydende_ore,
-        this_year: antall_i_ar * palydende_ore,
+        fjoraret: shares_last_year * palydende_ore,
+        this_year: shares_this_year * palydende_ore,
     };
 
     Ok(ReturnSet {
@@ -724,8 +724,8 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 this_year: palydende_ore,
             },
             share_count: tax_return::PriorYear {
-                fjoraret: antall_i_fjor,
-                this_year: antall_i_ar,
+                fjoraret: shares_last_year,
+                this_year: shares_this_year,
             },
             innbetalt_aksjekapital: aksjekapital,
             overkurs: tax_return::PriorYear::default(),

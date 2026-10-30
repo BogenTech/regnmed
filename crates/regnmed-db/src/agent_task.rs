@@ -51,7 +51,7 @@ pub async fn opprett_oppgave(
     if let Some(id) = integration_id {
         // A task addressed to an integration that has no access to this
         // company would sit unanswerable forever.
-        let har_tilgang: bool = sqlx::query_scalar(
+        let has_access: bool = sqlx::query_scalar(
             "select exists (
                  select 1 from integration_grant
                  where integration_id = $1 and company_id = $2
@@ -63,7 +63,7 @@ pub async fn opprett_oppgave(
         .fetch_one(pool)
         .await?;
         ensure!(
-            har_tilgang,
+            has_access,
             "integrasjonen har ingen aktiv tilgang til selskapet"
         );
     }

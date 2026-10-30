@@ -258,7 +258,7 @@ pub const ALL: [TransactionType; 31] = {
 
 /// One movement on one shareholder's holding.
 ///
-/// `antall` is always POSITIVE — the direction lives in the type, so a
+/// `quantity` is always POSITIVE — the direction lives in the type, so a
 /// stored row can never contradict itself by claiming a negative
 /// purchase. [`Hendelse::delta`] resolves the sign.
 #[derive(Debug, Clone)]

@@ -247,7 +247,7 @@ async fn assets_depreciate_and_dispose() {
         "kontormaskin får mai; avhendet fresemaskin får ingenting"
     );
 
-    // Utrangering (vederlag 0) posts a pure tap voucher.
+    // Utrangering (consideration 0) posts a pure tap voucher.
     let (status, disposal) = request(
         &state,
         "POST",
@@ -260,8 +260,8 @@ async fn assets_depreciate_and_dispose() {
     assert_eq!(disposal["bokfort_ore"], 12_000_00 - 133_332);
     assert_eq!(disposal["gevinst_ore"], -(12_000_00 - 133_332));
 
-    // Skattemessig saldo 2026: gruppe a tilgang 12 000 (vederlag 0),
-    // gruppe d tilgang 36 000 vederlag 33 000.
+    // Skattemessig saldo 2026: gruppe a additions 12 000 (consideration 0),
+    // gruppe d additions 36 000 consideration 33 000.
     let (status, balance) = request(
         &state,
         "GET",

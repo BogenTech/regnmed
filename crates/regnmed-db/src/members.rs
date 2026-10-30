@@ -448,7 +448,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
     .fetch_all(&mut *tx)
     .await?;
 
-    let mut antall = 0;
+    let mut count = 0;
     for rad in &rader {
         let company_id: Uuid = rad.get("company_id");
         let role: String = rad.get("role");
@@ -526,10 +526,10 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
         .bind(person_id)
         .execute(&mut *tx)
         .await?;
-        antall += 1;
+        count += 1;
     }
     tx.commit().await?;
-    Ok(antall)
+    Ok(count)
 }
 
 #[derive(Debug, Clone)]

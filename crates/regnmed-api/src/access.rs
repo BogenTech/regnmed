@@ -1000,10 +1000,10 @@ pub async fn require(
     // database carries but the code does not know grants nothing — and a
     // rettighet that cannot be delegated stays inert even if it had
     // somehow found its way into the table.
-    let Some(tilgang) = lookup(state, person_id, company_id).await? else {
+    let Some(access) = lookup(state, person_id, company_id).await? else {
         return Err(ApiError::NotFound);
     };
-    if !tilgang.has(right) {
+    if !access.has(right) {
         return Err(ApiError::Forbidden(manglende(right)));
     }
 
@@ -1016,7 +1016,7 @@ pub async fn require(
             "abonnementet er utløpt — lesing og eksport virker som før, men endringer er sperret til abonnementet er i orden (docs/abonnement.md)",
         ));
     }
-    Ok(tilgang)
+    Ok(access)
 }
 
 /// The error message names the missing rettighet. Whoever gets a 403
@@ -1032,7 +1032,7 @@ fn manglende(right: Right) -> &'static str {
 /// **These cannot catch a rettighet sitting in the WRONG bundle.** They
 /// derive their expectations from the bundles, so moving `PRODUKT_SKRIV`
 /// from bokføring to reading still passes — tried, deliberately.
-/// `tests/grupper/tilgang.rs` is the guard there: it asks a real server
+/// `tests/grupper/access.rs` is the guard there: it asks a real server
 /// with a real role and sees what gets through.
 ///
 /// What these tests do catch is the rest: a rettighet in two bundles, a

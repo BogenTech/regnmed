@@ -326,7 +326,7 @@ pub struct MailRow {
     pub from_address: String,
     pub subject: Option<String>,
     pub body: Option<String>,
-    pub antall_vedlegg: i32,
+    pub attachment_count: i32,
     pub received_at: DateTime<Utc>,
     pub status: String,
     pub note: Option<String>,
@@ -357,7 +357,7 @@ pub async fn list_mail(
             from_address: r.get("from_address"),
             subject: r.get("subject"),
             body: r.get("body"),
-            antall_vedlegg: r.get("antall_vedlegg"),
+            attachment_count: r.get("antall_vedlegg"),
             received_at: r.get("received_at"),
             status: r.get("status"),
             note: r.get("note"),
@@ -402,7 +402,7 @@ pub async fn release_mail(
     );
 
     let mut tx = pool.begin().await?;
-    let mut antall = 0usize;
+    let mut count = 0usize;
     for a in &attachments {
         let content: Vec<u8> = a.get("content");
         let stored: Vec<u8> = a.get("sha256");
@@ -420,7 +420,7 @@ pub async fn release_mail(
             &content,
         )
         .await?;
-        antall += 1;
+        count += 1;
     }
     sqlx::query(
         "update inbox_mail set status = 'mottatt', decided_by = $3, decided_at = now()
@@ -443,7 +443,7 @@ pub async fn release_mail(
         )
         .await?;
     }
-    Ok(antall)
+    Ok(count)
 }
 
 /// Rejects a quarantined mail. The row stays — with who decided and

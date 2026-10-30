@@ -243,7 +243,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "fastsatt slettes ikke");
 
     // The variance report names the version it measures against.
-    let (status, avvik) = request(
+    let (status, variance) = request(
         &state,
         "GET",
         &format!("{base}/reports/avvik?year={year}&t_o_m=2"),
@@ -251,11 +251,11 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{avvik}");
-    assert_eq!(avvik["budsjett"]["versjon"], 1);
-    assert_eq!(avvik["budsjett"]["status"], "fastsatt");
-    assert_eq!(avvik["t_o_m_maned"], 2);
-    let inntekt = &avvik["seksjoner"][0];
+    assert_eq!(status, StatusCode::OK, "{variance}");
+    assert_eq!(variance["budsjett"]["versjon"], 1);
+    assert_eq!(variance["budsjett"]["status"], "fastsatt");
+    assert_eq!(variance["t_o_m_maned"], 2);
+    let inntekt = &variance["seksjoner"][0];
     assert_eq!(inntekt["heading"], "Driftsinntekter");
     assert_eq!(inntekt["budsjett_hittil_ore"], 20_000_00);
     assert_eq!(inntekt["faktisk_hittil_ore"], 20_000_00, "12 000 + 8 000");
@@ -264,9 +264,9 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     assert_eq!(inntekt["linjer"][0]["faktisk_maaneder"][0], 12_000_00);
     assert_eq!(inntekt["linjer"][0]["faktisk_maaneder"][1], 8_000_00);
     // Result to date: (20 000 − 4 000) actual against (20 000 − 4 000) budget.
-    assert_eq!(avvik["resultat_faktisk_hittil_ore"], 16_000_00);
-    assert_eq!(avvik["resultat_budsjett_hittil_ore"], 16_000_00);
-    assert_eq!(avvik["resultat_budsjett_ar_ore"], 96_000_00);
+    assert_eq!(variance["resultat_faktisk_hittil_ore"], 16_000_00);
+    assert_eq!(variance["resultat_budsjett_hittil_ore"], 16_000_00);
+    assert_eq!(variance["resultat_budsjett_ar_ore"], 96_000_00);
 
     // A revision is a NEW version — the old report still means the same
     // thing.
@@ -298,7 +298,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
 
     // The default is the newest FASTSATT — draft v2 does not take over
     // the report until somebody fastsetter it.
-    let (_, avvik) = request(
+    let (_, variance) = request(
         &state,
         "GET",
         &format!("{base}/reports/avvik?year={year}&t_o_m=2"),
@@ -306,9 +306,9 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         None,
     )
     .await;
-    assert_eq!(avvik["budsjett"]["versjon"], 1);
+    assert_eq!(variance["budsjett"]["versjon"], 1);
     // …but it can be chosen explicitly.
-    let (_, avvik) = request(
+    let (_, variance) = request(
         &state,
         "GET",
         &format!("{base}/reports/avvik?year={year}&t_o_m=2&budget_id={v2}"),
@@ -316,10 +316,10 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         None,
     )
     .await;
-    assert_eq!(avvik["budsjett"]["versjon"], 2);
-    assert_eq!(avvik["seksjoner"][0]["budsjett_hittil_ore"], 30_000_00);
+    assert_eq!(variance["budsjett"]["versjon"], 2);
+    assert_eq!(variance["seksjoner"][0]["budsjett_hittil_ore"], 30_000_00);
     assert_eq!(
-        avvik["seksjoner"][0]["avvik_hittil_ore"], -10_000_00,
+        variance["seksjoner"][0]["avvik_hittil_ore"], -10_000_00,
         "20 000 faktisk mot 30 000 planlagt"
     );
 
@@ -359,7 +359,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     )
     .await
     .unwrap();
-    let (_, avvik) = request(
+    let (_, variance) = request(
         &state,
         "GET",
         &format!("{base}/reports/avvik?year={year}&t_o_m=2"),
@@ -367,7 +367,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         None,
     )
     .await;
-    let annen = avvik["seksjoner"]
+    let annen = variance["seksjoner"]
         .as_array()
         .unwrap()
         .iter()
