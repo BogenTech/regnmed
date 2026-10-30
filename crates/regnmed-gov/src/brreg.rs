@@ -61,7 +61,7 @@ pub struct Capital {
     #[serde(rename = "belop")]
     pub amount: Option<serde_json::Number>,
     #[serde(default, rename = "antallAksjer")]
-    pub antall_aksjer: Option<i64>,
+    pub share_count: Option<i64>,
     #[serde(default)]
     #[serde(rename = "valuta")]
     pub currency: Option<String>,
@@ -346,7 +346,7 @@ mod tests {
         );
         let k = e.kapital.unwrap();
         assert_eq!(k.amount_ore(), Some(3_000_000));
-        assert_eq!(k.antall_aksjer, Some(1000));
+        assert_eq!(k.share_count, Some(1000));
     }
 
     /// Capital in another currency is not comparable to the ledger's øre

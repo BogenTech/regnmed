@@ -153,7 +153,7 @@ pub struct AssetRow {
     pub akkumulert_ore: i64,
     pub bokfort_ore: i64,
     pub disposed_date: Option<NaiveDate>,
-    pub vederlag_ore: Option<i64>,
+    pub consideration_ore: Option<i64>,
 }
 
 pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow>> {
@@ -193,7 +193,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                     kostpris - akkumulert
                 },
                 disposed_date: avhendet,
-                vederlag_ore: r.get("vederlag_ore"),
+                consideration_ore: r.get("vederlag_ore"),
             }
         })
         .collect())
@@ -428,13 +428,13 @@ pub async fn dispose_asset(
     company_id: Uuid,
     asset_id: Uuid,
     date: NaiveDate,
-    vederlag_ore: i64,
+    consideration_ore: i64,
     contra_account: &str,
     gain_account: &str,
     loss_account: &str,
     created_by: &str,
 ) -> Result<Disposal> {
-    ensure!(vederlag_ore >= 0, "vederlag kan ikke være negativt");
+    ensure!(consideration_ore >= 0, "vederlag kan ikke være negativt");
     let mut tx = pool.begin().await?;
     let asset = sqlx::query(
         "select navn, kostpris_ore, balansekonto, avhendet_dato,
@@ -453,13 +453,13 @@ pub async fn dispose_asset(
         "driftsmidlet er allerede avhendet"
     );
     let bokfort = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
-    let gevinst = vederlag_ore - bokfort;
+    let gevinst = consideration_ore - bokfort;
 
     let mut entries = Vec::new();
-    if vederlag_ore != 0 {
+    if consideration_ore != 0 {
         entries.push(EntryDraft {
             account_number: contra_account.to_string(),
-            amount: Ore(vederlag_ore),
+            amount: Ore(consideration_ore),
             vat_code: None,
             description: Some("Vederlag ved avhending".into()),
             party_no: None,
@@ -527,7 +527,7 @@ pub async fn dispose_asset(
     .bind(asset_id)
     .bind(company_id)
     .bind(date)
-    .bind(vederlag_ore)
+    .bind(consideration_ore)
     .bind(voucher.as_ref().map(|p| p.id))
     .execute(&mut *tx)
     .await?;
@@ -545,7 +545,7 @@ pub struct DepreciationGroupRow {
     pub beskrivelse: String,
     pub opening_ore: i64,
     pub tilgang_ore: i64,
-    pub vederlag_ore: i64,
+    pub consideration_ore: i64,
     pub grunnlag_ore: i64,
     pub rate_bp: i64,
     pub avskrivning_ore: i64,
@@ -620,7 +620,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 beskrivelse: (*beskrivelse).to_string(),
                 opening_ore: inngaende,
                 tilgang_ore: tilgang,
-                vederlag_ore: vederlag,
+                consideration_ore: vederlag,
                 grunnlag_ore: ar.basis_ore,
                 rate_bp,
                 avskrivning_ore: ar.depreciation_ore,

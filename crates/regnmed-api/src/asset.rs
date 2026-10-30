@@ -91,7 +91,7 @@ pub async fn list(
             "akkumulert_ore": a.akkumulert_ore,
             "bokfort_ore": a.bokfort_ore,
             "avhendet_dato": a.disposed_date.map(|d| d.to_string()),
-            "vederlag_ore": a.vederlag_ore,
+            "vederlag_ore": a.consideration_ore,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -138,8 +138,8 @@ pub async fn depreciate(
 pub struct DisposeRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
-    #[serde(default)]
-    vederlag_ore: i64,
+    #[serde(default, rename = "vederlag_ore")]
+    consideration_ore: i64,
     /// Defaults: motkonto 1920, gevinst 3880, tap 7880.
     #[serde(rename = "motkonto")]
     contra_account: Option<String>,
@@ -162,7 +162,7 @@ pub async fn dispose(
         company_id,
         asset_id,
         request.date,
-        request.vederlag_ore,
+        request.consideration_ore,
         request.contra_account.as_deref().unwrap_or("1920"),
         request.gain_account.as_deref().unwrap_or("3880"),
         request.loss_account.as_deref().unwrap_or("7880"),
@@ -219,7 +219,7 @@ pub async fn balance(
             "beskrivelse": g.beskrivelse,
             "inngaende_ore": g.opening_ore,
             "tilgang_ore": g.tilgang_ore,
-            "vederlag_ore": g.vederlag_ore,
+            "vederlag_ore": g.consideration_ore,
             "grunnlag_ore": g.grunnlag_ore,
             "sats_bp": g.rate_bp,
             "avskrivning_ore": g.avskrivning_ore,

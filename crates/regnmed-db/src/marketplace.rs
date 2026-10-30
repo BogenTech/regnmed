@@ -46,7 +46,7 @@ pub struct RegistryFacts {
     /// Registered share capital in øre, and the share count — control
     /// figures for the aksjeeierbok (#43), never posted.
     pub aksjekapital_ore: Option<i64>,
-    pub antall_aksjer: Option<i64>,
+    pub share_count: Option<i64>,
     /// The registration history `(fra og med, mva, foretaksregister)`,
     /// oldest first — the two registers have independent dates, so this
     /// is a timeline rather than a pair of flags
@@ -92,7 +92,7 @@ pub async fn onboard_company(
     .bind(company_id)
     .bind(&facts.naeringskode)
     .bind(facts.aksjekapital_ore)
-    .bind(facts.antall_aksjer)
+    .bind(facts.share_count)
     .execute(pool)
     .await?;
     // One row per registration change, with the register's OWN dates —

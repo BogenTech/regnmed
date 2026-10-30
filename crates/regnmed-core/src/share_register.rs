@@ -22,7 +22,7 @@ use chrono::NaiveDate;
 /// several aksjeklasser (a tracked v1 limitation, docs/aksjonaer.md).
 ///
 /// Verified against Skatteetatens own published RF-1086 example.
-pub const AKSJETYPE_ORDINAERE: &str = "01";
+pub const SHARE_CLASS_ORDINARY: &str = "01";
 
 /// How a shareholder's holding changed.
 ///
@@ -30,7 +30,7 @@ pub const AKSJETYPE_ORDINAERE: &str = "01";
 /// which form field a movement lands in — only the oppgave does, and it
 /// asks each variant where it belongs via [`Transaksjonstype::post`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Transaksjonstype {
+pub enum TransactionType {
     // Post 23 — tilgang (acquisitions).
     Kjop,
     ArvUtenKontinuitet,
@@ -69,20 +69,20 @@ pub enum Transaksjonstype {
 
 /// Which RF-1086 post a transaction is reported under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Post {
+pub enum FormItem {
     /// Post 23: shares in tilgang (acquisitions).
-    Tilgang,
+    Acquisition,
     /// Post 24: shares in tilgang through omfordeling.
-    TilgangOmfordeling,
+    AcquisitionReallocation,
     /// Post 25: shares in avgang.
-    Avgang,
+    Disposal,
 }
 
-impl Transaksjonstype {
+impl TransactionType {
     /// The Norwegian name, exactly as Skatteetatens rettledning writes
     /// it. This is what the aksjeeierbok and the portal show.
-    pub fn navn(self) -> &'static str {
-        use Transaksjonstype::*;
+    pub fn name(self) -> &'static str {
+        use TransactionType::*;
         match self {
             Kjop => "kjøp",
             ArvUtenKontinuitet => "arv uten skattemessig kontinuitet",
@@ -124,7 +124,7 @@ impl Transaksjonstype {
     /// us, unlike [`Transaksjonstype::kode`], and therefore safe to rely
     /// on.
     pub fn slug(self) -> &'static str {
-        use Transaksjonstype::*;
+        use TransactionType::*;
         match self {
             Kjop => "kjop",
             ArvUtenKontinuitet => "arv_uten_kontinuitet",
@@ -161,31 +161,31 @@ impl Transaksjonstype {
     }
 
     pub fn from_slug(slug: &str) -> Option<Self> {
-        ALLE.iter().copied().find(|t| t.slug() == slug)
+        ALL.iter().copied().find(|t| t.slug() == slug)
     }
 
-    pub fn post(self) -> Post {
-        use Transaksjonstype::*;
+    pub fn post(self) -> FormItem {
+        use TransactionType::*;
         match self {
             Fondsemisjon
             | Splitt
             | SkattefriFusjon
             | SkattefriFisjon
-            | SammenslaingDelingAksjeklasse => Post::TilgangOmfordeling,
+            | SammenslaingDelingAksjeklasse => FormItem::AcquisitionReallocation,
             Salg
             | Likvidasjon
             | PartiellLikvidasjonLikedelt
             | PartiellLikvidasjonSkjevdelt
             | InnlosningSkattefriFusjonFisjon
             | Spleis
-            | SlettingEgneAksjer => Post::Avgang,
-            _ => Post::Tilgang,
+            | SlettingEgneAksjer => FormItem::Disposal,
+            _ => FormItem::Acquisition,
         }
     }
 
     /// Whether the movement adds shares to the shareholder.
-    pub fn er_tilgang(self) -> bool {
-        self.post() != Post::Avgang
+    pub fn is_acquisition(self) -> bool {
+        self.post() != FormItem::Disposal
     }
 
     /// The code RF-1086 expects in the `Transaksjonstype` field — or
@@ -206,8 +206,8 @@ impl Transaksjonstype {
     /// (RF-1088) and changes inngangsverdi and skjermingsgrunnlag. A
     /// loud refusal is recoverable; a silently mis-filed transaction is
     /// not.
-    pub fn kode(self) -> Option<&'static str> {
-        use Transaksjonstype::*;
+    pub fn code(self) -> Option<&'static str> {
+        use TransactionType::*;
         match self {
             // Verified: Skatteetatens published RF-1086 example files a
             // stiftelse/nyemisjon as "N", in both the hovedskjema's
@@ -219,8 +219,8 @@ impl Transaksjonstype {
     }
 }
 
-pub const ALLE: [Transaksjonstype; 31] = {
-    use Transaksjonstype::*;
+pub const ALL: [TransactionType; 31] = {
+    use TransactionType::*;
     [
         Kjop,
         ArvUtenKontinuitet,
@@ -262,22 +262,22 @@ pub const ALLE: [Transaksjonstype; 31] = {
 /// stored row can never contradict itself by claiming a negative
 /// purchase. [`Hendelse::delta`] resolves the sign.
 #[derive(Debug, Clone)]
-pub struct Hendelse {
+pub struct ShareEvent {
     pub date: NaiveDate,
-    pub type_: Transaksjonstype,
-    pub antall: i64,
+    pub type_: TransactionType,
+    pub quantity: i64,
     /// What the shareholder paid, when the company knows it. Only
     /// meaningful on tilgang; the oppgave calls it anskaffelsesverdi.
-    pub vederlag_ore: Option<i64>,
+    pub consideration_ore: Option<i64>,
 }
 
-impl Hendelse {
+impl ShareEvent {
     /// Signed change to the holding.
     pub fn delta(&self) -> i64 {
-        if self.type_.er_tilgang() {
-            self.antall
+        if self.type_.is_acquisition() {
+            self.quantity
         } else {
-            -self.antall
+            -self.quantity
         }
     }
 }
@@ -285,46 +285,46 @@ impl Hendelse {
 /// A shareholder's movement through one year — exactly the four numbers
 /// RF-1086 post 20 and posts 23-25 are built from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Aarsbevegelse {
+pub struct YearMovement {
     /// Holding at 31.12 the year before (post 20's "fjoråret").
-    pub inngaende: i64,
-    pub tilgang: i64,
-    pub avgang: i64,
+    pub opening: i64,
+    pub acquisitions: i64,
+    pub disposals: i64,
     /// Holding at 31.12 of the year itself.
-    pub utgaende: i64,
+    pub closing: i64,
 }
 
 /// Holding as of `dato`, inclusive — the aksjeeierbok on a given day.
 ///
 /// Order of the input does not matter: a sum is a sum. That is the
 /// point of computing rather than storing.
-pub fn beholdning<'a>(hendelser: impl IntoIterator<Item = &'a Hendelse>, date: NaiveDate) -> i64 {
-    hendelser
+pub fn holding<'a>(events: impl IntoIterator<Item = &'a ShareEvent>, date: NaiveDate) -> i64 {
+    events
         .into_iter()
         .filter(|h| h.date <= date)
-        .map(Hendelse::delta)
+        .map(ShareEvent::delta)
         .sum()
 }
 
 /// Folds one shareholder's events into the year's movement.
-pub fn aarsbevegelse<'a>(
-    hendelser: impl IntoIterator<Item = &'a Hendelse> + Clone,
+pub fn year_movement<'a>(
+    events: impl IntoIterator<Item = &'a ShareEvent> + Clone,
     ar: i32,
-) -> Aarsbevegelse {
-    let mut b = Aarsbevegelse::default();
-    for h in hendelser {
-        let hendelse_ar = crate::fiscal_year::of(h.date);
-        if hendelse_ar < ar {
-            b.inngaende += h.delta();
-        } else if hendelse_ar == ar {
-            if h.type_.er_tilgang() {
-                b.tilgang += h.antall;
+) -> YearMovement {
+    let mut b = YearMovement::default();
+    for h in events {
+        let event_year = crate::fiscal_year::of(h.date);
+        if event_year < ar {
+            b.opening += h.delta();
+        } else if event_year == ar {
+            if h.type_.is_acquisition() {
+                b.acquisitions += h.quantity;
             } else {
-                b.avgang += h.antall;
+                b.disposals += h.quantity;
             }
         }
     }
-    b.utgaende = b.inngaende + b.tilgang - b.avgang;
+    b.closing = b.opening + b.acquisitions - b.disposals;
     b
 }
 
@@ -336,60 +336,60 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
     }
 
-    fn h(date: NaiveDate, type_: Transaksjonstype, antall: i64) -> Hendelse {
-        Hendelse {
+    fn h(date: NaiveDate, type_: TransactionType, quantity: i64) -> ShareEvent {
+        ShareEvent {
             date,
             type_,
-            antall,
-            vederlag_ore: None,
+            quantity,
+            consideration_ore: None,
         }
     }
 
     #[test]
     fn the_holding_is_the_sum_of_the_events_up_to_the_date() {
-        let hendelser = vec![
-            h(d(2025, 1, 1), Transaksjonstype::Stiftelse, 100),
-            h(d(2026, 3, 1), Transaksjonstype::Kjop, 50),
-            h(d(2026, 9, 1), Transaksjonstype::Salg, 30),
+        let events = vec![
+            h(d(2025, 1, 1), TransactionType::Stiftelse, 100),
+            h(d(2026, 3, 1), TransactionType::Kjop, 50),
+            h(d(2026, 9, 1), TransactionType::Salg, 30),
         ];
-        assert_eq!(beholdning(&hendelser, d(2024, 12, 31)), 0);
-        assert_eq!(beholdning(&hendelser, d(2025, 1, 1)), 100);
-        assert_eq!(beholdning(&hendelser, d(2026, 3, 1)), 150);
-        assert_eq!(beholdning(&hendelser, d(2026, 12, 31)), 120);
+        assert_eq!(holding(&events, d(2024, 12, 31)), 0);
+        assert_eq!(holding(&events, d(2025, 1, 1)), 100);
+        assert_eq!(holding(&events, d(2026, 3, 1)), 150);
+        assert_eq!(holding(&events, d(2026, 12, 31)), 120);
     }
 
     #[test]
     fn the_year_movement_separates_opening_from_the_years_movement() {
-        let hendelser = vec![
-            h(d(2025, 1, 1), Transaksjonstype::Stiftelse, 100),
-            h(d(2026, 3, 1), Transaksjonstype::Kjop, 50),
-            h(d(2026, 9, 1), Transaksjonstype::Salg, 30),
+        let events = vec![
+            h(d(2025, 1, 1), TransactionType::Stiftelse, 100),
+            h(d(2026, 3, 1), TransactionType::Kjop, 50),
+            h(d(2026, 9, 1), TransactionType::Salg, 30),
         ];
-        let b = aarsbevegelse(&hendelser, 2026);
-        assert_eq!(b.inngaende, 100);
-        assert_eq!(b.tilgang, 50);
-        assert_eq!(b.avgang, 30);
-        assert_eq!(b.utgaende, 120);
+        let b = year_movement(&events, 2026);
+        assert_eq!(b.opening, 100);
+        assert_eq!(b.acquisitions, 50);
+        assert_eq!(b.disposals, 30);
+        assert_eq!(b.closing, 120);
         // Last year's closing is this year's opening — otherwise post 20 does not add up.
-        assert_eq!(aarsbevegelse(&hendelser, 2025).utgaende, b.inngaende);
+        assert_eq!(year_movement(&events, 2025).closing, b.opening);
     }
 
     #[test]
     fn the_direction_lives_in_the_type_not_in_the_sign() {
-        assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Kjop, 10).delta(), 10);
-        assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Salg, 10).delta(), -10);
-        assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Splitt, 10).delta(), 10);
-        assert_eq!(h(d(2026, 1, 1), Transaksjonstype::Spleis, 10).delta(), -10);
+        assert_eq!(h(d(2026, 1, 1), TransactionType::Kjop, 10).delta(), 10);
+        assert_eq!(h(d(2026, 1, 1), TransactionType::Salg, 10).delta(), -10);
+        assert_eq!(h(d(2026, 1, 1), TransactionType::Splitt, 10).delta(), 10);
+        assert_eq!(h(d(2026, 1, 1), TransactionType::Spleis, 10).delta(), -10);
     }
 
     #[test]
     fn slugs_round_trip_and_are_unique() {
         let mut sett = std::collections::HashSet::new();
-        for t in ALLE {
+        for t in ALL {
             assert!(sett.insert(t.slug()), "duplikat slug: {}", t.slug());
-            assert_eq!(Transaksjonstype::from_slug(t.slug()), Some(t));
+            assert_eq!(TransactionType::from_slug(t.slug()), Some(t));
         }
-        assert_eq!(Transaksjonstype::from_slug("finnes-ikke"), None);
+        assert_eq!(TransactionType::from_slug("finnes-ikke"), None);
     }
 
     /// Pins the honest limitation: we have verified the code only for
@@ -398,10 +398,10 @@ mod tests {
     /// against an official source — not because they looked plausible.
     #[test]
     fn only_verified_codes_exist() {
-        let med_kode: Vec<_> = ALLE.iter().filter(|t| t.kode().is_some()).collect();
+        let med_kode: Vec<_> = ALL.iter().filter(|t| t.code().is_some()).collect();
         assert_eq!(med_kode.len(), 2, "{med_kode:?}");
-        assert_eq!(Transaksjonstype::Stiftelse.kode(), Some("N"));
-        assert_eq!(Transaksjonstype::Nyemisjon.kode(), Some("N"));
-        assert_eq!(Transaksjonstype::Kjop.kode(), None);
+        assert_eq!(TransactionType::Stiftelse.code(), Some("N"));
+        assert_eq!(TransactionType::Nyemisjon.code(), Some("N"));
+        assert_eq!(TransactionType::Kjop.code(), None);
     }
 }

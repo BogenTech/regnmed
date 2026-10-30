@@ -27,11 +27,11 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-fn aksjonaer_json(a: &regnmed_db::aksjebok::Aksjonaer) -> serde_json::Value {
+fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::Value {
     json!({
         "id": a.id,
         "kind": a.kind,
-        "navn": a.navn,
+        "navn": a.name,
         // §4-5: birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
         "orgnr": a.orgnr,
@@ -41,7 +41,7 @@ fn aksjonaer_json(a: &regnmed_db::aksjebok::Aksjonaer) -> serde_json::Value {
         "poststed": a.poststed,
         "landkode": a.landkode,
         "note": a.note,
-        "antall_aksjer": a.antall_aksjer,
+        "antall_aksjer": a.share_count,
         "andel_bp": a.andel_bp,
     })
 }
@@ -61,21 +61,22 @@ pub async fn list_shareholders(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
     let date = q.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let bok = regnmed_db::aksjebok::aksjeeierbok(&state.pool, company_id, date)
+    let bok = regnmed_db::share_register::aksjeeierbok(&state.pool, company_id, date)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let totalt: i64 = bok.iter().map(|a| a.antall_aksjer).sum();
+    let totalt: i64 = bok.iter().map(|a| a.share_count).sum();
     Ok(Json(json!({
         "dato": date,
         "totalt_antall_aksjer": totalt,
-        "aksjonarer": bok.iter().map(aksjonaer_json).collect::<Vec<_>>(),
+        "aksjonarer": bok.iter().map(shareholder_json).collect::<Vec<_>>(),
     })))
 }
 
 #[derive(Deserialize)]
 pub struct CreateShareholderRequest {
     kind: String,
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     fodselsnummer: Option<String>,
     orgnr: Option<String>,
     utenlandsk_id: Option<String>,
@@ -93,12 +94,12 @@ pub async fn create_shareholder(
     Json(request): Json<CreateShareholderRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
-    let id = regnmed_db::aksjebok::create_aksjonaer(
+    let id = regnmed_db::share_register::create_shareholder(
         &state.pool,
         company_id,
-        &regnmed_db::aksjebok::NyAksjonaer {
+        &regnmed_db::share_register::NewShareholder {
             kind: request.kind,
-            navn: request.navn,
+            name: request.name,
             fodselsnummer: request.fodselsnummer,
             orgnr: request.orgnr,
             utenlandsk_id: request.utenlandsk_id,
@@ -117,7 +118,8 @@ pub async fn create_shareholder(
 
 #[derive(Deserialize)]
 pub struct ContactRequest {
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     adresse: Option<String>,
     postnummer: Option<String>,
     poststed: Option<String>,
@@ -131,11 +133,11 @@ pub async fn update_contact(
     Json(request): Json<ContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
-    regnmed_db::aksjebok::update_aksjonaer_kontakt(
+    regnmed_db::share_register::update_shareholder_contact(
         &state.pool,
         company_id,
         shareholder_id,
-        &request.navn,
+        &request.name,
         request.adresse.as_deref(),
         request.postnummer.as_deref(),
         request.poststed.as_deref(),
@@ -155,14 +157,14 @@ pub async fn transaction_types(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
-    let types: Vec<_> = regnmed_core::aksjebok::ALLE
+    let types: Vec<_> = regnmed_core::share_register::ALL
         .iter()
         .map(|t| {
             json!({
                 "slug": t.slug(),
-                "navn": t.navn(),
-                "tilgang": t.er_tilgang(),
-                "leverbar": t.kode().is_some(),
+                "navn": t.name(),
+                "tilgang": t.is_acquisition(),
+                "leverbar": t.code().is_some(),
             })
         })
         .collect();
@@ -181,16 +183,17 @@ pub async fn list_events(
     Query(q): Query<EventQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
-    let events = regnmed_db::aksjebok::list_hendelser(&state.pool, company_id, q.year).await?;
+    let events =
+        regnmed_db::share_register::list_hendelser(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "hendelser": events.iter().map(|e| json!({
             "id": e.id,
             "shareholder_id": e.shareholder_id,
-            "aksjonar": e.aksjonaer,
+            "aksjonar": e.shareholder,
             "type": e.type_,
             "type_navn": e.type_navn,
             "dato": e.date,
-            "antall": e.antall,
+            "antall": e.quantity,
             "belop_ore": e.amount_ore,
             "motpart": e.motpart,
             "note": e.note,
@@ -206,7 +209,8 @@ pub struct CreateEventRequest {
     type_: String,
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
-    antall: i64,
+    #[serde(rename = "antall")]
+    quantity: i64,
     #[serde(rename = "belop_ore")]
     amount_ore: Option<i64>,
     /// The other side of a transfer, written in the same transaction.
@@ -222,13 +226,13 @@ pub async fn create_event(
     Json(request): Json<CreateEventRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
-    let id = regnmed_db::aksjebok::record_hendelse(
+    let id = regnmed_db::share_register::record_hendelse(
         &state.pool,
         company_id,
         request.shareholder_id,
         &request.type_,
         request.date,
-        request.antall,
+        request.quantity,
         request.amount_ore,
         request.motpart_id,
         request.motpart_type.as_deref(),
@@ -247,7 +251,7 @@ pub async fn list_dividends(
     Query(q): Query<EventQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
-    let rows = regnmed_db::aksjebok::list_utbytte(&state.pool, company_id, q.year).await?;
+    let rows = regnmed_db::share_register::list_utbytte(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "utbytte": rows.iter().map(|u| json!({
             "id": u.id,
@@ -276,7 +280,7 @@ pub async fn create_dividend(
     Json(request): Json<CreateDividendRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
-    let vedtak = regnmed_db::aksjebok::create_utbytte(
+    let vedtak = regnmed_db::share_register::create_utbytte(
         &state.pool,
         company_id,
         request.decided_date,
@@ -294,7 +298,7 @@ pub async fn create_dividend(
 }
 
 #[derive(Deserialize)]
-pub struct OppgaveQuery {
+pub struct ReturnQuery {
     year: i32,
     /// `json` (default) previews; `xml` downloads the filing itself.
     format: Option<String>,
@@ -310,31 +314,25 @@ pub struct OppgaveQuery {
 /// `skatteetaten:innrapporteringaksjonaerregisteroppgave` plus an Altinn
 /// systembruker, neither of which we hold (docs/gov.md). Rendering
 /// without pretending to send is the honest half.
-pub async fn oppgave(
+pub async fn tax_return(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(q): Query<OppgaveQuery>,
+    Query(q): Query<ReturnQuery>,
 ) -> Result<Response, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
-    let sett = regnmed_db::aksjebok::bygg_oppgave(&state.pool, company_id, q.year)
+    let sett = regnmed_db::share_register::bygg_oppgave(&state.pool, company_id, q.year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     // Always rendered, but an error is only fatal when somebody actually
     // asks for the file. The preview must SHOW what is blocking the
     // filing — a blank page helps nobody understand why.
-    let hoved = regnmed_core::aksjonaeroppgave::render_hovedskjema(&sett.hovedskjema);
+    let hoved = regnmed_core::shareholder_return::render_main_form(&sett.hovedskjema);
     let under: Vec<_> = sett
         .underskjemaer
         .iter()
-        .map(|(id, u)| {
-            (
-                *id,
-                u,
-                regnmed_core::aksjonaeroppgave::render_underskjema(u),
-            )
-        })
+        .map(|(id, u)| (*id, u, regnmed_core::shareholder_return::render_sub_form(u)))
         .collect();
 
     if q.format.as_deref() == Some("xml") {
@@ -346,7 +344,7 @@ pub async fn oppgave(
                 .map_err(|e| ApiError::BadRequest(e.to_string()))?;
             skjemaer.push(json!({
                 "shareholder_id": id,
-                "navn": u.navn,
+                "navn": u.name,
                 "xml": xml,
             }));
         }
@@ -364,7 +362,7 @@ pub async fn oppgave(
     }
     for (_, u, xml) in &under {
         if let Err(e) = xml {
-            hindringer.push(format!("{}: {e}", u.navn));
+            hindringer.push(format!("{}: {e}", u.name));
         }
     }
 
@@ -373,20 +371,20 @@ pub async fn oppgave(
         "hindringer": hindringer,
         "inntektsar": q.year,
         "antall_aksjonarer": under.len(),
-        "antall_aksjer": sett.hovedskjema.antall_aksjer.i_ar,
-        "antall_aksjer_fjoraret": sett.hovedskjema.antall_aksjer.fjoraret,
+        "antall_aksjer": sett.hovedskjema.share_count.i_ar,
+        "antall_aksjer_fjoraret": sett.hovedskjema.share_count.fjoraret,
         "aksjekapital_ore": sett.hovedskjema.aksjekapital.i_ar,
         "palydende_ore": sett.hovedskjema.palydende_ore.i_ar,
-        "utbytte": sett.hovedskjema.utbytte.iter().map(|u| json!({
+        "utbytte": sett.hovedskjema.dividend.iter().map(|u| json!({
             "dato": u.date,
             "per_aksje_ore": u.per_aksje_ore,
             "totalt_ore": u.totalt_ore,
         })).collect::<Vec<_>>(),
         "aksjonarer": sett.underskjemaer.iter().map(|(id, u)| json!({
             "shareholder_id": id,
-            "navn": u.navn,
-            "antall_fjoraret": u.antall_aksjer.fjoraret,
-            "antall": u.antall_aksjer.i_ar,
+            "navn": u.name,
+            "antall_fjoraret": u.share_count.fjoraret,
+            "antall": u.share_count.i_ar,
             "antall_bevegelser": u.bevegelser.len(),
         })).collect::<Vec<_>>(),
     }))

@@ -7,8 +7,6 @@
 //! on any machine, or chain verification breaks.
 
 pub mod accrual;
-pub mod aksjebok;
-pub mod aksjonaeroppgave;
 pub mod anchor;
 pub mod assets;
 pub mod audit;
@@ -46,6 +44,8 @@ pub mod reminders;
 pub mod saft;
 pub mod saft_import;
 pub mod secret;
+pub mod share_register;
+pub mod shareholder_return;
 pub mod statements;
 pub mod subscription;
 pub mod vat;

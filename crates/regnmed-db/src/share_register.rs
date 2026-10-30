@@ -7,25 +7,25 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{Datelike, NaiveDate};
 use regnmed_core::Ore;
-use regnmed_core::aksjebok::{Aarsbevegelse, Hendelse, Transaksjonstype};
-use regnmed_core::aksjonaeroppgave as oppgave;
+use regnmed_core::share_register::{ShareEvent, TransactionType, YearMovement};
+use regnmed_core::shareholder_return as tax_return;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
 
-/// Default accounts for the utbytte posting. Utbytte is a distribution
+/// Default accounts for the dividend posting. A dividend is a distribution
 /// of equity, not a cost: annen egenkapital is debited and the
 /// (not yet paid) obligation to the shareholders credited.
-pub const KONTO_ANNEN_EGENKAPITAL: &str = "2050";
-pub const KONTO_AVSATT_UTBYTTE: &str = "2800";
+pub const ACCOUNT_OTHER_EQUITY: &str = "2050";
+pub const ACCOUNT_DIVIDEND_PAYABLE: &str = "2800";
 
 #[derive(Debug, Clone)]
-pub struct Aksjonaer {
+pub struct Shareholder {
     pub id: Uuid,
     pub kind: String,
-    pub navn: String,
+    pub name: String,
     /// Aksjeloven §4-5 asks for the birth DATE, not the birth number.
     /// Derived from the fødselsnummer we hold for the oppgave; the
     /// number itself never leaves this module.
@@ -38,19 +38,19 @@ pub struct Aksjonaer {
     pub landkode: Option<String>,
     pub note: Option<String>,
     /// Holding as of the requested date — computed, never stored.
-    pub antall_aksjer: i64,
+    pub share_count: i64,
     pub andel_bp: i64,
 }
 
 #[derive(Debug, Clone)]
-pub struct Aksjehendelse {
+pub struct ShareEventRow {
     pub id: Uuid,
     pub shareholder_id: Uuid,
-    pub aksjonaer: String,
+    pub shareholder: String,
     pub type_: String,
     pub type_navn: String,
     pub date: NaiveDate,
-    pub antall: i64,
+    pub quantity: i64,
     pub amount_ore: Option<i64>,
     pub motpart: Option<String>,
     pub note: Option<String>,
@@ -58,7 +58,7 @@ pub struct Aksjehendelse {
 }
 
 #[derive(Debug, Clone)]
-pub struct Utbyttevedtak {
+pub struct DividendResolution {
     pub id: Uuid,
     pub decided_date: NaiveDate,
     pub per_aksje_ore: i64,
@@ -69,9 +69,9 @@ pub struct Utbyttevedtak {
 }
 
 #[derive(Debug, Clone)]
-pub struct NyAksjonaer {
+pub struct NewShareholder {
     pub kind: String,
-    pub navn: String,
+    pub name: String,
     pub fodselsnummer: Option<String>,
     pub orgnr: Option<String>,
     pub utenlandsk_id: Option<String>,
@@ -85,10 +85,10 @@ pub struct NyAksjonaer {
 /// Registers a shareholder. The identifier is validated here — a
 /// fødselsnummer or orgnr with a broken check digit is a typo we can
 /// catch now instead of at filing time, months later.
-pub async fn create_aksjonaer(
+pub async fn create_shareholder(
     pool: &PgPool,
     company_id: Uuid,
-    ny: &NyAksjonaer,
+    ny: &NewShareholder,
     created_by: &str,
 ) -> Result<Uuid> {
     match ny.kind.as_str() {
@@ -140,7 +140,7 @@ pub async fn create_aksjonaer(
     .bind(&ny.fodselsnummer)
     .bind(&ny.orgnr)
     .bind(&ny.utenlandsk_id)
-    .bind(&ny.navn)
+    .bind(&ny.name)
     .bind(&ny.adresse)
     .bind(&ny.postnummer)
     .bind(&ny.poststed)
@@ -154,17 +154,17 @@ pub async fn create_aksjonaer(
 }
 
 /// Editable contact data. Identity is not here — the trigger refuses it.
-pub async fn update_aksjonaer_kontakt(
+pub async fn update_shareholder_contact(
     pool: &PgPool,
     company_id: Uuid,
     shareholder_id: Uuid,
-    navn: &str,
+    name: &str,
     adresse: Option<&str>,
     postnummer: Option<&str>,
     poststed: Option<&str>,
     landkode: Option<&str>,
 ) -> Result<()> {
-    ensure!(!navn.trim().is_empty(), "navn kan ikke være tomt");
+    ensure!(!name.trim().is_empty(), "navn kan ikke være tomt");
     let done = sqlx::query(
         "update shareholder set navn = $3, adresse = $4, postnummer = $5,
                 poststed = $6, landkode = $7
@@ -172,7 +172,7 @@ pub async fn update_aksjonaer_kontakt(
     )
     .bind(shareholder_id)
     .bind(company_id)
-    .bind(navn)
+    .bind(name)
     .bind(adresse)
     .bind(postnummer)
     .bind(poststed)
@@ -192,7 +192,7 @@ pub async fn aksjeeierbok(
     pool: &PgPool,
     company_id: Uuid,
     date: NaiveDate,
-) -> Result<Vec<Aksjonaer>> {
+) -> Result<Vec<Shareholder>> {
     let rows = sqlx::query(
         "select s.id, s.kind, s.navn, s.fodselsnummer, s.orgnr, s.utenlandsk_id,
                 s.adresse, s.postnummer, s.poststed, s.landkode, s.note,
@@ -213,11 +213,11 @@ pub async fn aksjeeierbok(
     Ok(rows
         .iter()
         .map(|r| {
-            let antall: i64 = r.get("antall");
-            Aksjonaer {
+            let quantity: i64 = r.get("antall");
+            Shareholder {
                 id: r.get("id"),
                 kind: r.get("kind"),
-                navn: r.get("navn"),
+                name: r.get("navn"),
                 birth_date: r
                     .get::<Option<String>, _>("fodselsnummer")
                     .as_deref()
@@ -229,10 +229,10 @@ pub async fn aksjeeierbok(
                 poststed: r.get("poststed"),
                 landkode: r.get("landkode"),
                 note: r.get("note"),
-                antall_aksjer: antall,
+                share_count: quantity,
                 // Basispunkter, ingen flyttall.
                 andel_bp: if total > 0 {
-                    (antall as i128 * 10_000 / total as i128) as i64
+                    (quantity as i128 * 10_000 / total as i128) as i64
                 } else {
                     0
                 },
@@ -244,9 +244,9 @@ pub async fn aksjeeierbok(
 /// The avgang type slugs, as SQL needs them to resolve direction.
 /// Derived from the core enum so the two can never drift apart.
 fn avgangstyper() -> Vec<String> {
-    regnmed_core::aksjebok::ALLE
+    regnmed_core::share_register::ALL
         .iter()
-        .filter(|t| !t.er_tilgang())
+        .filter(|t| !t.is_acquisition())
         .map(|t| t.slug().to_string())
         .collect()
 }
@@ -255,7 +255,7 @@ pub async fn list_hendelser(
     pool: &PgPool,
     company_id: Uuid,
     ar: Option<i32>,
-) -> Result<Vec<Aksjehendelse>> {
+) -> Result<Vec<ShareEventRow>> {
     let rows = sqlx::query(
         "select e.id, e.shareholder_id, s.navn as aksjonaer, e.type, e.dato, e.antall,
                 e.belop_ore, e.note, e.created_by,
@@ -274,16 +274,16 @@ pub async fn list_hendelser(
         .iter()
         .map(|r| {
             let slug: String = r.get("type");
-            Aksjehendelse {
+            ShareEventRow {
                 id: r.get("id"),
                 shareholder_id: r.get("shareholder_id"),
-                aksjonaer: r.get("aksjonaer"),
-                type_navn: Transaksjonstype::from_slug(&slug)
-                    .map(|t| t.navn().to_string())
+                shareholder: r.get("aksjonaer"),
+                type_navn: TransactionType::from_slug(&slug)
+                    .map(|t| t.name().to_string())
                     .unwrap_or_else(|| slug.clone()),
                 type_: slug,
                 date: r.get("dato"),
-                antall: r.get("antall"),
+                quantity: r.get("antall"),
                 amount_ore: r.get("belop_ore"),
                 motpart: r.get("motpart"),
                 note: r.get("note"),
@@ -303,16 +303,16 @@ pub async fn record_hendelse(
     shareholder_id: Uuid,
     type_slug: &str,
     date: NaiveDate,
-    antall: i64,
+    quantity: i64,
     amount_ore: Option<i64>,
     motpart_id: Option<Uuid>,
     motpart_type_slug: Option<&str>,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<Uuid> {
-    let type_ = Transaksjonstype::from_slug(type_slug)
+    let type_ = TransactionType::from_slug(type_slug)
         .with_context(|| format!("ukjent transaksjonstype «{type_slug}»"))?;
-    ensure!(antall > 0, "antall aksjer må være positivt");
+    ensure!(quantity > 0, "antall aksjer må være positivt");
 
     let mut tx = pool.begin().await?;
     // The shareholder must belong to this company.
@@ -326,11 +326,11 @@ pub async fn record_hendelse(
     eier.context("no such aksjonær")?;
 
     // An avgang cannot take more shares than the owner holds on the date.
-    if !type_.er_tilgang() {
-        let beholdning = beholdning_i_tx(&mut tx, shareholder_id, date).await?;
+    if !type_.is_acquisition() {
+        let holding = beholdning_i_tx(&mut tx, shareholder_id, date).await?;
         ensure!(
-            beholdning >= antall,
-            "aksjonæren har {beholdning} aksjer den {date} og kan ikke avhende {antall}"
+            holding >= quantity,
+            "aksjonæren har {holding} aksjer den {date} og kan ikke avhende {quantity}"
         );
     }
 
@@ -342,7 +342,7 @@ pub async fn record_hendelse(
         shareholder_id,
         type_.slug(),
         date,
-        antall,
+        quantity,
         amount_ore,
         motpart_id,
         note,
@@ -352,17 +352,17 @@ pub async fn record_hendelse(
 
     // The counterparty, when the transfer has a known other side.
     if let (Some(motpart_id), Some(motpart_slug)) = (motpart_id, motpart_type_slug) {
-        let motpart_type = Transaksjonstype::from_slug(motpart_slug)
+        let motpart_type = TransactionType::from_slug(motpart_slug)
             .with_context(|| format!("ukjent transaksjonstype «{motpart_slug}»"))?;
         ensure!(
-            motpart_type.er_tilgang() != type_.er_tilgang(),
+            motpart_type.is_acquisition() != type_.is_acquisition(),
             "de to sidene av en overdragelse må gå hver sin vei"
         );
-        if !motpart_type.er_tilgang() {
-            let beholdning = beholdning_i_tx(&mut tx, motpart_id, date).await?;
+        if !motpart_type.is_acquisition() {
+            let holding = beholdning_i_tx(&mut tx, motpart_id, date).await?;
             ensure!(
-                beholdning >= antall,
-                "motparten har bare {beholdning} aksjer den {date}"
+                holding >= quantity,
+                "motparten har bare {holding} aksjer den {date}"
             );
         }
         insert_event(
@@ -372,7 +372,7 @@ pub async fn record_hendelse(
             motpart_id,
             motpart_type.slug(),
             date,
-            antall,
+            quantity,
             amount_ore,
             Some(shareholder_id),
             note,
@@ -393,7 +393,7 @@ async fn insert_event(
     shareholder_id: Uuid,
     type_slug: &str,
     date: NaiveDate,
-    antall: i64,
+    quantity: i64,
     amount_ore: Option<i64>,
     motpart_id: Option<Uuid>,
     note: Option<&str>,
@@ -410,7 +410,7 @@ async fn insert_event(
     .bind(shareholder_id)
     .bind(type_slug)
     .bind(date)
-    .bind(antall)
+    .bind(quantity)
     .bind(amount_ore)
     .bind(motpart_id)
     .bind(note)
@@ -425,7 +425,7 @@ async fn beholdning_i_tx(
     shareholder_id: Uuid,
     date: NaiveDate,
 ) -> Result<i64> {
-    let antall: Option<i64> = sqlx::query_scalar(
+    let quantity: Option<i64> = sqlx::query_scalar(
         "select sum(case when type = any($3) then -antall else antall end)::bigint
          from share_event where shareholder_id = $1 and dato <= $2",
     )
@@ -434,11 +434,11 @@ async fn beholdning_i_tx(
     .bind(avgangstyper())
     .fetch_one(tx.as_mut())
     .await?;
-    Ok(antall.unwrap_or(0))
+    Ok(quantity.unwrap_or(0))
 }
 
 /// Every event for one shareholder, as the core fold wants them.
-async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Hendelse>> {
+async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<ShareEvent>> {
     let rows = sqlx::query(
         "select type, dato, antall, belop_ore from share_event
          where shareholder_id = $1 order by dato, created_at",
@@ -450,11 +450,11 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Hendel
         .iter()
         .filter_map(|r| {
             let slug: String = r.get("type");
-            Some(Hendelse {
+            Some(ShareEvent {
                 date: r.get("dato"),
-                type_: Transaksjonstype::from_slug(&slug)?,
-                antall: r.get("antall"),
-                vederlag_ore: r.get("belop_ore"),
+                type_: TransactionType::from_slug(&slug)?,
+                quantity: r.get("antall"),
+                consideration_ore: r.get("belop_ore"),
             })
         })
         .collect())
@@ -472,15 +472,15 @@ pub async fn create_utbytte(
     per_aksje_ore: i64,
     note: Option<&str>,
     created_by: &str,
-) -> Result<Utbyttevedtak> {
+) -> Result<DividendResolution> {
     ensure!(per_aksje_ore > 0, "utbytte per aksje må være positivt");
     let bok = aksjeeierbok(pool, company_id, decided_date).await?;
-    let antall: i64 = bok.iter().map(|a| a.antall_aksjer).sum();
+    let quantity: i64 = bok.iter().map(|a| a.share_count).sum();
     ensure!(
-        antall > 0,
+        quantity > 0,
         "aksjeeierboken er tom den {decided_date} — registrer stiftelsen først"
     );
-    let totalt_ore = antall
+    let totalt_ore = quantity
         .checked_mul(per_aksje_ore)
         .context("utbyttebeløpet er urimelig stort")?;
 
@@ -492,7 +492,7 @@ pub async fn create_utbytte(
         reverses: None,
         entries: vec![
             EntryDraft {
-                account_number: KONTO_ANNEN_EGENKAPITAL.into(),
+                account_number: ACCOUNT_OTHER_EQUITY.into(),
                 amount: Ore(totalt_ore),
                 vat_code: None,
                 description: Some("Avsatt utbytte".into()),
@@ -502,7 +502,7 @@ pub async fn create_utbytte(
                 currency: None,
             },
             EntryDraft {
-                account_number: KONTO_AVSATT_UTBYTTE.into(),
+                account_number: ACCOUNT_DIVIDEND_PAYABLE.into(),
                 amount: Ore(-totalt_ore),
                 vat_code: None,
                 description: None,
@@ -533,7 +533,7 @@ pub async fn create_utbytte(
     .await?;
     tx.commit().await?;
 
-    Ok(Utbyttevedtak {
+    Ok(DividendResolution {
         id,
         decided_date,
         per_aksje_ore,
@@ -548,7 +548,7 @@ pub async fn list_utbytte(
     pool: &PgPool,
     company_id: Uuid,
     ar: Option<i32>,
-) -> Result<Vec<Utbyttevedtak>> {
+) -> Result<Vec<DividendResolution>> {
     let rows = sqlx::query(
         "select id, besluttet_dato, per_aksje_ore, note, voucher_id, created_by
          from dividend
@@ -563,16 +563,16 @@ pub async fn list_utbytte(
     for r in rows {
         let date: NaiveDate = r.get("besluttet_dato");
         let per_aksje: i64 = r.get("per_aksje_ore");
-        let antall: i64 = aksjeeierbok(pool, company_id, date)
+        let quantity: i64 = aksjeeierbok(pool, company_id, date)
             .await?
             .iter()
-            .map(|a| a.antall_aksjer)
+            .map(|a| a.share_count)
             .sum();
-        out.push(Utbyttevedtak {
+        out.push(DividendResolution {
             id: r.get("id"),
             decided_date: date,
             per_aksje_ore: per_aksje,
-            totalt_ore: antall * per_aksje,
+            totalt_ore: quantity * per_aksje,
             voucher_id: r.get("voucher_id"),
             note: r.get("note"),
             created_by: r.get("created_by"),
@@ -584,23 +584,23 @@ pub async fn list_utbytte(
 // ------------------------------------------------------------- oppgaven
 
 /// Everything the RF-1086 filing needs, built from the aksjeeierbok.
-pub struct Oppgavesett {
-    pub hovedskjema: oppgave::Hovedskjema,
-    pub underskjemaer: Vec<(Uuid, oppgave::Underskjema)>,
+pub struct ReturnSet {
+    pub hovedskjema: tax_return::MainForm,
+    pub underskjemaer: Vec<(Uuid, tax_return::SubForm)>,
 }
 
 /// Builds the year's oppgave. Amounts come from the aksjebok, not from
 /// anything the user retypes for the filing.
-pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Oppgavesett> {
-    let selskap = sqlx::query("select orgnr, name, address, email from company where id = $1")
+pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<ReturnSet> {
+    let company = sqlx::query("select orgnr, name, address, email from company where id = $1")
         .bind(company_id)
         .fetch_optional(pool)
         .await?
         .context("no such company")?;
-    let orgnr: String = selskap.get("orgnr");
+    let orgnr: String = company.get("orgnr");
     // The address is free text with us; the oppgave wants it split. The
     // same rule EHF uses, in one place.
-    let (gate, postnr, poststed) = crate::ehf::split_adresse(selskap.get("address"));
+    let (gate, postnr, poststed) = crate::ehf::split_adresse(company.get("address"));
 
     // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
     // for the aksjonærregisteroppgave it is the inntektsår that governs
@@ -617,7 +617,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
 
     let mut antall_i_ar = 0i64;
     let mut antall_i_fjor = 0i64;
-    let mut nyutstedelser: Vec<oppgave::Nyutstedelse> = Vec::new();
+    let mut nyutstedelser: Vec<tax_return::NewIssue> = Vec::new();
     let mut underskjemaer = Vec::new();
 
     // The nominal value is known through the events only when somebody
@@ -627,28 +627,28 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
     let palydende_ore = palydende_ore(pool, company_id).await?;
 
     for a in &bok {
-        let hendelser = hendelser_for(pool, a.id).await?;
-        let bevegelse: Aarsbevegelse = regnmed_core::aksjebok::aarsbevegelse(&hendelser, ar);
-        antall_i_ar += bevegelse.utgaende;
-        antall_i_fjor += bevegelse.inngaende;
+        let events = hendelser_for(pool, a.id).await?;
+        let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, ar);
+        antall_i_ar += bevegelse.closing;
+        antall_i_fjor += bevegelse.opening;
 
         let mut bevegelser = Vec::new();
-        for h in hendelser.iter().filter(|h| h.date.year() == ar) {
-            bevegelser.push(oppgave::Bevegelse {
+        for h in events.iter().filter(|h| h.date.year() == ar) {
+            bevegelser.push(tax_return::ShareMovement {
                 date: h.date,
                 type_: h.type_,
-                antall: h.antall,
-                amount_ore: h.vederlag_ore,
+                quantity: h.quantity,
+                amount_ore: h.consideration_ore,
             });
             // New issues are reported at company level too.
             if matches!(
                 h.type_,
-                Transaksjonstype::Stiftelse | Transaksjonstype::Nyemisjon
+                TransactionType::Stiftelse | TransactionType::Nyemisjon
             ) {
-                nyutstedelser.push(oppgave::Nyutstedelse {
+                nyutstedelser.push(tax_return::NewIssue {
                     date: h.date,
                     type_: h.type_,
-                    antall_nye: h.antall,
+                    antall_nye: h.quantity,
                     antall_etter: 0, // fylles når totalen er kjent
                     palydende_ore,
                     overkurs_ore: 0,
@@ -656,34 +656,34 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
             }
         }
 
-        let utbytte = utbytte_rader
+        let dividend = utbytte_rader
             .iter()
             .filter_map(|u| {
-                let eid = regnmed_core::aksjebok::beholdning(&hendelser, u.decided_date);
-                (eid > 0).then_some(oppgave::Utbyttepost {
+                let eid = regnmed_core::share_register::holding(&events, u.decided_date);
+                (eid > 0).then_some(tax_return::DividendEntry {
                     date: u.decided_date,
                     amount_ore: eid * u.per_aksje_ore,
-                    antall_aksjer: eid,
+                    share_count: eid,
                 })
             })
             .collect();
 
         underskjemaer.push((
             a.id,
-            oppgave::Underskjema {
+            tax_return::SubForm {
                 orgnr: orgnr.clone(),
                 inntektsar: ar,
                 id: aksjonaerid(pool, a).await?,
-                navn: a.navn.clone(),
+                name: a.name.clone(),
                 adresse: a.adresse.clone(),
                 postnummer: a.postnummer.clone(),
                 poststed: a.poststed.clone(),
                 landkode: a.landkode.clone(),
-                antall_aksjer: oppgave::Fjoraret {
-                    fjoraret: bevegelse.inngaende,
-                    i_ar: bevegelse.utgaende,
+                share_count: tax_return::PriorYear {
+                    fjoraret: bevegelse.opening,
+                    i_ar: bevegelse.closing,
                 },
-                utbytte,
+                dividend,
                 bevegelser,
             },
         ));
@@ -697,41 +697,41 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
         n.antall_etter = aksjeeierbok(pool, company_id, n.date)
             .await?
             .iter()
-            .map(|a| a.antall_aksjer)
+            .map(|a| a.share_count)
             .sum();
     }
 
-    let aksjekapital = oppgave::Fjoraret {
+    let aksjekapital = tax_return::PriorYear {
         fjoraret: antall_i_fjor * palydende_ore,
         i_ar: antall_i_ar * palydende_ore,
     };
 
-    Ok(Oppgavesett {
-        hovedskjema: oppgave::Hovedskjema {
-            selskap: oppgave::Selskap {
+    Ok(ReturnSet {
+        hovedskjema: tax_return::MainForm {
+            company: tax_return::Company {
                 orgnr,
-                navn: selskap.get("name"),
+                name: company.get("name"),
                 adresse: gate,
                 postnummer: postnr,
                 poststed,
                 kontakt_navn: None,
-                kontakt_epost: selskap.get("email"),
+                kontakt_epost: company.get("email"),
             },
             inntektsar: ar,
             aksjekapital,
-            palydende_ore: oppgave::Fjoraret {
+            palydende_ore: tax_return::PriorYear {
                 fjoraret: palydende_ore,
                 i_ar: palydende_ore,
             },
-            antall_aksjer: oppgave::Fjoraret {
+            share_count: tax_return::PriorYear {
                 fjoraret: antall_i_fjor,
                 i_ar: antall_i_ar,
             },
             innbetalt_aksjekapital: aksjekapital,
-            overkurs: oppgave::Fjoraret::default(),
-            utbytte: utbytte_rader
+            overkurs: tax_return::PriorYear::default(),
+            dividend: utbytte_rader
                 .iter()
-                .map(|u| oppgave::Utdeling {
+                .map(|u| tax_return::Distribution {
                     date: u.decided_date,
                     per_aksje_ore: u.per_aksje_ore,
                     totalt_ore: u.totalt_ore,
@@ -749,21 +749,21 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
 /// carried on [`Aksjonaer`] — that struct is what the aksjeeierbok and
 /// the portal show, and per aksjeloven §4-5 it holds only the birth
 /// date. The number exists for one purpose, and takes one path.
-async fn aksjonaerid(pool: &PgPool, a: &Aksjonaer) -> Result<Option<oppgave::Aksjonaerid>> {
+async fn aksjonaerid(pool: &PgPool, a: &Shareholder) -> Result<Option<tax_return::ShareholderId>> {
     if let Some(orgnr) = &a.orgnr {
-        return Ok(Some(oppgave::Aksjonaerid::Organisasjonsnummer(
+        return Ok(Some(tax_return::ShareholderId::Organisasjonsnummer(
             orgnr.clone(),
         )));
     }
     if let Some(utl) = &a.utenlandsk_id {
-        return Ok(Some(oppgave::Aksjonaerid::Utenlandsk(utl.clone())));
+        return Ok(Some(tax_return::ShareholderId::Utenlandsk(utl.clone())));
     }
     let fnr: Option<String> =
         sqlx::query_scalar("select fodselsnummer from shareholder where id = $1")
             .bind(a.id)
             .fetch_one(pool)
             .await?;
-    Ok(fnr.map(oppgave::Aksjonaerid::Fodselsnummer))
+    Ok(fnr.map(tax_return::ShareholderId::Fodselsnummer))
 }
 
 /// Pålydende per aksje, derived from the founding event when it carries
@@ -780,9 +780,9 @@ async fn palydende_ore(pool: &PgPool, company_id: Uuid) -> Result<i64> {
     .await?;
     Ok(match row {
         Some(r) => {
-            let antall: i64 = r.get("antall");
+            let quantity: i64 = r.get("antall");
             let amount: i64 = r.get("belop_ore");
-            if antall > 0 { amount / antall } else { 0 }
+            if quantity > 0 { amount / quantity } else { 0 }
         }
         None => 0,
     })

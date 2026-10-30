@@ -89,12 +89,12 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("2050", "Annen egenkapital"),
         ("2800", "Avsatt utbytte"),
         ("1920", "Bankinnskudd"),
     ] {
-        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+        regnmed_db::ensure_account(&state.pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -233,7 +233,7 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("kan ikke avhende"));
 
-    // Utbytte: vedtaket bokføres i samme transaksjon.
+    // Dividend: the resolution is posted in the same transaction.
     let (status, body) = call(
         &state,
         &token,
@@ -345,12 +345,12 @@ async fn events_cannot_be_changed_or_deleted() {
         .await
         .unwrap();
 
-    let holder = regnmed_db::aksjebok::create_aksjonaer(
+    let holder = regnmed_db::share_register::create_shareholder(
         &state.pool,
         company,
-        &regnmed_db::aksjebok::NyAksjonaer {
+        &regnmed_db::share_register::NewShareholder {
             kind: "selskap".into(),
-            navn: "Eier AS".into(),
+            name: "Eier AS".into(),
             fodselsnummer: None,
             orgnr: Some("923609016".into()),
             utenlandsk_id: None,
@@ -364,7 +364,7 @@ async fn events_cannot_be_changed_or_deleted() {
     )
     .await
     .unwrap();
-    let event = regnmed_db::aksjebok::record_hendelse(
+    let event = regnmed_db::share_register::record_hendelse(
         &state.pool,
         company,
         holder,
@@ -404,7 +404,7 @@ async fn events_cannot_be_changed_or_deleted() {
     assert!(err.to_string().contains("uforanderlig"), "{err}");
 
     // …but the address is, because people move.
-    regnmed_db::aksjebok::update_aksjonaer_kontakt(
+    regnmed_db::share_register::update_shareholder_contact(
         &state.pool,
         company,
         holder,
