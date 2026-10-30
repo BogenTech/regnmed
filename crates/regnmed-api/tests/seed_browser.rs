@@ -202,12 +202,12 @@ async fn seed_browser_demo() {
     }
     // Aksjeeierbok (#43): two owners, a stiftelse, a transfer and a
     // dividend decision — enough to see the book, the events and the oppgave.
-    let kari = regnmed_db::aksjebok::create_aksjonaer(
+    let kari = regnmed_db::share_register::create_shareholder(
         &state.pool,
         company,
-        &regnmed_db::aksjebok::NyAksjonaer {
+        &regnmed_db::share_register::NewShareholder {
             kind: "person".into(),
-            navn: "Kari Nordmann".into(),
+            name: "Kari Nordmann".into(),
             fodselsnummer: Some("26829398612".into()),
             orgnr: None,
             utenlandsk_id: None,
@@ -221,12 +221,12 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    let investor = regnmed_db::aksjebok::create_aksjonaer(
+    let investor = regnmed_db::share_register::create_shareholder(
         &state.pool,
         company,
-        &regnmed_db::aksjebok::NyAksjonaer {
+        &regnmed_db::share_register::NewShareholder {
             kind: "selskap".into(),
-            navn: "Investor AS".into(),
+            name: "Investor AS".into(),
             fodselsnummer: None,
             orgnr: Some("923609016".into()),
             utenlandsk_id: None,
@@ -241,7 +241,7 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
     let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
-    regnmed_db::aksjebok::record_hendelse(
+    regnmed_db::share_register::record_hendelse(
         &state.pool,
         company,
         kari,
@@ -256,7 +256,7 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    regnmed_db::aksjebok::record_hendelse(
+    regnmed_db::share_register::record_hendelse(
         &state.pool,
         company,
         kari,
@@ -271,7 +271,7 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    regnmed_db::aksjebok::create_utbytte(
+    regnmed_db::share_register::create_utbytte(
         &state.pool,
         company,
         date(2026, 5, 20),

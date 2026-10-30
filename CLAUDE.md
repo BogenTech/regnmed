@@ -334,23 +334,55 @@ were English prose carrying a STATUTORY noun -- `arbeidsgiveravgift`,
 citation, not untranslated prose. Measured with a Norwegian-stopword
 ratio per comment line rather than by eye.
 
+`aksjebok`->`share_register` and `aksjonaeroppgave`->
+`shareholder_return` moved next: `Aksjonaer`->`Shareholder`,
+`Utbyttevedtak`->`DividendResolution`, `Hovedskjema`/`Underskjema`->
+`MainForm`/`SubForm`, `Aarsbevegelse`->`YearMovement`,
+`beholdning`->`holding`, `vederlag_ore`->`consideration_ore`.
+
+**The 31 `TransactionType` VARIANTS were deliberately NOT translated**
+(`Kjop`, `ArvUtenKontinuitet`, `Stiftelse`, `Nyemisjon`, `Spleis`,
+`SlettingEgneAksjer`, ...), and the reason is different in kind from
+`Rett`'s 72. `Rett`'s variants are OUR vocabulary, so translating them
+is scheduling. These are Skatteetatens: each one names an exact
+statutory concept, each is paired with its verbatim Norwegian string
+in `name()`, and each maps to a code list Skatteetaten does NOT
+publish (#43's honest gap -- `code()` returns `Some` only for `N`).
+Inventing an English name for "arv uten skattemessig kontinuitet"
+would put a translation of mine between the code and the law it
+encodes, at exactly the point where a wrong transaksjonstype flows
+into the shareholder's RF-1088 and changes inngangsverdi. The enum's
+NAME is English; its members stay the registry's.
+
+Collisions this batch, all caught by the compiler: `tilgang` means
+ACQUISITION of shares here and ACCESS everywhere else, so the narrow
+pass rewrote `use crate::tilgang::{Rett, krev}` inside the aksjebok
+file (reverted by hand); `oppgave` is this RF-1086 RETURN here and an
+agent TASK in `agent_task`, so `OppgaveQuery` exists twice with two
+meanings and only this one moved (`agent_task.rs` excluded like
+`tilgang.rs`); `Bevegelse`->`ShareMovement` because `Movement` is
+already `inventory`'s. A `use X as Y` alias has no `::` and so was
+missed by the module-path sweep -- worth remembering.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~7 500
-Norwegian identifier occurrences, 667 distinct names, 201 files --
-4,8 % of all identifiers.** Per crate: api 3 777, db 2 398, core
-1 046, cli 138, mcp 81, gov 43, agent 9, mail 2. The heaviest single
-file is `tilgang.rs` at 806, of which `Rett` alone is 507.
+a Norwegian word list, strings and comments excluded): **~6 500
+Norwegian identifier occurrences, 628 distinct names -- 4,2 % of all
+identifiers**, down from 7 494 / 667 / 4,8 % before the payroll and
+share-register batches. Per crate: api 3 587, db 1 961, core 718,
+cli 138, mcp 81, gov 38, agent 9, mail 2. The heaviest single file is
+`tilgang.rs` at 806, of which `Rett` alone is 507 -- roughly an eighth
+of everything remaining sits in that one file.
 
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
 still.
 
-**Still Norwegian**, deliberately: the modules whose core and db halves are
-both unconverted (`mva`,
-`abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
+**Still Norwegian**, deliberately: the modules whose core and db halves
+are both unconverted (`saft_import`, `salgsdokument`, `reskontro`),
 `regnmed-api::tilgang` (the single access guard, named all through
-docs/auth.md) and the test tree (`tests/grupper/`, the seven group
-binaries).
+docs/auth.md -- and `Rett`'s 72 variants, deferred by three batches
+now), `regnmed-db::agentllm`, `regnmed-api::herding` and the test
+tree (`tests/grupper/`, the seven group binaries).
 The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
 Norwegian identifiers, and converting them is its own work, crate by
 crate, not a single sweep. `regnmed-api` has to move in lockstep with

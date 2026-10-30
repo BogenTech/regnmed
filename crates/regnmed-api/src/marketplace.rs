@@ -112,7 +112,7 @@ pub async fn onboard_company(
         email: enhet.epostadresse.clone(),
         naeringskode: enhet.naeringskode1.as_ref().map(|k| k.code.clone()),
         aksjekapital_ore: kapital.and_then(|k| k.amount_ore()),
-        antall_aksjer: kapital.and_then(|k| k.antall_aksjer),
+        share_count: kapital.and_then(|k| k.share_count),
         registreringer: enhet.registration_timeline(today),
     };
     let onboarded = regnmed_db::onboard_company(

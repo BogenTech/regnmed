@@ -6,13 +6,13 @@
 
 mod common;
 
-#[path = "grupper/aksjonaer.rs"]
-mod aksjonaer;
 #[path = "grupper/ansattkobling.rs"]
 mod ansattkobling;
 #[path = "grupper/assets.rs"]
 mod assets;
 #[path = "grupper/expenses.rs"]
 mod expenses;
+#[path = "grupper/share_register.rs"]
+mod share_register;
 #[path = "grupper/timesheet.rs"]
 mod timesheet;

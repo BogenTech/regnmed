@@ -7,7 +7,6 @@
 pub mod accrual;
 pub mod agent_task;
 pub mod agentllm;
-pub mod aksjebok;
 pub mod anchor;
 pub mod approval;
 pub mod asset;
@@ -49,6 +48,7 @@ pub mod saft;
 pub mod saft_import;
 pub mod salgsdokument;
 pub mod settings;
+pub mod share_register;
 pub mod statements;
 pub mod subscription;
 pub mod subscription_follow_up;

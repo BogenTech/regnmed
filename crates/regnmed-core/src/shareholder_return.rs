@@ -15,29 +15,29 @@
 //! agency's own example writes them.
 //!
 //! **The honest limitation** is the transaction type codes: see
-//! [`crate::aksjebok::Transaksjonstype::kode`]. We do not render a code
+//! [`crate::share_register::Transaksjonstype::kode`]. We do not render a code
 //! we have not verified against an official source — [`render_underskjema`]
 //! fails loudly instead.
 
 use chrono::NaiveDate;
 
-use crate::aksjebok::{AKSJETYPE_ORDINAERE, Post, Transaksjonstype};
+use crate::share_register::{FormItem, SHARE_CLASS_ORDINARY, TransactionType};
 
 /// Skatteetatens etatid, fast i begge skjemaene.
 const ETATID: &str = "974761076";
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum OppgaveError {
+pub enum ReturnError {
     /// A movement whose RF-1086 code we have not verified. Filing it
     /// with a guessed code would corrupt the shareholder's own
     /// aksjeoppgave, so we refuse.
-    UverifisertKode(Transaksjonstype),
+    UverifisertKode(TransactionType),
     /// Neither fødselsnummer, organisasjonsnummer nor utenlandsk
     /// aksjonær-ID — the oppgave has no way to name this shareholder.
     ManglerIdentitet(String),
 }
 
-impl std::fmt::Display for OppgaveError {
+impl std::fmt::Display for ReturnError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UverifisertKode(t) => write!(
@@ -45,23 +45,23 @@ impl std::fmt::Display for OppgaveError {
                 "transaksjonstypen «{}» kan ikke leveres: RF-1086-koden for den er ikke \
                  publisert i XSD-en eller rettledningen, og regnmed gjetter den ikke \
                  (se docs/aksjonaer.md)",
-                t.navn()
+                t.name()
             ),
-            Self::ManglerIdentitet(navn) => write!(
+            Self::ManglerIdentitet(name) => write!(
                 f,
-                "aksjonæren «{navn}» mangler fødselsnummer, organisasjonsnummer og \
+                "aksjonæren «{name}» mangler fødselsnummer, organisasjonsnummer og \
                  utenlandsk aksjonær-ID — oppgaven kan ikke identifisere eieren"
             ),
         }
     }
 }
 
-impl std::error::Error for OppgaveError {}
+impl std::error::Error for ReturnError {}
 
 #[derive(Debug, Clone)]
-pub struct Selskap {
+pub struct Company {
     pub orgnr: String,
-    pub navn: String,
+    pub name: String,
     pub adresse: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
@@ -72,14 +72,14 @@ pub struct Selskap {
 /// A pair of "last year / this year" figures, which is how nearly every
 /// number in the hovedskjema is reported.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Fjoraret {
+pub struct PriorYear {
     pub fjoraret: i64,
     pub i_ar: i64,
 }
 
 /// One utbytte decision during the year (generalforsamlingens vedtak).
 #[derive(Debug, Clone)]
-pub struct Utdeling {
+pub struct Distribution {
     pub date: NaiveDate,
     pub per_aksje_ore: i64,
     pub totalt_ore: i64,
@@ -87,9 +87,9 @@ pub struct Utdeling {
 
 /// Shares issued during the year, reported at company level.
 #[derive(Debug, Clone)]
-pub struct Nyutstedelse {
+pub struct NewIssue {
     pub date: NaiveDate,
-    pub type_: Transaksjonstype,
+    pub type_: TransactionType,
     pub antall_nye: i64,
     /// Total share count after the event.
     pub antall_etter: i64,
@@ -98,20 +98,20 @@ pub struct Nyutstedelse {
 }
 
 #[derive(Debug, Clone)]
-pub struct Hovedskjema {
-    pub selskap: Selskap,
+pub struct MainForm {
+    pub company: Company,
     pub inntektsar: i32,
-    pub aksjekapital: Fjoraret,
-    pub palydende_ore: Fjoraret,
-    pub antall_aksjer: Fjoraret,
-    pub innbetalt_aksjekapital: Fjoraret,
-    pub overkurs: Fjoraret,
-    pub utbytte: Vec<Utdeling>,
-    pub nyutstedelser: Vec<Nyutstedelse>,
+    pub aksjekapital: PriorYear,
+    pub palydende_ore: PriorYear,
+    pub share_count: PriorYear,
+    pub innbetalt_aksjekapital: PriorYear,
+    pub overkurs: PriorYear,
+    pub dividend: Vec<Distribution>,
+    pub nyutstedelser: Vec<NewIssue>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Aksjonaerid {
+pub enum ShareholderId {
     Fodselsnummer(String),
     Organisasjonsnummer(String),
     /// `UTLxxxxxxxxx`, assigned by Aksjonærregisteret to shareholders
@@ -120,35 +120,36 @@ pub enum Aksjonaerid {
 }
 
 #[derive(Debug, Clone)]
-pub struct Utbyttepost {
+pub struct DividendEntry {
     pub date: NaiveDate,
     pub amount_ore: i64,
-    pub antall_aksjer: i64,
+    pub share_count: i64,
 }
 
 /// One movement on one shareholder, as the underskjema reports it.
 #[derive(Debug, Clone)]
-pub struct Bevegelse {
+pub struct ShareMovement {
     pub date: NaiveDate,
-    pub type_: Transaksjonstype,
-    pub antall: i64,
-    /// Anskaffelsesverdi (tilgang) or vederlag (avgang), when known.
+    pub type_: TransactionType,
+    pub quantity: i64,
+    /// Acquisition value (anskaffelsesverdi) on an acquisition, or the
+    /// consideration (vederlag) on a disposal, when known.
     pub amount_ore: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Underskjema {
+pub struct SubForm {
     pub orgnr: String,
     pub inntektsar: i32,
-    pub id: Option<Aksjonaerid>,
-    pub navn: String,
+    pub id: Option<ShareholderId>,
+    pub name: String,
     pub adresse: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
     pub landkode: Option<String>,
-    pub antall_aksjer: Fjoraret,
-    pub utbytte: Vec<Utbyttepost>,
-    pub bevegelser: Vec<Bevegelse>,
+    pub share_count: PriorYear,
+    pub dividend: Vec<DividendEntry>,
+    pub bevegelser: Vec<ShareMovement>,
 }
 
 // ---------------------------------------------------------------- writer
@@ -250,10 +251,10 @@ fn kutt(text: &str, maks: usize) -> String {
 
 // ------------------------------------------------------------ hovedskjema
 
-pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
+pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     for n in &h.nyutstedelser {
-        if n.type_.kode().is_none() {
-            return Err(OppgaveError::UverifisertKode(n.type_));
+        if n.type_.code().is_none() {
+            return Err(ReturnError::UverifisertKode(n.type_));
         }
     }
 
@@ -268,33 +269,33 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
 
     w.gruppe("GenerellInformasjon-grp-2587", 2587);
     w.gruppe("Selskap-grp-2588", 2588);
-    w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &h.selskap.orgnr);
-    w.felt("EnhetNavn-datadef-1", 1, &kutt(&h.selskap.navn, 175));
-    w.felt_opt("EnhetAdresse-datadef-15", 15, h.selskap.adresse.as_ref());
+    w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &h.company.orgnr);
+    w.felt("EnhetNavn-datadef-1", 1, &kutt(&h.company.name, 175));
+    w.felt_opt("EnhetAdresse-datadef-15", 15, h.company.adresse.as_ref());
     w.felt_opt(
         "EnhetPostnummer-datadef-6673",
         6673,
-        h.selskap.postnummer.as_ref(),
+        h.company.postnummer.as_ref(),
     );
     w.felt_opt(
         "EnhetPoststed-datadef-6674",
         6674,
-        h.selskap.poststed.as_ref(),
+        h.company.poststed.as_ref(),
     );
-    w.felt("AksjeType-datadef-17659", 17659, AKSJETYPE_ORDINAERE);
+    w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &h.inntektsar.to_string());
     w.close("Selskap-grp-2588");
-    if h.selskap.kontakt_navn.is_some() || h.selskap.kontakt_epost.is_some() {
+    if h.company.kontakt_navn.is_some() || h.company.kontakt_epost.is_some() {
         w.gruppe("Kontaktperson-grp-3442", 3442);
         w.felt_opt(
             "KontaktpersonSkjemaNavn-datadef-33918",
             33918,
-            h.selskap.kontakt_navn.as_ref(),
+            h.company.kontakt_navn.as_ref(),
         );
         w.felt_opt(
             "KontaktpersonSkjemaEPost-datadef-30533",
             30533,
-            h.selskap.kontakt_epost.as_ref(),
+            h.company.kontakt_epost.as_ref(),
         );
         w.close("Kontaktperson-grp-3442");
     }
@@ -338,12 +339,12 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     w.felt(
         "AksjerMvAntallFjoraret-datadef-29166",
         29166,
-        &h.antall_aksjer.fjoraret.to_string(),
+        &h.share_count.fjoraret.to_string(),
     );
     w.felt(
         "AksjerMvAntall-datadef-29167",
         29167,
-        &h.antall_aksjer.i_ar.to_string(),
+        &h.share_count.i_ar.to_string(),
     );
     w.close("AntallAksjerIDenneAksjeklassen-grp-3445");
     w.gruppe("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446", 3446);
@@ -372,9 +373,9 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     w.close("InnbetaltOverkursIDenneAksjeklassen-grp-3448");
     w.close("Selskapsopplysninger-grp-2589");
 
-    if !h.utbytte.is_empty() {
+    if !h.dividend.is_empty() {
         w.gruppe("Utbytte-grp-3449", 3449);
-        for u in &h.utbytte {
+        for u in &h.dividend {
             w.gruppe(
                 "UtdeltSkatterettsligUtbytteILopetAvInntektsaret-grp-3451",
                 3451,
@@ -402,10 +403,10 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     if !h.nyutstedelser.is_empty() {
         w.gruppe("UtstedelseAvAksjerIfmStiftelseNyemisjonMv-grp-3452", 3452);
         for n in &h.nyutstedelser {
-            let kode = n
+            let code = n
                 .type_
-                .kode()
-                .ok_or(OppgaveError::UverifisertKode(n.type_))?;
+                .code()
+                .ok_or(ReturnError::UverifisertKode(n.type_))?;
             w.gruppe("AntallNyutstedteAksjer-grp-3453", 3453);
             w.felt(
                 "AksjerNyutstedteStiftelseMvAntall-datadef-17668",
@@ -417,7 +418,7 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
                 17669,
                 &n.antall_etter.to_string(),
             );
-            w.felt("AksjerNyutstedteStiftelseMvType-datadef-17670", 17670, kode);
+            w.felt("AksjerNyutstedteStiftelseMvType-datadef-17670", 17670, code);
             w.felt(
                 "AksjerNyutstedteStiftelseMvTidspunkt-datadef-17671",
                 17671,
@@ -444,13 +445,13 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
 
 // ----------------------------------------------------------- underskjema
 
-pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
+pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     let Some(id) = &u.id else {
-        return Err(OppgaveError::ManglerIdentitet(u.navn.clone()));
+        return Err(ReturnError::ManglerIdentitet(u.name.clone()));
     };
     for b in &u.bevegelser {
-        if b.type_.kode().is_none() {
-            return Err(OppgaveError::UverifisertKode(b.type_));
+        if b.type_.code().is_none() {
+            return Err(ReturnError::UverifisertKode(b.type_));
         }
     }
 
@@ -466,22 +467,22 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
     w.gruppe("SelskapsOgAksjonaropplysninger-grp-3987", 3987);
     w.gruppe("Selskapsidentifikasjon-grp-3986", 3986);
     w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &u.orgnr);
-    w.felt("AksjeType-datadef-17659", 17659, AKSJETYPE_ORDINAERE);
+    w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &u.inntektsar.to_string());
     w.close("Selskapsidentifikasjon-grp-3986");
     w.gruppe("NorskUtenlandskAksjonar-grp-3988", 3988);
     match id {
-        Aksjonaerid::Fodselsnummer(f) => w.felt("AksjonarFodselsnummer-datadef-1156", 1156, f),
-        Aksjonaerid::Organisasjonsnummer(o) => {
+        ShareholderId::Fodselsnummer(f) => w.felt("AksjonarFodselsnummer-datadef-1156", 1156, f),
+        ShareholderId::Organisasjonsnummer(o) => {
             w.felt("AksjonarOrganisasjonsnummer-datadef-7597", 7597, o)
         }
-        Aksjonaerid::Utenlandsk(x) => w.felt(
+        ShareholderId::Utenlandsk(x) => w.felt(
             "AksjonarUtenlandskIdenifikasjonsnummer-datadef-26626",
             26626,
             x,
         ),
     }
-    w.felt("AksjonarNavn-datadef-1153", 1153, &kutt(&u.navn, 35));
+    w.felt("AksjonarNavn-datadef-1153", 1153, &kutt(&u.name, 35));
     w.felt_opt(
         "AksjonarPostnummer-datadef-7598",
         7598,
@@ -505,15 +506,15 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
     w.felt(
         "AksjerAntallFjoraret-datadef-29168",
         29168,
-        &u.antall_aksjer.fjoraret.to_string(),
+        &u.share_count.fjoraret.to_string(),
     );
     w.felt(
         "AksjonarAksjerAntall-datadef-17741",
         17741,
-        &u.antall_aksjer.i_ar.to_string(),
+        &u.share_count.i_ar.to_string(),
     );
     w.close("AntallAksjerPerAksjonar-grp-3989");
-    for post in &u.utbytte {
+    for post in &u.dividend {
         w.gruppe("UtdeltUtbyttePerAksjonar-grp-3991", 3991);
         w.felt(
             "Aksjeutbytte-datadef-29169",
@@ -523,7 +524,7 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
         w.felt(
             "AksjerUtbytteAntall-datadef-17742",
             17742,
-            &post.antall_aksjer.to_string(),
+            &post.share_count.to_string(),
         );
         w.felt(
             "AksjerUtbytteTidspunkt-datadef-17769",
@@ -534,26 +535,26 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
     }
     w.close("AntallAksjerUtbytteOgTilbakebetalingAvTidligereInnbetaltKapit-grp-3990");
 
-    let tilgang: Vec<_> = u
+    let acquisitions: Vec<_> = u
         .bevegelser
         .iter()
-        .filter(|b| b.type_.post() == Post::Tilgang)
+        .filter(|b| b.type_.post() == FormItem::Acquisition)
         .collect();
-    if !tilgang.is_empty() {
+    if !acquisitions.is_empty() {
         w.gruppe("Transaksjoner-grp-3992", 3992);
         w.gruppe("KjopArvGaveStiftelseNyemisjonMv-grp-3993", 3993);
-        for b in tilgang {
-            let kode = b
+        for b in acquisitions {
+            let code = b
                 .type_
-                .kode()
-                .ok_or(OppgaveError::UverifisertKode(b.type_))?;
+                .code()
+                .ok_or(ReturnError::UverifisertKode(b.type_))?;
             w.gruppe("AntallAksjerITilgang-grp-3998", 3998);
             w.felt(
                 "AksjerKjopAntall-datadef-12153",
                 12153,
-                &b.antall.to_string(),
+                &b.quantity.to_string(),
             );
-            w.felt("AksjeErvervType-datadef-17745", 17745, kode);
+            w.felt("AksjeErvervType-datadef-17745", 17745, code);
             w.felt("AksjerErvervsdato-datadef-17746", 17746, &tidspunkt(b.date));
             if let Some(ore) = b.amount_ore {
                 w.felt("AksjeAnskaffelsesverdi-datadef-17636", 17636, &amount(ore));
@@ -564,25 +565,25 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
         w.close("Transaksjoner-grp-3992");
     }
 
-    let avgang: Vec<_> = u
+    let disposals: Vec<_> = u
         .bevegelser
         .iter()
-        .filter(|b| b.type_.post() == Post::Avgang)
+        .filter(|b| b.type_.post() == FormItem::Disposal)
         .collect();
-    if !avgang.is_empty() {
+    if !disposals.is_empty() {
         w.gruppe("SalgArvGaveLikvidasjonPartiellLikvidasjonMv-grp-3995", 3995);
-        for b in avgang {
-            let kode = b
+        for b in disposals {
+            let code = b
                 .type_
-                .kode()
-                .ok_or(OppgaveError::UverifisertKode(b.type_))?;
+                .code()
+                .ok_or(ReturnError::UverifisertKode(b.type_))?;
             w.gruppe("AksjerIAvgang-grp-4002", 4002);
             w.felt(
                 "AksjerArvMvOmsattAntall-datadef-17752",
                 17752,
-                &b.antall.to_string(),
+                &b.quantity.to_string(),
             );
-            w.felt("AksjerArvMvOmsattType-datadef-17753", 17753, kode);
+            w.felt("AksjerArvMvOmsattType-datadef-17753", 17753, code);
             w.felt(
                 "AksjerArvMvOmsattTidspunkt-datadef-17754",
                 17754,
@@ -608,10 +609,10 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
     }
 
-    fn selskap() -> Selskap {
-        Selskap {
+    fn company() -> Company {
+        Company {
             orgnr: "314259521".into(),
-            navn: "Mosegrodd Oransje Tiger AS".into(),
+            name: "Mosegrodd Oransje Tiger AS".into(),
             adresse: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
@@ -620,35 +621,35 @@ mod tests {
         }
     }
 
-    fn hovedskjema() -> Hovedskjema {
-        Hovedskjema {
-            selskap: selskap(),
+    fn hovedskjema() -> MainForm {
+        MainForm {
+            company: company(),
             inntektsar: 2026,
-            aksjekapital: Fjoraret {
+            aksjekapital: PriorYear {
                 fjoraret: 0,
                 i_ar: 10_000_000,
             },
-            palydende_ore: Fjoraret {
+            palydende_ore: PriorYear {
                 fjoraret: 0,
                 i_ar: 100_000,
             },
-            antall_aksjer: Fjoraret {
+            share_count: PriorYear {
                 fjoraret: 0,
                 i_ar: 100,
             },
-            innbetalt_aksjekapital: Fjoraret {
+            innbetalt_aksjekapital: PriorYear {
                 fjoraret: 0,
                 i_ar: 10_000_000,
             },
-            overkurs: Fjoraret::default(),
-            utbytte: vec![Utdeling {
+            overkurs: PriorYear::default(),
+            dividend: vec![Distribution {
                 date: d(2026, 5, 20),
                 per_aksje_ore: 50_000,
                 totalt_ore: 5_000_000,
             }],
-            nyutstedelser: vec![Nyutstedelse {
+            nyutstedelser: vec![NewIssue {
                 date: d(2026, 1, 2),
-                type_: Transaksjonstype::Stiftelse,
+                type_: TransactionType::Stiftelse,
                 antall_nye: 100,
                 antall_etter: 100,
                 palydende_ore: 100_000,
@@ -657,29 +658,29 @@ mod tests {
         }
     }
 
-    fn underskjema() -> Underskjema {
-        Underskjema {
+    fn underskjema() -> SubForm {
+        SubForm {
             orgnr: "314259521".into(),
             inntektsar: 2026,
-            id: Some(Aksjonaerid::Fodselsnummer("26829398612".into())),
-            navn: "Kari Nordmann".into(),
+            id: Some(ShareholderId::Fodselsnummer("26829398612".into())),
+            name: "Kari Nordmann".into(),
             adresse: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
             landkode: None,
-            antall_aksjer: Fjoraret {
+            share_count: PriorYear {
                 fjoraret: 0,
                 i_ar: 100,
             },
-            utbytte: vec![Utbyttepost {
+            dividend: vec![DividendEntry {
                 date: d(2026, 5, 20),
                 amount_ore: 5_000_000,
-                antall_aksjer: 100,
+                share_count: 100,
             }],
-            bevegelser: vec![Bevegelse {
+            bevegelser: vec![ShareMovement {
                 date: d(2026, 1, 2),
-                type_: Transaksjonstype::Stiftelse,
-                antall: 100,
+                type_: TransactionType::Stiftelse,
+                quantity: 100,
                 amount_ore: Some(10_000_000),
             }],
         }
@@ -715,13 +716,13 @@ mod tests {
 
     #[test]
     fn the_main_form_validates_against_the_official_xsd() {
-        let xml = render_hovedskjema(&hovedskjema()).unwrap();
+        let xml = render_main_form(&hovedskjema()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveHovedskjema.xsd", "hoved");
     }
 
     #[test]
     fn the_sub_form_validates_against_the_official_xsd() {
-        let xml = render_underskjema(&underskjema()).unwrap();
+        let xml = render_sub_form(&underskjema()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveUnderskjema.xsd", "under");
     }
 
@@ -731,17 +732,17 @@ mod tests {
         // happened. Then there is no code to be unsure about.
         let mut h = hovedskjema();
         h.nyutstedelser.clear();
-        h.utbytte.clear();
+        h.dividend.clear();
         valider(
-            &render_hovedskjema(&h).unwrap(),
+            &render_main_form(&h).unwrap(),
             "aksjonaerregisteroppgaveHovedskjema.xsd",
             "hoved-stille",
         );
         let mut u = underskjema();
         u.bevegelser.clear();
-        u.utbytte.clear();
+        u.dividend.clear();
         valider(
-            &render_underskjema(&u).unwrap(),
+            &render_sub_form(&u).unwrap(),
             "aksjonaerregisteroppgaveUnderskjema.xsd",
             "under-stille",
         );
@@ -750,19 +751,19 @@ mod tests {
     #[test]
     fn a_corporate_shareholder_and_a_foreign_id_both_validate() {
         let mut u = underskjema();
-        u.id = Some(Aksjonaerid::Organisasjonsnummer("923609016".into()));
-        u.navn = "Equinor ASA".into();
+        u.id = Some(ShareholderId::Organisasjonsnummer("923609016".into()));
+        u.name = "Equinor ASA".into();
         valider(
-            &render_underskjema(&u).unwrap(),
+            &render_sub_form(&u).unwrap(),
             "aksjonaerregisteroppgaveUnderskjema.xsd",
             "under-selskap",
         );
 
         let mut u = underskjema();
-        u.id = Some(Aksjonaerid::Utenlandsk("UTL000000123".into()));
+        u.id = Some(ShareholderId::Utenlandsk("UTL000000123".into()));
         u.landkode = Some("SE".into());
         valider(
-            &render_underskjema(&u).unwrap(),
+            &render_sub_form(&u).unwrap(),
             "aksjonaerregisteroppgaveUnderskjema.xsd",
             "under-utl",
         );
@@ -773,9 +774,9 @@ mod tests {
     #[test]
     fn a_long_shareholder_name_is_truncated_rather_than_failing() {
         let mut u = underskjema();
-        u.id = Some(Aksjonaerid::Organisasjonsnummer("923609016".into()));
-        u.navn = "Æ".repeat(60);
-        let xml = render_underskjema(&u).unwrap();
+        u.id = Some(ShareholderId::Organisasjonsnummer("923609016".into()));
+        u.name = "Æ".repeat(60);
+        let xml = render_sub_form(&u).unwrap();
         valider(
             &xml,
             "aksjonaerregisteroppgaveUnderskjema.xsd",
@@ -790,14 +791,14 @@ mod tests {
     #[test]
     fn an_unverified_transaction_type_is_refused_loudly() {
         let mut u = underskjema();
-        u.bevegelser = vec![Bevegelse {
+        u.bevegelser = vec![ShareMovement {
             date: d(2026, 6, 1),
-            type_: Transaksjonstype::Salg,
-            antall: 10,
+            type_: TransactionType::Salg,
+            quantity: 10,
             amount_ore: Some(1_000_000),
         }];
-        let feil = render_underskjema(&u).unwrap_err();
-        assert_eq!(feil, OppgaveError::UverifisertKode(Transaksjonstype::Salg));
+        let feil = render_sub_form(&u).unwrap_err();
+        assert_eq!(feil, ReturnError::UverifisertKode(TransactionType::Salg));
         assert!(feil.to_string().contains("salg"), "{feil}");
         assert!(feil.to_string().contains("gjetter"), "{feil}");
     }
@@ -807,20 +808,20 @@ mod tests {
         let mut u = underskjema();
         u.id = None;
         assert!(matches!(
-            render_underskjema(&u).unwrap_err(),
-            OppgaveError::ManglerIdentitet(_)
+            render_sub_form(&u).unwrap_err(),
+            ReturnError::ManglerIdentitet(_)
         ));
     }
 
     #[test]
     fn the_rendering_is_deterministic() {
         assert_eq!(
-            render_hovedskjema(&hovedskjema()).unwrap(),
-            render_hovedskjema(&hovedskjema()).unwrap()
+            render_main_form(&hovedskjema()).unwrap(),
+            render_main_form(&hovedskjema()).unwrap()
         );
         assert_eq!(
-            render_underskjema(&underskjema()).unwrap(),
-            render_underskjema(&underskjema()).unwrap()
+            render_sub_form(&underskjema()).unwrap(),
+            render_sub_form(&underskjema()).unwrap()
         );
     }
 

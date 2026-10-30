@@ -3,7 +3,6 @@
 
 pub mod accrual;
 pub mod agent_task;
-pub mod aksjebok;
 pub mod anchor;
 pub mod approval;
 pub mod asset;
@@ -43,6 +42,7 @@ pub mod reskontro;
 pub mod roles;
 pub mod salgsdokument;
 pub mod settings;
+pub mod share_register;
 pub mod subscription;
 pub mod tilgang;
 pub mod timesheet;
@@ -521,27 +521,27 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/shareholders",
-            get(aksjebok::list_shareholders).post(aksjebok::create_shareholder),
+            get(share_register::list_shareholders).post(share_register::create_shareholder),
         )
         .route(
             "/companies/{company_id}/shareholders/transaction-types",
-            get(aksjebok::transaction_types),
+            get(share_register::transaction_types),
         )
         .route(
             "/companies/{company_id}/shareholders/{shareholder_id}/contact",
-            axum::routing::put(aksjebok::update_contact),
+            axum::routing::put(share_register::update_contact),
         )
         .route(
             "/companies/{company_id}/share-events",
-            get(aksjebok::list_events).post(aksjebok::create_event),
+            get(share_register::list_events).post(share_register::create_event),
         )
         .route(
             "/companies/{company_id}/dividends",
-            get(aksjebok::list_dividends).post(aksjebok::create_dividend),
+            get(share_register::list_dividends).post(share_register::create_dividend),
         )
         .route(
             "/companies/{company_id}/reports/aksjonaeroppgave",
-            get(aksjebok::oppgave),
+            get(share_register::tax_return),
         )
         .route(
             "/companies/{company_id}/assets",
