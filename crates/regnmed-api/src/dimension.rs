@@ -15,15 +15,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 pub async fn list(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::DimensjonLes).await?;
+    require(&state, person.person_id, company_id, Right::DimensionRead).await?;
     let rows = regnmed_db::list_dimensions(&state.pool, company_id, person.person_id).await?;
     Ok(Json(json!({
         "dimensions": rows.iter().map(|d| json!({
@@ -56,7 +56,7 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::DimensjonSkriv).await?;
+    require(&state, person.person_id, company_id, Right::DimensionWrite).await?;
     regnmed_db::create_dimension(
         &state.pool,
         company_id,
@@ -88,7 +88,7 @@ pub async fn update(
     Path((company_id, kind, code)): Path<(Uuid, String, String)>,
     Json(request): Json<UpdateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::DimensjonSkriv).await?;
+    require(&state, person.person_id, company_id, Right::DimensionWrite).await?;
     regnmed_db::update_dimension(
         &state.pool,
         company_id,
@@ -113,7 +113,13 @@ pub async fn list_satser(
     person: AuthPerson,
     Path((company_id, code)): Path<(Uuid, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerSatsSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetRateWrite,
+    )
+    .await?;
     let rows = regnmed_db::list_prosjekt_satser(&state.pool, company_id, &code).await?;
     Ok(Json(json!({
         "satser": rows.iter().map(|r| json!({
@@ -142,7 +148,13 @@ pub async fn set_sats(
     Path((company_id, code)): Path<(Uuid, String)>,
     Json(request): Json<SatsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerSatsSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetRateWrite,
+    )
+    .await?;
     let valid_from = request
         .valid_from
         .unwrap_or_else(|| chrono::Utc::now().date_naive());

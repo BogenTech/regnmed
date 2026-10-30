@@ -17,8 +17,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 fn kind_from(raw: Option<&str>) -> Result<PartyKind, ApiError> {
     match raw.map(str::trim) {
@@ -42,7 +42,7 @@ pub async fn import_contacts(
     Query(query): Query<ContactsQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MigrationAdmin).await?;
     let kind = kind_from(query.kind.as_deref())?;
     let rader = parse_contacts(&body, kind).map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if rader.is_empty() {
@@ -81,7 +81,7 @@ pub async fn import_open_items(
     Query(query): Query<OpenItemsQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MigrationAdmin).await?;
     let kind = kind_from(query.kind.as_deref())?;
     let account = query.account.unwrap_or_else(|| {
         match kind {

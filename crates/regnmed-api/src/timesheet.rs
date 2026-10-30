@@ -19,8 +19,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 /// Logging hours requires `TIMER_SKRIV_EGNE`; the returned [`Tilgang`]
 /// answers the follow-ups — `TIMER_SKRIV_ALLE` (correct everyone's, not
@@ -30,8 +30,8 @@ async fn require_write(
     state: &AppState,
     person_id: Uuid,
     company_id: Uuid,
-) -> Result<crate::tilgang::Tilgang, ApiError> {
-    krev(state, person_id, company_id, Rett::TimerSkrivEgne).await
+) -> Result<crate::access::Access, ApiError> {
+    require(state, person_id, company_id, Right::TimesheetWriteOwn).await
 }
 
 #[derive(Deserialize)]
@@ -76,7 +76,7 @@ pub async fn create(
         company_id,
         person.person_id,
         &request.draft(),
-        tilgang.har(Rett::TimerSatsSkriv),
+        tilgang.has(Right::TimesheetRateWrite),
         created_by,
     )
     .await
@@ -96,9 +96,9 @@ pub async fn update(
         company_id,
         entry_id,
         person.person_id,
-        !tilgang.har(Rett::TimerSkrivAlle),
+        !tilgang.has(Right::TimesheetWriteAll),
         &request.draft(),
-        tilgang.har(Rett::TimerSatsSkriv),
+        tilgang.has(Right::TimesheetRateWrite),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -116,7 +116,7 @@ pub async fn delete(
         company_id,
         entry_id,
         person.person_id,
-        !tilgang.har(Rett::TimerSkrivAlle),
+        !tilgang.has(Right::TimesheetWriteAll),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -135,12 +135,18 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
     Query(range): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
+    let tilgang = require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetReadOwn,
+    )
+    .await?;
     let entries = regnmed_db::list_time_entries(
         &state.pool,
         company_id,
         person.person_id,
-        !tilgang.har(Rett::TimerLesAlle),
+        !tilgang.has(Right::TimesheetReadAll),
         range.from,
         range.to,
     )
@@ -169,7 +175,13 @@ pub async fn summary(
     Path(company_id): Path<Uuid>,
     Query(range): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerRapportLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetReportRead,
+    )
+    .await?;
     let rows = regnmed_db::timesheet_summary(&state.pool, company_id, range.from, range.to).await?;
     Ok(Json(json!({
         "prosjekter": rows.iter().map(|r| json!({
@@ -196,7 +208,13 @@ pub async fn unbilled(
     Path(company_id): Path<Uuid>,
     Query(query): Query<UnbilledQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerRapportLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetReportRead,
+    )
+    .await?;
     let groups = regnmed_db::unbilled_groups(
         &state.pool,
         company_id,
@@ -243,7 +261,7 @@ pub async fn bill(
     Path(company_id): Path<Uuid>,
     Json(request): Json<BillRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerFakturer).await?;
+    require(&state, person.person_id, company_id, Right::TimesheetBill).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -281,7 +299,13 @@ pub async fn get_lock(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerLesEgne).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::TimesheetReadOwn,
+    )
+    .await?;
     let lock = regnmed_db::timesheet_lock(&state.pool, company_id).await?;
     Ok(Json(
         json!({ "locked_through": lock.map(|d| d.to_string()) }),
@@ -300,7 +324,7 @@ pub async fn set_lock(
     Path(company_id): Path<Uuid>,
     Json(request): Json<LockRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::TimerLaas).await?;
+    require(&state, person.person_id, company_id, Right::TimesheetLock).await?;
     let locked_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_timesheet_lock(
         &state.pool,

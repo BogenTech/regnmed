@@ -87,7 +87,7 @@ alt-eller-ingenting inn i en tom hovedbok, loggført med innholdshash og
 attribuerbar og avgrenset i tid. Det som gjensto var aldri risikoen —
 det var vokabularet.
 
-### Grensen som består: `Rett::kan_delegeres`
+### Grensen som består: `Right::can_be_delegated`
 
 En maskin får **aldri** en rettighet som styrer hvem som har tilgang,
 uansett hvilken rolle den bærer:
@@ -99,7 +99,7 @@ uansett hvilken rolle den bærer:
 | `INTEGRASJON_ADMIN` | Andre integrasjoners tilgang — og sin egen |
 | `SELSKAP_ADMIN` | Firmaopplysninger, registreringsstatus |
 
-Filtreringen ligger **i tilgangsoppslaget** (`tilgang::slaa_opp`), ikke
+Filtreringen ligger **i tilgangsoppslaget** (`access::lookup`), ikke
 ved tildelingen. Det er en avgjørelse: da gjelder den også for roller
 som kommer til senere, og for rader som ble skrevet før regelen fantes.
 Vakten, `/me` og `company_access` er ellers urørt — en integrasjon er

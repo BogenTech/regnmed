@@ -15,8 +15,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct PeriodeQuery {
@@ -49,7 +49,7 @@ pub async fn status(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let periode = periode_or_lock(&state, company_id, query.periode).await?;
     let linjer =
         regnmed_db::balance_documentation::balance_status(&state.pool, company_id, periode).await?;
@@ -90,7 +90,7 @@ pub async fn avstem(
     Path(company_id): Path<Uuid>,
     Json(request): Json<AvstemRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -130,7 +130,7 @@ pub async fn avstem_med_vedlegg(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -160,7 +160,7 @@ pub async fn vedlegg(
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let (navn, content_type, bytes) =
         regnmed_db::balance_documentation::hent_vedlegg(&state.pool, company_id, id)
             .await
@@ -190,7 +190,7 @@ pub async fn historikk(
     Path(company_id): Path<Uuid>,
     Query(query): Query<HistorikkQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let rader = regnmed_db::balance_documentation::historikk(
         &state.pool,
         company_id,

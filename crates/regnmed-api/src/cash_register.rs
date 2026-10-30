@@ -12,8 +12,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct SalgLinje {
@@ -87,7 +87,7 @@ pub async fn dagsoppgjor(
     Path(company_id): Path<Uuid>,
     Json(request): Json<DagsoppgjorRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &state.pool,
@@ -117,7 +117,7 @@ pub async fn dagsoppgjor_med_rapport(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     // The settlement itself travels as a JSON header field so the body
     // can stay the raw report — same shape as the other upload routes.
     let meta = headers

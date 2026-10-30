@@ -24,8 +24,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::Value {
     json!({
@@ -59,7 +59,13 @@ pub async fn list_shareholders(
     Path(company_id): Path<Uuid>,
     Query(q): Query<BokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
     let date = q.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let bok = regnmed_db::share_register::aksjeeierbok(&state.pool, company_id, date)
         .await
@@ -93,7 +99,13 @@ pub async fn create_shareholder(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateShareholderRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterWrite,
+    )
+    .await?;
     let id = regnmed_db::share_register::create_shareholder(
         &state.pool,
         company_id,
@@ -132,7 +144,13 @@ pub async fn update_contact(
     Path((company_id, shareholder_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<ContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterWrite,
+    )
+    .await?;
     regnmed_db::share_register::update_shareholder_contact(
         &state.pool,
         company_id,
@@ -156,7 +174,13 @@ pub async fn transaction_types(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
     let types: Vec<_> = regnmed_core::share_register::ALL
         .iter()
         .map(|t| {
@@ -182,7 +206,13 @@ pub async fn list_events(
     Path(company_id): Path<Uuid>,
     Query(q): Query<EventQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
     let events =
         regnmed_db::share_register::list_hendelser(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
@@ -225,7 +255,13 @@ pub async fn create_event(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateEventRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterWrite,
+    )
+    .await?;
     let id = regnmed_db::share_register::record_hendelse(
         &state.pool,
         company_id,
@@ -250,7 +286,13 @@ pub async fn list_dividends(
     Path(company_id): Path<Uuid>,
     Query(q): Query<EventQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
     let rows = regnmed_db::share_register::list_utbytte(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "utbytte": rows.iter().map(|u| json!({
@@ -279,7 +321,13 @@ pub async fn create_dividend(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateDividendRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokSkriv).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterWrite,
+    )
+    .await?;
     let vedtak = regnmed_db::share_register::create_utbytte(
         &state.pool,
         company_id,
@@ -320,7 +368,13 @@ pub async fn tax_return(
     Path(company_id): Path<Uuid>,
     Query(q): Query<ReturnQuery>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
     let sett = regnmed_db::share_register::bygg_oppgave(&state.pool, company_id, q.year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

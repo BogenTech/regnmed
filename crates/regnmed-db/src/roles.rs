@@ -41,11 +41,11 @@ pub const RESERVERTE_NAVN: [&str; 6] = ["admin", "bokforing", "les", "ansatt", "
 const UNIK_KRENKELSE: &str = "23505";
 
 #[derive(Debug, Clone)]
-pub struct Rolle {
+pub struct Role {
     pub id: Uuid,
     pub navn: String,
     pub aktiv: bool,
-    pub rettigheter: Vec<String>,
+    pub rights: Vec<String>,
     pub i_bruk: i64,
 }
 
@@ -75,7 +75,7 @@ pub async fn rettigheter_for(
     Ok(rows.iter().map(|r| r.get("rett")).collect())
 }
 
-pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolle>> {
+pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Role>> {
     let rows = sqlx::query(
         "select r.id, r.navn, r.aktiv,
                 coalesce(array_agg(rr.rett) filter (where rr.rett is not null), '{}') as rettigheter,
@@ -92,11 +92,11 @@ pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolle>> 
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Rolle {
+        .map(|r| Role {
             id: r.get("id"),
             navn: r.get("navn"),
             aktiv: r.get("aktiv"),
-            rettigheter: r.get("rettigheter"),
+            rights: r.get("rettigheter"),
             i_bruk: r.get("i_bruk"),
         })
         .collect())
@@ -107,7 +107,7 @@ async fn logg(
     company_id: Uuid,
     role_id: Uuid,
     endring: &str,
-    rettigheter: Option<&str>,
+    rights: Option<&str>,
     utfort_av: Uuid,
 ) -> Result<()> {
     sqlx::query(
@@ -119,7 +119,7 @@ async fn logg(
     .bind(company_id)
     .bind(role_id)
     .bind(endring)
-    .bind(rettigheter)
+    .bind(rights)
     .bind(utfort_av)
     .execute(&mut **tx)
     .await?;
@@ -181,7 +181,7 @@ pub async fn opprett(
 async fn sett_rettigheter_in(
     tx: &mut Transaction<'_, Postgres>,
     role_id: Uuid,
-    rettigheter: &[String],
+    rights: &[String],
 ) -> Result<()> {
     sqlx::query("delete from company_role_right where role_id = $1")
         .bind(role_id)
@@ -193,7 +193,7 @@ async fn sett_rettigheter_in(
          on conflict do nothing",
     )
     .bind(role_id)
-    .bind(rettigheter)
+    .bind(rights)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -278,7 +278,7 @@ pub async fn finnes(pool: &PgPool, company_id: Uuid, navn: &str) -> Result<bool>
 pub struct Rolleendring {
     pub navn: String,
     pub endring: String,
-    pub rettigheter: Option<String>,
+    pub rights: Option<String>,
     pub utfort_av: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -302,7 +302,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendri
         .map(|r| Rolleendring {
             navn: r.get("navn"),
             endring: r.get("endring"),
-            rettigheter: r.get("rettigheter"),
+            rights: r.get("rettigheter"),
             utfort_av: r.get("utfort_av"),
             created_at: r.get("created_at"),
         })

@@ -19,9 +19,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
-use crate::tilgang::{Rett, krev};
 
 /// 404 (not 403) when the person has no path to the company: a caller
 /// without access must not learn that the company exists.
@@ -60,7 +60,7 @@ pub async fn vat_report(
     Path(company_id): Path<Uuid>,
     Query(query): Query<VatPeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let (ordning, period) = scheme_period(&state, company_id, query.year, query.period).await?;
 
     let lines = regnmed_db::vat_specification(
@@ -110,7 +110,7 @@ pub async fn vat_return(
     Path(company_id): Path<Uuid>,
     Query(query): Query<VatPeriodQuery>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let (ordning, period) = scheme_period(&state, company_id, query.year, query.period).await?;
 
     let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
@@ -168,7 +168,7 @@ pub async fn saft_export(
     Path(company_id): Path<Uuid>,
     Query(query): Query<SaftQuery>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
 
     let (start, end) = match (query.year, query.from, query.to) {
         // year= betyr regnskapsåret; definisjonen ligger i
@@ -240,7 +240,7 @@ pub async fn trial_balance(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let rows = regnmed_db::trial_balance(&state.pool, company_id, query.from, query.to).await?;
     Ok(Json(json!({
@@ -261,7 +261,7 @@ pub async fn account_specification(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let posts = regnmed_db::account_specification(
         &state.pool,
@@ -315,7 +315,7 @@ async fn reskontro_specification(
     Query(query): Query<PeriodQuery>,
     kind: &str,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let parties =
         regnmed_db::reskontro_specification(&state.pool, company_id, kind, query.from, query.to)
@@ -344,7 +344,7 @@ pub async fn posting_specification(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let vouchers =
         regnmed_db::posting_specification(&state.pool, company_id, query.from, query.to).await?;
@@ -384,7 +384,7 @@ pub async fn result(
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let lines = regnmed_db::balance_lines(
         &state.pool,
@@ -423,7 +423,7 @@ pub async fn project_profitability(
     Path(company_id): Path<Uuid>,
     Query(query): Query<ProsjektRapportQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let year = match query.year {
         Some(y) => y,
         None => {
@@ -520,7 +520,7 @@ pub async fn balance_sheet(
     Path(company_id): Path<Uuid>,
     Query(query): Query<DateQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let lines =
         regnmed_db::balance_lines(&state.pool, company_id, None, query.date, None, None).await?;
     let b = regnmed_core::statements::balance_sheet(&lines);
@@ -549,7 +549,7 @@ pub async fn audit(
     Path(company_id): Path<Uuid>,
     Query(query): Query<AuditQuery>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let generated_by = person.name.as_deref().unwrap_or(&person.sub);
     let report = regnmed_db::build_audit_report(
         &state.pool,
@@ -601,7 +601,7 @@ pub async fn period_scheme(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -651,7 +651,7 @@ pub async fn set_period_scheme(
     Path(company_id): Path<Uuid>,
     Json(request): Json<SetOrdningRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::VatSchemeAdmin).await?;
+    require(&state, person.person_id, company_id, Right::VatSchemeAdmin).await?;
     let ordning = regnmed_core::vat::PeriodScheme::parse(&request.ordning).ok_or_else(|| {
         ApiError::BadRequest("ordning must be to-maneder, arlig or primaernaering".into())
     })?;
@@ -687,7 +687,7 @@ pub async fn nokkeltall(
     Path(company_id): Path<Uuid>,
     Query(query): Query<NokkeltallQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await

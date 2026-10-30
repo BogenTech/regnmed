@@ -13,8 +13,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -28,7 +28,7 @@ pub async fn import_file(
     Query(query): Query<AccountQuery>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::OcrImport).await?;
+    require(&state, person.person_id, company_id, Right::OcrImport).await?;
 
     let file = regnmed_core::ocr::parse(&body)
         .map_err(|e| ApiError::BadRequest(format!("OCR file: {e}")))?;
@@ -59,7 +59,7 @@ pub async fn list_payments(
     Path(company_id): Path<Uuid>,
     Query(query): Query<RangeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::OcrLes).await?;
+    require(&state, person.person_id, company_id, Right::OcrRead).await?;
 
     let payments =
         regnmed_db::list_ocr_payments(&state.pool, company_id, query.from, query.to).await?;

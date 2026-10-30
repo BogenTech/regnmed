@@ -18,11 +18,11 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
-use crate::tilgang::{Rett, krev};
 
-fn ansatt_json(a: &regnmed_db::payroll::Ansatt) -> serde_json::Value {
+fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
     json!({
         "id": a.id,
         "navn": a.navn,
@@ -54,7 +54,7 @@ pub async fn list_employees(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let employees = regnmed_db::payroll::list_ansatte(&state.pool, company_id).await?;
     Ok(Json(json!({
         "ansatte": employees.iter().map(ansatt_json).collect::<Vec<_>>()
@@ -97,7 +97,7 @@ pub async fn create_employee(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     let id = regnmed_db::payroll::create_ansatt(
         &state.pool,
         company_id,
@@ -155,7 +155,7 @@ pub async fn list_payroll(
     Path(company_id): Path<Uuid>,
     Query(q): Query<YearQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let runs = regnmed_db::payroll::list_kjoringer(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "kjoringer": runs.iter().map(kjoring_json).collect::<Vec<_>>()
@@ -200,7 +200,7 @@ pub async fn run_payroll(
     Path(company_id): Path<Uuid>,
     Json(request): Json<RunPayrollRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnKjor).await?;
+    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
     let poster: Vec<_> = request
         .lines
         .iter()
@@ -257,14 +257,8 @@ pub async fn payslip_pdf(
     // Note this is NOT #55: that issue takes LONNSSLIPP_LES_ALLE OUT of
     // the reading bundle. Here only the scope is added, without changing
     // who has what.
-    let rolle = krev(
-        &state,
-        person.person_id,
-        company_id,
-        Rett::LonnsslippLesEgen,
-    )
-    .await?;
-    if !rolle.har(Rett::LonnsslippLesAlle) {
+    let rolle = require(&state, person.person_id, company_id, Right::PayslipReadOwn).await?;
+    if !rolle.has(Right::PayslipReadAll) {
         let eier = regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
         if eier != Some(person.person_id) {
             return Err(ApiError::NotFound);
@@ -294,7 +288,7 @@ pub async fn payroll_hours(
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<HoursQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let g = regnmed_db::payroll::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.month)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -322,7 +316,7 @@ pub async fn link_employee(
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<LinkRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     regnmed_db::payroll::link_ansatt_person(
         &state.pool,
         company_id,
@@ -341,7 +335,7 @@ pub async fn unlink_employee(
     person: AuthPerson,
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     regnmed_db::payroll::unlink_ansatt_person(
         &state.pool,
         company_id,
@@ -359,7 +353,7 @@ pub async fn employee_link_history(
     person: AuthPerson,
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::LonnLes).await?;
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let rader =
         regnmed_db::payroll::ansatt_link_historikk(&state.pool, company_id, employee_id).await?;
     Ok(Json(json!({

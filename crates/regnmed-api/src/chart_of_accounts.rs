@@ -19,15 +19,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 pub async fn list_accounts(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let accounts = regnmed_db::list_accounts(&state.pool, company_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -63,7 +63,7 @@ pub async fn create_account(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateAccountRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let number = request.number.trim();
     let name = match request.name.as_deref().map(str::trim) {
         Some(n) if !n.is_empty() => n.to_string(),
@@ -93,7 +93,7 @@ pub async fn update_account(
     Path((company_id, number)): Path<(Uuid, String)>,
     Json(request): Json<UpdateAccountRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     regnmed_db::update_account(
         &state.pool,
         company_id,
@@ -143,7 +143,7 @@ pub async fn post_manual_voucher(
     Path(company_id): Path<Uuid>,
     Json(request): Json<ManualVoucherRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let draft = VoucherDraft {
         journal_code: request.journal_code,
         voucher_date: request.date,

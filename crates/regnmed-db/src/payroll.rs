@@ -51,7 +51,7 @@ pub struct NyAnsatt {
 }
 
 #[derive(Debug, Clone)]
-pub struct Ansatt {
+pub struct Employee {
     pub id: Uuid,
     pub navn: String,
     pub stilling: Option<String>,
@@ -77,7 +77,7 @@ pub struct Ansatt {
     pub person_epost: Option<String>,
 }
 
-impl Ansatt {
+impl Employee {
     fn withholding(&self) -> Withholding {
         match self.withholding_type.as_str() {
             "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
@@ -135,7 +135,7 @@ pub async fn create_ansatt(
     Ok(id)
 }
 
-pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ansatt>> {
+pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employee>> {
     let rows = sqlx::query(
         "select e.id, e.fodselsnummer, e.navn, e.stilling, e.ansatt_fra, e.ansatt_til,
                 e.manedslonn_ore, e.timelonn_ore, e.trekk_type, e.trekk_prosent_bp,
@@ -153,8 +153,8 @@ pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ansatt>
     Ok(rows.iter().map(ansatt_fra_rad).collect())
 }
 
-fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Ansatt {
-    Ansatt {
+fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
+    Employee {
         id: r.get("id"),
         navn: r.get("navn"),
         stilling: r.get("stilling"),

@@ -30,7 +30,7 @@ og tas med ut. Derfor:
 
 Sperren håndheves i tilgangsvakten (docs/auth.md §3) — én søm, ingen
 endepunkter kan glemme den. Skillet mellom «endrer» og «leser» er en
-uttømmende match i koden ([`Rett::endrer`]), så en ny rettighet tvinges
+uttømmende match i koden ([`Right::mutates`]), så en ny rettighet tvinges
 til å velge side.
 
 ## 2. Statusene

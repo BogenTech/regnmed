@@ -14,15 +14,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 pub async fn get_settings(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
+    require(&state, person.person_id, company_id, Right::CompanyRead).await?;
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
@@ -69,7 +69,7 @@ pub async fn update_settings(
     Path(company_id): Path<Uuid>,
     Json(request): Json<UpdateSettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
     regnmed_db::update_company_settings(
         &state.pool,
         company_id,
@@ -106,7 +106,7 @@ pub async fn set_registrering(
     Path(company_id): Path<Uuid>,
     Json(request): Json<RegistreringRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
     let valid_from = match request.valid_from {
         Some(date) => date,
         None => sqlx::query_scalar("select current_date")
@@ -145,7 +145,7 @@ pub async fn update_party_contact(
     Path((company_id, party_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<PartyContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::KontaktSkriv).await?;
+    require(&state, person.person_id, company_id, Right::ContactWrite).await?;
     regnmed_db::update_party_contact(
         &state.pool,
         company_id,

@@ -364,14 +364,46 @@ meanings and only this one moved (`agent_task.rs` excluded like
 already `inventory`'s. A `use X as Y` alias has no `::` and so was
 missed by the module-path sweep -- worth remembering.
 
+`regnmed-api::tilgang`->`access` moved next -- the single biggest
+file, 806 occurrences, deferred by three earlier batches. `Rett`->
+`Right` with ALL 72 VARIANTS translated (`BilagLes`->`VoucherRead`,
+`FakturaSkriv`->`InvoiceWrite`, `LonnKjor`->`PayrollRun`, ...),
+`Rolle`->`Role` (`Ansatt`/`Les`/`Revisor`/`Bokforing`->`Employee`/
+`Read`/`Auditor`/`Bookkeeping`), `Tilgang`->`Access`, `krev`->
+`require`, `slaa_opp`->`lookup`, `har`->`has`, `endrer`->`mutates`,
+`kan_delegeres`->`can_be_delegated`, `medforer`->`implies`,
+`beskrivelse`->`description`, `gruppe`->`group`. The 72-entry map was
+GENERATED from a noun table x a verb table and checked for duplicate
+sources and targets before running -- hand-writing 72 pairs is how one
+of them comes out wrong.
+
+**THE SLUGS DID NOT MOVE, and that is the whole contract.** Every
+`"BILAG_LES"` is a string literal, so the guard held them byte-
+identical; `/me` ships them, the portal reads them, and
+`Rett::fra_db`/`fra_slug` resolve DB rows through them. The payoff was
+visible immediately: **docs/auth.md's generated matrix needed NO
+regeneration**, because `matrise()` builds the table purely from
+`slug()` and `beskrivelse()` return values. The doc-check test passed
+before any doc edit.
+
+What DID need editing was the PROSE: 24 code references across
+docs/auth.md, docs/agent.md, docs/integrations.md and
+docs/abonnement.md named `tilgang::krev`, `Rett::kan_delegeres`,
+`tests/grupper/tilgang.rs` and so on, and a stale reference in
+audit-facing documentation is worse than none. The one PAIRED change
+is the `START` marker: it contains its own generator's path, so
+`matrise.rs`->`matrix.rs` had to move in the Rust const AND in
+docs/auth.md in the same commit, exactly as this file warned. The
+guard was SEEN TO FAIL (a sabotaged slug in the doc) and pass again.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~6 500
-Norwegian identifier occurrences, 628 distinct names -- 4,2 % of all
-identifiers**, down from 7 494 / 667 / 4,8 % before the payroll and
-share-register batches. Per crate: api 3 587, db 1 961, core 718,
-cli 138, mcp 81, gov 38, agent 9, mail 2. The heaviest single file is
-`tilgang.rs` at 806, of which `Rett` alone is 507 -- roughly an eighth
-of everything remaining sits in that one file.
+a Norwegian word list, strings and comments excluded): **~5 200
+Norwegian identifier occurrences, 561 distinct names, 194 files --
+3,4 % of all identifiers**, down from 7 494 / 667 / 4,8 % four batches
+ago. Per crate: api 2 263, db 1 942, core 718, cli 138, mcp 81,
+gov 38, agent 9, mail 2. No single file dominates any more: the
+heaviest are `db::subscription` 244, `db::payroll` 159, `cli::main`
+138, `api::access` 131, `core::ehf_import` 115.
 
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
@@ -379,10 +411,9 @@ still.
 
 **Still Norwegian**, deliberately: the modules whose core and db halves
 are both unconverted (`saft_import`, `salgsdokument`, `reskontro`),
-`regnmed-api::tilgang` (the single access guard, named all through
-docs/auth.md -- and `Rett`'s 72 variants, deferred by three batches
-now), `regnmed-db::agentllm`, `regnmed-api::herding` and the test
-tree (`tests/grupper/`, the seven group binaries).
+`regnmed-db::agentllm`, `regnmed-api::herding` and the test tree
+(`tests/grupper/`, the seven group binaries -- their `#[path]`
+entries move with each batch, the binary filenames have not).
 The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
 Norwegian identifiers, and converting them is its own work, crate by
 crate, not a single sweep. `regnmed-api` has to move in lockstep with

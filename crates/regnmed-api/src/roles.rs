@@ -16,16 +16,16 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, Role, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, Rolle, krev};
 
 /// The rettigheter, with the name the portal displays them under.
-fn rett_json(r: Rett) -> serde_json::Value {
+fn rett_json(r: Right) -> serde_json::Value {
     json!({
         "rett": r.slug(),
-        "gruppe": r.gruppe(),
-        "beskrivelse": r.beskrivelse(),
-        "kan_delegeres": r.kan_delegeres(),
+        "gruppe": r.group(),
+        "beskrivelse": r.description(),
+        "kan_delegeres": r.can_be_delegated(),
     })
 }
 
@@ -34,41 +34,41 @@ pub async fn list_roles(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
     let innebygde = [
-        Rolle::Ansatt,
-        Rolle::Les,
-        Rolle::Revisor,
-        Rolle::Bokforing,
-        Rolle::Admin,
+        Role::Employee,
+        Role::Read,
+        Role::Auditor,
+        Role::Bookkeeping,
+        Role::Admin,
     ];
     Ok(Json(json!({
         // Built-in roles cannot be changed. They are shown as they are,
         // so an admin sees what they actually mean without reading code.
         "innebygde": innebygde.iter().map(|r| json!({
             "navn": r.slug(),
-            "beskrivelse": r.beskrivelse(),
-            "rettigheter": r.rettigheter().iter().map(|x| x.slug()).collect::<Vec<_>>(),
+            "beskrivelse": r.description(),
+            "rettigheter": r.rights().iter().map(|x| x.slug()).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "egne": egne.iter().map(|r| json!({
             "id": r.id,
             "navn": r.navn,
             "aktiv": r.aktiv,
-            "rettigheter": r.rettigheter,
+            "rettigheter": r.rights,
             "i_bruk": r.i_bruk,
         })).collect::<Vec<_>>(),
         // The vocabulary, so the portal can build the checkbox grid
         // without keeping its own copy of the list.
-        "vokabular": Rett::ALLE.iter().map(|r| rett_json(*r)).collect::<Vec<_>>(),
+        "vokabular": Right::ALLE.iter().map(|r| rett_json(*r)).collect::<Vec<_>>(),
     })))
 }
 
 #[derive(Deserialize)]
 pub struct RolleRequest {
     navn: Option<String>,
-    #[serde(default)]
-    rettigheter: Vec<String>,
+    #[serde(default, rename = "rettigheter")]
+    rights: Vec<String>,
 }
 
 /// Translates the names into rettigheter and refuses what cannot be
@@ -81,9 +81,9 @@ pub struct RolleRequest {
 fn godkjenn(navn: &[String]) -> Result<Vec<String>, ApiError> {
     let mut ut = Vec::new();
     for n in navn {
-        let rett = Rett::fra_slug(n)
+        let rett = Right::from_slug(n)
             .ok_or_else(|| ApiError::BadRequest(format!("ukjent rettighet «{n}»")))?;
-        if !rett.kan_delegeres() {
+        if !rett.can_be_delegated() {
             return Err(ApiError::BadRequest(format!(
                 "«{}» kan ikke legges i en egendefinert rolle: den styrer hvem som har \
                  tilgang, og en rolle som kan endre tilganger kan gi seg selv alt annet",
@@ -103,11 +103,11 @@ pub async fn create_role(
     Path(company_id): Path<Uuid>,
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let navn = request
         .navn
         .ok_or_else(|| ApiError::BadRequest("rollen må ha et navn".into()))?;
-    let godkjente = godkjenn(&request.rettigheter)?;
+    let godkjente = godkjenn(&request.rights)?;
     let id = regnmed_db::roles::opprett(
         &state.pool,
         company_id,
@@ -127,8 +127,8 @@ pub async fn set_rights(
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let godkjente = godkjenn(&request.rettigheter)?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
+    let godkjente = godkjenn(&request.rights)?;
     regnmed_db::roles::sett_rettigheter(
         &state.pool,
         company_id,
@@ -146,7 +146,7 @@ pub async fn deactivate(
     person: AuthPerson,
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, false, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -158,7 +158,7 @@ pub async fn restore(
     person: AuthPerson,
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, true, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -170,13 +170,13 @@ pub async fn history(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let rader = regnmed_db::roles::historikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.navn,
             "endring": e.endring,
-            "rettigheter": e.rettigheter,
+            "rettigheter": e.rights,
             "utfort_av": e.utfort_av,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
