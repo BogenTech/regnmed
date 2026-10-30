@@ -44,12 +44,12 @@ pub async fn get_settings(
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.vat_registered,
         "foretaksregistrert": reg.foretaksregistrert,
-        "registrering_historikk": historikk.iter().map(|(date, r, kilde, notat)| json!({
+        "registrering_historikk": historikk.iter().map(|(date, r, source, note)| json!({
             "valid_from": date.to_string(),
             "mva_registrert": r.vat_registered,
             "foretaksregistrert": r.foretaksregistrert,
-            "kilde": kilde,
-            "notat": notat,
+            "kilde": source,
+            "notat": note,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -93,7 +93,8 @@ pub struct RegistreringRequest {
     /// that happened earlier should say so, since documents dated
     /// before it must not carry the påtegning.
     valid_from: Option<chrono::NaiveDate>,
-    notat: Option<String>,
+    #[serde(rename = "notat")]
+    note: Option<String>,
 }
 
 /// Records the company's registration status (§5-1-2, #81). A new dated
@@ -123,7 +124,7 @@ pub async fn set_registrering(
             foretaksregistrert: request.foretaksregistrert,
         },
         "manuell",
-        request.notat.as_deref(),
+        request.note.as_deref(),
         person.name.as_deref().unwrap_or(&person.sub),
     )
     .await

@@ -53,12 +53,12 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1700", "Forskuddsbetalt kostnad"),
         ("1920", "Bank"),
         ("6300", "Leie lokale"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -66,7 +66,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     // The source bilag: a year of rent paid in January, parked on 1700.
     // 10 000,01 kr so the split cannot come out even.
     let total = 1_000_001;
-    let kilde = regnmed_db::post_voucher(
+    let source = regnmed_db::post_voucher(
         &pool,
         company,
         &VoucherDraft {
@@ -106,7 +106,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         &pool,
         company,
         &PeriodiseringDraft {
-            kilde_voucher: Some(kilde.id),
+            kilde_voucher: Some(source.id),
             beskrivelse: "Husleie 2026".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
@@ -115,7 +115,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
             til: (2026, 12),
             department: None,
             project: None,
-            notat: None,
+            note: None,
         },
         "test",
     )
@@ -163,8 +163,8 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+    for (nr, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -181,7 +181,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
             til: (2026, 12),
             department: None,
             project: None,
-            notat: None,
+            note: None,
         },
         "test",
     )
@@ -219,8 +219,8 @@ async fn a_started_plan_cannot_be_rewritten() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+    for (nr, name) in [("1700", "Forskuddsbetalt"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -237,7 +237,7 @@ async fn a_started_plan_cannot_be_rewritten() {
             til: (2026, 6),
             department: None,
             project: None,
-            notat: None,
+            note: None,
         },
         "test",
     )
@@ -247,14 +247,14 @@ async fn a_started_plan_cannot_be_rewritten() {
         .await
         .unwrap();
 
-    let feil = sqlx::query("update periodisering set total_ore = 99_000 where id = $1")
+    let error = sqlx::query("update periodisering set total_ore = 99_000 where id = $1")
         .bind(plan)
         .execute(&pool)
         .await
         .expect_err("en påbegynt plan skal ikke kunne endres");
     assert!(
-        feil.to_string().contains("påbegynt"),
-        "feilmeldingen skal si hvorfor: {feil}"
+        error.to_string().contains("påbegynt"),
+        "feilmeldingen skal si hvorfor: {error}"
     );
 
     // …but stopping it is still allowed, or a plan could never be ended.
@@ -275,12 +275,12 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1500", "Kundefordringer"),
         ("1700", "Forskuddsbetalt"),
         ("6300", "Leie"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -298,18 +298,18 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         til: (2026, 3),
         department: None,
         project: None,
-        notat: None,
+        note: None,
     };
 
-    let feil = create_periodisering(&pool, company, &plan("6300", "1500"), "test")
+    let error = create_periodisering(&pool, company, &plan("6300", "1500"), "test")
         .await
         .expect_err("reskontrokonto kan aldri lykkes uten part");
-    assert!(feil.to_string().contains("reskontrokonto"), "{feil}");
+    assert!(error.to_string().contains("reskontrokonto"), "{error}");
 
-    let feil = create_periodisering(&pool, company, &plan("6300", "9999"), "test")
+    let error = create_periodisering(&pool, company, &plan("6300", "9999"), "test")
         .await
         .expect_err("ukjent konto");
-    assert!(feil.to_string().contains("finnes ikke"), "{feil}");
+    assert!(error.to_string().contains("finnes ikke"), "{error}");
 
     // The good one still works.
     create_periodisering(&pool, company, &plan("6300", "1700"), "test")

@@ -76,7 +76,7 @@ pub async fn subscription_status(
         "status": status.slug(),
         "dato": date.map(|d| d.to_string()),
         "planer": planer,
-        "kort": card.filter(|k| k.aktiv).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
+        "kort": card.filter(|k| k.active).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
         "kort_mulig": state.stripe.is_some(),
         "abonnement": abo.map(|a| json!({
             "plan": a.plan,
@@ -129,14 +129,14 @@ pub async fn card_setup(
     let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
         Some(card) => card.stripe_customer_id,
         None => {
-            let (navn, orgnr): (String, String) =
+            let (name, orgnr): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
                     .bind(company_id)
                     .fetch_one(&state.pool)
                     .await
                     .map_err(anyhow::Error::from)?;
             stripe
-                .create_customer(&company_id.to_string(), &navn, &orgnr)
+                .create_customer(&company_id.to_string(), &name, &orgnr)
                 .await?
         }
     };
@@ -186,9 +186,9 @@ async fn sync_price(
             return Ok(price_id);
         }
     }
-    let navn = format!("regnmed {plan}");
+    let name = format!("regnmed {plan}");
     let price_id = client(cfg)
-        .create_price(&navn, brutto, interval, plan)
+        .create_price(&name, brutto, interval, plan)
         .await?;
     regnmed_db::subscription::save_stripe_price(
         &state.pool,
@@ -249,15 +249,15 @@ pub async fn start_subscription(
                 "abonnementet er allerede aktivt".into(),
             ));
         }
-        let navn = person.name.as_deref().unwrap_or(&person.sub);
+        let name = person.name.as_deref().unwrap_or(&person.sub);
         regnmed_db::subscription::open_coverage(
             &state.pool,
             company_id,
             &request.plan,
             idag,
             None,
-            &format!("selvbetjent i portalen av {navn}"),
-            navn,
+            &format!("selvbetjent i portalen av {name}"),
+            name,
         )
         .await?;
         return Ok(Json(json!({ "status": "aktiv" })));
@@ -268,14 +268,14 @@ pub async fn start_subscription(
     let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
         Some(card) => card.stripe_customer_id,
         None => {
-            let (navn, orgnr): (String, String) =
+            let (name, orgnr): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
                     .bind(company_id)
                     .fetch_one(&state.pool)
                     .await
                     .map_err(anyhow::Error::from)?;
             stripe
-                .create_customer(&company_id.to_string(), &navn, &orgnr)
+                .create_customer(&company_id.to_string(), &name, &orgnr)
                 .await?
         }
     };

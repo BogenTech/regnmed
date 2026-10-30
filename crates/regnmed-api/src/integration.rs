@@ -38,7 +38,7 @@ pub async fn list(
             "grant_id": g.grant_id,
             "integration_id": g.integration_id,
             "client_id": g.client_id,
-            "navn": g.navn,
+            "navn": g.name,
             "kontakt": g.kontakt,
             "access": g.access,
             "valid_from": g.valid_from.to_string(),
@@ -67,7 +67,7 @@ pub async fn list(
         "kan_opprette": state.regnid.is_some() && state.sealing_key.is_some(),
         "leverandorer": regnmed_db::agentllm::LEVERANDORER
             .iter()
-            .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
+            .map(|(name, url)| json!({ "navn": name, "base_url": url }))
             .collect::<Vec<_>>(),
     })))
 }
@@ -76,7 +76,8 @@ pub async fn list(
 pub struct GrantRequest {
     /// The client_id the IdP issues tokens for — the token's `sub`.
     client_id: String,
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     kontakt: Option<String>,
     /// A role name, exactly as a member gets one: a built-in role or one
     /// of the company's own (#101). `revisor` is not assignable here any
@@ -98,22 +99,22 @@ const TILDELBARE: [Role; 4] = [Role::Employee, Role::Read, Role::Bookkeeping, Ro
 /// company's own ACTIVE roles. Without this a typo would be stored and
 /// then resolve to `Rolle::Ukjent` — an integration with a grant and no
 /// access, which looks like a bug in the API rather than in the request.
-async fn krev_gyldig_rolle(state: &AppState, company_id: Uuid, navn: &str) -> Result<(), ApiError> {
-    let navn = navn.trim();
-    if TILDELBARE.iter().any(|r| r.slug() == navn) {
+async fn krev_gyldig_rolle(state: &AppState, company_id: Uuid, name: &str) -> Result<(), ApiError> {
+    let name = name.trim();
+    if TILDELBARE.iter().any(|r| r.slug() == name) {
         return Ok(());
     }
     let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
-    if egne.iter().any(|r| r.aktiv && r.navn == navn) {
+    if egne.iter().any(|r| r.active && r.name == name) {
         return Ok(());
     }
     let valg: Vec<&str> = TILDELBARE
         .iter()
         .map(|r| r.slug())
-        .chain(egne.iter().filter(|r| r.aktiv).map(|r| r.navn.as_str()))
+        .chain(egne.iter().filter(|r| r.active).map(|r| r.name.as_str()))
         .collect();
     Err(ApiError::BadRequest(format!(
-        "«{navn}» er ingen rolle i dette selskapet — velg en av: {}",
+        "«{name}» er ingen rolle i dette selskapet — velg en av: {}",
         valg.join(", ")
     )))
 }
@@ -137,7 +138,7 @@ pub async fn grant(
         &state.pool,
         company_id,
         &request.client_id,
-        &request.navn,
+        &request.name,
         request.kontakt.as_deref(),
         &request.access,
         &by,
@@ -149,7 +150,8 @@ pub async fn grant(
 
 #[derive(Deserialize)]
 pub struct AgentRequest {
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     /// A role name, exactly as a member gets one.
     access: String,
     kontakt: Option<String>,
@@ -235,7 +237,7 @@ pub async fn opprett_agent(
             )
             .create_machine_client(
                 &client_id,
-                request.navn.trim(),
+                request.name.trim(),
                 state.verifier.audience().unwrap_or_default(),
             )
             .await
@@ -248,7 +250,7 @@ pub async fn opprett_agent(
         &state.pool,
         company_id,
         &client_id,
-        &request.navn,
+        &request.name,
         request.kontakt.as_deref(),
         &request.access,
         &by,
@@ -269,7 +271,7 @@ pub async fn opprett_agent(
             &state.pool,
             company_id,
             integration_id,
-            &request.navn,
+            &request.name,
             request.kontakt.as_deref(),
             request.avatar_farge.as_deref(),
             request.avatar_ikon.as_deref(),
@@ -350,7 +352,8 @@ pub async fn opprett_agent(
 
 #[derive(Deserialize)]
 pub struct EndreRequest {
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     kontakt: Option<String>,
     avatar_farge: Option<String>,
     avatar_ikon: Option<String>,
@@ -380,7 +383,7 @@ pub async fn endre(
         &state.pool,
         company_id,
         integration_id,
-        &request.navn,
+        &request.name,
         request.kontakt.as_deref(),
         request.avatar_farge.as_deref(),
         request.avatar_ikon.as_deref(),
@@ -388,7 +391,7 @@ pub async fn endre(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    Ok(Json(json!({ "navn": request.navn.trim() })))
+    Ok(Json(json!({ "navn": request.name.trim() })))
 }
 
 #[derive(Deserialize)]
@@ -453,7 +456,7 @@ pub async fn log(
     let rows = regnmed_db::integration_calls(&state.pool, company_id).await?;
     Ok(Json(json!({
         "kall": rows.iter().map(|c| json!({
-            "navn": c.navn,
+            "navn": c.name,
             "method": c.method,
             "path": c.path,
             "status": c.status,
@@ -495,14 +498,14 @@ pub async fn llm(
         "tilgjengelig": state.sealing_key.is_some(),
         "leverandorer": regnmed_db::agentllm::LEVERANDORER
             .iter()
-            .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
+            .map(|(name, url)| json!({ "navn": name, "base_url": url }))
             .collect::<Vec<_>>(),
         // Whether the worker can authenticate AS this agent at all.
         // Without it a model is configured but nothing can run it, and
         // the portal must be able to say which half is missing.
         "klient_lagret": regnmed_db::agentllm::har_klienthemmelighet(
             &state.pool, integration_id).await?,
-        "oppsett": oppsett.filter(|o| o.aktiv).map(|o| json!({
+        "oppsett": oppsett.filter(|o| o.active).map(|o| json!({
             "leverandor": o.leverandor,
             "base_url": o.base_url,
             "modell": o.modell,

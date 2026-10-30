@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct AttestationPolicy {
-    pub aktiv: bool,
+    pub active: bool,
     /// Innboks bilag with a debit sum >= the threshold require
     /// attestering; None = every bilag while the policy is active.
     pub amount_limit_ore: Option<i64>,
@@ -30,7 +30,7 @@ pub struct AttestationPolicy {
 
 fn policy_from_row(row: &sqlx::postgres::PgRow) -> AttestationPolicy {
     AttestationPolicy {
-        aktiv: row.get("aktiv"),
+        active: row.get("aktiv"),
         amount_limit_ore: row.get("belopsgrense_ore"),
         attestant_person_id: row.get("attestant_person_id"),
         krev_for_maskin: row.get("krev_for_maskin"),
@@ -78,7 +78,7 @@ pub async fn policy_history(pool: &PgPool, company_id: Uuid) -> Result<Vec<Attes
 pub async fn set_policy(
     pool: &PgPool,
     company_id: Uuid,
-    aktiv: bool,
+    active: bool,
     amount_limit_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
     krev_for_maskin: Option<bool>,
@@ -106,7 +106,7 @@ pub async fn set_policy(
     )
     .bind(Uuid::now_v7())
     .bind(company_id)
-    .bind(aktiv)
+    .bind(active)
     .bind(amount_limit_ore)
     .bind(attestant_person_id)
     .bind(krev_for_maskin)
@@ -232,7 +232,7 @@ pub async fn attester_inbox_document(
         ensure!(note.is_some(), "en avvisning i attestering krever et notat");
     }
     if let Some(policy) = current_policy(pool, company_id).await?
-        && policy.aktiv
+        && policy.active
         && let Some(attestant) = policy.attestant_person_id
         && attestant != person_id
     {

@@ -159,27 +159,27 @@ fn sats(bp: i64) -> String {
     }
 }
 
-pub fn render(melding: &VatReturn) -> String {
+pub fn render(message: &VatReturn) -> String {
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(&format!(r#"<mvaMeldingDto xmlns="{NAMESPACE}">"#));
     x.depth = 1;
 
     x.open("innsending");
-    x.leaf("regnskapssystemsreferanse", &melding.referanse);
+    x.leaf("regnskapssystemsreferanse", &message.referanse);
     x.open("regnskapssystem");
     x.leaf("systemnavn", "regnmed");
-    x.leaf("systemversjon", &melding.system_version);
+    x.leaf("systemversjon", &message.system_version);
     x.close("regnskapssystem");
     x.close("innsending");
 
     x.open("skattegrunnlagOgBeregnetSkatt");
     x.open("skattleggingsperiode");
     x.open("periode");
-    match melding.ordning {
+    match message.ordning {
         PeriodScheme::ToManeder => x.leaf(
             "skattleggingsperiodeToMaaneder",
-            periode_name(melding.period),
+            periode_name(message.period),
         ),
         // Both yearly ordninger are skattleggingsperiodeAar in the
         // schema; primærnæring is a registration matter, not a
@@ -189,10 +189,10 @@ pub fn render(melding: &VatReturn) -> String {
         }
     }
     x.close("periode");
-    x.leaf("aar", &melding.period.year.to_string());
+    x.leaf("aar", &message.period.year.to_string());
     x.close("skattleggingsperiode");
-    x.leaf("fastsattMerverdiavgift", &melding.fastsatt_kr.to_string());
-    for line in &melding.lines {
+    x.leaf("fastsattMerverdiavgift", &message.fastsatt_kr.to_string());
+    for line in &message.lines {
         x.open("mvaSpesifikasjonslinje");
         x.leaf("mvaKode", &line.code);
         x.leaf("mvaKodeRegnskapsystem", &line.description);
@@ -209,7 +209,7 @@ pub fn render(melding: &VatReturn) -> String {
 
     x.empty("betalingsinformasjon");
     x.open("skattepliktig");
-    x.leaf("organisasjonsnummer", &melding.orgnr);
+    x.leaf("organisasjonsnummer", &message.orgnr);
     x.close("skattepliktig");
     x.leaf("meldingskategori", "alminnelig");
 
@@ -248,7 +248,7 @@ mod tests {
         ]
     }
 
-    fn melding() -> VatReturn {
+    fn message() -> VatReturn {
         build(
             "999888777",
             Period::new(2026, 1).unwrap(),
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn converts_signs_units_and_skips_code_0() {
-        let m = melding();
+        let m = message();
         assert_eq!(m.lines.len(), 2, "code 0 is not reported");
 
         let utg = m.lines.iter().find(|l| l.code == "3").unwrap();
@@ -305,7 +305,7 @@ mod tests {
                 tax_ore: -25_000_00,
             }]
         };
-        let melding = |code: &str| {
+        let message = |code: &str| {
             build(
                 "999888777",
                 Period::new(2026, 1).unwrap(),
@@ -316,7 +316,7 @@ mod tests {
             )
         };
 
-        let med = melding("86");
+        let med = message("86");
         assert_eq!(med.lines[0].vat_kr, 25_000, "beregnet utgående avgift");
         assert_eq!(med.lines[0].fradrag_kr, -25_000, "og fradraget for den");
         assert_eq!(
@@ -324,7 +324,7 @@ mod tests {
             "full fradragsrett: kjøpet skal ikke koste avgift"
         );
 
-        let uten = melding("87");
+        let uten = message("87");
         assert_eq!(
             uten.lines[0].fradrag_kr, 0,
             "ingen fradragsrett, intet fradrag"
@@ -337,7 +337,7 @@ mod tests {
         // The cost markers calculate nothing: the tax on an import is
         // computed under 81/14, so letting 21 generate it too would
         // charge the same import twice.
-        let markor = melding("21");
+        let markor = message("21");
         assert!(markor.lines.is_empty(), "kode 21 er en kostnadsmarkør");
         assert_eq!(markor.fastsatt_kr, 0, "og beregner ingen avgift");
     }
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn renders_expected_structure() {
-        let xml = render(&melding());
+        let xml = render(&message());
         for expected in [
             r#"<mvaMeldingDto xmlns="no:skatteetaten:fastsetting:avgift:mva:skattemeldingformerverdiavgift:v1.0">"#,
             "<regnskapssystemsreferanse>regnmed-2026-1</regnskapssystemsreferanse>",
@@ -370,7 +370,7 @@ mod tests {
         ] {
             assert!(xml.contains(expected), "missing {expected} in:\n{xml}");
         }
-        assert_eq!(xml, render(&melding()), "deterministic");
+        assert_eq!(xml, render(&message()), "deterministic");
     }
 
     /// Validates the rendered melding against Skatteetaten's official XSD.
@@ -384,7 +384,7 @@ mod tests {
         let dir = std::env::temp_dir().join("regnmed-mvamelding-test");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("melding.xml");
-        std::fs::write(&file, render(&melding())).unwrap();
+        std::fs::write(&file, render(&message())).unwrap();
 
         let output = match std::process::Command::new("xmllint")
             .args(["--noout", "--schema", xsd])
@@ -408,13 +408,13 @@ mod tests {
     /// and the result stays schema-valid. Skips without xmllint.
     #[test]
     fn yearly_period_renders_skattleggingsperiode_aar() {
-        let mut melding = melding();
-        melding.ordning = PeriodScheme::Arlig;
-        melding.period = Period {
+        let mut message = message();
+        message.ordning = PeriodScheme::Arlig;
+        message.period = Period {
             year: 2026,
             number: 1,
         };
-        let xml = render(&melding);
+        let xml = render(&message);
         assert!(xml.contains("<skattleggingsperiodeAar>aarlig</skattleggingsperiodeAar>"));
         assert!(!xml.contains("skattleggingsperiodeToMaaneder"));
 

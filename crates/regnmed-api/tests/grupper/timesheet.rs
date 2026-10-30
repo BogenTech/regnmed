@@ -832,7 +832,7 @@ async fn the_project_owns_the_rate_and_the_default() {
     assert_eq!(standard["timesats_ore"], 1_000_00);
 
     // Billable hours on a project with NO rate anywhere fail loudly.
-    let (status, feil) = request(
+    let (status, error) = request(
         &state,
         "POST",
         &base,
@@ -846,10 +846,10 @@ async fn the_project_owns_the_rate_and_the_default() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {feil}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {error}");
     assert!(
-        feil["error"].as_str().unwrap().contains("timesats"),
-        "feilen navngir det som mangler: {feil}"
+        error["error"].as_str().unwrap().contains("timesats"),
+        "feilen navngir det som mangler: {error}"
     );
     // Not billable works without any rate.
     let (status, _) = request(

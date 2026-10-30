@@ -24,7 +24,7 @@ pub struct Oppgave {
     pub integration_id: Option<Uuid>,
     /// The agent the task is addressed to; None = any agent with access.
     pub agent: Option<String>,
-    pub melding: String,
+    pub message: String,
     pub frist: Option<NaiveDate>,
     pub opprettet_av: String,
     pub created_at: DateTime<Utc>,
@@ -42,12 +42,12 @@ pub async fn opprett_oppgave(
     pool: &PgPool,
     company_id: Uuid,
     integration_id: Option<Uuid>,
-    melding: &str,
+    message: &str,
     frist: Option<NaiveDate>,
     opprettet_av: &str,
 ) -> Result<Uuid> {
-    let melding = melding.trim();
-    ensure!(!melding.is_empty(), "oppgaven trenger en melding");
+    let message = message.trim();
+    ensure!(!message.is_empty(), "oppgaven trenger en melding");
     if let Some(id) = integration_id {
         // A task addressed to an integration that has no access to this
         // company would sit unanswerable forever.
@@ -76,7 +76,7 @@ pub async fn opprett_oppgave(
     .bind(id)
     .bind(company_id)
     .bind(integration_id)
-    .bind(melding)
+    .bind(message)
     .bind(frist)
     .bind(opprettet_av)
     .execute(pool)
@@ -102,7 +102,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Oppgave {
         id: r.get("id"),
         integration_id: r.get("integration_id"),
         agent: r.get("agent"),
-        melding: r.get("melding"),
+        message: r.get("melding"),
         frist: r.get("frist"),
         opprettet_av: r.get("opprettet_av"),
         created_at: r.get("created_at"),
@@ -152,7 +152,7 @@ pub async fn hent_oppgave(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<O
 #[derive(Debug, Clone)]
 pub struct Hendelse {
     pub status: String,
-    pub notat: Option<String>,
+    pub note: Option<String>,
     pub av: String,
     pub created_at: DateTime<Utc>,
 }
@@ -173,7 +173,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<
         .iter()
         .map(|r| Hendelse {
             status: r.get("status"),
-            notat: r.get("notat"),
+            note: r.get("notat"),
             av: r.get("av"),
             created_at: r.get("created_at"),
         })
@@ -188,16 +188,16 @@ pub async fn svar(
     company_id: Uuid,
     oppgave_id: Uuid,
     status: &str,
-    notat: Option<&str>,
+    note: Option<&str>,
     av: &str,
 ) -> Result<()> {
     ensure!(
         matches!(status, "pagar" | "sporsmal" | "utfort" | "avvist"),
         "ukjent status «{status}» — bruk pagar, sporsmal, utfort eller avvist"
     );
-    let notat = notat.map(str::trim).filter(|n| !n.is_empty());
+    let note = note.map(str::trim).filter(|n| !n.is_empty());
     ensure!(
-        matches!(status, "pagar" | "utfort") || notat.is_some(),
+        matches!(status, "pagar" | "utfort") || note.is_some(),
         "«{status}» krever en begrunnelse"
     );
     let finnes: bool = sqlx::query_scalar(
@@ -215,7 +215,7 @@ pub async fn svar(
     .bind(Uuid::now_v7())
     .bind(oppgave_id)
     .bind(status)
-    .bind(notat)
+    .bind(note)
     .bind(av)
     .execute(pool)
     .await?;

@@ -131,8 +131,8 @@ async fn find_party(
     pool: &PgPool,
     company_id: Uuid,
     kind: &str,
-    nummer: Option<&str>,
-    navn: &str,
+    number: Option<&str>,
+    name: &str,
     orgnr: Option<&str>,
 ) -> Result<Option<(Uuid, String)>> {
     let row = sqlx::query(
@@ -148,8 +148,8 @@ async fn find_party(
     .bind(company_id)
     .bind(kind)
     .bind(orgnr.filter(|o| !o.is_empty()))
-    .bind(nummer.filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty()))
-    .bind(navn)
+    .bind(number.filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty()))
+    .bind(name)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| (r.get("id"), r.get("name"))))
@@ -210,9 +210,9 @@ pub async fn plan_open_items(
         )
         .await?;
         if found.is_none() {
-            let navn = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
-            if !nye_parter.contains(&navn) {
-                nye_parter.push(navn);
+            let name = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
+            if !nye_parter.contains(&name) {
+                nye_parter.push(name);
             }
         }
     }
@@ -297,20 +297,20 @@ pub async fn import_open_items(
     let mut opprettede_parter = 0usize;
     let mut entries = Vec::with_capacity(rader.len() + 1);
     for rad in rader {
-        let navn = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
+        let name = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
         let found = find_party_in(
             &mut tx,
             company_id,
             kind.as_str(),
             Some(rad.party.as_str()),
-            &navn,
+            &name,
         )
         .await?;
         let party_no = match found {
             Some(no) => no,
             None => {
                 let no =
-                    create_party_in(&mut tx, company_id, kind.as_str(), &navn, &rad.party).await?;
+                    create_party_in(&mut tx, company_id, kind.as_str(), &name, &rad.party).await?;
                 opprettede_parter += 1;
                 no
             }
@@ -380,10 +380,10 @@ async fn find_party_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     kind: &str,
-    nummer: Option<&str>,
-    navn: &str,
+    number: Option<&str>,
+    name: &str,
 ) -> Result<Option<String>> {
-    let numeric = nummer.filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+    let numeric = number.filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
     let row = sqlx::query(
         "select party_no from party
          where company_id = $1 and kind = $2
@@ -394,7 +394,7 @@ async fn find_party_in(
     .bind(company_id)
     .bind(kind)
     .bind(numeric)
-    .bind(navn)
+    .bind(name)
     .fetch_optional(&mut **tx)
     .await?;
     Ok(row.map(|r| r.get("party_no")))
@@ -404,7 +404,7 @@ async fn create_party_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     kind: &str,
-    navn: &str,
+    name: &str,
     vendor_ref: &str,
 ) -> Result<String> {
     let numeric = (!vendor_ref.is_empty() && vendor_ref.chars().all(|c| c.is_ascii_digit()))
@@ -433,7 +433,7 @@ async fn create_party_in(
     .bind(company_id)
     .bind(&party_no)
     .bind(kind)
-    .bind(navn)
+    .bind(name)
     .execute(&mut **tx)
     .await
     .context("creating party from open items")?;

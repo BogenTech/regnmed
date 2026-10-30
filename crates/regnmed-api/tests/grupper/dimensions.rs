@@ -110,7 +110,7 @@ async fn a_prosjekt_carries_its_kunde() {
 
     // An avdeling cannot have a customer; a supplier and an unknown
     // number are not customers.
-    for (body, feil) in [
+    for (body, error) in [
         (
             serde_json::json!({"kind": "avdeling", "code": "A9", "name": "Feil", "kunde": kunde}),
             "bare prosjekter",
@@ -127,8 +127,8 @@ async fn a_prosjekt_carries_its_kunde() {
         let (status, svar) = request(&state, "POST", &base, &token, Some(body.to_string())).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "body: {svar}");
         assert!(
-            svar["error"].as_str().unwrap_or("").contains(feil),
-            "expected «{feil}»: {svar}"
+            svar["error"].as_str().unwrap_or("").contains(error),
+            "expected «{error}»: {svar}"
         );
     }
 

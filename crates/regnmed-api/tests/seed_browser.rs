@@ -159,8 +159,8 @@ async fn seed_browser_demo() {
         &state.pool,
         company,
         &regnmed_db::ProductDraft {
-            nummer: "V1".into(),
-            navn: "Kaffekopp".into(),
+            number: "V1".into(),
+            name: "Kaffekopp".into(),
             salgspris_ore: 149_00,
             vat_code: Some("3".into()),
             account: "3000".into(),
@@ -283,7 +283,7 @@ async fn seed_browser_demo() {
     .unwrap();
 
     // Employees + one month run, so the Lønn section has something to show.
-    for (fnr, navn, stilling, lonn, trekk_bp, fp_bp) in [
+    for (fnr, name, stilling, lonn, trekk_bp, fp_bp) in [
         (
             "26829398612",
             "Kari Utvikler",
@@ -306,7 +306,7 @@ async fn seed_browser_demo() {
             company,
             &regnmed_db::payroll::NyAnsatt {
                 fodselsnummer: fnr.into(),
-                navn: navn.into(),
+                name: name.into(),
                 stilling: Some(stilling.into()),
                 ansatt_fra: date(2025, 1, 1),
                 manedslonn_ore: Some(lonn),
@@ -377,7 +377,7 @@ async fn seed_browser_demo() {
         company,
         &regnmed_db::payroll::NyAnsatt {
             fodselsnummer: "25927898821".into(),
-            navn: "Timo Timeansatt".into(),
+            name: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,

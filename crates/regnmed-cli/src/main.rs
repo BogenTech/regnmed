@@ -77,7 +77,7 @@ enum Command {
         fra: Option<chrono::NaiveDate>,
         /// Decision reference (required when a price is set)
         #[arg(long)]
-        kilde: Option<String>,
+        source: Option<String>,
     },
     /// Invoice the current month for every company with coverage, into
     /// the OPS COMPANY's hovedbok (docs/abonnement.md, #65). Idempotent;
@@ -117,7 +117,7 @@ enum Command {
         til: chrono::NaiveDate,
         /// Why this person holds the role (appointment/case reference)
         #[arg(long)]
-        notat: String,
+        note: String,
     },
     /// List platform role memberships, active and ended
     PlatformList,
@@ -293,13 +293,13 @@ async fn main() -> Result<()> {
             epost,
             rolle,
             til,
-            notat,
+            note,
         } => {
             let person_id = regnmed_db::person_by_email(&pool, &epost)
                 .await?
                 .context("no person with that e-mail — they must log in once first")?;
-            let id = regnmed_db::grant_platform_role(&pool, person_id, &rolle, til, &notat, None)
-                .await?;
+            let id =
+                regnmed_db::grant_platform_role(&pool, person_id, &rolle, til, &note, None).await?;
             println!("granted {rolle} to {epost} until {til} (membership {id})");
         }
         Command::PlatformList => {
@@ -311,12 +311,12 @@ async fn main() -> Result<()> {
                 println!(
                     "{} {} {} ({}) {} — {}  [{}]",
                     m.id,
-                    if m.aktiv { "AKTIV " } else { "avsluttet" },
-                    m.navn,
+                    if m.active { "AKTIV " } else { "avsluttet" },
+                    m.name,
                     m.epost.as_deref().unwrap_or("-"),
                     m.rolle,
                     format_args!("{} → {}", m.valid_from, m.valid_to),
-                    m.notat,
+                    m.note,
                 );
             }
         }
@@ -367,23 +367,23 @@ async fn main() -> Result<()> {
             plan,
             pris_ore,
             fra,
-            kilde,
+            source,
         } => {
             if let (Some(plan), Some(pris_ore)) = (&plan, pris_ore) {
-                let kilde = kilde
+                let source = source
                     .as_deref()
                     .context("en ny pris krever --kilde med vedtaksreferansen")?;
                 let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                     .fetch_one(&pool)
                     .await?;
                 let fra = fra.unwrap_or(idag);
-                regnmed_db::subscription::set_price(&pool, plan, pris_ore, fra, kilde).await?;
+                regnmed_db::subscription::set_price(&pool, plan, pris_ore, fra, source).await?;
                 println!(
                     "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {fra}",
                     pris_ore / 100,
                     pris_ore % 100
                 );
-            } else if plan.is_some() || pris_ore.is_some() || kilde.is_some() {
+            } else if plan.is_some() || pris_ore.is_some() || source.is_some() {
                 anyhow::bail!("en ny pris krever både --plan, --pris-ore og --kilde");
             }
             println!("prislisten (nyeste rad per plan gjelder fra sin dato):");
@@ -394,7 +394,7 @@ async fn main() -> Result<()> {
                     p.price_ore_per_month / 100,
                     p.price_ore_per_month % 100,
                     p.valid_from,
-                    p.kilde
+                    p.source
                 );
             }
         }
@@ -434,7 +434,7 @@ async fn main() -> Result<()> {
                             continue;
                         };
                         let card = regnmed_db::subscription::card_for(&pool, u.company_id).await?;
-                        let Some(card) = card.filter(|k| k.aktiv) else {
+                        let Some(card) = card.filter(|k| k.active) else {
                             continue;
                         };
                         match stripe
@@ -481,7 +481,7 @@ async fn main() -> Result<()> {
             if mailq.is_none() {
                 println!("NATS_URL er ikke satt — bokføringsstegene kjører, ingenting sendes");
             }
-            let mut feil = 0usize;
+            let mut error = 0usize;
 
             // The snapshot is taken BEFORE today's purringer: the sperre
             // gate ("a purring has been sent") therefore only sees steps
@@ -498,7 +498,7 @@ async fn main() -> Result<()> {
                         "{}: faktura {} — selskapet mangler e-postadresse, purres ikke",
                         f.company_name, f.invoice_no
                     );
-                    feil += 1;
+                    error += 1;
                     continue;
                 }
                 match opf::purr(&pool, drift, f, idag).await {
@@ -511,7 +511,7 @@ async fn main() -> Result<()> {
                             "{}: faktura {} — purring FEILET: {e:#}",
                             f.company_name, f.invoice_no
                         );
-                        feil += 1;
+                        error += 1;
                     }
                 }
             }
@@ -547,7 +547,7 @@ async fn main() -> Result<()> {
                                 "{}: faktura {} — utsendelse FEILET: {e:#}",
                                 f.company_name, f.invoice_no
                             );
-                            feil += 1;
+                            error += 1;
                         }
                     }
                 }
@@ -577,13 +577,13 @@ async fn main() -> Result<()> {
                                 "{}: {} for faktura {} — utsendelse FEILET: {e:#}",
                                 p.company_name, p.step, p.invoice_no
                             );
-                            feil += 1;
+                            error += 1;
                         }
                     }
                 }
             } else if apne.iter().any(|f| !f.sendt) {
                 println!("usendte fakturaer venter på NATS_URL");
-                feil += 1;
+                error += 1;
             }
 
             // 3) End coverage on prolonged non-payment (the pre-purring
@@ -597,7 +597,7 @@ async fn main() -> Result<()> {
                     Ok(false) => {}
                     Err(e) => {
                         println!("{}: sperring FEILET: {e:#}", f.company_name);
-                        feil += 1;
+                        error += 1;
                     }
                 }
             }
@@ -611,13 +611,13 @@ async fn main() -> Result<()> {
                     Ok(false) => {}
                     Err(e) => {
                         println!("{company}: gjenoppretting FEILET: {e:#}");
-                        feil += 1;
+                        error += 1;
                     }
                 }
             }
 
-            if feil > 0 {
-                anyhow::bail!("{feil} oppfølgingssteg feilet");
+            if error > 0 {
+                anyhow::bail!("{error} oppfølgingssteg feilet");
             }
         }
         Command::GenerateInvoices => {
@@ -688,7 +688,7 @@ async fn main() -> Result<()> {
                 match (&outcome.voucher, &outcome.detail) {
                     (Some((year, no)), _) => println!(
                         "{}: avskrivning {}-{:02} bokført som bilag {}-{} ({} øre)",
-                        outcome.navn,
+                        outcome.name,
                         outcome.period.format("%Y"),
                         chrono::Datelike::month(&outcome.period),
                         year,
@@ -697,7 +697,7 @@ async fn main() -> Result<()> {
                     ),
                     (None, detail) => println!(
                         "{}: FEIL for {} — {}",
-                        outcome.navn,
+                        outcome.name,
                         outcome.period,
                         detail.as_deref().unwrap_or("ukjent")
                     ),
@@ -829,7 +829,7 @@ async fn vat_return(
     );
 
     let referanse = format!("regnmed-{}-{}-{}", orgnr, period.year, period.number);
-    let melding = regnmed_core::vat_return::build(
+    let message = regnmed_core::vat_return::build(
         &orgnr,
         period,
         ordning,
@@ -837,7 +837,7 @@ async fn vat_return(
         env!("CARGO_PKG_VERSION"),
         &spes,
     );
-    let xml = regnmed_core::vat_return::render(&melding);
+    let xml = regnmed_core::vat_return::render(&message);
 
     match out.as_deref() {
         Some(path) if path == std::path::Path::new("-") => {
@@ -856,8 +856,8 @@ async fn vat_return(
             println!(
                 "wrote {} ({} linjer, fastsatt merverdiavgift {} kr)",
                 path.display(),
-                melding.lines.len(),
-                melding.fastsatt_kr
+                message.lines.len(),
+                message.fastsatt_kr
             );
         }
     }

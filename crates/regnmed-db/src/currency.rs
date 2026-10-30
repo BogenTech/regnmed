@@ -14,7 +14,7 @@ pub async fn insert_kurs(
     currency: &str,
     date: NaiveDate,
     rate_micro: i64,
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
     ensure!(
         is_valid_currency_code(currency),
@@ -28,7 +28,7 @@ pub async fn insert_kurs(
     .bind(currency)
     .bind(date)
     .bind(rate_micro)
-    .bind(kilde)
+    .bind(source)
     .execute(pool)
     .await?;
     Ok(())
@@ -69,7 +69,7 @@ pub struct KursRow {
     pub currency: String,
     pub date: NaiveDate,
     pub rate_micro: i64,
-    pub kilde: String,
+    pub source: String,
 }
 
 /// The newest rate per currency (the portal's kurser card).
@@ -86,7 +86,7 @@ pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<KursRow>> {
             currency: r.get("valuta"),
             date: r.get("dato"),
             rate_micro: r.get("kurs_micro"),
-            kilde: r.get("kilde"),
+            source: r.get("kilde"),
         })
         .collect())
 }

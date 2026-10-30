@@ -32,7 +32,7 @@ fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
         "oppgave_id": o.id,
         "integration_id": o.integration_id,
         "agent": o.agent,
-        "melding": o.melding,
+        "melding": o.message,
         "frist": o.frist.map(|d| d.to_string()),
         "opprettet_av": o.opprettet_av,
         "opprettet": o.created_at.to_rfc3339(),
@@ -77,7 +77,8 @@ pub async fn list(
 pub struct NyOppgave {
     /// Addressed to one agent; omitted = any agent with access.
     integration_id: Option<Uuid>,
-    melding: String,
+    #[serde(rename = "melding")]
+    message: String,
     frist: Option<chrono::NaiveDate>,
 }
 
@@ -98,7 +99,7 @@ pub async fn opprett(
         &state.pool,
         company_id,
         request.integration_id,
-        &request.melding,
+        &request.message,
         request.frist,
         person.display(),
     )
@@ -130,7 +131,7 @@ pub async fn hent(
         "oppgave": oppgave_json(&oppgave),
         "historikk": trail.iter().map(|h| json!({
             "status": h.status,
-            "notat": h.notat,
+            "notat": h.note,
             "av": h.av,
             "tidspunkt": h.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
@@ -142,7 +143,8 @@ pub struct Svar {
     /// `pagar`, `sporsmal`, `utfort` or `avvist`. The last two are
     /// final — see migration 0064.
     status: String,
-    notat: Option<String>,
+    #[serde(rename = "notat")]
+    note: Option<String>,
 }
 
 pub async fn svar(
@@ -178,7 +180,7 @@ pub async fn svar(
         company_id,
         oppgave_id,
         &request.status,
-        request.notat.as_deref(),
+        request.note.as_deref(),
         person.display(),
     )
     .await

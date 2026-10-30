@@ -25,8 +25,8 @@ use crate::ledger::post_voucher_in;
 
 #[derive(Debug, Clone)]
 pub struct ProductDraft {
-    pub nummer: String,
-    pub navn: String,
+    pub number: String,
+    pub name: String,
     pub salgspris_ore: i64,
     pub vat_code: Option<String>,
     pub account: String,
@@ -42,8 +42,8 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     )
     .bind(id)
     .bind(company_id)
-    .bind(&draft.nummer)
-    .bind(&draft.navn)
+    .bind(&draft.number)
+    .bind(&draft.name)
     .bind(draft.salgspris_ore)
     .bind(&draft.vat_code)
     .bind(&draft.account)
@@ -53,7 +53,7 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     .with_context(|| {
         format!(
             "could not create product {} (duplicate nummer?)",
-            draft.nummer
+            draft.number
         )
     })?;
     Ok(id)
@@ -65,12 +65,12 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
 pub async fn update_product(
     pool: &PgPool,
     company_id: Uuid,
-    nummer: &str,
-    navn: Option<&str>,
+    number: &str,
+    name: Option<&str>,
     salgspris_ore: Option<i64>,
     vat_code: Option<Option<&str>>,
     account: Option<&str>,
-    aktiv: Option<bool>,
+    active: Option<bool>,
     lagerfort: Option<bool>,
 ) -> Result<()> {
     let updated = sqlx::query(
@@ -85,28 +85,28 @@ pub async fn update_product(
          where company_id = $1 and nummer = $2",
     )
     .bind(company_id)
-    .bind(nummer)
-    .bind(navn)
+    .bind(number)
+    .bind(name)
     .bind(salgspris_ore)
     .bind(vat_code.is_some())
     .bind(vat_code.flatten())
     .bind(account)
-    .bind(aktiv)
+    .bind(active)
     .bind(lagerfort)
     .execute(pool)
     .await?;
-    ensure!(updated.rows_affected() == 1, "no product {nummer}");
+    ensure!(updated.rows_affected() == 1, "no product {number}");
     Ok(())
 }
 
 #[derive(Debug)]
 pub struct ProductRow {
-    pub nummer: String,
-    pub navn: String,
+    pub number: String,
+    pub name: String,
     pub salgspris_ore: i64,
     pub vat_code: Option<String>,
     pub account: String,
-    pub aktiv: bool,
+    pub active: bool,
     pub lagerfort: bool,
 }
 
@@ -121,12 +121,12 @@ pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<Produc
     Ok(rows
         .iter()
         .map(|r| ProductRow {
-            nummer: r.get("nummer"),
-            navn: r.get("navn"),
+            number: r.get("nummer"),
+            name: r.get("navn"),
             salgspris_ore: r.get("salgspris_ore"),
             vat_code: r.get("vat_code"),
             account: r.get("konto"),
-            aktiv: r.get("aktiv"),
+            active: r.get("aktiv"),
             lagerfort: r.get("lagerfort"),
         })
         .collect())
@@ -155,19 +155,19 @@ pub async fn resolve_product_line(
     spec: ProductLineSpec,
 ) -> Result<InvoiceLineDraft> {
     match &spec.produkt {
-        Some(nummer) => {
+        Some(number) => {
             let product = sqlx::query(
                 "select id, navn, salgspris_ore, vat_code, konto, aktiv
                  from product where company_id = $1 and nummer = $2",
             )
             .bind(company_id)
-            .bind(nummer)
+            .bind(number)
             .fetch_optional(pool)
             .await?
-            .with_context(|| format!("no product {nummer}"))?;
+            .with_context(|| format!("no product {number}"))?;
             ensure!(
                 product.get::<bool, _>("aktiv"),
-                "product {nummer} is deactivated"
+                "product {number} is deactivated"
             );
             Ok(InvoiceLineDraft {
                 description: spec
@@ -262,7 +262,7 @@ pub(crate) async fn record_sales_in(
 pub async fn register_movement(
     pool: &PgPool,
     company_id: Uuid,
-    nummer: &str,
+    number: &str,
     date: NaiveDate,
     kind: &str,
     antall_milli: i64,
@@ -277,13 +277,13 @@ pub async fn register_movement(
     let product =
         sqlx::query("select id, lagerfort from product where company_id = $1 and nummer = $2")
             .bind(company_id)
-            .bind(nummer)
+            .bind(number)
             .fetch_optional(pool)
             .await?
-            .with_context(|| format!("no product {nummer}"))?;
+            .with_context(|| format!("no product {number}"))?;
     ensure!(
         product.get::<bool, _>("lagerfort"),
-        "product {nummer} is not lagerført"
+        "product {number} is not lagerført"
     );
     sqlx::query(
         "insert into inventory_movement
@@ -330,8 +330,8 @@ where
 
 #[derive(Debug)]
 pub struct InventoryRow {
-    pub nummer: String,
-    pub navn: String,
+    pub number: String,
+    pub name: String,
     pub antall_milli: i64,
     pub verdi_ore: i64,
     pub gjennomsnitt_ore: Option<i64>,
@@ -352,8 +352,8 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
     for p in &products {
         let status = product_status(pool, p.get("id")).await?;
         rows.push(InventoryRow {
-            nummer: p.get("nummer"),
-            navn: p.get("navn"),
+            number: p.get("nummer"),
+            name: p.get("navn"),
             antall_milli: status.quantity_milli,
             verdi_ore: status.value_ore,
             gjennomsnitt_ore: status.average_ore(),
@@ -377,7 +377,7 @@ pub struct MovementRow {
 pub async fn list_movements(
     pool: &PgPool,
     company_id: Uuid,
-    nummer: &str,
+    number: &str,
 ) -> Result<Vec<MovementRow>> {
     let rows = sqlx::query(
         "select m.dato, m.kind, m.antall_milli, m.kostpris_ore, m.note, i.invoice_no,
@@ -389,7 +389,7 @@ pub async fn list_movements(
          order by m.dato desc, m.created_at desc",
     )
     .bind(company_id)
-    .bind(nummer)
+    .bind(number)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -409,7 +409,7 @@ pub async fn list_movements(
 
 #[derive(Debug, Clone)]
 pub struct TellingLinje {
-    pub nummer: String,
+    pub number: String,
     pub talt_milli: i64,
 }
 
@@ -423,7 +423,7 @@ pub struct TellingKonti {
 
 #[derive(Debug)]
 pub struct TellingJustering {
-    pub nummer: String,
+    pub number: String,
     pub bokfort_milli: i64,
     pub talt_milli: i64,
 }
@@ -462,14 +462,14 @@ pub async fn varetelling(
              where company_id = $1 and nummer = $2 for update",
         )
         .bind(company_id)
-        .bind(&linje.nummer)
+        .bind(&linje.number)
         .fetch_optional(&mut *tx)
         .await?
-        .with_context(|| format!("no product {}", linje.nummer))?;
+        .with_context(|| format!("no product {}", linje.number))?;
         ensure!(
             product.get::<bool, _>("lagerfort"),
             "product {} is not lagerført",
-            linje.nummer
+            linje.number
         );
         let product_id: Uuid = product.get("id");
         let status = product_status(&mut *tx, product_id).await?;
@@ -491,7 +491,7 @@ pub async fn varetelling(
             .await?;
         }
         justeringer.push(TellingJustering {
-            nummer: linje.nummer.clone(),
+            number: linje.number.clone(),
             bokfort_milli: status.quantity_milli,
             talt_milli: linje.talt_milli,
         });

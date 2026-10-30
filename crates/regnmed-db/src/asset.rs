@@ -42,7 +42,7 @@ fn maned_nr(acquisition_date: NaiveDate, period: NaiveDate) -> i32 {
 
 #[derive(Debug, Clone)]
 pub struct AssetDraft {
-    pub navn: String,
+    pub name: String,
     pub acquisition_date: NaiveDate,
     pub kostpris_ore: i64,
     pub restverdi_ore: i64,
@@ -124,7 +124,7 @@ pub async fn create_asset(
     )
     .bind(id)
     .bind(company_id)
-    .bind(&draft.navn)
+    .bind(&draft.name)
     .bind(draft.acquisition_date)
     .bind(draft.kostpris_ore)
     .bind(draft.restverdi_ore)
@@ -142,7 +142,7 @@ pub async fn create_asset(
 #[derive(Debug)]
 pub struct AssetRow {
     pub id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub acquisition_date: NaiveDate,
     pub kostpris_ore: i64,
     pub restverdi_ore: i64,
@@ -178,7 +178,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
             let avhendet: Option<NaiveDate> = r.get("avhendet_dato");
             AssetRow {
                 id: r.get("id"),
-                navn: r.get("navn"),
+                name: r.get("navn"),
                 acquisition_date: r.get("anskaffelsesdato"),
                 kostpris_ore: kostpris,
                 restverdi_ore: r.get("restverdi_ore"),
@@ -202,7 +202,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
 #[derive(Debug)]
 pub struct DepreciationOutcome {
     pub asset_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub period: NaiveDate,
     /// None = failed; detail holds the error.
     pub voucher: Option<(i32, i64)>,
@@ -230,13 +230,13 @@ pub async fn depreciate_due(
     let mut outcomes = Vec::new();
     for asset in &assets {
         let asset_id: Uuid = asset.get("id");
-        let navn: String = asset.get("navn");
+        let name: String = asset.get("navn");
         loop {
             match depreciate_next(pool, company_id, asset_id, through, created_by).await {
                 Ok(Some(outcome)) => {
                     let failed = outcome.voucher.is_none();
                     outcomes.push(DepreciationOutcome {
-                        navn: navn.clone(),
+                        name: name.clone(),
                         ..outcome
                     });
                     if failed {
@@ -247,7 +247,7 @@ pub async fn depreciate_due(
                 Err(err) => {
                     outcomes.push(DepreciationOutcome {
                         asset_id,
-                        navn: navn.clone(),
+                        name: name.clone(),
                         period: through,
                         voucher: None,
                         amount_ore: 0,
@@ -313,12 +313,12 @@ async fn depreciate_next(
         levetid,
         nr,
     );
-    let navn: String = asset.get("navn");
+    let name: String = asset.get("navn");
     let result = async {
         let draft = VoucherDraft {
             journal_code: "GL".into(),
             voucher_date,
-            description: format!("Avskrivning {navn} {}-{:02}", period.year(), period.month()),
+            description: format!("Avskrivning {name} {}-{:02}", period.year(), period.month()),
             reverses: None,
             entries: vec![
                 EntryDraft {
@@ -365,7 +365,7 @@ async fn depreciate_next(
             tx.commit().await?;
             Ok(Some(DepreciationOutcome {
                 asset_id,
-                navn,
+                name,
                 period,
                 voucher: Some((posted.fiscal_year, posted.voucher_number)),
                 amount_ore: amount,
@@ -388,7 +388,7 @@ async fn depreciate_next(
             .await?;
             Ok(Some(DepreciationOutcome {
                 asset_id,
-                navn,
+                name,
                 period,
                 voucher: None,
                 amount_ore: amount,
@@ -507,11 +507,11 @@ pub async fn dispose_asset(
     let voucher = if entries.is_empty() {
         None
     } else {
-        let navn: String = asset.get("navn");
+        let name: String = asset.get("navn");
         let draft = VoucherDraft {
             journal_code: "GL".into(),
             voucher_date: date,
-            description: format!("Avhending {navn}"),
+            description: format!("Avhending {name}"),
             reverses: None,
             entries,
         };

@@ -183,7 +183,7 @@ pub async fn bokfor_inbox_document(
     ensure!(status == "ny", "document is already decided ({status})");
 
     if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
-        && policy.aktiv
+        && policy.active
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
         // An agent's bilag is worth a look because nobody saw it, not

@@ -344,9 +344,9 @@ mod tests {
     /// compute tabelltrekk, we say so.
     #[test]
     fn tabelltrekk_is_refused_loudly() {
-        let feil = calculate(&basis(5_000_000, Withholding::Table(7100)), 3).unwrap_err();
-        assert_eq!(feil, PayrollError::TableWithholdingUnsupported(7100));
-        assert!(feil.to_string().contains("tilnærmer dem ikke"), "{feil}");
+        let error = calculate(&basis(5_000_000, Withholding::Table(7100)), 3).unwrap_err();
+        assert_eq!(error, PayrollError::TableWithholdingUnsupported(7100));
+        assert!(error.to_string().contains("tilnærmer dem ikke"), "{error}");
     }
 
     #[test]
@@ -362,9 +362,9 @@ mod tests {
 
     #[test]
     fn sone_ia_is_refused_because_the_fribelop_is_invisible_here() {
-        let feil = employer_contribution(5_000_000, Zone::Ia, 1060).unwrap_err();
-        assert_eq!(feil, PayrollError::ZoneIaRequiresExemptionCalculation);
-        assert!(feil.to_string().contains("fribeløpet"), "{feil}");
+        let error = employer_contribution(5_000_000, Zone::Ia, 1060).unwrap_err();
+        assert_eq!(error, PayrollError::ZoneIaRequiresExemptionCalculation);
+        assert!(error.to_string().contains("fribeløpet"), "{error}");
     }
 
     #[test]

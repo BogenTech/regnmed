@@ -124,7 +124,7 @@ pub async fn list_satser(
     Ok(Json(json!({
         "satser": rows.iter().map(|r| json!({
             "person_id": r.person_id,
-            "person_navn": r.person_navn,
+            "person_navn": r.person_name,
             "timesats_ore": r.timesats_ore,
             "valid_from": r.valid_from.to_string(),
             "created_by": r.created_by,

@@ -25,7 +25,7 @@ use crate::herding::{Vis, file_response};
 fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
     json!({
         "id": a.id,
-        "navn": a.navn,
+        "navn": a.name,
         "stilling": a.stilling,
         // Birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
@@ -43,7 +43,7 @@ fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         // employee has no portal access.
         "person": a.person_id.map(|pid| json!({
             "person_id": pid,
-            "navn": a.person_navn,
+            "navn": a.person_name,
             "epost": a.person_epost,
         })),
     })
@@ -64,7 +64,8 @@ pub async fn list_employees(
 #[derive(Deserialize)]
 pub struct CreateEmployeeRequest {
     fodselsnummer: String,
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     stilling: Option<String>,
     ansatt_fra: chrono::NaiveDate,
     manedslonn_ore: Option<i64>,
@@ -103,7 +104,7 @@ pub async fn create_employee(
         company_id,
         &regnmed_db::payroll::NyAnsatt {
             fodselsnummer: request.fodselsnummer,
-            navn: request.navn,
+            name: request.name,
             stilling: request.stilling,
             ansatt_fra: request.ansatt_fra,
             manedslonn_ore: request.manedslonn_ore,
@@ -143,8 +144,8 @@ fn kjoring_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
         "aga_feriepenger_ore": k.sum.employer_contribution_holiday_pay_ore,
         "lonnskostnad_ore": k.sum.payroll_cost_ore(),
         "voucher_id": k.voucher_id,
-        "ansatte": k.employees.iter().map(|(id, navn)| json!({
-            "employee_id": id, "navn": navn,
+        "ansatte": k.employees.iter().map(|(id, name)| json!({
+            "employee_id": id, "navn": name,
         })).collect::<Vec<_>>(),
     })
 }
@@ -228,7 +229,7 @@ pub async fn run_payroll(
         "kjoring": kjoring_json(&run),
         "linjer": run.lines.iter().map(|l| json!({
             "employee_id": l.employee_id,
-            "navn": l.navn,
+            "navn": l.name,
             "brutto_ore": l.calculation.gross_ore,
             "feriepenger_ore": l.calculation.holiday_pay_ore,
             "forskuddstrekk_ore": l.calculation.withholding_ore,
@@ -267,9 +268,14 @@ pub async fn payslip_pdf(
     let input = regnmed_db::payroll::payslip(&state.pool, company_id, run_id, employee_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
-    let filnavn = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.month);
+    let filename = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.month);
     let pdf = regnmed_core::payslip::render_payslip(&input);
-    Ok(file_response(Vis::Inline, &filnavn, "application/pdf", pdf))
+    Ok(file_response(
+        Vis::Inline,
+        &filename,
+        "application/pdf",
+        pdf,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -359,8 +365,8 @@ pub async fn employee_link_history(
     Ok(Json(json!({
         "historikk": rader.iter().map(|h| json!({
             "endring": h.endring,
-            "kilde": h.kilde,
-            "person": h.person_navn,
+            "kilde": h.source,
+            "person": h.person_name,
             "utfort_av": h.utfort_av,
             "tidspunkt": h.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),

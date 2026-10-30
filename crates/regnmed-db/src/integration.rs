@@ -20,7 +20,7 @@ pub struct Integration {
     pub id: Uuid,
     pub person_id: Uuid,
     pub client_id: String,
-    pub navn: String,
+    pub name: String,
     pub kontakt: Option<String>,
     pub rate_limit_min: i32,
     pub registrert_av: String,
@@ -39,7 +39,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         id: r.get("id"),
         person_id: r.get("person_id"),
         client_id: r.get("client_id"),
-        navn: r.get("navn"),
+        name: r.get("navn"),
         kontakt: r.get("kontakt"),
         rate_limit_min: r.get("rate_limit_min"),
         registrert_av: r.get("registrert_av"),
@@ -72,14 +72,14 @@ pub async fn grant_integration(
     pool: &PgPool,
     company_id: Uuid,
     client_id: &str,
-    navn: &str,
+    name: &str,
     kontakt: Option<&str>,
     access: &str,
     created_by: &str,
 ) -> Result<Uuid> {
     let client_id = client_id.trim();
     ensure!(!client_id.is_empty(), "client_id mangler");
-    ensure!(!navn.trim().is_empty(), "integrasjonen trenger et navn");
+    ensure!(!name.trim().is_empty(), "integrasjonen trenger et navn");
     // The role NAME is validated by the caller, where the vocabulary
     // lives (`regnmed-api::tilgang`): this crate does not know which
     // names are roles, and a second list here would be a second truth.
@@ -114,7 +114,7 @@ pub async fn grant_integration(
             if kind != "integrasjon" {
                 sqlx::query("update person set kind = 'integrasjon', name = $2 where id = $1")
                     .bind(id)
-                    .bind(navn.trim())
+                    .bind(name.trim())
                     .execute(&mut *tx)
                     .await?;
             }
@@ -128,7 +128,7 @@ pub async fn grant_integration(
             )
             .bind(id)
             .bind(client_id)
-            .bind(navn.trim())
+            .bind(name.trim())
             .execute(&mut *tx)
             .await?;
             id
@@ -150,7 +150,7 @@ pub async fn grant_integration(
                 )
                 .bind(id)
                 .bind(person_id)
-                .bind(navn.trim())
+                .bind(name.trim())
                 .bind(kontakt.map(str::trim).filter(|k| !k.is_empty()))
                 .bind(created_by)
                 .execute(&mut *tx)
@@ -206,14 +206,14 @@ pub async fn update_integration(
     pool: &PgPool,
     company_id: Uuid,
     integration_id: Uuid,
-    navn: &str,
+    name: &str,
     kontakt: Option<&str>,
     avatar_farge: Option<&str>,
     avatar_ikon: Option<&str>,
     system_prompt: Option<&str>,
 ) -> Result<()> {
-    let navn = navn.trim();
-    ensure!(!navn.is_empty(), "integrasjonen trenger et navn");
+    let name = name.trim();
+    ensure!(!name.is_empty(), "integrasjonen trenger et navn");
     fn tom(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|t| !t.is_empty())
     }
@@ -254,7 +254,7 @@ pub async fn update_integration(
     )
     .bind(integration_id)
     .bind(company_id)
-    .bind(navn)
+    .bind(name)
     .bind(kontakt)
     .bind(farge)
     .bind(ikon)
@@ -355,7 +355,7 @@ pub struct GrantRow {
     pub grant_id: Uuid,
     pub integration_id: Uuid,
     pub client_id: String,
-    pub navn: String,
+    pub name: String,
     pub kontakt: Option<String>,
     pub access: String,
     pub valid_from: NaiveDate,
@@ -404,7 +404,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             grant_id: r.get("grant_id"),
             integration_id: r.get("integration_id"),
             client_id: r.get("client_id"),
-            navn: r.get("navn"),
+            name: r.get("navn"),
             kontakt: r.get("kontakt"),
             access: r.get("access"),
             valid_from: r.get("valid_from"),
@@ -465,7 +465,7 @@ pub async fn log_integration_call(
 
 #[derive(Debug)]
 pub struct CallRow {
-    pub navn: String,
+    pub name: String,
     pub method: String,
     pub path: String,
     pub status: i32,
@@ -488,7 +488,7 @@ pub async fn integration_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ca
     Ok(rows
         .iter()
         .map(|r| CallRow {
-            navn: r.get("navn"),
+            name: r.get("navn"),
             method: r.get("method"),
             path: r.get("path"),
             status: r.get("status"),

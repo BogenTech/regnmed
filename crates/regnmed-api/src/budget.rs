@@ -29,7 +29,7 @@ fn budget_json(b: &regnmed_db::BudgetRow) -> serde_json::Value {
         "budget_id": b.id,
         "year": b.year,
         "versjon": b.versjon,
-        "navn": b.navn,
+        "navn": b.name,
         "status": b.status,
         "note": b.note,
         "sum_ore": b.sum_ore,
@@ -61,7 +61,8 @@ pub async fn list_budgets(
 #[derive(Deserialize)]
 pub struct CreateBudgetRequest {
     year: i32,
-    navn: Option<String>,
+    #[serde(rename = "navn")]
+    name: Option<String>,
     note: Option<String>,
     /// Seed the lines from this year's ACTUALS…
     fra_ar: Option<i32>,
@@ -77,15 +78,15 @@ pub async fn create_budget(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BudgetWrite).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let navn = request
-        .navn
+    let name = request
+        .name
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| format!("Budsjett {}", request.year));
     let budget_id = regnmed_db::create_budget(
         &state.pool,
         company_id,
         request.year,
-        &navn,
+        &name,
         request.note.as_deref(),
         request.fra_ar,
         request.justering_bp.unwrap_or(0),

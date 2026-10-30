@@ -524,8 +524,8 @@ async fn a_human_must_attest_what_a_machine_posts() {
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nummer, navn) in [("6300", "Leie"), ("1920", "Bank")] {
-        regnmed_db::ensure_account(&state.pool, company, nummer, navn)
+    for (number, name) in [("6300", "Leie"), ("1920", "Bank")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
@@ -535,7 +535,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
     // second pair of eyes.
     let agent_sub = format!("agent-{}", Uuid::new_v4());
     let annen_sub = format!("agent-{}", Uuid::new_v4());
-    for (sub, navn) in [
+    for (sub, name) in [
         (&agent_sub, "Bokføringsagenten"),
         (&annen_sub, "Hjelpeagenten"),
     ] {
@@ -543,7 +543,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
             &state.pool,
             company,
             sub,
-            navn,
+            name,
             None,
             "bokforing",
             "Lise Leder",

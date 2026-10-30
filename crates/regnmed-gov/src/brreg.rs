@@ -11,7 +11,8 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct BrregEntity {
     pub organisasjonsnummer: String,
-    pub navn: String,
+    #[serde(rename = "navn")]
+    pub name: String,
     #[serde(default)]
     pub organisasjonsform: Option<Code>,
     #[serde(default)]
@@ -249,7 +250,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(entity.navn, "EQUINOR ASA");
+        assert_eq!(entity.name, "EQUINOR ASA");
         assert_eq!(entity.organisasjonsform.unwrap().code, "ASA");
         assert!(entity.registered_in_vat_register);
         assert!(entity.registrert_i_foretaksregisteret);

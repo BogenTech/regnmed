@@ -41,12 +41,12 @@ async fn json_call(
         )
         .await
         .unwrap();
-    let kode = response.status();
+    let code = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await
         .unwrap();
     (
-        kode,
+        code,
         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
     )
 }
@@ -69,19 +69,19 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     Some((state, idp, company, token))
 }
 
-async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, navn: &str, fnr: &str) -> Uuid {
-    let (kode, svar) = json_call(
+async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, name: &str, fnr: &str) -> Uuid {
+    let (code, svar) = json_call(
         state,
         "POST",
         &format!("/companies/{company}/employees"),
         admin,
         &format!(
-            r#"{{"fodselsnummer":"{fnr}","navn":"{navn}","ansatt_fra":"2026-01-01",
+            r#"{{"fodselsnummer":"{fnr}","navn":"{name}","ansatt_fra":"2026-01-01",
                  "manedslonn_ore":5000000,"trekk_type":"prosent","trekk_prosent_bp":3000}}"#
         ),
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
     svar["employee_id"].as_str().unwrap().parse().unwrap()
 }
 
@@ -91,7 +91,7 @@ async fn ansatt_person_json(
     admin: &str,
     employee_id: Uuid,
 ) -> serde_json::Value {
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         state,
         "GET",
         &format!("/companies/{company}/employees"),
@@ -99,7 +99,7 @@ async fn ansatt_person_json(
         "",
     )
     .await;
-    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
     svar["ansatte"]
         .as_array()
         .unwrap()
@@ -124,7 +124,7 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     // so the /me redemption matches.
     let sub = format!("ansatt|{}", Uuid::new_v4());
     let epost = format!("{}@test.invalid", sub.replace('|', "."));
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -132,10 +132,10 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
         &format!(r#"{{"epost":"{epost}","rolle":"ansatt","employee_id":"{employee}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
 
     // Only one open invitation may promise an employee.
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -143,20 +143,20 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
         &format!(r#"{{"epost":"annen@test.invalid","rolle":"ansatt","employee_id":"{employee}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(svar["error"].as_str().unwrap().contains("åpen invitasjon"));
 
     // First login: membership AND link arrive together.
     let token = idp.token(&sub, "Kari Kobling");
-    let (kode, me) = json_call(&state, "GET", "/me", &token, "").await;
-    assert_eq!(kode, StatusCode::OK);
+    let (code, me) = json_call(&state, "GET", "/me", &token, "").await;
+    assert_eq!(code, StatusCode::OK);
     assert_eq!(me["nye_tilganger"], 1);
     assert_eq!(me["companies"][0]["company_id"], company.to_string());
 
     let person = ansatt_person_json(&state, company, &admin, employee).await;
     assert_eq!(person["person_id"], me["person_id"]);
 
-    let kilde: String = sqlx::query(
+    let source: String = sqlx::query(
         "select kilde from employee_link_change where employee_id = $1 and endring = 'koblet'",
     )
     .bind(employee)
@@ -164,7 +164,7 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     .await
     .unwrap()
     .get("kilde");
-    assert_eq!(kilde, "invitasjon");
+    assert_eq!(source, "invitasjon");
 }
 
 /// A person who is already another employee here redeems an invitation
@@ -195,7 +195,7 @@ async fn a_conflicting_link_never_blocks_the_login() {
         .await
         .unwrap();
 
-    let (kode, _) = json_call(
+    let (code, _) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -203,11 +203,11 @@ async fn a_conflicting_link_never_blocks_the_login() {
         &format!(r#"{{"epost":"{epost}","rolle":"ansatt","employee_id":"{andre}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
 
     let token = idp.token(&sub, "Q");
-    let (kode, me) = json_call(&state, "GET", "/me", &token, "").await;
-    assert_eq!(kode, StatusCode::OK, "the login must survive the conflict");
+    let (code, me) = json_call(&state, "GET", "/me", &token, "").await;
+    assert_eq!(code, StatusCode::OK, "the login must survive the conflict");
     assert_eq!(me["nye_tilganger"], 1, "membership is still redeemed");
 
     let person = ansatt_person_json(&state, company, &admin, andre).await;
@@ -234,7 +234,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         .await
         .unwrap();
 
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &link_uri,
@@ -242,7 +242,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         &format!(r#"{{"person_id":"{medlem}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
 
     // Relinking to someone else without unlinking first is refused.
     let annen = regnmed_db::ensure_person(
@@ -253,7 +253,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     )
     .await
     .unwrap();
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &link_uri,
@@ -261,12 +261,12 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         &format!(r#"{{"person_id":"{annen}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(svar["error"].as_str().unwrap().contains("koble fra først"));
 
     // The same person cannot be a second employee in the company.
     let tvilling = ny_ansatt(&state, company, &admin, "Tvilling", FNR[0]).await;
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/employees/{tvilling}/link"),
@@ -274,7 +274,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         &format!(r#"{{"person_id":"{medlem}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(svar["error"].as_str().unwrap().contains("annen ansatt"));
 
     // A machine identity is never a lønnsmottaker.
@@ -291,7 +291,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         .execute(&state.pool)
         .await
         .unwrap();
-    let (kode, svar) = json_call(
+    let (code, svar) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/employees/{tvilling}/link"),
@@ -299,14 +299,14 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         &format!(r#"{{"person_id":"{robot}"}}"#),
     )
     .await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(svar["error"].as_str().unwrap().contains("integrasjon"));
 
     // Unlink, then the history names both events.
-    let (kode, _) = json_call(&state, "DELETE", &link_uri, &admin, "").await;
-    assert_eq!(kode, StatusCode::OK);
-    let (kode, svar) = json_call(&state, "GET", &format!("{link_uri}/history"), &admin, "").await;
-    assert_eq!(kode, StatusCode::OK);
+    let (code, _) = json_call(&state, "DELETE", &link_uri, &admin, "").await;
+    assert_eq!(code, StatusCode::OK);
+    let (code, svar) = json_call(&state, "GET", &format!("{link_uri}/history"), &admin, "").await;
+    assert_eq!(code, StatusCode::OK);
     let historikk = svar["historikk"].as_array().unwrap();
     assert_eq!(historikk.len(), 2);
     assert_eq!(historikk[0]["endring"], "frakoblet");

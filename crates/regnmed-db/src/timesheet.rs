@@ -395,7 +395,7 @@ pub struct UnbilledGroup {
 #[derive(Debug)]
 pub struct UnbilledPerson {
     pub person_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub minutter: i64,
     pub entry_ids: Vec<Uuid>,
 }
@@ -403,7 +403,7 @@ pub struct UnbilledPerson {
 struct UnbilledRow {
     id: Uuid,
     person_id: Uuid,
-    person_navn: String,
+    person_name: String,
     project: Option<String>,
     kunde: Option<String>,
     customer_name: Option<String>,
@@ -443,7 +443,7 @@ async fn unbilled_rows(
         .map(|row| UnbilledRow {
             id: row.get("id"),
             person_id: row.get("person_id"),
-            person_navn: row.get("person_navn"),
+            person_name: row.get("person_navn"),
             project: row.get("prosjekt"),
             kunde: row.get("kunde"),
             customer_name: row.get("kunde_navn"),
@@ -496,7 +496,7 @@ fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
             }
             None => group.personer.push(UnbilledPerson {
                 person_id: row.person_id,
-                navn: row.person_navn,
+                name: row.person_name,
                 minutter: row.minutter,
                 entry_ids: vec![row.id],
             }),

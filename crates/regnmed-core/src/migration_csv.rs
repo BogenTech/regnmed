@@ -136,7 +136,7 @@ pub fn parse_contacts(
     let (header, lines) = read_header(text).ok_or(MigrationError::Empty)?;
     let h = &header.headers;
 
-    let navn_col = find_column_ranked(
+    let name_col = find_column_ranked(
         h,
         &[
             "navn",
@@ -186,7 +186,7 @@ pub fn parse_contacts(
     );
     let type_col = find_column(h, &["type", "kundeleverandor", "parttype"], &[]);
 
-    let navn_col = navn_col.ok_or_else(|| MigrationError::UnknownLayout(h.join(", ")))?;
+    let name_col = name_col.ok_or_else(|| MigrationError::UnknownLayout(h.join(", ")))?;
 
     let mut rader = Vec::new();
     for (i, line) in lines.enumerate() {
@@ -194,7 +194,7 @@ pub fn parse_contacts(
             continue;
         }
         let fields = split_record(line, header.delimiter);
-        let name = cell(&fields, Some(navn_col));
+        let name = cell(&fields, Some(name_col));
         if name.is_empty() {
             continue;
         }
@@ -256,7 +256,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
         ],
         &["fakturanr", "bilagsnr", "orgnr"],
     );
-    let navn_col = find_column_ranked(
+    let name_col = find_column_ranked(
         h,
         &["navn", "kundenavn", "leverandornavn", "name", "motpart"],
         &["kontaktperson"],
@@ -283,7 +283,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
     let forfall_col = find_column_ranked(h, &["forfallsdato", "forfall", "due date", "due"], &[]);
 
     let amount_col = amount_col.ok_or_else(|| MigrationError::UnknownLayout(h.join(", ")))?;
-    if part_col.is_none() && navn_col.is_none() {
+    if part_col.is_none() && name_col.is_none() {
         return Err(MigrationError::UnknownLayout(h.join(", ")));
     }
 
@@ -305,7 +305,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
             continue;
         }
         let number = some_nonempty(cell(&fields, part_col));
-        let name = some_nonempty(cell(&fields, navn_col));
+        let name = some_nonempty(cell(&fields, name_col));
         let party =
             number
                 .clone()

@@ -293,9 +293,12 @@ mod tests {
     fn a_z_report_that_does_not_add_up_is_refused_loudly() {
         let mut d = day();
         d.payments[0].amount_ore = 4_000_00;
-        let feil = build_settlement(&d).unwrap_err();
-        assert!(matches!(feil, CashRegisterError::Unbalanced { .. }));
-        assert!(feil.to_string().contains("kassadifferansebilag"), "{feil}");
+        let error = build_settlement(&d).unwrap_err();
+        assert!(matches!(error, CashRegisterError::Unbalanced { .. }));
+        assert!(
+            error.to_string().contains("kassadifferansebilag"),
+            "{error}"
+        );
 
         d.z_number = "  ".into();
         assert_eq!(

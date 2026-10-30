@@ -264,7 +264,7 @@ pub async fn approve_expense(
     // (docs/attestering.md, #47) the approver must be someone other than
     // the person who submitted the claim.
     if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
-        && policy.aktiv
+        && policy.active
     {
         let innsender: Uuid = expense.get("person_id");
         ensure!(
@@ -276,7 +276,7 @@ pub async fn approve_expense(
     let date: NaiveDate = expense.get("dato");
     let amount: i64 = expense.get("belop_ore");
     let beskrivelse: String = expense.get("beskrivelse");
-    let navn: String = expense.get("navn");
+    let name: String = expense.get("navn");
 
     let mut entries = Vec::new();
     let mut warning = None;
@@ -362,7 +362,7 @@ pub async fn approve_expense(
         account_number: contra_account.to_string(),
         amount: Ore(-amount),
         vat_code: None,
-        description: Some(format!("Skyldig {navn}")),
+        description: Some(format!("Skyldig {name}")),
         party_no: None,
         department: None,
         project: None,
@@ -377,7 +377,7 @@ pub async fn approve_expense(
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: date,
-        description: format!("{label} {navn}: {beskrivelse}"),
+        description: format!("{label} {name}: {beskrivelse}"),
         reverses: None,
         entries,
     };
@@ -483,12 +483,12 @@ pub async fn pay_expense(
     let contra_account: String = expense
         .get::<Option<String>, _>("motkonto")
         .unwrap_or_default();
-    let navn: String = expense.get("navn");
+    let name: String = expense.get("navn");
 
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: date,
-        description: format!("Utbetaling utlegg {navn}"),
+        description: format!("Utbetaling utlegg {name}"),
         reverses: None,
         entries: vec![
             EntryDraft {

@@ -23,7 +23,7 @@ pub struct LlmOppsett {
     pub leverandor: String,
     pub base_url: String,
     pub modell: String,
-    pub aktiv: bool,
+    pub active: bool,
     pub satt_av: String,
     pub created_at: DateTime<Utc>,
 }
@@ -40,7 +40,7 @@ pub const LEVERANDORER: [(&str, &str); 3] = [
 fn standard_url(leverandor: &str) -> Option<&'static str> {
     LEVERANDORER
         .iter()
-        .find(|(navn, _)| *navn == leverandor)
+        .find(|(name, _)| *name == leverandor)
         .map(|(_, url)| *url)
 }
 
@@ -127,7 +127,7 @@ pub async fn fjern_llm(
     satt_av: &str,
 ) -> Result<()> {
     let forrige = hent_llm(pool, company_id, integration_id).await?;
-    let forrige = forrige.filter(|o| o.aktiv);
+    let forrige = forrige.filter(|o| o.active);
     let Some(forrige) = forrige else {
         anyhow::bail!("agenten har ingen aktiv modell å slå av");
     };
@@ -168,7 +168,7 @@ pub async fn hent_llm(
         leverandor: r.get("leverandor"),
         base_url: r.get("base_url"),
         modell: r.get("modell"),
-        aktiv: r.get("aktiv"),
+        active: r.get("aktiv"),
         satt_av: r.get("satt_av"),
         created_at: r.get("created_at"),
     }))
@@ -195,8 +195,8 @@ pub async fn hent_llm_nokkel(
     .fetch_optional(pool)
     .await?;
     let Some(row) = row else { return Ok(None) };
-    let aktiv: bool = row.get("aktiv");
-    if !aktiv {
+    let active: bool = row.get("aktiv");
+    if !active {
         return Ok(None);
     }
     let sealed: Vec<u8> = row.get::<Option<Vec<u8>>, _>("nokkel").unwrap_or_default();
@@ -206,7 +206,7 @@ pub async fn hent_llm_nokkel(
             leverandor: row.get("leverandor"),
             base_url: row.get("base_url"),
             modell: row.get("modell"),
-            aktiv,
+            active,
             satt_av: row.get("satt_av"),
             created_at: row.get("created_at"),
         },

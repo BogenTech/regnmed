@@ -100,12 +100,12 @@ pub async fn bokfor_dagsoppgjor(
 
     // The Z-report is the documentation of the settlement (§5-4), so it
     // hangs on the settlement's own bilag.
-    if let Some((navn, content_type, bytes)) = z_rapport {
+    if let Some((name, content_type, bytes)) = z_rapport {
         crate::add_attachment_in(
             &mut tx,
             company_id,
             posted.id,
-            navn,
+            name,
             content_type,
             bytes,
             created_by,

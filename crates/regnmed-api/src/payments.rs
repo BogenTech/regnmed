@@ -52,7 +52,8 @@ pub struct RunItemRequest {
     #[serde(rename = "belop_ore")]
     amount_ore: Option<i64>,
     kid: Option<String>,
-    melding: Option<String>,
+    #[serde(rename = "melding")]
+    message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -86,7 +87,7 @@ pub async fn create_run(
             entry_id: i.entry_id,
             amount_ore: i.amount_ore,
             kid: i.kid.filter(|k| !k.trim().is_empty()),
-            melding: i.melding.filter(|m| !m.trim().is_empty()),
+            message: i.message.filter(|m| !m.trim().is_empty()),
         })
         .collect();
     let created_by = person.name.as_deref().unwrap_or(&person.sub);

@@ -46,10 +46,10 @@ pub async fn list_access(
     Ok(Json(json!({
         "medlemmer": medlemmer.iter().map(|m| json!({
             "person_id": m.person_id,
-            "navn": m.navn,
+            "navn": m.name,
             "epost": m.epost,
             "rolle": m.rolle,
-            "aktiv": m.aktiv,
+            "aktiv": m.active,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -111,12 +111,12 @@ pub async fn access_history(
     let rader = regnmed_db::firm_members::tilgangshistorikk(&state.pool, firm_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
-            "navn": e.navn,
+            "navn": e.name,
             "endring": e.endring,
             "fra_rolle": e.fra_rolle,
             "til_rolle": e.til_rolle,
             "utfort_av": e.utfort_av,
-            "kilde": e.kilde,
+            "kilde": e.source,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))
@@ -168,13 +168,13 @@ pub async fn invite(
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    let feil = try_send_firm_invitation(&state, &person, firm_id, id)
+    let error = try_send_firm_invitation(&state, &person, firm_id, id)
         .await
         .err();
     Ok(Json(json!({
         "invitasjon_id": id,
-        "epost_sendt": feil.is_none(),
-        "epost_grunn": feil,
+        "epost_sendt": error.is_none(),
+        "epost_grunn": error,
     })))
 }
 

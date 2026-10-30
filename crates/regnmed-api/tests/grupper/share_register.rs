@@ -45,9 +45,9 @@ async fn call(
 }
 
 /// Validates against a vendored XSD; skips when xmllint is missing.
-fn valider(xml: &str, xsd_navn: &str, tag: &str) {
+fn valider(xml: &str, xsd_name: &str, tag: &str) {
     let xsd = format!(
-        "{}/../../docs/aksjonaer/{xsd_navn}",
+        "{}/../../docs/aksjonaer/{xsd_name}",
         env!("CARGO_MANIFEST_DIR")
     );
     let dir = std::env::temp_dir().join("regnmed-aksjonaer-api-test");
@@ -284,9 +284,9 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    let feil = body["error"].as_str().unwrap();
-    assert!(feil.contains("salg"), "{feil}");
-    assert!(feil.contains("gjetter"), "{feil}");
+    let error = body["error"].as_str().unwrap();
+    assert!(error.contains("salg"), "{error}");
+    assert!(error.contains("gjetter"), "{error}");
 
     // The stiftelse year has only codes we HAVE verified, and is filed.
     let (status, body) = call(

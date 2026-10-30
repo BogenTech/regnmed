@@ -190,15 +190,15 @@ async fn expand_omvendt(
             OMVENDT_FRADRAG.0,
         ));
     }
-    for (nummer, navn) in [OMVENDT_UTGAENDE, OMVENDT_FRADRAG] {
+    for (number, name) in [OMVENDT_UTGAENDE, OMVENDT_FRADRAG] {
         sqlx::query(
             "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
              on conflict (company_id, number) do nothing",
         )
         .bind(Uuid::now_v7())
         .bind(company_id)
-        .bind(nummer)
-        .bind(navn)
+        .bind(number)
+        .bind(name)
         .execute(&mut **tx)
         .await?;
     }

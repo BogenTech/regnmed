@@ -23,7 +23,7 @@ use crate::auth::{ApiError, AuthPerson};
 
 fn policy_json(p: &regnmed_db::AttestationPolicy) -> serde_json::Value {
     json!({
-        "aktiv": p.aktiv,
+        "aktiv": p.active,
         "belopsgrense_ore": p.amount_limit_ore,
         "attestant_person_id": p.attestant_person_id,
         "krev_for_maskin": p.krev_for_maskin,
@@ -47,7 +47,8 @@ pub async fn get_policy(
 
 #[derive(Deserialize)]
 pub struct PolicyRequest {
-    aktiv: bool,
+    #[serde(rename = "aktiv")]
+    active: bool,
     #[serde(rename = "belopsgrense_ore")]
     amount_limit_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
@@ -67,7 +68,7 @@ pub async fn set_policy(
     regnmed_db::set_policy(
         &state.pool,
         company_id,
-        request.aktiv,
+        request.active,
         request.amount_limit_ore,
         request.attestant_person_id,
         request.krev_for_maskin,

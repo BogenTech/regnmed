@@ -36,7 +36,8 @@ pub struct PeriodiseringRequest {
     department: Option<String>,
     #[serde(rename = "prosjekt")]
     project: Option<String>,
-    notat: Option<String>,
+    #[serde(rename = "notat")]
+    note: Option<String>,
 }
 
 pub async fn list(
@@ -57,7 +58,7 @@ pub async fn list(
             "til_maned": p.til_maned.to_string(),
             "avdeling": p.department,
             "prosjekt": p.project,
-            "notat": p.notat,
+            "notat": p.note,
             "stoppet_dato": p.stopped_date.map(|d| d.to_string()),
             // Computed, never stored: what is left is the difference.
             "fort_ore": p.fort_ore,
@@ -87,7 +88,7 @@ pub async fn create(
             til: (request.til_ar, request.til_maned),
             department: request.department,
             project: request.project,
-            notat: request.notat,
+            note: request.note,
         },
         person.name.as_deref().unwrap_or(&person.sub),
     )

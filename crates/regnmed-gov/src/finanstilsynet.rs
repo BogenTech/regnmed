@@ -28,8 +28,8 @@ struct Authorisation {
     // to translate, and not a reason to name our fields after it.
     #[serde(rename = "kode")]
     code: String,
-    #[serde(default)]
-    aktiv: bool,
+    #[serde(default, rename = "aktiv")]
+    active: bool,
 }
 
 pub struct FinanstilsynetClient {
@@ -81,7 +81,7 @@ impl FinanstilsynetClient {
         Ok(virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.code.to_lowercase().contains(needle)))
+            .any(|a| a.active && a.code.to_lowercase().contains(needle)))
     }
 }
 
@@ -102,11 +102,11 @@ mod tests {
         let active_accounting = virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.code.to_lowercase().contains("regnskap"));
+            .any(|a| a.active && a.code.to_lowercase().contains("regnskap"));
         let active_revisjon = virksomhet
             .autorisasjoner
             .iter()
-            .any(|a| a.aktiv && a.code.to_lowercase().contains("revisj"));
+            .any(|a| a.active && a.code.to_lowercase().contains("revisj"));
         assert!(active_accounting);
         assert!(!active_revisjon, "inactive licenses do not count");
     }

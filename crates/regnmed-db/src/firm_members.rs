@@ -31,10 +31,10 @@ fn krev_rolle(rolle: &str) -> Result<()> {
 #[derive(Debug, Clone)]
 pub struct Byramedlem {
     pub person_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub epost: Option<String>,
     pub rolle: String,
-    pub aktiv: bool,
+    pub active: bool,
 }
 
 pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedlem>> {
@@ -56,10 +56,10 @@ pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedl
         .iter()
         .map(|r| Byramedlem {
             person_id: r.get("person_id"),
-            navn: r.get("navn"),
+            name: r.get("navn"),
             epost: r.get("epost"),
             rolle: r.get("rolle"),
-            aktiv: r.get("aktiv"),
+            active: r.get("aktiv"),
         })
         .collect())
 }
@@ -72,7 +72,7 @@ pub(crate) async fn logg(
     fra: Option<&str>,
     til: Option<&str>,
     utfort_av: Option<Uuid>,
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
     sqlx::query(
         "insert into firm_member_change
@@ -86,7 +86,7 @@ pub(crate) async fn logg(
     .bind(fra)
     .bind(til)
     .bind(utfort_av)
-    .bind(kilde)
+    .bind(source)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -170,7 +170,7 @@ pub async fn sett_aktiv(
     pool: &PgPool,
     firm_id: Uuid,
     person_id: Uuid,
-    aktiv: bool,
+    active: bool,
     utfort_av: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
@@ -184,7 +184,7 @@ pub async fn sett_aktiv(
             .await?
             .context("personen er ikke medlem av byrået")?;
     let rolle: String = rad.get("role");
-    if rad.get::<bool, _>("active") == aktiv {
+    if rad.get::<bool, _>("active") == active {
         tx.commit().await?;
         return Ok(());
     }
@@ -192,7 +192,7 @@ pub async fn sett_aktiv(
     sqlx::query("update firm_member set active = $3 where firm_id = $1 and person_id = $2")
         .bind(firm_id)
         .bind(person_id)
-        .bind(aktiv)
+        .bind(active)
         .execute(&mut *tx)
         .await?;
     krev_gjenvaerende_admin(&mut tx, firm_id).await?;
@@ -200,7 +200,7 @@ pub async fn sett_aktiv(
         &mut tx,
         firm_id,
         person_id,
-        if aktiv { "reaktivert" } else { "deaktivert" },
+        if active { "reaktivert" } else { "deaktivert" },
         Some(&rolle),
         Some(&rolle),
         Some(utfort_av),
@@ -384,12 +384,12 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 
 #[derive(Debug, Clone)]
 pub struct Byraendring {
-    pub navn: String,
+    pub name: String,
     pub endring: String,
     pub fra_rolle: Option<String>,
     pub til_rolle: Option<String>,
     pub utfort_av: Option<String>,
-    pub kilde: String,
+    pub source: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -411,12 +411,12 @@ pub async fn tilgangshistorikk(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrae
     Ok(rows
         .iter()
         .map(|r| Byraendring {
-            navn: r.get("navn"),
+            name: r.get("navn"),
             endring: r.get("endring"),
             fra_rolle: r.get("fra_rolle"),
             til_rolle: r.get("til_rolle"),
             utfort_av: r.get("utfort_av"),
-            kilde: r.get("kilde"),
+            source: r.get("kilde"),
             created_at: r.get("created_at"),
         })
         .collect())

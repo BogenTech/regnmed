@@ -35,7 +35,7 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 /// Names belonging to the built-in roles, which cannot be reused.
-pub const RESERVERTE_NAVN: [&str; 6] = ["admin", "bokforing", "les", "ansatt", "revisor", "ukjent"];
+pub const RESERVED_NAMES: [&str; 6] = ["admin", "bokforing", "les", "ansatt", "revisor", "ukjent"];
 
 /// SQLSTATE for unique_violation.
 const UNIK_KRENKELSE: &str = "23505";
@@ -43,8 +43,8 @@ const UNIK_KRENKELSE: &str = "23505";
 #[derive(Debug, Clone)]
 pub struct Role {
     pub id: Uuid,
-    pub navn: String,
-    pub aktiv: bool,
+    pub name: String,
+    pub active: bool,
     pub rights: Vec<String>,
     pub i_bruk: i64,
 }
@@ -57,9 +57,9 @@ pub struct Role {
 pub async fn rettigheter_for(
     pool: &PgPool,
     company_id: Uuid,
-    navn: &[String],
+    name: &[String],
 ) -> Result<Vec<String>> {
-    if navn.is_empty() {
+    if name.is_empty() {
         return Ok(Vec::new());
     }
     let rows = sqlx::query(
@@ -69,7 +69,7 @@ pub async fn rettigheter_for(
          where r.company_id = $1 and r.aktiv and r.navn = any($2)",
     )
     .bind(company_id)
-    .bind(navn)
+    .bind(name)
     .fetch_all(pool)
     .await?;
     Ok(rows.iter().map(|r| r.get("rett")).collect())
@@ -94,8 +94,8 @@ pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Role>> {
         .iter()
         .map(|r| Role {
             id: r.get("id"),
-            navn: r.get("navn"),
-            aktiv: r.get("aktiv"),
+            name: r.get("navn"),
+            active: r.get("aktiv"),
             rights: r.get("rettigheter"),
             i_bruk: r.get("i_bruk"),
         })
@@ -131,16 +131,16 @@ async fn logg(
 pub async fn opprett(
     pool: &PgPool,
     company_id: Uuid,
-    navn: &str,
+    name: &str,
     godkjente: &[String],
     av: Uuid,
-    av_navn: &str,
+    by_name: &str,
 ) -> Result<Uuid> {
-    let navn = navn.trim();
-    ensure!(!navn.is_empty(), "rollen må ha et navn");
+    let name = name.trim();
+    ensure!(!name.is_empty(), "rollen må ha et navn");
     ensure!(
-        !RESERVERTE_NAVN.contains(&navn.to_lowercase().as_str()),
-        "«{navn}» er navnet på en innebygd rolle"
+        !RESERVED_NAMES.contains(&name.to_lowercase().as_str()),
+        "«{name}» er navnet på en innebygd rolle"
     );
 
     let id = Uuid::new_v4();
@@ -150,15 +150,15 @@ pub async fn opprett(
     )
     .bind(id)
     .bind(company_id)
-    .bind(navn)
-    .bind(av_navn)
+    .bind(name)
+    .bind(by_name)
     .execute(&mut *tx)
     .await;
     if let Err(e) = res {
         // The error code, not the constraint name: renaming the
         // constraint must not turn "the name is taken" into a 500.
         if e.as_database_error().and_then(|d| d.code()).as_deref() == Some(UNIK_KRENKELSE) {
-            bail!("selskapet har allerede en rolle som heter «{navn}»");
+            bail!("selskapet har allerede en rolle som heter «{name}»");
         }
         return Err(e.into());
     }
@@ -237,14 +237,14 @@ pub async fn sett_aktiv(
     pool: &PgPool,
     company_id: Uuid,
     role_id: Uuid,
-    aktiv: bool,
+    active: bool,
     av: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let n = sqlx::query("update company_role set aktiv = $3 where id = $2 and company_id = $1")
         .bind(company_id)
         .bind(role_id)
-        .bind(aktiv)
+        .bind(active)
         .execute(&mut *tx)
         .await?
         .rows_affected();
@@ -253,7 +253,7 @@ pub async fn sett_aktiv(
         &mut tx,
         company_id,
         role_id,
-        if aktiv { "reaktivert" } else { "deaktivert" },
+        if active { "reaktivert" } else { "deaktivert" },
         None,
         av,
     )
@@ -263,12 +263,12 @@ pub async fn sett_aktiv(
 }
 
 /// Does this role name exist here as an active custom role?
-pub async fn finnes(pool: &PgPool, company_id: Uuid, navn: &str) -> Result<bool> {
+pub async fn finnes(pool: &PgPool, company_id: Uuid, name: &str) -> Result<bool> {
     let n: i64 = sqlx::query_scalar(
         "select count(*) from company_role where company_id = $1 and navn = $2 and aktiv",
     )
     .bind(company_id)
-    .bind(navn)
+    .bind(name)
     .fetch_one(pool)
     .await?;
     Ok(n > 0)
@@ -276,7 +276,7 @@ pub async fn finnes(pool: &PgPool, company_id: Uuid, navn: &str) -> Result<bool>
 
 #[derive(Debug, Clone)]
 pub struct Rolleendring {
-    pub navn: String,
+    pub name: String,
     pub endring: String,
     pub rights: Option<String>,
     pub utfort_av: Option<String>,
@@ -300,7 +300,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendri
     Ok(rows
         .iter()
         .map(|r| Rolleendring {
-            navn: r.get("navn"),
+            name: r.get("navn"),
             endring: r.get("endring"),
             rights: r.get("rettigheter"),
             utfort_av: r.get("utfort_av"),

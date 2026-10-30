@@ -29,7 +29,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
-    let modellnavn =
+    let model_name =
         std::env::var("REGNMED_TESTMODELL").unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
 
     let idp = TestIdp::new();
@@ -81,7 +81,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &nokkel).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,
@@ -95,7 +95,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
     .await
     .expect("sløyfen skal ikke feile mot en ekte leverandør");
 
-    println!("modell:  {modellnavn}");
+    println!("modell:  {model_name}");
     println!("status:  {}", outcome.status());
     println!("notat:   {}", outcome.note());
 
@@ -121,7 +121,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
-    let modellnavn =
+    let model_name =
         std::env::var("REGNMED_TESTMODELL").unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
 
     let idp = TestIdp::new();
@@ -180,7 +180,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &modellnavn, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &nokkel).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,
@@ -195,7 +195,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     .await
     .expect("sløyfen skal ikke feile mot en ekte leverandør");
 
-    println!("modell:  {modellnavn}");
+    println!("modell:  {model_name}");
     println!("status:  {}", outcome.status());
     println!("notat:   {}", outcome.note());
 

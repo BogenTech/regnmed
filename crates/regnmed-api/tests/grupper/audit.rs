@@ -539,8 +539,8 @@ async fn undocumented_vouchers_are_counted_and_listable() {
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [("1920", "Bank"), ("6800", "Kontorkostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+    for (nr, name) in [("1920", "Bank"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, name)
             .await
             .unwrap();
     }

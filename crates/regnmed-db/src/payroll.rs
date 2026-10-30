@@ -37,7 +37,7 @@ pub const KONTO_PAALOPT_AGA_FERIEPENGER: &str = "2780";
 #[derive(Debug, Clone)]
 pub struct NyAnsatt {
     pub fodselsnummer: String,
-    pub navn: String,
+    pub name: String,
     pub stilling: Option<String>,
     pub ansatt_fra: NaiveDate,
     pub manedslonn_ore: Option<i64>,
@@ -53,7 +53,7 @@ pub struct NyAnsatt {
 #[derive(Debug, Clone)]
 pub struct Employee {
     pub id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub stilling: Option<String>,
     /// Ferieloven §4-5 has no parallel here, but the privacy concern is
     /// the same as in the aksjeeierbok: the list carries the birth date,
@@ -73,7 +73,7 @@ pub struct Employee {
     /// The linked portal user (migration 0036/0050), if any — who may
     /// see this employee's payslip and whose hours become timelønn.
     pub person_id: Option<Uuid>,
-    pub person_navn: Option<String>,
+    pub person_name: Option<String>,
     pub person_epost: Option<String>,
 }
 
@@ -117,7 +117,7 @@ pub async fn create_ansatt(
     .bind(id)
     .bind(company_id)
     .bind(&ny.fodselsnummer)
-    .bind(&ny.navn)
+    .bind(&ny.name)
     .bind(&ny.stilling)
     .bind(ny.ansatt_fra)
     .bind(ny.manedslonn_ore)
@@ -156,7 +156,7 @@ pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employe
 fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
     Employee {
         id: r.get("id"),
-        navn: r.get("navn"),
+        name: r.get("navn"),
         stilling: r.get("stilling"),
         birth_date: r
             .get::<String, _>("fodselsnummer")
@@ -173,7 +173,7 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
         bank_account: r.get("bank_account"),
         note: r.get("note"),
         person_id: r.get("person_id"),
-        person_navn: r.get("person_navn"),
+        person_name: r.get("person_navn"),
         person_epost: r.get("person_epost"),
     }
 }
@@ -223,7 +223,7 @@ pub struct Lonnskjoring {
 #[derive(Debug, Clone)]
 pub struct Lonnslinje {
     pub employee_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub calculation: PayrollCalculation,
     pub holiday_pay_accrual_ore: i64,
     /// This run's change to the accrued aga on the employee's unpaid
@@ -365,7 +365,7 @@ pub async fn run_payroll(
         ensure!(
             employee.ansatt_i(maned_slutt, maned_start),
             "{} var ikke ansatt i {month}/{ar}",
-            employee.navn
+            employee.name
         );
         let brutto = if post.from_timesheet {
             let basis = timegrunnlag(pool, company_id, employee.id, ar, month).await?;
@@ -376,12 +376,12 @@ pub async fn run_payroll(
                 basis.laast,
                 "timelisten for {month:02}/{ar} er ikke låst — lås måneden før timelønn \
                  utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
-                employee.navn
+                employee.name
             );
             ensure!(
                 basis.minutes > 0,
                 "{} har ingen førte timer i {month:02}/{ar}",
-                employee.navn
+                employee.name
             );
             basis.amount_ore
         } else {
@@ -390,7 +390,7 @@ pub async fn run_payroll(
                 .with_context(|| {
                     format!(
                         "{} har verken månedslønn eller oppgitt beløp",
-                        employee.navn
+                        employee.name
                     )
                 })?
         };
@@ -404,7 +404,7 @@ pub async fn run_payroll(
             },
             month,
         )
-        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.navn))?;
+        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
 
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
@@ -434,7 +434,7 @@ pub async fn run_payroll(
 
         lines.push(Lonnslinje {
             employee_id: employee.id,
-            navn: employee.navn.clone(),
+            name: employee.name.clone(),
             calculation,
             holiday_pay_accrual_ore: avsetning,
             employer_contribution_holiday_pay_ore: aga_feriepenger,
@@ -678,7 +678,7 @@ pub async fn run_payroll(
         voucher_id: posted.id,
         employees: lines
             .iter()
-            .map(|l| (l.employee_id, l.navn.clone()))
+            .map(|l| (l.employee_id, l.name.clone()))
             .collect(),
         lines,
         advarsler: feriepengeavvik(pool, company_id)
@@ -866,10 +866,10 @@ pub async fn payslip(
 
     let withholding_type: String = row.get("trekk_type");
     Ok(PayslipInput {
-        arbeidsgiver_navn: row.get("selskap"),
+        employer_name: row.get("selskap"),
         arbeidsgiver_orgnr: row.get("orgnr"),
         arbeidsgiver_adresse: row.get("address"),
-        ansatt_navn: row.get("navn"),
+        employee_name: row.get("navn"),
         ansatt_stilling: row.get("stilling"),
         // Birth date, not fødselsnummer — even on a document sent to the
         // employee themselves.
@@ -957,13 +957,13 @@ pub async fn timegrunnlag(
     .await?
     .context("no such ansatt")?;
     let person_id: Option<Uuid> = employee.get("person_id");
-    let navn: String = employee.get("navn");
+    let name: String = employee.get("navn");
     let person_id = person_id.with_context(|| {
-        format!("{navn} er ikke koblet til en portalbruker — timeføringen vet ikke hvem det er")
+        format!("{name} er ikke koblet til en portalbruker — timeføringen vet ikke hvem det er")
     })?;
     let timesats: i64 = employee
         .get::<Option<i64>, _>("timelonn_ore")
-        .with_context(|| format!("{navn} har ingen timelønn"))?;
+        .with_context(|| format!("{name} har ingen timelønn"))?;
 
     let minutes: Option<i64> = sqlx::query_scalar(
         "select sum(minutter)::bigint from time_entry
@@ -1114,7 +1114,7 @@ pub(crate) async fn logg_kobling(
     employee_id: Uuid,
     person_id: Uuid,
     endring: &str,
-    kilde: &str,
+    source: &str,
     utfort_av: Option<Uuid>,
 ) -> Result<()> {
     sqlx::query(
@@ -1126,7 +1126,7 @@ pub(crate) async fn logg_kobling(
     .bind(employee_id)
     .bind(person_id)
     .bind(endring)
-    .bind(kilde)
+    .bind(source)
     .bind(utfort_av)
     .execute(&mut **tx)
     .await?;
@@ -1136,8 +1136,8 @@ pub(crate) async fn logg_kobling(
 #[derive(Debug, Clone)]
 pub struct Koblingsendring {
     pub endring: String,
-    pub kilde: String,
-    pub person_navn: String,
+    pub source: String,
+    pub person_name: String,
     pub utfort_av: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -1167,8 +1167,8 @@ pub async fn ansatt_link_historikk(
         .iter()
         .map(|r| Koblingsendring {
             endring: r.get("endring"),
-            kilde: r.get("kilde"),
-            person_navn: r.get("person_navn"),
+            source: r.get("kilde"),
+            person_name: r.get("person_navn"),
             utfort_av: r.get("utfort_av"),
             created_at: r.get("created_at"),
         })

@@ -92,7 +92,7 @@ async fn byra_members_are_invited_never_coregistered() {
         regnmed_db::ensure_person(&state.pool, &format!("test|{}", Uuid::new_v4()), None, None)
             .await
             .unwrap();
-    let feil = regnmed_db::create_verified_firm(
+    let error = regnmed_db::create_verified_firm(
         &state.pool,
         &firm_orgnr,
         "BYRÅTEST AS",
@@ -103,8 +103,8 @@ async fn byra_members_are_invited_never_coregistered() {
     .await
     .unwrap_err();
     assert!(
-        feil.to_string().contains("allerede registrert"),
-        "refusal names the reason: {feil}"
+        error.to_string().contains("allerede registrert"),
+        "refusal names the reason: {error}"
     );
     let medlemmer: i64 = sqlx::query_scalar("select count(*) from firm_member where firm_id = $1")
         .bind(firm_id)
@@ -114,7 +114,7 @@ async fn byra_members_are_invited_never_coregistered() {
     assert_eq!(medlemmer, 1, "the stranger did not become a member");
 
     // The founder's arrival is on the record.
-    let kilde: String = sqlx::query_scalar(
+    let source: String = sqlx::query_scalar(
         "select kilde from firm_member_change where firm_id = $1 and person_id = $2",
     )
     .bind(firm_id)
@@ -122,7 +122,7 @@ async fn byra_members_are_invited_never_coregistered() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(kilde, "registrering");
+    assert_eq!(source, "registrering");
 
     // A client company with an open engagement — what membership reaches.
     let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Klientselskap AS")

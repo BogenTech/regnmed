@@ -957,11 +957,11 @@ pub async fn lookup(
         return Ok(None);
     }
     let maskin = tilganger.iter().any(|a| a.via == "integrasjon");
-    let mut navn: Vec<String> = tilganger.into_iter().map(|a| a.access).collect();
-    navn.sort();
-    navn.dedup();
-    let roles: Vec<Role> = navn.iter().map(|s| Role::from_db(s)).collect();
-    let ukjente: Vec<String> = navn
+    let mut name: Vec<String> = tilganger.into_iter().map(|a| a.access).collect();
+    name.sort();
+    name.dedup();
+    let roles: Vec<Role> = name.iter().map(|s| Role::from_db(s)).collect();
+    let ukjente: Vec<String> = name
         .iter()
         .zip(&roles)
         .filter(|(_, r)| **r == Role::Ukjent)

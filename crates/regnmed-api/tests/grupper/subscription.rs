@@ -36,12 +36,12 @@ async fn kall(
         )
         .await
         .unwrap();
-    let kode = response.status();
+    let code = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
         .await
         .unwrap();
     (
-        kode,
+        code,
         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
     )
 }
@@ -83,7 +83,7 @@ async fn a_new_company_is_in_its_trial_and_can_do_everything() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -91,7 +91,7 @@ async fn a_new_company_is_in_its_trial_and_can_do_everything() {
         r#"{"nummer":"1","navn":"Vare","salgspris_ore":1000}"#,
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "prøvetiden skal virke som normalt");
+    assert_eq!(code, StatusCode::OK, "prøvetiden skal virke som normalt");
 
     let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
     let selskap = me["companies"]
@@ -116,7 +116,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     make_blocked(&state, company).await;
 
     // Changes: refused, with the explanation in the response.
-    let (kode, svar) = kall(
+    let (code, svar) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -124,7 +124,7 @@ async fn a_block_stops_changes_and_nothing_else() {
         r#"{"nummer":"1","navn":"Vare","salgspris_ore":1000}"#,
     )
     .await;
-    assert_eq!(kode, StatusCode::FORBIDDEN);
+    assert_eq!(code, StatusCode::FORBIDDEN);
     assert!(
         svar["error"]
             .as_str()
@@ -134,7 +134,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     );
 
     // Lesing: virker.
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "GET",
         &format!("/companies/{company}/invoices"),
@@ -142,11 +142,11 @@ async fn a_block_stops_changes_and_nothing_else() {
         "",
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "lesing skal alltid virke");
+    assert_eq!(code, StatusCode::OK, "lesing skal alltid virke");
 
     // Export: works — the hovedbok is never taken hostage.
     let year = Utc::now().year();
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "GET",
         &format!(
@@ -157,13 +157,13 @@ async fn a_block_stops_changes_and_nothing_else() {
     )
     .await;
     assert_ne!(
-        kode,
+        code,
         StatusCode::FORBIDDEN,
         "SAF-T-eksport skal virke på et sperret selskap"
     );
 
     // Governance of the company: works, or nobody could sort things out.
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "GET",
         &format!("/companies/{company}/access"),
@@ -171,8 +171,8 @@ async fn a_block_stops_changes_and_nothing_else() {
         "",
     )
     .await;
-    assert_eq!(kode, StatusCode::OK);
-    let (kode, _) = kall(
+    assert_eq!(code, StatusCode::OK);
+    let (code, _) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -181,7 +181,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     )
     .await;
     assert_eq!(
-        kode,
+        code,
         StatusCode::OK,
         "et sperret selskap må kunne slippe inn den som skal ordne opp"
     );
@@ -209,8 +209,8 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    for (nr, navn) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+    for (nr, name) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -242,7 +242,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
 
     make_blocked(&state, company).await;
 
-    let (kode, svar) = kall(
+    let (code, svar) = kall(
         &state,
         "POST",
         &format!(
@@ -254,13 +254,13 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
     )
     .await;
     assert_eq!(
-        kode,
+        code,
         StatusCode::OK,
         "dokumentasjonsplikten kan ikke sperres av manglende betaling: {svar}"
     );
 
     // …but the accounts still cannot be carried forward.
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/vouchers"),
@@ -274,7 +274,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
     )
     .await;
     assert_eq!(
-        kode,
+        code,
         StatusCode::FORBIDDEN,
         "å bokføre mer er fortsatt sperret"
     );
@@ -301,7 +301,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
     .await
     .unwrap();
 
-    let (kode, _) = kall(
+    let (code, _) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -309,7 +309,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
         r#"{"nummer":"2","navn":"Vare to","salgspris_ore":1000}"#,
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "tegning skal åpne skrivingen igjen");
+    assert_eq!(code, StatusCode::OK, "tegning skal åpne skrivingen igjen");
 
     // Oppsigelse fra i morgen: dekningen står ut dagen, deretter løper
     // fristen — endringer virker fortsatt, banneret varsler.
@@ -406,8 +406,8 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
 }
 
 /// A faktura-ready company whose mva registration we choose.
-async fn driftsselskap(pool: &sqlx::PgPool, navn: &str, vat_registered: bool) -> Uuid {
-    let id = regnmed_db::create_company(pool, &unique_orgnr(), navn)
+async fn driftsselskap(pool: &sqlx::PgPool, name: &str, vat_registered: bool) -> Uuid {
+    let id = regnmed_db::create_company(pool, &unique_orgnr(), name)
         .await
         .unwrap();
     gjor_fakturaklar(pool, id).await;
@@ -496,14 +496,14 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
         .await
         .unwrap();
 
-    let (kode, vat, netto) = linje(registrert, kunde_a).await;
-    assert_eq!(kode, "3", "registrert selger fakturerer utgående mva");
+    let (code, vat, netto) = linje(registrert, kunde_a).await;
+    assert_eq!(code, "3", "registrert selger fakturerer utgående mva");
     assert_eq!(netto, price);
     assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
 
-    let (kode, vat, netto) = linje(utenfor, kunde_b).await;
+    let (code, vat, netto) = linje(utenfor, kunde_b).await;
     assert_eq!(
-        kode, "7",
+        code, "7",
         "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
     );
     assert_eq!(vat, 0, "mval. §11-4: ingen mva skal oppgis");
@@ -817,12 +817,12 @@ async fn webhook_post(
         )
         .await
         .unwrap();
-    let kode = response.status();
+    let code = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await
         .unwrap();
     (
-        kode,
+        code,
         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
     )
 }
@@ -849,8 +849,8 @@ async fn the_webhook_rejects_an_invalid_signature() {
     };
     let state = with_stripe(&state, "999999999");
     let payload = br#"{"type":"payment_intent.succeeded","data":{"object":{}}}"#;
-    let (kode, _) = webhook_post(&state, payload, "t=1,v1=feil").await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST);
+    let (code, _) = webhook_post(&state, payload, "t=1,v1=feil").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
 }
 
 /// A Stripe account can serve more than one product, so sessions that were
@@ -876,17 +876,17 @@ async fn a_session_that_carries_no_card_is_acknowledged_not_rejected() {
 
     // Another product's checkout in the same Stripe account: no reference
     // of ours, so nothing to do — but it must still be a 200.
-    let (kode, svar) = send(serde_json::json!({
+    let (code, svar) = send(serde_json::json!({
         "type": "checkout.session.completed",
         "data": { "object": { "id": "cs_someone_else", "mode": "payment" } }
     }))
     .await;
-    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
     assert_eq!(svar["handled"], "ignorert");
 
     // Our own subscription session: the card is attached by Stripe, and the
     // subscription reaches us on customer.subscription.created instead.
-    let (kode, svar) = send(serde_json::json!({
+    let (code, svar) = send(serde_json::json!({
         "type": "checkout.session.completed",
         "data": { "object": {
             "id": "cs_abonnement",
@@ -897,7 +897,7 @@ async fn a_session_that_carries_no_card_is_acknowledged_not_rejected() {
         } }
     }))
     .await;
-    assert_eq!(kode, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
     assert_eq!(svar["handled"], "abonnement_sesjon");
 }
 
@@ -948,8 +948,8 @@ async fn a_card_charge_posts_once_and_only_once() {
     let now = Utc::now().timestamp();
     let signatur = regnmed_gov::stripe::sign_webhook(&payload, "whsec_test", now);
 
-    let (kode, svar) = webhook_post(&state, &payload, &signatur).await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let (code, svar) = webhook_post(&state, &payload, &signatur).await;
+    assert_eq!(code, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "bokfort");
 
     // The reskontro item is closed: the receivable has zero remaining.
@@ -967,8 +967,8 @@ async fn a_card_charge_posts_once_and_only_once() {
     assert_eq!(rest, 0, "fordringen skulle vært lukket av korttrekket");
 
     // Replay: the same event again — acknowledged, but posts nothing.
-    let (kode, svar) = webhook_post(&state, &payload, &signatur).await;
-    assert_eq!(kode, StatusCode::OK);
+    let (code, svar) = webhook_post(&state, &payload, &signatur).await;
+    assert_eq!(code, StatusCode::OK);
     assert_eq!(svar["handled"], "replay");
     let bilag: i64 = sqlx::query_scalar(
         "select count(*) from voucher
@@ -1001,7 +1001,7 @@ async fn signing_up_activates_directly_without_the_card_rail() {
         return;
     };
     // Rail off: `state` from oppsett() has no StripeCfg.
-    let (kode, svar) = kall(
+    let (code, svar) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/subscription"),
@@ -1009,7 +1009,7 @@ async fn signing_up_activates_directly_without_the_card_rail() {
         r#"{"plan":"standard"}"#,
     )
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
     assert_eq!(svar["status"], "aktiv");
     assert_eq!(
         regnmed_db::subscription::status_for(&state.pool, company)
@@ -1042,7 +1042,7 @@ async fn a_company_cannot_start_a_second_subscription() {
     .await
     .unwrap();
 
-    let (kode, svar) = kall(
+    let (code, svar) = kall(
         &state,
         "POST",
         &format!("/companies/{company}/subscription"),
@@ -1050,7 +1050,7 @@ async fn a_company_cannot_start_a_second_subscription() {
         r#"{"plan":"standard"}"#,
     )
     .await;
-    assert_eq!(kode, StatusCode::BAD_REQUEST, "{svar}");
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{svar}");
     assert!(
         svar["error"]
             .as_str()
@@ -1097,7 +1097,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     };
 
     // 1. Subscription created → coverage opens.
-    let (kode, svar) = send(serde_json::json!({
+    let (code, svar) = send(serde_json::json!({
         "type": "customer.subscription.created",
         "data": { "object": {
             "id": sub_id,
@@ -1110,7 +1110,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
         }}
     }))
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "abonnement_opprettet");
     assert_eq!(
         regnmed_db::subscription::status_for(&state.pool, kunde)
@@ -1138,8 +1138,8 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
             "lines": { "data": [ { "description": "regnmed standard — august 2026" } ] },
         }}
     });
-    let (kode, svar) = send(betalt.clone()).await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    let (code, svar) = send(betalt.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "bokfort");
 
     let (fakturaer, rest): (i64, i64) = sqlx::query_as(
@@ -1158,8 +1158,8 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     assert_eq!(rest, 0, "fakturaen skulle vært lukket av betalingen");
 
     // 3. Stripe redelivers the same event — nothing is booked twice.
-    let (kode, svar) = send(betalt).await;
-    assert_eq!(kode, StatusCode::OK);
+    let (code, svar) = send(betalt).await;
+    assert_eq!(code, StatusCode::OK);
     assert_eq!(svar["handled"], "replay", "en replay skal ikke bokføre");
     let fakturaer: i64 = sqlx::query_scalar("select count(*) from invoice where company_id = $1")
         .bind(drift)
@@ -1169,12 +1169,12 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     assert_eq!(fakturaer, 1, "replay skulle ikke gitt en ny faktura");
 
     // 4. Cancelled → coverage closes.
-    let (kode, svar) = send(serde_json::json!({
+    let (code, svar) = send(serde_json::json!({
         "type": "customer.subscription.deleted",
         "data": { "object": { "id": sub_id, "status": "canceled" } }
     }))
     .await;
-    assert_eq!(kode, StatusCode::OK, "{svar}");
+    assert_eq!(code, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "abonnement_avsluttet");
     assert!(
         regnmed_db::subscription::stripe_abo_for(&state.pool, kunde)

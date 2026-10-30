@@ -396,14 +396,42 @@ is the `START` marker: it contains its own generator's path, so
 docs/auth.md in the same commit, exactly as this file warned. The
 guard was SEEN TO FAIL (a sabotaged slug in the doc) and pass again.
 
+From here the work stopped being concept batches and became
+DICTIONARY SWEEPS: the remainder is a long tail of generic words
+spread thin, not modules. First sweep: `navn`->`name` (330 occurrences
+plus 17 compounds -- `filnavn`->`filename`, `selger_navn`->
+`seller_name`, `RESERVERTE_NAVN`->`RESERVED_NAMES`), `kode`->`code`,
+`feil`->`error`, `aktiv`->`active`, `kilde`->`source`,
+`melding`->`message`, `notat`->`note`, `nummer`->`number`. 104 files,
+and the compiler found NOTHING -- which is what a sweep over words
+that carry one meaning everywhere should look like.
+
+**NEW GUARD: `scripts/pin-wire.py`**, and it exists because hand-adding
+`#[serde(rename)]` went wrong in FOUR batches in a row -- always the
+same way, an attribute landing on a `name: value` line inside a
+function body ("cannot find attribute `serde` in this scope"). Run it
+with the same map BEFORE the rename: it walks only the bodies of
+structs that derive Serialize/Deserialize, pins each affected field to
+the name it has NOW, merges into an existing `#[serde(default)]`
+rather than stacking a second attribute, and SKIPS a field that
+already carries a `rename` (BRREG's `kode`, Finanstilsynet's `aktiv`,
+the two `navn` pinned in the share-register batch -- four of the 25
+affected fields). The rename then moves the Rust name out from under a
+pin that is correct by construction. 21 fields pinned, zero by hand.
+`wire-names.py` still has the last word, and was SEEN TO FAIL: with
+one pin deleted it reported `budget.rs:CreateBudgetRequest` carrying
+`name` where the baseline said `navn`.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~5 200
-Norwegian identifier occurrences, 561 distinct names, 194 files --
-3,4 % of all identifiers**, down from 7 494 / 667 / 4,8 % four batches
-ago. Per crate: api 2 263, db 1 942, core 718, cli 138, mcp 81,
-gov 38, agent 9, mail 2. No single file dominates any more: the
-heaviest are `db::subscription` 244, `db::payroll` 159, `cli::main`
-138, `api::access` 131, `core::ehf_import` 115.
+a Norwegian word list, strings and comments excluded): **~4 300
+Norwegian identifier occurrences, 539 distinct names, 191 files --
+2,8 % of all identifiers**, down from 7 494 / 667 / 4,8 % five batches
+ago. Per crate: api 1 884, db 1 557, core 634, cli 109, mcp 68,
+gov 29, agent 7, mail 0. The biggest remaining tokens are `orgnr` 230
+(+ `unique_orgnr` 170, a test helper), `svar` 149, `rolle` 117,
+`gjor_fakturaklar` 116, `idag` 99, `kunde` 88, `beskrivelse` 73.
+`svar` is the one to be careful with: it is a RESPONSE body in the
+tests and an ANSWER in the agent task queue.
 
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider

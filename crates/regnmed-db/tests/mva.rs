@@ -314,12 +314,12 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1500", "Kundefordringer"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -469,12 +469,12 @@ async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("2710", "Inngående mva"),
         ("2910", "Mellomregning ansatte"),
         ("6420", "Leie datasystemer"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, navn)
+        regnmed_db::ensure_account(&pool, company, nr, name)
             .await
             .unwrap();
     }

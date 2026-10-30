@@ -41,12 +41,12 @@ async fn request(
     )
 }
 
-fn asset_row<'a>(body: &'a serde_json::Value, navn: &str) -> &'a serde_json::Value {
+fn asset_row<'a>(body: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
     body["assets"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|a| a["navn"] == navn)
+        .find(|a| a["navn"] == name)
         .unwrap()
 }
 

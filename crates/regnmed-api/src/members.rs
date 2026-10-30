@@ -32,10 +32,10 @@ pub async fn list_access(
     Ok(Json(json!({
         "medlemmer": medlemmer.iter().map(|m| json!({
             "person_id": m.person_id,
-            "navn": m.navn,
+            "navn": m.name,
             "epost": m.epost,
             "rolle": m.rolle,
-            "aktiv": m.aktiv,
+            "aktiv": m.active,
             "via": m.via,
             // Access through an oppdrag is governed by the engagement.
             // The portal should show it, not offer a button that does
@@ -133,13 +133,13 @@ pub async fn access_history(
     let rader = regnmed_db::members::tilgangshistorikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
-            "navn": e.navn,
+            "navn": e.name,
             "endring": e.endring,
             "fra_rolle": e.fra_rolle,
             "til_rolle": e.til_rolle,
             "utfort_av": e.utfort_av,
-            "kilde": e.kilde,
-            "notat": e.notat,
+            "kilde": e.source,
+            "notat": e.note,
             "tidspunkt": e.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))
@@ -206,13 +206,13 @@ pub async fn invite(
     // invitation IS the grant, the mail only announces it. A queue that
     // is down must not take membership administration down with it — so
     // the failure is reported, never raised (#66).
-    let feil = crate::dispatch::try_send_invitation(&state, &person, company_id, id)
+    let error = crate::dispatch::try_send_invitation(&state, &person, company_id, id)
         .await
         .err();
     Ok(Json(json!({
         "invitasjon_id": id,
-        "epost_sendt": feil.is_none(),
-        "epost_grunn": feil,
+        "epost_sendt": error.is_none(),
+        "epost_grunn": error,
     })))
 }
 

@@ -232,7 +232,7 @@ pub async fn unbilled(
             "entries": g.entry_ids.len(),
             "personer": g.personer.iter().map(|p| json!({
                 "person_id": p.person_id,
-                "navn": p.navn,
+                "navn": p.name,
                 "minutter": p.minutter,
                 "entry_ids": p.entry_ids,
             })).collect::<Vec<_>>(),

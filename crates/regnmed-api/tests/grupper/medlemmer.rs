@@ -52,17 +52,17 @@ async fn call(
 /// up here. `ensure_person` writes it on every login, so an invitation
 /// must be addressed to what the IdP actually supplies — that is the same
 /// rule as in production, and the test would be worthless without it.
-fn kommende(idp: &TestIdp, navn: &str) -> (String, String, String) {
-    let sub = format!("{navn}|{}", Uuid::new_v4());
+fn kommende(idp: &TestIdp, name: &str) -> (String, String, String) {
+    let sub = format!("{name}|{}", Uuid::new_v4());
     // Normalised form: that is how it is stored and compared.
     let epost = format!("{}@test.invalid", sub.replace('|', ".")).to_lowercase();
-    (sub.clone(), epost, idp.token(&sub, navn))
+    (sub.clone(), epost, idp.token(&sub, name))
 }
 
 /// The same, but logged in: the person exists in the database.
-async fn innlogget(state: &AppState, idp: &TestIdp, navn: &str) -> (Uuid, String) {
-    let (sub, _, token) = kommende(idp, navn);
-    let id = regnmed_db::ensure_person(&state.pool, &sub, Some(navn), None)
+async fn innlogget(state: &AppState, idp: &TestIdp, name: &str) -> (Uuid, String) {
+    let (sub, _, token) = kommende(idp, name);
+    let id = regnmed_db::ensure_person(&state.pool, &sub, Some(name), None)
         .await
         .unwrap();
     (id, token)

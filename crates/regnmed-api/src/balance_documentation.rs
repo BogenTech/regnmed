@@ -70,7 +70,7 @@ pub async fn status(
                 "avstemt_dato": a.reconciled_date.to_string(),
                 "avstemt_av": a.avstemt_av,
                 "har_vedlegg": a.har_vedlegg,
-                "vedlegg_navn": a.vedlegg_navn,
+                "vedlegg_navn": a.attachment_name,
             })),
         })).collect::<Vec<_>>(),
     })))
@@ -161,7 +161,7 @@ pub async fn vedlegg(
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let (navn, content_type, bytes) =
+    let (name, content_type, bytes) =
         regnmed_db::balance_documentation::hent_vedlegg(&state.pool, company_id, id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -170,7 +170,7 @@ pub async fn vedlegg(
             (header::CONTENT_TYPE, content_type),
             (
                 header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{navn}\""),
+                format!("attachment; filename=\"{name}\""),
             ),
         ],
         bytes,
@@ -206,7 +206,7 @@ pub async fn historikk(
             "avstemt_dato": a.reconciled_date.to_string(),
             "avstemt_av": a.avstemt_av,
             "har_vedlegg": a.har_vedlegg,
-            "vedlegg_navn": a.vedlegg_navn,
+            "vedlegg_navn": a.attachment_name,
         })).collect::<Vec<_>>(),
     })))
 }

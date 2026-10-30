@@ -24,10 +24,10 @@ async fn get(state: &AppState, uri: &str) -> Svar {
         .await
         .unwrap();
     let status = response.status();
-    let header = |navn: &str| {
+    let header = |name: &str| {
         response
             .headers()
-            .get(navn)
+            .get(name)
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_string()

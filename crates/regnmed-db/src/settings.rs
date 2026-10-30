@@ -100,13 +100,13 @@ pub async fn record_registrering(
     company_id: Uuid,
     valid_from: NaiveDate,
     reg: Registrering,
-    kilde: &str,
-    notat: Option<&str>,
+    source: &str,
+    note: Option<&str>,
     recorded_by: &str,
 ) -> Result<()> {
     ensure!(
-        matches!(kilde, "brreg" | "manuell" | "migrert"),
-        "ukjent kilde «{kilde}»"
+        matches!(source, "brreg" | "manuell" | "migrert"),
+        "ukjent kilde «{source}»"
     );
     sqlx::query(
         "insert into company_registrering
@@ -120,8 +120,8 @@ pub async fn record_registrering(
     .bind(valid_from)
     .bind(reg.vat_registered)
     .bind(reg.foretaksregistrert)
-    .bind(kilde)
-    .bind(notat)
+    .bind(source)
+    .bind(note)
     .bind(recorded_by)
     .execute(pool)
     .await?;
