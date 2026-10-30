@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use regnmed_api::{AppState, router};
 use regnmed_core::Ore;
-use regnmed_core::valuta::Valuta;
+use regnmed_core::currency::Currency;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 
 async fn request(
@@ -57,16 +57,16 @@ async fn saldo(state: &AppState, company: Uuid, konto: &str) -> i64 {
     .unwrap()
 }
 
-fn entry(konto: &str, amount: i64, valuta: Option<Valuta>) -> EntryDraft {
+fn entry(konto: &str, amount: i64, currency: Option<Currency>) -> EntryDraft {
     EntryDraft {
         account_number: konto.into(),
         amount: Ore(amount),
         vat_code: None,
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta,
+        department: None,
+        project: None,
+        currency,
     }
 }
 
@@ -203,10 +203,10 @@ async fn valuta_invoice_agio_and_regulation() {
             entry(
                 "1920",
                 1_150_00,
-                Some(Valuta {
-                    valuta: "CHF".into(),
-                    belop_cent: 100_00,
-                    kurs_micro: 115_000_000,
+                Some(Currency {
+                    code: "CHF".into(),
+                    amount_cent: 100_00,
+                    rate_micro: 115_000_000,
                 }),
             ),
             entry("3000", -1_150_00, None),
@@ -228,10 +228,10 @@ async fn valuta_invoice_agio_and_regulation() {
             entry(
                 "1920",
                 1_160_00,
-                Some(Valuta {
-                    valuta: "CHF".into(),
-                    belop_cent: 100_00,
-                    kurs_micro: 11_600_000,
+                Some(Currency {
+                    code: "CHF".into(),
+                    amount_cent: 100_00,
+                    rate_micro: 11_600_000,
                 }),
             ),
             EntryDraft {
@@ -239,10 +239,10 @@ async fn valuta_invoice_agio_and_regulation() {
                 ..entry(
                     "1500",
                     -1_160_00,
-                    Some(Valuta {
-                        valuta: "CHF".into(),
-                        belop_cent: -100_00,
-                        kurs_micro: 11_600_000,
+                    Some(Currency {
+                        code: "CHF".into(),
+                        amount_cent: -100_00,
+                        rate_micro: 11_600_000,
                     }),
                 )
             },

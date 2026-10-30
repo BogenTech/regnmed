@@ -74,8 +74,8 @@ pub async fn saldo_lines(
     company_id: Uuid,
     from: Option<NaiveDate>,
     to: NaiveDate,
-    avdeling: Option<&str>,
-    prosjekt: Option<&str>,
+    department: Option<&str>,
+    project: Option<&str>,
 ) -> Result<Vec<SaldoLine>> {
     let rows = sqlx::query(
         "select a.number, a.name, sum(e.amount_ore)::bigint as saldo
@@ -94,8 +94,8 @@ pub async fn saldo_lines(
     .bind(company_id)
     .bind(from)
     .bind(to)
-    .bind(avdeling)
-    .bind(prosjekt)
+    .bind(department)
+    .bind(project)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -165,8 +165,8 @@ pub struct KontoPost {
     /// period's inngående saldo.
     pub saldo_ore: i64,
     pub party_no: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
 }
 
 /// Kontospesifikasjon: every posting per account in date/bilag order,
@@ -224,8 +224,8 @@ pub async fn kontospesifikasjon(
             amount_ore: r.get("amount_ore"),
             saldo_ore: r.get::<i64, _>("inngaende") + r.get::<i64, _>("bevegelse"),
             party_no: r.get("party_no"),
-            avdeling: r.get("avdeling"),
-            prosjekt: r.get("prosjekt"),
+            department: r.get("avdeling"),
+            project: r.get("prosjekt"),
         })
         .collect())
 }

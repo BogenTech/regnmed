@@ -309,9 +309,9 @@ pub async fn approve_expense(
                 vat_code: mva_kode.map(str::to_string),
                 description: Some(beskrivelse.clone()),
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             });
             if mva != 0 {
                 entries.push(EntryDraft {
@@ -320,9 +320,9 @@ pub async fn approve_expense(
                     vat_code: None,
                     description: Some("Inngående mva".into()),
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 });
             }
         }
@@ -342,9 +342,9 @@ pub async fn approve_expense(
                     sats % 100
                 )),
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             });
             let trekkpliktig: i64 = expense
                 .get::<Option<i64>, _>("trekkpliktig_ore")
@@ -364,9 +364,9 @@ pub async fn approve_expense(
         vat_code: None,
         description: Some(format!("Skyldig {navn}")),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     });
 
     let label = if kind == "utlegg" {
@@ -497,9 +497,9 @@ pub async fn pay_expense(
                 vat_code: None,
                 description: Some(expense.get("beskrivelse")),
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
             EntryDraft {
                 account_number: bank_konto.to_string(),
@@ -507,9 +507,9 @@ pub async fn pay_expense(
                 vat_code: None,
                 description: None,
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
         ],
     };

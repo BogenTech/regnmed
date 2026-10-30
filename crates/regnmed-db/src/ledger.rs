@@ -299,23 +299,25 @@ pub async fn post_voucher_in(
         // Valuta sanity: the NOK amount is authoritative, but it must
         // agree with cent × kurs within 1 kr — anything larger is a
         // unit mistake (kurs off by a power of ten), not rounding.
-        if let Some(valuta) = &entry.valuta {
-            let expected = regnmed_core::valuta::nok_ore(valuta.belop_cent, valuta.kurs_micro);
+        if let Some(currency) = &entry.currency {
+            let expected =
+                regnmed_core::currency::nok_ore(currency.amount_cent, currency.rate_micro);
             if (entry.amount.0 - expected).abs() > 1_00 {
                 bail!(
                     "entry line {}: {} {} à kurs {} tilsier {} øre, men beløpet er {} øre — \
                      sjekk enhetene (cent / mikro-NOK)",
                     i + 1,
-                    valuta.belop_cent,
-                    valuta.valuta,
-                    regnmed_core::valuta::kurs_str(valuta.kurs_micro),
+                    currency.amount_cent,
+                    currency.code,
+                    regnmed_core::currency::rate_str(currency.rate_micro),
                     expected,
                     entry.amount.0
                 );
             }
         }
-        let avdeling_id = resolve_dimension(tx, company_id, i, "avdeling", &entry.avdeling).await?;
-        let prosjekt_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.prosjekt).await?;
+        let avdeling_id =
+            resolve_dimension(tx, company_id, i, "avdeling", &entry.department).await?;
+        let prosjekt_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.project).await?;
         dimension_ids.push((avdeling_id, prosjekt_id));
         let account = sqlx::query(
             "select id, reskontro_kind from account
@@ -397,9 +399,9 @@ pub async fn post_voucher_in(
                 vat_code: none_if_empty(&e.vat_code),
                 description: none_if_empty(&e.description),
                 party_no: none_if_empty(&e.party_no),
-                avdeling: none_if_empty(&e.avdeling),
-                prosjekt: none_if_empty(&e.prosjekt),
-                valuta: e.valuta.clone(),
+                department: none_if_empty(&e.department),
+                project: none_if_empty(&e.project),
+                currency: e.currency.clone(),
             })
             .collect(),
     };
@@ -452,9 +454,9 @@ pub async fn post_voucher_in(
         .bind(party_id)
         .bind(dims.0)
         .bind(dims.1)
-        .bind(entry.valuta.as_ref().map(|v| v.valuta.clone()))
-        .bind(entry.valuta.as_ref().map(|v| v.belop_cent))
-        .bind(entry.valuta.as_ref().map(|v| v.kurs_micro))
+        .bind(entry.currency.as_ref().map(|v| v.code.clone()))
+        .bind(entry.currency.as_ref().map(|v| v.amount_cent))
+        .bind(entry.currency.as_ref().map(|v| v.rate_micro))
         .execute(&mut **tx)
         .await?;
     }
@@ -545,13 +547,13 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
                     vat_code: e.get("vat_code"),
                     description: e.get("description"),
                     party_no: e.get("party_no"),
-                    avdeling: e.get("avdeling"),
-                    prosjekt: e.get("prosjekt"),
-                    valuta: e.get::<Option<String>, _>("valuta").map(|valuta| {
-                        regnmed_core::valuta::Valuta {
-                            valuta,
-                            belop_cent: e.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0),
-                            kurs_micro: e.get::<Option<i64>, _>("kurs_micro").unwrap_or(0),
+                    department: e.get("avdeling"),
+                    project: e.get("prosjekt"),
+                    currency: e.get::<Option<String>, _>("valuta").map(|currency| {
+                        regnmed_core::currency::Currency {
+                            code: currency,
+                            amount_cent: e.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0),
+                            rate_micro: e.get::<Option<i64>, _>("kurs_micro").unwrap_or(0),
                         }
                     }),
                 })

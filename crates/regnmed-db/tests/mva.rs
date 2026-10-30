@@ -36,9 +36,9 @@ fn entry(account: &str, ore: i64, vat_code: Option<&str>) -> EntryDraft {
         vat_code: vat_code.map(str::to_owned),
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     }
 }
 
@@ -359,7 +359,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: vec![regnmed_db::InvoiceLineDraft {
             description: "Serverleie".into(),
@@ -367,8 +367,8 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
             quantity_milli: 1000,
             unit_price_ore: 5_565_29,
             vat_code: Some("3".into()),
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
             product_id: None,
         }],
     };
@@ -395,8 +395,8 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
             quantity_milli: 1000,
             unit_price_ore: 5_565_29,
             vat_code: Some("3".into()),
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
             product_id: None,
         }],
         "test",

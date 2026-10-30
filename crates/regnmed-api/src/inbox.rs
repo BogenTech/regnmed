@@ -119,8 +119,10 @@ pub struct BokforLine {
     party_no: Option<String>,
     description: Option<String>,
     /// Dimension codes (docs/dimensjoner.md).
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
+    #[serde(rename = "avdeling")]
+    department: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -152,9 +154,9 @@ pub async fn bokfor(
                 vat_code: l.vat_code.clone(),
                 description: l.description.clone(),
                 party_no: l.party_no.clone(),
-                avdeling: l.avdeling.clone(),
-                prosjekt: l.prosjekt.clone(),
-                valuta: None,
+                department: l.department.clone(),
+                project: l.project.clone(),
+                currency: None,
             })
             .collect(),
     };
@@ -219,7 +221,7 @@ pub async fn ehf_forslag(
         "fakturanr": m.fakturanr,
         "fakturadato": m.fakturadato.map(|d| d.to_string()),
         "forfallsdato": m.forfallsdato.map(|d| d.to_string()),
-        "valuta": m.valuta,
+        "valuta": m.currency,
         "selger_navn": m.selger_navn,
         "selger_orgnr": m.selger_orgnr,
         "kid": m.kid,

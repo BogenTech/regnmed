@@ -369,7 +369,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
             journal_code: "GL".into(),
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
-            valuta: None,
+            currency: None,
             valuta_kurs_micro: None,
             lines: vec![regnmed_db::InvoiceLineDraft {
                 description: "Eksportsalg".into(),
@@ -377,8 +377,8 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
                 quantity_milli: 1_000,
                 unit_price_ore: 10_000_00,
                 vat_code: Some("5".into()),
-                avdeling: None,
-                prosjekt: None,
+                department: None,
+                project: None,
                 product_id: None,
             }],
         },
@@ -490,7 +490,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
             journal_code: "GL".into(),
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
-            valuta: None,
+            currency: None,
             valuta_kurs_micro: None,
             lines: vec![regnmed_db::InvoiceLineDraft {
                 description: "Salg før registrering".into(),
@@ -503,8 +503,8 @@ async fn a_document_predating_the_registration_carries_no_note() {
                 // påtegning this test is about depends on the date, not
                 // on the line's code.
                 vat_code: None,
-                avdeling: None,
-                prosjekt: None,
+                department: None,
+                project: None,
                 product_id: None,
             }],
         },
@@ -600,7 +600,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: vec![regnmed_db::InvoiceLineDraft {
             description: format!("Serverleie {n}"),
@@ -608,8 +608,8 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
             quantity_milli: 1_000,
             unit_price_ore: 1_000_00,
             vat_code: None,
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
             product_id: None,
         }],
     };

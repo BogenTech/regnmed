@@ -285,9 +285,9 @@ pub async fn import_saft(
                     vat_code: None,
                     description: None,
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 })
                 .collect(),
         };
@@ -363,9 +363,9 @@ pub async fn import_saft(
                         vat_code,
                         description: line.description.clone().filter(|d| !d.is_empty()),
                         party_no,
-                        avdeling: None,
-                        prosjekt: None,
-                        valuta: None,
+                        department: None,
+                        project: None,
+                        currency: None,
                     }
                 })
                 .collect(),

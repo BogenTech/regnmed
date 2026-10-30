@@ -421,9 +421,9 @@ pub async fn match_valuta(
                     vat_code: None,
                     description: Some("Kursdifferanse ved oppgjør".into()),
                     party_no: Some(party_no),
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
                 EntryDraft {
                     account_number: resultatkonto.to_string(),
@@ -431,9 +431,9 @@ pub async fn match_valuta(
                     vat_code: None,
                     description: None,
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
             ],
         };
@@ -521,9 +521,9 @@ pub async fn kursregulering(
         } else {
             belop + matched_cent
         };
-        let valuta: String = row.get("valuta");
-        let (_, kurs) = crate::currency::require_kurs(pool, &valuta, per_dato).await?;
-        diff_total += regnmed_core::valuta::nok_ore(rest_cent, kurs) - rest_nok;
+        let currency: String = row.get("valuta");
+        let (_, kurs) = crate::currency::require_kurs(pool, &currency, per_dato).await?;
+        diff_total += regnmed_core::currency::nok_ore(rest_cent, kurs) - rest_nok;
     }
     if diff_total == 0 {
         return Ok(None);
@@ -537,9 +537,9 @@ pub async fn kursregulering(
         vat_code: None,
         description: Some(desc.to_string()),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     let resultatkonto = if diff_total > 0 {
         gevinstkonto

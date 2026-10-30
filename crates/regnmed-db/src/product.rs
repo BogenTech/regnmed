@@ -145,8 +145,8 @@ pub struct ProductLineSpec {
     pub quantity_milli: i64,
     pub unit_price_ore: Option<i64>,
     pub vat_code: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
 }
 
 pub async fn resolve_product_line(
@@ -180,8 +180,8 @@ pub async fn resolve_product_line(
                     .unit_price_ore
                     .unwrap_or_else(|| product.get("salgspris_ore")),
                 vat_code: spec.vat_code.or_else(|| product.get("vat_code")),
-                avdeling: spec.avdeling,
-                prosjekt: spec.prosjekt,
+                department: spec.department,
+                project: spec.project,
                 product_id: Some(product.get("id")),
             })
         }
@@ -199,8 +199,8 @@ pub async fn resolve_product_line(
                 quantity_milli: spec.quantity_milli,
                 unit_price_ore,
                 vat_code: spec.vat_code,
-                avdeling: spec.avdeling,
-                prosjekt: spec.prosjekt,
+                department: spec.department,
+                project: spec.project,
                 product_id: None,
             })
         }
@@ -535,9 +535,9 @@ pub async fn varetelling(
                         vat_code: None,
                         description: Some("Varelager etter telling".into()),
                         party_no: None,
-                        avdeling: None,
-                        prosjekt: None,
-                        valuta: None,
+                        department: None,
+                        project: None,
+                        currency: None,
                     },
                     EntryDraft {
                         account_number: konti.endring_konto.clone(),
@@ -545,9 +545,9 @@ pub async fn varetelling(
                         vat_code: None,
                         description: Some("Beholdningsendring".into()),
                         party_no: None,
-                        avdeling: None,
-                        prosjekt: None,
-                        valuta: None,
+                        department: None,
+                        project: None,
+                        currency: None,
                     },
                 ],
             };

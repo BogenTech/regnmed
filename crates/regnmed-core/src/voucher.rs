@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use uuid::Uuid;
 
-use crate::valuta::{Valuta, gyldig_valutakode};
+use crate::currency::{Currency, is_valid_currency_code};
 use crate::{LedgerError, Ore};
 
 /// One line of a voucher. Positive amounts are debits, negative are credits.
@@ -20,13 +20,13 @@ pub struct EntryDraft {
     /// Dimension codes (docs/dimensjoner.md). Optional; must reference
     /// an ACTIVE dimension of the right kind — enforced at posting,
     /// where the dimension registry is available.
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     /// Valutainformasjon (docs/valuta.md): what the transaction lød på
     /// and the rate it was booked at. Hash-covered (format v4). The
     /// NOK `amount` is authoritative; posting sanity-checks the
     /// conversion against it.
-    pub valuta: Option<Valuta>,
+    pub currency: Option<Currency>,
 }
 
 /// A voucher (bilag) as submitted for posting, before it is assigned a
@@ -61,23 +61,25 @@ impl VoucherDraft {
             if entry.party_no.as_deref() == Some("") {
                 return Err(LedgerError::EmptyPartyNo(i + 1));
             }
-            if entry.avdeling.as_deref() == Some("") || entry.prosjekt.as_deref() == Some("") {
+            if entry.department.as_deref() == Some("") || entry.project.as_deref() == Some("") {
                 return Err(LedgerError::EmptyDimension(i + 1));
             }
-            if let Some(valuta) = &entry.valuta {
-                if !gyldig_valutakode(&valuta.valuta) {
+            if let Some(currency) = &entry.currency {
+                if !is_valid_currency_code(&currency.code) {
                     return Err(LedgerError::InvalidValuta(
                         i + 1,
-                        format!("ugyldig valutakode {:?}", valuta.valuta),
+                        format!("ugyldig valutakode {:?}", currency.code),
                     ));
                 }
-                if valuta.kurs_micro <= 0 {
+                if currency.rate_micro <= 0 {
                     return Err(LedgerError::InvalidValuta(
                         i + 1,
                         "kursen må være positiv".into(),
                     ));
                 }
-                if valuta.belop_cent == 0 || valuta.belop_cent.signum() != entry.amount.0.signum() {
+                if currency.amount_cent == 0
+                    || currency.amount_cent.signum() != entry.amount.0.signum()
+                {
                     return Err(LedgerError::InvalidValuta(
                         i + 1,
                         "valutabeløpet må ha samme fortegn som NOK-beløpet".into(),
@@ -106,9 +108,9 @@ mod tests {
             vat_code: None,
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         }
     }
 

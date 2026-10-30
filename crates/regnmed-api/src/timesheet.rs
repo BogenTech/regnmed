@@ -40,7 +40,8 @@ pub struct EntryRequest {
     minutter: i32,
     #[serde(default)]
     beskrivelse: String,
-    prosjekt: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
     /// Absent = the project's fakturerbar_default.
     fakturerbar: Option<bool>,
     /// Honored only with TIMER_SATS_SKRIV — otherwise the register's
@@ -54,7 +55,7 @@ impl EntryRequest {
             dato: self.dato,
             minutter: self.minutter,
             beskrivelse: self.beskrivelse,
-            prosjekt: self.prosjekt,
+            project: self.project,
             fakturerbar: self.fakturerbar,
             timesats_ore: self.timesats_ore,
         }
@@ -153,7 +154,7 @@ pub async fn list(
             "dato": e.dato.to_string(),
             "minutter": e.minutter,
             "beskrivelse": e.beskrivelse,
-            "prosjekt": e.prosjekt,
+            "prosjekt": e.project,
             "fakturerbar": e.fakturerbar,
             "timesats_ore": e.timesats_ore,
             "invoice_no": e.invoice_no,
@@ -171,7 +172,7 @@ pub async fn summary(
     let rows = regnmed_db::timesheet_summary(&state.pool, company_id, range.from, range.to).await?;
     Ok(Json(json!({
         "prosjekter": rows.iter().map(|r| json!({
-            "prosjekt": r.prosjekt,
+            "prosjekt": r.project,
             "minutter": r.minutter,
             "fakturerbare_minutter": r.fakturerbare_minutter,
             "ufakturert_ore": r.ufakturert_ore,
@@ -183,7 +184,8 @@ pub async fn summary(
 
 #[derive(Deserialize, Default)]
 pub struct UnbilledQuery {
-    prosjekt: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
     through: Option<chrono::NaiveDate>,
 }
 
@@ -197,13 +199,13 @@ pub async fn unbilled(
     let groups = regnmed_db::unbilled_groups(
         &state.pool,
         company_id,
-        query.prosjekt.as_deref(),
+        query.project.as_deref(),
         query.through,
     )
     .await?;
     Ok(Json(json!({
         "groups": groups.iter().map(|g| json!({
-            "prosjekt": g.prosjekt,
+            "prosjekt": g.project,
             "kunde": g.kunde,
             "kunde_navn": g.kunde_navn,
             "timesats_ore": g.timesats_ore,
@@ -222,7 +224,8 @@ pub async fn unbilled(
 #[derive(Deserialize)]
 pub struct BillRequest {
     party_no: String,
-    prosjekt: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
     through: Option<chrono::NaiveDate>,
     /// A selection of the grunnlag (chosen people/entries in the
     /// portal). Every id must be billable and unbilled — a stale
@@ -253,7 +256,7 @@ pub async fn bill(
         &state.pool,
         company_id,
         &request.party_no,
-        request.prosjekt.as_deref(),
+        request.project.as_deref(),
         request.through,
         request.entry_ids.as_deref(),
         request.vat_code.as_deref(),

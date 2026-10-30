@@ -103,8 +103,8 @@ async fn insert_lines(
         .bind(line.quantity_milli)
         .bind(line.unit_price_ore)
         .bind(&line.vat_code)
-        .bind(&line.avdeling)
-        .bind(&line.prosjekt)
+        .bind(&line.department)
+        .bind(&line.project)
         .bind(line.product_id)
         .execute(&mut **tx)
         .await?;
@@ -149,8 +149,8 @@ pub async fn create_template_from_invoice(
         quantity_milli: r.get("quantity_milli"),
         unit_price_ore: r.get("unit_price_ore"),
         vat_code: r.get("vat_code"),
-        avdeling: r.get("avdeling"),
-        prosjekt: r.get("prosjekt"),
+        department: r.get("avdeling"),
+        project: r.get("prosjekt"),
         product_id: r.get("product_id"),
     })
     .collect();
@@ -393,7 +393,7 @@ pub async fn generate_one(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: line_rows
             .iter()
@@ -403,8 +403,8 @@ pub async fn generate_one(
                 quantity_milli: r.get("quantity_milli"),
                 unit_price_ore: r.get("unit_price_ore"),
                 vat_code: r.get("vat_code"),
-                avdeling: r.get("avdeling"),
-                prosjekt: r.get("prosjekt"),
+                department: r.get("avdeling"),
+                project: r.get("prosjekt"),
                 product_id: r.get("product_id"),
             })
             .collect(),

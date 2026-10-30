@@ -178,7 +178,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
             journal_code: "GL".into(),
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
-            valuta: None,
+            currency: None,
             valuta_kurs_micro: None,
             lines: vec![
                 regnmed_db::InvoiceLineDraft {
@@ -187,8 +187,8 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
                     quantity_milli: 2_000,
                     unit_price_ore: 1_250_00,
                     vat_code: Some("3".into()),
-                    avdeling: None,
-                    prosjekt: None,
+                    department: None,
+                    project: None,
                     product_id: None,
                 },
                 regnmed_db::InvoiceLineDraft {
@@ -197,8 +197,8 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
                     quantity_milli: 1_000,
                     unit_price_ore: 500_00,
                     vat_code: None,
-                    avdeling: None,
-                    prosjekt: None,
+                    department: None,
+                    project: None,
                     product_id: None,
                 },
             ],

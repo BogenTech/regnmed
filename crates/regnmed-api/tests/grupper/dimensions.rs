@@ -246,15 +246,15 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
 
     // Cost: 3 000 on the project; the bank leg carries no dimension and
     // must stay out of the project's economics.
-    let linje = |konto: &str, belop: i64, prosjekt: Option<&str>| EntryDraft {
+    let linje = |konto: &str, belop: i64, project: Option<&str>| EntryDraft {
         account_number: konto.into(),
         amount: Ore(belop),
         vat_code: None,
         description: Some("Materialkjøp".into()),
         party_no: None,
-        avdeling: None,
-        prosjekt: prosjekt.map(Into::into),
-        valuta: None,
+        department: None,
+        project: project.map(Into::into),
+        currency: None,
     };
     regnmed_db::post_voucher(
         &state.pool,
@@ -281,7 +281,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         dato,
         minutter: 60,
         beskrivelse: "Prosjektarbeid".into(),
-        prosjekt: Some("PL1".into()),
+        project: Some("PL1".into()),
         fakturerbar: Some(true),
         timesats_ore: Some(100_000),
     };
@@ -450,7 +450,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
 
     // An invoice with dims on the revenue line: posts, and the chain
     // (now carrying a v3 voucher) verifies.
-    let invoice = |avdeling: Option<&str>, prosjekt: Option<&str>, price: i64| {
+    let invoice = |department: Option<&str>, project: Option<&str>, price: i64| {
         serde_json::json!({
             "party_no": party_no,
             "invoice_date": "2026-03-01",
@@ -459,8 +459,8 @@ async fn dimensions_hash_v3_reports_and_saft() {
                 "description": "Konsulentbistand",
                 "unit_price_ore": price,
                 "vat_code": "3",
-                "avdeling": avdeling,
-                "prosjekt": prosjekt,
+                "avdeling": department,
+                "prosjekt": project,
             }],
         })
         .to_string()

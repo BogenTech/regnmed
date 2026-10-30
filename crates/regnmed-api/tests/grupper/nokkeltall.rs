@@ -41,9 +41,9 @@ fn entry(konto: &str, amount: i64, party: Option<&str>) -> EntryDraft {
         vat_code: None,
         description: None,
         party_no: party.map(str::to_string),
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     }
 }
 

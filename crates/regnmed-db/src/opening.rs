@@ -93,9 +93,9 @@ pub async fn post_opening_balance(
                 vat_code: None,
                 description: None,
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             })
             .collect(),
     };

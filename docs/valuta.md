@@ -10,7 +10,7 @@ Dokumenter bærer transaksjonsvalutaen, og posteringslinjene bærer
   NOK-beløpet.
 - Kurs i **mikro-NOK per valutaenhet** (11,6543 kr/EUR → 11 654 300).
 - Omregning: `round_half_away(cent × kurs / 10⁶)` øre
-  (`regnmed-core::valuta::nok_ore`). Summer er summer av avrundede
+  (`regnmed-core::currency::nok_ore`). Summer er summer av avrundede
   deler — aldri omvendt.
 
 ## Hash format v4
@@ -94,7 +94,7 @@ som resten av eksporten.
 
 ## Where it is tested
 
-- `regnmed-core/src/valuta.rs` — omregning, kursparsing, koder.
+- `regnmed-core/src/currency.rs` — omregning, kursparsing, koder.
 - `regnmed-core/src/hash.rs` — golden v4 + tampering på valutafeltene.
 - `regnmed-gov/src/norgesbank.rs` — SDMX-parseren mot vendored sample
   (inkl. UNIT_MULT).

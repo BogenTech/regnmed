@@ -109,9 +109,9 @@ pub async fn avslutt_ar(
         vat_code: None,
         description: Some(tekst.to_string()),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     let mut entries = Vec::with_capacity(4);
     if skattekostnad_ore != 0 {

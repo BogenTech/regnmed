@@ -357,9 +357,9 @@ pub fn build_krav_voucher(
         vat_code: None,
         description: None,
         party_no: Some(party_no.to_string()),
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     }];
     if gebyr_ore > 0 {
         entries.push(EntryDraft {
@@ -368,9 +368,9 @@ pub fn build_krav_voucher(
             vat_code: None,
             description: Some("Purregebyr".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if rente_ore > 0 {
@@ -380,9 +380,9 @@ pub fn build_krav_voucher(
             vat_code: None,
             description: Some("Forsinkelsesrente".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     let draft = VoucherDraft {

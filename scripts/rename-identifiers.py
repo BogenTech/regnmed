@@ -14,7 +14,17 @@ take production down, so this exists instead.
    sends or reads -- and guard 1 cannot see it, because the field name
    is code, not a string. Those are reported, never renamed silently.
 
-3. COMMENTS ARE PROSE, NOT CODE. `to -> two` turned "fails to open"
+3. A MIS-TOKENIZED LITERAL SKIPS CODE SILENTLY, and the guard cannot
+   see it, because the before/after comparison uses the same tokenizer.
+   Ordinary Rust strings MAY span newlines -- every multi-line SQL query
+   is one -- and excluding `\n` from the string pattern made the scanner
+   fall through into the query text, where `returning last_number",`
+   offers an `r"` that reads as a raw string and swallows the next
+   twenty lines as a literal. Those lines were never renamed and nothing
+   reported it. Char literals are matched too, so `'"'` cannot open a
+   bogus string.
+
+4. COMMENTS ARE PROSE, NOT CODE. `to -> two` turned "fails to open"
    into "fails two open" across a module's doc comments. Comments are
    skipped like literals; lines mentioning an old name are reported so
    the genuine identifier references get fixed by hand.
@@ -46,10 +56,14 @@ import re, sys, pathlib
 # placeholder got renamed on one side of a `.replace()` and not the
 # other -- caught by a test, not by the guard that was supposed to.
 STR = re.compile(
-    r'r(#*)"(?:(?!"\1).)*"\1'   # raw string
-    r'|"(?:[^"\\\n]|\\.)*"'    # ordinary string
-    r'|//[^\n]*'                 # line comment, incl. /// and //!
-    r'|/\*(?:.|\n)*?\*/',        # block comment
+    # A raw-string prefix is only a prefix at a token boundary: the `r`
+    # at the end of `last_number"` is not one, and reading it as `r"..."`
+    # is how this silently skipped a whole function (see below).
+    r'(?<![A-Za-z0-9_])r(#*)"(?:(?!"\1).)*"\1'   # raw string
+    r"|b?'(?:[^'\\]|\\.)'"                      # char / byte literal
+    r'|"(?:[^"\\]|\\.)*"'                       # ordinary string -- MAY span lines
+    r'|//[^\n]*'                                 # line comment, incl. /// and //!
+    r'|/\*(?:.|\n)*?\*/',                        # block comment
     re.S,
 )
 COMMENT = re.compile(r'^(?://|/\*)')

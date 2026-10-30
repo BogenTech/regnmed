@@ -8,6 +8,8 @@ mod common;
 
 #[path = "grupper/bank.rs"]
 mod bank;
+#[path = "grupper/valuta.rs"]
+mod currency;
 #[path = "grupper/ocr.rs"]
 mod ocr;
 #[path = "grupper/payments.rs"]
@@ -16,5 +18,3 @@ mod payments;
 mod reskontro;
 #[path = "grupper/terminordning.rs"]
 mod terminordning;
-#[path = "grupper/valuta.rs"]
-mod valuta;

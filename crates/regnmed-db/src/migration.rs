@@ -328,9 +328,9 @@ pub async fn import_open_items(
             vat_code: None,
             description: Some(tekst),
             party_no: Some(party_no),
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     let sum_ore: i64 = entries.iter().map(|e| e.amount.0).sum();
@@ -340,9 +340,9 @@ pub async fn import_open_items(
         vat_code: None,
         description: Some("Motpost åpne poster ved migrering".into()),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     });
 
     let draft = VoucherDraft {

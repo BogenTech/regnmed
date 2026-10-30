@@ -39,11 +39,11 @@ fn foreign_saft_5digit() -> String {
         tax_percent_bp: None,
         customer_id: None,
         supplier_id: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
-        valutabelop_cent: None,
-        kurs_micro: None,
+        department: None,
+        project: None,
+        currency: None,
+        currency_amount_cent: None,
+        rate_micro: None,
     };
     let input = SaftInput {
         orgnr: "923609016".into(),

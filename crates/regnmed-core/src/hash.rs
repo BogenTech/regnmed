@@ -38,7 +38,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::Ore;
-use crate::valuta::Valuta;
+use crate::currency::Currency;
 
 /// SHA-256 of arbitrary bytes — used for attachment content hashes.
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -82,10 +82,10 @@ pub struct EntryHashInput {
     /// Reskontro party number — v2+; v1 vouchers have none.
     pub party_no: Option<String>,
     /// Dimension codes — v3+; earlier vouchers have none.
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     /// Valutainformasjon — v4 only; earlier vouchers have none.
-    pub valuta: Option<Valuta>,
+    pub currency: Option<Currency>,
 }
 
 /// `hash = SHA-256(prev_hash || canonical(voucher))`, per the voucher's
@@ -131,15 +131,15 @@ pub fn chain_hash(prev_hash: &[u8; 32], v: &VoucherHashInput) -> [u8; 32] {
             push_field(&mut buf, e.party_no.as_deref().unwrap_or("").as_bytes());
         }
         if v.hash_version >= 3 {
-            push_field(&mut buf, e.avdeling.as_deref().unwrap_or("").as_bytes());
-            push_field(&mut buf, e.prosjekt.as_deref().unwrap_or("").as_bytes());
+            push_field(&mut buf, e.department.as_deref().unwrap_or("").as_bytes());
+            push_field(&mut buf, e.project.as_deref().unwrap_or("").as_bytes());
         }
         if v.hash_version >= 4 {
-            match &e.valuta {
-                Some(valuta) => {
-                    push_field(&mut buf, valuta.valuta.as_bytes());
-                    push_field(&mut buf, valuta.belop_cent.to_string().as_bytes());
-                    push_field(&mut buf, valuta.kurs_micro.to_string().as_bytes());
+            match &e.currency {
+                Some(currency) => {
+                    push_field(&mut buf, currency.code.as_bytes());
+                    push_field(&mut buf, currency.amount_cent.to_string().as_bytes());
+                    push_field(&mut buf, currency.rate_micro.to_string().as_bytes());
                 }
                 None => {
                     push_field(&mut buf, b"");
@@ -202,9 +202,9 @@ mod tests {
                     vat_code: None,
                     description: None,
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
                 EntryHashInput {
                     line_no: 2,
@@ -213,9 +213,9 @@ mod tests {
                     vat_code: Some("3".into()),
                     description: None,
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
             ],
         }
@@ -232,18 +232,18 @@ mod tests {
     fn sample_v3() -> VoucherHashInput {
         let mut v = sample_v2();
         v.hash_version = 3;
-        v.entries[1].avdeling = Some("100".into());
-        v.entries[1].prosjekt = Some("P42".into());
+        v.entries[1].department = Some("100".into());
+        v.entries[1].project = Some("P42".into());
         v
     }
 
     fn sample_v4() -> VoucherHashInput {
         let mut v = sample_v3();
         v.hash_version = 4;
-        v.entries[0].valuta = Some(Valuta {
-            valuta: "EUR".into(),
-            belop_cent: 107_251,
-            kurs_micro: 11_654_300,
+        v.entries[0].currency = Some(Currency {
+            code: "EUR".into(),
+            amount_cent: 107_251,
+            rate_micro: 11_654_300,
         });
         v
     }
@@ -306,20 +306,20 @@ mod tests {
     fn v4_hashes_the_valuta_and_differs_from_v3() {
         let original = chain_hash(&GENESIS_HASH, &sample_v4());
         let mut endret = sample_v4();
-        endret.entries[0].valuta.as_mut().unwrap().kurs_micro = 11_654_301;
+        endret.entries[0].currency.as_mut().unwrap().rate_micro = 11_654_301;
         assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
         let mut endret = sample_v4();
-        endret.entries[0].valuta.as_mut().unwrap().belop_cent = 107_252;
+        endret.entries[0].currency.as_mut().unwrap().amount_cent = 107_252;
         assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
         let mut endret = sample_v4();
-        endret.entries[0].valuta.as_mut().unwrap().valuta = "USD".into();
+        endret.entries[0].currency.as_mut().unwrap().code = "USD".into();
         assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
 
         let mut as_v3 = sample_v4();
         as_v3.hash_version = 3;
-        as_v3.entries[0].valuta = None;
+        as_v3.entries[0].currency = None;
         let mut as_v4_no_valuta = sample_v4();
-        as_v4_no_valuta.entries[0].valuta = None;
+        as_v4_no_valuta.entries[0].currency = None;
         assert_ne!(
             chain_hash(&GENESIS_HASH, &as_v3),
             chain_hash(&GENESIS_HASH, &as_v4_no_valuta)
@@ -333,25 +333,25 @@ mod tests {
     fn v3_hashes_the_dimensions_and_differs_from_v2() {
         let original = chain_hash(&GENESIS_HASH, &sample_v3());
         let mut moved = sample_v3();
-        moved.entries[1].prosjekt = Some("P43".into());
+        moved.entries[1].project = Some("P43".into());
         assert_ne!(original, chain_hash(&GENESIS_HASH, &moved));
         let mut moved = sample_v3();
-        moved.entries[1].avdeling = Some("200".into());
+        moved.entries[1].department = Some("200".into());
         assert_ne!(original, chain_hash(&GENESIS_HASH, &moved));
         // avdeling and prosjekt are separate fields — swapping which one
         // carries the code must change the hash (netstring framing).
         let mut swapped = sample_v3();
-        swapped.entries[1].avdeling = Some("P42".into());
-        swapped.entries[1].prosjekt = Some("100".into());
+        swapped.entries[1].department = Some("P42".into());
+        swapped.entries[1].project = Some("100".into());
         assert_ne!(original, chain_hash(&GENESIS_HASH, &swapped));
 
         let mut as_v2 = sample_v3();
         as_v2.hash_version = 2;
-        as_v2.entries[1].avdeling = None;
-        as_v2.entries[1].prosjekt = None;
+        as_v2.entries[1].department = None;
+        as_v2.entries[1].project = None;
         let mut as_v3_no_dims = sample_v3();
-        as_v3_no_dims.entries[1].avdeling = None;
-        as_v3_no_dims.entries[1].prosjekt = None;
+        as_v3_no_dims.entries[1].department = None;
+        as_v3_no_dims.entries[1].project = None;
         assert_ne!(
             chain_hash(&GENESIS_HASH, &as_v2),
             chain_hash(&GENESIS_HASH, &as_v3_no_dims)

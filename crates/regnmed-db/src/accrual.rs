@@ -31,8 +31,8 @@ pub struct PeriodiseringDraft {
     pub total_ore: i64,
     pub fra: (i32, u32),
     pub til: (i32, u32),
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     pub notat: Option<String>,
 }
 
@@ -45,8 +45,8 @@ pub struct Periodisering {
     pub total_ore: i64,
     pub fra_maned: NaiveDate,
     pub til_maned: NaiveDate,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     pub notat: Option<String>,
     pub stoppet_dato: Option<NaiveDate>,
     /// How much has actually been posted, and over how many months —
@@ -137,8 +137,8 @@ pub async fn create_periodisering(
             }
         }
     };
-    let avdeling_id = dim(draft.avdeling.as_deref(), "avdeling").await?;
-    let prosjekt_id = dim(draft.prosjekt.as_deref(), "prosjekt").await?;
+    let avdeling_id = dim(draft.department.as_deref(), "avdeling").await?;
+    let prosjekt_id = dim(draft.project.as_deref(), "prosjekt").await?;
 
     let id = Uuid::now_v7();
     sqlx::query(
@@ -195,8 +195,8 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
             total_ore: r.get("total_ore"),
             fra_maned: r.get("fra_maned"),
             til_maned: r.get("til_maned"),
-            avdeling: r.get("avdeling"),
-            prosjekt: r.get("prosjekt"),
+            department: r.get("avdeling"),
+            project: r.get("prosjekt"),
             notat: r.get("notat"),
             stoppet_dato: r.get("stoppet_dato"),
             fort_ore: r.get("fort_ore"),
@@ -284,8 +284,8 @@ pub async fn periodiser_plan(
     let beskrivelse: String = plan.get("beskrivelse");
     let resultatkonto: String = plan.get("resultatkonto");
     let balansekonto: String = plan.get("balansekonto");
-    let avdeling: Option<String> = plan.get("avdeling");
-    let prosjekt: Option<String> = plan.get("prosjekt");
+    let department: Option<String> = plan.get("avdeling");
+    let project: Option<String> = plan.get("prosjekt");
     let rader = regnmed_core::accrual::plan(
         plan.get("total_ore"),
         (fra.year(), fra.month()),
@@ -322,8 +322,8 @@ pub async fn periodiser_plan(
                 &beskrivelse,
                 &resultatkonto,
                 &balansekonto,
-                avdeling.as_deref(),
-                prosjekt.as_deref(),
+                department.as_deref(),
+                project.as_deref(),
                 i + 1,
                 antall,
             )
@@ -344,8 +344,8 @@ async fn post_en_maned(
     beskrivelse: &str,
     resultatkonto: &str,
     balansekonto: &str,
-    avdeling: Option<&str>,
-    prosjekt: Option<&str>,
+    department: Option<&str>,
+    project: Option<&str>,
     nr: usize,
     antall: usize,
 ) -> Result<PeriodiseringUtfall> {
@@ -358,17 +358,17 @@ async fn post_en_maned(
             vat_code: None,
             description: Some(format!("Periodisering måned {nr}/{antall}")),
             party_no: None,
-            avdeling: if dims {
-                avdeling.map(str::to_owned)
+            department: if dims {
+                department.map(str::to_owned)
             } else {
                 None
             },
-            prosjekt: if dims {
-                prosjekt.map(str::to_owned)
+            project: if dims {
+                project.map(str::to_owned)
             } else {
                 None
             },
-            valuta: None,
+            currency: None,
         };
         let draft = VoucherDraft {
             journal_code: "GL".into(),
