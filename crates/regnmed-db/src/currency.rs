@@ -12,7 +12,7 @@ use sqlx::{PgPool, Row};
 pub async fn insert_kurs(
     pool: &PgPool,
     currency: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
     rate_micro: i64,
     kilde: &str,
 ) -> Result<()> {
@@ -26,7 +26,7 @@ pub async fn insert_kurs(
          on conflict (valuta, dato) do nothing",
     )
     .bind(currency)
-    .bind(dato)
+    .bind(date)
     .bind(rate_micro)
     .bind(kilde)
     .execute(pool)
@@ -39,7 +39,7 @@ pub async fn insert_kurs(
 pub async fn kurs_for(
     pool: &PgPool,
     currency: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<Option<(NaiveDate, i64)>> {
     let row = sqlx::query(
         "select dato, kurs_micro from valutakurs
@@ -47,7 +47,7 @@ pub async fn kurs_for(
          order by dato desc limit 1",
     )
     .bind(currency)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| (r.get("dato"), r.get("kurs_micro"))))
@@ -57,17 +57,17 @@ pub async fn kurs_for(
 pub async fn require_kurs(
     pool: &PgPool,
     currency: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<(NaiveDate, i64)> {
-    kurs_for(pool, currency, dato).await?.with_context(|| {
-        format!("ingen {currency}-kurs på eller før {dato} — hent eller registrer kurser")
+    kurs_for(pool, currency, date).await?.with_context(|| {
+        format!("ingen {currency}-kurs på eller før {date} — hent eller registrer kurser")
     })
 }
 
 #[derive(Debug)]
 pub struct KursRow {
     pub currency: String,
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub rate_micro: i64,
     pub kilde: String,
 }
@@ -84,7 +84,7 @@ pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<KursRow>> {
         .iter()
         .map(|r| KursRow {
             currency: r.get("valuta"),
-            dato: r.get("dato"),
+            date: r.get("dato"),
             rate_micro: r.get("kurs_micro"),
             kilde: r.get("kilde"),
         })

@@ -25,8 +25,8 @@ use crate::ledger::post_voucher_in;
 pub struct PeriodiseringDraft {
     pub kilde_voucher: Option<Uuid>,
     pub beskrivelse: String,
-    pub resultatkonto: String,
-    pub balansekonto: String,
+    pub income_account: String,
+    pub balance_account: String,
     /// Net amount in øre, ledger signs: a prepaid COST is positive.
     pub total_ore: i64,
     pub fra: (i32, u32),
@@ -40,15 +40,15 @@ pub struct PeriodiseringDraft {
 pub struct Periodisering {
     pub id: Uuid,
     pub beskrivelse: String,
-    pub resultatkonto: String,
-    pub balansekonto: String,
+    pub income_account: String,
+    pub balance_account: String,
     pub total_ore: i64,
     pub fra_maned: NaiveDate,
     pub til_maned: NaiveDate,
     pub department: Option<String>,
     pub project: Option<String>,
     pub notat: Option<String>,
-    pub stoppet_dato: Option<NaiveDate>,
+    pub stopped_date: Option<NaiveDate>,
     /// How much has actually been posted, and over how many months —
     /// computed from the run log, never stored.
     pub fort_ore: i64,
@@ -90,25 +90,25 @@ pub async fn create_periodisering(
     // for a year. Found in browser verification — 1500 is a reskontro
     // account, the plan was accepted, and all three months then failed
     // with "requires a party" where only the run log could see it.
-    for (konto, rolle) in [
-        (&draft.resultatkonto, "resultatkontoen"),
-        (&draft.balansekonto, "balansekontoen"),
+    for (account, rolle) in [
+        (&draft.income_account, "resultatkontoen"),
+        (&draft.balance_account, "balansekontoen"),
     ] {
         let funnet: Option<(bool, Option<String>)> = sqlx::query_as(
             "select active, reskontro_kind from account where company_id = $1 and number = $2",
         )
         .bind(company_id)
-        .bind(konto)
+        .bind(account)
         .fetch_optional(pool)
         .await?;
         let (aktiv, reskontro) =
-            funnet.with_context(|| format!("{rolle} {konto} finnes ikke i kontoplanen"))?;
-        ensure!(aktiv, "{rolle} {konto} er deaktivert");
+            funnet.with_context(|| format!("{rolle} {account} finnes ikke i kontoplanen"))?;
+        ensure!(aktiv, "{rolle} {account} er deaktivert");
         // Periodisering posts without a party, so a reskontro account
         // could never succeed — refusing now beats refusing monthly.
         ensure!(
             reskontro.is_none(),
-            "{rolle} {konto} er en reskontrokonto og krever part på hver postering. \
+            "{rolle} {account} er en reskontrokonto og krever part på hver postering. \
              Periodisering fører uten part, så velg en annen konto"
         );
     }
@@ -151,8 +151,8 @@ pub async fn create_periodisering(
     .bind(company_id)
     .bind(draft.kilde_voucher)
     .bind(draft.beskrivelse.trim())
-    .bind(&draft.resultatkonto)
-    .bind(&draft.balansekonto)
+    .bind(&draft.income_account)
+    .bind(&draft.balance_account)
     .bind(draft.total_ore)
     .bind(fra)
     .bind(til)
@@ -190,15 +190,15 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
         .map(|r| Periodisering {
             id: r.get("id"),
             beskrivelse: r.get("beskrivelse"),
-            resultatkonto: r.get("resultatkonto"),
-            balansekonto: r.get("balansekonto"),
+            income_account: r.get("resultatkonto"),
+            balance_account: r.get("balansekonto"),
             total_ore: r.get("total_ore"),
             fra_maned: r.get("fra_maned"),
             til_maned: r.get("til_maned"),
             department: r.get("avdeling"),
             project: r.get("prosjekt"),
             notat: r.get("notat"),
-            stoppet_dato: r.get("stoppet_dato"),
+            stopped_date: r.get("stoppet_dato"),
             fort_ore: r.get("fort_ore"),
             forte_maneder: r.get("forte_maneder"),
         })
@@ -212,7 +212,7 @@ pub async fn stopp_periodisering(
     pool: &PgPool,
     company_id: Uuid,
     id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<()> {
     let n = sqlx::query(
         "update periodisering set stoppet_dato = $3
@@ -220,7 +220,7 @@ pub async fn stopp_periodisering(
     )
     .bind(id)
     .bind(company_id)
-    .bind(dato)
+    .bind(date)
     .execute(pool)
     .await?
     .rows_affected();
@@ -233,7 +233,7 @@ pub struct PeriodiseringUtfall {
     pub periodisering_id: Uuid,
     pub beskrivelse: String,
     pub period: NaiveDate,
-    pub belop_ore: i64,
+    pub amount_ore: i64,
     pub voucher: Option<(i32, i64)>,
     pub detail: Option<String>,
 }
@@ -282,8 +282,8 @@ pub async fn periodiser_plan(
     let til: NaiveDate = plan.get("til_maned");
     let stoppet: Option<NaiveDate> = plan.get("stoppet_dato");
     let beskrivelse: String = plan.get("beskrivelse");
-    let resultatkonto: String = plan.get("resultatkonto");
-    let balansekonto: String = plan.get("balansekonto");
+    let income_account: String = plan.get("resultatkonto");
+    let balance_account: String = plan.get("balansekonto");
     let department: Option<String> = plan.get("avdeling");
     let project: Option<String> = plan.get("prosjekt");
     let rader = regnmed_core::accrual::plan(
@@ -320,8 +320,8 @@ pub async fn periodiser_plan(
                 rad.date,
                 rad.amount_ore,
                 &beskrivelse,
-                &resultatkonto,
-                &balansekonto,
+                &income_account,
+                &balance_account,
                 department.as_deref(),
                 project.as_deref(),
                 i + 1,
@@ -340,10 +340,10 @@ async fn post_en_maned(
     periodisering_id: Uuid,
     period: NaiveDate,
     voucher_date: NaiveDate,
-    belop_ore: i64,
+    amount_ore: i64,
     beskrivelse: &str,
-    resultatkonto: &str,
-    balansekonto: &str,
+    income_account: &str,
+    balance_account: &str,
     department: Option<&str>,
     project: Option<&str>,
     nr: usize,
@@ -351,9 +351,9 @@ async fn post_en_maned(
 ) -> Result<PeriodiseringUtfall> {
     let mut tx = pool.begin().await?;
     let result = async {
-        let linje = |konto: &str, belop: i64, dims: bool| EntryDraft {
-            account_number: konto.to_string(),
-            amount: Ore(belop),
+        let linje = |account: &str, amount: i64, dims: bool| EntryDraft {
+            account_number: account.to_string(),
+            amount: Ore(amount),
             // No vat_code, ever: the tax belongs to the source bilag.
             vat_code: None,
             description: Some(format!("Periodisering måned {nr}/{antall}")),
@@ -380,8 +380,8 @@ async fn post_en_maned(
             ),
             reverses: None,
             entries: vec![
-                linje(resultatkonto, belop_ore, true),
-                linje(balansekonto, -belop_ore, false),
+                linje(income_account, amount_ore, true),
+                linje(balance_account, -amount_ore, false),
             ],
         };
         draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -393,7 +393,7 @@ async fn post_en_maned(
         .bind(Uuid::now_v7())
         .bind(periodisering_id)
         .bind(period)
-        .bind(belop_ore)
+        .bind(amount_ore)
         .bind(posted.id)
         .execute(&mut *tx)
         .await?;
@@ -408,7 +408,7 @@ async fn post_en_maned(
                 periodisering_id,
                 beskrivelse: beskrivelse.to_string(),
                 period,
-                belop_ore,
+                amount_ore,
                 voucher: Some((posted.fiscal_year, posted.voucher_number)),
                 detail: None,
             })
@@ -423,7 +423,7 @@ async fn post_en_maned(
             .bind(Uuid::now_v7())
             .bind(periodisering_id)
             .bind(period)
-            .bind(belop_ore)
+            .bind(amount_ore)
             .bind(&detail)
             .execute(pool)
             .await?;
@@ -431,7 +431,7 @@ async fn post_en_maned(
                 periodisering_id,
                 beskrivelse: beskrivelse.to_string(),
                 period,
-                belop_ore,
+                amount_ore,
                 voucher: None,
                 detail: Some(detail),
             })

@@ -41,14 +41,14 @@ async fn request(
     )
 }
 
-async fn saldo(state: &AppState, company: Uuid, konto: &str) -> i64 {
+async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company)
-    .bind(konto)
+    .bind(account)
     .fetch_one(&state.pool)
     .await
     .unwrap()

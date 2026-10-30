@@ -44,9 +44,9 @@ async fn request(
     )
 }
 
-fn salg(dato: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
-    let entry = |konto: &str, amount: i64| EntryDraft {
-        account_number: konto.into(),
+fn salg(date: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
+    let entry = |account: &str, amount: i64| EntryDraft {
+        account_number: account.into(),
         amount: Ore(amount),
         vat_code: None,
         description: None,
@@ -57,8 +57,8 @@ fn salg(dato: chrono::NaiveDate, netto: i64, kostnad: i64) -> VoucherDraft {
     };
     VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
-        description: format!("Drift {dato}"),
+        voucher_date: date,
+        description: format!("Drift {date}"),
         reverses: None,
         entries: vec![
             entry("1920", netto - kostnad),
@@ -161,11 +161,11 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     let lines = budget["lines"].as_array().unwrap();
     // 3000 and 6300 for January and February — in presentation sign,
     // 10 % above last year.
-    let line = |konto: &str, maned: i64| {
+    let line = |account: &str, maned: i64| {
         lines
             .iter()
-            .find(|l| l["account"] == konto && l["maned"] == maned)
-            .unwrap_or_else(|| panic!("mangler {konto} måned {maned}"))["belop_ore"]
+            .find(|l| l["account"] == account && l["maned"] == maned)
+            .unwrap_or_else(|| panic!("mangler {account} måned {maned}"))["belop_ore"]
             .as_i64()
             .unwrap()
     };

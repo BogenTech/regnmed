@@ -29,7 +29,7 @@ pub struct ProductDraft {
     pub navn: String,
     pub salgspris_ore: i64,
     pub vat_code: Option<String>,
-    pub konto: String,
+    pub account: String,
     pub lagerfort: bool,
 }
 
@@ -46,7 +46,7 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     .bind(&draft.navn)
     .bind(draft.salgspris_ore)
     .bind(&draft.vat_code)
-    .bind(&draft.konto)
+    .bind(&draft.account)
     .bind(draft.lagerfort)
     .execute(pool)
     .await
@@ -69,7 +69,7 @@ pub async fn update_product(
     navn: Option<&str>,
     salgspris_ore: Option<i64>,
     vat_code: Option<Option<&str>>,
-    konto: Option<&str>,
+    account: Option<&str>,
     aktiv: Option<bool>,
     lagerfort: Option<bool>,
 ) -> Result<()> {
@@ -90,7 +90,7 @@ pub async fn update_product(
     .bind(salgspris_ore)
     .bind(vat_code.is_some())
     .bind(vat_code.flatten())
-    .bind(konto)
+    .bind(account)
     .bind(aktiv)
     .bind(lagerfort)
     .execute(pool)
@@ -105,7 +105,7 @@ pub struct ProductRow {
     pub navn: String,
     pub salgspris_ore: i64,
     pub vat_code: Option<String>,
-    pub konto: String,
+    pub account: String,
     pub aktiv: bool,
     pub lagerfort: bool,
 }
@@ -125,7 +125,7 @@ pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<Produc
             navn: r.get("navn"),
             salgspris_ore: r.get("salgspris_ore"),
             vat_code: r.get("vat_code"),
-            konto: r.get("konto"),
+            account: r.get("konto"),
             aktiv: r.get("aktiv"),
             lagerfort: r.get("lagerfort"),
         })
@@ -263,7 +263,7 @@ pub async fn register_movement(
     pool: &PgPool,
     company_id: Uuid,
     nummer: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
     kind: &str,
     antall_milli: i64,
     kostpris_ore: Option<i64>,
@@ -293,7 +293,7 @@ pub async fn register_movement(
     .bind(Uuid::now_v7())
     .bind(company_id)
     .bind(product.get::<Uuid, _>("id"))
-    .bind(dato)
+    .bind(date)
     .bind(kind)
     .bind(antall_milli)
     .bind(kostpris_ore)
@@ -364,7 +364,7 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
 
 #[derive(Debug)]
 pub struct MovementRow {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub kind: String,
     pub antall_milli: i64,
     pub kostpris_ore: Option<i64>,
@@ -395,7 +395,7 @@ pub async fn list_movements(
     Ok(rows
         .iter()
         .map(|r| MovementRow {
-            dato: r.get("dato"),
+            date: r.get("dato"),
             kind: r.get("kind"),
             antall_milli: r.get("antall_milli"),
             kostpris_ore: r.get("kostpris_ore"),
@@ -417,8 +417,8 @@ pub struct TellingLinje {
 pub struct TellingKonti {
     /// Defaults at the API layer: GL, 1460, 4390 (beholdningsendring).
     pub journal_code: String,
-    pub lager_konto: String,
-    pub endring_konto: String,
+    pub inventory_account: String,
+    pub change_account: String,
 }
 
 #[derive(Debug)]
@@ -448,7 +448,7 @@ pub struct TellingResult {
 pub async fn varetelling(
     pool: &PgPool,
     company_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
     linjer: &[TellingLinje],
     post: Option<&TellingKonti>,
     created_by: &str,
@@ -483,9 +483,9 @@ pub async fn varetelling(
             .bind(Uuid::now_v7())
             .bind(company_id)
             .bind(product_id)
-            .bind(dato)
+            .bind(date)
             .bind(diff)
-            .bind(format!("Varetelling {dato}"))
+            .bind(format!("Varetelling {date}"))
             .bind(created_by)
             .execute(&mut *tx)
             .await?;
@@ -517,7 +517,7 @@ pub async fn varetelling(
              where a.company_id = $1 and a.number = $2",
         )
         .bind(company_id)
-        .bind(&konti.lager_konto)
+        .bind(&konti.inventory_account)
         .fetch_one(&mut *tx)
         .await?;
         bokfort_ore = Some(bokfort);
@@ -525,12 +525,12 @@ pub async fn varetelling(
         if endring != 0 {
             let draft = VoucherDraft {
                 journal_code: konti.journal_code.clone(),
-                voucher_date: dato,
-                description: format!("Varetelling {dato}"),
+                voucher_date: date,
+                description: format!("Varetelling {date}"),
                 reverses: None,
                 entries: vec![
                     EntryDraft {
-                        account_number: konti.lager_konto.clone(),
+                        account_number: konti.inventory_account.clone(),
                         amount: Ore(endring),
                         vat_code: None,
                         description: Some("Varelager etter telling".into()),
@@ -540,7 +540,7 @@ pub async fn varetelling(
                         currency: None,
                     },
                     EntryDraft {
-                        account_number: konti.endring_konto.clone(),
+                        account_number: konti.change_account.clone(),
                         amount: Ore(-endring),
                         vat_code: None,
                         description: Some("Beholdningsendring".into()),

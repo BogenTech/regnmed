@@ -598,9 +598,9 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let base = format!("/companies/{company}/timesheet");
 
     // Two hours Anna, one hour Bjørn — same (prosjekt, sats) group.
-    let timer = |dato: &str, minutter: i32| {
+    let timer = |date: &str, minutter: i32| {
         serde_json::json!({
-            "dato": dato, "minutter": minutter, "beskrivelse": "Arbeid",
+            "dato": date, "minutter": minutter, "beskrivelse": "Arbeid",
             "prosjekt": "P1", "fakturerbar": true,
         })
         .to_string()

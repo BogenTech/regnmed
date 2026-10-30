@@ -40,15 +40,15 @@ pub struct MottattFaktura {
     /// True for CreditNote — the amounts flip when the bilag is proposed.
     pub er_kreditnota: bool,
     pub fakturanr: String,
-    pub fakturadato: Option<NaiveDate>,
-    pub forfallsdato: Option<NaiveDate>,
+    pub invoice_date: Option<NaiveDate>,
+    pub due_date: Option<NaiveDate>,
     pub currency: String,
     pub selger_navn: String,
     /// Norwegian orgnr without prefix when the sender uses ICD 0192.
     pub selger_orgnr: Option<String>,
     pub kjoper_orgnr: Option<String>,
     pub kid: Option<String>,
-    pub kontonummer: Option<String>,
+    pub account_number: Option<String>,
     pub netto_ore: i64,
     pub mva_ore: i64,
     /// PayableAmount — what the supplier actually claims.
@@ -113,14 +113,14 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
     let mut faktura = MottattFaktura {
         er_kreditnota: false,
         fakturanr: String::new(),
-        fakturadato: None,
-        forfallsdato: None,
+        invoice_date: None,
+        due_date: None,
         currency: "NOK".into(),
         selger_navn: String::new(),
         selger_orgnr: None,
         kjoper_orgnr: None,
         kid: None,
-        kontonummer: None,
+        account_number: None,
         netto_ore: 0,
         mva_ore: 0,
         brutto_ore: 0,
@@ -187,8 +187,8 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
 
                 match leaf {
                     "ID" if path.len() == 2 => faktura.fakturanr = value,
-                    "IssueDate" if path.len() == 2 => faktura.fakturadato = Some(date(&value)?),
-                    "DueDate" if path.len() == 2 => faktura.forfallsdato = Some(date(&value)?),
+                    "IssueDate" if path.len() == 2 => faktura.invoice_date = Some(date(&value)?),
+                    "DueDate" if path.len() == 2 => faktura.due_date = Some(date(&value)?),
                     "DocumentCurrencyCode" if path.len() == 2 => faktura.currency = value,
                     "PaymentID" => faktura.kid = Some(value),
                     "Name" if supplier && ends_with(&path, &["PartyName", "Name"]) => {
@@ -221,7 +221,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                         }
                     }
                     "ID" if ends_with(&path, &["PayeeFinancialAccount", "ID"]) => {
-                        faktura.kontonummer = Some(value);
+                        faktura.account_number = Some(value);
                     }
                     "TaxExclusiveAmount" => faktura.netto_ore = amount(&value)?,
                     "TaxInclusiveAmount" if faktura.brutto_ore == 0 => {
@@ -281,15 +281,15 @@ mod tests {
             dokumenttype,
             fakturanr: "F-2026-7".into(),
             krediterer: None,
-            fakturadato: NaiveDate::from_ymd_opt(2026, 7, 3).unwrap(),
-            forfallsdato: NaiveDate::from_ymd_opt(2026, 7, 17),
+            invoice_date: NaiveDate::from_ymd_opt(2026, 7, 3).unwrap(),
+            due_date: NaiveDate::from_ymd_opt(2026, 7, 17),
             currency: "NOK".into(),
             kjopers_referanse: None,
             selger: part("Grossisten AS", "915933149"),
             kjoper: part("Vår Klient AS", "923609016"),
-            leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 2),
+            delivery_date: NaiveDate::from_ymd_opt(2026, 7, 2),
             leveringssted: None,
-            kontonummer: Some("86011117947".into()),
+            account_number: Some("86011117947".into()),
             kid: Some("1234567897".into()),
             linjer: vec![
                 EhfLinje {
@@ -323,18 +323,18 @@ mod tests {
         assert!(!mottatt.er_kreditnota);
         assert_eq!(mottatt.fakturanr, "F-2026-7");
         assert_eq!(
-            mottatt.fakturadato,
+            mottatt.invoice_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 3).unwrap())
         );
         assert_eq!(
-            mottatt.forfallsdato,
+            mottatt.due_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 17).unwrap())
         );
         assert_eq!(mottatt.selger_navn, "Grossisten AS");
         assert_eq!(mottatt.selger_orgnr.as_deref(), Some("915933149"));
         assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
         assert_eq!(mottatt.kid.as_deref(), Some("1234567897"));
-        assert_eq!(mottatt.kontonummer.as_deref(), Some("86011117947"));
+        assert_eq!(mottatt.account_number.as_deref(), Some("86011117947"));
         assert_eq!(mottatt.netto_ore, 1_300_00);
         assert_eq!(mottatt.mva_ore, 325_00);
         assert_eq!(mottatt.brutto_ore, 1_625_00);

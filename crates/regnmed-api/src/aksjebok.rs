@@ -33,7 +33,7 @@ fn aksjonaer_json(a: &regnmed_db::aksjebok::Aksjonaer) -> serde_json::Value {
         "kind": a.kind,
         "navn": a.navn,
         // §4-5: birth date, not fødselsnummer.
-        "fodselsdato": a.fodselsdato,
+        "fodselsdato": a.birth_date,
         "orgnr": a.orgnr,
         "utenlandsk_id": a.utenlandsk_id,
         "adresse": a.adresse,
@@ -49,7 +49,8 @@ fn aksjonaer_json(a: &regnmed_db::aksjebok::Aksjonaer) -> serde_json::Value {
 #[derive(Deserialize)]
 pub struct BokQuery {
     /// The aksjeeierbok is a function of a date; today when unset.
-    dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "dato")]
+    date: Option<chrono::NaiveDate>,
 }
 
 pub async fn list_shareholders(
@@ -59,13 +60,13 @@ pub async fn list_shareholders(
     Query(q): Query<BokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AksjebokLes).await?;
-    let dato = q.dato.unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let bok = regnmed_db::aksjebok::aksjeeierbok(&state.pool, company_id, dato)
+    let date = q.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let bok = regnmed_db::aksjebok::aksjeeierbok(&state.pool, company_id, date)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let totalt: i64 = bok.iter().map(|a| a.antall_aksjer).sum();
     Ok(Json(json!({
-        "dato": dato,
+        "dato": date,
         "totalt_antall_aksjer": totalt,
         "aksjonarer": bok.iter().map(aksjonaer_json).collect::<Vec<_>>(),
     })))
@@ -188,9 +189,9 @@ pub async fn list_events(
             "aksjonar": e.aksjonaer,
             "type": e.type_,
             "type_navn": e.type_navn,
-            "dato": e.dato,
+            "dato": e.date,
             "antall": e.antall,
-            "belop_ore": e.belop_ore,
+            "belop_ore": e.amount_ore,
             "motpart": e.motpart,
             "note": e.note,
             "created_by": e.created_by,
@@ -203,9 +204,11 @@ pub struct CreateEventRequest {
     shareholder_id: Uuid,
     #[serde(rename = "type")]
     type_: String,
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     antall: i64,
-    belop_ore: Option<i64>,
+    #[serde(rename = "belop_ore")]
+    amount_ore: Option<i64>,
     /// The other side of a transfer, written in the same transaction.
     motpart_id: Option<Uuid>,
     motpart_type: Option<String>,
@@ -224,9 +227,9 @@ pub async fn create_event(
         company_id,
         request.shareholder_id,
         &request.type_,
-        request.dato,
+        request.date,
         request.antall,
-        request.belop_ore,
+        request.amount_ore,
         request.motpart_id,
         request.motpart_type.as_deref(),
         request.note.as_deref(),
@@ -248,7 +251,7 @@ pub async fn list_dividends(
     Ok(Json(json!({
         "utbytte": rows.iter().map(|u| json!({
             "id": u.id,
-            "besluttet_dato": u.besluttet_dato,
+            "besluttet_dato": u.decided_date,
             "per_aksje_ore": u.per_aksje_ore,
             "totalt_ore": u.totalt_ore,
             "voucher_id": u.voucher_id,
@@ -260,7 +263,8 @@ pub async fn list_dividends(
 
 #[derive(Deserialize)]
 pub struct CreateDividendRequest {
-    besluttet_dato: chrono::NaiveDate,
+    #[serde(rename = "besluttet_dato")]
+    decided_date: chrono::NaiveDate,
     per_aksje_ore: i64,
     note: Option<String>,
 }
@@ -275,7 +279,7 @@ pub async fn create_dividend(
     let vedtak = regnmed_db::aksjebok::create_utbytte(
         &state.pool,
         company_id,
-        request.besluttet_dato,
+        request.decided_date,
         request.per_aksje_ore,
         request.note.as_deref(),
         person.display(),
@@ -374,7 +378,7 @@ pub async fn oppgave(
         "aksjekapital_ore": sett.hovedskjema.aksjekapital.i_ar,
         "palydende_ore": sett.hovedskjema.palydende_ore.i_ar,
         "utbytte": sett.hovedskjema.utbytte.iter().map(|u| json!({
-            "dato": u.dato,
+            "dato": u.date,
             "per_aksje_ore": u.per_aksje_ore,
             "totalt_ore": u.totalt_ore,
         })).collect::<Vec<_>>(),

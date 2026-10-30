@@ -17,20 +17,24 @@ use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct SalgLinje {
-    konto: String,
+    #[serde(rename = "konto")]
+    account: String,
     vat_code: Option<String>,
     brutto_ore: i64,
 }
 
 #[derive(Deserialize)]
 pub struct BetalingLinje {
-    konto: String,
-    belop_ore: i64,
+    #[serde(rename = "konto")]
+    account: String,
+    #[serde(rename = "belop_ore")]
+    amount_ore: i64,
 }
 
 #[derive(Deserialize)]
 pub struct DagsoppgjorRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     z_nummer: String,
     salg: Vec<SalgLinje>,
     betaling: Vec<BetalingLinje>,
@@ -38,30 +42,32 @@ pub struct DagsoppgjorRequest {
     /// The cash account and what was counted in it. Omitted = the till
     /// was not counted, and no difference voucher is posted — we do not
     /// infer that a missing count means it agreed.
-    kontantkonto: Option<String>,
+    #[serde(rename = "kontantkonto")]
+    cash_account: Option<String>,
     opptalt_kontant_ore: Option<i64>,
     /// Where a discrepancy is charged. 7830 Kassadifferanse by default.
-    differansekonto: Option<String>,
+    #[serde(rename = "differansekonto")]
+    difference_account: Option<String>,
 }
 
 fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::DagsoppgjorInn {
     regnmed_db::cash_register::DagsoppgjorInn {
-        dato: request.dato,
+        date: request.date,
         z_nummer: request.z_nummer,
         salg: request
             .salg
             .into_iter()
-            .map(|l| (l.konto, l.vat_code, l.brutto_ore))
+            .map(|l| (l.account, l.vat_code, l.brutto_ore))
             .collect(),
         betaling: request
             .betaling
             .into_iter()
-            .map(|b| (b.konto, b.belop_ore))
+            .map(|b| (b.account, b.amount_ore))
             .collect(),
         mva_konto: request.mva_konto.unwrap_or_else(|| "2700".into()),
-        kontantkonto: request.kontantkonto,
+        cash_account: request.cash_account,
         opptalt_kontant_ore: request.opptalt_kontant_ore,
-        differansekonto: request.differansekonto.unwrap_or_else(|| "7830".into()),
+        difference_account: request.difference_account.unwrap_or_else(|| "7830".into()),
     }
 }
 

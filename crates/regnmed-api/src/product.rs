@@ -76,7 +76,8 @@ pub struct CreateProductRequest {
     salgspris_ore: i64,
     vat_code: Option<String>,
     /// Defaults to 3000.
-    konto: Option<String>,
+    #[serde(rename = "konto")]
+    account: Option<String>,
     #[serde(default)]
     lagerfort: bool,
 }
@@ -96,7 +97,7 @@ pub async fn create(
             navn: request.navn,
             salgspris_ore: request.salgspris_ore,
             vat_code: request.vat_code,
-            konto: request.konto.unwrap_or_else(|| "3000".into()),
+            account: request.account.unwrap_or_else(|| "3000".into()),
             lagerfort: request.lagerfort,
         },
     )
@@ -118,7 +119,7 @@ pub async fn list(
             "navn": p.navn,
             "salgspris_ore": p.salgspris_ore,
             "vat_code": p.vat_code,
-            "konto": p.konto,
+            "konto": p.account,
             "aktiv": p.aktiv,
             "lagerfort": p.lagerfort,
         })).collect::<Vec<_>>(),
@@ -140,7 +141,8 @@ pub struct UpdateProductRequest {
     salgspris_ore: Option<i64>,
     #[serde(default, deserialize_with = "double_option")]
     vat_code: Option<Option<String>>,
-    konto: Option<String>,
+    #[serde(rename = "konto")]
+    account: Option<String>,
     aktiv: Option<bool>,
     lagerfort: Option<bool>,
 }
@@ -159,7 +161,7 @@ pub async fn update(
         request.navn.as_deref(),
         request.salgspris_ore,
         request.vat_code.as_ref().map(|v| v.as_deref()),
-        request.konto.as_deref(),
+        request.account.as_deref(),
         request.aktiv,
         request.lagerfort,
     )
@@ -202,7 +204,7 @@ pub async fn movements(
     let rows = regnmed_db::list_movements(&state.pool, company_id, &query.produkt).await?;
     Ok(Json(json!({
         "movements": rows.iter().map(|m| json!({
-            "dato": m.dato.to_string(),
+            "dato": m.date.to_string(),
             "kind": m.kind,
             "antall_milli": m.antall_milli,
             "kostpris_ore": m.kostpris_ore,
@@ -216,7 +218,8 @@ pub async fn movements(
 #[derive(Deserialize)]
 pub struct MovementRequest {
     produkt: String,
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     /// kjop | justering (salg only ever comes from invoicing).
     kind: String,
     antall_milli: i64,
@@ -237,7 +240,7 @@ pub async fn register_movement(
         &state.pool,
         company_id,
         &request.produkt,
-        request.dato,
+        request.date,
         &request.kind,
         request.antall_milli,
         request.kostpris_ore,
@@ -257,14 +260,17 @@ pub struct CountLine {
 
 #[derive(Deserialize)]
 pub struct CountRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     linjer: Vec<CountLine>,
     /// Post the value adjustment as an ordinary voucher (default true).
     post: Option<bool>,
     journal: Option<String>,
     /// Defaults: 1460 (varelager), 4390 (beholdningsendring).
-    lager_konto: Option<String>,
-    endring_konto: Option<String>,
+    #[serde(rename = "lager_konto")]
+    inventory_account: Option<String>,
+    #[serde(rename = "endring_konto")]
+    change_account: Option<String>,
 }
 
 pub async fn count(
@@ -277,8 +283,8 @@ pub async fn count(
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let konti = regnmed_db::TellingKonti {
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
-        lager_konto: request.lager_konto.unwrap_or_else(|| "1460".into()),
-        endring_konto: request.endring_konto.unwrap_or_else(|| "4390".into()),
+        inventory_account: request.inventory_account.unwrap_or_else(|| "1460".into()),
+        change_account: request.change_account.unwrap_or_else(|| "4390".into()),
     };
     let post = request.post.unwrap_or(true);
     let linjer: Vec<regnmed_db::TellingLinje> = request
@@ -292,7 +298,7 @@ pub async fn count(
     let result = regnmed_db::varetelling(
         &state.pool,
         company_id,
-        request.dato,
+        request.date,
         &linjer,
         post.then_some(&konti),
         created_by,

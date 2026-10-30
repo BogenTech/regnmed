@@ -40,7 +40,7 @@ pub async fn payable(
             "party_no": i.party_no,
             "party_name": i.party_name,
             "bank_account": i.bank_account,
-            "belop_ore": i.belop_ore,
+            "belop_ore": i.amount_ore,
             "i_kjoring": i.i_kjoring,
         })).collect::<Vec<_>>(),
     })))
@@ -49,7 +49,8 @@ pub async fn payable(
 #[derive(Deserialize)]
 pub struct RunItemRequest {
     entry_id: Uuid,
-    belop_ore: Option<i64>,
+    #[serde(rename = "belop_ore")]
+    amount_ore: Option<i64>,
     kid: Option<String>,
     melding: Option<String>,
 }
@@ -58,7 +59,8 @@ pub struct RunItemRequest {
 pub struct CreateRunRequest {
     items: Vec<RunItemRequest>,
     /// 11-digit kontonummer; defaults to the company's bank_account.
-    debitor_konto: Option<String>,
+    #[serde(rename = "debitor_konto")]
+    debtor_account: Option<String>,
     /// Defaults to today.
     execution_date: Option<chrono::NaiveDate>,
 }
@@ -82,7 +84,7 @@ pub async fn create_run(
         .into_iter()
         .map(|i| regnmed_db::PaymentItemDraft {
             entry_id: i.entry_id,
-            belop_ore: i.belop_ore,
+            amount_ore: i.amount_ore,
             kid: i.kid.filter(|k| !k.trim().is_empty()),
             melding: i.melding.filter(|m| !m.trim().is_empty()),
         })
@@ -92,7 +94,7 @@ pub async fn create_run(
         &state.pool,
         company_id,
         &items,
-        request.debitor_konto.as_deref(),
+        request.debtor_account.as_deref(),
         execution_date,
         created_by,
         person.person_id,
@@ -164,9 +166,11 @@ pub async fn file(
 
 #[derive(Deserialize, Default)]
 pub struct SettleRequest {
-    dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "dato")]
+    date: Option<chrono::NaiveDate>,
     /// Ledger bank account, default 1920.
-    bank_konto: Option<String>,
+    #[serde(rename = "bank_konto")]
+    bank_account: Option<String>,
 }
 
 pub async fn settle(
@@ -177,7 +181,7 @@ pub async fn settle(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BetalingOppgjor).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
-    let dato = match request.dato {
+    let date = match request.date {
         Some(d) => d,
         None => sqlx::query_scalar("select current_date")
             .fetch_one(&state.pool)
@@ -189,8 +193,8 @@ pub async fn settle(
         &state.pool,
         company_id,
         run_id,
-        dato,
-        request.bank_konto.as_deref().unwrap_or("1920"),
+        date,
+        request.bank_account.as_deref().unwrap_or("1920"),
         settled_by,
     )
     .await

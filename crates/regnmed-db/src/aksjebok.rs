@@ -29,7 +29,7 @@ pub struct Aksjonaer {
     /// Aksjeloven §4-5 asks for the birth DATE, not the birth number.
     /// Derived from the fødselsnummer we hold for the oppgave; the
     /// number itself never leaves this module.
-    pub fodselsdato: Option<NaiveDate>,
+    pub birth_date: Option<NaiveDate>,
     pub orgnr: Option<String>,
     pub utenlandsk_id: Option<String>,
     pub adresse: Option<String>,
@@ -49,9 +49,9 @@ pub struct Aksjehendelse {
     pub aksjonaer: String,
     pub type_: String,
     pub type_navn: String,
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub antall: i64,
-    pub belop_ore: Option<i64>,
+    pub amount_ore: Option<i64>,
     pub motpart: Option<String>,
     pub note: Option<String>,
     pub created_by: String,
@@ -60,7 +60,7 @@ pub struct Aksjehendelse {
 #[derive(Debug, Clone)]
 pub struct Utbyttevedtak {
     pub id: Uuid,
-    pub besluttet_dato: NaiveDate,
+    pub decided_date: NaiveDate,
     pub per_aksje_ore: i64,
     pub totalt_ore: i64,
     pub voucher_id: Option<Uuid>,
@@ -191,7 +191,7 @@ pub async fn update_aksjonaer_kontakt(
 pub async fn aksjeeierbok(
     pool: &PgPool,
     company_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<Vec<Aksjonaer>> {
     let rows = sqlx::query(
         "select s.id, s.kind, s.navn, s.fodselsnummer, s.orgnr, s.utenlandsk_id,
@@ -204,7 +204,7 @@ pub async fn aksjeeierbok(
          order by antall desc, s.navn",
     )
     .bind(company_id)
-    .bind(dato)
+    .bind(date)
     .bind(avgangstyper())
     .fetch_all(pool)
     .await?;
@@ -218,7 +218,7 @@ pub async fn aksjeeierbok(
                 id: r.get("id"),
                 kind: r.get("kind"),
                 navn: r.get("navn"),
-                fodselsdato: r
+                birth_date: r
                     .get::<Option<String>, _>("fodselsnummer")
                     .as_deref()
                     .and_then(regnmed_core::nin::birth_date),
@@ -282,9 +282,9 @@ pub async fn list_hendelser(
                     .map(|t| t.navn().to_string())
                     .unwrap_or_else(|| slug.clone()),
                 type_: slug,
-                dato: r.get("dato"),
+                date: r.get("dato"),
                 antall: r.get("antall"),
-                belop_ore: r.get("belop_ore"),
+                amount_ore: r.get("belop_ore"),
                 motpart: r.get("motpart"),
                 note: r.get("note"),
                 created_by: r.get("created_by"),
@@ -302,9 +302,9 @@ pub async fn record_hendelse(
     company_id: Uuid,
     shareholder_id: Uuid,
     type_slug: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
     antall: i64,
-    belop_ore: Option<i64>,
+    amount_ore: Option<i64>,
     motpart_id: Option<Uuid>,
     motpart_type_slug: Option<&str>,
     note: Option<&str>,
@@ -327,10 +327,10 @@ pub async fn record_hendelse(
 
     // An avgang cannot take more shares than the owner holds on the date.
     if !type_.er_tilgang() {
-        let beholdning = beholdning_i_tx(&mut tx, shareholder_id, dato).await?;
+        let beholdning = beholdning_i_tx(&mut tx, shareholder_id, date).await?;
         ensure!(
             beholdning >= antall,
-            "aksjonæren har {beholdning} aksjer den {dato} og kan ikke avhende {antall}"
+            "aksjonæren har {beholdning} aksjer den {date} og kan ikke avhende {antall}"
         );
     }
 
@@ -341,9 +341,9 @@ pub async fn record_hendelse(
         company_id,
         shareholder_id,
         type_.slug(),
-        dato,
+        date,
         antall,
-        belop_ore,
+        amount_ore,
         motpart_id,
         note,
         created_by,
@@ -359,10 +359,10 @@ pub async fn record_hendelse(
             "de to sidene av en overdragelse må gå hver sin vei"
         );
         if !motpart_type.er_tilgang() {
-            let beholdning = beholdning_i_tx(&mut tx, motpart_id, dato).await?;
+            let beholdning = beholdning_i_tx(&mut tx, motpart_id, date).await?;
             ensure!(
                 beholdning >= antall,
-                "motparten har bare {beholdning} aksjer den {dato}"
+                "motparten har bare {beholdning} aksjer den {date}"
             );
         }
         insert_event(
@@ -371,9 +371,9 @@ pub async fn record_hendelse(
             company_id,
             motpart_id,
             motpart_type.slug(),
-            dato,
+            date,
             antall,
-            belop_ore,
+            amount_ore,
             Some(shareholder_id),
             note,
             created_by,
@@ -392,9 +392,9 @@ async fn insert_event(
     company_id: Uuid,
     shareholder_id: Uuid,
     type_slug: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
     antall: i64,
-    belop_ore: Option<i64>,
+    amount_ore: Option<i64>,
     motpart_id: Option<Uuid>,
     note: Option<&str>,
     created_by: &str,
@@ -409,9 +409,9 @@ async fn insert_event(
     .bind(company_id)
     .bind(shareholder_id)
     .bind(type_slug)
-    .bind(dato)
+    .bind(date)
     .bind(antall)
-    .bind(belop_ore)
+    .bind(amount_ore)
     .bind(motpart_id)
     .bind(note)
     .bind(created_by)
@@ -423,14 +423,14 @@ async fn insert_event(
 async fn beholdning_i_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     shareholder_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<i64> {
     let antall: Option<i64> = sqlx::query_scalar(
         "select sum(case when type = any($3) then -antall else antall end)::bigint
          from share_event where shareholder_id = $1 and dato <= $2",
     )
     .bind(shareholder_id)
-    .bind(dato)
+    .bind(date)
     .bind(avgangstyper())
     .fetch_one(tx.as_mut())
     .await?;
@@ -451,7 +451,7 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Hendel
         .filter_map(|r| {
             let slug: String = r.get("type");
             Some(Hendelse {
-                dato: r.get("dato"),
+                date: r.get("dato"),
                 type_: Transaksjonstype::fra_slug(&slug)?,
                 antall: r.get("antall"),
                 vederlag_ore: r.get("belop_ore"),
@@ -468,17 +468,17 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Hendel
 pub async fn create_utbytte(
     pool: &PgPool,
     company_id: Uuid,
-    besluttet_dato: NaiveDate,
+    decided_date: NaiveDate,
     per_aksje_ore: i64,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<Utbyttevedtak> {
     ensure!(per_aksje_ore > 0, "utbytte per aksje må være positivt");
-    let bok = aksjeeierbok(pool, company_id, besluttet_dato).await?;
+    let bok = aksjeeierbok(pool, company_id, decided_date).await?;
     let antall: i64 = bok.iter().map(|a| a.antall_aksjer).sum();
     ensure!(
         antall > 0,
-        "aksjeeierboken er tom den {besluttet_dato} — registrer stiftelsen først"
+        "aksjeeierboken er tom den {decided_date} — registrer stiftelsen først"
     );
     let totalt_ore = antall
         .checked_mul(per_aksje_ore)
@@ -487,8 +487,8 @@ pub async fn create_utbytte(
     let mut tx = pool.begin().await?;
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: besluttet_dato,
-        description: format!("Utbytte, vedtatt {besluttet_dato}"),
+        voucher_date: decided_date,
+        description: format!("Utbytte, vedtatt {decided_date}"),
         reverses: None,
         entries: vec![
             EntryDraft {
@@ -524,7 +524,7 @@ pub async fn create_utbytte(
     )
     .bind(id)
     .bind(company_id)
-    .bind(besluttet_dato)
+    .bind(decided_date)
     .bind(per_aksje_ore)
     .bind(note)
     .bind(posted.id)
@@ -535,7 +535,7 @@ pub async fn create_utbytte(
 
     Ok(Utbyttevedtak {
         id,
-        besluttet_dato,
+        decided_date,
         per_aksje_ore,
         totalt_ore,
         voucher_id: Some(posted.id),
@@ -561,16 +561,16 @@ pub async fn list_utbytte(
     .await?;
     let mut out = Vec::new();
     for r in rows {
-        let dato: NaiveDate = r.get("besluttet_dato");
+        let date: NaiveDate = r.get("besluttet_dato");
         let per_aksje: i64 = r.get("per_aksje_ore");
-        let antall: i64 = aksjeeierbok(pool, company_id, dato)
+        let antall: i64 = aksjeeierbok(pool, company_id, date)
             .await?
             .iter()
             .map(|a| a.antall_aksjer)
             .sum();
         out.push(Utbyttevedtak {
             id: r.get("id"),
-            besluttet_dato: dato,
+            decided_date: date,
             per_aksje_ore: per_aksje,
             totalt_ore: antall * per_aksje,
             voucher_id: r.get("voucher_id"),
@@ -633,12 +633,12 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
         antall_i_fjor += bevegelse.inngaende;
 
         let mut bevegelser = Vec::new();
-        for h in hendelser.iter().filter(|h| h.dato.year() == ar) {
+        for h in hendelser.iter().filter(|h| h.date.year() == ar) {
             bevegelser.push(oppgave::Bevegelse {
-                dato: h.dato,
+                date: h.date,
                 type_: h.type_,
                 antall: h.antall,
-                belop_ore: h.vederlag_ore,
+                amount_ore: h.vederlag_ore,
             });
             // New issues are reported at company level too.
             if matches!(
@@ -646,7 +646,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
                 Transaksjonstype::Stiftelse | Transaksjonstype::Nyemisjon
             ) {
                 nyutstedelser.push(oppgave::Nyutstedelse {
-                    dato: h.dato,
+                    date: h.date,
                     type_: h.type_,
                     antall_nye: h.antall,
                     antall_etter: 0, // fylles når totalen er kjent
@@ -659,10 +659,10 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
         let utbytte = utbytte_rader
             .iter()
             .filter_map(|u| {
-                let eid = regnmed_core::aksjebok::beholdning(&hendelser, u.besluttet_dato);
+                let eid = regnmed_core::aksjebok::beholdning(&hendelser, u.decided_date);
                 (eid > 0).then_some(oppgave::Utbyttepost {
-                    dato: u.besluttet_dato,
-                    belop_ore: eid * u.per_aksje_ore,
+                    date: u.decided_date,
+                    amount_ore: eid * u.per_aksje_ore,
                     antall_aksjer: eid,
                 })
             })
@@ -692,9 +692,9 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
     // "Antall aksjer etter stiftelse/nyemisjon" is the total ON THE
     // EVENT'S DATE, not at year end. With one emisjon they are the same
     // number; with two, the year-end total would be wrong for the first.
-    nyutstedelser.sort_by_key(|n| n.dato);
+    nyutstedelser.sort_by_key(|n| n.date);
     for n in &mut nyutstedelser {
-        n.antall_etter = aksjeeierbok(pool, company_id, n.dato)
+        n.antall_etter = aksjeeierbok(pool, company_id, n.date)
             .await?
             .iter()
             .map(|a| a.antall_aksjer)
@@ -732,7 +732,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Op
             utbytte: utbytte_rader
                 .iter()
                 .map(|u| oppgave::Utdeling {
-                    dato: u.besluttet_dato,
+                    date: u.decided_date,
                     per_aksje_ore: u.per_aksje_ore,
                     totalt_ore: u.totalt_ore,
                 })
@@ -781,8 +781,8 @@ async fn palydende_ore(pool: &PgPool, company_id: Uuid) -> Result<i64> {
     Ok(match row {
         Some(r) => {
             let antall: i64 = r.get("antall");
-            let belop: i64 = r.get("belop_ore");
-            if antall > 0 { belop / antall } else { 0 }
+            let amount: i64 = r.get("belop_ore");
+            if antall > 0 { amount / antall } else { 0 }
         }
         None => 0,
     })

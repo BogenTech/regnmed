@@ -103,9 +103,9 @@ pub async fn avslutt_ar(
     let resultat_for_skatt_ore = resultat_for_aret(pool, company_id, ar).await?;
     let disponert_ore = resultat_for_skatt_ore - skattekostnad_ore;
 
-    let linje = |konto: &str, belop: i64, tekst: &str| EntryDraft {
-        account_number: konto.to_string(),
-        amount: Ore(belop),
+    let linje = |account: &str, amount: i64, tekst: &str| EntryDraft {
+        account_number: account.to_string(),
+        amount: Ore(amount),
         vat_code: None,
         description: Some(tekst.to_string()),
         party_no: None,

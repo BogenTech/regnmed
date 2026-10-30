@@ -27,7 +27,7 @@ pub struct Registrering {
 pub async fn registrering_on(
     pool: &PgPool,
     company_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<Registrering> {
     let row = sqlx::query(
         "select mva_registrert, foretaksregistrert from company_registrering
@@ -35,7 +35,7 @@ pub async fn registrering_on(
          order by valid_from desc limit 1",
     )
     .bind(company_id)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?;
     Ok(row.map_or(Registrering::default(), |r| Registrering {
@@ -77,11 +77,11 @@ pub fn krever_mva_registrering(code: &str) -> bool {
 /// Callers that DERIVE a code instead of taking one from a person use
 /// code 7 and rate 0 rather than this guard; see
 /// `abonnement::utgaende_mva`.
-pub async fn krev_mva_registrert(pool: &PgPool, company_id: Uuid, dato: NaiveDate) -> Result<()> {
-    let reg = registrering_on(pool, company_id, dato).await?;
+pub async fn krev_mva_registrert(pool: &PgPool, company_id: Uuid, date: NaiveDate) -> Result<()> {
+    let reg = registrering_on(pool, company_id, date).await?;
     ensure!(
         reg.mva_registrert,
-        "selskapet var ikke mva-registrert {dato} og kan ikke bruke mva-koder — \
+        "selskapet var ikke mva-registrert {date} og kan ikke bruke mva-koder — \
          fjern mva-koden, eller oppdater registreringsstatusen under \
          firmaopplysninger hvis selskapet faktisk er registrert"
     );
@@ -252,9 +252,9 @@ pub async fn update_party_contact(
     fn clear(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|s| !s.is_empty())
     }
-    let normalized_konto = match clear(bank_account) {
-        Some(konto) => {
-            let normalized = regnmed_core::pain001::normalize_account_number(konto);
+    let normalized_account = match clear(bank_account) {
+        Some(account) => {
+            let normalized = regnmed_core::pain001::normalize_account_number(account);
             ensure!(
                 regnmed_core::pain001::is_valid_account_number(&normalized),
                 "ugyldig kontonummer (11 siffer, MOD11)"
@@ -277,7 +277,7 @@ pub async fn update_party_contact(
     .bind(email.is_some())
     .bind(clear(email))
     .bind(bank_account.is_some())
-    .bind(normalized_konto)
+    .bind(normalized_account)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no such party");

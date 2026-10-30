@@ -17,7 +17,7 @@ pub struct AttestationPolicy {
     pub aktiv: bool,
     /// Innboks bilag with a debit sum >= the threshold require
     /// attestering; None = every bilag while the policy is active.
-    pub belopsgrense_ore: Option<i64>,
+    pub amount_limit_ore: Option<i64>,
     /// The designated attestant; None = anyone with posting access.
     pub attestant_person_id: Option<Uuid>,
     /// When true, a bilag posted by an INTEGRATION requires an approved
@@ -31,7 +31,7 @@ pub struct AttestationPolicy {
 fn policy_from_row(row: &sqlx::postgres::PgRow) -> AttestationPolicy {
     AttestationPolicy {
         aktiv: row.get("aktiv"),
-        belopsgrense_ore: row.get("belopsgrense_ore"),
+        amount_limit_ore: row.get("belopsgrense_ore"),
         attestant_person_id: row.get("attestant_person_id"),
         krev_for_maskin: row.get("krev_for_maskin"),
         created_by: row.get("created_by"),
@@ -79,12 +79,12 @@ pub async fn set_policy(
     pool: &PgPool,
     company_id: Uuid,
     aktiv: bool,
-    belopsgrense_ore: Option<i64>,
+    amount_limit_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
     krev_for_maskin: Option<bool>,
     created_by: &str,
 ) -> Result<()> {
-    if let Some(grense) = belopsgrense_ore {
+    if let Some(grense) = amount_limit_ore {
         ensure!(grense >= 0, "beløpsgrensen kan ikke være negativ");
     }
     if let Some(attestant) = attestant_person_id {
@@ -107,7 +107,7 @@ pub async fn set_policy(
     .bind(Uuid::now_v7())
     .bind(company_id)
     .bind(aktiv)
-    .bind(belopsgrense_ore)
+    .bind(amount_limit_ore)
     .bind(attestant_person_id)
     .bind(krev_for_maskin)
     .bind(created_by)

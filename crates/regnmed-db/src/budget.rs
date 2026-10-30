@@ -37,7 +37,7 @@ pub struct BudgetLine {
     pub account_name: String,
     pub maned: i32,
     /// Presentasjonsfortegn: inntekt positiv, kostnad positiv.
-    pub belop_ore: i64,
+    pub amount_ore: i64,
 }
 
 fn budget_from_row(r: &sqlx::postgres::PgRow) -> BudgetRow {
@@ -114,7 +114,7 @@ pub async fn budget_lines(
             account_number: r.get("number"),
             account_name: r.get("name"),
             maned: r.get("maned"),
-            belop_ore: r.get("belop_ore"),
+            amount_ore: r.get("belop_ore"),
         })
         .collect())
 }
@@ -186,8 +186,8 @@ pub async fn create_budget(
     if let Some(fra) = fra_ar {
         let rows = monthly_actuals(&mut tx, company_id, fra).await?;
         for (account_id, number, maned, ledger_ore) in rows {
-            let belop = scale_ore(presentasjon_ore(&number, ledger_ore), justering_bp);
-            if belop == 0 {
+            let amount = scale_ore(presentasjon_ore(&number, ledger_ore), justering_bp);
+            if amount == 0 {
                 continue;
             }
             sqlx::query(
@@ -198,7 +198,7 @@ pub async fn create_budget(
             .bind(id)
             .bind(account_id)
             .bind(maned)
-            .bind(belop)
+            .bind(amount)
             .execute(&mut *tx)
             .await?;
         }
@@ -239,7 +239,7 @@ async fn monthly_actuals(
 pub struct BudgetLineDraft {
     pub account_number: String,
     pub maned: i32,
-    pub belop_ore: i64,
+    pub amount_ore: i64,
 }
 
 /// Replaces the budget's lines wholesale (utkast only — the trigger
@@ -281,7 +281,7 @@ pub async fn set_budget_lines(
             i + 1,
             line.account_number
         );
-        if line.belop_ore == 0 {
+        if line.amount_ore == 0 {
             continue;
         }
         let account_id: Uuid = sqlx::query_scalar(
@@ -302,7 +302,7 @@ pub async fn set_budget_lines(
         .bind(budget_id)
         .bind(account_id)
         .bind(line.maned)
-        .bind(line.belop_ore)
+        .bind(line.amount_ore)
         .execute(&mut *tx)
         .await?;
     }
@@ -348,7 +348,7 @@ pub async fn delete_budget(pool: &PgPool, company_id: Uuid, budget_id: Uuid) -> 
     Ok(())
 }
 
-fn konto_entry<'a>(
+fn account_entry<'a>(
     tall: &'a mut std::collections::BTreeMap<String, AccountFigures>,
     number: &str,
     name: String,
@@ -415,16 +415,16 @@ pub async fn avviksrapport(
     for r in &rows {
         let number: String = r.get("number");
         let maned: i32 = r.get("maned");
-        let belop: i64 = r.get("belop");
-        let konto = konto_entry(&mut tall, &number, r.get("name"));
-        konto.actual[(maned - 1) as usize] += presentasjon_ore(&number, belop);
+        let amount: i64 = r.get("belop");
+        let account = account_entry(&mut tall, &number, r.get("name"));
+        account.actual[(maned - 1) as usize] += presentasjon_ore(&number, amount);
     }
 
     // Budsjett: allerede i presentasjonsfortegn.
     if let Some(b) = &budsjett {
         for line in budget_lines(pool, company_id, b.id).await? {
-            let konto = konto_entry(&mut tall, &line.account_number, line.account_name);
-            konto.budget[(line.maned - 1) as usize] += line.belop_ore;
+            let account = account_entry(&mut tall, &line.account_number, line.account_name);
+            account.budget[(line.maned - 1) as usize] += line.amount_ore;
         }
     }
 

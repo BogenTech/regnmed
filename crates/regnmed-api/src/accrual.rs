@@ -21,8 +21,10 @@ use crate::tilgang::{Rett, krev};
 pub struct PeriodiseringRequest {
     kilde_voucher: Option<Uuid>,
     beskrivelse: String,
-    resultatkonto: String,
-    balansekonto: String,
+    #[serde(rename = "resultatkonto")]
+    income_account: String,
+    #[serde(rename = "balansekonto")]
+    balance_account: String,
     /// Nettobeløp i øre, hovedbokens fortegn (forskuddsbetalt kostnad
     /// positiv). Aldri inkludert mva — avgiften hører kildebilaget til.
     total_ore: i64,
@@ -48,15 +50,15 @@ pub async fn list(
         "periodiseringer": planer.iter().map(|p| json!({
             "id": p.id,
             "beskrivelse": p.beskrivelse,
-            "resultatkonto": p.resultatkonto,
-            "balansekonto": p.balansekonto,
+            "resultatkonto": p.income_account,
+            "balansekonto": p.balance_account,
             "total_ore": p.total_ore,
             "fra_maned": p.fra_maned.to_string(),
             "til_maned": p.til_maned.to_string(),
             "avdeling": p.department,
             "prosjekt": p.project,
             "notat": p.notat,
-            "stoppet_dato": p.stoppet_dato.map(|d| d.to_string()),
+            "stoppet_dato": p.stopped_date.map(|d| d.to_string()),
             // Computed, never stored: what is left is the difference.
             "fort_ore": p.fort_ore,
             "forte_maneder": p.forte_maneder,
@@ -78,8 +80,8 @@ pub async fn create(
         &regnmed_db::accrual::PeriodiseringDraft {
             kilde_voucher: request.kilde_voucher,
             beskrivelse: request.beskrivelse,
-            resultatkonto: request.resultatkonto,
-            balansekonto: request.balansekonto,
+            income_account: request.income_account,
+            balance_account: request.balance_account,
             total_ore: request.total_ore,
             fra: (request.fra_ar, request.fra_maned),
             til: (request.til_ar, request.til_maned),
@@ -128,7 +130,7 @@ pub async fn kjor(
     Ok(Json(json!({
         "kjort": utfall.iter().map(|u| json!({
             "period": u.period.to_string(),
-            "belop_ore": u.belop_ore,
+            "belop_ore": u.amount_ore,
             "bilag": u.voucher.map(|(y, n)| format!("{y}-{n}")),
             "feil": u.detail,
         })).collect::<Vec<_>>(),
@@ -145,9 +147,9 @@ pub async fn runs(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "kjoringer": rader.iter().map(|(period, belop, detail)| json!({
+        "kjoringer": rader.iter().map(|(period, amount, detail)| json!({
             "period": period.to_string(),
-            "belop_ore": belop,
+            "belop_ore": amount,
             "feil": detail,
         })).collect::<Vec<_>>(),
     })))

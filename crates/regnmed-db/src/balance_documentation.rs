@@ -21,8 +21,8 @@ use uuid::Uuid;
 /// One balance account's standing for a period.
 #[derive(Debug)]
 pub struct BalanseLinje {
-    pub konto: String,
-    pub kontonavn: String,
+    pub account: String,
+    pub account_name: String,
     /// Booked saldo at period end, computed now.
     pub saldo_ore: i64,
     /// The newest avstemming for the period, when there is one.
@@ -34,7 +34,7 @@ pub struct Avstemming {
     pub id: Uuid,
     pub saldo_ore: i64,
     pub forklaring: String,
-    pub avstemt_dato: NaiveDate,
+    pub reconciled_date: NaiveDate,
     pub avstemt_av: String,
     pub har_vedlegg: bool,
     pub vedlegg_navn: Option<String>,
@@ -82,7 +82,7 @@ pub async fn balanse_status(
 
     let mut linjer = Vec::with_capacity(rows.len());
     for row in &rows {
-        let konto: String = row.get("konto");
+        let account: String = row.get("konto");
         let avstemt = sqlx::query(
             "select d.id, d.saldo_ore, d.forklaring, d.avstemt_dato,
                     coalesce(p.name, p.oidc_sub) as avstemt_av,
@@ -94,21 +94,21 @@ pub async fn balanse_status(
         )
         .bind(company_id)
         .bind(periode)
-        .bind(&konto)
+        .bind(&account)
         .fetch_optional(pool)
         .await?
         .map(|r| Avstemming {
             id: r.get("id"),
             saldo_ore: r.get("saldo_ore"),
             forklaring: r.get("forklaring"),
-            avstemt_dato: r.get("avstemt_dato"),
+            reconciled_date: r.get("avstemt_dato"),
             avstemt_av: r.get("avstemt_av"),
             har_vedlegg: r.get("har_vedlegg"),
             vedlegg_navn: r.get("vedlegg_navn"),
         });
         linjer.push(BalanseLinje {
-            konto,
-            kontonavn: row.get("kontonavn"),
+            account,
+            account_name: row.get("kontonavn"),
             saldo_ore: row.get("saldo_ore"),
             avstemt,
         });
@@ -123,12 +123,12 @@ pub async fn balanse_status(
 pub async fn avstem(
     pool: &PgPool,
     company_id: Uuid,
-    konto: &str,
+    account: &str,
     periode: NaiveDate,
     forklaring: &str,
     vedlegg: Option<(&str, &str, &[u8])>,
     avstemt_av: Uuid,
-    avstemt_dato: NaiveDate,
+    reconciled_date: NaiveDate,
 ) -> Result<Uuid> {
     ensure!(
         !forklaring.trim().is_empty(),
@@ -138,13 +138,13 @@ pub async fn avstem(
         "select exists(select 1 from account where company_id = $1 and number = $2)",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .fetch_one(pool)
     .await?;
-    ensure!(finnes, "ukjent konto {konto}");
+    ensure!(finnes, "ukjent konto {account}");
     ensure!(
-        konto.starts_with('1') || konto.starts_with('2'),
-        "{konto} er ikke en balansekonto — §11 gjelder balansepostene"
+        account.starts_with('1') || account.starts_with('2'),
+        "{account} er ikke en balansekonto — §11 gjelder balansepostene"
     );
 
     let saldo_ore: i64 = sqlx::query_scalar(
@@ -155,7 +155,7 @@ pub async fn avstem(
          where a.company_id = $1 and a.number = $2 and v.voucher_date <= $3",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .bind(periode)
     .fetch_one(pool)
     .await?;
@@ -179,7 +179,7 @@ pub async fn avstem(
     )
     .bind(id)
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .bind(periode)
     .bind(saldo_ore)
     .bind(forklaring.trim())
@@ -188,7 +188,7 @@ pub async fn avstem(
     .bind(type_)
     .bind(sha)
     .bind(avstemt_av)
-    .bind(avstemt_dato)
+    .bind(reconciled_date)
     .execute(pool)
     .await?;
     Ok(id)
@@ -231,7 +231,7 @@ pub async fn hent_vedlegg(
 pub async fn historikk(
     pool: &PgPool,
     company_id: Uuid,
-    konto: &str,
+    account: &str,
     periode: NaiveDate,
 ) -> Result<Vec<Avstemming>> {
     Ok(sqlx::query(
@@ -244,7 +244,7 @@ pub async fn historikk(
          order by d.created_at desc",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .bind(periode)
     .fetch_all(pool)
     .await?
@@ -253,7 +253,7 @@ pub async fn historikk(
         id: r.get("id"),
         saldo_ore: r.get("saldo_ore"),
         forklaring: r.get("forklaring"),
-        avstemt_dato: r.get("avstemt_dato"),
+        reconciled_date: r.get("avstemt_dato"),
         avstemt_av: r.get("avstemt_av"),
         har_vedlegg: r.get("har_vedlegg"),
         vedlegg_navn: r.get("vedlegg_navn"),

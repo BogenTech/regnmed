@@ -62,7 +62,7 @@ pub enum PurringError {
     /// No forsinkelsesrente rate covers this day (before the earliest
     /// verified period) — we never guess a rate.
     ManglerRentesats {
-        dato: NaiveDate,
+        date: NaiveDate,
     },
     /// The purretrapp is one-way.
     StegTilbake {
@@ -80,8 +80,8 @@ pub enum PurringError {
     },
     /// At most two gebyr-bearing steps per claim (inkassoforskriften §1-2).
     ForMangeGebyr,
-    NegativtBelop,
-    FristForSendedato,
+    NegativeAmount,
+    DeadlineBeforeSendDate,
     /// Inkassoloven §9: a payment deadline of at least 14 days.
     FristForKort {
         minst: NaiveDate,
@@ -95,8 +95,8 @@ impl fmt::Display for PurringError {
             PurringError::IkkeForfalt { forfall } => {
                 write!(f, "fakturaen forfaller {forfall} og er ikke forfalt")
             }
-            PurringError::ManglerRentesats { dato } => {
-                write!(f, "ingen forsinkelsesrentesats dekker {dato}")
+            PurringError::ManglerRentesats { date } => {
+                write!(f, "ingen forsinkelsesrentesats dekker {date}")
             }
             PurringError::StegTilbake { siste, forsokt } => write!(
                 f,
@@ -121,8 +121,8 @@ impl fmt::Display for PurringError {
                 f,
                 "maksimalt to gebyrbelagte purringer/varsler per krav (inkassoforskriften §1-2)"
             ),
-            PurringError::NegativtBelop => write!(f, "beløp kan ikke være negative"),
-            PurringError::FristForSendedato => {
+            PurringError::NegativeAmount => write!(f, "beløp kan ikke være negative"),
+            PurringError::DeadlineBeforeSendDate => {
                 write!(f, "betalingsfristen må være etter sendedatoen")
             }
             PurringError::FristForKort { minst } => write!(
@@ -153,8 +153,8 @@ pub struct RenteBeregning {
 }
 
 /// `beløp × sats × dager / (10000 × 365)`, avrundet halvt vekk fra null.
-fn rente_for_segment(belop_ore: i64, sats_bp: i64, dager: i64) -> Option<i64> {
-    let teller = i128::from(belop_ore) * i128::from(sats_bp) * i128::from(dager);
+fn rente_for_segment(amount_ore: i64, sats_bp: i64, dager: i64) -> Option<i64> {
+    let teller = i128::from(amount_ore) * i128::from(sats_bp) * i128::from(dager);
     let nevner: i128 = 10_000 * 365;
     let avrundet = (2 * teller.abs() + nevner) / (2 * nevner);
     i64::try_from(avrundet * teller.signum()).ok()
@@ -166,20 +166,20 @@ fn rente_for_segment(belop_ore: i64, sats_bp: i64, dager: i64) -> Option<i64> {
 /// its own, so the spesifikasjon in the document sums exactly to the
 /// total.
 pub fn forsinkelsesrente(
-    belop_ore: i64,
+    amount_ore: i64,
     forfall: NaiveDate,
     til: NaiveDate,
     satser: &[RatePeriod],
 ) -> Result<RenteBeregning, PurringError> {
-    if belop_ore < 0 {
-        return Err(PurringError::NegativtBelop);
+    if amount_ore < 0 {
+        return Err(PurringError::NegativeAmount);
     }
     let mut perioder = Vec::new();
     let mut sum: i64 = 0;
     let mut dag = forfall.succ_opt().expect("date in range");
     while dag <= til {
         let sats = value_on(satser, "forsinkelsesrente", dag)
-            .ok_or(PurringError::ManglerRentesats { dato: dag })?;
+            .ok_or(PurringError::ManglerRentesats { date: dag })?;
         let neste_skifte = satser
             .iter()
             .filter(|s| s.domain == "forsinkelsesrente" && s.valid_from > dag)
@@ -190,7 +190,8 @@ pub fn forsinkelsesrente(
             _ => til,
         };
         let dager = (slutt - dag).num_days() + 1;
-        let rente = rente_for_segment(belop_ore, sats, dager).ok_or(PurringError::RenteOverflow)?;
+        let rente =
+            rente_for_segment(amount_ore, sats, dager).ok_or(PurringError::RenteOverflow)?;
         sum = sum.checked_add(rente).ok_or(PurringError::RenteOverflow)?;
         perioder.push(RentePeriode {
             fra: dag,
@@ -291,7 +292,7 @@ pub fn valider_steg(
     historikk: &[TidligereSkritt],
 ) -> Result<(), PurringError> {
     if gebyr_ore < 0 {
-        return Err(PurringError::NegativtBelop);
+        return Err(PurringError::NegativeAmount);
     }
     if sent_date <= forfall {
         return Err(PurringError::IkkeForfalt { forfall });
@@ -305,7 +306,7 @@ pub fn valider_steg(
         });
     }
     if frist_date <= sent_date {
-        return Err(PurringError::FristForSendedato);
+        return Err(PurringError::DeadlineBeforeSendDate);
     }
     if steg == Steg::Inkassovarsel {
         let minst = sent_date + chrono::Days::new(14);
@@ -407,11 +408,11 @@ pub struct PurringDokument {
     pub kunde_navn: String,
     pub kunde_nr: String,
     pub faktura_no: i64,
-    pub faktura_dato: NaiveDate,
+    pub invoice_date: NaiveDate,
     pub forfall: NaiveDate,
     pub sent_date: NaiveDate,
     pub frist_date: NaiveDate,
-    pub restbelop_ore: i64,
+    pub remaining_amount_ore: i64,
     /// The interest spesifikasjon when interest is claimed; empty otherwise.
     pub rente: RenteBeregning,
     pub gebyr_ore: i64,
@@ -444,13 +445,13 @@ pub fn render_dokument(dok: &PurringDokument) -> String {
     line("");
     line(&format!(
         "Faktura {} av {} forfalt {}.",
-        dok.faktura_no, dok.faktura_dato, dok.forfall
+        dok.faktura_no, dok.invoice_date, dok.forfall
     ));
     line("");
-    let mut total = dok.restbelop_ore;
+    let mut total = dok.remaining_amount_ore;
     line(&format!(
         "Utestående beløp:                        {:>12} kr",
-        Ore(dok.restbelop_ore).to_string()
+        Ore(dok.remaining_amount_ore).to_string()
     ));
     if dok.rente.sum_ore > 0 {
         line("Forsinkelsesrente (forsinkelsesrenteloven §2):");
@@ -595,7 +596,7 @@ mod tests {
         assert_eq!(
             err,
             PurringError::ManglerRentesats {
-                dato: date(2024, 12, 16)
+                date: date(2024, 12, 16)
             }
         );
     }
@@ -604,7 +605,7 @@ mod tests {
     fn a_negative_amount_is_rejected() {
         assert_eq!(
             forsinkelsesrente(-1, date(2025, 6, 15), date(2025, 7, 15), &satser()).unwrap_err(),
-            PurringError::NegativtBelop
+            PurringError::NegativeAmount
         );
     }
 
@@ -757,7 +758,7 @@ mod tests {
     fn a_deadline_before_the_send_date_is_rejected() {
         assert_eq!(
             ok_steg(Steg::Purring, date(2026, 2, 1), date(2026, 2, 1), 0, &[]),
-            Err(PurringError::FristForSendedato)
+            Err(PurringError::DeadlineBeforeSendDate)
         );
     }
 
@@ -806,11 +807,11 @@ mod tests {
             kunde_navn: "Kari Kunde".into(),
             kunde_nr: "10000".into(),
             faktura_no: 7,
-            faktura_dato: date(2025, 6, 1),
+            invoice_date: date(2025, 6, 1),
             forfall: date(2025, 6, 15),
             sent_date: date(2025, 7, 15),
             frist_date: date(2025, 7, 29),
-            restbelop_ore: 1_000_000,
+            remaining_amount_ore: 1_000_000,
             rente: forsinkelsesrente(1_000_000, date(2025, 6, 15), date(2025, 7, 15), &satser())
                 .unwrap(),
             gebyr_ore: 3500,

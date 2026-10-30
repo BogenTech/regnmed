@@ -197,7 +197,7 @@ pub async fn bokfor_inbox_document(
         let maskinkrav = maskin_bokforer && policy.krev_for_maskin == Some(true);
         if maskinkrav
             || policy
-                .belopsgrense_ore
+                .amount_limit_ore
                 .is_none_or(|grense| debetsum >= grense)
         {
             let state = crate::approval::attestation_state(

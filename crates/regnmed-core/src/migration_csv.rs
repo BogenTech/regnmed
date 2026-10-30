@@ -174,7 +174,7 @@ pub fn parse_contacts(
         &["adresse", "gateadresse", "postadresse", "address"],
         &["epost", "e post", "email"],
     );
-    let konto_col = find_column_ranked(
+    let account_col = find_column_ranked(
         h,
         &[
             "kontonummer",
@@ -213,7 +213,7 @@ pub fn parse_contacts(
             ),
             email: some_nonempty(cell(&fields, epost_col)),
             address: some_nonempty(cell(&fields, adresse_col)),
-            bank_account: some_nonempty(cell(&fields, konto_col)),
+            bank_account: some_nonempty(cell(&fields, account_col)),
         });
         let _ = i;
     }
@@ -229,7 +229,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
     let (header, lines) = read_header(text).ok_or(MigrationError::Empty)?;
     let h = &header.headers;
 
-    let belop_col = find_column_ranked(
+    let amount_col = find_column_ranked(
         h,
         &[
             "restbelop",
@@ -275,14 +275,14 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
         &[],
     );
     let kid_col = find_column_ranked(h, &["kid"], &[]);
-    let dato_col = find_column_ranked(
+    let date_col = find_column_ranked(
         h,
         &["fakturadato", "bilagsdato", "dato", "date"],
         &["forfall", "due", "betalt"],
     );
     let forfall_col = find_column_ranked(h, &["forfallsdato", "forfall", "due date", "due"], &[]);
 
-    let belop_col = belop_col.ok_or_else(|| MigrationError::UnknownLayout(h.join(", ")))?;
+    let amount_col = amount_col.ok_or_else(|| MigrationError::UnknownLayout(h.join(", ")))?;
     if part_col.is_none() && navn_col.is_none() {
         return Err(MigrationError::UnknownLayout(h.join(", ")));
     }
@@ -294,12 +294,12 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
         }
         let line_no = i + 2; // header is line 1
         let fields = split_record(line, header.delimiter);
-        let belop_raw = cell(&fields, Some(belop_col));
-        if belop_raw.is_empty() {
+        let amount_raw = cell(&fields, Some(amount_col));
+        if amount_raw.is_empty() {
             continue;
         }
         let amount_ore =
-            crate::csvutil::parse_amount(&belop_raw).map_err(MigrationError::BadAmount)?;
+            crate::csvutil::parse_amount(&amount_raw).map_err(MigrationError::BadAmount)?;
         if amount_ore == 0 {
             // A settled item is not an open item.
             continue;
@@ -332,7 +332,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
                     .filter(|c| c.is_ascii_digit())
                     .collect(),
             ),
-            date: parse_day(cell(&fields, dato_col))?,
+            date: parse_day(cell(&fields, date_col))?,
             due_date: parse_day(cell(&fields, forfall_col))?,
             amount_ore,
         });
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn restbelop_beats_the_invoice_total() {
+    fn remaining_amount_beats_the_invoice_total() {
         // The trap: importing "Beløp" would overstate the reskontro.
         let csv = "Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n\
                    10001;Hansen AS;F-100;15.01.2026;29.01.2026;12 500,00;2 500,00;1234567897\n";

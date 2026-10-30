@@ -366,15 +366,15 @@ pub async fn create_invoice_in(
         selger_adresse: company.get("address"),
         selger_mva_registrert: reg.mva_registrert,
         selger_foretaksregistrert: reg.foretaksregistrert,
-        selger_kontonummer: company.get("bank_account"),
+        seller_account_number: company.get("bank_account"),
         kjoper_navn: party.get("name"),
         kjoper_nr: draft.party_no.clone(),
         kjoper_orgnr: party.get("orgnr"),
         kjoper_adresse: party.get("address"),
         fakturanr: invoice_no,
-        fakturadato: draft.invoice_date,
-        forfallsdato: draft.due_date,
-        leveringsdato: Some(draft.delivery_date),
+        invoice_date: draft.invoice_date,
+        due_date: draft.due_date,
+        delivery_date: Some(draft.delivery_date),
         leveringssted: draft.delivery_place.clone(),
         // Stored on the invoice either way (OCR resolves payments BY
         // kid, #7) — but only PRINTED when the bank can honour it (#104).
@@ -702,7 +702,7 @@ pub async fn create_kontantfaktura(
     pool: &PgPool,
     company_id: Uuid,
     draft: &InvoiceDraft,
-    oppgjorskonto: &str,
+    settlement_account: &str,
     betalingsmiddel: &str,
     created_by: &str,
 ) -> Result<IssuedInvoice> {
@@ -748,7 +748,7 @@ pub async fn create_kontantfaktura(
         reverses: None,
         entries: vec![
             regnmed_core::voucher::EntryDraft {
-                account_number: oppgjorskonto.to_string(),
+                account_number: settlement_account.to_string(),
                 amount: regnmed_core::Ore(gross),
                 vat_code: None,
                 description: Some(betalingsmiddel.trim().to_string()),

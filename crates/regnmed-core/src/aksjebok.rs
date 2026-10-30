@@ -263,7 +263,7 @@ pub const ALLE: [Transaksjonstype; 31] = {
 /// purchase. [`Hendelse::delta`] resolves the sign.
 #[derive(Debug, Clone)]
 pub struct Hendelse {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub type_: Transaksjonstype,
     pub antall: i64,
     /// What the shareholder paid, when the company knows it. Only
@@ -298,10 +298,10 @@ pub struct Aarsbevegelse {
 ///
 /// Order of the input does not matter: a sum is a sum. That is the
 /// point of computing rather than storing.
-pub fn beholdning<'a>(hendelser: impl IntoIterator<Item = &'a Hendelse>, dato: NaiveDate) -> i64 {
+pub fn beholdning<'a>(hendelser: impl IntoIterator<Item = &'a Hendelse>, date: NaiveDate) -> i64 {
     hendelser
         .into_iter()
-        .filter(|h| h.dato <= dato)
+        .filter(|h| h.date <= date)
         .map(Hendelse::delta)
         .sum()
 }
@@ -313,7 +313,7 @@ pub fn aarsbevegelse<'a>(
 ) -> Aarsbevegelse {
     let mut b = Aarsbevegelse::default();
     for h in hendelser {
-        let hendelse_ar = crate::fiscal_year::of(h.dato);
+        let hendelse_ar = crate::fiscal_year::of(h.date);
         if hendelse_ar < ar {
             b.inngaende += h.delta();
         } else if hendelse_ar == ar {
@@ -336,9 +336,9 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
     }
 
-    fn h(dato: NaiveDate, type_: Transaksjonstype, antall: i64) -> Hendelse {
+    fn h(date: NaiveDate, type_: Transaksjonstype, antall: i64) -> Hendelse {
         Hendelse {
-            dato,
+            date,
             type_,
             antall,
             vederlag_ore: None,

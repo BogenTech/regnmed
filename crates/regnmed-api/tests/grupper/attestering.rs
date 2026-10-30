@@ -59,12 +59,12 @@ async fn upload(state: &AppState, company: Uuid, token: &str, name: &str) -> Str
     uploaded["document_id"].as_str().unwrap().to_string()
 }
 
-fn post_body(belop: i64) -> Vec<u8> {
+fn post_body(amount: i64) -> Vec<u8> {
     json!({
         "journal_code": "GL", "date": "2026-07-10", "description": "Innkjøp",
         "lines": [
-            {"account": "6300", "amount_ore": belop},
-            {"account": "2400", "amount_ore": -belop, "party_no": "70001"},
+            {"account": "6300", "amount_ore": amount},
+            {"account": "2400", "amount_ore": -amount, "party_no": "70001"},
         ],
     })
     .to_string()

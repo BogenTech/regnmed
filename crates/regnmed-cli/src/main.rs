@@ -662,7 +662,7 @@ async fn main() -> Result<()> {
                         chrono::Datelike::month(&u.period),
                         year,
                         no,
-                        u.belop_ore
+                        u.amount_ore
                     ),
                     (None, Some(detail)) => println!(
                         "{}: {}-{:02} FEILET: {detail}",

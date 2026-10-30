@@ -27,9 +27,9 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
-fn e(konto: &str, ore: i64) -> EntryDraft {
+fn e(account: &str, ore: i64) -> EntryDraft {
     EntryDraft {
-        account_number: konto.into(),
+        account_number: account.into(),
         amount: Ore(ore),
         vat_code: None,
         description: None,

@@ -34,21 +34,21 @@ fn month_end(month_start: NaiveDate) -> NaiveDate {
 
 /// 1-based month number of `period` in a plan starting at
 /// `anskaffelsesdato`'s month.
-fn maned_nr(anskaffelsesdato: NaiveDate, period: NaiveDate) -> i32 {
-    (period.year() - anskaffelsesdato.year()) * 12
-        + (period.month() as i32 - anskaffelsesdato.month() as i32)
+fn maned_nr(acquisition_date: NaiveDate, period: NaiveDate) -> i32 {
+    (period.year() - acquisition_date.year()) * 12
+        + (period.month() as i32 - acquisition_date.month() as i32)
         + 1
 }
 
 #[derive(Debug, Clone)]
 pub struct AssetDraft {
     pub navn: String,
-    pub anskaffelsesdato: NaiveDate,
+    pub acquisition_date: NaiveDate,
     pub kostpris_ore: i64,
     pub restverdi_ore: i64,
     pub levetid_maneder: i32,
-    pub balansekonto: String,
-    pub avskrivningskonto: String,
+    pub balance_account: String,
+    pub depreciation_account: String,
     pub saldogruppe: String,
     pub anskaffelse_voucher_id: Option<Uuid>,
 }
@@ -78,17 +78,17 @@ pub async fn create_asset(
         draft.kostpris_ore - draft.restverdi_ore >= draft.levetid_maneder as i64,
         "avskrivbart beløp må være minst 1 øre per måned av levetiden"
     );
-    for konto in [&draft.balansekonto, &draft.avskrivningskonto] {
+    for account in [&draft.balance_account, &draft.depreciation_account] {
         let exists: Option<i32> = sqlx::query_scalar(
             "select 1 from account where company_id = $1 and number = $2 and active",
         )
         .bind(company_id)
-        .bind(konto)
+        .bind(account)
         .fetch_optional(pool)
         .await?;
         ensure!(
             exists.is_some(),
-            "no active account {konto} for this company"
+            "no active account {account} for this company"
         );
     }
     if let Some(voucher_id) = draft.anskaffelse_voucher_id {
@@ -102,7 +102,7 @@ pub async fn create_asset(
     }
 
     let satser = load_satser(pool).await?;
-    let grense = value_on(&satser, "aktiveringsgrense", draft.anskaffelsesdato);
+    let grense = value_on(&satser, "aktiveringsgrense", draft.acquisition_date);
     let mut warning = None;
     if let Some(grense) = grense
         && draft.kostpris_ore < grense
@@ -125,12 +125,12 @@ pub async fn create_asset(
     .bind(id)
     .bind(company_id)
     .bind(&draft.navn)
-    .bind(draft.anskaffelsesdato)
+    .bind(draft.acquisition_date)
     .bind(draft.kostpris_ore)
     .bind(draft.restverdi_ore)
     .bind(draft.levetid_maneder)
-    .bind(&draft.balansekonto)
-    .bind(&draft.avskrivningskonto)
+    .bind(&draft.balance_account)
+    .bind(&draft.depreciation_account)
     .bind(&draft.saldogruppe)
     .bind(draft.anskaffelse_voucher_id)
     .bind(created_by)
@@ -143,16 +143,16 @@ pub async fn create_asset(
 pub struct AssetRow {
     pub id: Uuid,
     pub navn: String,
-    pub anskaffelsesdato: NaiveDate,
+    pub acquisition_date: NaiveDate,
     pub kostpris_ore: i64,
     pub restverdi_ore: i64,
     pub levetid_maneder: i32,
-    pub balansekonto: String,
-    pub avskrivningskonto: String,
+    pub balance_account: String,
+    pub depreciation_account: String,
     pub saldogruppe: String,
     pub akkumulert_ore: i64,
     pub bokfort_ore: i64,
-    pub avhendet_dato: Option<NaiveDate>,
+    pub disposed_date: Option<NaiveDate>,
     pub vederlag_ore: Option<i64>,
 }
 
@@ -179,12 +179,12 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
             AssetRow {
                 id: r.get("id"),
                 navn: r.get("navn"),
-                anskaffelsesdato: r.get("anskaffelsesdato"),
+                acquisition_date: r.get("anskaffelsesdato"),
                 kostpris_ore: kostpris,
                 restverdi_ore: r.get("restverdi_ore"),
                 levetid_maneder: r.get("levetid_maneder"),
-                balansekonto: r.get("balansekonto"),
-                avskrivningskonto: r.get("avskrivningskonto"),
+                balance_account: r.get("balansekonto"),
+                depreciation_account: r.get("avskrivningskonto"),
                 saldogruppe: r.get("saldogruppe"),
                 akkumulert_ore: akkumulert,
                 bokfort_ore: if avhendet.is_some() {
@@ -192,7 +192,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 } else {
                     kostpris - akkumulert
                 },
-                avhendet_dato: avhendet,
+                disposed_date: avhendet,
                 vederlag_ore: r.get("vederlag_ore"),
             }
         })
@@ -283,7 +283,7 @@ async fn depreciate_next(
     else {
         return Ok(None);
     };
-    let anskaffelsesdato: NaiveDate = asset.get("anskaffelsesdato");
+    let acquisition_date: NaiveDate = asset.get("anskaffelsesdato");
     let levetid: i32 = asset.get("levetid_maneder");
     let avhendet: Option<NaiveDate> = asset.get("avhendet_dato");
 
@@ -296,9 +296,9 @@ async fn depreciate_next(
     .await?;
     let period = match last_done {
         Some(p) => p.checked_add_months(chrono::Months::new(1)).unwrap(),
-        None => month_start(anskaffelsesdato),
+        None => month_start(acquisition_date),
     };
-    let nr = maned_nr(anskaffelsesdato, period);
+    let nr = maned_nr(acquisition_date, period);
     let voucher_date = month_end(period);
     // Due: month ended, plan not exhausted, asset still owned that month.
     if voucher_date > through || nr > levetid || avhendet.is_some_and(|d| month_start(d) <= period)
@@ -427,11 +427,11 @@ pub async fn dispose_asset(
     pool: &PgPool,
     company_id: Uuid,
     asset_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
     vederlag_ore: i64,
-    motkonto: &str,
-    gevinstkonto: &str,
-    tapskonto: &str,
+    contra_account: &str,
+    gain_account: &str,
+    loss_account: &str,
     created_by: &str,
 ) -> Result<Disposal> {
     ensure!(vederlag_ore >= 0, "vederlag kan ikke være negativt");
@@ -458,7 +458,7 @@ pub async fn dispose_asset(
     let mut entries = Vec::new();
     if vederlag_ore != 0 {
         entries.push(EntryDraft {
-            account_number: motkonto.to_string(),
+            account_number: contra_account.to_string(),
             amount: Ore(vederlag_ore),
             vat_code: None,
             description: Some("Vederlag ved avhending".into()),
@@ -483,9 +483,9 @@ pub async fn dispose_asset(
     if gevinst != 0 {
         entries.push(EntryDraft {
             account_number: if gevinst > 0 {
-                gevinstkonto.to_string()
+                gain_account.to_string()
             } else {
-                tapskonto.to_string()
+                loss_account.to_string()
             },
             amount: Ore(-gevinst),
             vat_code: None,
@@ -510,7 +510,7 @@ pub async fn dispose_asset(
         let navn: String = asset.get("navn");
         let draft = VoucherDraft {
             journal_code: "GL".into(),
-            voucher_date: dato,
+            voucher_date: date,
             description: format!("Avhending {navn}"),
             reverses: None,
             entries,
@@ -526,7 +526,7 @@ pub async fn dispose_asset(
     )
     .bind(asset_id)
     .bind(company_id)
-    .bind(dato)
+    .bind(date)
     .bind(vederlag_ore)
     .bind(voucher.as_ref().map(|p| p.id))
     .execute(&mut *tx)

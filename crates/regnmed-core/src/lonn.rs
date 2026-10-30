@@ -23,8 +23,8 @@
 use chrono::NaiveDate;
 
 /// Rounds a basis-point calculation half away from zero.
-fn bp_av(belop_ore: i64, sats_bp: i64) -> i64 {
-    let n = belop_ore as i128 * sats_bp as i128;
+fn bp_av(amount_ore: i64, sats_bp: i64) -> i64 {
+    let n = amount_ore as i128 * sats_bp as i128;
     let d = 10_000i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
     (sign * ((n.abs() + d / 2) / d)) as i64
@@ -69,9 +69,9 @@ impl std::fmt::Display for LonnError {
                  som også forbrukes utenfor regnmed — å regne redusert sats uten \
                  hele bildet ville underrapportert avgift (se docs/lonn.md)"
             ),
-            Self::ManglerSats(domene, dato) => write!(
+            Self::ManglerSats(domene, date) => write!(
                 f,
-                "satsregisteret har ingen verifisert «{domene}» som dekker {dato} \
+                "satsregisteret har ingen verifisert «{domene}» som dekker {date} \
                  — legg inn satsen med kilde før lønnskjøringen"
             ),
         }

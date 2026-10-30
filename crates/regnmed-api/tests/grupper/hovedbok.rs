@@ -47,7 +47,7 @@ async fn call(
     )
 }
 
-fn konto<'a>(list: &'a serde_json::Value, number: &str) -> &'a serde_json::Value {
+fn account<'a>(list: &'a serde_json::Value, number: &str) -> &'a serde_json::Value {
     list["kontoer"]
         .as_array()
         .unwrap()
@@ -183,9 +183,9 @@ async fn kontoplan_and_manual_vouchers_end_to_end() {
 
     // The kontoplan carries computed balances now.
     let (_, list) = call(&state, "GET", &format!("{base}/accounts"), &token, None).await;
-    assert_eq!(konto(&list, "1921")["saldo_ore"], 5000_00);
-    assert_eq!(konto(&list, "1920")["saldo_ore"], -5000_00);
-    assert_eq!(konto(&list, "1921")["posteringer"], 1);
+    assert_eq!(account(&list, "1921")["saldo_ore"], 5000_00);
+    assert_eq!(account(&list, "1920")["saldo_ore"], -5000_00);
+    assert_eq!(account(&list, "1921")["posteringer"], 1);
 
     // Rename is free (the name is master data); the deactivated account
     // refuses NEW postings while history stands.
@@ -199,8 +199,8 @@ async fn kontoplan_and_manual_vouchers_end_to_end() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let (_, list) = call(&state, "GET", &format!("{base}/accounts"), &token, None).await;
-    assert_eq!(konto(&list, "1921")["name"], "Skattetrekk");
-    assert_eq!(konto(&list, "1921")["active"], false);
+    assert_eq!(account(&list, "1921")["name"], "Skattetrekk");
+    assert_eq!(account(&list, "1921")["active"], false);
     let (status, _) = call(
         &state,
         "POST",

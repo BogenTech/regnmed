@@ -29,7 +29,7 @@ pub async fn list_rates(
     Ok(Json(json!({
         "rates": kurser.iter().map(|k| json!({
             "valuta": k.currency,
-            "dato": k.dato.to_string(),
+            "dato": k.date.to_string(),
             "kurs": regnmed_core::currency::rate_str(k.rate_micro),
             "kurs_micro": k.rate_micro,
             "kilde": k.kilde,
@@ -41,7 +41,8 @@ pub async fn list_rates(
 pub struct ManualRateRequest {
     #[serde(rename = "valuta")]
     currency: String,
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     /// Decimal, e.g. "11.6543".
     kurs: String,
     kilde: Option<String>,
@@ -60,7 +61,7 @@ pub async fn add_rate(
     regnmed_db::insert_kurs(
         &state.pool,
         &request.currency.to_uppercase(),
-        request.dato,
+        request.date,
         rate_micro,
         request
             .kilde
@@ -112,12 +113,16 @@ pub async fn fetch_rates(
 
 #[derive(Deserialize)]
 pub struct RegulateRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     /// Balansekonto for the urealiserte regulering — chosen
     /// consciously per kontoplan, no default.
-    balansekonto: String,
-    gevinstkonto: Option<String>,
-    tapskonto: Option<String>,
+    #[serde(rename = "balansekonto")]
+    balance_account: String,
+    #[serde(rename = "gevinstkonto")]
+    gain_account: Option<String>,
+    #[serde(rename = "tapskonto")]
+    loss_account: Option<String>,
 }
 
 pub async fn regulate(
@@ -131,10 +136,10 @@ pub async fn regulate(
     let result = regnmed_db::kursregulering(
         &state.pool,
         company_id,
-        request.dato,
-        &request.balansekonto,
-        request.gevinstkonto.as_deref().unwrap_or("8060"),
-        request.tapskonto.as_deref().unwrap_or("8160"),
+        request.date,
+        &request.balance_account,
+        request.gain_account.as_deref().unwrap_or("8060"),
+        request.loss_account.as_deref().unwrap_or("8160"),
         created_by,
     )
     .await

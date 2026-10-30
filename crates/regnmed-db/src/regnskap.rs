@@ -152,7 +152,7 @@ pub async fn prosjekt_saldo_lines(
 /// One posting on one account, with the dokumentasjonshenvisning
 /// (journal + bilagsnummer) the forskrift requires.
 #[derive(Debug)]
-pub struct KontoPost {
+pub struct AccountPost {
     pub number: String,
     pub account_name: String,
     pub journal_code: String,
@@ -172,13 +172,13 @@ pub struct KontoPost {
 /// Kontospesifikasjon: every posting per account in date/bilag order,
 /// with running saldo seeded from the inngående balance. `account`
 /// filters to one account when given.
-pub async fn kontospesifikasjon(
+pub async fn account_specification(
     pool: &PgPool,
     company_id: Uuid,
     account: Option<&str>,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<KontoPost>> {
+) -> Result<Vec<AccountPost>> {
     let rows = sqlx::query(
         "select a.number, a.name as account_name, j.code as journal_code,
                 v.fiscal_year, v.voucher_number, v.voucher_date,
@@ -213,7 +213,7 @@ pub async fn kontospesifikasjon(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| KontoPost {
+        .map(|r| AccountPost {
             number: r.get("number"),
             account_name: r.get("account_name"),
             journal_code: r.get("journal_code"),

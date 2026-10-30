@@ -589,13 +589,13 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
     gi_partene_adresse(&state.pool, company).await;
     let token = idp.token(&sub, "Uten avtale");
 
-    let dato = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
     let utsted = |n: i64| regnmed_db::InvoiceDraft {
         kontant_betalingsmiddel: None,
         party_no: party_no.clone(),
-        invoice_date: dato,
-        due_date: dato,
-        delivery_date: dato,
+        invoice_date: date,
+        due_date: date,
+        delivery_date: date,
         delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),

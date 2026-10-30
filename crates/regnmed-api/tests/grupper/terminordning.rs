@@ -60,9 +60,9 @@ async fn body_text(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, St
     (status, String::from_utf8_lossy(&bytes).to_string())
 }
 
-fn salg(dato: chrono::NaiveDate, netto: i64) -> VoucherDraft {
-    let entry = |konto: &str, amount: i64, vat: Option<&str>| EntryDraft {
-        account_number: konto.into(),
+fn salg(date: chrono::NaiveDate, netto: i64) -> VoucherDraft {
+    let entry = |account: &str, amount: i64, vat: Option<&str>| EntryDraft {
+        account_number: account.into(),
         amount: Ore(amount),
         vat_code: vat.map(str::to_string),
         description: None,
@@ -73,8 +73,8 @@ fn salg(dato: chrono::NaiveDate, netto: i64) -> VoucherDraft {
     };
     VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
-        description: format!("Salg {dato}"),
+        voucher_date: date,
+        description: format!("Salg {date}"),
         reverses: None,
         entries: vec![
             entry("1920", netto + netto / 4, None),

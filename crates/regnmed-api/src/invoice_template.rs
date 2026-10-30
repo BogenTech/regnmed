@@ -29,8 +29,10 @@ pub struct CreateTemplateRequest {
     party_no: Option<String>,
     /// manedlig | kvartalsvis | arlig
     intervall: String,
-    neste_dato: chrono::NaiveDate,
-    slutt_dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "neste_dato")]
+    next_date: chrono::NaiveDate,
+    #[serde(rename = "slutt_dato")]
+    end_date: Option<chrono::NaiveDate>,
     /// Days from fakturadato to forfall; default 14.
     forfall_dager: Option<i32>,
     /// Mark generated invoices for sending (a human still sends).
@@ -55,7 +57,7 @@ pub async fn create(
                 company_id,
                 invoice_id,
                 &request.intervall,
-                request.neste_dato,
+                request.next_date,
                 request.forfall_dager.unwrap_or(14),
                 request.merk_utsendelse,
                 created_by,
@@ -72,8 +74,8 @@ pub async fn create(
                 &regnmed_db::TemplateDraft {
                     party_no,
                     intervall: request.intervall,
-                    neste_dato: request.neste_dato,
-                    slutt_dato: request.slutt_dato,
+                    next_date: request.next_date,
+                    end_date: request.end_date,
                     forfall_dager: request.forfall_dager.unwrap_or(14),
                     merk_utsendelse: request.merk_utsendelse,
                     lines: resolve_lines(&state, company_id, request.lines).await?,
@@ -100,8 +102,8 @@ pub async fn list(
             "party_no": t.party_no,
             "party_name": t.party_name,
             "intervall": t.intervall,
-            "neste_dato": t.neste_dato.to_string(),
-            "slutt_dato": t.slutt_dato.map(|d| d.to_string()),
+            "neste_dato": t.next_date.to_string(),
+            "slutt_dato": t.end_date.map(|d| d.to_string()),
             "forfall_dager": t.forfall_dager,
             "merk_utsendelse": t.merk_utsendelse,
             "active": t.active,
@@ -114,10 +116,12 @@ pub async fn list(
 #[derive(Deserialize)]
 pub struct UpdateTemplateRequest {
     intervall: Option<String>,
-    neste_dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "neste_dato")]
+    next_date: Option<chrono::NaiveDate>,
     /// Present-but-null clears the sluttdato.
     #[serde(default, with = "double_option")]
-    slutt_dato: Option<Option<chrono::NaiveDate>>,
+    #[serde(rename = "slutt_dato")]
+    end_date: Option<Option<chrono::NaiveDate>>,
     forfall_dager: Option<i32>,
     merk_utsendelse: Option<bool>,
     active: Option<bool>,
@@ -153,8 +157,8 @@ pub async fn update(
         company_id,
         template_id,
         request.intervall.as_deref(),
-        request.neste_dato,
-        request.slutt_dato,
+        request.next_date,
+        request.end_date,
         request.forfall_dager,
         request.merk_utsendelse,
         request.active,

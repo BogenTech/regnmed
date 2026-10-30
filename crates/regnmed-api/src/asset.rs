@@ -23,14 +23,17 @@ use crate::tilgang::{Rett, krev};
 #[derive(Deserialize)]
 pub struct CreateAssetRequest {
     navn: String,
-    anskaffelsesdato: chrono::NaiveDate,
+    #[serde(rename = "anskaffelsesdato")]
+    acquisition_date: chrono::NaiveDate,
     kostpris_ore: i64,
     #[serde(default)]
     restverdi_ore: i64,
     levetid_maneder: i32,
     /// Defaults: balanse 1250, avskrivning 6000.
-    balansekonto: Option<String>,
-    avskrivningskonto: Option<String>,
+    #[serde(rename = "balansekonto")]
+    balance_account: Option<String>,
+    #[serde(rename = "avskrivningskonto")]
+    depreciation_account: Option<String>,
     saldogruppe: String,
     anskaffelse_voucher_id: Option<Uuid>,
 }
@@ -48,12 +51,14 @@ pub async fn create(
         company_id,
         &regnmed_db::AssetDraft {
             navn: request.navn,
-            anskaffelsesdato: request.anskaffelsesdato,
+            acquisition_date: request.acquisition_date,
             kostpris_ore: request.kostpris_ore,
             restverdi_ore: request.restverdi_ore,
             levetid_maneder: request.levetid_maneder,
-            balansekonto: request.balansekonto.unwrap_or_else(|| "1250".into()),
-            avskrivningskonto: request.avskrivningskonto.unwrap_or_else(|| "6000".into()),
+            balance_account: request.balance_account.unwrap_or_else(|| "1250".into()),
+            depreciation_account: request
+                .depreciation_account
+                .unwrap_or_else(|| "6000".into()),
             saldogruppe: request.saldogruppe,
             anskaffelse_voucher_id: request.anskaffelse_voucher_id,
         },
@@ -75,16 +80,16 @@ pub async fn list(
         "assets": assets.iter().map(|a| json!({
             "asset_id": a.id,
             "navn": a.navn,
-            "anskaffelsesdato": a.anskaffelsesdato.to_string(),
+            "anskaffelsesdato": a.acquisition_date.to_string(),
             "kostpris_ore": a.kostpris_ore,
             "restverdi_ore": a.restverdi_ore,
             "levetid_maneder": a.levetid_maneder,
-            "balansekonto": a.balansekonto,
-            "avskrivningskonto": a.avskrivningskonto,
+            "balansekonto": a.balance_account,
+            "avskrivningskonto": a.depreciation_account,
             "saldogruppe": a.saldogruppe,
             "akkumulert_ore": a.akkumulert_ore,
             "bokfort_ore": a.bokfort_ore,
-            "avhendet_dato": a.avhendet_dato.map(|d| d.to_string()),
+            "avhendet_dato": a.disposed_date.map(|d| d.to_string()),
             "vederlag_ore": a.vederlag_ore,
         })).collect::<Vec<_>>(),
     })))
@@ -130,13 +135,17 @@ pub async fn depreciate(
 
 #[derive(Deserialize)]
 pub struct DisposeRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     #[serde(default)]
     vederlag_ore: i64,
     /// Defaults: motkonto 1920, gevinst 3880, tap 7880.
-    motkonto: Option<String>,
-    gevinstkonto: Option<String>,
-    tapskonto: Option<String>,
+    #[serde(rename = "motkonto")]
+    contra_account: Option<String>,
+    #[serde(rename = "gevinstkonto")]
+    gain_account: Option<String>,
+    #[serde(rename = "tapskonto")]
+    loss_account: Option<String>,
 }
 
 pub async fn dispose(
@@ -151,11 +160,11 @@ pub async fn dispose(
         &state.pool,
         company_id,
         asset_id,
-        request.dato,
+        request.date,
         request.vederlag_ore,
-        request.motkonto.as_deref().unwrap_or("1920"),
-        request.gevinstkonto.as_deref().unwrap_or("3880"),
-        request.tapskonto.as_deref().unwrap_or("7880"),
+        request.contra_account.as_deref().unwrap_or("1920"),
+        request.gain_account.as_deref().unwrap_or("3880"),
+        request.loss_account.as_deref().unwrap_or("7880"),
         created_by,
     )
     .await

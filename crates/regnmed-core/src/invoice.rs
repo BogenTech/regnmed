@@ -95,24 +95,24 @@ pub fn maanedsnavn(month: u32) -> &'static str {
 /// `{år}` in a template line's description become the generated
 /// period's month name and year — "Husleie {måned} {år}" → "Husleie
 /// august 2026".
-pub fn interpoler_periodetekst(tekst: &str, dato: NaiveDate) -> String {
+pub fn interpoler_periodetekst(tekst: &str, date: NaiveDate) -> String {
     use chrono::Datelike;
     tekst
-        .replace("{måned}", maanedsnavn(dato.month()))
-        .replace("{år}", &dato.year().to_string())
+        .replace("{måned}", maanedsnavn(date.month()))
+        .replace("{år}", &date.year().to_string())
 }
 
 /// The next generation date for a template interval. Month arithmetic
 /// clamps into shorter months (31. jan + 1 måned = 28. feb) — chrono's
 /// checked_add_months semantics, documented in docs/faktura.md.
-pub fn neste_intervall_dato(dato: NaiveDate, intervall: &str) -> Option<NaiveDate> {
+pub fn next_interval_date(date: NaiveDate, intervall: &str) -> Option<NaiveDate> {
     let months = match intervall {
         "manedlig" => 1,
         "kvartalsvis" => 3,
         "arlig" => 12,
         _ => return None,
     };
-    dato.checked_add_months(chrono::Months::new(months))
+    date.checked_add_months(chrono::Months::new(months))
 }
 
 /// KID for an invoice: the number zero-padded to 8 digits plus a MOD10
@@ -254,18 +254,18 @@ mod tests {
     fn intervall_advance_clamps_into_short_months() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(
-            neste_intervall_dato(date(2026, 1, 31), "manedlig"),
+            next_interval_date(date(2026, 1, 31), "manedlig"),
             Some(date(2026, 2, 28))
         );
         assert_eq!(
-            neste_intervall_dato(date(2026, 11, 30), "kvartalsvis"),
+            next_interval_date(date(2026, 11, 30), "kvartalsvis"),
             Some(date(2027, 2, 28))
         );
         assert_eq!(
-            neste_intervall_dato(date(2026, 7, 1), "arlig"),
+            next_interval_date(date(2026, 7, 1), "arlig"),
             Some(date(2027, 7, 1))
         );
-        assert_eq!(neste_intervall_dato(date(2026, 1, 1), "ukentlig"), None);
+        assert_eq!(next_interval_date(date(2026, 1, 1), "ukentlig"), None);
     }
 
     #[test]

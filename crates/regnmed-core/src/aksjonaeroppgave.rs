@@ -80,7 +80,7 @@ pub struct Fjoraret {
 /// One utbytte decision during the year (generalforsamlingens vedtak).
 #[derive(Debug, Clone)]
 pub struct Utdeling {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub per_aksje_ore: i64,
     pub totalt_ore: i64,
 }
@@ -88,7 +88,7 @@ pub struct Utdeling {
 /// Shares issued during the year, reported at company level.
 #[derive(Debug, Clone)]
 pub struct Nyutstedelse {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub type_: Transaksjonstype,
     pub antall_nye: i64,
     /// Total share count after the event.
@@ -121,19 +121,19 @@ pub enum Aksjonaerid {
 
 #[derive(Debug, Clone)]
 pub struct Utbyttepost {
-    pub dato: NaiveDate,
-    pub belop_ore: i64,
+    pub date: NaiveDate,
+    pub amount_ore: i64,
     pub antall_aksjer: i64,
 }
 
 /// One movement on one shareholder, as the underskjema reports it.
 #[derive(Debug, Clone)]
 pub struct Bevegelse {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub type_: Transaksjonstype,
     pub antall: i64,
     /// Anskaffelsesverdi (tilgang) or vederlag (avgang), when known.
-    pub belop_ore: Option<i64>,
+    pub amount_ore: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -230,13 +230,13 @@ impl Writer {
 
 /// Øre as the decimal the XSD patterns accept (`[0-9]+(\.[0-9]{1,2})?`).
 /// Always two decimals so output is byte-identical for equal input.
-fn belop(ore: i64) -> String {
+fn amount(ore: i64) -> String {
     format!("{}.{:02}", ore / 100, (ore % 100).abs())
 }
 
 /// `xs:dateTime` at midnight, matching Skatteetatens own example.
-fn tidspunkt(dato: NaiveDate) -> String {
-    format!("{}T00:00:00", dato.format("%Y-%m-%d"))
+fn tidspunkt(date: NaiveDate) -> String {
+    format!("{}T00:00:00", date.format("%Y-%m-%d"))
 }
 
 /// Truncates to the field's maximum length on a char boundary.
@@ -305,33 +305,33 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     w.felt(
         "AksjekapitalFjoraret-datadef-7129",
         7129,
-        &belop(h.aksjekapital.fjoraret),
+        &amount(h.aksjekapital.fjoraret),
     );
-    w.felt("Aksjekapital-datadef-87", 87, &belop(h.aksjekapital.i_ar));
+    w.felt("Aksjekapital-datadef-87", 87, &amount(h.aksjekapital.i_ar));
     w.close("AksjekapitalForHeleSelskapet-grp-3443");
     // One share class in v1: the class's figures are the company's.
     w.gruppe("AksjekapitalIDenneAksjeklassen-grp-3444", 3444);
     w.felt(
         "AksjekapitalISINAksjetypeFjoraret-datadef-17663",
         17663,
-        &belop(h.aksjekapital.fjoraret),
+        &amount(h.aksjekapital.fjoraret),
     );
     w.felt(
         "AksjekapitalISINAksjetype-datadef-17664",
         17664,
-        &belop(h.aksjekapital.i_ar),
+        &amount(h.aksjekapital.i_ar),
     );
     w.close("AksjekapitalIDenneAksjeklassen-grp-3444");
     w.gruppe("PalydendePerAksje-grp-3447", 3447);
     w.felt(
         "AksjeMvPalydendeFjoraret-datadef-23944",
         23944,
-        &belop(h.palydende_ore.fjoraret),
+        &amount(h.palydende_ore.fjoraret),
     );
     w.felt(
         "AksjeMvPalydende-datadef-23945",
         23945,
-        &belop(h.palydende_ore.i_ar),
+        &amount(h.palydende_ore.i_ar),
     );
     w.close("PalydendePerAksje-grp-3447");
     w.gruppe("AntallAksjerIDenneAksjeklassen-grp-3445", 3445);
@@ -350,24 +350,24 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
     w.felt(
         "AksjekapitalInnbetaltFjoraret-datadef-8020",
         8020,
-        &belop(h.innbetalt_aksjekapital.fjoraret),
+        &amount(h.innbetalt_aksjekapital.fjoraret),
     );
     w.felt(
         "AksjekapitalInnbetalt-datadef-5867",
         5867,
-        &belop(h.innbetalt_aksjekapital.i_ar),
+        &amount(h.innbetalt_aksjekapital.i_ar),
     );
     w.close("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446");
     w.gruppe("InnbetaltOverkursIDenneAksjeklassen-grp-3448", 3448);
     w.felt(
         "AksjeOverkursISINAksjetypeFjoraret-datadef-17662",
         17662,
-        &belop(h.overkurs.fjoraret),
+        &amount(h.overkurs.fjoraret),
     );
     w.felt(
         "AksjeOverkursISINAksjetype-datadef-17661",
         17661,
-        &belop(h.overkurs.i_ar),
+        &amount(h.overkurs.i_ar),
     );
     w.close("InnbetaltOverkursIDenneAksjeklassen-grp-3448");
     w.close("Selskapsopplysninger-grp-2589");
@@ -382,17 +382,17 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
             w.felt(
                 "AksjeUtbytteISINAksjetype-datadef-17665",
                 17665,
-                &belop(u.totalt_ore),
+                &amount(u.totalt_ore),
             );
             w.felt(
                 "AksjeUtbyttePerAksje-datadef-23946",
                 23946,
-                &belop(u.per_aksje_ore),
+                &amount(u.per_aksje_ore),
             );
             w.felt(
                 "AksjeUtbytteTidspunkt-datadef-17667",
                 17667,
-                &tidspunkt(u.dato),
+                &tidspunkt(u.date),
             );
             w.close("UtdeltSkatterettsligUtbytteILopetAvInntektsaret-grp-3451");
         }
@@ -421,17 +421,17 @@ pub fn render_hovedskjema(h: &Hovedskjema) -> Result<String, OppgaveError> {
             w.felt(
                 "AksjerNyutstedteStiftelseMvTidspunkt-datadef-17671",
                 17671,
-                &tidspunkt(n.dato),
+                &tidspunkt(n.date),
             );
             w.felt(
                 "AksjerNyutstedteStiftelseMvPalydende-datadef-23947",
                 23947,
-                &belop(n.palydende_ore),
+                &amount(n.palydende_ore),
             );
             w.felt(
                 "AksjerNyutstedteStiftelseMvOverkurs-datadef-23948",
                 23948,
-                &belop(n.overkurs_ore),
+                &amount(n.overkurs_ore),
             );
             w.close("AntallNyutstedteAksjer-grp-3453");
         }
@@ -515,7 +515,11 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
     w.close("AntallAksjerPerAksjonar-grp-3989");
     for post in &u.utbytte {
         w.gruppe("UtdeltUtbyttePerAksjonar-grp-3991", 3991);
-        w.felt("Aksjeutbytte-datadef-29169", 29169, &belop(post.belop_ore));
+        w.felt(
+            "Aksjeutbytte-datadef-29169",
+            29169,
+            &amount(post.amount_ore),
+        );
         w.felt(
             "AksjerUtbytteAntall-datadef-17742",
             17742,
@@ -524,7 +528,7 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
         w.felt(
             "AksjerUtbytteTidspunkt-datadef-17769",
             17769,
-            &tidspunkt(post.dato),
+            &tidspunkt(post.date),
         );
         w.close("UtdeltUtbyttePerAksjonar-grp-3991");
     }
@@ -550,9 +554,9 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
                 &b.antall.to_string(),
             );
             w.felt("AksjeErvervType-datadef-17745", 17745, kode);
-            w.felt("AksjerErvervsdato-datadef-17746", 17746, &tidspunkt(b.dato));
-            if let Some(ore) = b.belop_ore {
-                w.felt("AksjeAnskaffelsesverdi-datadef-17636", 17636, &belop(ore));
+            w.felt("AksjerErvervsdato-datadef-17746", 17746, &tidspunkt(b.date));
+            if let Some(ore) = b.amount_ore {
+                w.felt("AksjeAnskaffelsesverdi-datadef-17636", 17636, &amount(ore));
             }
             w.close("AntallAksjerITilgang-grp-3998");
         }
@@ -582,10 +586,10 @@ pub fn render_underskjema(u: &Underskjema) -> Result<String, OppgaveError> {
             w.felt(
                 "AksjerArvMvOmsattTidspunkt-datadef-17754",
                 17754,
-                &tidspunkt(b.dato),
+                &tidspunkt(b.date),
             );
-            if let Some(ore) = b.belop_ore {
-                w.felt("AksjerArvMvOmsatt-datadef-17755", 17755, &belop(ore));
+            if let Some(ore) = b.amount_ore {
+                w.felt("AksjerArvMvOmsatt-datadef-17755", 17755, &amount(ore));
             }
             w.close("AksjerIAvgang-grp-4002");
         }
@@ -638,12 +642,12 @@ mod tests {
             },
             overkurs: Fjoraret::default(),
             utbytte: vec![Utdeling {
-                dato: d(2026, 5, 20),
+                date: d(2026, 5, 20),
                 per_aksje_ore: 50_000,
                 totalt_ore: 5_000_000,
             }],
             nyutstedelser: vec![Nyutstedelse {
-                dato: d(2026, 1, 2),
+                date: d(2026, 1, 2),
                 type_: Transaksjonstype::Stiftelse,
                 antall_nye: 100,
                 antall_etter: 100,
@@ -668,15 +672,15 @@ mod tests {
                 i_ar: 100,
             },
             utbytte: vec![Utbyttepost {
-                dato: d(2026, 5, 20),
-                belop_ore: 5_000_000,
+                date: d(2026, 5, 20),
+                amount_ore: 5_000_000,
                 antall_aksjer: 100,
             }],
             bevegelser: vec![Bevegelse {
-                dato: d(2026, 1, 2),
+                date: d(2026, 1, 2),
                 type_: Transaksjonstype::Stiftelse,
                 antall: 100,
-                belop_ore: Some(10_000_000),
+                amount_ore: Some(10_000_000),
             }],
         }
     }
@@ -787,10 +791,10 @@ mod tests {
     fn an_unverified_transaction_type_is_refused_loudly() {
         let mut u = underskjema();
         u.bevegelser = vec![Bevegelse {
-            dato: d(2026, 6, 1),
+            date: d(2026, 6, 1),
             type_: Transaksjonstype::Salg,
             antall: 10,
-            belop_ore: Some(1_000_000),
+            amount_ore: Some(1_000_000),
         }];
         let feil = render_underskjema(&u).unwrap_err();
         assert_eq!(feil, OppgaveError::UverifisertKode(Transaksjonstype::Salg));
@@ -822,9 +826,9 @@ mod tests {
 
     #[test]
     fn amounts_are_written_with_two_decimals() {
-        assert_eq!(belop(10_000_000), "100000.00");
-        assert_eq!(belop(12_345), "123.45");
-        assert_eq!(belop(0), "0.00");
+        assert_eq!(amount(10_000_000), "100000.00");
+        assert_eq!(amount(12_345), "123.45");
+        assert_eq!(amount(0), "0.00");
         assert_eq!(tidspunkt(d(2026, 1, 2)), "2026-01-02T00:00:00");
     }
 }

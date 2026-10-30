@@ -40,7 +40,7 @@ const MANEDER: [&str; 12] = [
 pub struct Slipplinje {
     pub tekst: String,
     /// Positive adds to what is paid, negative is a deduction.
-    pub belop_ore: i64,
+    pub amount_ore: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -52,10 +52,10 @@ pub struct LonnsslippInput {
     pub ansatt_stilling: Option<String>,
     /// Aksjeloven-style restraint: the date identifies, the number is
     /// not needed on a document that travels.
-    pub ansatt_fodselsdato: Option<chrono::NaiveDate>,
+    pub employee_birth_date: Option<chrono::NaiveDate>,
     pub ar: i32,
     pub maned: u32,
-    pub utbetalt_dato: chrono::NaiveDate,
+    pub paid_date: chrono::NaiveDate,
     pub linjer: Vec<Slipplinje>,
     /// Sum of every pay line — what "bruttolønn" means to the person
     /// reading the slip, feriepenger included.
@@ -135,7 +135,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         .unwrap_or("");
     let fakta = [
         ("Periode", format!("{maned_navn} {}", input.ar)),
-        ("Utbetalt", input.utbetalt_dato.to_string()),
+        ("Utbetalt", input.paid_date.to_string()),
     ];
     let mut fy = 82.0;
     for (label, value) in &fakta {
@@ -152,7 +152,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         pdf.text(MARGIN, ay, 9.0, Font::Regular, stilling);
         ay += 12.0;
     }
-    if let Some(fodt) = input.ansatt_fodselsdato {
+    if let Some(fodt) = input.employee_birth_date {
         pdf.text(MARGIN, ay, 9.0, Font::Regular, &format!("Født {fodt}"));
     }
 
@@ -166,7 +166,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
 
     for linje in &input.linjer {
         pdf.text(MARGIN, ly, 10.0, Font::Regular, &linje.tekst);
-        pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(linje.belop_ore));
+        pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(linje.amount_ore));
         ly += 15.0;
     }
 
@@ -257,13 +257,13 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         &format!("HITTIL I {}", input.ar),
     );
     ly += 14.0;
-    for (tekst, belop) in [
+    for (tekst, amount) in [
         ("Bruttolønn", input.hittil_brutto_ore),
         ("Forskuddstrekk", input.hittil_trekk_ore),
         ("Feriepenger opptjent", input.hittil_feriepenger_ore),
     ] {
         pdf.text(MARGIN, ly, 9.0, Font::Regular, tekst);
-        pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(belop));
+        pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(amount));
         ly += 13.0;
     }
 
@@ -274,7 +274,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    fn dato(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
+    fn date(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
         chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()
     }
 
@@ -285,13 +285,13 @@ mod tests {
             arbeidsgiver_adresse: Some("Storgata 1, 0155 OSLO".into()),
             ansatt_navn: "Kari Utvikler".into(),
             ansatt_stilling: Some("Utvikler".into()),
-            ansatt_fodselsdato: Some(dato(1993, 2, 26)),
+            employee_birth_date: Some(date(1993, 2, 26)),
             ar: 2026,
             maned: 3,
-            utbetalt_dato: dato(2026, 3, 25),
+            paid_date: date(2026, 3, 25),
             linjer: vec![Slipplinje {
                 tekst: "Fastlønn".into(),
-                belop_ore: 5_000_000,
+                amount_ore: 5_000_000,
             }],
             brutto_ore: 5_000_000,
             trekkgrunnlag_ore: 5_000_000,
@@ -339,7 +339,7 @@ mod tests {
         juni.forskuddstrekk_ore = 1_050_000;
         juni.linjer.push(Slipplinje {
             tekst: "Feriepenger".into(),
-            belop_ore: 4_000_000,
+            amount_ore: 4_000_000,
         });
         juni.netto_ore = 5_950_000;
         let tekst = String::from_utf8_lossy(&render_lonnsslipp(&juni)).to_string();

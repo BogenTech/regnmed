@@ -63,11 +63,14 @@ pub async fn import_contacts(
 pub struct OpenItemsQuery {
     kind: Option<String>,
     /// The reskontro account the items belong to (1500 / 2400 by default).
-    konto: Option<String>,
+    #[serde(rename = "konto")]
+    account: Option<String>,
     /// The contra account the bilag balances against; 2050 (annen
     /// egenkapital) by default, the same plug the opening balance uses.
-    motkonto: Option<String>,
-    dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "motkonto")]
+    contra_account: Option<String>,
+    #[serde(rename = "dato")]
+    date: Option<chrono::NaiveDate>,
     preview: Option<bool>,
 }
 
@@ -80,7 +83,7 @@ pub async fn import_open_items(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
     let kind = kind_from(query.kind.as_deref())?;
-    let konto = query.konto.unwrap_or_else(|| {
+    let account = query.account.unwrap_or_else(|| {
         match kind {
             PartyKind::Customer => "1500",
             PartyKind::Supplier => "2400",
@@ -94,24 +97,24 @@ pub async fn import_open_items(
         ));
     }
 
-    let plan = regnmed_db::plan_open_items(&state.pool, company_id, kind, &konto, &rader)
+    let plan = regnmed_db::plan_open_items(&state.pool, company_id, kind, &account, &rader)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     if query.preview.unwrap_or(false) {
         return Ok(Json(json!({
             "preview": true,
             "kind": kind.as_str(),
-            "konto": konto,
+            "konto": account,
             "antall": plan.antall,
             "sum_ore": plan.sum_ore,
-            "konto_saldo_ore": plan.konto_saldo_ore,
-            "kan_importeres": plan.konto_saldo_ore == 0,
+            "konto_saldo_ore": plan.account_balance_ore,
+            "kan_importeres": plan.account_balance_ore == 0,
             "nye_parter": plan.nye_parter,
             "warnings": plan.advarsler,
         })));
     }
 
-    let dato = match query.dato {
+    let date = match query.date {
         Some(d) => d,
         None => sqlx::query_scalar("select current_date")
             .fetch_one(&state.pool)
@@ -123,9 +126,9 @@ pub async fn import_open_items(
         &state.pool,
         company_id,
         kind,
-        &konto,
-        query.motkonto.as_deref().unwrap_or("2050"),
-        dato,
+        &account,
+        query.contra_account.as_deref().unwrap_or("2050"),
+        date,
         &rader,
         created_by,
     )

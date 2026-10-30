@@ -31,7 +31,8 @@ pub struct CreateInvoiceRequest {
     /// on delivery. The default is stated HERE, at the boundary, so it
     /// is one documented decision rather than an assumption buried in
     /// the posting — the portal always sends it explicitly.
-    leveringsdato: Option<chrono::NaiveDate>,
+    #[serde(rename = "leveringsdato")]
+    delivery_date: Option<chrono::NaiveDate>,
     /// Leveringssted, required "der det er relevant" — typically a
     /// vareleveranse to an address other than the buyer's.
     leveringssted: Option<String>,
@@ -51,7 +52,8 @@ pub struct CreateInvoiceRequest {
     /// Where the money landed — 1900 kontanter, 1920 bank, or the card
     /// acquirer's clearing account. Required with the above; we never
     /// guess how somebody was paid.
-    oppgjorskonto: Option<String>,
+    #[serde(rename = "oppgjorskonto")]
+    settlement_account: Option<String>,
     lines: Vec<DocLineRequest>,
     /// Selected unbilled hours (docs/timer.md): appended as hour lines
     /// per (prosjekt, sats) group and marked fakturert in the SAME
@@ -90,7 +92,7 @@ pub async fn create_invoice(
     let kontant = request
         .kontant_betalingsmiddel
         .filter(|s| !s.trim().is_empty());
-    let oppgjorskonto = request.oppgjorskonto;
+    let settlement_account = request.settlement_account;
     let draft = regnmed_db::InvoiceDraft {
         // create_kontantfaktura sets this itself; the ordinary route
         // never issues one, so a caller cannot turn a credit sale into a
@@ -99,7 +101,7 @@ pub async fn create_invoice(
         party_no: request.party_no,
         invoice_date: request.invoice_date,
         due_date: request.due_date,
-        delivery_date: request.leveringsdato.unwrap_or(request.invoice_date),
+        delivery_date: request.delivery_date.unwrap_or(request.invoice_date),
         delivery_place: request.leveringssted,
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
@@ -115,7 +117,7 @@ pub async fn create_invoice(
     // caller might skip and leave a "paid" document with an open item
     // behind it.
     if let Some(middel) = kontant {
-        let konto = oppgjorskonto.ok_or_else(|| {
+        let account = settlement_account.ok_or_else(|| {
             ApiError::BadRequest(
                 "kontantsalg må si hvor pengene havnet (oppgjorskonto, f.eks. 1900 eller 1920)"
                     .into(),
@@ -125,7 +127,7 @@ pub async fn create_invoice(
             &state.pool,
             company_id,
             &draft,
-            &konto,
+            &account,
             &middel,
             created_by,
         )

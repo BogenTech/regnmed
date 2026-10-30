@@ -61,16 +61,16 @@ async fn body_text(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, St
     (status, String::from_utf8_lossy(&bytes).to_string())
 }
 
-fn leverandorfaktura(dato: chrono::NaiveDate, belop: i64, party_no: &str) -> VoucherDraft {
+fn leverandorfaktura(date: chrono::NaiveDate, amount: i64, party_no: &str) -> VoucherDraft {
     VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
-        description: format!("Leverandørfaktura {belop}"),
+        voucher_date: date,
+        description: format!("Leverandørfaktura {amount}"),
         reverses: None,
         entries: vec![
             EntryDraft {
                 account_number: "4300".into(),
-                amount: Ore(belop),
+                amount: Ore(amount),
                 vat_code: None,
                 description: None,
                 party_no: None,
@@ -80,7 +80,7 @@ fn leverandorfaktura(dato: chrono::NaiveDate, belop: i64, party_no: &str) -> Vou
             },
             EntryDraft {
                 account_number: "2400".into(),
-                amount: Ore(-belop),
+                amount: Ore(-amount),
                 vat_code: None,
                 description: Some("Varekjøp".into()),
                 party_no: Some(party_no.to_string()),
@@ -92,14 +92,14 @@ fn leverandorfaktura(dato: chrono::NaiveDate, belop: i64, party_no: &str) -> Vou
     }
 }
 
-async fn saldo(state: &AppState, company: Uuid, konto: &str) -> i64 {
+async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company)
-    .bind(konto)
+    .bind(account)
     .fetch_one(&state.pool)
     .await
     .unwrap()
@@ -152,7 +152,7 @@ async fn betalingsliste_pain001_and_settlement() {
     )
     .await
     .unwrap();
-    let (_, uten_konto_no) = regnmed_db::create_party(
+    let (_, without_account_no) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -205,7 +205,7 @@ async fn betalingsliste_pain001_and_settlement() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &leverandorfaktura(date(7, 8), 500_00, &uten_konto_no),
+        &leverandorfaktura(date(7, 8), 500_00, &without_account_no),
         "test",
     )
     .await
@@ -218,17 +218,17 @@ async fn betalingsliste_pain001_and_settlement() {
     assert_eq!(status, StatusCode::OK, "body: {payable}");
     let items = payable["items"].as_array().unwrap();
     assert_eq!(items.len(), 3);
-    let entry_of = |belop: i64| {
-        items.iter().find(|i| i["belop_ore"] == belop).unwrap()["entry_id"]
+    let entry_of = |amount: i64| {
+        items.iter().find(|i| i["belop_ore"] == amount).unwrap()["entry_id"]
             .as_str()
             .unwrap()
             .to_string()
     };
-    let uten_konto_entry = items
+    let without_account_entry = items
         .iter()
         .find(|i| i["party_name"] == "Kontantløs AS")
         .unwrap();
-    assert!(uten_konto_entry["bank_account"].is_null());
+    assert!(without_account_entry["bank_account"].is_null());
 
     // A post whose supplier lacks a konto is refused loudly.
     let (status, _) = request(
@@ -238,7 +238,7 @@ async fn betalingsliste_pain001_and_settlement() {
         &token,
         Some(
             serde_json::json!({
-                "items": [{ "entry_id": uten_konto_entry["entry_id"] }],
+                "items": [{ "entry_id": without_account_entry["entry_id"] }],
             })
             .to_string(),
         ),

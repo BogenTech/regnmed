@@ -254,7 +254,7 @@ pub async fn saldobalanse(
     })))
 }
 
-pub async fn kontospesifikasjon(
+pub async fn account_specification(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -262,7 +262,7 @@ pub async fn kontospesifikasjon(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     check_period(query.from, query.to)?;
-    let posts = regnmed_db::kontospesifikasjon(
+    let posts = regnmed_db::account_specification(
         &state.pool,
         company_id,
         query.account.as_deref(),

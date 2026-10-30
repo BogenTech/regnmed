@@ -31,7 +31,7 @@ pub struct PayableItem {
     pub party_name: String,
     pub bank_account: Option<String>,
     /// What we owe on this post (positive).
-    pub belop_ore: i64,
+    pub amount_ore: i64,
     /// Already part of an utkast/godkjent run.
     pub i_kjoring: bool,
 }
@@ -76,7 +76,7 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
             party_no: r.get("party_no"),
             party_name: r.get("party_name"),
             bank_account: r.get("bank_account"),
-            belop_ore: -r.get::<i64, _>("remaining_ore"),
+            amount_ore: -r.get::<i64, _>("remaining_ore"),
             i_kjoring: r.get("i_kjoring"),
         })
         .collect())
@@ -86,7 +86,7 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
 pub struct PaymentItemDraft {
     pub entry_id: Uuid,
     /// None = the whole open remainder.
-    pub belop_ore: Option<i64>,
+    pub amount_ore: Option<i64>,
     pub kid: Option<String>,
     pub melding: Option<String>,
 }
@@ -98,21 +98,21 @@ pub async fn create_run(
     pool: &PgPool,
     company_id: Uuid,
     items: &[PaymentItemDraft],
-    debitor_konto: Option<&str>,
+    debtor_account: Option<&str>,
     execution_date: NaiveDate,
     created_by: &str,
     created_by_person: Uuid,
 ) -> Result<Uuid> {
     ensure!(!items.is_empty(), "betalingslisten er tom");
-    let debitor = match debitor_konto {
-        Some(konto) => normalize_account_number(konto),
+    let debitor = match debtor_account {
+        Some(account) => normalize_account_number(account),
         None => {
-            let konto: Option<String> =
+            let account: Option<String> =
                 sqlx::query_scalar("select bank_account from company where id = $1")
                     .bind(company_id)
                     .fetch_one(pool)
                     .await?;
-            konto
+            account
                 .map(|k| normalize_account_number(&k))
                 .context("selskapet mangler kontonummer — sett det under Firmaopplysninger")?
         }
@@ -143,14 +143,14 @@ pub async fn create_run(
             .iter()
             .find(|p| p.entry_id == item.entry_id)
             .with_context(|| format!("linje {}: ingen åpen leverandørpost", i + 1))?;
-        let belop = item.belop_ore.unwrap_or(open.belop_ore);
+        let amount = item.amount_ore.unwrap_or(open.amount_ore);
         ensure!(
-            belop > 0 && belop <= open.belop_ore,
+            amount > 0 && amount <= open.amount_ore,
             "linje {}: beløpet må være 1..{} øre",
             i + 1,
-            open.belop_ore
+            open.amount_ore
         );
-        let konto = open
+        let account = open
             .bank_account
             .as_deref()
             .map(normalize_account_number)
@@ -177,9 +177,9 @@ pub async fn create_run(
         .bind(Uuid::now_v7())
         .bind(run_id)
         .bind(item.entry_id)
-        .bind(belop)
+        .bind(amount)
         .bind(&open.party_name)
-        .bind(&konto)
+        .bind(&account)
         .bind(&item.kid)
         .bind(
             item.melding
@@ -328,8 +328,8 @@ pub async fn settle_run(
     pool: &PgPool,
     company_id: Uuid,
     run_id: Uuid,
-    dato: NaiveDate,
-    bank_konto: &str,
+    date: NaiveDate,
+    bank_account: &str,
     settled_by: &str,
 ) -> Result<SettledRun> {
     let mut tx = pool.begin().await?;
@@ -375,7 +375,7 @@ pub async fn settle_run(
         })
         .collect();
     entries.push(EntryDraft {
-        account_number: bank_konto.to_string(),
+        account_number: bank_account.to_string(),
         amount: Ore(-total),
         vat_code: None,
         description: Some(format!("Betalingskjøring {run_id}")),
@@ -386,7 +386,7 @@ pub async fn settle_run(
     });
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
+        voucher_date: date,
         description: format!("Utbetaling betalingsliste {run_id}"),
         reverses: None,
         entries,

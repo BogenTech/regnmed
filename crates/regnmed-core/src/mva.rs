@@ -274,8 +274,8 @@ pub fn direction(code: &str) -> Direction {
 pub fn omvendt_entries(
     basis: &crate::voucher::EntryDraft,
     rate_bp: i64,
-    utgaende_konto: &str,
-    fradrag_konto: &str,
+    output_account: &str,
+    deduction_account: &str,
 ) -> Vec<crate::voucher::EntryDraft> {
     let retning = basis
         .vat_code
@@ -292,9 +292,9 @@ pub fn omvendt_entries(
     if avgift == 0 {
         return Vec::new();
     }
-    let entry = |konto: &str, belop: i64, tekst: &str, dims: bool| crate::voucher::EntryDraft {
-        account_number: konto.to_string(),
-        amount: crate::Ore(belop),
+    let entry = |account: &str, amount: i64, tekst: &str, dims: bool| crate::voucher::EntryDraft {
+        account_number: account.to_string(),
+        amount: crate::Ore(amount),
         // Uncoded, exactly like the invoice engine's mva entry: the
         // spesifikasjon derives grunnlag from the CODED lines, and a code
         // here would count the same basis twice.
@@ -306,14 +306,14 @@ pub fn omvendt_entries(
         currency: None,
     };
     let mut ut = vec![entry(
-        utgaende_konto,
+        output_account,
         -avgift,
         "Beregnet mva, omvendt avgiftsplikt/innførsel",
         false,
     )];
     match retning {
         Direction::OmvendtMedFradrag => ut.push(entry(
-            fradrag_konto,
+            deduction_account,
             avgift,
             "Fradrag for beregnet mva",
             false,

@@ -28,7 +28,7 @@ fn ansatt_json(a: &regnmed_db::lonn::Ansatt) -> serde_json::Value {
         "navn": a.navn,
         "stilling": a.stilling,
         // Birth date, not fødselsnummer.
-        "fodselsdato": a.fodselsdato,
+        "fodselsdato": a.birth_date,
         "ansatt_fra": a.ansatt_fra,
         "ansatt_til": a.ansatt_til,
         "manedslonn_ore": a.manedslonn_ore,
@@ -129,7 +129,7 @@ fn kjoring_json(k: &regnmed_db::lonn::Lonnskjoring) -> serde_json::Value {
         "id": k.id,
         "ar": k.ar,
         "maned": k.maned,
-        "utbetalt_dato": k.utbetalt_dato,
+        "utbetalt_dato": k.paid_date,
         "sone": k.sone,
         "brutto_ore": k.sum.brutto_ore,
         "feriepenger_utbetalt_ore": k.sum.feriepenger_utbetalt_ore,
@@ -176,7 +176,8 @@ pub struct PayrollLine {
 pub struct RunPayrollRequest {
     ar: i32,
     maned: u32,
-    utbetalt_dato: chrono::NaiveDate,
+    #[serde(rename = "utbetalt_dato")]
+    paid_date: chrono::NaiveDate,
     /// Arbeidsgiveravgiftssone: I, II, III, IV, IVa or V. Ia is refused
     /// — its reduced rate is bounded by a yearly fribeløp regnmed
     /// cannot see in full (docs/lonn.md).
@@ -206,7 +207,7 @@ pub async fn run_payroll(
         company_id,
         request.ar,
         request.maned,
-        request.utbetalt_dato,
+        request.paid_date,
         &request.sone,
         &poster,
         person.display(),
@@ -290,7 +291,7 @@ pub async fn payroll_hours(
     Ok(Json(json!({
         "minutter": g.minutter,
         "timesats_ore": g.timesats_ore,
-        "belop_ore": g.belop_ore,
+        "belop_ore": g.amount_ore,
         "laast": g.laast,
     })))
 }

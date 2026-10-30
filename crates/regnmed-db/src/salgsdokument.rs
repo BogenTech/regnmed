@@ -161,8 +161,8 @@ pub async fn update_tilbud(
                 .is_some_and(crate::settings::krever_mva_registrering)
         })
     }) {
-        let dato = doc_date.unwrap_or(row.get::<NaiveDate, _>("doc_date"));
-        crate::settings::krev_mva_registrert(pool, company_id, dato).await?;
+        let date = doc_date.unwrap_or(row.get::<NaiveDate, _>("doc_date"));
+        crate::settings::krev_mva_registrert(pool, company_id, date).await?;
     }
     sqlx::query(
         "update salgsdokument set doc_date = coalesce($3, doc_date), updated_at = now()
@@ -516,18 +516,18 @@ pub async fn salgsdokument_pdf(
         selger_adresse: doc.get("address"),
         selger_mva_registrert: reg.mva_registrert,
         selger_foretaksregistrert: reg.foretaksregistrert,
-        selger_kontonummer: None,
+        seller_account_number: None,
         kjoper_navn: doc.get("party_name"),
         kjoper_nr: doc.get("party_no"),
         kjoper_orgnr: doc.get("party_orgnr"),
         kjoper_adresse: doc.get("party_address"),
         fakturanr: doc.get("doc_no"),
-        fakturadato: doc_date,
-        forfallsdato: doc_date,
+        invoice_date: doc_date,
+        due_date: doc_date,
         // A tilbud/ordrebekreftelse is not a salgsdokument — nothing is
         // delivered yet, so §5-1-1's leveringstidspunkt does not apply
         // and stating one would be a promise we did not make.
-        leveringsdato: None,
+        delivery_date: None,
         leveringssted: None,
         kid: None,
         currency: None,

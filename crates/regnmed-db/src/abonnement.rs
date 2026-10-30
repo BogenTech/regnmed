@@ -181,7 +181,7 @@ pub async fn registrer_kortbetaling(
     invoice_id: Uuid,
     payment_intent_id: &str,
     succeeded: bool,
-    belop_ore: i64,
+    amount_ore: i64,
     detail: Option<&str>,
 ) -> Result<bool> {
     // The faktura must be the ops company's, and the amount must match
@@ -231,7 +231,7 @@ pub async fn registrer_kortbetaling(
     .bind(invoice_id)
     .bind(payment_intent_id)
     .bind(if succeeded { "succeeded" } else { "failed" })
-    .bind(belop_ore)
+    .bind(amount_ore)
     .bind(detail)
     .execute(&mut *tx)
     .await?
@@ -245,8 +245,8 @@ pub async fn registrer_kortbetaling(
     }
 
     ensure!(
-        belop_ore == gross,
-        "trekket ({belop_ore} øre) stemmer ikke med fordringen ({gross} øre) for faktura {invoice_no}"
+        amount_ore == gross,
+        "trekket ({amount_ore} øre) stemmer ikke med fordringen ({gross} øre) for faktura {invoice_no}"
     );
 
     let draft = regnmed_core::voucher::VoucherDraft {
@@ -809,7 +809,7 @@ pub async fn brutto_for(
     drift_company_id: Uuid,
     plan: &str,
     interval: &str,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<i64> {
     let egen: Option<i64> = sqlx::query_scalar(
         "select pris_ore_per_mnd from abonnement_pris
@@ -818,15 +818,15 @@ pub async fn brutto_for(
     )
     .bind(plan)
     .bind(interval)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?;
     let netto = match egen {
         Some(n) => n,
-        None if interval == "year" => pris_pa(pool, plan, dato).await? * 12,
-        None => pris_pa(pool, plan, dato).await?,
+        None if interval == "year" => pris_pa(pool, plan, date).await? * 12,
+        None => pris_pa(pool, plan, date).await?,
     };
-    let (_kode, rate_bp) = utgaende_mva(pool, drift_company_id, dato).await?;
+    let (_kode, rate_bp) = utgaende_mva(pool, drift_company_id, date).await?;
     Ok(netto + regnmed_core::mva::vat_of_base(netto, rate_bp))
 }
 
@@ -853,30 +853,30 @@ pub async fn brutto_for(
 pub async fn utgaende_mva(
     pool: &PgPool,
     drift_company_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<(String, i64)> {
-    let reg = crate::settings::registrering_on(pool, drift_company_id, dato).await?;
+    let reg = crate::settings::registrering_on(pool, drift_company_id, date).await?;
     if !reg.mva_registrert {
         return Ok(("7".into(), 0));
     }
     let rates = crate::mva::load_vat_rates(pool).await?;
-    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", dato)
+    let rate_bp = regnmed_core::mva::rate_on(&rates, "regular", date)
         .context("ingen ordinær mva-sats for datoen — satsregisteret må dekke den")?;
     Ok(("3".into(), rate_bp))
 }
 
 /// The price in force on a date, in øre per month excl. mva.
-pub async fn pris_pa(pool: &PgPool, plan: &str, dato: NaiveDate) -> Result<i64> {
+pub async fn pris_pa(pool: &PgPool, plan: &str, date: NaiveDate) -> Result<i64> {
     let pris: Option<i64> = sqlx::query_scalar(
         "select pris_ore_per_mnd from abonnement_pris
          where plan = $1 and valid_from <= $2
          order by valid_from desc limit 1",
     )
     .bind(plan)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?;
-    pris.with_context(|| format!("ingen pris for planen «{plan}» per {dato} — prislisten er data (abonnement_pris) og må dekke datoen"))
+    pris.with_context(|| format!("ingen pris for planen «{plan}» per {date} — prislisten er data (abonnement_pris) og må dekke datoen"))
 }
 
 #[derive(Debug)]
