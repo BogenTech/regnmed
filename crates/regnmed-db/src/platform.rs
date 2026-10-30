@@ -481,7 +481,7 @@ pub async fn platform_assign_company(
     .bind(person_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (endring, fra) = match existing {
+    let (endring, from) = match existing {
         None => {
             let inserted = sqlx::query(
                 "insert into company_member (company_id, person_id, role)
@@ -496,7 +496,7 @@ pub async fn platform_assign_company(
             ("lagt_til", None)
         }
         Some(row) => {
-            let fra: String = row.get("role");
+            let from: String = row.get("role");
             let active: bool = row.get("active");
             ensure!(
                 systemadmin,
@@ -513,7 +513,7 @@ pub async fn platform_assign_company(
             .await?;
             (
                 if active { "rolle_endret" } else { "reaktivert" },
-                Some(fra),
+                Some(from),
             )
         }
     };
@@ -526,7 +526,7 @@ pub async fn platform_assign_company(
     .bind(company_id)
     .bind(person_id)
     .bind(endring)
-    .bind(fra.as_deref())
+    .bind(from.as_deref())
     .bind(role)
     .bind(performed_by)
     .execute(&mut *tx)
@@ -559,7 +559,7 @@ pub async fn platform_assign_firm(
     .bind(person_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (endring, fra) = match existing {
+    let (endring, from) = match existing {
         None => {
             let inserted = sqlx::query(
                 "insert into firm_member (firm_id, person_id, role)
@@ -574,7 +574,7 @@ pub async fn platform_assign_firm(
             ("lagt_til", None)
         }
         Some(row) => {
-            let fra: String = row.get("role");
+            let from: String = row.get("role");
             let active: bool = row.get("active");
             ensure!(
                 systemadmin,
@@ -591,7 +591,7 @@ pub async fn platform_assign_firm(
             .await?;
             (
                 if active { "rolle_endret" } else { "reaktivert" },
-                Some(fra),
+                Some(from),
             )
         }
     };
@@ -604,7 +604,7 @@ pub async fn platform_assign_firm(
     .bind(firm_id)
     .bind(person_id)
     .bind(endring)
-    .bind(fra.as_deref())
+    .bind(from.as_deref())
     .bind(role)
     .bind(performed_by)
     .execute(&mut *tx)

@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::ledger::{create_company, ensure_account, ensure_journal, find_company_by_orgnr};
-use crate::reskontro::set_account_reskontro;
+use crate::subledger::set_account_subledger;
 use crate::tenancy::ensure_company_member;
 
 /// Starter kontoplan (NS 4102 core) every onboarded company gets:
@@ -98,11 +98,11 @@ pub async fn onboard_company(
     // One row per registration change, with the register's OWN dates —
     // a company that entered Merverdiavgiftsregisteret in 2019 must not
     // carry the "MVA" note on a document dated 2018 (#81).
-    for (fra, vat, foretak) in &facts.registreringer {
+    for (from, vat, foretak) in &facts.registreringer {
         crate::settings::record_registrering(
             pool,
             company_id,
-            *fra,
+            *from,
             crate::settings::Registrering {
                 vat_registered: *vat,
                 foretaksregistrert: *foretak,
@@ -118,8 +118,8 @@ pub async fn onboard_company(
     for (number, name) in STARTER_ACCOUNTS {
         ensure_account(pool, company_id, number, name).await?;
     }
-    set_account_reskontro(pool, company_id, "1500", Some("kunde")).await?;
-    set_account_reskontro(pool, company_id, "2400", Some("leverandor")).await?;
+    set_account_subledger(pool, company_id, "1500", Some("kunde")).await?;
+    set_account_subledger(pool, company_id, "2400", Some("leverandor")).await?;
     Ok(OnboardedCompany {
         company_id,
         name: registry_name.to_string(),

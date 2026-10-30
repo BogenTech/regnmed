@@ -266,7 +266,7 @@ pub async fn unmatch_items(pool: &PgPool, company_id: Uuid, match_id: Uuid) -> R
 }
 
 /// Flags an account as a reskontro account (or clears the flag).
-pub async fn set_account_reskontro(
+pub async fn set_account_subledger(
     pool: &PgPool,
     company_id: Uuid,
     account_number: &str,

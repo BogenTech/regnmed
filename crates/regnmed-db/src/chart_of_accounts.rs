@@ -20,7 +20,7 @@ pub struct AccountRow {
     pub name: String,
     pub vat_code: Option<String>,
     pub active: bool,
-    pub reskontro_kind: Option<String>,
+    pub subledger_kind: Option<String>,
     /// Lifetime balance (SUM of entries, øre) — computed, never stored.
     pub balance_ore: i64,
     pub posteringer: i64,
@@ -50,7 +50,7 @@ pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<Accoun
             name: r.get("name"),
             vat_code: r.get("vat_code"),
             active: r.get("active"),
-            reskontro_kind: r.get("reskontro_kind"),
+            subledger_kind: r.get("reskontro_kind"),
             balance_ore: r.get("saldo_ore"),
             posteringer: r.get("posteringer"),
         })
@@ -115,7 +115,7 @@ pub async fn update_account(
     Ok(())
 }
 
-pub struct BilagLinje {
+pub struct VoucherLine {
     pub account: String,
     pub account_name: String,
     pub amount_ore: i64,
@@ -126,19 +126,19 @@ pub struct BilagLinje {
     pub project: Option<String>,
 }
 
-pub struct BilagMedLinjer {
+pub struct VoucherWithLines {
     pub voucher_id: Uuid,
     pub journal_code: String,
     pub fiscal_year: i32,
     pub voucher_number: i64,
     pub voucher_date: chrono::NaiveDate,
     pub description: String,
-    pub lines: Vec<BilagLinje>,
+    pub lines: Vec<VoucherLine>,
 }
 
-pub struct BilagSide {
+pub struct VoucherPage {
     pub total: i64,
-    pub vouchers: Vec<BilagMedLinjer>,
+    pub vouchers: Vec<VoucherWithLines>,
 }
 
 /// The hovedbok browsing surface: vouchers newest-first with their
@@ -157,7 +157,7 @@ pub async fn list_vouchers_paged(
     offset: i64,
     med_linjer: bool,
     uten_vedlegg: bool,
-) -> Result<BilagSide> {
+) -> Result<VoucherPage> {
     let sok = sok.map(str::trim).filter(|s| !s.is_empty());
     let filter = "v.company_id = $1
          and ($2::date is null or v.voucher_date >= $2)
@@ -203,9 +203,9 @@ pub async fn list_vouchers_paged(
     .await?;
 
     let ids: Vec<Uuid> = headers.iter().map(|r| r.get("id")).collect();
-    let mut vouchers: Vec<BilagMedLinjer> = headers
+    let mut vouchers: Vec<VoucherWithLines> = headers
         .into_iter()
-        .map(|r| BilagMedLinjer {
+        .map(|r| VoucherWithLines {
             voucher_id: r.get("id"),
             journal_code: r.get("journal_code"),
             fiscal_year: r.get("fiscal_year"),
@@ -217,7 +217,7 @@ pub async fn list_vouchers_paged(
         .collect();
 
     if !med_linjer {
-        return Ok(BilagSide { total, vouchers });
+        return Ok(VoucherPage { total, vouchers });
     }
 
     let lines = sqlx::query(
@@ -237,7 +237,7 @@ pub async fn list_vouchers_paged(
     for row in lines {
         let vid: Uuid = row.get("voucher_id");
         if let Some(v) = vouchers.iter_mut().find(|v| v.voucher_id == vid) {
-            v.lines.push(BilagLinje {
+            v.lines.push(VoucherLine {
                 account: row.get("number"),
                 account_name: row.get("name"),
                 amount_ore: row.get("amount_ore"),
@@ -250,7 +250,7 @@ pub async fn list_vouchers_paged(
         }
     }
 
-    Ok(BilagSide { total, vouchers })
+    Ok(VoucherPage { total, vouchers })
 }
 
 /// Post a free-form manual voucher. Everything post_voucher already

@@ -309,14 +309,14 @@ pub fn holding<'a>(events: impl IntoIterator<Item = &'a ShareEvent>, date: Naive
 /// Folds one shareholder's events into the year's movement.
 pub fn year_movement<'a>(
     events: impl IntoIterator<Item = &'a ShareEvent> + Clone,
-    ar: i32,
+    year: i32,
 ) -> YearMovement {
     let mut b = YearMovement::default();
     for h in events {
         let event_year = crate::fiscal_year::of(h.date);
-        if event_year < ar {
+        if event_year < year {
             b.opening += h.delta();
-        } else if event_year == ar {
+        } else if event_year == year {
             if h.type_.is_acquisition() {
                 b.acquisitions += h.quantity;
             } else {

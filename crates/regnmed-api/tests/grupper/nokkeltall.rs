@@ -47,7 +47,7 @@ fn entry(account: &str, amount: i64, party: Option<&str>) -> EntryDraft {
     }
 }
 
-fn bilag(date: chrono::NaiveDate, entries: Vec<EntryDraft>) -> VoucherDraft {
+fn voucher(date: chrono::NaiveDate, entries: Vec<EntryDraft>) -> VoucherDraft {
     VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: date,
@@ -88,10 +88,10 @@ async fn key_figures_result_liquidity_and_deadlines() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     let (_, customer) =
@@ -122,7 +122,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &bilag(
+        &voucher(
             date(year - 1, 1, 15),
             vec![
                 entry("1500", 20_000_00, Some(&customer)),
@@ -136,7 +136,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &bilag(
+        &voucher(
             date(year - 1, 12, 31),
             vec![
                 entry("1920", 99_000_00, None),
@@ -152,7 +152,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &bilag(
+        &voucher(
             date(year, 1, 10),
             vec![
                 entry("1500", 50_000_00, Some(&customer)),
@@ -166,7 +166,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &bilag(
+        &voucher(
             date(year, 2, 10),
             vec![
                 entry("4300", 10_000_00, None),
@@ -180,7 +180,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &bilag(
+        &voucher(
             date(year, 1, 20),
             vec![
                 entry("1920", 5_000_00, None),

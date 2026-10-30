@@ -368,7 +368,7 @@ async fn list_subscriptions(
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
                 Status::Aktiv => a.valid_to,
-                Status::Trial { til } => Some(til),
+                Status::Trial { to } => Some(to),
                 Status::Grace { sperres } => Some(sperres),
                 Status::Blocked { siden } => Some(siden),
             };
@@ -447,7 +447,7 @@ async fn company_detail(
     use regnmed_core::subscription::Status;
     let date = match status {
         Status::Aktiv => None,
-        Status::Trial { til } => Some(til),
+        Status::Trial { to } => Some(to),
         Status::Grace { sperres } => Some(sperres),
         Status::Blocked { siden } => Some(siden),
     };

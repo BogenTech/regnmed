@@ -134,7 +134,7 @@ async fn invoice_mail_rides_the_shared_rail() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (party_id, party_no) =

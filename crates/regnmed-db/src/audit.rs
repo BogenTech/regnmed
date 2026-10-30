@@ -19,7 +19,7 @@
 //!    regelverksrevisjon (docs/regelverk.md).
 
 use anyhow::Result;
-use regnmed_core::audit::{AnchorInfo, AuditInput, Check, ReskontroKonto};
+use regnmed_core::audit::{AnchorInfo, AuditInput, Check, SubledgerAccount};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -95,7 +95,7 @@ pub async fn build_audit_report(
     // account that carries party postings — an amount in a party's
     // spesifikasjon that no reskontro account holds is exactly the kind
     // of divergence a check limited to flagged accounts cannot see.
-    let reskontro = sqlx::query(
+    let subledger = sqlx::query(
         "select a.number, a.reskontro_kind,
                 coalesce(sum(e.amount_ore), 0)::bigint as hovedbok_ore,
                 coalesce(sum(e.amount_ore) filter (where e.party_id is not null), 0)::bigint
@@ -123,16 +123,16 @@ pub async fn build_audit_report(
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    let accounts: Vec<ReskontroKonto> = reskontro
+    let accounts: Vec<SubledgerAccount> = subledger
         .iter()
         .map(|r| {
             let mut part_kinds: Vec<String> = r.get("part_kinds");
             part_kinds.sort(); // array_agg has no order; the report is deterministic
-            ReskontroKonto {
+            SubledgerAccount {
                 account: r.get("number"),
                 flagg: r.get("reskontro_kind"),
                 general_ledger_ore: r.get("hovedbok_ore"),
-                reskontro_ore: r.get("reskontro_ore"),
+                subledger_ore: r.get("reskontro_ore"),
                 without_party_count: r.get("uten_part_antall"),
                 with_party_count: r.get("med_part_antall"),
                 wrong_kind_count: r.get("feil_kind_antall"),
@@ -141,7 +141,7 @@ pub async fn build_audit_report(
             }
         })
         .collect();
-    checks.push(regnmed_core::audit::reskontro_check(&accounts));
+    checks.push(regnmed_core::audit::subledger_check(&accounts));
 
     // 5. Balansekontroll.
     let total: i64 = sqlx::query_scalar(

@@ -501,16 +501,16 @@ mod tests {
             date(2027, 2, 10)
         );
 
-        let ar = PeriodScheme::Arlig;
-        assert_eq!(ar.period_count(), 1);
-        let period = ar.period_of(date(2026, 11, 3));
+        let year = PeriodScheme::Arlig;
+        assert_eq!(year.period_count(), 1);
+        let period = year.period_of(date(2026, 11, 3));
         assert_eq!(period.number, 1);
-        assert_eq!(ar.start(period), date(2026, 1, 1));
-        assert_eq!(ar.end(period), date(2026, 12, 31));
-        assert_eq!(ar.deadline(period), date(2027, 3, 10));
-        assert_eq!(ar.label(period), "\u{c5}rstermin 2026");
+        assert_eq!(year.start(period), date(2026, 1, 1));
+        assert_eq!(year.end(period), date(2026, 12, 31));
+        assert_eq!(year.deadline(period), date(2027, 3, 10));
+        assert_eq!(year.label(period), "\u{c5}rstermin 2026");
         assert!(
-            ar.new_period(2026, 2).is_none(),
+            year.new_period(2026, 2).is_none(),
             "aarstermin har ingen 2. periode"
         );
 

@@ -32,10 +32,10 @@ pub fn of(date: NaiveDate) -> i32 {
 
 /// First and last day of a fiscal year, inclusive — the period a
 /// year-based report covers.
-pub fn period(ar: i32) -> Option<(NaiveDate, NaiveDate)> {
+pub fn period(year: i32) -> Option<(NaiveDate, NaiveDate)> {
     Some((
-        NaiveDate::from_ymd_opt(ar, 1, 1)?,
-        NaiveDate::from_ymd_opt(ar, 12, 31)?,
+        NaiveDate::from_ymd_opt(year, 1, 1)?,
+        NaiveDate::from_ymd_opt(year, 12, 31)?,
     ))
 }
 

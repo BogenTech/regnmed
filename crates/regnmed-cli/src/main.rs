@@ -56,7 +56,7 @@ enum Command {
         plan: String,
         /// End date for "avslutt" (YYYY-MM-DD, EXCLUSIVE); defaults to today
         #[arg(long)]
-        til: Option<chrono::NaiveDate>,
+        to: Option<chrono::NaiveDate>,
         /// Agreement/decision reference explaining the row (required for tegn)
         #[arg(long)]
         note: Option<String>,
@@ -74,7 +74,7 @@ enum Command {
         pris_ore: Option<i64>,
         /// Date the new price applies from (YYYY-MM-DD); defaults to today
         #[arg(long)]
-        fra: Option<chrono::NaiveDate>,
+        from: Option<chrono::NaiveDate>,
         /// Decision reference (required when a price is set)
         #[arg(long)]
         source: Option<String>,
@@ -114,7 +114,7 @@ enum Command {
         role: String,
         /// Expiry date (YYYY-MM-DD, EXCLUSIVE) — platform roles always end
         #[arg(long)]
-        til: chrono::NaiveDate,
+        to: chrono::NaiveDate,
         /// Why this person holds the role (appointment/case reference)
         #[arg(long)]
         note: String,
@@ -292,15 +292,15 @@ async fn main() -> Result<()> {
         Command::PlatformGrant {
             epost,
             role,
-            til,
+            to,
             note,
         } => {
             let person_id = regnmed_db::person_by_email(&pool, &epost)
                 .await?
                 .context("no person with that e-mail — they must log in once first")?;
             let id =
-                regnmed_db::grant_platform_role(&pool, person_id, &role, til, &note, None).await?;
-            println!("granted {role} to {epost} until {til} (membership {id})");
+                regnmed_db::grant_platform_role(&pool, person_id, &role, to, &note, None).await?;
+            println!("granted {role} to {epost} until {to} (membership {id})");
         }
         Command::PlatformList => {
             let members = regnmed_db::list_platform_members(&pool).await?;
@@ -329,7 +329,7 @@ async fn main() -> Result<()> {
             orgnumber,
             aksjon,
             plan,
-            til,
+            to,
             note,
         } => {
             let company_id = resolve_company(&pool, company, orgnumber.as_deref()).await?;
@@ -354,9 +354,9 @@ async fn main() -> Result<()> {
                     println!("abonnement «{plan}» tegnet fra {today} (til videre)");
                 }
                 "avslutt" => {
-                    let til = til.unwrap_or(today);
-                    regnmed_db::subscription::close_coverage(&pool, company_id, til).await?;
-                    println!("åpen dekning avsluttet — siste dag med dekning er dagen før {til}");
+                    let to = to.unwrap_or(today);
+                    regnmed_db::subscription::close_coverage(&pool, company_id, to).await?;
+                    println!("åpen dekning avsluttet — siste dag med dekning er dagen før {to}");
                 }
                 annet => anyhow::bail!("ukjent --aksjon «{annet}» (bruk tegn eller avslutt)"),
             }
@@ -366,7 +366,7 @@ async fn main() -> Result<()> {
         Command::SubscriptionPrice {
             plan,
             pris_ore,
-            fra,
+            from,
             source,
         } => {
             if let (Some(plan), Some(pris_ore)) = (&plan, pris_ore) {
@@ -376,10 +376,10 @@ async fn main() -> Result<()> {
                 let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                     .fetch_one(&pool)
                     .await?;
-                let fra = fra.unwrap_or(today);
-                regnmed_db::subscription::set_price(&pool, plan, pris_ore, fra, source).await?;
+                let from = from.unwrap_or(today);
+                regnmed_db::subscription::set_price(&pool, plan, pris_ore, from, source).await?;
                 println!(
-                    "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {fra}",
+                    "ny pris for «{plan}»: {},{:02} kr/mnd eks. mva fra {from}",
                     pris_ore / 100,
                     pris_ore % 100
                 );

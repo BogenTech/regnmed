@@ -49,7 +49,7 @@ async fn create_kind(
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let lines = resolve_lines(state, company_id, request.lines).await?;
-    let (id, doc_no) = regnmed_db::create_salgsdokument(
+    let (id, doc_no) = regnmed_db::create_sales_document(
         &state.pool,
         company_id,
         kind,
@@ -88,7 +88,7 @@ async fn list_kind(
     kind: &str,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(state, person.person_id, company_id, Right::QuoteRead).await?;
-    let rows = regnmed_db::list_salgsdokumenter(&state.pool, company_id, Some(kind)).await?;
+    let rows = regnmed_db::list_sales_documents(&state.pool, company_id, Some(kind)).await?;
     Ok(Json(json!({
         "documents": rows.iter().map(|d| json!({
             "id": d.id,

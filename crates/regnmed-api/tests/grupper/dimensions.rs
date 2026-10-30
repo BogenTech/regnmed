@@ -200,7 +200,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =
@@ -403,7 +403,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =

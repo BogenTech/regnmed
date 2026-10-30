@@ -233,7 +233,7 @@ pub async fn account_specification(
 /// One posting on one party, with the dokumentasjonshenvisning the
 /// forskrift requires and the running saldo per party.
 #[derive(Debug)]
-pub struct ReskontroPost {
+pub struct SubledgerItem {
     pub account_number: String,
     pub journal_code: String,
     pub fiscal_year: i32,
@@ -249,12 +249,12 @@ pub struct ReskontroPost {
 /// One party's block of the spesifikasjon: inngående saldo, every
 /// posting in the period, utgående saldo.
 #[derive(Debug)]
-pub struct ReskontroParty {
+pub struct SubledgerParty {
     pub party_no: String,
     pub party_name: String,
     pub opening_ore: i64,
     pub closing_ore: i64,
-    pub posts: Vec<ReskontroPost>,
+    pub posts: Vec<SubledgerItem>,
 }
 
 /// Kunde-/leverandørspesifikasjon (bokføringsforskriften §3-1 nr. 3–4):
@@ -263,13 +263,13 @@ pub struct ReskontroParty {
 /// `leverandor`. A party with no movement in the period is still listed
 /// when its inngående saldo is nonzero — the saldo exists whether or not
 /// the period touched it.
-pub async fn reskontro_specification(
+pub async fn subledger_specification(
     pool: &PgPool,
     company_id: Uuid,
     kind: &str,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<ReskontroParty>> {
+) -> Result<Vec<SubledgerParty>> {
     // Saldi first: the party list is everyone with a nonzero inngående
     // saldo or any movement in the period, so the blocks below can be
     // seeded even when a party has no lines.
@@ -292,9 +292,9 @@ pub async fn reskontro_specification(
     .bind(to)
     .fetch_all(pool)
     .await?;
-    let mut parties: Vec<ReskontroParty> = saldi
+    let mut parties: Vec<SubledgerParty> = saldi
         .iter()
-        .map(|r| ReskontroParty {
+        .map(|r| SubledgerParty {
             party_no: r.get("party_no"),
             party_name: r.get("name"),
             opening_ore: r.get("inngaende"),
@@ -344,7 +344,7 @@ pub async fn reskontro_specification(
             .last()
             .map_or(block.opening_ore, |p| p.balance_ore)
             + amount;
-        block.posts.push(ReskontroPost {
+        block.posts.push(SubledgerItem {
             account_number: r.get("account_number"),
             journal_code: r.get("journal_code"),
             fiscal_year: r.get("fiscal_year"),

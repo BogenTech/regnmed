@@ -89,7 +89,7 @@ async fn revisor_generates_the_verification_report() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =
@@ -337,7 +337,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     // cleared (as åpningsbalanse does), 2 500,00 is posted without a
     // party, and the flag comes back. The saldo now exceeds what the
     // customer_specification holds.
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, kunde_no) =
@@ -346,17 +346,17 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
             .unwrap();
     gi_partene_adresse(&state.pool, company).await;
     post("1500", 12_500_00, "3000", Some(kunde_no), 10).await;
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", None)
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", None)
         .await
         .unwrap();
     post("1500", 2_500_00, "3000", None, 11).await;
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
 
     // (b) 2400 carries leverandør postings, then someone flags it
     // 'kunde' — the amounts land in the spesifikasjon the account is not.
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     let (_, lev_no) = regnmed_db::create_party(
@@ -370,18 +370,18 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     .await
     .unwrap();
     post("2400", -8_000_00, "4000", Some(lev_no.clone()), 12).await;
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("kunde"))
         .await
         .unwrap();
 
     // (c) 2500 holds party postings but the flag was cleared and never
     // restored — the amount is in the leverandørspesifikasjon while no
     // reskontro account in the hovedbok holds it.
-    regnmed_db::set_account_reskontro(&state.pool, company, "2500", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2500", Some("leverandor"))
         .await
         .unwrap();
     post("2500", -3_000_00, "4000", Some(lev_no), 13).await;
-    regnmed_db::set_account_reskontro(&state.pool, company, "2500", None)
+    regnmed_db::set_account_subledger(&state.pool, company, "2500", None)
         .await
         .unwrap();
 
@@ -453,14 +453,14 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, clean, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, clean, "1500", Some("kunde"))
         .await
         .unwrap();
     // 2400 is flagged and never posted to: zero is a saldo like any
     // other and ties out. (Counting rows rather than amounts made an
     // untouched account look like it held a party-less posting, because
     // the left join hands the account back with a null entry.)
-    regnmed_db::set_account_reskontro(&state.pool, clean, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, clean, "2400", Some("leverandor"))
         .await
         .unwrap();
     let (_, ren_kunde) =
@@ -550,7 +550,7 @@ async fn undocumented_vouchers_are_counted_and_listable() {
     }
     let token = idp.token(&sub, "Adm");
 
-    let bilag = |dag: u32, text: &str| VoucherDraft {
+    let voucher = |dag: u32, text: &str| VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: NaiveDate::from_ymd_opt(2026, 4, dag).unwrap(),
         description: text.into(),
@@ -579,10 +579,10 @@ async fn undocumented_vouchers_are_counted_and_listable() {
         ],
     };
     let dokumentert =
-        regnmed_db::post_voucher(&state.pool, company, &bilag(2, "Med kvittering"), "test")
+        regnmed_db::post_voucher(&state.pool, company, &voucher(2, "Med kvittering"), "test")
             .await
             .unwrap();
-    regnmed_db::post_voucher(&state.pool, company, &bilag(3, "Uten kvittering"), "test")
+    regnmed_db::post_voucher(&state.pool, company, &voucher(3, "Uten kvittering"), "test")
         .await
         .unwrap();
     regnmed_db::add_attachment(

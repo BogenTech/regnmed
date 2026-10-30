@@ -614,19 +614,19 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 .with_context(|| {
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
-            let ar = tax_depreciation_year(inngaende, tilgang, vederlag, rate_bp);
+            let year = tax_depreciation_year(inngaende, tilgang, vederlag, rate_bp);
             rad = Some(DepreciationGroupRow {
                 gruppe: (*gruppe).to_string(),
                 description: (*description).to_string(),
                 opening_ore: inngaende,
                 tilgang_ore: tilgang,
                 consideration_ore: vederlag,
-                basis_ore: ar.basis_ore,
+                basis_ore: year.basis_ore,
                 rate_bp,
-                avskrivning_ore: ar.depreciation_ore,
-                closing_ore: ar.closing_ore,
+                avskrivning_ore: year.depreciation_ore,
+                closing_ore: year.closing_ore,
             });
-            inngaende = ar.closing_ore;
+            inngaende = year.closing_ore;
         }
         if let Some(rad) = rad {
             grupper.push(rad);

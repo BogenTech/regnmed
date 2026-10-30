@@ -133,7 +133,7 @@ pub struct YearQuery {
 fn kjoring_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
     json!({
         "id": k.id,
-        "ar": k.ar,
+        "ar": k.year,
         "maned": k.month,
         "utbetalt_dato": k.paid_date,
         "sone": k.zone,
@@ -183,7 +183,8 @@ pub struct PayrollLine {
 
 #[derive(Deserialize)]
 pub struct RunPayrollRequest {
-    ar: i32,
+    #[serde(rename = "ar")]
+    year: i32,
     #[serde(rename = "maned")]
     month: u32,
     #[serde(rename = "utbetalt_dato")]
@@ -217,7 +218,7 @@ pub async fn run_payroll(
     let run = regnmed_db::payroll::run_payroll(
         &state.pool,
         company_id,
-        request.ar,
+        request.year,
         request.month,
         request.paid_date,
         &request.zone,
@@ -271,7 +272,7 @@ pub async fn payslip_pdf(
     let input = regnmed_db::payroll::payslip(&state.pool, company_id, run_id, employee_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
-    let filename = format!("lonnsslipp-{}-{:02}.pdf", input.ar, input.month);
+    let filename = format!("lonnsslipp-{}-{:02}.pdf", input.year, input.month);
     let pdf = regnmed_core::payslip::render_payslip(&input);
     Ok(file_response(
         Vis::Inline,
@@ -283,7 +284,8 @@ pub async fn payslip_pdf(
 
 #[derive(Deserialize)]
 pub struct HoursQuery {
-    ar: i32,
+    #[serde(rename = "ar")]
+    year: i32,
     #[serde(rename = "maned")]
     month: u32,
 }
@@ -298,9 +300,10 @@ pub async fn payroll_hours(
     Query(q): Query<HoursQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
-    let g = regnmed_db::payroll::timegrunnlag(&state.pool, company_id, employee_id, q.ar, q.month)
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let g =
+        regnmed_db::payroll::timegrunnlag(&state.pool, company_id, employee_id, q.year, q.month)
+            .await
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "minutter": g.minutes,
         "timesats_ore": g.timesats_ore,

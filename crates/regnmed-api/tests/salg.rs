@@ -21,4 +21,4 @@ mod products;
 #[path = "grupper/reminders.rs"]
 mod reminders;
 #[path = "grupper/salgsdokument.rs"]
-mod salgsdokument;
+mod sales_document;

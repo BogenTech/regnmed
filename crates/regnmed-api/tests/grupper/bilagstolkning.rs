@@ -96,7 +96,7 @@ async fn suggestions_from_the_pdf_text_layer_and_from_history() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     // The supplier exists with an orgnr — that is the key the interpretation uses.

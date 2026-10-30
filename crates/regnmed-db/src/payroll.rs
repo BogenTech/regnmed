@@ -207,7 +207,7 @@ pub struct PayrollEntry {
 #[derive(Debug, Clone)]
 pub struct Lonnskjoring {
     pub id: Uuid,
-    pub ar: i32,
+    pub year: i32,
     pub month: u32,
     pub paid_date: NaiveDate,
     pub zone: String,
@@ -320,7 +320,7 @@ async fn rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
 pub async fn run_payroll(
     pool: &PgPool,
     company_id: Uuid,
-    ar: i32,
+    year: i32,
     month: u32,
     paid_date: NaiveDate,
     zone_slug: &str,
@@ -349,7 +349,7 @@ pub async fn run_payroll(
         })?;
 
     let employees = list_ansatte(pool, company_id).await?;
-    let maned_start = NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")?;
+    let maned_start = NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")?;
     let maned_slutt = maned_start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
@@ -367,23 +367,23 @@ pub async fn run_payroll(
             .with_context(|| format!("ukjent ansatt {}", post.employee_id))?;
         ensure!(
             employee.ansatt_i(maned_slutt, maned_start),
-            "{} var ikke ansatt i {month}/{ar}",
+            "{} var ikke ansatt i {month}/{year}",
             employee.name
         );
         let gross = if post.from_timesheet {
-            let basis = timegrunnlag(pool, company_id, employee.id, ar, month).await?;
+            let basis = timegrunnlag(pool, company_id, employee.id, year, month).await?;
             // The hours must be LOCKED before they are paid. A payroll
             // run is insert-only; if the hours change afterwards the two
             // diverge forever with no way to reconcile them.
             ensure!(
                 basis.laast,
-                "timelisten for {month:02}/{ar} er ikke låst — lås måneden før timelønn \
+                "timelisten for {month:02}/{year} er ikke låst — lås måneden før timelønn \
                  utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
                 employee.name
             );
             ensure!(
                 basis.minutes > 0,
-                "{} har ingen førte timer i {month:02}/{ar}",
+                "{} har ingen førte timer i {month:02}/{year}",
                 employee.name
             );
             basis.amount_ore
@@ -454,7 +454,7 @@ pub async fn run_payroll(
             account_number: KONTO_LONN.into(),
             amount: Ore(sum.gross_ore),
             vat_code: None,
-            description: Some(format!("Lønn {month:02}/{ar}")),
+            description: Some(format!("Lønn {month:02}/{year}")),
             party_no: None,
             department: None,
             project: None,
@@ -576,7 +576,7 @@ pub async fn run_payroll(
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: paid_date,
-        description: format!("Lønnskjøring {month:02}/{ar}"),
+        description: format!("Lønnskjøring {month:02}/{year}"),
         reverses: None,
         entries,
     };
@@ -617,7 +617,7 @@ pub async fn run_payroll(
     )
     .bind(run_id)
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .bind(month as i32)
     .bind(paid_date)
     .bind(zone_slug)
@@ -636,7 +636,7 @@ pub async fn run_payroll(
         if e.to_string()
             .contains("payroll_run_company_id_ar_maned_key")
         {
-            anyhow::anyhow!("lønn for {month:02}/{ar} er allerede kjørt")
+            anyhow::anyhow!("lønn for {month:02}/{year} er allerede kjørt")
         } else {
             anyhow::anyhow!("{e}")
         }
@@ -673,7 +673,7 @@ pub async fn run_payroll(
 
     Ok(Lonnskjoring {
         id: run_id,
-        ar,
+        year,
         month,
         paid_date,
         zone: zone_slug.to_string(),
@@ -728,7 +728,7 @@ fn kroner(ore: i64) -> String {
 pub async fn list_kjoringer(
     pool: &PgPool,
     company_id: Uuid,
-    ar: Option<i32>,
+    year: Option<i32>,
 ) -> Result<Vec<Lonnskjoring>> {
     let rows = sqlx::query(
         "select id, ar, maned, utbetalt_dato, sone, brutto_ore,
@@ -739,14 +739,14 @@ pub async fn list_kjoringer(
          order by ar desc, maned desc",
     )
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .fetch_all(pool)
     .await?;
     let mut out = rows
         .iter()
         .map(|r| Lonnskjoring {
             id: r.get("id"),
-            ar: r.get("ar"),
+            year: r.get("ar"),
             month: r.get::<i32, _>("maned") as u32,
             paid_date: r.get("utbetalt_dato"),
             zone: r.get("sone"),
@@ -786,12 +786,12 @@ pub async fn list_kjoringer(
 }
 
 /// Guard used by the API before offering a run: which months already ran.
-pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, ar: i32, month: u32) -> Result<bool> {
+pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, year: i32, month: u32) -> Result<bool> {
     let n: i64 = sqlx::query_scalar(
         "select count(*) from payroll_run where company_id = $1 and ar = $2 and maned = $3",
     )
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .bind(month as i32)
     .fetch_one(pool)
     .await?;
@@ -835,7 +835,7 @@ pub async fn payslip(
     .await?
     .context("no such lønnslinje")?;
 
-    let ar: i32 = row.get("ar");
+    let year: i32 = row.get("ar");
     let gross: i64 = row.get("brutto_ore");
     let holiday_pay: i64 = row.get("feriepenger_ore");
 
@@ -850,7 +850,7 @@ pub async fn payslip(
            and r.maned <= (select maned from payroll_run where id = $4)",
     )
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .bind(employee_id)
     .bind(run_id)
     .fetch_one(pool)
@@ -880,7 +880,7 @@ pub async fn payslip(
             .get::<String, _>("fodselsnummer")
             .as_str()
             .pipe_birth_date(),
-        ar,
+        year,
         month: row.get::<i32, _>("maned") as u32,
         paid_date: row.get("utbetalt_dato"),
         lines,
@@ -942,10 +942,10 @@ pub async fn timegrunnlag(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
-    ar: i32,
+    year: i32,
     month: u32,
 ) -> Result<Timegrunnlag> {
-    let start = NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")?;
+    let start = NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")?;
     let slutt = start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())

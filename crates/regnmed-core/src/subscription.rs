@@ -33,7 +33,7 @@ pub enum Status {
     /// A row covers today's date.
     Aktiv,
     /// No coverage, but the company is inside its trial period.
-    Trial { til: NaiveDate },
+    Trial { to: NaiveDate },
     /// Coverage (or the trial) is over, but the deadline is still
     /// running: writing works, the warning stands.
     Grace { sperres: NaiveDate },
@@ -78,7 +78,7 @@ pub fn status(
     }
     let trial_until = opprettet + chrono::Days::new(TRIAL_DAYS as u64);
     if siste_slutt.is_none() && today < trial_until {
-        return Status::Trial { til: trial_until };
+        return Status::Trial { to: trial_until };
     }
     let grunnlag = siste_slutt.map_or(trial_until, |s| s.max(trial_until));
     let sperres = grunnlag + chrono::Days::new(GRACE_DAYS as u64);
@@ -110,17 +110,13 @@ mod tests {
         let opprettet = d(2026, 7, 1);
         assert_eq!(
             status(opprettet, false, None, d(2026, 7, 28)),
-            Status::Trial {
-                til: d(2026, 7, 31)
-            }
+            Status::Trial { to: d(2026, 7, 31) }
         );
         // The trial's last day is the day BEFORE `til` — the bound is
         // exclusive like every other.
         assert_eq!(
             status(opprettet, false, None, d(2026, 7, 30)),
-            Status::Trial {
-                til: d(2026, 7, 31)
-            }
+            Status::Trial { to: d(2026, 7, 31) }
         );
         assert!(matches!(
             status(opprettet, false, None, d(2026, 7, 31)),

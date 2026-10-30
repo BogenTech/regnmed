@@ -183,8 +183,8 @@ pub async fn create_budget(
     .execute(&mut *tx)
     .await?;
 
-    if let Some(fra) = fra_ar {
-        let rows = monthly_actuals(&mut tx, company_id, fra).await?;
+    if let Some(from) = fra_ar {
+        let rows = monthly_actuals(&mut tx, company_id, from).await?;
         for (account_id, number, month, ledger_ore) in rows {
             let amount = scale_ore(presentation_ore(&number, ledger_ore), justering_bp);
             if amount == 0 {

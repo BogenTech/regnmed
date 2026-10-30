@@ -254,7 +254,7 @@ fn avgangstyper() -> Vec<String> {
 pub async fn list_hendelser(
     pool: &PgPool,
     company_id: Uuid,
-    ar: Option<i32>,
+    year: Option<i32>,
 ) -> Result<Vec<ShareEventRow>> {
     let rows = sqlx::query(
         "select e.id, e.shareholder_id, s.navn as aksjonaer, e.type, e.dato, e.antall,
@@ -267,7 +267,7 @@ pub async fn list_hendelser(
          order by e.dato desc, e.created_at desc",
     )
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -547,7 +547,7 @@ pub async fn create_utbytte(
 pub async fn list_utbytte(
     pool: &PgPool,
     company_id: Uuid,
-    ar: Option<i32>,
+    year: Option<i32>,
 ) -> Result<Vec<DividendResolution>> {
     let rows = sqlx::query(
         "select id, besluttet_dato, per_aksje_ore, note, voucher_id, created_by
@@ -556,7 +556,7 @@ pub async fn list_utbytte(
          order by besluttet_dato desc",
     )
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .fetch_all(pool)
     .await?;
     let mut out = Vec::new();
@@ -591,7 +591,7 @@ pub struct ReturnSet {
 
 /// Builds the year's oppgave. Amounts come from the aksjebok, not from
 /// anything the user retypes for the filing.
-pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<ReturnSet> {
+pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<ReturnSet> {
     let company = sqlx::query("select orgnr, name, address, email from company where id = $1")
         .bind(company_id)
         .fetch_optional(pool)
@@ -605,7 +605,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
     // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
     // for the aksjonærregisteroppgave it is the inntektsår that governs
     // anyway.
-    let siste_i_ar = NaiveDate::from_ymd_opt(ar, 12, 31).context("ugyldig år")?;
+    let siste_i_ar = NaiveDate::from_ymd_opt(year, 12, 31).context("ugyldig år")?;
 
     let bok = aksjeeierbok(pool, company_id, siste_i_ar).await?;
     ensure!(
@@ -613,7 +613,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
         "aksjeeierboken er tom — registrer aksjonærene og stiftelsen før oppgaven"
     );
 
-    let utbytte_rader = list_utbytte(pool, company_id, Some(ar)).await?;
+    let utbytte_rader = list_utbytte(pool, company_id, Some(year)).await?;
 
     let mut antall_i_ar = 0i64;
     let mut antall_i_fjor = 0i64;
@@ -628,12 +628,12 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
 
     for a in &bok {
         let events = hendelser_for(pool, a.id).await?;
-        let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, ar);
+        let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, year);
         antall_i_ar += bevegelse.closing;
         antall_i_fjor += bevegelse.opening;
 
         let mut bevegelser = Vec::new();
-        for h in events.iter().filter(|h| h.date.year() == ar) {
+        for h in events.iter().filter(|h| h.date.year() == year) {
             bevegelser.push(tax_return::ShareMovement {
                 date: h.date,
                 type_: h.type_,
@@ -672,7 +672,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
             a.id,
             tax_return::SubForm {
                 orgnumber: orgnumber.clone(),
-                inntektsar: ar,
+                inntektsar: year,
                 id: aksjonaerid(pool, a).await?,
                 name: a.name.clone(),
                 adresse: a.adresse.clone(),
@@ -717,7 +717,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
                 contact_name: None,
                 kontakt_epost: company.get("email"),
             },
-            inntektsar: ar,
+            inntektsar: year,
             aksjekapital,
             palydende_ore: tax_return::PriorYear {
                 fjoraret: palydende_ore,

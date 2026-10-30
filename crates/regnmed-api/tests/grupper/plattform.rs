@@ -68,8 +68,8 @@ async fn person(state: &AppState, idp: &TestIdp, name: &str) -> (Uuid, String, S
 /// database (the CLI bootstrap path).
 async fn platform_person(state: &AppState, idp: &TestIdp, role: &str) -> (Uuid, String) {
     let (id, _, token) = person(state, idp, role).await;
-    let til = (Utc::now() + Duration::days(30)).date_naive();
-    regnmed_db::grant_platform_role(&state.pool, id, role, til, "test", None)
+    let to = (Utc::now() + Duration::days(30)).date_naive();
+    regnmed_db::grant_platform_role(&state.pool, id, role, to, "test", None)
         .await
         .unwrap();
     (id, token)
@@ -331,13 +331,13 @@ async fn revocation_of_a_platform_role_is_immediate() {
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
     let (_, epost, token) = person(&state, &idp, "Ny Support").await;
 
-    let til = (Utc::now() + Duration::days(14)).date_naive();
+    let to = (Utc::now() + Duration::days(14)).date_naive();
     let (code, response) = json_call(
         &state,
         "POST",
         "/platform/members",
         &sysadmin,
-        &format!(r#"{{"epost":"{epost}","rolle":"support","valid_to":"{til}","notat":"sak 42"}}"#),
+        &format!(r#"{{"epost":"{epost}","rolle":"support","valid_to":"{to}","notat":"sak 42"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{response}");

@@ -84,7 +84,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (party_id, party_no) =
@@ -313,7 +313,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     // ENK — the old rule (AS/ASA) would deny it the påtegning.
@@ -440,7 +440,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     regnmed_db::update_company_settings(
@@ -566,7 +566,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     // Kontonummer, men ingen KID-avtale — nettopp kombinasjonen et

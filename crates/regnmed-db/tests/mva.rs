@@ -323,7 +323,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     regnmed_db::update_company_settings(
@@ -387,7 +387,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 
     // Same door, same guard: a tilbud is where the number is first
     // promised to the customer.
-    let tilbud = regnmed_db::create_salgsdokument(
+    let tilbud = regnmed_db::create_sales_document(
         &pool,
         company,
         "tilbud",

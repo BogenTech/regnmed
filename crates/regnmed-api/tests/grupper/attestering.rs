@@ -111,7 +111,7 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     let (leverandor_id, _) = regnmed_db::create_party(

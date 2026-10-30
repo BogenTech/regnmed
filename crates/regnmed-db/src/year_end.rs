@@ -28,7 +28,7 @@ pub const OPPTJENT_EK_KONTO: &str = "2050";
 
 #[derive(Debug)]
 pub struct Arsavslutning {
-    pub ar: i32,
+    pub year: i32,
     pub voucher: (i32, i64),
     pub result_before_tax_ore: i64,
     pub skattekostnad_ore: i64,
@@ -39,16 +39,16 @@ pub struct Arsavslutning {
 /// The fiscal year's span — the calendar-year assumption lives in ONE
 /// place (`regnmed_core::fiscal_year`, docs/regelverk.md), and this goes
 /// through that seam like the posting and the SAF-T export do.
-fn period(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
-    regnmed_core::fiscal_year::period(ar).with_context(|| format!("ugyldig år {ar}"))
+fn period(year: i32) -> Result<(NaiveDate, NaiveDate)> {
+    regnmed_core::fiscal_year::period(year).with_context(|| format!("ugyldig år {year}"))
 }
 
 /// The year's result before tax, from the ledger — presentation sign,
 /// positive = overskudd. Read here rather than taken from the caller:
 /// the number that gets disponert must be the ledger's own.
-pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<i64> {
-    let (fra, til) = period(ar)?;
-    let lines = crate::balance_lines(pool, company_id, Some(fra), til, None, None).await?;
+pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, year: i32) -> Result<i64> {
+    let (from, to) = period(year)?;
+    let lines = crate::balance_lines(pool, company_id, Some(from), to, None, None).await?;
     Ok(regnmed_core::statements::result(&lines).annual_result_ore)
 }
 
@@ -64,7 +64,7 @@ pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, ar: i32) -> Re
 pub async fn avslutt_ar(
     pool: &PgPool,
     company_id: Uuid,
-    ar: i32,
+    year: i32,
     skattekostnad_ore: i64,
     created_by: &str,
 ) -> Result<Arsavslutning> {
@@ -72,17 +72,17 @@ pub async fn avslutt_ar(
         skattekostnad_ore >= 0,
         "skattekostnaden kan ikke være negativ — en skattefordel er utsatt skatt, som ikke er bygget"
     );
-    let (_, ar_slutt) = period(ar)?;
+    let (_, ar_slutt) = period(year)?;
 
     let alt_avsluttet: Option<i32> =
         sqlx::query_scalar("select ar from arsavslutning where company_id = $1 and ar = $2")
             .bind(company_id)
-            .bind(ar)
+            .bind(year)
             .fetch_optional(pool)
             .await?;
     ensure!(
         alt_avsluttet.is_none(),
-        "{ar} er allerede avsluttet — en korreksjon er et reverserende bilag, ikke en ny avslutning"
+        "{year} er allerede avsluttet — en korreksjon er et reverserende bilag, ikke en ny avslutning"
     );
 
     // The lock would refuse our own voucher, so say so plainly instead
@@ -94,13 +94,13 @@ pub async fn avslutt_ar(
     if let Some(las) = las {
         ensure!(
             las < ar_slutt,
-            "perioden er låst til og med {las}, så årsavslutningsbilaget for {ar} \
+            "perioden er låst til og med {las}, så årsavslutningsbilaget for {year} \
              (datert {ar_slutt}) kan ikke posteres. Årsavslutningen låser året selv — \
-             lås derfor ikke {ar} på forhånd"
+             lås derfor ikke {year} på forhånd"
         );
     }
 
-    let result_before_tax_ore = result_for_the_year(pool, company_id, ar).await?;
+    let result_before_tax_ore = result_for_the_year(pool, company_id, year).await?;
     let disponert_ore = result_before_tax_ore - skattekostnad_ore;
 
     let linje = |account: &str, amount: i64, text: &str| EntryDraft {
@@ -143,7 +143,7 @@ pub async fn avslutt_ar(
     }
     ensure!(
         !entries.is_empty(),
-        "{ar} har verken resultat eller skattekostnad å disponere"
+        "{year} har verken resultat eller skattekostnad å disponere"
     );
 
     for (nr, name) in [
@@ -161,7 +161,7 @@ pub async fn avslutt_ar(
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: ar_slutt,
-        description: format!("Årsavslutning {ar}"),
+        description: format!("Årsavslutning {year}"),
         reverses: None,
         entries,
     };
@@ -176,7 +176,7 @@ pub async fn avslutt_ar(
     )
     .bind(Uuid::now_v7())
     .bind(company_id)
-    .bind(ar)
+    .bind(year)
     .bind(posted.id)
     .bind(result_before_tax_ore)
     .bind(skattekostnad_ore)
@@ -192,13 +192,13 @@ pub async fn avslutt_ar(
     .bind(Uuid::now_v7())
     .bind(company_id)
     .bind(ar_slutt)
-    .bind(format!("årsavslutning {ar} ({created_by})"))
+    .bind(format!("årsavslutning {year} ({created_by})"))
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
 
     Ok(Arsavslutning {
-        ar,
+        year,
         voucher: (posted.fiscal_year, posted.voucher_number),
         result_before_tax_ore,
         skattekostnad_ore,
@@ -220,7 +220,7 @@ pub async fn list_arsavslutninger(pool: &PgPool, company_id: Uuid) -> Result<Vec
     .await?
     .iter()
     .map(|r| Arsavslutning {
-        ar: r.get("ar"),
+        year: r.get("ar"),
         voucher: (r.get("fiscal_year"), r.get("voucher_number")),
         result_before_tax_ore: r.get("resultat_for_skatt_ore"),
         skattekostnad_ore: r.get("skattekostnad_ore"),

@@ -17,7 +17,8 @@ use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
 pub struct AvsluttRequest {
-    ar: i32,
+    #[serde(rename = "ar")]
+    year: i32,
     /// Skattekostnaden for året, i øre. Kalleren regner den ut —
     /// skattemessig resultat er ikke regnskapsmessig resultat, og å
     /// utlede den her ville vært å dikte opp en skattemelding. 0 er et
@@ -34,7 +35,7 @@ pub async fn list(
     let rader = regnmed_db::year_end::list_arsavslutninger(&state.pool, company_id).await?;
     Ok(Json(json!({
         "arsavslutninger": rader.iter().map(|a| json!({
-            "ar": a.ar,
+            "ar": a.year,
             "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
             "resultat_for_skatt_ore": a.result_before_tax_ore,
             "skattekostnad_ore": a.skattekostnad_ore,
@@ -50,14 +51,14 @@ pub async fn list(
 pub async fn forslag(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, ar)): Path<(Uuid, i32)>,
+    Path((company_id, year)): Path<(Uuid, i32)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let result = regnmed_db::year_end::result_for_the_year(&state.pool, company_id, ar)
+    let result = regnmed_db::year_end::result_for_the_year(&state.pool, company_id, year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "ar": ar,
+        "ar": year,
         "resultat_for_skatt_ore": result,
     })))
 }
@@ -73,14 +74,14 @@ pub async fn avslutt(
     let a = regnmed_db::year_end::avslutt_ar(
         &state.pool,
         company_id,
-        request.ar,
+        request.year,
         request.skattekostnad_ore,
         person.name.as_deref().unwrap_or(&person.sub),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "ar": a.ar,
+        "ar": a.year,
         "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
         "resultat_for_skatt_ore": a.result_before_tax_ore,
         "skattekostnad_ore": a.skattekostnad_ore,

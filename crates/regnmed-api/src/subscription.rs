@@ -45,7 +45,7 @@ pub async fn subscription_status(
     use regnmed_core::subscription::Status;
     let date = match status {
         Status::Aktiv => None,
-        Status::Trial { til } => Some(til),
+        Status::Trial { to } => Some(to),
         Status::Grace { sperres } => Some(sperres),
         Status::Blocked { siden } => Some(siden),
     };

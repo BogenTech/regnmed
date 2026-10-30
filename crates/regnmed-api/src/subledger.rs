@@ -172,19 +172,19 @@ pub async fn delete_match(
 }
 
 #[derive(Deserialize)]
-pub struct ReskontroFlagRequest {
+pub struct SubledgerFlagRequest {
     /// "kunde", "leverandor" or null to clear.
     kind: Option<String>,
 }
 
-pub async fn set_account_reskontro(
+pub async fn set_account_subledger(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, account_number)): Path<(Uuid, String)>,
-    Json(request): Json<ReskontroFlagRequest>,
+    Json(request): Json<SubledgerFlagRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::SubledgerWrite).await?;
-    regnmed_db::set_account_reskontro(
+    regnmed_db::set_account_subledger(
         &state.pool,
         company_id,
         &account_number,
