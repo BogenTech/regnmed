@@ -206,7 +206,7 @@ pub async fn invite(
     // invitation IS the grant, the mail only announces it. A queue that
     // is down must not take membership administration down with it — so
     // the failure is reported, never raised (#66).
-    let feil = crate::utsendelse::try_send_invitation(&state, &person, company_id, id)
+    let feil = crate::dispatch::try_send_invitation(&state, &person, company_id, id)
         .await
         .err();
     Ok(Json(json!({

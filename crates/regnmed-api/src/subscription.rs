@@ -41,20 +41,20 @@ pub async fn subscription_status(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
-    let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
-    use regnmed_core::abonnement::Status;
+    let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
+    use regnmed_core::subscription::Status;
     let date = match status {
         Status::Aktiv => None,
-        Status::Prove { til } => Some(til),
-        Status::Frist { sperres } => Some(sperres),
-        Status::Sperret { siden } => Some(siden),
+        Status::Trial { til } => Some(til),
+        Status::Grace { sperres } => Some(sperres),
+        Status::Blocked { siden } => Some(siden),
     };
-    let kort = regnmed_db::abonnement::kort_for(&state.pool, company_id).await?;
-    let priser = regnmed_db::abonnement::list_priser(&state.pool).await?;
-    // Nyeste gjeldende pris per plan.
+    let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;
+    let prices = regnmed_db::subscription::list_prices(&state.pool).await?;
+    // Newest price in force per plan.
     let idag = chrono::Utc::now().date_naive();
     let mut sett: Vec<&str> = Vec::new();
-    let planer: Vec<serde_json::Value> = priser
+    let planer: Vec<serde_json::Value> = prices
         .iter()
         .filter(|p| p.valid_from <= idag)
         .filter(|p| {
@@ -65,18 +65,18 @@ pub async fn subscription_status(
                 true
             }
         })
-        .map(|p| json!({ "plan": p.plan, "pris_ore_per_mnd": p.pris_ore_per_mnd }))
+        .map(|p| json!({ "plan": p.plan, "pris_ore_per_mnd": p.price_ore_per_month }))
         .collect();
     // The Stripe subscription, when the company is on that rail. Its
     // presence is what tells the portal to offer "si opp" rather than
     // "kontakt drift" — companies from before the Stripe rail keep the
     // old arrangement and have nothing to cancel here.
-    let abo = regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id).await?;
+    let abo = regnmed_db::subscription::stripe_abo_for(&state.pool, company_id).await?;
     Ok(Json(json!({
         "status": status.slug(),
         "dato": date.map(|d| d.to_string()),
         "planer": planer,
-        "kort": kort.filter(|k| k.aktiv).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
+        "kort": card.filter(|k| k.aktiv).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
         "kort_mulig": state.stripe.is_some(),
         "abonnement": abo.map(|a| json!({
             "plan": a.plan,
@@ -126,8 +126,8 @@ pub async fn card_setup(
         .unwrap_or_else(|| format!("/#/c/{company_id}/oversikt"));
     let success = format!("{origin}{path}");
 
-    let customer = match regnmed_db::abonnement::kort_for(&state.pool, company_id).await? {
-        Some(kort) => kort.stripe_customer_id,
+    let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
+        Some(card) => card.stripe_customer_id,
         None => {
             let (navn, orgnr): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
@@ -171,7 +171,7 @@ async fn sync_price(
     interval: &str,
     idag: chrono::NaiveDate,
 ) -> Result<String, ApiError> {
-    let brutto = regnmed_db::abonnement::brutto_for(
+    let brutto = regnmed_db::subscription::brutto_for(
         &state.pool,
         drift_company(state).await?,
         plan,
@@ -180,7 +180,7 @@ async fn sync_price(
     )
     .await?;
     if let Some((price_id, kjent)) =
-        regnmed_db::abonnement::stripe_price_for(&state.pool, plan, interval).await?
+        regnmed_db::subscription::stripe_price_for(&state.pool, plan, interval).await?
     {
         if kjent == brutto {
             return Ok(price_id);
@@ -190,7 +190,7 @@ async fn sync_price(
     let price_id = client(cfg)
         .create_price(&navn, brutto, interval, plan)
         .await?;
-    regnmed_db::abonnement::lagre_stripe_price(
+    regnmed_db::subscription::save_stripe_price(
         &state.pool,
         plan,
         interval,
@@ -225,11 +225,11 @@ pub async fn start_subscription(
             "intervallet må være «month» eller «year»".into(),
         ));
     }
-    regnmed_db::abonnement::pris_pa(&state.pool, &request.plan, idag)
+    regnmed_db::subscription::price_on(&state.pool, &request.plan, idag)
         .await
         .map_err(|_| ApiError::BadRequest("ukjent plan".into()))?;
 
-    if regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id)
+    if regnmed_db::subscription::stripe_abo_for(&state.pool, company_id)
         .await?
         .is_some()
     {
@@ -240,7 +240,7 @@ pub async fn start_subscription(
 
     let Some(cfg) = &state.stripe else {
         // No card rail: ops-agreed invoicing, coverage written directly.
-        if regnmed_db::abonnement::status_for(&state.pool, company_id)
+        if regnmed_db::subscription::status_for(&state.pool, company_id)
             .await?
             .slug()
             == "aktiv"
@@ -250,7 +250,7 @@ pub async fn start_subscription(
             ));
         }
         let navn = person.name.as_deref().unwrap_or(&person.sub);
-        regnmed_db::abonnement::tegn(
+        regnmed_db::subscription::open_coverage(
             &state.pool,
             company_id,
             &request.plan,
@@ -265,8 +265,8 @@ pub async fn start_subscription(
 
     let price_id = sync_price(&state, cfg, &request.plan, interval, idag).await?;
     let stripe = client(cfg);
-    let customer = match regnmed_db::abonnement::kort_for(&state.pool, company_id).await? {
-        Some(kort) => kort.stripe_customer_id,
+    let customer = match regnmed_db::subscription::card_for(&state.pool, company_id).await? {
+        Some(card) => card.stripe_customer_id,
         None => {
             let (navn, orgnr): (String, String) =
                 sqlx::query_as("select name, orgnr from company where id = $1")
@@ -350,7 +350,7 @@ pub async fn stripe_webhook(
             let stripe = client(cfg);
             let pm = stripe.setup_intent_payment_method(setup_intent).await?;
             let (brand, last4) = stripe.payment_method_card(&pm).await.unwrap_or_default();
-            regnmed_db::abonnement::lagre_kort(
+            regnmed_db::subscription::save_card(
                 &state.pool,
                 company,
                 &customer,
@@ -379,7 +379,7 @@ pub async fn stripe_webhook(
                 object["amount"].as_i64().unwrap_or(0)
             };
             let detail = object["last_payment_error"]["message"].as_str();
-            let ny = regnmed_db::abonnement::registrer_kortbetaling(
+            let ny = regnmed_db::subscription::register_card_payment(
                 &state.pool,
                 drift,
                 invoice_id,
@@ -412,7 +412,7 @@ pub async fn stripe_webhook(
             let plan = price["metadata"]["regnmed_plan"].as_str().unwrap_or("");
 
             if let Some(company) = company {
-                let ny = regnmed_db::abonnement::lagre_stripe_abo(
+                let ny = regnmed_db::subscription::save_stripe_subscription(
                     &state.pool,
                     company,
                     sub_id,
@@ -431,14 +431,21 @@ pub async fn stripe_webhook(
             // `past_due` at Stripe means Stripe is still retrying, and
             // locking the customer out mid-retry would take the hovedbok
             // hostage over a card that may well go through tomorrow.
-            regnmed_db::abonnement::oppdater_stripe_status(&state.pool, sub_id, status, cancel_at)
-                .await?;
+            regnmed_db::subscription::oppdater_stripe_status(
+                &state.pool,
+                sub_id,
+                status,
+                cancel_at,
+            )
+            .await?;
             Ok(Json(json!({ "handled": "status_oppdatert" })))
         }
         "customer.subscription.deleted" => {
             let sub_id = object["id"].as_str().unwrap_or_default();
             let idag = chrono::Utc::now().date_naive();
-            match regnmed_db::abonnement::avslutt_stripe_abo(&state.pool, sub_id, idag).await? {
+            match regnmed_db::subscription::end_stripe_subscription(&state.pool, sub_id, idag)
+                .await?
+            {
                 Some(_) => Ok(Json(json!({ "handled": "abonnement_avsluttet" }))),
                 None => Ok(Json(json!({ "handled": "replay" }))),
             }
@@ -451,7 +458,7 @@ pub async fn stripe_webhook(
                 return Ok(Json(json!({ "handled": "ignorert" })));
             }
             let Some(abo) =
-                regnmed_db::abonnement::stripe_abo_by_subscription(&state.pool, sub_id).await?
+                regnmed_db::subscription::stripe_abo_by_subscription(&state.pool, sub_id).await?
             else {
                 return Ok(Json(json!({ "handled": "ukjent_abonnement" })));
             };
@@ -467,7 +474,7 @@ pub async fn stripe_webhook(
                 .unwrap_or("abonnement")
                 .to_string();
             let idag = chrono::Utc::now().date_naive();
-            let ny = regnmed_db::abonnement::bokfor_stripe_betaling(
+            let ny = regnmed_db::subscription::post_stripe_payment(
                 &state.pool,
                 drift,
                 abo.company_id,
@@ -515,7 +522,7 @@ pub async fn cancel_subscription(
             "kortbetaling er ikke satt opp på denne installasjonen".into(),
         ));
     };
-    let Some(abo) = regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id).await? else {
+    let Some(abo) = regnmed_db::subscription::stripe_abo_for(&state.pool, company_id).await? else {
         return Err(ApiError::BadRequest(
             "selskapet har ikke et Stripe-abonnement å si opp — ta kontakt med drift".into(),
         ));
@@ -524,7 +531,7 @@ pub async fn cancel_subscription(
         .cancel_subscription_at_period_end(&abo.stripe_subscription_id)
         .await?;
     let cancel_at_dt = cancel_at.and_then(|t| chrono::DateTime::from_timestamp(t, 0));
-    regnmed_db::abonnement::oppdater_stripe_status(
+    regnmed_db::subscription::oppdater_stripe_status(
         &state.pool,
         &abo.stripe_subscription_id,
         &status,

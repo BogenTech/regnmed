@@ -260,7 +260,7 @@ pub async fn invitation_email_payload(
 /// One row per send — the id IS the queue's Nats-Msg-Id, so the log row
 /// and the (deduplicated) queue message are the same event.
 #[allow(clippy::too_many_arguments)]
-pub async fn log_utsendelse(
+pub async fn log_dispatch(
     pool: &PgPool,
     id: Uuid,
     company_id: Uuid,
@@ -293,7 +293,7 @@ pub async fn log_utsendelse(
 }
 
 #[derive(Debug)]
-pub struct UtsendelseRow {
+pub struct DispatchRow {
     pub id: Uuid,
     pub reminder_id: Option<Uuid>,
     pub to_email: String,
@@ -302,11 +302,11 @@ pub struct UtsendelseRow {
     pub sent_at: chrono::DateTime<chrono::Utc>,
 }
 
-pub async fn list_utsendelser(
+pub async fn list_dispatches(
     pool: &PgPool,
     company_id: Uuid,
     invoice_id: Uuid,
-) -> Result<Vec<UtsendelseRow>> {
+) -> Result<Vec<DispatchRow>> {
     let rows = sqlx::query(
         "select id, reminder_id, to_email, subject, sent_by, created_at
          from utsendelse where company_id = $1 and invoice_id = $2
@@ -318,7 +318,7 @@ pub async fn list_utsendelser(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| UtsendelseRow {
+        .map(|r| DispatchRow {
             id: r.get("id"),
             reminder_id: r.get("reminder_id"),
             to_email: r.get("to_email"),

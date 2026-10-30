@@ -289,7 +289,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
     make_blocked(&state, company).await;
 
     let idag = Utc::now().date_naive();
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         company,
         "standard",
@@ -313,10 +313,10 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
 
     // Oppsigelse fra i morgen: dekningen står ut dagen, deretter løper
     // fristen — endringer virker fortsatt, banneret varsler.
-    regnmed_db::abonnement::avslutt(&state.pool, company, idag + chrono::Days::new(1))
+    regnmed_db::subscription::close_coverage(&state.pool, company, idag + chrono::Days::new(1))
         .await
         .unwrap();
-    let status = regnmed_db::abonnement::status_for(&state.pool, company)
+    let status = regnmed_db::subscription::status_for(&state.pool, company)
         .await
         .unwrap();
     assert_eq!(status.slug(), "aktiv", "dekningen står ut siste dag");
@@ -325,7 +325,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
 /// The invoicing run: regnmed invoices itself with its own engine — and a
 /// month cannot be invoiced twice.
 #[tokio::test]
-async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
+async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     let Some((state, _idp, kunde, _admin)) = oppsett().await else {
         return;
     };
@@ -334,7 +334,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
         .unwrap();
     gjor_fakturaklar(&state.pool, drift).await;
     let idag = Utc::now().date_naive();
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         kunde,
         "standard",
@@ -349,7 +349,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     // The `bare` narrowing: the dev database can hold thousands of
     // companies with coverage (the migration's seeding), and the test
     // must not invoice them all.
-    let forste = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+    let forste = regnmed_db::subscription::fakturer_maned(&state.pool, drift, idag, Some(kunde))
         .await
         .unwrap();
     let vare = forste
@@ -362,7 +362,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     };
 
     // Kjøring nummer to: samme måned, ingen ny faktura.
-    let andre = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+    let andre = regnmed_db::subscription::fakturer_maned(&state.pool, drift, idag, Some(kunde))
         .await
         .unwrap();
     let vare2 = andre.iter().find(|u| u.company_id == kunde).unwrap();
@@ -393,16 +393,16 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    let pris = regnmed_db::abonnement::pris_pa(&state.pool, "standard", idag)
+    let price = regnmed_db::subscription::price_on(&state.pool, "standard", idag)
         .await
         .unwrap();
-    assert_eq!(amount, pris);
-    let kunde_orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
+    assert_eq!(amount, price);
+    let customer_orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(kunde)
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    assert_eq!(orgnr, kunde_orgnr);
+    assert_eq!(orgnr, customer_orgnumber);
 }
 
 /// A faktura-ready company whose mva registration we choose.
@@ -454,7 +454,7 @@ async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
     let idag = Utc::now().date_naive();
     let fra = NaiveDateHelper::forste_i_maneden(idag);
     for kunde in [kunde_a, kunde_b] {
-        regnmed_db::abonnement::tegn(
+        regnmed_db::subscription::open_coverage(
             &state.pool,
             kunde,
             "standard",
@@ -471,9 +471,10 @@ async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
     let utenfor = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
 
     let linje = async |drift: Uuid, kunde: Uuid| -> (String, i64, i64) {
-        let utfall = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
-            .await
-            .unwrap();
+        let utfall =
+            regnmed_db::subscription::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+                .await
+                .unwrap();
         let vare = utfall
             .iter()
             .find(|u| u.company_id == kunde)
@@ -491,13 +492,13 @@ async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
         .unwrap()
     };
 
-    let pris = regnmed_db::abonnement::pris_pa(&state.pool, "standard", idag)
+    let price = regnmed_db::subscription::price_on(&state.pool, "standard", idag)
         .await
         .unwrap();
 
     let (kode, mva, netto) = linje(registrert, kunde_a).await;
     assert_eq!(kode, "3", "registrert selger fakturerer utgående mva");
-    assert_eq!(netto, pris);
+    assert_eq!(netto, price);
     assert!(mva > 0, "25 % skulle vært beregnet, men mva_ore = {mva}");
 
     let (kode, mva, netto) = linje(utenfor, kunde_b).await;
@@ -507,23 +508,26 @@ async fn mva_on_our_own_faktura_follows_the_ops_company_registration() {
     );
     assert_eq!(mva, 0, "mval. §11-4: ingen mva skal oppgis");
     assert_eq!(
-        netto, pris,
+        netto, price,
         "prisen er den samme — bare avgiften faller bort"
     );
 
     // The same fact decides the Stripe Price: the card is charged the
-    // gross, and bokfor_stripe_betaling asserts charge == fordring.
+    // gross, and post_stripe_payment asserts charge == fordring.
     let brutto_registrert =
-        regnmed_db::abonnement::brutto_for(&state.pool, registrert, "standard", "month", idag)
+        regnmed_db::subscription::brutto_for(&state.pool, registrert, "standard", "month", idag)
             .await
             .unwrap();
     let brutto_utenfor =
-        regnmed_db::abonnement::brutto_for(&state.pool, utenfor, "standard", "month", idag)
+        regnmed_db::subscription::brutto_for(&state.pool, utenfor, "standard", "month", idag)
             .await
             .unwrap();
-    assert!(brutto_registrert > pris, "registrert selger trekker brutto");
+    assert!(
+        brutto_registrert > price,
+        "registrert selger trekker brutto"
+    );
     assert_eq!(
-        brutto_utenfor, pris,
+        brutto_utenfor, price,
         "kortet skal trekkes fakturaens beløp — en Stripe-pris med 25 % \
          på en uregistrert selger ville sprengt beløpskontrollen i \
          bokfor_stripe_betaling ved hvert eneste trekk"
@@ -542,7 +546,7 @@ impl NaiveDateHelper {
 /// and payment restores coverage, while an oppsigelse never resurrects.
 #[tokio::test]
 async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
-    use regnmed_db::abonnement_oppfolging as opf;
+    use regnmed_db::subscription_follow_up as opf;
 
     let Some((state, _idp, kunde, _admin)) = oppsett().await else {
         return;
@@ -552,7 +556,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .unwrap();
     gjor_fakturaklar(&state.pool, drift).await;
     let idag = Utc::now().date_naive();
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         kunde,
         "standard",
@@ -563,7 +567,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     )
     .await
     .unwrap();
-    let utfall = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+    let utfall = regnmed_db::subscription::fakturer_maned(&state.pool, drift, idag, Some(kunde))
         .await
         .unwrap();
     let gross = utfall
@@ -572,12 +576,12 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .and_then(|u| u.gross_ore)
         .expect("faktura utstedt");
 
-    let mine = |apne: Vec<opf::AbonnementFaktura>| {
+    let mine = |apne: Vec<opf::SubscriptionInvoice>| {
         apne.into_iter()
             .find(|f| f.company_id == kunde)
             .expect("abonnementsfakturaen i listen")
     };
-    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(!f.sendt, "ingenting er sendt ennå");
     assert_eq!(f.remaining_ore, gross);
     let forfall = f.due_date;
@@ -596,7 +600,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .expect("påminnelse");
     assert_eq!(steg, "paminnelse");
     // Same snapshot again: the reminder exists now, one step per day max.
-    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
         opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(3))
             .await
@@ -617,7 +621,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     assert!(gebyr > 0, "purringen bærer gebyret");
 
     // Not yet 30 days past forfall: coverage stands.
-    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
         !opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(29))
             .await
@@ -662,7 +666,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .unwrap()
         .expect("inkassovarsel");
     assert_eq!(steg, "inkassovarsel");
-    let f = mine(opf::apne_fakturaer(&state.pool, drift).await.unwrap());
+    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
         opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(90))
             .await
@@ -673,7 +677,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
 
     // Unpaid: no restoration.
     assert!(
-        !opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(40))
+        !opf::restore_if_paid(&state.pool, drift, kunde, forfall + chrono::Days::new(40))
             .await
             .unwrap()
     );
@@ -744,7 +748,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
 
     // Paid → restored, once; the trail remembers.
     assert!(
-        opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(41))
+        opf::restore_if_paid(&state.pool, drift, kunde, forfall + chrono::Days::new(41))
             .await
             .unwrap()
     );
@@ -759,7 +763,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     assert_eq!(plan, "standard", "planen fortsetter som før");
     assert!(valid_to.is_none(), "dekningen er åpen igjen");
     assert!(
-        !opf::gjenopprett_om_betalt(&state.pool, drift, kunde, forfall + chrono::Days::new(42))
+        !opf::restore_if_paid(&state.pool, drift, kunde, forfall + chrono::Days::new(42))
             .await
             .unwrap(),
         "gjenoppretting skjer én gang"
@@ -770,7 +774,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     let oppsagt = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oppsagt AS")
         .await
         .unwrap();
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         oppsagt,
         "basis",
@@ -781,11 +785,11 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     )
     .await
     .unwrap();
-    regnmed_db::abonnement::avslutt(&state.pool, oppsagt, idag + chrono::Days::new(1))
+    regnmed_db::subscription::close_coverage(&state.pool, oppsagt, idag + chrono::Days::new(1))
         .await
         .unwrap();
     assert!(
-        !opf::gjenopprett_om_betalt(&state.pool, drift, oppsagt, idag + chrono::Days::new(60))
+        !opf::restore_if_paid(&state.pool, drift, oppsagt, idag + chrono::Days::new(60))
             .await
             .unwrap(),
         "en oppsigelse vekkes aldri til live"
@@ -914,7 +918,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     let state = with_stripe(&state, &drift_orgnr);
 
     let idag = Utc::now().date_naive();
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         kunde,
         "standard",
@@ -925,7 +929,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     )
     .await
     .unwrap();
-    let utfall = regnmed_db::abonnement::fakturer_maned(&state.pool, drift, idag, Some(kunde))
+    let utfall = regnmed_db::subscription::fakturer_maned(&state.pool, drift, idag, Some(kunde))
         .await
         .unwrap();
     let faktura = utfall.iter().find(|u| u.company_id == kunde).unwrap();
@@ -1008,7 +1012,7 @@ async fn signing_up_activates_directly_without_the_card_rail() {
     assert_eq!(kode, StatusCode::OK, "{svar}");
     assert_eq!(svar["status"], "aktiv");
     assert_eq!(
-        regnmed_db::abonnement::status_for(&state.pool, company)
+        regnmed_db::subscription::status_for(&state.pool, company)
             .await
             .unwrap()
             .slug(),
@@ -1025,7 +1029,7 @@ async fn a_company_cannot_start_a_second_subscription() {
         return;
     };
     let state = with_stripe(&state, "999999999");
-    regnmed_db::abonnement::lagre_stripe_abo(
+    regnmed_db::subscription::save_stripe_subscription(
         &state.pool,
         company,
         &format!("sub_{}", Uuid::new_v4()),
@@ -1109,7 +1113,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     assert_eq!(kode, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "abonnement_opprettet");
     assert_eq!(
-        regnmed_db::abonnement::status_for(&state.pool, kunde)
+        regnmed_db::subscription::status_for(&state.pool, kunde)
             .await
             .unwrap()
             .slug(),
@@ -1173,7 +1177,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     assert_eq!(kode, StatusCode::OK, "{svar}");
     assert_eq!(svar["handled"], "abonnement_avsluttet");
     assert!(
-        regnmed_db::abonnement::stripe_abo_for(&state.pool, kunde)
+        regnmed_db::subscription::stripe_abo_for(&state.pool, kunde)
             .await
             .unwrap()
             .is_none(),

@@ -28,7 +28,7 @@ pub struct TemplateDraft {
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
     pub forfall_dager: i32,
-    pub merk_utsendelse: bool,
+    pub mark_dispatch: bool,
     pub lines: Vec<TemplateLineDraft>,
 }
 
@@ -74,7 +74,7 @@ pub async fn create_template(
     .bind(draft.next_date)
     .bind(draft.end_date)
     .bind(draft.forfall_dager)
-    .bind(draft.merk_utsendelse)
+    .bind(draft.mark_dispatch)
     .bind(created_by)
     .execute(&mut *tx)
     .await?;
@@ -122,7 +122,7 @@ pub async fn create_template_from_invoice(
     intervall: &str,
     next_date: NaiveDate,
     forfall_dager: i32,
-    merk_utsendelse: bool,
+    mark_dispatch: bool,
     created_by: &str,
 ) -> Result<Uuid> {
     let party_no: String = sqlx::query_scalar(
@@ -163,7 +163,7 @@ pub async fn create_template_from_invoice(
             next_date,
             end_date: None,
             forfall_dager,
-            merk_utsendelse,
+            mark_dispatch,
             lines,
         },
         created_by,
@@ -182,7 +182,7 @@ pub async fn update_template(
     next_date: Option<NaiveDate>,
     end_date: Option<Option<NaiveDate>>,
     forfall_dager: Option<i32>,
-    merk_utsendelse: Option<bool>,
+    mark_dispatch: Option<bool>,
     active: Option<bool>,
     lines: Option<&[TemplateLineDraft]>,
 ) -> Result<()> {
@@ -208,7 +208,7 @@ pub async fn update_template(
     .bind(end_date.is_some())
     .bind(end_date.flatten())
     .bind(forfall_dager)
-    .bind(merk_utsendelse)
+    .bind(mark_dispatch)
     .bind(active)
     .execute(&mut *tx)
     .await?;
@@ -234,7 +234,7 @@ pub struct TemplateRow {
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
     pub forfall_dager: i32,
-    pub merk_utsendelse: bool,
+    pub mark_dispatch: bool,
     pub active: bool,
     pub sum_netto_ore: i64,
     pub runs: i64,
@@ -267,7 +267,7 @@ pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<Templ
             next_date: r.get("neste_dato"),
             end_date: r.get("slutt_dato"),
             forfall_dager: r.get("forfall_dager"),
-            merk_utsendelse: r.get("merk_utsendelse"),
+            mark_dispatch: r.get("merk_utsendelse"),
             active: r.get("active"),
             sum_netto_ore: r.get("sum_netto_ore"),
             runs: r.get("runs"),
@@ -368,7 +368,7 @@ pub async fn generate_one(
         return Ok(None);
     }
     let intervall: String = template.get("intervall");
-    let merk_utsendelse: bool = template.get("merk_utsendelse");
+    let mark_dispatch: bool = template.get("merk_utsendelse");
 
     let line_rows = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
@@ -429,7 +429,7 @@ pub async fn generate_one(
         .bind(template_id)
         .bind(issued.invoice_id)
         .bind(next_date)
-        .bind(merk_utsendelse)
+        .bind(mark_dispatch)
         .execute(&mut *tx)
         .await?;
         let advanced =
@@ -486,7 +486,7 @@ pub async fn generate_one(
 pub struct RunRow {
     pub generated_for: NaiveDate,
     pub invoice_no: Option<i64>,
-    pub til_utsendelse: bool,
+    pub for_dispatch: bool,
     pub detail: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -510,7 +510,7 @@ pub async fn list_runs(pool: &PgPool, company_id: Uuid, template_id: Uuid) -> Re
         .map(|r| RunRow {
             generated_for: r.get("generated_for"),
             invoice_no: r.get("invoice_no"),
-            til_utsendelse: r.get("til_utsendelse"),
+            for_dispatch: r.get("til_utsendelse"),
             detail: r.get("detail"),
             created_at: r.get("created_at"),
         })

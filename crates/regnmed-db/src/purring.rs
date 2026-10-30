@@ -93,7 +93,7 @@ pub struct ReminderDraft {
     pub steg: String,
     /// None → dagens dato (current_date i databasen).
     pub sent_date: Option<NaiveDate>,
-    pub frist_date: NaiveDate,
+    pub grace_date: NaiveDate,
     pub gebyr_ore: i64,
     /// Claim accrued forsinkelsesrente on top of the principal.
     pub med_rente: bool,
@@ -110,7 +110,7 @@ pub struct ReminderResult {
     pub reminder_id: Option<Uuid>,
     pub steg: String,
     pub sent_date: NaiveDate,
-    pub frist_date: NaiveDate,
+    pub grace_date: NaiveDate,
     pub remaining_ore: i64,
     pub gebyr_ore: i64,
     pub maks_gebyr_ore: i64,
@@ -255,7 +255,7 @@ async fn prepare(
     valider_steg(
         steg,
         sent_date,
-        draft.frist_date,
+        draft.grace_date,
         facts.due_date,
         draft.gebyr_ore,
         maks_gebyr_ore,
@@ -272,7 +272,7 @@ async fn prepare(
         invoice_date: facts.invoice_date,
         forfall: facts.due_date,
         sent_date,
-        frist_date: draft.frist_date,
+        grace_date: draft.grace_date,
         remaining_amount_ore: facts.remaining_ore,
         rente: rente.clone(),
         gebyr_ore: draft.gebyr_ore,
@@ -293,7 +293,7 @@ fn result_of(p: &PreparedReminder, draft: &ReminderDraft) -> ReminderResult {
         reminder_id: None,
         steg: p.steg.as_str().to_string(),
         sent_date: p.sent_date,
-        frist_date: draft.frist_date,
+        grace_date: draft.grace_date,
         remaining_ore: p.facts.remaining_ore,
         gebyr_ore: draft.gebyr_ore,
         maks_gebyr_ore: p.maks_gebyr_ore,
@@ -359,7 +359,7 @@ pub async fn create_reminder(
     .bind(invoice_id)
     .bind(prepared.steg.as_str())
     .bind(prepared.sent_date)
-    .bind(draft.frist_date)
+    .bind(draft.grace_date)
     .bind(prepared.facts.remaining_ore)
     .bind(draft.gebyr_ore)
     .bind(prepared.rente.sum_ore)
@@ -381,7 +381,7 @@ pub struct ReminderRow {
     pub reminder_id: Uuid,
     pub steg: String,
     pub sent_date: NaiveDate,
-    pub frist_date: NaiveDate,
+    pub grace_date: NaiveDate,
     pub remaining_ore: i64,
     pub gebyr_ore: i64,
     pub rente_ore: i64,
@@ -416,7 +416,7 @@ pub async fn list_reminders(
             reminder_id: r.get("id"),
             steg: r.get("steg"),
             sent_date: r.get("sent_date"),
-            frist_date: r.get("frist_date"),
+            grace_date: r.get("frist_date"),
             remaining_ore: r.get("remaining_ore"),
             gebyr_ore: r.get("gebyr_ore"),
             rente_ore: r.get("rente_ore"),

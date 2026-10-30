@@ -1,4 +1,4 @@
-//! Who may do what: access, members, oppdrag, marketplace, abonnement.
+//! Who may do what: access, members, oppdrag, marketplace, subscription.
 //!
 //! One binary for several test files: each tests/*.rs links separately,
 //! and 33 of them held a single test. nextest runs every test in its own
@@ -6,8 +6,6 @@
 
 mod common;
 
-#[path = "grupper/abonnement.rs"]
-mod abonnement;
 #[path = "grupper/agent.rs"]
 mod agent;
 #[path = "grupper/byramedlemmer.rs"]
@@ -26,5 +24,7 @@ mod me_endpoint;
 mod medlemmer;
 #[path = "grupper/plattform.rs"]
 mod plattform;
+#[path = "grupper/subscription.rs"]
+mod subscription;
 #[path = "grupper/tilgang.rs"]
 mod tilgang;

@@ -226,7 +226,7 @@ pub struct NesteSkritt {
     /// Add forsinkelsesrente to the claim.
     pub med_rente: bool,
     /// Payment deadline, days from the send date.
-    pub frist_dager: i64,
+    pub grace_days: i64,
 }
 
 /// Days past forfall before the first (free) påminnelse — a bank
@@ -251,7 +251,7 @@ pub fn neste_skritt(
                 steg: Steg::Paminnelse,
                 med_gebyr: false,
                 med_rente: false,
-                frist_dager: SKRITT_MELLOMROM_DAGER,
+                grace_days: SKRITT_MELLOMROM_DAGER,
             })
         }
         Some((Steg::Paminnelse, sendt))
@@ -261,7 +261,7 @@ pub fn neste_skritt(
                 steg: Steg::Purring,
                 med_gebyr: true,
                 med_rente: false,
-                frist_dager: SKRITT_MELLOMROM_DAGER,
+                grace_days: SKRITT_MELLOMROM_DAGER,
             })
         }
         Some((Steg::Purring, sendt))
@@ -271,7 +271,7 @@ pub fn neste_skritt(
                 steg: Steg::Inkassovarsel,
                 med_gebyr: false,
                 med_rente: true,
-                frist_dager: SKRITT_MELLOMROM_DAGER,
+                grace_days: SKRITT_MELLOMROM_DAGER,
             })
         }
         _ => None,
@@ -285,7 +285,7 @@ pub fn neste_skritt(
 pub fn valider_steg(
     steg: Steg,
     sent_date: NaiveDate,
-    frist_date: NaiveDate,
+    grace_date: NaiveDate,
     forfall: NaiveDate,
     gebyr_ore: i64,
     maks_gebyr_ore: i64,
@@ -305,12 +305,12 @@ pub fn valider_steg(
             forsokt: steg,
         });
     }
-    if frist_date <= sent_date {
+    if grace_date <= sent_date {
         return Err(PurringError::DeadlineBeforeSendDate);
     }
     if steg == Steg::Inkassovarsel {
         let minst = sent_date + chrono::Days::new(14);
-        if frist_date < minst {
+        if grace_date < minst {
             return Err(PurringError::FristForKort { minst });
         }
     }
@@ -411,7 +411,7 @@ pub struct PurringDokument {
     pub invoice_date: NaiveDate,
     pub forfall: NaiveDate,
     pub sent_date: NaiveDate,
-    pub frist_date: NaiveDate,
+    pub grace_date: NaiveDate,
     pub remaining_amount_ore: i64,
     /// The interest spesifikasjon when interest is claimed; empty otherwise.
     pub rente: RenteBeregning,
@@ -479,7 +479,7 @@ pub fn render_dokument(dok: &PurringDokument) -> String {
         "Å betale:                                {:>12} kr",
         Ore(total).to_string()
     ));
-    line(&format!("Betales innen:  {}", dok.frist_date));
+    line(&format!("Betales innen:  {}", dok.grace_date));
     if let Some(kid) = &dok.kid {
         line(&format!("KID:            {kid}"));
     }
@@ -529,7 +529,7 @@ mod tests {
         .unwrap();
         assert_eq!(p.steg, Steg::Inkassovarsel);
         assert!(p.med_rente && !p.med_gebyr);
-        assert_eq!(p.frist_dager, 14);
+        assert_eq!(p.grace_days, 14);
         // After the inkassovarsel the machine stops nagging — no matter
         // how long it waits.
         assert_eq!(
@@ -810,7 +810,7 @@ mod tests {
             invoice_date: date(2025, 6, 1),
             forfall: date(2025, 6, 15),
             sent_date: date(2025, 7, 15),
-            frist_date: date(2025, 7, 29),
+            grace_date: date(2025, 7, 29),
             remaining_amount_ore: 1_000_000,
             rente: forsinkelsesrente(1_000_000, date(2025, 6, 15), date(2025, 7, 15), &satser())
                 .unwrap(),

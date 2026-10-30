@@ -1,7 +1,6 @@
 //! HTTP API for regnmed. Library crate so integration tests can build the
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
-pub mod abonnement;
 pub mod accrual;
 pub mod agent_task;
 pub mod aksjebok;
@@ -16,6 +15,7 @@ pub mod cash_register;
 pub mod chart_of_accounts;
 pub mod currency;
 pub mod dimension;
+pub mod dispatch;
 pub mod email;
 pub mod engagement;
 pub mod expenses;
@@ -43,9 +43,9 @@ pub mod reskontro;
 pub mod roles;
 pub mod salgsdokument;
 pub mod settings;
+pub mod subscription;
 pub mod tilgang;
 pub mod timesheet;
-pub mod utsendelse;
 pub mod year_end;
 
 use std::sync::Arc;
@@ -424,15 +424,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/send",
-            axum::routing::post(utsendelse::send_invoice),
+            axum::routing::post(dispatch::send_invoice),
         )
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}/send",
-            axum::routing::post(utsendelse::send_reminder),
+            axum::routing::post(dispatch::send_reminder),
         )
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
-            get(utsendelse::list_utsendelser),
+            get(dispatch::list_dispatches),
         )
         .route(
             "/companies/{company_id}/payments/payable",
@@ -659,15 +659,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/subscription",
-            get(abonnement::subscription_status).post(abonnement::start_subscription),
+            get(subscription::subscription_status).post(subscription::start_subscription),
         )
         .route(
             "/companies/{company_id}/subscription/card-setup",
-            axum::routing::post(abonnement::card_setup),
+            axum::routing::post(subscription::card_setup),
         )
         .route(
             "/companies/{company_id}/subscription/cancel",
-            axum::routing::post(abonnement::cancel_subscription),
+            axum::routing::post(subscription::cancel_subscription),
         )
         // Open route: authenticated by the webhook signature, not by a token.
         // Namespaced by provider because the card rail is deliberately
@@ -675,7 +675,7 @@ pub fn router(state: AppState) -> Router {
         // endpoint sits beside this one instead of renaming it.
         .route(
             "/webhooks/stripe",
-            axum::routing::post(abonnement::stripe_webhook),
+            axum::routing::post(subscription::stripe_webhook),
         )
         .route(
             "/companies/{company_id}/parties/{party_id}/contact",
@@ -826,7 +826,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/invitations/{invitation_id}/resend",
-            axum::routing::post(utsendelse::resend_invitation),
+            axum::routing::post(dispatch::resend_invitation),
         )
         .route(
             "/companies/{company_id}/roles",
@@ -951,16 +951,16 @@ async fn me(
     // Abonnementsstatus per selskap (#65): portalen viser banneret her,
     // and the block itself sits in the access guard. One lookup per
     // distinct company — the list is short (a person's companies, not all).
-    let mut abonnement = std::collections::HashMap::new();
+    let mut subscription = std::collections::HashMap::new();
     for a in &access {
-        if let std::collections::hash_map::Entry::Vacant(e) = abonnement.entry(a.company_id) {
-            let status = regnmed_db::abonnement::status_for(&state.pool, a.company_id).await?;
-            use regnmed_core::abonnement::Status;
+        if let std::collections::hash_map::Entry::Vacant(e) = subscription.entry(a.company_id) {
+            let status = regnmed_db::subscription::status_for(&state.pool, a.company_id).await?;
+            use regnmed_core::subscription::Status;
             let date = match status {
                 Status::Aktiv => None,
-                Status::Prove { til } => Some(til),
-                Status::Frist { sperres } => Some(sperres),
-                Status::Sperret { siden } => Some(siden),
+                Status::Trial { til } => Some(til),
+                Status::Grace { sperres } => Some(sperres),
+                Status::Blocked { siden } => Some(siden),
             };
             e.insert(json!({ "status": status.slug(), "dato": date.map(|d| d.to_string()) }));
         }
@@ -998,7 +998,7 @@ async fn me(
                 "name": a.name,
                 "access": a.access,
                 "via": a.via,
-                "abonnement": abonnement.get(&a.company_id),
+                "abonnement": subscription.get(&a.company_id),
                 "rettigheter": rettigheter.get(&a.company_id),
             }))
             .collect::<Vec<_>>(),

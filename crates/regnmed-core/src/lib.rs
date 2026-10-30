@@ -6,7 +6,6 @@
 //! deterministic — the same voucher content must hash identically forever,
 //! on any machine, or chain verification breaks.
 
-pub mod abonnement;
 pub mod accrual;
 pub mod aksjebok;
 pub mod aksjonaeroppgave;
@@ -50,6 +49,7 @@ pub mod revisjon;
 pub mod saft;
 pub mod saft_import;
 pub mod secret;
+pub mod subscription;
 pub mod voucher;
 pub mod voucher_hints;
 pub(crate) mod xml;

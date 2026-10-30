@@ -13,13 +13,13 @@
 use chrono::NaiveDate;
 
 /// Trial period for new companies, counted from creation.
-pub const PROVETID_DAGER: i64 = 30;
+pub const TRIAL_DAYS: i64 = 30;
 
 /// Payment deadline after coverage (or the trial) ran out: writing
 /// still works, but the portal warns. Only after the deadline is it
 /// blocked. Mirrors forfall plus a reasonable margin on the abonnement
 /// faktura.
-pub const FRIST_DAGER: i64 = 14;
+pub const GRACE_DAYS: i64 = 14;
 
 /// The automatic follow-up (#75) ends coverage when an abonnement
 /// faktura is this many days past forfall AND a purring has been sent —
@@ -33,27 +33,27 @@ pub enum Status {
     /// A row covers today's date.
     Aktiv,
     /// No coverage, but the company is inside its trial period.
-    Prove { til: NaiveDate },
+    Trial { til: NaiveDate },
     /// Coverage (or the trial) is over, but the deadline is still
     /// running: writing works, the warning stands.
-    Frist { sperres: NaiveDate },
+    Grace { sperres: NaiveDate },
     /// The deadline has passed: writing actions are refused.
-    Sperret { siden: NaiveDate },
+    Blocked { siden: NaiveDate },
 }
 
 impl Status {
     /// Should writing actions be refused?
-    pub fn sperret(&self) -> bool {
-        matches!(self, Status::Sperret { .. })
+    pub fn blocked(&self) -> bool {
+        matches!(self, Status::Blocked { .. })
     }
 
     /// Machine-readable name, used in `/me` and the portal.
     pub fn slug(&self) -> &'static str {
         match self {
             Status::Aktiv => "aktiv",
-            Status::Prove { .. } => "prove",
-            Status::Frist { .. } => "frist",
-            Status::Sperret { .. } => "sperret",
+            Status::Trial { .. } => "prove",
+            Status::Grace { .. } => "frist",
+            Status::Blocked { .. } => "sperret",
         }
     }
 }
@@ -76,16 +76,16 @@ pub fn status(
     if dekket_i_dag {
         return Status::Aktiv;
     }
-    let prove_til = opprettet + chrono::Days::new(PROVETID_DAGER as u64);
-    if siste_slutt.is_none() && idag < prove_til {
-        return Status::Prove { til: prove_til };
+    let trial_until = opprettet + chrono::Days::new(TRIAL_DAYS as u64);
+    if siste_slutt.is_none() && idag < trial_until {
+        return Status::Trial { til: trial_until };
     }
-    let grunnlag = siste_slutt.map_or(prove_til, |s| s.max(prove_til));
-    let sperres = grunnlag + chrono::Days::new(FRIST_DAGER as u64);
+    let grunnlag = siste_slutt.map_or(trial_until, |s| s.max(trial_until));
+    let sperres = grunnlag + chrono::Days::new(GRACE_DAYS as u64);
     if idag < sperres {
-        Status::Frist { sperres }
+        Status::Grace { sperres }
     } else {
-        Status::Sperret { siden: sperres }
+        Status::Blocked { siden: sperres }
     }
 }
 
@@ -110,7 +110,7 @@ mod tests {
         let opprettet = d(2026, 7, 1);
         assert_eq!(
             status(opprettet, false, None, d(2026, 7, 28)),
-            Status::Prove {
+            Status::Trial {
                 til: d(2026, 7, 31)
             }
         );
@@ -118,50 +118,50 @@ mod tests {
         // exclusive like every other.
         assert_eq!(
             status(opprettet, false, None, d(2026, 7, 30)),
-            Status::Prove {
+            Status::Trial {
                 til: d(2026, 7, 31)
             }
         );
         assert!(matches!(
             status(opprettet, false, None, d(2026, 7, 31)),
-            Status::Frist { .. }
+            Status::Grace { .. }
         ));
     }
 
     #[test]
     fn the_trial_becomes_a_deadline_and_then_a_block() {
         let opprettet = d(2026, 1, 1);
-        let prove_til = d(2026, 1, 31);
+        let trial_until = d(2026, 1, 31);
         let sperres = d(2026, 2, 14);
         assert_eq!(
             status(opprettet, false, None, d(2026, 2, 1)),
-            Status::Frist { sperres }
+            Status::Grace { sperres }
         );
         assert_eq!(
             status(opprettet, false, None, d(2026, 2, 13)),
-            Status::Frist { sperres }
+            Status::Grace { sperres }
         );
         assert_eq!(
             status(opprettet, false, None, sperres),
-            Status::Sperret { siden: sperres }
+            Status::Blocked { siden: sperres }
         );
-        let _ = prove_til;
+        let _ = trial_until;
     }
 
     #[test]
-    fn a_cancelled_abonnement_counts_from_its_own_end_not_the_trial() {
+    fn a_cancelled_subscription_counts_from_its_own_end_not_the_trial() {
         // Company from 2024, abonnement that ran out 2026-07-01: the
         // deadline runs from that end date, not from the long-expired
         // trial period.
         let s = status(d(2024, 1, 1), false, Some(d(2026, 7, 1)), d(2026, 7, 10));
         assert_eq!(
             s,
-            Status::Frist {
+            Status::Grace {
                 sperres: d(2026, 7, 15)
             }
         );
         assert!(
-            status(d(2024, 1, 1), false, Some(d(2026, 7, 1)), d(2026, 7, 15)).sperret(),
+            status(d(2024, 1, 1), false, Some(d(2026, 7, 1)), d(2026, 7, 15)).blocked(),
             "fristen er eksklusiv: sperret PÅ dagen"
         );
     }
@@ -175,7 +175,7 @@ mod tests {
         let s = status(opprettet, false, Some(d(2026, 7, 10)), d(2026, 8, 5));
         assert_eq!(
             s,
-            Status::Frist {
+            Status::Grace {
                 sperres: d(2026, 8, 14)
             }
         );

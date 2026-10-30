@@ -334,7 +334,7 @@ async fn overview(
     let mut fordeling = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
-            regnmed_core::abonnement::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
@@ -360,15 +360,15 @@ async fn list_subscriptions(
     let idag = chrono::Utc::now().date_naive();
     Ok(Json(json!({
         "abonnementer": abo.iter().map(|a| {
-            use regnmed_core::abonnement::Status;
+            use regnmed_core::subscription::Status;
             let status =
-                regnmed_core::abonnement::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
+                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
                 Status::Aktiv => a.valid_to,
-                Status::Prove { til } => Some(til),
-                Status::Frist { sperres } => Some(sperres),
-                Status::Sperret { siden } => Some(siden),
+                Status::Trial { til } => Some(til),
+                Status::Grace { sperres } => Some(sperres),
+                Status::Blocked { siden } => Some(siden),
             };
             json!({
                 "company_id": a.company_id,
@@ -440,14 +440,14 @@ async fn company_detail(
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
     let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
     let invitasjoner = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
-    let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
+    let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
-    use regnmed_core::abonnement::Status;
+    use regnmed_core::subscription::Status;
     let date = match status {
         Status::Aktiv => None,
-        Status::Prove { til } => Some(til),
-        Status::Frist { sperres } => Some(sperres),
-        Status::Sperret { siden } => Some(siden),
+        Status::Trial { til } => Some(til),
+        Status::Grace { sperres } => Some(sperres),
+        Status::Blocked { siden } => Some(siden),
     };
     Ok(Json(json!({
         "settings": {
@@ -564,7 +564,7 @@ async fn restore_member(
 pub struct CoverageRequest {
     plan: String,
     /// Mandatory reference: WHY coverage is opened by hand (support
-    /// case, agreement, migration). `tegn` refuses an empty one.
+    /// case, agreement, migration). `open_coverage` refuses an empty one.
     note: String,
 }
 
@@ -578,13 +578,13 @@ async fn start_coverage(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
     let idag = chrono::Utc::now().date_naive();
-    let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
-    if matches!(status, regnmed_core::abonnement::Status::Aktiv) {
+    let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
+    if matches!(status, regnmed_core::subscription::Status::Aktiv) {
         return Err(ApiError::BadRequest(
             "selskapet har allerede aktiv dekning".into(),
         ));
     }
-    regnmed_db::abonnement::tegn(
+    regnmed_db::subscription::open_coverage(
         &state.pool,
         company_id,
         &request.plan,
@@ -609,7 +609,7 @@ async fn end_coverage(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
     let idag = chrono::Utc::now().date_naive();
-    regnmed_db::abonnement::avslutt(&state.pool, company_id, idag)
+    regnmed_db::subscription::close_coverage(&state.pool, company_id, idag)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "avsluttet": true })))
