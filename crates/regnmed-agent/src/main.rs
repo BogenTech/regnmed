@@ -40,59 +40,59 @@ enum Command {
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
-    let pool = regnmed_db::connect(&std::env::var("DATABASE_URL").context("DATABASE_URL mangler")?)
-        .await?;
+    let pool =
+        regnmed_db::connect(&std::env::var("DATABASE_URL").context("DATABASE_URL is not set")?)
+            .await?;
     // Without the sealing key nothing stored can be opened, so there is
     // no useful work to do: say that rather than looping over tasks and
     // failing one by one.
-    let nokkel = Nokkel::fra_hex(
+    let key = Nokkel::fra_hex(
         &std::env::var("AGENT_SEALING_KEY")
-            .context("AGENT_SEALING_KEY mangler — vertsagenter er av")?,
+            .context("AGENT_SEALING_KEY is not set — hosted agents are off")?,
     )?;
     let issuer = std::env::var("REGNMED_ISSUER").unwrap_or_else(|_| "https://id.regnmed.no".into());
     let api = std::env::var("REGNMED_API").unwrap_or_else(|_| "https://api.regnmed.no".into());
 
     match cli.command {
         Command::Run { company } => {
-            let oppgaver = regnmed_db::agentllm::apne_agentoppgaver(&pool, company).await?;
-            if oppgaver.is_empty() {
-                println!("ingen åpne agentoppgaver");
+            let tasks = regnmed_db::agentllm::apne_agentoppgaver(&pool, company).await?;
+            if tasks.is_empty() {
+                println!("no open agent tasks");
                 return Ok(());
             }
-            let navn = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
-            for (company_id, oppgave_id) in oppgaver {
+            let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
+            for (company_id, task_id) in tasks {
                 // The sweep takes the same lease the queue workers take.
                 // Without it this would be the one place two processes
                 // could run a task at once -- precisely when a backlog
                 // makes that most likely.
-                match regnmed_db::agentoppgave::claim_task(&pool, oppgave_id, &navn).await {
+                match regnmed_db::agentoppgave::claim_task(&pool, task_id, &name).await {
                     Ok(true) => {}
                     Ok(false) => {
-                        println!("{oppgave_id} arbeides alt på, hopper over");
+                        println!("{task_id} is already being worked on, skipping");
                         continue;
                     }
-                    Err(feil) => {
-                        eprintln!("kunne ikke ta {oppgave_id}: {feil:#}");
+                    Err(error) => {
+                        eprintln!("could not claim {task_id}: {error:#}");
                         continue;
                     }
                 }
                 // One task's failure must not stop the rest: the outcome
                 // is written into that task's own trail either way.
-                let utfall =
-                    regnmed_agent::run_task(&pool, &nokkel, company_id, oppgave_id, &issuer, &api)
-                        .await;
-                if let Err(feil) = regnmed_db::agentoppgave::release_task(&pool, oppgave_id).await {
-                    eprintln!("klarte ikke slippe {oppgave_id}: {feil:#}");
+                let outcome =
+                    regnmed_agent::run_task(&pool, &key, company_id, task_id, &issuer, &api).await;
+                if let Err(error) = regnmed_db::agentoppgave::release_task(&pool, task_id).await {
+                    eprintln!("could not release {task_id}: {error:#}");
                 }
-                match utfall {
-                    Ok(utfall) => println!("{oppgave_id} {} {}", utfall.status(), utfall.notat()),
-                    Err(feil) => eprintln!("{oppgave_id} feilet: {feil:#}"),
+                match outcome {
+                    Ok(outcome) => println!("{task_id} {} {}", outcome.status(), outcome.note()),
+                    Err(error) => eprintln!("{task_id} failed: {error:#}"),
                 }
             }
         }
         Command::Listen => {
             let url = std::env::var("NATS_URL")
-                .context("NATS_URL mangler — uten kø finnes det ingenting å lytte på")?;
+                .context("NATS_URL is not set — without a queue there is nothing to listen to")?;
             let js = regnmed_mail::connect(
                 &url,
                 std::env::var("NATS_USER").ok(),
@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
             )
             .await?;
             regnmed_mail::taskqueue::ensure_stream(&js).await?;
-            listen(&pool, &nokkel, &js, &issuer, &api).await?;
+            listen(&pool, &key, &js, &issuer, &api).await?;
         }
     }
     Ok(())
@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
 /// since a turn's input is the previous turn's output.
 async fn listen(
     pool: &sqlx::PgPool,
-    nokkel: &Nokkel,
+    key: &Nokkel,
     js: &regnmed_mail::jetstream::Context,
     issuer: &str,
     api: &str,
@@ -125,7 +125,7 @@ async fn listen(
 
     // Named after the pod so a stuck claim in the database points at a
     // process an operator can actually go and look at.
-    let navn = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
+    let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
 
     let consumer = js
         .get_stream(regnmed_mail::taskqueue::STREAM)
@@ -148,24 +148,24 @@ async fn listen(
         )
         .await?;
 
-    println!("{navn} lytter på {}", regnmed_mail::taskqueue::SUBJECT);
-    let mut meldinger = consumer.messages().await?;
-    while let Some(melding) = meldinger.next().await {
-        let melding = match melding {
+    println!("{name} listening on {}", regnmed_mail::taskqueue::SUBJECT);
+    let mut messages = consumer.messages().await?;
+    while let Some(message) = messages.next().await {
+        let message = match message {
             Ok(m) => m,
-            Err(feil) => {
-                eprintln!("køen ga en feil: {feil:#}");
+            Err(error) => {
+                eprintln!("the queue returned an error: {error:#}");
                 continue;
             }
         };
-        let varsel: regnmed_mail::taskqueue::TaskNudge =
-            match serde_json::from_slice(&melding.payload) {
+        let nudge: regnmed_mail::taskqueue::TaskNudge =
+            match serde_json::from_slice(&message.payload) {
                 Ok(v) => v,
                 // Unreadable payloads are acked: redelivering something we
                 // cannot parse only burns the queue.
-                Err(feil) => {
-                    eprintln!("ubrukelig varsel, hopper over: {feil:#}");
-                    let _ = melding.ack().await;
+                Err(error) => {
+                    eprintln!("unusable nudge, skipping: {error:#}");
+                    let _ = message.ack().await;
                     continue;
                 }
             };
@@ -173,42 +173,35 @@ async fn listen(
         // The claim, not the queue, is what guarantees one worker per
         // task (docs/agent.md §8.7). A redelivery after ack_wait, or a
         // backstop sweep running at the same moment, stops here.
-        match regnmed_db::agentoppgave::claim_task(pool, varsel.oppgave_id, &navn).await {
+        match regnmed_db::agentoppgave::claim_task(pool, nudge.task_id, &name).await {
             Ok(true) => {}
             Ok(false) => {
-                println!("{} arbeides alt på, hopper over", varsel.oppgave_id);
-                let _ = melding.ack().await;
+                println!("{} is already being worked on, skipping", nudge.task_id);
+                let _ = message.ack().await;
                 continue;
             }
-            Err(feil) => {
-                eprintln!("kunne ikke ta {}: {feil:#}", varsel.oppgave_id);
-                let _ = melding.ack().await;
+            Err(error) => {
+                eprintln!("could not claim {}: {error:#}", nudge.task_id);
+                let _ = message.ack().await;
                 continue;
             }
         }
 
-        let utfall = regnmed_agent::run_task(
-            pool,
-            nokkel,
-            varsel.company_id,
-            varsel.oppgave_id,
-            issuer,
-            api,
-        )
-        .await;
+        let outcome =
+            regnmed_agent::run_task(pool, key, nudge.company_id, nudge.task_id, issuer, api).await;
         // Released whatever happened: the lease is not evidence, and a
         // failed run must not lock the task out of a later retry.
-        if let Err(feil) = regnmed_db::agentoppgave::release_task(pool, varsel.oppgave_id).await {
-            eprintln!("klarte ikke slippe {}: {feil:#}", varsel.oppgave_id);
+        if let Err(error) = regnmed_db::agentoppgave::release_task(pool, nudge.task_id).await {
+            eprintln!("could not release {}: {error:#}", nudge.task_id);
         }
-        match utfall {
-            Ok(u) => println!("{} {} {}", varsel.oppgave_id, u.status(), u.notat()),
-            Err(feil) => eprintln!("{} feilet: {feil:#}", varsel.oppgave_id),
+        match outcome {
+            Ok(u) => println!("{} {} {}", nudge.task_id, u.status(), u.note()),
+            Err(error) => eprintln!("{} failed: {error:#}", nudge.task_id),
         }
         // Acked either way: the outcome is written into the task's own
         // trail, so a redelivery would only repeat work somebody can
         // already read about.
-        let _ = melding.ack().await;
+        let _ = message.ack().await;
     }
     Ok(())
 }

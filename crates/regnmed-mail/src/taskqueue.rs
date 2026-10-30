@@ -40,7 +40,7 @@ pub const CONSUMER: &str = "agentarbeidere";
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskNudge {
     pub company_id: Uuid,
-    pub oppgave_id: Uuid,
+    pub task_id: Uuid,
 }
 
 /// Makes sure the stream exists. Same idempotent shape as the mail
@@ -73,14 +73,14 @@ pub async fn ensure_stream(js: &jetstream::Context) -> Result<()> {
 /// Failure is the CALLER's to shrug off: the task is already safely in
 /// the database, and the backstop sweep will pick it up. Never let a
 /// queue that is down fail the request that created the work.
-pub async fn nudge(js: &jetstream::Context, company_id: Uuid, oppgave_id: Uuid) -> Result<()> {
+pub async fn nudge(js: &jetstream::Context, company_id: Uuid, task_id: Uuid) -> Result<()> {
     let payload = serde_json::to_vec(&TaskNudge {
         company_id,
-        oppgave_id,
+        task_id,
     })?;
     let melding = async_nats::HeaderMap::from_iter([(
         async_nats::header::NATS_MESSAGE_ID,
-        async_nats::HeaderValue::from(oppgave_id.to_string().as_str()),
+        async_nats::HeaderValue::from(task_id.to_string().as_str()),
     )]);
     js.publish_with_headers(SUBJECT, melding, payload.into())
         .await

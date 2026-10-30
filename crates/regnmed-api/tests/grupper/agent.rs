@@ -1,7 +1,7 @@
 //! Agenten som ansatt eller regnskapsfører (#101, #102, #103).
 //!
 //! This is the end-to-end test the MCP server's tool table promises:
-//! `crates/regnmed-mcp/src/verktoy.rs` is CURATED rather than generated
+//! `crates/regnmed-mcp/src/tools.rs` is CURATED rather than generated
 //! from the route table, which buys a tool list a small model can
 //! actually choose from — and costs the guarantee that it still matches
 //! the API. This test is that guarantee. It serves the real router on a
@@ -37,24 +37,24 @@ async fn tjen(state: AppState) -> String {
     format!("http://{addr}")
 }
 
-async fn kall(server: &Server, navn: &str, args: Value) -> (bool, String) {
-    let svar = server
+async fn calls(server: &Server, name: &str, args: Value) -> (bool, String) {
+    let reply = server
         .handter(json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": { "name": navn, "arguments": args },
+            "params": { "name": name, "arguments": args },
         }))
         .await
         .expect("et kall med id får alltid svar");
     assert!(
-        svar.get("error").is_none(),
-        "{navn}: et verktøykall skal aldri bli en protokollfeil — modellen ser den ikke: {svar}"
+        reply.get("error").is_none(),
+        "{name}: et verktøykall skal aldri bli en protokollfeil — modellen ser den ikke: {reply}"
     );
-    let innhold = svar["result"]["content"][0]["text"]
+    let innhold = reply["result"]["content"][0]["text"]
         .as_str()
         .unwrap_or_default()
         .to_string();
     (
-        svar["result"]["isError"].as_bool().unwrap_or(false),
+        reply["result"]["isError"].as_bool().unwrap_or(false),
         innhold,
     )
 }
@@ -104,8 +104,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // A chart to post against: `bilag_for` is exercised for real below,
     // and without accounts it would fail for a reason that says nothing
     // about whether the tool matches the API.
-    for (nr, navn) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, navn)
+    for (nr, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
+        regnmed_db::ensure_account(&state.pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -117,8 +117,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         &idp.token(&client_id, ""),
     ));
 
-    // A task to answer, so the oppgave tools have a real target.
-    let oppgave = regnmed_db::agentoppgave::opprett_oppgave(
+    // A task to answer, so the task tools have a real target.
+    let task = regnmed_db::agentoppgave::opprett_oppgave(
         &state.pool,
         company,
         Some(integration_id),
@@ -155,14 +155,14 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("forfalte_fakturaer", json!({})),
         ("saft_logg", json!({})),
         ("oppgaver", json!({})),
-        ("oppgave", json!({"oppgave": oppgave.to_string()})),
+        ("oppgave", json!({"oppgave": task.to_string()})),
     ]);
 
-    for (navn, args) in &argumenter {
-        let (feilet, tekst) = kall(&server, navn, args.clone()).await;
+    for (name, args) in &argumenter {
+        let (feilet, text) = calls(&server, name, args.clone()).await;
         assert!(
             !feilet,
-            "{navn} nådde ikke fram eller ble nektet — verktøytabellen har sklidt fra API-et: {tekst}"
+            "{name} nådde ikke fram eller ble nektet — verktøytabellen har sklidt fra API-et: {text}"
         );
     }
 
@@ -171,7 +171,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // posting tool needed an inbox document). Exercised rather than
     // exempted — it writes to the ledger, which is the one place a
     // drifted tool does damage instead of just failing.
-    let (feilet, tekst) = kall(
+    let (feilet, text) = calls(
         &server,
         "bilag_for",
         json!({
@@ -185,7 +185,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         }),
     )
     .await;
-    assert!(!feilet, "bilag_for nådde ikke fram: {tekst}");
+    assert!(!feilet, "bilag_for nådde ikke fram: {text}");
     let bokfort: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
         .bind(company)
         .fetch_one(&state.pool)
@@ -220,27 +220,27 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     }
 
     // ---- The writing path, end to end through the tools ----
-    let (feilet, svar) = kall(
+    let (feilet, reply) = calls(
         &server,
         "bilag_last_opp",
         json!({"fil": skriv_midlertidig("kvittering.txt", b"Kaffe 49,00")}),
     )
     .await;
-    assert!(!feilet, "{svar}");
-    let dokument = serde_json::from_str::<Value>(&svar).unwrap()["document_id"]
+    assert!(!feilet, "{reply}");
+    let dokument = serde_json::from_str::<Value>(&reply).unwrap()["document_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    let (feilet, svar) = kall(&server, "innboks_forslag", json!({"dokument": dokument})).await;
-    assert!(!feilet, "forslaget svarer for ethvert dokument: {svar}");
+    let (feilet, reply) = calls(&server, "innboks_forslag", json!({"dokument": dokument})).await;
+    assert!(!feilet, "forslaget svarer for ethvert dokument: {reply}");
 
-    for (nummer, navn) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nummer, navn)
+    for (nummer, name) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, nummer, name)
             .await
             .unwrap();
     }
-    let (feilet, svar) = kall(
+    let (feilet, reply) = calls(
         &server,
         "bilag_bokfor",
         json!({
@@ -255,7 +255,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         }),
     )
     .await;
-    assert!(!feilet, "{svar}");
+    assert!(!feilet, "{reply}");
 
     // The bilag names the AGENT, not an anonymous subject — the whole
     // reason an integration is a person row (#45).
@@ -269,33 +269,33 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     assert_eq!(created_by, "Regnskapsagenten");
 
     // ---- And the agent reports back on the task it was given ----
-    let (feilet, svar) = kall(
+    let (feilet, reply) = calls(
         &server,
         "oppgave_svar",
-        json!({"oppgave": oppgave.to_string(), "status": "sporsmal",
+        json!({"oppgave": task.to_string(), "status": "sporsmal",
                "notat": "Kontoplanen må avstemmes mot NS 4102 — bekreft forslaget."}),
     )
     .await;
-    assert!(!feilet, "{svar}");
-    let (feilet, svar) = kall(
+    assert!(!feilet, "{reply}");
+    let (feilet, reply) = calls(
         &server,
         "oppgave_svar",
-        json!({"oppgave": oppgave.to_string(), "status": "utfort",
+        json!({"oppgave": task.to_string(), "status": "utfort",
                "notat": "Importert og avstemt."}),
     )
     .await;
-    assert!(!feilet, "{svar}");
+    assert!(!feilet, "{reply}");
     // Terminal means terminal: migration 0064's trigger refuses a
     // further event, and the agent is TOLD so rather than silently
     // overwriting its own answer.
-    let (feilet, svar) = kall(
+    let (feilet, reply) = calls(
         &server,
         "oppgave_svar",
-        json!({"oppgave": oppgave.to_string(), "status": "pagar"}),
+        json!({"oppgave": task.to_string(), "status": "pagar"}),
     )
     .await;
-    assert!(feilet, "en avsluttet oppgave kan ikke gjenåpnes: {svar}");
-    assert!(svar.contains("avsluttet"), "{svar}");
+    assert!(feilet, "en avsluttet oppgave kan ikke gjenåpnes: {reply}");
+    assert!(reply.contains("avsluttet"), "{reply}");
 
     // ---- The remaining write paths: do they EXIST? ----
     //
@@ -307,7 +307,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // to tell that from "no access".
     let tomfil = skriv_midlertidig("tom.xml", b"ikke saft");
     let tomcsv = skriv_midlertidig("tom.csv", b"ingen;overskrifter\n");
-    for (navn, args) in [
+    for (name, args) in [
         (
             "bilag_avvis",
             json!({"dokument": Uuid::new_v4().to_string(), "note": "nei"}),
@@ -329,17 +329,17 @@ async fn every_tool_in_the_table_still_matches_the_api() {
             json!({"fil": tomcsv, "kind": "kunde", "preview": true}),
         ),
     ] {
-        let (feilet, svar) = kall(&server, navn, args).await;
-        assert!(feilet, "{navn} skulle feilet på innholdet: {svar}");
+        let (feilet, reply) = calls(&server, name, args).await;
+        assert!(feilet, "{name} skulle feilet på innholdet: {reply}");
         assert!(
-            svar.contains("400"),
-            "{navn}: forventet 400 (ruten finnes, innholdet er tull). \
-             404/405 betyr at stien i verktøytabellen er gal: {svar}"
+            reply.contains("400"),
+            "{name}: forventet 400 (ruten finnes, innholdet er tull). \
+             404/405 betyr at stien i verktøytabellen er gal: {reply}"
         );
     }
 
     // ---- A bad call comes back as prose the model can act on ----
-    let (feilet, svar) = kall(
+    let (feilet, reply) = calls(
         &server,
         "bilag_bokfor",
         json!({
@@ -351,8 +351,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     .await;
     assert!(feilet);
     assert!(
-        svar.contains("400") || svar.contains("404"),
-        "feilen bærer statusen: {svar}"
+        reply.contains("400") || reply.contains("404"),
+        "feilen bærer statusen: {reply}"
     );
 }
 
@@ -360,8 +360,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
 /// PATH rather than base64 on purpose: it runs on the same machine as
 /// the agent, and a base64 PDF through a model's context is both
 /// expensive and pointless.
-fn skriv_midlertidig(navn: &str, innhold: &[u8]) -> String {
-    let sti = std::env::temp_dir().join(format!("regnmed-{}-{navn}", Uuid::new_v4()));
+fn skriv_midlertidig(name: &str, innhold: &[u8]) -> String {
+    let sti = std::env::temp_dir().join(format!("regnmed-{}-{name}", Uuid::new_v4()));
     std::fs::write(&sti, innhold).unwrap();
     sti.to_string_lossy().to_string()
 }
@@ -377,17 +377,17 @@ struct FalskLeverandor {
     sett: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
-async fn tjen_leverandor(mock: FalskLeverandor, svar: Vec<Value>) -> String {
-    let svar = std::sync::Arc::new(std::sync::Mutex::new(svar.into_iter()));
+async fn tjen_leverandor(mock: FalskLeverandor, reply: Vec<Value>) -> String {
+    let reply = std::sync::Arc::new(std::sync::Mutex::new(reply.into_iter()));
     let app =
         axum::Router::new().route(
             "/chat/completions",
             axum::routing::post(move |axum::Json(kropp): axum::Json<Value>| {
                 let mock = mock.clone();
-                let svar = svar.clone();
+                let reply = reply.clone();
                 async move {
                     mock.sett.lock().unwrap().push(kropp);
-                    let neste = svar.lock().unwrap().next();
+                    let neste = reply.lock().unwrap().next();
                     axum::Json(neste.unwrap_or_else(
                         || json!({"choices":[{"message":{"content":"FERDIG: tom"}}]}),
                     ))
@@ -465,9 +465,9 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     )
     .await;
 
-    let modell = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
-    let utfall = regnmed_agent::run_loop(
-        &modell,
+    let model = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+    let outcome = regnmed_agent::run_loop(
+        &model,
         &server,
         "bokforing",
         // The agent's own extra instructions (docs/agent.md §8.6).
@@ -479,8 +479,8 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     .unwrap();
 
     assert_eq!(
-        utfall,
-        regnmed_agent::Utfall::Utfort("saldobalansen er hentet og avstemt".into()),
+        outcome,
+        regnmed_agent::Outcome::Done("saldobalansen er hentet og avstemt".into()),
         "sluttmarkøren avgjør statusen oppgavekøen får"
     );
 
@@ -488,8 +488,8 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     assert_eq!(sett.len(), 2, "to turer: ett verktøykall, så svaret");
 
     // The catalogue the model was offered is the real one.
-    let verktoy = sett[0]["tools"].as_array().unwrap();
-    assert_eq!(verktoy.len(), regnmed_mcp::verktoy::VERKTOY.len());
+    let tools = sett[0]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), regnmed_mcp::verktoy::VERKTOY.len());
 
     // The role prompt went with it — a `bokforing` agent must not be
     // told it is something else, or it spends its turns being refused.
@@ -511,20 +511,20 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     // THE assertion: the second turn carries a tool result that came
     // from the real endpoint, not from the loop's imagination. An
     // unauthorised or missing route would show up here as an error text.
-    let meldinger = sett[1]["messages"].as_array().unwrap();
-    let verktoysvar = meldinger
+    let messages = sett[1]["messages"].as_array().unwrap();
+    let verktoysvar = messages
         .iter()
         .find(|m| m["role"] == "tool")
         .expect("verktøysvaret er med videre");
     assert_eq!(verktoysvar["tool_call_id"], "call_1");
-    let tekst = verktoysvar["content"].as_str().unwrap();
+    let text = verktoysvar["content"].as_str().unwrap();
     assert!(
-        tekst.contains("linjer") || tekst.contains("konto") || tekst.starts_with('{'),
-        "verktøyet svarte ikke med data fra API-et: {tekst}"
+        text.contains("linjer") || text.contains("konto") || text.starts_with('{'),
+        "verktøyet svarte ikke med data fra API-et: {text}"
     );
     assert!(
-        !tekst.contains("404") && !tekst.to_lowercase().contains("not found"),
-        "verktøyet traff en rute som ikke finnes: {tekst}"
+        !text.contains("404") && !text.to_lowercase().contains("not found"),
+        "verktøyet traff en rute som ikke finnes: {text}"
     );
 }
 
@@ -566,49 +566,45 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
             "content":"FERDIG: brukte svaret ditt"}}]})],
     )
     .await;
-    let modell = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
+    let model = regnmed_agent::llm::Llm::ny(&leverandor, "testmodell", "sk-test").unwrap();
 
-    let historikk = vec![
-        regnmed_agent::Replikk {
-            fra_agenten: true,
-            tekst: "Hvilken konto skal kontorrekvisita på?".into(),
+    let history = vec![
+        regnmed_agent::HistoryLine {
+            from_agent: true,
+            text: "Hvilken konto skal kontorrekvisita på?".into(),
         },
-        regnmed_agent::Replikk {
-            fra_agenten: false,
-            tekst: "Bruk 6800.".into(),
+        regnmed_agent::HistoryLine {
+            from_agent: false,
+            text: "Bruk 6800.".into(),
         },
     ];
     regnmed_agent::run_loop(
-        &modell,
+        &model,
         &server,
         "bokforing",
         None,
         "Bokfør kontorrekvisita.",
-        &historikk,
+        &history,
     )
     .await
     .unwrap();
 
     let sett = mock.sett.lock().unwrap().clone();
-    let meldinger = sett[0]["messages"].as_array().unwrap();
+    let messages = sett[0]["messages"].as_array().unwrap();
     // system, order, the agent's own question, the human's answer.
+    assert_eq!(messages.len(), 4, "hele tråden skal være med: {messages:?}");
+    assert_eq!(messages[1]["role"], "user");
+    assert_eq!(messages[1]["content"], "Bokfør kontorrekvisita.");
     assert_eq!(
-        meldinger.len(),
-        4,
-        "hele tråden skal være med: {meldinger:?}"
-    );
-    assert_eq!(meldinger[1]["role"], "user");
-    assert_eq!(meldinger[1]["content"], "Bokfør kontorrekvisita.");
-    assert_eq!(
-        meldinger[2]["role"], "assistant",
+        messages[2]["role"], "assistant",
         "agentens eget spørsmål må komme tilbake som agentens, ikke som brukerens"
     );
     assert_eq!(
-        meldinger[2]["content"],
+        messages[2]["content"],
         "Hvilken konto skal kontorrekvisita på?"
     );
-    assert_eq!(meldinger[3]["role"], "user");
-    assert_eq!(meldinger[3]["content"], "Bruk 6800.");
+    assert_eq!(messages[3]["role"], "user");
+    assert_eq!(messages[3]["content"], "Bruk 6800.");
 }
 
 /// Exactly one worker gets a task, however many ask at once
@@ -635,7 +631,7 @@ async fn only_one_worker_can_hold_a_task() {
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
-    let oppgave = regnmed_db::agentoppgave::opprett_oppgave(
+    let task = regnmed_db::agentoppgave::opprett_oppgave(
         &state.pool,
         company,
         None,
@@ -652,7 +648,7 @@ async fn only_one_worker_can_hold_a_task() {
     let forsok = futures_util::future::join_all((0..10).map(|i| {
         let pool = state.pool.clone();
         async move {
-            regnmed_db::agentoppgave::claim_task(&pool, oppgave, &format!("worker-{i}"))
+            regnmed_db::agentoppgave::claim_task(&pool, task, &format!("worker-{i}"))
                 .await
                 .unwrap()
         }
@@ -668,7 +664,7 @@ async fn only_one_worker_can_hold_a_task() {
     // nothing — this is the redelivery case, where JetStream hands the
     // nudge out again after ack_wait on a task that is still running.
     assert!(
-        !regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "sent-ute")
+        !regnmed_db::agentoppgave::claim_task(&state.pool, task, "sent-ute")
             .await
             .unwrap(),
         "en levende lås slipper ingen andre inn"
@@ -676,11 +672,11 @@ async fn only_one_worker_can_hold_a_task() {
 
     // Releasing opens it again: a failed run must not lock the task out
     // of a retry, so the lease is dropped whatever the outcome was.
-    regnmed_db::agentoppgave::release_task(&state.pool, oppgave)
+    regnmed_db::agentoppgave::release_task(&state.pool, task)
         .await
         .unwrap();
     assert!(
-        regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "neste")
+        regnmed_db::agentoppgave::claim_task(&state.pool, task, "neste")
             .await
             .unwrap(),
         "etter slipp kan neste worker ta den"
@@ -692,13 +688,13 @@ async fn only_one_worker_can_hold_a_task() {
         "update agent_task_claim set claimed_at = now() - ($2 || ' minutes')::interval
          where oppgave_id = $1",
     )
-    .bind(oppgave)
+    .bind(task)
     .bind((regnmed_db::agentoppgave::CLAIM_TTL_MINUTES + 1).to_string())
     .execute(&state.pool)
     .await
     .unwrap();
     assert!(
-        regnmed_db::agentoppgave::claim_task(&state.pool, oppgave, "overtar")
+        regnmed_db::agentoppgave::claim_task(&state.pool, task, "overtar")
             .await
             .unwrap(),
         "en forlatt lås kan overtas"

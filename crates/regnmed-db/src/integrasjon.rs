@@ -31,7 +31,7 @@ pub struct Integration {
     pub avatar_ikon: Option<String>,
     /// Extra instructions for THIS agent, appended to the role prompt
     /// (docs/agent.md §8.6). Text for a model, never authorization.
-    pub systemprompt: Option<String>,
+    pub system_prompt: Option<String>,
 }
 
 fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
@@ -46,7 +46,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         created_at: r.get("created_at"),
         avatar_farge: r.get("avatar_farge"),
         avatar_ikon: r.get("avatar_ikon"),
-        systemprompt: r.get("systemprompt"),
+        system_prompt: r.get("systemprompt"),
     }
 }
 
@@ -210,7 +210,7 @@ pub async fn update_integration(
     kontakt: Option<&str>,
     avatar_farge: Option<&str>,
     avatar_ikon: Option<&str>,
-    systemprompt: Option<&str>,
+    system_prompt: Option<&str>,
 ) -> Result<()> {
     let navn = navn.trim();
     ensure!(!navn.is_empty(), "integrasjonen trenger et navn");
@@ -220,7 +220,7 @@ pub async fn update_integration(
     let kontakt = tom(kontakt);
     let farge = tom(avatar_farge);
     let ikon = tom(avatar_ikon);
-    let prompt = tom(systemprompt);
+    let prompt = tom(system_prompt);
     if let Some(prompt) = prompt {
         // A cap, not a judgement of content: the whole prompt is sent
         // with every single model turn, so a novel pasted in here is
@@ -367,7 +367,7 @@ pub struct GrantRow {
     pub kall_i_dag: i64,
     pub avatar_farge: Option<String>,
     pub avatar_ikon: Option<String>,
-    pub systemprompt: Option<String>,
+    pub system_prompt: Option<String>,
     /// The governing LLM provider and model, when one is active
     /// (docs/agent.md §8). Joined here rather than fetched per row:
     /// the card lists agents, and one query is one query.
@@ -415,7 +415,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             kall_i_dag: r.get("kall_i_dag"),
             avatar_farge: r.get("avatar_farge"),
             avatar_ikon: r.get("avatar_ikon"),
-            systemprompt: r.get("systemprompt"),
+            system_prompt: r.get("systemprompt"),
             llm: r
                 .get::<Option<String>, _>("llm_leverandor")
                 .zip(r.get::<Option<String>, _>("llm_modell")),
