@@ -16,7 +16,7 @@ use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
-pub struct SalgLinje {
+pub struct SaleLine {
     #[serde(rename = "konto")]
     account: String,
     vat_code: Option<String>,
@@ -33,11 +33,12 @@ pub struct BetalingLinje {
 }
 
 #[derive(Deserialize)]
-pub struct DagsoppgjorRequest {
+pub struct DailySettlementRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     z_nummer: String,
-    salg: Vec<SalgLinje>,
+    #[serde(rename = "salg")]
+    sale: Vec<SaleLine>,
     #[serde(rename = "betaling")]
     payment: Vec<BetalingLinje>,
     #[serde(rename = "mva_konto")]
@@ -47,18 +48,19 @@ pub struct DagsoppgjorRequest {
     /// infer that a missing count means it agreed.
     #[serde(rename = "kontantkonto")]
     cash_account: Option<String>,
-    opptalt_kontant_ore: Option<i64>,
+    #[serde(rename = "opptalt_kontant_ore")]
+    counted_cash_ore: Option<i64>,
     /// Where a discrepancy is charged. 7830 Kassadifferanse by default.
     #[serde(rename = "differansekonto")]
     difference_account: Option<String>,
 }
 
-fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::DagsoppgjorInn {
-    regnmed_db::cash_register::DagsoppgjorInn {
+fn til_inn(request: DailySettlementRequest) -> regnmed_db::cash_register::DailySettlementInput {
+    regnmed_db::cash_register::DailySettlementInput {
         date: request.date,
         z_nummer: request.z_nummer,
-        salg: request
-            .salg
+        sale: request
+            .sale
             .into_iter()
             .map(|l| (l.account, l.vat_code, l.gross_ore))
             .collect(),
@@ -69,7 +71,7 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
             .collect(),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
         cash_account: request.cash_account,
-        opptalt_kontant_ore: request.opptalt_kontant_ore,
+        counted_cash_ore: request.counted_cash_ore,
         difference_account: request.difference_account.unwrap_or_else(|| "7830".into()),
     }
 }
@@ -82,15 +84,15 @@ fn response(posted: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_jso
     }))
 }
 
-pub async fn dagsoppgjor(
+pub async fn daily_settlement(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<DagsoppgjorRequest>,
+    Json(request): Json<DailySettlementRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::post_daily_settlement(
         &state.pool,
         company_id,
         &til_inn(request),
@@ -110,7 +112,7 @@ pub struct ZRapportQuery {
 /// The settlement WITH its Z-report in one call. §5-4 wants the report
 /// kept as the documentation, and uploading it separately would leave a
 /// window where the bilag exists without it.
-pub async fn dagsoppgjor_med_rapport(
+pub async fn daily_settlement_with_report(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -125,7 +127,7 @@ pub async fn dagsoppgjor_med_rapport(
         .get("x-dagsoppgjor")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| ApiError::BadRequest("mangler X-Dagsoppgjor-hodet".into()))?;
-    let request: DagsoppgjorRequest = serde_json::from_str(meta)
+    let request: DailySettlementRequest = serde_json::from_str(meta)
         .map_err(|e| ApiError::BadRequest(format!("ugyldig dagsoppgjør: {e}")))?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -133,7 +135,7 @@ pub async fn dagsoppgjor_med_rapport(
         .unwrap_or("application/octet-stream")
         .to_string();
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::post_daily_settlement(
         &state.pool,
         company_id,
         &til_inn(request),

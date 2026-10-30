@@ -98,8 +98,8 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
-        let (text, feilet) = self.execute_tool(tool, args).await;
-        Ok(text_response(&text, feilet))
+        let (text, failed) = self.execute_tool(tool, args).await;
+        Ok(text_response(&text, failed))
     }
 
     /// Runs a tool and returns its text plus whether it failed. Public

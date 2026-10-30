@@ -508,12 +508,12 @@ en forpliktelse.
 
 **Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
 systemprompten av `rolle::prompt`, og kallet går gjennom
-`Server::utfor_verktoy` — samme dispatcher som MCP-serveren. Transporten
+`Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
 oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
 nøyaktig like mange verktøy som tabellen.
 
-Sløyfen stopper etter `MAKS_TURER` (12) og SIER at den stoppet. En sløyfe
+Sløyfen stopper etter `MAX_TURNS` (12) og SIER at den stoppet. En sløyfe
 som ikke stopper bruker kundens penger; en agent som stille gir opp er verre
 enn en som melder fra om en vegg.
 
@@ -563,7 +563,7 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
   som bærer det.
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives. Chat-flaten
   (steg 4) vil ville ha delsvar.
-- **Ingen kostnadsgrense.** `MAKS_TURER` begrenser antall turer, ikke antall
+- **Ingen kostnadsgrense.** `MAX_TURNS` begrenser antall turer, ikke antall
   tokens. `integration.rate_limit_min` begrenser kall mot VÅRT API, ikke mot
   leverandøren.
 - **Selvbetjent klientregistrering mangler fortsatt.** Klienthemmeligheten
@@ -626,10 +626,10 @@ sider. Og det gjør oppgaven plukkbar igjen for workeren, som hopper over
 hver match, for ingenting.
 
 **Tråden mates tilbake til modellen.** Dette var det virkelige hullet, og
-det var ikke i UI-et: `kjor_sloyfe` fikk bare bestillingen, så en agent som
+det var ikke i UI-et: `run_loop` fikk bare bestillingen, så en agent som
 hadde spurt og ble plukket opp igjen ville spurt om det samme for alltid —
 og da hadde det ikke hjulpet at `sporsmal` er ikke-terminal.
-`kjor_oppgave` bygger nå replikkene av historikken: hendelser skrevet av
+`run_task` bygger nå replikkene av historikken: hendelser skrevet av
 agentens eget navn blir `assistant`, resten `user`, og en bar `pagar` uten
 notat («begynte å arbeide») er ingen replikk. Testfestet i `agent.rs`:
 systemprompt, bestilling, agentens eget spørsmål som `assistant`, og

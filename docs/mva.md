@@ -29,7 +29,7 @@ laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen:
 | Vei | Hva som skjer uten registrering |
 | --- | --- |
 | faktura, kreditnota, repeterende (`invoice::resolve_lines`) | nektes |
-| tilbud og ordre (`create_salgsdokument`, `update_quote`) | nektes der linjene SKRIVES |
+| tilbud og ordre (`create_sales_document`, `update_quote`) | nektes der linjene SKRIVES |
 | utlegg (`approve_expense`) | nektes; hele brutto er kostnaden |
 | abonnementsskinnen (`abonnement::utgaende_mva`) | velger kode `7` selv |
 
@@ -151,7 +151,7 @@ bokført noe sted, og bokføringsforskriften §3-1 nr. 8 krever at
 merverdiavgiften spesifiseres i regnskapet.
 
 Utvidelsen skjer i POSTERINGSTRANSAKSJONEN (`post_voucher_in` →
-`expand_omvendt`), ikke i den enkelte inngangen: da kan ingen vei inn i
+`expand_reverse_charge`), ikke i den enkelte inngangen: da kan ingen vei inn i
 hovedboken glemme den, og linjene hashes sammen med resten av bilaget.
 Satsen er den som gjaldt på BILAGSDATOEN, fra samme daterte tabell som
 spesifikasjonen — hovedboken og meldingen regner på samme kilde.

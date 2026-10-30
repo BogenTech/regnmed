@@ -89,8 +89,8 @@ impl Capital {
 pub struct Address {
     #[serde(default, rename = "adresse")]
     pub address: Vec<String>,
-    #[serde(default)]
-    pub postnummer: Option<String>,
+    #[serde(default, rename = "postnummer")]
+    pub postal_code: Option<String>,
     #[serde(default, rename = "poststed")]
     pub postal_city: Option<String>,
 }
@@ -107,7 +107,7 @@ impl Address {
             .filter(|l| !l.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-        let sted = match (&self.postnummer, &self.postal_city) {
+        let sted = match (&self.postal_code, &self.postal_city) {
             (Some(number), Some(sted)) => format!("{} {}", number.trim(), sted.trim()),
             (None, Some(sted)) => sted.trim().to_string(),
             (Some(number), None) => number.trim().to_string(),
@@ -371,13 +371,13 @@ mod tests {
     fn a_missing_address_is_none_not_an_empty_line() {
         let tom = Address {
             address: vec![String::new()],
-            postnummer: None,
+            postal_code: None,
             postal_city: None,
         };
         assert!(tom.one_line().is_none());
         let bare_sted = Address {
             address: vec![],
-            postnummer: Some("0155".into()),
+            postal_code: Some("0155".into()),
             postal_city: Some("Oslo".into()),
         };
         assert_eq!(bare_sted.one_line().unwrap(), "0155 Oslo");

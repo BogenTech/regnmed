@@ -169,7 +169,7 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
-            kontant_betalingsmiddel: None,
+            cash_payment_method: None,
             party_no: customer_no.clone(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),

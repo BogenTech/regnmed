@@ -122,7 +122,7 @@ pub async fn list_satser(
         Right::TimesheetRateWrite,
     )
     .await?;
-    let rows = regnmed_db::list_prosjekt_satser(&state.pool, company_id, &code).await?;
+    let rows = regnmed_db::list_project_rates(&state.pool, company_id, &code).await?;
     Ok(Json(json!({
         "satser": rows.iter().map(|r| json!({
             "person_id": r.person_id,
@@ -162,7 +162,7 @@ pub async fn set_sats(
         .valid_from
         .unwrap_or_else(|| chrono::Utc::now().date_naive());
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::set_prosjekt_sats(
+    regnmed_db::set_project_rate(
         &state.pool,
         company_id,
         &code,

@@ -250,11 +250,11 @@ pub fn router(state: AppState) -> Router {
             get(firm_members::list_invitations).post(firm_members::invite),
         )
         .route(
-            "/firms/{firm_id}/invitations/{invitasjon_id}",
+            "/firms/{firm_id}/invitations/{invitation_id}",
             axum::routing::delete(firm_members::revoke_invitation),
         )
         .route(
-            "/firms/{firm_id}/invitations/{invitasjon_id}/resend",
+            "/firms/{firm_id}/invitations/{invitation_id}/resend",
             axum::routing::post(firm_members::resend_invitation),
         )
         .route(
@@ -565,11 +565,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/kassaoppgjor",
-            axum::routing::post(cash_register::dagsoppgjor),
+            axum::routing::post(cash_register::daily_settlement),
         )
         .route(
             "/companies/{company_id}/kassaoppgjor/rapport",
-            axum::routing::post(cash_register::dagsoppgjor_med_rapport),
+            axum::routing::post(cash_register::daily_settlement_with_report),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon",
@@ -577,7 +577,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/vedlegg",
-            axum::routing::post(balance_documentation::avstem_med_vedlegg),
+            axum::routing::post(balance_documentation::reconcile_with_attachment),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/historikk",
@@ -585,7 +585,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/{id}/vedlegg",
-            get(balance_documentation::vedlegg),
+            get(balance_documentation::attachment),
         )
         .route(
             "/companies/{company_id}/periodiseringer",
@@ -960,9 +960,9 @@ async fn me(
             let status = regnmed_db::subscription::status_for(&state.pool, a.company_id).await?;
             use regnmed_core::subscription::Status;
             let date = match status {
-                Status::Aktiv => None,
+                Status::Active => None,
                 Status::Trial { to } => Some(to),
-                Status::Grace { sperres } => Some(sperres),
+                Status::Grace { blocked_from } => Some(blocked_from),
                 Status::Blocked { siden } => Some(siden),
             };
             e.insert(json!({ "status": status.slug(), "dato": date.map(|d| d.to_string()) }));

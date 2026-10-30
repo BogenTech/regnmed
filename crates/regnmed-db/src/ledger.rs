@@ -145,7 +145,7 @@ const REVERSE_CHARGE_DEDUCTION: (&str, &str) = (
 /// The rate is the one valid on the VOUCHER DATE, from the same dated
 /// table the spesifikasjon uses — so the ledger and the melding compute
 /// the same amount from the same source, which is the whole point.
-async fn expand_omvendt(
+async fn expand_reverse_charge(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     draft: &VoucherDraft,
@@ -154,7 +154,7 @@ async fn expand_omvendt(
     let treffer = |e: &regnmed_core::voucher::EntryDraft| {
         matches!(
             e.vat_code.as_deref().map_or(Direction::None, direction),
-            Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+            Direction::ReverseChargeDeductible | Direction::ReverseChargeNonDeductible
         )
     };
     if !draft.entries.iter().any(treffer) {
@@ -231,7 +231,7 @@ pub async fn post_voucher_in(
     // forget it, and so the added entries are hashed with the rest of
     // the voucher. Both shapes net to zero, so a draft that balanced
     // still balances.
-    let expanded = expand_omvendt(tx, company_id, draft).await?;
+    let expanded = expand_reverse_charge(tx, company_id, draft).await?;
     let draft = expanded.as_ref().unwrap_or(draft);
 
     // Ajourhold: locked periods reject postings — corrections go in an
@@ -316,10 +316,10 @@ pub async fn post_voucher_in(
                 );
             }
         }
-        let avdeling_id =
+        let department_id =
             resolve_dimension(tx, company_id, i, "avdeling", &entry.department).await?;
-        let prosjekt_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.project).await?;
-        dimension_ids.push((avdeling_id, prosjekt_id));
+        let project_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.project).await?;
+        dimension_ids.push((department_id, project_id));
         let account = sqlx::query(
             "select id, reskontro_kind from account
              where company_id = $1 and number = $2 and active",

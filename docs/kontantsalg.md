@@ -18,7 +18,7 @@ SAF-T Cash Register.
 
 ## 2. Kontantfaktura
 
-`Dokumenttype::Kontantfaktura` er et ANNET DOKUMENT, ikke en faktura med
+`DocumentType::Kontantfaktura` er et ANNET DOKUMENT, ikke en faktura med
 et flagg: tittelen KONTANTFAKTURA, «Betalt: <betalingsmiddel>» blant
 dokumentfaktaene, og **ingen KID, ingen forfallsdato, ingen
 betalingsinformasjon**. Å be noen betale det de allerede har betalt er
@@ -28,7 +28,7 @@ ikke en skjønnhetsfeil, det er et krav om betaling nummer to.
 enklere å postere salget rett mot bank og hoppe over 1500 — og det er
 nettopp det som ikke må skje: reskontro-doktrinen sier at en kundes
 posteringer bærer en part, og en sidedør forbi den ville gjort
-`reskontro_kontroll` (revisors avstemming) stille ufullstendig. Parten
+`subledger_check` (revisors avstemming) stille ufullstendig. Parten
 står på BEGGE sider, og den åpne posten lukkes i det øyeblikket den
 oppstår.
 

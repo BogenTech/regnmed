@@ -159,8 +159,13 @@ def shadows(src, pairs):
     function no longer matching its call site, two enums of one name.
     But if `b` is already bound in the same scope, `a -> b` SHADOWS it:
     the code still compiles, the wrong binding is read, and nothing
-    says a word. `nr -> number` would have done exactly that in nine
-    files that bind both. Reported, never refused: a target that
+    says a word. This check was written for `nr -> number`, on a grep
+    that said nine files bind both -- and its FIRST RUN disproved
+    that: the grep had read comments, and code-only it is five files
+    of disjoint `for` loops. No instance of the hazard has turned up
+    yet in this repo. The class is real; the check stays, because the
+    grep that claimed one was not evidence either way. Reported,
+    never refused: a target that
     appears only as a module path (`crate::email::`) or in another
     scope is usually fine, and only a human can tell which.
     """

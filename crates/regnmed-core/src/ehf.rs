@@ -88,7 +88,7 @@ pub struct EhfLinje {
 #[derive(Debug, Clone)]
 pub struct EhfDocument {
     pub document_type: DocumentType,
-    pub fakturanr: String,
+    pub invoice_number: String,
     /// The invoice number a kreditnota credits.
     pub krediterer: Option<String>,
     pub invoice_date: NaiveDate,
@@ -307,7 +307,7 @@ pub fn render(doc: &EhfDocument) -> String {
 
     w.leaf("cbc:CustomizationID", CUSTOMIZATION_ID);
     w.leaf("cbc:ProfileID", PROFILE_ID);
-    w.leaf("cbc:ID", &doc.fakturanr);
+    w.leaf("cbc:ID", &doc.invoice_number);
     w.leaf("cbc:IssueDate", &doc.invoice_date.to_string());
     if doc.document_type == DocumentType::Invoice
         && let Some(due_date) = doc.due_date
@@ -377,7 +377,7 @@ pub fn render(doc: &EhfDocument) -> String {
     w.open("cac:TaxTotal");
     w.leaf_attr("cbc:TaxAmount", &attr, &money(vat_sum));
     for (kategori, bp) in &rates {
-        let grunnlag: i64 = doc
+        let basis: i64 = doc
             .linjer
             .iter()
             .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
@@ -390,7 +390,7 @@ pub fn render(doc: &EhfDocument) -> String {
             .map(|l| l.vat_ore)
             .sum();
         w.open("cac:TaxSubtotal");
-        w.leaf_attr("cbc:TaxableAmount", &attr, &money(grunnlag));
+        w.leaf_attr("cbc:TaxableAmount", &attr, &money(basis));
         w.leaf_attr("cbc:TaxAmount", &attr, &money(avgift));
         w.open("cac:TaxCategory");
         w.leaf("cbc:ID", kategori);
@@ -468,7 +468,7 @@ mod tests {
     fn document(document_type: DocumentType) -> EhfDocument {
         EhfDocument {
             document_type,
-            fakturanr: "1001".into(),
+            invoice_number: "1001".into(),
             krediterer: (document_type == DocumentType::CreditNote).then(|| "1000".to_string()),
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),

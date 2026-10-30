@@ -123,7 +123,7 @@ an empty registry the project picker says so rather than disappearing
   landed) pins visibility (egne vs `TIMER_LES_ALLE`), correction via a
   custom role holding `TIMER_SKRIV_ALLE`, and `TIMER_FAKTURER` on
   billing. Selective billing
-  (`a_selection_of_the_grunnlag_bills_and_locks_exactly_itself`) pins
+  (`a_selection_of_the_basis_bills_and_locks_exactly_itself`) pins
   the per-person grunnlag, billing one person's hours while the rest
   stay unbilled, the DB lock on the selection, and that a stale
   selection fails whole. The rate model

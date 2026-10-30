@@ -53,7 +53,7 @@ pub async fn import_contacts(
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({
         "lest": rader.len(),
-        "opprettet": report.opprettet,
+        "opprettet": report.created,
         "oppdatert": report.oppdatert,
         "warnings": report.warnings,
     })))

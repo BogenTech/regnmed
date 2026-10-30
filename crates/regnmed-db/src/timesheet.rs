@@ -17,7 +17,7 @@ pub struct TimeEntryDraft {
     pub date: NaiveDate,
     pub minutes: i32,
     pub description: String,
-    /// Prosjekt dimension CODE (resolved against the registry).
+    /// Project dimension CODE (resolved against the registry).
     pub project: Option<String>,
     /// None = the project's fakturerbar_default (false without a
     /// project). Every user may set this per entry.
@@ -29,16 +29,16 @@ pub struct TimeEntryDraft {
     pub hourly_rate_ore: Option<i64>,
 }
 
-struct Prosjekt {
+struct Project {
     id: Uuid,
     fakturerbar_default: bool,
 }
 
-async fn resolve_prosjekt(
+async fn resolve_project(
     pool: &PgPool,
     company_id: Uuid,
     code: &Option<String>,
-) -> Result<Option<Prosjekt>> {
+) -> Result<Option<Project>> {
     let Some(code) = code else { return Ok(None) };
     let row = sqlx::query(
         "select id, active, fakturerbar_default from dimension
@@ -50,7 +50,7 @@ async fn resolve_prosjekt(
     .await?
     .with_context(|| format!("no prosjekt {code}"))?;
     ensure!(row.get::<bool, _>("active"), "prosjekt {code} er avsluttet");
-    Ok(Some(Prosjekt {
+    Ok(Some(Project {
         id: row.get("id"),
         fakturerbar_default: row.get("fakturerbar_default"),
     }))
@@ -87,7 +87,7 @@ async fn resolve_billing(
     pool: &PgPool,
     person_id: Uuid,
     draft: &TimeEntryDraft,
-    project: &Option<Prosjekt>,
+    project: &Option<Project>,
     sats_override: bool,
 ) -> Result<(bool, Option<i64>)> {
     let billable = draft
@@ -128,10 +128,10 @@ pub async fn create_time_entry(
     created_by: &str,
 ) -> Result<Uuid> {
     check_draft(draft)?;
-    let project = resolve_prosjekt(pool, company_id, &draft.project).await?;
+    let project = resolve_project(pool, company_id, &draft.project).await?;
     let (billable, hourly_rate_ore) =
         resolve_billing(pool, person_id, draft, &project, sats_override).await?;
-    let prosjekt_id = project.map(|p| p.id);
+    let project_id = project.map(|p| p.id);
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into time_entry (id, company_id, person_id, dato, minutter, beskrivelse,
@@ -144,7 +144,7 @@ pub async fn create_time_entry(
     .bind(draft.date)
     .bind(draft.minutes)
     .bind(&draft.description)
-    .bind(prosjekt_id)
+    .bind(project_id)
     .bind(billable)
     .bind(hourly_rate_ore)
     .bind(created_by)
@@ -167,7 +167,7 @@ pub async fn update_time_entry(
     sats_override: bool,
 ) -> Result<()> {
     check_draft(draft)?;
-    let project = resolve_prosjekt(pool, company_id, &draft.project).await?;
+    let project = resolve_project(pool, company_id, &draft.project).await?;
     // The entry may belong to someone else (TIMER_SKRIV_ALLE): the rate
     // follows the OWNER of the hours, not the corrector.
     let owner: Uuid =
@@ -179,7 +179,7 @@ pub async fn update_time_entry(
             .context("no such time entry")?;
     let (billable, hourly_rate_ore) =
         resolve_billing(pool, owner, draft, &project, sats_override).await?;
-    let prosjekt_id = project.map(|p| p.id);
+    let project_id = project.map(|p| p.id);
     let updated = sqlx::query(
         "update time_entry set dato = $4, minutter = $5, beskrivelse = $6, prosjekt_id = $7,
                 fakturerbar = $8, timesats_ore = $9, updated_at = now()
@@ -191,7 +191,7 @@ pub async fn update_time_entry(
     .bind(draft.date)
     .bind(draft.minutes)
     .bind(&draft.description)
-    .bind(prosjekt_id)
+    .bind(project_id)
     .bind(billable)
     .bind(hourly_rate_ore)
     .execute(pool)
@@ -289,7 +289,7 @@ pub async fn list_time_entries(
 }
 
 #[derive(Debug)]
-pub struct ProsjektSum {
+pub struct ProjectSum {
     pub project: Option<String>,
     pub minutes: i64,
     pub fakturerbare_minutter: i64,
@@ -307,7 +307,7 @@ pub async fn timesheet_summary(
     company_id: Uuid,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<ProsjektSum>> {
+) -> Result<Vec<ProjectSum>> {
     let rows = sqlx::query(
         "select d.code as prosjekt,
                 sum(t.minutter)::bigint as minutter,
@@ -333,7 +333,7 @@ pub async fn timesheet_summary(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| ProsjektSum {
+        .map(|r| ProjectSum {
             project: r.get("prosjekt"),
             minutes: r.get("minutter"),
             fakturerbare_minutter: r.get::<Option<i64>, _>("fakturerbare").unwrap_or(0),
@@ -607,7 +607,7 @@ pub async fn create_invoice_with_hours(
     let mut lines = draft.lines.clone();
     lines.extend(groups.iter().map(|g| hour_line(g, vat_code)));
     let full = InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: draft.party_no.clone(),
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
@@ -667,7 +667,7 @@ pub async fn bill_hours(
 
     let lines = groups.iter().map(|g| hour_line(g, vat_code)).collect();
     let draft = InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: party_no.to_string(),
         invoice_date,
         due_date,

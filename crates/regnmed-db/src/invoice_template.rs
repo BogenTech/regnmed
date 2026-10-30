@@ -24,7 +24,7 @@ pub use crate::invoice::InvoiceLineDraft as TemplateLineDraft;
 #[derive(Debug)]
 pub struct TemplateDraft {
     pub party_no: String,
-    pub intervall: String,
+    pub interval: String,
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
     pub due_days: i32,
@@ -32,9 +32,9 @@ pub struct TemplateDraft {
     pub lines: Vec<TemplateLineDraft>,
 }
 
-fn check_intervall(intervall: &str) -> Result<()> {
+fn check_interval(interval: &str) -> Result<()> {
     ensure!(
-        matches!(intervall, "manedlig" | "kvartalsvis" | "arlig"),
+        matches!(interval, "manedlig" | "kvartalsvis" | "arlig"),
         "intervall must be manedlig, kvartalsvis or arlig"
     );
     Ok(())
@@ -46,7 +46,7 @@ pub async fn create_template(
     draft: &TemplateDraft,
     created_by: &str,
 ) -> Result<Uuid> {
-    check_intervall(&draft.intervall)?;
+    check_interval(&draft.interval)?;
     ensure!(
         !draft.lines.is_empty(),
         "a template needs at least one line"
@@ -70,7 +70,7 @@ pub async fn create_template(
     .bind(template_id)
     .bind(company_id)
     .bind(party_id)
-    .bind(&draft.intervall)
+    .bind(&draft.interval)
     .bind(draft.next_date)
     .bind(draft.end_date)
     .bind(draft.due_days)
@@ -119,7 +119,7 @@ pub async fn create_template_from_invoice(
     pool: &PgPool,
     company_id: Uuid,
     invoice_id: Uuid,
-    intervall: &str,
+    interval: &str,
     next_date: NaiveDate,
     due_days: i32,
     mark_dispatch: bool,
@@ -159,7 +159,7 @@ pub async fn create_template_from_invoice(
         company_id,
         &TemplateDraft {
             party_no,
-            intervall: intervall.to_string(),
+            interval: interval.to_string(),
             next_date,
             end_date: None,
             due_days,
@@ -178,7 +178,7 @@ pub async fn update_template(
     pool: &PgPool,
     company_id: Uuid,
     template_id: Uuid,
-    intervall: Option<&str>,
+    interval: Option<&str>,
     next_date: Option<NaiveDate>,
     end_date: Option<Option<NaiveDate>>,
     due_days: Option<i32>,
@@ -186,8 +186,8 @@ pub async fn update_template(
     active: Option<bool>,
     lines: Option<&[TemplateLineDraft]>,
 ) -> Result<()> {
-    if let Some(intervall) = intervall {
-        check_intervall(intervall)?;
+    if let Some(interval) = interval {
+        check_interval(interval)?;
     }
     let mut tx = pool.begin().await?;
     let updated = sqlx::query(
@@ -203,7 +203,7 @@ pub async fn update_template(
     )
     .bind(template_id)
     .bind(company_id)
-    .bind(intervall)
+    .bind(interval)
     .bind(next_date)
     .bind(end_date.is_some())
     .bind(end_date.flatten())
@@ -230,7 +230,7 @@ pub struct TemplateRow {
     pub id: Uuid,
     pub party_no: String,
     pub party_name: String,
-    pub intervall: String,
+    pub interval: String,
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
     pub due_days: i32,
@@ -263,7 +263,7 @@ pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<Templ
             id: r.get("id"),
             party_no: r.get("party_no"),
             party_name: r.get("party_name"),
-            intervall: r.get("intervall"),
+            interval: r.get("intervall"),
             next_date: r.get("neste_dato"),
             end_date: r.get("slutt_dato"),
             due_days: r.get("forfall_dager"),
@@ -367,7 +367,7 @@ pub async fn generate_one(
     {
         return Ok(None);
     }
-    let intervall: String = template.get("intervall");
+    let interval: String = template.get("intervall");
     let mark_dispatch: bool = template.get("merk_utsendelse");
 
     let line_rows = sqlx::query(
@@ -381,7 +381,7 @@ pub async fn generate_one(
     ensure!(!line_rows.is_empty(), "template has no lines");
 
     let draft = InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: template.get("party_no"),
         invoice_date: next_date,
         due_date: next_date + chrono::Days::new(template.get::<i32, _>("forfall_dager") as u64),
@@ -433,7 +433,7 @@ pub async fn generate_one(
         .execute(&mut *tx)
         .await?;
         let advanced =
-            next_interval_date(next_date, &intervall).context("could not advance neste_dato")?;
+            next_interval_date(next_date, &interval).context("could not advance neste_dato")?;
         sqlx::query(
             "update invoice_template set neste_dato = $2, updated_at = now() where id = $1",
         )

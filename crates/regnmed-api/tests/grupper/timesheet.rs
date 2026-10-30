@@ -413,7 +413,7 @@ async fn timer_rights_mean_what_they_say() {
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
         .unwrap();
-    regnmed_db::set_prosjekt_sats(
+    regnmed_db::set_project_rate(
         &state.pool,
         company,
         "P1",
@@ -467,9 +467,9 @@ async fn timer_rights_mean_what_they_say() {
     // (bokforing, custom role, admin) sees both.
     let uke = format!("{base}?from=2026-08-03&to=2026-08-09");
     let (_, sett) = request(&state, "GET", &uke, &employee_token, None).await;
-    let egne = sett["entries"].as_array().unwrap();
-    assert_eq!(egne.len(), 1, "ansatt ser bare egne timer: {sett}");
-    assert_eq!(egne[0]["own"], true);
+    let own = sett["entries"].as_array().unwrap();
+    assert_eq!(own.len(), 1, "ansatt ser bare egne timer: {sett}");
+    assert_eq!(own[0]["own"], true);
     for token in [&bokforer_token, &timesjef_token, &admin_token] {
         let (_, alle) = request(&state, "GET", &uke, token, None).await;
         assert_eq!(
@@ -539,7 +539,7 @@ async fn timer_rights_mean_what_they_say() {
 /// already-billed selection fails whole rather than billing less than
 /// what was chosen.
 #[tokio::test]
-async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
+async fn a_selection_of_the_basis_bills_and_locks_exactly_itself() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -585,7 +585,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
         .unwrap();
-    regnmed_db::set_prosjekt_sats(
+    regnmed_db::set_project_rate(
         &state.pool,
         company,
         "P1",

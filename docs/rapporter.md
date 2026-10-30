@@ -101,8 +101,8 @@ bank, og at fristene aldri ligger i fortiden.
 som allerede finnes (ingen lagret tilstand, ingen ny SQL-vei):
 
 - **Inntekter og kostnader per prosjekt** fra de dimensjonsfiltrerte
-  SUM-spørringene (`saldo_lines`/`prosjekt_saldo_lines`), foldet med
-  `regnskap::lonnsomhet` — presentasjonsfortegnene ett sted, som alt
+  SUM-spørringene (`balance_lines`/`project_balance_lines`), foldet med
+  `statements::profitability` — presentasjonsfortegnene ett sted, som alt
   annet. Bare posteringer MED prosjektdimensjon telles; en bankmotpost
   uten dimensjon er ikke prosjektøkonomi.
 - **Timene** fra timelistesummeringene, splittet fakturert/ufakturert

@@ -19,16 +19,16 @@ use uuid::Uuid;
 /// What the caller sends: gross per income account and VAT code, the
 /// payment means, and optionally what was actually counted in the till.
 #[derive(Debug)]
-pub struct DagsoppgjorInn {
+pub struct DailySettlementInput {
     pub date: NaiveDate,
     pub z_nummer: String,
-    pub salg: Vec<(String, Option<String>, i64)>,
+    pub sale: Vec<(String, Option<String>, i64)>,
     pub payment: Vec<(String, i64)>,
     pub vat_account: String,
     /// The cash account, and what was counted in it. Both or neither —
     /// a counted amount without an account cannot be posted anywhere.
     pub cash_account: Option<String>,
-    pub opptalt_kontant_ore: Option<i64>,
+    pub counted_cash_ore: Option<i64>,
     pub difference_account: String,
 }
 
@@ -40,22 +40,22 @@ pub struct BokfortOppgjor {
     pub difference_ore: i64,
 }
 
-pub async fn bokfor_dagsoppgjor(
+pub async fn post_daily_settlement(
     pool: &PgPool,
     company_id: Uuid,
-    inn: &DagsoppgjorInn,
+    inn: &DailySettlementInput,
     z_rapport: Option<(&str, &str, &[u8])>,
     created_by: &str,
 ) -> Result<BokfortOppgjor> {
     ensure!(
-        inn.cash_account.is_some() == inn.opptalt_kontant_ore.is_some(),
+        inn.cash_account.is_some() == inn.counted_cash_ore.is_some(),
         "opptalt kontantbeholdning krever at kontantkontoen oppgis, og omvendt"
     );
 
     // The rate is the one that applied on the settlement date, from the
     // same dated table the invoice engine and the spesifikasjon read.
-    let mut salg = Vec::with_capacity(inn.salg.len());
-    for (account, vat_code, gross_ore) in &inn.salg {
+    let mut sale = Vec::with_capacity(inn.sale.len());
+    for (account, vat_code, gross_ore) in &inn.sale {
         let rate_bp = match vat_code {
             None => 0,
             Some(code) => sqlx::query_scalar::<_, i32>(
@@ -71,7 +71,7 @@ pub async fn bokfor_dagsoppgjor(
             .map(i64::from)
             .with_context(|| format!("ingen mva-sats for kode {code} per {} ", inn.date))?,
         };
-        salg.push(SalesLine {
+        sale.push(SalesLine {
             account: account.clone(),
             vat_code: vat_code.clone(),
             rate_bp,
@@ -82,7 +82,7 @@ pub async fn bokfor_dagsoppgjor(
     let oppgjor = DailySettlement {
         date: inn.date,
         z_number: inn.z_nummer.clone(),
-        sales: salg,
+        sales: sale,
         payments: inn
             .payment
             .iter()
@@ -115,7 +115,7 @@ pub async fn bokfor_dagsoppgjor(
 
     let mut difference = None;
     let mut difference_ore = 0;
-    if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.opptalt_kontant_ore) {
+    if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.counted_cash_ore) {
         let registrert: i64 = inn
             .payment
             .iter()

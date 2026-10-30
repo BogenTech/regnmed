@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::balance_documentation::{avstem, balance_status, hent_vedlegg};
+use regnmed_db::balance_documentation::{avstem, balance_status, fetch_attachment};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -41,7 +41,7 @@ fn e(account: &str, ore: i64) -> EntryDraft {
     }
 }
 
-async fn oppsett(pool: &PgPool) -> (Uuid, Uuid) {
+async fn config(pool: &PgPool) -> (Uuid, Uuid) {
     let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Balanse AS")
         .await
         .unwrap();
@@ -67,7 +67,7 @@ async fn oppsett(pool: &PgPool) -> (Uuid, Uuid) {
 #[tokio::test]
 async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     let Some(pool) = pool().await else { return };
-    let (company, person) = oppsett(&pool).await;
+    let (company, person) = config(&pool).await;
     regnmed_db::post_voucher(
         &pool,
         company,
@@ -124,7 +124,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
 #[tokio::test]
 async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     let Some(pool) = pool().await else { return };
-    let (company, person) = oppsett(&pool).await;
+    let (company, person) = config(&pool).await;
     let period = d(2026, 3, 31);
     regnmed_db::post_voucher(
         &pool,
@@ -202,9 +202,9 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
 /// The vedlegg IS the documentation, so it comes back byte for byte —
 /// and the hash is re-checked on the way out, like bilagsvedleggene.
 #[tokio::test]
-async fn the_vedlegg_round_trips_and_its_hash_is_verified() {
+async fn the_attachment_round_trips_and_its_hash_is_verified() {
     let Some(pool) = pool().await else { return };
-    let (company, person) = oppsett(&pool).await;
+    let (company, person) = config(&pool).await;
     let period = d(2026, 6, 30);
     regnmed_db::post_voucher(
         &pool,
@@ -233,7 +233,7 @@ async fn the_vedlegg_round_trips_and_its_hash_is_verified() {
     .await
     .unwrap();
 
-    let (name, ct, bytes) = hent_vedlegg(&pool, company, id).await.unwrap();
+    let (name, ct, bytes) = fetch_attachment(&pool, company, id).await.unwrap();
     assert_eq!(name, "kontoutskrift.pdf");
     assert_eq!(ct, "application/pdf");
     assert_eq!(bytes, b"%PDF-1.4 saldo");

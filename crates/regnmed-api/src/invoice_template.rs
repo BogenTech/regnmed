@@ -28,7 +28,8 @@ pub struct CreateTemplateRequest {
     from_invoice_id: Option<Uuid>,
     party_no: Option<String>,
     /// manedlig | kvartalsvis | arlig
-    intervall: String,
+    #[serde(rename = "intervall")]
+    interval: String,
     #[serde(rename = "neste_dato")]
     next_date: chrono::NaiveDate,
     #[serde(rename = "slutt_dato")]
@@ -64,7 +65,7 @@ pub async fn create(
                 &state.pool,
                 company_id,
                 invoice_id,
-                &request.intervall,
+                &request.interval,
                 request.next_date,
                 request.due_days.unwrap_or(14),
                 request.mark_dispatch,
@@ -81,7 +82,7 @@ pub async fn create(
                 company_id,
                 &regnmed_db::TemplateDraft {
                     party_no,
-                    intervall: request.intervall,
+                    interval: request.interval,
                     next_date: request.next_date,
                     end_date: request.end_date,
                     due_days: request.due_days.unwrap_or(14),
@@ -115,7 +116,7 @@ pub async fn list(
             "template_id": t.id,
             "party_no": t.party_no,
             "party_name": t.party_name,
-            "intervall": t.intervall,
+            "intervall": t.interval,
             "neste_dato": t.next_date.to_string(),
             "slutt_dato": t.end_date.map(|d| d.to_string()),
             "forfall_dager": t.due_days,
@@ -129,7 +130,8 @@ pub async fn list(
 
 #[derive(Deserialize)]
 pub struct UpdateTemplateRequest {
-    intervall: Option<String>,
+    #[serde(rename = "intervall")]
+    interval: Option<String>,
     #[serde(rename = "neste_dato")]
     next_date: Option<chrono::NaiveDate>,
     /// Present-but-null clears the sluttdato.
@@ -178,7 +180,7 @@ pub async fn update(
         &state.pool,
         company_id,
         template_id,
-        request.intervall.as_deref(),
+        request.interval.as_deref(),
         request.next_date,
         request.end_date,
         request.due_days,

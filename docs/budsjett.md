@@ -33,7 +33,7 @@ gjelder bilag; et budsjett er ikke bilag, og å tvinge brukeren til å
 skrive «−100 000» for planlagt salg ville vært en lekkasje fra
 lagringsformatet ut i grensesnittet.
 
-Faktiske tall konverteres med `regnmed_core::regnskap::presentasjon_ore`
+Faktiske tall konverteres med `regnmed_core::statements::presentation_ore`
 — den samme regelen resultatrapporten bruker, ett sted i koden — før de
 møter budsjettet, så sammenligningen skjer i ett rom.
 

@@ -35,7 +35,7 @@ pub async fn list_roles(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
+    let own = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
     let innebygde = [
         Role::Employee,
         Role::Read,
@@ -51,7 +51,7 @@ pub async fn list_roles(
             "beskrivelse": r.description(),
             "rettigheter": r.rights().iter().map(|x| x.slug()).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
-        "egne": egne.iter().map(|r| json!({
+        "egne": own.iter().map(|r| json!({
             "id": r.id,
             "navn": r.name,
             "aktiv": r.active,
@@ -148,7 +148,7 @@ pub async fn deactivate(
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, false, person.person_id)
+    regnmed_db::roles::set_active(&state.pool, company_id, role_id, false, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -160,7 +160,7 @@ pub async fn restore(
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, true, person.person_id)
+    regnmed_db::roles::set_active(&state.pool, company_id, role_id, true, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -176,7 +176,7 @@ pub async fn history(
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.name,
-            "endring": e.endring,
+            "endring": e.change,
             "rettigheter": e.rights,
             "utfort_av": e.performed_by,
             "tidspunkt": e.created_at.to_rfc3339(),

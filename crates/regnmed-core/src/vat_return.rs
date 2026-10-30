@@ -52,14 +52,14 @@ pub struct VatReturn {
 pub struct MeldingLine {
     pub code: String,
     pub description: String,
-    pub grunnlag_kr: Option<i64>,
+    pub basis_kr: Option<i64>,
     pub rate_bp: Option<i64>,
     /// The code's own booked tax, melding signs.
     pub vat_kr: i64,
     /// The deduction the SAME code carries (reverse charge / import with
     /// full deduction right); 0 for every other code. Signed opposite
     /// `mva_kr`, so the pair sums to the line's net effect.
-    pub fradrag_kr: i64,
+    pub deduction_kr: i64,
 }
 
 /// Whole kroner from øre, rounded half away from zero.
@@ -84,7 +84,7 @@ pub fn build(
         }
         // Ledger → melding: negate (payable-positive) and round to kroner.
         let vat_kr = kroner(-line.tax_ore);
-        let grunnlag_kr = kroner(-line.basis_ore);
+        let basis_kr = kroner(-line.basis_ore);
         let retning = direction(&line.code);
         // Cost markers are not tax calculations, and using them is not
         // even mandatory — the import's tax is reported under 81/14.
@@ -94,20 +94,20 @@ pub fn build(
         if retning == Direction::Kostnadsmarkor {
             continue;
         }
-        let (grunnlag, rate) = match retning {
+        let (basis, rate) = match retning {
             // Fradrag lines carry only the deducted amount.
             Direction::Input => (None, None),
             // Everything else reports grunnlag + sats.
             Direction::Output
             | Direction::None
             | Direction::Kostnadsmarkor
-            | Direction::OmvendtMedFradrag
-            | Direction::OmvendtUtenFradrag => (Some(grunnlag_kr), Some(line.rate_bp)),
+            | Direction::ReverseChargeDeductible
+            | Direction::ReverseChargeNonDeductible => (Some(basis_kr), Some(line.rate_bp)),
         };
         lines.push(MeldingLine {
             code: line.code.clone(),
             description: line.description.clone(),
-            grunnlag_kr: grunnlag,
+            basis_kr: basis,
             rate_bp: rate,
             vat_kr,
             // The deduction the same code carries. Kept beside the line
@@ -116,8 +116,8 @@ pub fn build(
             // booked tax (the XSD calls it «Bokført beløp for
             // merverdiavgift»), while the fastsatte total is the net
             // effect on what is payable.
-            fradrag_kr: match retning {
-                Direction::OmvendtMedFradrag => -vat_kr,
+            deduction_kr: match retning {
+                Direction::ReverseChargeDeductible => -vat_kr,
                 _ => 0,
             },
         });
@@ -126,7 +126,7 @@ pub fn build(
     // ALSO deducts it when the deduction right is full. Summing only the
     // computed side billed every such customer 25 % of a basis they owed
     // nothing on.
-    let fastsatt_kr = lines.iter().map(|l| l.vat_kr + l.fradrag_kr).sum();
+    let fastsatt_kr = lines.iter().map(|l| l.vat_kr + l.deduction_kr).sum();
     VatReturn {
         orgnumber: orgnumber.to_string(),
         period,
@@ -196,8 +196,8 @@ pub fn render(message: &VatReturn) -> String {
         x.open("mvaSpesifikasjonslinje");
         x.leaf("mvaKode", &line.code);
         x.leaf("mvaKodeRegnskapsystem", &line.description);
-        if let Some(grunnlag) = line.grunnlag_kr {
-            x.leaf("grunnlag", &grunnlag.to_string());
+        if let Some(basis) = line.basis_kr {
+            x.leaf("grunnlag", &basis.to_string());
         }
         if let Some(bp) = line.rate_bp {
             x.leaf("sats", &rate(bp));
@@ -269,12 +269,12 @@ mod tests {
             utg.vat_kr, 2500,
             "utgående: ledger credit → payable positive, kroner"
         );
-        assert_eq!(utg.grunnlag_kr, Some(10_000), "10000,49 rounds to 10000");
+        assert_eq!(utg.basis_kr, Some(10_000), "10000,49 rounds to 10000");
         assert_eq!(utg.rate_bp, Some(2500));
 
         let inn = m.lines.iter().find(|l| l.code == "1").unwrap();
         assert_eq!(inn.vat_kr, -2000, "fradrag is negative in the melding");
-        assert_eq!(inn.grunnlag_kr, None, "inngående lines carry no grunnlag");
+        assert_eq!(inn.basis_kr, None, "inngående lines carry no grunnlag");
         assert_eq!(inn.rate_bp, None);
 
         assert_eq!(m.fastsatt_kr, 500, "fastsatt = sum of line effects");
@@ -318,7 +318,7 @@ mod tests {
 
         let med = message("86");
         assert_eq!(med.lines[0].vat_kr, 25_000, "beregnet utgående avgift");
-        assert_eq!(med.lines[0].fradrag_kr, -25_000, "og fradraget for den");
+        assert_eq!(med.lines[0].deduction_kr, -25_000, "og fradraget for den");
         assert_eq!(
             med.fastsatt_kr, 0,
             "full fradragsrett: kjøpet skal ikke koste avgift"
@@ -326,7 +326,7 @@ mod tests {
 
         let without = message("87");
         assert_eq!(
-            without.lines[0].fradrag_kr, 0,
+            without.lines[0].deduction_kr, 0,
             "ingen fradragsrett, intet fradrag"
         );
         assert_eq!(

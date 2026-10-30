@@ -34,7 +34,7 @@ pub struct InvoiceDraft {
     /// delivery, and this is what settled it ("Kort", "Vipps",
     /// "Kontant"). It changes the DOCUMENT — no KID, no forfall — so it
     /// belongs on the draft, not only on the posting.
-    pub kontant_betalingsmiddel: Option<String>,
+    pub cash_payment_method: Option<String>,
     pub party_no: String,
     pub invoice_date: NaiveDate,
     pub due_date: NaiveDate,
@@ -354,12 +354,12 @@ pub async fn create_invoice_in(
     let pdf = render_invoice_pdf(&InvoicePdfInput {
         document_type: if credits_invoice_id.is_some() {
             DocumentType::CreditNote
-        } else if draft.kontant_betalingsmiddel.is_some() {
+        } else if draft.cash_payment_method.is_some() {
             DocumentType::Kontantfaktura
         } else {
             DocumentType::Invoice
         },
-        betalingsmiddel: draft.kontant_betalingsmiddel.clone(),
+        payment_method: draft.cash_payment_method.clone(),
         credits_number: credited_invoice_no,
         seller_name: company.get("name"),
         seller_orgnumber: company.get("orgnr"),
@@ -371,7 +371,7 @@ pub async fn create_invoice_in(
         buyer_number: draft.party_no.clone(),
         buyer_orgnumber: party.get("orgnr"),
         buyer_address: party.get("address"),
-        fakturanr: invoice_no,
+        invoice_number: invoice_no,
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
         delivery_date: Some(draft.delivery_date),
@@ -560,7 +560,7 @@ pub async fn credit_invoice(
         .fetch_one(pool)
         .await?;
     let draft = InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: original.get("party_no"),
         invoice_date: today,
         due_date: today,
@@ -703,22 +703,22 @@ pub async fn create_kontantfaktura(
     company_id: Uuid,
     draft: &InvoiceDraft,
     settlement_account: &str,
-    betalingsmiddel: &str,
+    payment_method: &str,
     created_by: &str,
 ) -> Result<IssuedInvoice> {
     ensure!(
-        !betalingsmiddel.trim().is_empty(),
+        !payment_method.trim().is_empty(),
         "kontantfakturaen må si hva den ble gjort opp med (§5-3)"
     );
     // Set here rather than trusted from the caller: a kontantfaktura
     // that reached the PDF as an ordinary faktura would print a KID for
     // money already received.
     let draft = &InvoiceDraft {
-        kontant_betalingsmiddel: Some(betalingsmiddel.trim().to_string()),
+        cash_payment_method: Some(payment_method.trim().to_string()),
         ..InvoiceDraft::clone(draft)
     };
     let mut tx = pool.begin().await?;
-    let utstedt = create_invoice_in(pool, &mut tx, company_id, draft, created_by, None).await?;
+    let issued = create_invoice_in(pool, &mut tx, company_id, draft, created_by, None).await?;
 
     let (party_no, receivable_entry, gross): (String, Uuid, i64) = {
         let row = sqlx::query(
@@ -728,7 +728,7 @@ pub async fn create_kontantfaktura(
              join entry e on e.id = i.receivable_entry_id
              where i.id = $1",
         )
-        .bind(utstedt.invoice_id)
+        .bind(issued.invoice_id)
         .fetch_one(&mut *tx)
         .await?;
         (
@@ -742,8 +742,8 @@ pub async fn create_kontantfaktura(
         journal_code: draft.journal_code.clone(),
         voucher_date: draft.invoice_date,
         description: format!(
-            "Kontantsalg, oppgjør faktura {} ({betalingsmiddel})",
-            utstedt.invoice_no
+            "Kontantsalg, oppgjør faktura {} ({payment_method})",
+            issued.invoice_no
         ),
         reverses: None,
         entries: vec![
@@ -751,7 +751,7 @@ pub async fn create_kontantfaktura(
                 account_number: settlement_account.to_string(),
                 amount: regnmed_core::Ore(gross),
                 vat_code: None,
-                description: Some(betalingsmiddel.trim().to_string()),
+                description: Some(payment_method.trim().to_string()),
                 party_no: None,
                 department: None,
                 project: None,
@@ -792,5 +792,5 @@ pub async fn create_kontantfaktura(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(utstedt)
+    Ok(issued)
 }

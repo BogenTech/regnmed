@@ -85,7 +85,7 @@ pub async fn revoke_access(
     Path((firm_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::firm_members::sett_aktiv(&state.pool, firm_id, person_id, false, person.person_id)
+    regnmed_db::firm_members::set_active(&state.pool, firm_id, person_id, false, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -97,7 +97,7 @@ pub async fn restore_access(
     Path((firm_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::firm_members::sett_aktiv(&state.pool, firm_id, person_id, true, person.person_id)
+    regnmed_db::firm_members::set_active(&state.pool, firm_id, person_id, true, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -113,7 +113,7 @@ pub async fn access_history(
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.name,
-            "endring": e.endring,
+            "endring": e.change,
             "fra_rolle": e.from_role,
             "til_rolle": e.to_role,
             "utfort_av": e.performed_by,
@@ -184,13 +184,13 @@ pub async fn invite(
 pub async fn revoke_invitation(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((firm_id, invitasjon_id)): Path<(Uuid, Uuid)>,
+    Path((firm_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::firm_members::tilbakekall_invitasjon(
+    regnmed_db::firm_members::revoke_invitation(
         &state.pool,
         firm_id,
-        invitasjon_id,
+        invitation_id,
         person.person_id,
     )
     .await
@@ -205,7 +205,7 @@ async fn try_send_firm_invitation(
     state: &AppState,
     person: &AuthPerson,
     firm_id: Uuid,
-    invitasjon_id: Uuid,
+    invitation_id: Uuid,
 ) -> Result<(), String> {
     let Some(js) = &state.mailq else {
         return Err("e-postutsendelse er ikke konfigurert (NATS_URL)".into());
@@ -213,7 +213,7 @@ async fn try_send_firm_invitation(
     let payload = regnmed_db::firm_members::firm_invitation_email_payload(
         &state.pool,
         firm_id,
-        invitasjon_id,
+        invitation_id,
         state.portal_base.as_deref(),
     )
     .await
@@ -227,7 +227,7 @@ async fn try_send_firm_invitation(
     regnmed_db::firm_members::log_firm_dispatch(
         &state.pool,
         id,
-        invitasjon_id,
+        invitation_id,
         &payload.to,
         &payload.subject,
         sent_by,
@@ -240,10 +240,10 @@ async fn try_send_firm_invitation(
 pub async fn resend_invitation(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((firm_id, invitasjon_id)): Path<(Uuid, Uuid)>,
+    Path((firm_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    try_send_firm_invitation(&state, &person, firm_id, invitasjon_id)
+    try_send_firm_invitation(&state, &person, firm_id, invitation_id)
         .await
         .map_err(ApiError::BadRequest)?;
     Ok(Json(json!({ "epost_sendt": true })))

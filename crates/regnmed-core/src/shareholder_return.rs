@@ -63,7 +63,7 @@ pub struct Company {
     pub orgnumber: String,
     pub name: String,
     pub address: Option<String>,
-    pub postnummer: Option<String>,
+    pub postal_code: Option<String>,
     pub postal_city: Option<String>,
     pub contact_name: Option<String>,
     pub contact_email: Option<String>,
@@ -73,7 +73,7 @@ pub struct Company {
 /// number in the hovedskjema is reported.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PriorYear {
-    pub fjoraret: i64,
+    pub last_year: i64,
     pub this_year: i64,
 }
 
@@ -112,7 +112,7 @@ pub struct MainForm {
 
 #[derive(Debug, Clone)]
 pub enum ShareholderId {
-    Fodselsnummer(String),
+    Nin(String),
     Organisasjonsnummer(String),
     /// `UTLxxxxxxxxx`, assigned by Aksjonærregisteret to shareholders
     /// with no Norwegian identifier.
@@ -144,9 +144,9 @@ pub struct SubForm {
     pub id: Option<ShareholderId>,
     pub name: String,
     pub address: Option<String>,
-    pub postnummer: Option<String>,
+    pub postal_code: Option<String>,
     pub postal_city: Option<String>,
-    pub landkode: Option<String>,
+    pub country_code: Option<String>,
     pub share_count: PriorYear,
     pub dividend: Vec<DividendEntry>,
     pub bevegelser: Vec<ShareMovement>,
@@ -279,7 +279,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt_opt(
         "EnhetPostnummer-datadef-6673",
         6673,
-        h.company.postnummer.as_ref(),
+        h.company.postal_code.as_ref(),
     );
     w.felt_opt(
         "EnhetPoststed-datadef-6674",
@@ -310,7 +310,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalFjoraret-datadef-7129",
         7129,
-        &amount(h.aksjekapital.fjoraret),
+        &amount(h.aksjekapital.last_year),
     );
     w.felt(
         "Aksjekapital-datadef-87",
@@ -323,7 +323,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalISINAksjetypeFjoraret-datadef-17663",
         17663,
-        &amount(h.aksjekapital.fjoraret),
+        &amount(h.aksjekapital.last_year),
     );
     w.felt(
         "AksjekapitalISINAksjetype-datadef-17664",
@@ -335,7 +335,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjeMvPalydendeFjoraret-datadef-23944",
         23944,
-        &amount(h.palydende_ore.fjoraret),
+        &amount(h.palydende_ore.last_year),
     );
     w.felt(
         "AksjeMvPalydende-datadef-23945",
@@ -347,7 +347,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjerMvAntallFjoraret-datadef-29166",
         29166,
-        &h.share_count.fjoraret.to_string(),
+        &h.share_count.last_year.to_string(),
     );
     w.felt(
         "AksjerMvAntall-datadef-29167",
@@ -359,7 +359,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalInnbetaltFjoraret-datadef-8020",
         8020,
-        &amount(h.innbetalt_aksjekapital.fjoraret),
+        &amount(h.innbetalt_aksjekapital.last_year),
     );
     w.felt(
         "AksjekapitalInnbetalt-datadef-5867",
@@ -371,7 +371,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjeOverkursISINAksjetypeFjoraret-datadef-17662",
         17662,
-        &amount(h.overkurs.fjoraret),
+        &amount(h.overkurs.last_year),
     );
     w.felt(
         "AksjeOverkursISINAksjetype-datadef-17661",
@@ -480,7 +480,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     w.close("Selskapsidentifikasjon-grp-3986");
     w.group("NorskUtenlandskAksjonar-grp-3988", 3988);
     match id {
-        ShareholderId::Fodselsnummer(f) => w.felt("AksjonarFodselsnummer-datadef-1156", 1156, f),
+        ShareholderId::Nin(f) => w.felt("AksjonarFodselsnummer-datadef-1156", 1156, f),
         ShareholderId::Organisasjonsnummer(o) => {
             w.felt("AksjonarOrganisasjonsnummer-datadef-7597", 7597, o)
         }
@@ -494,14 +494,18 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     w.felt_opt(
         "AksjonarPostnummer-datadef-7598",
         7598,
-        u.postnummer.as_ref(),
+        u.postal_code.as_ref(),
     );
     w.felt_opt(
         "AksjonarPoststed-datadef-7599",
         7599,
         u.postal_city.as_ref(),
     );
-    w.felt_opt("AksjonarLandkode-datadef-17740", 17740, u.landkode.as_ref());
+    w.felt_opt(
+        "AksjonarLandkode-datadef-17740",
+        17740,
+        u.country_code.as_ref(),
+    );
     if let Some(address) = u.address.as_ref().filter(|a| !a.trim().is_empty()) {
         w.group("Adresse-grp-7722", 7722);
         w.felt("AksjonarAdresse-datadef-1154", 1154, &kutt(address, 105));
@@ -518,7 +522,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjerAntallFjoraret-datadef-29168",
         29168,
-        &u.share_count.fjoraret.to_string(),
+        &u.share_count.last_year.to_string(),
     );
     w.felt(
         "AksjonarAksjerAntall-datadef-17741",
@@ -626,7 +630,7 @@ mod tests {
             orgnumber: "314259521".into(),
             name: "Mosegrodd Oransje Tiger AS".into(),
             address: Some("Haråsveien 13E".into()),
-            postnummer: Some("0283".into()),
+            postal_code: Some("0283".into()),
             postal_city: Some("OSLO".into()),
             contact_name: Some("Kari Styreleder".into()),
             contact_email: Some("kari@example.no".into()),
@@ -638,19 +642,19 @@ mod tests {
             company: company(),
             inntektsar: 2026,
             aksjekapital: PriorYear {
-                fjoraret: 0,
+                last_year: 0,
                 this_year: 10_000_000,
             },
             palydende_ore: PriorYear {
-                fjoraret: 0,
+                last_year: 0,
                 this_year: 100_000,
             },
             share_count: PriorYear {
-                fjoraret: 0,
+                last_year: 0,
                 this_year: 100,
             },
             innbetalt_aksjekapital: PriorYear {
-                fjoraret: 0,
+                last_year: 0,
                 this_year: 10_000_000,
             },
             overkurs: PriorYear::default(),
@@ -674,14 +678,14 @@ mod tests {
         SubForm {
             orgnumber: "314259521".into(),
             inntektsar: 2026,
-            id: Some(ShareholderId::Fodselsnummer("26829398612".into())),
+            id: Some(ShareholderId::Nin("26829398612".into())),
             name: "Kari Nordmann".into(),
             address: Some("Haråsveien 13E".into()),
-            postnummer: Some("0283".into()),
+            postal_code: Some("0283".into()),
             postal_city: Some("OSLO".into()),
-            landkode: None,
+            country_code: None,
             share_count: PriorYear {
-                fjoraret: 0,
+                last_year: 0,
                 this_year: 100,
             },
             dividend: vec![DividendEntry {
@@ -739,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn a_year_without_transactions_is_still_a_valid_oppgave() {
+    fn a_year_without_transactions_is_still_a_valid_return() {
         // The common case: the same owners as last year, nothing
         // happened. Then there is no code to be unsure about.
         let mut h = hovedskjema();
@@ -773,7 +777,7 @@ mod tests {
 
         let mut u = underskjema();
         u.id = Some(ShareholderId::Utenlandsk("UTL000000123".into()));
-        u.landkode = Some("SE".into());
+        u.country_code = Some("SE".into());
         valider(
             &render_sub_form(&u).unwrap(),
             "aksjonaerregisteroppgaveUnderskjema.xsd",

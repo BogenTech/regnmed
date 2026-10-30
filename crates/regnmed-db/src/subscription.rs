@@ -45,9 +45,9 @@ async fn fakta(
 /// Today's status for one company.
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     let today = Utc::now().date_naive();
-    let (opprettet, dekket, last_end) = fakta(pool, company_id, today).await?;
+    let (created, dekket, last_end) = fakta(pool, company_id, today).await?;
     Ok(regnmed_core::subscription::status(
-        opprettet, dekket, last_end, today,
+        created, dekket, last_end, today,
     ))
 }
 
@@ -567,7 +567,7 @@ pub async fn post_stripe_payment(
     }
 
     let draft = crate::invoice::InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no,
         invoice_date: today,
         due_date: today,
@@ -591,7 +591,7 @@ pub async fn post_stripe_payment(
             product_id: None,
         }],
     };
-    let utstedt = crate::invoice::create_invoice_in(
+    let issued = crate::invoice::create_invoice_in(
         pool,
         &mut tx,
         drift_company_id,
@@ -601,11 +601,11 @@ pub async fn post_stripe_payment(
     )
     .await?;
 
-    let gross = utstedt.gross_ore;
+    let gross = issued.gross_ore;
     let voucher = regnmed_core::voucher::VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: today,
-        description: format!("Kortbetaling abonnement, faktura {}", utstedt.invoice_no),
+        description: format!("Kortbetaling abonnement, faktura {}", issued.invoice_no),
         reverses: None,
         entries: vec![
             regnmed_core::voucher::EntryDraft {
@@ -628,7 +628,7 @@ pub async fn post_stripe_payment(
                         "select p.party_no from invoice i join party p on p.id = i.party_id
                          where i.id = $1",
                     )
-                    .bind(utstedt.invoice_id)
+                    .bind(issued.invoice_id)
                     .fetch_one(&mut *tx)
                     .await?,
                 ),
@@ -648,7 +648,7 @@ pub async fn post_stripe_payment(
 
     let receivable_entry: Uuid =
         sqlx::query_scalar("select receivable_entry_id from invoice where id = $1")
-            .bind(utstedt.invoice_id)
+            .bind(issued.invoice_id)
             .fetch_one(&mut *tx)
             .await?;
     let payment_entry: Uuid =
@@ -674,7 +674,7 @@ pub async fn post_stripe_payment(
     )
     .bind(Uuid::new_v4())
     .bind(customer)
-    .bind(utstedt.invoice_id)
+    .bind(issued.invoice_id)
     .bind(payment_intent_id)
     .bind(gross)
     .bind(stripe_invoice_id)
@@ -692,7 +692,7 @@ pub async fn post_stripe_payment(
     .bind(customer)
     .bind(today.year())
     .bind(today.month() as i32)
-    .bind(utstedt.invoice_id)
+    .bind(issued.invoice_id)
     .execute(&mut *tx)
     .await?;
 
@@ -1093,7 +1093,7 @@ async fn fakturer_en(
 
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no,
         invoice_date: today,
         due_date: today + chrono::Days::new(14),
@@ -1121,7 +1121,7 @@ async fn fakturer_en(
             product_id: None,
         }],
     };
-    let utstedt = crate::invoice::create_invoice_in(
+    let issued = crate::invoice::create_invoice_in(
         pool,
         &mut tx,
         drift,
@@ -1142,7 +1142,7 @@ async fn fakturer_en(
     .bind(customer)
     .bind(today.year())
     .bind(today.month() as i32)
-    .bind(utstedt.invoice_id)
+    .bind(issued.invoice_id)
     .execute(&mut *tx)
     .await;
     if let Err(e) = &result {
@@ -1157,8 +1157,8 @@ async fn fakturer_en(
     result?;
     tx.commit().await?;
     Ok(Some((
-        utstedt.invoice_no,
-        utstedt.invoice_id,
-        utstedt.gross_ore,
+        issued.invoice_no,
+        issued.invoice_id,
+        issued.gross_ore,
     )))
 }

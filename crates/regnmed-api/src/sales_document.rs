@@ -188,11 +188,11 @@ pub async fn quote_to_order(
             .map_err(anyhow::Error::from)?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let (ordre_id, doc_no) =
-        regnmed_db::quote_to_ordre(&state.pool, company_id, quote_id, doc_date, created_by)
+    let (order_id, doc_no) =
+        regnmed_db::quote_to_order(&state.pool, company_id, quote_id, doc_date, created_by)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(Json(json!({ "order_id": ordre_id, "doc_no": doc_no })))
+    Ok(Json(json!({ "order_id": order_id, "doc_no": doc_no })))
 }
 
 #[derive(Deserialize, Default)]
@@ -222,7 +222,7 @@ pub async fn order_to_invoice(
         .due_date
         .unwrap_or(invoice_date + chrono::Days::new(14));
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let issued = regnmed_db::ordre_to_invoice(
+    let issued = regnmed_db::order_to_invoice(
         &state.pool,
         company_id,
         order_id,

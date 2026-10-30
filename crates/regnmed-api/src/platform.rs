@@ -337,7 +337,7 @@ async fn overview(
     let mut fordeling = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
-            regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.last_end, today);
+            regnmed_core::subscription::status(a.created, a.dekket_i_dag, a.last_end, today);
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
@@ -365,19 +365,19 @@ async fn list_subscriptions(
         "abonnementer": abo.iter().map(|a| {
             use regnmed_core::subscription::Status;
             let status =
-                regnmed_core::subscription::status(a.opprettet, a.dekket_i_dag, a.last_end, today);
+                regnmed_core::subscription::status(a.created, a.dekket_i_dag, a.last_end, today);
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
-                Status::Aktiv => a.valid_to,
+                Status::Active => a.valid_to,
                 Status::Trial { to } => Some(to),
-                Status::Grace { sperres } => Some(sperres),
+                Status::Grace { blocked_from } => Some(blocked_from),
                 Status::Blocked { siden } => Some(siden),
             };
             json!({
                 "company_id": a.company_id,
                 "orgnr": a.orgnumber,
                 "name": a.name,
-                "opprettet": a.opprettet.to_string(),
+                "opprettet": a.created.to_string(),
                 "plan": a.plan,
                 "status": status.slug(),
                 "dato": date.map(|d| d.to_string()),
@@ -447,9 +447,9 @@ async fn company_detail(
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
     use regnmed_core::subscription::Status;
     let date = match status {
-        Status::Aktiv => None,
+        Status::Active => None,
         Status::Trial { to } => Some(to),
-        Status::Grace { sperres } => Some(sperres),
+        Status::Grace { blocked_from } => Some(blocked_from),
         Status::Blocked { siden } => Some(siden),
     };
     Ok(Json(json!({
@@ -531,7 +531,7 @@ async fn deactivate_member(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.require_systemadmin()?;
-    regnmed_db::members::sett_aktiv(
+    regnmed_db::members::set_active(
         &state.pool,
         company_id,
         person_id,
@@ -550,7 +550,7 @@ async fn restore_member(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.require_systemadmin()?;
-    regnmed_db::members::sett_aktiv(
+    regnmed_db::members::set_active(
         &state.pool,
         company_id,
         person_id,
@@ -582,7 +582,7 @@ async fn start_coverage(
     ctx.require_systemadmin()?;
     let today = chrono::Utc::now().date_naive();
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
-    if matches!(status, regnmed_core::subscription::Status::Aktiv) {
+    if matches!(status, regnmed_core::subscription::Status::Active) {
         return Err(ApiError::BadRequest(
             "selskapet har allerede aktiv dekning".into(),
         ));

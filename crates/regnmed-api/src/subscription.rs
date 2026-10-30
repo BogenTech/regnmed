@@ -44,9 +44,9 @@ pub async fn subscription_status(
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     use regnmed_core::subscription::Status;
     let date = match status {
-        Status::Aktiv => None,
+        Status::Active => None,
         Status::Trial { to } => Some(to),
-        Status::Grace { sperres } => Some(sperres),
+        Status::Grace { blocked_from } => Some(blocked_from),
         Status::Blocked { siden } => Some(siden),
     };
     let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;

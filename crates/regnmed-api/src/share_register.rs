@@ -37,9 +37,9 @@ fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::
         "orgnr": a.orgnumber,
         "utenlandsk_id": a.utenlandsk_id,
         "adresse": a.address,
-        "postnummer": a.postnummer,
+        "postnummer": a.postal_code,
         "poststed": a.postal_city,
-        "landkode": a.landkode,
+        "landkode": a.country_code,
         "note": a.note,
         "antall_aksjer": a.share_count,
         "andel_bp": a.andel_bp,
@@ -83,16 +83,19 @@ pub struct CreateShareholderRequest {
     kind: String,
     #[serde(rename = "navn")]
     name: String,
-    fodselsnummer: Option<String>,
+    #[serde(rename = "fodselsnummer")]
+    nin: Option<String>,
     #[serde(rename = "orgnr")]
     orgnumber: Option<String>,
     utenlandsk_id: Option<String>,
     #[serde(rename = "adresse")]
     address: Option<String>,
-    postnummer: Option<String>,
+    #[serde(rename = "postnummer")]
+    postal_code: Option<String>,
     #[serde(rename = "poststed")]
     postal_city: Option<String>,
-    landkode: Option<String>,
+    #[serde(rename = "landkode")]
+    country_code: Option<String>,
     note: Option<String>,
 }
 
@@ -115,13 +118,13 @@ pub async fn create_shareholder(
         &regnmed_db::share_register::NewShareholder {
             kind: request.kind,
             name: request.name,
-            fodselsnummer: request.fodselsnummer,
+            nin: request.nin,
             orgnumber: request.orgnumber,
             utenlandsk_id: request.utenlandsk_id,
             address: request.address,
-            postnummer: request.postnummer,
+            postal_code: request.postal_code,
             postal_city: request.postal_city,
-            landkode: request.landkode,
+            country_code: request.country_code,
             note: request.note,
         },
         person.display(),
@@ -137,10 +140,12 @@ pub struct ContactRequest {
     name: String,
     #[serde(rename = "adresse")]
     address: Option<String>,
-    postnummer: Option<String>,
+    #[serde(rename = "postnummer")]
+    postal_code: Option<String>,
     #[serde(rename = "poststed")]
     postal_city: Option<String>,
-    landkode: Option<String>,
+    #[serde(rename = "landkode")]
+    country_code: Option<String>,
 }
 
 pub async fn update_contact(
@@ -162,9 +167,9 @@ pub async fn update_contact(
         shareholder_id,
         &request.name,
         request.address.as_deref(),
-        request.postnummer.as_deref(),
+        request.postal_code.as_deref(),
         request.postal_city.as_deref(),
-        request.landkode.as_deref(),
+        request.country_code.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -230,7 +235,7 @@ pub async fn list_events(
             "dato": e.date,
             "antall": e.quantity,
             "belop_ore": e.amount_ore,
-            "motpart": e.motpart,
+            "motpart": e.counterparty,
             "note": e.note,
             "created_by": e.created_by,
         })).collect::<Vec<_>>()
@@ -249,8 +254,10 @@ pub struct CreateEventRequest {
     #[serde(rename = "belop_ore")]
     amount_ore: Option<i64>,
     /// The other side of a transfer, written in the same transaction.
-    motpart_id: Option<Uuid>,
-    motpart_type: Option<String>,
+    #[serde(rename = "motpart_id")]
+    counterparty_id: Option<Uuid>,
+    #[serde(rename = "motpart_type")]
+    counterparty_type: Option<String>,
     note: Option<String>,
 }
 
@@ -275,8 +282,8 @@ pub async fn create_event(
         request.date,
         request.quantity,
         request.amount_ore,
-        request.motpart_id,
-        request.motpart_type.as_deref(),
+        request.counterparty_id,
+        request.counterparty_type.as_deref(),
         request.note.as_deref(),
         person.display(),
     )
@@ -381,7 +388,7 @@ pub async fn tax_return(
         Right::ShareRegisterRead,
     )
     .await?;
-    let sett = regnmed_db::share_register::bygg_oppgave(&state.pool, company_id, q.year)
+    let sett = regnmed_db::share_register::build_return(&state.pool, company_id, q.year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
@@ -432,7 +439,7 @@ pub async fn tax_return(
         "inntektsar": q.year,
         "antall_aksjonarer": under.len(),
         "antall_aksjer": sett.hovedskjema.share_count.this_year,
-        "antall_aksjer_fjoraret": sett.hovedskjema.share_count.fjoraret,
+        "antall_aksjer_fjoraret": sett.hovedskjema.share_count.last_year,
         "aksjekapital_ore": sett.hovedskjema.aksjekapital.this_year,
         "palydende_ore": sett.hovedskjema.palydende_ore.this_year,
         "utbytte": sett.hovedskjema.dividend.iter().map(|u| json!({
@@ -443,7 +450,7 @@ pub async fn tax_return(
         "aksjonarer": sett.underskjemaer.iter().map(|(id, u)| json!({
             "shareholder_id": id,
             "navn": u.name,
-            "antall_fjoraret": u.share_count.fjoraret,
+            "antall_fjoraret": u.share_count.last_year,
             "antall": u.share_count.this_year,
             "antall_bevegelser": u.bevegelser.len(),
         })).collect::<Vec<_>>(),

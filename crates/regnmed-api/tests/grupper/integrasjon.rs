@@ -176,9 +176,9 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{log}");
-    let kall = log["kall"].as_array().unwrap();
+    let call = log["kall"].as_array().unwrap();
     assert!(
-        kall.iter().any(|k| k["navn"] == "Nettbutikken"
+        call.iter().any(|k| k["navn"] == "Nettbutikken"
             && k["path"].as_str().unwrap().contains("/bokfor")),
         "de endrende kallene er logget: {log}"
     );

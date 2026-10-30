@@ -31,12 +31,12 @@ pub const SPERR_ETTER_FORFALL_DAGER: i64 = 30;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// A row covers today's date.
-    Aktiv,
+    Active,
     /// No coverage, but the company is inside its trial period.
     Trial { to: NaiveDate },
     /// Coverage (or the trial) is over, but the deadline is still
     /// running: writing works, the warning stands.
-    Grace { sperres: NaiveDate },
+    Grace { blocked_from: NaiveDate },
     /// The deadline has passed: writing actions are refused.
     Blocked { siden: NaiveDate },
 }
@@ -50,7 +50,7 @@ impl Status {
     /// Machine-readable name, used in `/me` and the portal.
     pub fn slug(&self) -> &'static str {
         match self {
-            Status::Aktiv => "aktiv",
+            Status::Active => "aktiv",
             Status::Trial { .. } => "prove",
             Status::Grace { .. } => "frist",
             Status::Blocked { .. } => "sperret",
@@ -68,24 +68,26 @@ impl Status {
 ///   end of the trial, so a company that cancelled after two years is
 ///   not blocked "14 days after the trial" long past.
 pub fn status(
-    opprettet: NaiveDate,
+    created: NaiveDate,
     dekket_i_dag: bool,
     last_end: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Status {
     if dekket_i_dag {
-        return Status::Aktiv;
+        return Status::Active;
     }
-    let trial_until = opprettet + chrono::Days::new(TRIAL_DAYS as u64);
+    let trial_until = created + chrono::Days::new(TRIAL_DAYS as u64);
     if last_end.is_none() && today < trial_until {
         return Status::Trial { to: trial_until };
     }
-    let grunnlag = last_end.map_or(trial_until, |s| s.max(trial_until));
-    let sperres = grunnlag + chrono::Days::new(GRACE_DAYS as u64);
-    if today < sperres {
-        Status::Grace { sperres }
+    let basis = last_end.map_or(trial_until, |s| s.max(trial_until));
+    let blocked_from = basis + chrono::Days::new(GRACE_DAYS as u64);
+    if today < blocked_from {
+        Status::Grace { blocked_from }
     } else {
-        Status::Blocked { siden: sperres }
+        Status::Blocked {
+            siden: blocked_from,
+        }
     }
 }
 
@@ -101,45 +103,47 @@ mod tests {
     fn coverage_means_active_whatever_the_age() {
         assert_eq!(
             status(d(2020, 1, 1), true, Some(d(2023, 1, 1)), d(2026, 7, 28)),
-            Status::Aktiv
+            Status::Active
         );
     }
 
     #[test]
     fn a_new_company_is_in_its_trial_period() {
-        let opprettet = d(2026, 7, 1);
+        let created = d(2026, 7, 1);
         assert_eq!(
-            status(opprettet, false, None, d(2026, 7, 28)),
+            status(created, false, None, d(2026, 7, 28)),
             Status::Trial { to: d(2026, 7, 31) }
         );
         // The trial's last day is the day BEFORE `til` — the bound is
         // exclusive like every other.
         assert_eq!(
-            status(opprettet, false, None, d(2026, 7, 30)),
+            status(created, false, None, d(2026, 7, 30)),
             Status::Trial { to: d(2026, 7, 31) }
         );
         assert!(matches!(
-            status(opprettet, false, None, d(2026, 7, 31)),
+            status(created, false, None, d(2026, 7, 31)),
             Status::Grace { .. }
         ));
     }
 
     #[test]
     fn the_trial_becomes_a_deadline_and_then_a_block() {
-        let opprettet = d(2026, 1, 1);
+        let created = d(2026, 1, 1);
         let trial_until = d(2026, 1, 31);
-        let sperres = d(2026, 2, 14);
+        let blocked_from = d(2026, 2, 14);
         assert_eq!(
-            status(opprettet, false, None, d(2026, 2, 1)),
-            Status::Grace { sperres }
+            status(created, false, None, d(2026, 2, 1)),
+            Status::Grace { blocked_from }
         );
         assert_eq!(
-            status(opprettet, false, None, d(2026, 2, 13)),
-            Status::Grace { sperres }
+            status(created, false, None, d(2026, 2, 13)),
+            Status::Grace { blocked_from }
         );
         assert_eq!(
-            status(opprettet, false, None, sperres),
-            Status::Blocked { siden: sperres }
+            status(created, false, None, blocked_from),
+            Status::Blocked {
+                siden: blocked_from
+            }
         );
         let _ = trial_until;
     }
@@ -153,7 +157,7 @@ mod tests {
         assert_eq!(
             s,
             Status::Grace {
-                sperres: d(2026, 7, 15)
+                blocked_from: d(2026, 7, 15)
             }
         );
         assert!(
@@ -167,12 +171,12 @@ mod tests {
         // A row that ended BEFORE the trial was over (a short paid
         // period at start-up): the deadline runs from the later of the
         // two — the trial, in this case.
-        let opprettet = d(2026, 7, 1);
-        let s = status(opprettet, false, Some(d(2026, 7, 10)), d(2026, 8, 5));
+        let created = d(2026, 7, 1);
+        let s = status(created, false, Some(d(2026, 7, 10)), d(2026, 8, 5));
         assert_eq!(
             s,
             Status::Grace {
-                sperres: d(2026, 8, 14)
+                blocked_from: d(2026, 8, 14)
             }
         );
     }

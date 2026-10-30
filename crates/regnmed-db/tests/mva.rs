@@ -53,7 +53,7 @@ fn voucher(day: NaiveDate, description: &str, entries: Vec<EntryDraft>) -> Vouch
 }
 
 #[tokio::test]
-async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
+async fn specification_reports_basis_and_tax_per_period() {
     let Some(pool) = pool().await else { return };
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Mva Test AS")
         .await
@@ -195,7 +195,7 @@ async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
 /// transaction, or the melding reports a "bokført beløp" that is booked
 /// nowhere.
 #[tokio::test]
-async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
+async fn reverse_charge_posts_the_computed_tax_into_the_ledger() {
     let Some(pool) = pool().await else { return };
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Innførsel AS")
         .await
@@ -354,7 +354,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 
     let today = date(2026, 10, 28);
     let draft = regnmed_db::InvoiceDraft {
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: party_no.clone(),
         invoice_date: today,
         due_date: today,
@@ -416,10 +416,10 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     // carried in the price and never named as tax.
     let mut without_code = draft.clone();
     without_code.lines[0].vat_code = None;
-    let utstedt = regnmed_db::create_invoice(&pool, company, &without_code, "test", None)
+    let issued = regnmed_db::create_invoice(&pool, company, &without_code, "test", None)
         .await
         .expect("an unregistered company must still be able to invoice");
-    assert_eq!(utstedt.gross_ore, 5_565_29, "no VAT may be added");
+    assert_eq!(issued.gross_ore, 5_565_29, "no VAT may be added");
 
     // Code 7 ("ingen mva-behandling", income side) is how an
     // unregistered company's line is CORRECTLY coded, and the

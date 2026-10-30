@@ -70,7 +70,7 @@ pub async fn status(
                 "forklaring": a.forklaring,
                 "avstemt_dato": a.reconciled_date.to_string(),
                 "avstemt_av": a.reconciled_by,
-                "har_vedlegg": a.har_vedlegg,
+                "har_vedlegg": a.has_attachment,
                 "vedlegg_navn": a.attachment_name,
             })),
         })).collect::<Vec<_>>(),
@@ -113,7 +113,7 @@ pub async fn avstem(
 }
 
 #[derive(Deserialize)]
-pub struct VedleggQuery {
+pub struct AttachmentQuery {
     #[serde(rename = "konto")]
     account: String,
     #[serde(rename = "periode")]
@@ -125,11 +125,11 @@ pub struct VedleggQuery {
 /// Avstemming WITH its documentation in one call: the kontoutskrift or
 /// the signed varetellingsliste IS the documentation, so uploading it
 /// and asserting the saldo are one act, not two.
-pub async fn avstem_med_vedlegg(
+pub async fn reconcile_with_attachment(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<VedleggQuery>,
+    Query(query): Query<AttachmentQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -158,14 +158,14 @@ pub async fn avstem_med_vedlegg(
     Ok(Json(json!({ "id": id })))
 }
 
-pub async fn vedlegg(
+pub async fn attachment(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let (name, content_type, bytes) =
-        regnmed_db::balance_documentation::hent_vedlegg(&state.pool, company_id, id)
+        regnmed_db::balance_documentation::fetch_attachment(&state.pool, company_id, id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok((
@@ -209,7 +209,7 @@ pub async fn history(
             "forklaring": a.forklaring,
             "avstemt_dato": a.reconciled_date.to_string(),
             "avstemt_av": a.reconciled_by,
-            "har_vedlegg": a.har_vedlegg,
+            "har_vedlegg": a.has_attachment,
             "vedlegg_navn": a.attachment_name,
         })).collect::<Vec<_>>(),
     })))

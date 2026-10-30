@@ -20,7 +20,7 @@ use uuid::Uuid;
 /// One attachment, already decoded by the caller — the db layer stores
 /// bytes, it does not parse wire formats.
 #[derive(Debug, Clone)]
-pub struct MottattVedlegg {
+pub struct ReceivedAttachment {
     pub filename: String,
     pub content_type: String,
     pub content: Vec<u8>,
@@ -40,7 +40,7 @@ pub struct ReceivedEmail {
     /// The message as received, stored verbatim as documentation of
     /// origin. Opaque here — never parsed by this layer.
     pub raw: Vec<u8>,
-    pub attachments: Vec<MottattVedlegg>,
+    pub attachments: Vec<ReceivedAttachment>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -201,13 +201,13 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
             .await?;
     let tillatt = sender_allowed(&from, &allowed);
 
-    let vedlegg: Vec<&MottattVedlegg> = mail
+    let attachment: Vec<&ReceivedAttachment> = mail
         .attachments
         .iter()
         .filter(|a| !a.content.is_empty())
         .collect();
 
-    let status = if vedlegg.is_empty() {
+    let status = if attachment.is_empty() {
         "avvist"
     } else if tillatt {
         "mottatt"
@@ -237,7 +237,7 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
     .bind(&mail.subject)
     .bind(&mail.text)
     .bind(&mail.raw)
-    .bind(vedlegg.len() as i32)
+    .bind(attachment.len() as i32)
     .bind(status)
     .bind(&note)
     .execute(&mut *tx)
@@ -250,7 +250,7 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
 
     // The attachments are stored decoded either way: quarantine must be
     // releasable later without the sender resending anything.
-    for a in &vedlegg {
+    for a in &attachment {
         let digest = regnmed_core::hash::sha256(&a.content);
         sqlx::query(
             "insert into inbox_mail_attachment (id, mail_id, filename, content_type,
@@ -282,7 +282,7 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
     tx.commit().await?;
 
     Ok(match status {
-        "mottatt" => Mottak::Mottatt(vedlegg.len()),
+        "mottatt" => Mottak::Mottatt(attachment.len()),
         "karantene" => Mottak::Karantene,
         _ => Mottak::Avvist(note.unwrap_or_default()),
     })

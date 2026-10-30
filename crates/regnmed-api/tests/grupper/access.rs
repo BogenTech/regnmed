@@ -468,7 +468,7 @@ async fn an_employee_gets_only_their_own_payslip() {
             &state.pool,
             company,
             &regnmed_db::payroll::NewEmployee {
-                fodselsnummer: fnr.into(),
+                nin: fnr.into(),
                 name: name.into(),
                 stilling: None,
                 employed_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),

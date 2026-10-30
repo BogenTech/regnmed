@@ -106,11 +106,11 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
         .collect())
 }
 
-async fn logg(
+async fn log(
     tx: &mut Transaction<'_, Postgres>,
     company_id: Uuid,
     person_id: Uuid,
-    endring: &str,
+    change: &str,
     from: Option<&str>,
     to: Option<&str>,
     performed_by: Option<Uuid>,
@@ -124,7 +124,7 @@ async fn logg(
     .bind(Uuid::new_v4())
     .bind(company_id)
     .bind(person_id)
-    .bind(endring)
+    .bind(change)
     .bind(from)
     .bind(to)
     .bind(performed_by)
@@ -202,7 +202,7 @@ pub async fn set_role(
         .execute(&mut *tx)
         .await?;
     require_remaining_admin(&mut tx, company_id).await?;
-    logg(
+    log(
         &mut tx,
         company_id,
         person_id,
@@ -219,7 +219,7 @@ pub async fn set_role(
 
 /// Turns access off or back on. The membership is never deleted — it is
 /// the history of who had access.
-pub async fn sett_aktiv(
+pub async fn set_active(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
@@ -257,7 +257,7 @@ pub async fn sett_aktiv(
         .execute(&mut *tx)
         .await?;
     require_remaining_admin(&mut tx, company_id).await?;
-    logg(
+    log(
         &mut tx,
         company_id,
         person_id,
@@ -273,7 +273,7 @@ pub async fn sett_aktiv(
 }
 
 #[derive(Debug, Clone)]
-pub struct Invitasjon {
+pub struct Invitation {
     pub id: Uuid,
     pub email: String,
     pub role: String,
@@ -364,7 +364,7 @@ pub async fn inviter(
     Ok(id)
 }
 
-pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitasjon>> {
+pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitation>> {
     let rows = sqlx::query(
         "select i.id, i.epost, i.role, i.created_at, i.employee_id,
                 coalesce(p.name, p.oidc_sub) as invitert_av,
@@ -380,7 +380,7 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Invitasjon {
+        .map(|r| Invitation {
             id: r.get("id"),
             email: r.get("epost"),
             role: r.get("role"),
@@ -392,10 +392,10 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
         .collect())
 }
 
-pub async fn tilbakekall_invitasjon(
+pub async fn revoke_invitation(
     pool: &PgPool,
     company_id: Uuid,
-    invitasjon_id: Uuid,
+    invitation_id: Uuid,
     by: Uuid,
 ) -> Result<()> {
     let n = sqlx::query(
@@ -404,7 +404,7 @@ pub async fn tilbakekall_invitasjon(
            and accepted_at is null and revoked_at is null",
     )
     .bind(company_id)
-    .bind(invitasjon_id)
+    .bind(invitation_id)
     .bind(by)
     .execute(pool)
     .await?
@@ -449,7 +449,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
     for rad in &rader {
         let company_id: Uuid = rad.get("company_id");
         let role: String = rad.get("role");
-        let invitasjon_id: Uuid = rad.get("id");
+        let invitation_id: Uuid = rad.get("id");
         let employee_id: Option<Uuid> = rad.get("employee_id");
 
         let fantes: Option<String> = sqlx::query_scalar(
@@ -469,7 +469,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
             .bind(&role)
             .execute(&mut *tx)
             .await?;
-            logg(
+            log(
                 &mut tx,
                 company_id,
                 person_id,
@@ -503,7 +503,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
             .execute(&mut *tx)
             .await?;
             if koblet.rows_affected() == 1 {
-                crate::payroll::logg_kobling(
+                crate::payroll::log_link(
                     &mut tx,
                     company_id,
                     eid,
@@ -519,7 +519,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
         sqlx::query(
             "update company_invitation set accepted_at = now(), accepted_by = $2 where id = $1",
         )
-        .bind(invitasjon_id)
+        .bind(invitation_id)
         .bind(person_id)
         .execute(&mut *tx)
         .await?;
@@ -532,7 +532,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 #[derive(Debug, Clone)]
 pub struct Tilgangsendring {
     pub name: String,
-    pub endring: String,
+    pub change: String,
     pub from_role: Option<String>,
     pub to_role: Option<String>,
     pub performed_by: Option<String>,
@@ -563,7 +563,7 @@ pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ti
         .iter()
         .map(|r| Tilgangsendring {
             name: r.get("navn"),
-            endring: r.get("endring"),
+            change: r.get("endring"),
             from_role: r.get("fra_rolle"),
             to_role: r.get("til_rolle"),
             performed_by: r.get("utfort_av"),

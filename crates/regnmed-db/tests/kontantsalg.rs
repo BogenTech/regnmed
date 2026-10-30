@@ -110,11 +110,11 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     .unwrap();
 
     let date = d(2026, 4, 3);
-    let utstedt = regnmed_db::invoice::create_kontantfaktura(
+    let issued = regnmed_db::invoice::create_kontantfaktura(
         &pool,
         company,
         &regnmed_db::InvoiceDraft {
-            kontant_betalingsmiddel: None, // create_kontantfaktura sets it
+            cash_payment_method: None, // create_kontantfaktura sets it
             party_no: party_no.clone(),
             invoice_date: date,
             due_date: date,
@@ -189,7 +189,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
 
     // The stored salgsdokument is a KONTANTFAKTURA, not a faktura with a
     // KID for money already received.
-    let pdf_id = regnmed_db::invoice_pdf_attachment_id(&pool, company, utstedt.invoice_id)
+    let pdf_id = regnmed_db::invoice_pdf_attachment_id(&pool, company, issued.invoice_id)
         .await
         .unwrap()
         .expect("PDF lagret ved utstedelse");
@@ -204,7 +204,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
 /// Kassaoppgjør (#89, §5-3/§5-4): the day's Z-report as one voucher with
 /// the mva split, and the till discrepancy as its OWN bilag.
 #[tokio::test]
-async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
+async fn a_daily_settlement_posts_the_day_and_its_difference_separately() {
     let Some(pool) = pool().await else { return };
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Kafeen AS")
         .await
@@ -225,13 +225,13 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
             .unwrap();
     }
 
-    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::post_daily_settlement(
         &pool,
         company,
-        &regnmed_db::cash_register::DagsoppgjorInn {
+        &regnmed_db::cash_register::DailySettlementInput {
             date: d(2026, 4, 3),
             z_nummer: "0042".into(),
-            salg: vec![
+            sale: vec![
                 ("3000".into(), Some("3".into()), 12_500_00),
                 ("3010".into(), Some("31".into()), 2_300_00),
             ],
@@ -239,7 +239,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
             vat_account: "2700".into(),
             cash_account: Some("1900".into()),
             // 50 kr short in the till.
-            opptalt_kontant_ore: Some(4_750_00),
+            counted_cash_ore: Some(4_750_00),
             difference_account: "7830".into(),
         },
         Some(("z-0042.txt", "text/plain", b"Z-rapport 0042")),
@@ -274,7 +274,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     assert_eq!(voucher, 2);
 
     // The Z-report hangs on the settlement, per §5-4.
-    let vedlegg: i64 = sqlx::query_scalar(
+    let attachment: i64 = sqlx::query_scalar(
         "select count(*)::bigint from attachment a
          join voucher v on v.id = a.voucher_id
          where v.company_id = $1 and v.description like 'Kassaoppgjør Z-0042%'",
@@ -283,7 +283,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(vedlegg, 1);
+    assert_eq!(attachment, 1);
 
     regnmed_db::verify_chain(&pool, company).await.unwrap();
 }

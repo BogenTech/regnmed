@@ -130,7 +130,7 @@ pub async fn list_expenses(
     pool: &PgPool,
     company_id: Uuid,
     viewer: Uuid,
-    bare_egne: bool,
+    only_own: bool,
 ) -> Result<Vec<ExpenseRow>> {
     let rows = sqlx::query(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
@@ -147,7 +147,7 @@ pub async fn list_expenses(
     )
     .bind(company_id)
     .bind(viewer)
-    .bind(bare_egne)
+    .bind(only_own)
     .fetch_all(pool)
     .await?;
     Ok(rows

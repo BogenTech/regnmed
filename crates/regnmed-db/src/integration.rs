@@ -21,7 +21,7 @@ pub struct Integration {
     pub person_id: Uuid,
     pub client_id: String,
     pub name: String,
-    pub kontakt: Option<String>,
+    pub contact: Option<String>,
     pub rate_limit_min: i32,
     pub registered_by: String,
     pub created_at: DateTime<Utc>,
@@ -40,7 +40,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         person_id: r.get("person_id"),
         client_id: r.get("client_id"),
         name: r.get("navn"),
-        kontakt: r.get("kontakt"),
+        contact: r.get("kontakt"),
         rate_limit_min: r.get("rate_limit_min"),
         registered_by: r.get("registrert_av"),
         created_at: r.get("created_at"),
@@ -73,7 +73,7 @@ pub async fn grant_integration(
     company_id: Uuid,
     client_id: &str,
     name: &str,
-    kontakt: Option<&str>,
+    contact: Option<&str>,
     access: &str,
     created_by: &str,
 ) -> Result<Uuid> {
@@ -151,7 +151,7 @@ pub async fn grant_integration(
                 .bind(id)
                 .bind(person_id)
                 .bind(name.trim())
-                .bind(kontakt.map(str::trim).filter(|k| !k.is_empty()))
+                .bind(contact.map(str::trim).filter(|k| !k.is_empty()))
                 .bind(created_by)
                 .execute(&mut *tx)
                 .await?;
@@ -207,7 +207,7 @@ pub async fn update_integration(
     company_id: Uuid,
     integration_id: Uuid,
     name: &str,
-    kontakt: Option<&str>,
+    contact: Option<&str>,
     avatar_farge: Option<&str>,
     avatar_ikon: Option<&str>,
     system_prompt: Option<&str>,
@@ -217,7 +217,7 @@ pub async fn update_integration(
     fn tom(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|t| !t.is_empty())
     }
-    let kontakt = tom(kontakt);
+    let contact = tom(contact);
     let farge = tom(avatar_farge);
     let ikon = tom(avatar_ikon);
     let prompt = tom(system_prompt);
@@ -255,7 +255,7 @@ pub async fn update_integration(
     .bind(integration_id)
     .bind(company_id)
     .bind(name)
-    .bind(kontakt)
+    .bind(contact)
     .bind(farge)
     .bind(ikon)
     .bind(prompt)
@@ -356,7 +356,7 @@ pub struct GrantRow {
     pub integration_id: Uuid,
     pub client_id: String,
     pub name: String,
-    pub kontakt: Option<String>,
+    pub contact: Option<String>,
     pub access: String,
     pub valid_from: NaiveDate,
     pub valid_to: Option<NaiveDate>,
@@ -364,7 +364,7 @@ pub struct GrantRow {
     pub revoked_by: Option<String>,
     pub rate_limit_min: i32,
     /// Calls today, from the usage counter.
-    pub kall_i_dag: i64,
+    pub calls_today: i64,
     pub avatar_farge: Option<String>,
     pub avatar_ikon: Option<String>,
     pub system_prompt: Option<String>,
@@ -405,14 +405,14 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             integration_id: r.get("integration_id"),
             client_id: r.get("client_id"),
             name: r.get("navn"),
-            kontakt: r.get("kontakt"),
+            contact: r.get("kontakt"),
             access: r.get("access"),
             valid_from: r.get("valid_from"),
             valid_to: r.get("valid_to"),
             created_by: r.get("created_by"),
             revoked_by: r.get("revoked_by"),
             rate_limit_min: r.get("rate_limit_min"),
-            kall_i_dag: r.get("kall_i_dag"),
+            calls_today: r.get("kall_i_dag"),
             avatar_farge: r.get("avatar_farge"),
             avatar_ikon: r.get("avatar_ikon"),
             system_prompt: r.get("systemprompt"),

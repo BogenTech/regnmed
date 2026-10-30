@@ -27,7 +27,7 @@ use crate::AppState;
 use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
-fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
+fn task_json(o: &regnmed_db::agent_task::Task) -> serde_json::Value {
     json!({
         "oppgave_id": o.id,
         "integration_id": o.integration_id,
@@ -45,7 +45,7 @@ fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
 }
 
 #[derive(Deserialize)]
-pub struct OppgaveQuery {
+pub struct TaskQuery {
     /// Default true: an agent asking "what should I do" wants the open
     /// ones. The history is one query parameter away.
     apne: Option<bool>,
@@ -55,7 +55,7 @@ pub async fn list(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<OppgaveQuery>,
+    Query(query): Query<TaskQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     // A machine sees its own queue; a human sees everything, which is
@@ -69,12 +69,12 @@ pub async fn list(
     )
     .await?;
     Ok(Json(json!({
-        "oppgaver": rader.iter().map(oppgave_json).collect::<Vec<_>>(),
+        "oppgaver": rader.iter().map(task_json).collect::<Vec<_>>(),
     })))
 }
 
 #[derive(Deserialize)]
-pub struct NyOppgave {
+pub struct NewTask {
     /// Addressed to one agent; omitted = any agent with access.
     integration_id: Option<Uuid>,
     #[serde(rename = "melding")]
@@ -87,7 +87,7 @@ pub async fn opprett(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<NyOppgave>,
+    Json(request): Json<NewTask>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(
         &state,
@@ -96,7 +96,7 @@ pub async fn opprett(
         Right::IntegrationAdmin,
     )
     .await?;
-    let id = regnmed_db::agent_task::opprett_oppgave(
+    let id = regnmed_db::agent_task::create_task(
         &state.pool,
         company_id,
         request.integration_id,
@@ -116,12 +116,12 @@ pub async fn hent(
     Path((company_id, task_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
-    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, task_id)
+    let task = regnmed_db::agent_task::fetch_task(&state.pool, company_id, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     // Another agent's order is not this agent's business.
     if let Some(caller) = person.integration.as_ref()
-        && oppgave
+        && task
             .integration_id
             .is_some_and(|addressed| addressed != caller.id)
     {
@@ -129,7 +129,7 @@ pub async fn hent(
     }
     let trail = regnmed_db::agent_task::history(&state.pool, company_id, task_id).await?;
     Ok(Json(json!({
-        "oppgave": oppgave_json(&oppgave),
+        "oppgave": task_json(&task),
         "historikk": trail.iter().map(|h| json!({
             "status": h.status,
             "notat": h.note,
@@ -155,13 +155,13 @@ pub async fn answer(
     Json(request): Json<Answer>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let access = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
-    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, task_id)
+    let task = regnmed_db::agent_task::fetch_task(&state.pool, company_id, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     match person.integration.as_ref() {
         // A machine answers its own tasks and the unaddressed ones.
         Some(caller) => {
-            if oppgave
+            if task
                 .integration_id
                 .is_some_and(|addressed| addressed != caller.id)
             {

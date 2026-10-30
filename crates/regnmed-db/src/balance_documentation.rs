@@ -36,7 +36,7 @@ pub struct Avstemming {
     pub forklaring: String,
     pub reconciled_date: NaiveDate,
     pub reconciled_by: String,
-    pub har_vedlegg: bool,
+    pub has_attachment: bool,
     pub attachment_name: Option<String>,
 }
 
@@ -103,7 +103,7 @@ pub async fn balance_status(
             forklaring: r.get("forklaring"),
             reconciled_date: r.get("avstemt_dato"),
             reconciled_by: r.get("avstemt_av"),
-            har_vedlegg: r.get("har_vedlegg"),
+            has_attachment: r.get("har_vedlegg"),
             attachment_name: r.get("vedlegg_navn"),
         });
         linjer.push(BalanceSheetLine {
@@ -126,7 +126,7 @@ pub async fn avstem(
     account: &str,
     period: NaiveDate,
     forklaring: &str,
-    vedlegg: Option<(&str, &str, &[u8])>,
+    attachment: Option<(&str, &str, &[u8])>,
     reconciled_by: Uuid,
     reconciled_date: NaiveDate,
 ) -> Result<Uuid> {
@@ -160,7 +160,7 @@ pub async fn avstem(
     .fetch_one(pool)
     .await?;
 
-    let (name, type_, bytes, sha) = match vedlegg {
+    let (name, type_, bytes, sha) = match attachment {
         Some((name, type_, bytes)) => {
             ensure!(!bytes.is_empty(), "vedlegget er tomt");
             let sha = sha256(bytes).to_vec();
@@ -196,7 +196,7 @@ pub async fn avstem(
 
 /// The stored vedlegg, with its hash re-verified — the same discipline
 /// as bilagsvedleggene: what comes out is proven to be what went in.
-pub async fn hent_vedlegg(
+pub async fn fetch_attachment(
     pool: &PgPool,
     company_id: Uuid,
     id: Uuid,
@@ -255,7 +255,7 @@ pub async fn history(
         forklaring: r.get("forklaring"),
         reconciled_date: r.get("avstemt_dato"),
         reconciled_by: r.get("avstemt_av"),
-        har_vedlegg: r.get("har_vedlegg"),
+        has_attachment: r.get("har_vedlegg"),
         attachment_name: r.get("vedlegg_navn"),
     })
     .collect())

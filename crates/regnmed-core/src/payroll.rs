@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn aga_is_the_rate_times_the_grunnlag() {
+    fn employer_contribution_is_the_rate_times_the_basis() {
         // Sone I: 14,1 % of 50 000 kr.
         assert_eq!(
             employer_contribution(5_000_000, Zone::I, 1410).unwrap(),

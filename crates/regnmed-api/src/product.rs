@@ -213,7 +213,7 @@ pub async fn movements(
             "dato": m.date.to_string(),
             "kind": m.kind,
             "antall_milli": m.quantity_milli,
-            "kostpris_ore": m.kostpris_ore,
+            "kostpris_ore": m.cost_price_ore,
             "note": m.note,
             "invoice_no": m.invoice_no,
             "created_by": m.created_by,
@@ -232,7 +232,8 @@ pub struct MovementRequest {
     #[serde(rename = "antall_milli")]
     quantity_milli: i64,
     /// Anskaffelseskost per unit (øre) — expected on kjøp.
-    kostpris_ore: Option<i64>,
+    #[serde(rename = "kostpris_ore")]
+    cost_price_ore: Option<i64>,
     note: Option<String>,
 }
 
@@ -251,7 +252,7 @@ pub async fn register_movement(
         request.date,
         &request.kind,
         request.quantity_milli,
-        request.kostpris_ore,
+        request.cost_price_ore,
         request.note.as_deref(),
         created_by,
     )

@@ -673,7 +673,7 @@ if self.maskin && !rett.kan_delegeres() {
 
 Det er ett sted, og det er valgt: da gjelder regelen også for roller som
 kommer til senere og for rader som ble skrevet før den fantes.
-`rettighet_slugs` filtrerer det samme, så `/me` ikke lover en maskin
+`right_slugs` filtrerer det samme, så `/me` ikke lover en maskin
 knapper som kommer til å feile.
 
 `maskin` er sann når minst én av veiene inn til selskapet er et

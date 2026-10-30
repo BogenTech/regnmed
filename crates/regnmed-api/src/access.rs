@@ -1190,7 +1190,7 @@ mod tests {
     /// remembered both — and that kind of "remember both" is exactly what
     /// slips.
     #[test]
-    fn alle_implies_egne() {
+    fn all_implies_own() {
         assert!(
             Right::TimesheetReadAll
                 .implies()

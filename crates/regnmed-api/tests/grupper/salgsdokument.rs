@@ -58,7 +58,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 #[tokio::test]
-async fn quote_ordre_invoice_chain() {
+async fn quote_order_invoice_chain() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -213,7 +213,7 @@ async fn quote_ordre_invoice_chain() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "one ordre per tilbud");
 
     // Ordrebekreftelse PDF.
-    let (status, ordre_pdf) = send(
+    let (status, order_pdf) = send(
         &state,
         "GET",
         &format!("/companies/{company}/orders/{order_id}/pdf"),
@@ -222,7 +222,7 @@ async fn quote_ordre_invoice_chain() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(find(&ordre_pdf, b"ORDREBEKREFTELSE").is_some());
+    assert!(find(&order_pdf, b"ORDREBEKREFTELSE").is_some());
 
     // Ordre → faktura through the ordinary path; chain + PDF verified;
     // links carried; second conversion rejected.

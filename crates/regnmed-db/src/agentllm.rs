@@ -19,10 +19,10 @@ use uuid::Uuid;
 
 /// What a caller may see. Deliberately has no field for the key.
 #[derive(Debug)]
-pub struct LlmOppsett {
+pub struct LlmConfig {
     pub supplier: String,
     pub base_url: String,
-    pub modell: String,
+    pub model: String,
     pub active: bool,
     pub set_by: String,
     pub created_at: DateTime<Utc>,
@@ -53,12 +53,12 @@ pub async fn sett_llm(
     integration_id: Uuid,
     supplier: &str,
     base_url: Option<&str>,
-    modell: &str,
+    model: &str,
     api_key: &str,
     set_by: &str,
 ) -> Result<()> {
     let supplier = supplier.trim();
-    let modell = modell.trim();
+    let model = model.trim();
     let api_key = api_key.trim();
     let standard = standard_url(supplier);
     ensure!(
@@ -70,7 +70,7 @@ pub async fn sett_llm(
             .collect::<Vec<_>>()
             .join(", ")
     );
-    ensure!(!modell.is_empty(), "modellen mangler");
+    ensure!(!model.is_empty(), "modellen mangler");
     ensure!(!api_key.is_empty(), "API-nøkkelen mangler");
 
     // A given base_url wins, so `annet` works and a customer can point a
@@ -111,7 +111,7 @@ pub async fn sett_llm(
     .bind(company_id)
     .bind(supplier)
     .bind(url)
-    .bind(modell)
+    .bind(model)
     .bind(seal(key, api_key.as_bytes())?)
     .bind(set_by)
     .execute(pool)
@@ -141,7 +141,7 @@ pub async fn fjern_llm(
     .bind(company_id)
     .bind(forrige.supplier)
     .bind(forrige.base_url)
-    .bind(forrige.modell)
+    .bind(forrige.model)
     .bind(set_by)
     .execute(pool)
     .await?;
@@ -158,16 +158,16 @@ pub async fn hent_llm(
     pool: &PgPool,
     company_id: Uuid,
     integration_id: Uuid,
-) -> Result<Option<LlmOppsett>> {
+) -> Result<Option<LlmConfig>> {
     let row = sqlx::query(NYESTE)
         .bind(integration_id)
         .bind(company_id)
         .fetch_optional(pool)
         .await?;
-    Ok(row.map(|r| LlmOppsett {
+    Ok(row.map(|r| LlmConfig {
         supplier: r.get("leverandor"),
         base_url: r.get("base_url"),
-        modell: r.get("modell"),
+        model: r.get("modell"),
         active: r.get("aktiv"),
         set_by: r.get("satt_av"),
         created_at: r.get("created_at"),
@@ -183,7 +183,7 @@ pub async fn fetch_llm_key(
     key: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
-) -> Result<Option<(LlmOppsett, String)>> {
+) -> Result<Option<(LlmConfig, String)>> {
     let row = sqlx::query(
         "select leverandor, base_url, modell, aktiv, satt_av, created_at, nokkel
          from agent_llm
@@ -202,10 +202,10 @@ pub async fn fetch_llm_key(
     let sealed: Vec<u8> = row.get::<Option<Vec<u8>>, _>("nokkel").unwrap_or_default();
     let klar = String::from_utf8(open(key, &sealed)?)?;
     Ok(Some((
-        LlmOppsett {
+        LlmConfig {
             supplier: row.get("leverandor"),
             base_url: row.get("base_url"),
-            modell: row.get("modell"),
+            model: row.get("modell"),
             active,
             set_by: row.get("satt_av"),
             created_at: row.get("created_at"),
