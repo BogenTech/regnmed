@@ -620,13 +620,13 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
         .iter()
         .find(|c| c["company_id"].as_str() == Some(&company.to_string()))
         .expect("agenten ser selskapet");
-    let rettigheter: Vec<&str> = selskap["rettigheter"]
+    let rights: Vec<&str> = selskap["rettigheter"]
         .as_array()
         .unwrap()
         .iter()
         .map(|r| r.as_str().unwrap())
         .collect();
-    assert!(rettigheter.contains(&"MIGRERING_ADMIN"), "{rettigheter:?}");
+    assert!(rights.contains(&"MIGRERING_ADMIN"), "{rights:?}");
     for nektet in [
         "MEDLEM_ADMIN",
         "OPPDRAG_ADMIN",
@@ -634,8 +634,8 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
         "SELSKAP_ADMIN",
     ] {
         assert!(
-            !rettigheter.contains(&nektet),
-            "{nektet} skal ikke stå i /me for en maskin: {rettigheter:?}"
+            !rights.contains(&nektet),
+            "{nektet} skal ikke stå i /me for en maskin: {rights:?}"
         );
     }
 }

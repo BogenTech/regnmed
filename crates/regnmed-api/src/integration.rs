@@ -13,7 +13,7 @@
 //! Since #101 the grant carries a ROLE NAME, the same vocabulary a
 //! member gets, `admin` included when the owner decides it. The ceiling
 //! is `Rett::kan_delegeres`, enforced where access is resolved
-//! (`tilgang::slaa_opp`) rather than by a shorter list of roles here: a
+//! (`access::slaa_opp`) rather than by a shorter list of roles here: a
 //! machine does the work, but never widens anyone's access.
 
 use axum::Json;
@@ -23,15 +23,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, Role, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, Rolle, krev};
 
 pub async fn list(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let rows = regnmed_db::list_integrations(&state.pool, company_id).await?;
     Ok(Json(json!({
         "integrasjoner": rows.iter().map(|g| json!({
@@ -92,7 +92,7 @@ pub struct GrantRequest {
 /// the revision #101 made explicitly: the ceiling is
 /// [`Rett::kan_delegeres`], enforced in the access lookup, not a
 /// shorter list of roles here.
-const TILDELBARE: [Rolle; 4] = [Rolle::Ansatt, Rolle::Les, Rolle::Bokforing, Rolle::Admin];
+const TILDELBARE: [Role; 4] = [Role::Employee, Role::Read, Role::Bookkeeping, Role::Admin];
 
 /// Refuses a role name that is neither built-in nor one of the
 /// company's own ACTIVE roles. Without this a typo would be stored and
@@ -124,7 +124,13 @@ pub async fn grant(
     Path(company_id): Path<Uuid>,
     Json(request): Json<GrantRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     krev_gyldig_rolle(&state, company_id, &request.access).await?;
     let by = person.display().to_string();
     let id = regnmed_db::grant_integration(
@@ -184,7 +190,13 @@ pub async fn opprett_agent(
     Path(company_id): Path<Uuid>,
     Json(request): Json<AgentRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     krev_gyldig_rolle(&state, company_id, &request.access).await?;
     let by = person.display().to_string();
 
@@ -357,7 +369,13 @@ pub async fn endre(
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<EndreRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     regnmed_db::update_integration(
         &state.pool,
         company_id,
@@ -387,7 +405,13 @@ pub async fn rolle(
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     krev_gyldig_rolle(&state, company_id, &request.access).await?;
     regnmed_db::endre_integrasjonsrolle(
         &state.pool,
@@ -406,7 +430,13 @@ pub async fn revoke(
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     let by = person.display().to_string();
     regnmed_db::revoke_integration(&state.pool, company_id, integration_id, &by)
         .await
@@ -419,7 +449,7 @@ pub async fn log(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let rows = regnmed_db::integration_calls(&state.pool, company_id).await?;
     Ok(Json(json!({
         "kall": rows.iter().map(|c| json!({
@@ -456,7 +486,7 @@ pub async fn llm(
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let oppsett = regnmed_db::agentllm::hent_llm(&state.pool, company_id, integration_id).await?;
     Ok(Json(json!({
         // Without a sealing key the rail is off, and the portal says so
@@ -492,7 +522,13 @@ pub async fn sett_llm(
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<LlmRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     let Some(nokkel) = state.sealing_key.as_ref() else {
         return Err(ApiError::BadRequest(
             "vertsagenter er ikke satt opp på denne installasjonen (AGENT_SEALING_KEY mangler)"
@@ -535,7 +571,13 @@ pub async fn fjern_llm(
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     regnmed_db::agentllm::fjern_llm(&state.pool, company_id, integration_id, person.display())
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

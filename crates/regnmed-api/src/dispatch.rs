@@ -17,9 +17,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::mailq::{OutboundMail, publish};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize, Default)]
 pub struct SendRequest {
@@ -69,7 +69,7 @@ pub async fn send_invoice(
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<SendRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::FakturaSend).await?;
+    require(&state, person.person_id, company_id, Right::InvoiceSend).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let payload = regnmed_db::invoice_email_payload(
         &state.pool,
@@ -88,7 +88,7 @@ pub async fn send_reminder(
     Path((company_id, invoice_id, reminder_id)): Path<(Uuid, Uuid, Uuid)>,
     body: Option<Json<SendRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::FakturaSend).await?;
+    require(&state, person.person_id, company_id, Right::InvoiceSend).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let payload = regnmed_db::reminder_email_payload(
         &state.pool,
@@ -107,7 +107,7 @@ pub async fn list_dispatches(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::FakturaLes).await?;
+    require(&state, person.person_id, company_id, Right::InvoiceRead).await?;
     let rows = regnmed_db::list_dispatches(&state.pool, company_id, invoice_id).await?;
     Ok(Json(json!({
         "utsendelser": rows.iter().map(|u| json!({
@@ -176,7 +176,7 @@ pub async fn resend_invitation(
     person: AuthPerson,
     Path((company_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     try_send_invitation(&state, &person, company_id, invitation_id)
         .await
         .map_err(ApiError::BadRequest)?;

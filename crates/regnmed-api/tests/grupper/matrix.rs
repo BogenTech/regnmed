@@ -12,38 +12,38 @@
 //!
 //! Requires no database.
 
-use regnmed_api::tilgang::{Rett, Rolle};
+use regnmed_api::access::{Right, Role};
 
-const START: &str = "<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrise.rs -->";
-const SLUTT: &str = "<!-- /MATRISE -->";
+const START: &str = "<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrix.rs -->";
+const END: &str = "<!-- /MATRISE -->";
 
 /// The roles in the table, in the order that makes sense to read: from
 /// least to most. `revisor` sits between `les` and `bokforing` because it
 /// is reading plus lønn.
-const ROLLER: [Rolle; 5] = [
-    Rolle::Ansatt,
-    Rolle::Les,
-    Rolle::Revisor,
-    Rolle::Bokforing,
-    Rolle::Admin,
+const ROLES: [Role; 5] = [
+    Role::Employee,
+    Role::Read,
+    Role::Auditor,
+    Role::Bookkeeping,
+    Role::Admin,
 ];
 
-fn matrise() -> String {
+fn matrix() -> String {
     let mut ut = String::new();
     ut.push_str(START);
     ut.push_str("\n\n| Rettighet | Hva den gir |");
-    for r in ROLLER {
+    for r in ROLES {
         ut.push_str(&format!(" {} |", r.slug()));
     }
     ut.push_str("\n| --- | --- |");
-    for _ in ROLLER {
+    for _ in ROLES {
         ut.push_str(" --- |");
     }
     ut.push('\n');
 
     // Grouped like the portal, and within the group in the vocabulary's
     // own order — it is written to be read.
-    let mut grupper: Vec<&'static str> = Rett::ALLE.iter().map(|r| r.gruppe()).collect();
+    let mut grupper: Vec<&'static str> = Right::ALLE.iter().map(|r| r.group()).collect();
     grupper.dedup();
     let mut sett = Vec::new();
     for g in grupper {
@@ -52,16 +52,16 @@ fn matrise() -> String {
         }
         sett.push(g);
         ut.push_str(&format!("| **{g}** | | | | | | |\n"));
-        for rett in Rett::ALLE.iter().filter(|r| r.gruppe() == g) {
-            ut.push_str(&format!("| `{}` | {} |", rett.slug(), rett.beskrivelse()));
-            for rolle in ROLLER {
-                ut.push_str(if rolle.har(*rett) { " ✅ |" } else { " — |" });
+        for right in Right::ALLE.iter().filter(|r| r.group() == g) {
+            ut.push_str(&format!("| `{}` | {} |", right.slug(), right.description()));
+            for role in ROLES {
+                ut.push_str(if role.has(*right) { " ✅ |" } else { " — |" });
             }
             ut.push('\n');
         }
     }
     ut.push('\n');
-    ut.push_str(SLUTT);
+    ut.push_str(END);
     ut
 }
 
@@ -69,7 +69,7 @@ fn matrise() -> String {
 fn the_matrix_in_docs_matches_the_code() {
     let sti = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/auth.md");
     let doc = std::fs::read_to_string(sti).expect("docs/auth.md");
-    let forventet = matrise();
+    let forventet = matrix();
 
     if !doc.contains(&forventet) {
         // Print the whole block, so the fix is a paste.
@@ -88,12 +88,12 @@ fn the_matrix_in_docs_matches_the_code() {
 /// an access table with holes is a table you cannot trust.
 #[test]
 fn the_matrix_covers_the_whole_vocabulary() {
-    let m = matrise();
-    for rett in Rett::ALLE {
+    let m = matrix();
+    for right in Right::ALLE {
         assert!(
-            m.contains(&format!("| `{}` |", rett.slug())),
+            m.contains(&format!("| `{}` |", right.slug())),
             "{} mangler i matrisen",
-            rett.slug()
+            right.slug()
         );
     }
 }

@@ -52,282 +52,282 @@ use crate::auth::ApiError;
 /// is expensive to add afterwards: every "own" variant would be a new
 /// name, and stored roles would have to be migrated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Rett {
+pub enum Right {
     // Hovedbok, bilag and periods
-    BilagLes,
-    VedleggSkriv,
-    BilagLastOpp,
-    BilagBokfor,
-    PeriodeLaas,
+    VoucherRead,
+    AttachmentWrite,
+    VoucherUpload,
+    VoucherPost,
+    PeriodLock,
 
     // Rapporter
-    RapportLes,
+    ReportRead,
     VatSchemeAdmin,
 
     // Faktura and sales
-    FakturaLes,
-    FakturaSkriv,
-    FakturaSend,
-    FakturamalLes,
-    FakturamalSkriv,
-    TilbudLes,
-    TilbudSkriv,
-    PurringLes,
-    PurringSkriv,
+    InvoiceRead,
+    InvoiceWrite,
+    InvoiceSend,
+    InvoiceTemplateRead,
+    InvoiceTemplateWrite,
+    QuoteRead,
+    QuoteWrite,
+    ReminderRead,
+    ReminderWrite,
 
     // Reskontro and contacts
-    ReskontroLes,
-    ReskontroSkriv,
+    SubledgerRead,
+    SubledgerWrite,
 
     // Bank, payment and currency
-    BankLes,
-    BankAvstem,
-    OcrLes,
+    BankRead,
+    BankReconcile,
+    OcrRead,
     OcrImport,
-    BetalingLes,
-    BetalingOpprett,
-    BetalingGodkjenn,
-    BetalingOppgjor,
-    ValutaLes,
-    ValutaSkriv,
+    PaymentRead,
+    PaymentCreate,
+    PaymentApprove,
+    PaymentSettle,
+    CurrencyRead,
+    CurrencyWrite,
 
     // Products and inventory
-    ProduktLes,
-    ProduktSkriv,
-    LagerLes,
-    LagerSkriv,
+    ProductRead,
+    ProductWrite,
+    InventoryRead,
+    InventoryWrite,
 
     // Fixed assets
-    AnleggLes,
-    AnleggSkriv,
+    AssetRead,
+    AssetWrite,
 
     // Hours — scope applies here today
-    TimerLesEgne,
-    TimerLesAlle,
+    TimesheetReadOwn,
+    TimesheetReadAll,
     /// Company-wide hour overviews (per prosjekt, unbilled). Kept apart
     /// from `TimerLesAlle`, which is an admin's right to see and correct
     /// other people's individual hours: a reader should see the totals
     /// without being able to correct anything.
-    TimerRapportLes,
-    TimerSkrivEgne,
-    TimerSkrivAlle,
-    TimerFakturer,
+    TimesheetReportRead,
+    TimesheetWriteOwn,
+    TimesheetWriteAll,
+    TimesheetBill,
     /// Setting the dated timesatser on prosjekter (default and per
     /// person) and overriding the rate on a single entry. Without it,
     /// entries get the register's rate — never the caller's number.
-    TimerSatsSkriv,
-    TimerLaas,
+    TimesheetRateWrite,
+    TimesheetLock,
 
     // Utlegg
-    UtleggLesEgne,
-    UtleggLesAlle,
-    UtleggSkrivEgne,
-    UtleggGodkjenn,
-    UtleggUtbetal,
+    ExpenseReadOwn,
+    ExpenseReadAll,
+    ExpenseWriteOwn,
+    ExpenseApprove,
+    ExpensePay,
     // Lønn
     // Lønn
-    LonnLes,
-    LonnsslippLesEgen,
-    LonnsslippLesAlle,
-    LonnSkriv,
-    LonnKjor,
+    PayrollRead,
+    PayslipReadOwn,
+    PayslipReadAll,
+    PayrollWrite,
+    PayrollRun,
     // Budget
     // Budsjett
-    BudsjettLes,
-    BudsjettSkriv,
+    BudgetRead,
+    BudgetWrite,
     // Dimensions
     // Dimensjoner
-    DimensjonLes,
-    DimensjonSkriv,
+    DimensionRead,
+    DimensionWrite,
     // Aksjeeierbok
     // Aksjeeierbok
-    AksjebokLes,
-    AksjebokSkriv,
+    ShareRegisterRead,
+    ShareRegisterWrite,
     // Attestering
     // Attestering
-    AttesteringLes,
-    AttesteringUtfor,
-    AttesteringAdmin,
+    ApprovalRead,
+    ApprovalPerform,
+    ApprovalAdmin,
     // Innboks by e-mail
     // Innboks per e-post
-    EpostInnLes,
-    EpostInnAdmin,
+    InboundMailRead,
+    InboundMailAdmin,
     // Anchoring
     // Forankring
-    ForankringLes,
+    AnchorRead,
     // Company, oppdrag, integrations, migration
     // Selskap, oppdrag, integrasjoner, migrering
-    SelskapLes,
-    SelskapAdmin,
-    MedlemAdmin,
-    KontaktSkriv,
-    OppdragLes,
-    OppdragAdmin,
-    IntegrasjonLes,
-    IntegrasjonAdmin,
-    MigreringAdmin,
+    CompanyRead,
+    CompanyAdmin,
+    MemberAdmin,
+    ContactWrite,
+    EngagementRead,
+    EngagementAdmin,
+    IntegrationRead,
+    IntegrationAdmin,
+    MigrationAdmin,
 }
 
-static ALLE_RETTIGHETER: [Rett; 73] = [
-    Rett::BilagLes,
-    Rett::VedleggSkriv,
-    Rett::BilagLastOpp,
-    Rett::BilagBokfor,
-    Rett::PeriodeLaas,
-    Rett::RapportLes,
-    Rett::VatSchemeAdmin,
-    Rett::FakturaLes,
-    Rett::FakturaSkriv,
-    Rett::FakturaSend,
-    Rett::FakturamalLes,
-    Rett::FakturamalSkriv,
-    Rett::TilbudLes,
-    Rett::TilbudSkriv,
-    Rett::PurringLes,
-    Rett::PurringSkriv,
-    Rett::ReskontroLes,
-    Rett::ReskontroSkriv,
-    Rett::BankLes,
-    Rett::BankAvstem,
-    Rett::OcrLes,
-    Rett::OcrImport,
-    Rett::BetalingLes,
-    Rett::BetalingOpprett,
-    Rett::BetalingGodkjenn,
-    Rett::BetalingOppgjor,
-    Rett::ValutaLes,
-    Rett::ValutaSkriv,
-    Rett::ProduktLes,
-    Rett::ProduktSkriv,
-    Rett::LagerLes,
-    Rett::LagerSkriv,
-    Rett::AnleggLes,
-    Rett::AnleggSkriv,
-    Rett::TimerLesEgne,
-    Rett::TimerLesAlle,
-    Rett::TimerRapportLes,
-    Rett::TimerSkrivEgne,
-    Rett::TimerSkrivAlle,
-    Rett::TimerFakturer,
-    Rett::TimerSatsSkriv,
-    Rett::TimerLaas,
-    Rett::UtleggLesEgne,
-    Rett::UtleggLesAlle,
-    Rett::UtleggSkrivEgne,
-    Rett::UtleggGodkjenn,
-    Rett::UtleggUtbetal,
-    Rett::LonnLes,
-    Rett::LonnsslippLesEgen,
-    Rett::LonnsslippLesAlle,
-    Rett::LonnSkriv,
-    Rett::LonnKjor,
-    Rett::BudsjettLes,
-    Rett::BudsjettSkriv,
-    Rett::DimensjonLes,
-    Rett::DimensjonSkriv,
-    Rett::AksjebokLes,
-    Rett::AksjebokSkriv,
-    Rett::AttesteringLes,
-    Rett::AttesteringUtfor,
-    Rett::AttesteringAdmin,
-    Rett::EpostInnLes,
-    Rett::EpostInnAdmin,
-    Rett::ForankringLes,
-    Rett::SelskapLes,
-    Rett::SelskapAdmin,
-    Rett::MedlemAdmin,
-    Rett::KontaktSkriv,
-    Rett::OppdragLes,
-    Rett::OppdragAdmin,
-    Rett::IntegrasjonLes,
-    Rett::IntegrasjonAdmin,
-    Rett::MigreringAdmin,
+static ALL_RIGHTS: [Right; 73] = [
+    Right::VoucherRead,
+    Right::AttachmentWrite,
+    Right::VoucherUpload,
+    Right::VoucherPost,
+    Right::PeriodLock,
+    Right::ReportRead,
+    Right::VatSchemeAdmin,
+    Right::InvoiceRead,
+    Right::InvoiceWrite,
+    Right::InvoiceSend,
+    Right::InvoiceTemplateRead,
+    Right::InvoiceTemplateWrite,
+    Right::QuoteRead,
+    Right::QuoteWrite,
+    Right::ReminderRead,
+    Right::ReminderWrite,
+    Right::SubledgerRead,
+    Right::SubledgerWrite,
+    Right::BankRead,
+    Right::BankReconcile,
+    Right::OcrRead,
+    Right::OcrImport,
+    Right::PaymentRead,
+    Right::PaymentCreate,
+    Right::PaymentApprove,
+    Right::PaymentSettle,
+    Right::CurrencyRead,
+    Right::CurrencyWrite,
+    Right::ProductRead,
+    Right::ProductWrite,
+    Right::InventoryRead,
+    Right::InventoryWrite,
+    Right::AssetRead,
+    Right::AssetWrite,
+    Right::TimesheetReadOwn,
+    Right::TimesheetReadAll,
+    Right::TimesheetReportRead,
+    Right::TimesheetWriteOwn,
+    Right::TimesheetWriteAll,
+    Right::TimesheetBill,
+    Right::TimesheetRateWrite,
+    Right::TimesheetLock,
+    Right::ExpenseReadOwn,
+    Right::ExpenseReadAll,
+    Right::ExpenseWriteOwn,
+    Right::ExpenseApprove,
+    Right::ExpensePay,
+    Right::PayrollRead,
+    Right::PayslipReadOwn,
+    Right::PayslipReadAll,
+    Right::PayrollWrite,
+    Right::PayrollRun,
+    Right::BudgetRead,
+    Right::BudgetWrite,
+    Right::DimensionRead,
+    Right::DimensionWrite,
+    Right::ShareRegisterRead,
+    Right::ShareRegisterWrite,
+    Right::ApprovalRead,
+    Right::ApprovalPerform,
+    Right::ApprovalAdmin,
+    Right::InboundMailRead,
+    Right::InboundMailAdmin,
+    Right::AnchorRead,
+    Right::CompanyRead,
+    Right::CompanyAdmin,
+    Right::MemberAdmin,
+    Right::ContactWrite,
+    Right::EngagementRead,
+    Right::EngagementAdmin,
+    Right::IntegrationRead,
+    Right::IntegrationAdmin,
+    Right::MigrationAdmin,
 ];
 
-impl Rett {
+impl Right {
     /// The canonical name. This is the string #60 stores in
     /// `role_right`, so it cannot change without a migration.
     pub fn slug(self) -> &'static str {
-        use Rett::*;
+        use Right::*;
         match self {
-            BilagLes => "BILAG_LES",
-            VedleggSkriv => "VEDLEGG_SKRIV",
-            BilagLastOpp => "BILAG_LAST_OPP",
-            BilagBokfor => "BILAG_BOKFOR",
-            PeriodeLaas => "PERIODE_LAAS",
-            RapportLes => "RAPPORT_LES",
+            VoucherRead => "BILAG_LES",
+            AttachmentWrite => "VEDLEGG_SKRIV",
+            VoucherUpload => "BILAG_LAST_OPP",
+            VoucherPost => "BILAG_BOKFOR",
+            PeriodLock => "PERIODE_LAAS",
+            ReportRead => "RAPPORT_LES",
             VatSchemeAdmin => "MVA_ORDNING_ADMIN",
-            FakturaLes => "FAKTURA_LES",
-            FakturaSkriv => "FAKTURA_SKRIV",
-            FakturaSend => "FAKTURA_SEND",
-            FakturamalLes => "FAKTURAMAL_LES",
-            FakturamalSkriv => "FAKTURAMAL_SKRIV",
-            TilbudLes => "TILBUD_LES",
-            TilbudSkriv => "TILBUD_SKRIV",
-            PurringLes => "PURRING_LES",
-            PurringSkriv => "PURRING_SKRIV",
-            ReskontroLes => "RESKONTRO_LES",
-            ReskontroSkriv => "RESKONTRO_SKRIV",
-            BankLes => "BANK_LES",
-            BankAvstem => "BANK_AVSTEM",
-            OcrLes => "OCR_LES",
+            InvoiceRead => "FAKTURA_LES",
+            InvoiceWrite => "FAKTURA_SKRIV",
+            InvoiceSend => "FAKTURA_SEND",
+            InvoiceTemplateRead => "FAKTURAMAL_LES",
+            InvoiceTemplateWrite => "FAKTURAMAL_SKRIV",
+            QuoteRead => "TILBUD_LES",
+            QuoteWrite => "TILBUD_SKRIV",
+            ReminderRead => "PURRING_LES",
+            ReminderWrite => "PURRING_SKRIV",
+            SubledgerRead => "RESKONTRO_LES",
+            SubledgerWrite => "RESKONTRO_SKRIV",
+            BankRead => "BANK_LES",
+            BankReconcile => "BANK_AVSTEM",
+            OcrRead => "OCR_LES",
             OcrImport => "OCR_IMPORT",
-            BetalingLes => "BETALING_LES",
-            BetalingOpprett => "BETALING_OPPRETT",
-            BetalingGodkjenn => "BETALING_GODKJENN",
-            BetalingOppgjor => "BETALING_OPPGJOR",
-            ValutaLes => "VALUTA_LES",
-            ValutaSkriv => "VALUTA_SKRIV",
-            ProduktLes => "PRODUKT_LES",
-            ProduktSkriv => "PRODUKT_SKRIV",
-            LagerLes => "LAGER_LES",
-            LagerSkriv => "LAGER_SKRIV",
-            AnleggLes => "ANLEGG_LES",
-            AnleggSkriv => "ANLEGG_SKRIV",
-            TimerLesEgne => "TIMER_LES_EGNE",
-            TimerLesAlle => "TIMER_LES_ALLE",
-            TimerRapportLes => "TIMER_RAPPORT_LES",
-            TimerSkrivEgne => "TIMER_SKRIV_EGNE",
-            TimerSkrivAlle => "TIMER_SKRIV_ALLE",
-            TimerFakturer => "TIMER_FAKTURER",
-            TimerSatsSkriv => "TIMER_SATS_SKRIV",
-            TimerLaas => "TIMER_LAAS",
-            UtleggLesEgne => "UTLEGG_LES_EGNE",
-            UtleggLesAlle => "UTLEGG_LES_ALLE",
-            UtleggSkrivEgne => "UTLEGG_SKRIV_EGNE",
-            UtleggGodkjenn => "UTLEGG_GODKJENN",
-            UtleggUtbetal => "UTLEGG_UTBETAL",
-            LonnLes => "LONN_LES",
-            LonnsslippLesEgen => "LONNSSLIPP_LES_EGEN",
-            LonnsslippLesAlle => "LONNSSLIPP_LES_ALLE",
-            LonnSkriv => "LONN_SKRIV",
-            LonnKjor => "LONN_KJOR",
-            BudsjettLes => "BUDSJETT_LES",
-            BudsjettSkriv => "BUDSJETT_SKRIV",
-            DimensjonLes => "DIMENSJON_LES",
-            DimensjonSkriv => "DIMENSJON_SKRIV",
-            AksjebokLes => "AKSJEBOK_LES",
-            AksjebokSkriv => "AKSJEBOK_SKRIV",
-            AttesteringLes => "ATTESTERING_LES",
-            AttesteringUtfor => "ATTESTERING_UTFOR",
-            AttesteringAdmin => "ATTESTERING_ADMIN",
-            EpostInnLes => "EPOST_INN_LES",
-            EpostInnAdmin => "EPOST_INN_ADMIN",
-            ForankringLes => "FORANKRING_LES",
-            SelskapLes => "SELSKAP_LES",
-            SelskapAdmin => "SELSKAP_ADMIN",
-            MedlemAdmin => "MEDLEM_ADMIN",
-            KontaktSkriv => "KONTAKT_SKRIV",
-            OppdragLes => "OPPDRAG_LES",
-            OppdragAdmin => "OPPDRAG_ADMIN",
-            IntegrasjonLes => "INTEGRASJON_LES",
-            IntegrasjonAdmin => "INTEGRASJON_ADMIN",
-            MigreringAdmin => "MIGRERING_ADMIN",
+            PaymentRead => "BETALING_LES",
+            PaymentCreate => "BETALING_OPPRETT",
+            PaymentApprove => "BETALING_GODKJENN",
+            PaymentSettle => "BETALING_OPPGJOR",
+            CurrencyRead => "VALUTA_LES",
+            CurrencyWrite => "VALUTA_SKRIV",
+            ProductRead => "PRODUKT_LES",
+            ProductWrite => "PRODUKT_SKRIV",
+            InventoryRead => "LAGER_LES",
+            InventoryWrite => "LAGER_SKRIV",
+            AssetRead => "ANLEGG_LES",
+            AssetWrite => "ANLEGG_SKRIV",
+            TimesheetReadOwn => "TIMER_LES_EGNE",
+            TimesheetReadAll => "TIMER_LES_ALLE",
+            TimesheetReportRead => "TIMER_RAPPORT_LES",
+            TimesheetWriteOwn => "TIMER_SKRIV_EGNE",
+            TimesheetWriteAll => "TIMER_SKRIV_ALLE",
+            TimesheetBill => "TIMER_FAKTURER",
+            TimesheetRateWrite => "TIMER_SATS_SKRIV",
+            TimesheetLock => "TIMER_LAAS",
+            ExpenseReadOwn => "UTLEGG_LES_EGNE",
+            ExpenseReadAll => "UTLEGG_LES_ALLE",
+            ExpenseWriteOwn => "UTLEGG_SKRIV_EGNE",
+            ExpenseApprove => "UTLEGG_GODKJENN",
+            ExpensePay => "UTLEGG_UTBETAL",
+            PayrollRead => "LONN_LES",
+            PayslipReadOwn => "LONNSSLIPP_LES_EGEN",
+            PayslipReadAll => "LONNSSLIPP_LES_ALLE",
+            PayrollWrite => "LONN_SKRIV",
+            PayrollRun => "LONN_KJOR",
+            BudgetRead => "BUDSJETT_LES",
+            BudgetWrite => "BUDSJETT_SKRIV",
+            DimensionRead => "DIMENSJON_LES",
+            DimensionWrite => "DIMENSJON_SKRIV",
+            ShareRegisterRead => "AKSJEBOK_LES",
+            ShareRegisterWrite => "AKSJEBOK_SKRIV",
+            ApprovalRead => "ATTESTERING_LES",
+            ApprovalPerform => "ATTESTERING_UTFOR",
+            ApprovalAdmin => "ATTESTERING_ADMIN",
+            InboundMailRead => "EPOST_INN_LES",
+            InboundMailAdmin => "EPOST_INN_ADMIN",
+            AnchorRead => "FORANKRING_LES",
+            CompanyRead => "SELSKAP_LES",
+            CompanyAdmin => "SELSKAP_ADMIN",
+            MemberAdmin => "MEDLEM_ADMIN",
+            ContactWrite => "KONTAKT_SKRIV",
+            EngagementRead => "OPPDRAG_LES",
+            EngagementAdmin => "OPPDRAG_ADMIN",
+            IntegrationRead => "INTEGRASJON_LES",
+            IntegrationAdmin => "INTEGRASJON_ADMIN",
+            MigrationAdmin => "MIGRERING_ADMIN",
         }
     }
 
     /// The whole vocabulary, in the order the enum is written.
-    pub const ALLE: &'static [Rett] = &ALLE_RETTIGHETER;
+    pub const ALLE: &'static [Right] = &ALL_RIGHTS;
 
     /// Does the action carry the accounts (or the data around them)
     /// forward?
@@ -341,20 +341,23 @@ impl Rett {
     ///
     /// The match is exhaustive on purpose: a NEW rettighet is forced to
     /// pick a side here, it cannot fall outside the block by accident.
-    pub fn endrer(self) -> bool {
-        use Rett::*;
+    pub fn mutates(self) -> bool {
+        use Right::*;
         match self {
             // Reading — always open.
-            BilagLes | RapportLes | FakturaLes | FakturamalLes | TilbudLes | PurringLes
-            | ReskontroLes | BankLes | OcrLes | BetalingLes | ValutaLes | ProduktLes | LagerLes
-            | AnleggLes | TimerLesEgne | TimerLesAlle | TimerRapportLes | UtleggLesEgne
-            | UtleggLesAlle | LonnLes | LonnsslippLesEgen | LonnsslippLesAlle | BudsjettLes
-            | DimensjonLes | AksjebokLes | AttesteringLes | EpostInnLes | ForankringLes
-            | SelskapLes | OppdragLes | IntegrasjonLes => false,
+            VoucherRead | ReportRead | InvoiceRead | InvoiceTemplateRead | QuoteRead
+            | ReminderRead | SubledgerRead | BankRead | OcrRead | PaymentRead | CurrencyRead
+            | ProductRead | InventoryRead | AssetRead | TimesheetReadOwn | TimesheetReadAll
+            | TimesheetReportRead | ExpenseReadOwn | ExpenseReadAll | PayrollRead
+            | PayslipReadOwn | PayslipReadAll | BudgetRead | DimensionRead | ShareRegisterRead
+            | ApprovalRead | InboundMailRead | AnchorRead | CompanyRead | EngagementRead
+            | IntegrationRead => false,
 
             // Governance of the company — open even when the abonnement
             // is blocked (see above).
-            SelskapAdmin | MedlemAdmin | OppdragAdmin | IntegrasjonAdmin | EpostInnAdmin => false,
+            CompanyAdmin | MemberAdmin | EngagementAdmin | IntegrationAdmin | InboundMailAdmin => {
+                false
+            }
 
             // Documenting what is ALREADY booked — open (#85).
             // Bokføringsloven §10 requires booked information to be
@@ -370,17 +373,17 @@ impl Rett {
             // BilagLastOpp stays blocked, deliberately: the innboks is
             // where NEW documents arrive to be booked, not where
             // existing entries get their documentation.
-            VedleggSkriv => false,
+            AttachmentWrite => false,
 
             // Everything that carries the accounts forward — blocked.
-            BilagLastOpp | BilagBokfor | PeriodeLaas | VatSchemeAdmin | FakturaSkriv
-            | FakturaSend | FakturamalSkriv | TilbudSkriv | PurringSkriv | ReskontroSkriv
-            | KontaktSkriv | BankAvstem | OcrImport | BetalingOpprett | BetalingGodkjenn
-            | BetalingOppgjor | ValutaSkriv | ProduktSkriv | LagerSkriv | AnleggSkriv
-            | TimerSkrivEgne | TimerSkrivAlle | TimerFakturer | TimerSatsSkriv | TimerLaas
-            | UtleggSkrivEgne | UtleggGodkjenn | UtleggUtbetal | LonnSkriv | LonnKjor
-            | BudsjettSkriv | DimensjonSkriv | AksjebokSkriv | AttesteringUtfor
-            | AttesteringAdmin | MigreringAdmin => true,
+            VoucherUpload | VoucherPost | PeriodLock | VatSchemeAdmin | InvoiceWrite
+            | InvoiceSend | InvoiceTemplateWrite | QuoteWrite | ReminderWrite | SubledgerWrite
+            | ContactWrite | BankReconcile | OcrImport | PaymentCreate | PaymentApprove
+            | PaymentSettle | CurrencyWrite | ProductWrite | InventoryWrite | AssetWrite
+            | TimesheetWriteOwn | TimesheetWriteAll | TimesheetBill | TimesheetRateWrite
+            | TimesheetLock | ExpenseWriteOwn | ExpenseApprove | ExpensePay | PayrollWrite
+            | PayrollRun | BudgetWrite | DimensionWrite | ShareRegisterWrite | ApprovalPerform
+            | ApprovalAdmin | MigrationAdmin => true,
         }
     }
 
@@ -391,8 +394,8 @@ impl Rett {
     /// promise a rettighet nobody enforces. If a version is rolled back
     /// that does not know a new rettighet, it disappears — it does not
     /// turn into something else.
-    pub fn fra_slug(s: &str) -> Option<Rett> {
-        Rett::ALLE.iter().copied().find(|r| r.slug() == s)
+    pub fn from_slug(s: &str) -> Option<Right> {
+        Right::ALLE.iter().copied().find(|r| r.slug() == s)
     }
 
     /// Whether the rettighet may be placed in a **custom** role (#60).
@@ -401,92 +404,95 @@ impl Rett {
     /// change access can give itself everything else, and then the rest
     /// of the boundary is decoration. Those rettigheter stay with admin,
     /// which is a role a company cannot rewrite.
-    pub fn kan_delegeres(self) -> bool {
+    pub fn can_be_delegated(self) -> bool {
         !matches!(
             self,
-            Rett::MedlemAdmin | Rett::OppdragAdmin | Rett::IntegrasjonAdmin | Rett::SelskapAdmin
+            Right::MemberAdmin
+                | Right::EngagementAdmin
+                | Right::IntegrationAdmin
+                | Right::CompanyAdmin
         )
     }
 
     /// The area the rettighet belongs to — the same split as the
     /// portal's menu, so a grid of rettigheter can be read by someone who
     /// knows the product rather than the code.
-    pub fn gruppe(self) -> &'static str {
-        use Rett::*;
+    pub fn group(self) -> &'static str {
+        use Right::*;
         match self {
-            BilagLes => "Bilag",
-            VedleggSkriv => "Bilag",
-            BilagLastOpp => "Bilag",
-            BilagBokfor => "Bilag",
-            PeriodeLaas => "Bilag",
-            RapportLes => "Rapporter",
+            VoucherRead => "Bilag",
+            AttachmentWrite => "Bilag",
+            VoucherUpload => "Bilag",
+            VoucherPost => "Bilag",
+            PeriodLock => "Bilag",
+            ReportRead => "Rapporter",
             VatSchemeAdmin => "Rapporter",
-            FakturaLes => "Faktura",
-            FakturaSkriv => "Faktura",
-            FakturaSend => "Faktura",
-            FakturamalLes => "Faktura",
-            FakturamalSkriv => "Faktura",
-            TilbudLes => "Faktura",
-            TilbudSkriv => "Faktura",
-            PurringLes => "Faktura",
-            PurringSkriv => "Faktura",
-            ReskontroLes => "Reskontro",
-            ReskontroSkriv => "Reskontro",
-            BankLes => "Bank",
-            BankAvstem => "Bank",
-            OcrLes => "Bank",
+            InvoiceRead => "Faktura",
+            InvoiceWrite => "Faktura",
+            InvoiceSend => "Faktura",
+            InvoiceTemplateRead => "Faktura",
+            InvoiceTemplateWrite => "Faktura",
+            QuoteRead => "Faktura",
+            QuoteWrite => "Faktura",
+            ReminderRead => "Faktura",
+            ReminderWrite => "Faktura",
+            SubledgerRead => "Reskontro",
+            SubledgerWrite => "Reskontro",
+            BankRead => "Bank",
+            BankReconcile => "Bank",
+            OcrRead => "Bank",
             OcrImport => "Bank",
-            BetalingLes => "Betaling",
-            BetalingOpprett => "Betaling",
-            BetalingGodkjenn => "Betaling",
-            BetalingOppgjor => "Betaling",
-            ValutaLes => "Bank",
-            ValutaSkriv => "Bank",
-            ProduktLes => "Produkter",
-            ProduktSkriv => "Produkter",
-            LagerLes => "Produkter",
-            LagerSkriv => "Produkter",
-            AnleggLes => "Anlegg",
-            AnleggSkriv => "Anlegg",
-            TimerLesEgne => "Timer",
-            TimerLesAlle => "Timer",
-            TimerRapportLes => "Timer",
-            TimerSkrivEgne => "Timer",
-            TimerSkrivAlle => "Timer",
-            TimerFakturer => "Timer",
-            TimerSatsSkriv => "Timer",
-            TimerLaas => "Timer",
-            UtleggLesEgne => "Utlegg",
-            UtleggLesAlle => "Utlegg",
-            UtleggSkrivEgne => "Utlegg",
-            UtleggGodkjenn => "Utlegg",
-            UtleggUtbetal => "Utlegg",
-            LonnLes => "Lønn",
-            LonnsslippLesEgen => "Lønn",
-            LonnsslippLesAlle => "Lønn",
-            LonnSkriv => "Lønn",
-            LonnKjor => "Lønn",
-            BudsjettLes => "Rapporter",
-            BudsjettSkriv => "Rapporter",
-            DimensjonLes => "Dimensjoner",
-            DimensjonSkriv => "Dimensjoner",
-            AksjebokLes => "Aksjonærer",
-            AksjebokSkriv => "Aksjonærer",
-            AttesteringLes => "Attestering",
-            AttesteringUtfor => "Attestering",
-            AttesteringAdmin => "Attestering",
-            EpostInnLes => "Bilag",
-            EpostInnAdmin => "Bilag",
-            ForankringLes => "Rapporter",
-            SelskapLes => "Selskap",
-            SelskapAdmin => "Selskap",
-            MedlemAdmin => "Selskap",
-            KontaktSkriv => "Reskontro",
-            OppdragLes => "Selskap",
-            OppdragAdmin => "Selskap",
-            IntegrasjonLes => "Selskap",
-            IntegrasjonAdmin => "Selskap",
-            MigreringAdmin => "Selskap",
+            PaymentRead => "Betaling",
+            PaymentCreate => "Betaling",
+            PaymentApprove => "Betaling",
+            PaymentSettle => "Betaling",
+            CurrencyRead => "Bank",
+            CurrencyWrite => "Bank",
+            ProductRead => "Produkter",
+            ProductWrite => "Produkter",
+            InventoryRead => "Produkter",
+            InventoryWrite => "Produkter",
+            AssetRead => "Anlegg",
+            AssetWrite => "Anlegg",
+            TimesheetReadOwn => "Timer",
+            TimesheetReadAll => "Timer",
+            TimesheetReportRead => "Timer",
+            TimesheetWriteOwn => "Timer",
+            TimesheetWriteAll => "Timer",
+            TimesheetBill => "Timer",
+            TimesheetRateWrite => "Timer",
+            TimesheetLock => "Timer",
+            ExpenseReadOwn => "Utlegg",
+            ExpenseReadAll => "Utlegg",
+            ExpenseWriteOwn => "Utlegg",
+            ExpenseApprove => "Utlegg",
+            ExpensePay => "Utlegg",
+            PayrollRead => "Lønn",
+            PayslipReadOwn => "Lønn",
+            PayslipReadAll => "Lønn",
+            PayrollWrite => "Lønn",
+            PayrollRun => "Lønn",
+            BudgetRead => "Rapporter",
+            BudgetWrite => "Rapporter",
+            DimensionRead => "Dimensjoner",
+            DimensionWrite => "Dimensjoner",
+            ShareRegisterRead => "Aksjonærer",
+            ShareRegisterWrite => "Aksjonærer",
+            ApprovalRead => "Attestering",
+            ApprovalPerform => "Attestering",
+            ApprovalAdmin => "Attestering",
+            InboundMailRead => "Bilag",
+            InboundMailAdmin => "Bilag",
+            AnchorRead => "Rapporter",
+            CompanyRead => "Selskap",
+            CompanyAdmin => "Selskap",
+            MemberAdmin => "Selskap",
+            ContactWrite => "Reskontro",
+            EngagementRead => "Selskap",
+            EngagementAdmin => "Selskap",
+            IntegrationRead => "Selskap",
+            IntegrationAdmin => "Selskap",
+            MigrationAdmin => "Selskap",
         }
     }
 
@@ -496,94 +502,96 @@ impl Rett {
     /// composing a role. The text belongs here and not in the portal:
     /// then there is only one list, and a new rettighet cannot be left
     /// standing without an explanation.
-    pub fn beskrivelse(self) -> &'static str {
-        use Rett::*;
+    pub fn description(self) -> &'static str {
+        use Right::*;
         match self {
-            BilagLes => "Se bilag og vedlegg",
-            VedleggSkriv => "Legge vedlegg på et bilag",
-            BilagLastOpp => "Sende dokument til innboksen",
-            BilagBokfor => "Bokføre fra innboksen",
-            PeriodeLaas => "Låse en periode",
-            RapportLes => "Se regnskapsrapportene",
+            VoucherRead => "Se bilag og vedlegg",
+            AttachmentWrite => "Legge vedlegg på et bilag",
+            VoucherUpload => "Sende dokument til innboksen",
+            VoucherPost => "Bokføre fra innboksen",
+            PeriodLock => "Låse en periode",
+            ReportRead => "Se regnskapsrapportene",
             VatSchemeAdmin => "Endre mva-terminordning",
-            FakturaLes => "Se fakturaer",
-            FakturaSkriv => "Utstede faktura og kreditnota",
-            FakturaSend => "Sende faktura på e-post",
-            FakturamalLes => "Se repeterende fakturaer",
-            FakturamalSkriv => "Endre repeterende fakturaer",
-            TilbudLes => "Se tilbud og ordre",
-            TilbudSkriv => "Lage tilbud og ordre",
-            PurringLes => "Se purringer og forfalte krav",
-            PurringSkriv => "Sende purring og inkassovarsel",
-            ReskontroLes => "Se kunder, leverandører og åpne poster",
-            ReskontroSkriv => "Endre kontakter og matche åpne poster",
-            BankLes => "Se bankavstemming",
-            BankAvstem => "Importere kontoutdrag og matche",
-            OcrLes => "Se OCR-innbetalinger",
+            InvoiceRead => "Se fakturaer",
+            InvoiceWrite => "Utstede faktura og kreditnota",
+            InvoiceSend => "Sende faktura på e-post",
+            InvoiceTemplateRead => "Se repeterende fakturaer",
+            InvoiceTemplateWrite => "Endre repeterende fakturaer",
+            QuoteRead => "Se tilbud og ordre",
+            QuoteWrite => "Lage tilbud og ordre",
+            ReminderRead => "Se purringer og forfalte krav",
+            ReminderWrite => "Sende purring og inkassovarsel",
+            SubledgerRead => "Se kunder, leverandører og åpne poster",
+            SubledgerWrite => "Endre kontakter og matche åpne poster",
+            BankRead => "Se bankavstemming",
+            BankReconcile => "Importere kontoutdrag og matche",
+            OcrRead => "Se OCR-innbetalinger",
             OcrImport => "Importere OCR-fil",
-            BetalingLes => "Se betalingslister",
-            BetalingOpprett => "Opprette betalingsliste",
-            BetalingGodkjenn => "Godkjenne betalingsliste",
-            BetalingOppgjor => "Registrere at betalingene er utført",
-            ValutaLes => "Se valutakurser",
-            ValutaSkriv => "Legge inn og hente valutakurser",
-            ProduktLes => "Se produktregisteret",
-            ProduktSkriv => "Endre produktregisteret",
-            LagerLes => "Se lagerbeholdning",
-            LagerSkriv => "Registrere lagerbevegelser og varetelling",
-            AnleggLes => "Se anleggsregisteret",
-            AnleggSkriv => "Registrere, avskrive og avhende anleggsmidler",
-            TimerLesEgne => "Se sine egne timer",
-            TimerLesAlle => "Se alles timer",
-            TimerRapportLes => "Se timeoversikt per prosjekt og ufakturert",
-            TimerSkrivEgne => "Føre sine egne timer",
-            TimerSkrivAlle => "Rette alles timer",
-            TimerFakturer => "Fakturere førte timer",
-            TimerSatsSkriv => "Sette timesatser på prosjekter og overstyre sats på timeføringer",
-            TimerLaas => "Låse timelisten for en måned",
-            UtleggLesEgne => "Se sine egne utlegg",
-            UtleggLesAlle => "Se alles utlegg",
-            UtleggSkrivEgne => "Sende inn eget utlegg og kjøregodtgjørelse",
-            UtleggGodkjenn => "Godkjenne og avvise utlegg",
-            UtleggUtbetal => "Registrere utbetaling av utlegg",
-            LonnLes => "Se ansattregisteret og lønnskjøringene",
-            LonnsslippLesEgen => "Se sin egen lønnsslipp",
-            LonnsslippLesAlle => "Se alles lønnsslipper",
-            LonnSkriv => "Registrere ansatte",
-            LonnKjor => "Kjøre lønn",
-            BudsjettLes => "Se budsjett og avviksrapport",
-            BudsjettSkriv => "Lage og fastsette budsjett",
-            DimensjonLes => "Se avdelinger og prosjekter",
-            DimensjonSkriv => "Endre avdelinger og prosjekter",
-            AksjebokLes => "Se aksjeeierboken",
-            AksjebokSkriv => "Registrere aksjonærer, hendelser og utbytte",
-            AttesteringLes => "Se attesteringssporet",
-            AttesteringUtfor => "Attestere bilag",
-            AttesteringAdmin => "Sette attesteringspolicyen",
-            EpostInnLes => "Se e-post inn til innboksen",
-            EpostInnAdmin => "Styre mottaksadresse og avsenderliste",
-            ForankringLes => "Se forankringen av hovedboken",
-            SelskapLes => "Se firmaopplysningene",
-            SelskapAdmin => "Endre firmaopplysningene",
-            MedlemAdmin => "Gi og fjerne tilgang",
-            KontaktSkriv => "Endre kontaktinfo på en part",
-            OppdragLes => "Se oppdrag",
-            OppdragAdmin => "Inngå og avslutte oppdrag",
-            IntegrasjonLes => "Se integrasjoner",
-            IntegrasjonAdmin => "Slippe til en integrasjon",
-            MigreringAdmin => "Importere regnskap fra et annet system",
+            PaymentRead => "Se betalingslister",
+            PaymentCreate => "Opprette betalingsliste",
+            PaymentApprove => "Godkjenne betalingsliste",
+            PaymentSettle => "Registrere at betalingene er utført",
+            CurrencyRead => "Se valutakurser",
+            CurrencyWrite => "Legge inn og hente valutakurser",
+            ProductRead => "Se produktregisteret",
+            ProductWrite => "Endre produktregisteret",
+            InventoryRead => "Se lagerbeholdning",
+            InventoryWrite => "Registrere lagerbevegelser og varetelling",
+            AssetRead => "Se anleggsregisteret",
+            AssetWrite => "Registrere, avskrive og avhende anleggsmidler",
+            TimesheetReadOwn => "Se sine egne timer",
+            TimesheetReadAll => "Se alles timer",
+            TimesheetReportRead => "Se timeoversikt per prosjekt og ufakturert",
+            TimesheetWriteOwn => "Føre sine egne timer",
+            TimesheetWriteAll => "Rette alles timer",
+            TimesheetBill => "Fakturere førte timer",
+            TimesheetRateWrite => {
+                "Sette timesatser på prosjekter og overstyre sats på timeføringer"
+            }
+            TimesheetLock => "Låse timelisten for en måned",
+            ExpenseReadOwn => "Se sine egne utlegg",
+            ExpenseReadAll => "Se alles utlegg",
+            ExpenseWriteOwn => "Sende inn eget utlegg og kjøregodtgjørelse",
+            ExpenseApprove => "Godkjenne og avvise utlegg",
+            ExpensePay => "Registrere utbetaling av utlegg",
+            PayrollRead => "Se ansattregisteret og lønnskjøringene",
+            PayslipReadOwn => "Se sin egen lønnsslipp",
+            PayslipReadAll => "Se alles lønnsslipper",
+            PayrollWrite => "Registrere ansatte",
+            PayrollRun => "Kjøre lønn",
+            BudgetRead => "Se budsjett og avviksrapport",
+            BudgetWrite => "Lage og fastsette budsjett",
+            DimensionRead => "Se avdelinger og prosjekter",
+            DimensionWrite => "Endre avdelinger og prosjekter",
+            ShareRegisterRead => "Se aksjeeierboken",
+            ShareRegisterWrite => "Registrere aksjonærer, hendelser og utbytte",
+            ApprovalRead => "Se attesteringssporet",
+            ApprovalPerform => "Attestere bilag",
+            ApprovalAdmin => "Sette attesteringspolicyen",
+            InboundMailRead => "Se e-post inn til innboksen",
+            InboundMailAdmin => "Styre mottaksadresse og avsenderliste",
+            AnchorRead => "Se forankringen av hovedboken",
+            CompanyRead => "Se firmaopplysningene",
+            CompanyAdmin => "Endre firmaopplysningene",
+            MemberAdmin => "Gi og fjerne tilgang",
+            ContactWrite => "Endre kontaktinfo på en part",
+            EngagementRead => "Se oppdrag",
+            EngagementAdmin => "Inngå og avslutte oppdrag",
+            IntegrationRead => "Se integrasjoner",
+            IntegrationAdmin => "Slippe til en integrasjon",
+            MigrationAdmin => "Importere regnskap fra et annet system",
         }
     }
 
     /// What this rettighet also grants. `_ALLE` grants `_EGNE`: whoever
     /// sees everyone's hours obviously sees their own, and without the
     /// rule every bundle would have to remember both.
-    pub fn medforer(self) -> &'static [Rett] {
+    pub fn implies(self) -> &'static [Right] {
         match self {
-            Rett::TimerLesAlle => &[Rett::TimerLesEgne],
-            Rett::TimerSkrivAlle => &[Rett::TimerSkrivEgne, Rett::TimerLesEgne],
-            Rett::UtleggLesAlle => &[Rett::UtleggLesEgne],
-            Rett::LonnsslippLesAlle => &[Rett::LonnsslippLesEgen],
+            Right::TimesheetReadAll => &[Right::TimesheetReadOwn],
+            Right::TimesheetWriteAll => &[Right::TimesheetWriteOwn, Right::TimesheetReadOwn],
+            Right::ExpenseReadAll => &[Right::ExpenseReadOwn],
+            Right::PayslipReadAll => &[Right::PayslipReadOwn],
             _ => &[],
         }
     }
@@ -595,7 +603,7 @@ impl Rett {
 /// database so a company can make its own — but the vocabulary and the
 /// guard are the same, so that change does not touch the endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Rolle {
+pub enum Role {
     /// A role value this binary does not know. Grants NO rettigheter.
     ///
     /// This is not theoretical: during a rolling deploy the database can
@@ -607,13 +615,13 @@ pub enum Rolle {
     Ukjent,
     /// Self-service: own hours, own utlegg, own payslip. Not a step
     /// below `Les` — see [`ANSATT_BUNT`].
-    Ansatt,
-    Les,
+    Employee,
+    Read,
     /// Reading like `Les`, plus the lønn data an audit needs. Comes only
     /// from an oppdrag of kind `revisjon` — it cannot be assigned
     /// directly.
-    Revisor,
-    Bokforing,
+    Auditor,
+    Bookkeeping,
     Admin,
 }
 
@@ -630,52 +638,52 @@ pub enum Rolle {
 /// employee list and everyone's hours, utlegg and lønn are not in it, and
 /// will not get in by accident either — a new rettighet must be written
 /// in here to apply.
-pub const ANSATT_BUNT: &[Rett] = &[
+pub const EMPLOYEE_BUNDLE: &[Right] = &[
     // Logging and seeing one's own hours. The prosjekt register must be
     // readable, or there is nothing to log the hours against.
-    Rett::TimerLesEgne,
-    Rett::TimerSkrivEgne,
-    Rett::DimensjonLes,
+    Right::TimesheetReadOwn,
+    Right::TimesheetWriteOwn,
+    Right::DimensionRead,
     // Submitting and following one's own refusjonskrav.
-    Rett::UtleggLesEgne,
-    Rett::UtleggSkrivEgne,
+    Right::ExpenseReadOwn,
+    Right::ExpenseWriteOwn,
     // Their own payslip — not their colleagues'.
-    Rett::LonnsslippLesEgen,
+    Right::PayslipReadOwn,
     // Receipt photos from the phone (#48). Uploading is not posting: the
     // document lands in the innboks and waits for someone with
     // BILAG_BOKFOR.
-    Rett::BilagLastOpp,
+    Right::VoucherUpload,
 ];
 
 /// What anyone with access to the company gets. Revisor lives here:
 /// reading everything, changing nothing.
-const LES_BUNT: &[Rett] = &[
-    Rett::BilagLes,
-    Rett::RapportLes,
-    Rett::FakturaLes,
-    Rett::FakturamalLes,
-    Rett::TilbudLes,
-    Rett::PurringLes,
-    Rett::ReskontroLes,
-    Rett::BankLes,
-    Rett::OcrLes,
-    Rett::BetalingLes,
-    Rett::ValutaLes,
-    Rett::ProduktLes,
-    Rett::LagerLes,
-    Rett::AnleggLes,
-    Rett::TimerLesEgne,
-    Rett::TimerRapportLes,
-    Rett::UtleggLesAlle,
-    Rett::BudsjettLes,
-    Rett::DimensjonLes,
-    Rett::AksjebokLes,
-    Rett::AttesteringLes,
-    Rett::EpostInnLes,
-    Rett::ForankringLes,
-    Rett::SelskapLes,
-    Rett::OppdragLes,
-    Rett::IntegrasjonLes,
+const LES_BUNT: &[Right] = &[
+    Right::VoucherRead,
+    Right::ReportRead,
+    Right::InvoiceRead,
+    Right::InvoiceTemplateRead,
+    Right::QuoteRead,
+    Right::ReminderRead,
+    Right::SubledgerRead,
+    Right::BankRead,
+    Right::OcrRead,
+    Right::PaymentRead,
+    Right::CurrencyRead,
+    Right::ProductRead,
+    Right::InventoryRead,
+    Right::AssetRead,
+    Right::TimesheetReadOwn,
+    Right::TimesheetReportRead,
+    Right::ExpenseReadAll,
+    Right::BudgetRead,
+    Right::DimensionRead,
+    Right::ShareRegisterRead,
+    Right::ApprovalRead,
+    Right::InboundMailRead,
+    Right::AnchorRead,
+    Right::CompanyRead,
+    Right::EngagementRead,
+    Right::IntegrationRead,
 ];
 
 /// What revisor adds to reading: the lønn data (#55).
@@ -685,79 +693,79 @@ const LES_BUNT: &[Rett] = &[
 /// check. So the answer is "yes, a revisor sees lønn", but now it is an
 /// **explicit yes** rather than a side effect of revisor and an internal
 /// reader having been the same role.
-pub const REVISOR_BUNT: &[Rett] = &[
-    Rett::LonnLes,
-    Rett::LonnsslippLesAlle,
+pub const AUDITOR_BUNDLE: &[Right] = &[
+    Right::PayrollRead,
+    Right::PayslipReadAll,
     // Hours are billing evidence — the audit reads everyone's, like lønn.
-    Rett::TimerLesAlle,
+    Right::TimesheetReadAll,
 ];
 
 /// What bokføring adds: everything that changes the hovedbok or ends there.
-const BOKFORING_BUNT: &[Rett] = &[
-    Rett::VedleggSkriv,
-    Rett::BilagLastOpp,
-    Rett::BilagBokfor,
-    Rett::PeriodeLaas,
-    Rett::FakturaSkriv,
-    Rett::FakturaSend,
-    Rett::FakturamalSkriv,
-    Rett::TilbudSkriv,
-    Rett::PurringSkriv,
-    Rett::ReskontroSkriv,
-    Rett::BankAvstem,
-    Rett::OcrImport,
-    Rett::BetalingOpprett,
-    Rett::BetalingGodkjenn,
-    Rett::BetalingOppgjor,
-    Rett::ValutaSkriv,
-    Rett::ProduktSkriv,
-    Rett::LagerSkriv,
-    Rett::AnleggSkriv,
-    Rett::TimerSkrivEgne,
+const BOKFORING_BUNT: &[Right] = &[
+    Right::AttachmentWrite,
+    Right::VoucherUpload,
+    Right::VoucherPost,
+    Right::PeriodLock,
+    Right::InvoiceWrite,
+    Right::InvoiceSend,
+    Right::InvoiceTemplateWrite,
+    Right::QuoteWrite,
+    Right::ReminderWrite,
+    Right::SubledgerWrite,
+    Right::BankReconcile,
+    Right::OcrImport,
+    Right::PaymentCreate,
+    Right::PaymentApprove,
+    Right::PaymentSettle,
+    Right::CurrencyWrite,
+    Right::ProductWrite,
+    Right::InventoryWrite,
+    Right::AssetWrite,
+    Right::TimesheetWriteOwn,
     // Whoever bills the hours needs to see whose they are.
-    Rett::TimerLesAlle,
-    Rett::TimerFakturer,
+    Right::TimesheetReadAll,
+    Right::TimesheetBill,
     // The rates live on the project; whoever keeps the books sets them.
-    Rett::TimerSatsSkriv,
-    Rett::UtleggSkrivEgne,
-    Rett::UtleggGodkjenn,
-    Rett::UtleggUtbetal,
-    Rett::LonnLes,
-    Rett::LonnsslippLesAlle,
-    Rett::LonnSkriv,
-    Rett::LonnKjor,
-    Rett::BudsjettSkriv,
-    Rett::DimensjonSkriv,
-    Rett::AksjebokSkriv,
-    Rett::AttesteringUtfor,
-    Rett::KontaktSkriv,
+    Right::TimesheetRateWrite,
+    Right::ExpenseWriteOwn,
+    Right::ExpenseApprove,
+    Right::ExpensePay,
+    Right::PayrollRead,
+    Right::PayslipReadAll,
+    Right::PayrollWrite,
+    Right::PayrollRun,
+    Right::BudgetWrite,
+    Right::DimensionWrite,
+    Right::ShareRegisterWrite,
+    Right::ApprovalPerform,
+    Right::ContactWrite,
 ];
 
 /// What admin adds: governing the company and who gets in.
-const ADMIN_BUNT: &[Rett] = &[
-    Rett::VatSchemeAdmin,
-    Rett::TimerSkrivAlle,
-    Rett::TimerLaas,
-    Rett::AttesteringAdmin,
-    Rett::EpostInnAdmin,
-    Rett::SelskapAdmin,
+const ADMIN_BUNT: &[Right] = &[
+    Right::VatSchemeAdmin,
+    Right::TimesheetWriteAll,
+    Right::TimesheetLock,
+    Right::ApprovalAdmin,
+    Right::InboundMailAdmin,
+    Right::CompanyAdmin,
     // Governing who gets in. Whoever holds this can give themselves
     // everything else, so it belongs with admin and nobody else.
-    Rett::MedlemAdmin,
-    Rett::OppdragAdmin,
-    Rett::IntegrasjonAdmin,
-    Rett::MigreringAdmin,
+    Right::MemberAdmin,
+    Right::EngagementAdmin,
+    Right::IntegrationAdmin,
+    Right::MigrationAdmin,
 ];
 
-impl Rolle {
+impl Role {
     /// Unknown values grant NO rettigheter — see [`Rolle::Ukjent`].
-    pub fn fra_db(s: &str) -> Self {
+    pub fn from_db(s: &str) -> Self {
         match s {
             "admin" => Self::Admin,
-            "bokforing" => Self::Bokforing,
-            "ansatt" => Self::Ansatt,
-            "les" => Self::Les,
-            "revisor" => Self::Revisor,
+            "bokforing" => Self::Bookkeeping,
+            "ansatt" => Self::Employee,
+            "les" => Self::Read,
+            "revisor" => Self::Auditor,
             _ => Self::Ukjent,
         }
     }
@@ -765,15 +773,15 @@ impl Rolle {
     pub fn slug(self) -> &'static str {
         match self {
             Self::Admin => "admin",
-            Self::Bokforing => "bokforing",
-            Self::Les => "les",
-            Self::Ansatt => "ansatt",
-            Self::Revisor => "revisor",
+            Self::Bookkeeping => "bokforing",
+            Self::Read => "les",
+            Self::Employee => "ansatt",
+            Self::Auditor => "revisor",
             Self::Ukjent => "ukjent",
         }
     }
 
-    pub fn er_admin(self) -> bool {
+    pub fn is_admin(self) -> bool {
         self == Self::Admin
     }
 
@@ -781,18 +789,18 @@ impl Rolle {
     /// guidance in the portal renders these (#79). One copy, kept next
     /// to the bundles that make the claims true: whoever changes a
     /// bundle below must reread this text.
-    pub fn beskrivelse(self) -> &'static str {
+    pub fn description(self) -> &'static str {
         match self {
-            Self::Ansatt => {
+            Self::Employee => {
                 "Selvbetjening for en lønnsmottaker: fører egne timer og utlegg, \
                  ser egne lønnsslipper og laster opp kvitteringer. Ser ikke hovedboken."
             }
-            Self::Les => "Ser hele regnskapet, endrer ingenting. Lønn er unntatt.",
-            Self::Revisor => {
+            Self::Read => "Ser hele regnskapet, endrer ingenting. Lønn er unntatt.",
+            Self::Auditor => {
                 "Lesetilgang pluss lønn og kjedeverifikasjon. Tildeles ikke direkte — \
                  rollen følger av et revisjonsoppdrag."
             }
-            Self::Bokforing => {
+            Self::Bookkeeping => {
                 "Den daglige økonomien: bilag, faktura og purring, bank og betaling, \
                  timer, lønn og rapporter. Ikke tilgangsstyring."
             }
@@ -808,36 +816,36 @@ impl Rolle {
     /// bokføring is reading plus something, admin is bokføring plus
     /// something — but that is a property of these three bundles, not of
     /// the model. A custom role (#60) need not be nested at all.
-    fn bunter(self) -> &'static [&'static [Rett]] {
+    fn bunter(self) -> &'static [&'static [Right]] {
         match self {
             Self::Ukjent => &[],
             // Ansatt is NOT nested under the other three — it is its own
             // composition, and that is the whole point of the model.
-            Self::Ansatt => &[ANSATT_BUNT],
-            Self::Les => &[LES_BUNT],
-            Self::Revisor => &[LES_BUNT, REVISOR_BUNT],
-            Self::Bokforing => &[LES_BUNT, BOKFORING_BUNT],
+            Self::Employee => &[EMPLOYEE_BUNDLE],
+            Self::Read => &[LES_BUNT],
+            Self::Auditor => &[LES_BUNT, AUDITOR_BUNDLE],
+            Self::Bookkeeping => &[LES_BUNT, BOKFORING_BUNT],
             Self::Admin => &[LES_BUNT, BOKFORING_BUNT, ADMIN_BUNT],
         }
     }
 
     /// Whether the role has the rettighet, directly or because another
     /// rettighet implies it.
-    pub fn har(self, rett: Rett) -> bool {
+    pub fn has(self, right: Right) -> bool {
         self.bunter()
             .iter()
             .flat_map(|b| b.iter())
-            .any(|r| *r == rett || r.medforer().contains(&rett))
+            .any(|r| *r == right || r.implies().contains(&right))
     }
 
     /// Every rettighet the role actually grants, implications included.
     /// The portal uses this to show what a role means (#61).
-    pub fn rettigheter(self) -> Vec<Rett> {
-        let mut ut: Vec<Rett> = self
+    pub fn rights(self) -> Vec<Right> {
+        let mut ut: Vec<Right> = self
             .bunter()
             .iter()
             .flat_map(|b| b.iter())
-            .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied()))
+            .flat_map(|r| std::iter::once(*r).chain(r.implies().iter().copied()))
             .collect();
         ut.sort();
         ut.dedup();
@@ -855,11 +863,11 @@ impl Rolle {
 /// hours if we picked just one role. Once roles become custom (#60) the
 /// union is moreover the only rule that still makes sense.
 #[derive(Debug, Clone)]
-pub struct Tilgang {
-    roller: Vec<Rolle>,
+pub struct Access {
+    roles: Vec<Role>,
     /// Rettigheter from the company's OWN roles (#60), already filtered
     /// against the vocabulary and against [`Rett::kan_delegeres`].
-    egendefinerte: Vec<Rett>,
+    egendefinerte: Vec<Right>,
     /// The caller got here as a machine (an `integration_grant`, #45).
     ///
     /// Since #101 an integration holds a REAL role — `admin` included,
@@ -871,55 +879,55 @@ pub struct Tilgang {
     maskin: bool,
 }
 
-impl Tilgang {
-    pub fn har(&self, rett: Rett) -> bool {
-        if self.maskin && !rett.kan_delegeres() {
+impl Access {
+    pub fn has(&self, right: Right) -> bool {
+        if self.maskin && !right.can_be_delegated() {
             return false;
         }
         // The implication (`_ALLE` medfører `_EGNE`) is a property of the
         // rettighet, not of the role kind — a custom role holding
         // TIMER_SKRIV_ALLE can correct everyone's hours and therefore
         // also its own, whether or not the admin ticked both boxes.
-        self.roller.iter().any(|r| r.har(rett))
+        self.roles.iter().any(|r| r.has(right))
             || self
                 .egendefinerte
                 .iter()
-                .any(|r| *r == rett || r.medforer().contains(&rett))
+                .any(|r| *r == right || r.implies().contains(&right))
     }
 
     /// Whether this is a machine caller — the attestering policy and the
     /// portal both want to know.
-    pub fn er_maskin(&self) -> bool {
+    pub fn is_machine(&self) -> bool {
         self.maskin
     }
 
-    pub fn er_admin(&self) -> bool {
-        self.roller.iter().any(|r| r.er_admin())
+    pub fn is_admin(&self) -> bool {
+        self.roles.iter().any(|r| r.is_admin())
     }
 
     /// The role names, strongest first — for display and logging, never
     /// for deciding access.
-    pub fn roller(&self) -> Vec<&'static str> {
-        self.roller.iter().map(|r| r.slug()).collect()
+    pub fn roles(&self) -> Vec<&'static str> {
+        self.roles.iter().map(|r| r.slug()).collect()
     }
 
     /// Every rettighet the person holds, as slugs — implications
     /// included, sorted and deduplicated. `/me` carries this so the
     /// portal can show only controls that will succeed; DISPLAY ONLY,
     /// the guard below remains the enforcement.
-    pub fn rettighet_slugs(&self) -> Vec<&'static str> {
+    pub fn right_slugs(&self) -> Vec<&'static str> {
         let mut ut: Vec<&'static str> = self
-            .roller
+            .roles
             .iter()
-            .flat_map(|r| r.rettigheter())
+            .flat_map(|r| r.rights())
             .chain(
                 self.egendefinerte
                     .iter()
-                    .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied())),
+                    .flat_map(|r| std::iter::once(*r).chain(r.implies().iter().copied())),
             )
             // Same filter as `har`, or `/me` would promise a machine
             // controls that are going to fail.
-            .filter(|r| !self.maskin || r.kan_delegeres())
+            .filter(|r| !self.maskin || r.can_be_delegated())
             .map(|r| r.slug())
             .collect();
         ut.sort_unstable();
@@ -931,11 +939,11 @@ impl Tilgang {
 /// Builds the person's [`Tilgang`] for one company without requiring any
 /// particular rettighet — `None` when they have no access at all. `/me`
 /// uses this; every guarded endpoint goes through [`krev`].
-pub async fn slaa_opp(
+pub async fn lookup(
     state: &AppState,
     person_id: Uuid,
     company_id: Uuid,
-) -> Result<Option<Tilgang>, ApiError> {
+) -> Result<Option<Access>, ApiError> {
     // `company_access_for_person` rather than `company_roles`, because
     // the route in (`via`) decides the machine ceiling below and comes
     // out of the same single query — no extra cost on the hot path.
@@ -952,11 +960,11 @@ pub async fn slaa_opp(
     let mut navn: Vec<String> = tilganger.into_iter().map(|a| a.access).collect();
     navn.sort();
     navn.dedup();
-    let roller: Vec<Rolle> = navn.iter().map(|s| Rolle::fra_db(s)).collect();
+    let roles: Vec<Role> = navn.iter().map(|s| Role::from_db(s)).collect();
     let ukjente: Vec<String> = navn
         .iter()
-        .zip(&roller)
-        .filter(|(_, r)| **r == Rolle::Ukjent)
+        .zip(&roles)
+        .filter(|(_, r)| **r == Role::Ukjent)
         .map(|(n, _)| n.clone())
         .collect();
     let egendefinerte = if ukjente.is_empty() {
@@ -965,12 +973,12 @@ pub async fn slaa_opp(
         regnmed_db::roles::rettigheter_for(&state.pool, company_id, &ukjente)
             .await?
             .iter()
-            .filter_map(|s| Rett::fra_slug(s))
-            .filter(|r| r.kan_delegeres())
+            .filter_map(|s| Right::from_slug(s))
+            .filter(|r| r.can_be_delegated())
             .collect()
     };
-    Ok(Some(Tilgang {
-        roller,
+    Ok(Some(Access {
+        roles,
         egendefinerte,
         maskin,
     }))
@@ -981,29 +989,29 @@ pub async fn slaa_opp(
 /// **An unknown company and missing access both give 404.** Someone
 /// without access must not learn that the company exists; that is the
 /// same rule as everywhere else in the API (docs/auth.md).
-pub async fn krev(
+pub async fn require(
     state: &AppState,
     person_id: Uuid,
     company_id: Uuid,
-    rett: Rett,
-) -> Result<Tilgang, ApiError> {
+    right: Right,
+) -> Result<Access, ApiError> {
     // Names that are not built-in may be the company's own roles (the
     // lookup in `slaa_opp` only costs an extra query then). A name the
     // database carries but the code does not know grants nothing — and a
     // rettighet that cannot be delegated stays inert even if it had
     // somehow found its way into the table.
-    let Some(tilgang) = slaa_opp(state, person_id, company_id).await? else {
+    let Some(tilgang) = lookup(state, person_id, company_id).await? else {
         return Err(ApiError::NotFound);
     };
-    if !tilgang.har(rett) {
-        return Err(ApiError::Forbidden(manglende(rett)));
+    if !tilgang.has(right) {
+        return Err(ApiError::Forbidden(manglende(right)));
     }
 
     // The abonnement block (#65, docs/abonnement.md) — AFTER the access
     // check, so an outsider still gets 404 and never learns anything
     // about the company's abonnement. Only changing rettigheter
     // costs the lookup; reading and export always go through.
-    if rett.endrer() && regnmed_db::subscription::blocked(&state.pool, company_id).await? {
+    if right.mutates() && regnmed_db::subscription::blocked(&state.pool, company_id).await? {
         return Err(ApiError::Forbidden(
             "abonnementet er utløpt — lesing og eksport virker som før, men endringer er sperret til abonnementet er i orden (docs/abonnement.md)",
         ));
@@ -1014,9 +1022,9 @@ pub async fn krev(
 /// The error message names the missing rettighet. Whoever gets a 403
 /// should be able to tell their admin what they need, without us having
 /// to dig through the log.
-fn manglende(rett: Rett) -> &'static str {
+fn manglende(right: Right) -> &'static str {
     // ApiError::Forbidden carries &'static str, so the slug is used directly.
-    rett.slug()
+    right.slug()
 }
 
 /// Unit tests for the vocabulary.
@@ -1040,13 +1048,13 @@ mod tests {
     /// bundle, it comes from `UTLEGG_LES_ALLE`. Without that expansion
     /// the completeness test would fail on rettigheter no bundle names
     /// directly.
-    fn every_rettighet() -> Vec<Rett> {
-        let mut v: Vec<Rett> = LES_BUNT
+    fn every_rettighet() -> Vec<Right> {
+        let mut v: Vec<Right> = LES_BUNT
             .iter()
-            .chain(REVISOR_BUNT)
+            .chain(AUDITOR_BUNDLE)
             .chain(BOKFORING_BUNT)
             .chain(ADMIN_BUNT)
-            .flat_map(|r| std::iter::once(*r).chain(r.medforer().iter().copied()))
+            .flat_map(|r| std::iter::once(*r).chain(r.implies().iter().copied()))
             .collect();
         v.sort();
         v.dedup();
@@ -1074,7 +1082,7 @@ mod tests {
     #[test]
     fn the_ansatt_bundle_uses_only_known_rettigheter() {
         let kjente: std::collections::BTreeSet<_> = every_rettighet().into_iter().collect();
-        for r in ANSATT_BUNT {
+        for r in EMPLOYEE_BUNDLE {
             assert!(
                 kjente.contains(r),
                 "{} finnes ikke i noen nivåbunt",
@@ -1086,38 +1094,38 @@ mod tests {
     /// The most important thing about the ansatt role is what it does NOT give.
     #[test]
     fn an_ansatt_cannot_reach_the_hovedbok() {
-        let a = Rolle::Ansatt;
+        let a = Role::Employee;
         for nektet in [
-            Rett::BilagLes,
-            Rett::BilagBokfor,
-            Rett::RapportLes,
-            Rett::FakturaLes,
-            Rett::FakturaSkriv,
-            Rett::BankLes,
-            Rett::ReskontroLes,
-            Rett::BetalingLes,
-            Rett::LonnLes,
-            Rett::LonnsslippLesAlle,
-            Rett::TimerLesAlle,
-            Rett::TimerRapportLes,
-            Rett::UtleggLesAlle,
-            Rett::UtleggGodkjenn,
-            Rett::SelskapLes,
-            Rett::MedlemAdmin,
+            Right::VoucherRead,
+            Right::VoucherPost,
+            Right::ReportRead,
+            Right::InvoiceRead,
+            Right::InvoiceWrite,
+            Right::BankRead,
+            Right::SubledgerRead,
+            Right::PaymentRead,
+            Right::PayrollRead,
+            Right::PayslipReadAll,
+            Right::TimesheetReadAll,
+            Right::TimesheetReportRead,
+            Right::ExpenseReadAll,
+            Right::ExpenseApprove,
+            Right::CompanyRead,
+            Right::MemberAdmin,
         ] {
-            assert!(!a.har(nektet), "ansatt skulle ikke hatt {}", nektet.slug());
+            assert!(!a.has(nektet), "ansatt skulle ikke hatt {}", nektet.slug());
         }
         // And what it SHALL have.
         for gitt in [
-            Rett::TimerLesEgne,
-            Rett::TimerSkrivEgne,
-            Rett::UtleggSkrivEgne,
-            Rett::UtleggLesEgne,
-            Rett::LonnsslippLesEgen,
-            Rett::BilagLastOpp,
-            Rett::DimensjonLes,
+            Right::TimesheetReadOwn,
+            Right::TimesheetWriteOwn,
+            Right::ExpenseWriteOwn,
+            Right::ExpenseReadOwn,
+            Right::PayslipReadOwn,
+            Right::VoucherUpload,
+            Right::DimensionRead,
         ] {
-            assert!(a.har(gitt), "ansatt mangler {}", gitt.slug());
+            assert!(a.has(gitt), "ansatt mangler {}", gitt.slug());
         }
     }
 
@@ -1139,15 +1147,15 @@ mod tests {
     #[test]
     fn the_built_in_roles_are_nested() {
         for r in every_rettighet() {
-            if Rolle::Les.har(r) {
-                assert!(Rolle::Revisor.har(r), "revisor mangler {}", r.slug());
-                assert!(Rolle::Bokforing.har(r), "bokforing mangler {}", r.slug());
+            if Role::Read.has(r) {
+                assert!(Role::Auditor.has(r), "revisor mangler {}", r.slug());
+                assert!(Role::Bookkeeping.has(r), "bokforing mangler {}", r.slug());
             }
-            if Rolle::Revisor.har(r) {
-                assert!(Rolle::Bokforing.har(r), "bokforing mangler {}", r.slug());
+            if Role::Auditor.has(r) {
+                assert!(Role::Bookkeeping.has(r), "bokforing mangler {}", r.slug());
             }
-            if Rolle::Bokforing.har(r) {
-                assert!(Rolle::Admin.har(r), "admin mangler {}", r.slug());
+            if Role::Bookkeeping.has(r) {
+                assert!(Role::Admin.has(r), "admin mangler {}", r.slug());
             }
         }
     }
@@ -1160,20 +1168,20 @@ mod tests {
     #[test]
     fn the_bundles_reproduce_the_old_levels_exactly() {
         for r in LES_BUNT {
-            assert!(Rolle::Les.har(*r), "les mangler {}", r.slug());
+            assert!(Role::Read.has(*r), "les mangler {}", r.slug());
         }
         for r in BOKFORING_BUNT {
-            assert!(!Rolle::Les.har(*r), "les skulle ikke hatt {}", r.slug());
-            assert!(Rolle::Bokforing.har(*r), "bokforing mangler {}", r.slug());
+            assert!(!Role::Read.has(*r), "les skulle ikke hatt {}", r.slug());
+            assert!(Role::Bookkeeping.has(*r), "bokforing mangler {}", r.slug());
         }
         for r in ADMIN_BUNT {
-            assert!(!Rolle::Les.har(*r), "les skulle ikke hatt {}", r.slug());
+            assert!(!Role::Read.has(*r), "les skulle ikke hatt {}", r.slug());
             assert!(
-                !Rolle::Bokforing.har(*r),
+                !Role::Bookkeeping.has(*r),
                 "bokforing skulle ikke hatt {}",
                 r.slug()
             );
-            assert!(Rolle::Admin.har(*r), "admin mangler {}", r.slug());
+            assert!(Role::Admin.has(*r), "admin mangler {}", r.slug());
         }
     }
 
@@ -1183,24 +1191,28 @@ mod tests {
     /// slips.
     #[test]
     fn alle_implies_egne() {
-        assert!(Rett::TimerLesAlle.medforer().contains(&Rett::TimerLesEgne));
         assert!(
-            Rett::TimerSkrivAlle
-                .medforer()
-                .contains(&Rett::TimerSkrivEgne)
+            Right::TimesheetReadAll
+                .implies()
+                .contains(&Right::TimesheetReadOwn)
+        );
+        assert!(
+            Right::TimesheetWriteAll
+                .implies()
+                .contains(&Right::TimesheetWriteOwn)
         );
         // Admin has _ALLE and therefore gets _EGNE without it being in the bundle.
-        assert!(!ADMIN_BUNT.contains(&Rett::TimerSkrivEgne));
-        assert!(Rolle::Admin.har(Rett::TimerSkrivEgne));
+        assert!(!ADMIN_BUNT.contains(&Right::TimesheetWriteOwn));
+        assert!(Role::Admin.has(Right::TimesheetWriteOwn));
         // And it does not hold the other way: own does not give everyone's.
-        assert!(!Rolle::Bokforing.har(Rett::TimerSkrivAlle));
-        assert!(Rolle::Bokforing.har(Rett::TimerSkrivEgne));
+        assert!(!Role::Bookkeeping.has(Right::TimesheetWriteAll));
+        assert!(Role::Bookkeeping.has(Right::TimesheetWriteOwn));
     }
 
     #[test]
     fn the_role_round_trips_against_the_database_values() {
         for slug in ["admin", "bokforing", "les", "ansatt", "revisor"] {
-            assert_eq!(Rolle::fra_db(slug).slug(), slug);
+            assert_eq!(Role::from_db(slug).slug(), slug);
         }
     }
 
@@ -1213,9 +1225,9 @@ mod tests {
     #[test]
     fn an_unknown_role_grants_no_rettigheter() {
         for ukjent in ["superbruker", "", "Ansatt", "LES"] {
-            let r = Rolle::fra_db(ukjent);
-            assert_eq!(r, Rolle::Ukjent, "«{ukjent}»");
-            assert!(r.rettigheter().is_empty(), "«{ukjent}» ga rettigheter");
+            let r = Role::from_db(ukjent);
+            assert_eq!(r, Role::Ukjent, "«{ukjent}»");
+            assert!(r.rights().is_empty(), "«{ukjent}» ga rettigheter");
         }
     }
 
@@ -1224,30 +1236,30 @@ mod tests {
     /// has an audit duty that requires the lønn data.
     #[test]
     fn a_revisor_sees_lonn_but_an_internal_reader_does_not() {
-        for rett in [Rett::LonnLes, Rett::LonnsslippLesAlle] {
-            assert!(Rolle::Revisor.har(rett), "revisor mangler {}", rett.slug());
+        for right in [Right::PayrollRead, Right::PayslipReadAll] {
+            assert!(Role::Auditor.has(right), "revisor mangler {}", right.slug());
             assert!(
-                !Rolle::Les.har(rett),
+                !Role::Read.has(right),
                 "les skulle ikke hatt {}",
-                rett.slug()
+                right.slug()
             );
             assert!(
-                !Rolle::Ansatt.har(rett),
+                !Role::Employee.has(right),
                 "ansatt skulle ikke hatt {}",
-                rett.slug()
+                right.slug()
             );
             assert!(
-                Rolle::Bokforing.har(rett),
+                Role::Bookkeeping.has(right),
                 "bokforing mangler {}",
-                rett.slug()
+                right.slug()
             );
         }
         // A revisor is otherwise exactly a reader — and writes nothing.
-        assert!(Rolle::Revisor.har(Rett::RapportLes));
-        assert!(!Rolle::Revisor.har(Rett::BilagBokfor));
-        assert!(!Rolle::Revisor.har(Rett::LonnKjor));
+        assert!(Role::Auditor.has(Right::ReportRead));
+        assert!(!Role::Auditor.has(Right::VoucherPost));
+        assert!(!Role::Auditor.has(Right::PayrollRun));
         // Their own slip belongs to every employee, independently of this.
-        assert!(Rolle::Ansatt.har(Rett::LonnsslippLesEgen));
+        assert!(Role::Employee.has(Right::PayslipReadOwn));
     }
 
     /// Every rettighet must have an explanation and a group. Without the
@@ -1255,36 +1267,36 @@ mod tests {
     /// text — and a checkbox without an explanation is worse than no box.
     #[test]
     fn every_rettighet_has_a_description_and_a_group() {
-        for r in Rett::ALLE {
+        for r in Right::ALLE {
             assert!(
-                !r.beskrivelse().is_empty(),
+                !r.description().is_empty(),
                 "{} mangler forklaring",
                 r.slug()
             );
-            assert!(!r.gruppe().is_empty(), "{} mangler gruppe", r.slug());
+            assert!(!r.group().is_empty(), "{} mangler gruppe", r.slug());
             // The description is for a human, not the slug again.
-            assert_ne!(r.beskrivelse(), r.slug(), "{}", r.slug());
+            assert_ne!(r.description(), r.slug(), "{}", r.slug());
         }
     }
 
     /// The slug must read back — it is what #60 stores.
     #[test]
     fn the_slug_round_trips() {
-        for r in Rett::ALLE {
-            assert_eq!(Rett::fra_slug(r.slug()), Some(*r), "{}", r.slug());
+        for r in Right::ALLE {
+            assert_eq!(Right::from_slug(r.slug()), Some(*r), "{}", r.slug());
         }
-        assert_eq!(Rett::fra_slug("FAKTURA_ALT"), None);
-        assert_eq!(Rett::fra_slug(""), None);
+        assert_eq!(Right::from_slug("FAKTURA_ALT"), None);
+        assert_eq!(Right::from_slug(""), None);
     }
 
     /// The rettighet list the portal shows must be complete and sorted
     /// without duplicates, including what is implied.
     #[test]
     fn the_rettighet_list_is_complete() {
-        let admin = Rolle::Admin.rettigheter();
+        let admin = Role::Admin.rights();
         assert_eq!(admin.len(), every_rettighet().len());
-        let les = Rolle::Les.rettigheter();
-        assert!(les.contains(&Rett::TimerLesEgne));
-        assert!(!les.contains(&Rett::TimerLesAlle));
+        let les = Role::Read.rights();
+        assert!(les.contains(&Right::TimesheetReadOwn));
+        assert!(!les.contains(&Right::TimesheetReadAll));
     }
 }

@@ -24,8 +24,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
     json!({
@@ -57,7 +57,7 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
     Query(query): Query<OppgaveQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     // A machine sees its own queue; a human sees everything, which is
     // the point of having given the orders.
     let for_integration = person.integration.as_ref().map(|i| i.id);
@@ -87,7 +87,13 @@ pub async fn opprett(
     Path(company_id): Path<Uuid>,
     Json(request): Json<NyOppgave>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::IntegrationAdmin,
+    )
+    .await?;
     let id = regnmed_db::agent_task::opprett_oppgave(
         &state.pool,
         company_id,
@@ -107,7 +113,7 @@ pub async fn hent(
     person: AuthPerson,
     Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -145,7 +151,7 @@ pub async fn svar(
     Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<Svar>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let tilgang = krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
+    let tilgang = require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
     let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -162,7 +168,7 @@ pub async fn svar(
         // A human closing or withdrawing an order is administering a
         // machine's access to the books, so it takes that rettighet.
         None => {
-            if !tilgang.har(Rett::IntegrasjonAdmin) {
+            if !tilgang.has(Right::IntegrationAdmin) {
                 return Err(ApiError::Forbidden("INTEGRASJON_ADMIN"));
             }
         }

@@ -151,7 +151,7 @@ fn interpret(text: &str) -> Outcome {
 /// the closing markers [`interpret`] reads cannot be talked away.
 ///
 /// What the order does NOT do is decide access. Whatever an owner
-/// writes here, the role on the grant is what `tilgang::krev` enforces
+/// writes here, the role on the grant is what `access::krev` enforces
 /// on every call the agent makes, so the worst a bad instruction can do
 /// is make the agent attempt things it will be refused.
 fn system_prompt(role_name: &str, ekstra: Option<&str>) -> String {

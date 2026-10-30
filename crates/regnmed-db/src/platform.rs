@@ -3,7 +3,7 @@
 //! This is the deliberately bounded exception to "no access path crosses a
 //! company boundary". A platform role reaches administrative master data —
 //! persons, memberships, customer registers — and NOTHING in any company's
-//! ledger. The company-scoped guard (`tilgang::krev`) and the access
+//! ledger. The company-scoped guard (`access::krev`) and the access
 //! resolution in `tenancy.rs` are untouched by design: a platform member
 //! without an ordinary membership is still a stranger to every company's
 //! vouchers, balances and reports.

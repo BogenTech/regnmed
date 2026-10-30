@@ -23,9 +23,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct UploadQuery {
@@ -45,7 +45,7 @@ pub async fn create_utlegg(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggSkrivEgne).await?;
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -84,7 +84,7 @@ pub async fn create_kjoring(
     Path(company_id): Path<Uuid>,
     Json(request): Json<KjoringRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggSkrivEgne).await?;
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let (id, amount_ore, trekkpliktig_ore) = regnmed_db::create_kjoring(
         &state.pool,
@@ -112,8 +112,8 @@ pub async fn list(
     // En ansatt ser sine egne krav; alle andre ser selskapets. Omfanget
     // decided by the rettighet, not by the role — then it moves by
     // itself when roles are recomposed (#60).
-    let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
-    let bare_egne = !rolle.har(Rett::UtleggLesAlle);
+    let rolle = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
+    let bare_egne = !rolle.has(Right::ExpenseReadAll);
     let expenses =
         regnmed_db::list_expenses(&state.pool, company_id, person.person_id, bare_egne).await?;
     Ok(Json(json!({
@@ -141,8 +141,8 @@ pub async fn receipt(
     person: AuthPerson,
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    let rolle = krev(&state, person.person_id, company_id, Rett::UtleggLesEgne).await?;
-    if !rolle.har(Rett::UtleggLesAlle) {
+    let rolle = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
+    if !rolle.has(Right::ExpenseReadAll) {
         // The receipt is a picture of something private. Without
         // UTLEGG_LES_ALLE you get only your own — and a claim belonging
         // to someone else must answer as though it does not exist.
@@ -189,7 +189,7 @@ pub async fn approve(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<ApproveRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggGodkjenn).await?;
+    require(&state, person.person_id, company_id, Right::ExpenseApprove).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let kind: Option<String> =
         sqlx::query_scalar("select kind from expense where id = $1 and company_id = $2")
@@ -233,7 +233,7 @@ pub async fn reject(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RejectRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggGodkjenn).await?;
+    require(&state, person.person_id, company_id, Right::ExpenseApprove).await?;
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::reject_expense(
         &state.pool,
@@ -262,7 +262,7 @@ pub async fn pay(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<PayRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::UtleggUtbetal).await?;
+    require(&state, person.person_id, company_id, Right::ExpensePay).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let date = match request.date {
         Some(d) => d,

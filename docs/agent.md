@@ -27,7 +27,7 @@ de samme som for et menneske. Tilbakekalling er én `valid_to` unna og
 virker i samme øyeblikk.
 
 Det ene en maskin aldri får, uansett rolle, er en rettighet som styrer
-**hvem som har tilgang** (`Rett::kan_delegeres`). Den gjør jobben, men
+**hvem som har tilgang** (`Right::can_be_delegated`). Den gjør jobben, men
 utvider ikke tilgang — heller ikke sin egen.
 
 ## 2. MCP-serveren er transport, ikke autorisasjon
@@ -234,7 +234,7 @@ til en agent».
 | `null` i et argument droppes framfor å bli sendt | `regnmed-mcp` (enhetstester) |
 
 De to tilgangsvaktene er **sett feile**: med `maskin`-filteret fjernet
-fra `Tilgang::har` inviterer roboten medlemmer inn i selskapet, og med
+fra `Access::has` inviterer roboten medlemmer inn i selskapet, og med
 `maskinkrav` fjernet fra bokføringstransaksjonen bokfører agenten et
 49-kroners bilag uten at noen har sett det.
 
@@ -289,7 +289,7 @@ hele tatt, er den det eneste riktige svaret.
 Den dyre halvdelen av «agent som ansatt» var aldri praten — den var å
 gjøre en robot trygg å gi ekte tilgang. Den er bygget og i drift:
 rollen på `integration_grant` (#101), maskintaket
-(`Rett::kan_delegeres`), `krev_for_maskin` i attesteringen, 33 kuraterte
+(`Right::can_be_delegated`), `krev_for_maskin` i attesteringen, 33 kuraterte
 verktøy med JSON Schema (`VERKTOY`) og fire rolleprompter skrevet for
 små modeller (`rolle.rs`). En vertsagent arver alt dette uendret, fordi
 håndhevingen ligger i transaksjonene og i tilgangsoppslaget — ikke i
@@ -691,7 +691,7 @@ kunden måtte forstå.
 
 Mest av alt dette: **agenten har fortsatt sin egen identitet.** Den
 henter token som seg selv, med `client_credentials`, og går gjennom
-`integration_grant`, maskintaket (`Rett::kan_delegeres`) og
+`integration_grant`, maskintaket (`Right::can_be_delegated`) og
 attesteringsreglene som før. Snarveien vi vurderte og forkastet —
 ÉN privilegert legitimasjon som workeren bruker til å opptre som hvilken
 som helst agent — ville gjort én lekkasje til alle agenter i alle
@@ -740,7 +740,7 @@ instruksene spesialisere («strøm bokføres på 6340», «spør Aud ved tvil»)
 uten å fortrenge hverken rollens regler eller markørene `tolk()` leser.
 
 Den betyr IKKE noe for tilgang. Hva en eier enn skriver her, er rollen
-på grantet det `tilgang::krev` håndhever på hvert kall agenten gjør: det
+på grantet det `access::require` håndhever på hvert kall agenten gjør: det
 verste en dårlig instruks får til er en agent som prøver ting den blir
 nektet. Grensen ligger i oppslaget, aldri i prompten.
 

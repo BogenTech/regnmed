@@ -19,15 +19,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 pub async fn list_access(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
     Ok(Json(json!({
         "medlemmer": medlemmer.iter().map(|m| json!({
@@ -55,7 +55,7 @@ pub struct RolleRequest {
 /// without any rettigheter — safe, but completely baffling to the person
 /// concerned.
 async fn krev_kjent_rolle(state: &AppState, company_id: Uuid, rolle: &str) -> Result<(), ApiError> {
-    if regnmed_db::members::ROLLER.contains(&rolle) {
+    if regnmed_db::members::ROLES.contains(&rolle) {
         return Ok(());
     }
     if regnmed_db::roles::finnes(&state.pool, company_id, rolle).await? {
@@ -72,7 +72,7 @@ pub async fn set_role(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     krev_kjent_rolle(&state, company_id, &request.rolle).await?;
     regnmed_db::members::sett_rolle(
         &state.pool,
@@ -91,7 +91,7 @@ pub async fn revoke_access(
     person: AuthPerson,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
@@ -110,7 +110,7 @@ pub async fn restore_access(
     person: AuthPerson,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
@@ -129,7 +129,7 @@ pub async fn access_history(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let rader = regnmed_db::members::tilgangshistorikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
@@ -150,7 +150,7 @@ pub async fn list_invitations(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let rader = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
     Ok(Json(json!({
         "invitasjoner": rader.iter().map(|i| json!({
@@ -186,10 +186,10 @@ pub async fn invite(
     Path(company_id): Path<Uuid>,
     Json(request): Json<InviteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     krev_kjent_rolle(&state, company_id, &request.rolle).await?;
     if request.employee_id.is_some() {
-        krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
+        require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     }
     let id = regnmed_db::members::inviter(
         &state.pool,
@@ -221,7 +221,7 @@ pub async fn revoke_invitation(
     person: AuthPerson,
     Path((company_id, invitasjon_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     regnmed_db::members::tilbakekall_invitasjon(
         &state.pool,
         company_id,

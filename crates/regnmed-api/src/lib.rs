@@ -1,6 +1,7 @@
 //! HTTP API for regnmed. Library crate so integration tests can build the
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
+pub mod access;
 pub mod accrual;
 pub mod agent_task;
 pub mod anchor;
@@ -44,7 +45,6 @@ pub mod salgsdokument;
 pub mod settings;
 pub mod share_register;
 pub mod subscription;
-pub mod tilgang;
 pub mod timesheet;
 pub mod year_end;
 
@@ -969,12 +969,12 @@ async fn me(
     // Rettighetene per selskap, so the portal can show only controls
     // that will succeed. DISPLAY ONLY — the server's guard decides, the
     // portal just stops offering buttons that would 403 (docs/auth.md).
-    let mut rettigheter = std::collections::HashMap::new();
+    let mut rights = std::collections::HashMap::new();
     for a in &access {
-        if let std::collections::hash_map::Entry::Vacant(e) = rettigheter.entry(a.company_id) {
-            let slugs = tilgang::slaa_opp(&state, person.person_id, a.company_id)
+        if let std::collections::hash_map::Entry::Vacant(e) = rights.entry(a.company_id) {
+            let slugs = access::lookup(&state, person.person_id, a.company_id)
                 .await?
-                .map(|t| t.rettighet_slugs())
+                .map(|t| t.right_slugs())
                 .unwrap_or_default();
             e.insert(slugs);
         }
@@ -999,7 +999,7 @@ async fn me(
                 "access": a.access,
                 "via": a.via,
                 "abonnement": subscription.get(&a.company_id),
-                "rettigheter": rettigheter.get(&a.company_id),
+                "rettigheter": rights.get(&a.company_id),
             }))
             .collect::<Vec<_>>(),
     })))

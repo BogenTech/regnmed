@@ -77,12 +77,12 @@ unionen.
 ## 3. Vakten
 
 Hvert selskapsavgrenset endepunkt går gjennom **én** vakt,
-`regnmed_api::tilgang::krev` — det eneste stedet i API-et som slår opp
+`regnmed_api::access::require` — det eneste stedet i API-et som slår opp
 tilgang. Endepunktet sier hvilken **rettighet** handlingen krever, ikke
 hvem som får gjøre den:
 
 ```rust
-krev(&state, person.person_id, company_id, Rett::FakturaSkriv).await?;
+require(&state, person.person_id, company_id, Right::InvoiceWrite).await?;
 ```
 
 `krev` returnerer personens samlede tilgang, så en handler som trenger
@@ -108,7 +108,7 @@ søm ingen kan glemme.
 #59 var tilgang tre nivåer (`admin` > `bokforing` > `les`), lett å
 forstå og umulig å bøye: enten så du hele hovedboken, eller ingenting.
 
-Vokabularet er en **enum i koden** (`regnmed_api::tilgang::Rett`), ikke
+Vokabularet er en **enum i koden** (`regnmed_api::access::Right`), ikke
 fritekst i databasen: et endepunkt kan ikke kreve en rettighet som ikke
 finnes, og kompilatoren finner alle stedene når en rettighet endrer
 navn. Navnene er norske, som resten av domenet — `FAKTURA_LES`, ikke
@@ -152,7 +152,7 @@ måtte migreres.
 | `admin` | `bokforing` + å styre selskapet og hvem som slipper inn |
 
 Hver innebygd rolle bærer også en **forklaring i klartekst**
-(`Rolle::beskrivelse()`, #79) som serveres på `/roles` — én kopi, rett
+(`Role::description()`, #79) som serveres på `/roles` — én kopi, rett
 ved buntene som gjør den sann, vist både i rollekortet og i
 invitasjonsveiledningen. En test krever at ingen innebygd rolle står
 uten forklaring.
@@ -191,12 +191,12 @@ regnskapet må uansett se lønn for å bokføre den. Et selskap som vil ha
 ## 5. Matrisen
 
 Hele vokabularet, og hva hver innebygd rolle gir. **Tabellen er
-maskinsjekket** — `crates/regnmed-api/tests/grupper/matrise.rs` genererer den fra
-`Rolle` og `Rett` og feiler hvis dokumentet ikke stemmer. En
+maskinsjekket** — `crates/regnmed-api/tests/grupper/matrix.rs` genererer den fra
+`Role` og `Right` og feiler hvis dokumentet ikke stemmer. En
 tilgangstabell som er blitt feil er verre enn ingen tabell: den blir
 sitert i en revisjon, og ingen leser koden for å kontrollere den.
 
-<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrise.rs -->
+<!-- MATRISE: generert av crates/regnmed-api/tests/grupper/matrix.rs -->
 
 | Rettighet | Hva den gir | ansatt | les | revisor | bokforing | admin |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -302,7 +302,7 @@ Et selskap setter sammen sine egne roller av rettighetene som finnes:
 `company_member.role` peker på navnet.
 
 **De innebygde rollene ligger IKKE i databasen.** De er definert i
-`regnmed-api::tilgang` og blir der. To definisjoner av det samme er to
+`regnmed-api::access` og blir der. To definisjoner av det samme er to
 steder å drive fra hverandre, og et regnskapssystem har ikke råd til at
 tilgang betyr én ting i koden og en annen i basen. Tabellen holder bare
 det selskapet har funnet på selv; portalen får de innebygde beskrevet
@@ -316,7 +316,7 @@ ekte.
 **Rettigheter som styrer hvem som har tilgang kan ikke delegeres.**
 `MEDLEM_ADMIN`, `SELSKAP_ADMIN`, `OPPDRAG_ADMIN` og `INTEGRASJON_ADMIN`
 er utenfor rekkevidde for en egendefinert rolle
-([`Rett::kan_delegeres`]) — en rolle som kan endre tilganger kan gi seg
+([`Right::can_be_delegated`]) — en rolle som kan endre tilganger kan gi seg
 selv alt annet, og da er resten av avgrensningen bare pynt. Avvist når
 rollen lages, ikke bare ignorert ved oppslag.
 
@@ -340,7 +340,7 @@ annen forespørsel. Nå ser oppslaget alltid enten den gamle eller den nye
 listen. Rollen låses (`for update`) før listen skrives om, ellers ville
 to samtidige endringer begge slettet den gamle og sluppet igjennom hver
 sin — altså unionen, som er mer tilgang enn noen av dem ba om. Testene
-står i `tests/grupper/tilgang.rs` og er sett feile uten rettingen.
+står i `tests/grupper/access.rs` og er sett feile uten rettingen.
 
 Integrasjoner går gjennom samme oppslag, så en maskin kan få en
 egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
@@ -352,7 +352,7 @@ egendefinert rolle og dermed nøyaktig `FAKTURA_LES` og ingenting mer.
 > strengest der brukeren er mest hjelpeløs — en ny kunde står foran
 > migreringen, den vanskeligste oppgaven i systemet, og det var nettopp
 > der ingen agent slapp til. Grensen som BESTÅR er
-> `Rett::kan_delegeres`: en maskin kan gjøre jobben, men aldri utvide
+> `Right::can_be_delegated`: en maskin kan gjøre jobben, men aldri utvide
 > sin egen eller andres tilgang. Teksten under blir stående til #101 er
 > implementert, slik at koden og dokumentet sier det samme så lenge
 > `integration_grant.access` fortsatt er `les`/`bokforing`.
@@ -461,7 +461,7 @@ den delen som betyr mest: en omskrevet hovedbok kan bevises, uansett
 hvem som skrev.
 
 Avgjørelsen er festet i test, ikke bare i tekst:
-`an_admin_crosses_no_company_boundary` i `tests/grupper/tilgang.rs` viser at den
+`an_admin_crosses_no_company_boundary` i `tests/grupper/access.rs` viser at den
 sterkeste selskapsrollen som finnes er en fullstendig fremmed i
 naboselskapet — 404 på lesing, skriving og administrasjon, og `/me`
 nevner ikke selskapet. Og
@@ -478,7 +478,7 @@ plattformrolle når **administrative stamdata på tvers av selskaper og
 byråer** — personer, medlemskap, invitasjoner-i-praksis (tildeling av
 medlemskap) og kunderegistre — og ingenting i noen hovedbok. Alt den
 kan ligger under `/platform/*` på sin egen sub-router
-(`regnmed-api::platform`); tilgangsvakten `tilgang::krev` og
+(`regnmed-api::platform`); tilgangsvakten `access::require` og
 tenancy-oppslaget er uendret.
 
 To roller, lagret i `platform_member` (migrasjon 0049):
@@ -648,7 +648,7 @@ Tilgang er ett lag av flere, og de gjør forskjellige ting:
 | **Tilgang** (dette dokumentet) | hvem som får utføre en handling |
 | **Attestering** (docs/attestering.md) | en EKSTRA sperre oppå tilgang: at *en annen* har godkjent før bokføring eller betaling. Ikke en erstatning — den som attesterer må uansett ha tilgang |
 | **Periodelås / timelås** | tidssperrer, ikke tilgangssperrer: en admin med all verdens rettigheter kan ikke bokføre i en låst periode |
-| **Abonnementssperren** (docs/abonnement.md) | en betalingssperre, håndhevet i samme vakt: et sperret abonnement stopper endrende rettigheter (`Rett::endrer`), aldri lesing, eksport eller styringen av selskapet |
+| **Abonnementssperren** (docs/abonnement.md) | en betalingssperre, håndhevet i samme vakt: et sperret abonnement stopper endrende rettigheter (`Right::mutates`), aldri lesing, eksport eller styringen av selskapet |
 | **Append-only-hovedboken** (docs/ledger.md) | gjelder uansett rolle. En admin kan heller ikke endre eller slette et bilag — korreksjon er et reverserende bilag |
 | **Maskintaket** (#101, docs/agent.md) | en annen akse enn rollen: en integrasjon får aldri en rettighet som styrer hvem som har tilgang, uansett hvilken rolle eieren ga den |
 
@@ -665,7 +665,7 @@ innebygd eller selskapets eget, tildelt som til et medlem. Taket er
 flyttet fra tildelingen til **oppslaget**:
 
 ```rust
-// tilgang.rs — Tilgang::har
+// access.rs — Access::has
 if self.maskin && !rett.kan_delegeres() {
     return false;
 }
@@ -755,7 +755,7 @@ måtte lese koden — og et rutenett for selskapets egne.
 
 Rutenettet viser **hva rettigheten lar deg gjøre**, ikke slug-en: «Se
 alles timer», ikke `TIMER_LES_ALLE`. Teksten og grupperingen kommer fra
-`Rett::beskrivelse()` og `Rett::gruppe()` og serveres av API-et, så det
+`Right::description()` og `Right::group()` og serveres av API-et, så det
 finnes bare én liste — portalen har ingen egen kopi, og en ny rettighet
 kan ikke bli stående uten forklaring (egen test).
 
@@ -778,11 +778,11 @@ annet som fanger.
 | Fil | Hva den fester |
 | --- | --- |
 | `tests/grupper/me_endpoint.rs` | Identiteten: lokalt generert JWKS signerer ekte RS256-tokens, et byrå-med-oppdrag pluss et direkte medlemskap løses til nøyaktig forventet selskapsliste, og forfalskede/utløpte/feil-audience-tokens avvises |
-| `tests/grupper/tilgang.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
+| `tests/grupper/access.rs` | Tilgangsmatrisen mot en ekte server: at `les` ikke får endre noe, at `bokforing` ikke får administrere, at en ansatt ikke kommer til hovedboken, at lønn ikke er allmenn lesning, at en egendefinert rolle gir akkurat det den sier, at en utenforstående får 404 og ikke 403 — og at admin i ett selskap er en fullstendig fremmed i et annet (§8), inkludert at nødprosedyren krever referanse og navngir seg selv i sporet |
 | `tests/grupper/medlemmer.rs` | Hele livsløpet: invitasjon → innlogging → medlemskap, at svaret ikke røper om brukeren finnes, at siste admin ikke kan fjerne seg selv, at oppdragstilgang ikke kan endres herfra, og at sporet navngir hvem som ga hvem tilgang |
 | `tests/grupper/plattform.rs` | Plattformgrensen (§8) begge veier: en selskapsadmin er fremmed for `/platform`, en plattform-systemadmin får 404 på hovedbok/stamdata/administrasjon i ethvert selskap; hvert kall logges (også avviste) og loggen leses av selskapets admin men ikke av `les`; support får ikke kunderegistre, medlemsendringer eller plattformadministrasjon; tilbakekalling virker på neste forespørsel; tildelinger står med `kilde='plattform'` i selskapets egen logg |
-| `tests/grupper/matrise.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
-| `regnmed_api::tilgang` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |
+| `tests/grupper/matrix.rs` | At tabellen i §5 stemmer med koden, og at den dekker hele vokabularet |
+| `regnmed_api::access` sine enhetstester | At buntene ikke overlapper, at slug-ene er unike og går rundtur, at `_ALLE` medfører `_EGNE`, at hver rettighet har forklaring og gruppe, og at en ukjent rolleverdi gir **ingen** rettigheter |
 
 ### Tre feller, alle gått i under bygging
 
@@ -791,7 +791,7 @@ mens den målte ingenting.
 
 1. **Enhetstestene kan ikke fange en rettighet i feil bunt.** De utleder
    fasiten sin *fra* buntene. Prøvd med vilje — `PRODUKT_SKRIV` flyttet
-   til lesebunten — og samtlige besto. Det er `tests/grupper/tilgang.rs` som er
+   til lesebunten — og samtlige besto. Det er `tests/grupper/access.rs` som er
    sperren der, og den slo ut.
 2. **Kroppen må være gyldig JSON for endepunktet.** axum kjører
    `Json<T>`-uttrekket før handleren, så en tom kropp gir 422 og vakten

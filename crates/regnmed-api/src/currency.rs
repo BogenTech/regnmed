@@ -16,15 +16,15 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 pub async fn list_rates(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::ValutaLes).await?;
+    require(&state, person.person_id, company_id, Right::CurrencyRead).await?;
     let kurser = regnmed_db::latest_kurser(&state.pool).await?;
     Ok(Json(json!({
         "rates": kurser.iter().map(|k| json!({
@@ -54,7 +54,7 @@ pub async fn add_rate(
     Path(company_id): Path<Uuid>,
     Json(request): Json<ManualRateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::ValutaSkriv).await?;
+    require(&state, person.person_id, company_id, Right::CurrencyWrite).await?;
     let rate_micro = regnmed_core::currency::parse_rate(&request.kurs)
         .ok_or_else(|| ApiError::BadRequest(format!("uparselig kurs {:?}", request.kurs)))?;
     let registered_by = person.name.as_deref().unwrap_or(&person.sub);
@@ -86,7 +86,7 @@ pub async fn fetch_rates(
     Path(company_id): Path<Uuid>,
     Json(request): Json<FetchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::ValutaSkriv).await?;
+    require(&state, person.person_id, company_id, Right::CurrencyWrite).await?;
     let valutaer: Vec<String> = request
         .valutaer
         .iter()
@@ -131,7 +131,7 @@ pub async fn regulate(
     Path(company_id): Path<Uuid>,
     Json(request): Json<RegulateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::ValutaSkriv).await?;
+    require(&state, person.person_id, company_id, Right::CurrencyWrite).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let result = regnmed_db::kursregulering(
         &state.pool,

@@ -25,8 +25,8 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 use crate::{AppState, StripeCfg};
 
 fn client(cfg: &StripeCfg) -> regnmed_gov::stripe::Stripe {
@@ -40,7 +40,7 @@ pub async fn subscription_status(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
+    require(&state, person.person_id, company_id, Right::CompanyRead).await?;
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     use regnmed_core::subscription::Status;
     let date = match status {
@@ -107,7 +107,7 @@ pub async fn card_setup(
     headers: HeaderMap,
     Json(request): Json<CardSetupRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
     let Some(cfg) = &state.stripe else {
         return Err(ApiError::BadRequest(
             "kortbetaling er ikke satt opp på denne installasjonen (STRIPE_SECRET_KEY mangler)"
@@ -217,7 +217,7 @@ pub async fn start_subscription(
     headers: HeaderMap,
     Json(request): Json<StartRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
     let idag = chrono::Utc::now().date_naive();
     let interval = request.interval.as_deref().unwrap_or("month");
     if interval != "month" && interval != "year" {
@@ -516,7 +516,7 @@ pub async fn cancel_subscription(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
     let Some(cfg) = &state.stripe else {
         return Err(ApiError::BadRequest(
             "kortbetaling er ikke satt opp på denne installasjonen".into(),

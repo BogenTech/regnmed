@@ -19,16 +19,16 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
-use crate::tilgang::{Rett, krev};
 
 pub async fn get_period_lock(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let current = regnmed_db::current_period_lock(&state.pool, company_id).await?;
     let history = regnmed_db::period_lock_history(&state.pool, company_id).await?;
     Ok(Json(json!({
@@ -54,14 +54,14 @@ pub async fn set_period_lock(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // Locking requires bokføring; REOPENING requires admin, and that is
     // decided inside set_period_lock — hence the role comes along.
-    let rolle = krev(&state, person.person_id, company_id, Rett::PeriodeLaas).await?;
+    let rolle = require(&state, person.person_id, company_id, Right::PeriodLock).await?;
     let set_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::set_period_lock(
         &state.pool,
         company_id,
         request.locked_through,
         set_by,
-        rolle.er_admin(),
+        rolle.is_admin(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -97,7 +97,7 @@ pub async fn list_vouchers(
     Path(company_id): Path<Uuid>,
     Query(query): Query<VoucherListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let limit = query.limit.unwrap_or(500).clamp(1, 500);
     let offset = query.offset.unwrap_or(0).max(0);
     let med_linjer = query.lines.unwrap_or(false);
@@ -154,7 +154,7 @@ pub async fn upload_attachment(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::VedleggSkriv).await?;
+    require(&state, person.person_id, company_id, Right::AttachmentWrite).await?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -184,7 +184,7 @@ pub async fn list_voucher_attachments(
     person: AuthPerson,
     Path((company_id, voucher_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let attachments = regnmed_db::list_attachments(&state.pool, company_id, voucher_id).await?;
     Ok(Json(json!({
         "attachments": attachments.iter().map(|a| json!({
@@ -203,7 +203,7 @@ pub async fn download_attachment(
     person: AuthPerson,
     Path((company_id, attachment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let (meta, content) = regnmed_db::get_attachment(&state.pool, company_id, attachment_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

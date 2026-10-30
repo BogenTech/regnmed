@@ -17,8 +17,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct CreateAssetRequest {
@@ -45,7 +45,7 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CreateAssetRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggSkriv).await?;
+    require(&state, person.person_id, company_id, Right::AssetWrite).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let (id, warning) = regnmed_db::create_asset(
         &state.pool,
@@ -75,7 +75,7 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggLes).await?;
+    require(&state, person.person_id, company_id, Right::AssetRead).await?;
     let assets = regnmed_db::list_assets(&state.pool, company_id).await?;
     Ok(Json(json!({
         "assets": assets.iter().map(|a| json!({
@@ -108,7 +108,7 @@ pub async fn depreciate(
     Path(company_id): Path<Uuid>,
     body: Option<Json<DepreciateRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggSkriv).await?;
+    require(&state, person.person_id, company_id, Right::AssetWrite).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let through = match request.through {
         Some(d) => d,
@@ -155,7 +155,7 @@ pub async fn dispose(
     Path((company_id, asset_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<DisposeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggSkriv).await?;
+    require(&state, person.person_id, company_id, Right::AssetWrite).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let disposal = regnmed_db::dispose_asset(
         &state.pool,
@@ -182,7 +182,7 @@ pub async fn runs(
     person: AuthPerson,
     Path((company_id, asset_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggLes).await?;
+    require(&state, person.person_id, company_id, Right::AssetRead).await?;
     let runs = regnmed_db::list_depreciations(&state.pool, company_id, asset_id).await?;
     Ok(Json(json!({
         "runs": runs.iter().map(|r| json!({
@@ -208,7 +208,7 @@ pub async fn balance(
     Path(company_id): Path<Uuid>,
     Query(query): Query<BalanceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::AnleggLes).await?;
+    require(&state, person.person_id, company_id, Right::AssetRead).await?;
     let rapport = regnmed_db::balance_report(&state.pool, company_id, query.year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

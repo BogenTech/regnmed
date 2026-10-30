@@ -6,6 +6,8 @@
 
 mod common;
 
+#[path = "grupper/access.rs"]
+mod access;
 #[path = "grupper/agent.rs"]
 mod agent;
 #[path = "grupper/byramedlemmer.rs"]
@@ -16,8 +18,8 @@ mod engagement;
 mod integrasjon;
 #[path = "grupper/marketplace.rs"]
 mod marketplace;
-#[path = "grupper/matrise.rs"]
-mod matrise;
+#[path = "grupper/matrix.rs"]
+mod matrix;
 #[path = "grupper/me_endpoint.rs"]
 mod me_endpoint;
 #[path = "grupper/medlemmer.rs"]
@@ -26,5 +28,3 @@ mod medlemmer;
 mod plattform;
 #[path = "grupper/subscription.rs"]
 mod subscription;
-#[path = "grupper/tilgang.rs"]
-mod tilgang;

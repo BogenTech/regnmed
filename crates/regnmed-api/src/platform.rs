@@ -3,7 +3,7 @@
 //! The deliberately bounded exception to "no access path crosses a
 //! company boundary". Everything a platform role can do lives under
 //! `/platform/*` on its own sub-router; the company-scoped guard
-//! (`tilgang::krev`) is untouched, and there is NO route from a platform
+//! (`access::krev`) is untouched, and there is NO route from a platform
 //! role into any company's ledger — no vouchers, no balances, no reports.
 //!
 //! The #57 safeguards are enforced structurally, not by convention:
@@ -31,8 +31,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 /// What the middleware resolved: who is calling, and as what. Handlers
 /// receive it as an `Extension` — its presence proves the call went
@@ -678,7 +678,7 @@ pub async fn company_platform_access(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let rader = regnmed_db::platform_access_for_company(&state.pool, company_id).await?;
     Ok(Json(innsyn_json(&rader)))
 }

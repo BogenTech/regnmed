@@ -18,11 +18,11 @@ use uuid::Uuid;
 use crate::members::normaliser_epost;
 
 /// The firm roles (0005): `admin` runs the byrå, `ansatt` works in it.
-pub const ROLLER: [&str; 2] = ["admin", "ansatt"];
+pub const ROLES: [&str; 2] = ["admin", "ansatt"];
 
 fn krev_rolle(rolle: &str) -> Result<()> {
     ensure!(
-        ROLLER.contains(&rolle),
+        ROLES.contains(&rolle),
         "«{rolle}» er ikke en byrårolle — velg admin eller ansatt"
     );
     Ok(())

@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// The roles that can be assigned. `ansatt` is self-service (#54) and not
 /// a step below `les` — it may write a few things of its own and read
 /// almost nothing.
-pub const ROLLER: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
+pub const ROLES: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
 fn krev_tildelbar(rolle: &str) -> Result<()> {
     if rolle == "revisor" {

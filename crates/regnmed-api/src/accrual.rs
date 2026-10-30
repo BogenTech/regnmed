@@ -14,8 +14,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 #[derive(Deserialize)]
 pub struct PeriodiseringRequest {
@@ -44,7 +44,7 @@ pub async fn list(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let planer = regnmed_db::accrual::list_periodiseringer(&state.pool, company_id).await?;
     Ok(Json(json!({
         "periodiseringer": planer.iter().map(|p| json!({
@@ -73,7 +73,7 @@ pub async fn create(
     Path(company_id): Path<Uuid>,
     Json(request): Json<PeriodiseringRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let id = regnmed_db::accrual::create_periodisering(
         &state.pool,
         company_id,
@@ -101,7 +101,7 @@ pub async fn stopp(
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -119,7 +119,7 @@ pub async fn kjor(
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let idag: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
@@ -142,7 +142,7 @@ pub async fn runs(
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let rader = regnmed_db::accrual::list_runs(&state.pool, company_id, id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

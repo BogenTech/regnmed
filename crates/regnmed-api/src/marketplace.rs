@@ -15,8 +15,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::AppState;
+use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
-use crate::tilgang::{Rett, krev};
 
 fn validate_orgnr(orgnr: &str) -> Result<(), ApiError> {
     if !regnmed_core::orgnumber::is_valid(orgnr) {
@@ -246,7 +246,7 @@ pub async fn import_saft(
     headers: axum::http::HeaderMap,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MigrationAdmin).await?;
     let (file, source_xml) = parse_import_body(&headers, body)?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let report = regnmed_db::import_saft(&state.pool, company_id, &file, &source_xml, created_by)
@@ -271,7 +271,7 @@ pub async fn saft_import_log(
     person: AuthPerson,
     Path(company_id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
     let rows = regnmed_db::saft_import_log(&state.pool, company_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -297,7 +297,7 @@ pub async fn analyze_saft(
     Path(company_id): Path<uuid::Uuid>,
     body: String,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MigrationAdmin).await?;
     let file = regnmed_core::saft_import::parse(&body)
         .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
     let accounts: Vec<(String, String)> = file
@@ -341,7 +341,7 @@ pub async fn opening_balance(
     Path(company_id): Path<uuid::Uuid>,
     Json(request): Json<OpeningRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    krev(&state, person.person_id, company_id, Rett::MigreringAdmin).await?;
+    require(&state, person.person_id, company_id, Right::MigrationAdmin).await?;
     let lines: Vec<(String, i64)> = request
         .lines
         .iter()
