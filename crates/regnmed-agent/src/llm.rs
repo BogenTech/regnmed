@@ -125,7 +125,7 @@ pub struct Llm {
 }
 
 impl Llm {
-    pub fn ny(base_url: &str, model: &str, key: &str) -> Result<Self> {
+    pub fn new(base_url: &str, model: &str, key: &str) -> Result<Self> {
         Ok(Self {
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(180))
@@ -157,25 +157,24 @@ impl Llm {
             .context("nådde ikke modelleverandøren")?;
 
         let status = reply.status();
-        let kropp = reply.text().await.unwrap_or_default();
+        let body = reply.text().await.unwrap_or_default();
         if !status.is_success() {
             // The provider's own message is the useful part: a wrong key,
             // a model the account cannot reach, a spent budget. Passing
             // it through means the task's trail says WHY.
             bail!(
                 "modelleverandøren svarte {status}: {}",
-                truncate(&kropp, 400)
+                truncate(&body, 400)
             );
         }
 
-        let respons: Respons = serde_json::from_str(&kropp).with_context(|| {
-            format!("uventet reply fra leverandøren: {}", truncate(&kropp, 400))
-        })?;
+        let respons: Respons = serde_json::from_str(&body)
+            .with_context(|| format!("uventet reply fra leverandøren: {}", truncate(&body, 400)))?;
         let Some(valg) = respons.choices.into_iter().next() else {
             bail!("leverandøren svarte uten noe valg");
         };
 
-        let raa: Option<Value> = serde_json::from_str::<Value>(&kropp)
+        let raa: Option<Value> = serde_json::from_str::<Value>(&body)
             .ok()
             .and_then(|v| v["choices"][0]["message"]["tool_calls"].as_array().cloned())
             .map(Value::Array);
@@ -217,7 +216,7 @@ mod tests {
 
     #[test]
     fn a_tool_call_is_read_out_of_a_providers_answer() {
-        let kropp = json!({
+        let body = json!({
             "choices": [{
                 "message": {
                     "content": null,
@@ -233,7 +232,7 @@ mod tests {
             }]
         })
         .to_string();
-        let respons: Respons = serde_json::from_str(&kropp).unwrap();
+        let respons: Respons = serde_json::from_str(&body).unwrap();
         let calls = &respons.choices[0].message.tool_calls.as_ref().unwrap()[0];
         assert_eq!(calls.function.name, "saldobalanse");
         let args: Map<String, Value> = serde_json::from_str(&calls.function.arguments).unwrap();
@@ -244,7 +243,7 @@ mod tests {
     fn fields_we_do_not_model_do_not_break_it() {
         // A provider adding usage, finish_reason or a new message field
         // must not stop an agent working: this is a wire we do not own.
-        let kropp = json!({
+        let body = json!({
             "id": "x", "object": "chat.completion", "usage": {"total_tokens": 9},
             "choices": [{
                 "index": 0, "finish_reason": "stop", "logprobs": null,
@@ -252,7 +251,7 @@ mod tests {
             }]
         })
         .to_string();
-        let respons: Respons = serde_json::from_str(&kropp).unwrap();
+        let respons: Respons = serde_json::from_str(&body).unwrap();
         assert_eq!(
             respons.choices[0].message.content.as_deref(),
             Some("ferdig")

@@ -712,15 +712,21 @@ async fn main() -> Result<()> {
                 .filter(|c| !c.is_empty())
                 .collect();
             let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
-            let noteringer = client.hent_kurser(&valutaer, days).await?;
+            let noteringer = client.fetch_rates(&valutaer, days).await?;
             for n in &noteringer {
-                regnmed_db::insert_kurs(&pool, &n.valuta, n.dato, n.kurs_micro, "Norges Bank EXR")
-                    .await?;
+                regnmed_db::insert_kurs(
+                    &pool,
+                    &n.currency,
+                    n.date,
+                    n.rate_micro,
+                    "Norges Bank EXR",
+                )
+                .await?;
                 println!(
                     "{} {}: {}",
-                    n.valuta,
-                    n.dato,
-                    regnmed_core::valuta::kurs_str(n.kurs_micro)
+                    n.currency,
+                    n.date,
+                    regnmed_core::valuta::kurs_str(n.rate_micro)
                 );
             }
             println!("{} noteringer lagret", noteringer.len());

@@ -9,13 +9,13 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct BrregEnhet {
+pub struct BrregEntity {
     pub organisasjonsnummer: String,
     pub navn: String,
     #[serde(default)]
-    pub organisasjonsform: Option<Kode>,
+    pub organisasjonsform: Option<Code>,
     #[serde(default)]
-    pub naeringskode1: Option<Kode>,
+    pub naeringskode1: Option<Code>,
     #[serde(default, rename = "registrertIMvaregisteret")]
     pub registrert_i_mvaregisteret: bool,
     /// Registrert i Foretaksregisteret. Governs the "Foretaksregisteret"
@@ -24,7 +24,7 @@ pub struct BrregEnhet {
     /// cannot be inferred from the organisasjonsform (#81).
     #[serde(default, rename = "registrertIForetaksregisteret")]
     pub registrert_i_foretaksregisteret: bool,
-    /// The DATE the enhet entered each register. The flags alone are not
+    /// The DATE the entity entered each register. The flags alone are not
     /// enough: registreringsstatus is dated master data (#81), and a
     /// company that registered for mva in 2019 must not have the "MVA"
     /// note on documents dated before that.
@@ -33,17 +33,17 @@ pub struct BrregEnhet {
     #[serde(default, rename = "registreringsdatoForetaksregisteret")]
     pub registreringsdato_foretaksregisteret: Option<String>,
     #[serde(default)]
-    pub forretningsadresse: Option<Adresse>,
+    pub forretningsadresse: Option<Address>,
     /// Registered contact address — a better default for `company.email`
     /// than an empty field the user has to discover.
     #[serde(default)]
     pub epostadresse: Option<String>,
     #[serde(default)]
-    pub kapital: Option<Kapital>,
+    pub kapital: Option<Capital>,
     #[serde(default)]
     pub konkurs: bool,
     /// Voluntary liquidation, and the compulsory kind. Neither is
-    /// bankruptcy, so the konkurs check misses both — but an enhet being
+    /// bankruptcy, so the konkurs check misses both — but an entity being
     /// wound up is not a going concern to onboard.
     #[serde(default, rename = "underAvvikling")]
     pub under_avvikling: bool,
@@ -55,7 +55,7 @@ pub struct BrregEnhet {
 
 /// Registered share capital. Only meaningful for AS/ASA.
 #[derive(Debug, Deserialize)]
-pub struct Kapital {
+pub struct Capital {
     #[serde(default)]
     pub belop: Option<serde_json::Number>,
     #[serde(default, rename = "antallAksjer")]
@@ -64,11 +64,11 @@ pub struct Kapital {
     pub valuta: Option<String>,
 }
 
-impl Kapital {
+impl Capital {
     /// Aksjekapital in øre. The registry sends a JSON number; it is
     /// stringified and parsed DECIMALLY (the same parser the valutakurs
     /// uses) so no float ever touches money.
-    pub fn belop_ore(&self) -> Option<i64> {
+    pub fn amount_ore(&self) -> Option<i64> {
         // Capital in another currency is not comparable to the ledger's
         // øre, so it is not converted — better absent than wrong.
         if self.valuta.as_deref().is_some_and(|v| v != "NOK") {
@@ -82,7 +82,7 @@ impl Kapital {
 /// Enhetsregisterets adresseform: `adresse` is an array of street
 /// lines, with postnummer/poststed alongside.
 #[derive(Debug, Deserialize)]
-pub struct Adresse {
+pub struct Address {
     #[serde(default)]
     pub adresse: Vec<String>,
     #[serde(default)]
@@ -91,11 +91,11 @@ pub struct Adresse {
     pub poststed: Option<String>,
 }
 
-impl Adresse {
+impl Address {
     /// One line, in the shape the rest of regnmed stores addresses in
     /// ("Storgata 1, 0155 Oslo") — the form `regnmed_db::ehf` knows how
     /// to split again for EHF.
-    pub fn en_linje(&self) -> Option<String> {
+    pub fn one_line(&self) -> Option<String> {
         let gate = self
             .adresse
             .iter()
@@ -118,14 +118,19 @@ impl Adresse {
     }
 }
 
+/// A code from Enhetsregisteret. The field names here mirror BRREG's
+/// own JSON, which is Norwegian — so they carry `serde(rename)` rather
+/// than Norwegian identifiers. An external schema is not ours to
+/// translate, but it is not a reason to name our fields after it.
 #[derive(Debug, Deserialize)]
-pub struct Kode {
-    pub kode: String,
-    #[serde(default)]
-    pub beskrivelse: String,
+pub struct Code {
+    #[serde(rename = "kode")]
+    pub code: String,
+    #[serde(default, rename = "beskrivelse")]
+    pub description: String,
 }
 
-impl BrregEnhet {
+impl BrregEntity {
     /// The registration history as dated observations
     /// `(fra og med, mva-registrert, foretaksregistrert)`, oldest first.
     ///
@@ -135,19 +140,19 @@ impl BrregEnhet {
     /// document dated in between carry exactly the påtegninger that
     /// applied then (#81).
     ///
-    /// `i_dag` is the fallback for a register the enhet is in but has no
+    /// `i_dag` is the fallback for a register the entity is in but has no
     /// date for, and for the "registered in neither" record.
-    pub fn registreringstidslinje(&self, i_dag: NaiveDate) -> Vec<(NaiveDate, bool, bool)> {
-        fn dato(raw: &Option<String>) -> Option<NaiveDate> {
+    pub fn registration_timeline(&self, i_dag: NaiveDate) -> Vec<(NaiveDate, bool, bool)> {
+        fn date(raw: &Option<String>) -> Option<NaiveDate> {
             NaiveDate::parse_from_str(raw.as_deref()?.trim(), "%Y-%m-%d").ok()
         }
         let mut hendelser: Vec<(NaiveDate, bool)> = Vec::new();
         if self.registrert_i_mvaregisteret {
-            hendelser.push((dato(&self.registreringsdato_mva).unwrap_or(i_dag), true));
+            hendelser.push((date(&self.registreringsdato_mva).unwrap_or(i_dag), true));
         }
         if self.registrert_i_foretaksregisteret {
             hendelser.push((
-                dato(&self.registreringsdato_foretaksregisteret).unwrap_or(i_dag),
+                date(&self.registreringsdato_foretaksregisteret).unwrap_or(i_dag),
                 false,
             ));
         }
@@ -189,9 +194,9 @@ impl BrregClient {
         }
     }
 
-    /// Looks up an enhet; `Ok(None)` when the orgnr is unknown to the
+    /// Looks up an entity; `Ok(None)` when the orgnr is unknown to the
     /// register.
-    pub async fn enhet(&self, orgnr: &str) -> Result<Option<BrregEnhet>> {
+    pub async fn entity(&self, orgnr: &str) -> Result<Option<BrregEntity>> {
         let url = format!("{}/enheter/{orgnr}", self.base_url.trim_end_matches('/'));
         let response = self
             .http
@@ -221,7 +226,7 @@ mod tests {
 
     #[test]
     fn parses_the_registry_shape() {
-        let enhet: BrregEnhet = serde_json::from_str(
+        let entity: BrregEntity = serde_json::from_str(
             r#"{
                 "organisasjonsnummer": "923609016",
                 "navn": "EQUINOR ASA",
@@ -241,18 +246,18 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(enhet.navn, "EQUINOR ASA");
-        assert_eq!(enhet.organisasjonsform.unwrap().kode, "ASA");
-        assert!(enhet.registrert_i_mvaregisteret);
-        assert!(enhet.registrert_i_foretaksregisteret);
+        assert_eq!(entity.navn, "EQUINOR ASA");
+        assert_eq!(entity.organisasjonsform.unwrap().code, "ASA");
+        assert!(entity.registrert_i_mvaregisteret);
+        assert!(entity.registrert_i_foretaksregisteret);
         assert_eq!(
-            enhet.forretningsadresse.unwrap().en_linje().unwrap(),
+            entity.forretningsadresse.unwrap().one_line().unwrap(),
             "Øvre Bogenvei 67, 3152 TOLVSRØD"
         );
-        assert!(enhet.slettedato.is_none());
+        assert!(entity.slettedato.is_none());
     }
 
-    fn enhet(json: &str) -> BrregEnhet {
+    fn entity(json: &str) -> BrregEntity {
         serde_json::from_str(json).unwrap()
     }
 
@@ -265,7 +270,7 @@ mod tests {
     /// the påtegning that applied then (#81).
     #[test]
     fn the_registration_timeline_follows_each_register_own_date() {
-        let e = enhet(
+        let e = entity(
             r#"{
                 "organisasjonsnummer": "923609016", "navn": "EQUINOR ASA",
                 "registrertIMvaregisteret": true,
@@ -274,7 +279,7 @@ mod tests {
                 "registreringsdatoForetaksregisteret": "1988-04-28"
             }"#,
         );
-        let rader = e.registreringstidslinje(d("2026-08-07"));
+        let rader = e.registration_timeline(d("2026-08-07"));
         assert_eq!(
             rader,
             vec![
@@ -287,7 +292,7 @@ mod tests {
     /// Registered in both on the same day: one row, not two.
     #[test]
     fn same_day_registrations_collapse_into_one_row() {
-        let e = enhet(
+        let e = entity(
             r#"{
                 "organisasjonsnummer": "935115086", "navn": "X AS",
                 "registrertIMvaregisteret": true,
@@ -297,7 +302,7 @@ mod tests {
             }"#,
         );
         assert_eq!(
-            e.registreringstidslinje(d("2026-08-07")),
+            e.registration_timeline(d("2026-08-07")),
             vec![(d("2025-02-26"), true, true)]
         );
     }
@@ -306,9 +311,9 @@ mod tests {
     /// that we asked and the answer was no, dated today.
     #[test]
     fn no_registrations_still_yields_a_dated_record() {
-        let e = enhet(r#"{"organisasjonsnummer": "1", "navn": "ENK"}"#);
+        let e = entity(r#"{"organisasjonsnummer": "1", "navn": "ENK"}"#);
         assert_eq!(
-            e.registreringstidslinje(d("2026-08-07")),
+            e.registration_timeline(d("2026-08-07")),
             vec![(d("2026-08-07"), false, false)]
         );
     }
@@ -317,12 +322,12 @@ mod tests {
     /// today rather than dropping the registration.
     #[test]
     fn a_registration_without_a_date_falls_back_to_today() {
-        let e = enhet(
+        let e = entity(
             r#"{"organisasjonsnummer": "1", "navn": "Y AS",
                 "registrertIForetaksregisteret": true}"#,
         );
         assert_eq!(
-            e.registreringstidslinje(d("2026-08-07")),
+            e.registration_timeline(d("2026-08-07")),
             vec![(d("2026-08-07"), false, true)]
         );
     }
@@ -331,13 +336,13 @@ mod tests {
     /// integer øre without a float in between.
     #[test]
     fn share_capital_becomes_integer_ore() {
-        let e = enhet(
+        let e = entity(
             r#"{"organisasjonsnummer": "1", "navn": "Z AS",
                 "kapital": {"belop": 30000.0, "antallAksjer": 1000,
                             "type": "Aksjekapital", "valuta": "NOK"}}"#,
         );
         let k = e.kapital.unwrap();
-        assert_eq!(k.belop_ore(), Some(3_000_000));
+        assert_eq!(k.amount_ore(), Some(3_000_000));
         assert_eq!(k.antall_aksjer, Some(1000));
     }
 
@@ -345,29 +350,29 @@ mod tests {
     /// and is left absent rather than silently treated as kroner.
     #[test]
     fn foreign_currency_capital_is_not_converted() {
-        let e = enhet(
+        let e = entity(
             r#"{"organisasjonsnummer": "1", "navn": "Æ AS",
                 "kapital": {"belop": 25000.0, "valuta": "EUR"}}"#,
         );
-        assert_eq!(e.kapital.unwrap().belop_ore(), None);
+        assert_eq!(e.kapital.unwrap().amount_ore(), None);
     }
 
-    /// An enhet without a registered address must not become the string
+    /// An entity without a registered address must not become the string
     /// ", " — the salgsdokument would carry a comma where the seller's
     /// address should be.
     #[test]
     fn a_missing_address_is_none_not_an_empty_line() {
-        let tom = Adresse {
+        let tom = Address {
             adresse: vec![String::new()],
             postnummer: None,
             poststed: None,
         };
-        assert!(tom.en_linje().is_none());
-        let bare_sted = Adresse {
+        assert!(tom.one_line().is_none());
+        let bare_sted = Address {
             adresse: vec![],
             postnummer: Some("0155".into()),
             poststed: Some("Oslo".into()),
         };
-        assert_eq!(bare_sted.en_linje().unwrap(), "0155 Oslo");
+        assert_eq!(bare_sted.one_line().unwrap(), "0155 Oslo");
     }
 }

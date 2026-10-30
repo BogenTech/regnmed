@@ -221,7 +221,7 @@ pub async fn opprett_agent(
                 &cfg.client_id,
                 &cfg.client_secret,
             )
-            .opprett_maskinklient(
+            .create_machine_client(
                 &client_id,
                 request.navn.trim(),
                 state.verifier.audience().unwrap_or_default(),

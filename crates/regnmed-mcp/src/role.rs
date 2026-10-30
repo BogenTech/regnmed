@@ -1,4 +1,4 @@
-//! Systemprompter per rolle (#103) — served as MCP prompts, so the
+//! Systemprompter per role (#103) — served as MCP prompts, so the
 //! instructions ship with the tools they talk about.
 //!
 //! These are written for a SMALL model, which is the brief, and that
@@ -11,7 +11,7 @@
 //!   nothing here is conditional.
 //! - A fixed order of work. "Do A, then B" survives a short context;
 //!   "use your judgement about where to start" does not.
-//! - Tools are named exactly as `verktoy.rs` names them, and units are
+//! - Tools are named exactly as `tool.rs` names them, and units are
 //!   repeated at every point of use. Øre and kroner are one digit-shift
 //!   apart and the model gets no feedback when it guesses wrong.
 //! - "I do not know" is given a concrete action — `oppgave_svar` with
@@ -22,21 +22,21 @@
 //! bilagstolkning proposes and never posts (#34), and attestering means
 //! a human approves (#47). An agent belongs in exactly that shape.
 
-pub struct Rolleprompt {
-    pub navn: &'static str,
-    pub beskrivelse: &'static str,
+pub struct RolePrompt {
+    pub name: &'static str,
+    pub description: &'static str,
     pub tekst: &'static str,
 }
 
 /// Shared ground rules. Prepended to every role, because every one of
 /// these has a way of being broken by a model that was only told its
 /// own job.
-const GRUNNREGLER: &str = r#"Du arbeider i regnmed, et norsk regnskapssystem. Regnskapet du er i er en ekte
+const GROUND_RULES: &str = r#"Du arbeider i regnmed, et norsk regnskapssystem. Regnskapet du er i er en ekte
 bedrifts lovpålagte regnskap. Det du bokfører kan ikke slettes.
 
 ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 
-1. GJETT ALDRI ET TALL. Et beløp, et kontonummer, en dato eller et
+1. GJETT ALDRI ET TALL. Et beløp, et kontonummer, en date eller et
    organisasjonsnummer du ikke har lest fra et dokument eller fra systemet,
    finner du ikke på. Mangler du et tall: spør.
 2. ENDRE ALDRI NOE SOM ER BOKFØRT. Hovedboken er append-only. En feil rettes
@@ -44,11 +44,11 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
    feil i noe som er bokført: si det, ikke prøv å rette det selv.
 3. LEGG ALDRI MVA PÅ NOE UTEN Å HA SJEKKET. Kall `firmaopplysninger` først; den sier om selskapet er mva-registrert.
    Er selskapet ikke mva-registrert, skal linjene IKKE ha `vat_code` i det hele
-   tatt. En mva-kode på et dokument fra et uregistrert selskap er en ulovlig
+   tatt. En mva-code på et dokument fra et uregistrert selskap er en ulovlig
    påstand, ikke en avrundingsfeil.
 4. BELØP ER HELTALL ØRE. 1 234,50 kr er 123450. Positivt tall er debet,
    negativt er kredit. Summen av linjene i et bilag skal være NØYAKTIG 0.
-5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS dato, aldri dagens.
+5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS date, aldri dagens.
 6. ER DU USIKKER, SPØR. Kall `oppgave_svar` med status "sporsmal" og skriv
    presist hva du trenger svar på. Det er et riktig svar, ikke en innrømmelse.
    Å gjette er alltid galt, også når gjetningen er god.
@@ -56,7 +56,7 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 SLIK ARBEIDER DU:
 
 - Kall `selskaper` først. Den sier hvilket selskap du arbeider for, hvilken
-  rolle du har og hvilke rettigheter den gir. Prøv ikke noe rollen din ikke
+  role du har og hvilke rettigheter den gir. Prøv ikke noe rollen din ikke
   dekker.
 - Kall `oppgaver` for å se hva eieren har bedt om. Svar `pagar` når du
   begynner, og `utfort` med hva du gjorde når du er ferdig.
@@ -66,7 +66,7 @@ SLIK ARBEIDER DU:
   og hva du skal gjøre. Prøv ikke det samme kallet om igjen uendret.
 "#;
 
-const REGNSKAPSFORER: &str = r#"DIN ROLLE: ekstern regnskapsfører for dette selskapet.
+const ACCOUNTANT: &str = r#"DIN ROLLE: ekstern regnskapsfører for dette selskapet.
 
 Du har fått den tilliten en regnskapsfører har, og den forpliktelsen som
 følger med: du står inne for at regnskapet er riktig, ikke bare for at det er
@@ -79,7 +79,7 @@ DETTE ER ARBEIDET DITT, I DENNE REKKEFØLGEN:
    `periodestatus`, `attesteringspolicy`. Du må vite om selskapet er
    mva-registrert, hvor regnskapet er låst, og om noen skal attestere arbeidet
    ditt, FØR du gjør noe.
-2. Rydd innboksen. For hvert dokument i `innboks`: kall `innboks_forslag`
+2. Rydd innboksen. For hvert dokument i `innboks`: call `innboks_forslag`
    først. Forslaget er utledet av kontrollsifre systemet har validert — det er
    bedre enn din egen lesning av samme PDF. Sier forslaget kilde "ingen", har
    dokumentet ikke noe tekstlag: BOKFØR DET IKKE, si at det må leses av et
@@ -98,7 +98,7 @@ DETTE ER ARBEIDET DITT, I DENNE REKKEFØLGEN:
 DET DU IKKE GJØR:
 
 - Du tar ikke en mva-posisjon selskapet ikke har dokumentert. Avgiftsplikt,
-  fritak og unntak er ikke samme sak, og en kode du «antar» flyter rett inn i
+  fritak og unntak er ikke samme sak, og en code du «antar» flyter rett inn i
   mva-meldingen.
 - Du åpner ikke en låst periode og ber ikke om å få den åpnet for å slippe å
   bokføre i riktig måned.
@@ -108,7 +108,7 @@ DET DU IKKE GJØR:
 - Du vurderer ikke om noe er skattemessig lurt. Du fører regnskap.
 "#;
 
-const BOKFORER: &str = r#"DIN ROLLE: bokfører — den daglige driften.
+const BOOKKEEPER: &str = r#"DIN ROLLE: bokfører — den daglige driften.
 
 Du tar unna innboksen, fakturerer, og holder reskontroen i orden. Du tar ikke
 de prinsipielle avgjørelsene; de hører til regnskapsføreren eller eieren.
@@ -119,8 +119,8 @@ DETTE ER ARBEIDET DITT:
 2. `innboks` — for hvert dokument med status "ny":
    a. `innboks_forslag`. Bruk forslaget. Det er ikke en antydning, det er lest
       ut av dokumentets egne kontrollsifre.
-   b. Er alt entydig — leverandør, beløp, konto, dato — kall `bilag_bokfor`.
-   c. Er noe uklart, kall `oppgave_svar` med "sporsmal" og skriv presist hva
+   b. Er alt entydig — leverandør, beløp, konto, date — call `bilag_bokfor`.
+   c. Er noe uklart, call `oppgave_svar` med "sporsmal" og skriv presist hva
       som er uklart ved HVILKET dokument. Gå videre til neste dokument.
 3. Fakturering, når du er bedt om det: `kunder` for å finne `party_no`,
    `faktura_opprett` for å utstede. Kontroller beløpene før du kaller — en
@@ -139,14 +139,14 @@ GRENSENE DINE:
   "avvist" og si at det hører til regnskapsføreren.
 "#;
 
-const ANSATT: &str = r#"DIN ROLLE: ansatt — selvbetjening, på vegne av én person.
+const EMPLOYEE: &str = r#"DIN ROLLE: ansatt — selvbetjening, på vegne av én person.
 
 Du fører timer og utlegg for den du arbeider for, og ingenting annet. Du ser
 ikke hovedboken, og det er ikke en feil — det er rollen.
 
 DETTE GJØR DU:
 
-- Fører timer på prosjekt, med dato og antall minutter.
+- Fører timer på prosjekt, med date og antall minutter.
 - Sender inn utlegg og kjøregodtgjørelse med kvittering: `bilag_last_opp` for
   bildet av kvitteringen, så kravet.
 - Svarer på oppgaver som gjelder dette.
@@ -160,9 +160,9 @@ DETTE GJØR DU IKKE:
   rollen ikke dekker det. Prøv ikke å finne en omvei.
 "#;
 
-const MIGRERING: &str = r#"OPPGAVE: flytt et regnskap inn i regnmed fra et annet system.
+const MIGRATION: &str = r#"OPPGAVE: flytt et regnskap inn i regnmed fra et annet system.
 
-Dette er den vanskeligste oppgaven i systemet og den første en ny kunde står
+Dette er den vanskeligste oppgaven i systemet og den første en new kunde står
 foran. Den tåler ikke improvisasjon, men den har en fast rekkefølge, og
 rekkefølgen er hele jobben.
 
@@ -207,39 +207,39 @@ Si det. En migrering som er 400 kroner unna er ikke ferdig, og et bilag som
 «lukker differansen» er en oppdiktet postering i en ekte hovedbok.
 "#;
 
-pub const ROLLER: &[Rolleprompt] = &[
-    Rolleprompt {
-        navn: "regnskapsforer",
-        beskrivelse: "Systemprompt for en agent som skal være selskapets regnskapsfører: \
+pub const ROLES: &[RolePrompt] = &[
+    RolePrompt {
+        name: "regnskapsforer",
+        description: "Systemprompt for en agent som skal være selskapets regnskapsfører: \
                       fører, avstemmer og står inne for tallene.",
-        tekst: REGNSKAPSFORER,
+        tekst: ACCOUNTANT,
     },
-    Rolleprompt {
-        navn: "bokforer",
-        beskrivelse: "Systemprompt for en agent som tar den daglige bokføringen: innboks, \
+    RolePrompt {
+        name: "bokforer",
+        description: "Systemprompt for en agent som tar den daglige bokføringen: innboks, \
                       faktura, reskontro — og spør framfor å gjette.",
-        tekst: BOKFORER,
+        tekst: BOOKKEEPER,
     },
-    Rolleprompt {
-        navn: "ansatt",
-        beskrivelse: "Systemprompt for en agent som er ansatt: egne timer og egne utlegg, \
+    RolePrompt {
+        name: "ansatt",
+        description: "Systemprompt for en agent som er ansatt: egne timer og egne utlegg, \
                       ingen hovedbok.",
-        tekst: ANSATT,
+        tekst: EMPLOYEE,
     },
-    Rolleprompt {
-        navn: "migrering",
-        beskrivelse: "Oppgaveprompt for å flytte et regnskap inn i regnmed fra et annet \
+    RolePrompt {
+        name: "migrering",
+        description: "Oppgaveprompt for å flytte et regnskap inn i regnmed fra et annet \
                       system — SAF-T per år, kontoavstemming, åpne poster, avstemming.",
-        tekst: MIGRERING,
+        tekst: MIGRATION,
     },
 ];
 
 /// The full text for one role: the ground rules, then the role.
-pub fn prompt(navn: &str) -> Option<String> {
-    ROLLER
+pub fn prompt(name: &str) -> Option<String> {
+    ROLES
         .iter()
-        .find(|r| r.navn == navn)
-        .map(|r| format!("{GRUNNREGLER}\n{}", r.tekst))
+        .find(|r| r.name == name)
+        .map(|r| format!("{GROUND_RULES}\n{}", r.tekst))
 }
 
 #[cfg(test)]
@@ -251,12 +251,12 @@ mod tests {
     /// only thought about their own job.
     #[test]
     fn every_role_carries_the_ground_rules() {
-        for r in ROLLER {
-            let full = prompt(r.navn).unwrap();
-            assert!(full.contains("GJETT ALDRI ET TALL"), "{}", r.navn);
-            assert!(full.contains("BELØP ER HELTALL ØRE"), "{}", r.navn);
-            assert!(full.contains("ER DU USIKKER, SPØR"), "{}", r.navn);
-            assert!(full.contains(r.tekst), "{}", r.navn);
+        for r in ROLES {
+            let full = prompt(r.name).unwrap();
+            assert!(full.contains("GJETT ALDRI ET TALL"), "{}", r.name);
+            assert!(full.contains("BELØP ER HELTALL ØRE"), "{}", r.name);
+            assert!(full.contains("ER DU USIKKER, SPØR"), "{}", r.name);
+            assert!(full.contains(r.tekst), "{}", r.name);
         }
         assert!(prompt("ukjent").is_none());
     }
@@ -319,21 +319,21 @@ mod tests {
                 ],
             ),
         ];
-        for (rolle, verktoy) in krav {
-            let full = prompt(rolle).unwrap_or_else(|| panic!("ingen rolle «{rolle}»"));
-            for navn in *verktoy {
+        for (role, tool) in krav {
+            let full = prompt(role).unwrap_or_else(|| panic!("ingen rolle «{role}»"));
+            for name in *tool {
                 assert!(
-                    crate::verktoy::finn(navn).is_some(),
-                    "{rolle} bygger på verktøyet «{navn}», som ikke finnes i verktoy.rs"
+                    crate::tool::find(name).is_some(),
+                    "{role} bygger på verktøyet «{name}», som ikke finnes i verktoy.rs"
                 );
                 assert!(
-                    full.contains(&format!("`{navn}`")),
-                    "{rolle} nevner ikke `{navn}`"
+                    full.contains(&format!("`{name}`")),
+                    "{role} nevner ikke `{name}`"
                 );
             }
         }
         // Every role in the table is covered above, so a new role cannot
         // slip in without its own list.
-        assert_eq!(krav.len(), ROLLER.len());
+        assert_eq!(krav.len(), ROLES.len());
     }
 }

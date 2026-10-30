@@ -33,29 +33,29 @@ pub async fn registry_preview(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     validate_orgnr(&orgnr)?;
     let enhet = regnmed_gov::brreg::BrregClient::from_env()
-        .enhet(&orgnr)
+        .entity(&orgnr)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or(ApiError::NotFound)?;
 
     let finanstilsynet = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env();
     let regnskap = finanstilsynet
-        .has_autorisasjon(&orgnr, "regnskap")
+        .has_authorisation(&orgnr, "regnskap")
         .await
         .unwrap_or(false);
     let revisjon = finanstilsynet
-        .has_autorisasjon(&orgnr, "revisjon")
+        .has_authorisation(&orgnr, "revisjon")
         .await
         .unwrap_or(false);
 
     Ok(Json(json!({
         "orgnr": enhet.organisasjonsnummer,
         "navn": enhet.navn,
-        "organisasjonsform": enhet.organisasjonsform.as_ref().map(|k| k.kode.clone()),
-        "naeringskode": enhet.naeringskode1.as_ref().map(|k| format!("{} {}", k.kode, k.beskrivelse)),
+        "organisasjonsform": enhet.organisasjonsform.as_ref().map(|k| k.code.clone()),
+        "naeringskode": enhet.naeringskode1.as_ref().map(|k| format!("{} {}", k.code, k.description)),
         "mva_registrert": enhet.registrert_i_mvaregisteret,
         "foretaksregistrert": enhet.registrert_i_foretaksregisteret,
-        "adresse": enhet.forretningsadresse.as_ref().and_then(|a| a.en_linje()),
+        "adresse": enhet.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         "konkurs": enhet.konkurs,
         "under_avvikling": enhet.under_avvikling || enhet.under_tvangsavvikling,
         "slettet": enhet.slettedato.is_some(),
@@ -75,7 +75,7 @@ pub async fn onboard_company(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     validate_orgnr(&request.orgnr)?;
     let enhet = regnmed_gov::brreg::BrregClient::from_env()
-        .enhet(&request.orgnr)
+        .entity(&request.orgnr)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
@@ -107,13 +107,13 @@ pub async fn onboard_company(
         .map_err(anyhow::Error::from)?;
     let kapital = enhet.kapital.as_ref();
     let facts = regnmed_db::RegistryFacts {
-        orgform: enhet.organisasjonsform.as_ref().map(|k| k.kode.clone()),
-        address: enhet.forretningsadresse.as_ref().and_then(|a| a.en_linje()),
+        orgform: enhet.organisasjonsform.as_ref().map(|k| k.code.clone()),
+        address: enhet.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         email: enhet.epostadresse.clone(),
-        naeringskode: enhet.naeringskode1.as_ref().map(|k| k.kode.clone()),
-        aksjekapital_ore: kapital.and_then(|k| k.belop_ore()),
+        naeringskode: enhet.naeringskode1.as_ref().map(|k| k.code.clone()),
+        aksjekapital_ore: kapital.and_then(|k| k.amount_ore()),
         antall_aksjer: kapital.and_then(|k| k.antall_aksjer),
-        registreringer: enhet.registreringstidslinje(today),
+        registreringer: enhet.registration_timeline(today),
     };
     let onboarded = regnmed_db::onboard_company(
         &state.pool,
@@ -146,7 +146,7 @@ pub async fn create_firm(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     validate_orgnr(&request.orgnr)?;
     let enhet = regnmed_gov::brreg::BrregClient::from_env()
-        .enhet(&request.orgnr)
+        .entity(&request.orgnr)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
@@ -172,7 +172,7 @@ pub async fn create_firm(
     }
 
     let verified = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env()
-        .has_autorisasjon(&request.orgnr, &request.kind)
+        .has_authorisation(&request.orgnr, &request.kind)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if !verified {

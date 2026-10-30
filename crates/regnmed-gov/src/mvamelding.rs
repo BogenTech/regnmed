@@ -108,7 +108,7 @@ fn extract_findings(xml: &str) -> Vec<String> {
                 break;
             };
             let block = &rest[start..start + end];
-            // The human-readable text lives in <beskrivelse> or the block itself.
+            // The human-readable text lives in <description> or the block itself.
             let text = block
                 .split_once("<beskrivelse>")
                 .and_then(|(_, tail)| tail.split_once("</beskrivelse>"))
@@ -128,8 +128,8 @@ mod tests {
     #[test]
     fn extracts_avvik_descriptions() {
         let xml = r#"<valideringsresultat>
-            <avvik><avviksnavn>x</avviksnavn><beskrivelse>fastsattMerverdiavgift stemmer ikke</beskrivelse></avvik>
-            <avvik><beskrivelse>ugyldig sats</beskrivelse></avvik>
+            <avvik><avviksnavn>x</avviksnavn><description>fastsattMerverdiavgift stemmer ikke</description></avvik>
+            <avvik><description>ugyldig sats</description></avvik>
         </valideringsresultat>"#;
         let findings = extract_findings(xml);
         assert_eq!(findings.len(), 2);
