@@ -23,12 +23,12 @@ pub struct ChainReport {
 }
 
 /// Creates a company together with the genesis of its hash chain.
-pub async fn create_company(pool: &PgPool, orgnr: &str, name: &str) -> Result<Uuid> {
+pub async fn create_company(pool: &PgPool, orgnumber: &str, name: &str) -> Result<Uuid> {
     let mut tx = pool.begin().await?;
     let id = Uuid::now_v7();
     sqlx::query("insert into company (id, orgnr, name) values ($1, $2, $3)")
         .bind(id)
-        .bind(orgnr)
+        .bind(orgnumber)
         .bind(name)
         .execute(&mut *tx)
         .await?;
@@ -41,9 +41,9 @@ pub async fn create_company(pool: &PgPool, orgnr: &str, name: &str) -> Result<Uu
     Ok(id)
 }
 
-pub async fn find_company_by_orgnr(pool: &PgPool, orgnr: &str) -> Result<Option<Uuid>> {
+pub async fn find_company_by_orgnr(pool: &PgPool, orgnumber: &str) -> Result<Option<Uuid>> {
     let row = sqlx::query("select id from company where orgnr = $1")
-        .bind(orgnr)
+        .bind(orgnumber)
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|r| r.get("id")))

@@ -39,7 +39,7 @@ pub async fn list_parties(
             "party_no": p.party_no,
             "kind": p.kind,
             "name": p.name,
-            "orgnr": p.orgnr,
+            "orgnr": p.orgnumber,
             "address": p.address,
             "email": p.email,
             "bank_account": p.bank_account,
@@ -52,7 +52,8 @@ pub async fn list_parties(
 pub struct CreatePartyRequest {
     kind: String,
     name: String,
-    orgnr: Option<String>,
+    #[serde(rename = "orgnr")]
+    orgnumber: Option<String>,
     party_no: Option<String>,
 }
 
@@ -68,7 +69,7 @@ pub async fn create_party(
         company_id,
         &request.kind,
         &request.name,
-        request.orgnr.as_deref(),
+        request.orgnumber.as_deref(),
         request.party_no.as_deref(),
     )
     .await

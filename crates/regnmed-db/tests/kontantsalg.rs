@@ -16,7 +16,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -50,7 +50,7 @@ async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
 #[tokio::test]
 async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Kontantsalg AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Kontantsalg AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -124,7 +124,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
             currency: None,
-            valuta_kurs_micro: None,
+            exchange_rate_micro: None,
             lines: vec![regnmed_db::InvoiceLineDraft {
                 description: "Kaffe og kake".into(),
                 account_number: "3000".into(),
@@ -206,7 +206,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
 #[tokio::test]
 async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Kafeen AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Kafeen AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -225,7 +225,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
             .unwrap();
     }
 
-    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
+    let posted = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &pool,
         company,
         &regnmed_db::cash_register::DagsoppgjorInn {
@@ -235,7 +235,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
                 ("3000".into(), Some("3".into()), 12_500_00),
                 ("3010".into(), Some("31".into()), 2_300_00),
             ],
-            betaling: vec![("1900".into(), 4_800_00), ("1571".into(), 10_000_00)],
+            payment: vec![("1900".into(), 4_800_00), ("1571".into(), 10_000_00)],
             vat_account: "2700".into(),
             cash_account: Some("1900".into()),
             // 50 kr short in the till.
@@ -248,8 +248,8 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     .await
     .unwrap();
 
-    assert_eq!(bokfort.difference_ore, -50_00);
-    assert!(bokfort.difference.is_some(), "differansen får eget bilag");
+    assert_eq!(posted.difference_ore, -50_00);
+    assert!(posted.difference.is_some(), "differansen får eget bilag");
 
     // The day: income net per rate, mva as the sum of the parts.
     assert_eq!(balance(&pool, company, "3000").await, -10_000_00);

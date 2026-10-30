@@ -20,7 +20,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -55,7 +55,7 @@ fn voucher(day: NaiveDate, description: &str, entries: Vec<EntryDraft>) -> Vouch
 #[tokio::test]
 async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Mva Test AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Mva Test AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -148,12 +148,12 @@ async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
     assert_eq!(lines.len(), 2, "codes 1 and 3, nothing from termin 2");
 
     let inn = lines.iter().find(|l| l.code == "1").unwrap();
-    assert_eq!(inn.grunnlag_ore, 8_000_00);
+    assert_eq!(inn.basis_ore, 8_000_00);
     assert_eq!(inn.tax_ore, 2_000_00);
     assert_eq!(inn.rate_bp, 2500);
 
     let utg = lines.iter().find(|l| l.code == "3").unwrap();
-    assert_eq!(utg.grunnlag_ore, -10_000_00, "sales base is a credit");
+    assert_eq!(utg.basis_ore, -10_000_00, "sales base is a credit");
     assert_eq!(utg.tax_ore, -2_500_00);
 
     // 2017 report: 10 % on code 33, from the dated rate table.
@@ -197,7 +197,7 @@ async fn spesifikasjon_reports_grunnlag_and_avgift_per_termin() {
 #[tokio::test]
 async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Innførsel AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Innførsel AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -308,7 +308,7 @@ async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
 #[tokio::test]
 async fn an_unregistered_company_cannot_charge_output_vat() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Uregistrert AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Uregistrert AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -364,7 +364,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: vec![regnmed_db::InvoiceLineDraft {
             description: "Serverleie".into(),
             account_number: "3000".into(),
@@ -463,7 +463,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 #[tokio::test]
 async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Utlegg Uregistrert AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Utlegg Uregistrert AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")

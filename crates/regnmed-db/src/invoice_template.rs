@@ -27,7 +27,7 @@ pub struct TemplateDraft {
     pub intervall: String,
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
-    pub forfall_dager: i32,
+    pub due_days: i32,
     pub mark_dispatch: bool,
     pub lines: Vec<TemplateLineDraft>,
 }
@@ -73,7 +73,7 @@ pub async fn create_template(
     .bind(&draft.intervall)
     .bind(draft.next_date)
     .bind(draft.end_date)
-    .bind(draft.forfall_dager)
+    .bind(draft.due_days)
     .bind(draft.mark_dispatch)
     .bind(created_by)
     .execute(&mut *tx)
@@ -121,7 +121,7 @@ pub async fn create_template_from_invoice(
     invoice_id: Uuid,
     intervall: &str,
     next_date: NaiveDate,
-    forfall_dager: i32,
+    due_days: i32,
     mark_dispatch: bool,
     created_by: &str,
 ) -> Result<Uuid> {
@@ -162,7 +162,7 @@ pub async fn create_template_from_invoice(
             intervall: intervall.to_string(),
             next_date,
             end_date: None,
-            forfall_dager,
+            due_days,
             mark_dispatch,
             lines,
         },
@@ -181,7 +181,7 @@ pub async fn update_template(
     intervall: Option<&str>,
     next_date: Option<NaiveDate>,
     end_date: Option<Option<NaiveDate>>,
-    forfall_dager: Option<i32>,
+    due_days: Option<i32>,
     mark_dispatch: Option<bool>,
     active: Option<bool>,
     lines: Option<&[TemplateLineDraft]>,
@@ -207,7 +207,7 @@ pub async fn update_template(
     .bind(next_date)
     .bind(end_date.is_some())
     .bind(end_date.flatten())
-    .bind(forfall_dager)
+    .bind(due_days)
     .bind(mark_dispatch)
     .bind(active)
     .execute(&mut *tx)
@@ -233,7 +233,7 @@ pub struct TemplateRow {
     pub intervall: String,
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
-    pub forfall_dager: i32,
+    pub due_days: i32,
     pub mark_dispatch: bool,
     pub active: bool,
     pub sum_netto_ore: i64,
@@ -266,7 +266,7 @@ pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<Templ
             intervall: r.get("intervall"),
             next_date: r.get("neste_dato"),
             end_date: r.get("slutt_dato"),
-            forfall_dager: r.get("forfall_dager"),
+            due_days: r.get("forfall_dager"),
             mark_dispatch: r.get("merk_utsendelse"),
             active: r.get("active"),
             sum_netto_ore: r.get("sum_netto_ore"),
@@ -394,7 +394,7 @@ pub async fn generate_one(
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: line_rows
             .iter()
             .map(|r| InvoiceLineDraft {

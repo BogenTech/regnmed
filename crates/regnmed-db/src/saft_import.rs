@@ -183,7 +183,7 @@ pub async fn import_saft(
             } else {
                 &party.name
             })
-            .bind(party.orgnr.as_deref().filter(|o| o.len() == 9))
+            .bind(party.orgnumber.as_deref().filter(|o| o.len() == 9))
             .execute(&mut *tx)
             .await?;
             party_map.insert((tag, party.source_id.clone()), party_no);

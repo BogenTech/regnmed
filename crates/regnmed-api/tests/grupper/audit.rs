@@ -4,7 +4,7 @@
 //! planted anchor mismatch turns the verdict; the text download renders;
 //! outsiders get 404. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -52,25 +52,29 @@ async fn revisor_generates_the_verification_report() {
 
     // The revisor reaches the company ONLY through her firm's revisjon
     // engagement — the marketplace path, not a direct membership.
-    let revisor_sub = format!("test|{}", Uuid::new_v4());
-    let revisor = regnmed_db::ensure_person(&state.pool, &revisor_sub, Some("Randi Revisor"), None)
+    let auditor_sub = format!("test|{}", Uuid::new_v4());
+    let auditor = regnmed_db::ensure_person(&state.pool, &auditor_sub, Some("Randi Revisor"), None)
         .await
         .unwrap();
-    let firm =
-        regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon & Co AS", "revisjon")
-            .await
-            .unwrap();
-    regnmed_db::ensure_firm_member(&state.pool, firm, revisor, "ansatt")
+    let firm = regnmed_db::ensure_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Revisjon & Co AS",
+        "revisjon",
+    )
+    .await
+    .unwrap();
+    regnmed_db::ensure_firm_member(&state.pool, firm, auditor, "ansatt")
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kontrollert AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kontrollert AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_engagement(&state.pool, firm, company, "revisjon")
         .await
         .unwrap();
-    let token = idp.token(&revisor_sub, "Randi Revisor");
+    let token = idp.token(&auditor_sub, "Randi Revisor");
 
     // A small ledger with reskontro, a period lock and an anchor.
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
@@ -148,7 +152,7 @@ async fn revisor_generates_the_verification_report() {
         NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
         "Åpne poster i kundereskontroen, avstemt mot hovedboken",
         None,
-        revisor,
+        auditor,
         NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
     )
     .await
@@ -265,7 +269,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Bea Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Avstemt AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Avstemt AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -431,7 +435,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     // possible (the ledger is append-only) — but a company where every
     // party posting sits on its own flagged account ties out, and says
     // so with the total it reconciled.
-    let clean = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Ren AS")
+    let clean = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Ren AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, clean, person, "admin")
@@ -530,7 +534,7 @@ async fn undocumented_vouchers_are_counted_and_listable() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Adm"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Dokumentasjon AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Dokumentasjon AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")

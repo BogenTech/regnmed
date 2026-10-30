@@ -215,7 +215,7 @@ pub async fn ehf_forslag(
     let forslag = regnmed_db::inbox_ehf_forslag(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    let m = &forslag.mottatt;
+    let m = &forslag.received;
     Ok(Json(json!({
         "er_kreditnota": m.er_kreditnota,
         "fakturanr": m.fakturanr,
@@ -223,7 +223,7 @@ pub async fn ehf_forslag(
         "forfallsdato": m.due_date.map(|d| d.to_string()),
         "valuta": m.currency,
         "selger_navn": m.seller_name,
-        "selger_orgnr": m.selger_orgnr,
+        "selger_orgnr": m.seller_orgnumber,
         "kid": m.kid,
         "kontonummer": m.account_number,
         "netto_ore": m.net_ore,
@@ -234,7 +234,7 @@ pub async fn ehf_forslag(
             "netto_ore": l.net_ore,
             "mva_sats_bp": l.vat_rate_bp,
         })).collect::<Vec<_>>(),
-        "leverandor_no": forslag.leverandor_no,
+        "leverandor_no": forslag.supplier_no,
         "leverandor_navn": forslag.supplier_name,
         "warnings": forslag.advarsler,
     })))
@@ -257,16 +257,16 @@ pub async fn forslag(
     Ok(Json(json!({
         "kilde": f.source,
         "selger_navn": f.seller_name,
-        "orgnr": f.orgnr,
+        "orgnr": f.orgnumber,
         "fakturanr": f.fakturanr,
         "dato": f.date.map(|d| d.to_string()),
-        "forfall": f.forfall.map(|d| d.to_string()),
+        "forfall": f.due_date.map(|d| d.to_string()),
         "kid": f.kid,
         "kontonummer": f.account_number,
         "netto_ore": f.net_ore,
         "mva_ore": f.vat_ore,
         "brutto_ore": f.gross_ore,
-        "leverandor_no": f.leverandor_no,
+        "leverandor_no": f.supplier_no,
         "leverandor_navn": f.supplier_name,
         "konto": f.account,
         "konto_begrunnelse": f.account_reason,

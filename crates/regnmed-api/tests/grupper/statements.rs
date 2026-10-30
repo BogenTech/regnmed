@@ -4,7 +4,7 @@
 //! lists vouchers in posting order, and resultat/balanse balance to the
 //! øre. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -90,7 +90,7 @@ async fn statutory_reports_reconcile_to_the_ore() {
     regnmed_db::ensure_person(&state.pool, &stranger_sub, Some("Fremmed"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Rapport AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Rapport AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -260,7 +260,7 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
     regnmed_db::ensure_person(&state.pool, &stranger_sub, Some("Fremmed"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Reskontro AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Reskontro AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

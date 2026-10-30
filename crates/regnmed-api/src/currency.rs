@@ -44,7 +44,8 @@ pub struct ManualRateRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     /// Decimal, e.g. "11.6543".
-    kurs: String,
+    #[serde(rename = "kurs")]
+    exchange_rate: String,
     #[serde(rename = "kilde")]
     source: Option<String>,
 }
@@ -56,8 +57,10 @@ pub async fn add_rate(
     Json(request): Json<ManualRateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::CurrencyWrite).await?;
-    let rate_micro = regnmed_core::currency::parse_rate(&request.kurs)
-        .ok_or_else(|| ApiError::BadRequest(format!("uparselig kurs {:?}", request.kurs)))?;
+    let rate_micro =
+        regnmed_core::currency::parse_rate(&request.exchange_rate).ok_or_else(|| {
+            ApiError::BadRequest(format!("uparselig kurs {:?}", request.exchange_rate))
+        })?;
     let registered_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::insert_kurs(
         &state.pool,

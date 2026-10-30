@@ -95,7 +95,7 @@ pub async fn vat_report(
             "code": l.code,
             "description": l.description,
             "rate_bp": l.rate_bp,
-            "grunnlag_ore": l.grunnlag_ore,
+            "grunnlag_ore": l.basis_ore,
             "avgift_ore": l.tax_ore,
         })).collect::<Vec<_>>(),
         "utgaende_ore": utgaende,
@@ -113,7 +113,7 @@ pub async fn vat_return(
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let (ordning, period) = scheme_period(&state, company_id, query.year, query.period).await?;
 
-    let orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
+    let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_one(&state.pool)
         .await
@@ -132,9 +132,9 @@ pub async fn vat_return(
         )));
     }
 
-    let referanse = format!("regnmed-{}-{}-{}", orgnr, period.year, period.number);
+    let referanse = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
     let message = regnmed_core::vat_return::build(
-        &orgnr,
+        &orgnumber,
         period,
         ordning,
         &referanse,
@@ -143,7 +143,7 @@ pub async fn vat_return(
     );
     let filename = format!(
         "mva-melding_{}_{}-termin{}.xml",
-        orgnr, period.year, period.number
+        orgnumber, period.year, period.number
     );
     Ok(xml_download(
         regnmed_core::vat_return::render(&message),
@@ -202,7 +202,7 @@ pub async fn saft_export(
         regnmed_db::load_saft_input(&state.pool, company_id, start, end, &first, &last).await?;
     let filename = format!(
         "SAF-T Financial_{}_{}.xml",
-        input.orgnr,
+        input.orgnumber,
         chrono::Utc::now().format("%Y%m%d%H%M%S")
     );
     let xml = regnmed_core::saft::render(&input).map_err(ApiError::BadRequest)?;
@@ -442,7 +442,7 @@ pub async fn project_profitability(
     let timer_for = |code: &str| timer.iter().find(|t| t.project.as_deref() == Some(code));
     let timer_json = |t: Option<&regnmed_db::timesheet::ProsjektSum>| match t {
         Some(t) => json!({
-            "minutter": t.minutter,
+            "minutter": t.minutes,
             "fakturerte_minutter": t.fakturerte_minutter,
             "fakturert_ore": t.fakturert_ore,
             "ufakturert_ore": t.ufakturert_ore,
@@ -560,7 +560,7 @@ pub async fn audit(
     .await?;
 
     if query.format.as_deref() == Some("tekst") {
-        let filename = format!("verifikasjonsrapport_{}.txt", report.orgnr);
+        let filename = format!("verifikasjonsrapport_{}.txt", report.orgnumber);
         return Ok(file_response(
             Vis::Attachment,
             &filename,
@@ -570,8 +570,8 @@ pub async fn audit(
     }
 
     Ok(Json(json!({
-        "orgnr": report.orgnr,
-        "selskap": report.selskap,
+        "orgnr": report.orgnumber,
+        "selskap": report.company,
         "generert": report.generert,
         "generert_av": report.generert_av,
         "programversjon": report.programversjon,
@@ -724,12 +724,12 @@ pub async fn nokkeltall(
     let mut frister = Vec::new();
     for y in [this_year, this_year + 1] {
         for n in 1..=ordning.period_count() {
-            if let Some(periode) = ordning.new_period(y, n) {
-                let deadline = ordning.deadline(periode);
+            if let Some(period) = ordning.new_period(y, n) {
+                let deadline = ordning.deadline(period);
                 if deadline >= today && frister.len() < 2 {
                     frister.push(serde_json::json!({
                         "type": "mva",
-                        "label": ordning.label(periode),
+                        "label": ordning.label(period),
                         "frist": deadline.to_string(),
                     }));
                 }

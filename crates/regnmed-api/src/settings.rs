@@ -29,10 +29,10 @@ pub async fn get_settings(
         .await
         .map_err(anyhow::Error::from)?;
     let reg = regnmed_db::registrering_on(&state.pool, company_id, today).await?;
-    let historikk = regnmed_db::registrering_history(&state.pool, company_id).await?;
+    let history = regnmed_db::registrering_history(&state.pool, company_id).await?;
     Ok(Json(json!({
         "name": s.name,
-        "orgnr": s.orgnr,
+        "orgnr": s.orgnumber,
         "address": s.address,
         "bank_account": s.bank_account,
         "orgform": s.orgform,
@@ -44,7 +44,7 @@ pub async fn get_settings(
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.vat_registered,
         "foretaksregistrert": reg.foretaksregistrert,
-        "registrering_historikk": historikk.iter().map(|(date, r, source, note)| json!({
+        "registrering_historikk": history.iter().map(|(date, r, source, note)| json!({
             "valid_from": date.to_string(),
             "mva_registrert": r.vat_registered,
             "foretaksregistrert": r.foretaksregistrert,

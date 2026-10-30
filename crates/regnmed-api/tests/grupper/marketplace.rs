@@ -5,7 +5,7 @@
 //! creation gated on autorisasjon — runs without the internet.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, test_state, unique_orgnr};
+use crate::common::{TestIdp, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -24,9 +24,9 @@ async fn start_mock_registries() -> String {
     use axum::routing::get;
     let app = axum::Router::new()
         .route(
-            "/enheter/{orgnr}",
-            get(|axum::extract::Path(orgnr): axum::extract::Path<String>| async move {
-                let body = match orgnr.as_str() {
+            "/enheter/{orgnumber}",
+            get(|axum::extract::Path(orgnumber): axum::extract::Path<String>| async move {
+                let body = match orgnumber.as_str() {
                     COMPANY_ORGNR => serde_json::json!({
                         "organisasjonsnummer": COMPANY_ORGNR,
                         "navn": "TESTSELSKAP AS",
@@ -73,9 +73,9 @@ async fn start_mock_registries() -> String {
             }),
         )
         .route(
-            "/virksomheter/{orgnr}",
-            get(|axum::extract::Path(orgnr): axum::extract::Path<String>| async move {
-                if orgnr == FIRM_ORGNR {
+            "/virksomheter/{orgnumber}",
+            get(|axum::extract::Path(orgnumber): axum::extract::Path<String>| async move {
+                if orgnumber == FIRM_ORGNR {
                     (
                         StatusCode::OK,
                         axum::Json(serde_json::json!({
@@ -142,16 +142,16 @@ async fn onboarding_from_registries_end_to_end() {
     let token = idp.token(&sub, "Grunnlegger Gro");
 
     // Clean slate: earlier runs may have onboarded these orgnrs.
-    for orgnr in [COMPANY_ORGNR, FIRM_ORGNR] {
+    for orgnumber in [COMPANY_ORGNR, FIRM_ORGNR] {
         sqlx::query("update company set orgnr = $2 where orgnr = $1")
-            .bind(orgnr)
-            .bind(unique_orgnr())
+            .bind(orgnumber)
+            .bind(unique_orgnumber())
             .execute(&state.pool)
             .await
             .unwrap();
         sqlx::query("update firm set orgnr = $2 where orgnr = $1")
-            .bind(orgnr)
-            .bind(unique_orgnr())
+            .bind(orgnumber)
+            .bind(unique_orgnumber())
             .execute(&state.pool)
             .await
             .unwrap();
@@ -220,14 +220,14 @@ async fn onboarding_from_registries_end_to_end() {
     // The two registers have INDEPENDENT dates, so the timeline has one
     // row per change. A document dated between them must carry only the
     // påtegning that applied then (#81) — the whole point of the dating.
-    let historikk = settings["registrering_historikk"].as_array().unwrap();
-    assert_eq!(historikk.len(), 2, "en rad per endring: {historikk:?}");
-    assert_eq!(historikk[1]["valid_from"], "2019-03-04");
-    assert_eq!(historikk[1]["mva_registrert"], false);
-    assert_eq!(historikk[1]["foretaksregistrert"], true);
-    assert_eq!(historikk[0]["valid_from"], "2020-06-15");
-    assert_eq!(historikk[0]["mva_registrert"], true);
-    assert_eq!(historikk[0]["kilde"], "brreg");
+    let history = settings["registrering_historikk"].as_array().unwrap();
+    assert_eq!(history.len(), 2, "en rad per endring: {history:?}");
+    assert_eq!(history[1]["valid_from"], "2019-03-04");
+    assert_eq!(history[1]["mva_registrert"], false);
+    assert_eq!(history[1]["foretaksregistrert"], true);
+    assert_eq!(history[0]["valid_from"], "2020-06-15");
+    assert_eq!(history[0]["mva_registrert"], true);
+    assert_eq!(history[0]["kilde"], "brreg");
 
     let (status, me) = request(&state, "GET", "/me", &token, None).await;
     assert_eq!(status, StatusCode::OK);

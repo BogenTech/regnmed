@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct CompanyAccess {
     pub company_id: Uuid,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
     /// 'admin', 'bokforing' or 'les'.
     pub access: String,
@@ -45,19 +45,19 @@ pub async fn ensure_person(
     Ok(row.get("id"))
 }
 
-pub async fn ensure_firm(pool: &PgPool, orgnr: &str, name: &str, kind: &str) -> Result<Uuid> {
+pub async fn ensure_firm(pool: &PgPool, orgnumber: &str, name: &str, kind: &str) -> Result<Uuid> {
     sqlx::query(
         "insert into firm (id, orgnr, name, kind) values ($1, $2, $3, $4)
          on conflict (orgnr) do nothing",
     )
     .bind(Uuid::now_v7())
-    .bind(orgnr)
+    .bind(orgnumber)
     .bind(name)
     .bind(kind)
     .execute(pool)
     .await?;
     let row = sqlx::query("select id from firm where orgnr = $1")
-        .bind(orgnr)
+        .bind(orgnumber)
         .fetch_one(pool)
         .await?;
     Ok(row.get("id"))
@@ -235,7 +235,7 @@ pub async fn company_access_for_person(
         .iter()
         .map(|r| CompanyAccess {
             company_id: r.get("company_id"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             name: r.get("name"),
             access: r.get("access"),
             via: r.get("via"),

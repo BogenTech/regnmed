@@ -5,7 +5,7 @@
 //! opening balance manually — zero-sum enforced, empty-ledger only.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -46,7 +46,7 @@ fn foreign_saft_5digit() -> String {
         rate_micro: None,
     };
     let input = SaftInput {
-        orgnr: "923609016".into(),
+        orgnumber: "923609016".into(),
         company_name: "Femsifret AS".into(),
         contact_first_name: "Kari".into(),
         contact_last_name: "Nordmann".into(),
@@ -139,7 +139,7 @@ async fn foreign_chart_maps_through_the_wizard() {
     let admin = regnmed_db::ensure_person(&state.pool, &sub, Some("Mona Mapper"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Mappet AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Mappet AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -232,7 +232,7 @@ async fn manual_opening_balance_posts_once_and_balances() {
     let admin = regnmed_db::ensure_person(&state.pool, &sub, Some("Ove Oppstart"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Manuell AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Manuell AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

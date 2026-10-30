@@ -289,9 +289,9 @@ impl PayrollTotals {
 mod tests {
     use super::*;
 
-    fn basis(brutto: i64, withholding: Withholding) -> PayrollBasis {
+    fn basis(gross: i64, withholding: Withholding) -> PayrollBasis {
         PayrollBasis {
-            gross_ore: brutto,
+            gross_ore: gross,
             holiday_pay_ore: 0,
             withholding,
         }
@@ -471,19 +471,19 @@ mod tests {
     /// sum across the whole life is zero.
     #[test]
     fn the_accrual_builds_up_and_draws_back_down_to_zero() {
-        let sats = 1410;
+        let rate = 1410;
         // Year 1: 51 000 kr of feriepenger earned, nothing accrued before.
-        let mal1 = employer_contribution_accrual_target(5_100_000, sats);
+        let mal1 = employer_contribution_accrual_target(5_100_000, rate);
         let delta1 = mal1 - 0;
         assert_eq!(delta1, 719_100);
 
         // Year 2, half is paid out: the liability is now 25 500 kr.
-        let mal2 = employer_contribution_accrual_target(2_550_000, sats);
+        let mal2 = employer_contribution_accrual_target(2_550_000, rate);
         let delta2 = mal2 - mal1;
         assert!(delta2 < 0, "a payout draws the accrual down");
 
         // The rest is paid out: the liability is zero, and so is the accrual.
-        let mal3 = employer_contribution_accrual_target(0, sats);
+        let mal3 = employer_contribution_accrual_target(0, rate);
         let delta3 = mal3 - mal2;
         assert_eq!(mal3, 0);
         assert_eq!(delta1 + delta2 + delta3, 0, "the whole life sums to zero");

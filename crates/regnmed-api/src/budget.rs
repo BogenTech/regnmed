@@ -112,7 +112,7 @@ pub async fn get_budget(
         "lines": lines.iter().map(|l| json!({
             "account": l.account_number,
             "account_name": l.account_name,
-            "maned": l.maned,
+            "maned": l.month,
             "belop_ore": l.amount_ore,
         })).collect::<Vec<_>>(),
     })))
@@ -121,7 +121,8 @@ pub async fn get_budget(
 #[derive(Deserialize)]
 pub struct LineRequest {
     account: String,
-    maned: i32,
+    #[serde(rename = "maned")]
+    month: i32,
     #[serde(rename = "belop_ore")]
     amount_ore: i64,
 }
@@ -143,7 +144,7 @@ pub async fn set_lines(
         .into_iter()
         .map(|l| regnmed_db::BudgetLineDraft {
             account_number: l.account.trim().to_string(),
-            maned: l.maned,
+            month: l.month,
             amount_ore: l.amount_ore,
         })
         .collect();

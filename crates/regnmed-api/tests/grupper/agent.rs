@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -66,14 +66,14 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         return;
     };
     let eier_sub = format!("test|{}", Uuid::new_v4());
-    let eier = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Agentverktoy AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Agentverktoy AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
-    regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
@@ -186,12 +186,12 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     )
     .await;
     assert!(!feilet, "bilag_for nådde ikke fram: {text}");
-    let bokfort: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
+    let posted: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
         .bind(company)
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    assert_eq!(bokfort, 1, "bilaget havnet ikke i hovedboken");
+    assert_eq!(posted, 1, "bilaget havnet ikke i hovedboken");
 
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.
@@ -416,13 +416,13 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
         return;
     };
     let eier_sub = format!("test|{}", Uuid::new_v4());
-    let eier = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Vertsagent AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Vertsagent AS")
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, eier, "admin")
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
@@ -537,7 +537,7 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Trådagent AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Trådagent AS")
         .await
         .unwrap();
     let client_id = format!("tradagent-{}", Uuid::new_v4());
@@ -625,7 +625,7 @@ async fn only_one_worker_can_hold_a_task() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Køselskapet AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Køselskapet AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")

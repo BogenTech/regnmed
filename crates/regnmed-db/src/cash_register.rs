@@ -23,7 +23,7 @@ pub struct DagsoppgjorInn {
     pub date: NaiveDate,
     pub z_nummer: String,
     pub salg: Vec<(String, Option<String>, i64)>,
-    pub betaling: Vec<(String, i64)>,
+    pub payment: Vec<(String, i64)>,
     pub vat_account: String,
     /// The cash account, and what was counted in it. Both or neither —
     /// a counted amount without an account cannot be posted anywhere.
@@ -84,7 +84,7 @@ pub async fn bokfor_dagsoppgjor(
         z_number: inn.z_nummer.clone(),
         sales: salg,
         payments: inn
-            .betaling
+            .payment
             .iter()
             .map(|(account, amount_ore)| PaymentLine {
                 account: account.clone(),
@@ -117,7 +117,7 @@ pub async fn bokfor_dagsoppgjor(
     let mut difference_ore = 0;
     if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.opptalt_kontant_ore) {
         let registrert: i64 = inn
-            .betaling
+            .payment
             .iter()
             .filter(|(account, _)| account == cash_account)
             .map(|(_, amount)| *amount)

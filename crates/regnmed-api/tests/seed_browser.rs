@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{TestIdp, test_state, unique_orgnr};
+use common::{TestIdp, test_state, unique_orgnumber};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -20,7 +20,7 @@ async fn seed_browser_demo() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Demo Bruker"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Purredemo AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Purredemo AS")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
@@ -136,7 +136,7 @@ async fn seed_browser_demo() {
                 receivable_account: "1500".into(),
                 vat_account: "2700".into(),
                 currency: None,
-                valuta_kurs_micro: None,
+                exchange_rate_micro: None,
                 lines: vec![regnmed_db::InvoiceLineDraft {
                     description: "Konsulentbistand".into(),
                     account_number: "3000".into(),
@@ -209,7 +209,7 @@ async fn seed_browser_demo() {
             kind: "person".into(),
             name: "Kari Nordmann".into(),
             fodselsnummer: Some("26829398612".into()),
-            orgnr: None,
+            orgnumber: None,
             utenlandsk_id: None,
             adresse: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
@@ -228,7 +228,7 @@ async fn seed_browser_demo() {
             kind: "selskap".into(),
             name: "Investor AS".into(),
             fodselsnummer: None,
-            orgnr: Some("923609016".into()),
+            orgnumber: Some("923609016".into()),
             utenlandsk_id: None,
             adresse: None,
             postnummer: None,
@@ -308,12 +308,12 @@ async fn seed_browser_demo() {
                 fodselsnummer: fnr.into(),
                 name: name.into(),
                 stilling: Some(stilling.into()),
-                ansatt_fra: date(2025, 1, 1),
+                employed_from: date(2025, 1, 1),
                 manedslonn_ore: Some(lonn),
                 timelonn_ore: None,
                 withholding_type: "prosent".into(),
                 withholding_percent_bp: Some(trekk_bp),
-                trekk_tabell: None,
+                withholding_table: None,
                 holiday_pay_bp: fp_bp,
                 bank_account: None,
                 note: None,
@@ -379,12 +379,12 @@ async fn seed_browser_demo() {
             fodselsnummer: "25927898821".into(),
             name: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),
-            ansatt_fra: date(2025, 1, 1),
+            employed_from: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000),
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3000),
-            trekk_tabell: None,
+            withholding_table: None,
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
@@ -399,17 +399,17 @@ async fn seed_browser_demo() {
         .execute(&state.pool)
         .await
         .unwrap();
-    for (dag, minutter) in [(1u32, 450i32), (2, 480), (3, 390), (6, 480), (7, 420)] {
+    for (dag, minutes) in [(1u32, 450i32), (2, 480), (3, 390), (6, 480), (7, 420)] {
         regnmed_db::timesheet::create_time_entry(
             &state.pool,
             company,
             person,
             &regnmed_db::timesheet::TimeEntryDraft {
                 date: date(2026, 7, dag),
-                minutter,
+                minutes,
                 description: "Konsulentarbeid".into(),
                 project: None,
-                fakturerbar: Some(true),
+                billable: Some(true),
                 timesats_ore: Some(120_000),
             },
             true,

@@ -187,7 +187,7 @@ pub async fn register_card_payment(
     // The faktura must be the ops company's, and the amount must match
     // the receivable — we created the charge ourselves, so a mismatch is
     // a bug.
-    let faktura = sqlx::query(
+    let invoice = sqlx::query(
         "select e.id as receivable_entry, e.amount_ore::bigint as gross,
                 p.party_no, i.invoice_no
          from invoice i
@@ -200,10 +200,10 @@ pub async fn register_card_payment(
     .fetch_optional(pool)
     .await?
     .context("ukjent abonnementsfaktura for korttrekket")?;
-    let receivable_entry: Uuid = faktura.get("receivable_entry");
-    let gross: i64 = faktura.get("gross");
-    let party_no: String = faktura.get("party_no");
-    let invoice_no: i64 = faktura.get("invoice_no");
+    let receivable_entry: Uuid = invoice.get("receivable_entry");
+    let gross: i64 = invoice.get("gross");
+    let party_no: String = invoice.get("party_no");
+    let invoice_no: i64 = invoice.get("invoice_no");
 
     // The customer company is identified by the run log (the faktura was
     // created by fakturer_maned with a run row in the same tx).
@@ -389,7 +389,7 @@ pub async fn save_stripe_subscription(
     av: &str,
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let ny = sqlx::query(
+    let new = sqlx::query(
         "insert into abonnement_stripe
              (company_id, stripe_subscription_id, stripe_price_id, plan, interval, status)
          values ($1,$2,$3,$4,$5,$6)
@@ -404,7 +404,7 @@ pub async fn save_stripe_subscription(
     .execute(&mut *tx)
     .await?
     .rows_affected();
-    if ny == 0 {
+    if new == 0 {
         return Ok(false); // webhook-replay
     }
     // Coverage only if the company does not already have an open row —
@@ -513,7 +513,7 @@ pub async fn post_stripe_payment(
     payment_intent_id: &str,
     gross_ore: i64,
     plan: &str,
-    periode: &str,
+    period: &str,
     today: NaiveDate,
 ) -> Result<bool> {
     ensure!(gross_ore > 0, "betalingen må være positiv");
@@ -550,7 +550,7 @@ pub async fn post_stripe_payment(
     // for Norwegian mva: ours. An unregistered ops company splits at 0,
     // i.e. the whole charge is the base — same code path, no special case.
     let (vat_code, rate_bp) = output_vat(pool, drift_company_id, today).await?;
-    let (netto, _mva) = regnmed_core::vat::split_gross(gross_ore, rate_bp);
+    let (net, _mva) = regnmed_core::vat::split_gross(gross_ore, rate_bp);
 
     let mut tx = pool.begin().await?;
 
@@ -582,12 +582,12 @@ pub async fn post_stripe_payment(
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: vec![crate::invoice::InvoiceLineDraft {
-            description: format!("regnmed {plan} — {periode}"),
+            description: format!("regnmed {plan} — {period}"),
             account_number: "3000".into(),
             quantity_milli: 1000,
-            unit_price_ore: netto,
+            unit_price_ore: net,
             vat_code: Some(vat_code),
             department: None,
             project: None,
@@ -827,13 +827,13 @@ pub async fn brutto_for(
     .bind(date)
     .fetch_optional(pool)
     .await?;
-    let netto = match egen {
+    let net = match egen {
         Some(n) => n,
         None if interval == "year" => price_on(pool, plan, date).await? * 12,
         None => price_on(pool, plan, date).await?,
     };
     let (_kode, rate_bp) = output_vat(pool, drift_company_id, date).await?;
-    Ok(netto + regnmed_core::vat::vat_of_base(netto, rate_bp))
+    Ok(net + regnmed_core::vat::vat_of_base(net, rate_bp))
 }
 
 /// The utgående mva code for OUR OWN subscription invoices, and the rate
@@ -1108,7 +1108,7 @@ async fn fakturer_en(
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
         currency: None,
-        valuta_kurs_micro: None,
+        exchange_rate_micro: None,
         lines: vec![crate::invoice::InvoiceLineDraft {
             description: format!(
                 "regnmed {plan} — {} {}",

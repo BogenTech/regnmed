@@ -4,7 +4,7 @@
 //! bilagsinnboks yields a posting suggestion computed from the original
 //! every time — never stored. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -100,7 +100,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Eva EHF"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Sender AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Sender AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -179,7 +179,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
             receivable_account: "1500".into(),
             vat_account: "2700".into(),
             currency: None,
-            valuta_kurs_micro: None,
+            exchange_rate_micro: None,
             lines: vec![
                 regnmed_db::InvoiceLineDraft {
                     description: "Konsulentbistand".into(),
@@ -278,7 +278,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     );
 
     // ---- Inn: en mottatt EHF i innboksen ----
-    let (_, leverandor_no) = regnmed_db::create_party(
+    let (_, supplier_no) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -288,7 +288,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     )
     .await
     .unwrap();
-    let mottatt = r#"<?xml version="1.0" encoding="UTF-8"?>
+    let received = r#"<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
@@ -326,7 +326,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
         &format!("{base}/inbox?filename=ehf-90210.xml"),
         &token,
         "application/xml",
-        mottatt.as_bytes().to_vec(),
+        received.as_bytes().to_vec(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{uploaded}");
@@ -339,7 +339,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     assert_eq!(forslag["selger_navn"], "Handelshuset AS");
     assert_eq!(forslag["selger_orgnr"], "974760673");
     assert_eq!(
-        forslag["leverandor_no"], leverandor_no,
+        forslag["leverandor_no"], supplier_no,
         "leverandøren gjenkjennes på orgnr"
     );
     assert_eq!(forslag["netto_ore"], 2_000_00);
@@ -361,7 +361,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(content, mottatt, "originalen er urørt");
+    assert_eq!(content, received, "originalen er urørt");
 
     // A document that is not EHF says so instead of guessing.
     let (_, uploaded) = post_bytes(

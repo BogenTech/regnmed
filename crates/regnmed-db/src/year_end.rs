@@ -39,7 +39,7 @@ pub struct Arsavslutning {
 /// The fiscal year's span — the calendar-year assumption lives in ONE
 /// place (`regnmed_core::fiscal_year`, docs/regelverk.md), and this goes
 /// through that seam like the posting and the SAF-T export do.
-fn periode(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
+fn period(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
     regnmed_core::fiscal_year::period(ar).with_context(|| format!("ugyldig år {ar}"))
 }
 
@@ -47,7 +47,7 @@ fn periode(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
 /// positive = overskudd. Read here rather than taken from the caller:
 /// the number that gets disponert must be the ledger's own.
 pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<i64> {
-    let (fra, til) = periode(ar)?;
+    let (fra, til) = period(ar)?;
     let lines = crate::balance_lines(pool, company_id, Some(fra), til, None, None).await?;
     Ok(regnmed_core::statements::result(&lines).annual_result_ore)
 }
@@ -72,7 +72,7 @@ pub async fn avslutt_ar(
         skattekostnad_ore >= 0,
         "skattekostnaden kan ikke være negativ — en skattefordel er utsatt skatt, som ikke er bygget"
     );
-    let (_, ar_slutt) = periode(ar)?;
+    let (_, ar_slutt) = period(ar)?;
 
     let alt_avsluttet: Option<i32> =
         sqlx::query_scalar("select ar from arsavslutning where company_id = $1 and ar = $2")

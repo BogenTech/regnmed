@@ -307,9 +307,9 @@ pub async fn build_audit_report(
                      (bokføringsloven §11)"
                 .into(),
         },
-        Some(periode) => {
+        Some(period) => {
             let lines =
-                crate::balance_documentation::balance_status(pool, company_id, periode).await?;
+                crate::balance_documentation::balance_status(pool, company_id, period).await?;
             let udokumentert: Vec<&crate::balance_documentation::BalanceSheetLine> =
                 lines.iter().filter(|l| l.avstemt.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = lines
@@ -319,7 +319,7 @@ pub async fn build_audit_report(
             let mut deler = Vec::new();
             if !udokumentert.is_empty() {
                 deler.push(format!(
-                    "{} av {} balansekontoer med saldo mangler dokumentasjon per {periode}: {}",
+                    "{} av {} balansekontoer med saldo mangler dokumentasjon per {period}: {}",
                     udokumentert.len(),
                     lines.len(),
                     udokumentert
@@ -348,7 +348,7 @@ pub async fn build_audit_report(
                 ok: deler.is_empty(),
                 detalj: if deler.is_empty() {
                     format!(
-                        "alle {} balansekontoer med saldo er dokumentert per {periode}",
+                        "alle {} balansekontoer med saldo er dokumentert per {period}",
                         lines.len()
                     )
                 } else {
@@ -424,8 +424,8 @@ pub async fn build_audit_report(
         .collect();
 
     Ok(AuditInput {
-        orgnr: company.get("orgnr"),
-        selskap: company.get("name"),
+        orgnumber: company.get("orgnr"),
+        company: company.get("name"),
         generert: chrono::Utc::now().to_rfc3339(),
         generert_av: generated_by.to_string(),
         programversjon: app_version.to_string(),

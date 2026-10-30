@@ -29,13 +29,13 @@ fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "stilling": a.stilling,
         // Birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
-        "ansatt_fra": a.ansatt_fra,
+        "ansatt_fra": a.employed_from,
         "ansatt_til": a.ansatt_til,
         "manedslonn_ore": a.manedslonn_ore,
         "timelonn_ore": a.timelonn_ore,
         "trekk_type": a.withholding_type,
         "trekk_prosent_bp": a.withholding_percent_bp,
-        "trekk_tabell": a.trekk_tabell,
+        "trekk_tabell": a.withholding_table,
         "feriepenger_bp": a.holiday_pay_bp,
         "bank_account": a.bank_account,
         "note": a.note,
@@ -67,7 +67,8 @@ pub struct CreateEmployeeRequest {
     #[serde(rename = "navn")]
     name: String,
     stilling: Option<String>,
-    ansatt_fra: chrono::NaiveDate,
+    #[serde(rename = "ansatt_fra")]
+    employed_from: chrono::NaiveDate,
     manedslonn_ore: Option<i64>,
     timelonn_ore: Option<i64>,
     #[serde(default = "prosent")]
@@ -75,7 +76,8 @@ pub struct CreateEmployeeRequest {
     withholding_type: String,
     #[serde(rename = "trekk_prosent_bp")]
     withholding_percent_bp: Option<i32>,
-    trekk_tabell: Option<i32>,
+    #[serde(rename = "trekk_tabell")]
+    withholding_table: Option<i32>,
     /// Ferieloven §10: 1020 as a minimum, 1250 from the year the
     /// employee turns 60, higher on tariff.
     #[serde(default = "lovens_minimum")]
@@ -106,12 +108,12 @@ pub async fn create_employee(
             fodselsnummer: request.fodselsnummer,
             name: request.name,
             stilling: request.stilling,
-            ansatt_fra: request.ansatt_fra,
+            employed_from: request.employed_from,
             manedslonn_ore: request.manedslonn_ore,
             timelonn_ore: request.timelonn_ore,
             withholding_type: request.withholding_type,
             withholding_percent_bp: request.withholding_percent_bp,
-            trekk_tabell: request.trekk_tabell,
+            withholding_table: request.withholding_table,
             holiday_pay_bp: request.holiday_pay_bp,
             bank_account: request.bank_account,
             note: request.note,
@@ -260,8 +262,9 @@ pub async fn payslip_pdf(
     // who has what.
     let role = require(&state, person.person_id, company_id, Right::PayslipReadOwn).await?;
     if !role.has(Right::PayslipReadAll) {
-        let eier = regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
-        if eier != Some(person.person_id) {
+        let owner =
+            regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
+        if owner != Some(person.person_id) {
             return Err(ApiError::NotFound);
         }
     }
@@ -367,7 +370,7 @@ pub async fn employee_link_history(
             "endring": h.endring,
             "kilde": h.source,
             "person": h.person_name,
-            "utfort_av": h.utfort_av,
+            "utfort_av": h.performed_by,
             "tidspunkt": h.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))

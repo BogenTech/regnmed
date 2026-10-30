@@ -85,7 +85,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         mailq: None,
         rate: Default::default(),
         stripe: None,
-        drift_orgnr: None,
+        ops_orgnumber: None,
         portal_base: None,
         // A fixed test key: the sealing is exercised for real, and a
         // test that needs the rail OFF rebuilds the state without it.
@@ -102,7 +102,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
     })
 }
 
-pub fn unique_orgnr() -> String {
+pub fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }

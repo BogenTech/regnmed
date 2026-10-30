@@ -23,7 +23,7 @@ pub async fn create_party(
     company_id: Uuid,
     kind: &str,
     name: &str,
-    orgnr: Option<&str>,
+    orgnumber: Option<&str>,
     party_no: Option<&str>,
 ) -> Result<(Uuid, String)> {
     ensure!(
@@ -61,7 +61,7 @@ pub async fn create_party(
     .bind(&party_no)
     .bind(kind)
     .bind(name)
-    .bind(orgnr)
+    .bind(orgnumber)
     .execute(pool)
     .await
     .context("creating party (duplicate party_no?)")?;
@@ -74,7 +74,7 @@ pub struct PartyRow {
     pub party_no: String,
     pub kind: String,
     pub name: String,
-    pub orgnr: Option<String>,
+    pub orgnumber: Option<String>,
     pub address: Option<String>,
     pub email: Option<String>,
     pub bank_account: Option<String>,
@@ -108,7 +108,7 @@ pub async fn list_parties(
             party_no: r.get("party_no"),
             kind: r.get("kind"),
             name: r.get("name"),
-            orgnr: r.get("orgnr"),
+            orgnumber: r.get("orgnr"),
             address: r.get("address"),
             email: r.get("email"),
             bank_account: r.get("bank_account"),
@@ -523,8 +523,8 @@ pub async fn kursregulering(
             amount + matched_cent
         };
         let currency: String = row.get("valuta");
-        let (_, kurs) = crate::currency::require_kurs(pool, &currency, as_of_date).await?;
-        diff_total += regnmed_core::currency::nok_ore(rest_cent, kurs) - rest_nok;
+        let (_, exchange_rate) = crate::currency::require_kurs(pool, &currency, as_of_date).await?;
+        diff_total += regnmed_core::currency::nok_ore(rest_cent, exchange_rate) - rest_nok;
     }
     if diff_total == 0 {
         return Ok(None);

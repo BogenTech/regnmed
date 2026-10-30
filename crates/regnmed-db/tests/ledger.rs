@@ -22,7 +22,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -30,7 +30,7 @@ fn unique_orgnr() -> String {
 /// Fresh company with a journal and a few NS 4102 accounts, isolated from
 /// everything else in the shared dev database.
 async fn seeded_company(pool: &PgPool) -> Uuid {
-    let company = regnmed_db::create_company(pool, &unique_orgnr(), "Testselskap AS")
+    let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Testselskap AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")

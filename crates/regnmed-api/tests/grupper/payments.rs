@@ -5,7 +5,7 @@
 //! rest in one transaction, and the run history is immutable at the
 //! DB layer. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -115,7 +115,7 @@ async fn betalingsliste_pain001_and_settlement() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Betalings Ansvarlig"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Innkjøp AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Innkjøp AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

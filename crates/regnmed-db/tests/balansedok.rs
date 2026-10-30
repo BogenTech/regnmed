@@ -19,7 +19,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -42,7 +42,7 @@ fn e(account: &str, ore: i64) -> EntryDraft {
 }
 
 async fn oppsett(pool: &PgPool) -> (Uuid, Uuid) {
-    let company = regnmed_db::create_company(pool, &unique_orgnr(), "Balanse AS")
+    let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Balanse AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
@@ -83,8 +83,8 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     .await
     .unwrap();
 
-    let periode = d(2026, 1, 31);
-    let linjer = balance_status(&pool, company, periode).await.unwrap();
+    let period = d(2026, 1, 31);
+    let linjer = balance_status(&pool, company, period).await.unwrap();
     // 3000 is a resultatkonto and 2400 has no saldo: neither belongs on
     // a §11 list.
     assert_eq!(linjer.len(), 1, "{linjer:?}");
@@ -94,7 +94,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
 
     // A resultatkonto cannot be reconciled here at all.
     let error = avstem(
-        &pool, company, "3000", periode, "forsøk", None, person, periode,
+        &pool, company, "3000", period, "forsøk", None, person, period,
     )
     .await
     .expect_err("§11 gjelder balansepostene");
@@ -104,15 +104,15 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
         &pool,
         company,
         "1920",
-        periode,
+        period,
         "Kontoutskrift fra banken pr. 31.01",
         None,
         person,
-        periode,
+        period,
     )
     .await
     .unwrap();
-    let linjer = balance_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, period).await.unwrap();
     let a = linjer[0].avstemt.as_ref().expect("avstemt");
     assert_eq!(a.balance_ore, 50_000_00, "saldoen lagres slik den var");
     assert_eq!(a.avstemt_av, "Rev Isor");
@@ -125,7 +125,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
 async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     let Some(pool) = pool().await else { return };
     let (company, person) = oppsett(&pool).await;
-    let periode = d(2026, 3, 31);
+    let period = d(2026, 3, 31);
     regnmed_db::post_voucher(
         &pool,
         company,
@@ -144,11 +144,11 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
         &pool,
         company,
         "1920",
-        periode,
+        period,
         "Kontoutskrift",
         None,
         person,
-        periode,
+        period,
     )
     .await
     .unwrap();
@@ -169,7 +169,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     .await
     .unwrap();
 
-    let linjer = balance_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, period).await.unwrap();
     assert_eq!(
         linjer[0].avvik_ore(),
         Some(2_500_00),
@@ -181,22 +181,22 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
         &pool,
         company,
         "1920",
-        periode,
+        period,
         "Ny kontoutskrift etter etterslepet",
         None,
         person,
-        periode,
+        period,
     )
     .await
     .unwrap();
-    let linjer = balance_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, period).await.unwrap();
     assert_eq!(linjer[0].avvik_ore(), None);
-    let historikk = regnmed_db::balance_documentation::historikk(&pool, company, "1920", periode)
+    let history = regnmed_db::balance_documentation::history(&pool, company, "1920", period)
         .await
         .unwrap();
-    assert_eq!(historikk.len(), 2, "rettingen sletter ikke den forrige");
-    assert_eq!(historikk[0].balance_ore, 12_500_00, "nyeste først");
-    assert_eq!(historikk[1].balance_ore, 10_000_00);
+    assert_eq!(history.len(), 2, "rettingen sletter ikke den forrige");
+    assert_eq!(history[0].balance_ore, 12_500_00, "nyeste først");
+    assert_eq!(history[1].balance_ore, 10_000_00);
 }
 
 /// The vedlegg IS the documentation, so it comes back byte for byte —
@@ -205,7 +205,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
 async fn the_vedlegg_round_trips_and_its_hash_is_verified() {
     let Some(pool) = pool().await else { return };
     let (company, person) = oppsett(&pool).await;
-    let periode = d(2026, 6, 30);
+    let period = d(2026, 6, 30);
     regnmed_db::post_voucher(
         &pool,
         company,
@@ -224,11 +224,11 @@ async fn the_vedlegg_round_trips_and_its_hash_is_verified() {
         &pool,
         company,
         "1920",
-        periode,
+        period,
         "Kontoutskrift vedlagt",
         Some(("kontoutskrift.pdf", "application/pdf", b"%PDF-1.4 saldo")),
         person,
-        periode,
+        period,
     )
     .await
     .unwrap();

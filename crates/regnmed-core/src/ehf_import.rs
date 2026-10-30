@@ -45,8 +45,8 @@ pub struct MottattFaktura {
     pub currency: String,
     pub seller_name: String,
     /// Norwegian orgnr without prefix when the sender uses ICD 0192.
-    pub selger_orgnr: Option<String>,
-    pub kjoper_orgnr: Option<String>,
+    pub seller_orgnumber: Option<String>,
+    pub buyer_orgnumber: Option<String>,
     pub kid: Option<String>,
     pub account_number: Option<String>,
     pub net_ore: i64,
@@ -110,15 +110,15 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
     reader.config_mut().trim_text(true);
 
     let mut path: Vec<String> = Vec::new();
-    let mut faktura = MottattFaktura {
+    let mut invoice = MottattFaktura {
         er_kreditnota: false,
         fakturanr: String::new(),
         invoice_date: None,
         due_date: None,
         currency: "NOK".into(),
         seller_name: String::new(),
-        selger_orgnr: None,
-        kjoper_orgnr: None,
+        seller_orgnumber: None,
+        buyer_orgnumber: None,
         kid: None,
         account_number: None,
         net_ore: 0,
@@ -147,7 +147,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                         }
                         "CreditNote" => {
                             root_seen = true;
-                            faktura.er_kreditnota = true;
+                            invoice.er_kreditnota = true;
                         }
                         _ => {}
                     }
@@ -163,7 +163,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
             Event::End(end) => {
                 let local = String::from_utf8_lossy(end.local_name().as_ref()).into_owned();
                 if local == "InvoiceLine" || local == "CreditNoteLine" {
-                    faktura.linjer.push(MottattLinje {
+                    invoice.linjer.push(MottattLinje {
                         description: std::mem::take(&mut line_name),
                         net_ore: line_net,
                         vat_rate_bp: line_bp,
@@ -186,18 +186,18 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                 let customer = path.iter().any(|p| p == "AccountingCustomerParty");
 
                 match leaf {
-                    "ID" if path.len() == 2 => faktura.fakturanr = value,
-                    "IssueDate" if path.len() == 2 => faktura.invoice_date = Some(date(&value)?),
-                    "DueDate" if path.len() == 2 => faktura.due_date = Some(date(&value)?),
-                    "DocumentCurrencyCode" if path.len() == 2 => faktura.currency = value,
-                    "PaymentID" => faktura.kid = Some(value),
+                    "ID" if path.len() == 2 => invoice.fakturanr = value,
+                    "IssueDate" if path.len() == 2 => invoice.invoice_date = Some(date(&value)?),
+                    "DueDate" if path.len() == 2 => invoice.due_date = Some(date(&value)?),
+                    "DocumentCurrencyCode" if path.len() == 2 => invoice.currency = value,
+                    "PaymentID" => invoice.kid = Some(value),
                     "Name" if supplier && ends_with(&path, &["PartyName", "Name"]) => {
                         if !supplier_name_from_legal {
-                            faktura.seller_name = value;
+                            invoice.seller_name = value;
                         }
                     }
                     "RegistrationName" if supplier => {
-                        faktura.seller_name = value;
+                        invoice.seller_name = value;
                         supplier_name_from_legal = true;
                     }
                     "EndpointID" | "CompanyID" | "ID"
@@ -209,31 +209,32 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                         // Strip an ICD prefix ("0192:915933149") and any
                         // NO…MVA wrapper; keep the nine digits.
                         let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
-                        let orgnr = if digits.len() >= 9 {
+                        let orgnumber = if digits.len() >= 9 {
                             Some(digits[digits.len() - 9..].to_string())
                         } else {
                             None
                         };
                         if supplier {
-                            faktura.selger_orgnr = faktura.selger_orgnr.take().or(orgnr);
+                            invoice.seller_orgnumber =
+                                invoice.seller_orgnumber.take().or(orgnumber);
                         } else {
-                            faktura.kjoper_orgnr = faktura.kjoper_orgnr.take().or(orgnr);
+                            invoice.buyer_orgnumber = invoice.buyer_orgnumber.take().or(orgnumber);
                         }
                     }
                     "ID" if ends_with(&path, &["PayeeFinancialAccount", "ID"]) => {
-                        faktura.account_number = Some(value);
+                        invoice.account_number = Some(value);
                     }
-                    "TaxExclusiveAmount" => faktura.net_ore = amount(&value)?,
-                    "TaxInclusiveAmount" if faktura.gross_ore == 0 => {
-                        faktura.gross_ore = amount(&value)?;
+                    "TaxExclusiveAmount" => invoice.net_ore = amount(&value)?,
+                    "TaxInclusiveAmount" if invoice.gross_ore == 0 => {
+                        invoice.gross_ore = amount(&value)?;
                     }
-                    "PayableAmount" => faktura.gross_ore = amount(&value)?,
+                    "PayableAmount" => invoice.gross_ore = amount(&value)?,
                     "TaxAmount" if ends_with(&path, &["TaxTotal", "TaxAmount"]) => {
-                        faktura.vat_ore = amount(&value)?;
+                        invoice.vat_ore = amount(&value)?;
                     }
                     "LineExtensionAmount" if in_line => line_net = amount(&value)?,
-                    "LineExtensionAmount" if faktura.net_ore == 0 => {
-                        faktura.net_ore = amount(&value)?;
+                    "LineExtensionAmount" if invoice.net_ore == 0 => {
+                        invoice.net_ore = amount(&value)?;
                     }
                     "Name" if in_line && ends_with(&path, &["Item", "Name"]) => line_name = value,
                     "Description" if in_line && line_name.is_empty() => line_name = value,
@@ -249,13 +250,13 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
     if !root_seen {
         return Err(EhfImportError::NotEhf);
     }
-    if faktura.net_ore == 0 && !faktura.linjer.is_empty() {
-        faktura.net_ore = faktura.linjer.iter().map(|l| l.net_ore).sum();
+    if invoice.net_ore == 0 && !invoice.linjer.is_empty() {
+        invoice.net_ore = invoice.linjer.iter().map(|l| l.net_ore).sum();
     }
-    if faktura.gross_ore == 0 {
-        faktura.gross_ore = faktura.net_ore + faktura.vat_ore;
+    if invoice.gross_ore == 0 {
+        invoice.gross_ore = invoice.net_ore + invoice.vat_ore;
     }
-    Ok(faktura)
+    Ok(invoice)
 }
 
 #[cfg(test)]
@@ -263,10 +264,10 @@ mod tests {
     use super::*;
     use crate::ehf::{Dokumenttype, EhfDokument, EhfLinje, EhfPart, render};
 
-    fn part(name: &str, orgnr: &str) -> EhfPart {
+    fn part(name: &str, orgnumber: &str) -> EhfPart {
         EhfPart {
             name: name.into(),
-            orgnr: orgnr.into(),
+            orgnumber: orgnumber.into(),
             adresse: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
@@ -294,7 +295,7 @@ mod tests {
             linjer: vec![
                 EhfLinje {
                     description: "Varekjøp".into(),
-                    antall_milli: 3_000,
+                    quantity_milli: 3_000,
                     unit: "EA".into(),
                     enhetspris_ore: 400_00,
                     net_ore: 1_200_00,
@@ -303,7 +304,7 @@ mod tests {
                 },
                 EhfLinje {
                     description: "Frakt".into(),
-                    antall_milli: 1_000,
+                    quantity_milli: 1_000,
                     unit: "EA".into(),
                     enhetspris_ore: 100_00,
                     net_ore: 100_00,
@@ -318,39 +319,39 @@ mod tests {
     /// importer carries: what we write, we can read.
     #[test]
     fn reads_our_own_faktura_back() {
-        let xml = render(&dokument(Dokumenttype::Faktura));
-        let mottatt = parse(&xml).unwrap();
-        assert!(!mottatt.er_kreditnota);
-        assert_eq!(mottatt.fakturanr, "F-2026-7");
+        let xml = render(&dokument(Dokumenttype::Invoice));
+        let received = parse(&xml).unwrap();
+        assert!(!received.er_kreditnota);
+        assert_eq!(received.fakturanr, "F-2026-7");
         assert_eq!(
-            mottatt.invoice_date,
+            received.invoice_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 3).unwrap())
         );
         assert_eq!(
-            mottatt.due_date,
+            received.due_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 17).unwrap())
         );
-        assert_eq!(mottatt.seller_name, "Grossisten AS");
-        assert_eq!(mottatt.selger_orgnr.as_deref(), Some("915933149"));
-        assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
-        assert_eq!(mottatt.kid.as_deref(), Some("1234567897"));
-        assert_eq!(mottatt.account_number.as_deref(), Some("86011117947"));
-        assert_eq!(mottatt.net_ore, 1_300_00);
-        assert_eq!(mottatt.vat_ore, 325_00);
-        assert_eq!(mottatt.gross_ore, 1_625_00);
-        assert_eq!(mottatt.linjer.len(), 2);
-        assert_eq!(mottatt.linjer[0].description, "Varekjøp");
-        assert_eq!(mottatt.linjer[0].net_ore, 1_200_00);
-        assert_eq!(mottatt.linjer[0].vat_rate_bp, Some(2500));
+        assert_eq!(received.seller_name, "Grossisten AS");
+        assert_eq!(received.seller_orgnumber.as_deref(), Some("915933149"));
+        assert_eq!(received.buyer_orgnumber.as_deref(), Some("923609016"));
+        assert_eq!(received.kid.as_deref(), Some("1234567897"));
+        assert_eq!(received.account_number.as_deref(), Some("86011117947"));
+        assert_eq!(received.net_ore, 1_300_00);
+        assert_eq!(received.vat_ore, 325_00);
+        assert_eq!(received.gross_ore, 1_625_00);
+        assert_eq!(received.linjer.len(), 2);
+        assert_eq!(received.linjer[0].description, "Varekjøp");
+        assert_eq!(received.linjer[0].net_ore, 1_200_00);
+        assert_eq!(received.linjer[0].vat_rate_bp, Some(2500));
     }
 
     #[test]
     fn a_kreditnota_is_recognised() {
-        let xml = render(&dokument(Dokumenttype::Kreditnota));
-        let mottatt = parse(&xml).unwrap();
-        assert!(mottatt.er_kreditnota);
-        assert_eq!(mottatt.linjer.len(), 2);
-        assert_eq!(mottatt.gross_ore, 1_625_00);
+        let xml = render(&dokument(Dokumenttype::CreditNote));
+        let received = parse(&xml).unwrap();
+        assert!(received.er_kreditnota);
+        assert_eq!(received.linjer.len(), 2);
+        assert_eq!(received.gross_ore, 1_625_00);
     }
 
     /// A real EHF from another system: different prefixes, extra
@@ -404,20 +405,20 @@ mod tests {
     <cac:Item><cbc:Name>Kontorstoler</cbc:Name></cac:Item>
   </cac:InvoiceLine>
 </ubl:Invoice>"#;
-        let mottatt = parse(xml).unwrap();
-        assert_eq!(mottatt.fakturanr, "90210");
+        let received = parse(xml).unwrap();
+        assert_eq!(received.fakturanr, "90210");
         assert_eq!(
-            mottatt.seller_name, "Handelshuset AS",
+            received.seller_name, "Handelshuset AS",
             "RegistrationName vinner over PartyName"
         );
-        assert_eq!(mottatt.selger_orgnr.as_deref(), Some("974760673"));
-        assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
-        assert_eq!(mottatt.kid.as_deref(), Some("0000000123456"));
-        assert_eq!(mottatt.net_ore, 2_000_00);
-        assert_eq!(mottatt.vat_ore, 500_00);
-        assert_eq!(mottatt.gross_ore, 2_500_00);
-        assert_eq!(mottatt.linjer[0].description, "Kontorstoler");
-        assert_eq!(mottatt.linjer[0].vat_rate_bp, None, "ingen sats på linjen");
+        assert_eq!(received.seller_orgnumber.as_deref(), Some("974760673"));
+        assert_eq!(received.buyer_orgnumber.as_deref(), Some("923609016"));
+        assert_eq!(received.kid.as_deref(), Some("0000000123456"));
+        assert_eq!(received.net_ore, 2_000_00);
+        assert_eq!(received.vat_ore, 500_00);
+        assert_eq!(received.gross_ore, 2_500_00);
+        assert_eq!(received.linjer[0].description, "Kontorstoler");
+        assert_eq!(received.linjer[0].vat_rate_bp, None, "ingen sats på linjen");
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //! fails loudly outside the satsregister's coverage.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -60,7 +60,7 @@ async fn assets_depreciate_and_dispose() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Anlegg Ansvarlig"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Maskinpark AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Maskinpark AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

@@ -44,7 +44,7 @@ pub async fn directory(
     Ok(Json(json!({
         "firms": firms.iter().map(|f| json!({
             "firm_id": f.firm_id,
-            "orgnr": f.orgnr,
+            "orgnr": f.orgnumber,
             "name": f.name,
             "kind": f.kind,
             "client_count": f.client_count,

@@ -8,7 +8,7 @@
 //!
 //! Requires DATABASE_URL; skips otherwise.
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::{Datelike, Utc};
@@ -49,9 +49,10 @@ async fn kall(
 async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Abonnementstest AS")
-        .await
-        .unwrap();
+    let company =
+        regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Abonnementstest AS")
+            .await
+            .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
@@ -94,15 +95,15 @@ async fn a_new_company_is_in_its_trial_and_can_do_everything() {
     assert_eq!(code, StatusCode::OK, "prøvetiden skal virke som normalt");
 
     let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
-    let selskap = me["companies"]
+    let company = me["companies"]
         .as_array()
         .unwrap()
         .iter()
         .find(|c| c["company_id"] == company.to_string())
         .expect("selskapet i /me");
-    assert_eq!(selskap["abonnement"]["status"], "prove");
+    assert_eq!(company["abonnement"]["status"], "prove");
     assert!(
-        selskap["abonnement"]["dato"].is_string(),
+        company["abonnement"]["dato"].is_string(),
         "prøvetiden skal si når den løper ut"
     );
 }
@@ -188,13 +189,13 @@ async fn a_block_stops_changes_and_nothing_else() {
 
     // /me says it as it is.
     let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
-    let selskap = me["companies"]
+    let company = me["companies"]
         .as_array()
         .unwrap()
         .iter()
         .find(|c| c["company_id"] == company.to_string())
         .unwrap();
-    assert_eq!(selskap["abonnement"]["status"], "sperret");
+    assert_eq!(company["abonnement"]["status"], "sperret");
 }
 
 /// Documenting what is already booked survives a block (#85).
@@ -329,7 +330,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     let Some((state, _idp, customer, _admin)) = oppsett().await else {
         return;
     };
-    let drift = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Regnmed Drift AS")
+    let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Regnmed Drift AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, drift).await;
@@ -374,7 +375,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
 
     // The faktura lives in the OPS COMPANY's hovedbok, with the
     // customer's orgnr on the party — the amount is the price list's.
-    let (amount, orgnr): (i64, String) = sqlx::query_as(
+    let (amount, orgnumber): (i64, String) = sqlx::query_as(
         "select (select sum(l.net_ore)::bigint
                    from invoice_line l where l.invoice_id = i.id),
                 p.orgnr
@@ -403,12 +404,12 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    assert_eq!(orgnr, customer_orgnumber);
+    assert_eq!(orgnumber, customer_orgnumber);
 }
 
 /// A faktura-ready company whose mva registration we choose.
 async fn driftsselskap(pool: &sqlx::PgPool, name: &str, vat_registered: bool) -> Uuid {
-    let id = regnmed_db::create_company(pool, &unique_orgnr(), name)
+    let id = regnmed_db::create_company(pool, &unique_orgnumber(), name)
         .await
         .unwrap();
     make_invoiceable(pool, id).await;
@@ -447,7 +448,7 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
     let Some((state, _idp, kunde_a, _admin)) = oppsett().await else {
         return;
     };
-    let kunde_b = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kunde B AS")
+    let kunde_b = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kunde B AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, kunde_b).await;
@@ -497,19 +498,19 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
         .await
         .unwrap();
 
-    let (code, vat, netto) = linje(registrert, kunde_a).await;
+    let (code, vat, net) = linje(registrert, kunde_a).await;
     assert_eq!(code, "3", "registrert selger fakturerer utgående mva");
-    assert_eq!(netto, price);
+    assert_eq!(net, price);
     assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
 
-    let (code, vat, netto) = linje(utenfor, kunde_b).await;
+    let (code, vat, net) = linje(utenfor, kunde_b).await;
     assert_eq!(
         code, "7",
         "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
     );
     assert_eq!(vat, 0, "mval. §11-4: ingen mva skal oppgis");
     assert_eq!(
-        netto, price,
+        net, price,
         "prisen er den samme — bare avgiften faller bort"
     );
 
@@ -552,7 +553,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     let Some((state, _idp, customer, _admin)) = oppsett().await else {
         return;
     };
-    let drift = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Regnmed Drift AS")
+    let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Regnmed Drift AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, drift).await;
@@ -584,19 +585,19 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             .expect("abonnementsfakturaen i listen")
     };
     let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
-    assert!(!f.sendt, "ingenting er sendt ennå");
+    assert!(!f.sent, "ingenting er sendt ennå");
     assert_eq!(f.remaining_ore, gross);
-    let forfall = f.due_date;
+    let due_date = f.due_date;
 
     // Too early: the transfer may be in flight.
     assert!(
-        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(2))
+        opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(2))
             .await
             .unwrap()
             .is_none()
     );
     // Day 3: the free påminnelse.
-    let (_, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(3))
+    let (_, steg) = opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(3))
         .await
         .unwrap()
         .expect("påminnelse");
@@ -604,13 +605,13 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     // Same snapshot again: the reminder exists now, one step per day max.
     let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
-        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(3))
+        opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(3))
             .await
             .unwrap()
             .is_none()
     );
     // 14 days later: purring, with the standardkompensasjon gebyr.
-    let (reminder_id, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(17))
+    let (reminder_id, steg) = opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(17))
         .await
         .unwrap()
         .expect("purring");
@@ -625,13 +626,13 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     // Not yet 30 days past forfall: coverage stands.
     let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
-        !opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(29))
+        !opf::sperr_om_moden(&state.pool, &f, due_date + chrono::Days::new(29))
             .await
             .unwrap()
     );
     // Day 30, purring long since sent: coverage is ended and logged.
     assert!(
-        opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(30))
+        opf::sperr_om_moden(&state.pool, &f, due_date + chrono::Days::new(30))
             .await
             .unwrap()
     );
@@ -656,21 +657,21 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     assert_eq!(logg, "sperret");
     // A second look the day after changes nothing — no open row left.
     assert!(
-        !opf::sperr_om_moden(&state.pool, &f, forfall + chrono::Days::new(31))
+        !opf::sperr_om_moden(&state.pool, &f, due_date + chrono::Days::new(31))
             .await
             .unwrap()
     );
 
     // The ladder continues past the sperre: inkassovarsel with rente,
     // then silence.
-    let (_, steg) = opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(31))
+    let (_, steg) = opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(31))
         .await
         .unwrap()
         .expect("inkassovarsel");
     assert_eq!(steg, "inkassovarsel");
     let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(
-        opf::purr(&state.pool, drift, &f, forfall + chrono::Days::new(90))
+        opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(90))
             .await
             .unwrap()
             .is_none(),
@@ -683,7 +684,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             &state.pool,
             drift,
             customer,
-            forfall + chrono::Days::new(40)
+            due_date + chrono::Days::new(40)
         )
         .await
         .unwrap()
@@ -729,7 +730,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     )
     .await
     .unwrap();
-    let betaling: Uuid =
+    let payment: Uuid =
         sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
             .bind(posted.id)
             .fetch_one(&state.pool)
@@ -747,7 +748,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     )
     .bind(Uuid::now_v7())
     .bind(fordring)
-    .bind(betaling)
+    .bind(payment)
     .bind(gross)
     .execute(&state.pool)
     .await
@@ -759,7 +760,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             &state.pool,
             drift,
             customer,
-            forfall + chrono::Days::new(41)
+            due_date + chrono::Days::new(41)
         )
         .await
         .unwrap()
@@ -779,7 +780,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             &state.pool,
             drift,
             customer,
-            forfall + chrono::Days::new(42)
+            due_date + chrono::Days::new(42)
         )
         .await
         .unwrap(),
@@ -788,7 +789,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
 
     // An OPPSIGELSE is never resurrected: no 'sperret' entry in the
     // trail means no restoration, paid or not.
-    let oppsagt = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Oppsagt AS")
+    let oppsagt = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Oppsagt AS")
         .await
         .unwrap();
     regnmed_db::subscription::open_coverage(
@@ -844,14 +845,14 @@ async fn webhook_post(
     )
 }
 
-fn with_stripe(base: &AppState, drift_orgnr: &str) -> AppState {
+fn with_stripe(base: &AppState, ops_orgnumber: &str) -> AppState {
     AppState {
         stripe: Some(regnmed_api::StripeCfg {
             secret_key: "sk_test_x".into(),
             webhook_secret: "whsec_test".into(),
             api_base: None,
         }),
-        drift_orgnr: Some(drift_orgnr.into()),
+        ops_orgnumber: Some(ops_orgnumber.into()),
         portal_base: None,
         ..base.clone()
     }
@@ -927,12 +928,12 @@ async fn a_card_charge_posts_once_and_only_once() {
     let Some((state, _idp, customer, _admin)) = oppsett().await else {
         return;
     };
-    let drift_orgnr = unique_orgnr();
-    let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
+    let ops_orgnumber = unique_orgnumber();
+    let drift = regnmed_db::create_company(&state.pool, &ops_orgnumber, "Regnmed Drift AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, drift).await;
-    let state = with_stripe(&state, &drift_orgnr);
+    let state = with_stripe(&state, &ops_orgnumber);
 
     let today = Utc::now().date_naive();
     regnmed_db::subscription::open_coverage(
@@ -950,9 +951,9 @@ async fn a_card_charge_posts_once_and_only_once() {
         regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
             .await
             .unwrap();
-    let faktura = utfall.iter().find(|u| u.company_id == customer).unwrap();
-    let invoice_id = faktura.invoice_id.expect("faktura utstedt");
-    let gross = faktura.gross_ore.unwrap();
+    let invoice = utfall.iter().find(|u| u.company_id == customer).unwrap();
+    let invoice_id = invoice.invoice_id.expect("faktura utstedt");
+    let gross = invoice.gross_ore.unwrap();
 
     let payload = serde_json::to_vec(&serde_json::json!({
         "type": "payment_intent.succeeded",
@@ -1100,12 +1101,12 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     let Some((state, _idp, customer, _admin)) = oppsett().await else {
         return;
     };
-    let drift_orgnr = unique_orgnr();
-    let drift = regnmed_db::create_company(&state.pool, &drift_orgnr, "Regnmed Drift AS")
+    let ops_orgnumber = unique_orgnumber();
+    let drift = regnmed_db::create_company(&state.pool, &ops_orgnumber, "Regnmed Drift AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, drift).await;
-    let state = with_stripe(&state, &drift_orgnr);
+    let state = with_stripe(&state, &ops_orgnumber);
     let sub_id = format!("sub_test_{}", Uuid::new_v4());
 
     let send = async |body: serde_json::Value| -> (StatusCode, serde_json::Value) {

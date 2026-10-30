@@ -4,7 +4,7 @@
 //! dimension, and the SAF-T export carries Analysis elements.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -63,7 +63,7 @@ async fn a_prosjekt_carries_its_kunde() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Dim Admin"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kundekobling AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kundekobling AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -179,7 +179,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Prosjekt Per"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Lønnsomhet AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Lønnsomhet AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -280,10 +280,10 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     // table. Sats 1 000 kr/t.
     let time = |date: chrono::NaiveDate| regnmed_db::timesheet::TimeEntryDraft {
         date,
-        minutter: 60,
+        minutes: 60,
         description: "Prosjektarbeid".into(),
         project: Some("PL1".into()),
-        fakturerbar: Some(true),
+        billable: Some(true),
         timesats_ore: Some(100_000),
     };
     regnmed_db::timesheet::create_time_entry(
@@ -306,7 +306,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let mut ufakturert = time(chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
-    ufakturert.minutter = 90;
+    ufakturert.minutes = 90;
     regnmed_db::timesheet::create_time_entry(
         &state.pool,
         company,
@@ -384,7 +384,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Dimensjon AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Dimensjon AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

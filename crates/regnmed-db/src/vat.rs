@@ -66,14 +66,14 @@ pub async fn vat_specification(
                 .with_context(|| {
                     format!("no VAT rate on record for code {code} in this period (pre-2016?)")
                 })?;
-            let grunnlag_ore: i64 = row.get("grunnlag_ore");
+            let basis_ore: i64 = row.get("grunnlag_ore");
             ensure!(!code.is_empty(), "empty vat code in ledger");
             Ok(SpecLine {
                 code,
                 description: row.get("description"),
                 rate_bp,
-                grunnlag_ore,
-                tax_ore: vat_of_base(grunnlag_ore, rate_bp),
+                basis_ore,
+                tax_ore: vat_of_base(basis_ore, rate_bp),
             })
         })
         .collect()

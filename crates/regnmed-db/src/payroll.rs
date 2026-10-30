@@ -39,12 +39,12 @@ pub struct NyAnsatt {
     pub fodselsnummer: String,
     pub name: String,
     pub stilling: Option<String>,
-    pub ansatt_fra: NaiveDate,
+    pub employed_from: NaiveDate,
     pub manedslonn_ore: Option<i64>,
     pub timelonn_ore: Option<i64>,
     pub withholding_type: String,
     pub withholding_percent_bp: Option<i32>,
-    pub trekk_tabell: Option<i32>,
+    pub withholding_table: Option<i32>,
     pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
@@ -60,13 +60,13 @@ pub struct Employee {
     /// not the fødselsnummer. The number is fetched only when the
     /// a-melding is to be built.
     pub birth_date: Option<NaiveDate>,
-    pub ansatt_fra: NaiveDate,
+    pub employed_from: NaiveDate,
     pub ansatt_til: Option<NaiveDate>,
     pub manedslonn_ore: Option<i64>,
     pub timelonn_ore: Option<i64>,
     pub withholding_type: String,
     pub withholding_percent_bp: Option<i32>,
-    pub trekk_tabell: Option<i32>,
+    pub withholding_table: Option<i32>,
     pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
@@ -81,30 +81,33 @@ impl Employee {
     fn withholding(&self) -> Withholding {
         match self.withholding_type.as_str() {
             "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
-            "tabell" => Withholding::Table(self.trekk_tabell.unwrap_or(0)),
+            "tabell" => Withholding::Table(self.withholding_table.unwrap_or(0)),
             _ => Withholding::Ingen,
         }
     }
 
     fn ansatt_i(&self, maned_slutt: NaiveDate, maned_start: NaiveDate) -> bool {
-        self.ansatt_fra <= maned_slutt && self.ansatt_til.is_none_or(|t| t >= maned_start)
+        self.employed_from <= maned_slutt && self.ansatt_til.is_none_or(|t| t >= maned_start)
     }
 }
 
 pub async fn create_ansatt(
     pool: &PgPool,
     company_id: Uuid,
-    ny: &NyAnsatt,
+    new: &NyAnsatt,
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(
-        regnmed_core::nin::is_valid(&ny.fodselsnummer),
+        regnmed_core::nin::is_valid(&new.fodselsnummer),
         "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
     );
     ensure!(
-        matches!(ny.withholding_type.as_str(), "prosent" | "tabell" | "ingen"),
+        matches!(
+            new.withholding_type.as_str(),
+            "prosent" | "tabell" | "ingen"
+        ),
         "ukjent trekktype «{}»",
-        ny.withholding_type
+        new.withholding_type
     );
     let id = Uuid::new_v4();
     sqlx::query(
@@ -116,18 +119,18 @@ pub async fn create_ansatt(
     )
     .bind(id)
     .bind(company_id)
-    .bind(&ny.fodselsnummer)
-    .bind(&ny.name)
-    .bind(&ny.stilling)
-    .bind(ny.ansatt_fra)
-    .bind(ny.manedslonn_ore)
-    .bind(ny.timelonn_ore)
-    .bind(&ny.withholding_type)
-    .bind(ny.withholding_percent_bp)
-    .bind(ny.trekk_tabell)
-    .bind(ny.holiday_pay_bp)
-    .bind(&ny.bank_account)
-    .bind(&ny.note)
+    .bind(&new.fodselsnummer)
+    .bind(&new.name)
+    .bind(&new.stilling)
+    .bind(new.employed_from)
+    .bind(new.manedslonn_ore)
+    .bind(new.timelonn_ore)
+    .bind(&new.withholding_type)
+    .bind(new.withholding_percent_bp)
+    .bind(new.withholding_table)
+    .bind(new.holiday_pay_bp)
+    .bind(&new.bank_account)
+    .bind(&new.note)
     .bind(created_by)
     .execute(pool)
     .await
@@ -162,13 +165,13 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
             .get::<String, _>("fodselsnummer")
             .as_str()
             .pipe_birth_date(),
-        ansatt_fra: r.get("ansatt_fra"),
+        employed_from: r.get("ansatt_fra"),
         ansatt_til: r.get("ansatt_til"),
         manedslonn_ore: r.get("manedslonn_ore"),
         timelonn_ore: r.get("timelonn_ore"),
         withholding_type: r.get("trekk_type"),
         withholding_percent_bp: r.get("trekk_prosent_bp"),
-        trekk_tabell: r.get("trekk_tabell"),
+        withholding_table: r.get("trekk_tabell"),
         holiday_pay_bp: r.get("feriepenger_bp"),
         bank_account: r.get("bank_account"),
         note: r.get("note"),
@@ -284,7 +287,7 @@ async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Resu
     Ok(balance)
 }
 
-async fn satser(pool: &PgPool) -> Result<Vec<RatePeriod>> {
+async fn rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
     let rows = sqlx::query("select domene, valid_from, verdi from sats")
         .fetch_all(pool)
         .await?;
@@ -335,7 +338,7 @@ pub async fn run_payroll(
     // precisely the mistake the fribeløp rule exists to prevent.
     payroll::employer_contribution(0, zone, 0).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let alle_satser = satser(pool).await?;
+    let alle_satser = rates(pool).await?;
     let aga_domene = zone.rate_domain();
     let aga_bp =
         regnmed_core::rates::value_on(&alle_satser, &aga_domene, paid_date).ok_or_else(|| {
@@ -352,7 +355,7 @@ pub async fn run_payroll(
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
 
-    let historikk = feriepengehistorikk(pool, company_id).await?;
+    let history = feriepengehistorikk(pool, company_id).await?;
 
     let mut sum = PayrollTotals::default();
     let mut lines = Vec::new();
@@ -367,7 +370,7 @@ pub async fn run_payroll(
             "{} var ikke ansatt i {month}/{ar}",
             employee.name
         );
-        let brutto = if post.from_timesheet {
+        let gross = if post.from_timesheet {
             let basis = timegrunnlag(pool, company_id, employee.id, ar, month).await?;
             // The hours must be LOCKED before they are paid. A payroll
             // run is insert-only; if the hours change afterwards the two
@@ -394,11 +397,11 @@ pub async fn run_payroll(
                     )
                 })?
         };
-        ensure!(brutto >= 0, "brutto kan ikke være negativ");
+        ensure!(gross >= 0, "brutto kan ikke være negativ");
 
         let calculation = payroll::calculate(
             &PayrollBasis {
-                gross_ore: brutto,
+                gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
                 withholding: employee.withholding(),
             },
@@ -408,9 +411,9 @@ pub async fn run_payroll(
 
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
-        let avsetning = payroll::holiday_pay_accrual(brutto, employee.holiday_pay_bp as i64);
+        let avsetning = payroll::holiday_pay_accrual(gross, employee.holiday_pay_bp as i64);
         // The avgift falls on what is actually paid out.
-        let aga = payroll::employer_contribution(brutto + post.holiday_pay_ore, zone, aga_bp)
+        let aga = payroll::employer_contribution(gross + post.holiday_pay_ore, zone, aga_bp)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         sum.gross_ore += calculation.gross_ore;
@@ -423,7 +426,7 @@ pub async fn run_payroll(
         // is what the run books — which is also why a feriepenger
         // liability earned before this function existed is caught up on
         // the first run instead of standing uncovered.
-        let hist = historikk.get(&employee.id).copied().unwrap_or_default();
+        let hist = history.get(&employee.id).copied().unwrap_or_default();
         let skyldig_etter = hist.skyldig_ore + avsetning - post.holiday_pay_ore;
         let aga_feriepenger = payroll::employer_contribution_accrual_target(skyldig_etter, aga_bp)
             - hist.avsatt_aga_ore;
@@ -833,7 +836,7 @@ pub async fn payslip(
     .context("no such lønnslinje")?;
 
     let ar: i32 = row.get("ar");
-    let brutto: i64 = row.get("brutto_ore");
+    let gross: i64 = row.get("brutto_ore");
     let holiday_pay: i64 = row.get("feriepenger_ore");
 
     // Year to date, through this run.
@@ -855,7 +858,7 @@ pub async fn payslip(
 
     let mut lines = vec![PayslipLine {
         text: "Fastlønn".into(),
-        amount_ore: brutto,
+        amount_ore: gross,
     }];
     if holiday_pay != 0 {
         lines.push(PayslipLine {
@@ -881,7 +884,7 @@ pub async fn payslip(
         month: row.get::<i32, _>("maned") as u32,
         paid_date: row.get("utbetalt_dato"),
         lines,
-        gross_ore: brutto + holiday_pay,
+        gross_ore: gross + holiday_pay,
         withholding_basis_ore: row.get("trekkgrunnlag_ore"),
         withholding_ore: row.get("forskuddstrekk_ore"),
         withholding_percent_bp: (withholding_type == "prosent")
@@ -1019,7 +1022,7 @@ pub async fn link_ansatt_person(
     company_id: Uuid,
     employee_id: Uuid,
     person_id: Uuid,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let eksisterende: Option<Option<Uuid>> = sqlx::query_scalar(
@@ -1063,7 +1066,7 @@ pub async fn link_ansatt_person(
         person_id,
         "koblet",
         "admin",
-        Some(utfort_av),
+        Some(performed_by),
     )
     .await?;
     tx.commit().await?;
@@ -1076,7 +1079,7 @@ pub async fn unlink_ansatt_person(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
-    utfort_av: Uuid,
+    performed_by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let eksisterende: Option<Option<Uuid>> = sqlx::query_scalar(
@@ -1101,7 +1104,7 @@ pub async fn unlink_ansatt_person(
         person_id,
         "frakoblet",
         "admin",
-        Some(utfort_av),
+        Some(performed_by),
     )
     .await?;
     tx.commit().await?;
@@ -1115,7 +1118,7 @@ pub(crate) async fn logg_kobling(
     person_id: Uuid,
     endring: &str,
     source: &str,
-    utfort_av: Option<Uuid>,
+    performed_by: Option<Uuid>,
 ) -> Result<()> {
     sqlx::query(
         "insert into employee_link_change
@@ -1127,7 +1130,7 @@ pub(crate) async fn logg_kobling(
     .bind(person_id)
     .bind(endring)
     .bind(source)
-    .bind(utfort_av)
+    .bind(performed_by)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1138,7 +1141,7 @@ pub struct Koblingsendring {
     pub endring: String,
     pub source: String,
     pub person_name: String,
-    pub utfort_av: Option<String>,
+    pub performed_by: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -1169,7 +1172,7 @@ pub async fn ansatt_link_historikk(
             endring: r.get("endring"),
             source: r.get("kilde"),
             person_name: r.get("person_navn"),
-            utfort_av: r.get("utfort_av"),
+            performed_by: r.get("utfort_av"),
             created_at: r.get("created_at"),
         })
         .collect())

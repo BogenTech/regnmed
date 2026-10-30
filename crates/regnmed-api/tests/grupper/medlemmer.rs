@@ -7,7 +7,7 @@
 //!
 //! Krever DATABASE_URL; hopper over ellers.
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -69,7 +69,7 @@ async fn innlogget(state: &AppState, idp: &TestIdp, name: &str) -> (Uuid, String
 }
 
 async fn company_with_admin(state: &AppState, idp: &TestIdp) -> (Uuid, Uuid, String) {
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgang AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Tilgang AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -237,7 +237,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
     };
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
-    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Byrå AS", "regnskap")
+    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Byrå AS", "regnskap")
         .await
         .unwrap();
     let (accountant, _) = innlogget(&state, &idp, "Regnskapsfører").await;

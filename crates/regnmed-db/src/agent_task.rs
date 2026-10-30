@@ -25,7 +25,7 @@ pub struct Oppgave {
     /// The agent the task is addressed to; None = any agent with access.
     pub agent: Option<String>,
     pub message: String,
-    pub frist: Option<NaiveDate>,
+    pub deadline: Option<NaiveDate>,
     pub opprettet_av: String,
     pub created_at: DateTime<Utc>,
     /// Newest event's status, or "ny" when nothing has happened.
@@ -43,7 +43,7 @@ pub async fn opprett_oppgave(
     company_id: Uuid,
     integration_id: Option<Uuid>,
     message: &str,
-    frist: Option<NaiveDate>,
+    deadline: Option<NaiveDate>,
     opprettet_av: &str,
 ) -> Result<Uuid> {
     let message = message.trim();
@@ -77,7 +77,7 @@ pub async fn opprett_oppgave(
     .bind(company_id)
     .bind(integration_id)
     .bind(message)
-    .bind(frist)
+    .bind(deadline)
     .bind(opprettet_av)
     .execute(pool)
     .await?;
@@ -103,7 +103,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Oppgave {
         integration_id: r.get("integration_id"),
         agent: r.get("agent"),
         message: r.get("melding"),
-        frist: r.get("frist"),
+        deadline: r.get("frist"),
         opprettet_av: r.get("opprettet_av"),
         created_at: r.get("created_at"),
         status: r
@@ -157,7 +157,7 @@ pub struct Hendelse {
     pub created_at: DateTime<Utc>,
 }
 
-pub async fn historikk(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<Hendelse>> {
+pub async fn history(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<Hendelse>> {
     let rows = sqlx::query(
         "select e.status, e.notat, e.av, e.created_at
          from agent_oppgave_hendelse e
@@ -186,7 +186,7 @@ pub async fn historikk(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<
 pub async fn answer(
     pool: &PgPool,
     company_id: Uuid,
-    oppgave_id: Uuid,
+    task_id: Uuid,
     status: &str,
     note: Option<&str>,
     av: &str,
@@ -203,7 +203,7 @@ pub async fn answer(
     let finnes: bool = sqlx::query_scalar(
         "select exists (select 1 from agent_oppgave where id = $1 and company_id = $2)",
     )
-    .bind(oppgave_id)
+    .bind(task_id)
     .bind(company_id)
     .fetch_one(pool)
     .await?;
@@ -213,7 +213,7 @@ pub async fn answer(
          values ($1, $2, $3, $4, $5)",
     )
     .bind(Uuid::now_v7())
-    .bind(oppgave_id)
+    .bind(task_id)
     .bind(status)
     .bind(note)
     .bind(av)
@@ -238,7 +238,7 @@ pub const CLAIM_TTL_MINUTES: i64 = 15;
 /// insert either creates the row or collides, and the `do update` only
 /// fires for a claim old enough to be considered abandoned. `returning`
 /// is empty when the conflicting row was still fresh.
-pub async fn claim_task(pool: &PgPool, oppgave_id: Uuid, worker: &str) -> Result<bool> {
+pub async fn claim_task(pool: &PgPool, task_id: Uuid, worker: &str) -> Result<bool> {
     let tatt: Option<Uuid> = sqlx::query_scalar(
         "insert into agent_task_claim (oppgave_id, worker)
          values ($1, $2)
@@ -247,7 +247,7 @@ pub async fn claim_task(pool: &PgPool, oppgave_id: Uuid, worker: &str) -> Result
           where agent_task_claim.claimed_at < now() - ($3 || ' minutes')::interval
          returning oppgave_id",
     )
-    .bind(oppgave_id)
+    .bind(task_id)
     .bind(worker)
     .bind(CLAIM_TTL_MINUTES.to_string())
     .fetch_optional(pool)
@@ -257,9 +257,9 @@ pub async fn claim_task(pool: &PgPool, oppgave_id: Uuid, worker: &str) -> Result
 
 /// Releases the lease. Called whatever the outcome — the trail of what
 /// happened lives in the hendelser, not here.
-pub async fn release_task(pool: &PgPool, oppgave_id: Uuid) -> Result<()> {
+pub async fn release_task(pool: &PgPool, task_id: Uuid) -> Result<()> {
     sqlx::query("delete from agent_task_claim where oppgave_id = $1")
-        .bind(oppgave_id)
+        .bind(task_id)
         .execute(pool)
         .await?;
     Ok(())

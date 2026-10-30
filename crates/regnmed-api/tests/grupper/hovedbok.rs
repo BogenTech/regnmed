@@ -6,7 +6,7 @@
 //! active attestering policy closes the manual side door. Requires
 //! DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -70,7 +70,7 @@ async fn kontoplan_and_manual_vouchers_end_to_end() {
     let leser = regnmed_db::ensure_person(&state.pool, &leser_sub, Some("Lise Leser"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Hovedbok AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Hovedbok AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -268,7 +268,7 @@ async fn manual_posting_respects_the_attestering_policy() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Attestert Ane"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Policy AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Policy AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -351,7 +351,7 @@ async fn voucher_listing_pages_and_filters_server_side() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Paige Pager"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Sidevis AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Sidevis AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

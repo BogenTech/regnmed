@@ -4,7 +4,7 @@
 //! ('les' via revisjon engagement) can read the reconciliation but not
 //! mutate it. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -64,21 +64,26 @@ async fn request(
 
 /// Company with a bank account, a matching sale voucher (12 500 kr in on
 /// 2026-01-20) and an accountant (bokforing) + a revisor (les).
-async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid {
+async fn seed(state: &AppState, accountant_sub: &str, auditor_sub: &str) -> Uuid {
     let accountant =
         regnmed_db::ensure_person(&state.pool, accountant_sub, Some("Kari Bokfører"), None)
             .await
             .unwrap();
-    let revisor = regnmed_db::ensure_person(&state.pool, revisor_sub, Some("Revy Sorsen"), None)
+    let auditor = regnmed_db::ensure_person(&state.pool, auditor_sub, Some("Revy Sorsen"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Bankklient AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Bankklient AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
-    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Tall & Orden AS", "regnskap")
-        .await
-        .unwrap();
+    let firm = regnmed_db::ensure_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Tall & Orden AS",
+        "regnskap",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_firm_member(&state.pool, firm, accountant, "ansatt")
         .await
         .unwrap();
@@ -86,10 +91,10 @@ async fn seed(state: &AppState, accountant_sub: &str, revisor_sub: &str) -> Uuid
         .await
         .unwrap();
     let revisorfirma =
-        regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon AS", "revisjon")
+        regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Revisjon AS", "revisjon")
             .await
             .unwrap();
-    regnmed_db::ensure_firm_member(&state.pool, revisorfirma, revisor, "ansatt")
+    regnmed_db::ensure_firm_member(&state.pool, revisorfirma, auditor, "ansatt")
         .await
         .unwrap();
     regnmed_db::ensure_engagement(&state.pool, revisorfirma, company, "revisjon")
@@ -159,10 +164,10 @@ async fn import_auto_match_manual_match_and_permissions() {
         return;
     };
     let accountant_sub = format!("test|{}", Uuid::new_v4());
-    let revisor_sub = format!("test|{}", Uuid::new_v4());
-    let company = seed(&state, &accountant_sub, &revisor_sub).await;
+    let auditor_sub = format!("test|{}", Uuid::new_v4());
+    let company = seed(&state, &accountant_sub, &auditor_sub).await;
     let accountant = idp.token(&accountant_sub, "Kari Bokfører");
-    let revisor = idp.token(&revisor_sub, "Revy Sorsen");
+    let auditor = idp.token(&auditor_sub, "Revy Sorsen");
     let camt = CAMT.replace("{REF}", &Uuid::new_v4().to_string());
 
     // A revisor cannot import (403 — company known via engagement).
@@ -170,7 +175,7 @@ async fn import_auto_match_manual_match_and_permissions() {
         &state,
         "POST",
         &format!("/companies/{company}/bank/statements?account=1920"),
-        &revisor,
+        &auditor,
         Some(camt.clone()),
         false,
     )
@@ -210,7 +215,7 @@ async fn import_auto_match_manual_match_and_permissions() {
         &state,
         "GET",
         &format!("/companies/{company}/bank/reconciliation?account=1920"),
-        &revisor,
+        &auditor,
         None,
         false,
     )
@@ -341,8 +346,8 @@ async fn csv_export_imports_through_the_same_engine() {
         return;
     };
     let accountant_sub = format!("test|{}", Uuid::new_v4());
-    let revisor_sub = format!("test|{}", Uuid::new_v4());
-    let company = seed(&state, &accountant_sub, &revisor_sub).await;
+    let auditor_sub = format!("test|{}", Uuid::new_v4());
+    let company = seed(&state, &accountant_sub, &auditor_sub).await;
     let accountant = idp.token(&accountant_sub, "Kari Bokfører");
 
     // A DNB-style export: the 12 500 kr inflow matches the seeded sale.

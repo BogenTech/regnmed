@@ -21,7 +21,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -47,7 +47,7 @@ async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
 #[tokio::test]
 async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Periodisering AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Periodisering AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -157,7 +157,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
 #[tokio::test]
 async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Stopp AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Stopp AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -213,7 +213,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
 #[tokio::test]
 async fn a_started_plan_cannot_be_rewritten() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Frys AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Frys AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
@@ -269,7 +269,7 @@ async fn a_started_plan_cannot_be_rewritten() {
 #[tokio::test]
 async fn a_plan_refuses_an_account_it_could_never_post_to() {
     let Some(pool) = pool().await else { return };
-    let company = regnmed_db::create_company(&pool, &unique_orgnr(), "Kontosjekk AS")
+    let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Kontosjekk AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")

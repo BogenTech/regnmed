@@ -76,12 +76,12 @@ pub async fn create_kjoring(
     created_by: &str,
 ) -> Result<(Uuid, i64, i64)> {
     ensure!(km > 0, "km må være positivt");
-    let satser = load_rates(pool).await?;
-    let sats = value_on(&satser, "km_godtgjorelse", date)
+    let rates = load_rates(pool).await?;
+    let rate = value_on(&rates, "km_godtgjorelse", date)
         .with_context(|| format!("ingen km-sats for {date} i satsregisteret"))?;
-    let trekkfri_sats = value_on(&satser, "km_godtgjorelse_trekkfri", date)
+    let trekkfri_sats = value_on(&rates, "km_godtgjorelse_trekkfri", date)
         .with_context(|| format!("ingen trekkfri km-sats for {date} i satsregisteret"))?;
-    let beregnet = mileage_allowance(km, sats, trekkfri_sats);
+    let beregnet = mileage_allowance(km, rate, trekkfri_sats);
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore,
@@ -95,7 +95,7 @@ pub async fn create_kjoring(
     .bind(description)
     .bind(beregnet.amount_ore)
     .bind(km)
-    .bind(sats)
+    .bind(rate)
     .bind(beregnet.tax_free_ore)
     .bind(beregnet.taxable_ore)
     .bind(created_by)
@@ -288,7 +288,7 @@ pub async fn approve_expense(
             if vat_code.is_some_and(crate::settings::requires_vat_registration) {
                 crate::settings::require_vat_registered(pool, company_id, date).await?;
             }
-            let (netto, vat) = match vat_code {
+            let (net, vat) = match vat_code {
                 Some(code) => {
                     let rate_class: String =
                         sqlx::query_scalar("select rate_class from vat_code where code = $1")
@@ -305,7 +305,7 @@ pub async fn approve_expense(
             };
             entries.push(EntryDraft {
                 account_number: account.to_string(),
-                amount: Ore(netto),
+                amount: Ore(net),
                 vat_code: vat_code.map(str::to_string),
                 description: Some(description.clone()),
                 party_no: None,
@@ -329,7 +329,7 @@ pub async fn approve_expense(
         _ => {
             ensure!(vat_code.is_none(), "kjøregodtgjørelse har ingen mva");
             let km: i64 = expense.get::<Option<i64>, _>("km").unwrap_or(0);
-            let sats: i64 = expense
+            let rate: i64 = expense
                 .get::<Option<i64>, _>("sats_ore_per_km")
                 .unwrap_or(0);
             entries.push(EntryDraft {
@@ -338,8 +338,8 @@ pub async fn approve_expense(
                 vat_code: None,
                 description: Some(format!(
                     "{description} — {km} km à {},{:02} kr",
-                    sats / 100,
-                    sats % 100
+                    rate / 100,
+                    rate % 100
                 )),
                 party_no: None,
                 department: None,

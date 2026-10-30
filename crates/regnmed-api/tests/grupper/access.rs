@@ -16,7 +16,7 @@
 //!
 //! Requires DATABASE_URL; skips otherwise.
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -164,7 +164,7 @@ const ADMIN: &[(&str, &str, &str)] = &[
 async fn setup() -> Option<(AppState, TestIdp, Uuid, String, String, String)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Tilgangstest AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Tilgangstest AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -330,12 +330,12 @@ async fn an_ansatt_cannot_reach_the_hovedbok() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
+    let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
     for (method, uri) in NEKTET_FOR_ANSATT {
         let uri = uri.replace("{c}", &company.to_string());
         assert_eq!(
-            status(&state, method, &uri, &ansatt, "").await,
+            status(&state, method, &uri, &employee, "").await,
             StatusCode::FORBIDDEN,
             "ansatt skulle vært nektet {method} {uri}"
         );
@@ -347,11 +347,11 @@ async fn an_ansatt_may_do_their_own() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
+    let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
     for uri in TILLATT_FOR_ANSATT {
         let uri = uri.replace("{c}", &company.to_string());
-        let s = status(&state, "GET", &uri, &ansatt, "").await;
+        let s = status(&state, "GET", &uri, &employee, "").await;
         assert_ne!(s, StatusCode::FORBIDDEN, "ansatt nektet {uri}");
         assert_ne!(s, StatusCode::NOT_FOUND, "ansatt fikk 404 på {uri}");
     }
@@ -362,7 +362,7 @@ async fn an_ansatt_may_do_their_own() {
             &state,
             "POST",
             &format!("/companies/{company}/timesheet"),
-            &ansatt,
+            &employee,
             r#"{"dato":"2026-01-15","minutter":60,"beskrivelse":"Arbeid"}"#,
         )
         .await,
@@ -374,7 +374,7 @@ async fn an_ansatt_may_do_their_own() {
             &state,
             "POST",
             &format!("/companies/{company}/expenses/kjoring"),
-            &ansatt,
+            &employee,
             r#"{"dato":"2026-01-15","beskrivelse":"Kundebesøk","km":10}"#,
         )
         .await,
@@ -391,7 +391,7 @@ async fn an_ansatt_may_upload_but_not_post() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
+    let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
     let opplasting = router(state.clone())
         .oneshot(
@@ -400,7 +400,7 @@ async fn an_ansatt_may_upload_but_not_post() {
                 .uri(format!(
                     "/companies/{company}/inbox?filename=kvittering.pdf"
                 ))
-                .header("authorization", format!("Bearer {ansatt}"))
+                .header("authorization", format!("Bearer {employee}"))
                 .header("content-type", "application/pdf")
                 .body(Body::from("kvittering"))
                 .unwrap(),
@@ -419,7 +419,7 @@ async fn an_ansatt_may_upload_but_not_post() {
             &state,
             "GET",
             &format!("/companies/{company}/inbox"),
-            &ansatt,
+            &employee,
             ""
         )
         .await,
@@ -467,12 +467,12 @@ async fn an_ansatt_gets_only_their_own_payslip() {
                 fodselsnummer: fnr.into(),
                 name: name.into(),
                 stilling: None,
-                ansatt_fra: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                employed_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                 manedslonn_ore: Some(5_000_000),
                 timelonn_ore: None,
                 withholding_type: "prosent".into(),
                 withholding_percent_bp: Some(3000),
-                trekk_tabell: None,
+                withholding_table: None,
                 holiday_pay_bp: 1020,
                 bank_account: None,
                 note: None,
@@ -570,7 +570,7 @@ async fn lonn_is_not_general_reading() {
     };
 
     // A revisor comes in through an oppdrag, not as a member.
-    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Revisjon AS", "revisjon")
+    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnumber(), "Revisjon AS", "revisjon")
         .await
         .unwrap();
     let sub = format!("revisor|{}", Uuid::new_v4());
@@ -583,13 +583,13 @@ async fn lonn_is_not_general_reading() {
     regnmed_db::ensure_engagement(&state.pool, firm, company, "revisjon")
         .await
         .unwrap();
-    let revisor = idp.token(&sub, "Revisor");
-    let ansatt = person_with_role(&state, &idp, company, "ansatt").await;
+    let auditor = idp.token(&sub, "Revisor");
+    let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
     for uri in ["/companies/{c}/employees", "/companies/{c}/payroll"] {
         let uri = uri.replace("{c}", &company.to_string());
         // Refused: internal reader and employee.
-        for (name, token) in [("les", &les), ("ansatt", &ansatt)] {
+        for (name, token) in [("les", &les), ("ansatt", &employee)] {
             assert_eq!(
                 status(&state, "GET", &uri, token, "").await,
                 StatusCode::FORBIDDEN,
@@ -598,7 +598,7 @@ async fn lonn_is_not_general_reading() {
         }
         // Allowed: revisor (audit duty), bokføring and admin.
         for (name, token) in [
-            ("revisor", &revisor),
+            ("revisor", &auditor),
             ("bokforing", &bokforing),
             ("admin", &admin),
         ] {
@@ -617,7 +617,7 @@ async fn lonn_is_not_general_reading() {
             &state,
             "POST",
             &format!("/companies/{company}/employees"),
-            &revisor,
+            &auditor,
             r#"{"fodselsnummer":"03048810003","navn":"X","ansatt_fra":"2026-01-01"}"#,
         )
         .await,
@@ -838,7 +838,7 @@ async fn an_admin_crosses_no_company_boundary() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
-    let nabo = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Naboselskapet AS")
+    let nabo = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Naboselskapet AS")
         .await
         .unwrap();
 

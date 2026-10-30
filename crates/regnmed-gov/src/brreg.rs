@@ -200,8 +200,11 @@ impl BrregClient {
 
     /// Looks up an entity; `Ok(None)` when the orgnr is unknown to the
     /// register.
-    pub async fn entity(&self, orgnr: &str) -> Result<Option<BrregEntity>> {
-        let url = format!("{}/enheter/{orgnr}", self.base_url.trim_end_matches('/'));
+    pub async fn entity(&self, orgnumber: &str) -> Result<Option<BrregEntity>> {
+        let url = format!(
+            "{}/enheter/{orgnumber}",
+            self.base_url.trim_end_matches('/')
+        );
         let response = self
             .http
             .get(&url)

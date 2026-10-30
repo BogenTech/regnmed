@@ -4,7 +4,7 @@
 //! and verify content hashes catch tampering. Requires DATABASE_URL
 //! (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -97,16 +97,21 @@ async fn period_lock_and_attachments_end_to_end() {
         regnmed_db::ensure_person(&state.pool, &accountant_sub, Some("Kari Bokfører"), None)
             .await
             .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Periodetest AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Periodetest AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
-    let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Tall & Orden AS", "regnskap")
-        .await
-        .unwrap();
+    let firm = regnmed_db::ensure_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Tall & Orden AS",
+        "regnskap",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_firm_member(&state.pool, firm, accountant, "ansatt")
         .await
         .unwrap();

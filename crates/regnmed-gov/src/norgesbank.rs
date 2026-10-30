@@ -157,12 +157,12 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Quote>> {
                 Value::Number(n) => n.to_string(),
                 other => bail!("uventet observasjonsverdi {other}"),
             };
-            let kurs = parse_rate(&raw)
+            let exchange_rate = parse_rate(&raw)
                 .with_context(|| format!("uparselig kurs {raw:?} for {currency}"))?;
             noteringer.push(Quote {
                 currency: currency.clone(),
                 date,
-                rate_micro: kurs / divisor,
+                rate_micro: exchange_rate / divisor,
             });
         }
     }

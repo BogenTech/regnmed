@@ -60,7 +60,7 @@ impl std::error::Error for ReturnError {}
 
 #[derive(Debug, Clone)]
 pub struct Company {
-    pub orgnr: String,
+    pub orgnumber: String,
     pub name: String,
     pub adresse: Option<String>,
     pub postnummer: Option<String>,
@@ -74,14 +74,14 @@ pub struct Company {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PriorYear {
     pub fjoraret: i64,
-    pub i_ar: i64,
+    pub this_year: i64,
 }
 
 /// One utbytte decision during the year (generalforsamlingens vedtak).
 #[derive(Debug, Clone)]
 pub struct Distribution {
     pub date: NaiveDate,
-    pub per_aksje_ore: i64,
+    pub per_share_ore: i64,
     pub totalt_ore: i64,
 }
 
@@ -139,7 +139,7 @@ pub struct ShareMovement {
 
 #[derive(Debug, Clone)]
 pub struct SubForm {
-    pub orgnr: String,
+    pub orgnumber: String,
     pub inntektsar: i32,
     pub id: Option<ShareholderId>,
     pub name: String,
@@ -269,7 +269,11 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
 
     w.gruppe("GenerellInformasjon-grp-2587", 2587);
     w.gruppe("Selskap-grp-2588", 2588);
-    w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &h.company.orgnr);
+    w.felt(
+        "EnhetOrganisasjonsnummer-datadef-18",
+        18,
+        &h.company.orgnumber,
+    );
     w.felt("EnhetNavn-datadef-1", 1, &kutt(&h.company.name, 175));
     w.felt_opt("EnhetAdresse-datadef-15", 15, h.company.adresse.as_ref());
     w.felt_opt(
@@ -308,7 +312,11 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         7129,
         &amount(h.aksjekapital.fjoraret),
     );
-    w.felt("Aksjekapital-datadef-87", 87, &amount(h.aksjekapital.i_ar));
+    w.felt(
+        "Aksjekapital-datadef-87",
+        87,
+        &amount(h.aksjekapital.this_year),
+    );
     w.close("AksjekapitalForHeleSelskapet-grp-3443");
     // One share class in v1: the class's figures are the company's.
     w.gruppe("AksjekapitalIDenneAksjeklassen-grp-3444", 3444);
@@ -320,7 +328,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalISINAksjetype-datadef-17664",
         17664,
-        &amount(h.aksjekapital.i_ar),
+        &amount(h.aksjekapital.this_year),
     );
     w.close("AksjekapitalIDenneAksjeklassen-grp-3444");
     w.gruppe("PalydendePerAksje-grp-3447", 3447);
@@ -332,7 +340,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjeMvPalydende-datadef-23945",
         23945,
-        &amount(h.palydende_ore.i_ar),
+        &amount(h.palydende_ore.this_year),
     );
     w.close("PalydendePerAksje-grp-3447");
     w.gruppe("AntallAksjerIDenneAksjeklassen-grp-3445", 3445);
@@ -344,7 +352,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjerMvAntall-datadef-29167",
         29167,
-        &h.share_count.i_ar.to_string(),
+        &h.share_count.this_year.to_string(),
     );
     w.close("AntallAksjerIDenneAksjeklassen-grp-3445");
     w.gruppe("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446", 3446);
@@ -356,7 +364,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjekapitalInnbetalt-datadef-5867",
         5867,
-        &amount(h.innbetalt_aksjekapital.i_ar),
+        &amount(h.innbetalt_aksjekapital.this_year),
     );
     w.close("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446");
     w.gruppe("InnbetaltOverkursIDenneAksjeklassen-grp-3448", 3448);
@@ -368,7 +376,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjeOverkursISINAksjetype-datadef-17661",
         17661,
-        &amount(h.overkurs.i_ar),
+        &amount(h.overkurs.this_year),
     );
     w.close("InnbetaltOverkursIDenneAksjeklassen-grp-3448");
     w.close("Selskapsopplysninger-grp-2589");
@@ -388,7 +396,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjeUtbyttePerAksje-datadef-23946",
                 23946,
-                &amount(u.per_aksje_ore),
+                &amount(u.per_share_ore),
             );
             w.felt(
                 "AksjeUtbytteTidspunkt-datadef-17667",
@@ -466,7 +474,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
 
     w.gruppe("SelskapsOgAksjonaropplysninger-grp-3987", 3987);
     w.gruppe("Selskapsidentifikasjon-grp-3986", 3986);
-    w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &u.orgnr);
+    w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &u.orgnumber);
     w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &u.inntektsar.to_string());
     w.close("Selskapsidentifikasjon-grp-3986");
@@ -511,7 +519,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjonarAksjerAntall-datadef-17741",
         17741,
-        &u.share_count.i_ar.to_string(),
+        &u.share_count.this_year.to_string(),
     );
     w.close("AntallAksjerPerAksjonar-grp-3989");
     for post in &u.dividend {
@@ -611,7 +619,7 @@ mod tests {
 
     fn company() -> Company {
         Company {
-            orgnr: "314259521".into(),
+            orgnumber: "314259521".into(),
             name: "Mosegrodd Oransje Tiger AS".into(),
             adresse: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
@@ -627,24 +635,24 @@ mod tests {
             inntektsar: 2026,
             aksjekapital: PriorYear {
                 fjoraret: 0,
-                i_ar: 10_000_000,
+                this_year: 10_000_000,
             },
             palydende_ore: PriorYear {
                 fjoraret: 0,
-                i_ar: 100_000,
+                this_year: 100_000,
             },
             share_count: PriorYear {
                 fjoraret: 0,
-                i_ar: 100,
+                this_year: 100,
             },
             innbetalt_aksjekapital: PriorYear {
                 fjoraret: 0,
-                i_ar: 10_000_000,
+                this_year: 10_000_000,
             },
             overkurs: PriorYear::default(),
             dividend: vec![Distribution {
                 date: d(2026, 5, 20),
-                per_aksje_ore: 50_000,
+                per_share_ore: 50_000,
                 totalt_ore: 5_000_000,
             }],
             nyutstedelser: vec![NewIssue {
@@ -660,7 +668,7 @@ mod tests {
 
     fn underskjema() -> SubForm {
         SubForm {
-            orgnr: "314259521".into(),
+            orgnumber: "314259521".into(),
             inntektsar: 2026,
             id: Some(ShareholderId::Fodselsnummer("26829398612".into())),
             name: "Kari Nordmann".into(),
@@ -670,7 +678,7 @@ mod tests {
             landkode: None,
             share_count: PriorYear {
                 fjoraret: 0,
-                i_ar: 100,
+                this_year: 100,
             },
             dividend: vec![DividendEntry {
                 date: d(2026, 5, 20),

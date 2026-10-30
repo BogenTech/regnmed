@@ -18,7 +18,7 @@ async fn pool() -> Option<PgPool> {
     Some(pool)
 }
 
-fn unique_orgnr() -> String {
+fn unique_orgnumber() -> String {
     let n = u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap());
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
@@ -41,7 +41,7 @@ fn e(account: &str, ore: i64) -> EntryDraft {
 }
 
 async fn selskap_med_overskudd(pool: &PgPool) -> Uuid {
-    let company = regnmed_db::create_company(pool, &unique_orgnr(), "Årsoppgjør AS")
+    let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Årsoppgjør AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")

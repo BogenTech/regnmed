@@ -5,7 +5,7 @@
 //! the trekkpliktige del surfaced as a warning, and utbetaling posting
 //! mellomregning mot bank. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -64,7 +64,7 @@ async fn expenses_flow() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Reisende Medarbeider"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Utlegg AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Utlegg AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

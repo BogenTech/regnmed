@@ -38,13 +38,15 @@ async fn require_write(
 pub struct EntryRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
-    minutter: i32,
+    #[serde(rename = "minutter")]
+    minutes: i32,
     #[serde(default, rename = "beskrivelse")]
     description: String,
     #[serde(rename = "prosjekt")]
     project: Option<String>,
     /// Absent = the project's fakturerbar_default.
-    fakturerbar: Option<bool>,
+    #[serde(rename = "fakturerbar")]
+    billable: Option<bool>,
     /// Honored only with TIMER_SATS_SKRIV — otherwise the register's
     /// rate applies (docs/timer.md).
     timesats_ore: Option<i64>,
@@ -54,10 +56,10 @@ impl EntryRequest {
     fn draft(self) -> regnmed_db::TimeEntryDraft {
         regnmed_db::TimeEntryDraft {
             date: self.date,
-            minutter: self.minutter,
+            minutes: self.minutes,
             description: self.description,
             project: self.project,
-            fakturerbar: self.fakturerbar,
+            billable: self.billable,
             timesats_ore: self.timesats_ore,
         }
     }
@@ -159,10 +161,10 @@ pub async fn list(
             "person": e.person_name,
             "own": e.own,
             "dato": e.date.to_string(),
-            "minutter": e.minutter,
+            "minutter": e.minutes,
             "beskrivelse": e.description,
             "prosjekt": e.project,
-            "fakturerbar": e.fakturerbar,
+            "fakturerbar": e.billable,
             "timesats_ore": e.timesats_ore,
             "invoice_no": e.invoice_no,
         })).collect::<Vec<_>>(),
@@ -186,7 +188,7 @@ pub async fn summary(
     Ok(Json(json!({
         "prosjekter": rows.iter().map(|r| json!({
             "prosjekt": r.project,
-            "minutter": r.minutter,
+            "minutter": r.minutes,
             "fakturerbare_minutter": r.fakturerbare_minutter,
             "ufakturert_ore": r.ufakturert_ore,
             "fakturerte_minutter": r.fakturerte_minutter,
@@ -228,12 +230,12 @@ pub async fn unbilled(
             "kunde": g.customer,
             "kunde_navn": g.customer_name,
             "timesats_ore": g.timesats_ore,
-            "minutter": g.minutter,
+            "minutter": g.minutes,
             "entries": g.entry_ids.len(),
             "personer": g.personer.iter().map(|p| json!({
                 "person_id": p.person_id,
                 "navn": p.name,
-                "minutter": p.minutter,
+                "minutter": p.minutes,
                 "entry_ids": p.entry_ids,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),

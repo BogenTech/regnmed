@@ -161,7 +161,7 @@ pub async fn registrering_history(
 #[derive(Debug)]
 pub struct CompanySettings {
     pub name: String,
-    pub orgnr: String,
+    pub orgnumber: String,
     pub address: Option<String>,
     pub bank_account: Option<String>,
     pub orgform: Option<String>,
@@ -182,7 +182,7 @@ pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<Company
     .await?;
     Ok(CompanySettings {
         name: row.get("name"),
-        orgnr: row.get("orgnr"),
+        orgnumber: row.get("orgnr"),
         address: row.get("address"),
         bank_account: row.get("bank_account"),
         orgform: row.get("orgform"),

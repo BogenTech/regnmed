@@ -5,7 +5,7 @@
 //!
 //! Requires DATABASE_URL — skips politely otherwise.
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
@@ -79,7 +79,7 @@ async fn aksjeeierbok_dividends_and_the_oppgave() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Styreleder"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Aksjeselskapet AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Aksjeselskapet AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -337,7 +337,7 @@ async fn events_cannot_be_changed_or_deleted() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Ola"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Uforanderlig AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Uforanderlig AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -352,7 +352,7 @@ async fn events_cannot_be_changed_or_deleted() {
             kind: "selskap".into(),
             name: "Eier AS".into(),
             fodselsnummer: None,
-            orgnr: Some("923609016".into()),
+            orgnumber: Some("923609016".into()),
             utenlandsk_id: None,
             adresse: None,
             postnummer: None,

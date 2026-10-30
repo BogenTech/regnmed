@@ -4,7 +4,7 @@
 //! ordinary invoice with the prosjekt dimension — hours marked
 //! fakturert one-way. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -50,7 +50,7 @@ async fn hours_lock_and_bill() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Konsulent"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timer AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Timer AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -348,7 +348,7 @@ async fn timer_rights_mean_what_they_say() {
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
         .await
         .unwrap();
-    let ansatt = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
+    let employee = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
         .await
         .unwrap();
     let bokforer = regnmed_db::ensure_person(&state.pool, &bokforer_sub, Some("Berit Bok"), None)
@@ -357,14 +357,14 @@ async fn timer_rights_mean_what_they_say() {
     let timesjef = regnmed_db::ensure_person(&state.pool, &timesjef_sub, Some("Trine Sjef"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Timevakt AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Timevakt AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, ansatt, "ansatt")
+    regnmed_db::ensure_company_member(&state.pool, company, employee, "ansatt")
         .await
         .unwrap();
     regnmed_db::ensure_company_member(&state.pool, company, bokforer, "bokforing")
@@ -423,7 +423,7 @@ async fn timer_rights_mean_what_they_say() {
     .unwrap();
 
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
-    let ansatt_token = idp.token(&ansatt_sub, "Espen Ansatt");
+    let employee_token = idp.token(&ansatt_sub, "Espen Ansatt");
     let bokforer_token = idp.token(&bokforer_sub, "Berit Bok");
     let timesjef_token = idp.token(&timesjef_sub, "Trine Sjef");
     let base = format!("/companies/{company}/timesheet");
@@ -447,7 +447,7 @@ async fn timer_rights_mean_what_they_say() {
         &state,
         "POST",
         &base,
-        &ansatt_token,
+        &employee_token,
         Some(
             serde_json::json!({
                 "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Levering",
@@ -463,7 +463,7 @@ async fn timer_rights_mean_what_they_say() {
     // Visibility: the ansatt sees only their own row; TIMER_LES_ALLE
     // (bokforing, custom role, admin) sees both.
     let uke = format!("{base}?from=2026-08-03&to=2026-08-09");
-    let (_, sett) = request(&state, "GET", &uke, &ansatt_token, None).await;
+    let (_, sett) = request(&state, "GET", &uke, &employee_token, None).await;
     let egne = sett["entries"].as_array().unwrap();
     assert_eq!(egne.len(), 1, "ansatt ser bare egne timer: {sett}");
     assert_eq!(egne[0]["own"], true);
@@ -513,7 +513,7 @@ async fn timer_rights_mean_what_they_say() {
         &state,
         "POST",
         &format!("{base}/invoice"),
-        &ansatt_token,
+        &employee_token,
         Some(bill.clone()),
     )
     .await;
@@ -549,7 +549,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let b = regnmed_db::ensure_person(&state.pool, &b_sub, Some("Bjørn"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Utvalg AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Utvalg AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -598,9 +598,9 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
     let base = format!("/companies/{company}/timesheet");
 
     // Two hours Anna, one hour Bjørn — same (prosjekt, sats) group.
-    let timer = |date: &str, minutter: i32| {
+    let timer = |date: &str, minutes: i32| {
         serde_json::json!({
-            "dato": date, "minutter": minutter, "beskrivelse": "Arbeid",
+            "dato": date, "minutter": minutes, "beskrivelse": "Arbeid",
             "prosjekt": "P1", "fakturerbar": true,
         })
         .to_string()
@@ -694,17 +694,17 @@ async fn the_project_owns_the_rate_and_the_default() {
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
         .await
         .unwrap();
-    let ansatt = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
+    let employee = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Satseiere AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Satseiere AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, ansatt, "ansatt")
+    regnmed_db::ensure_company_member(&state.pool, company, employee, "ansatt")
         .await
         .unwrap();
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
@@ -714,7 +714,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         .await
         .unwrap();
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
-    let ansatt_token = idp.token(&ansatt_sub, "Espen Ansatt");
+    let employee_token = idp.token(&ansatt_sub, "Espen Ansatt");
     let base = format!("/companies/{company}/timesheet");
 
     // Admin turns on the billable default and sets the rates: project
@@ -729,29 +729,23 @@ async fn the_project_owns_the_rate_and_the_default() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let satser = format!("/companies/{company}/dimensions/prosjekt/P1/satser");
+    let rates = format!("/companies/{company}/dimensions/prosjekt/P1/satser");
     let (status, _) = request(
         &state,
         "POST",
-        &satser,
-        &ansatt_token,
+        &rates,
+        &employee_token,
         Some(serde_json::json!({ "timesats_ore": 1 }).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "ansatt setter ikke satser");
     for body in [
         serde_json::json!({ "timesats_ore": 1_000_00, "valid_from": "2026-01-01" }),
-        serde_json::json!({ "person_id": ansatt, "timesats_ore": 800_00,
+        serde_json::json!({ "person_id": employee, "timesats_ore": 800_00,
                             "valid_from": "2026-01-01" }),
     ] {
-        let (status, response) = request(
-            &state,
-            "POST",
-            &satser,
-            &admin_token,
-            Some(body.to_string()),
-        )
-        .await;
+        let (status, response) =
+            request(&state, "POST", &rates, &admin_token, Some(body.to_string())).await;
         assert_eq!(status, StatusCode::OK, "body: {response}");
     }
 
@@ -761,7 +755,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         &state,
         "POST",
         &base,
-        &ansatt_token,
+        &employee_token,
         Some(
             serde_json::json!({
                 "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Levering",
@@ -773,7 +767,7 @@ async fn the_project_owns_the_rate_and_the_default() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {created}");
     let uke = format!("{base}?from=2026-08-03&to=2026-08-09");
-    let (_, sett) = request(&state, "GET", &uke, &ansatt_token, None).await;
+    let (_, sett) = request(&state, "GET", &uke, &employee_token, None).await;
     let egen = &sett["entries"][0];
     assert_eq!(egen["fakturerbar"], true, "prosjektets standard: {sett}");
     assert_eq!(
@@ -836,7 +830,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         &state,
         "POST",
         &base,
-        &ansatt_token,
+        &employee_token,
         Some(
             serde_json::json!({
                 "dato": "2026-08-03", "minutter": 60, "beskrivelse": "X",
@@ -856,7 +850,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         &state,
         "POST",
         &base,
-        &ansatt_token,
+        &employee_token,
         Some(
             serde_json::json!({
                 "dato": "2026-08-03", "minutter": 60, "beskrivelse": "Intern",
@@ -890,7 +884,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
         regnmed_db::ensure_person(&state.pool, &fakturist_sub, Some("Fia Fakturist"), None)
             .await
             .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Kombinert AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kombinert AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;

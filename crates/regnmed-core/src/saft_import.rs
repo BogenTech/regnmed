@@ -46,7 +46,7 @@ pub struct ImportAccount {
 pub struct ImportParty {
     pub source_id: String,
     pub name: String,
-    pub orgnr: Option<String>,
+    pub orgnumber: Option<String>,
 }
 
 #[derive(Debug)]
@@ -142,12 +142,12 @@ pub fn parse(xml: &str) -> Result<SaftFile, SaftImportError> {
                     "Customer" => file.customers.push(ImportParty {
                         source_id: party.0.clone(),
                         name: party.1.clone(),
-                        orgnr: party.2.take(),
+                        orgnumber: party.2.take(),
                     }),
                     "Supplier" => file.suppliers.push(ImportParty {
                         source_id: party.0.clone(),
                         name: party.1.clone(),
-                        orgnr: party.2.take(),
+                        orgnumber: party.2.take(),
                     }),
                     "DebitAmount" if in_path(&path, "Line") => {
                         line.amount_ore = line_amount.0;
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn roundtrip_through_our_own_exporter() {
         let input = SaftInput {
-            orgnr: "923609016".into(),
+            orgnumber: "923609016".into(),
             company_name: "Roundtrip AS".into(),
             contact_first_name: "Kari".into(),
             contact_last_name: "Nordmann".into(),
@@ -288,7 +288,7 @@ mod tests {
             customers: vec![SaftParty {
                 party_no: "10000".into(),
                 name: "Kunde & Co AS".into(),
-                orgnr: Some("911111111".into()),
+                orgnumber: Some("911111111".into()),
                 balance_account: Some("1500".into()),
                 opening_ore: 500_00,
                 closing_ore: 13_000_00,
@@ -357,7 +357,7 @@ mod tests {
 
         assert_eq!(parsed.customers.len(), 1);
         assert_eq!(parsed.customers[0].source_id, "10000");
-        assert_eq!(parsed.customers[0].orgnr.as_deref(), Some("911111111"));
+        assert_eq!(parsed.customers[0].orgnumber.as_deref(), Some("911111111"));
 
         assert_eq!(parsed.transactions.len(), 1);
         let tx = &parsed.transactions[0];

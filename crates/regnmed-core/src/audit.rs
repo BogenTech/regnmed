@@ -181,8 +181,8 @@ pub struct AnchorInfo {
 
 #[derive(Debug, Clone)]
 pub struct AuditInput {
-    pub orgnr: String,
-    pub selskap: String,
+    pub orgnumber: String,
+    pub company: String,
     /// RFC 3339; passed in, never read from a clock here.
     pub generert: String,
     pub generert_av: String,
@@ -212,7 +212,7 @@ pub fn render_text(input: &AuditInput) -> String {
     line("");
     line(&format!(
         "Selskap:        {} ({})",
-        input.selskap, input.orgnr
+        input.company, input.orgnumber
     ));
     line(&format!("Generert:       {}", input.generert));
     line(&format!("Generert av:    {}", input.generert_av));
@@ -280,8 +280,8 @@ mod tests {
 
     fn sample() -> AuditInput {
         AuditInput {
-            orgnr: "999888777".into(),
-            selskap: "Demo AS".into(),
+            orgnumber: "999888777".into(),
+            company: "Demo AS".into(),
             generert: "2026-07-23T12:00:00+00:00".into(),
             generert_av: "Randi Revisor".into(),
             programversjon: "0.1.0".into(),

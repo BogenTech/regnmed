@@ -34,7 +34,7 @@ pub const NAMESPACE: &str =
 
 #[derive(Debug)]
 pub struct VatReturn {
-    pub orgnr: String,
+    pub orgnumber: String,
     pub period: Period,
     /// The company's terminordning (docs/mva.md, #51): decides which
     /// skattleggingsperiode element the XML carries.
@@ -70,7 +70,7 @@ fn kroner(ore: i64) -> i64 {
 /// Builds the melding from spesifikasjon lines (ledger signs, øre).
 /// Code 0 has no place in the melding and is skipped.
 pub fn build(
-    orgnr: &str,
+    orgnumber: &str,
     period: Period,
     ordning: PeriodScheme,
     referanse: &str,
@@ -84,7 +84,7 @@ pub fn build(
         }
         // Ledger → melding: negate (payable-positive) and round to kroner.
         let vat_kr = kroner(-line.tax_ore);
-        let grunnlag_kr = kroner(-line.grunnlag_ore);
+        let grunnlag_kr = kroner(-line.basis_ore);
         let retning = direction(&line.code);
         // Cost markers are not tax calculations, and using them is not
         // even mandatory — the import's tax is reported under 81/14.
@@ -94,7 +94,7 @@ pub fn build(
         if retning == Direction::Kostnadsmarkor {
             continue;
         }
-        let (grunnlag, sats) = match retning {
+        let (grunnlag, rate) = match retning {
             // Fradrag lines carry only the deducted amount.
             Direction::Inngaende => (None, None),
             // Everything else reports grunnlag + sats.
@@ -108,7 +108,7 @@ pub fn build(
             code: line.code.clone(),
             description: line.description.clone(),
             grunnlag_kr: grunnlag,
-            rate_bp: sats,
+            rate_bp: rate,
             vat_kr,
             // The deduction the same code carries. Kept beside the line
             // rather than folded into `mva_kr`, because the two are
@@ -128,7 +128,7 @@ pub fn build(
     // nothing on.
     let fastsatt_kr = lines.iter().map(|l| l.vat_kr + l.fradrag_kr).sum();
     VatReturn {
-        orgnr: orgnr.to_string(),
+        orgnumber: orgnumber.to_string(),
         period,
         ordning,
         referanse: referanse.to_string(),
@@ -151,7 +151,7 @@ fn periode_name(period: Period) -> &'static str {
 }
 
 /// Sats as the kodeliste expects: "25", "11.11".
-fn sats(bp: i64) -> String {
+fn rate(bp: i64) -> String {
     match (bp / 100, bp % 100) {
         (whole, 0) => format!("{whole}"),
         (whole, frac) if frac % 10 == 0 => format!("{whole}.{}", frac / 10),
@@ -200,7 +200,7 @@ pub fn render(message: &VatReturn) -> String {
             x.leaf("grunnlag", &grunnlag.to_string());
         }
         if let Some(bp) = line.rate_bp {
-            x.leaf("sats", &sats(bp));
+            x.leaf("sats", &rate(bp));
         }
         x.leaf("merverdiavgift", &line.vat_kr.to_string());
         x.close("mvaSpesifikasjonslinje");
@@ -209,7 +209,7 @@ pub fn render(message: &VatReturn) -> String {
 
     x.empty("betalingsinformasjon");
     x.open("skattepliktig");
-    x.leaf("organisasjonsnummer", &message.orgnr);
+    x.leaf("organisasjonsnummer", &message.orgnumber);
     x.close("skattepliktig");
     x.leaf("meldingskategori", "alminnelig");
 
@@ -228,21 +228,21 @@ mod tests {
                 code: "1".into(),
                 description: "Inngående mva, alminnelig sats".into(),
                 rate_bp: 2500,
-                grunnlag_ore: 8_000_00,
+                basis_ore: 8_000_00,
                 tax_ore: 2_000_00,
             },
             SpecLine {
                 code: "3".into(),
                 description: "Utgående mva, alminnelig sats".into(),
                 rate_bp: 2500,
-                grunnlag_ore: -10_000_49, // odd øre to prove rounding
+                basis_ore: -10_000_49, // odd øre to prove rounding
                 tax_ore: -2_500_12,
             },
             SpecLine {
                 code: "0".into(),
                 description: "Ingen mva-behandling".into(),
                 rate_bp: 0,
-                grunnlag_ore: 5_000_00,
+                basis_ore: 5_000_00,
                 tax_ore: 0,
             },
         ]
@@ -301,7 +301,7 @@ mod tests {
                 rate_bp: 2500,
                 // A purchase basis posts as a debit; the computed tax is
                 // an output tax, i.e. a credit in the ledger.
-                grunnlag_ore: 100_000_00,
+                basis_ore: 100_000_00,
                 tax_ore: -25_000_00,
             }]
         };

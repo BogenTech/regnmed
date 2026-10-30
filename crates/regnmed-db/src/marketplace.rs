@@ -60,16 +60,16 @@ pub struct RegistryFacts {
 /// once.
 pub async fn onboard_company(
     pool: &PgPool,
-    orgnr: &str,
+    orgnumber: &str,
     registry_name: &str,
     person_id: Uuid,
     facts: &RegistryFacts,
 ) -> Result<OnboardedCompany> {
     ensure!(
-        find_company_by_orgnr(pool, orgnr).await?.is_none(),
-        "company {orgnr} is already onboarded"
+        find_company_by_orgnr(pool, orgnumber).await?.is_none(),
+        "company {orgnumber} is already onboarded"
     );
-    let company_id = create_company(pool, orgnr, registry_name)
+    let company_id = create_company(pool, orgnumber, registry_name)
         .await
         .context("creating company")?;
     // Master data straight from the register: the salgsdokument needs
@@ -137,7 +137,7 @@ pub async fn onboard_company(
 /// byrå is an invitation decision its admins make, not a side effect.
 pub async fn create_verified_firm(
     pool: &PgPool,
-    orgnr: &str,
+    orgnumber: &str,
     registry_name: &str,
     kind: &str,
     autorisasjon_ref: &str,
@@ -151,7 +151,7 @@ pub async fn create_verified_firm(
         "byrået er allerede registrert i regnmed — be en administrator der om å invitere deg";
     let mut tx = pool.begin().await?;
     let existing: Option<Uuid> = sqlx::query_scalar("select id from firm where orgnr = $1")
-        .bind(orgnr)
+        .bind(orgnumber)
         .fetch_optional(&mut *tx)
         .await?;
     ensure!(existing.is_none(), "{ALLEREDE}");
@@ -162,7 +162,7 @@ pub async fn create_verified_firm(
          values ($1, $2, $3, $4, now(), $5)",
     )
     .bind(firm_id)
-    .bind(orgnr)
+    .bind(orgnumber)
     .bind(registry_name)
     .bind(kind)
     .bind(autorisasjon_ref)

@@ -71,7 +71,7 @@ pub struct AppState {
     pub stripe: Option<StripeCfg>,
     /// Driftsselskapets orgnr (REGNMED_DRIFT_ORGNR) — hovedboken
     /// abonnementstrekkene bokføres i.
-    pub drift_orgnr: Option<String>,
+    pub ops_orgnumber: Option<String>,
     /// The portal's public URL (PORTAL_BASE_URL), used for the link in
     /// the invitation mail (#66). Deliberately configuration and never
     /// the request's Host header: a mail we send must not be addressable
@@ -137,7 +137,7 @@ pub fn router(state: AppState) -> Router {
             get(anchor::verify_anchors),
         )
         .route(
-            "/registry/enheter/{orgnr}",
+            "/registry/enheter/{orgnumber}",
             get(marketplace::registry_preview),
         )
         .route(
@@ -193,11 +193,11 @@ pub fn router(state: AppState) -> Router {
             get(agent_task::list).post(agent_task::opprett),
         )
         .route(
-            "/companies/{company_id}/agent/oppgaver/{oppgave_id}",
+            "/companies/{company_id}/agent/oppgaver/{task_id}",
             get(agent_task::hent),
         )
         .route(
-            "/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar",
+            "/companies/{company_id}/agent/oppgaver/{task_id}/svar",
             axum::routing::post(agent_task::answer),
         )
         .route(
@@ -578,7 +578,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/historikk",
-            get(balance_documentation::historikk),
+            get(balance_documentation::history),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/{id}/vedlegg",
@@ -994,7 +994,7 @@ async fn me(
             .iter()
             .map(|a| json!({
                 "company_id": a.company_id,
-                "orgnr": a.orgnr,
+                "orgnr": a.orgnumber,
                 "name": a.name,
                 "access": a.access,
                 "via": a.via,

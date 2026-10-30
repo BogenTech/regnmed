@@ -194,7 +194,7 @@ pub struct SpecLine {
     pub code: String,
     pub description: String,
     pub rate_bp: i64,
-    pub grunnlag_ore: i64,
+    pub basis_ore: i64,
     /// `vat_of_base(grunnlag, rate)` — beregnet, not posted; comparing it
     /// against the posted VAT accounts is the accountant's control.
     pub tax_ore: i64,
@@ -503,12 +503,12 @@ mod tests {
 
         let ar = PeriodScheme::Arlig;
         assert_eq!(ar.period_count(), 1);
-        let periode = ar.period_of(date(2026, 11, 3));
-        assert_eq!(periode.number, 1);
-        assert_eq!(ar.start(periode), date(2026, 1, 1));
-        assert_eq!(ar.end(periode), date(2026, 12, 31));
-        assert_eq!(ar.deadline(periode), date(2027, 3, 10));
-        assert_eq!(ar.label(periode), "\u{c5}rstermin 2026");
+        let period = ar.period_of(date(2026, 11, 3));
+        assert_eq!(period.number, 1);
+        assert_eq!(ar.start(period), date(2026, 1, 1));
+        assert_eq!(ar.end(period), date(2026, 12, 31));
+        assert_eq!(ar.deadline(period), date(2027, 3, 10));
+        assert_eq!(ar.label(period), "\u{c5}rstermin 2026");
         assert!(
             ar.new_period(2026, 2).is_none(),
             "aarstermin har ingen 2. periode"

@@ -80,7 +80,7 @@ pub async fn load_saft_input(
         let party = SaftParty {
             party_no: row.get("party_no"),
             name: row.get("name"),
-            orgnr: row.get("orgnr"),
+            orgnumber: row.get("orgnr"),
             balance_account: row.get("balance_account"),
             opening_ore: row.get("opening_ore"),
             closing_ore: row.get("closing_ore"),
@@ -254,7 +254,7 @@ pub async fn load_saft_input(
     }
 
     Ok(SaftInput {
-        orgnr: company.get("orgnr"),
+        orgnumber: company.get("orgnr"),
         company_name: company.get("name"),
         contact_first_name: contact_first_name.to_string(),
         contact_last_name: contact_last_name.to_string(),

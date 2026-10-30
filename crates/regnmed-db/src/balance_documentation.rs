@@ -61,7 +61,7 @@ impl BalanceSheetLine {
 pub async fn balance_status(
     pool: &PgPool,
     company_id: Uuid,
-    periode: NaiveDate,
+    period: NaiveDate,
 ) -> Result<Vec<BalanceSheetLine>> {
     let rows = sqlx::query(
         "select a.number as konto, a.name as kontonavn,
@@ -76,7 +76,7 @@ pub async fn balance_status(
          order by a.number",
     )
     .bind(company_id)
-    .bind(periode)
+    .bind(period)
     .fetch_all(pool)
     .await?;
 
@@ -93,7 +93,7 @@ pub async fn balance_status(
              order by d.created_at desc limit 1",
         )
         .bind(company_id)
-        .bind(periode)
+        .bind(period)
         .bind(&account)
         .fetch_optional(pool)
         .await?
@@ -124,7 +124,7 @@ pub async fn avstem(
     pool: &PgPool,
     company_id: Uuid,
     account: &str,
-    periode: NaiveDate,
+    period: NaiveDate,
     forklaring: &str,
     vedlegg: Option<(&str, &str, &[u8])>,
     avstemt_av: Uuid,
@@ -156,7 +156,7 @@ pub async fn avstem(
     )
     .bind(company_id)
     .bind(account)
-    .bind(periode)
+    .bind(period)
     .fetch_one(pool)
     .await?;
 
@@ -180,7 +180,7 @@ pub async fn avstem(
     .bind(id)
     .bind(company_id)
     .bind(account)
-    .bind(periode)
+    .bind(period)
     .bind(balance_ore)
     .bind(forklaring.trim())
     .bind(bytes)
@@ -228,11 +228,11 @@ pub async fn hent_vedlegg(
 
 /// The full trail for one account and period, newest first — a
 /// correction is a new row, and the reader can see both.
-pub async fn historikk(
+pub async fn history(
     pool: &PgPool,
     company_id: Uuid,
     account: &str,
-    periode: NaiveDate,
+    period: NaiveDate,
 ) -> Result<Vec<Avstemming>> {
     Ok(sqlx::query(
         "select d.id, d.saldo_ore, d.forklaring, d.avstemt_dato,
@@ -245,7 +245,7 @@ pub async fn historikk(
     )
     .bind(company_id)
     .bind(account)
-    .bind(periode)
+    .bind(period)
     .fetch_all(pool)
     .await?
     .iter()

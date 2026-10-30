@@ -139,7 +139,7 @@ pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<Produc
 /// traceability.
 #[derive(Debug, Default)]
 pub struct ProductLineSpec {
-    pub produkt: Option<String>,
+    pub product: Option<String>,
     pub description: Option<String>,
     pub account: Option<String>,
     pub quantity_milli: i64,
@@ -154,7 +154,7 @@ pub async fn resolve_product_line(
     company_id: Uuid,
     spec: ProductLineSpec,
 ) -> Result<InvoiceLineDraft> {
-    match &spec.produkt {
+    match &spec.product {
         Some(number) => {
             let product = sqlx::query(
                 "select id, navn, salgspris_ore, vat_code, konto, aktiv
@@ -265,7 +265,7 @@ pub async fn register_movement(
     number: &str,
     date: NaiveDate,
     kind: &str,
-    antall_milli: i64,
+    quantity_milli: i64,
     kostpris_ore: Option<i64>,
     note: Option<&str>,
     created_by: &str,
@@ -295,7 +295,7 @@ pub async fn register_movement(
     .bind(product.get::<Uuid, _>("id"))
     .bind(date)
     .bind(kind)
-    .bind(antall_milli)
+    .bind(quantity_milli)
     .bind(kostpris_ore)
     .bind(note)
     .bind(created_by)
@@ -332,7 +332,7 @@ where
 pub struct InventoryRow {
     pub number: String,
     pub name: String,
-    pub antall_milli: i64,
+    pub quantity_milli: i64,
     pub verdi_ore: i64,
     pub gjennomsnitt_ore: Option<i64>,
 }
@@ -354,7 +354,7 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
         rows.push(InventoryRow {
             number: p.get("nummer"),
             name: p.get("navn"),
-            antall_milli: status.quantity_milli,
+            quantity_milli: status.quantity_milli,
             verdi_ore: status.value_ore,
             gjennomsnitt_ore: status.average_ore(),
         });
@@ -366,7 +366,7 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
 pub struct MovementRow {
     pub date: NaiveDate,
     pub kind: String,
-    pub antall_milli: i64,
+    pub quantity_milli: i64,
     pub kostpris_ore: Option<i64>,
     pub note: Option<String>,
     pub invoice_no: Option<i64>,
@@ -397,7 +397,7 @@ pub async fn list_movements(
         .map(|r| MovementRow {
             date: r.get("dato"),
             kind: r.get("kind"),
-            antall_milli: r.get("antall_milli"),
+            quantity_milli: r.get("antall_milli"),
             kostpris_ore: r.get("kostpris_ore"),
             note: r.get("note"),
             invoice_no: r.get("invoice_no"),
@@ -435,7 +435,7 @@ pub struct TellingResult {
     pub verdi_ore: i64,
     /// Booked balance on the lager account before adjustment (only
     /// computed when posting was requested).
-    pub bokfort_ore: Option<i64>,
+    pub posted_ore: Option<i64>,
     pub voucher: Option<(i32, i64)>,
 }
 
@@ -508,10 +508,10 @@ pub async fn varetelling(
         verdi_ore += product_status(&mut *tx, id).await?.value_ore;
     }
 
-    let mut bokfort_ore = None;
+    let mut posted_ore = None;
     let mut voucher = None;
     if let Some(konti) = post {
-        let bokfort: i64 = sqlx::query_scalar(
+        let posted: i64 = sqlx::query_scalar(
             "select coalesce(sum(e.amount_ore), 0)::bigint
              from entry e join account a on a.id = e.account_id
              where a.company_id = $1 and a.number = $2",
@@ -520,8 +520,8 @@ pub async fn varetelling(
         .bind(&konti.inventory_account)
         .fetch_one(&mut *tx)
         .await?;
-        bokfort_ore = Some(bokfort);
-        let endring = verdi_ore - bokfort;
+        posted_ore = Some(posted);
+        let endring = verdi_ore - posted;
         if endring != 0 {
             let draft = VoucherDraft {
                 journal_code: konti.journal_code.clone(),
@@ -560,7 +560,7 @@ pub async fn varetelling(
     Ok(TellingResult {
         justeringer,
         verdi_ore,
-        bokfort_ore,
+        posted_ore,
         voucher,
     })
 }

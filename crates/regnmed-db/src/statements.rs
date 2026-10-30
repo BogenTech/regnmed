@@ -484,9 +484,9 @@ pub async fn nokkeltall(
     .await?;
     let mut maaneder = [0i64; 12];
     for row in &month_rows {
-        let maned: i32 = row.get("maned");
-        if (1..=12).contains(&maned) {
-            maaneder[(maned - 1) as usize] = row.get("resultat");
+        let month: i32 = row.get("maned");
+        if (1..=12).contains(&month) {
+            maaneder[(month - 1) as usize] = row.get("resultat");
         }
     }
 

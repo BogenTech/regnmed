@@ -34,7 +34,7 @@ fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::
         "navn": a.name,
         // §4-5: birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
-        "orgnr": a.orgnr,
+        "orgnr": a.orgnumber,
         "utenlandsk_id": a.utenlandsk_id,
         "adresse": a.adresse,
         "postnummer": a.postnummer,
@@ -84,7 +84,8 @@ pub struct CreateShareholderRequest {
     #[serde(rename = "navn")]
     name: String,
     fodselsnummer: Option<String>,
-    orgnr: Option<String>,
+    #[serde(rename = "orgnr")]
+    orgnumber: Option<String>,
     utenlandsk_id: Option<String>,
     adresse: Option<String>,
     postnummer: Option<String>,
@@ -113,7 +114,7 @@ pub async fn create_shareholder(
             kind: request.kind,
             name: request.name,
             fodselsnummer: request.fodselsnummer,
-            orgnr: request.orgnr,
+            orgnumber: request.orgnumber,
             utenlandsk_id: request.utenlandsk_id,
             adresse: request.adresse,
             postnummer: request.postnummer,
@@ -298,7 +299,7 @@ pub async fn list_dividends(
         "utbytte": rows.iter().map(|u| json!({
             "id": u.id,
             "besluttet_dato": u.decided_date,
-            "per_aksje_ore": u.per_aksje_ore,
+            "per_aksje_ore": u.per_share_ore,
             "totalt_ore": u.totalt_ore,
             "voucher_id": u.voucher_id,
             "note": u.note,
@@ -311,7 +312,8 @@ pub async fn list_dividends(
 pub struct CreateDividendRequest {
     #[serde(rename = "besluttet_dato")]
     decided_date: chrono::NaiveDate,
-    per_aksje_ore: i64,
+    #[serde(rename = "per_aksje_ore")]
+    per_share_ore: i64,
     note: Option<String>,
 }
 
@@ -332,7 +334,7 @@ pub async fn create_dividend(
         &state.pool,
         company_id,
         request.decided_date,
-        request.per_aksje_ore,
+        request.per_share_ore,
         request.note.as_deref(),
         person.display(),
     )
@@ -425,20 +427,20 @@ pub async fn tax_return(
         "hindringer": hindringer,
         "inntektsar": q.year,
         "antall_aksjonarer": under.len(),
-        "antall_aksjer": sett.hovedskjema.share_count.i_ar,
+        "antall_aksjer": sett.hovedskjema.share_count.this_year,
         "antall_aksjer_fjoraret": sett.hovedskjema.share_count.fjoraret,
-        "aksjekapital_ore": sett.hovedskjema.aksjekapital.i_ar,
-        "palydende_ore": sett.hovedskjema.palydende_ore.i_ar,
+        "aksjekapital_ore": sett.hovedskjema.aksjekapital.this_year,
+        "palydende_ore": sett.hovedskjema.palydende_ore.this_year,
         "utbytte": sett.hovedskjema.dividend.iter().map(|u| json!({
             "dato": u.date,
-            "per_aksje_ore": u.per_aksje_ore,
+            "per_aksje_ore": u.per_share_ore,
             "totalt_ore": u.totalt_ore,
         })).collect::<Vec<_>>(),
         "aksjonarer": sett.underskjemaer.iter().map(|(id, u)| json!({
             "shareholder_id": id,
             "navn": u.name,
             "antall_fjoraret": u.share_count.fjoraret,
-            "antall": u.share_count.i_ar,
+            "antall": u.share_count.this_year,
             "antall_bevegelser": u.bevegelser.len(),
         })).collect::<Vec<_>>(),
     }))

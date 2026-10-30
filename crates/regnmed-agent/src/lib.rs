@@ -298,7 +298,7 @@ pub async fn run_task(
     let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
     regnmed_db::agent_task::answer(pool, company_id, task_id, "pagar", None, &name).await?;
 
-    let history: Vec<HistoryLine> = regnmed_db::agent_task::historikk(pool, company_id, task_id)
+    let history: Vec<HistoryLine> = regnmed_db::agent_task::history(pool, company_id, task_id)
         .await?
         .into_iter()
         .filter_map(|h| {

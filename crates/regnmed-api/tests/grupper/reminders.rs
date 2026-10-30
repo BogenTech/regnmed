@@ -4,7 +4,7 @@
 //! guardrails reject bad skritt, and the history is immutable.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnr};
+use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -50,7 +50,7 @@ async fn reminder_ladder_with_legal_guardrails() {
     let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
         .await
         .unwrap();
-    let company = regnmed_db::create_company(&state.pool, &unique_orgnr(), "Purring AS")
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Purring AS")
         .await
         .unwrap();
     make_invoiceable(&state.pool, company).await;
@@ -149,13 +149,13 @@ async fn reminder_ladder_with_legal_guardrails() {
     let reminders_uri = format!("/companies/{company}/invoices/{invoice_id}/reminders");
 
     // Fee-free reminder: registered, but nothing posted.
-    let frist = (today + chrono::Days::new(14)).to_string();
+    let deadline = (today + chrono::Days::new(14)).to_string();
     let (status, paminnelse) = request(
         &state,
         "POST",
         &reminders_uri,
         &token,
-        Some(serde_json::json!({ "steg": "paminnelse", "frist_date": frist }).to_string()),
+        Some(serde_json::json!({ "steg": "paminnelse", "frist_date": deadline }).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {paminnelse}");
@@ -178,7 +178,7 @@ async fn reminder_ladder_with_legal_guardrails() {
         Some(
             serde_json::json!({
                 "steg": "purring",
-                "frist_date": frist,
+                "frist_date": deadline,
                 "gebyr_ore": 3800,
                 "med_rente": true,
             })
@@ -206,7 +206,7 @@ async fn reminder_ladder_with_legal_guardrails() {
         &reminders_uri,
         &token,
         Some(
-            serde_json::json!({ "steg": "purring", "frist_date": frist, "gebyr_ore": 3900 })
+            serde_json::json!({ "steg": "purring", "frist_date": deadline, "gebyr_ore": 3900 })
                 .to_string(),
         ),
     )
@@ -222,7 +222,7 @@ async fn reminder_ladder_with_legal_guardrails() {
         Some(
             serde_json::json!({
                 "steg": "purring",
-                "frist_date": frist,
+                "frist_date": deadline,
                 "gebyr_ore": 3800,
                 "med_rente": true,
             })
@@ -273,7 +273,7 @@ async fn reminder_ladder_with_legal_guardrails() {
         "POST",
         &reminders_uri,
         &token,
-        Some(serde_json::json!({ "steg": "paminnelse", "frist_date": frist }).to_string()),
+        Some(serde_json::json!({ "steg": "paminnelse", "frist_date": deadline }).to_string()),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {back}");
