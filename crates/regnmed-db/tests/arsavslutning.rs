@@ -84,7 +84,7 @@ async fn selskap_med_overskudd(pool: &PgPool) -> Uuid {
     company
 }
 
-async fn saldo(pool: &PgPool, company: Uuid, nr: &str) -> i64 {
+async fn balance(pool: &PgPool, company: Uuid, nr: &str) -> i64 {
     sqlx::query_scalar::<_, Option<i64>>(
         "select sum(e.amount_ore)::bigint from entry e
          join account a on a.id = e.account_id
@@ -106,7 +106,7 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
     let Some(pool) = pool().await else { return };
     let company = selskap_med_overskudd(&pool).await;
 
-    let for_skatt = regnmed_db::year_end::resultat_for_aret(&pool, company, 2025)
+    let for_skatt = regnmed_db::year_end::result_for_the_year(&pool, company, 2025)
         .await
         .unwrap();
     assert_eq!(for_skatt, 60_000_00);
@@ -114,44 +114,44 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
     let avsluttet = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 13_200_00, "test")
         .await
         .unwrap();
-    assert_eq!(avsluttet.resultat_for_skatt_ore, 60_000_00);
+    assert_eq!(avsluttet.result_before_tax_ore, 60_000_00);
     assert_eq!(avsluttet.disponert_ore, 46_800_00, "etter skatt");
 
     // The tax is accrued, the result is in equity.
     assert_eq!(
-        saldo(&pool, company, "8300").await,
+        balance(&pool, company, "8300").await,
         13_200_00,
         "skattekostnad"
     );
     assert_eq!(
-        saldo(&pool, company, "2500").await,
+        balance(&pool, company, "2500").await,
         -13_200_00,
         "betalbar skatt"
     );
     assert_eq!(
-        saldo(&pool, company, "2050").await,
+        balance(&pool, company, "2050").await,
         -46_800_00,
         "opptjent EK"
     );
     assert_eq!(
-        saldo(&pool, company, "8800").await,
+        balance(&pool, company, "8800").await,
         46_800_00,
         "disponeringen"
     );
 
     // The balanse: udisponert is empty, and it still balances.
-    let lines = regnmed_db::saldo_lines(&pool, company, None, d(2025, 12, 31), None, None)
+    let lines = regnmed_db::balance_lines(&pool, company, None, d(2025, 12, 31), None, None)
         .await
         .unwrap();
-    let b = regnmed_core::regnskap::balanse(&lines);
+    let b = regnmed_core::statements::balance_sheet(&lines);
     assert_eq!(
-        b.udisponert_resultat_ore, 0,
+        b.undistributed_result_ore, 0,
         "resultatet er disponert — det kan ikke også ligge udisponert"
     );
-    assert_eq!(b.differanse_ore(), 0);
+    assert_eq!(b.difference_ore(), 0);
 
     // …and the year's resultatregnskap is untouched by its own closing.
-    let arets = regnmed_db::saldo_lines(
+    let arets = regnmed_db::balance_lines(
         &pool,
         company,
         Some(d(2025, 1, 1)),
@@ -161,9 +161,9 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
     )
     .await
     .unwrap();
-    let r = regnmed_core::regnskap::resultat(&arets);
+    let r = regnmed_core::statements::result(&arets);
     assert_eq!(
-        r.arsresultat_ore,
+        r.annual_result_ore,
         60_000_00 - 13_200_00,
         "resultat etter skattekostnad, uten disponeringen"
     );

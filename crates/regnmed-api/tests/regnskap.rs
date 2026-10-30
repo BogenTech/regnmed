@@ -18,9 +18,9 @@ mod hovedbok;
 mod migrering;
 #[path = "grupper/nokkeltall.rs"]
 mod nokkeltall;
-#[path = "grupper/regnskap.rs"]
-mod regnskap;
 #[path = "grupper/reports.rs"]
 mod reports;
 #[path = "grupper/saft_migration.rs"]
 mod saft_migration;
+#[path = "grupper/statements.rs"]
+mod statements;

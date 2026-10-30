@@ -75,8 +75,8 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::Dagsoppgjo
 fn svar(bokfort: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
     Json(json!({
         "bilag": format!("{}-{}", bokfort.voucher.0, bokfort.voucher.1),
-        "differanse_ore": bokfort.differanse_ore,
-        "differansebilag": bokfort.differanse.map(|(y, n)| format!("{y}-{n}")),
+        "differanse_ore": bokfort.difference_ore,
+        "differansebilag": bokfort.difference.map(|(y, n)| format!("{y}-{n}")),
     }))
 }
 

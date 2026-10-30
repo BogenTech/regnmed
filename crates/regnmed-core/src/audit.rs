@@ -110,15 +110,15 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
         reskontro_sum += account.reskontro_ore;
 
         // 1. The tie-out itself.
-        let differanse = account.general_ledger_ore - account.reskontro_ore;
-        if differanse != 0 {
+        let difference = account.general_ledger_ore - account.reskontro_ore;
+        if difference != 0 {
             deviations.push(format!(
                 "konto {}: hovedbok {} mot reskontro {} — differanse {} ({} øre), {} uten part",
                 account.account,
                 Ore(account.general_ledger_ore),
                 Ore(account.reskontro_ore),
-                Ore(differanse),
-                differanse,
+                Ore(difference),
+                difference,
                 posteringer(account.without_party_count),
             ));
         } else if account.without_party_count > 0 {

@@ -240,8 +240,8 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
     let firm = regnmed_db::ensure_firm(&state.pool, &unique_orgnr(), "Byrå AS", "regnskap")
         .await
         .unwrap();
-    let (regnskapsforer, _) = innlogget(&state, &idp, "Regnskapsfører").await;
-    regnmed_db::ensure_firm_member(&state.pool, firm, regnskapsforer, "ansatt")
+    let (accountant, _) = innlogget(&state, &idp, "Regnskapsfører").await;
+    regnmed_db::ensure_firm_member(&state.pool, firm, accountant, "ansatt")
         .await
         .unwrap();
     regnmed_db::ensure_engagement(&state.pool, firm, company, "regnskap")
@@ -261,7 +261,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["person_id"] == regnskapsforer.to_string())
+        .find(|m| m["person_id"] == accountant.to_string())
         .expect("regnskapsføreren skal være med i listen");
     assert_eq!(via_oppdrag["via"], "Byrå AS");
     assert_eq!(via_oppdrag["kan_endres"], false);
@@ -271,7 +271,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
     let (status, svar) = call(
         &state,
         "PUT",
-        &format!("/companies/{company}/access/{regnskapsforer}"),
+        &format!("/companies/{company}/access/{accountant}"),
         &admin,
         Some(json!({"rolle": "les"})),
     )

@@ -62,7 +62,7 @@ async fn get_json(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, ser
     )
 }
 
-async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
+async fn balance(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
@@ -171,7 +171,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         "bare den ukjente parten"
     );
     assert_eq!(
-        saldo(&state, company, "1500").await,
+        balance(&state, company, "1500").await,
         0,
         "intet bokført ennå"
     );
@@ -191,8 +191,8 @@ async fn contacts_and_open_items_from_an_old_system() {
 
     // The reskontro IS the hovedbok here: the balance is the sum of the
     // items because they are the same rows.
-    assert_eq!(saldo(&state, company, "1500").await, 15_500_00);
-    assert_eq!(saldo(&state, company, "2050").await, -15_500_00);
+    assert_eq!(balance(&state, company, "1500").await, 15_500_00);
+    assert_eq!(balance(&state, company, "2050").await, -15_500_00);
 
     // Each item stands open on its party, with the invoice number in the text.
     let (_, parties) = get_json(&state, &format!("{base}/parties?kind=kunde"), &token).await;
@@ -261,7 +261,7 @@ async fn contacts_and_open_items_from_an_old_system() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        saldo(&state, company, "2400").await,
+        balance(&state, company, "2400").await,
         -4_500_00,
         "leverandørgjeld er kredit"
     );

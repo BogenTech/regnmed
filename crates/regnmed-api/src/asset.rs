@@ -34,7 +34,8 @@ pub struct CreateAssetRequest {
     balance_account: Option<String>,
     #[serde(rename = "avskrivningskonto")]
     depreciation_account: Option<String>,
-    saldogruppe: String,
+    #[serde(rename = "saldogruppe")]
+    depreciation_group: String,
     anskaffelse_voucher_id: Option<Uuid>,
 }
 
@@ -59,7 +60,7 @@ pub async fn create(
             depreciation_account: request
                 .depreciation_account
                 .unwrap_or_else(|| "6000".into()),
-            saldogruppe: request.saldogruppe,
+            depreciation_group: request.depreciation_group,
             anskaffelse_voucher_id: request.anskaffelse_voucher_id,
         },
         created_by,
@@ -86,7 +87,7 @@ pub async fn list(
             "levetid_maneder": a.levetid_maneder,
             "balansekonto": a.balance_account,
             "avskrivningskonto": a.depreciation_account,
-            "saldogruppe": a.saldogruppe,
+            "saldogruppe": a.depreciation_group,
             "akkumulert_ore": a.akkumulert_ore,
             "bokfort_ore": a.bokfort_ore,
             "avhendet_dato": a.disposed_date.map(|d| d.to_string()),
@@ -197,18 +198,18 @@ pub async fn runs(
 }
 
 #[derive(Deserialize)]
-pub struct SaldoQuery {
+pub struct BalanceQuery {
     year: i32,
 }
 
-pub async fn saldo(
+pub async fn balance(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<SaldoQuery>,
+    Query(query): Query<BalanceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::AnleggLes).await?;
-    let rapport = regnmed_db::saldo_rapport(&state.pool, company_id, query.year)
+    let rapport = regnmed_db::balance_report(&state.pool, company_id, query.year)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
@@ -216,13 +217,13 @@ pub async fn saldo(
         "grupper": rapport.grupper.iter().map(|g| json!({
             "gruppe": g.gruppe,
             "beskrivelse": g.beskrivelse,
-            "inngaende_ore": g.inngaende_ore,
+            "inngaende_ore": g.opening_ore,
             "tilgang_ore": g.tilgang_ore,
             "vederlag_ore": g.vederlag_ore,
             "grunnlag_ore": g.grunnlag_ore,
             "sats_bp": g.sats_bp,
             "avskrivning_ore": g.avskrivning_ore,
-            "utgaende_ore": g.utgaende_ore,
+            "utgaende_ore": g.closing_ore,
         })).collect::<Vec<_>>(),
         "bokfort_ore": rapport.bokfort_ore,
         "skattemessig_ore": rapport.skattemessig_ore,

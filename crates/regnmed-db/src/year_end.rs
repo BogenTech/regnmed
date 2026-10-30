@@ -4,7 +4,7 @@
 //! The disposition account is 8800, and that is Skatteetatens choice
 //! rather than ours — its næringsspesifikasjon code list gives 8800 its
 //! own grouping category, separate from every income-statement line
-//! (`regnmed_core::regnskap::DISPONERING_KONTO`).
+//! (`regnmed_core::statements::ALLOCATION_ACCOUNT`).
 //!
 //! Ordering: the closing SETS the period lock rather than requiring it,
 //! because the voucher is dated 31.12 and the database trigger from
@@ -30,7 +30,7 @@ pub const OPPTJENT_EK_KONTO: &str = "2050";
 pub struct Arsavslutning {
     pub ar: i32,
     pub voucher: (i32, i64),
-    pub resultat_for_skatt_ore: i64,
+    pub result_before_tax_ore: i64,
     pub skattekostnad_ore: i64,
     pub disponert_ore: i64,
     pub created_by: String,
@@ -46,10 +46,10 @@ fn periode(ar: i32) -> Result<(NaiveDate, NaiveDate)> {
 /// The year's result before tax, from the ledger — presentation sign,
 /// positive = overskudd. Read here rather than taken from the caller:
 /// the number that gets disponert must be the ledger's own.
-pub async fn resultat_for_aret(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<i64> {
+pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<i64> {
     let (fra, til) = periode(ar)?;
-    let lines = crate::saldo_lines(pool, company_id, Some(fra), til, None, None).await?;
-    Ok(regnmed_core::regnskap::resultat(&lines).arsresultat_ore)
+    let lines = crate::balance_lines(pool, company_id, Some(fra), til, None, None).await?;
+    Ok(regnmed_core::statements::result(&lines).annual_result_ore)
 }
 
 /// Closes a year: accrues the tax, transfers the result to equity, and
@@ -57,7 +57,7 @@ pub async fn resultat_for_aret(pool: &PgPool, company_id: Uuid, ar: i32) -> Resu
 ///
 /// `skattekostnad_ore` is the CALLER'S number, not a percentage of the
 /// accounting profit. Taxable income is not accounting income
-/// (permanent and temporary differences; `saldo_rapport` already
+/// (permanent and temporary differences; `balance_report` already
 /// computes the latter for anleggsmidler), so deriving it here would be
 /// inventing a tax return. Zero is a legitimate answer and must be
 /// stated, never assumed.
@@ -100,8 +100,8 @@ pub async fn avslutt_ar(
         );
     }
 
-    let resultat_for_skatt_ore = resultat_for_aret(pool, company_id, ar).await?;
-    let disponert_ore = resultat_for_skatt_ore - skattekostnad_ore;
+    let result_before_tax_ore = result_for_the_year(pool, company_id, ar).await?;
+    let disponert_ore = result_before_tax_ore - skattekostnad_ore;
 
     let linje = |account: &str, amount: i64, tekst: &str| EntryDraft {
         account_number: account.to_string(),
@@ -131,7 +131,7 @@ pub async fn avslutt_ar(
     // disposition lines then.
     if disponert_ore != 0 {
         entries.push(linje(
-            regnmed_core::regnskap::DISPONERING_KONTO,
+            regnmed_core::statements::ALLOCATION_ACCOUNT,
             disponert_ore,
             "Disponering av årets resultat",
         ));
@@ -150,7 +150,7 @@ pub async fn avslutt_ar(
         (SKATTEKOSTNAD_KONTO, "Skattekostnad"),
         (BETALBAR_SKATT_KONTO, "Betalbar skatt"),
         (
-            regnmed_core::regnskap::DISPONERING_KONTO,
+            regnmed_core::statements::ALLOCATION_ACCOUNT,
             "Disponering av årets resultat",
         ),
         (OPPTJENT_EK_KONTO, "Annen egenkapital"),
@@ -178,7 +178,7 @@ pub async fn avslutt_ar(
     .bind(company_id)
     .bind(ar)
     .bind(posted.id)
-    .bind(resultat_for_skatt_ore)
+    .bind(result_before_tax_ore)
     .bind(skattekostnad_ore)
     .bind(disponert_ore)
     .bind(created_by)
@@ -200,7 +200,7 @@ pub async fn avslutt_ar(
     Ok(Arsavslutning {
         ar,
         voucher: (posted.fiscal_year, posted.voucher_number),
-        resultat_for_skatt_ore,
+        result_before_tax_ore,
         skattekostnad_ore,
         disponert_ore,
         created_by: created_by.to_string(),
@@ -222,7 +222,7 @@ pub async fn list_arsavslutninger(pool: &PgPool, company_id: Uuid) -> Result<Vec
     .map(|r| Arsavslutning {
         ar: r.get("ar"),
         voucher: (r.get("fiscal_year"), r.get("voucher_number")),
-        resultat_for_skatt_ore: r.get("resultat_for_skatt_ore"),
+        result_before_tax_ore: r.get("resultat_for_skatt_ore"),
         skattekostnad_ore: r.get("skattekostnad_ore"),
         disponert_ore: r.get("disponert_ore"),
         created_by: r.get("created_by"),

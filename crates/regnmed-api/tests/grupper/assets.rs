@@ -215,7 +215,7 @@ async fn assets_depreciate_and_dispose() {
     assert_eq!(disposal["bokfort_ore"], 32_000_00);
     assert_eq!(disposal["gevinst_ore"], 1_000_00);
     assert!(disposal["voucher"].is_string());
-    let gevinst_saldo: i64 = sqlx::query_scalar(
+    let gain_balance: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = '3880'",
@@ -224,7 +224,7 @@ async fn assets_depreciate_and_dispose() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(gevinst_saldo, -1_000_00, "gevinsten er kreditert 3880");
+    assert_eq!(gain_balance, -1_000_00, "gevinsten er kreditert 3880");
     let (status, _) = request(
         &state,
         "POST",
@@ -262,7 +262,7 @@ async fn assets_depreciate_and_dispose() {
 
     // Skattemessig saldo 2026: gruppe a tilgang 12 000 (vederlag 0),
     // gruppe d tilgang 36 000 vederlag 33 000.
-    let (status, saldo) = request(
+    let (status, balance) = request(
         &state,
         "GET",
         &format!("{base}/saldo?year=2026"),
@@ -270,9 +270,9 @@ async fn assets_depreciate_and_dispose() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {saldo}");
+    assert_eq!(status, StatusCode::OK, "body: {balance}");
     let gruppe = |g: &str| {
-        saldo["grupper"]
+        balance["grupper"]
             .as_array()
             .unwrap()
             .iter()
@@ -291,8 +291,8 @@ async fn assets_depreciate_and_dispose() {
     assert_eq!(d["grunnlag_ore"], 3_000_00);
     assert_eq!(d["avskrivning_ore"], 600_00);
     assert_eq!(d["utgaende_ore"], 2_400_00);
-    assert_eq!(saldo["skattemessig_ore"], 10_800_00);
-    assert_eq!(saldo["bokfort_ore"], 0, "begge driftsmidlene er avhendet");
+    assert_eq!(balance["skattemessig_ore"], 10_800_00);
+    assert_eq!(balance["bokfort_ore"], 0, "begge driftsmidlene er avhendet");
 
     // The whole chain verifies: 8 avskrivninger + 2 avhendinger.
     let report = regnmed_db::verify_chain(&state.pool, company)

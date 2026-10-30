@@ -310,7 +310,7 @@ pub async fn build_audit_report(
         Some(periode) => {
             let lines =
                 crate::balance_documentation::balance_status(pool, company_id, periode).await?;
-            let udokumentert: Vec<&crate::balance_documentation::BalanseLinje> =
+            let udokumentert: Vec<&crate::balance_documentation::BalanceSheetLine> =
                 lines.iter().filter(|l| l.avstemt.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = lines
                 .iter()

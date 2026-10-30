@@ -226,7 +226,7 @@ async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
     .await
     .unwrap();
 
-    let saldo = |number: &'static str| {
+    let balance = |number: &'static str| {
         let pool = pool.clone();
         async move {
             sqlx::query_scalar::<_, Option<i64>>(
@@ -244,13 +244,13 @@ async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
     };
 
     assert_eq!(
-        saldo("2701").await,
+        balance("2701").await,
         -25_000_00,
         "beregnet utgående avgift skal stå som gjeld i hovedboken"
     );
-    assert_eq!(saldo("2711").await, 25_000_00, "og fradraget for den");
+    assert_eq!(balance("2711").await, 25_000_00, "og fradraget for den");
     assert_eq!(
-        saldo("6800").await,
+        balance("6800").await,
         100_000_00,
         "full fradragsrett endrer ikke kostnaden"
     );
@@ -272,13 +272,17 @@ async fn omvendt_avgiftsplikt_posts_the_computed_tax_into_the_ledger() {
     .await
     .unwrap();
     assert_eq!(
-        saldo("2701").await,
+        balance("2701").await,
         -50_000_00,
         "avgiften skal beregnes også uten fradragsrett"
     );
-    assert_eq!(saldo("2711").await, 25_000_00, "men ikke føres til fradrag");
     assert_eq!(
-        saldo("6800").await,
+        balance("2711").await,
+        25_000_00,
+        "men ikke føres til fradrag"
+    );
+    assert_eq!(
+        balance("6800").await,
         225_000_00,
         "ikke-fradragsberettiget avgift er en del av kostnaden"
     );

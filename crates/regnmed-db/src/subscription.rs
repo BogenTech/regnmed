@@ -954,7 +954,7 @@ pub async fn fakturer_maned(
     for kunde in &kunder {
         let company_id: Uuid = kunde.get("id");
         let navn: String = kunde.get("name");
-        let resultat = fakturer_en(
+        let result = fakturer_en(
             pool,
             drift_company_id,
             company_id,
@@ -964,7 +964,7 @@ pub async fn fakturer_maned(
             idag,
         )
         .await;
-        utfall.push(match resultat {
+        utfall.push(match result {
             Ok(Some((nr, id, gross))) => InvoiceOutcome {
                 company_id,
                 company_navn: navn,
@@ -1136,7 +1136,7 @@ async fn fakturer_en(
     // faktura exists. If we lose a race against a parallel run, the
     // uniqueness breaks THE WHOLE transaction — our faktura is rolled
     // back, the winner's stands, and no month is ever invoiced twice.
-    let resultat = sqlx::query(
+    let result = sqlx::query(
         "insert into abonnement_faktura_run (id, company_id, ar, maned, invoice_id)
          values ($1, $2, $3, $4, $5)",
     )
@@ -1147,7 +1147,7 @@ async fn fakturer_en(
     .bind(utstedt.invoice_id)
     .execute(&mut *tx)
     .await;
-    if let Err(e) = &resultat {
+    if let Err(e) = &result {
         if let Some(db) = e.as_database_error() {
             if db.code().as_deref() == Some("23505") {
                 // Somebody else got the month first; our faktura goes
@@ -1156,7 +1156,7 @@ async fn fakturer_en(
             }
         }
     }
-    resultat?;
+    result?;
     tx.commit().await?;
     Ok(Some((
         utstedt.invoice_no,

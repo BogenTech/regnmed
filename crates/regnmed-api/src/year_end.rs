@@ -36,7 +36,7 @@ pub async fn list(
         "arsavslutninger": rader.iter().map(|a| json!({
             "ar": a.ar,
             "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
-            "resultat_for_skatt_ore": a.resultat_for_skatt_ore,
+            "resultat_for_skatt_ore": a.result_before_tax_ore,
             "skattekostnad_ore": a.skattekostnad_ore,
             "disponert_ore": a.disponert_ore,
             "created_by": a.created_by,
@@ -53,12 +53,12 @@ pub async fn forslag(
     Path((company_id, ar)): Path<(Uuid, i32)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
-    let resultat = regnmed_db::year_end::resultat_for_aret(&state.pool, company_id, ar)
+    let result = regnmed_db::year_end::result_for_the_year(&state.pool, company_id, ar)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "ar": ar,
-        "resultat_for_skatt_ore": resultat,
+        "resultat_for_skatt_ore": result,
     })))
 }
 
@@ -82,7 +82,7 @@ pub async fn avslutt(
     Ok(Json(json!({
         "ar": a.ar,
         "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
-        "resultat_for_skatt_ore": a.resultat_for_skatt_ore,
+        "resultat_for_skatt_ore": a.result_before_tax_ore,
         "skattekostnad_ore": a.skattekostnad_ore,
         "disponert_ore": a.disponert_ore,
     })))

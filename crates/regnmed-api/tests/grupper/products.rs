@@ -367,7 +367,7 @@ async fn products_stock_and_count() {
     assert_eq!(telling["verdi_ore"], 1_300_00, "6,5 à 200 kr");
     assert_eq!(telling["bokfort_ore"], 0);
     assert!(telling["voucher"].is_string());
-    let lager_saldo: i64 = sqlx::query_scalar(
+    let inventory_balance: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = '1460'",
@@ -376,7 +376,10 @@ async fn products_stock_and_count() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(lager_saldo, 1_300_00, "lager på balansen = telleverdien");
+    assert_eq!(
+        inventory_balance, 1_300_00,
+        "lager på balansen = telleverdien"
+    );
 
     // Counting the same numbers again changes nothing and posts nothing.
     let (status, telling) = request(

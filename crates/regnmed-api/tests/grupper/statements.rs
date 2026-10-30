@@ -1,4 +1,4 @@
-//! Lovpålagte spesifikasjoner over the web API: saldobalanse carries
+//! Statutory specifications over the web API: the trial balance carries
 //! inngående/utgående across a period boundary, kontospesifikasjon has
 //! running saldo and dokumentasjonshenvisning, bokføringsspesifikasjon
 //! lists vouchers in posting order, and resultat/balanse balance to the
@@ -202,7 +202,7 @@ async fn statutory_reports_reconcile_to_the_ore() {
         assert_eq!(sum, 0, "voucher {} balances", voucher["bilag"]);
     }
 
-    // Resultat 2026: inntekter positive, årsresultat 1 850,00.
+    // Income statement 2026: revenue positive, annual result 1 850,00.
     let (_, r) = get(
         &state,
         &format!("{base}/resultat?from=2026-01-01&to=2026-12-31"),
@@ -213,7 +213,7 @@ async fn statutory_reports_reconcile_to_the_ore() {
     assert_eq!(r["driftsresultat_ore"], 1_850_00);
     assert_eq!(r["arsresultat_ore"], 1_850_00);
 
-    // Balanse per 2026-12-31: balances to the øre via udisponert
+    // Balance sheet per 2026-12-31: balances to the øre via undistributed
     // resultat, and includes the 2025 history.
     let (_, b) = get(&state, &format!("{base}/balanse?date=2026-12-31"), &token).await;
     assert_eq!(b["eiendeler"]["sum_ore"], 101_850_00);

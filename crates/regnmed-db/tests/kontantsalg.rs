@@ -25,7 +25,7 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
-async fn saldo(pool: &PgPool, company: Uuid, number: &str) -> i64 {
+async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
     sqlx::query_scalar::<_, Option<i64>>(
         "select sum(e.amount_ore)::bigint from entry e
          join account a on a.id = e.account_id
@@ -145,16 +145,20 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
 
     // The claim was raised and settled: 1500 nets to zero, the cash is in.
     assert_eq!(
-        saldo(&pool, company, "1500").await,
+        balance(&pool, company, "1500").await,
         0,
         "fordringen er gjort opp"
     );
     assert_eq!(
-        saldo(&pool, company, "1900").await,
+        balance(&pool, company, "1900").await,
         250_00,
         "brutto i kassen"
     );
-    assert_eq!(saldo(&pool, company, "2700").await, -50_00, "mva beregnet");
+    assert_eq!(
+        balance(&pool, company, "2700").await,
+        -50_00,
+        "mva beregnet"
+    );
 
     // Both sides carry the party, so the customer's history is complete
     // and the reskontro tie-out still sees everything.
@@ -244,18 +248,18 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     .await
     .unwrap();
 
-    assert_eq!(bokfort.differanse_ore, -50_00);
-    assert!(bokfort.differanse.is_some(), "differansen får eget bilag");
+    assert_eq!(bokfort.difference_ore, -50_00);
+    assert!(bokfort.difference.is_some(), "differansen får eget bilag");
 
     // The day: income net per rate, mva as the sum of the parts.
-    assert_eq!(saldo(&pool, company, "3000").await, -10_000_00);
-    assert_eq!(saldo(&pool, company, "3010").await, -2_000_00);
-    assert_eq!(saldo(&pool, company, "2700").await, -2_800_00);
-    assert_eq!(saldo(&pool, company, "1571").await, 10_000_00);
+    assert_eq!(balance(&pool, company, "3000").await, -10_000_00);
+    assert_eq!(balance(&pool, company, "3010").await, -2_000_00);
+    assert_eq!(balance(&pool, company, "2700").await, -2_800_00);
+    assert_eq!(balance(&pool, company, "1571").await, 10_000_00);
     // Cash: registered 4 800 less the 50 that was missing.
-    assert_eq!(saldo(&pool, company, "1900").await, 4_750_00);
+    assert_eq!(balance(&pool, company, "1900").await, 4_750_00);
     assert_eq!(
-        saldo(&pool, company, "7830").await,
+        balance(&pool, company, "7830").await,
         50_00,
         "differansen er kostnadsført, ikke jevnet ut i salget"
     );

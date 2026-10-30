@@ -49,7 +49,7 @@ pub struct AssetDraft {
     pub levetid_maneder: i32,
     pub balance_account: String,
     pub depreciation_account: String,
-    pub saldogruppe: String,
+    pub depreciation_group: String,
     pub anskaffelse_voucher_id: Option<Uuid>,
 }
 
@@ -64,9 +64,9 @@ pub async fn create_asset(
     created_by: &str,
 ) -> Result<(Uuid, Option<String>)> {
     ensure!(
-        is_valid_depreciation_group(&draft.saldogruppe),
+        is_valid_depreciation_group(&draft.depreciation_group),
         "ukjent saldogruppe {} (a–j)",
-        draft.saldogruppe
+        draft.depreciation_group
     );
     ensure!(
         draft.restverdi_ore >= 0 && draft.restverdi_ore < draft.kostpris_ore,
@@ -131,7 +131,7 @@ pub async fn create_asset(
     .bind(draft.levetid_maneder)
     .bind(&draft.balance_account)
     .bind(&draft.depreciation_account)
-    .bind(&draft.saldogruppe)
+    .bind(&draft.depreciation_group)
     .bind(draft.anskaffelse_voucher_id)
     .bind(created_by)
     .execute(pool)
@@ -149,7 +149,7 @@ pub struct AssetRow {
     pub levetid_maneder: i32,
     pub balance_account: String,
     pub depreciation_account: String,
-    pub saldogruppe: String,
+    pub depreciation_group: String,
     pub akkumulert_ore: i64,
     pub bokfort_ore: i64,
     pub disposed_date: Option<NaiveDate>,
@@ -185,7 +185,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 levetid_maneder: r.get("levetid_maneder"),
                 balance_account: r.get("balansekonto"),
                 depreciation_account: r.get("avskrivningskonto"),
-                saldogruppe: r.get("saldogruppe"),
+                depreciation_group: r.get("saldogruppe"),
                 akkumulert_ore: akkumulert,
                 bokfort_ore: if avhendet.is_some() {
                     0
@@ -540,22 +540,22 @@ pub async fn dispose_asset(
 }
 
 #[derive(Debug)]
-pub struct SaldoGruppeRad {
+pub struct DepreciationGroupRow {
     pub gruppe: String,
     pub beskrivelse: String,
-    pub inngaende_ore: i64,
+    pub opening_ore: i64,
     pub tilgang_ore: i64,
     pub vederlag_ore: i64,
     pub grunnlag_ore: i64,
     pub sats_bp: i64,
     pub avskrivning_ore: i64,
-    pub utgaende_ore: i64,
+    pub closing_ore: i64,
 }
 
 #[derive(Debug)]
-pub struct SaldoRapport {
+pub struct BalanceReport {
     pub year: i32,
-    pub grupper: Vec<SaldoGruppeRad>,
+    pub grupper: Vec<DepreciationGroupRow>,
     /// Regnskapsmessig bokført verdi ved årets utgang.
     pub bokfort_ore: i64,
     /// Sum utgående skattemessig saldo.
@@ -569,7 +569,7 @@ pub struct SaldoRapport {
 /// rates from the satsregister per year) — nothing stored, identical
 /// re-runs forever. Assets acquired before the register's rate
 /// coverage make the year fail loudly rather than guess.
-pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result<SaldoRapport> {
+pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Result<BalanceReport> {
     let assets = sqlx::query(
         "select anskaffelsesdato, kostpris_ore, saldogruppe, avhendet_dato, vederlag_ore
          from asset where company_id = $1",
@@ -587,7 +587,7 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
     let mut grupper = Vec::new();
     for (gruppe, beskrivelse) in DEPRECIATION_GROUPS {
         let mut inngaende = 0i64;
-        let mut rad: Option<SaldoGruppeRad> = None;
+        let mut rad: Option<DepreciationGroupRow> = None;
         for y in first_year..=year {
             let tilgang: i64 = assets
                 .iter()
@@ -615,16 +615,16 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
                     format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
                 })?;
             let ar = tax_depreciation_year(inngaende, tilgang, vederlag, sats_bp);
-            rad = Some(SaldoGruppeRad {
+            rad = Some(DepreciationGroupRow {
                 gruppe: (*gruppe).to_string(),
                 beskrivelse: (*beskrivelse).to_string(),
-                inngaende_ore: inngaende,
+                opening_ore: inngaende,
                 tilgang_ore: tilgang,
                 vederlag_ore: vederlag,
                 grunnlag_ore: ar.basis_ore,
                 sats_bp,
                 avskrivning_ore: ar.depreciation_ore,
-                utgaende_ore: ar.closing_ore,
+                closing_ore: ar.closing_ore,
             });
             inngaende = ar.closing_ore;
         }
@@ -649,8 +649,8 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
     .bind(year_end)
     .fetch_one(pool)
     .await?;
-    let skattemessig: i64 = grupper.iter().map(|g| g.utgaende_ore).sum();
-    Ok(SaldoRapport {
+    let skattemessig: i64 = grupper.iter().map(|g| g.closing_ore).sum();
+    Ok(BalanceReport {
         year,
         grupper,
         bokfort_ore: bokfort,

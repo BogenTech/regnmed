@@ -89,7 +89,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     // a §11 list.
     assert_eq!(linjer.len(), 1, "{linjer:?}");
     assert_eq!(linjer[0].account, "1920");
-    assert_eq!(linjer[0].saldo_ore, 50_000_00);
+    assert_eq!(linjer[0].balance_ore, 50_000_00);
     assert!(linjer[0].avstemt.is_none());
 
     // A resultatkonto cannot be reconciled here at all.
@@ -114,7 +114,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     .unwrap();
     let linjer = balance_status(&pool, company, periode).await.unwrap();
     let a = linjer[0].avstemt.as_ref().expect("avstemt");
-    assert_eq!(a.saldo_ore, 50_000_00, "saldoen lagres slik den var");
+    assert_eq!(a.balance_ore, 50_000_00, "saldoen lagres slik den var");
     assert_eq!(a.avstemt_av, "Rev Isor");
     assert_eq!(linjer[0].avvik_ore(), None, "ingen bevegelse etterpå");
 }
@@ -195,8 +195,8 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
         .await
         .unwrap();
     assert_eq!(historikk.len(), 2, "rettingen sletter ikke den forrige");
-    assert_eq!(historikk[0].saldo_ore, 12_500_00, "nyeste først");
-    assert_eq!(historikk[1].saldo_ore, 10_000_00);
+    assert_eq!(historikk[0].balance_ore, 12_500_00, "nyeste først");
+    assert_eq!(historikk[1].balance_ore, 10_000_00);
 }
 
 /// The vedlegg IS the documentation, so it comes back byte for byte —

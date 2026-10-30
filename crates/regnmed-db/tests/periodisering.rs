@@ -30,7 +30,7 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
-async fn saldo(pool: &PgPool, company: Uuid, number: &str) -> i64 {
+async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
     sqlx::query_scalar::<_, Option<i64>>(
         "select sum(e.amount_ore)::bigint from entry e
          join account a on a.id = e.account_id
@@ -128,9 +128,9 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         .unwrap();
     assert_eq!(utfall.len(), 3, "{utfall:?}");
     assert!(utfall.iter().all(|u| u.voucher.is_some()), "{utfall:?}");
-    assert_eq!(saldo(&pool, company, "6300").await, 249_999, "3 × 833,33");
+    assert_eq!(balance(&pool, company, "6300").await, 249_999, "3 × 833,33");
     assert_eq!(
-        saldo(&pool, company, "1700").await,
+        balance(&pool, company, "1700").await,
         total - 249_999,
         "resten står fortsatt parkert i balansen"
     );
@@ -141,15 +141,15 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         .await
         .unwrap();
     assert!(igjen.is_empty(), "{igjen:?}");
-    assert_eq!(saldo(&pool, company, "6300").await, 249_999);
+    assert_eq!(balance(&pool, company, "6300").await, 249_999);
 
     // The whole year: the parts sum EXACTLY to the total, and 1700 is
     // emptied to the øre — the property the feature stands on.
     periodiser_plan(&pool, company, plan, d(2026, 12, 31))
         .await
         .unwrap();
-    assert_eq!(saldo(&pool, company, "6300").await, total);
-    assert_eq!(saldo(&pool, company, "1700").await, 0, "på øret");
+    assert_eq!(balance(&pool, company, "6300").await, total);
+    assert_eq!(balance(&pool, company, "1700").await, 0, "på øret");
 
     regnmed_db::verify_chain(&pool, company).await.unwrap();
 }
@@ -190,7 +190,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
     periodiser_plan(&pool, company, plan, d(2026, 2, 28))
         .await
         .unwrap();
-    assert_eq!(saldo(&pool, company, "6300").await, 20_000);
+    assert_eq!(balance(&pool, company, "6300").await, 20_000);
 
     regnmed_db::accrual::stopp_periodisering(&pool, company, plan, d(2026, 3, 1))
         .await
@@ -201,7 +201,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         .unwrap();
     assert!(etter.is_empty(), "{etter:?}");
     assert_eq!(
-        saldo(&pool, company, "6300").await,
+        balance(&pool, company, "6300").await,
         20_000,
         "det som er ført står"
     );
@@ -288,11 +288,11 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         .await
         .unwrap();
 
-    let plan = |resultat: &str, balanse: &str| PeriodiseringDraft {
+    let plan = |result: &str, balance_sheet: &str| PeriodiseringDraft {
         kilde_voucher: None,
         beskrivelse: "Husleie".into(),
-        income_account: resultat.into(),
-        balance_account: balanse.into(),
+        income_account: result.into(),
+        balance_account: balance_sheet.into(),
         total_ore: 30_000,
         fra: (2026, 1),
         til: (2026, 3),

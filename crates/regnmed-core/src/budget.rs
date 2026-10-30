@@ -4,7 +4,7 @@
 //! The amounts here are in **presentation sign** (like the resultat
 //! report: income positive, cost positive), because a budget is written
 //! the way a human reads it. Actuals are converted from the hovedbok's
-//! debit/credit with [`crate::regnskap::presentasjon_ore`] before they
+//! debit/credit with [`crate::statements::presentation_ore`] before they
 //! meet the budget, so the comparison happens in one space.
 //!
 //! `variance = actual − budget` per account. The sign is interpreted by the
@@ -12,7 +12,7 @@
 //! planned, for a cost account it is more expensive. The report does not
 //! pretend to know what is "good" — it shows the numbers.
 
-use crate::regnskap::class_of;
+use crate::statements::class_of;
 
 /// One account's year: twelve months of budget and twelve of actuals,
 /// both presentation sign.

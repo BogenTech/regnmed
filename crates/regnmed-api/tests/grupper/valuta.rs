@@ -44,7 +44,7 @@ async fn request(
     )
 }
 
-async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
+async fn balance(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
@@ -191,7 +191,7 @@ async fn valuta_invoice_agio_and_regulation() {
     assert_eq!(receivable.1.as_deref(), Some("CHF"));
     assert_eq!(receivable.2, Some(100_00));
     assert_eq!(receivable.3, Some(11_500_000));
-    assert_eq!(saldo(&state, company, "1500").await, 1_150_00);
+    assert_eq!(balance(&state, company, "1500").await, 1_150_00);
 
     // Unit mistakes are refused at posting (kurs off by ten).
     let bad = VoucherDraft {
@@ -275,8 +275,12 @@ async fn valuta_invoice_agio_and_regulation() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {matched}");
     assert_eq!(matched["agio_ore"], 1_000, "10 kr gevinst");
-    assert_eq!(saldo(&state, company, "8060").await, -1_000);
-    assert_eq!(saldo(&state, company, "1500").await, 0, "reskontro i null");
+    assert_eq!(balance(&state, company, "8060").await, -1_000);
+    assert_eq!(
+        balance(&state, company, "1500").await,
+        0,
+        "reskontro i null"
+    );
     let open_items: i64 = sqlx::query_scalar(
         "select count(*) from entry e
          join voucher v on v.id = e.voucher_id
@@ -333,7 +337,11 @@ async fn valuta_invoice_agio_and_regulation() {
     assert_eq!(status, StatusCode::OK, "body: {regulering}");
     assert_eq!(regulering["diff_ore"], 100_00, "200 EUR × (12,00 − 11,50)");
     assert!(regulering["voucher"].is_string() && regulering["reversal"].is_string());
-    assert_eq!(saldo(&state, company, "1508").await, 0, "reversalen nuller");
+    assert_eq!(
+        balance(&state, company, "1508").await,
+        0,
+        "reversalen nuller"
+    );
     let reversal_links: i64 = sqlx::query_scalar(
         "select count(*) from voucher where company_id = $1 and reverses_voucher_id is not null",
     )

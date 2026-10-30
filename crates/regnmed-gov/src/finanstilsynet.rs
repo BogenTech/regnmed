@@ -99,7 +99,7 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let active_regnskap = virksomhet
+        let active_accounting = virksomhet
             .autorisasjoner
             .iter()
             .any(|a| a.aktiv && a.code.to_lowercase().contains("regnskap"));
@@ -107,7 +107,7 @@ mod tests {
             .autorisasjoner
             .iter()
             .any(|a| a.aktiv && a.code.to_lowercase().contains("revisj"));
-        assert!(active_regnskap);
+        assert!(active_accounting);
         assert!(!active_revisjon, "inactive licenses do not count");
     }
 }

@@ -287,7 +287,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/saldobalanse",
-            get(reports::saldobalanse),
+            get(reports::trial_balance),
         )
         .route(
             "/companies/{company_id}/reports/kontospesifikasjon",
@@ -295,23 +295,23 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/bokforingsspesifikasjon",
-            get(reports::bokforingsspesifikasjon),
+            get(reports::posting_specification),
         )
         .route(
             "/companies/{company_id}/reports/kundespesifikasjon",
-            get(reports::kundespesifikasjon),
+            get(reports::customer_specification),
         )
         .route(
             "/companies/{company_id}/reports/leverandorspesifikasjon",
-            get(reports::leverandorspesifikasjon),
+            get(reports::supplier_specification),
         )
         .route(
             "/companies/{company_id}/reports/resultat",
-            get(reports::resultat),
+            get(reports::result),
         )
         .route(
             "/companies/{company_id}/reports/balanse",
-            get(reports::balanse),
+            get(reports::balance_sheet),
         )
         .route(
             "/companies/{company_id}/reports/revisjon",
@@ -319,7 +319,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/prosjekt",
-            get(reports::prosjektlonnsomhet),
+            get(reports::project_profitability),
         )
         .route(
             "/companies/{company_id}/reports/nokkeltall",
@@ -551,7 +551,7 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/assets/depreciate",
             axum::routing::post(asset::depreciate),
         )
-        .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
+        .route("/companies/{company_id}/assets/saldo", get(asset::balance))
         .route(
             "/companies/{company_id}/arsavslutning",
             get(year_end::list).post(year_end::avslutt),
