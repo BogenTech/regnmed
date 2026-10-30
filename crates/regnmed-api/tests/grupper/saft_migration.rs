@@ -546,7 +546,7 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
     // The revisjonsrapport carries the trail as kontroll «Importert
     // historikk» — full hashes, so the revisor can compare the source
     // system's files byte for byte.
-    let (status, revisjon) = request(
+    let (status, audit) = request(
         &state,
         "GET",
         &format!("/companies/{company}/reports/revisjon"),
@@ -554,8 +554,8 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "revisjon: {revisjon}");
-    let importert = revisjon["kontroller"]
+    assert_eq!(status, StatusCode::OK, "revisjon: {audit}");
+    let importert = audit["kontroller"]
         .as_array()
         .unwrap()
         .iter()

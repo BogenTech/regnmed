@@ -691,7 +691,7 @@ pub async fn list_invoices(
 /// simpler to post the sale straight against bank and skip 1500
 /// entirely, and that is exactly what must not happen: the reskontro
 /// doctrine says a customer's postings carry a party, and a side door
-/// past it would make `reskontro_kontroll` — the revisor's tie-out —
+/// past it would make `reskontro_check` — the revisor's tie-out —
 /// quietly incomplete. The customer history stays true, and the open
 /// item is closed the instant it exists.
 ///

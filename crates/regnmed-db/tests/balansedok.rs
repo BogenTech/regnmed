@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::balance_documentation::{avstem, balanse_status, hent_vedlegg};
+use regnmed_db::balance_documentation::{avstem, balance_status, hent_vedlegg};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -84,7 +84,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     .unwrap();
 
     let periode = d(2026, 1, 31);
-    let linjer = balanse_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, periode).await.unwrap();
     // 3000 is a resultatkonto and 2400 has no saldo: neither belongs on
     // a §11 list.
     assert_eq!(linjer.len(), 1, "{linjer:?}");
@@ -112,7 +112,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     )
     .await
     .unwrap();
-    let linjer = balanse_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, periode).await.unwrap();
     let a = linjer[0].avstemt.as_ref().expect("avstemt");
     assert_eq!(a.saldo_ore, 50_000_00, "saldoen lagres slik den var");
     assert_eq!(a.avstemt_av, "Rev Isor");
@@ -169,7 +169,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     .await
     .unwrap();
 
-    let linjer = balanse_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, periode).await.unwrap();
     assert_eq!(
         linjer[0].avvik_ore(),
         Some(2_500_00),
@@ -189,7 +189,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     )
     .await
     .unwrap();
-    let linjer = balanse_status(&pool, company, periode).await.unwrap();
+    let linjer = balance_status(&pool, company, periode).await.unwrap();
     assert_eq!(linjer[0].avvik_ore(), None);
     let historikk = regnmed_db::balance_documentation::historikk(&pool, company, "1920", periode)
         .await

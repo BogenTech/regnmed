@@ -15,7 +15,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
-use crate::rates::load_satser;
+use crate::rates::load_rates;
 
 #[derive(Debug)]
 pub struct OverdueInvoice {
@@ -236,7 +236,7 @@ async fn prepare(
                 .await?
         }
     };
-    let satser = load_satser(pool).await?;
+    let satser = load_rates(pool).await?;
     let gebyr_domene = if draft.naeringsdrivende {
         "standardkompensasjon"
     } else {

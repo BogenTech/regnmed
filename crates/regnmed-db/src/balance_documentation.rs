@@ -58,7 +58,7 @@ impl BalanseLinje {
 /// Accounts that end the period at zero are left out: there is nothing
 /// to document about a saldo of nothing, and listing them would bury the
 /// accounts that matter under the ones that do not.
-pub async fn balanse_status(
+pub async fn balance_status(
     pool: &PgPool,
     company_id: Uuid,
     periode: NaiveDate,

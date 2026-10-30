@@ -246,6 +246,28 @@ JSON is -- `#[command(name = "mva-report")]`, `#[arg(long = "termin")]`
 user-facing decision. Verify with `regnmed mva-melding --help`, not by
 reading the enum.
 
+`revisjon`->`audit` moved next (modules in core and db, plus
+`Kontroll`->`Check`, `kontroller`->`checks`, `ankere`->`anchors`,
+`kjede_*`->`chain_*`, `hovedbok_ore`->`general_ledger_ore`). NOTHING
+needed a serde pin: the report is serialized with `json!` and string
+keys, so `"kontroller"` and `"ankere"` sit next to `report.checks` and
+`report.anchors` -- the wire check proved it unchanged with no
+attributes added. The deterministic TEXT rendering a revisor downloads
+and re-verifies is pinned by its own test, which passes unchanged.
+
+Two words were NOT taken, and the reason generalizes: `avvik` is an
+audit FINDING here and a budget VARIANCE in `budget`, and `satser` is
+the rate register; both were done in the narrow pass only.
+`'revisjon'` and `'regnskap'` ALSO name engagement kinds stored as DB
+values -- those comments were left alone deliberately while the
+module-path mentions in the same files moved.
+
+**`regnskap` is next and needs care**: it means both the financial
+statements (`core::regnskap`, `db::regnskap`) and the ACCOUNTANT ROLE
+in tenancy, marketplace and engagement, where it is a stored value.
+Bare `saldo` reaches 33 files and `hovedbok` 31, through `lonn`,
+`reskontro`, `aksjebok` and `year_end` -- so it is not one batch.
+
 **Still Norwegian**, deliberately: the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),

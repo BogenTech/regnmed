@@ -1,6 +1,6 @@
 //! The revisor's verification report over the web API: a revisor whose
 //! only path to the company is a 'revisjon' engagement (read-only)
-//! generates the report; every kontroll passes on a healthy ledger; a
+//! generates the report; every check passes on a healthy ledger; a
 //! planted anchor mismatch turns the verdict; the text download renders;
 //! outsiders get 404. Requires DATABASE_URL (skips otherwise).
 
@@ -139,7 +139,7 @@ async fn revisor_generates_the_verification_report() {
         .expect("ledger has vouchers");
 
     // §11 (#88): a balance account with a saldo must be documented, or
-    // the report is right to call it an avvik. 1500 is the only one
+    // the report is right to call it a deviation. 1500 is the only one
     // here, and documenting it is what makes this ledger "healthy".
     regnmed_db::balance_documentation::avstem(
         &state.pool,
@@ -154,31 +154,29 @@ async fn revisor_generates_the_verification_report() {
     .await
     .unwrap();
 
-    // Healthy ledger: every kontroll OK, anchors listed.
+    // Healthy ledger: every check OK, anchors listed.
     let uri = format!("/companies/{company}/reports/revisjon");
     let (status, _, body) = get_raw(&state, &uri, &token).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
-    let kontroller = report["kontroller"].as_array().unwrap();
-    assert_eq!(kontroller.len(), 10);
-    for kontroll in kontroller {
-        assert_eq!(kontroll["ok"], true, "{kontroll}");
+    let checks = report["kontroller"].as_array().unwrap();
+    assert_eq!(checks.len(), 10);
+    for check in checks {
+        assert_eq!(check["ok"], true, "{check}");
     }
     // Dokumentasjon is an INFORMASJONSKONTROLL (#85): this ledger's
     // bilag have no vedlegg, and the verdict must still be ok — a
     // missing attachment is not proof of a missing document.
     assert!(
-        kontroller.iter().any(|k| k["navn"] == "Dokumentasjon"
+        checks.iter().any(|k| k["navn"] == "Dokumentasjon"
             && k["ok"] == true
             && k["detalj"].as_str().unwrap().contains("mangler vedlegg")),
         "{report}"
     );
     assert!(
-        kontroller
-            .iter()
-            .any(|k| k["navn"] == "Balansedokumentasjon"
-                && k["detalj"].as_str().unwrap().contains("er dokumentert")),
+        checks.iter().any(|k| k["navn"] == "Balansedokumentasjon"
+            && k["detalj"].as_str().unwrap().contains("er dokumentert")),
         "{report}"
     );
     assert!(
@@ -190,9 +188,9 @@ async fn revisor_generates_the_verification_report() {
                 && k["detalj"].as_str().unwrap().contains("1 reskontrokonto")),
         "{report}"
     );
-    // A ledger without imports says so — the kontroll never hides.
+    // A ledger without imports says so — the check never hides.
     assert!(
-        kontroller.iter().any(|k| k["navn"] == "Importert historikk"
+        checks.iter().any(|k| k["navn"] == "Importert historikk"
             && k["detalj"]
                 .as_str()
                 .unwrap()
@@ -233,13 +231,13 @@ async fn revisor_generates_the_verification_report() {
     let (_, _, body) = get_raw(&state, &uri, &token).await;
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], false);
-    let forankring = report["kontroller"]
+    let anchoring = report["kontroller"]
         .as_array()
         .unwrap()
         .iter()
         .find(|k| k["navn"] == "Ekstern forankring")
         .unwrap();
-    assert_eq!(forankring["ok"], false);
+    assert_eq!(anchoring["ok"], false);
 
     // No path to the company → 404, never a hint that it exists.
     let stranger_sub = format!("test|{}", Uuid::new_v4());
@@ -251,13 +249,13 @@ async fn revisor_generates_the_verification_report() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Kontroll 4 is a real tie-out: Σ reskontro against the account's own
+/// Check 4 is a real tie-out: Σ reskontro against the account's own
 /// saldo, konto for konto. Every divergence below is reachable WITHOUT
 /// editing the ledger — the reskontro flag is what moves (åpningsbalanse
 /// and SAF-T import clear it, an admin can set it again), and the
 /// postings then sit on the wrong side of the equation.
 #[tokio::test]
-async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
+async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -387,15 +385,15 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
     let (status, _, body) = get_raw(&state, &uri, &token).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let kontroll = report["kontroller"]
+    let check = report["kontroller"]
         .as_array()
         .unwrap()
         .iter()
         .find(|k| k["navn"] == "Reskontro mot hovedbok")
         .unwrap();
-    assert_eq!(kontroll["ok"], false, "{report}");
+    assert_eq!(check["ok"], false, "{report}");
     assert_eq!(report["alle_ok"], false);
-    let detalj = kontroll["detalj"].as_str().unwrap();
+    let detalj = check["detalj"].as_str().unwrap();
 
     // (a) the difference, in kroner and in øre, with the konto named.
     assert!(
@@ -414,7 +412,7 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
         detalj.contains("konto 2500 er ikke merket som reskontrokonto, men 1 postering bærer part (-3000,00, leverandor)"),
         "{detalj}"
     );
-    // Every finding on its own line, and only the reskontro kontroll
+    // Every finding on its own line, and only the reskontro check
     // fails — the tie-out never drags the other checks down with it.
     assert_eq!(detalj.lines().count(), 3, "{detalj}");
     for other in report["kontroller"].as_array().unwrap() {
@@ -503,14 +501,14 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
     )
     .await;
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let kontroll = report["kontroller"]
+    let check = report["kontroller"]
         .as_array()
         .unwrap()
         .iter()
         .find(|k| k["navn"] == "Reskontro mot hovedbok")
         .unwrap();
-    assert_eq!(kontroll["ok"], true, "{report}");
-    let detalj = kontroll["detalj"].as_str().unwrap();
+    assert_eq!(check["ok"], true, "{report}");
+    let detalj = check["detalj"].as_str().unwrap();
     assert!(detalj.contains("2 reskontrokontoer avstemt"), "{detalj}");
     assert!(detalj.contains("7000,00"), "{detalj}");
 }
@@ -518,12 +516,12 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
 /// «Hvilke bilag mangler dokumentasjon?» — the question a bokettersyn
 /// opens with, which the system could not answer before #85.
 ///
-/// Counted as INFORMATION, never as an avvik, and never counting bilag
+/// Counted as INFORMATION, never as a deviation, and never counting bilag
 /// that carry their documentation by construction. The same set backs
 /// the bilag list's `uten_vedlegg` filter, so whoever tidies up works
 /// from exactly the numbers the revisor read.
 #[tokio::test]
-async fn undocumented_bilag_are_counted_and_listable() {
+async fn undocumented_vouchers_are_counted_and_listable() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -548,10 +546,10 @@ async fn undocumented_bilag_are_counted_and_listable() {
     }
     let token = idp.token(&sub, "Adm");
 
-    let bilag = |dag: u32, tekst: &str| VoucherDraft {
+    let bilag = |dag: u32, text: &str| VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: NaiveDate::from_ymd_opt(2026, 4, dag).unwrap(),
-        description: tekst.into(),
+        description: text.into(),
         reverses: None,
         entries: vec![
             EntryDraft {

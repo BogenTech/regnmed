@@ -258,7 +258,7 @@ pub async fn list_vouchers_paged(
 /// double entry); what this adds is the attestering boundary: when the
 /// company runs an active attestering policy and the voucher is at or
 /// over the beløpsgrense, a manual posting would BYPASS the intern
-/// kontroll (#47) — attestation targets inbox documents. Fail closed and
+/// check (#47) — attestation targets inbox documents. Fail closed and
 /// point at the innboks instead of quietly opening a side door.
 pub async fn post_manual_voucher(
     pool: &PgPool,

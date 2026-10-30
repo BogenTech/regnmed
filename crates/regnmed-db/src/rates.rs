@@ -5,7 +5,7 @@ use anyhow::Result;
 use regnmed_core::rates::RatePeriod;
 use sqlx::{PgPool, Row};
 
-pub async fn load_satser(pool: &PgPool) -> Result<Vec<RatePeriod>> {
+pub async fn load_rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
     let rows =
         sqlx::query("select domene, valid_from, verdi from sats order by domene, valid_from")
             .fetch_all(pool)

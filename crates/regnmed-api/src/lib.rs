@@ -315,7 +315,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/revisjon",
-            get(reports::revisjon),
+            get(reports::audit),
         )
         .route(
             "/companies/{company_id}/reports/prosjekt",

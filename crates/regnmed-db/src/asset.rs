@@ -18,7 +18,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
-use crate::rates::load_satser;
+use crate::rates::load_rates;
 
 fn month_start(date: NaiveDate) -> NaiveDate {
     NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap()
@@ -101,7 +101,7 @@ pub async fn create_asset(
         ensure!(ok.is_some(), "anskaffelsesbilaget finnes ikke");
     }
 
-    let satser = load_satser(pool).await?;
+    let satser = load_rates(pool).await?;
     let grense = value_on(&satser, "aktiveringsgrense", draft.acquisition_date);
     let mut warning = None;
     if let Some(grense) = grense
@@ -577,7 +577,7 @@ pub async fn saldo_rapport(pool: &PgPool, company_id: Uuid, year: i32) -> Result
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    let satser = load_satser(pool).await?;
+    let satser = load_rates(pool).await?;
 
     let first_year = assets
         .iter()

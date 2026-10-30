@@ -43,7 +43,7 @@ pub async fn registry_preview(
         .has_authorisation(&orgnr, "regnskap")
         .await
         .unwrap_or(false);
-    let revisjon = finanstilsynet
+    let audit = finanstilsynet
         .has_authorisation(&orgnr, "revisjon")
         .await
         .unwrap_or(false);
@@ -59,7 +59,7 @@ pub async fn registry_preview(
         "konkurs": enhet.konkurs,
         "under_avvikling": enhet.under_avvikling || enhet.under_tvangsavvikling,
         "slettet": enhet.deleted_date.is_some(),
-        "autorisasjon": { "regnskap": regnskap, "revisjon": revisjon },
+        "autorisasjon": { "regnskap": regnskap, "revisjon": audit },
     })))
 }
 

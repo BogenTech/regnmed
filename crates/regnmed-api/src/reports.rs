@@ -535,7 +535,7 @@ pub async fn balanse(
 // ---- Revisorens verifikasjonsrapport (issue #24) ----
 
 #[derive(Deserialize)]
-pub struct RevisjonQuery {
+pub struct AuditQuery {
     format: Option<String>,
 }
 
@@ -543,15 +543,15 @@ pub struct RevisjonQuery {
 /// Any access level may generate it — the revisor (engagement 'revisjon'
 /// → 'les') is exactly who it is for. `?format=tekst` downloads the
 /// deterministic plain-text rendering for the revisor's own archive.
-pub async fn revisjon(
+pub async fn audit(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<RevisjonQuery>,
+    Query(query): Query<AuditQuery>,
 ) -> Result<Response, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     let generated_by = person.name.as_deref().unwrap_or(&person.sub);
-    let report = regnmed_db::build_revisjon_report(
+    let report = regnmed_db::build_audit_report(
         &state.pool,
         company_id,
         generated_by,
@@ -565,7 +565,7 @@ pub async fn revisjon(
             Vis::Attachment,
             &filename,
             "text/plain",
-            regnmed_core::revisjon::render_text(&report),
+            regnmed_core::audit::render_text(&report),
         ));
     }
 
@@ -575,15 +575,15 @@ pub async fn revisjon(
         "generert": report.generert,
         "generert_av": report.generert_av,
         "programversjon": report.programversjon,
-        "kjede_sekvens": report.kjede_sekvens,
-        "kjede_hode": report.kjede_hode_hex,
+        "kjede_sekvens": report.chain_sequence,
+        "kjede_hode": report.chain_head_hex,
         "alle_ok": report.alle_ok(),
-        "kontroller": report.kontroller.iter().map(|k| json!({
+        "kontroller": report.checks.iter().map(|k| json!({
             "navn": k.navn,
             "ok": k.ok,
             "detalj": k.detalj,
         })).collect::<Vec<_>>(),
-        "ankere": report.ankere.iter().map(|a| json!({
+        "ankere": report.anchors.iter().map(|a| json!({
             "tidspunkt": a.tidspunkt,
             "root": a.root_hex,
             "siste_sekvens": a.siste_sekvens,
