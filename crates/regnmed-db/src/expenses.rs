@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::attachment::add_attachment_in;
 use crate::ledger::post_voucher_in;
 use crate::mva::load_vat_rates;
-use crate::sats::load_satser;
+use crate::rates::load_satser;
 
 /// Registers an utlegg with its receipt. The receipt is immutable from
 /// this moment (SHA-256 stored, trigger + grants) and follows the
@@ -263,7 +263,7 @@ pub async fn approve_expense(
     // Self-approval was allowed in v1 (#42); with attestering active
     // (docs/attestering.md, #47) the approver must be someone other than
     // the person who submitted the claim.
-    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+    if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.aktiv
     {
         let innsender: Uuid = expense.get("person_id");

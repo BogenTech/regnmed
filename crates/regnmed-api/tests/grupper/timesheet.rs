@@ -372,7 +372,7 @@ async fn timer_rights_mean_what_they_say() {
         .unwrap();
     // A company-defined role carrying exactly the two ALLE-rights: the
     // enforcement must read the rettighet, not the role name.
-    regnmed_db::roller::opprett(
+    regnmed_db::roles::opprett(
         &state.pool,
         company,
         "Timesjef",
@@ -897,7 +897,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
-    regnmed_db::roller::opprett(
+    regnmed_db::roles::opprett(
         &state.pool,
         company,
         "Fakturist",

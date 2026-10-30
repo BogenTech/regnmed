@@ -267,7 +267,7 @@ pub async fn post_manual_voucher(
     created_by: &str,
 ) -> Result<PostedVoucher> {
     let mut tx = pool.begin().await?;
-    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+    if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.aktiv
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();

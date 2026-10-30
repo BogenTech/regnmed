@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::periodisering::{PeriodiseringDraft, create_periodisering, periodiser_plan};
+use regnmed_db::accrual::{PeriodiseringDraft, create_periodisering, periodiser_plan};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -192,7 +192,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         .unwrap();
     assert_eq!(saldo(&pool, company, "6300").await, 20_000);
 
-    regnmed_db::periodisering::stopp_periodisering(&pool, company, plan, d(2026, 3, 1))
+    regnmed_db::accrual::stopp_periodisering(&pool, company, plan, d(2026, 3, 1))
         .await
         .unwrap();
     // Even asked for the whole year, nothing more is posted.
@@ -258,7 +258,7 @@ async fn a_started_plan_cannot_be_rewritten() {
     );
 
     // …but stopping it is still allowed, or a plan could never be ended.
-    regnmed_db::periodisering::stopp_periodisering(&pool, company, plan, d(2026, 2, 1))
+    regnmed_db::accrual::stopp_periodisering(&pool, company, plan, d(2026, 2, 1))
         .await
         .unwrap();
 }

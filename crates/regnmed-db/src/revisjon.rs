@@ -308,8 +308,9 @@ pub async fn build_revisjon_report(
                 .into(),
         },
         Some(periode) => {
-            let linjer = crate::balansedok::balanse_status(pool, company_id, periode).await?;
-            let udokumentert: Vec<&crate::balansedok::BalanseLinje> =
+            let linjer =
+                crate::balance_documentation::balanse_status(pool, company_id, periode).await?;
+            let udokumentert: Vec<&crate::balance_documentation::BalanseLinje> =
                 linjer.iter().filter(|l| l.avstemt.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = linjer
                 .iter()

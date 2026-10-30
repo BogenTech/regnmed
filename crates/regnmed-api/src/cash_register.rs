@@ -44,8 +44,8 @@ pub struct DagsoppgjorRequest {
     differansekonto: Option<String>,
 }
 
-fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::kassa::DagsoppgjorInn {
-    regnmed_db::kassa::DagsoppgjorInn {
+fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::cash_register::DagsoppgjorInn {
+    regnmed_db::cash_register::DagsoppgjorInn {
         dato: request.dato,
         z_nummer: request.z_nummer,
         salg: request
@@ -65,7 +65,7 @@ fn til_inn(request: DagsoppgjorRequest) -> regnmed_db::kassa::DagsoppgjorInn {
     }
 }
 
-fn svar(bokfort: regnmed_db::kassa::BokfortOppgjor) -> Json<serde_json::Value> {
+fn svar(bokfort: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
     Json(json!({
         "bilag": format!("{}-{}", bokfort.voucher.0, bokfort.voucher.1),
         "differanse_ore": bokfort.differanse_ore,
@@ -81,7 +81,7 @@ pub async fn dagsoppgjor(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let bokfort = regnmed_db::kassa::bokfor_dagsoppgjor(
+    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &state.pool,
         company_id,
         &til_inn(request),
@@ -124,7 +124,7 @@ pub async fn dagsoppgjor_med_rapport(
         .unwrap_or("application/octet-stream")
         .to_string();
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let bokfort = regnmed_db::kassa::bokfor_dagsoppgjor(
+    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &state.pool,
         company_id,
         &til_inn(request),

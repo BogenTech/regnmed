@@ -221,10 +221,10 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
             .unwrap();
     }
 
-    let bokfort = regnmed_db::kassa::bokfor_dagsoppgjor(
+    let bokfort = regnmed_db::cash_register::bokfor_dagsoppgjor(
         &pool,
         company,
-        &regnmed_db::kassa::DagsoppgjorInn {
+        &regnmed_db::cash_register::DagsoppgjorInn {
             dato: d(2026, 4, 3),
             z_nummer: "0042".into(),
             salg: vec![

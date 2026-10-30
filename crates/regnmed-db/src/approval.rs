@@ -4,8 +4,8 @@
 //! The policy is append-only history (the newest row governs); decisions
 //! are an insert-only trail where the newest decision governs.
 //! Enforcement lives in the transactions that post and approve — see
-//! [`crate::innboks::bokfor_inbox_document`],
-//! [`crate::betaling::approve_run`] and [`crate::utlegg::approve_expense`].
+//! [`crate::inbox::bokfor_inbox_document`],
+//! [`crate::payments::approve_run`] and [`crate::expenses::approve_expense`].
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};

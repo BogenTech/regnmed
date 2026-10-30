@@ -31,7 +31,7 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
-    let rader = regnmed_db::arsavslutning::list_arsavslutninger(&state.pool, company_id).await?;
+    let rader = regnmed_db::year_end::list_arsavslutninger(&state.pool, company_id).await?;
     Ok(Json(json!({
         "arsavslutninger": rader.iter().map(|a| json!({
             "ar": a.ar,
@@ -53,7 +53,7 @@ pub async fn forslag(
     Path((company_id, ar)): Path<(Uuid, i32)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
-    let resultat = regnmed_db::arsavslutning::resultat_for_aret(&state.pool, company_id, ar)
+    let resultat = regnmed_db::year_end::resultat_for_aret(&state.pool, company_id, ar)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
@@ -70,7 +70,7 @@ pub async fn avslutt(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
     krev(&state, person.person_id, company_id, Rett::PeriodeLaas).await?;
-    let a = regnmed_db::arsavslutning::avslutt_ar(
+    let a = regnmed_db::year_end::avslutt_ar(
         &state.pool,
         company_id,
         request.ar,

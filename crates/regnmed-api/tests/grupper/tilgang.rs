@@ -996,7 +996,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
         return;
     };
     let spokelse = Uuid::new_v4();
-    let res = regnmed_db::roller::opprett(
+    let res = regnmed_db::roles::opprett(
         &state.pool,
         company,
         "Halvferdig",
@@ -1007,7 +1007,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
     .await;
     assert!(res.is_err(), "loggraden skulle ikke gått gjennom");
 
-    let roller = regnmed_db::roller::list_roller(&state.pool, company)
+    let roller = regnmed_db::roles::list_roller(&state.pool, company)
         .await
         .unwrap();
     assert!(
@@ -1070,7 +1070,7 @@ async fn rettigheter_are_never_read_half_written() {
     // The change starts — and does not get past the lock.
     let pool = state.pool.clone();
     let skriver = tokio::spawn(async move {
-        regnmed_db::roller::sett_rettigheter(
+        regnmed_db::roles::sett_rettigheter(
             &pool,
             company,
             role_id,
@@ -1082,7 +1082,7 @@ async fn rettigheter_are_never_read_half_written() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     for i in 0..20 {
-        let sett = regnmed_db::roller::rettigheter_for(&state.pool, company, &navn)
+        let sett = regnmed_db::roles::rettigheter_for(&state.pool, company, &navn)
             .await
             .unwrap();
         assert_eq!(
@@ -1095,7 +1095,7 @@ async fn rettigheter_are_never_read_half_written() {
 
     laas.commit().await.unwrap();
     skriver.await.unwrap().unwrap();
-    let sett = regnmed_db::roller::rettigheter_for(&state.pool, company, &navn)
+    let sett = regnmed_db::roles::rettigheter_for(&state.pool, company, &navn)
         .await
         .unwrap();
     assert_eq!(

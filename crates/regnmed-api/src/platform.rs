@@ -438,8 +438,8 @@ async fn company_detail(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
-    let medlemmer = regnmed_db::medlemmer::list_medlemmer(&state.pool, company_id).await?;
-    let invitasjoner = regnmed_db::medlemmer::list_invitasjoner(&state.pool, company_id).await?;
+    let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
+    let invitasjoner = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
     let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
     use regnmed_core::abonnement::Status;
@@ -528,7 +528,7 @@ async fn deactivate_member(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
-    regnmed_db::medlemmer::sett_aktiv(
+    regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
         person_id,
@@ -547,7 +547,7 @@ async fn restore_member(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.krev_systemadmin()?;
-    regnmed_db::medlemmer::sett_aktiv(
+    regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
         person_id,
@@ -689,7 +689,7 @@ pub async fn firm_platform_access(
     person: AuthPerson,
     Path(firm_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    crate::byramedlemmer::require_firm_admin(&state, person.person_id, firm_id).await?;
+    crate::firm_members::require_firm_admin(&state, person.person_id, firm_id).await?;
     let rader = regnmed_db::platform_access_for_firm(&state.pool, firm_id).await?;
     Ok(Json(innsyn_json(&rader)))
 }

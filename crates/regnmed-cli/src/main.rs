@@ -649,7 +649,7 @@ async fn main() -> Result<()> {
             let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
                 .fetch_one(&pool)
                 .await?;
-            let utfall = regnmed_db::periodisering::periodiser_all(&pool, today).await?;
+            let utfall = regnmed_db::accrual::periodiser_all(&pool, today).await?;
             if utfall.is_empty() {
                 println!("ingen periodiseringer forfalt");
             }

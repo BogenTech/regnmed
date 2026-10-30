@@ -105,7 +105,7 @@ pub async fn decide_request(
     // decision belongs to the byrå's leadership, like GRFS puts the
     // oppdragsansvar with named responsibles. Members still SEE the
     // requests; they cannot answer them.
-    crate::byramedlemmer::require_firm_admin(&state, person.person_id, firm_id).await?;
+    crate::firm_members::require_firm_admin(&state, person.person_id, firm_id).await?;
     regnmed_db::decide_request(
         &state.pool,
         firm_id,

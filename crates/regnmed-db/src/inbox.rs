@@ -182,7 +182,7 @@ pub async fn bokfor_inbox_document(
     let status: String = document.get("status");
     ensure!(status == "ny", "document is already decided ({status})");
 
-    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+    if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.aktiv
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
@@ -200,7 +200,7 @@ pub async fn bokfor_inbox_document(
                 .belopsgrense_ore
                 .is_none_or(|grense| debetsum >= grense)
         {
-            let state = crate::attestering::attestation_state(
+            let state = crate::approval::attestation_state(
                 &mut *tx,
                 company_id,
                 "inbox_document",

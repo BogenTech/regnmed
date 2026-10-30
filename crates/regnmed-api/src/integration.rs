@@ -103,7 +103,7 @@ async fn krev_gyldig_rolle(state: &AppState, company_id: Uuid, navn: &str) -> Re
     if TILDELBARE.iter().any(|r| r.slug() == navn) {
         return Ok(());
     }
-    let egne = regnmed_db::roller::list_roller(&state.pool, company_id).await?;
+    let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
     if egne.iter().any(|r| r.aktiv && r.navn == navn) {
         return Ok(());
     }

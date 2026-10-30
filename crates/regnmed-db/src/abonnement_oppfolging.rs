@@ -19,7 +19,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::purring::{ReminderDraft, create_reminder};
-use crate::sats::load_satser;
+use crate::rates::load_satser;
 
 pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
 

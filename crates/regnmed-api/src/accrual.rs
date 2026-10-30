@@ -41,7 +41,7 @@ pub async fn list(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
-    let planer = regnmed_db::periodisering::list_periodiseringer(&state.pool, company_id).await?;
+    let planer = regnmed_db::accrual::list_periodiseringer(&state.pool, company_id).await?;
     Ok(Json(json!({
         "periodiseringer": planer.iter().map(|p| json!({
             "id": p.id,
@@ -70,10 +70,10 @@ pub async fn create(
     Json(request): Json<PeriodiseringRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagBokfor).await?;
-    let id = regnmed_db::periodisering::create_periodisering(
+    let id = regnmed_db::accrual::create_periodisering(
         &state.pool,
         company_id,
-        &regnmed_db::periodisering::PeriodiseringDraft {
+        &regnmed_db::accrual::PeriodiseringDraft {
             kilde_voucher: request.kilde_voucher,
             beskrivelse: request.beskrivelse,
             resultatkonto: request.resultatkonto,
@@ -102,7 +102,7 @@ pub async fn stopp(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    regnmed_db::periodisering::stopp_periodisering(&state.pool, company_id, id, idag)
+    regnmed_db::accrual::stopp_periodisering(&state.pool, company_id, id, idag)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "stoppet": idag.to_string() })))
@@ -120,7 +120,7 @@ pub async fn kjor(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let utfall = regnmed_db::periodisering::periodiser_plan(&state.pool, company_id, id, idag)
+    let utfall = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, idag)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
@@ -139,7 +139,7 @@ pub async fn runs(
     Path((company_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
-    let rader = regnmed_db::periodisering::list_runs(&state.pool, company_id, id)
+    let rader = regnmed_db::accrual::list_runs(&state.pool, company_id, id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({

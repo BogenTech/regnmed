@@ -2,51 +2,51 @@
 //! router; the `regnmed-api` binary is a thin wrapper (src/main.rs).
 
 pub mod abonnement;
-pub mod agentoppgave;
+pub mod accrual;
+pub mod agent_task;
 pub mod aksjebok;
 pub mod anchor;
-pub mod arsavslutning;
+pub mod approval;
 pub mod asset;
-pub mod attestering;
 pub mod auth;
-pub mod balansedok;
+pub mod balance_documentation;
 pub mod bank;
-pub mod budsjett;
-pub mod byramedlemmer;
+pub mod budget;
+pub mod cash_register;
+pub mod chart_of_accounts;
 pub mod currency;
 pub mod dimension;
+pub mod email;
 pub mod engagement;
-pub mod epost;
 pub mod expenses;
+pub mod firm_members;
 pub mod herding;
-pub mod innboks;
-pub mod integrasjon;
+pub mod inbox;
+pub mod integration;
 pub mod invoice;
 pub mod invoice_template;
-pub mod kassa;
-pub mod kontoplan;
 pub mod lonn;
 pub mod mailq;
 pub mod mailq_in;
 pub mod marketplace;
-pub mod medlemmer;
-pub mod migrering;
+pub mod members;
+pub mod migration;
 pub mod ocr;
 pub mod payments;
 pub mod period;
-pub mod periodisering;
-pub mod plattform;
+pub mod platform;
 pub mod portal;
 pub mod product;
 pub mod purring;
 pub mod reports;
 pub mod reskontro;
-pub mod roller;
+pub mod roles;
 pub mod salgsdokument;
 pub mod settings;
 pub mod tilgang;
 pub mod timesheet;
 pub mod utsendelse;
+pub mod year_end;
 
 use std::sync::Arc;
 
@@ -159,11 +159,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/import/contacts",
-            axum::routing::post(migrering::import_contacts),
+            axum::routing::post(migration::import_contacts),
         )
         .route(
             "/companies/{company_id}/import/open-items",
-            axum::routing::post(migrering::import_open_items),
+            axum::routing::post(migration::import_open_items),
         )
         .route(
             "/companies/{company_id}/opening-balance",
@@ -171,11 +171,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/integrations",
-            get(integrasjon::list).post(integrasjon::grant),
+            get(integration::list).post(integration::grant),
         )
         .route(
             "/companies/{company_id}/integrations/log",
-            get(integrasjon::log),
+            get(integration::log),
         )
         // One call creates the whole agent — identity included
         // (docs/agent.md §8.6). `POST /integrations` above still takes
@@ -183,42 +183,42 @@ pub fn router(state: AppState) -> Router {
         // themselves.
         .route(
             "/companies/{company_id}/agents",
-            axum::routing::post(integrasjon::opprett_agent),
+            axum::routing::post(integration::opprett_agent),
         )
         // Oppgaver til en agent (#103): the owner says what to do, the
         // agent reports back, and the trail outlives the chat it was
         // asked in.
         .route(
             "/companies/{company_id}/agent/oppgaver",
-            get(agentoppgave::list).post(agentoppgave::opprett),
+            get(agent_task::list).post(agent_task::opprett),
         )
         .route(
             "/companies/{company_id}/agent/oppgaver/{oppgave_id}",
-            get(agentoppgave::hent),
+            get(agent_task::hent),
         )
         .route(
             "/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar",
-            axum::routing::post(agentoppgave::svar),
+            axum::routing::post(agent_task::svar),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}",
-            axum::routing::put(integrasjon::endre),
+            axum::routing::put(integration::endre),
         )
         // Vertsagent: kundens egen LLM-leverandør (docs/agent.md §8).
         // Nøkkelen går inn forseglet og har ingen vei ut herfra.
         .route(
             "/companies/{company_id}/integrations/{integration_id}/llm",
-            get(integrasjon::llm)
-                .put(integrasjon::sett_llm)
-                .delete(integrasjon::fjern_llm),
+            get(integration::llm)
+                .put(integration::sett_llm)
+                .delete(integration::fjern_llm),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/rolle",
-            axum::routing::put(integrasjon::rolle),
+            axum::routing::put(integration::rolle),
         )
         .route(
             "/companies/{company_id}/integrations/{integration_id}/revoke",
-            axum::routing::post(integrasjon::revoke),
+            axum::routing::post(integration::revoke),
         )
         .route("/directory/firms", get(engagement::directory))
         .route("/firms/mine", get(engagement::my_firms))
@@ -230,32 +230,32 @@ pub fn router(state: AppState) -> Router {
         .route("/firms/{firm_id}/clients", get(engagement::firm_clients))
         .route(
             "/firms/{firm_id}/platform-access",
-            get(plattform::firm_platform_access),
+            get(platform::firm_platform_access),
         )
-        .route("/firms/{firm_id}/access", get(byramedlemmer::list_access))
+        .route("/firms/{firm_id}/access", get(firm_members::list_access))
         .route(
             "/firms/{firm_id}/access/history",
-            get(byramedlemmer::access_history),
+            get(firm_members::access_history),
         )
         .route(
             "/firms/{firm_id}/access/{person_id}",
-            axum::routing::put(byramedlemmer::set_role).delete(byramedlemmer::revoke_access),
+            axum::routing::put(firm_members::set_role).delete(firm_members::revoke_access),
         )
         .route(
             "/firms/{firm_id}/access/{person_id}/restore",
-            axum::routing::post(byramedlemmer::restore_access),
+            axum::routing::post(firm_members::restore_access),
         )
         .route(
             "/firms/{firm_id}/invitations",
-            get(byramedlemmer::list_invitations).post(byramedlemmer::invite),
+            get(firm_members::list_invitations).post(firm_members::invite),
         )
         .route(
             "/firms/{firm_id}/invitations/{invitasjon_id}",
-            axum::routing::delete(byramedlemmer::revoke_invitation),
+            axum::routing::delete(firm_members::revoke_invitation),
         )
         .route(
             "/firms/{firm_id}/invitations/{invitasjon_id}/resend",
-            axum::routing::post(byramedlemmer::resend_invitation),
+            axum::routing::post(firm_members::resend_invitation),
         )
         .route(
             "/companies/{company_id}/engagements",
@@ -325,25 +325,22 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/reports/nokkeltall",
             get(reports::nokkeltall),
         )
-        .route(
-            "/companies/{company_id}/reports/avvik",
-            get(budsjett::avvik),
-        )
+        .route("/companies/{company_id}/reports/avvik", get(budget::avvik))
         .route(
             "/companies/{company_id}/budgets",
-            get(budsjett::list_budgets).post(budsjett::create_budget),
+            get(budget::list_budgets).post(budget::create_budget),
         )
         .route(
             "/companies/{company_id}/budgets/{budget_id}",
-            get(budsjett::get_budget).delete(budsjett::delete_budget),
+            get(budget::get_budget).delete(budget::delete_budget),
         )
         .route(
             "/companies/{company_id}/budgets/{budget_id}/lines",
-            axum::routing::put(budsjett::set_lines),
+            axum::routing::put(budget::set_lines),
         )
         .route(
             "/companies/{company_id}/budgets/{budget_id}/fastsett",
-            axum::routing::post(budsjett::fastsett),
+            axum::routing::post(budget::fastsett),
         )
         .route(
             "/companies/{company_id}/bank/statements",
@@ -403,11 +400,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/accounts",
-            get(kontoplan::list_accounts).post(kontoplan::create_account),
+            get(chart_of_accounts::list_accounts).post(chart_of_accounts::create_account),
         )
         .route(
             "/companies/{company_id}/accounts/{account_number}",
-            axum::routing::put(kontoplan::update_account),
+            axum::routing::put(chart_of_accounts::update_account),
         )
         .route(
             "/companies/{company_id}/invoices",
@@ -557,51 +554,51 @@ pub fn router(state: AppState) -> Router {
         .route("/companies/{company_id}/assets/saldo", get(asset::saldo))
         .route(
             "/companies/{company_id}/arsavslutning",
-            get(arsavslutning::list).post(arsavslutning::avslutt),
+            get(year_end::list).post(year_end::avslutt),
         )
         .route(
             "/companies/{company_id}/arsavslutning/{ar}/forslag",
-            get(arsavslutning::forslag),
+            get(year_end::forslag),
         )
         .route(
             "/companies/{company_id}/kassaoppgjor",
-            axum::routing::post(kassa::dagsoppgjor),
+            axum::routing::post(cash_register::dagsoppgjor),
         )
         .route(
             "/companies/{company_id}/kassaoppgjor/rapport",
-            axum::routing::post(kassa::dagsoppgjor_med_rapport),
+            axum::routing::post(cash_register::dagsoppgjor_med_rapport),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon",
-            get(balansedok::status).post(balansedok::avstem),
+            get(balance_documentation::status).post(balance_documentation::avstem),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/vedlegg",
-            axum::routing::post(balansedok::avstem_med_vedlegg),
+            axum::routing::post(balance_documentation::avstem_med_vedlegg),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/historikk",
-            get(balansedok::historikk),
+            get(balance_documentation::historikk),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/{id}/vedlegg",
-            get(balansedok::vedlegg),
+            get(balance_documentation::vedlegg),
         )
         .route(
             "/companies/{company_id}/periodiseringer",
-            get(periodisering::list).post(periodisering::create),
+            get(accrual::list).post(accrual::create),
         )
         .route(
             "/companies/{company_id}/periodiseringer/{id}/stopp",
-            axum::routing::post(periodisering::stopp),
+            axum::routing::post(accrual::stopp),
         )
         .route(
             "/companies/{company_id}/periodiseringer/{id}/kjor",
-            axum::routing::post(periodisering::kjor),
+            axum::routing::post(accrual::kjor),
         )
         .route(
             "/companies/{company_id}/periodiseringer/{id}/kjoringer",
-            get(periodisering::runs),
+            get(accrual::runs),
         )
         .route(
             "/companies/{company_id}/assets/{asset_id}/dispose",
@@ -746,89 +743,86 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/inbox",
-            get(innboks::list).post(innboks::upload),
+            get(inbox::list).post(inbox::upload),
         )
         .route(
             "/companies/{company_id}/inbox/settings",
-            get(epost::settings),
+            get(email::settings),
         )
         .route(
             "/companies/{company_id}/inbox/settings/address",
-            axum::routing::post(epost::rotate_address),
+            axum::routing::post(email::rotate_address),
         )
         .route(
             "/companies/{company_id}/inbox/settings/senders",
-            axum::routing::post(epost::add_sender),
+            axum::routing::post(email::add_sender),
         )
         .route(
             "/companies/{company_id}/inbox/settings/senders/{sender_id}",
-            axum::routing::delete(epost::remove_sender),
+            axum::routing::delete(email::remove_sender),
         )
-        .route("/companies/{company_id}/inbox/mail", get(epost::list_mail))
+        .route("/companies/{company_id}/inbox/mail", get(email::list_mail))
         .route(
             "/companies/{company_id}/inbox/mail/{mail_id}/release",
-            axum::routing::post(epost::release),
+            axum::routing::post(email::release),
         )
         .route(
             "/companies/{company_id}/inbox/mail/{mail_id}/reject",
-            axum::routing::post(epost::reject),
+            axum::routing::post(email::reject),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/content",
-            get(innboks::download),
+            get(inbox::download),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/bokfor",
-            axum::routing::post(innboks::bokfor),
+            axum::routing::post(inbox::bokfor),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/avvis",
-            axum::routing::post(innboks::avvis),
+            axum::routing::post(inbox::avvis),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/ehf",
-            get(innboks::ehf_forslag),
+            get(inbox::ehf_forslag),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/forslag",
-            get(innboks::forslag),
+            get(inbox::forslag),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/attester",
-            axum::routing::post(attestering::attester),
+            axum::routing::post(approval::attester),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/attestering",
-            get(attestering::trail),
+            get(approval::trail),
         )
         .route(
             "/companies/{company_id}/attestering/policy",
-            get(attestering::get_policy).post(attestering::set_policy),
+            get(approval::get_policy).post(approval::set_policy),
         )
-        .route("/companies/{company_id}/members", get(attestering::members))
-        .route(
-            "/companies/{company_id}/access",
-            get(medlemmer::list_access),
-        )
+        .route("/companies/{company_id}/members", get(approval::members))
+        .route("/companies/{company_id}/access", get(members::list_access))
         .route(
             "/companies/{company_id}/access/history",
-            get(medlemmer::access_history),
+            get(members::access_history),
         )
         .route(
             "/companies/{company_id}/access/{person_id}",
-            axum::routing::put(medlemmer::set_role).delete(medlemmer::revoke_access),
+            axum::routing::put(members::set_role).delete(members::revoke_access),
         )
         .route(
             "/companies/{company_id}/access/{person_id}/restore",
-            axum::routing::post(medlemmer::restore_access),
+            axum::routing::post(members::restore_access),
         )
         .route(
             "/companies/{company_id}/invitations",
-            get(medlemmer::list_invitations).post(medlemmer::invite),
+            get(members::list_invitations).post(members::invite),
         )
         .route(
             "/companies/{company_id}/invitations/{invitation_id}",
-            axum::routing::delete(medlemmer::revoke_invitation),
+            axum::routing::delete(members::revoke_invitation),
         )
         .route(
             "/companies/{company_id}/invitations/{invitation_id}/resend",
@@ -836,23 +830,20 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/roles",
-            get(roller::list_roles).post(roller::create_role),
+            get(roles::list_roles).post(roles::create_role),
         )
-        .route(
-            "/companies/{company_id}/roles/history",
-            get(roller::history),
-        )
+        .route("/companies/{company_id}/roles/history", get(roles::history))
         .route(
             "/companies/{company_id}/roles/{role_id}",
-            axum::routing::put(roller::set_rights),
+            axum::routing::put(roles::set_rights),
         )
         .route(
             "/companies/{company_id}/roles/{role_id}/deactivate",
-            axum::routing::post(roller::deactivate),
+            axum::routing::post(roles::deactivate),
         )
         .route(
             "/companies/{company_id}/roles/{role_id}/restore",
-            axum::routing::post(roller::restore),
+            axum::routing::post(roles::restore),
         )
         .route(
             "/companies/{company_id}/period-lock",
@@ -860,7 +851,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/vouchers",
-            get(period::list_vouchers).post(kontoplan::post_manual_voucher),
+            get(period::list_vouchers).post(chart_of_accounts::post_manual_voucher),
         )
         .route(
             "/companies/{company_id}/vouchers/{voucher_id}/attachments",
@@ -874,11 +865,11 @@ pub fn router(state: AppState) -> Router {
         // the company's own admins read what the platform did here.
         .route(
             "/companies/{company_id}/platform-access",
-            get(plattform::company_platform_access),
+            get(platform::company_platform_access),
         )
         // The /platform sub-router (docs/auth.md §8) — its own guard + log
         // middleware; nothing here reaches any company's ledger.
-        .merge(plattform::plattform_router(state.clone()))
+        .merge(platform::plattform_router(state.clone()))
         // Attachments and statement uploads need more than axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024))
         // Hardening on EVERY response (#64): nosniff and Referrer-Policy
@@ -943,8 +934,8 @@ async fn me(
     // fresh login, because the portal calls /me when the session starts.
     // Putting the lookup in the extractor would cost a query on EVERY
     // request for something that happens once.
-    let nye = regnmed_db::medlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?
-        + regnmed_db::byramedlemmer::los_inn_invitasjoner(&state.pool, person.person_id).await?;
+    let nye = regnmed_db::members::los_inn_invitasjoner(&state.pool, person.person_id).await?
+        + regnmed_db::firm_members::los_inn_invitasjoner(&state.pool, person.person_id).await?;
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
 

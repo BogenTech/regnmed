@@ -253,7 +253,7 @@ pub async fn create_invoice_in(
             let kurs_micro = match draft.valuta_kurs_micro {
                 Some(kurs) => kurs,
                 None => {
-                    crate::valuta::require_kurs(pool, code, draft.invoice_date)
+                    crate::currency::require_kurs(pool, code, draft.invoice_date)
                         .await?
                         .1
                 }

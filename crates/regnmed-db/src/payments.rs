@@ -222,7 +222,7 @@ pub async fn approve_run(
     let status: String = run.get("status");
     ensure!(status == "utkast", "kjøringen er {status}");
 
-    if let Some(policy) = crate::attestering::current_policy(&mut *tx, company_id).await?
+    if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.aktiv
     {
         let creator: Option<Uuid> = run.get("created_by_person");

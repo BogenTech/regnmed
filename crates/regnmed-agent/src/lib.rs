@@ -254,7 +254,7 @@ pub async fn run_task(
     issuer: &str,
     api_base: &str,
 ) -> Result<Outcome> {
-    let task = regnmed_db::agentoppgave::hent_oppgave(pool, company_id, task_id)
+    let task = regnmed_db::agent_task::hent_oppgave(pool, company_id, task_id)
         .await?
         .context("no such task")?;
     let Some(integration_id) = task.integration_id else {
@@ -296,9 +296,9 @@ pub async fn run_task(
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.
     let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
-    regnmed_db::agentoppgave::svar(pool, company_id, task_id, "pagar", None, &name).await?;
+    regnmed_db::agent_task::svar(pool, company_id, task_id, "pagar", None, &name).await?;
 
-    let history: Vec<HistoryLine> = regnmed_db::agentoppgave::historikk(pool, company_id, task_id)
+    let history: Vec<HistoryLine> = regnmed_db::agent_task::historikk(pool, company_id, task_id)
         .await?
         .into_iter()
         .filter_map(|h| {
@@ -328,7 +328,7 @@ pub async fn run_task(
         // everything else about the task.
         Err(error) => Outcome::Refused(llm::truncate(&format!("{error:#}"), 1000)),
     };
-    regnmed_db::agentoppgave::svar(
+    regnmed_db::agent_task::svar(
         pool,
         company_id,
         task_id,
