@@ -304,7 +304,7 @@ pub async fn run_task(
         .filter_map(|h| {
             // A bare `pagar` with no note is "started working", not
             // something anybody said.
-            let text = h.notat.filter(|t| !t.trim().is_empty())?;
+            let text = h.note.filter(|t| !t.trim().is_empty())?;
             Some(HistoryLine {
                 from_agent: h.av == name,
                 text,
@@ -317,7 +317,7 @@ pub async fn run_task(
         &server,
         &grant.access,
         grant.system_prompt.as_deref(),
-        &task.melding,
+        &task.message,
         &history,
     )
     .await

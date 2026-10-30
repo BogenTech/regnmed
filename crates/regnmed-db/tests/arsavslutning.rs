@@ -47,8 +47,8 @@ async fn selskap_med_overskudd(pool: &PgPool) -> Uuid {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [("1920", "Bank"), ("3000", "Salg"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(pool, company, nr, navn)
+    for (nr, name) in [("1920", "Bank"), ("3000", "Salg"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -197,10 +197,10 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     );
 
     // Twice is refused — a correction is a reversing voucher.
-    let feil = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
+    let error = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
         .await
         .expect_err("et år kan ikke disponeres to ganger");
-    assert!(feil.to_string().contains("allerede avsluttet"), "{feil}");
+    assert!(error.to_string().contains("allerede avsluttet"), "{error}");
 
     // A year already locked cannot be closed: its voucher is dated
     // inside the lock, and the message must say so rather than let the
@@ -209,8 +209,8 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     regnmed_db::set_period_lock(&pool, company2, d(2025, 12, 31), "test", false)
         .await
         .unwrap();
-    let feil = regnmed_db::year_end::avslutt_ar(&pool, company2, 2025, 0, "test")
+    let error = regnmed_db::year_end::avslutt_ar(&pool, company2, 2025, 0, "test")
         .await
         .expect_err("låst år kan ikke avsluttes");
-    assert!(feil.to_string().contains("låst til og med"), "{feil}");
+    assert!(error.to_string().contains("låst til og med"), "{error}");
 }

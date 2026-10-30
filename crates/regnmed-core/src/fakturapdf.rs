@@ -74,7 +74,7 @@ pub struct FakturaPdfInput {
     /// The invoice number of the faktura this one credits.
     pub krediterer_nr: Option<i64>,
 
-    pub selger_navn: String,
+    pub seller_name: String,
     pub selger_orgnr: String,
     pub selger_adresse: Option<String>,
     pub seller_vat_registered: bool,
@@ -83,7 +83,7 @@ pub struct FakturaPdfInput {
     pub selger_foretaksregistrert: bool,
     pub seller_account_number: Option<String>,
 
-    pub kjoper_navn: String,
+    pub buyer_name: String,
     pub kjoper_nr: String,
     pub kjoper_orgnr: Option<String>,
     pub kjoper_adresse: Option<String>,
@@ -169,7 +169,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     let kreditnota = input.dokumenttype == Dokumenttype::Kreditnota;
 
     // Seller block, top left.
-    pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.selger_navn);
+    pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.seller_name);
     let mut y = 76.0;
     if let Some(adresse) = &input.selger_adresse {
         pdf.text(MARGIN, y, 9.0, Font::Regular, adresse);
@@ -237,7 +237,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
 
     // Buyer block.
     pdf.text(MARGIN, 130.0, 8.0, Font::Bold, "FAKTURAMOTTAKER");
-    pdf.text(MARGIN, 144.0, 11.0, Font::Regular, &input.kjoper_navn);
+    pdf.text(MARGIN, 144.0, 11.0, Font::Regular, &input.buyer_name);
     let mut ky = 158.0;
     if let Some(adresse) = &input.kjoper_adresse {
         pdf.text(MARGIN, ky, 9.0, Font::Regular, adresse);
@@ -433,13 +433,13 @@ mod tests {
         FakturaPdfInput {
             dokumenttype: Dokumenttype::Faktura,
             krediterer_nr: None,
-            selger_navn: "Demo & Sønn AS".into(),
+            seller_name: "Demo & Sønn AS".into(),
             selger_orgnr: "999888777".into(),
             selger_adresse: Some("Storgata 1, 0155 Oslo".into()),
             seller_vat_registered: true,
             selger_foretaksregistrert: true,
             seller_account_number: Some("1234.56.78903".into()),
-            kjoper_navn: "Kunde & Co AS".into(),
+            buyer_name: "Kunde & Co AS".into(),
             kjoper_nr: "10000".into(),
             kjoper_orgnr: Some("911111111".into()),
             kjoper_adresse: None,

@@ -537,7 +537,7 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
     let agent_token = idp.token(&client_id, "");
 
     // ---- A role name that is not a role is refused, with the choices ----
-    let (status, feil) = request(
+    let (status, error) = request(
         &state,
         "POST",
         &format!("{base}/integrations"),
@@ -548,11 +548,11 @@ async fn an_agent_with_admin_may_migrate_but_never_widen_access() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{feil}");
-    let melding = feil["error"].as_str().unwrap();
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    let message = error["error"].as_str().unwrap();
     assert!(
-        melding.contains("bokforing") && melding.contains("admin"),
-        "feilen sier hva man kan velge: {melding}"
+        message.contains("bokforing") && message.contains("admin"),
+        "feilen sier hva man kan velge: {message}"
     );
 
     // ---- The owner grants admin, as #101 decided she may ----
@@ -766,10 +766,10 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
     .await
     .unwrap();
     assert_eq!(rader.len(), 2, "sporet beholdes: {rader:?}");
-    let aktiv: Vec<&(String, Option<chrono::NaiveDate>)> =
+    let active: Vec<&(String, Option<chrono::NaiveDate>)> =
         rader.iter().filter(|r| r.1.is_none()).collect();
-    assert_eq!(aktiv.len(), 1, "én levende tilgang: {rader:?}");
-    assert_eq!(aktiv[0].0, "les");
+    assert_eq!(active.len(), 1, "én levende tilgang: {rader:?}");
+    assert_eq!(active[0].0, "les");
     assert!(
         rader.iter().any(|r| r.0 == "bokforing" && r.1.is_some()),
         "den gamle rollen står med sluttdato: {rader:?}"

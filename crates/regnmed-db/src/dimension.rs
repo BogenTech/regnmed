@@ -184,7 +184,7 @@ pub async fn update_dimension(
 #[derive(Debug)]
 pub struct ProsjektSatsRow {
     pub person_id: Option<Uuid>,
-    pub person_navn: Option<String>,
+    pub person_name: Option<String>,
     pub timesats_ore: i64,
     pub valid_from: chrono::NaiveDate,
     pub created_by: String,
@@ -214,7 +214,7 @@ pub async fn list_prosjekt_satser(
         .iter()
         .map(|r| ProsjektSatsRow {
             person_id: r.get("person_id"),
-            person_navn: r
+            person_name: r
                 .get::<Option<Uuid>, _>("person_id")
                 .map(|_| r.get("person_navn")),
             timesats_ore: r.get("timesats_ore"),

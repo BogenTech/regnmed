@@ -50,7 +50,7 @@ pub async fn registry_preview(
 
     Ok(Json(json!({
         "orgnr": enhet.organisasjonsnummer,
-        "navn": enhet.navn,
+        "navn": enhet.name,
         "organisasjonsform": enhet.organisasjonsform.as_ref().map(|k| k.code.clone()),
         "naeringskode": enhet.naeringskode1.as_ref().map(|k| format!("{} {}", k.code, k.description)),
         "mva_registrert": enhet.registered_in_vat_register,
@@ -118,7 +118,7 @@ pub async fn onboard_company(
     let onboarded = regnmed_db::onboard_company(
         &state.pool,
         &request.orgnr,
-        &enhet.navn,
+        &enhet.name,
         person.person_id,
         &facts,
     )
@@ -184,7 +184,7 @@ pub async fn create_firm(
     let firm_id = regnmed_db::create_verified_firm(
         &state.pool,
         &request.orgnr,
-        &enhet.navn,
+        &enhet.name,
         &request.kind,
         "finanstilsynet-virksomhetsregister",
         person.person_id,
@@ -194,7 +194,7 @@ pub async fn create_firm(
     Ok(Json(json!({
         "firm_id": firm_id,
         "orgnr": request.orgnr,
-        "navn": enhet.navn,
+        "navn": enhet.name,
         "kind": request.kind,
         "autorisasjon_verified": true,
     })))

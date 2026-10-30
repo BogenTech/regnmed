@@ -53,8 +53,8 @@ pub async fn list_roles(
         })).collect::<Vec<_>>(),
         "egne": egne.iter().map(|r| json!({
             "id": r.id,
-            "navn": r.navn,
-            "aktiv": r.aktiv,
+            "navn": r.name,
+            "aktiv": r.active,
             "rettigheter": r.rights,
             "i_bruk": r.i_bruk,
         })).collect::<Vec<_>>(),
@@ -66,7 +66,8 @@ pub async fn list_roles(
 
 #[derive(Deserialize)]
 pub struct RolleRequest {
-    navn: Option<String>,
+    #[serde(rename = "navn")]
+    name: Option<String>,
     #[serde(default, rename = "rettigheter")]
     rights: Vec<String>,
 }
@@ -78,9 +79,9 @@ pub struct RolleRequest {
 /// writing here, and a role that silently lacks half its contents is
 /// worse than an error message. (On lookup, unknown names ARE ignored —
 /// there they mean an old database, not a typo.)
-fn godkjenn(navn: &[String]) -> Result<Vec<String>, ApiError> {
+fn godkjenn(name: &[String]) -> Result<Vec<String>, ApiError> {
     let mut ut = Vec::new();
-    for n in navn {
+    for n in name {
         let rett = Right::from_slug(n)
             .ok_or_else(|| ApiError::BadRequest(format!("ukjent rettighet «{n}»")))?;
         if !rett.can_be_delegated() {
@@ -104,14 +105,14 @@ pub async fn create_role(
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let navn = request
-        .navn
+    let name = request
+        .name
         .ok_or_else(|| ApiError::BadRequest("rollen må ha et navn".into()))?;
     let godkjente = godkjenn(&request.rights)?;
     let id = regnmed_db::roles::opprett(
         &state.pool,
         company_id,
-        &navn,
+        &name,
         &godkjente,
         person.person_id,
         person.display(),
@@ -174,7 +175,7 @@ pub async fn history(
     let rader = regnmed_db::roles::historikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
-            "navn": e.navn,
+            "navn": e.name,
             "endring": e.endring,
             "rettigheter": e.rights,
             "utfort_av": e.utfort_av,

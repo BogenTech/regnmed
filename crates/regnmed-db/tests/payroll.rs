@@ -40,7 +40,7 @@ async fn selskap(pool: &PgPool) -> Uuid {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("5000", "Lønn til ansatte"),
         ("5090", "Feriepenger"),
         ("5400", "Arbeidsgiveravgift"),
@@ -50,20 +50,20 @@ async fn selskap(pool: &PgPool) -> Uuid {
         ("2940", "Skyldige feriepenger"),
         ("1920", "Bankinnskudd"),
     ] {
-        regnmed_db::ensure_account(pool, company, nr, navn)
+        regnmed_db::ensure_account(pool, company, nr, name)
             .await
             .unwrap();
     }
     company
 }
 
-async fn employee(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) -> Uuid {
+async fn employee(pool: &PgPool, company: Uuid, fnr: &str, name: &str, lonn: i64) -> Uuid {
     payroll::create_ansatt(
         pool,
         company,
         &NyAnsatt {
             fodselsnummer: fnr.into(),
-            navn: navn.into(),
+            name: name.into(),
             stilling: Some("Utvikler".into()),
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(lonn),
@@ -265,7 +265,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 
     // Sone Ia is refused: the fribeløp cannot be read out of a single rate.
-    let feil = payroll::run_payroll(
+    let error = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -282,7 +282,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     )
     .await
     .unwrap_err();
-    assert!(feil.to_string().contains("fribeløpet"), "{feil}");
+    assert!(error.to_string().contains("fribeløpet"), "{error}");
 }
 
 #[tokio::test]
@@ -294,7 +294,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
         company,
         &NyAnsatt {
             fodselsnummer: "08888797336".into(),
-            navn: "Tabell Trekksen".into(),
+            name: "Tabell Trekksen".into(),
             stilling: None,
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(5_000_000),
@@ -311,7 +311,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     .await
     .unwrap();
 
-    let feil = payroll::run_payroll(
+    let error = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -328,8 +328,8 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     )
     .await
     .unwrap_err();
-    assert!(feil.to_string().contains("tabelltrekk"), "{feil}");
-    assert!(feil.to_string().contains("tilnærmer dem ikke"), "{feil}");
+    assert!(error.to_string().contains("tabelltrekk"), "{error}");
+    assert!(error.to_string().contains("tilnærmer dem ikke"), "{error}");
 }
 
 #[tokio::test]
@@ -360,7 +360,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     .unwrap();
     assert!(payroll::kjort_maned(&pool, company, 2026, 7).await.unwrap());
 
-    let feil = payroll::run_payroll(
+    let error = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -372,7 +372,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     )
     .await
     .unwrap_err();
-    assert!(feil.to_string().contains("allerede kjørt"), "{feil}");
+    assert!(error.to_string().contains("allerede kjørt"), "{error}");
 
     // The database itself refuses to change or delete a run.
     let err = sqlx::query("update payroll_run set brutto_ore = 1 where id = $1")
@@ -419,12 +419,12 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let feil = payroll::create_ansatt(
+    let error = payroll::create_ansatt(
         &pool,
         company,
         &NyAnsatt {
             fodselsnummer: "26829398613".into(),
-            navn: "Feil Nummer".into(),
+            name: "Feil Nummer".into(),
             stilling: None,
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(1),
@@ -440,7 +440,7 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     )
     .await
     .unwrap_err();
-    assert!(feil.to_string().contains("fødselsnummer"), "{feil}");
+    assert!(error.to_string().contains("fødselsnummer"), "{error}");
 }
 
 /// The payslip is built from the insert-only payroll line, so it can be
@@ -486,7 +486,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     .unwrap();
 
     let slipp = payroll::payslip(&pool, company, juni.id, a).await.unwrap();
-    assert_eq!(slipp.ansatt_navn, "Kari Utvikler");
+    assert_eq!(slipp.employee_name, "Kari Utvikler");
     // Birth date, not fødselsnummer — on the payslip too.
     assert_eq!(slipp.employee_birth_date, Some(date(1993, 2, 26)));
     // Brutto on the slip is EVERYTHING paid out; the trekkgrunnlag is less.
@@ -543,7 +543,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         company,
         &NyAnsatt {
             fodselsnummer: "25927898821".into(),
-            navn: "Timelønnet".into(),
+            name: "Timelønnet".into(),
             stilling: None,
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,
@@ -604,7 +604,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     };
 
     // Unlocked: refused.
-    let feil = payroll::run_payroll(
+    let error = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -616,7 +616,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     )
     .await
     .unwrap_err();
-    assert!(feil.to_string().contains("ikke låst"), "{feil}");
+    assert!(error.to_string().contains("ikke låst"), "{error}");
 
     // Lock the month, and the run goes through.
     regnmed_db::timesheet::set_timesheet_lock(&pool, company, date(2026, 3, 31), "Test", None)
@@ -652,10 +652,10 @@ async fn an_employee_without_a_portal_user_fails_clearly() {
     let company = selskap(&pool).await;
     let a = employee(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
 
-    let feil = payroll::timegrunnlag(&pool, company, a, 2026, 3)
+    let error = payroll::timegrunnlag(&pool, company, a, 2026, 3)
         .await
         .unwrap_err();
-    assert!(feil.to_string().contains("portalbruker"), "{feil}");
+    assert!(error.to_string().contains("portalbruker"), "{error}");
 }
 
 // ---------------------------------------------------------------------

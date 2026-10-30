@@ -48,7 +48,7 @@ pub struct ShareEventRow {
     pub shareholder_id: Uuid,
     pub shareholder: String,
     pub type_: String,
-    pub type_navn: String,
+    pub type_name: String,
     pub date: NaiveDate,
     pub quantity: i64,
     pub amount_ore: Option<i64>,
@@ -278,7 +278,7 @@ pub async fn list_hendelser(
                 id: r.get("id"),
                 shareholder_id: r.get("shareholder_id"),
                 shareholder: r.get("aksjonaer"),
-                type_navn: TransactionType::from_slug(&slug)
+                type_name: TransactionType::from_slug(&slug)
                     .map(|t| t.name().to_string())
                     .unwrap_or_else(|| slug.clone()),
                 type_: slug,
@@ -714,7 +714,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, ar: i32) -> Result<Re
                 adresse: gate,
                 postnummer: postnr,
                 poststed,
-                kontakt_navn: None,
+                contact_name: None,
                 kontakt_epost: company.get("email"),
             },
             inntektsar: ar,

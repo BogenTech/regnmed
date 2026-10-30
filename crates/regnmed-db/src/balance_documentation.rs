@@ -37,7 +37,7 @@ pub struct Avstemming {
     pub reconciled_date: NaiveDate,
     pub avstemt_av: String,
     pub har_vedlegg: bool,
-    pub vedlegg_navn: Option<String>,
+    pub attachment_name: Option<String>,
 }
 
 impl BalanceSheetLine {
@@ -104,7 +104,7 @@ pub async fn balance_status(
             reconciled_date: r.get("avstemt_dato"),
             avstemt_av: r.get("avstemt_av"),
             har_vedlegg: r.get("har_vedlegg"),
-            vedlegg_navn: r.get("vedlegg_navn"),
+            attachment_name: r.get("vedlegg_navn"),
         });
         linjer.push(BalanceSheetLine {
             account,
@@ -160,11 +160,11 @@ pub async fn avstem(
     .fetch_one(pool)
     .await?;
 
-    let (navn, type_, bytes, sha) = match vedlegg {
-        Some((navn, type_, bytes)) => {
+    let (name, type_, bytes, sha) = match vedlegg {
+        Some((name, type_, bytes)) => {
             ensure!(!bytes.is_empty(), "vedlegget er tomt");
             let sha = sha256(bytes).to_vec();
-            (Some(navn), Some(type_), Some(bytes), Some(sha))
+            (Some(name), Some(type_), Some(bytes), Some(sha))
         }
         None => (None, None, None, None),
     };
@@ -184,7 +184,7 @@ pub async fn avstem(
     .bind(balance_ore)
     .bind(forklaring.trim())
     .bind(bytes)
-    .bind(navn)
+    .bind(name)
     .bind(type_)
     .bind(sha)
     .bind(avstemt_av)
@@ -256,7 +256,7 @@ pub async fn historikk(
         reconciled_date: r.get("avstemt_dato"),
         avstemt_av: r.get("avstemt_av"),
         har_vedlegg: r.get("har_vedlegg"),
-        vedlegg_navn: r.get("vedlegg_navn"),
+        attachment_name: r.get("vedlegg_navn"),
     })
     .collect())
 }

@@ -120,7 +120,7 @@ pub struct Card {
     pub payment_method_id: String,
     pub brand: String,
     pub last4: String,
-    pub aktiv: bool,
+    pub active: bool,
 }
 
 pub async fn card_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Card>> {
@@ -136,7 +136,7 @@ pub async fn card_for(pool: &PgPool, company_id: Uuid) -> Result<Option<Card>> {
         payment_method_id: r.get("payment_method_id"),
         brand: r.get("brand"),
         last4: r.get("last4"),
-        aktiv: r.get("aktiv"),
+        active: r.get("aktiv"),
     }))
 }
 
@@ -519,13 +519,13 @@ pub async fn post_stripe_payment(
 
     // Same self-configuring setup the monthly run does.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1500", "Kundefordringer"),
         ("1570", "Kortoppgjør"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt, avgiftspliktig"),
     ] {
-        crate::ensure_account(pool, drift_company_id, nr, navn).await?;
+        crate::ensure_account(pool, drift_company_id, nr, name).await?;
     }
     crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
 
@@ -709,9 +709,9 @@ pub async fn set_price(
     plan: &str,
     price_ore_per_month: i64,
     fra: NaiveDate,
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
-    ensure!(!kilde.trim().is_empty(), "prisraden må ha en kilde");
+    ensure!(!source.trim().is_empty(), "prisraden må ha en kilde");
     ensure!(price_ore_per_month >= 0, "prisen kan ikke være negativ");
     sqlx::query(
         "insert into abonnement_pris (plan, pris_ore_per_mnd, valid_from, kilde)
@@ -720,7 +720,7 @@ pub async fn set_price(
     .bind(plan)
     .bind(price_ore_per_month)
     .bind(fra)
-    .bind(kilde.trim())
+    .bind(source.trim())
     .execute(pool)
     .await?;
     Ok(())
@@ -731,7 +731,7 @@ pub struct PriceRow {
     pub plan: String,
     pub price_ore_per_month: i64,
     pub valid_from: NaiveDate,
-    pub kilde: String,
+    pub source: String,
 }
 
 /// The whole price list, newest first per plan.
@@ -748,7 +748,7 @@ pub async fn list_prices(pool: &PgPool) -> Result<Vec<PriceRow>> {
             plan: r.get("plan"),
             price_ore_per_month: r.get("pris_ore_per_mnd"),
             valid_from: r.get("valid_from"),
-            kilde: r.get("kilde"),
+            source: r.get("kilde"),
         })
         .collect())
 }
@@ -779,7 +779,7 @@ pub async fn save_stripe_price(
     interval: &str,
     gross_ore: i64,
     stripe_price_id: &str,
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
     sqlx::query(
         "insert into abonnement_stripe_price
@@ -790,7 +790,7 @@ pub async fn save_stripe_price(
     .bind(interval)
     .bind(gross_ore)
     .bind(stripe_price_id)
-    .bind(kilde)
+    .bind(source)
     .execute(pool)
     .await?;
     Ok(())
@@ -914,12 +914,12 @@ pub async fn fakturer_maned(
     // The ops company needs an account and a journal for the sale;
     // ensure is idempotent and makes the first run self-configuring.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1500", "Kundefordringer"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt, avgiftspliktig"),
     ] {
-        crate::ensure_account(pool, drift_company_id, nr, navn).await?;
+        crate::ensure_account(pool, drift_company_id, nr, name).await?;
     }
     // The receivable account must carry reskontro, otherwise posting
     // refuses the party line — and the abonnement faktura MUST be on the
@@ -953,13 +953,13 @@ pub async fn fakturer_maned(
     let mut utfall = Vec::new();
     for kunde in &kunder {
         let company_id: Uuid = kunde.get("id");
-        let navn: String = kunde.get("name");
+        let name: String = kunde.get("name");
         let result = fakturer_en(
             pool,
             drift_company_id,
             company_id,
             kunde.get("orgnr"),
-            &navn,
+            &name,
             kunde.get("plan"),
             idag,
         )
@@ -967,7 +967,7 @@ pub async fn fakturer_maned(
         utfall.push(match result {
             Ok(Some((nr, id, gross))) => InvoiceOutcome {
                 company_id,
-                company_name: navn,
+                company_name: name,
                 invoice_no: Some(nr),
                 invoice_id: Some(id),
                 gross_ore: Some(gross),
@@ -977,7 +977,7 @@ pub async fn fakturer_maned(
             // plan costs nothing.
             Ok(None) => InvoiceOutcome {
                 company_id,
-                company_name: navn,
+                company_name: name,
                 invoice_no: None,
                 invoice_id: None,
                 gross_ore: None,
@@ -985,7 +985,7 @@ pub async fn fakturer_maned(
             },
             Err(e) => InvoiceOutcome {
                 company_id,
-                company_name: navn,
+                company_name: name,
                 invoice_no: None,
                 invoice_id: None,
                 gross_ore: None,
@@ -1111,7 +1111,7 @@ async fn fakturer_en(
         lines: vec![crate::invoice::InvoiceLineDraft {
             description: format!(
                 "regnmed {plan} — {} {}",
-                regnmed_core::invoice::maanedsnavn(idag.month()),
+                regnmed_core::invoice::month_name(idag.month()),
                 idag.year()
             ),
             account_number: "3000".into(),

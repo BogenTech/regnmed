@@ -94,7 +94,7 @@ async fn request(
     )
 }
 
-fn mail(to: &str, from: &str, message_id: &str, filnavn: &str) -> mailq_in::InboundMail {
+fn mail(to: &str, from: &str, message_id: &str, filename: &str) -> mailq_in::InboundMail {
     mailq_in::InboundMail {
         to: to.into(),
         from: from.into(),
@@ -102,10 +102,10 @@ fn mail(to: &str, from: &str, message_id: &str, filnavn: &str) -> mailq_in::Inbo
         text: Some("Hei, her kommer fakturaen. Mvh Grossisten".into()),
         message_id: message_id.into(),
         attachments: vec![mailq_in::InboundAttachment {
-            filename: filnavn.into(),
+            filename: filename.into(),
             content_type: "application/pdf".into(),
             content_base64: base64::engine::general_purpose::STANDARD
-                .encode(format!("innholdet i {filnavn}").as_bytes()),
+                .encode(format!("innholdet i {filename}").as_bytes()),
         }],
     }
 }

@@ -133,7 +133,7 @@ pub async fn vat_return(
     }
 
     let referanse = format!("regnmed-{}-{}-{}", orgnr, period.year, period.number);
-    let melding = regnmed_core::vat_return::build(
+    let message = regnmed_core::vat_return::build(
         &orgnr,
         period,
         ordning,
@@ -146,7 +146,7 @@ pub async fn vat_return(
         orgnr, period.year, period.number
     );
     Ok(xml_download(
-        regnmed_core::vat_return::render(&melding),
+        regnmed_core::vat_return::render(&message),
         &filename,
     ))
 }
@@ -579,7 +579,7 @@ pub async fn audit(
         "kjede_hode": report.chain_head_hex,
         "alle_ok": report.alle_ok(),
         "kontroller": report.checks.iter().map(|k| json!({
-            "navn": k.navn,
+            "navn": k.name,
             "ok": k.ok,
             "detalj": k.detalj,
         })).collect::<Vec<_>>(),

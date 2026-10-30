@@ -115,11 +115,11 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
     let bilde = b"JPEG-bytes fra kameraet".to_vec();
     let sha256 = hex::encode(regnmed_core::hash::sha256(&bilde));
 
-    let last_opp = |filnavn: &str, hash: Option<&str>, bytes: Vec<u8>| {
+    let last_opp = |filename: &str, hash: Option<&str>, bytes: Vec<u8>| {
         let state = state.clone();
         let token = token.clone();
         let uri = format!(
-            "/companies/{company}/inbox?filename={filnavn}{}",
+            "/companies/{company}/inbox?filename={filename}{}",
             hash.map(|h| format!("&sha256={h}")).unwrap_or_default()
         );
         async move {

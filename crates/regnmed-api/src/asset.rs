@@ -22,7 +22,8 @@ use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
 pub struct CreateAssetRequest {
-    navn: String,
+    #[serde(rename = "navn")]
+    name: String,
     #[serde(rename = "anskaffelsesdato")]
     acquisition_date: chrono::NaiveDate,
     kostpris_ore: i64,
@@ -51,7 +52,7 @@ pub async fn create(
         &state.pool,
         company_id,
         &regnmed_db::AssetDraft {
-            navn: request.navn,
+            name: request.name,
             acquisition_date: request.acquisition_date,
             kostpris_ore: request.kostpris_ore,
             restverdi_ore: request.restverdi_ore,
@@ -80,7 +81,7 @@ pub async fn list(
     Ok(Json(json!({
         "assets": assets.iter().map(|a| json!({
             "asset_id": a.id,
-            "navn": a.navn,
+            "navn": a.name,
             "anskaffelsesdato": a.acquisition_date.to_string(),
             "kostpris_ore": a.kostpris_ore,
             "restverdi_ore": a.restverdi_ore,
@@ -125,7 +126,7 @@ pub async fn depreciate(
         "generated": outcomes.iter().filter(|o| o.voucher.is_some()).count(),
         "failed": outcomes.iter().filter(|o| o.voucher.is_none()).count(),
         "outcomes": outcomes.iter().map(|o| json!({
-            "navn": o.navn,
+            "navn": o.name,
             "period": o.period.to_string(),
             "amount_ore": o.amount_ore,
             "voucher": o.voucher.map(|(year, no)| format!("{year}-{no}")),

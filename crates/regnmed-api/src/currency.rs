@@ -32,7 +32,7 @@ pub async fn list_rates(
             "dato": k.date.to_string(),
             "kurs": regnmed_core::currency::rate_str(k.rate_micro),
             "kurs_micro": k.rate_micro,
-            "kilde": k.kilde,
+            "kilde": k.source,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -45,7 +45,8 @@ pub struct ManualRateRequest {
     date: chrono::NaiveDate,
     /// Decimal, e.g. "11.6543".
     kurs: String,
-    kilde: Option<String>,
+    #[serde(rename = "kilde")]
+    source: Option<String>,
 }
 
 pub async fn add_rate(
@@ -64,7 +65,7 @@ pub async fn add_rate(
         request.date,
         rate_micro,
         request
-            .kilde
+            .source
             .as_deref()
             .unwrap_or(&format!("manuell ({registered_by})")),
     )

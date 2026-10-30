@@ -40,13 +40,13 @@ impl Server {
 
     /// Handles one JSON-RPC message. `None` means "no reply" — a
     /// notification, which must never be answered.
-    pub async fn handle(&self, melding: Value) -> Option<Value> {
-        let method = melding.get("method").and_then(Value::as_str).unwrap_or("");
+    pub async fn handle(&self, message: Value) -> Option<Value> {
+        let method = message.get("method").and_then(Value::as_str).unwrap_or("");
         // A notification has no id. Per JSON-RPC, answering one is an
         // error on our side, so the shape of the message decides, not a
         // list of method names we would have to keep current.
-        let id = melding.get("id").cloned()?;
-        let params = melding
+        let id = message.get("id").cloned()?;
+        let params = message
             .get("params")
             .and_then(Value::as_object)
             .cloned()
@@ -69,9 +69,9 @@ impl Server {
 
         Some(match svar {
             Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-            Err(feil) => json!({
+            Err(error) => json!({
                 "jsonrpc": "2.0", "id": id,
-                "error": { "code": feil.code(), "message": feil.to_string() },
+                "error": { "code": error.code(), "message": error.to_string() },
             }),
         })
     }
@@ -110,7 +110,7 @@ impl Server {
     pub async fn execute_tool(&self, v: &Tool, args: Map<String, Value>) -> (String, bool) {
         match self.execute(v, args).await {
             Ok(tekst) => (tekst, false),
-            Err(feil) => (format!("{feil:#}"), true),
+            Err(error) => (format!("{error:#}"), true),
         }
     }
 
@@ -145,10 +145,10 @@ const INSTRUCTIONS: &str = "regnmed er et norsk regnskapssystem. Hovedboken er a
     til, og `oppgaver` for å se hva du er bedt om. Hent prompten for rollen din med prompts/get \
     (regnskapsforer, bokforer, ansatt, migrering) før du gjør noe annet.";
 
-fn text_response(tekst: &str, feil: bool) -> Value {
+fn text_response(tekst: &str, error: bool) -> Value {
     json!({
         "content": [{ "type": "text", "text": tekst }],
-        "isError": feil,
+        "isError": error,
     })
 }
 
@@ -385,8 +385,8 @@ mod tests {
         // And says so when there is none, rather than calling
         // /companies//vouchers and reporting a 404 the agent cannot act on.
         let mut a = Map::new();
-        let feil = fill_path("/companies/{selskap}/vouchers", &mut a, None).unwrap_err();
-        assert!(format!("{feil}").contains("REGNMED_COMPANY"), "{feil}");
+        let error = fill_path("/companies/{selskap}/vouchers", &mut a, None).unwrap_err();
+        assert!(format!("{error}").contains("REGNMED_COMPANY"), "{error}");
     }
 
     /// A model that fills every optional property with null must not

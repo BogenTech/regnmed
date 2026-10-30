@@ -21,7 +21,7 @@ pub struct BudgetRow {
     pub id: Uuid,
     pub year: i32,
     pub versjon: i32,
-    pub navn: String,
+    pub name: String,
     pub status: String,
     pub note: Option<String>,
     pub created_by: String,
@@ -45,7 +45,7 @@ fn budget_from_row(r: &sqlx::postgres::PgRow) -> BudgetRow {
         id: r.get("id"),
         year: r.get("year"),
         versjon: r.get("versjon"),
-        navn: r.get("navn"),
+        name: r.get("navn"),
         status: r.get("status"),
         note: r.get("note"),
         created_by: r.get("created_by"),
@@ -149,13 +149,13 @@ pub async fn create_budget(
     pool: &PgPool,
     company_id: Uuid,
     year: i32,
-    navn: &str,
+    name: &str,
     note: Option<&str>,
     fra_ar: Option<i32>,
     justering_bp: i64,
     created_by: &str,
 ) -> Result<Uuid> {
-    ensure!(!navn.trim().is_empty(), "budsjettet trenger et navn");
+    ensure!(!name.trim().is_empty(), "budsjettet trenger et navn");
     ensure!(
         (1900..=2999).contains(&year),
         "året {year} er utenfor rekkevidde"
@@ -177,7 +177,7 @@ pub async fn create_budget(
     .bind(company_id)
     .bind(year)
     .bind(versjon)
-    .bind(navn.trim())
+    .bind(name.trim())
     .bind(note.map(str::trim).filter(|n| !n.is_empty()))
     .bind(created_by)
     .execute(&mut *tx)

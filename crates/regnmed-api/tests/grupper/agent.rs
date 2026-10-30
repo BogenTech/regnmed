@@ -235,8 +235,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     let (feilet, reply) = calls(&server, "innboks_forslag", json!({"dokument": dokument})).await;
     assert!(!feilet, "forslaget svarer for ethvert dokument: {reply}");
 
-    for (nummer, name) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nummer, name)
+    for (number, name) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }

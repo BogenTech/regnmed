@@ -78,11 +78,11 @@ pub async fn nudge(js: &jetstream::Context, company_id: Uuid, task_id: Uuid) -> 
         company_id,
         task_id,
     })?;
-    let melding = async_nats::HeaderMap::from_iter([(
+    let message = async_nats::HeaderMap::from_iter([(
         async_nats::header::NATS_MESSAGE_ID,
         async_nats::HeaderValue::from(task_id.to_string().as_str()),
     )]);
-    js.publish_with_headers(SUBJECT, melding, payload.into())
+    js.publish_with_headers(SUBJECT, message, payload.into())
         .await
         .context("publishing the agent nudge")?
         .await

@@ -41,12 +41,12 @@ async fn request(
     )
 }
 
-fn inventory_row<'a>(body: &'a serde_json::Value, nummer: &str) -> &'a serde_json::Value {
+fn inventory_row<'a>(body: &'a serde_json::Value, number: &str) -> &'a serde_json::Value {
     body["inventory"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["nummer"] == nummer)
+        .find(|r| r["nummer"] == number)
         .unwrap()
 }
 

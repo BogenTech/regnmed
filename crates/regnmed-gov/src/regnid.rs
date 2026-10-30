@@ -59,18 +59,18 @@ impl Regnid {
     pub async fn create_machine_client(
         &self,
         client_id: &str,
-        navn: &str,
+        name: &str,
         audience: &str,
     ) -> Result<MachineClient> {
         ensure!(!client_id.trim().is_empty(), "client_id mangler");
-        ensure!(!navn.trim().is_empty(), "navnet mangler");
+        ensure!(!name.trim().is_empty(), "navnet mangler");
         let svar = self
             .http
             .post(format!("{}/provision/machine-client", self.base))
             .basic_auth(&self.client_id, Some(&self.client_secret))
             .json(&serde_json::json!({
                 "client_id": client_id.trim(),
-                "name": navn.trim(),
+                "name": name.trim(),
                 "audience": audience,
             }))
             .send()

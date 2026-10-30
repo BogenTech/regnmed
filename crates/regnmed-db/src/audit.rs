@@ -43,7 +43,7 @@ pub async fn build_audit_report(
     // 1. Chain re-walk — an error is a finding, not a crash.
     checks.push(match crate::verify_chain(pool, company_id).await {
         Ok(report) => Check {
-            navn: "Hash-kjede fra genesis".into(),
+            name: "Hash-kjede fra genesis".into(),
             ok: true,
             detalj: format!(
                 "{} bilag re-hashet fra lagret innhold; alle lenker og kjedehodet stemmer",
@@ -51,7 +51,7 @@ pub async fn build_audit_report(
             ),
         },
         Err(e) => Check {
-            navn: "Hash-kjede fra genesis".into(),
+            name: "Hash-kjede fra genesis".into(),
             ok: false,
             detalj: e.to_string(),
         },
@@ -60,12 +60,12 @@ pub async fn build_audit_report(
     // 2. Attachment content hashes.
     checks.push(match crate::verify_attachments(pool, company_id).await {
         Ok(count) => Check {
-            navn: "Bilagsvedlegg".into(),
+            name: "Bilagsvedlegg".into(),
             ok: true,
             detalj: format!("{count} vedlegg re-hashet mot lagret SHA-256"),
         },
         Err(e) => Check {
-            navn: "Bilagsvedlegg".into(),
+            name: "Bilagsvedlegg".into(),
             ok: false,
             detalj: e.to_string(),
         },
@@ -74,7 +74,7 @@ pub async fn build_audit_report(
     // 3. External anchors.
     let anchor_check = crate::verify_company_anchors(pool, company_id).await?;
     checks.push(Check {
-        navn: "Ekstern forankring".into(),
+        name: "Ekstern forankring".into(),
         ok: anchor_check.problems.is_empty(),
         detalj: if anchor_check.problems.is_empty() {
             format!(
@@ -153,7 +153,7 @@ pub async fn build_audit_report(
     .fetch_one(pool)
     .await?;
     checks.push(Check {
-        navn: "Balansekontroll".into(),
+        name: "Balansekontroll".into(),
         ok: total == 0,
         detalj: if total == 0 {
             "summen av alle posteringer er nøyaktig null".into()
@@ -173,7 +173,7 @@ pub async fn build_audit_report(
             .fetch_one(pool)
             .await?;
     checks.push(Check {
-        navn: "Periodelåsing".into(),
+        name: "Periodelåsing".into(),
         ok: true,
         detalj: match lock {
             Some(date) => format!(
@@ -189,7 +189,7 @@ pub async fn build_audit_report(
     let rates = crate::load_rates(pool).await?;
     let foreldede = regnmed_core::rates::stale_domains(&rates, chrono::Utc::now().date_naive());
     checks.push(Check {
-        navn: "Regelverkssatser".into(),
+        name: "Regelverkssatser".into(),
         ok: foreldede.is_empty(),
         detalj: if foreldede.is_empty() {
             let domener: std::collections::HashSet<_> =
@@ -267,7 +267,7 @@ pub async fn build_audit_report(
     })
     .collect();
     checks.push(Check {
-        navn: "Dokumentasjon".into(),
+        name: "Dokumentasjon".into(),
         ok: true,
         detalj: if udokumenterte == 0 {
             format!("alle {totalt} bilag utenfor importjournalen har vedlegg")
@@ -301,7 +301,7 @@ pub async fn build_audit_report(
         .await?;
     checks.push(match siste_las {
         None => Check {
-            navn: "Balansedokumentasjon".into(),
+            name: "Balansedokumentasjon".into(),
             ok: true,
             detalj: "ingen periode er låst ennå — balansepostene dokumenteres ved periodeslutt \
                      (bokføringsloven §11)"
@@ -344,7 +344,7 @@ pub async fn build_audit_report(
                 ));
             }
             Check {
-                navn: "Balansedokumentasjon".into(),
+                name: "Balansedokumentasjon".into(),
                 ok: deler.is_empty(),
                 detalj: if deler.is_empty() {
                     format!(
@@ -373,7 +373,7 @@ pub async fn build_audit_report(
     .await?;
     let import_log = crate::saft_import_log(pool, company_id).await?;
     checks.push(Check {
-        navn: "Importert historikk".into(),
+        name: "Importert historikk".into(),
         ok: true,
         detalj: if imp_vouchers == 0 {
             "ingen importert historikk — hovedboken er ført i sin helhet i regnmed".into()

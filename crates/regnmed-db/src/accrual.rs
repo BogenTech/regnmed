@@ -33,7 +33,7 @@ pub struct PeriodiseringDraft {
     pub til: (i32, u32),
     pub department: Option<String>,
     pub project: Option<String>,
-    pub notat: Option<String>,
+    pub note: Option<String>,
 }
 
 #[derive(Debug)]
@@ -47,7 +47,7 @@ pub struct Periodisering {
     pub til_maned: NaiveDate,
     pub department: Option<String>,
     pub project: Option<String>,
-    pub notat: Option<String>,
+    pub note: Option<String>,
     pub stopped_date: Option<NaiveDate>,
     /// How much has actually been posted, and over how many months —
     /// computed from the run log, never stored.
@@ -101,9 +101,9 @@ pub async fn create_periodisering(
         .bind(account)
         .fetch_optional(pool)
         .await?;
-        let (aktiv, reskontro) =
+        let (active, reskontro) =
             funnet.with_context(|| format!("{rolle} {account} finnes ikke i kontoplanen"))?;
-        ensure!(aktiv, "{rolle} {account} er deaktivert");
+        ensure!(active, "{rolle} {account} er deaktivert");
         // Periodisering posts without a party, so a reskontro account
         // could never succeed — refusing now beats refusing monthly.
         ensure!(
@@ -115,23 +115,23 @@ pub async fn create_periodisering(
 
     // Dimensions are resolved here so a typo fails the plan rather than
     // every monthly posting for the next year.
-    let dim = |kode: Option<&str>, kind: &'static str| {
-        let kode = kode.map(str::to_owned);
+    let dim = |code: Option<&str>, kind: &'static str| {
+        let code = code.map(str::to_owned);
         async move {
-            match kode {
+            match code {
                 None => anyhow::Ok(None),
-                Some(kode) => {
+                Some(code) => {
                     let id: Option<Uuid> = sqlx::query_scalar(
                         "select id from dimension
                          where company_id = $1 and kind = $2 and code = $3 and aktiv",
                     )
                     .bind(company_id)
                     .bind(kind)
-                    .bind(&kode)
+                    .bind(&code)
                     .fetch_optional(pool)
                     .await?;
                     Ok(Some(id.with_context(|| {
-                        format!("ukjent eller avsluttet {kind} «{kode}»")
+                        format!("ukjent eller avsluttet {kind} «{code}»")
                     })?))
                 }
             }
@@ -158,7 +158,7 @@ pub async fn create_periodisering(
     .bind(til)
     .bind(avdeling_id)
     .bind(prosjekt_id)
-    .bind(draft.notat.as_deref())
+    .bind(draft.note.as_deref())
     .bind(created_by)
     .execute(pool)
     .await?;
@@ -197,7 +197,7 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
             til_maned: r.get("til_maned"),
             department: r.get("avdeling"),
             project: r.get("prosjekt"),
-            notat: r.get("notat"),
+            note: r.get("notat"),
             stopped_date: r.get("stoppet_dato"),
             fort_ore: r.get("fort_ore"),
             forte_maneder: r.get("forte_maneder"),

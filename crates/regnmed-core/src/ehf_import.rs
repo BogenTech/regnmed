@@ -43,7 +43,7 @@ pub struct MottattFaktura {
     pub invoice_date: Option<NaiveDate>,
     pub due_date: Option<NaiveDate>,
     pub currency: String,
-    pub selger_navn: String,
+    pub seller_name: String,
     /// Norwegian orgnr without prefix when the sender uses ICD 0192.
     pub selger_orgnr: Option<String>,
     pub kjoper_orgnr: Option<String>,
@@ -116,7 +116,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
         invoice_date: None,
         due_date: None,
         currency: "NOK".into(),
-        selger_navn: String::new(),
+        seller_name: String::new(),
         selger_orgnr: None,
         kjoper_orgnr: None,
         kid: None,
@@ -193,11 +193,11 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                     "PaymentID" => faktura.kid = Some(value),
                     "Name" if supplier && ends_with(&path, &["PartyName", "Name"]) => {
                         if !supplier_name_from_legal {
-                            faktura.selger_navn = value;
+                            faktura.seller_name = value;
                         }
                     }
                     "RegistrationName" if supplier => {
-                        faktura.selger_navn = value;
+                        faktura.seller_name = value;
                         supplier_name_from_legal = true;
                     }
                     "EndpointID" | "CompanyID" | "ID"
@@ -263,9 +263,9 @@ mod tests {
     use super::*;
     use crate::ehf::{Dokumenttype, EhfDokument, EhfLinje, EhfPart, render};
 
-    fn part(navn: &str, orgnr: &str) -> EhfPart {
+    fn part(name: &str, orgnr: &str) -> EhfPart {
         EhfPart {
-            navn: navn.into(),
+            name: name.into(),
             orgnr: orgnr.into(),
             adresse: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
@@ -330,7 +330,7 @@ mod tests {
             mottatt.due_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 17).unwrap())
         );
-        assert_eq!(mottatt.selger_navn, "Grossisten AS");
+        assert_eq!(mottatt.seller_name, "Grossisten AS");
         assert_eq!(mottatt.selger_orgnr.as_deref(), Some("915933149"));
         assert_eq!(mottatt.kjoper_orgnr.as_deref(), Some("923609016"));
         assert_eq!(mottatt.kid.as_deref(), Some("1234567897"));
@@ -407,7 +407,7 @@ mod tests {
         let mottatt = parse(xml).unwrap();
         assert_eq!(mottatt.fakturanr, "90210");
         assert_eq!(
-            mottatt.selger_navn, "Handelshuset AS",
+            mottatt.seller_name, "Handelshuset AS",
             "RegistrationName vinner over PartyName"
         );
         assert_eq!(mottatt.selger_orgnr.as_deref(), Some("974760673"));

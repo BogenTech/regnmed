@@ -221,7 +221,7 @@ pub async fn list_events(
             "shareholder_id": e.shareholder_id,
             "aksjonar": e.shareholder,
             "type": e.type_,
-            "type_navn": e.type_navn,
+            "type_navn": e.type_name,
             "dato": e.date,
             "antall": e.quantity,
             "belop_ore": e.amount_ore,

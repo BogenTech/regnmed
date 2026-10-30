@@ -23,7 +23,7 @@ use crate::Ore;
 /// The text rendering indents every line under the check.
 #[derive(Debug, Clone)]
 pub struct Check {
-    pub navn: String,
+    pub name: String,
     pub ok: bool,
     pub detalj: String,
 }
@@ -132,7 +132,7 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
 
         // 2. Parties of the wrong kind.
         if account.wrong_kind_count > 0 {
-            let feil: Vec<&str> = account
+            let error: Vec<&str> = account
                 .part_kinds
                 .iter()
                 .map(String::as_str)
@@ -142,10 +142,10 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
                 "konto {} er merket {flagg}, men {} bærer part av typen {} ({})",
                 account.account,
                 posteringer(account.wrong_kind_count),
-                if feil.is_empty() {
+                if error.is_empty() {
                     "en annen".to_string()
                 } else {
-                    feil.join("/")
+                    error.join("/")
                 },
                 Ore(account.feil_kind_ore),
             ));
@@ -153,7 +153,7 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
     }
 
     Check {
-        navn: "Reskontro mot hovedbok".into(),
+        name: "Reskontro mot hovedbok".into(),
         ok: deviations.is_empty(),
         detalj: if deviations.is_empty() {
             format!(
@@ -237,7 +237,7 @@ pub fn render_text(input: &AuditInput) -> String {
         line(&format!(
             "[{}] {}",
             if check.ok { "OK" } else { "AVVIK" },
-            check.navn
+            check.name
         ));
         // A check may report several findings; each gets its own
         // indented line so the archived text stays readable.
@@ -289,12 +289,12 @@ mod tests {
             chain_head_hex: "ab".repeat(32),
             checks: vec![
                 Check {
-                    navn: "Hash-kjede fra genesis".into(),
+                    name: "Hash-kjede fra genesis".into(),
                     ok: true,
                     detalj: "13 bilag verifisert".into(),
                 },
                 Check {
-                    navn: "Reskontro mot hovedbok".into(),
+                    name: "Reskontro mot hovedbok".into(),
                     ok: true,
                     detalj: "1 reskontrokonto avstemt".into(),
                 },

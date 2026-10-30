@@ -182,13 +182,13 @@ async fn list_members(
         "medlemmer": medlemmer.iter().map(|m| json!({
             "id": m.id,
             "person_id": m.person_id,
-            "navn": m.navn,
+            "navn": m.name,
             "epost": m.epost,
             "rolle": m.rolle,
             "valid_from": m.valid_from.to_string(),
             "valid_to": m.valid_to.to_string(),
-            "notat": m.notat,
-            "aktiv": m.aktiv,
+            "notat": m.note,
+            "aktiv": m.active,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -198,7 +198,8 @@ pub struct GrantRequest {
     epost: String,
     rolle: String,
     valid_to: NaiveDate,
-    notat: String,
+    #[serde(rename = "notat")]
+    note: String,
 }
 
 async fn grant_member(
@@ -220,7 +221,7 @@ async fn grant_member(
         person_id,
         &body.rolle,
         body.valid_to,
-        &body.notat,
+        &body.note,
         Some(ctx.person_id),
     )
     .await
@@ -280,16 +281,16 @@ async fn list_users(
     Ok(Json(json!({
         "brukere": brukere.iter().map(|b| json!({
             "person_id": b.person_id,
-            "navn": b.navn,
+            "navn": b.name,
             "epost": b.epost,
             "kind": b.kind,
             "tilknytninger": b.tilknytninger.iter().map(|t| json!({
                 "slag": t.slag,
                 "id": t.id,
-                "navn": t.navn,
+                "navn": t.name,
                 "orgnr": t.orgnr,
                 "rolle": t.rolle,
-                "aktiv": t.aktiv,
+                "aktiv": t.active,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })))
@@ -309,7 +310,7 @@ async fn list_customers(
         "kunder": kunder.iter().map(|k| json!({
             "party_id": k.party_id,
             "party_no": k.party_no,
-            "navn": k.navn,
+            "navn": k.name,
             "orgnr": k.orgnr,
             "epost": k.epost,
             "selskap": {
@@ -460,10 +461,10 @@ async fn company_detail(
         },
         "medlemmer": medlemmer.iter().map(|m| json!({
             "person_id": m.person_id,
-            "navn": m.navn,
+            "navn": m.name,
             "epost": m.epost,
             "rolle": m.rolle,
-            "aktiv": m.aktiv,
+            "aktiv": m.active,
             "via": m.via,
             "kan_endres": m.kan_endres,
         })).collect::<Vec<_>>(),
@@ -661,7 +662,7 @@ async fn assign_firm(
 fn innsyn_json(rader: &[regnmed_db::PlattformInnsyn]) -> serde_json::Value {
     json!({
         "innsyn": rader.iter().map(|r| json!({
-            "navn": r.navn,
+            "navn": r.name,
             "rolle": r.rolle,
             "method": r.method,
             "path": r.path,

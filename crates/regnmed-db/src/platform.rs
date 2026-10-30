@@ -55,13 +55,13 @@ pub async fn active_platform_role(
 pub struct PlattformMedlem {
     pub id: Uuid,
     pub person_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub epost: Option<String>,
     pub rolle: String,
     pub valid_from: NaiveDate,
     pub valid_to: NaiveDate,
-    pub notat: String,
-    pub aktiv: bool,
+    pub note: String,
+    pub active: bool,
 }
 
 pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>> {
@@ -80,13 +80,13 @@ pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>
         .map(|r| PlattformMedlem {
             id: r.get("id"),
             person_id: r.get("person_id"),
-            navn: r.get("navn"),
+            name: r.get("navn"),
             epost: r.get("email"),
             rolle: r.get("rolle"),
             valid_from: r.get("valid_from"),
             valid_to: r.get("valid_to"),
-            notat: r.get("notat"),
-            aktiv: r.get("aktiv"),
+            note: r.get("notat"),
+            active: r.get("aktiv"),
         })
         .collect())
 }
@@ -99,7 +99,7 @@ pub async fn grant_platform_role(
     person_id: Uuid,
     rolle: &str,
     valid_to: NaiveDate,
-    notat: &str,
+    note: &str,
     granted_by: Option<Uuid>,
 ) -> Result<Uuid> {
     ensure!(
@@ -111,7 +111,7 @@ pub async fn grant_platform_role(
         "valid_to må ligge i framtiden — plattformroller er tidsbegrensede"
     );
     ensure!(
-        !notat.trim().is_empty(),
+        !note.trim().is_empty(),
         "notat er obligatorisk — skriv hvorfor"
     );
     let kind: String = sqlx::query("select kind from person where id = $1")
@@ -135,7 +135,7 @@ pub async fn grant_platform_role(
     .bind(person_id)
     .bind(rolle)
     .bind(valid_to)
-    .bind(notat.trim())
+    .bind(note.trim())
     .bind(granted_by)
     .execute(pool)
     .await?;
@@ -202,7 +202,7 @@ pub async fn log_platform_access(
 
 #[derive(Debug, Clone)]
 pub struct PlattformInnsyn {
-    pub navn: String,
+    pub name: String,
     pub rolle: String,
     pub method: String,
     pub path: String,
@@ -223,7 +223,7 @@ async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlattformIn
     Ok(rows
         .iter()
         .map(|r| PlattformInnsyn {
-            navn: r.get("navn"),
+            name: r.get("navn"),
             rolle: r.get("rolle"),
             method: r.get("method"),
             path: r.get("path"),
@@ -313,16 +313,16 @@ pub struct PlattformTilknytning {
     /// "selskap" or "byra".
     pub slag: String,
     pub id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub orgnr: String,
     pub rolle: String,
-    pub aktiv: bool,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlattformBruker {
     pub person_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub epost: Option<String>,
     pub kind: String,
     pub tilknytninger: Vec<PlattformTilknytning>,
@@ -367,7 +367,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
             let person_id: Uuid = p.get("id");
             PlattformBruker {
                 person_id,
-                navn: p.get("navn"),
+                name: p.get("navn"),
                 epost: p.get("email"),
                 kind: p.get("kind"),
                 tilknytninger: connections
@@ -376,10 +376,10 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
                     .map(|c| PlattformTilknytning {
                         slag: c.get("slag"),
                         id: c.get("id"),
-                        navn: c.get("navn"),
+                        name: c.get("navn"),
                         orgnr: c.get("orgnr"),
                         rolle: c.get("rolle"),
-                        aktiv: c.get("aktiv"),
+                        active: c.get("aktiv"),
                     })
                     .collect(),
             }
@@ -391,7 +391,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
 pub struct PlattformKunde {
     pub party_id: Uuid,
     pub party_no: String,
-    pub navn: String,
+    pub name: String,
     pub orgnr: Option<String>,
     pub epost: Option<String>,
     pub company_id: Uuid,
@@ -429,7 +429,7 @@ pub async fn platform_list_customers(
         .map(|r| PlattformKunde {
             party_id: r.get("id"),
             party_no: r.get("party_no"),
-            navn: r.get("navn"),
+            name: r.get("navn"),
             orgnr: r.get("orgnr"),
             epost: r.get("email"),
             company_id: r.get("company_id"),
@@ -497,7 +497,7 @@ pub async fn platform_assign_company(
         }
         Some(row) => {
             let fra: String = row.get("role");
-            let aktiv: bool = row.get("active");
+            let active: bool = row.get("active");
             ensure!(
                 systemadmin,
                 "medlemskapet finnes fra før — endringer krever systemadmin"
@@ -511,7 +511,10 @@ pub async fn platform_assign_company(
             .bind(rolle)
             .execute(&mut *tx)
             .await?;
-            (if aktiv { "rolle_endret" } else { "reaktivert" }, Some(fra))
+            (
+                if active { "rolle_endret" } else { "reaktivert" },
+                Some(fra),
+            )
         }
     };
     sqlx::query(
@@ -572,7 +575,7 @@ pub async fn platform_assign_firm(
         }
         Some(row) => {
             let fra: String = row.get("role");
-            let aktiv: bool = row.get("active");
+            let active: bool = row.get("active");
             ensure!(
                 systemadmin,
                 "medlemskapet finnes fra før — endringer krever systemadmin"
@@ -586,7 +589,10 @@ pub async fn platform_assign_firm(
             .bind(rolle)
             .execute(&mut *tx)
             .await?;
-            (if aktiv { "rolle_endret" } else { "reaktivert" }, Some(fra))
+            (
+                if active { "rolle_endret" } else { "reaktivert" },
+                Some(fra),
+            )
         }
     };
     sqlx::query(

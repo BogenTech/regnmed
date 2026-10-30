@@ -88,7 +88,7 @@ pub struct PaymentItemDraft {
     /// None = the whole open remainder.
     pub amount_ore: Option<i64>,
     pub kid: Option<String>,
-    pub melding: Option<String>,
+    pub message: Option<String>,
 }
 
 /// Creates a betalingsliste (status utkast): every item validated
@@ -182,7 +182,7 @@ pub async fn create_run(
         .bind(&account)
         .bind(&item.kid)
         .bind(
-            item.melding
+            item.message
                 .clone()
                 .or_else(|| open.description.clone())
                 .filter(|_| item.kid.is_none()),
@@ -223,7 +223,7 @@ pub async fn approve_run(
     ensure!(status == "utkast", "kjøringen er {status}");
 
     if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
-        && policy.aktiv
+        && policy.active
     {
         let creator: Option<Uuid> = run.get("created_by_person");
         match creator {

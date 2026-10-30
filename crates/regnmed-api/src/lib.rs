@@ -613,7 +613,7 @@ pub fn router(state: AppState) -> Router {
             get(product::list).post(product::create),
         )
         .route(
-            "/companies/{company_id}/products/{nummer}",
+            "/companies/{company_id}/products/{number}",
             axum::routing::put(product::update),
         )
         .route("/companies/{company_id}/inventory", get(product::inventory))

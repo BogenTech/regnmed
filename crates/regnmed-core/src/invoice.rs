@@ -74,7 +74,7 @@ pub fn compute(lines: &[InvoiceLineInput]) -> ComputedInvoice {
 /// Norwegian month name (lowercase, as it appears in running text).
 /// Public because abonnementsfakturaen (#65) names its period the same
 /// way as repeterende faktura.
-pub fn maanedsnavn(month: u32) -> &'static str {
+pub fn month_name(month: u32) -> &'static str {
     [
         "januar",
         "februar",
@@ -98,7 +98,7 @@ pub fn maanedsnavn(month: u32) -> &'static str {
 pub fn interpoler_periodetekst(tekst: &str, date: NaiveDate) -> String {
     use chrono::Datelike;
     tekst
-        .replace("{måned}", maanedsnavn(date.month()))
+        .replace("{måned}", month_name(date.month()))
         .replace("{år}", &date.year().to_string())
 }
 

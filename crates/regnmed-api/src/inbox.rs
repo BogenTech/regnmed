@@ -222,7 +222,7 @@ pub async fn ehf_forslag(
         "fakturadato": m.invoice_date.map(|d| d.to_string()),
         "forfallsdato": m.due_date.map(|d| d.to_string()),
         "valuta": m.currency,
-        "selger_navn": m.selger_navn,
+        "selger_navn": m.seller_name,
         "selger_orgnr": m.selger_orgnr,
         "kid": m.kid,
         "kontonummer": m.account_number,
@@ -235,7 +235,7 @@ pub async fn ehf_forslag(
             "mva_sats_bp": l.vat_rate_bp,
         })).collect::<Vec<_>>(),
         "leverandor_no": forslag.leverandor_no,
-        "leverandor_navn": forslag.leverandor_navn,
+        "leverandor_navn": forslag.supplier_name,
         "warnings": forslag.advarsler,
     })))
 }
@@ -255,8 +255,8 @@ pub async fn forslag(
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({
-        "kilde": f.kilde,
-        "selger_navn": f.selger_navn,
+        "kilde": f.source,
+        "selger_navn": f.seller_name,
         "orgnr": f.orgnr,
         "fakturanr": f.fakturanr,
         "dato": f.date.map(|d| d.to_string()),
@@ -267,7 +267,7 @@ pub async fn forslag(
         "mva_ore": f.vat_ore,
         "brutto_ore": f.gross_ore,
         "leverandor_no": f.leverandor_no,
-        "leverandor_navn": f.leverandor_navn,
+        "leverandor_navn": f.supplier_name,
         "konto": f.account,
         "konto_begrunnelse": f.account_reason,
         "begrunnelser": f.begrunnelser.iter().map(|(felt, hvorfor)| json!({

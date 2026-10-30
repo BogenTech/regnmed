@@ -42,10 +42,10 @@ pub fn normaliser_epost(raw: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct Medlem {
     pub person_id: Uuid,
-    pub navn: String,
+    pub name: String,
     pub epost: Option<String>,
     pub rolle: String,
-    pub aktiv: bool,
+    pub active: bool,
     /// "direkte", or the name of the byrå the oppdrag runs through.
     pub via: String,
     /// Access through an oppdrag cannot be changed here.
@@ -96,10 +96,10 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
         .iter()
         .map(|r| Medlem {
             person_id: r.get("person_id"),
-            navn: r.get("navn"),
+            name: r.get("navn"),
             epost: r.get("epost"),
             rolle: r.get("rolle"),
-            aktiv: r.get("aktiv"),
+            active: r.get("aktiv"),
             via: r.get("via"),
             kan_endres: r.get("kan_endres"),
         })
@@ -114,7 +114,7 @@ async fn logg(
     fra: Option<&str>,
     til: Option<&str>,
     utfort_av: Option<Uuid>,
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
     sqlx::query(
         "insert into company_member_change
@@ -128,7 +128,7 @@ async fn logg(
     .bind(fra)
     .bind(til)
     .bind(utfort_av)
-    .bind(kilde)
+    .bind(source)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -223,12 +223,12 @@ pub async fn sett_aktiv(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
-    aktiv: bool,
+    active: bool,
     utfort_av: Uuid,
     // 'admin' for the company's own administration, 'plattform' when a
     // platform role does it (docs/auth.md §8) — the company's change log
     // must name the source truthfully.
-    kilde: &str,
+    source: &str,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, company_id).await?;
@@ -245,7 +245,7 @@ pub async fn sett_aktiv(
          fjernes ved å avslutte oppdraget",
     )?;
     let rolle: String = rad.get("role");
-    if rad.get::<bool, _>("active") == aktiv {
+    if rad.get::<bool, _>("active") == active {
         tx.commit().await?;
         return Ok(());
     }
@@ -253,7 +253,7 @@ pub async fn sett_aktiv(
     sqlx::query("update company_member set active = $3 where company_id = $1 and person_id = $2")
         .bind(company_id)
         .bind(person_id)
-        .bind(aktiv)
+        .bind(active)
         .execute(&mut *tx)
         .await?;
     krev_gjenvaerende_admin(&mut tx, company_id).await?;
@@ -261,11 +261,11 @@ pub async fn sett_aktiv(
         &mut tx,
         company_id,
         person_id,
-        if aktiv { "reaktivert" } else { "deaktivert" },
+        if active { "reaktivert" } else { "deaktivert" },
         Some(&rolle),
         Some(&rolle),
         Some(utfort_av),
-        kilde,
+        source,
     )
     .await?;
     tx.commit().await?;
@@ -534,15 +534,15 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 
 #[derive(Debug, Clone)]
 pub struct Tilgangsendring {
-    pub navn: String,
+    pub name: String,
     pub endring: String,
     pub fra_rolle: Option<String>,
     pub til_rolle: Option<String>,
     pub utfort_av: Option<String>,
-    pub kilde: String,
+    pub source: String,
     /// Reference to the consent when `kilde = 'nodprosedyre'` (#57);
     /// otherwise normally empty.
-    pub notat: Option<String>,
+    pub note: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -565,13 +565,13 @@ pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ti
     Ok(rows
         .iter()
         .map(|r| Tilgangsendring {
-            navn: r.get("navn"),
+            name: r.get("navn"),
             endring: r.get("endring"),
             fra_rolle: r.get("fra_rolle"),
             til_rolle: r.get("til_rolle"),
             utfort_av: r.get("utfort_av"),
-            kilde: r.get("kilde"),
-            notat: r.get("notat"),
+            source: r.get("kilde"),
+            note: r.get("notat"),
             created_at: r.get("created_at"),
         })
         .collect())

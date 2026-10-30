@@ -213,7 +213,7 @@ pub struct AuthPerson {
 #[derive(Debug, Clone)]
 pub struct IntegrationCaller {
     pub id: Uuid,
-    pub navn: String,
+    pub name: String,
 }
 
 impl AuthPerson {
@@ -221,7 +221,7 @@ impl AuthPerson {
     /// the robot — that is the whole point of giving it an identity.
     pub fn display(&self) -> &str {
         match &self.integration {
-            Some(i) => &i.navn,
+            Some(i) => &i.name,
             None => self.name.as_deref().unwrap_or(&self.sub),
         }
     }
@@ -293,11 +293,11 @@ impl FromRequestParts<AppState> for AuthPerson {
         Ok(AuthPerson {
             person_id,
             sub: claims.sub,
-            name: integration.as_ref().map(|i| i.navn.clone()).or(claims.name),
+            name: integration.as_ref().map(|i| i.name.clone()).or(claims.name),
             email: claims.email,
             integration: integration.map(|i| IntegrationCaller {
                 id: i.id,
-                navn: i.navn,
+                name: i.name,
             }),
         })
     }

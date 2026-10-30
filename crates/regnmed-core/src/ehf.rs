@@ -58,7 +58,7 @@ impl Dokumenttype {
 
 #[derive(Debug, Clone)]
 pub struct EhfPart {
-    pub navn: String,
+    pub name: String,
     pub orgnr: String,
     /// Street address; EHF requires an address with a country code.
     pub adresse: Option<String>,
@@ -241,7 +241,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     );
     w.close("cac:PartyIdentification");
     w.open("cac:PartyName");
-    w.leaf("cbc:Name", &part.navn);
+    w.leaf("cbc:Name", &part.name);
     w.close("cac:PartyName");
     w.open("cac:PostalAddress");
     if let Some(adresse) = &part.adresse {
@@ -267,7 +267,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
         w.close("cac:PartyTaxScheme");
     }
     w.open("cac:PartyLegalEntity");
-    w.leaf("cbc:RegistrationName", &part.navn);
+    w.leaf("cbc:RegistrationName", &part.name);
     w.leaf_attr(
         "cbc:CompanyID",
         &format!("schemeID=\"{SCHEME_ORGNR}\""),
@@ -452,9 +452,9 @@ pub fn render(doc: &EhfDokument) -> String {
 mod tests {
     use super::*;
 
-    fn part(navn: &str, orgnr: &str, vat: bool) -> EhfPart {
+    fn part(name: &str, orgnr: &str, vat: bool) -> EhfPart {
         EhfPart {
-            navn: navn.into(),
+            name: name.into(),
             orgnr: orgnr.into(),
             adresse: Some("Storgata 1".into()),
             postnr: Some("0155".into()),

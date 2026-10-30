@@ -48,12 +48,12 @@ async fn oppsett(pool: &PgPool) -> (Uuid, Uuid) {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, navn) in [
+    for (nr, name) in [
         ("1920", "Bank"),
         ("2400", "Leverandørgjeld"),
         ("3000", "Salg"),
     ] {
-        regnmed_db::ensure_account(pool, company, nr, navn)
+        regnmed_db::ensure_account(pool, company, nr, name)
             .await
             .unwrap();
     }
@@ -93,12 +93,12 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     assert!(linjer[0].avstemt.is_none());
 
     // A resultatkonto cannot be reconciled here at all.
-    let feil = avstem(
+    let error = avstem(
         &pool, company, "3000", periode, "forsøk", None, person, periode,
     )
     .await
     .expect_err("§11 gjelder balansepostene");
-    assert!(feil.to_string().contains("balansekonto"), "{feil}");
+    assert!(error.to_string().contains("balansekonto"), "{error}");
 
     avstem(
         &pool,
@@ -233,8 +233,8 @@ async fn the_vedlegg_round_trips_and_its_hash_is_verified() {
     .await
     .unwrap();
 
-    let (navn, ct, bytes) = hent_vedlegg(&pool, company, id).await.unwrap();
-    assert_eq!(navn, "kontoutskrift.pdf");
+    let (name, ct, bytes) = hent_vedlegg(&pool, company, id).await.unwrap();
+    assert_eq!(name, "kontoutskrift.pdf");
     assert_eq!(ct, "application/pdf");
     assert_eq!(bytes, b"%PDF-1.4 saldo");
 

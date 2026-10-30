@@ -74,7 +74,7 @@ pub async fn rotate_mail_address(
     company_id: Uuid,
     created_by: &str,
 ) -> Result<String> {
-    let navn: String = sqlx::query_scalar("select name from company where id = $1")
+    let name: String = sqlx::query_scalar("select name from company where id = $1")
         .bind(company_id)
         .fetch_optional(pool)
         .await?
@@ -89,7 +89,7 @@ pub async fn rotate_mail_address(
     .await?;
     // The unguessable tail comes from a v4 UUID's randomness.
     let tail = Uuid::new_v4().simple().to_string();
-    let local = local_part(&navn, &tail);
+    let local = local_part(&name, &tail);
     sqlx::query(
         "insert into company_mail_inbox (id, company_id, local_part, created_by)
          values ($1, $2, $3, $4)",

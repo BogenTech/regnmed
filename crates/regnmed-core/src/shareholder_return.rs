@@ -65,7 +65,7 @@ pub struct Company {
     pub adresse: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
-    pub kontakt_navn: Option<String>,
+    pub contact_name: Option<String>,
     pub kontakt_epost: Option<String>,
 }
 
@@ -285,12 +285,12 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &h.inntektsar.to_string());
     w.close("Selskap-grp-2588");
-    if h.company.kontakt_navn.is_some() || h.company.kontakt_epost.is_some() {
+    if h.company.contact_name.is_some() || h.company.kontakt_epost.is_some() {
         w.gruppe("Kontaktperson-grp-3442", 3442);
         w.felt_opt(
             "KontaktpersonSkjemaNavn-datadef-33918",
             33918,
-            h.company.kontakt_navn.as_ref(),
+            h.company.contact_name.as_ref(),
         );
         w.felt_opt(
             "KontaktpersonSkjemaEPost-datadef-30533",
@@ -616,7 +616,7 @@ mod tests {
             adresse: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
-            kontakt_navn: Some("Kari Styreleder".into()),
+            contact_name: Some("Kari Styreleder".into()),
             kontakt_epost: Some("kari@example.no".into()),
         }
     }
@@ -687,9 +687,9 @@ mod tests {
     }
 
     /// Runs xmllint against a vendored XSD, skipping when it is absent.
-    fn valider(xml: &str, xsd_navn: &str, tag: &str) {
+    fn valider(xml: &str, xsd_name: &str, tag: &str) {
         let xsd = format!(
-            "{}/../../docs/aksjonaer/{xsd_navn}",
+            "{}/../../docs/aksjonaer/{xsd_name}",
             env!("CARGO_MANIFEST_DIR")
         );
         let dir = std::env::temp_dir().join("regnmed-aksjonaer-test");
@@ -797,10 +797,10 @@ mod tests {
             quantity: 10,
             amount_ore: Some(1_000_000),
         }];
-        let feil = render_sub_form(&u).unwrap_err();
-        assert_eq!(feil, ReturnError::UverifisertKode(TransactionType::Salg));
-        assert!(feil.to_string().contains("salg"), "{feil}");
-        assert!(feil.to_string().contains("gjetter"), "{feil}");
+        let error = render_sub_form(&u).unwrap_err();
+        assert_eq!(error, ReturnError::UverifisertKode(TransactionType::Salg));
+        assert!(error.to_string().contains("salg"), "{error}");
+        assert!(error.to_string().contains("gjetter"), "{error}");
     }
 
     #[test]

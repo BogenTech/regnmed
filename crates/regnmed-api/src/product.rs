@@ -71,8 +71,10 @@ pub async fn resolve_lines(
 
 #[derive(Deserialize)]
 pub struct CreateProductRequest {
-    nummer: String,
-    navn: String,
+    #[serde(rename = "nummer")]
+    number: String,
+    #[serde(rename = "navn")]
+    name: String,
     salgspris_ore: i64,
     vat_code: Option<String>,
     /// Defaults to 3000.
@@ -93,8 +95,8 @@ pub async fn create(
         &state.pool,
         company_id,
         &regnmed_db::ProductDraft {
-            nummer: request.nummer,
-            navn: request.navn,
+            number: request.number,
+            name: request.name,
             salgspris_ore: request.salgspris_ore,
             vat_code: request.vat_code,
             account: request.account.unwrap_or_else(|| "3000".into()),
@@ -115,12 +117,12 @@ pub async fn list(
     let products = regnmed_db::list_products(&state.pool, company_id).await?;
     Ok(Json(json!({
         "products": products.iter().map(|p| json!({
-            "nummer": p.nummer,
-            "navn": p.navn,
+            "nummer": p.number,
+            "navn": p.name,
             "salgspris_ore": p.salgspris_ore,
             "vat_code": p.vat_code,
             "konto": p.account,
-            "aktiv": p.aktiv,
+            "aktiv": p.active,
             "lagerfort": p.lagerfort,
         })).collect::<Vec<_>>(),
     })))
@@ -137,32 +139,34 @@ where
 
 #[derive(Deserialize)]
 pub struct UpdateProductRequest {
-    navn: Option<String>,
+    #[serde(rename = "navn")]
+    name: Option<String>,
     salgspris_ore: Option<i64>,
     #[serde(default, deserialize_with = "double_option")]
     vat_code: Option<Option<String>>,
     #[serde(rename = "konto")]
     account: Option<String>,
-    aktiv: Option<bool>,
+    #[serde(rename = "aktiv")]
+    active: Option<bool>,
     lagerfort: Option<bool>,
 }
 
 pub async fn update(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, nummer)): Path<(Uuid, String)>,
+    Path((company_id, number)): Path<(Uuid, String)>,
     Json(request): Json<UpdateProductRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ProductWrite).await?;
     regnmed_db::update_product(
         &state.pool,
         company_id,
-        &nummer,
-        request.navn.as_deref(),
+        &number,
+        request.name.as_deref(),
         request.salgspris_ore,
         request.vat_code.as_ref().map(|v| v.as_deref()),
         request.account.as_deref(),
-        request.aktiv,
+        request.active,
         request.lagerfort,
     )
     .await
@@ -179,8 +183,8 @@ pub async fn inventory(
     let rows = regnmed_db::inventory_status(&state.pool, company_id).await?;
     Ok(Json(json!({
         "inventory": rows.iter().map(|r| json!({
-            "nummer": r.nummer,
-            "navn": r.navn,
+            "nummer": r.number,
+            "navn": r.name,
             "antall_milli": r.antall_milli,
             "verdi_ore": r.verdi_ore,
             "gjennomsnitt_ore": r.gjennomsnitt_ore,
@@ -291,7 +295,7 @@ pub async fn count(
         .linjer
         .iter()
         .map(|l| regnmed_db::TellingLinje {
-            nummer: l.produkt.clone(),
+            number: l.produkt.clone(),
             talt_milli: l.talt_milli,
         })
         .collect();
@@ -307,7 +311,7 @@ pub async fn count(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "justeringer": result.justeringer.iter().map(|j| json!({
-            "produkt": j.nummer,
+            "produkt": j.number,
             "bokfort_milli": j.bokfort_milli,
             "talt_milli": j.talt_milli,
         })).collect::<Vec<_>>(),

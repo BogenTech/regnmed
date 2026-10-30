@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
         if linje.is_empty() {
             continue;
         }
-        let melding = match serde_json::from_str(linje) {
+        let message = match serde_json::from_str(linje) {
             Ok(v) => v,
             Err(e) => {
                 // A malformed line has no id, so there is nobody to
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        if let Some(svar) = server.handle(melding).await {
+        if let Some(svar) = server.handle(message).await {
             ut.write_all(serde_json::to_string(&svar)?.as_bytes())
                 .await?;
             ut.write_all(b"\n").await?;

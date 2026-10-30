@@ -135,7 +135,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         delivery_date: head.get("delivery_date"),
         leveringssted: head.get("delivery_place"),
         selger: EhfPart {
-            navn: head.get("selger_navn"),
+            name: head.get("selger_navn"),
             orgnr: head.get("selger_orgnr"),
             adresse: selger_gate,
             postnr: selger_postnr,
@@ -148,7 +148,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             epost: head.get("selger_epost"),
         },
         kjoper: EhfPart {
-            navn: head.get("kjoper_navn"),
+            name: head.get("kjoper_navn"),
             // Without an orgnr we cannot address the receiver in Peppol;
             // the endpoint says so rather than shipping a blank id.
             orgnr: head
@@ -179,7 +179,7 @@ pub struct EhfForslag {
     /// The supplier in our register, matched on orgnr — None means the
     /// import would have to create one.
     pub leverandor_no: Option<String>,
-    pub leverandor_navn: Option<String>,
+    pub supplier_name: Option<String>,
     pub advarsler: Vec<String>,
 }
 
@@ -196,7 +196,7 @@ pub async fn inbox_ehf_forslag(
     let mottatt = parse(&xml).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let mut advarsler = Vec::new();
-    let (leverandor_no, leverandor_navn) = match &mottatt.selger_orgnr {
+    let (leverandor_no, supplier_name) = match &mottatt.selger_orgnr {
         Some(orgnr) => {
             let row = sqlx::query(
                 "select party_no, name from party
@@ -214,7 +214,7 @@ pub async fn inbox_ehf_forslag(
                 None => {
                     advarsler.push(format!(
                         "leverandøren {} (orgnr {orgnr}) finnes ikke i reskontroen ennå",
-                        mottatt.selger_navn
+                        mottatt.seller_name
                     ));
                     (None, None)
                 }
@@ -241,7 +241,7 @@ pub async fn inbox_ehf_forslag(
     Ok(EhfForslag {
         mottatt,
         leverandor_no,
-        leverandor_navn,
+        supplier_name,
         advarsler,
     })
 }
@@ -253,8 +253,8 @@ pub async fn inbox_ehf_forslag(
 #[derive(Debug)]
 pub struct Bokforingsforslag {
     /// "ehf" | "pdf-tekst" | "tekst" | "ingen"
-    pub kilde: &'static str,
-    pub selger_navn: Option<String>,
+    pub source: &'static str,
+    pub seller_name: Option<String>,
     pub orgnr: Option<String>,
     pub fakturanr: Option<String>,
     pub date: Option<chrono::NaiveDate>,
@@ -265,7 +265,7 @@ pub struct Bokforingsforslag {
     pub vat_ore: Option<i64>,
     pub gross_ore: Option<i64>,
     pub leverandor_no: Option<String>,
-    pub leverandor_navn: Option<String>,
+    pub supplier_name: Option<String>,
     /// The account this supplier was posted to last time — the single
     /// most useful suggestion we can make, and it comes from the
     /// company's own history, not from a model.
@@ -285,8 +285,8 @@ pub async fn inbox_forslag(
         crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
 
     let mut forslag = Bokforingsforslag {
-        kilde: "ingen",
-        selger_navn: None,
+        source: "ingen",
+        seller_name: None,
         orgnr: None,
         fakturanr: None,
         date: None,
@@ -297,7 +297,7 @@ pub async fn inbox_forslag(
         vat_ore: None,
         gross_ore: None,
         leverandor_no: None,
-        leverandor_navn: None,
+        supplier_name: None,
         account: None,
         account_reason: None,
         begrunnelser: Vec::new(),
@@ -311,8 +311,8 @@ pub async fn inbox_forslag(
         .filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
         && let Ok(m) = regnmed_core::ehf_import::parse(xml)
     {
-        forslag.kilde = "ehf";
-        forslag.selger_navn = Some(m.selger_navn.clone());
+        forslag.source = "ehf";
+        forslag.seller_name = Some(m.seller_name.clone());
         forslag.orgnr = m.selger_orgnr.clone();
         forslag.fakturanr = Some(m.fakturanr.clone());
         forslag.date = m.invoice_date;
@@ -333,10 +333,10 @@ pub async fn inbox_forslag(
     } else {
         // 2. A PDF text layer, or a plain-text document.
         let tekst = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
-            regnmed_core::pdftext::extract(&content).inspect(|_| forslag.kilde = "pdf-tekst")
+            regnmed_core::pdftext::extract(&content).inspect(|_| forslag.source = "pdf-tekst")
         } else {
             text.filter(|t| t.len() > 20)
-                .inspect(|_| forslag.kilde = "tekst")
+                .inspect(|_| forslag.source = "tekst")
         };
         match tekst {
             None => {
@@ -406,7 +406,7 @@ pub async fn inbox_forslag(
         match row {
             Some(r) => {
                 let party_no: String = r.get("party_no");
-                forslag.leverandor_navn = Some(r.get("name"));
+                forslag.supplier_name = Some(r.get("name"));
                 if let Some((account, date)) =
                     last_expense_account(pool, company_id, &party_no).await?
                 {
