@@ -84,7 +84,7 @@ ikke går opp.
 
 ## 6. Hvor det er testet
 
-- `regnmed-core::kassa`: at bilaget går i null og splitter mva per sats,
+- `regnmed-core::cash_register`: at bilaget går i null og splitter mva per sats,
   at en ubalansert Z-rapport avvises med hjemmelen i meldingen, og at
   differansebilaget bare finnes når det ER en differanse (begge veier).
 - `crates/regnmed-db/tests/kontantsalg.rs`: kontantfakturaen som gjør

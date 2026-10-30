@@ -18,64 +18,64 @@ use crate::voucher::{EntryDraft, VoucherDraft};
 /// One line of the day's sales, as the register reports it: gross, on an
 /// income account, at one VAT rate.
 #[derive(Debug, Clone)]
-pub struct Salgslinje {
-    pub konto: String,
+pub struct SalesLine {
+    pub account: String,
     pub vat_code: Option<String>,
     /// The rate that applied on the settlement date, basis points.
     pub rate_bp: i64,
-    pub brutto_ore: i64,
+    pub gross_ore: i64,
 }
 
 /// What the day was paid with, as the register reports it: cash, bank,
 /// or a clearing account for cards and Vipps awaiting settlement.
 #[derive(Debug, Clone)]
-pub struct Betalingslinje {
-    pub konto: String,
-    pub belop_ore: i64,
+pub struct PaymentLine {
+    pub account: String,
+    pub amount_ore: i64,
 }
 
 #[derive(Debug, Clone)]
-pub struct Dagsoppgjor {
-    pub dato: chrono::NaiveDate,
+pub struct DailySettlement {
+    pub date: chrono::NaiveDate,
     /// The Z-report number. Goes in the voucher text so the bilag can be
     /// tied back to the register's own numbered report — that link is
     /// the point of §5-4, and a settlement without it documents nothing.
-    pub z_nummer: String,
-    pub salg: Vec<Salgslinje>,
-    pub betaling: Vec<Betalingslinje>,
-    pub mva_konto: String,
+    pub z_number: String,
+    pub sales: Vec<SalesLine>,
+    pub payments: Vec<PaymentLine>,
+    pub vat_account: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum KassaFeil {
-    IngenSalg,
-    TomtZNummer,
+pub enum CashRegisterError {
+    NoSales,
+    EmptyZNumber,
     /// The register says it sold one amount and took another. This is
     /// refused rather than balanced against a difference account: a
     /// mismatch INSIDE the Z-report is a broken report, not a till
     /// discrepancy, and papering over it would hide the one number the
     /// settlement exists to reconcile.
-    Ubalanse {
-        salg_ore: i64,
-        betaling_ore: i64,
+    Unbalanced {
+        sales_ore: i64,
+        payments_ore: i64,
     },
 }
 
-impl std::fmt::Display for KassaFeil {
+impl std::fmt::Display for CashRegisterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KassaFeil::IngenSalg => write!(f, "dagsoppgjøret har ingen salgslinjer"),
-            KassaFeil::TomtZNummer => write!(
+            CashRegisterError::NoSales => write!(f, "dagsoppgjøret har ingen salgslinjer"),
+            CashRegisterError::EmptyZNumber => write!(
                 f,
                 "dagsoppgjøret må ha Z-nummer fra kassasystemet (bokføringsforskriften §5-4)"
             ),
-            KassaFeil::Ubalanse {
-                salg_ore,
-                betaling_ore,
+            CashRegisterError::Unbalanced {
+                sales_ore,
+                payments_ore,
             } => write!(
                 f,
-                "kassaoppgjøret går ikke opp: salg {salg_ore} øre mot betalingsmidler \
-                 {betaling_ore} øre. Differansen mellom TALT kasse og registrert salg \
+                "kassaoppgjøret går ikke opp: salg {sales_ore} øre mot betalingsmidler \
+                 {payments_ore} øre. Differansen mellom TALT kasse og registrert salg \
                  føres som eget kassadifferansebilag — den skjules aldri her"
             ),
         }
@@ -89,27 +89,27 @@ impl std::fmt::Display for KassaFeil {
 /// the day's sales the same way it sees an invoice's. The mva line
 /// itself is uncoded, exactly as the invoice engine posts it — a code
 /// there would count the same grunnlag twice.
-pub fn bygg_oppgjor(oppgjor: &Dagsoppgjor) -> Result<VoucherDraft, KassaFeil> {
-    if oppgjor.salg.is_empty() {
-        return Err(KassaFeil::IngenSalg);
+pub fn build_settlement(settlement: &DailySettlement) -> Result<VoucherDraft, CashRegisterError> {
+    if settlement.sales.is_empty() {
+        return Err(CashRegisterError::NoSales);
     }
-    if oppgjor.z_nummer.trim().is_empty() {
-        return Err(KassaFeil::TomtZNummer);
+    if settlement.z_number.trim().is_empty() {
+        return Err(CashRegisterError::EmptyZNumber);
     }
-    let salg_ore: i64 = oppgjor.salg.iter().map(|l| l.brutto_ore).sum();
-    let betaling_ore: i64 = oppgjor.betaling.iter().map(|b| b.belop_ore).sum();
-    if salg_ore != betaling_ore {
-        return Err(KassaFeil::Ubalanse {
-            salg_ore,
-            betaling_ore,
+    let sales_ore: i64 = settlement.sales.iter().map(|l| l.gross_ore).sum();
+    let payments_ore: i64 = settlement.payments.iter().map(|b| b.amount_ore).sum();
+    if sales_ore != payments_ore {
+        return Err(CashRegisterError::Unbalanced {
+            sales_ore,
+            payments_ore,
         });
     }
 
-    let mut entries = Vec::with_capacity(oppgjor.salg.len() + oppgjor.betaling.len() + 1);
-    for b in &oppgjor.betaling {
+    let mut entries = Vec::with_capacity(settlement.sales.len() + settlement.payments.len() + 1);
+    for b in &settlement.payments {
         entries.push(EntryDraft {
-            account_number: b.konto.clone(),
-            amount: Ore(b.belop_ore),
+            account_number: b.account.clone(),
+            amount: Ore(b.amount_ore),
             vat_code: None,
             description: None,
             party_no: None,
@@ -118,13 +118,13 @@ pub fn bygg_oppgjor(oppgjor: &Dagsoppgjor) -> Result<VoucherDraft, KassaFeil> {
             valuta: None,
         });
     }
-    let mut mva_sum = 0;
-    for l in &oppgjor.salg {
-        let (netto, mva) = split_gross(l.brutto_ore, l.rate_bp);
-        mva_sum += mva;
+    let mut vat_sum = 0;
+    for l in &settlement.sales {
+        let (net, vat) = split_gross(l.gross_ore, l.rate_bp);
+        vat_sum += vat;
         entries.push(EntryDraft {
-            account_number: l.konto.clone(),
-            amount: Ore(-netto),
+            account_number: l.account.clone(),
+            amount: Ore(-net),
             vat_code: l.vat_code.clone(),
             description: None,
             party_no: None,
@@ -133,10 +133,10 @@ pub fn bygg_oppgjor(oppgjor: &Dagsoppgjor) -> Result<VoucherDraft, KassaFeil> {
             valuta: None,
         });
     }
-    if mva_sum != 0 {
+    if vat_sum != 0 {
         entries.push(EntryDraft {
-            account_number: oppgjor.mva_konto.clone(),
-            amount: Ore(-mva_sum),
+            account_number: settlement.vat_account.clone(),
+            amount: Ore(-vat_sum),
             vat_code: None,
             description: None,
             party_no: None,
@@ -147,8 +147,8 @@ pub fn bygg_oppgjor(oppgjor: &Dagsoppgjor) -> Result<VoucherDraft, KassaFeil> {
     }
     Ok(VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: oppgjor.dato,
-        description: format!("Kassaoppgjør Z-{}", oppgjor.z_nummer.trim()),
+        voucher_date: settlement.date,
+        description: format!("Kassaoppgjør Z-{}", settlement.z_number.trim()),
         reverses: None,
         entries,
     })
@@ -162,21 +162,21 @@ pub fn bygg_oppgjor(oppgjor: &Dagsoppgjor) -> Result<VoucherDraft, KassaFeil> {
 /// shortfall credits the cash account and charges the difference
 /// account; a surplus does the reverse. `None` when they agree — we do
 /// not post a zero voucher to prove nothing happened.
-pub fn bygg_differanse(
-    dato: chrono::NaiveDate,
-    z_nummer: &str,
-    kontantkonto: &str,
-    differansekonto: &str,
-    registrert_kontant_ore: i64,
-    opptalt_kontant_ore: i64,
+pub fn build_discrepancy(
+    date: chrono::NaiveDate,
+    z_number: &str,
+    cash_account: &str,
+    discrepancy_account: &str,
+    registered_cash_ore: i64,
+    counted_cash_ore: i64,
 ) -> Option<VoucherDraft> {
-    let differanse = opptalt_kontant_ore - registrert_kontant_ore;
-    if differanse == 0 {
+    let discrepancy = counted_cash_ore - registered_cash_ore;
+    if discrepancy == 0 {
         return None;
     }
-    let linje = |konto: &str, belop: i64| EntryDraft {
-        account_number: konto.to_string(),
-        amount: Ore(belop),
+    let line = |account: &str, amount: i64| EntryDraft {
+        account_number: account.to_string(),
+        amount: Ore(amount),
         vat_code: None,
         description: None,
         party_no: None,
@@ -186,12 +186,16 @@ pub fn bygg_differanse(
     };
     Some(VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
-        description: format!("Kassadifferanse Z-{} ({} øre)", z_nummer.trim(), differanse),
+        voucher_date: date,
+        description: format!(
+            "Kassadifferanse Z-{} ({} øre)",
+            z_number.trim(),
+            discrepancy
+        ),
         reverses: None,
         entries: vec![
-            linje(kontantkonto, differanse),
-            linje(differansekonto, -differanse),
+            line(cash_account, discrepancy),
+            line(discrepancy_account, -discrepancy),
         ],
     })
 }
@@ -200,41 +204,41 @@ pub fn bygg_differanse(
 mod tests {
     use super::*;
 
-    fn dag() -> Dagsoppgjor {
-        Dagsoppgjor {
-            dato: chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap(),
-            z_nummer: "0042".into(),
-            salg: vec![
-                Salgslinje {
-                    konto: "3000".into(),
+    fn day() -> DailySettlement {
+        DailySettlement {
+            date: chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap(),
+            z_number: "0042".into(),
+            sales: vec![
+                SalesLine {
+                    account: "3000".into(),
                     vat_code: Some("3".into()),
                     rate_bp: 2500,
-                    brutto_ore: 12_500_00,
+                    gross_ore: 12_500_00,
                 },
-                Salgslinje {
-                    konto: "3010".into(),
+                SalesLine {
+                    account: "3010".into(),
                     vat_code: Some("31".into()),
                     rate_bp: 1500,
-                    brutto_ore: 2_300_00,
+                    gross_ore: 2_300_00,
                 },
             ],
-            betaling: vec![
-                Betalingslinje {
-                    konto: "1900".into(),
-                    belop_ore: 4_800_00,
+            payments: vec![
+                PaymentLine {
+                    account: "1900".into(),
+                    amount_ore: 4_800_00,
                 },
-                Betalingslinje {
-                    konto: "1571".into(),
-                    belop_ore: 10_000_00,
+                PaymentLine {
+                    account: "1571".into(),
+                    amount_ore: 10_000_00,
                 },
             ],
-            mva_konto: "2700".into(),
+            vat_account: "2700".into(),
         }
     }
 
     #[test]
     fn the_settlement_balances_and_splits_mva_per_rate() {
-        let v = bygg_oppgjor(&dag()).unwrap();
+        let v = build_settlement(&day()).unwrap();
         assert_eq!(
             v.entries.iter().map(|e| e.amount.0).sum::<i64>(),
             0,
@@ -243,7 +247,7 @@ mod tests {
         assert!(v.description.contains("Z-0042"), "{}", v.description);
 
         // 12 500 incl. 25 % = 10 000 + 2 500; 2 300 incl. 15 % = 2 000 + 300.
-        let konto = |nr: &str| {
+        let account = |nr: &str| {
             v.entries
                 .iter()
                 .find(|e| e.account_number == nr)
@@ -251,15 +255,15 @@ mod tests {
                 .amount
                 .0
         };
-        assert_eq!(konto("3000"), -10_000_00);
-        assert_eq!(konto("3010"), -2_000_00);
+        assert_eq!(account("3000"), -10_000_00);
+        assert_eq!(account("3010"), -2_000_00);
         assert_eq!(
-            konto("2700"),
+            account("2700"),
             -2_800_00,
             "summen av delene, ikke av totalen"
         );
-        assert_eq!(konto("1900"), 4_800_00);
-        assert_eq!(konto("1571"), 10_000_00);
+        assert_eq!(account("1900"), 4_800_00);
+        assert_eq!(account("1571"), 10_000_00);
 
         // Income keeps its code so the mva-spesifikasjon sees the day's
         // sales; the mva line is uncoded like the invoice engine's.
@@ -287,26 +291,29 @@ mod tests {
     /// settlement exists to reconcile.
     #[test]
     fn a_z_report_that_does_not_add_up_is_refused_loudly() {
-        let mut d = dag();
-        d.betaling[0].belop_ore = 4_000_00;
-        let feil = bygg_oppgjor(&d).unwrap_err();
-        assert!(matches!(feil, KassaFeil::Ubalanse { .. }));
+        let mut d = day();
+        d.payments[0].amount_ore = 4_000_00;
+        let feil = build_settlement(&d).unwrap_err();
+        assert!(matches!(feil, CashRegisterError::Unbalanced { .. }));
         assert!(feil.to_string().contains("kassadifferansebilag"), "{feil}");
 
-        d.z_nummer = "  ".into();
-        assert_eq!(bygg_oppgjor(&d).unwrap_err(), KassaFeil::TomtZNummer);
+        d.z_number = "  ".into();
+        assert_eq!(
+            build_settlement(&d).unwrap_err(),
+            CashRegisterError::EmptyZNumber
+        );
     }
 
     #[test]
     fn the_kassadifferanse_is_its_own_voucher_and_only_when_there_is_one() {
-        let dato = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap();
         assert!(
-            bygg_differanse(dato, "0042", "1900", "7830", 4_800_00, 4_800_00).is_none(),
+            build_discrepancy(date, "0042", "1900", "7830", 4_800_00, 4_800_00).is_none(),
             "ingen differanse, intet bilag"
         );
 
         // 50 kr missing from the till.
-        let v = bygg_differanse(dato, "0042", "1900", "7830", 4_800_00, 4_750_00).unwrap();
+        let v = build_discrepancy(date, "0042", "1900", "7830", 4_800_00, 4_750_00).unwrap();
         assert_eq!(v.entries.iter().map(|e| e.amount.0).sum::<i64>(), 0);
         assert_eq!(v.entries[0].account_number, "1900");
         assert_eq!(v.entries[0].amount.0, -50_00, "kassen skrives ned");
@@ -318,7 +325,7 @@ mod tests {
         );
 
         // A surplus goes the other way — it is not "no discrepancy".
-        let over = bygg_differanse(dato, "0042", "1900", "7830", 4_800_00, 4_820_00).unwrap();
+        let over = build_discrepancy(date, "0042", "1900", "7830", 4_800_00, 4_820_00).unwrap();
         assert_eq!(over.entries[0].amount.0, 20_00);
     }
 }

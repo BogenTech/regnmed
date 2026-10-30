@@ -106,7 +106,7 @@ alphanumeric ids) go through a two-step wizard:
    the human decision is what gets imported.
 2. `POST /companies/{id}/import/saft` with a JSON envelope
    `{"file": "<xml>", "mapping": {"15000": "1500", …}}` applies the
-   mapping (`regnmed-core::kontoplan::apply_mapping`): line and account
+   mapping (`regnmed-core::chart_of_accounts::apply_mapping`): line and account
    ids are rewritten, and foreign accounts mapped onto the same NS 4102
    number are **merged** with openings summed. The import's own 4-digit
    validation still guards the result — a half-finished mapping fails
@@ -192,7 +192,7 @@ så bokfør).
   import log (the guard has been seen to fail: with the check disabled
   the unique constraint answers instead), and one ordinary voucher
   closes the import for good.
-- `regnmed-core/src/kontoplan.rs` — suggestion heuristics (identity,
+- `regnmed-core/src/chart_of_accounts.rs` — suggestion heuristics (identity,
   truncation, padding, name match, no-suggestion) and mapping
   application (rewrite, merge with summed openings, 4-digit target
   validation).

@@ -1,7 +1,7 @@
 //! Periodisering (#87, docs/periodisering.md): the plan, and the monthly
 //! run that posts it.
 //!
-//! The allocation itself is pure (`regnmed_core::periodisering`); this
+//! The allocation itself is pure (`regnmed_core::accrual`); this
 //! module owns the table and the transaction. Shape follows the
 //! avskrivninger (#40): ONE transaction per (plan, month) — voucher plus
 //! run row — with a partial unique index making a double posting
@@ -73,7 +73,7 @@ pub async fn create_periodisering(
     );
     let fra = first_of(draft.fra.0, draft.fra.1)?;
     let til = first_of(draft.til.0, draft.til.1)?;
-    let antall = regnmed_core::periodisering::antall_maneder(draft.fra, draft.til);
+    let antall = regnmed_core::accrual::month_count(draft.fra, draft.til);
     ensure!(
         antall > 0,
         "til-måneden kan ikke være før fra-måneden ({fra} → {til})"
@@ -286,7 +286,7 @@ pub async fn periodiser_plan(
     let balansekonto: String = plan.get("balansekonto");
     let avdeling: Option<String> = plan.get("avdeling");
     let prosjekt: Option<String> = plan.get("prosjekt");
-    let rader = regnmed_core::periodisering::plan(
+    let rader = regnmed_core::accrual::plan(
         plan.get("total_ore"),
         (fra.year(), fra.month()),
         (til.year(), til.month()),
@@ -303,11 +303,11 @@ pub async fn periodiser_plan(
 
     let mut utfall = Vec::new();
     for (i, rad) in rader.iter().enumerate() {
-        let period = NaiveDate::from_ymd_opt(rad.ar, rad.maned, 1).expect("gyldig måned");
+        let period = NaiveDate::from_ymd_opt(rad.year, rad.month, 1).expect("gyldig måned");
         // Due: the month has ended, it is not already posted, and the
         // plan was not stopped before it. Stopping is inclusive of the
         // month it happens in only if that month already ended.
-        if rad.dato > through || ferdige.contains(&period) || stoppet.is_some_and(|d| d <= rad.dato)
+        if rad.date > through || ferdige.contains(&period) || stoppet.is_some_and(|d| d <= rad.date)
         {
             continue;
         }
@@ -317,8 +317,8 @@ pub async fn periodiser_plan(
                 company_id,
                 periodisering_id,
                 period,
-                rad.dato,
-                rad.belop_ore,
+                rad.date,
+                rad.amount_ore,
                 &beskrivelse,
                 &resultatkonto,
                 &balansekonto,

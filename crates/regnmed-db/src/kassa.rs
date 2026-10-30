@@ -1,6 +1,6 @@
 //! Kassaoppgjør (#89, docs/kontantsalg.md): posting the day's settlement.
 //!
-//! The arrangement is pure (`regnmed_core::kassa`); this module looks up
+//! The arrangement is pure (`regnmed_core::cash_register`); this module looks up
 //! the rate that applied on the day, posts, and attaches the Z-report.
 //!
 //! ONE transaction covers the settlement, the kassadifferanse and the
@@ -10,7 +10,9 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::kassa::{Betalingslinje, Dagsoppgjor, Salgslinje, bygg_differanse, bygg_oppgjor};
+use regnmed_core::cash_register::{
+    DailySettlement, PaymentLine, SalesLine, build_discrepancy, build_settlement,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -69,29 +71,29 @@ pub async fn bokfor_dagsoppgjor(
             .map(i64::from)
             .with_context(|| format!("ingen mva-sats for kode {code} per {} ", inn.dato))?,
         };
-        salg.push(Salgslinje {
-            konto: konto.clone(),
+        salg.push(SalesLine {
+            account: konto.clone(),
             vat_code: vat_code.clone(),
             rate_bp,
-            brutto_ore: *brutto_ore,
+            gross_ore: *brutto_ore,
         });
     }
 
-    let oppgjor = Dagsoppgjor {
-        dato: inn.dato,
-        z_nummer: inn.z_nummer.clone(),
-        salg,
-        betaling: inn
+    let oppgjor = DailySettlement {
+        date: inn.dato,
+        z_number: inn.z_nummer.clone(),
+        sales: salg,
+        payments: inn
             .betaling
             .iter()
-            .map(|(konto, belop_ore)| Betalingslinje {
-                konto: konto.clone(),
-                belop_ore: *belop_ore,
+            .map(|(konto, belop_ore)| PaymentLine {
+                account: konto.clone(),
+                amount_ore: *belop_ore,
             })
             .collect(),
-        mva_konto: inn.mva_konto.clone(),
+        vat_account: inn.mva_konto.clone(),
     };
-    let draft = bygg_oppgjor(&oppgjor).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let draft = build_settlement(&oppgjor).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let mut tx = pool.begin().await?;
     let posted = crate::post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
@@ -121,7 +123,7 @@ pub async fn bokfor_dagsoppgjor(
             .map(|(_, belop)| *belop)
             .sum();
         differanse_ore = opptalt - registrert;
-        if let Some(diff) = bygg_differanse(
+        if let Some(diff) = build_discrepancy(
             inn.dato,
             &inn.z_nummer,
             kontantkonto,

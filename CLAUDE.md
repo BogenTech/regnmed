@@ -164,9 +164,12 @@ must keep matching docs/auth.md verbatim.
 
 **The conversion is not done.** New code follows this now. Converted so
 far (all 2026-10-30): `regnmed-agent` and the task queue,
-`regnmed-mcp`, `regnmed-gov`, and `regnmed-core`'s leaf modules
-(`hemmelig`->`secret`, `epost`->`email`, `orgnr`->`orgnumber`,
-`fnr`->`nin`, `regnskapsar`->`fiscal_year`, `pdftekst`->`pdftext`).
+`regnmed-mcp`, `regnmed-gov`, and these `regnmed-core` modules:
+`hemmelig`->`secret`, `epost`->`email`, `orgnr`->`orgnumber`,
+`fnr`->`nin`, `regnskapsar`->`fiscal_year`, `pdftekst`->`pdftext`,
+`anlegg`->`assets`, `lager`->`inventory`, `utlegg`->`expenses`,
+`periodisering`->`accrual`, `budsjett`->`budget`,
+`kontoplan`->`chart_of_accounts`, `kassa`->`cash_register`.
 The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
 Norwegian identifiers, and converting them is its own work, crate by
 crate, not a single sweep. `regnmed-api` has to move in lockstep with
@@ -381,7 +384,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    under `/companies/{id}/inbox…`; portal Bilag section opens with the
    inbox (upload, inline bokfør form, avvis).
 19. ✅ Kontoplan wizard + manuell åpningsbalanse (docs/migration.md,
-   closed #18): `regnmed-core::kontoplan` suggests NS 4102 mappings
+   closed #18): `regnmed-core::chart_of_accounts` suggests NS 4102 mappings
    (identity/truncate/pad/name-match against the vendored standard
    names — heuristics only, the admin decides);
    `POST …/import/saft/analyze` previews, import accepts a JSON
@@ -541,7 +544,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (kjop m/ kostpris per enhet; salg AUTO-inserted inside
    create_invoice_in — kreditnota returns stock; justering krever
    notat). Beholdning = SUM(antall_milli); verdi =
-   gjennomsnittsmetoden as a pure fold in `regnmed-core::lager`
+   gjennomsnittsmetoden as a pure fold in `regnmed-core::inventory`
    (milli-units × øre, half-away rounding; negativ beholdning synlig,
    aldri skjult). Varetelling i én tx: justeringer + verdibilag mot
    bokført lagersaldo (1460/4390 defaults). `/products` +
@@ -563,7 +566,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    negativ saldo/§14-45/§14-47 deliberately manual (documented).
    Avhending: gevinst (3880) / tap (7880) + one-way close in one tx;
    aktiveringsgrense warning (never refusal) at registration. Core
-   `regnmed-core::anlegg` (manedsbelop sums EXACTLY, saldo_ar).
+   `regnmed-core::assets` (manedsbelop sums EXACTLY, saldo_ar).
    `/companies/{id}/assets…` endpoints; portal Anlegg section.
 34. ✅ Utlegg og kjøregodtgjørelse (docs/utlegg.md, closed #42):
    migration 0026 `expense` — the innboks discipline on refusjonskrav:
@@ -575,7 +578,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    kopiert inn som vedlegg på bilaget** (oppbevaringsplikt).
    Kjøregodtgjørelse: km × statens sats PÅ KJØREDATOEN fra
    satsregisteret, satser LAGRET på kravet ved innsending (evidence);
-   trekkfri/trekkpliktig split i `regnmed-core::utlegg`; trekkpliktig
+   trekkfri/trekkpliktig split i `regnmed-core::expenses`; trekkpliktig
    del = tydelig varsel (a-melding #46 ikke bygget) — aldri skjult.
    Utbetaling: mellomregning→bank (1920) one-way; remittering (#33)
    overtar steget senere. Selvgodkjenning tillatt i v1 (#47
@@ -673,7 +676,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    kostnad positiv — budsjettet skrives slik det leses); faktiske tall
    konverteres med `regnskap::presentasjon_ore` (regelen ett sted) før
    sammenligning. Bare resultatkontoer (klasse 3–8);
-   likviditetsbudsjett bevisst utenfor. `regnmed-core::budsjett`:
+   likviditetsbudsjett bevisst utenfor. `regnmed-core::budget`:
    ren avvik-fold (NS 4102-seksjoner, hittil t.o.m. valgt måned,
    konto som bare finnes på én side blir MED) + `juster_ore` for «fra
    fjoråret ±X %» (basispunkter, half-away, ingen flyttall).

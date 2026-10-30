@@ -40,7 +40,7 @@ km × statens sats på **kjøredatoen**, fra satsregisteret
 (`km_godtgjorelse`, `km_godtgjorelse_trekkfri` — øre per km, med
 kilde; docs/regelverk.md). En dato utenfor registerets dekning
 avvises høyt, aldri gjettet. Ren beregning i
-`regnmed-core::utlegg::kjoregodtgjorelse`:
+`regnmed-core::expenses::mileage_allowance`:
 
 - beløp = km × sats
 - trekkfri del = km × trekkfri sats (aldri over beløpet)
@@ -86,7 +86,7 @@ kvitteringsfoto (PWA, #48).
 
 ## Where it is tested
 
-- `regnmed-core/src/utlegg.rs` — split trekkfri/trekkpliktig,
+- `regnmed-core/src/expenses.rs` — split trekkfri/trekkpliktig,
   historisk sats-invertering, null-tilfeller.
 - `crates/regnmed-api/tests/grupper/expenses.rs` — end to end: kvittering
   rundtur + DB-immutabilitet, godkjenning med mva-splitt (7790/2710/
