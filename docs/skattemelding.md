@@ -125,8 +125,8 @@ elementer vi kan fylle helt ut i dag**:
 | --- | --- |
 | `resultatregnskap` | `regnmed-core::regnskap` — resultat gruppert per NS 4102, presentasjonsfortegn |
 | `balanseregnskap` | samme modul, balanse med udisponert resultat |
-| `spesifikasjonAvAnleggsmiddel` | `regnmed-db::asset` + `saldo_rapport` (saldogrupper a–j, sktl. §14-43) |
-| `forskjellMellomRegnskapsmessigOgSkattemessigVerdi` | delvis: anleggsmidlenes midlertidige forskjeller beregnes alt i `saldo_rapport` |
+| `spesifikasjonAvAnleggsmiddel` | `regnmed-db::asset` + `balance_report` (saldogrupper a–j, sktl. §14-43) |
+| `forskjellMellomRegnskapsmessigOgSkattemessigVerdi` | delvis: anleggsmidlenes midlertidige forskjeller beregnes alt i `balance_report` |
 | kontogruppering | `regnmed-core::saft` sin næringsspesifikasjon-kodeliste, allerede vendored per årgang (#50) |
 
 Kodelisten SAF-T-eksporten bruker for gruppering **er** den samme

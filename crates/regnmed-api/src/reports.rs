@@ -406,7 +406,7 @@ pub async fn result(
 }
 
 #[derive(Deserialize)]
-pub struct ProsjektRapportQuery {
+pub struct ProjectReportQuery {
     year: Option<i32>,
     #[serde(rename = "prosjekt")]
     project: Option<String>,
@@ -421,7 +421,7 @@ pub async fn project_profitability(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(query): Query<ProsjektRapportQuery>,
+    Query(query): Query<ProjectReportQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let year = match query.year {
@@ -440,7 +440,7 @@ pub async fn project_profitability(
     let dims = regnmed_db::list_dimensions(&state.pool, company_id, person.person_id).await?;
     let timer = regnmed_db::timesheet_summary(&state.pool, company_id, from, to).await?;
     let timer_for = |code: &str| timer.iter().find(|t| t.project.as_deref() == Some(code));
-    let timer_json = |t: Option<&regnmed_db::timesheet::ProsjektSum>| match t {
+    let timer_json = |t: Option<&regnmed_db::timesheet::ProjectSum>| match t {
         Some(t) => json!({
             "minutter": t.minutes,
             "fakturerte_minutter": t.fakturerte_minutter,

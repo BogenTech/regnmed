@@ -104,8 +104,8 @@ pub fn interpoler_periodetekst(text: &str, date: NaiveDate) -> String {
 /// The next generation date for a template interval. Month arithmetic
 /// clamps into shorter months (31. jan + 1 måned = 28. feb) — chrono's
 /// checked_add_months semantics, documented in docs/faktura.md.
-pub fn next_interval_date(date: NaiveDate, intervall: &str) -> Option<NaiveDate> {
-    let months = match intervall {
+pub fn next_interval_date(date: NaiveDate, interval: &str) -> Option<NaiveDate> {
+    let months = match interval {
         "manedlig" => 1,
         "kvartalsvis" => 3,
         "arlig" => 12,
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn intervall_advance_clamps_into_short_months() {
+    fn interval_advance_clamps_into_short_months() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(
             next_interval_date(date(2026, 1, 31), "manedlig"),

@@ -19,7 +19,7 @@ use uuid::Uuid;
 pub const AVSLUTTET: [&str; 2] = ["utfort", "avvist"];
 
 #[derive(Debug, Clone)]
-pub struct Oppgave {
+pub struct Task {
     pub id: Uuid,
     pub integration_id: Option<Uuid>,
     /// The agent the task is addressed to; None = any agent with access.
@@ -38,7 +38,7 @@ pub struct Oppgave {
 /// Records an order. The content is immutable once given (0064): an
 /// amended task is a NEW task, or nobody can see afterwards what the
 /// agent was actually asked to do.
-pub async fn opprett_oppgave(
+pub async fn create_task(
     pool: &PgPool,
     company_id: Uuid,
     integration_id: Option<Uuid>,
@@ -97,8 +97,8 @@ const SELECT: &str = "select o.id, o.integration_id, i.navn as agent, o.melding,
                           order by e.created_at desc, e.id desc limit 1
                       ) h on true";
 
-fn from_row(r: &sqlx::postgres::PgRow) -> Oppgave {
-    Oppgave {
+fn from_row(r: &sqlx::postgres::PgRow) -> Task {
+    Task {
         id: r.get("id"),
         integration_id: r.get("integration_id"),
         agent: r.get("agent"),
@@ -125,7 +125,7 @@ pub async fn list_oppgaver(
     company_id: Uuid,
     for_integration: Option<Uuid>,
     bare_apne: bool,
-) -> Result<Vec<Oppgave>> {
+) -> Result<Vec<Task>> {
     let rows = sqlx::query(&format!(
         "{SELECT} where o.company_id = $1
            and ($2::uuid is null or o.integration_id is null or o.integration_id = $2)
@@ -140,7 +140,7 @@ pub async fn list_oppgaver(
     Ok(rows.iter().map(from_row).collect())
 }
 
-pub async fn hent_oppgave(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Option<Oppgave>> {
+pub async fn fetch_task(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Option<Task>> {
     let row = sqlx::query(&format!("{SELECT} where o.company_id = $1 and o.id = $2"))
         .bind(company_id)
         .bind(id)

@@ -62,7 +62,7 @@ async fn employee(pool: &PgPool, company: Uuid, fnr: &str, name: &str, lonn: i64
         pool,
         company,
         &NewEmployee {
-            fodselsnummer: fnr.into(),
+            nin: fnr.into(),
             name: name.into(),
             stilling: Some("Utvikler".into()),
             employed_from: date(2025, 1, 1),
@@ -293,7 +293,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
         &pool,
         company,
         &NewEmployee {
-            fodselsnummer: "08888797336".into(),
+            nin: "08888797336".into(),
             name: "Tabell Trekksen".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),
@@ -401,7 +401,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
 /// The list shows the birth date, not the fødselsnummer — the same
 /// privacy choice as in the aksjeeierbok.
 #[tokio::test]
-async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
+async fn the_employee_list_shows_the_birth_date_not_the_nin() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
@@ -416,14 +416,14 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 }
 
 #[tokio::test]
-async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
+async fn an_invalid_nin_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let error = payroll::create_employee(
         &pool,
         company,
         &NewEmployee {
-            fodselsnummer: "26829398613".into(),
+            nin: "26829398613".into(),
             name: "Feil Nummer".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),
@@ -542,7 +542,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         &pool,
         company,
         &NewEmployee {
-            fodselsnummer: "25927898821".into(),
+            nin: "25927898821".into(),
             name: "Timelønnet".into(),
             stilling: None,
             employed_from: date(2025, 1, 1),

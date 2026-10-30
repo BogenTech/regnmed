@@ -64,11 +64,11 @@ pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedl
         .collect())
 }
 
-pub(crate) async fn logg(
+pub(crate) async fn log(
     tx: &mut Transaction<'_, Postgres>,
     firm_id: Uuid,
     person_id: Uuid,
-    endring: &str,
+    change: &str,
     from: Option<&str>,
     to: Option<&str>,
     performed_by: Option<Uuid>,
@@ -82,7 +82,7 @@ pub(crate) async fn logg(
     .bind(Uuid::new_v4())
     .bind(firm_id)
     .bind(person_id)
-    .bind(endring)
+    .bind(change)
     .bind(from)
     .bind(to)
     .bind(performed_by)
@@ -149,7 +149,7 @@ pub async fn set_role(
         .execute(&mut *tx)
         .await?;
     require_remaining_admin(&mut tx, firm_id).await?;
-    logg(
+    log(
         &mut tx,
         firm_id,
         person_id,
@@ -166,7 +166,7 @@ pub async fn set_role(
 
 /// Turns access off or back on. Never deleted — the row is the history
 /// of who could reach the firm's clients.
-pub async fn sett_aktiv(
+pub async fn set_active(
     pool: &PgPool,
     firm_id: Uuid,
     person_id: Uuid,
@@ -196,7 +196,7 @@ pub async fn sett_aktiv(
         .execute(&mut *tx)
         .await?;
     require_remaining_admin(&mut tx, firm_id).await?;
-    logg(
+    log(
         &mut tx,
         firm_id,
         person_id,
@@ -288,10 +288,10 @@ pub async fn list_invitasjoner(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrai
         .collect())
 }
 
-pub async fn tilbakekall_invitasjon(
+pub async fn revoke_invitation(
     pool: &PgPool,
     firm_id: Uuid,
-    invitasjon_id: Uuid,
+    invitation_id: Uuid,
     by: Uuid,
 ) -> Result<()> {
     let n = sqlx::query(
@@ -300,7 +300,7 @@ pub async fn tilbakekall_invitasjon(
            and accepted_at is null and revoked_at is null",
     )
     .bind(firm_id)
-    .bind(invitasjon_id)
+    .bind(invitation_id)
     .bind(by)
     .execute(pool)
     .await?
@@ -336,7 +336,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
     for rad in &rader {
         let firm_id: Uuid = rad.get("firm_id");
         let role: String = rad.get("role");
-        let invitasjon_id: Uuid = rad.get("id");
+        let invitation_id: Uuid = rad.get("id");
 
         let fantes: Option<String> = sqlx::query_scalar(
             "select role from firm_member where firm_id = $1 and person_id = $2",
@@ -353,7 +353,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
                 .bind(&role)
                 .execute(&mut *tx)
                 .await?;
-            logg(
+            log(
                 &mut tx,
                 firm_id,
                 person_id,
@@ -369,7 +369,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
         sqlx::query(
             "update firm_invitation set accepted_at = now(), accepted_by = $2 where id = $1",
         )
-        .bind(invitasjon_id)
+        .bind(invitation_id)
         .bind(person_id)
         .execute(&mut *tx)
         .await?;
@@ -382,7 +382,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 #[derive(Debug, Clone)]
 pub struct Byraendring {
     pub name: String,
-    pub endring: String,
+    pub change: String,
     pub from_role: Option<String>,
     pub to_role: Option<String>,
     pub performed_by: Option<String>,
@@ -409,7 +409,7 @@ pub async fn tilgangshistorikk(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrae
         .iter()
         .map(|r| Byraendring {
             name: r.get("navn"),
-            endring: r.get("endring"),
+            change: r.get("endring"),
             from_role: r.get("fra_rolle"),
             to_role: r.get("til_rolle"),
             performed_by: r.get("utfort_av"),
@@ -439,7 +439,7 @@ pub async fn is_firm_admin(pool: &PgPool, person_id: Uuid, firm_id: Uuid) -> Res
 pub async fn firm_invitation_email_payload(
     pool: &PgPool,
     firm_id: Uuid,
-    invitasjon_id: Uuid,
+    invitation_id: Uuid,
     portal_base: Option<&str>,
 ) -> Result<crate::EmailPayload> {
     let row = sqlx::query(
@@ -451,7 +451,7 @@ pub async fn firm_invitation_email_payload(
          where i.id = $1 and i.firm_id = $2
            and i.accepted_at is null and i.revoked_at is null",
     )
-    .bind(invitasjon_id)
+    .bind(invitation_id)
     .bind(firm_id)
     .fetch_optional(pool)
     .await?

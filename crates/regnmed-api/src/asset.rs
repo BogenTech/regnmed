@@ -26,7 +26,8 @@ pub struct CreateAssetRequest {
     name: String,
     #[serde(rename = "anskaffelsesdato")]
     acquisition_date: chrono::NaiveDate,
-    kostpris_ore: i64,
+    #[serde(rename = "kostpris_ore")]
+    cost_price_ore: i64,
     #[serde(default)]
     restverdi_ore: i64,
     levetid_maneder: i32,
@@ -54,7 +55,7 @@ pub async fn create(
         &regnmed_db::AssetDraft {
             name: request.name,
             acquisition_date: request.acquisition_date,
-            kostpris_ore: request.kostpris_ore,
+            cost_price_ore: request.cost_price_ore,
             restverdi_ore: request.restverdi_ore,
             levetid_maneder: request.levetid_maneder,
             balance_account: request.balance_account.unwrap_or_else(|| "1250".into()),
@@ -83,7 +84,7 @@ pub async fn list(
             "asset_id": a.id,
             "navn": a.name,
             "anskaffelsesdato": a.acquisition_date.to_string(),
-            "kostpris_ore": a.kostpris_ore,
+            "kostpris_ore": a.cost_price_ore,
             "restverdi_ore": a.restverdi_ore,
             "levetid_maneder": a.levetid_maneder,
             "balansekonto": a.balance_account,

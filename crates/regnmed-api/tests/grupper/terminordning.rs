@@ -60,7 +60,7 @@ async fn body_text(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, St
     (status, String::from_utf8_lossy(&bytes).to_string())
 }
 
-fn salg(date: chrono::NaiveDate, net: i64) -> VoucherDraft {
+fn sale(date: chrono::NaiveDate, net: i64) -> VoucherDraft {
     let entry = |account: &str, amount: i64, vat: Option<&str>| EntryDraft {
         account_number: account.into(),
         amount: Ore(amount),
@@ -115,10 +115,10 @@ async fn the_period_scheme_governs_periods_and_the_return() {
             .unwrap();
     }
     let date = |m, d| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap();
-    regnmed_db::post_voucher(&state.pool, company, &salg(date(3, 5), 40_000_00), "test")
+    regnmed_db::post_voucher(&state.pool, company, &sale(date(3, 5), 40_000_00), "test")
         .await
         .unwrap();
-    regnmed_db::post_voucher(&state.pool, company, &salg(date(10, 5), 10_000_00), "test")
+    regnmed_db::post_voucher(&state.pool, company, &sale(date(10, 5), 10_000_00), "test")
         .await
         .unwrap();
     let token = idp.token(&sub, "Termin Ansvarlig");

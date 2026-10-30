@@ -266,7 +266,7 @@ pub async fn register_movement(
     date: NaiveDate,
     kind: &str,
     quantity_milli: i64,
-    kostpris_ore: Option<i64>,
+    cost_price_ore: Option<i64>,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<()> {
@@ -296,7 +296,7 @@ pub async fn register_movement(
     .bind(date)
     .bind(kind)
     .bind(quantity_milli)
-    .bind(kostpris_ore)
+    .bind(cost_price_ore)
     .bind(note)
     .bind(created_by)
     .execute(pool)
@@ -367,7 +367,7 @@ pub struct MovementRow {
     pub date: NaiveDate,
     pub kind: String,
     pub quantity_milli: i64,
-    pub kostpris_ore: Option<i64>,
+    pub cost_price_ore: Option<i64>,
     pub note: Option<String>,
     pub invoice_no: Option<i64>,
     pub created_by: String,
@@ -398,7 +398,7 @@ pub async fn list_movements(
             date: r.get("dato"),
             kind: r.get("kind"),
             quantity_milli: r.get("antall_milli"),
-            kostpris_ore: r.get("kostpris_ore"),
+            cost_price_ore: r.get("kostpris_ore"),
             note: r.get("note"),
             invoice_no: r.get("invoice_no"),
             created_by: r.get("created_by"),
@@ -521,8 +521,8 @@ pub async fn varetelling(
         .fetch_one(&mut *tx)
         .await?;
         posted_ore = Some(posted);
-        let endring = verdi_ore - posted;
-        if endring != 0 {
+        let change = verdi_ore - posted;
+        if change != 0 {
             let draft = VoucherDraft {
                 journal_code: konti.journal_code.clone(),
                 voucher_date: date,
@@ -531,7 +531,7 @@ pub async fn varetelling(
                 entries: vec![
                     EntryDraft {
                         account_number: konti.inventory_account.clone(),
-                        amount: Ore(endring),
+                        amount: Ore(change),
                         vat_code: None,
                         description: Some("Varelager etter telling".into()),
                         party_no: None,
@@ -541,7 +541,7 @@ pub async fn varetelling(
                     },
                     EntryDraft {
                         account_number: konti.change_account.clone(),
-                        amount: Ore(-endring),
+                        amount: Ore(-change),
                         vat_code: None,
                         description: Some("Beholdningsendring".into()),
                         party_no: None,

@@ -121,7 +121,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         } else {
             DocumentType::Invoice
         },
-        fakturanr: head.get::<i64, _>("invoice_no").to_string(),
+        invoice_number: head.get::<i64, _>("invoice_no").to_string(),
         krediterer: credits_number.map(|no| no.to_string()),
         invoice_date: invoice_date,
         due_date: Some(head.get("due_date")),
@@ -257,7 +257,7 @@ pub struct Bokforingsforslag {
     pub source: &'static str,
     pub seller_name: Option<String>,
     pub orgnumber: Option<String>,
-    pub fakturanr: Option<String>,
+    pub invoice_number: Option<String>,
     pub date: Option<chrono::NaiveDate>,
     pub due_date: Option<chrono::NaiveDate>,
     pub kid: Option<String>,
@@ -289,7 +289,7 @@ pub async fn inbox_suggestion(
         source: "ingen",
         seller_name: None,
         orgnumber: None,
-        fakturanr: None,
+        invoice_number: None,
         date: None,
         due_date: None,
         kid: None,
@@ -315,7 +315,7 @@ pub async fn inbox_suggestion(
         suggestion.source = "ehf";
         suggestion.seller_name = Some(m.seller_name.clone());
         suggestion.orgnumber = m.seller_orgnumber.clone();
-        suggestion.fakturanr = Some(m.fakturanr.clone());
+        suggestion.invoice_number = Some(m.invoice_number.clone());
         suggestion.date = m.invoice_date;
         suggestion.due_date = m.due_date;
         suggestion.kid = m.kid.clone();
@@ -360,7 +360,7 @@ pub async fn inbox_suggestion(
                     note("orgnr", &f.reason);
                 }
                 if let Some(f) = &t.invoice_number {
-                    suggestion.fakturanr = Some(f.value.clone());
+                    suggestion.invoice_number = Some(f.value.clone());
                     note("fakturanr", &f.reason);
                 }
                 if let Some(f) = &t.kid {

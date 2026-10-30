@@ -481,7 +481,7 @@ pub async fn platform_assign_company(
     .bind(person_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (endring, from) = match existing {
+    let (change, from) = match existing {
         None => {
             let inserted = sqlx::query(
                 "insert into company_member (company_id, person_id, role)
@@ -525,7 +525,7 @@ pub async fn platform_assign_company(
     .bind(Uuid::new_v4())
     .bind(company_id)
     .bind(person_id)
-    .bind(endring)
+    .bind(change)
     .bind(from.as_deref())
     .bind(role)
     .bind(performed_by)
@@ -559,7 +559,7 @@ pub async fn platform_assign_firm(
     .bind(person_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (endring, from) = match existing {
+    let (change, from) = match existing {
         None => {
             let inserted = sqlx::query(
                 "insert into firm_member (firm_id, person_id, role)
@@ -603,7 +603,7 @@ pub async fn platform_assign_firm(
     .bind(Uuid::new_v4())
     .bind(firm_id)
     .bind(person_id)
-    .bind(endring)
+    .bind(change)
     .bind(from.as_deref())
     .bind(role)
     .bind(performed_by)
@@ -655,7 +655,7 @@ pub struct PlatformSubscription {
     pub company_id: Uuid,
     pub orgnumber: String,
     pub name: String,
-    pub opprettet: NaiveDate,
+    pub created: NaiveDate,
     pub dekket_i_dag: bool,
     pub last_end: Option<NaiveDate>,
     /// Plan on the row covering today, if any.
@@ -691,7 +691,7 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlatformSu
             company_id: r.get("id"),
             orgnumber: r.get("orgnr"),
             name: r.get("name"),
-            opprettet: r.get("opprettet"),
+            created: r.get("opprettet"),
             dekket_i_dag: r.get("dekket"),
             last_end: r.get("siste_slutt"),
             plan: r.get("plan"),

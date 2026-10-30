@@ -99,11 +99,11 @@ struct Valg {
 #[derive(Deserialize)]
 struct Beskjed {
     content: Option<String>,
-    tool_calls: Option<Vec<RaaKall>>,
+    tool_calls: Option<Vec<RawCall>>,
 }
 
 #[derive(Deserialize)]
-struct RaaKall {
+struct RawCall {
     id: String,
     function: RaaFunksjon,
 }

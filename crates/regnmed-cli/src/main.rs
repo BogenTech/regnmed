@@ -967,7 +967,7 @@ async fn vat_report(
     if lines.iter().any(|l| {
         matches!(
             direction(&l.code),
-            Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+            Direction::ReverseChargeDeductible | Direction::ReverseChargeNonDeductible
         )
     }) {
         println!(

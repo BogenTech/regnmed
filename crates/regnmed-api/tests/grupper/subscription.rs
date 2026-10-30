@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use regnmed_api::{AppState, router};
 
-async fn kall(
+async fn call(
     state: &AppState,
     method: &str,
     uri: &str,
@@ -46,7 +46,7 @@ async fn kall(
     )
 }
 
-async fn oppsett() -> Option<(AppState, TestIdp, Uuid, String)> {
+async fn config() -> Option<(AppState, TestIdp, Uuid, String)> {
     let idp = TestIdp::new();
     let state = test_state(&idp).await?;
     let company =
@@ -81,10 +81,10 @@ async fn make_blocked(state: &AppState, company: Uuid) {
 
 #[tokio::test]
 async fn a_new_company_is_in_its_trial_and_can_do_everything() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -94,7 +94,7 @@ async fn a_new_company_is_in_its_trial_and_can_do_everything() {
     .await;
     assert_eq!(code, StatusCode::OK, "prøvetiden skal virke som normalt");
 
-    let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
+    let (_, me) = call(&state, "GET", "/me", &admin, "").await;
     let company = me["companies"]
         .as_array()
         .unwrap()
@@ -111,13 +111,13 @@ async fn a_new_company_is_in_its_trial_and_can_do_everything() {
 /// The core: blocked stops changes — and nothing else.
 #[tokio::test]
 async fn a_block_stops_changes_and_nothing_else() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
     make_blocked(&state, company).await;
 
     // Changes: refused, with the explanation in the response.
-    let (code, response) = kall(
+    let (code, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -135,7 +135,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     );
 
     // Lesing: virker.
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "GET",
         &format!("/companies/{company}/invoices"),
@@ -147,7 +147,7 @@ async fn a_block_stops_changes_and_nothing_else() {
 
     // Export: works — the hovedbok is never taken hostage.
     let year = Utc::now().year();
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "GET",
         &format!(
@@ -164,7 +164,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     );
 
     // Governance of the company: works, or nobody could sort things out.
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "GET",
         &format!("/companies/{company}/access"),
@@ -173,7 +173,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
@@ -188,7 +188,7 @@ async fn a_block_stops_changes_and_nothing_else() {
     );
 
     // /me says it as it is.
-    let (_, me) = kall(&state, "GET", "/me", &admin, "").await;
+    let (_, me) = call(&state, "GET", "/me", &admin, "").await;
     let company = me["companies"]
         .as_array()
         .unwrap()
@@ -207,7 +207,7 @@ async fn a_block_stops_changes_and_nothing_else() {
 /// hovedbok taken hostage. Booking MORE stays blocked, which is the line.
 #[tokio::test]
 async fn a_block_still_allows_documenting_what_is_already_booked() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
     for (number, name) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
@@ -243,7 +243,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
 
     make_blocked(&state, company).await;
 
-    let (code, response) = kall(
+    let (code, response) = call(
         &state,
         "POST",
         &format!(
@@ -261,7 +261,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
     );
 
     // …but the accounts still cannot be carried forward.
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "POST",
         &format!("/companies/{company}/vouchers"),
@@ -284,7 +284,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
 /// Signing up reopens, cancelling gives a deadline — not an instant block.
 #[tokio::test]
 async fn signing_up_opens_and_cancelling_gives_a_deadline() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
     make_blocked(&state, company).await;
@@ -302,7 +302,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
     .await
     .unwrap();
 
-    let (code, _) = kall(
+    let (code, _) = call(
         &state,
         "POST",
         &format!("/companies/{company}/products"),
@@ -327,7 +327,7 @@ async fn signing_up_opens_and_cancelling_gives_a_deadline() {
 /// month cannot be invoiced twice.
 #[tokio::test]
 async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
-    let Some((state, _idp, customer, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer, _admin)) = config().await else {
         return;
     };
     let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Regnmed Drift AS")
@@ -445,7 +445,7 @@ async fn driftsselskap(pool: &sqlx::PgPool, name: &str, vat_registered: bool) ->
 /// card rail would charge.
 #[tokio::test]
 async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
-    let Some((state, _idp, customer_a, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer_a, _admin)) = config().await else {
         return;
     };
     let customer_b = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kunde B AS")
@@ -550,7 +550,7 @@ impl NaiveDateHelper {
 async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     use regnmed_db::subscription_follow_up as opf;
 
-    let Some((state, _idp, customer, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer, _admin)) = config().await else {
         return;
     };
     let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Regnmed Drift AS")
@@ -636,7 +636,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             .await
             .unwrap()
     );
-    let (apen, logg): (bool, String) = (
+    let (apen, log): (bool, String) = (
         sqlx::query_scalar(
             "select exists(select 1 from abonnement where company_id = $1 and valid_to is null)",
         )
@@ -654,7 +654,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .unwrap(),
     );
     assert!(!apen, "ingen åpen dekning igjen");
-    assert_eq!(logg, "sperret");
+    assert_eq!(log, "sperret");
     // A second look the day after changes nothing — no open row left.
     assert!(
         !opf::sperr_om_moden(&state.pool, &f, due_date + chrono::Days::new(31))
@@ -862,7 +862,7 @@ fn with_stripe(base: &AppState, ops_orgnumber: &str) -> AppState {
 /// NOTHING happens, however correct the payload looks.
 #[tokio::test]
 async fn the_webhook_rejects_an_invalid_signature() {
-    let Some((state, _idp, _company, _admin)) = oppsett().await else {
+    let Some((state, _idp, _company, _admin)) = config().await else {
         return;
     };
     let state = with_stripe(&state, "999999999");
@@ -878,7 +878,7 @@ async fn the_webhook_rejects_an_invalid_signature() {
 /// the events that ARE ours.
 #[tokio::test]
 async fn a_session_that_carries_no_card_is_acknowledged_not_rejected() {
-    let Some((state, _idp, customer, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer, _admin)) = config().await else {
         return;
     };
     let state = with_stripe(&state, "999999999");
@@ -925,7 +925,7 @@ async fn a_session_that_carries_no_card_is_acknowledged_not_rejected() {
 /// nothing: uniqueness on payment_intent is the dedup key.
 #[tokio::test]
 async fn a_card_charge_posts_once_and_only_once() {
-    let Some((state, _idp, customer, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer, _admin)) = config().await else {
         return;
     };
     let ops_orgnumber = unique_orgnumber();
@@ -1016,11 +1016,11 @@ async fn a_card_charge_posts_once_and_only_once() {
 /// any call goes out to Stripe — which is also why it is testable here.
 #[tokio::test]
 async fn signing_up_activates_directly_without_the_card_rail() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
     // Rail off: `state` from oppsett() has no StripeCfg.
-    let (code, response) = kall(
+    let (code, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/subscription"),
@@ -1044,7 +1044,7 @@ async fn signing_up_activates_directly_without_the_card_rail() {
 /// the customer twice every month until somebody noticed.
 #[tokio::test]
 async fn a_company_cannot_start_a_second_subscription() {
-    let Some((state, _idp, company, admin)) = oppsett().await else {
+    let Some((state, _idp, company, admin)) = config().await else {
         return;
     };
     let state = with_stripe(&state, "999999999");
@@ -1061,7 +1061,7 @@ async fn a_company_cannot_start_a_second_subscription() {
     .await
     .unwrap();
 
-    let (code, response) = kall(
+    let (code, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/subscription"),
@@ -1098,7 +1098,7 @@ async fn a_company_cannot_start_a_second_subscription() {
 ///   4. `customer.subscription.deleted` closes the coverage.
 #[tokio::test]
 async fn a_stripe_subscription_recurs_until_cancelled() {
-    let Some((state, _idp, customer, _admin)) = oppsett().await else {
+    let Some((state, _idp, customer, _admin)) = config().await else {
         return;
     };
     let ops_orgnumber = unique_orgnumber();

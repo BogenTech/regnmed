@@ -171,7 +171,7 @@ pub async fn sperr_om_moden(
         return Ok(false);
     }
     crate::subscription::close_coverage(pool, invoice.company_id, today).await?;
-    logg(
+    log(
         pool,
         invoice.company_id,
         Some(invoice.invoice_id),
@@ -250,7 +250,7 @@ pub async fn restore_if_paid(
         PERFORMED_BY,
     )
     .await?;
-    logg(
+    log(
         pool,
         company_id,
         None,
@@ -303,7 +303,7 @@ pub async fn unsent_reminders(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentRe
         .collect())
 }
 
-async fn logg(
+async fn log(
     pool: &PgPool,
     company_id: Uuid,
     invoice_id: Option<Uuid>,

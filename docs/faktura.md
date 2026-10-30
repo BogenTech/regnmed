@@ -280,7 +280,7 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
 En **kontantfaktura** dokumenterer en ytelse som er betalt ved levering
 — kort, Vipps eller kontanter. Dokumentet er et annet dokument, ikke en
-faktura med et flagg: `Dokumenttype::Kontantfaktura` gir tittelen
+faktura med et flagg: `DocumentType::Kontantfaktura` gir tittelen
 KONTANTFAKTURA, «Betalt: <betalingsmiddel>» blant dokumentfaktaene, og
 **ingen KID, ingen forfallsdato og ingen betalingsinformasjon**. Å be
 noen betale det de allerede har betalt er ikke en skjønnhetsfeil, det er
@@ -291,7 +291,7 @@ sjekker samtidig at en vanlig faktura beholder dem alle.
 enklere å postere salget rett mot bank og hoppe over 1500 — og det er
 nettopp det som ikke må skje: reskontro-doktrinen sier at en kundes
 posteringer bærer en part, og en sidedør forbi den ville gjort
-`reskontro_kontroll` (revisors avstemming) stille ufullstendig. Kravet
+`subledger_check` (revisors avstemming) stille ufullstendig. Kravet
 finnes, bærer parten på BEGGE sider, og den åpne posten lukkes i det
 øyeblikket den oppstår.
 

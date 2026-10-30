@@ -218,7 +218,7 @@ pub async fn ehf_suggestion(
     let m = &suggestion.received;
     Ok(Json(json!({
         "er_kreditnota": m.er_kreditnota,
-        "fakturanr": m.fakturanr,
+        "fakturanr": m.invoice_number,
         "fakturadato": m.invoice_date.map(|d| d.to_string()),
         "forfallsdato": m.due_date.map(|d| d.to_string()),
         "valuta": m.currency,
@@ -258,7 +258,7 @@ pub async fn suggestion(
         "kilde": f.source,
         "selger_navn": f.seller_name,
         "orgnr": f.orgnumber,
-        "fakturanr": f.fakturanr,
+        "fakturanr": f.invoice_number,
         "dato": f.date.map(|d| d.to_string()),
         "forfall": f.due_date.map(|d| d.to_string()),
         "kid": f.kid,

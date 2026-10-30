@@ -167,18 +167,35 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     assert_eq!(created_by, "Nettbutikken", "bilaget navngir integrasjonen");
 
     // ---- The activity is visible to the company ----
-    let (status, log) = request(
-        &state,
-        "GET",
-        &format!("{base}/integrations/log"),
-        &admin_token,
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{log}");
-    let kall = log["kall"].as_array().unwrap();
+    // The log row is written from a detached task so that logging never
+    // sits on the request path (auth.rs), which makes this read
+    // eventually consistent. Poll rather than assume: CI once lost the
+    // race on a loaded postgres while the same test passed locally.
+    let mut log = serde_json::Value::Null;
+    for _ in 0..50 {
+        let (status, body) = request(
+            &state,
+            "GET",
+            &format!("{base}/integrations/log"),
+            &admin_token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        log = body;
+        if log["kall"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| k["navn"] == "Nettbutikken" && k["path"].as_str().unwrap().contains("/bokfor"))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let call = log["kall"].as_array().unwrap();
     assert!(
-        kall.iter().any(|k| k["navn"] == "Nettbutikken"
+        call.iter().any(|k| k["navn"] == "Nettbutikken"
             && k["path"].as_str().unwrap().contains("/bokfor")),
         "de endrende kallene er logget: {log}"
     );

@@ -33,9 +33,9 @@ pub struct Shareholder {
     pub orgnumber: Option<String>,
     pub utenlandsk_id: Option<String>,
     pub address: Option<String>,
-    pub postnummer: Option<String>,
+    pub postal_code: Option<String>,
     pub postal_city: Option<String>,
-    pub landkode: Option<String>,
+    pub country_code: Option<String>,
     pub note: Option<String>,
     /// Holding as of the requested date — computed, never stored.
     pub share_count: i64,
@@ -52,7 +52,7 @@ pub struct ShareEventRow {
     pub date: NaiveDate,
     pub quantity: i64,
     pub amount_ore: Option<i64>,
-    pub motpart: Option<String>,
+    pub counterparty: Option<String>,
     pub note: Option<String>,
     pub created_by: String,
 }
@@ -72,13 +72,13 @@ pub struct DividendResolution {
 pub struct NewShareholder {
     pub kind: String,
     pub name: String,
-    pub fodselsnummer: Option<String>,
+    pub nin: Option<String>,
     pub orgnumber: Option<String>,
     pub utenlandsk_id: Option<String>,
     pub address: Option<String>,
-    pub postnummer: Option<String>,
+    pub postal_code: Option<String>,
     pub postal_city: Option<String>,
-    pub landkode: Option<String>,
+    pub country_code: Option<String>,
     pub note: Option<String>,
 }
 
@@ -94,7 +94,7 @@ pub async fn create_shareholder(
     match new.kind.as_str() {
         "person" => {
             let fnr = new
-                .fodselsnummer
+                .nin
                 .as_deref()
                 .context("personlig aksjonær må ha fødselsnummer")?;
             ensure!(
@@ -137,14 +137,14 @@ pub async fn create_shareholder(
     .bind(id)
     .bind(company_id)
     .bind(&new.kind)
-    .bind(&new.fodselsnummer)
+    .bind(&new.nin)
     .bind(&new.orgnumber)
     .bind(&new.utenlandsk_id)
     .bind(&new.name)
     .bind(&new.address)
-    .bind(&new.postnummer)
+    .bind(&new.postal_code)
     .bind(&new.postal_city)
-    .bind(&new.landkode)
+    .bind(&new.country_code)
     .bind(&new.note)
     .bind(created_by)
     .execute(pool)
@@ -160,9 +160,9 @@ pub async fn update_shareholder_contact(
     shareholder_id: Uuid,
     name: &str,
     address: Option<&str>,
-    postnummer: Option<&str>,
+    postal_code: Option<&str>,
     postal_city: Option<&str>,
-    landkode: Option<&str>,
+    country_code: Option<&str>,
 ) -> Result<()> {
     ensure!(!name.trim().is_empty(), "navn kan ikke være tomt");
     let done = sqlx::query(
@@ -174,9 +174,9 @@ pub async fn update_shareholder_contact(
     .bind(company_id)
     .bind(name)
     .bind(address)
-    .bind(postnummer)
+    .bind(postal_code)
     .bind(postal_city)
-    .bind(landkode)
+    .bind(country_code)
     .execute(pool)
     .await?;
     ensure!(done.rows_affected() == 1, "no such aksjonær");
@@ -225,9 +225,9 @@ pub async fn aksjeeierbok(
                 orgnumber: r.get("orgnr"),
                 utenlandsk_id: r.get("utenlandsk_id"),
                 address: r.get("adresse"),
-                postnummer: r.get("postnummer"),
+                postal_code: r.get("postnummer"),
                 postal_city: r.get("poststed"),
-                landkode: r.get("landkode"),
+                country_code: r.get("landkode"),
                 note: r.get("note"),
                 share_count: quantity,
                 // Basispunkter, ingen flyttall.
@@ -285,7 +285,7 @@ pub async fn list_hendelser(
                 date: r.get("dato"),
                 quantity: r.get("antall"),
                 amount_ore: r.get("belop_ore"),
-                motpart: r.get("motpart"),
+                counterparty: r.get("motpart"),
                 note: r.get("note"),
                 created_by: r.get("created_by"),
             }
@@ -305,8 +305,8 @@ pub async fn record_hendelse(
     date: NaiveDate,
     quantity: i64,
     amount_ore: Option<i64>,
-    motpart_id: Option<Uuid>,
-    motpart_type_slug: Option<&str>,
+    counterparty_id: Option<Uuid>,
+    counterparty_type_slug: Option<&str>,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<Uuid> {
@@ -344,22 +344,24 @@ pub async fn record_hendelse(
         date,
         quantity,
         amount_ore,
-        motpart_id,
+        counterparty_id,
         note,
         created_by,
     )
     .await?;
 
     // The counterparty, when the transfer has a known other side.
-    if let (Some(motpart_id), Some(motpart_slug)) = (motpart_id, motpart_type_slug) {
-        let motpart_type = TransactionType::from_slug(motpart_slug)
-            .with_context(|| format!("ukjent transaksjonstype «{motpart_slug}»"))?;
+    if let (Some(counterparty_id), Some(counterparty_slug)) =
+        (counterparty_id, counterparty_type_slug)
+    {
+        let counterparty_type = TransactionType::from_slug(counterparty_slug)
+            .with_context(|| format!("ukjent transaksjonstype «{counterparty_slug}»"))?;
         ensure!(
-            motpart_type.is_acquisition() != type_.is_acquisition(),
+            counterparty_type.is_acquisition() != type_.is_acquisition(),
             "de to sidene av en overdragelse må gå hver sin vei"
         );
-        if !motpart_type.is_acquisition() {
-            let holding = beholdning_i_tx(&mut tx, motpart_id, date).await?;
+        if !counterparty_type.is_acquisition() {
+            let holding = beholdning_i_tx(&mut tx, counterparty_id, date).await?;
             ensure!(
                 holding >= quantity,
                 "motparten har bare {holding} aksjer den {date}"
@@ -369,8 +371,8 @@ pub async fn record_hendelse(
             &mut tx,
             Uuid::new_v4(),
             company_id,
-            motpart_id,
-            motpart_type.slug(),
+            counterparty_id,
+            counterparty_type.slug(),
             date,
             quantity,
             amount_ore,
@@ -395,7 +397,7 @@ async fn insert_event(
     date: NaiveDate,
     quantity: i64,
     amount_ore: Option<i64>,
-    motpart_id: Option<Uuid>,
+    counterparty_id: Option<Uuid>,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<()> {
@@ -412,7 +414,7 @@ async fn insert_event(
     .bind(date)
     .bind(quantity)
     .bind(amount_ore)
-    .bind(motpart_id)
+    .bind(counterparty_id)
     .bind(note)
     .bind(created_by)
     .execute(&mut **tx)
@@ -591,7 +593,7 @@ pub struct ReturnSet {
 
 /// Builds the year's oppgave. Amounts come from the aksjebok, not from
 /// anything the user retypes for the filing.
-pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<ReturnSet> {
+pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<ReturnSet> {
     let company = sqlx::query("select orgnr, name, address, email from company where id = $1")
         .bind(company_id)
         .fetch_optional(pool)
@@ -676,11 +678,11 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 id: aksjonaerid(pool, a).await?,
                 name: a.name.clone(),
                 address: a.address.clone(),
-                postnummer: a.postnummer.clone(),
+                postal_code: a.postal_code.clone(),
                 postal_city: a.postal_city.clone(),
-                landkode: a.landkode.clone(),
+                country_code: a.country_code.clone(),
                 share_count: tax_return::PriorYear {
-                    fjoraret: bevegelse.opening,
+                    last_year: bevegelse.opening,
                     this_year: bevegelse.closing,
                 },
                 dividend,
@@ -702,7 +704,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     }
 
     let aksjekapital = tax_return::PriorYear {
-        fjoraret: shares_last_year * palydende_ore,
+        last_year: shares_last_year * palydende_ore,
         this_year: shares_this_year * palydende_ore,
     };
 
@@ -712,7 +714,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 orgnumber,
                 name: company.get("name"),
                 address: gate,
-                postnummer: postnr,
+                postal_code: postnr,
                 postal_city,
                 contact_name: None,
                 contact_email: company.get("email"),
@@ -720,11 +722,11 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
             inntektsar: year,
             aksjekapital,
             palydende_ore: tax_return::PriorYear {
-                fjoraret: palydende_ore,
+                last_year: palydende_ore,
                 this_year: palydende_ore,
             },
             share_count: tax_return::PriorYear {
-                fjoraret: shares_last_year,
+                last_year: shares_last_year,
                 this_year: shares_this_year,
             },
             innbetalt_aksjekapital: aksjekapital,
@@ -763,7 +765,7 @@ async fn aksjonaerid(pool: &PgPool, a: &Shareholder) -> Result<Option<tax_return
             .bind(a.id)
             .fetch_one(pool)
             .await?;
-    Ok(fnr.map(tax_return::ShareholderId::Fodselsnummer))
+    Ok(fnr.map(tax_return::ShareholderId::Nin))
 }
 
 /// Pålydende per aksje, derived from the founding event when it carries

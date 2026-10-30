@@ -31,7 +31,7 @@ use crate::ledger::{PostedVoucher, post_voucher_in};
 
 #[derive(Debug, Default)]
 pub struct ContactsReport {
-    pub opprettet: usize,
+    pub created: usize,
     pub oppdatert: usize,
     pub warnings: Vec<String>,
 }
@@ -82,7 +82,7 @@ pub async fn import_contacts(
                 .await;
                 match created {
                     Ok((id, _)) => {
-                        report.opprettet += 1;
+                        report.created += 1;
                         id
                     }
                     Err(e) => {

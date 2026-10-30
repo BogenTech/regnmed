@@ -63,7 +63,8 @@ pub async fn list_employees(
 
 #[derive(Deserialize)]
 pub struct CreateEmployeeRequest {
-    fodselsnummer: String,
+    #[serde(rename = "fodselsnummer")]
+    nin: String,
     #[serde(rename = "navn")]
     name: String,
     stilling: Option<String>,
@@ -105,7 +106,7 @@ pub async fn create_employee(
         &state.pool,
         company_id,
         &regnmed_db::payroll::NewEmployee {
-            fodselsnummer: request.fodselsnummer,
+            nin: request.nin,
             name: request.name,
             stilling: request.stilling,
             employed_from: request.employed_from,
@@ -370,7 +371,7 @@ pub async fn employee_link_history(
         regnmed_db::payroll::employee_link_history(&state.pool, company_id, employee_id).await?;
     Ok(Json(json!({
         "historikk": rader.iter().map(|h| json!({
-            "endring": h.endring,
+            "endring": h.change,
             "kilde": h.source,
             "person": h.person_name,
             "utfort_av": h.performed_by,

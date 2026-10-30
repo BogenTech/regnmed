@@ -182,7 +182,7 @@ pub async fn update_dimension(
 
 /// One row of the dated sats history for a prosjekt (migration 0052).
 #[derive(Debug)]
-pub struct ProsjektSatsRow {
+pub struct ProjectRateRow {
     pub person_id: Option<Uuid>,
     pub person_name: Option<String>,
     pub hourly_rate_ore: i64,
@@ -192,11 +192,11 @@ pub struct ProsjektSatsRow {
 
 /// The full dated history, newest first — the editor shows it, nothing
 /// is ever deleted (append-only, the satsregister doctrine).
-pub async fn list_prosjekt_satser(
+pub async fn list_project_rates(
     pool: &PgPool,
     company_id: Uuid,
     code: &str,
-) -> Result<Vec<ProsjektSatsRow>> {
+) -> Result<Vec<ProjectRateRow>> {
     let rows = sqlx::query(
         "select s.person_id, coalesce(p.name, p.oidc_sub) as person_navn,
                 s.timesats_ore, s.valid_from, s.created_by
@@ -212,7 +212,7 @@ pub async fn list_prosjekt_satser(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| ProsjektSatsRow {
+        .map(|r| ProjectRateRow {
             person_id: r.get("person_id"),
             person_name: r
                 .get::<Option<Uuid>, _>("person_id")
@@ -226,7 +226,7 @@ pub async fn list_prosjekt_satser(
 
 /// A rate change is one INSERT: the new row wins from `valid_from`,
 /// history stays. `person_id` None sets the project's default rate.
-pub async fn set_prosjekt_sats(
+pub async fn set_project_rate(
     pool: &PgPool,
     company_id: Uuid,
     code: &str,

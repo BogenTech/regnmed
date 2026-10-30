@@ -39,7 +39,7 @@ pub async fn list(
             "integration_id": g.integration_id,
             "client_id": g.client_id,
             "navn": g.name,
-            "kontakt": g.kontakt,
+            "kontakt": g.contact,
             "access": g.access,
             "valid_from": g.valid_from.to_string(),
             "valid_to": g.valid_to.map(|d| d.to_string()),
@@ -47,12 +47,12 @@ pub async fn list(
             "created_by": g.created_by,
             "revoked_by": g.revoked_by,
             "rate_limit_min": g.rate_limit_min,
-            "kall_i_dag": g.kall_i_dag,
+            "kall_i_dag": g.calls_today,
             "avatar_farge": g.avatar_farge,
             "avatar_ikon": g.avatar_ikon,
             "system_prompt": g.system_prompt,
-            "llm": g.llm.as_ref().map(|(lev, modell)| json!({
-                "leverandor": lev, "modell": modell
+            "llm": g.llm.as_ref().map(|(lev, model)| json!({
+                "leverandor": lev, "modell": model
             })),
         })).collect::<Vec<_>>(),
         // The face's colours are served from the code that validates
@@ -78,7 +78,8 @@ pub struct GrantRequest {
     client_id: String,
     #[serde(rename = "navn")]
     name: String,
-    kontakt: Option<String>,
+    #[serde(rename = "kontakt")]
+    contact: Option<String>,
     /// A role name, exactly as a member gets one: a built-in role or one
     /// of the company's own (#101). `revisor` is not assignable here any
     /// more than it is to a person — it follows a revisjonsoppdrag.
@@ -108,14 +109,14 @@ async fn require_valid_role(
     if TILDELBARE.iter().any(|r| r.slug() == name) {
         return Ok(());
     }
-    let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
-    if egne.iter().any(|r| r.active && r.name == name) {
+    let own = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
+    if own.iter().any(|r| r.active && r.name == name) {
         return Ok(());
     }
     let valg: Vec<&str> = TILDELBARE
         .iter()
         .map(|r| r.slug())
-        .chain(egne.iter().filter(|r| r.active).map(|r| r.name.as_str()))
+        .chain(own.iter().filter(|r| r.active).map(|r| r.name.as_str()))
         .collect();
     Err(ApiError::BadRequest(format!(
         "«{name}» er ingen rolle i dette selskapet — velg en av: {}",
@@ -143,7 +144,7 @@ pub async fn grant(
         company_id,
         &request.client_id,
         &request.name,
-        request.kontakt.as_deref(),
+        request.contact.as_deref(),
         &request.access,
         &by,
     )
@@ -158,7 +159,8 @@ pub struct AgentRequest {
     name: String,
     /// A role name, exactly as a member gets one.
     access: String,
-    kontakt: Option<String>,
+    #[serde(rename = "kontakt")]
+    contact: Option<String>,
     avatar_farge: Option<String>,
     avatar_ikon: Option<String>,
     /// Extra instructions on top of the role prompt.
@@ -173,7 +175,8 @@ pub struct AgentRequest {
     #[serde(rename = "leverandor")]
     supplier: Option<String>,
     base_url: Option<String>,
-    modell: Option<String>,
+    #[serde(rename = "modell")]
+    model: Option<String>,
     #[serde(rename = "api_nokkel")]
     api_key: Option<String>,
 }
@@ -257,7 +260,7 @@ pub async fn opprett_agent(
         company_id,
         &client_id,
         &request.name,
-        request.kontakt.as_deref(),
+        request.contact.as_deref(),
         &request.access,
         &by,
     )
@@ -271,14 +274,14 @@ pub async fn opprett_agent(
     let har_metadata = request.avatar_farge.is_some()
         || request.avatar_ikon.is_some()
         || request.system_prompt.is_some()
-        || request.kontakt.is_some();
+        || request.contact.is_some();
     if har_metadata
         && let Err(e) = regnmed_db::update_integration(
             &state.pool,
             company_id,
             integration_id,
             &request.name,
-            request.kontakt.as_deref(),
+            request.contact.as_deref(),
             request.avatar_farge.as_deref(),
             request.avatar_ikon.as_deref(),
             request.system_prompt.as_deref(),
@@ -306,8 +309,8 @@ pub async fn opprett_agent(
 
     // The model, when the form carried one. Partial model fields are a
     // mistake worth naming rather than storing half of.
-    let modell = request
-        .modell
+    let model = request
+        .model
         .as_deref()
         .map(str::trim)
         .filter(|m| !m.is_empty());
@@ -316,8 +319,8 @@ pub async fn opprett_agent(
         .as_deref()
         .map(str::trim)
         .filter(|k| !k.is_empty());
-    match (modell, api_key) {
-        (Some(modell), Some(api_key)) => {
+    match (model, api_key) {
+        (Some(model), Some(api_key)) => {
             let Some(key) = state.sealing_key.as_ref() else {
                 return Err(ApiError::BadRequest(
                     "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
@@ -331,7 +334,7 @@ pub async fn opprett_agent(
                 integration_id,
                 request.supplier.as_deref().unwrap_or("openai"),
                 request.base_url.as_deref(),
-                modell,
+                model,
                 api_key,
                 &by,
             )
@@ -351,7 +354,7 @@ pub async fn opprett_agent(
         "client_id": client_id,
         // Whether this agent can work on its own, or is waiting for
         // somebody to finish setting it up.
-        "klar": modell.is_some() && api_key.is_some(),
+        "klar": model.is_some() && api_key.is_some(),
         "advarsler": warnings,
     })))
 }
@@ -360,7 +363,8 @@ pub async fn opprett_agent(
 pub struct EndreRequest {
     #[serde(rename = "navn")]
     name: String,
-    kontakt: Option<String>,
+    #[serde(rename = "kontakt")]
+    contact: Option<String>,
     avatar_farge: Option<String>,
     avatar_ikon: Option<String>,
     /// Extra instructions for this agent, on top of the role prompt
@@ -390,7 +394,7 @@ pub async fn endre(
         company_id,
         integration_id,
         &request.name,
-        request.kontakt.as_deref(),
+        request.contact.as_deref(),
         request.avatar_farge.as_deref(),
         request.avatar_ikon.as_deref(),
         request.system_prompt.as_deref(),
@@ -478,7 +482,8 @@ pub struct LlmRequest {
     #[serde(rename = "leverandor")]
     supplier: String,
     base_url: Option<String>,
-    modell: String,
+    #[serde(rename = "modell")]
+    model: String,
     /// The customer's own key. Goes in sealed and never comes back out:
     /// [`llm`] reports whether one is set, never what it is.
     #[serde(rename = "api_nokkel")]
@@ -498,7 +503,7 @@ pub async fn llm(
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::IntegrationRead).await?;
-    let oppsett = regnmed_db::agentllm::hent_llm(&state.pool, company_id, integration_id).await?;
+    let config = regnmed_db::agentllm::hent_llm(&state.pool, company_id, integration_id).await?;
     Ok(Json(json!({
         // Without a sealing key the rail is off, and the portal says so
         // rather than offering a form that would store a key we cannot
@@ -513,10 +518,10 @@ pub async fn llm(
         // the portal must be able to say which half is missing.
         "klient_lagret": regnmed_db::agentllm::har_klienthemmelighet(
             &state.pool, integration_id).await?,
-        "oppsett": oppsett.filter(|o| o.active).map(|o| json!({
+        "oppsett": config.filter(|o| o.active).map(|o| json!({
             "leverandor": o.supplier,
             "base_url": o.base_url,
-            "modell": o.modell,
+            "modell": o.model,
             "satt_av": o.set_by,
             "satt_at": o.created_at.to_rfc3339(),
             "nokkel_lagret": true,
@@ -553,7 +558,7 @@ pub async fn sett_llm(
         integration_id,
         &request.supplier,
         request.base_url.as_deref(),
-        &request.modell,
+        &request.model,
         &request.api_key,
         person.display(),
     )

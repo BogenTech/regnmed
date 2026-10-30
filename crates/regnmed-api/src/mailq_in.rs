@@ -54,7 +54,7 @@ fn octet_stream() -> String {
 
 /// Refuses an attachment larger than this; a mail rail is not a file
 /// share, and the innboks stores what it accepts forever.
-const MAX_VEDLEGG_BYTES: usize = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
 
 impl InboundMail {
     /// Wire shape → what the db layer stores. Undecodable or oversized
@@ -65,13 +65,13 @@ impl InboundMail {
         let mut attachments = Vec::new();
         for a in &self.attachments {
             match BASE64.decode(a.content_base64.as_bytes()) {
-                Ok(bytes) if bytes.len() > MAX_VEDLEGG_BYTES => warnings.push(format!(
+                Ok(bytes) if bytes.len() > MAX_ATTACHMENT_BYTES => warnings.push(format!(
                     "{} er større enn {} MB og ble ikke lagret",
                     a.filename,
-                    MAX_VEDLEGG_BYTES / (1024 * 1024)
+                    MAX_ATTACHMENT_BYTES / (1024 * 1024)
                 )),
                 Ok(bytes) if bytes.is_empty() => {}
-                Ok(bytes) => attachments.push(regnmed_db::MottattVedlegg {
+                Ok(bytes) => attachments.push(regnmed_db::ReceivedAttachment {
                     filename: a.filename.clone(),
                     content_type: a.content_type.clone(),
                     content: bytes,

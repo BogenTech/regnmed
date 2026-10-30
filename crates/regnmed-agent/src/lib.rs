@@ -254,7 +254,7 @@ pub async fn run_task(
     issuer: &str,
     api_base: &str,
 ) -> Result<Outcome> {
-    let task = regnmed_db::agent_task::hent_oppgave(pool, company_id, task_id)
+    let task = regnmed_db::agent_task::fetch_task(pool, company_id, task_id)
         .await?
         .context("no such task")?;
     let Some(integration_id) = task.integration_id else {
@@ -291,7 +291,7 @@ pub async fn run_task(
     )
     .await?;
     let server = Server::new(client);
-    let model = Llm::new(&settings.base_url, &settings.modell, &model_key)?;
+    let model = Llm::new(&settings.base_url, &settings.model, &model_key)?;
 
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.

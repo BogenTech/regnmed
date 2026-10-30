@@ -56,7 +56,7 @@ async fn request(
 /// A prosjekt may carry its kunde (#80): editable metadata, never part
 /// of the chain. Only prosjekter, only actual customers, one at a time.
 #[tokio::test]
-async fn a_prosjekt_carries_its_customer() {
+async fn a_project_carries_its_customer() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;

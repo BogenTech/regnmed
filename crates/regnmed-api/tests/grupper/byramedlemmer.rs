@@ -324,11 +324,11 @@ async fn byra_members_are_invited_never_coregistered() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {response}");
-    let invitasjon_id = response["invitasjon_id"].as_str().unwrap().to_string();
+    let invitation_id = response["invitasjon_id"].as_str().unwrap().to_string();
     let (status, _) = request(
         &state,
         "DELETE",
-        &format!("/firms/{firm_id}/invitations/{invitasjon_id}"),
+        &format!("/firms/{firm_id}/invitations/{invitation_id}"),
         &employee_token,
         None,
     )

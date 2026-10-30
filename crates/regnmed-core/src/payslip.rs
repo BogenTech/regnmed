@@ -351,7 +351,7 @@ mod tests {
 
     /// The fødselsnummer must never end up in a document that travels.
     #[test]
-    fn the_slip_shows_the_birth_date_not_the_fodselsnummer() {
+    fn the_slip_shows_the_birth_date_not_the_nin() {
         let text = String::from_utf8_lossy(&render_payslip(&input())).to_string();
         assert!(text.contains("1993-02-26"));
         assert!(!text.contains("26829398612"));

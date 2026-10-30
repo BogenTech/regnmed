@@ -97,7 +97,7 @@ pub async fn revoke_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    regnmed_db::members::sett_aktiv(
+    regnmed_db::members::set_active(
         &state.pool,
         company_id,
         person_id,
@@ -116,7 +116,7 @@ pub async fn restore_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    regnmed_db::members::sett_aktiv(
+    regnmed_db::members::set_active(
         &state.pool,
         company_id,
         person_id,
@@ -139,7 +139,7 @@ pub async fn access_history(
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.name,
-            "endring": e.endring,
+            "endring": e.change,
             "fra_rolle": e.from_role,
             "til_rolle": e.to_role,
             "utfort_av": e.performed_by,
@@ -226,13 +226,13 @@ pub async fn invite(
 pub async fn revoke_invitation(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, invitasjon_id)): Path<(Uuid, Uuid)>,
+    Path((company_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    regnmed_db::members::tilbakekall_invitasjon(
+    regnmed_db::members::revoke_invitation(
         &state.pool,
         company_id,
-        invitasjon_id,
+        invitation_id,
         person.person_id,
     )
     .await

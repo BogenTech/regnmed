@@ -41,7 +41,7 @@ suggests and computes, a person clicks.
   insert-only (append-only triggers + INSERT/SELECT-only grants), and
   the **rendered document is stored at registration** — the krav is
   reproducible byte for byte forever, however satser change later.
-  Rendering is deterministic (`render_dokument`), same doctrine as the
+  Rendering is deterministic (`render_document`), same doctrine as the
   verifikasjonsrapport.
 - **KID follows the invoice**: the krav carries the original invoice's
   KID, so an OCR payment still resolves the right invoice.

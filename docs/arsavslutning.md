@@ -42,7 +42,7 @@ krediterer 2050:
   hovedboken. **Hovedboken bærer det selv**, som alt annet her.
 
 Det ENESTE `regnmed-core::regnskap` måtte endre er at
-resultatregnskapet UTELATER 8800 (`resultat_sum`, mens `ledger_sum` som
+resultatregnskapet UTELATER 8800 (`result_for_the_year`, mens `ledger_sum` som
 balansen bruker beholder den). Uten det ville fjorårets
 resultatregnskap vist null overskudd i det øyeblikket året ble
 avsluttet. Testen er sett feile: `left: 0, right: 185000`.
@@ -69,7 +69,7 @@ sier hvorfor i stedet for å la triggeren dukke opp to lag ned.
 `skattekostnad_ore` er kallerens tall. Skattemessig resultat er ikke
 regnskapsmessig resultat — permanente og midlertidige forskjeller
 avgjør, og de midlertidige finnes allerede for anleggsmidler i
-`saldo_rapport`. Å regne 22 % av regnskapsmessig overskudd her ville
+`balance_report`. Å regne 22 % av regnskapsmessig overskudd her ville
 vært å dikte opp en skattemelding. **0 er et gyldig svar som må
 oppgis.**
 

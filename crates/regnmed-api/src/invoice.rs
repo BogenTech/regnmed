@@ -48,7 +48,8 @@ pub struct CreateInvoiceRequest {
     /// ("Kort", "Vipps", "Kontant"). Present = kontantfaktura: the
     /// receivable is raised and settled in one transaction, and the
     /// document carries no KID and no forfall.
-    kontant_betalingsmiddel: Option<String>,
+    #[serde(rename = "kontant_betalingsmiddel")]
+    cash_payment_method: Option<String>,
     /// Where the money landed — 1900 kontanter, 1920 bank, or the card
     /// acquirer's clearing account. Required with the above; we never
     /// guess how somebody was paid.
@@ -89,15 +90,13 @@ pub async fn create_invoice(
         require(&state, person.person_id, company_id, Right::TimesheetBill).await?;
     }
 
-    let kontant = request
-        .kontant_betalingsmiddel
-        .filter(|s| !s.trim().is_empty());
+    let cash = request.cash_payment_method.filter(|s| !s.trim().is_empty());
     let settlement_account = request.settlement_account;
     let draft = regnmed_db::InvoiceDraft {
         // create_kontantfaktura sets this itself; the ordinary route
         // never issues one, so a caller cannot turn a credit sale into a
         // "paid" document by passing a flag.
-        kontant_betalingsmiddel: None,
+        cash_payment_method: None,
         party_no: request.party_no,
         invoice_date: request.invoice_date,
         due_date: request.due_date,
@@ -116,7 +115,7 @@ pub async fn create_invoice(
     // same transaction as the issue, so it cannot be an extra step a
     // caller might skip and leave a "paid" document with an open item
     // behind it.
-    if let Some(middel) = kontant {
+    if let Some(middel) = cash {
         let account = settlement_account.ok_or_else(|| {
             ApiError::BadRequest(
                 "kontantsalg må si hvor pengene havnet (oppgjorskonto, f.eks. 1900 eller 1920)"

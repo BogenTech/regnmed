@@ -118,7 +118,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     ));
 
     // A task to answer, so the task tools have a real target.
-    let task = regnmed_db::agent_task::opprett_oppgave(
+    let task = regnmed_db::agent_task::create_task(
         &state.pool,
         company,
         Some(integration_id),
@@ -159,9 +159,9 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     ]);
 
     for (name, args) in &argumenter {
-        let (feilet, text) = calls(&server, name, args.clone()).await;
+        let (failed, text) = calls(&server, name, args.clone()).await;
         assert!(
-            !feilet,
+            !failed,
             "{name} nådde ikke fram eller ble nektet — verktøytabellen har sklidt fra API-et: {text}"
         );
     }
@@ -171,7 +171,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // posting tool needed an inbox document). Exercised rather than
     // exempted — it writes to the ledger, which is the one place a
     // drifted tool does damage instead of just failing.
-    let (feilet, text) = calls(
+    let (failed, text) = calls(
         &server,
         "bilag_for",
         json!({
@@ -185,7 +185,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         }),
     )
     .await;
-    assert!(!feilet, "bilag_for nådde ikke fram: {text}");
+    assert!(!failed, "bilag_for nådde ikke fram: {text}");
     let posted: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
         .bind(company)
         .fetch_one(&state.pool)
@@ -220,27 +220,27 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     }
 
     // ---- The writing path, end to end through the tools ----
-    let (feilet, reply) = calls(
+    let (failed, reply) = calls(
         &server,
         "bilag_last_opp",
         json!({"fil": skriv_midlertidig("kvittering.txt", b"Kaffe 49,00")}),
     )
     .await;
-    assert!(!feilet, "{reply}");
+    assert!(!failed, "{reply}");
     let document = serde_json::from_str::<Value>(&reply).unwrap()["document_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    let (feilet, reply) = calls(&server, "innboks_forslag", json!({"dokument": document})).await;
-    assert!(!feilet, "forslaget svarer for ethvert dokument: {reply}");
+    let (failed, reply) = calls(&server, "innboks_forslag", json!({"dokument": document})).await;
+    assert!(!failed, "forslaget svarer for ethvert dokument: {reply}");
 
     for (number, name) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
-    let (feilet, reply) = calls(
+    let (failed, reply) = calls(
         &server,
         "bilag_bokfor",
         json!({
@@ -255,7 +255,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         }),
     )
     .await;
-    assert!(!feilet, "{reply}");
+    assert!(!failed, "{reply}");
 
     // The bilag names the AGENT, not an anonymous subject — the whole
     // reason an integration is a person row (#45).
@@ -269,32 +269,32 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     assert_eq!(created_by, "Regnskapsagenten");
 
     // ---- And the agent reports back on the task it was given ----
-    let (feilet, reply) = calls(
+    let (failed, reply) = calls(
         &server,
         "oppgave_svar",
         json!({"oppgave": task.to_string(), "status": "sporsmal",
                "notat": "Kontoplanen må avstemmes mot NS 4102 — bekreft forslaget."}),
     )
     .await;
-    assert!(!feilet, "{reply}");
-    let (feilet, reply) = calls(
+    assert!(!failed, "{reply}");
+    let (failed, reply) = calls(
         &server,
         "oppgave_svar",
         json!({"oppgave": task.to_string(), "status": "utfort",
                "notat": "Importert og avstemt."}),
     )
     .await;
-    assert!(!feilet, "{reply}");
+    assert!(!failed, "{reply}");
     // Terminal means terminal: migration 0064's trigger refuses a
     // further event, and the agent is TOLD so rather than silently
     // overwriting its own answer.
-    let (feilet, reply) = calls(
+    let (failed, reply) = calls(
         &server,
         "oppgave_svar",
         json!({"oppgave": task.to_string(), "status": "pagar"}),
     )
     .await;
-    assert!(feilet, "en avsluttet oppgave kan ikke gjenåpnes: {reply}");
+    assert!(failed, "en avsluttet oppgave kan ikke gjenåpnes: {reply}");
     assert!(reply.contains("avsluttet"), "{reply}");
 
     // ---- The remaining write paths: do they EXIST? ----
@@ -329,8 +329,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
             json!({"fil": tomcsv, "kind": "kunde", "preview": true}),
         ),
     ] {
-        let (feilet, reply) = calls(&server, name, args).await;
-        assert!(feilet, "{name} skulle feilet på innholdet: {reply}");
+        let (failed, reply) = calls(&server, name, args).await;
+        assert!(failed, "{name} skulle feilet på innholdet: {reply}");
         assert!(
             reply.contains("400"),
             "{name}: forventet 400 (ruten finnes, innholdet er tull). \
@@ -339,7 +339,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     }
 
     // ---- A bad call comes back as prose the model can act on ----
-    let (feilet, reply) = calls(
+    let (failed, reply) = calls(
         &server,
         "bilag_bokfor",
         json!({
@@ -349,7 +349,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         }),
     )
     .await;
-    assert!(feilet);
+    assert!(failed);
     assert!(
         reply.contains("400") || reply.contains("404"),
         "feilen bærer statusen: {reply}"
@@ -631,7 +631,7 @@ async fn only_one_worker_can_hold_a_task() {
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
-    let task = regnmed_db::agent_task::opprett_oppgave(
+    let task = regnmed_db::agent_task::create_task(
         &state.pool,
         company,
         None,

@@ -70,7 +70,7 @@ fn valider(xml: &str, xsd_name: &str, tag: &str) {
 }
 
 #[tokio::test]
-async fn aksjeeierbok_dividends_and_the_oppgave() {
+async fn share_register_dividends_and_the_return() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -351,13 +351,13 @@ async fn events_cannot_be_changed_or_deleted() {
         &regnmed_db::share_register::NewShareholder {
             kind: "selskap".into(),
             name: "Eier AS".into(),
-            fodselsnummer: None,
+            nin: None,
             orgnumber: Some("923609016".into()),
             utenlandsk_id: None,
             address: None,
-            postnummer: None,
+            postal_code: None,
             postal_city: None,
-            landkode: None,
+            country_code: None,
             note: None,
         },
         "Ola",

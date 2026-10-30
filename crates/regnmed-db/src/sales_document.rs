@@ -228,7 +228,7 @@ pub async fn set_quote_status(
 
 /// An accepted tilbud becomes an ordre: lines copied losslessly, chain
 /// linked, at most one ordre per tilbud (unique index).
-pub async fn quote_to_ordre(
+pub async fn quote_to_order(
     pool: &PgPool,
     company_id: Uuid,
     quote_id: Uuid,
@@ -251,13 +251,13 @@ pub async fn quote_to_ordre(
     );
 
     let doc_no = next_doc_no(&mut tx, company_id, "ordre").await?;
-    let ordre_id = Uuid::now_v7();
+    let order_id = Uuid::now_v7();
     sqlx::query(
         "insert into salgsdokument (id, company_id, kind, doc_no, party_id, doc_date,
                                     status, tilbud_id, created_by)
          values ($1, $2, 'ordre', $3, $4, $5, 'bekreftet', $6, $7)",
     )
-    .bind(ordre_id)
+    .bind(order_id)
     .bind(company_id)
     .bind(doc_no)
     .bind(quote.get::<Uuid, _>("party_id"))
@@ -276,20 +276,20 @@ pub async fn quote_to_ordre(
          from salgsdokument_line where dokument_id = $1",
     )
     .bind(quote_id)
-    .bind(ordre_id)
+    .bind(order_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok((ordre_id, doc_no))
+    Ok((order_id, doc_no))
 }
 
 /// A confirmed ordre becomes an invoice through the NORMAL atomic path
 /// (gap-free number, KID, posting, PDF) — ordre status and invoice link
 /// commit in the same transaction. One ordre → one faktura.
-pub async fn ordre_to_invoice(
+pub async fn order_to_invoice(
     pool: &PgPool,
     company_id: Uuid,
-    ordre_id: Uuid,
+    order_id: Uuid,
     invoice_date: NaiveDate,
     due_date: NaiveDate,
     delivery_date: NaiveDate,
@@ -297,25 +297,25 @@ pub async fn ordre_to_invoice(
     created_by: &str,
 ) -> Result<IssuedInvoice> {
     let mut tx = pool.begin().await?;
-    let ordre = sqlx::query(
+    let order = sqlx::query(
         "select s.status, p.party_no from salgsdokument s
          join party p on p.id = s.party_id
          where s.id = $1 and s.company_id = $2 and s.kind = 'ordre' for update of s",
     )
-    .bind(ordre_id)
+    .bind(order_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
     .await?
     .context("no such ordre")?;
     ensure!(
-        ordre.get::<String, _>("status") == "bekreftet",
+        order.get::<String, _>("status") == "bekreftet",
         "ordren er allerede fakturert"
     );
 
-    let lines = load_lines(pool, ordre_id).await?;
+    let lines = load_lines(pool, order_id).await?;
     let draft = InvoiceDraft {
-        kontant_betalingsmiddel: None,
-        party_no: ordre.get("party_no"),
+        cash_payment_method: None,
+        party_no: order.get("party_no"),
         invoice_date,
         due_date,
         delivery_date,
@@ -344,7 +344,7 @@ pub async fn ordre_to_invoice(
         "update salgsdokument set status = 'fakturert', invoice_id = $3, updated_at = now()
          where id = $1 and company_id = $2",
     )
-    .bind(ordre_id)
+    .bind(order_id)
     .bind(company_id)
     .bind(issued.invoice_id)
     .execute(&mut *tx)
@@ -508,7 +508,7 @@ pub async fn salgsdokument_pdf(
         DocumentType::Ordrebekreftelse
     };
     let pdf = render_invoice_pdf(&InvoicePdfInput {
-        betalingsmiddel: None,
+        payment_method: None,
         document_type,
         credits_number: None,
         seller_name: doc.get("company_name"),
@@ -521,7 +521,7 @@ pub async fn salgsdokument_pdf(
         buyer_number: doc.get("party_no"),
         buyer_orgnumber: doc.get("party_orgnr"),
         buyer_address: doc.get("party_address"),
-        fakturanr: doc.get("doc_no"),
+        invoice_number: doc.get("doc_no"),
         invoice_date: doc_date,
         due_date: doc_date,
         // A tilbud/ordrebekreftelse is not a salgsdokument — nothing is

@@ -18,13 +18,13 @@ use uuid::Uuid;
 use crate::ledger::post_voucher_in;
 
 /// NS 4102 accounts for payroll. Overridable per run.
-pub const KONTO_LONN: &str = "5000";
+pub const ACCOUNT_SALARY: &str = "5000";
 pub const ACCOUNT_HOLIDAY_PAY_COST: &str = "5090";
-pub const KONTO_AGA_KOSTNAD: &str = "5400";
-pub const KONTO_FORSKUDDSTREKK: &str = "2600";
+pub const ACCOUNT_EMPLOYER_CONTRIBUTION_COST: &str = "5400";
+pub const ACCOUNT_WITHHOLDING: &str = "2600";
 pub const ACCOUNT_HOLIDAY_PAY_OWED: &str = "2940";
-pub const KONTO_SKYLDIG_AGA: &str = "2770";
-pub const KONTO_SKYLDIG_LONN: &str = "2930";
+pub const ACCOUNT_EMPLOYER_CONTRIBUTION_PAYABLE: &str = "2770";
+pub const ACCOUNT_SALARY_PAYABLE: &str = "2930";
 /// Aga on feriepenger that are accrued but not paid out. The account
 /// numbers are chosen so the SAF-T grouping lands correctly: the code
 /// list names 5400 and 2770, and the nearest-neighbour lookup puts 5405
@@ -36,7 +36,7 @@ pub const ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY: &str = "2780";
 
 #[derive(Debug, Clone)]
 pub struct NewEmployee {
-    pub fodselsnummer: String,
+    pub nin: String,
     pub name: String,
     pub stilling: Option<String>,
     pub employed_from: NaiveDate,
@@ -98,7 +98,7 @@ pub async fn create_employee(
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(
-        regnmed_core::nin::is_valid(&new.fodselsnummer),
+        regnmed_core::nin::is_valid(&new.nin),
         "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
     );
     ensure!(
@@ -119,7 +119,7 @@ pub async fn create_employee(
     )
     .bind(id)
     .bind(company_id)
-    .bind(&new.fodselsnummer)
+    .bind(&new.nin)
     .bind(&new.name)
     .bind(&new.stilling)
     .bind(new.employed_from)
@@ -452,7 +452,7 @@ pub async fn run_payroll(
     let mut entries = Vec::new();
     if sum.gross_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_LONN.into(),
+            account_number: ACCOUNT_SALARY.into(),
             amount: Ore(sum.gross_ore),
             vat_code: None,
             description: Some(format!("Lønn {month:02}/{year}")),
@@ -464,7 +464,7 @@ pub async fn run_payroll(
     }
     if sum.withholding_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_FORSKUDDSTREKK.into(),
+            account_number: ACCOUNT_WITHHOLDING.into(),
             amount: Ore(-sum.withholding_ore),
             vat_code: None,
             description: Some("Forskuddstrekk".into()),
@@ -476,7 +476,7 @@ pub async fn run_payroll(
     }
     if sum.net_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_SKYLDIG_LONN.into(),
+            account_number: ACCOUNT_SALARY_PAYABLE.into(),
             amount: Ore(-sum.net_ore),
             vat_code: None,
             description: Some("Netto til utbetaling".into()),
@@ -525,7 +525,7 @@ pub async fn run_payroll(
     }
     if sum.employer_contribution_ore != 0 {
         entries.push(EntryDraft {
-            account_number: KONTO_AGA_KOSTNAD.into(),
+            account_number: ACCOUNT_EMPLOYER_CONTRIBUTION_COST.into(),
             amount: Ore(sum.employer_contribution_ore),
             vat_code: None,
             description: Some(format!("Arbeidsgiveravgift sone {zone_slug}")),
@@ -535,7 +535,7 @@ pub async fn run_payroll(
             currency: None,
         });
         entries.push(EntryDraft {
-            account_number: KONTO_SKYLDIG_AGA.into(),
+            account_number: ACCOUNT_EMPLOYER_CONTRIBUTION_PAYABLE.into(),
             amount: Ore(-sum.employer_contribution_ore),
             vat_code: None,
             description: Some("Skyldig arbeidsgiveravgift".into()),
@@ -1060,7 +1060,7 @@ pub async fn link_employee_person(
         }
     }
     res?;
-    logg_kobling(
+    log_link(
         &mut tx,
         company_id,
         employee_id,
@@ -1098,7 +1098,7 @@ pub async fn unlink_employee_person(
         .bind(company_id)
         .execute(&mut *tx)
         .await?;
-    logg_kobling(
+    log_link(
         &mut tx,
         company_id,
         employee_id,
@@ -1112,12 +1112,12 @@ pub async fn unlink_employee_person(
     Ok(())
 }
 
-pub(crate) async fn logg_kobling(
+pub(crate) async fn log_link(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     employee_id: Uuid,
     person_id: Uuid,
-    endring: &str,
+    change: &str,
     source: &str,
     performed_by: Option<Uuid>,
 ) -> Result<()> {
@@ -1129,7 +1129,7 @@ pub(crate) async fn logg_kobling(
     .bind(company_id)
     .bind(employee_id)
     .bind(person_id)
-    .bind(endring)
+    .bind(change)
     .bind(source)
     .bind(performed_by)
     .execute(&mut **tx)
@@ -1139,7 +1139,7 @@ pub(crate) async fn logg_kobling(
 
 #[derive(Debug, Clone)]
 pub struct Koblingsendring {
-    pub endring: String,
+    pub change: String,
     pub source: String,
     pub person_name: String,
     pub performed_by: Option<String>,
@@ -1170,7 +1170,7 @@ pub async fn employee_link_history(
     Ok(rows
         .iter()
         .map(|r| Koblingsendring {
-            endring: r.get("endring"),
+            change: r.get("endring"),
             source: r.get("kilde"),
             person_name: r.get("person_navn"),
             performed_by: r.get("utfort_av"),

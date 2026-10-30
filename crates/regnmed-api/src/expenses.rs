@@ -115,9 +115,9 @@ pub async fn list(
     // decided by the rettighet, not by the role — then it moves by
     // itself when roles are recomposed (#60).
     let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    let bare_egne = !role.has(Right::ExpenseReadAll);
+    let only_own = !role.has(Right::ExpenseReadAll);
     let expenses =
-        regnmed_db::list_expenses(&state.pool, company_id, person.person_id, bare_egne).await?;
+        regnmed_db::list_expenses(&state.pool, company_id, person.person_id, only_own).await?;
     Ok(Json(json!({
         "expenses": expenses.iter().map(|e| json!({
             "expense_id": e.id,

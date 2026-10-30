@@ -211,10 +211,10 @@ pub enum Direction {
     /// 88, 91). The buyer both computes the output tax and deducts it —
     /// mval. §11-1 (2) and (3), jf. §3-30 — so the net effect on the
     /// amount payable is ZERO.
-    OmvendtMedFradrag,
+    ReverseChargeDeductible,
     /// The same, WITHOUT deduction right (82, 84, 87, 89, 92): the
     /// computed output tax stands alone and is payable in full.
-    OmvendtUtenFradrag,
+    ReverseChargeNonDeductible,
     /// «Kostnad ved innførsel av varer» (20, 21, 22): a marker on the
     /// supplier invoice, NOT a tax calculation. Reported nowhere — the
     /// tax on that same import is calculated under 81/83 or 14/15, and a
@@ -248,8 +248,8 @@ pub fn direction(code: &str) -> Direction {
     match code {
         "3" | "31" | "32" | "33" => Direction::Output,
         "1" | "11" | "12" | "13" | "14" | "15" => Direction::Input,
-        "81" | "83" | "86" | "88" | "91" => Direction::OmvendtMedFradrag,
-        "82" | "84" | "87" | "89" | "92" => Direction::OmvendtUtenFradrag,
+        "81" | "83" | "86" | "88" | "91" => Direction::ReverseChargeDeductible,
+        "82" | "84" | "87" | "89" | "92" => Direction::ReverseChargeNonDeductible,
         "20" | "21" | "22" => Direction::Kostnadsmarkor,
         _ => Direction::None,
     }
@@ -280,7 +280,7 @@ pub fn reverse_charge_entries(
     let retning = basis.vat_code.as_deref().map_or(Direction::None, direction);
     if !matches!(
         retning,
-        Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
+        Direction::ReverseChargeDeductible | Direction::ReverseChargeNonDeductible
     ) {
         return Vec::new();
     }
@@ -309,7 +309,7 @@ pub fn reverse_charge_entries(
         false,
     )];
     match retning {
-        Direction::OmvendtMedFradrag => ut.push(entry(
+        Direction::ReverseChargeDeductible => ut.push(entry(
             deduction_account,
             tax,
             "Fradrag for beregnet mva",
@@ -409,11 +409,11 @@ mod tests {
         assert_eq!(direction("1"), Direction::Input);
         // The deduction right is in the code, and it decides whether the
         // computed tax is payable or a wash.
-        assert_eq!(direction("86"), Direction::OmvendtMedFradrag);
-        assert_eq!(direction("87"), Direction::OmvendtUtenFradrag);
-        assert_eq!(direction("81"), Direction::OmvendtMedFradrag);
-        assert_eq!(direction("82"), Direction::OmvendtUtenFradrag);
-        assert_eq!(direction("91"), Direction::OmvendtMedFradrag);
+        assert_eq!(direction("86"), Direction::ReverseChargeDeductible);
+        assert_eq!(direction("87"), Direction::ReverseChargeNonDeductible);
+        assert_eq!(direction("81"), Direction::ReverseChargeDeductible);
+        assert_eq!(direction("82"), Direction::ReverseChargeNonDeductible);
+        assert_eq!(direction("91"), Direction::ReverseChargeDeductible);
         // Import COST markers compute nothing — 81/14 do.
         assert_eq!(direction("21"), Direction::Kostnadsmarkor);
         // A zero-rated import basis is still a basis, not a marker.
@@ -426,7 +426,7 @@ mod tests {
     /// The computed tax must reach the hovedbok, and the voucher must
     /// still balance — otherwise the posting transaction would reject it.
     #[test]
-    fn omvendt_avgift_is_posted_and_nets_to_zero() {
+    fn reverse_charge_tax_is_posted_and_nets_to_zero() {
         let basis = |code: &str| crate::voucher::EntryDraft {
             account_number: "6800".into(),
             amount: crate::Ore(100_000_00),

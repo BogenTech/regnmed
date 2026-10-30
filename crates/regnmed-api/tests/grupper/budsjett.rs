@@ -44,7 +44,7 @@ async fn request(
     )
 }
 
-fn salg(date: chrono::NaiveDate, net: i64, kostnad: i64) -> VoucherDraft {
+fn sale(date: chrono::NaiveDate, net: i64, kostnad: i64) -> VoucherDraft {
     let entry = |account: &str, amount: i64| EntryDraft {
         account_number: account.into(),
         amount: Ore(amount),
@@ -111,7 +111,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         regnmed_db::post_voucher(
             &state.pool,
             company,
-            &salg(date(year - 1, m, 15), 10_000_00, 2_000_00),
+            &sale(date(year - 1, m, 15), 10_000_00, 2_000_00),
             "test",
         )
         .await
@@ -121,7 +121,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &salg(date(year, 1, 15), 12_000_00, 2_000_00),
+        &sale(date(year, 1, 15), 12_000_00, 2_000_00),
         "test",
     )
     .await
@@ -129,7 +129,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &salg(date(year, 2, 15), 8_000_00, 2_000_00),
+        &sale(date(year, 2, 15), 8_000_00, 2_000_00),
         "test",
     )
     .await

@@ -183,7 +183,7 @@ pub async fn create_verified_firm(
         .bind(person_id)
         .execute(&mut *tx)
         .await?;
-    crate::firm_members::logg(
+    crate::firm_members::log(
         &mut tx,
         firm_id,
         person_id,

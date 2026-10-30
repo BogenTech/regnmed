@@ -75,7 +75,7 @@ og regnskapsloven.
 - ✅ #49 satsregister: shipped — dated `sats` table seeded with
   verified values (forsinkelsesrente H1-2025→H2-2026,
   standardkompensasjon, inkassosats/purregebyr, km-satser, terskler),
-  each row carrying its legal kilde; `sats_on` lookup mirrors
+  each row carrying its legal kilde; `value_on` lookup mirrors
   `rate_on`; the revisjonsrapport's "Regelverkssatser" kontroll flags
   any monitored domain older than its change cadence. Consumers: #29,
   #40, #42, #46.

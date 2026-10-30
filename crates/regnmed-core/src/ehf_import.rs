@@ -39,7 +39,7 @@ pub struct MottattLinje {
 pub struct ReceivedInvoice {
     /// True for CreditNote — the amounts flip when the bilag is proposed.
     pub er_kreditnota: bool,
-    pub fakturanr: String,
+    pub invoice_number: String,
     pub invoice_date: Option<NaiveDate>,
     pub due_date: Option<NaiveDate>,
     pub currency: String,
@@ -112,7 +112,7 @@ pub fn parse(xml: &str) -> Result<ReceivedInvoice, EhfImportError> {
     let mut path: Vec<String> = Vec::new();
     let mut invoice = ReceivedInvoice {
         er_kreditnota: false,
-        fakturanr: String::new(),
+        invoice_number: String::new(),
         invoice_date: None,
         due_date: None,
         currency: "NOK".into(),
@@ -186,7 +186,7 @@ pub fn parse(xml: &str) -> Result<ReceivedInvoice, EhfImportError> {
                 let customer = path.iter().any(|p| p == "AccountingCustomerParty");
 
                 match leaf {
-                    "ID" if path.len() == 2 => invoice.fakturanr = value,
+                    "ID" if path.len() == 2 => invoice.invoice_number = value,
                     "IssueDate" if path.len() == 2 => invoice.invoice_date = Some(date(&value)?),
                     "DueDate" if path.len() == 2 => invoice.due_date = Some(date(&value)?),
                     "DocumentCurrencyCode" if path.len() == 2 => invoice.currency = value,
@@ -280,7 +280,7 @@ mod tests {
     fn document(document_type: DocumentType) -> EhfDocument {
         EhfDocument {
             document_type,
-            fakturanr: "F-2026-7".into(),
+            invoice_number: "F-2026-7".into(),
             krediterer: None,
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 3).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 7, 17),
@@ -322,7 +322,7 @@ mod tests {
         let xml = render(&document(DocumentType::Invoice));
         let received = parse(&xml).unwrap();
         assert!(!received.er_kreditnota);
-        assert_eq!(received.fakturanr, "F-2026-7");
+        assert_eq!(received.invoice_number, "F-2026-7");
         assert_eq!(
             received.invoice_date,
             Some(NaiveDate::from_ymd_opt(2026, 7, 3).unwrap())
@@ -406,7 +406,7 @@ mod tests {
   </cac:InvoiceLine>
 </ubl:Invoice>"#;
         let received = parse(xml).unwrap();
-        assert_eq!(received.fakturanr, "90210");
+        assert_eq!(received.invoice_number, "90210");
         assert_eq!(
             received.seller_name, "Handelshuset AS",
             "RegistrationName vinner over PartyName"

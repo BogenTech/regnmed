@@ -88,7 +88,7 @@ pub struct InvoicePdfInput {
     pub buyer_orgnumber: Option<String>,
     pub buyer_address: Option<String>,
 
-    pub fakturanr: i64,
+    pub invoice_number: i64,
     pub invoice_date: NaiveDate,
     pub due_date: NaiveDate,
     /// Leveringstidspunkt — bokføringsforskriften §5-1-1 nr. 4 requires
@@ -105,7 +105,7 @@ pub struct InvoicePdfInput {
     pub kid: Option<String>,
     /// How a kontantfaktura was settled ("Kort", "Vipps", "Kontant").
     /// Ignored on every other dokumenttype.
-    pub betalingsmiddel: Option<String>,
+    pub payment_method: Option<String>,
 
     /// Dokumentvaluta (docs/valuta.md). None = NOK. When set, every
     /// beløp on the document is in this currency and the totals block
@@ -194,7 +194,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     let mut fakta: Vec<(String, String)> = vec![
         (
             input.document_type.nummerord().into(),
-            input.fakturanr.to_string(),
+            input.invoice_number.to_string(),
         ),
         ("Dato".into(), input.invoice_date.to_string()),
     ];
@@ -207,7 +207,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     if input.document_type == DocumentType::Kontantfaktura {
         fakta.push((
             "Betalt".into(),
-            input.betalingsmiddel.clone().unwrap_or_else(|| "Ja".into()),
+            input.payment_method.clone().unwrap_or_else(|| "Ja".into()),
         ));
     }
     // Leveringstidspunkt is mandatory on the salgsdokument, so it sits
@@ -318,7 +318,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     rates.sort_unstable();
     rates.dedup();
     for rate in rates {
-        let grunnlag: i64 = input
+        let basis: i64 = input
             .linjer
             .iter()
             .filter(|l| l.vat_rate_bp == Some(rate))
@@ -335,7 +335,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
             ly,
             9.0,
             Font::Regular,
-            &format!("Mva {} av {}", prosent(rate), kr(grunnlag)),
+            &format!("Mva {} av {}", prosent(rate), kr(basis)),
         );
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(avgift));
         ly += 14.0;
@@ -391,7 +391,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
                     ly,
                     9.0,
                     Font::Regular,
-                    &format!("Merk betalingen med fakturanummer {}", input.fakturanr),
+                    &format!("Merk betalingen med fakturanummer {}", input.invoice_number),
                 );
             }
         }
@@ -448,13 +448,13 @@ mod tests {
             buyer_number: "10000".into(),
             buyer_orgnumber: Some("911111111".into()),
             buyer_address: None,
-            fakturanr: 7,
+            invoice_number: 7,
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
             delivery_date: NaiveDate::from_ymd_opt(2026, 7, 20),
             leveringssted: None,
             kid: Some("000000071".into()),
-            betalingsmiddel: None,
+            payment_method: None,
             linjer: vec![
                 PdfLinje {
                     description: "Konsulentbistand".into(),
@@ -586,13 +586,13 @@ mod tests {
 }
 
 #[cfg(test)]
-mod kontant_tests {
+mod cash_tests {
     use super::*;
 
     fn input(document_type: DocumentType) -> InvoicePdfInput {
         let mut i = super::tests::input();
         i.document_type = document_type;
-        i.betalingsmiddel = Some("Kort".into());
+        i.payment_method = Some("Kort".into());
         i
     }
 

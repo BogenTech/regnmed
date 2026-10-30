@@ -221,14 +221,14 @@ async fn products_stock_and_count() {
         None,
     )
     .await;
-    let salg = movements["movements"]
+    let sale = movements["movements"]
         .as_array()
         .unwrap()
         .iter()
         .find(|m| m["kind"] == "salg")
         .unwrap();
-    assert_eq!(salg["antall_milli"], -2_000);
-    assert_eq!(salg["invoice_no"], 1);
+    assert_eq!(sale["antall_milli"], -2_000);
+    assert_eq!(sale["invoice_no"], 1);
 
     // Register edits never touch issued documents; deactivated products
     // cannot be put on new ones.

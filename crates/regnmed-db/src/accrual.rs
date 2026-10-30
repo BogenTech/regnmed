@@ -137,8 +137,8 @@ pub async fn create_accrual(
             }
         }
     };
-    let avdeling_id = dim(draft.department.as_deref(), "avdeling").await?;
-    let prosjekt_id = dim(draft.project.as_deref(), "prosjekt").await?;
+    let department_id = dim(draft.department.as_deref(), "avdeling").await?;
+    let project_id = dim(draft.project.as_deref(), "prosjekt").await?;
 
     let id = Uuid::now_v7();
     sqlx::query(
@@ -156,8 +156,8 @@ pub async fn create_accrual(
     .bind(draft.total_ore)
     .bind(from)
     .bind(to)
-    .bind(avdeling_id)
-    .bind(prosjekt_id)
+    .bind(department_id)
+    .bind(project_id)
     .bind(draft.note.as_deref())
     .bind(created_by)
     .execute(pool)

@@ -98,11 +98,11 @@ pub async fn list_roller(pool: &PgPool, company_id: Uuid) -> Result<Vec<Role>> {
         .collect())
 }
 
-async fn logg(
+async fn log(
     tx: &mut Transaction<'_, Postgres>,
     company_id: Uuid,
     role_id: Uuid,
-    endring: &str,
+    change: &str,
     rights: Option<&str>,
     performed_by: Uuid,
 ) -> Result<()> {
@@ -114,7 +114,7 @@ async fn logg(
     .bind(Uuid::new_v4())
     .bind(company_id)
     .bind(role_id)
-    .bind(endring)
+    .bind(change)
     .bind(rights)
     .bind(performed_by)
     .execute(&mut **tx)
@@ -159,7 +159,7 @@ pub async fn opprett(
         return Err(e.into());
     }
     set_rights_in(&mut tx, id, godkjente).await?;
-    logg(
+    log(
         &mut tx,
         company_id,
         id,
@@ -214,7 +214,7 @@ pub async fn set_rights(
     .await?;
     ensure!(finnes.is_some(), "ukjent rolle");
     set_rights_in(&mut tx, role_id, godkjente).await?;
-    logg(
+    log(
         &mut tx,
         company_id,
         role_id,
@@ -229,7 +229,7 @@ pub async fn set_rights(
 
 /// Deactivates or revives a role. Roles are never deleted: they are the
 /// explanation of what access somebody HAD.
-pub async fn sett_aktiv(
+pub async fn set_active(
     pool: &PgPool,
     company_id: Uuid,
     role_id: Uuid,
@@ -245,7 +245,7 @@ pub async fn sett_aktiv(
         .await?
         .rows_affected();
     ensure!(n == 1, "ukjent rolle");
-    logg(
+    log(
         &mut tx,
         company_id,
         role_id,
@@ -273,7 +273,7 @@ pub async fn finnes(pool: &PgPool, company_id: Uuid, name: &str) -> Result<bool>
 #[derive(Debug, Clone)]
 pub struct Rolleendring {
     pub name: String,
-    pub endring: String,
+    pub change: String,
     pub rights: Option<String>,
     pub performed_by: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -297,7 +297,7 @@ pub async fn history(pool: &PgPool, company_id: Uuid) -> Result<Vec<Rolleendring
         .iter()
         .map(|r| Rolleendring {
             name: r.get("navn"),
-            endring: r.get("endring"),
+            change: r.get("endring"),
             rights: r.get("rettigheter"),
             performed_by: r.get("utfort_av"),
             created_at: r.get("created_at"),

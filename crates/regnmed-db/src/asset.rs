@@ -44,7 +44,7 @@ fn month_number(acquisition_date: NaiveDate, period: NaiveDate) -> i32 {
 pub struct AssetDraft {
     pub name: String,
     pub acquisition_date: NaiveDate,
-    pub kostpris_ore: i64,
+    pub cost_price_ore: i64,
     pub restverdi_ore: i64,
     pub levetid_maneder: i32,
     pub balance_account: String,
@@ -69,13 +69,13 @@ pub async fn create_asset(
         draft.depreciation_group
     );
     ensure!(
-        draft.restverdi_ore >= 0 && draft.restverdi_ore < draft.kostpris_ore,
+        draft.restverdi_ore >= 0 && draft.restverdi_ore < draft.cost_price_ore,
         "restverdi må være mellom 0 og kostpris"
     );
     // At least 1 øre per month: rules out zero-amount months, so every
     // generated period always posts a voucher (the run-log invariant).
     ensure!(
-        draft.kostpris_ore - draft.restverdi_ore >= draft.levetid_maneder as i64,
+        draft.cost_price_ore - draft.restverdi_ore >= draft.levetid_maneder as i64,
         "avskrivbart beløp må være minst 1 øre per måned av levetiden"
     );
     for account in [&draft.balance_account, &draft.depreciation_account] {
@@ -105,7 +105,7 @@ pub async fn create_asset(
     let grense = value_on(&rates, "aktiveringsgrense", draft.acquisition_date);
     let mut warning = None;
     if let Some(grense) = grense
-        && draft.kostpris_ore < grense
+        && draft.cost_price_ore < grense
     {
         warning = Some(format!(
             "kostpris under aktiveringsgrensen ({} kr) — kan kostnadsføres direkte",
@@ -126,7 +126,7 @@ pub async fn create_asset(
     .bind(company_id)
     .bind(&draft.name)
     .bind(draft.acquisition_date)
-    .bind(draft.kostpris_ore)
+    .bind(draft.cost_price_ore)
     .bind(draft.restverdi_ore)
     .bind(draft.levetid_maneder)
     .bind(&draft.balance_account)
@@ -144,7 +144,7 @@ pub struct AssetRow {
     pub id: Uuid,
     pub name: String,
     pub acquisition_date: NaiveDate,
-    pub kostpris_ore: i64,
+    pub cost_price_ore: i64,
     pub restverdi_ore: i64,
     pub levetid_maneder: i32,
     pub balance_account: String,
@@ -173,14 +173,14 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
     Ok(rows
         .iter()
         .map(|r| {
-            let kostpris: i64 = r.get("kostpris_ore");
+            let cost_price: i64 = r.get("kostpris_ore");
             let akkumulert: i64 = r.get("akkumulert");
             let avhendet: Option<NaiveDate> = r.get("avhendet_dato");
             AssetRow {
                 id: r.get("id"),
                 name: r.get("navn"),
                 acquisition_date: r.get("anskaffelsesdato"),
-                kostpris_ore: kostpris,
+                cost_price_ore: cost_price,
                 restverdi_ore: r.get("restverdi_ore"),
                 levetid_maneder: r.get("levetid_maneder"),
                 balance_account: r.get("balansekonto"),
@@ -190,7 +190,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 posted_ore: if avhendet.is_some() {
                     0
                 } else {
-                    kostpris - akkumulert
+                    cost_price - akkumulert
                 },
                 disposed_date: avhendet,
                 consideration_ore: r.get("vederlag_ore"),

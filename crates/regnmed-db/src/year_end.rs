@@ -22,9 +22,9 @@ use uuid::Uuid;
 /// Konti the closing uses. Named here rather than guessed per call:
 /// 8300/2500 is the ordinary betalbar-skatt pair, 8800/2050 the
 /// disposition.
-pub const SKATTEKOSTNAD_KONTO: &str = "8300";
-pub const BETALBAR_SKATT_KONTO: &str = "2500";
-pub const OPPTJENT_EK_KONTO: &str = "2050";
+pub const TAX_EXPENSE_ACCOUNT: &str = "8300";
+pub const TAX_PAYABLE_ACCOUNT: &str = "2500";
+pub const RETAINED_EARNINGS_ACCOUNT: &str = "2050";
 
 #[derive(Debug)]
 pub struct Arsavslutning {
@@ -116,12 +116,12 @@ pub async fn avslutt_ar(
     let mut entries = Vec::with_capacity(4);
     if skattekostnad_ore != 0 {
         entries.push(linje(
-            SKATTEKOSTNAD_KONTO,
+            TAX_EXPENSE_ACCOUNT,
             skattekostnad_ore,
             "Skattekostnad",
         ));
         entries.push(linje(
-            BETALBAR_SKATT_KONTO,
+            TAX_PAYABLE_ACCOUNT,
             -skattekostnad_ore,
             "Betalbar skatt",
         ));
@@ -136,7 +136,7 @@ pub async fn avslutt_ar(
             "Disponering av årets resultat",
         ));
         entries.push(linje(
-            OPPTJENT_EK_KONTO,
+            RETAINED_EARNINGS_ACCOUNT,
             -disponert_ore,
             "Overført til annen egenkapital",
         ));
@@ -147,13 +147,13 @@ pub async fn avslutt_ar(
     );
 
     for (number, name) in [
-        (SKATTEKOSTNAD_KONTO, "Skattekostnad"),
-        (BETALBAR_SKATT_KONTO, "Betalbar skatt"),
+        (TAX_EXPENSE_ACCOUNT, "Skattekostnad"),
+        (TAX_PAYABLE_ACCOUNT, "Betalbar skatt"),
         (
             regnmed_core::statements::ALLOCATION_ACCOUNT,
             "Disponering av årets resultat",
         ),
-        (OPPTJENT_EK_KONTO, "Annen egenkapital"),
+        (RETAINED_EARNINGS_ACCOUNT, "Annen egenkapital"),
     ] {
         crate::ensure_account(pool, company_id, number, name).await?;
     }

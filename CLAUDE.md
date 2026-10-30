@@ -565,10 +565,81 @@ deferred, so the group binary was excluded from the pass. The two in
 `platform` module path.
 
 **6 920 -> 5 024 of 187 895 segments (3,7 % -> 2,7 %), 875 -> 830
-distinct** over the two sweeps. Nothing above 32 now: `vedlegg` 32,
-`salg` 32, `kontant` 31, `prosjekt` 31, `betalingsmiddel` 31,
-`oppgave` 30, `intervall` 30, `fodselsnummer` 29, `endring` 28,
-`postnummer` 28.
+distinct** over the two sweeps.
+
+Seventh sweep took the whole band from 32 down to 19 in one map:
+`vedlegg`->`attachment`, `intervall`->`interval`,
+`fodselsnummer`->`nin` (the core module was already `nin`),
+`endring`->`change`, `postnummer`->`postal_code`,
+`invitasjon`->`invitation`, `oppsett`->`config`,
+`fradrag`->`deduction`, `fakturanr`->`invoice_number`,
+`motpart`->`counterparty`, `omvendt`->`reverse_charge`,
+`modell`->`model`, `opprettet`->`created`, `feilet`->`failed`,
+`logg`->`log`, `kall`->`call`, `kostpris`->`cost_price`,
+`landkode`->`country_code`, `sperres`->`blocked_from`,
+`grunnlag`->`basis`, `kontakt`->`contact`, `utstedt`->`issued`,
+`ordre`->`order`, `avdeling_id`/`prosjekt_id`->`department_id`/
+`project_id`, `sett_aktiv`->`set_active`, the eight `KONTO_*`/`*_KONTO`
+constants in `payroll` and `year_end`,
+`betalingsmiddel`->`payment_method`, `kontant`->`cash`,
+`salg`->`sale`, `egne`->`own`. 88 files, zero compile errors, five
+wire diffs that are all struct NAMES with identical fields.
+
+**CASE DID THE SPLITTING FOR FREE, twice.** `Salg` is a
+`TransactionType` variant -- Skatteetatens vocabulary, deliberately
+never translated -- while `salg` is an ordinary sale; `Egne` lives in
+`SlettingEgneAksjer` while `egne` is "own". The map is
+case-sensitive and `\b` does not break inside `SlettingEgneAksjer`,
+so a WIDE pass on the lowercase word left both statutory names
+untouched with no file list at all. Worth reaching for before writing
+a narrow pass.
+
+`oppgave` needed a real split -- the agent TASK
+(`agent_task`, `regnmed-agent`) against RF-1086's RETURN
+(`share_register`, `shareholder_return`) -- and **the MCP placeholder
+trap would have fired a THIRD time**: `{oppgave}` is one of the
+runtime-substituted path placeholders in `regnmed-mcp`'s tool table.
+This time it was caught BEFORE the run, by listing
+`grep -noE '\{[a-z_]+\}'` over `tool.rs` and `lib.rs` and checking
+it against the map. That listing is cheap and belongs in the recipe:
+`regnmed-mcp` is excluded from any pass whose map touches one of
+`{dokument} {felt} {mal} {oppgave} {selskap} {status} {utvidet}`.
+
+**NEW GUARD: `scripts/stale-docs.py`** -- every `code span` in `docs/`
+that looks like a Rust name and is nowhere in `crates/`. It exists
+because the previous batch found `settings::krev_mva_registrert` only
+by accident, and `docs/` is the AUDIT-FACING tree: a name that no
+longer exists is worse there than in a comment. Its first run found
+83 spans, of which **13 were genuinely stale** and are now fixed:
+`Server::utfor_verktoy`->`execute_tool`, `MAKS_TURER`->`MAX_TURNS`,
+`kjor_sloyfe`/`kjor_oppgave`->`run_loop`/`run_task`,
+`resultat_sum`->`result_for_the_year`,
+`saldo_rapport`->`balance_report`, `rettighet_slugs`->`right_slugs`,
+`regnskap::presentasjon_ore`->`statements::presentation_ore`,
+`Dokumenttype::`->`DocumentType::`,
+`reskontro_kontroll`->`subledger_check`,
+`create_salgsdokument`->`create_sales_document`,
+`render_dokument`->`render_document`,
+`saldo_lines`/`prosjekt_saldo_lines`->`balance_lines`/
+`project_balance_lines`, `regnskap::lonnsomhet`->
+`statements::profitability`, `sats_on`->`value_on`. It is NOT a CI
+gate and deliberately so: the other 60 are k8s fields, XML elements,
+satsregister keys, portal symbols (`ui/` is not scanned) and one name
+the prose quotes as history on purpose (`AGENT_NOKKEL`, explicitly
+"it was called that until 2026-10-29"). Gating would mean an
+allowlist that churns on every doc edit; running it each batch costs
+nothing.
+
+With them went the last three small clusters: `prosjekt`->`project`
+(the register's rate functions, `ProsjektSum`, `resolve_prosjekt`),
+`fjoraret`->`last_year` and `dagsoppgjor`->`daily_settlement`.
+88 + 13 files in all, zero compile errors, six wire diffs that are
+all struct NAMES with identical fields.
+
+Nothing above 19 remains, and the top of the list is now mostly
+statutory: `foretaksregistrert` 24, `nyemisjon` 23 and
+`kontinuitet` 20 (both Skatteetatens, they stay), `html` 21,
+`argang` 20, `skattefri` 19, `aksjekapital` 18, `annen` 18.
 
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every
@@ -581,8 +652,13 @@ identifier segment that is not English -- and lives in
 `scripts/norwegian-left.py` so the series is reproducible instead of
 depending on a file in someone's scratchpad:
 
-**6 920 of 187 624 identifier segments (3,7 %), 875 distinct**
-(2026-10-30). Per crate: db 2 371, api 2 289, core 1 708, gov 235,
+**4 162 of 188 137 identifier segments (2,2 %), 791 distinct**
+(2026-10-30, after the seventh sweep; the first reading of this
+instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 1 372,
+core 1 196, db 1 147, gov 216, mcp 86, agent 81, cli 63, mail 1.
+`counterparty` and `subledger` joined the STOP set: they are English
+names this conversion INTRODUCED that `/usr/share/dict/words` does
+not carry, so the instrument counted its own output as Norwegian. Per crate: db 2 371, api 2 289, core 1 708, gov 235,
 mcp 113, cli 111, agent 92, mail 1. It OVERCOUNTS by a few percent
 (residual abbreviations like `rfind`, `hexdigit`, `x86`), which is the
 right direction for a gate: it can only claim done when it is near
@@ -715,6 +791,14 @@ formats. Patterns in use:
   postgres:18 service (locally: `scripts/dev-db.sh` + `regnmed migrate`).
 - SAF-T output is validated against Skatteetaten's official XSD
   (vendored in `docs/saft/`) with xmllint, in unit tests and CI.
+- **An assertion on a fire-and-forget write must POLL, never assume.**
+  `integrasjonslogg` is written from a detached `tokio::spawn` in
+  `auth.rs` so logging never sits on the request path, which makes the
+  read eventually consistent. `a_machine_token_gets_only_what_an_admin_granted`
+  asserted on it immediately and went green 15 runs in a row before CI's
+  loaded postgres lost the race -- the same test passing locally in 3 s
+  took 17,8 s there. It now polls for 5 s; seen to fail (sabotaged
+  predicate) and pass again.
 - **API-integrasjonstestene er GRUPPERT** (2026-07-29): filene ligger i
   `crates/regnmed-api/tests/grupper/` og samles av sju binærer i
   `tests/` — salg, regnskap, penger, drift, personal,
