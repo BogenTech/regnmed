@@ -234,7 +234,7 @@ fn check_period(from: NaiveDate, to: NaiveDate) -> Result<(), ApiError> {
     Ok(())
 }
 
-pub async fn saldobalanse(
+pub async fn trial_balance(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -242,15 +242,15 @@ pub async fn saldobalanse(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     check_period(query.from, query.to)?;
-    let rows = regnmed_db::saldobalanse(&state.pool, company_id, query.from, query.to).await?;
+    let rows = regnmed_db::trial_balance(&state.pool, company_id, query.from, query.to).await?;
     Ok(Json(json!({
         "accounts": rows.iter().map(|r| json!({
             "number": r.number,
             "name": r.name,
-            "inngaende_ore": r.inngaende_ore,
-            "debet_ore": r.debet_ore,
-            "kredit_ore": r.kredit_ore,
-            "utgaende_ore": r.utgaende_ore,
+            "inngaende_ore": r.opening_ore,
+            "debet_ore": r.debit_ore,
+            "kredit_ore": r.credit_ore,
+            "utgaende_ore": r.closing_ore,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -279,7 +279,7 @@ pub async fn account_specification(
             "date": p.voucher_date.to_string(),
             "description": p.description,
             "amount_ore": p.amount_ore,
-            "saldo_ore": p.saldo_ore,
+            "saldo_ore": p.balance_ore,
             "party_no": p.party_no,
             "avdeling": p.department,
             "prosjekt": p.project,
@@ -287,28 +287,28 @@ pub async fn account_specification(
     })))
 }
 
-pub async fn kundespesifikasjon(
+pub async fn customer_specification(
     state: State<AppState>,
     person: AuthPerson,
     path: Path<Uuid>,
     query: Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    reskontrospesifikasjon(state, person, path, query, "kunde").await
+    reskontro_specification(state, person, path, query, "kunde").await
 }
 
-pub async fn leverandorspesifikasjon(
+pub async fn supplier_specification(
     state: State<AppState>,
     person: AuthPerson,
     path: Path<Uuid>,
     query: Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    reskontrospesifikasjon(state, person, path, query, "leverandor").await
+    reskontro_specification(state, person, path, query, "leverandor").await
 }
 
 /// Kunde-/leverandørspesifikasjon (bokføringsforskriften §3-1 nr. 3–4):
 /// per party, inngående saldo + every posting with running saldo and
 /// bilagshenvisning + utgående saldo, for any period.
-async fn reskontrospesifikasjon(
+async fn reskontro_specification(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -318,27 +318,27 @@ async fn reskontrospesifikasjon(
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     check_period(query.from, query.to)?;
     let parties =
-        regnmed_db::reskontrospesifikasjon(&state.pool, company_id, kind, query.from, query.to)
+        regnmed_db::reskontro_specification(&state.pool, company_id, kind, query.from, query.to)
             .await?;
     Ok(Json(json!({
         "parties": parties.iter().map(|p| json!({
             "party_no": p.party_no,
             "name": p.party_name,
-            "inngaende_ore": p.inngaende_ore,
-            "utgaende_ore": p.utgaende_ore,
+            "inngaende_ore": p.opening_ore,
+            "utgaende_ore": p.closing_ore,
             "posts": p.posts.iter().map(|l| json!({
                 "bilag": format!("{}-{}-{}", l.journal_code, l.fiscal_year, l.voucher_number),
                 "date": l.voucher_date.to_string(),
                 "account": l.account_number,
                 "description": l.description,
                 "amount_ore": l.amount_ore,
-                "saldo_ore": l.saldo_ore,
+                "saldo_ore": l.balance_ore,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })))
 }
 
-pub async fn bokforingsspesifikasjon(
+pub async fn posting_specification(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -347,7 +347,7 @@ pub async fn bokforingsspesifikasjon(
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     check_period(query.from, query.to)?;
     let vouchers =
-        regnmed_db::bokforingsspesifikasjon(&state.pool, company_id, query.from, query.to).await?;
+        regnmed_db::posting_specification(&state.pool, company_id, query.from, query.to).await?;
     Ok(Json(json!({
         "vouchers": vouchers.iter().map(|v| json!({
             "bilag": format!("{}-{}-{}", v.journal_code, v.fiscal_year, v.voucher_number),
@@ -366,19 +366,19 @@ pub async fn bokforingsspesifikasjon(
     })))
 }
 
-fn seksjon_json(s: &regnmed_core::regnskap::Seksjon) -> serde_json::Value {
+fn seksjon_json(s: &regnmed_core::statements::Section) -> serde_json::Value {
     json!({
         "heading": s.heading,
         "sum_ore": s.sum_ore,
         "lines": s.lines.iter().map(|l| json!({
             "number": l.number,
             "name": l.name,
-            "saldo_ore": l.saldo_ore,
+            "saldo_ore": l.balance_ore,
         })).collect::<Vec<_>>(),
     })
 }
 
-pub async fn resultat(
+pub async fn result(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -386,7 +386,7 @@ pub async fn resultat(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     check_period(query.from, query.to)?;
-    let lines = regnmed_db::saldo_lines(
+    let lines = regnmed_db::balance_lines(
         &state.pool,
         company_id,
         Some(query.from),
@@ -395,11 +395,11 @@ pub async fn resultat(
         query.project.as_deref(),
     )
     .await?;
-    let r = regnmed_core::regnskap::resultat(&lines);
+    let r = regnmed_core::statements::result(&lines);
     Ok(Json(json!({
-        "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
-        "driftsresultat_ore": r.driftsresultat_ore,
-        "arsresultat_ore": r.arsresultat_ore,
+        "seksjoner": r.sections.iter().map(seksjon_json).collect::<Vec<_>>(),
+        "driftsresultat_ore": r.operating_result_ore,
+        "arsresultat_ore": r.annual_result_ore,
         "avdeling": query.department,
         "prosjekt": query.project,
     })))
@@ -414,10 +414,10 @@ pub struct ProsjektRapportQuery {
 
 /// Prosjektlønnsomhet (#71, docs/rapporter.md): does the project make
 /// money? Pure composition of what already exists — dimension-filtered
-/// SUM queries folded with `regnskap::lonnsomhet` (presentation signs
+/// SUM queries folded with `statements::profitability` (presentation signs
 /// in one place), the timesheet summary's billed/unbilled split, and
 /// the kunde link from #80. No new stored state.
-pub async fn prosjektlonnsomhet(
+pub async fn project_profitability(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -459,10 +459,10 @@ pub async fn prosjektlonnsomhet(
             .find(|d| d.kind == "prosjekt" && &d.code == code)
             .ok_or_else(|| ApiError::BadRequest(format!("ingen prosjekt med kode {code}")))?;
         let lines =
-            regnmed_db::saldo_lines(&state.pool, company_id, Some(from), to, None, Some(code))
+            regnmed_db::balance_lines(&state.pool, company_id, Some(from), to, None, Some(code))
                 .await?;
-        let l = regnmed_core::regnskap::lonnsomhet(&lines);
-        let r = regnmed_core::regnskap::resultat(&lines);
+        let l = regnmed_core::statements::profitability(&lines);
+        let r = regnmed_core::statements::result(&lines);
         return Ok(Json(json!({
             "year": year,
             "prosjekt": dim.code,
@@ -470,38 +470,38 @@ pub async fn prosjektlonnsomhet(
             "active": dim.active,
             "kunde": dim.kunde,
             "kunde_navn": dim.kunde_navn,
-            "inntekter_ore": l.inntekter_ore,
-            "kostnader_ore": l.kostnader_ore,
-            "resultat_ore": l.resultat_ore(),
+            "inntekter_ore": l.revenue_ore,
+            "kostnader_ore": l.cost_ore,
+            "resultat_ore": l.result_ore(),
             "timer": timer_json(timer_for(code)),
-            "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
+            "seksjoner": r.sections.iter().map(seksjon_json).collect::<Vec<_>>(),
         })));
     }
 
-    let saldo = regnmed_db::prosjekt_saldo_lines(&state.pool, company_id, from, to).await?;
+    let balance = regnmed_db::project_balance_lines(&state.pool, company_id, from, to).await?;
     let rows = dims
         .iter()
         .filter(|d| d.kind == "prosjekt")
         .map(|d| {
-            let lines: Vec<regnmed_core::regnskap::SaldoLine> = saldo
+            let lines: Vec<regnmed_core::statements::BalanceLine> = balance
                 .iter()
                 .filter(|(p, _)| p == &d.code)
-                .map(|(_, l)| regnmed_core::regnskap::SaldoLine {
+                .map(|(_, l)| regnmed_core::statements::BalanceLine {
                     number: l.number.clone(),
                     name: l.name.clone(),
-                    saldo_ore: l.saldo_ore,
+                    balance_ore: l.balance_ore,
                 })
                 .collect();
-            let l = regnmed_core::regnskap::lonnsomhet(&lines);
+            let l = regnmed_core::statements::profitability(&lines);
             json!({
                 "prosjekt": d.code,
                 "name": d.name,
                 "active": d.active,
                 "kunde": d.kunde,
                 "kunde_navn": d.kunde_navn,
-                "inntekter_ore": l.inntekter_ore,
-                "kostnader_ore": l.kostnader_ore,
-                "resultat_ore": l.resultat_ore(),
+                "inntekter_ore": l.revenue_ore,
+                "kostnader_ore": l.cost_ore,
+                "resultat_ore": l.result_ore(),
                 "timer": timer_json(timer_for(&d.code)),
             })
         })
@@ -514,7 +514,7 @@ pub struct DateQuery {
     date: NaiveDate,
 }
 
-pub async fn balanse(
+pub async fn balance_sheet(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -522,13 +522,13 @@ pub async fn balanse(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     let lines =
-        regnmed_db::saldo_lines(&state.pool, company_id, None, query.date, None, None).await?;
-    let b = regnmed_core::regnskap::balanse(&lines);
+        regnmed_db::balance_lines(&state.pool, company_id, None, query.date, None, None).await?;
+    let b = regnmed_core::statements::balance_sheet(&lines);
     Ok(Json(json!({
-        "eiendeler": seksjon_json(&b.eiendeler),
-        "egenkapital_gjeld": seksjon_json(&b.egenkapital_gjeld),
-        "udisponert_resultat_ore": b.udisponert_resultat_ore,
-        "differanse_ore": b.differanse_ore(),
+        "eiendeler": seksjon_json(&b.assets),
+        "egenkapital_gjeld": seksjon_json(&b.equity_and_liabilities),
+        "udisponert_resultat_ore": b.undistributed_result_ore,
+        "differanse_ore": b.difference_ore(),
     })))
 }
 
@@ -741,8 +741,8 @@ pub async fn nokkeltall(
         tall.bank_ore + tall.kundefordringer_ore - tall.leverandorgjeld_ore - vat_net.max(0);
     Ok(Json(json!({
         "year": tall.year,
-        "resultat_hittil_ore": tall.resultat_hittil_ore,
-        "resultat_fjor_ore": tall.resultat_fjor_ore,
+        "resultat_hittil_ore": tall.result_ytd_ore,
+        "resultat_fjor_ore": tall.result_last_year_ore,
         "maaneder": tall.maaneder,
         "likviditet": {
             "bank_ore": tall.bank_ore,

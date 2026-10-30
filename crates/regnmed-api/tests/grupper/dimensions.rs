@@ -550,7 +550,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
 
     // Resultat per dimension: pure SUMs, filtered. Full year revenue is
     // 17 000; avdeling 100 carries 10 000, prosjekt P42 the same line.
-    let resultat = |filter: &str| {
+    let result = |filter: &str| {
         let uri =
             format!("/companies/{company}/reports/resultat?from=2026-01-01&to=2026-12-31{filter}");
         let state = state.clone();
@@ -561,12 +561,12 @@ async fn dimensions_hash_v3_reports_and_saft() {
             body["arsresultat_ore"].as_i64().unwrap()
         }
     };
-    assert_eq!(resultat("").await, 17_000_00);
-    assert_eq!(resultat("&avdeling=100").await, 10_000_00);
-    assert_eq!(resultat("&avdeling=200").await, 2_000_00);
-    assert_eq!(resultat("&prosjekt=P42").await, 10_000_00);
-    assert_eq!(resultat("&avdeling=100&prosjekt=P42").await, 10_000_00);
-    assert_eq!(resultat("&avdeling=200&prosjekt=P42").await, 0);
+    assert_eq!(result("").await, 17_000_00);
+    assert_eq!(result("&avdeling=100").await, 10_000_00);
+    assert_eq!(result("&avdeling=200").await, 2_000_00);
+    assert_eq!(result("&prosjekt=P42").await, 10_000_00);
+    assert_eq!(result("&avdeling=100&prosjekt=P42").await, 10_000_00);
+    assert_eq!(result("&avdeling=200&prosjekt=P42").await, 0);
 
     // Kontospesifikasjon carries the dimension columns.
     let (_, spes) = request(

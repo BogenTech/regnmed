@@ -332,7 +332,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     // (a) 1500 flagged: one invoice with a party, then the flag is
     // cleared (as åpningsbalanse does), 2 500,00 is posted without a
     // party, and the flag comes back. The saldo now exceeds what the
-    // kundespesifikasjon holds.
+    // customer_specification holds.
     regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();

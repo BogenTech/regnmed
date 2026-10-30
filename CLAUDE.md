@@ -262,11 +262,31 @@ the rate register; both were done in the narrow pass only.
 values -- those comments were left alone deliberately while the
 module-path mentions in the same files moved.
 
-**`regnskap` is next and needs care**: it means both the financial
+`regnskap`->`statements` moved next, and the care it needed was in
+the SPLIT, not the rename. `regnskap` names two things: the financial
 statements (`core::regnskap`, `db::regnskap`) and the ACCOUNTANT ROLE
-in tenancy, marketplace and engagement, where it is a stored value.
-Bare `saldo` reaches 33 files and `hovedbok` 31, through `lonn`,
-`reskontro`, `aksjebok` and `year_end` -- so it is not one batch.
+in tenancy, marketplace and engagement. The role is a STORED DB VALUE
+and a `?kind=` query value, so it only ever appears as a string
+literal -- which means the module rename was safe workspace-wide and
+the guard protected the role for free. The comments are where the two
+meet: the tool reported module-path mentions and stored-value mentions
+in one list, and only the first kind moved.
+
+The statements vocabulary came too: `SaldoLine`->`BalanceLine`,
+`Resultat`->`IncomeStatement`, `Balanse`->`BalanceSheet`,
+`Seksjon`->`Section`, `saldobalanse`->`trial_balance`,
+`presentasjon_ore`->`presentation_ore`,
+`Lonnsomhet`->`Profitability`, `inngaende_ore`/`utgaende_ore`->
+`opening_ore`/`closing_ore`. Bare `saldo`, `resultat`, `balanse` and
+`differanse` went WIDE after checking they carry one meaning in every
+file they appear in -- unlike `pris`/`kort`/`avvik`, which did not.
+`utgaende_ore` is the exception that proves the string guard: in
+`tests/grupper/terminordning.rs` it means OUTPUT VAT, but only as a
+`report["utgaende_ore"]` JSON key, so it was never eligible.
+
+**Still not one batch**: bare `hovedbok` reaches 31 files through
+`lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
+still.
 
 **Still Norwegian**, deliberately: the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,

@@ -39,7 +39,7 @@ pub async fn registry_preview(
         .ok_or(ApiError::NotFound)?;
 
     let finanstilsynet = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env();
-    let regnskap = finanstilsynet
+    let statements = finanstilsynet
         .has_authorisation(&orgnr, "regnskap")
         .await
         .unwrap_or(false);
@@ -59,7 +59,7 @@ pub async fn registry_preview(
         "konkurs": enhet.konkurs,
         "under_avvikling": enhet.under_avvikling || enhet.under_tvangsavvikling,
         "slettet": enhet.deleted_date.is_some(),
-        "autorisasjon": { "regnskap": regnskap, "revisjon": audit },
+        "autorisasjon": { "regnskap": statements, "revisjon": audit },
     })))
 }
 
@@ -91,7 +91,7 @@ pub async fn onboard_company(
     }
     // Avvikling er ikke konkurs, så konkurs-sjekken over fanger den
     // ikke — men en enhet under avvikling er ikke et selskap som skal
-    // begynne å føre regnskap hos oss.
+    // start keeping its books with us.
     if enhet.under_tvangsavvikling {
         return Err(ApiError::BadRequest(
             "enheten er under tvangsavvikling eller tvangsoppløsning".into(),

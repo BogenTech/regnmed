@@ -1,53 +1,53 @@
 //! Resultatregnskap and balanse grouped per NS 4102 account classes —
-//! the presentation layer over saldobalanse lines (bokføringsforskriften
+//! the presentation layer over trial-balance lines (bokføringsforskriften
 //! §3-1; the formal årsregnskap oppstillingsplan is a later, separate
 //! concern).
 //!
 //! Input lines carry **ledger signs** (debit positive, credit negative,
 //! integer øre). Presentation flips the sign where the reader expects
 //! positive numbers: inntekter (class 3, credit balances) and
-//! egenkapital/gjeld (class 2) are shown negated; eiendeler (class 1)
+//! equity and liabilities (class 2) are shown negated; assets (class 1)
 //! and kostnader (classes 4–8 debit) are shown as-is. The underlying
 //! identity never changes: everything sums from `SUM(amount_ore)`.
 //!
 //! Class map (NS 4102 first digit):
-//! 1 eiendeler · 2 egenkapital og gjeld · 3 driftsinntekter ·
+//! 1 assets · 2 equity and liabilities · 3 operating revenue ·
 //! 4 varekostnad · 5 lønnskostnad · 6–7 annen driftskostnad ·
 //! 8 finansposter, skatt m.m.
 
 /// One account's period balance, ledger sign.
 #[derive(Debug, Clone)]
-pub struct SaldoLine {
+pub struct BalanceLine {
     pub number: String,
     pub name: String,
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
 }
 
 /// A presentation section: heading, its account lines (display sign),
 /// and their sum (display sign).
 #[derive(Debug)]
-pub struct Seksjon {
+pub struct Section {
     pub heading: &'static str,
-    pub lines: Vec<SaldoLine>,
+    pub lines: Vec<BalanceLine>,
     pub sum_ore: i64,
 }
 
 #[derive(Debug)]
-pub struct Resultat {
-    pub seksjoner: Vec<Seksjon>,
-    pub driftsresultat_ore: i64,
+pub struct IncomeStatement {
+    pub sections: Vec<Section>,
+    pub operating_result_ore: i64,
     /// Positive = overskudd. `-(sum of classes 3–8, ledger sign)`.
-    pub arsresultat_ore: i64,
+    pub annual_result_ore: i64,
 }
 
 #[derive(Debug)]
-pub struct Balanse {
-    pub eiendeler: Seksjon,
-    pub egenkapital_gjeld: Seksjon,
+pub struct BalanceSheet {
+    pub assets: Section,
+    pub equity_and_liabilities: Section,
     /// Result accumulated in classes 3–8 up to the balance date, shown
     /// on the egenkapital side ("udisponert resultat") so the balance
     /// balances mid-year without a closing entry.
-    pub udisponert_resultat_ore: i64,
+    pub undistributed_result_ore: i64,
 }
 
 /// Resultatdisponering (#84): where the year's result is transferred to
@@ -59,17 +59,17 @@ pub struct Balanse {
 ///
 /// It sits in class 8, and that is what makes the whole årsavslutning
 /// work without new state: the disposition entry lowers `-sum(3..8)` by
-/// exactly the amount it raises equity, so `udisponert_resultat_ore`
+/// exactly the amount it raises equity, so `undistributed_result_ore`
 /// falls to zero for the closed year and the balanse still nets out.
 /// The ledger carries it, like everything else.
 ///
 /// The resultatregnskap must therefore EXCLUDE it: a disposition is not
 /// a result line, and counting it would make last year's P&L read zero
 /// the moment the year was closed.
-pub const DISPONERING_KONTO: &str = "8800";
+pub const ALLOCATION_ACCOUNT: &str = "8800";
 
 fn er_disponering(number: &str) -> bool {
-    number == DISPONERING_KONTO
+    number == ALLOCATION_ACCOUNT
 }
 
 pub fn class_of(number: &str) -> Option<u32> {
@@ -80,28 +80,28 @@ pub fn class_of(number: &str) -> Option<u32> {
 /// egenkapital/gjeld (class 2) read positive when negated; everything
 /// else is shown as booked. Used by the sections below and by budsjett
 /// (docs/budsjett.md), which stores what the reader sees.
-pub fn presentasjon_ore(number: &str, ledger_ore: i64) -> i64 {
+pub fn presentation_ore(number: &str, ledger_ore: i64) -> i64 {
     match class_of(number) {
         Some(2) | Some(3) => -ledger_ore,
         _ => ledger_ore,
     }
 }
 
-fn section(lines: &[SaldoLine], classes: &[u32], heading: &'static str, negate: bool) -> Seksjon {
-    let mut selected: Vec<SaldoLine> = lines
+fn section(lines: &[BalanceLine], classes: &[u32], heading: &'static str, negate: bool) -> Section {
+    let mut selected: Vec<BalanceLine> = lines
         .iter()
         .filter(|l| !er_disponering(&l.number))
         .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
-        .filter(|l| l.saldo_ore != 0)
+        .filter(|l| l.balance_ore != 0)
         .cloned()
         .collect();
     if negate {
         for line in &mut selected {
-            line.saldo_ore = -line.saldo_ore;
+            line.balance_ore = -line.balance_ore;
         }
     }
-    let sum_ore = selected.iter().map(|l| l.saldo_ore).sum();
-    Seksjon {
+    let sum_ore = selected.iter().map(|l| l.balance_ore).sum();
+    Section {
         heading,
         lines: selected,
         sum_ore,
@@ -111,40 +111,40 @@ fn section(lines: &[SaldoLine], classes: &[u32], heading: &'static str, negate: 
 /// Ledger-sign sum over account classes, disposition INCLUDED.
 ///
 /// `balanse` depends on that: the disposition entry is what makes
-/// `udisponert_resultat_ore` fall to zero for a closed year. The
-/// resultatregnskap uses `resultat_sum` instead.
-fn ledger_sum(lines: &[SaldoLine], classes: &[u32]) -> i64 {
+/// `undistributed_result_ore` falls to zero for a closed year. The
+/// income statement uses `result_sum` instead.
+fn ledger_sum(lines: &[BalanceLine], classes: &[u32]) -> i64 {
     lines
         .iter()
         .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
-        .map(|l| l.saldo_ore)
+        .map(|l| l.balance_ore)
         .sum()
 }
 
 /// The same sum with the disposition excluded — what the reader means
 /// by "resultat".
-fn resultat_sum(lines: &[SaldoLine], classes: &[u32]) -> i64 {
+fn result_sum(lines: &[BalanceLine], classes: &[u32]) -> i64 {
     lines
         .iter()
         .filter(|l| !er_disponering(&l.number))
         .filter(|l| class_of(&l.number).is_some_and(|c| classes.contains(&c)))
-        .map(|l| l.saldo_ore)
+        .map(|l| l.balance_ore)
         .sum()
 }
 
 /// Resultatregnskap over the period's saldo lines (classes 3–8).
-pub fn resultat(lines: &[SaldoLine]) -> Resultat {
-    let seksjoner = vec![
+pub fn result(lines: &[BalanceLine]) -> IncomeStatement {
+    let sections = vec![
         section(lines, &[3], "Driftsinntekter", true),
         section(lines, &[4], "Varekostnad", false),
         section(lines, &[5], "Lønnskostnad", false),
         section(lines, &[6, 7], "Annen driftskostnad", false),
         section(lines, &[8], "Finansposter, skatt m.m.", false),
     ];
-    Resultat {
-        driftsresultat_ore: -resultat_sum(lines, &[3, 4, 5, 6, 7]),
-        arsresultat_ore: -resultat_sum(lines, &[3, 4, 5, 6, 7, 8]),
-        seksjoner,
+    IncomeStatement {
+        operating_result_ore: -result_sum(lines, &[3, 4, 5, 6, 7]),
+        annual_result_ore: -result_sum(lines, &[3, 4, 5, 6, 7, 8]),
+        sections,
     }
 }
 
@@ -152,41 +152,41 @@ pub fn resultat(lines: &[SaldoLine]) -> Resultat {
 /// any dimension-filtered slice) earned and cost. Both numbers read
 /// positive; the difference is the dekningsbidrag.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Lonnsomhet {
+pub struct Profitability {
     /// Class 3, negated to read positive.
-    pub inntekter_ore: i64,
+    pub revenue_ore: i64,
     /// Classes 4–8 as booked (costs are debits, already positive).
-    pub kostnader_ore: i64,
+    pub cost_ore: i64,
 }
 
-impl Lonnsomhet {
-    pub fn resultat_ore(&self) -> i64 {
-        self.inntekter_ore - self.kostnader_ore
+impl Profitability {
+    pub fn result_ore(&self) -> i64 {
+        self.revenue_ore - self.cost_ore
     }
 }
 
-pub fn lonnsomhet(lines: &[SaldoLine]) -> Lonnsomhet {
-    Lonnsomhet {
-        inntekter_ore: -resultat_sum(lines, &[3]),
-        kostnader_ore: resultat_sum(lines, &[4, 5, 6, 7, 8]),
+pub fn profitability(lines: &[BalanceLine]) -> Profitability {
+    Profitability {
+        revenue_ore: -result_sum(lines, &[3]),
+        cost_ore: result_sum(lines, &[4, 5, 6, 7, 8]),
     }
 }
 
-/// Balanse over saldo lines accumulated from day one through the
+/// Balance sheet over balance lines accumulated from day one through the
 /// balance date (classes 1–2, plus the running result on the EK side).
-pub fn balanse(lines: &[SaldoLine]) -> Balanse {
-    Balanse {
-        eiendeler: section(lines, &[1], "Eiendeler", false),
-        egenkapital_gjeld: section(lines, &[2], "Egenkapital og gjeld", true),
-        udisponert_resultat_ore: -ledger_sum(lines, &[3, 4, 5, 6, 7, 8]),
+pub fn balance_sheet(lines: &[BalanceLine]) -> BalanceSheet {
+    BalanceSheet {
+        assets: section(lines, &[1], "Eiendeler", false),
+        equity_and_liabilities: section(lines, &[2], "Egenkapital og gjeld", true),
+        undistributed_result_ore: -ledger_sum(lines, &[3, 4, 5, 6, 7, 8]),
     }
 }
 
-impl Balanse {
+impl BalanceSheet {
     /// Double-entry guarantees this is zero over a complete ledger:
-    /// eiendeler − (egenkapital + gjeld + udisponert resultat).
-    pub fn differanse_ore(&self) -> i64 {
-        self.eiendeler.sum_ore - self.egenkapital_gjeld.sum_ore - self.udisponert_resultat_ore
+    /// assets − (equity + liabilities + undistributed result).
+    pub fn difference_ore(&self) -> i64 {
+        self.assets.sum_ore - self.equity_and_liabilities.sum_ore - self.undistributed_result_ore
     }
 }
 
@@ -194,11 +194,11 @@ impl Balanse {
 mod tests {
     use super::*;
 
-    fn line(number: &str, name: &str, saldo_ore: i64) -> SaldoLine {
-        SaldoLine {
+    fn line(number: &str, name: &str, balance_ore: i64) -> BalanceLine {
+        BalanceLine {
             number: number.into(),
             name: name.into(),
-            saldo_ore,
+            balance_ore,
         }
     }
 
@@ -212,15 +212,15 @@ mod tests {
             line("7790", "Annet", 1_500_00),
             line("1920", "Bank", 99_00),
         ];
-        let l = lonnsomhet(&lines);
-        assert_eq!(l.inntekter_ore, 10_000_00);
-        assert_eq!(l.kostnader_ore, 4_500_00);
-        assert_eq!(l.resultat_ore(), 5_500_00);
+        let l = profitability(&lines);
+        assert_eq!(l.revenue_ore, 10_000_00);
+        assert_eq!(l.cost_ore, 4_500_00);
+        assert_eq!(l.result_ore(), 5_500_00);
     }
 
     /// A small complete ledger: aksjekapital innskutt, ett salg m/mva,
     /// one purchase, one bank fee. Ledger signs throughout.
-    fn saldo() -> Vec<SaldoLine> {
+    fn balance() -> Vec<BalanceLine> {
         vec![
             line("1920", "Bank", 100_000_00 + 12_500_00 - 8_000_00 - 150_00),
             line("2000", "Aksjekapital", -100_000_00),
@@ -233,13 +233,13 @@ mod tests {
 
     #[test]
     fn resultat_shows_inntekter_positive_and_computes_arsresultat() {
-        let r = resultat(&saldo());
-        assert_eq!(r.seksjoner[0].heading, "Driftsinntekter");
-        assert_eq!(r.seksjoner[0].sum_ore, 10_000_00);
-        assert_eq!(r.seksjoner[1].sum_ore, 8_000_00, "varekostnad");
-        assert_eq!(r.seksjoner[3].sum_ore, 150_00, "annen driftskostnad");
-        assert_eq!(r.driftsresultat_ore, 10_000_00 - 8_000_00 - 150_00);
-        assert_eq!(r.arsresultat_ore, 1_850_00);
+        let r = result(&balance());
+        assert_eq!(r.sections[0].heading, "Driftsinntekter");
+        assert_eq!(r.sections[0].sum_ore, 10_000_00);
+        assert_eq!(r.sections[1].sum_ore, 8_000_00, "varekostnad");
+        assert_eq!(r.sections[3].sum_ore, 150_00, "annen driftskostnad");
+        assert_eq!(r.operating_result_ore, 10_000_00 - 8_000_00 - 150_00);
+        assert_eq!(r.annual_result_ore, 1_850_00);
     }
 
     /// Årsavslutning (#84): the disposition moves the year's result to
@@ -255,34 +255,37 @@ mod tests {
     /// disposition without any stored "this year is closed" flag.
     #[test]
     fn a_disposition_leaves_the_resultat_alone_and_empties_udisponert() {
-        let mut lines = saldo();
-        let arsresultat = resultat(&lines).arsresultat_ore;
-        assert_eq!(arsresultat, 1_850_00);
-        assert_eq!(balanse(&lines).udisponert_resultat_ore, arsresultat);
+        let mut lines = balance();
+        let annual_result = result(&lines).annual_result_ore;
+        assert_eq!(annual_result, 1_850_00);
+        assert_eq!(
+            balance_sheet(&lines).undistributed_result_ore,
+            annual_result
+        );
 
         // Close the year: debit 8800, credit 2050 (equity), same amount.
-        lines.push(line("8800", "Disponering av årets resultat", arsresultat));
-        lines.push(line("2050", "Annen egenkapital", -arsresultat));
+        lines.push(line("8800", "Disponering av årets resultat", annual_result));
+        lines.push(line("2050", "Annen egenkapital", -annual_result));
 
         assert_eq!(
-            resultat(&lines).arsresultat_ore,
-            arsresultat,
+            result(&lines).annual_result_ore,
+            annual_result,
             "disponeringen er ikke en resultatlinje — fjorårets resultat står"
         );
         assert!(
-            !resultat(&lines)
-                .seksjoner
+            !result(&lines)
+                .sections
                 .iter()
                 .any(|s| s.lines.iter().any(|l| l.number == "8800")),
             "8800 skal ikke vises som en resultatlinje"
         );
         assert_eq!(
-            balanse(&lines).udisponert_resultat_ore,
+            balance_sheet(&lines).undistributed_result_ore,
             0,
             "resultatet er disponert — det kan ikke også ligge udisponert"
         );
         assert_eq!(
-            balanse(&lines).differanse_ore(),
+            balance_sheet(&lines).difference_ore(),
             0,
             "balansen går fortsatt i null"
         );
@@ -290,22 +293,22 @@ mod tests {
 
     #[test]
     fn balanse_balances_via_udisponert_resultat() {
-        let b = balanse(&saldo());
-        assert_eq!(b.eiendeler.sum_ore, 104_350_00);
-        assert_eq!(b.egenkapital_gjeld.sum_ore, 102_500_00);
-        assert_eq!(b.udisponert_resultat_ore, 1_850_00);
-        assert_eq!(b.differanse_ore(), 0);
+        let b = balance_sheet(&balance());
+        assert_eq!(b.assets.sum_ore, 104_350_00);
+        assert_eq!(b.equity_and_liabilities.sum_ore, 102_500_00);
+        assert_eq!(b.undistributed_result_ore, 1_850_00);
+        assert_eq!(b.difference_ore(), 0);
     }
 
     #[test]
     fn zero_balance_accounts_are_omitted_but_sections_survive_empty() {
-        let mut lines = saldo();
+        let mut lines = balance();
         lines.push(line("1500", "Kundefordringer", 0));
-        let b = balanse(&lines);
-        assert!(b.eiendeler.lines.iter().all(|l| l.number != "1500"));
-        let r = resultat(&[]);
-        assert_eq!(r.arsresultat_ore, 0);
-        assert!(r.seksjoner.iter().all(|s| s.lines.is_empty()));
+        let b = balance_sheet(&lines);
+        assert!(b.assets.lines.iter().all(|l| l.number != "1500"));
+        let r = result(&[]);
+        assert_eq!(r.annual_result_ore, 0);
+        assert!(r.sections.iter().all(|s| s.lines.is_empty()));
     }
 
     #[test]
@@ -314,8 +317,8 @@ mod tests {
             line("6300", "Leie", 5_000_00),
             line("7770", "Gebyr", 100_00),
         ];
-        let r = resultat(&lines);
-        let annen = &r.seksjoner[3];
+        let r = result(&lines);
+        let annen = &r.sections[3];
         assert_eq!(annen.lines.len(), 2);
         assert_eq!(annen.sum_ore, 5_100_00);
     }

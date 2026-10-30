@@ -20,11 +20,11 @@ use uuid::Uuid;
 
 /// One balance account's standing for a period.
 #[derive(Debug)]
-pub struct BalanseLinje {
+pub struct BalanceSheetLine {
     pub account: String,
     pub account_name: String,
     /// Booked saldo at period end, computed now.
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
     /// The newest avstemming for the period, when there is one.
     pub avstemt: Option<Avstemming>,
 }
@@ -32,7 +32,7 @@ pub struct BalanseLinje {
 #[derive(Debug)]
 pub struct Avstemming {
     pub id: Uuid,
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
     pub forklaring: String,
     pub reconciled_date: NaiveDate,
     pub avstemt_av: String,
@@ -40,14 +40,14 @@ pub struct Avstemming {
     pub vedlegg_navn: Option<String>,
 }
 
-impl BalanseLinje {
+impl BalanceSheetLine {
     /// Documented, and for the saldo the account actually has. A
     /// difference is not "undocumented" — it is documented and then
     /// moved, which is a different thing to tell the reader.
     pub fn avvik_ore(&self) -> Option<i64> {
         self.avstemt
             .as_ref()
-            .map(|a| self.saldo_ore - a.saldo_ore)
+            .map(|a| self.balance_ore - a.balance_ore)
             .filter(|d| *d != 0)
     }
 }
@@ -62,7 +62,7 @@ pub async fn balance_status(
     pool: &PgPool,
     company_id: Uuid,
     periode: NaiveDate,
-) -> Result<Vec<BalanseLinje>> {
+) -> Result<Vec<BalanceSheetLine>> {
     let rows = sqlx::query(
         "select a.number as konto, a.name as kontonavn,
                 coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $2), 0)::bigint
@@ -99,17 +99,17 @@ pub async fn balance_status(
         .await?
         .map(|r| Avstemming {
             id: r.get("id"),
-            saldo_ore: r.get("saldo_ore"),
+            balance_ore: r.get("saldo_ore"),
             forklaring: r.get("forklaring"),
             reconciled_date: r.get("avstemt_dato"),
             avstemt_av: r.get("avstemt_av"),
             har_vedlegg: r.get("har_vedlegg"),
             vedlegg_navn: r.get("vedlegg_navn"),
         });
-        linjer.push(BalanseLinje {
+        linjer.push(BalanceSheetLine {
             account,
             account_name: row.get("kontonavn"),
-            saldo_ore: row.get("saldo_ore"),
+            balance_ore: row.get("saldo_ore"),
             avstemt,
         });
     }
@@ -147,7 +147,7 @@ pub async fn avstem(
         "{account} er ikke en balansekonto — §11 gjelder balansepostene"
     );
 
-    let saldo_ore: i64 = sqlx::query_scalar(
+    let balance_ore: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e
          join account a on a.id = e.account_id
@@ -181,7 +181,7 @@ pub async fn avstem(
     .bind(company_id)
     .bind(account)
     .bind(periode)
-    .bind(saldo_ore)
+    .bind(balance_ore)
     .bind(forklaring.trim())
     .bind(bytes)
     .bind(navn)
@@ -251,7 +251,7 @@ pub async fn historikk(
     .iter()
     .map(|r| Avstemming {
         id: r.get("id"),
-        saldo_ore: r.get("saldo_ore"),
+        balance_ore: r.get("saldo_ore"),
         forklaring: r.get("forklaring"),
         reconciled_date: r.get("avstemt_dato"),
         avstemt_av: r.get("avstemt_av"),

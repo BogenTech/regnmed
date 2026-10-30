@@ -42,7 +42,7 @@ pub async fn list_accounts(
             "vat_code": k.vat_code,
             "active": k.active,
             "reskontro_kind": k.reskontro_kind,
-            "saldo_ore": k.saldo_ore,
+            "saldo_ore": k.balance_ore,
             "posteringer": k.posteringer,
         })).collect::<Vec<_>>(),
         "standard": standard,

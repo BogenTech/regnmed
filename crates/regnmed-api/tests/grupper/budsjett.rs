@@ -263,7 +263,7 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
     assert_eq!(inntekt["budsjett_ar_ore"], 120_000_00);
     assert_eq!(inntekt["linjer"][0]["faktisk_maaneder"][0], 12_000_00);
     assert_eq!(inntekt["linjer"][0]["faktisk_maaneder"][1], 8_000_00);
-    // Resultat hittil: (20 000 − 4 000) faktisk mot (20 000 − 4 000) budsjett.
+    // Result to date: (20 000 − 4 000) actual against (20 000 − 4 000) budget.
     assert_eq!(avvik["resultat_faktisk_hittil_ore"], 16_000_00);
     assert_eq!(avvik["resultat_budsjett_hittil_ore"], 16_000_00);
     assert_eq!(avvik["resultat_budsjett_ar_ore"], 96_000_00);

@@ -58,14 +58,14 @@ pub async fn status(
         "kontoer": linjer.iter().map(|l| json!({
             "konto": l.account,
             "kontonavn": l.account_name,
-            "saldo_ore": l.saldo_ore,
+            "saldo_ore": l.balance_ore,
             // Computed, never stored — a difference means the account was
             // posted to AFTER it was reconciled, which is worth saying
             // out loud rather than quietly re-baselining.
             "avvik_ore": l.avvik_ore(),
             "avstemt": l.avstemt.as_ref().map(|a| json!({
                 "id": a.id,
-                "saldo_ore": a.saldo_ore,
+                "saldo_ore": a.balance_ore,
                 "forklaring": a.forklaring,
                 "avstemt_dato": a.reconciled_date.to_string(),
                 "avstemt_av": a.avstemt_av,
@@ -201,7 +201,7 @@ pub async fn historikk(
     Ok(Json(json!({
         "avstemminger": rader.iter().map(|a| json!({
             "id": a.id,
-            "saldo_ore": a.saldo_ore,
+            "saldo_ore": a.balance_ore,
             "forklaring": a.forklaring,
             "avstemt_dato": a.reconciled_date.to_string(),
             "avstemt_av": a.avstemt_av,

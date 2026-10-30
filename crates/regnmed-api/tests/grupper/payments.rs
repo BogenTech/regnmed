@@ -92,7 +92,7 @@ fn leverandorfaktura(date: chrono::NaiveDate, amount: i64, party_no: &str) -> Vo
     }
 }
 
-async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
+async fn balance(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
@@ -324,9 +324,9 @@ async fn betalingsliste_pain001_and_settlement() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {settled}");
-    assert_eq!(saldo(&state, company, "1920").await, -13_300_00);
+    assert_eq!(balance(&state, company, "1920").await, -13_300_00);
     assert_eq!(
-        saldo(&state, company, "2400").await,
+        balance(&state, company, "2400").await,
         -500_00,
         "bare den kontoløse posten står igjen"
     );

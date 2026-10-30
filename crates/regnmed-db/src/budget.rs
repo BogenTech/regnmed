@@ -12,7 +12,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use regnmed_core::budget::{AccountFigures, VarianceReport, scale_ore, variance};
-use regnmed_core::regnskap::{class_of, presentasjon_ore};
+use regnmed_core::statements::{class_of, presentation_ore};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -186,7 +186,7 @@ pub async fn create_budget(
     if let Some(fra) = fra_ar {
         let rows = monthly_actuals(&mut tx, company_id, fra).await?;
         for (account_id, number, maned, ledger_ore) in rows {
-            let amount = scale_ore(presentasjon_ore(&number, ledger_ore), justering_bp);
+            let amount = scale_ore(presentation_ore(&number, ledger_ore), justering_bp);
             if amount == 0 {
                 continue;
             }
@@ -417,7 +417,7 @@ pub async fn avviksrapport(
         let maned: i32 = r.get("maned");
         let amount: i64 = r.get("belop");
         let account = account_entry(&mut tall, &number, r.get("name"));
-        account.actual[(maned - 1) as usize] += presentasjon_ore(&number, amount);
+        account.actual[(maned - 1) as usize] += presentation_ore(&number, amount);
     }
 
     // Budsjett: allerede i presentasjonsfortegn.

@@ -186,7 +186,7 @@ pub async fn plan_open_items(
     account: &str,
     rader: &[OpenItemRow],
 ) -> Result<OpenItemsPlan> {
-    let saldo: Option<i64> = sqlx::query_scalar(
+    let balance: Option<i64> = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
@@ -195,7 +195,7 @@ pub async fn plan_open_items(
     .bind(account)
     .fetch_optional(pool)
     .await?;
-    let account_balance_ore = saldo.context("no such account")?;
+    let account_balance_ore = balance.context("no such account")?;
 
     let mut nye_parter = Vec::new();
     let mut advarsler = Vec::new();
@@ -261,7 +261,7 @@ pub async fn import_open_items(
     );
 
     let mut tx = pool.begin().await?;
-    let saldo: Option<i64> = sqlx::query_scalar(
+    let balance: Option<i64> = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
@@ -270,13 +270,13 @@ pub async fn import_open_items(
     .bind(account)
     .fetch_optional(&mut *tx)
     .await?;
-    let saldo = saldo.context("no such account")?;
-    if saldo != 0 {
+    let balance = balance.context("no such account")?;
+    if balance != 0 {
         bail!(
             "konto {account} har allerede saldo {} øre — åpne poster ERSTATTER samlelinjen, \
              de legges ikke oppå den. Utelat kontoen fra åpningsbalansen (eller reverser \
              samlelinjen) og kjør importen på nytt",
-            saldo
+            balance
         );
     }
 

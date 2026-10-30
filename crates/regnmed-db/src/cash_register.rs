@@ -36,8 +36,8 @@ pub struct DagsoppgjorInn {
 pub struct BokfortOppgjor {
     pub voucher: (i32, i64),
     /// The difference voucher, when there was a difference at all.
-    pub differanse: Option<(i32, i64)>,
-    pub differanse_ore: i64,
+    pub difference: Option<(i32, i64)>,
+    pub difference_ore: i64,
 }
 
 pub async fn bokfor_dagsoppgjor(
@@ -113,8 +113,8 @@ pub async fn bokfor_dagsoppgjor(
         .await?;
     }
 
-    let mut differanse = None;
-    let mut differanse_ore = 0;
+    let mut difference = None;
+    let mut difference_ore = 0;
     if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.opptalt_kontant_ore) {
         let registrert: i64 = inn
             .betaling
@@ -122,7 +122,7 @@ pub async fn bokfor_dagsoppgjor(
             .filter(|(account, _)| account == cash_account)
             .map(|(_, amount)| *amount)
             .sum();
-        differanse_ore = opptalt - registrert;
+        difference_ore = opptalt - registrert;
         if let Some(diff) = build_discrepancy(
             inn.date,
             &inn.z_nummer,
@@ -132,13 +132,13 @@ pub async fn bokfor_dagsoppgjor(
             opptalt,
         ) {
             let d = crate::post_voucher_in(&mut tx, company_id, &diff, created_by).await?;
-            differanse = Some((d.fiscal_year, d.voucher_number));
+            difference = Some((d.fiscal_year, d.voucher_number));
         }
     }
     tx.commit().await?;
     Ok(BokfortOppgjor {
         voucher: (posted.fiscal_year, posted.voucher_number),
-        differanse,
-        differanse_ore,
+        difference,
+        difference_ore,
     })
 }

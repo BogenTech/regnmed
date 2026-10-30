@@ -270,7 +270,7 @@ async fn feriepengehistorikk(
 }
 
 async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Result<i64> {
-    let saldo: i64 = sqlx::query_scalar(
+    let balance: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
@@ -279,7 +279,7 @@ async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Resu
     .bind(account)
     .fetch_one(pool)
     .await?;
-    Ok(saldo)
+    Ok(balance)
 }
 
 async fn satser(pool: &PgPool) -> Result<Vec<RatePeriod>> {

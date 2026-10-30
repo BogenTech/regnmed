@@ -41,7 +41,7 @@ async fn request(
     )
 }
 
-async fn saldo(state: &AppState, company: Uuid, account: &str) -> i64 {
+async fn balance(state: &AppState, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
@@ -149,9 +149,9 @@ async fn expenses_flow() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {approved}");
     assert!(approved["warning"].is_null());
-    assert_eq!(saldo(&state, company, "7790").await, 500_00);
-    assert_eq!(saldo(&state, company, "2710").await, 125_00);
-    assert_eq!(saldo(&state, company, "2910").await, -625_00);
+    assert_eq!(balance(&state, company, "7790").await, 500_00);
+    assert_eq!(balance(&state, company, "2710").await, 125_00);
+    assert_eq!(balance(&state, company, "2910").await, -625_00);
     // The receipt followed the claim onto the voucher (oppbevaring).
     let attachment_count: i64 = sqlx::query_scalar(
         "select count(*) from attachment a
@@ -222,7 +222,7 @@ async fn expenses_flow() {
             .contains("trekkpliktig del 216,00 kr"),
         "warning: {approved}"
     );
-    assert_eq!(saldo(&state, company, "7100").await, 636_00);
+    assert_eq!(balance(&state, company, "7100").await, 636_00);
 
     // Avvisning requires a note; the note sticks.
     let (status, made) = request(
@@ -275,11 +275,11 @@ async fn expenses_flow() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {paid}");
     assert_eq!(
-        saldo(&state, company, "2910").await,
+        balance(&state, company, "2910").await,
         -636_00,
         "kjøringen står igjen"
     );
-    assert_eq!(saldo(&state, company, "1920").await, -625_00);
+    assert_eq!(balance(&state, company, "1920").await, -625_00);
     let (status, _) = request(
         &state,
         "POST",

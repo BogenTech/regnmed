@@ -79,7 +79,7 @@ pub struct PartyRow {
     pub email: Option<String>,
     pub bank_account: Option<String>,
     /// SUM(amount_ore) over the party's entries — the reskontro saldo.
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
 }
 
 /// The spesifikasjon: every party of a kind with its saldo.
@@ -112,7 +112,7 @@ pub async fn list_parties(
             address: r.get("address"),
             email: r.get("email"),
             bank_account: r.get("bank_account"),
-            saldo_ore: r.get("saldo_ore"),
+            balance_ore: r.get("saldo_ore"),
         })
         .collect())
 }
@@ -401,7 +401,7 @@ pub async fn match_valuta(
         let today: NaiveDate = sqlx::query_scalar("select current_date")
             .fetch_one(&mut *tx)
             .await?;
-        let (income_account, resultat_amount, party_amount) = if agio > 0 {
+        let (income_account, result_amount, party_amount) = if agio > 0 {
             (gain_account, -agio, agio)
         } else {
             (loss_account, -agio, agio)
@@ -428,7 +428,7 @@ pub async fn match_valuta(
                 },
                 EntryDraft {
                     account_number: income_account.to_string(),
-                    amount: Ore(resultat_amount),
+                    amount: Ore(result_amount),
                     vat_code: None,
                     description: None,
                     party_no: None,

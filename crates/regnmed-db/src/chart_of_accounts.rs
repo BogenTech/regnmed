@@ -22,7 +22,7 @@ pub struct AccountRow {
     pub active: bool,
     pub reskontro_kind: Option<String>,
     /// Lifetime balance (SUM of entries, øre) — computed, never stored.
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
     pub posteringer: i64,
 }
 
@@ -51,7 +51,7 @@ pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<Accoun
             vat_code: r.get("vat_code"),
             active: r.get("active"),
             reskontro_kind: r.get("reskontro_kind"),
-            saldo_ore: r.get("saldo_ore"),
+            balance_ore: r.get("saldo_ore"),
             posteringer: r.get("posteringer"),
         })
         .collect())

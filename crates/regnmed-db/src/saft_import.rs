@@ -451,7 +451,7 @@ pub async fn saft_import_log(pool: &PgPool, company_id: Uuid) -> Result<Vec<Saft
 ///
 /// - **Balance accounts (class 1–2)** open at the booked all-time
 ///   balance — they carry over the year end unchanged.
-/// - **Resultat accounts (class 3–9)** are reset at year end by the
+/// - **Income statement accounts (class 3–9)** are reset at year end by the
 ///   exporting system, but regnmed never posts year-end closings
 ///   (udisponert resultat is derived in reports), so their file opening
 ///   is compared against the booked entries of the file's own fiscal

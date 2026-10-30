@@ -1,6 +1,6 @@
-//! Lovpålagte spesifikasjoner (bokføringsforskriften §3-1): saldobalanse,
+//! Statutory specifications (bokføringsforskriften §3-1): trial balance,
 //! kontospesifikasjon and bokføringsspesifikasjon, plus the saldo lines
-//! that feed resultat/balanse in `regnmed-core::regnskap`.
+//! that feed the income statement and balance sheet in `regnmed-core::statements`.
 //!
 //! All of it is `SUM(amount_ore)` and ordered SELECTs over the immutable
 //! ledger — never stored state, so the reports are correct the moment a
@@ -8,27 +8,27 @@
 
 use anyhow::Result;
 use chrono::NaiveDate;
-use regnmed_core::regnskap::SaldoLine;
+use regnmed_core::statements::BalanceLine;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 /// One account over a period: inngående saldo, movement, utgående saldo.
 #[derive(Debug)]
-pub struct SaldobalanseRow {
+pub struct TrialBalanceRow {
     pub number: String,
     pub name: String,
-    pub inngaende_ore: i64,
-    pub debet_ore: i64,
-    pub kredit_ore: i64,
-    pub utgaende_ore: i64,
+    pub opening_ore: i64,
+    pub debit_ore: i64,
+    pub credit_ore: i64,
+    pub closing_ore: i64,
 }
 
-pub async fn saldobalanse(
+pub async fn trial_balance(
     pool: &PgPool,
     company_id: Uuid,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<SaldobalanseRow>> {
+) -> Result<Vec<TrialBalanceRow>> {
     let rows = sqlx::query(
         "select a.number, a.name,
                 coalesce(sum(e.amount_ore) filter (where v.voucher_date < $2), 0)::bigint as inngaende,
@@ -54,13 +54,13 @@ pub async fn saldobalanse(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| SaldobalanseRow {
+        .map(|r| TrialBalanceRow {
             number: r.get("number"),
             name: r.get("name"),
-            inngaende_ore: r.get("inngaende"),
-            debet_ore: r.get("debet"),
-            kredit_ore: r.get("kredit"),
-            utgaende_ore: r.get("utgaende"),
+            opening_ore: r.get("inngaende"),
+            debit_ore: r.get("debet"),
+            credit_ore: r.get("kredit"),
+            closing_ore: r.get("utgaende"),
         })
         .collect())
 }
@@ -69,14 +69,14 @@ pub async fn saldobalanse(
 /// to resultat/balanse. For resultat, pass the period's `from` too.
 /// Optional dimension filters restrict to entries carrying that
 /// avdeling/prosjekt code — resultat per dimensjon, same pure SUM.
-pub async fn saldo_lines(
+pub async fn balance_lines(
     pool: &PgPool,
     company_id: Uuid,
     from: Option<NaiveDate>,
     to: NaiveDate,
     department: Option<&str>,
     project: Option<&str>,
-) -> Result<Vec<SaldoLine>> {
+) -> Result<Vec<BalanceLine>> {
     let rows = sqlx::query(
         "select a.number, a.name, sum(e.amount_ore)::bigint as saldo
          from account a
@@ -100,25 +100,25 @@ pub async fn saldo_lines(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| SaldoLine {
+        .map(|r| BalanceLine {
             number: r.get("number"),
             name: r.get("name"),
-            saldo_ore: r.get("saldo"),
+            balance_ore: r.get("saldo"),
         })
         .collect())
 }
 
 /// Per-prosjekt account sums over a period (#71) — the overview's data
-/// in ONE query, folded per project with `regnskap::lonnsomhet` by the
-/// caller. Same SUM style as `saldo_lines`, grouped by the project
+/// in ONE query, folded per project with `statements::profitability` by the
+/// caller. Same SUM style as `balance_lines`, grouped by the project
 /// code; entries without a prosjekt are not project economics and are
 /// deliberately absent.
-pub async fn prosjekt_saldo_lines(
+pub async fn project_balance_lines(
     pool: &PgPool,
     company_id: Uuid,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<(String, SaldoLine)>> {
+) -> Result<Vec<(String, BalanceLine)>> {
     let rows = sqlx::query(
         "select dp.code as prosjekt, a.number, a.name, sum(e.amount_ore)::bigint as saldo
          from account a
@@ -139,10 +139,10 @@ pub async fn prosjekt_saldo_lines(
         .map(|r| {
             (
                 r.get("prosjekt"),
-                SaldoLine {
+                BalanceLine {
                     number: r.get("number"),
                     name: r.get("name"),
-                    saldo_ore: r.get("saldo"),
+                    balance_ore: r.get("saldo"),
                 },
             )
         })
@@ -163,7 +163,7 @@ pub struct AccountPost {
     pub amount_ore: i64,
     /// Running saldo on the account, including this posting, from the
     /// period's inngående saldo.
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
     pub party_no: Option<String>,
     pub department: Option<String>,
     pub project: Option<String>,
@@ -222,7 +222,7 @@ pub async fn account_specification(
             voucher_date: r.get("voucher_date"),
             description: r.get("description"),
             amount_ore: r.get("amount_ore"),
-            saldo_ore: r.get::<i64, _>("inngaende") + r.get::<i64, _>("bevegelse"),
+            balance_ore: r.get::<i64, _>("inngaende") + r.get::<i64, _>("bevegelse"),
             party_no: r.get("party_no"),
             department: r.get("avdeling"),
             project: r.get("prosjekt"),
@@ -243,7 +243,7 @@ pub struct ReskontroPost {
     pub amount_ore: i64,
     /// Running saldo for the party, including this posting, from the
     /// period's inngående saldo.
-    pub saldo_ore: i64,
+    pub balance_ore: i64,
 }
 
 /// One party's block of the spesifikasjon: inngående saldo, every
@@ -252,8 +252,8 @@ pub struct ReskontroPost {
 pub struct ReskontroParty {
     pub party_no: String,
     pub party_name: String,
-    pub inngaende_ore: i64,
-    pub utgaende_ore: i64,
+    pub opening_ore: i64,
+    pub closing_ore: i64,
     pub posts: Vec<ReskontroPost>,
 }
 
@@ -263,7 +263,7 @@ pub struct ReskontroParty {
 /// `leverandor`. A party with no movement in the period is still listed
 /// when its inngående saldo is nonzero — the saldo exists whether or not
 /// the period touched it.
-pub async fn reskontrospesifikasjon(
+pub async fn reskontro_specification(
     pool: &PgPool,
     company_id: Uuid,
     kind: &str,
@@ -297,8 +297,8 @@ pub async fn reskontrospesifikasjon(
         .map(|r| ReskontroParty {
             party_no: r.get("party_no"),
             party_name: r.get("name"),
-            inngaende_ore: r.get("inngaende"),
-            utgaende_ore: r.get("utgaende"),
+            opening_ore: r.get("inngaende"),
+            closing_ore: r.get("utgaende"),
             posts: Vec::new(),
         })
         .collect();
@@ -339,10 +339,10 @@ pub async fn reskontrospesifikasjon(
         };
         let block = &mut parties[idx];
         let amount: i64 = r.get("amount_ore");
-        let saldo = block
+        let balance = block
             .posts
             .last()
-            .map_or(block.inngaende_ore, |p| p.saldo_ore)
+            .map_or(block.opening_ore, |p| p.balance_ore)
             + amount;
         block.posts.push(ReskontroPost {
             account_number: r.get("account_number"),
@@ -352,7 +352,7 @@ pub async fn reskontrospesifikasjon(
             voucher_date: r.get("voucher_date"),
             description: r.get("description"),
             amount_ore: amount,
-            saldo_ore: saldo,
+            balance_ore: balance,
         });
     }
     Ok(parties)
@@ -381,7 +381,7 @@ pub struct BokforingVoucher {
 
 /// Bokføringsspesifikasjon: every voucher in the period in posting
 /// order (chain order — which is also the audit order), with all lines.
-pub async fn bokforingsspesifikasjon(
+pub async fn posting_specification(
     pool: &PgPool,
     company_id: Uuid,
     from: NaiveDate,
@@ -446,8 +446,8 @@ pub async fn bokforingsspesifikasjon(
 pub struct Nokkeltall {
     pub year: i32,
     /// Presentasjonsfortegn: overskudd positivt.
-    pub resultat_hittil_ore: i64,
-    pub resultat_fjor_ore: i64,
+    pub result_ytd_ore: i64,
+    pub result_last_year_ore: i64,
     /// Index 0 = januar; presentasjonsfortegn.
     pub maaneder: [i64; 12],
     /// Bank and cash (the 19xx accounts), now.
@@ -520,9 +520,9 @@ pub async fn nokkeltall(
             anyhow::Ok(sum)
         }
     };
-    let resultat_hittil =
+    let result_ytd =
         resultat_between(chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap(), cutoff).await?;
-    let resultat_fjor = resultat_between(
+    let result_last_year = resultat_between(
         chrono::NaiveDate::from_ymd_opt(year - 1, 1, 1).unwrap(),
         fjor_cutoff,
     )
@@ -538,7 +538,7 @@ pub async fn nokkeltall(
     .bind(company_id)
     .fetch_one(pool)
     .await?;
-    let party_saldo = |kind: &'static str| {
+    let party_balance = |kind: &'static str| {
         let pool = pool.clone();
         async move {
             let sum: i64 = sqlx::query_scalar(
@@ -555,13 +555,13 @@ pub async fn nokkeltall(
             anyhow::Ok(sum)
         }
     };
-    let kundefordringer = party_saldo("kunde").await?;
-    let leverandorgjeld = -party_saldo("leverandor").await?;
+    let kundefordringer = party_balance("kunde").await?;
+    let leverandorgjeld = -party_balance("leverandor").await?;
 
     Ok(Nokkeltall {
         year,
-        resultat_hittil_ore: resultat_hittil,
-        resultat_fjor_ore: resultat_fjor,
+        result_ytd_ore: result_ytd,
+        result_last_year_ore: result_last_year,
         maaneder,
         bank_ore: bank,
         kundefordringer_ore: kundefordringer,
