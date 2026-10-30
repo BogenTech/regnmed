@@ -23,7 +23,7 @@
 use chrono::NaiveDate;
 
 /// Rounds a basis-point calculation half away from zero.
-fn bp_av(amount_ore: i64, rate_bp: i64) -> i64 {
+fn bp_of(amount_ore: i64, rate_bp: i64) -> i64 {
     let n = amount_ore as i128 * rate_bp as i128;
     let d = 10_000i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
@@ -175,7 +175,7 @@ pub fn calculate(basis: &PayrollBasis, month: u32) -> Result<PayrollCalculation,
     } else {
         rate_bp
     };
-    let forskuddstrekk = bp_av(trekkgrunnlag, effektiv_bp);
+    let forskuddstrekk = bp_of(trekkgrunnlag, effektiv_bp);
 
     Ok(PayrollCalculation {
         gross_ore: basis.gross_ore,
@@ -199,7 +199,7 @@ pub fn employer_contribution(
     if zone == Zone::Ia {
         return Err(PayrollError::ZoneIaRequiresExemptionCalculation);
     }
-    Ok(bp_av(basis_ore, rate_bp))
+    Ok(bp_of(basis_ore, rate_bp))
 }
 
 /// Pay for logged hours: minutes at an hourly rate, in øre.
@@ -239,7 +239,7 @@ pub fn hourly_pay(minutes: i64, timesats_ore: i64) -> i64 {
 /// There is no such thing as owing negative arbeidsgiveravgift, and
 /// booking one would turn a bookkeeping gap into income.
 pub fn employer_contribution_accrual_target(holiday_pay_owed_ore: i64, rate_bp: i64) -> i64 {
-    bp_av(holiday_pay_owed_ore.max(0), rate_bp)
+    bp_of(holiday_pay_owed_ore.max(0), rate_bp)
 }
 
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
@@ -249,7 +249,7 @@ pub fn employer_contribution_accrual_target(holiday_pay_owed_ore: i64, rate_bp: 
 /// commonly raise it to 12 % / 14,3 % for five weeks' holiday. Which
 /// one applies is the caller's decision, recorded per employee.
 pub fn holiday_pay_accrual(basis_ore: i64, rate_bp: i64) -> i64 {
-    bp_av(basis_ore, rate_bp)
+    bp_of(basis_ore, rate_bp)
 }
 
 /// What a month's payroll costs and owes, per employee, summed.
@@ -396,10 +396,10 @@ mod tests {
         // 1234,55 kr * 10,2 % = 125,9241 -> 125,92
         assert_eq!(holiday_pay_accrual(123_455, 1020), 12_592);
         // Exactly one half rounds up in absolute value.
-        assert_eq!(bp_av(50_000, 1), 5);
-        assert_eq!(bp_av(-50_000, 1), -5);
+        assert_eq!(bp_of(50_000, 1), 5);
+        assert_eq!(bp_of(-50_000, 1), -5);
         // The same input gives the same answer, always.
-        assert_eq!(bp_av(123_455, 1020), bp_av(123_455, 1020));
+        assert_eq!(bp_of(123_455, 1020), bp_of(123_455, 1020));
     }
 
     #[test]

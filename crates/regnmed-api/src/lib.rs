@@ -561,7 +561,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/arsavslutning/{year}/forslag",
-            get(year_end::forslag),
+            get(year_end::suggestion),
         )
         .route(
             "/companies/{company_id}/kassaoppgjor",
@@ -787,11 +787,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/ehf",
-            get(inbox::ehf_forslag),
+            get(inbox::ehf_suggestion),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/forslag",
-            get(inbox::forslag),
+            get(inbox::suggestion),
         )
         .route(
             "/companies/{company_id}/inbox/{document_id}/attester",
@@ -904,12 +904,12 @@ pub fn catch_panic_layer()
 /// Turns a panic into a 500. The detail is logged server-side; the client gets
 /// en nøytral melding — en panikk sier ofte noe om interne data.
 fn panikk_til_500(panikk: Box<dyn std::any::Any + Send + 'static>) -> Response {
-    let detalj = panikk
+    let detail = panikk
         .downcast_ref::<String>()
         .map(String::as_str)
         .or_else(|| panikk.downcast_ref::<&str>().copied())
         .unwrap_or("(ukjent panikk)");
-    eprintln!("panikk i forespørselshåndtering: {detalj}");
+    eprintln!("panikk i forespørselshåndtering: {detail}");
     (
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         [(axum::http::header::CONTENT_TYPE, "application/json")],

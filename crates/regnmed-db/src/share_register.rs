@@ -32,7 +32,7 @@ pub struct Shareholder {
     pub birth_date: Option<NaiveDate>,
     pub orgnumber: Option<String>,
     pub utenlandsk_id: Option<String>,
-    pub adresse: Option<String>,
+    pub address: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
     pub landkode: Option<String>,
@@ -75,7 +75,7 @@ pub struct NewShareholder {
     pub fodselsnummer: Option<String>,
     pub orgnumber: Option<String>,
     pub utenlandsk_id: Option<String>,
-    pub adresse: Option<String>,
+    pub address: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
     pub landkode: Option<String>,
@@ -141,7 +141,7 @@ pub async fn create_shareholder(
     .bind(&new.orgnumber)
     .bind(&new.utenlandsk_id)
     .bind(&new.name)
-    .bind(&new.adresse)
+    .bind(&new.address)
     .bind(&new.postnummer)
     .bind(&new.poststed)
     .bind(&new.landkode)
@@ -159,7 +159,7 @@ pub async fn update_shareholder_contact(
     company_id: Uuid,
     shareholder_id: Uuid,
     name: &str,
-    adresse: Option<&str>,
+    address: Option<&str>,
     postnummer: Option<&str>,
     poststed: Option<&str>,
     landkode: Option<&str>,
@@ -173,7 +173,7 @@ pub async fn update_shareholder_contact(
     .bind(shareholder_id)
     .bind(company_id)
     .bind(name)
-    .bind(adresse)
+    .bind(address)
     .bind(postnummer)
     .bind(poststed)
     .bind(landkode)
@@ -224,7 +224,7 @@ pub async fn aksjeeierbok(
                     .and_then(regnmed_core::nin::birth_date),
                 orgnumber: r.get("orgnr"),
                 utenlandsk_id: r.get("utenlandsk_id"),
-                adresse: r.get("adresse"),
+                address: r.get("adresse"),
                 postnummer: r.get("postnummer"),
                 poststed: r.get("poststed"),
                 landkode: r.get("landkode"),
@@ -600,7 +600,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     let orgnumber: String = company.get("orgnr");
     // The address is free text with us; the oppgave wants it split. The
     // same rule EHF uses, in one place.
-    let (gate, postnr, poststed) = crate::ehf::split_adresse(company.get("address"));
+    let (gate, postnr, poststed) = crate::ehf::split_address(company.get("address"));
 
     // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
     // for the aksjonærregisteroppgave it is the inntektsår that governs
@@ -675,7 +675,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 inntektsar: year,
                 id: aksjonaerid(pool, a).await?,
                 name: a.name.clone(),
-                adresse: a.adresse.clone(),
+                address: a.address.clone(),
                 postnummer: a.postnummer.clone(),
                 poststed: a.poststed.clone(),
                 landkode: a.landkode.clone(),
@@ -711,11 +711,11 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
             company: tax_return::Company {
                 orgnumber,
                 name: company.get("name"),
-                adresse: gate,
+                address: gate,
                 postnummer: postnr,
                 poststed,
                 contact_name: None,
-                kontakt_epost: company.get("email"),
+                contact_email: company.get("email"),
             },
             inntektsar: year,
             aksjekapital,

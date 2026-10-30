@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::fakturapdf::{Dokumenttype, FakturaPdfInput, PdfLinje, render_faktura_pdf};
+use regnmed_core::fakturapdf::{DocumentType, FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::{InvoiceLineInput, build_voucher, compute, invoice_kid};
 use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
@@ -352,25 +352,25 @@ pub async fn create_invoice_in(
     // flere enn AS/ASA (#81).
     let reg = crate::settings::registrering_on(pool, company_id, draft.invoice_date).await?;
     let pdf = render_faktura_pdf(&FakturaPdfInput {
-        dokumenttype: if credits_invoice_id.is_some() {
-            Dokumenttype::CreditNote
+        document_type: if credits_invoice_id.is_some() {
+            DocumentType::CreditNote
         } else if draft.kontant_betalingsmiddel.is_some() {
-            Dokumenttype::Kontantfaktura
+            DocumentType::Kontantfaktura
         } else {
-            Dokumenttype::Invoice
+            DocumentType::Invoice
         },
         betalingsmiddel: draft.kontant_betalingsmiddel.clone(),
-        krediterer_nr: credited_invoice_no,
+        credits_number: credited_invoice_no,
         seller_name: company.get("name"),
         seller_orgnumber: company.get("orgnr"),
-        selger_adresse: company.get("address"),
+        seller_address: company.get("address"),
         seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: company.get("bank_account"),
         buyer_name: party.get("name"),
-        kjoper_nr: draft.party_no.clone(),
+        buyer_number: draft.party_no.clone(),
         buyer_orgnumber: party.get("orgnr"),
-        kjoper_adresse: party.get("address"),
+        buyer_address: party.get("address"),
         fakturanr: invoice_no,
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
@@ -394,7 +394,7 @@ pub async fn create_invoice_in(
             })
             .collect(),
     });
-    let dokument = if credits_invoice_id.is_some() {
+    let document = if credits_invoice_id.is_some() {
         "kreditnota"
     } else {
         "faktura"
@@ -403,7 +403,7 @@ pub async fn create_invoice_in(
         tx,
         company_id,
         posted.id,
-        &format!("{dokument}-{invoice_no}.pdf"),
+        &format!("{document}-{invoice_no}.pdf"),
         "application/pdf",
         &pdf,
         created_by,

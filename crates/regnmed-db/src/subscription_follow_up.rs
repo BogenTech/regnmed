@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::rates::load_rates;
 use crate::reminders::{ReminderDraft, create_reminder};
 
-pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
+pub const PERFORMED_BY: &str = "regnmed abonnement-oppfolging";
 
 /// One abonnement invoice in the drift company, joined to the customer
 /// company it bills (via the run log — the only invoice→customer link).
@@ -31,7 +31,7 @@ pub struct SubscriptionInvoice {
     pub company_name: String,
     /// The customer company's own e-mail (Firmaopplysninger) — the
     /// recipient; the party in the drift company carries none.
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub invoice_id: Uuid,
     pub invoice_no: i64,
     pub due_date: NaiveDate,
@@ -76,7 +76,7 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
         .map(|r| SubscriptionInvoice {
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             invoice_id: r.get("invoice_id"),
             invoice_no: r.get("invoice_no"),
             due_date: r.get("due_date"),
@@ -134,7 +134,7 @@ pub async fn purr(
         fee_account: "3950".into(),
         interest_account: "8050".into(),
     };
-    let result = create_reminder(pool, drift, invoice.invoice_id, &draft, UTFORT_AV).await?;
+    let result = create_reminder(pool, drift, invoice.invoice_id, &draft, PERFORMED_BY).await?;
     let reminder_id = result.reminder_id.context("purringen fikk ingen id")?;
     Ok(Some((reminder_id, result.step)))
 }
@@ -247,7 +247,7 @@ pub async fn restore_if_paid(
         today,
         None,
         "innbetaling registrert — dekningen gjenopprettet automatisk (#75)",
-        UTFORT_AV,
+        PERFORMED_BY,
     )
     .await?;
     logg(
@@ -267,7 +267,7 @@ pub async fn restore_if_paid(
 pub struct UnsentReminder {
     pub company_id: Uuid,
     pub company_name: String,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub invoice_id: Uuid,
     pub invoice_no: i64,
     pub reminder_id: Uuid,
@@ -294,7 +294,7 @@ pub async fn unsent_reminders(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentRe
         .map(|r| UnsentReminder {
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             invoice_id: r.get("invoice_id"),
             invoice_no: r.get("invoice_no"),
             reminder_id: r.get("reminder_id"),

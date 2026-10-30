@@ -30,7 +30,7 @@ pub struct MottattVedlegg {
 /// shape belongs to the caller (regnmed-api::mailq_in); what reaches
 /// here is already bytes and text.
 #[derive(Debug, Clone)]
-pub struct MottattEpost {
+pub struct ReceivedEmail {
     /// The full recipient address the mail was delivered to.
     pub to: String,
     pub from: String,
@@ -173,7 +173,7 @@ pub async fn revoke_sender(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<
 
 /// Routes and stores an inbound mail. All-or-nothing per message: the
 /// log row and the documents it produced land in one transaction.
-pub async fn receive_mail(pool: &PgPool, mail: &MottattEpost) -> Result<Mottak> {
+pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak> {
     let local = mail
         .to
         .rsplit('<')

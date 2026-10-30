@@ -287,7 +287,7 @@ async fn an_outsider_gets_404_not_403() {
 /// extractor before the handler, so a missing parameter gives 400 and the
 /// guard is never asked. The test would then have passed without proving
 /// anything.
-const NEKTET_FOR_ANSATT: &[(&str, &str)] = &[
+const DENIED_FOR_EMPLOYEE: &[(&str, &str)] = &[
     ("GET", "/companies/{c}/vouchers"),
     (
         "GET",
@@ -318,7 +318,7 @@ const NEKTET_FOR_ANSATT: &[(&str, &str)] = &[
 ];
 
 /// And what they SHALL reach — the self-service, which would be useless otherwise.
-const TILLATT_FOR_ANSATT: &[&str] = &[
+const ALLOWED_FOR_EMPLOYEE: &[&str] = &[
     "/companies/{c}/timesheet?from=2026-01-01&to=2026-12-31",
     "/companies/{c}/timesheet/lock",
     "/companies/{c}/expenses",
@@ -326,13 +326,13 @@ const TILLATT_FOR_ANSATT: &[&str] = &[
 ];
 
 #[tokio::test]
-async fn an_ansatt_cannot_reach_the_hovedbok() {
+async fn an_employee_cannot_reach_the_hovedbok() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
-    for (method, uri) in NEKTET_FOR_ANSATT {
+    for (method, uri) in DENIED_FOR_EMPLOYEE {
         let uri = uri.replace("{c}", &company.to_string());
         assert_eq!(
             status(&state, method, &uri, &employee, "").await,
@@ -343,13 +343,13 @@ async fn an_ansatt_cannot_reach_the_hovedbok() {
 }
 
 #[tokio::test]
-async fn an_ansatt_may_do_their_own() {
+async fn an_employee_may_do_their_own() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
 
-    for uri in TILLATT_FOR_ANSATT {
+    for uri in ALLOWED_FOR_EMPLOYEE {
         let uri = uri.replace("{c}", &company.to_string());
         let s = status(&state, "GET", &uri, &employee, "").await;
         assert_ne!(s, StatusCode::FORBIDDEN, "ansatt nektet {uri}");
@@ -387,7 +387,7 @@ async fn an_ansatt_may_do_their_own() {
 /// innboks and waits for somebody with BILAG_BOKFOR — the employee
 /// reaches neither the innboks nor the posting.
 #[tokio::test]
-async fn an_ansatt_may_upload_but_not_post() {
+async fn an_employee_may_upload_but_not_post() {
     let Some((state, idp, company, _admin, _bokforing, _les)) = setup().await else {
         return;
     };
@@ -432,7 +432,7 @@ async fn an_ansatt_may_upload_but_not_post() {
 /// the very reason `_EGNE`/`_ALLE` exists — without it the rettighet
 /// would grant either everything or nothing.
 #[tokio::test]
-async fn an_ansatt_gets_only_their_own_payslip() {
+async fn an_employee_gets_only_their_own_payslip() {
     let Some((state, idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
@@ -460,10 +460,10 @@ async fn an_ansatt_gets_only_their_own_payslip() {
         regnmed_db::ensure_company_member(&state.pool, company, person, "ansatt")
             .await
             .unwrap();
-        let employee = regnmed_db::payroll::create_ansatt(
+        let employee = regnmed_db::payroll::create_employee(
             &state.pool,
             company,
-            &regnmed_db::payroll::NyAnsatt {
+            &regnmed_db::payroll::NewEmployee {
                 fodselsnummer: fnr.into(),
                 name: name.into(),
                 stilling: None,
@@ -691,7 +691,7 @@ async fn a_custom_role_grants_exactly_what_it_says() {
 /// those rettigheter cannot go into a custom role at all — refused when
 /// the role is created, not merely ignored on lookup.
 #[tokio::test]
-async fn access_governing_rettigheter_cannot_be_delegated() {
+async fn access_governing_rights_cannot_be_delegated() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
@@ -1019,7 +1019,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
 
 /// The access guard must never see the rettighet list mid-rewrite.
 ///
-/// `sett_rettigheter` is `delete` + `insert`; outside a transaction a
+/// `set_rights` is `delete` + `insert`; outside a transaction a
 /// concurrent lookup can read in between and see an EMPTY list — whoever
 /// holds the role loses access for a moment, at random, in an entirely
 /// different request.
@@ -1030,7 +1030,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
 /// past immediately, and the read sees either nothing or the new list —
 /// both fail here.
 #[tokio::test]
-async fn rettigheter_are_never_read_half_written() {
+async fn rights_are_never_read_half_written() {
     let Some((state, _idp, company, admin, _bokforing, _les)) = setup().await else {
         return;
     };
@@ -1070,7 +1070,7 @@ async fn rettigheter_are_never_read_half_written() {
     // The change starts — and does not get past the lock.
     let pool = state.pool.clone();
     let skriver = tokio::spawn(async move {
-        regnmed_db::roles::sett_rettigheter(
+        regnmed_db::roles::set_rights(
             &pool,
             company,
             role_id,
@@ -1082,7 +1082,7 @@ async fn rettigheter_are_never_read_half_written() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     for i in 0..20 {
-        let sett = regnmed_db::roles::rettigheter_for(&state.pool, company, &name)
+        let sett = regnmed_db::roles::rights_for(&state.pool, company, &name)
             .await
             .unwrap();
         assert_eq!(
@@ -1095,7 +1095,7 @@ async fn rettigheter_are_never_read_half_written() {
 
     laas.commit().await.unwrap();
     skriver.await.unwrap().unwrap();
-    let sett = regnmed_db::roles::rettigheter_for(&state.pool, company, &name)
+    let sett = regnmed_db::roles::rights_for(&state.pool, company, &name)
         .await
         .unwrap();
     assert_eq!(

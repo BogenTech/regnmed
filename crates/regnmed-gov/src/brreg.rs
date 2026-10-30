@@ -87,8 +87,8 @@ impl Capital {
 /// lines, with postnummer/poststed alongside.
 #[derive(Debug, Deserialize)]
 pub struct Address {
-    #[serde(default)]
-    pub adresse: Vec<String>,
+    #[serde(default, rename = "adresse")]
+    pub address: Vec<String>,
     #[serde(default)]
     pub postnummer: Option<String>,
     #[serde(default)]
@@ -101,7 +101,7 @@ impl Address {
     /// to split again for EHF.
     pub fn one_line(&self) -> Option<String> {
         let gate = self
-            .adresse
+            .address
             .iter()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
@@ -370,13 +370,13 @@ mod tests {
     #[test]
     fn a_missing_address_is_none_not_an_empty_line() {
         let tom = Address {
-            adresse: vec![String::new()],
+            address: vec![String::new()],
             postnummer: None,
             poststed: None,
         };
         assert!(tom.one_line().is_none());
         let bare_sted = Address {
-            adresse: vec![],
+            address: vec![],
             postnummer: Some("0155".into()),
             poststed: Some("Oslo".into()),
         };

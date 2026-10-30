@@ -19,7 +19,7 @@
 //!    the log cannot explain is exactly what the change log exists to
 //!    make impossible.
 //! 2. Setting rettigheter is `delete` + `insert`. Outside a transaction
-//!    `rettigheter_for` (the access guard, in an entirely different
+//!    `rights_for` (the access guard, in an entirely different
 //!    request) can read BETWEEN them and see an empty list: whoever holds
 //!    the role loses access for a moment, at random, with nothing wrong.
 //!    Now the lookup always sees either the old list or the new one.
@@ -54,11 +54,7 @@ pub struct Role {
 /// Called from the access guard for those role names that are not
 /// built-in. A deactivated role grants nothing — that is how a role is
 /// "removed" without losing the history of who held it.
-pub async fn rettigheter_for(
-    pool: &PgPool,
-    company_id: Uuid,
-    name: &[String],
-) -> Result<Vec<String>> {
+pub async fn rights_for(pool: &PgPool, company_id: Uuid, name: &[String]) -> Result<Vec<String>> {
     if name.is_empty() {
         return Ok(Vec::new());
     }
@@ -133,7 +129,7 @@ pub async fn opprett(
     company_id: Uuid,
     name: &str,
     godkjente: &[String],
-    av: Uuid,
+    by: Uuid,
     by_name: &str,
 ) -> Result<Uuid> {
     let name = name.trim();
@@ -162,14 +158,14 @@ pub async fn opprett(
         }
         return Err(e.into());
     }
-    sett_rettigheter_in(&mut tx, id, godkjente).await?;
+    set_rights_in(&mut tx, id, godkjente).await?;
     logg(
         &mut tx,
         company_id,
         id,
         "opprettet",
         Some(&godkjente.join(" ")),
-        av,
+        by,
     )
     .await?;
     tx.commit().await?;
@@ -178,7 +174,7 @@ pub async fn opprett(
 
 /// Rewrites the rettighet list. Always runs inside the transaction that
 /// also writes the log row, and after the role has been locked.
-async fn sett_rettigheter_in(
+async fn set_rights_in(
     tx: &mut Transaction<'_, Postgres>,
     role_id: Uuid,
     rights: &[String],
@@ -199,12 +195,12 @@ async fn sett_rettigheter_in(
     Ok(())
 }
 
-pub async fn sett_rettigheter(
+pub async fn set_rights(
     pool: &PgPool,
     company_id: Uuid,
     role_id: Uuid,
     godkjente: &[String],
-    av: Uuid,
+    by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     // Locks the role and checks that it exists in one — two concurrent
@@ -217,14 +213,14 @@ pub async fn sett_rettigheter(
     .fetch_optional(&mut *tx)
     .await?;
     ensure!(finnes.is_some(), "ukjent rolle");
-    sett_rettigheter_in(&mut tx, role_id, godkjente).await?;
+    set_rights_in(&mut tx, role_id, godkjente).await?;
     logg(
         &mut tx,
         company_id,
         role_id,
         "rettigheter_endret",
         Some(&godkjente.join(" ")),
-        av,
+        by,
     )
     .await?;
     tx.commit().await?;
@@ -238,7 +234,7 @@ pub async fn sett_aktiv(
     company_id: Uuid,
     role_id: Uuid,
     active: bool,
-    av: Uuid,
+    by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let n = sqlx::query("update company_role set aktiv = $3 where id = $2 and company_id = $1")
@@ -255,7 +251,7 @@ pub async fn sett_aktiv(
         role_id,
         if active { "reaktivert" } else { "deaktivert" },
         None,
-        av,
+        by,
     )
     .await?;
     tx.commit().await?;

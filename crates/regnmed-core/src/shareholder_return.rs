@@ -62,11 +62,11 @@ impl std::error::Error for ReturnError {}
 pub struct Company {
     pub orgnumber: String,
     pub name: String,
-    pub adresse: Option<String>,
+    pub address: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
     pub contact_name: Option<String>,
-    pub kontakt_epost: Option<String>,
+    pub contact_email: Option<String>,
 }
 
 /// A pair of "last year / this year" figures, which is how nearly every
@@ -143,7 +143,7 @@ pub struct SubForm {
     pub inntektsar: i32,
     pub id: Option<ShareholderId>,
     pub name: String,
-    pub adresse: Option<String>,
+    pub address: Option<String>,
     pub postnummer: Option<String>,
     pub poststed: Option<String>,
     pub landkode: Option<String>,
@@ -275,7 +275,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         &h.company.orgnumber,
     );
     w.felt("EnhetNavn-datadef-1", 1, &kutt(&h.company.name, 175));
-    w.felt_opt("EnhetAdresse-datadef-15", 15, h.company.adresse.as_ref());
+    w.felt_opt("EnhetAdresse-datadef-15", 15, h.company.address.as_ref());
     w.felt_opt(
         "EnhetPostnummer-datadef-6673",
         6673,
@@ -289,7 +289,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &h.inntektsar.to_string());
     w.close("Selskap-grp-2588");
-    if h.company.contact_name.is_some() || h.company.kontakt_epost.is_some() {
+    if h.company.contact_name.is_some() || h.company.contact_email.is_some() {
         w.gruppe("Kontaktperson-grp-3442", 3442);
         w.felt_opt(
             "KontaktpersonSkjemaNavn-datadef-33918",
@@ -299,7 +299,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         w.felt_opt(
             "KontaktpersonSkjemaEPost-datadef-30533",
             30533,
-            h.company.kontakt_epost.as_ref(),
+            h.company.contact_email.as_ref(),
         );
         w.close("Kontaktperson-grp-3442");
     }
@@ -498,9 +498,9 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     );
     w.felt_opt("AksjonarPoststed-datadef-7599", 7599, u.poststed.as_ref());
     w.felt_opt("AksjonarLandkode-datadef-17740", 17740, u.landkode.as_ref());
-    if let Some(adresse) = u.adresse.as_ref().filter(|a| !a.trim().is_empty()) {
+    if let Some(address) = u.address.as_ref().filter(|a| !a.trim().is_empty()) {
         w.gruppe("Adresse-grp-7722", 7722);
-        w.felt("AksjonarAdresse-datadef-1154", 1154, &kutt(adresse, 105));
+        w.felt("AksjonarAdresse-datadef-1154", 1154, &kutt(address, 105));
         w.close("Adresse-grp-7722");
     }
     w.close("NorskUtenlandskAksjonar-grp-3988");
@@ -621,11 +621,11 @@ mod tests {
         Company {
             orgnumber: "314259521".into(),
             name: "Mosegrodd Oransje Tiger AS".into(),
-            adresse: Some("Haråsveien 13E".into()),
+            address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
             contact_name: Some("Kari Styreleder".into()),
-            kontakt_epost: Some("kari@example.no".into()),
+            contact_email: Some("kari@example.no".into()),
         }
     }
 
@@ -672,7 +672,7 @@ mod tests {
             inntektsar: 2026,
             id: Some(ShareholderId::Fodselsnummer("26829398612".into())),
             name: "Kari Nordmann".into(),
-            adresse: Some("Haråsveien 13E".into()),
+            address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
             landkode: None,

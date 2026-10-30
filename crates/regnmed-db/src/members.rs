@@ -15,7 +15,7 @@ use uuid::Uuid;
 /// almost nothing.
 pub const ROLES: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 
-fn krev_tildelbar(role: &str) -> Result<()> {
+fn require_assignable(role: &str) -> Result<()> {
     if role == "revisor" {
         // Not a typo to reject silently: 'revisor' is a real role in
         // the system, it just arrives from somewhere else.
@@ -35,7 +35,7 @@ fn krev_tildelbar(role: &str) -> Result<()> {
 /// The address is the key an invitation is redeemed on, so "Ola@Firma.no"
 /// and "ola@firma.no" must be the same invitation. Normalisation happens
 /// here, in one place, and what is stored is the normalised form.
-pub fn normaliser_epost(raw: &str) -> String {
+pub fn normalize_email(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
@@ -43,7 +43,7 @@ pub fn normaliser_epost(raw: &str) -> String {
 pub struct Medlem {
     pub person_id: Uuid,
     pub name: String,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub role: String,
     pub active: bool,
     /// "direkte", or the name of the byrå the oppdrag runs through.
@@ -97,7 +97,7 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
         .map(|r| Medlem {
             person_id: r.get("person_id"),
             name: r.get("navn"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             role: r.get("rolle"),
             active: r.get("aktiv"),
             via: r.get("via"),
@@ -140,7 +140,7 @@ async fn logg(
 /// member rows first. Without the lock two concurrent demotions could
 /// both see "there is another admin" and leave the company with none —
 /// and a company without an admin is not recoverable without DB access.
-async fn krev_gjenvaerende_admin(
+async fn require_remaining_admin(
     tx: &mut Transaction<'_, Postgres>,
     company_id: Uuid,
 ) -> Result<()> {
@@ -168,14 +168,14 @@ async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, company_id: Uuid) ->
 }
 
 /// Changes the role of a direct member.
-pub async fn sett_rolle(
+pub async fn set_role(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
-    ny_rolle: &str,
+    new_role: &str,
     performed_by: Uuid,
 ) -> Result<()> {
-    krev_tildelbar(ny_rolle)?;
+    require_assignable(new_role)?;
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, company_id).await?;
 
@@ -190,7 +190,7 @@ pub async fn sett_rolle(
         "personen er ikke et direkte medlem her — tilgang gjennom et oppdrag \
          endres ved å endre oppdraget",
     )?;
-    if from == ny_rolle {
+    if from == new_role {
         tx.commit().await?;
         return Ok(());
     }
@@ -198,17 +198,17 @@ pub async fn sett_rolle(
     sqlx::query("update company_member set role = $3 where company_id = $1 and person_id = $2")
         .bind(company_id)
         .bind(person_id)
-        .bind(ny_rolle)
+        .bind(new_role)
         .execute(&mut *tx)
         .await?;
-    krev_gjenvaerende_admin(&mut tx, company_id).await?;
+    require_remaining_admin(&mut tx, company_id).await?;
     logg(
         &mut tx,
         company_id,
         person_id,
         "rolle_endret",
         Some(&from),
-        Some(ny_rolle),
+        Some(new_role),
         Some(performed_by),
         "admin",
     )
@@ -256,7 +256,7 @@ pub async fn sett_aktiv(
         .bind(active)
         .execute(&mut *tx)
         .await?;
-    krev_gjenvaerende_admin(&mut tx, company_id).await?;
+    require_remaining_admin(&mut tx, company_id).await?;
     logg(
         &mut tx,
         company_id,
@@ -275,9 +275,9 @@ pub async fn sett_aktiv(
 #[derive(Debug, Clone)]
 pub struct Invitasjon {
     pub id: Uuid,
-    pub epost: String,
+    pub email: String,
     pub role: String,
-    pub invitert_av: String,
+    pub invited_by: String,
     pub created_at: DateTime<Utc>,
     /// When the invitation mail last went out (#66), or None if it never
     /// did — which is what an admin needs to know before resending.
@@ -300,16 +300,16 @@ pub struct Invitasjon {
 pub async fn inviter(
     pool: &PgPool,
     company_id: Uuid,
-    epost: &str,
+    email: &str,
     role: &str,
     invited_by: Uuid,
     employee_id: Option<Uuid>,
 ) -> Result<Uuid> {
-    krev_tildelbar(role)?;
-    let epost = normaliser_epost(epost);
+    require_assignable(role)?;
+    let email = normalize_email(email);
     ensure!(
-        epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),
-        "«{epost}» ser ikke ut som en e-postadresse"
+        email.contains('@') && !email.starts_with('@') && !email.ends_with('@'),
+        "«{email}» ser ikke ut som en e-postadresse"
     );
     if let Some(eid) = employee_id {
         // The employee must be the company's own, unlinked, and not
@@ -349,7 +349,7 @@ pub async fn inviter(
     )
     .bind(id)
     .bind(company_id)
-    .bind(&epost)
+    .bind(&email)
     .bind(role)
     .bind(invited_by)
     .bind(employee_id)
@@ -357,7 +357,7 @@ pub async fn inviter(
     .await;
     if let Err(e) = res {
         if e.to_string().contains("company_invitation_open_uq") {
-            bail!("{epost} er allerede invitert til dette selskapet");
+            bail!("{email} er allerede invitert til dette selskapet");
         }
         return Err(e.into());
     }
@@ -382,9 +382,9 @@ pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<In
         .iter()
         .map(|r| Invitasjon {
             id: r.get("id"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             role: r.get("role"),
-            invitert_av: r.get("invitert_av"),
+            invited_by: r.get("invitert_av"),
             created_at: r.get("created_at"),
             sist_sendt: r.get("sist_sendt"),
             employee_id: r.get("employee_id"),
@@ -396,7 +396,7 @@ pub async fn tilbakekall_invitasjon(
     pool: &PgPool,
     company_id: Uuid,
     invitasjon_id: Uuid,
-    av: Uuid,
+    by: Uuid,
 ) -> Result<()> {
     let n = sqlx::query(
         "update company_invitation set revoked_at = now(), revoked_by = $3
@@ -405,7 +405,7 @@ pub async fn tilbakekall_invitasjon(
     )
     .bind(company_id)
     .bind(invitasjon_id)
-    .bind(av)
+    .bind(by)
     .execute(pool)
     .await?
     .rows_affected();
@@ -427,14 +427,11 @@ pub async fn tilbakekall_invitasjon(
 ///
 /// Returns the number of invitations redeemed.
 pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usize> {
-    let epost: Option<String> = sqlx::query_scalar("select email from person where id = $1")
+    let email: Option<String> = sqlx::query_scalar("select email from person where id = $1")
         .bind(person_id)
         .fetch_one(pool)
         .await?;
-    let Some(epost) = epost
-        .map(|e| normaliser_epost(&e))
-        .filter(|e| !e.is_empty())
-    else {
+    let Some(email) = email.map(|e| normalize_email(&e)).filter(|e| !e.is_empty()) else {
         return Ok(0);
     };
 
@@ -444,7 +441,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
          where epost = $1 and accepted_at is null and revoked_at is null
          for update",
     )
-    .bind(&epost)
+    .bind(&email)
     .fetch_all(&mut *tx)
     .await?;
 
@@ -536,8 +533,8 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 pub struct Tilgangsendring {
     pub name: String,
     pub endring: String,
-    pub fra_rolle: Option<String>,
-    pub til_rolle: Option<String>,
+    pub from_role: Option<String>,
+    pub to_role: Option<String>,
     pub performed_by: Option<String>,
     pub source: String,
     /// Reference to the consent when `kilde = 'nodprosedyre'` (#57);
@@ -567,8 +564,8 @@ pub async fn tilgangshistorikk(pool: &PgPool, company_id: Uuid) -> Result<Vec<Ti
         .map(|r| Tilgangsendring {
             name: r.get("navn"),
             endring: r.get("endring"),
-            fra_rolle: r.get("fra_rolle"),
-            til_rolle: r.get("til_rolle"),
+            from_role: r.get("fra_rolle"),
+            to_role: r.get("til_rolle"),
             performed_by: r.get("utfort_av"),
             source: r.get("kilde"),
             note: r.get("notat"),
@@ -583,7 +580,7 @@ mod tests {
 
     #[test]
     fn the_email_is_normalised_before_comparison() {
-        assert_eq!(normaliser_epost("  Ola@Firma.NO "), "ola@firma.no");
-        assert_eq!(normaliser_epost("ola@firma.no"), "ola@firma.no");
+        assert_eq!(normalize_email("  Ola@Firma.NO "), "ola@firma.no");
+        assert_eq!(normalize_email("ola@firma.no"), "ola@firma.no");
     }
 }

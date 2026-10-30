@@ -4,7 +4,9 @@
 //! ordinary invoice with the prosjekt dimension — hours marked
 //! fakturert one-way. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -82,7 +84,7 @@ async fn hours_lock_and_bill() {
     )
     .await
     .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     // P1 is linked to its customer (#80) — the fakturagrunnlag suggests
     // the recipient from this link further down.
     regnmed_db::create_dimension(
@@ -342,15 +344,16 @@ async fn timer_rights_mean_what_they_say() {
         return;
     };
     let admin_sub = format!("test|{}", Uuid::new_v4());
-    let ansatt_sub = format!("test|{}", Uuid::new_v4());
+    let employee_sub = format!("test|{}", Uuid::new_v4());
     let bokforer_sub = format!("test|{}", Uuid::new_v4());
     let timesjef_sub = format!("test|{}", Uuid::new_v4());
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
         .await
         .unwrap();
-    let employee = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
-        .await
-        .unwrap();
+    let employee =
+        regnmed_db::ensure_person(&state.pool, &employee_sub, Some("Espen Ansatt"), None)
+            .await
+            .unwrap();
     let bokforer = regnmed_db::ensure_person(&state.pool, &bokforer_sub, Some("Berit Bok"), None)
         .await
         .unwrap();
@@ -405,7 +408,7 @@ async fn timer_rights_mean_what_they_say() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     // The rate lives on the project (0052) — the ansatt logs against it.
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
@@ -423,7 +426,7 @@ async fn timer_rights_mean_what_they_say() {
     .unwrap();
 
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
-    let employee_token = idp.token(&ansatt_sub, "Espen Ansatt");
+    let employee_token = idp.token(&employee_sub, "Espen Ansatt");
     let bokforer_token = idp.token(&bokforer_sub, "Berit Bok");
     let timesjef_token = idp.token(&timesjef_sub, "Trine Sjef");
     let base = format!("/companies/{company}/timesheet");
@@ -458,7 +461,7 @@ async fn timer_rights_mean_what_they_say() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {created}");
-    let ansatt_entry = created["entry_id"].as_str().unwrap().to_string();
+    let employee_entry = created["entry_id"].as_str().unwrap().to_string();
 
     // Visibility: the ansatt sees only their own row; TIMER_LES_ALLE
     // (bokforing, custom role, admin) sees both.
@@ -486,7 +489,7 @@ async fn timer_rights_mean_what_they_say() {
     let (status, _) = request(
         &state,
         "PUT",
-        &format!("{base}/{ansatt_entry}"),
+        &format!("{base}/{employee_entry}"),
         &bokforer_token,
         Some(korreksjon.clone()),
     )
@@ -499,7 +502,7 @@ async fn timer_rights_mean_what_they_say() {
     let (status, body) = request(
         &state,
         "PUT",
-        &format!("{base}/{ansatt_entry}"),
+        &format!("{base}/{employee_entry}"),
         &timesjef_token,
         Some(korreksjon),
     )
@@ -578,7 +581,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     regnmed_db::create_dimension(&state.pool, company, "prosjekt", "P1", "Leveranse", None)
         .await
         .unwrap();
@@ -690,13 +693,14 @@ async fn the_project_owns_the_rate_and_the_default() {
         return;
     };
     let admin_sub = format!("test|{}", Uuid::new_v4());
-    let ansatt_sub = format!("test|{}", Uuid::new_v4());
+    let employee_sub = format!("test|{}", Uuid::new_v4());
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
         .await
         .unwrap();
-    let employee = regnmed_db::ensure_person(&state.pool, &ansatt_sub, Some("Espen Ansatt"), None)
-        .await
-        .unwrap();
+    let employee =
+        regnmed_db::ensure_person(&state.pool, &employee_sub, Some("Espen Ansatt"), None)
+            .await
+            .unwrap();
     let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Satseiere AS")
         .await
         .unwrap();
@@ -714,7 +718,7 @@ async fn the_project_owns_the_rate_and_the_default() {
         .await
         .unwrap();
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
-    let employee_token = idp.token(&ansatt_sub, "Espen Ansatt");
+    let employee_token = idp.token(&employee_sub, "Espen Ansatt");
     let base = format!("/companies/{company}/timesheet");
 
     // Admin turns on the billable default and sets the rates: project
@@ -923,7 +927,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
     let fakturist_token = idp.token(&fakturist_sub, "Fia Fakturist");
 

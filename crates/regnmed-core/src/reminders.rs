@@ -797,7 +797,7 @@ mod tests {
         assert_eq!(bare_rente.entries.len(), 2);
     }
 
-    fn dokument(step: Step) -> ReminderDocument {
+    fn document(step: Step) -> ReminderDocument {
         ReminderDocument {
             step,
             company: "Demo AS".into(),
@@ -824,8 +824,8 @@ mod tests {
 
     #[test]
     fn the_document_renders_deterministically_with_its_spesifikasjon() {
-        let a = render_document(&dokument(Step::Demand));
-        assert_eq!(a, render_document(&dokument(Step::Demand)));
+        let a = render_document(&document(Step::Demand));
+        assert_eq!(a, render_document(&document(Step::Demand)));
         assert!(a.starts_with("PURRING\n=======\n"));
         assert!(a.contains("Faktura 7 av 2025-06-01 forfalt 2025-06-15."));
         assert!(a.contains("12,50 %"));
@@ -842,7 +842,7 @@ mod tests {
 
     #[test]
     fn the_inkassovarsel_carries_the_statutory_text_and_stops_there() {
-        let text = render_document(&dokument(Step::CollectionNotice));
+        let text = render_document(&document(Step::CollectionNotice));
         assert!(text.starts_with("INKASSOVARSEL\n=============\n"));
         assert!(text.contains("inkassoloven §9"));
         assert!(text.contains("regnmed utfører ikke inkasso"));

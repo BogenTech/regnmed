@@ -115,7 +115,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     let linjer = balance_status(&pool, company, period).await.unwrap();
     let a = linjer[0].avstemt.as_ref().expect("avstemt");
     assert_eq!(a.balance_ore, 50_000_00, "saldoen lagres slik den var");
-    assert_eq!(a.avstemt_av, "Rev Isor");
+    assert_eq!(a.reconciled_by, "Rev Isor");
     assert_eq!(linjer[0].discrepancy_ore(), None, "ingen bevegelse etterpå");
 }
 

@@ -69,7 +69,7 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     Some((state, idp, company, token))
 }
 
-async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, name: &str, fnr: &str) -> Uuid {
+async fn new_employee(state: &AppState, company: Uuid, admin: &str, name: &str, fnr: &str) -> Uuid {
     let (code, response) = json_call(
         state,
         "POST",
@@ -85,7 +85,7 @@ async fn ny_ansatt(state: &AppState, company: Uuid, admin: &str, name: &str, fnr
     response["employee_id"].as_str().unwrap().parse().unwrap()
 }
 
-async fn ansatt_person_json(
+async fn employee_person_json(
     state: &AppState,
     company: Uuid,
     admin: &str,
@@ -118,18 +118,18 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let employee = ny_ansatt(&state, company, &admin, "Kari Kobling", FNR[0]).await;
+    let employee = new_employee(&state, company, &admin, "Kari Kobling", FNR[0]).await;
 
     // The future user's address is derived the way TestIdp derives it,
     // so the /me redemption matches.
     let sub = format!("ansatt|{}", Uuid::new_v4());
-    let epost = format!("{}@test.invalid", sub.replace('|', "."));
+    let email = format!("{}@test.invalid", sub.replace('|', "."));
     let (code, response) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        &format!(r#"{{"epost":"{epost}","rolle":"ansatt","employee_id":"{employee}"}}"#),
+        &format!(r#"{{"epost":"{email}","rolle":"ansatt","employee_id":"{employee}"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{response}");
@@ -158,7 +158,7 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     assert_eq!(me["nye_tilganger"], 1);
     assert_eq!(me["companies"][0]["company_id"], company.to_string());
 
-    let person = ansatt_person_json(&state, company, &admin, employee).await;
+    let person = employee_person_json(&state, company, &admin, employee).await;
     assert_eq!(person["person_id"], me["person_id"]);
 
     let source: String = sqlx::query(
@@ -181,12 +181,12 @@ async fn a_conflicting_link_never_blocks_the_login() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let forste = ny_ansatt(&state, company, &admin, "Allerede Ansatt", FNR[0]).await;
-    let andre = ny_ansatt(&state, company, &admin, "Ny Ansatt", FNR[1]).await;
+    let forste = new_employee(&state, company, &admin, "Allerede Ansatt", FNR[0]).await;
+    let andre = new_employee(&state, company, &admin, "Ny Ansatt", FNR[1]).await;
 
     let sub = format!("ansatt|{}", Uuid::new_v4());
-    let epost = format!("{}@test.invalid", sub.replace('|', "."));
-    let person_id = regnmed_db::ensure_person(&state.pool, &sub, Some("Q"), Some(&epost))
+    let email = format!("{}@test.invalid", sub.replace('|', "."));
+    let person_id = regnmed_db::ensure_person(&state.pool, &sub, Some("Q"), Some(&email))
         .await
         .unwrap();
     let admin_person: Uuid = sqlx::query_scalar(
@@ -196,16 +196,22 @@ async fn a_conflicting_link_never_blocks_the_login() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    regnmed_db::payroll::link_ansatt_person(&state.pool, company, forste, person_id, admin_person)
-        .await
-        .unwrap();
+    regnmed_db::payroll::link_employee_person(
+        &state.pool,
+        company,
+        forste,
+        person_id,
+        admin_person,
+    )
+    .await
+    .unwrap();
 
     let (code, _) = json_call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        &format!(r#"{{"epost":"{epost}","rolle":"ansatt","employee_id":"{andre}"}}"#),
+        &format!(r#"{{"epost":"{email}","rolle":"ansatt","employee_id":"{andre}"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::OK);
@@ -215,7 +221,7 @@ async fn a_conflicting_link_never_blocks_the_login() {
     assert_eq!(code, StatusCode::OK, "the login must survive the conflict");
     assert_eq!(me["nye_tilganger"], 1, "membership is still redeemed");
 
-    let person = ansatt_person_json(&state, company, &admin, andre).await;
+    let person = employee_person_json(&state, company, &admin, andre).await;
     assert!(
         person.is_null(),
         "the second employee must stay visibly unlinked, not silently mislinked"
@@ -228,7 +234,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let employee = ny_ansatt(&state, company, &admin, "Manuell Ansatt", FNR[2]).await;
+    let employee = new_employee(&state, company, &admin, "Manuell Ansatt", FNR[2]).await;
     let link_uri = format!("/companies/{company}/employees/{employee}/link");
 
     let medlem_sub = format!("les|{}", Uuid::new_v4());
@@ -275,7 +281,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     );
 
     // The same person cannot be a second employee in the company.
-    let tvilling = ny_ansatt(&state, company, &admin, "Tvilling", FNR[0]).await;
+    let tvilling = new_employee(&state, company, &admin, "Tvilling", FNR[0]).await;
     let (code, response) = json_call(
         &state,
         "POST",

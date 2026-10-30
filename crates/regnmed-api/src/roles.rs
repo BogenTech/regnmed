@@ -65,7 +65,7 @@ pub async fn list_roles(
 }
 
 #[derive(Deserialize)]
-pub struct RolleRequest {
+pub struct RoleRequest {
     #[serde(rename = "navn")]
     name: Option<String>,
     #[serde(default, rename = "rettigheter")]
@@ -102,7 +102,7 @@ pub async fn create_role(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<RolleRequest>,
+    Json(request): Json<RoleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let name = request
@@ -126,11 +126,11 @@ pub async fn set_rights(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<RolleRequest>,
+    Json(request): Json<RoleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let godkjente = godkjenn(&request.rights)?;
-    regnmed_db::roles::sett_rettigheter(
+    regnmed_db::roles::set_rights(
         &state.pool,
         company_id,
         role_id,

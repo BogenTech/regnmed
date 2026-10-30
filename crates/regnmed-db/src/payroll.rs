@@ -35,7 +35,7 @@ pub const KONTO_AGA_FERIEPENGER_KOSTNAD: &str = "5405";
 pub const KONTO_PAALOPT_AGA_FERIEPENGER: &str = "2780";
 
 #[derive(Debug, Clone)]
-pub struct NyAnsatt {
+pub struct NewEmployee {
     pub fodselsnummer: String,
     pub name: String,
     pub stilling: Option<String>,
@@ -61,7 +61,7 @@ pub struct Employee {
     /// a-melding is to be built.
     pub birth_date: Option<NaiveDate>,
     pub employed_from: NaiveDate,
-    pub ansatt_til: Option<NaiveDate>,
+    pub employed_to: Option<NaiveDate>,
     pub manedslonn_ore: Option<i64>,
     pub timelonn_ore: Option<i64>,
     pub withholding_type: String,
@@ -74,7 +74,7 @@ pub struct Employee {
     /// see this employee's payslip and whose hours become timelønn.
     pub person_id: Option<Uuid>,
     pub person_name: Option<String>,
-    pub person_epost: Option<String>,
+    pub person_email: Option<String>,
 }
 
 impl Employee {
@@ -86,15 +86,15 @@ impl Employee {
         }
     }
 
-    fn ansatt_i(&self, maned_slutt: NaiveDate, maned_start: NaiveDate) -> bool {
-        self.employed_from <= maned_slutt && self.ansatt_til.is_none_or(|t| t >= maned_start)
+    fn employed_in(&self, maned_slutt: NaiveDate, maned_start: NaiveDate) -> bool {
+        self.employed_from <= maned_slutt && self.employed_to.is_none_or(|t| t >= maned_start)
     }
 }
 
-pub async fn create_ansatt(
+pub async fn create_employee(
     pool: &PgPool,
     company_id: Uuid,
-    new: &NyAnsatt,
+    new: &NewEmployee,
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(
@@ -153,10 +153,10 @@ pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employe
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    Ok(rows.iter().map(ansatt_fra_rad).collect())
+    Ok(rows.iter().map(employee_from_row).collect())
 }
 
-fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
+fn employee_from_row(r: &sqlx::postgres::PgRow) -> Employee {
     Employee {
         id: r.get("id"),
         name: r.get("navn"),
@@ -166,7 +166,7 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
             .as_str()
             .pipe_birth_date(),
         employed_from: r.get("ansatt_fra"),
-        ansatt_til: r.get("ansatt_til"),
+        employed_to: r.get("ansatt_til"),
         manedslonn_ore: r.get("manedslonn_ore"),
         timelonn_ore: r.get("timelonn_ore"),
         withholding_type: r.get("trekk_type"),
@@ -177,7 +177,7 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Employee {
         note: r.get("note"),
         person_id: r.get("person_id"),
         person_name: r.get("person_navn"),
-        person_epost: r.get("person_epost"),
+        person_email: r.get("person_epost"),
     }
 }
 
@@ -219,7 +219,7 @@ pub struct Lonnskjoring {
     pub employees: Vec<(Uuid, String)>,
     /// Things worth saying out loud about the run. Never fatal — a
     /// payroll run that balances is still a valid payroll run.
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// One employee's line in a run.
@@ -366,7 +366,7 @@ pub async fn run_payroll(
             .find(|a| a.id == post.employee_id)
             .with_context(|| format!("ukjent ansatt {}", post.employee_id))?;
         ensure!(
-            employee.ansatt_i(maned_slutt, maned_start),
+            employee.employed_in(maned_slutt, maned_start),
             "{} var ikke ansatt i {month}/{year}",
             employee.name
         );
@@ -684,7 +684,7 @@ pub async fn run_payroll(
             .map(|l| (l.employee_id, l.name.clone()))
             .collect(),
         lines,
-        advarsler: feriepengeavvik(pool, company_id)
+        warnings: feriepengeavvik(pool, company_id)
             .await?
             .into_iter()
             .collect(),
@@ -762,7 +762,7 @@ pub async fn list_kjoringer(
             voucher_id: r.get("voucher_id"),
             lines: Vec::new(),
             employees: Vec::new(),
-            advarsler: Vec::new(),
+            warnings: Vec::new(),
         })
         .collect::<Vec<_>>();
 
@@ -870,10 +870,10 @@ pub async fn payslip(
     let withholding_type: String = row.get("trekk_type");
     Ok(PayslipInput {
         employer_name: row.get("selskap"),
-        arbeidsgiver_orgnr: row.get("orgnr"),
-        arbeidsgiver_adresse: row.get("address"),
+        employer_orgnumber: row.get("orgnr"),
+        employer_address: row.get("address"),
         employee_name: row.get("navn"),
-        ansatt_stilling: row.get("stilling"),
+        employee_position: row.get("stilling"),
         // Birth date, not fødselsnummer — even on a document sent to the
         // employee themselves.
         employee_birth_date: row
@@ -904,7 +904,7 @@ pub async fn payslip(
 ///
 /// The link is optional (migration 0036): an employee who never logs in
 /// has none, and then nobody can claim to be them.
-pub async fn ansatt_person(
+pub async fn employee_person(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
@@ -995,7 +995,7 @@ pub async fn timegrunnlag(
 /// Refuses everything that must never be on the other end of the link:
 /// a person that does not exist, or a machine identity — an integration
 /// with an employee's payslip access would be a leak by construction.
-async fn krev_koblbar_person(
+async fn require_linkable_person(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     person_id: Uuid,
 ) -> Result<()> {
@@ -1017,7 +1017,7 @@ async fn krev_koblbar_person(
 /// the person must be a human, and the partial unique index refuses a
 /// person who is already another employee in the same company. Every
 /// outcome that changes the link leaves an `employee_link_change` row.
-pub async fn link_ansatt_person(
+pub async fn link_employee_person(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
@@ -1044,7 +1044,7 @@ pub async fn link_ansatt_person(
         // and writes no audit row pretending something changed.
         return Ok(());
     }
-    krev_koblbar_person(&mut tx, person_id).await?;
+    require_linkable_person(&mut tx, person_id).await?;
     let res = sqlx::query("update employee set person_id = $3 where id = $1 and company_id = $2")
         .bind(employee_id)
         .bind(company_id)
@@ -1075,7 +1075,7 @@ pub async fn link_ansatt_person(
 
 /// Removes the link. The employee record stands; only who-may-log-in-as
 /// them is cleared. Audited like the link itself.
-pub async fn unlink_ansatt_person(
+pub async fn unlink_employee_person(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
@@ -1147,7 +1147,7 @@ pub struct Koblingsendring {
 
 /// The trail of who linked whom — the question that matters when a
 /// payslip was readable by the wrong person.
-pub async fn ansatt_link_historikk(
+pub async fn employee_link_history(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,

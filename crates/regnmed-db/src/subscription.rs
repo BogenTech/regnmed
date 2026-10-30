@@ -68,7 +68,7 @@ pub async fn open_coverage(
     from: NaiveDate,
     to: Option<NaiveDate>,
     note: &str,
-    av: &str,
+    by: &str,
 ) -> Result<Uuid> {
     ensure!(!note.trim().is_empty(), "tegningen må ha en referanse");
     let id = Uuid::new_v4();
@@ -82,7 +82,7 @@ pub async fn open_coverage(
     .bind(from)
     .bind(to)
     .bind(note.trim())
-    .bind(av)
+    .bind(by)
     .execute(pool)
     .await?;
     Ok(id)
@@ -386,7 +386,7 @@ pub async fn save_stripe_subscription(
     plan: &str,
     interval: &str,
     status: &str,
-    av: &str,
+    by: &str,
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
     let new = sqlx::query(
@@ -425,7 +425,7 @@ pub async fn save_stripe_subscription(
         .bind(company_id)
         .bind(plan)
         .bind(format!("Stripe-abonnement {subscription_id}"))
-        .bind(av)
+        .bind(by)
         .execute(&mut *tx)
         .await?;
     }
@@ -1015,7 +1015,7 @@ async fn party_for_customer(
     .bind(customer_orgnumber)
     .fetch_optional(pool)
     .await?;
-    let adresse: Option<String> = sqlx::query_scalar("select address from company where id = $1")
+    let address: Option<String> = sqlx::query_scalar("select address from company where id = $1")
         .bind(customer)
         .fetch_one(pool)
         .await?;
@@ -1044,14 +1044,14 @@ async fn party_for_customer(
     };
     // Kept in step with the company record, which the customer's own
     // admin maintains; only filled in, never blanked.
-    if let Some(adresse) = adresse.filter(|a| !a.trim().is_empty()) {
+    if let Some(address) = address.filter(|a| !a.trim().is_empty()) {
         sqlx::query(
             "update party set address = $3
              where id = $1 and company_id = $2 and (address is null or address = '')",
         )
         .bind(party_id)
         .bind(drift)
-        .bind(&adresse)
+        .bind(&address)
         .execute(pool)
         .await?;
     }

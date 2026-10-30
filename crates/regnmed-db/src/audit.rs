@@ -45,7 +45,7 @@ pub async fn build_audit_report(
         Ok(report) => Check {
             name: "Hash-kjede fra genesis".into(),
             ok: true,
-            detalj: format!(
+            detail: format!(
                 "{} bilag re-hashet fra lagret innhold; alle lenker og kjedehodet stemmer",
                 report.vouchers_checked
             ),
@@ -53,7 +53,7 @@ pub async fn build_audit_report(
         Err(e) => Check {
             name: "Hash-kjede fra genesis".into(),
             ok: false,
-            detalj: e.to_string(),
+            detail: e.to_string(),
         },
     });
 
@@ -62,12 +62,12 @@ pub async fn build_audit_report(
         Ok(count) => Check {
             name: "Bilagsvedlegg".into(),
             ok: true,
-            detalj: format!("{count} vedlegg re-hashet mot lagret SHA-256"),
+            detail: format!("{count} vedlegg re-hashet mot lagret SHA-256"),
         },
         Err(e) => Check {
             name: "Bilagsvedlegg".into(),
             ok: false,
-            detalj: e.to_string(),
+            detail: e.to_string(),
         },
     });
 
@@ -76,7 +76,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Ekstern forankring".into(),
         ok: anchor_check.problems.is_empty(),
-        detalj: if anchor_check.problems.is_empty() {
+        detail: if anchor_check.problems.is_empty() {
             format!(
                 "{} forankringer kontrollert mot den levende kjeden",
                 anchor_check.snapshots_checked
@@ -155,7 +155,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Balansekontroll".into(),
         ok: total == 0,
-        detalj: if total == 0 {
+        detail: if total == 0 {
             "summen av alle posteringer er nøyaktig null".into()
         } else {
             format!("posteringene summerer til {total} øre, ikke null")
@@ -175,7 +175,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Periodelåsing".into(),
         ok: true,
-        detalj: match lock {
+        detail: match lock {
             Some(date) => format!(
                 "låst til og med {date}; {lock_rows} hendelser i den ureviderbare låshistorikken"
             ),
@@ -191,7 +191,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Regelverkssatser".into(),
         ok: foreldede.is_empty(),
-        detalj: if foreldede.is_empty() {
+        detail: if foreldede.is_empty() {
             let domener: std::collections::HashSet<_> =
                 rates.iter().map(|s| s.domain.as_str()).collect();
             format!(
@@ -269,7 +269,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Dokumentasjon".into(),
         ok: true,
-        detalj: if udokumenterte == 0 {
+        detail: if udokumenterte == 0 {
             format!("alle {totalt} bilag utenfor importjournalen har vedlegg")
         } else {
             format!(
@@ -303,7 +303,7 @@ pub async fn build_audit_report(
         None => Check {
             name: "Balansedokumentasjon".into(),
             ok: true,
-            detalj: "ingen periode er låst ennå — balansepostene dokumenteres ved periodeslutt \
+            detail: "ingen periode er låst ennå — balansepostene dokumenteres ved periodeslutt \
                      (bokføringsloven §11)"
                 .into(),
         },
@@ -346,7 +346,7 @@ pub async fn build_audit_report(
             Check {
                 name: "Balansedokumentasjon".into(),
                 ok: deler.is_empty(),
-                detalj: if deler.is_empty() {
+                detail: if deler.is_empty() {
                     format!(
                         "alle {} balansekontoer med saldo er dokumentert per {period}",
                         lines.len()
@@ -375,7 +375,7 @@ pub async fn build_audit_report(
     checks.push(Check {
         name: "Importert historikk".into(),
         ok: true,
-        detalj: if imp_vouchers == 0 {
+        detail: if imp_vouchers == 0 {
             "ingen importert historikk — hovedboken er ført i sin helhet i regnmed".into()
         } else if import_log.is_empty() {
             format!(
@@ -427,7 +427,7 @@ pub async fn build_audit_report(
         orgnumber: company.get("orgnr"),
         company: company.get("name"),
         generert: chrono::Utc::now().to_rfc3339(),
-        generert_av: generated_by.to_string(),
+        generated_by: generated_by.to_string(),
         programversjon: app_version.to_string(),
         chain_sequence: head.get("last_seq"),
         chain_head_hex: hex::encode(head.get::<Vec<u8>, _>("last_hash")),

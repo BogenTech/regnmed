@@ -38,7 +38,7 @@ pub struct VatReturn {
     pub period: Period,
     /// The company's terminordning (docs/mva.md, #51): decides which
     /// skattleggingsperiode element the XML carries.
-    pub ordning: PeriodScheme,
+    pub scheme: PeriodScheme,
     /// Reference into our own system, echoed back in feedback
     /// (regnskapssystemsreferanse).
     pub referanse: String,
@@ -72,7 +72,7 @@ fn kroner(ore: i64) -> i64 {
 pub fn build(
     orgnumber: &str,
     period: Period,
-    ordning: PeriodScheme,
+    scheme: PeriodScheme,
     referanse: &str,
     system_version: &str,
     spes: &[SpecLine],
@@ -130,7 +130,7 @@ pub fn build(
     VatReturn {
         orgnumber: orgnumber.to_string(),
         period,
-        ordning,
+        scheme,
         referanse: referanse.to_string(),
         system_version: system_version.to_string(),
         lines,
@@ -176,7 +176,7 @@ pub fn render(message: &VatReturn) -> String {
     x.open("skattegrunnlagOgBeregnetSkatt");
     x.open("skattleggingsperiode");
     x.open("periode");
-    match message.ordning {
+    match message.scheme {
         PeriodScheme::ToManeder => x.leaf(
             "skattleggingsperiodeToMaaneder",
             periode_name(message.period),
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn yearly_period_renders_skattleggingsperiode_aar() {
         let mut message = message();
-        message.ordning = PeriodScheme::Arlig;
+        message.scheme = PeriodScheme::Arlig;
         message.period = Period {
             year: 2026,
             number: 1,

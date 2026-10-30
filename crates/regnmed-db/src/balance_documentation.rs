@@ -35,7 +35,7 @@ pub struct Avstemming {
     pub balance_ore: i64,
     pub forklaring: String,
     pub reconciled_date: NaiveDate,
-    pub avstemt_av: String,
+    pub reconciled_by: String,
     pub har_vedlegg: bool,
     pub attachment_name: Option<String>,
 }
@@ -102,7 +102,7 @@ pub async fn balance_status(
             balance_ore: r.get("saldo_ore"),
             forklaring: r.get("forklaring"),
             reconciled_date: r.get("avstemt_dato"),
-            avstemt_av: r.get("avstemt_av"),
+            reconciled_by: r.get("avstemt_av"),
             har_vedlegg: r.get("har_vedlegg"),
             attachment_name: r.get("vedlegg_navn"),
         });
@@ -127,7 +127,7 @@ pub async fn avstem(
     period: NaiveDate,
     forklaring: &str,
     vedlegg: Option<(&str, &str, &[u8])>,
-    avstemt_av: Uuid,
+    reconciled_by: Uuid,
     reconciled_date: NaiveDate,
 ) -> Result<Uuid> {
     ensure!(
@@ -187,7 +187,7 @@ pub async fn avstem(
     .bind(name)
     .bind(type_)
     .bind(sha)
-    .bind(avstemt_av)
+    .bind(reconciled_by)
     .bind(reconciled_date)
     .execute(pool)
     .await?;
@@ -254,7 +254,7 @@ pub async fn history(
         balance_ore: r.get("saldo_ore"),
         forklaring: r.get("forklaring"),
         reconciled_date: r.get("avstemt_dato"),
-        avstemt_av: r.get("avstemt_av"),
+        reconciled_by: r.get("avstemt_av"),
         har_vedlegg: r.get("har_vedlegg"),
         attachment_name: r.get("vedlegg_navn"),
     })

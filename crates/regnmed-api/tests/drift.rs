@@ -15,7 +15,7 @@ mod bilagstolkning;
 #[path = "grupper/dimensions.rs"]
 mod dimensions;
 #[path = "grupper/epost_inn.rs"]
-mod epost_inn;
+mod email_in;
 #[path = "grupper/innboks.rs"]
 mod innboks;
 #[path = "grupper/period_attachments.rs"]

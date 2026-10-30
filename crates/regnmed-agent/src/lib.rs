@@ -306,7 +306,7 @@ pub async fn run_task(
             // something anybody said.
             let text = h.note.filter(|t| !t.trim().is_empty())?;
             Some(HistoryLine {
-                from_agent: h.av == name,
+                from_agent: h.by == name,
                 text,
             })
         })

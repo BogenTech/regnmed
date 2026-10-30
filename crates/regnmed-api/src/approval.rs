@@ -26,7 +26,7 @@ fn policy_json(p: &regnmed_db::AttestationPolicy) -> serde_json::Value {
         "aktiv": p.active,
         "belopsgrense_ore": p.amount_limit_ore,
         "attestant_person_id": p.attestant_person_id,
-        "krev_for_maskin": p.krev_for_maskin,
+        "krev_for_maskin": p.require_for_machine,
         "created_by": p.created_by,
         "created_at": p.created_at.to_rfc3339(),
     })
@@ -54,7 +54,8 @@ pub struct PolicyRequest {
     attestant_person_id: Option<Uuid>,
     /// #101: everything a machine posts needs a human's attestering,
     /// whatever it costs.
-    krev_for_maskin: Option<bool>,
+    #[serde(rename = "krev_for_maskin")]
+    require_for_machine: Option<bool>,
 }
 
 pub async fn set_policy(
@@ -71,7 +72,7 @@ pub async fn set_policy(
         request.active,
         request.amount_limit_ore,
         request.attestant_person_id,
-        request.krev_for_maskin,
+        request.require_for_machine,
         created_by,
     )
     .await

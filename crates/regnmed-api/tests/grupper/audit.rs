@@ -4,7 +4,9 @@
 //! planted anchor mismatch turns the verdict; the text download renders;
 //! outsiders get 404. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -96,7 +98,7 @@ async fn revisor_generates_the_verification_report() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: NaiveDate::from_ymd_opt(2026, 5, 10).unwrap(),
@@ -344,7 +346,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     post("1500", 12_500_00, "3000", Some(kunde_no), 10).await;
     regnmed_db::set_account_subledger(&state.pool, company, "1500", None)
         .await
@@ -397,28 +399,28 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
         .unwrap();
     assert_eq!(check["ok"], false, "{report}");
     assert_eq!(report["alle_ok"], false);
-    let detalj = check["detalj"].as_str().unwrap();
+    let detail = check["detalj"].as_str().unwrap();
 
     // (a) the difference, in kroner and in øre, with the konto named.
     assert!(
-        detalj.contains("konto 1500: hovedbok 15000,00 mot reskontro 12500,00 — differanse 2500,00 (250000 øre), 1 postering uten part"),
-        "{detalj}"
+        detail.contains("konto 1500: hovedbok 15000,00 mot reskontro 12500,00 — differanse 2500,00 (250000 øre), 1 postering uten part"),
+        "{detail}"
     );
     // (b) the party of the wrong kind.
     assert!(
-        detalj.contains(
+        detail.contains(
             "konto 2400 er merket kunde, men 1 postering bærer part av typen leverandor (-8000,00)"
         ),
-        "{detalj}"
+        "{detail}"
     );
     // (c) the party postings on an account nobody flagged.
     assert!(
-        detalj.contains("konto 2500 er ikke merket som reskontrokonto, men 1 postering bærer part (-3000,00, leverandor)"),
-        "{detalj}"
+        detail.contains("konto 2500 er ikke merket som reskontrokonto, men 1 postering bærer part (-3000,00, leverandor)"),
+        "{detail}"
     );
     // Every finding on its own line, and only the reskontro check
     // fails — the tie-out never drags the other checks down with it.
-    assert_eq!(detalj.lines().count(), 3, "{detalj}");
+    assert_eq!(detail.lines().count(), 3, "{detail}");
     for other in report["kontroller"].as_array().unwrap() {
         if other["navn"] != "Reskontro mot hovedbok" {
             assert_eq!(other["ok"], true, "{other}");
@@ -512,9 +514,9 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
         .find(|k| k["navn"] == "Reskontro mot hovedbok")
         .unwrap();
     assert_eq!(check["ok"], true, "{report}");
-    let detalj = check["detalj"].as_str().unwrap();
-    assert!(detalj.contains("2 reskontrokontoer avstemt"), "{detalj}");
-    assert!(detalj.contains("7000,00"), "{detalj}");
+    let detail = check["detalj"].as_str().unwrap();
+    assert!(detail.contains("2 reskontrokontoer avstemt"), "{detail}");
+    assert!(detail.contains("7000,00"), "{detail}");
 }
 
 /// «Hvilke bilag mangler dokumentasjon?» — the question a bokettersyn
@@ -522,7 +524,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
 ///
 /// Counted as INFORMATION, never as a deviation, and never counting bilag
 /// that carry their documentation by construction. The same set backs
-/// the bilag list's `uten_vedlegg` filter, so whoever tidies up works
+/// the bilag list's `without_attachment` filter, so whoever tidies up works
 /// from exactly the numbers the revisor read.
 #[tokio::test]
 async fn undocumented_vouchers_are_counted_and_listable() {
@@ -614,14 +616,14 @@ async fn undocumented_vouchers_are_counted_and_listable() {
         dok["ok"], true,
         "manglende vedlegg er ikke et avvik i seg selv"
     );
-    let detalj = dok["detalj"].as_str().unwrap();
+    let detail = dok["detalj"].as_str().unwrap();
     assert!(
-        detalj.contains("1 av 2"),
-        "det dokumenterte bilaget skal ikke telles: {detalj}"
+        detail.contains("1 av 2"),
+        "det dokumenterte bilaget skal ikke telles: {detail}"
     );
     assert!(
-        detalj.contains("Uten kvittering"),
-        "kontrollen skal navngi bilaget som mangler: {detalj}"
+        detail.contains("Uten kvittering"),
+        "kontrollen skal navngi bilaget som mangler: {detail}"
     );
 
     // The working list behind it.

@@ -48,7 +48,7 @@ pub async fn list(
 /// The year's result as the ledger has it — what the closing WOULD
 /// disponere. Offered so the form can show the number before anyone
 /// commits to it.
-pub async fn forslag(
+pub async fn suggestion(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, year)): Path<(Uuid, i32)>,

@@ -227,12 +227,12 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     )
     .await;
     assert!(!feilet, "{reply}");
-    let dokument = serde_json::from_str::<Value>(&reply).unwrap()["document_id"]
+    let document = serde_json::from_str::<Value>(&reply).unwrap()["document_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    let (feilet, reply) = calls(&server, "innboks_forslag", json!({"dokument": dokument})).await;
+    let (feilet, reply) = calls(&server, "innboks_forslag", json!({"dokument": document})).await;
     assert!(!feilet, "forslaget svarer for ethvert dokument: {reply}");
 
     for (number, name) in [("1920", "Bank"), ("7790", "Annen kostnad")] {
@@ -244,7 +244,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         &server,
         "bilag_bokfor",
         json!({
-            "dokument": dokument,
+            "dokument": document,
             "journal_code": "GL",
             "date": "2026-03-04",
             "description": "Kaffe",

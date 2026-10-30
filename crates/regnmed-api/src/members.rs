@@ -33,7 +33,7 @@ pub async fn list_access(
         "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
             "navn": m.name,
-            "epost": m.epost,
+            "epost": m.email,
             "rolle": m.role,
             "aktiv": m.active,
             "via": m.via,
@@ -46,7 +46,7 @@ pub async fn list_access(
 }
 
 #[derive(Deserialize)]
-pub struct RolleRequest {
+pub struct RoleRequest {
     #[serde(rename = "rolle")]
     role: String,
 }
@@ -55,7 +55,11 @@ pub struct RolleRequest {
 /// company. Otherwise the membership would be created
 /// without any rettigheter — safe, but completely baffling to the person
 /// concerned.
-async fn krev_kjent_rolle(state: &AppState, company_id: Uuid, role: &str) -> Result<(), ApiError> {
+async fn require_known_role(
+    state: &AppState,
+    company_id: Uuid,
+    role: &str,
+) -> Result<(), ApiError> {
     if regnmed_db::members::ROLES.contains(&role) {
         return Ok(());
     }
@@ -71,11 +75,11 @@ pub async fn set_role(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<RolleRequest>,
+    Json(request): Json<RoleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    krev_kjent_rolle(&state, company_id, &request.role).await?;
-    regnmed_db::members::sett_rolle(
+    require_known_role(&state, company_id, &request.role).await?;
+    regnmed_db::members::set_role(
         &state.pool,
         company_id,
         person_id,
@@ -136,8 +140,8 @@ pub async fn access_history(
         "endringer": rader.iter().map(|e| json!({
             "navn": e.name,
             "endring": e.endring,
-            "fra_rolle": e.fra_rolle,
-            "til_rolle": e.til_rolle,
+            "fra_rolle": e.from_role,
+            "til_rolle": e.to_role,
             "utfort_av": e.performed_by,
             "kilde": e.source,
             "notat": e.note,
@@ -156,9 +160,9 @@ pub async fn list_invitations(
     Ok(Json(json!({
         "invitasjoner": rader.iter().map(|i| json!({
             "id": i.id,
-            "epost": i.epost,
+            "epost": i.email,
             "rolle": i.role,
-            "invitert_av": i.invitert_av,
+            "invitert_av": i.invited_by,
             "tidspunkt": i.created_at.to_rfc3339(),
             "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
             "employee_id": i.employee_id,
@@ -168,7 +172,8 @@ pub async fn list_invitations(
 
 #[derive(Deserialize)]
 pub struct InviteRequest {
-    epost: String,
+    #[serde(rename = "epost")]
+    email: String,
     #[serde(rename = "rolle")]
     role: String,
     /// Lønnsmottaker to link on redemption (docs/lonn.md, 0050).
@@ -189,14 +194,14 @@ pub async fn invite(
     Json(request): Json<InviteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    krev_kjent_rolle(&state, company_id, &request.role).await?;
+    require_known_role(&state, company_id, &request.role).await?;
     if request.employee_id.is_some() {
         require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     }
     let id = regnmed_db::members::inviter(
         &state.pool,
         company_id,
-        &request.epost,
+        &request.email,
         &request.role,
         person.person_id,
         request.employee_id,

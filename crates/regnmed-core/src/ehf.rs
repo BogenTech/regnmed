@@ -20,19 +20,19 @@
 use chrono::NaiveDate;
 
 /// Norwegian orgnr as a PEPPOL participant id: ISO 6523 ICD 0192.
-pub const SCHEME_ORGNR: &str = "0192";
+pub const SCHEME_ORGNUMBER: &str = "0192";
 
 const CUSTOMIZATION_ID: &str =
     "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0";
 const PROFILE_ID: &str = "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dokumenttype {
+pub enum DocumentType {
     Invoice,
     CreditNote,
 }
 
-impl Dokumenttype {
+impl DocumentType {
     fn root(self) -> &'static str {
         match self {
             Self::Invoice => "Invoice",
@@ -61,14 +61,14 @@ pub struct EhfPart {
     pub name: String,
     pub orgnumber: String,
     /// Street address; EHF requires an address with a country code.
-    pub adresse: Option<String>,
+    pub address: Option<String>,
     pub postnr: Option<String>,
     pub poststed: Option<String>,
     /// ISO 3166-1 alpha-2; "NO" when unknown.
     pub land: String,
     /// Registered in Merverdiavgiftsregisteret (yields PartyTaxScheme).
     pub vat_registered: bool,
-    pub epost: Option<String>,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,8 +86,8 @@ pub struct EhfLinje {
 }
 
 #[derive(Debug, Clone)]
-pub struct EhfDokument {
-    pub dokumenttype: Dokumenttype,
+pub struct EhfDocument {
+    pub document_type: DocumentType,
     pub fakturanr: String,
     /// The invoice number a kreditnota credits.
     pub krediterer: Option<String>,
@@ -230,13 +230,13 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.open("cac:Party");
     w.leaf_attr(
         "cbc:EndpointID",
-        &format!("schemeID=\"{SCHEME_ORGNR}\""),
+        &format!("schemeID=\"{SCHEME_ORGNUMBER}\""),
         &part.orgnumber,
     );
     w.open("cac:PartyIdentification");
     w.leaf_attr(
         "cbc:ID",
-        &format!("schemeID=\"{SCHEME_ORGNR}\""),
+        &format!("schemeID=\"{SCHEME_ORGNUMBER}\""),
         &part.orgnumber,
     );
     w.close("cac:PartyIdentification");
@@ -244,8 +244,8 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.leaf("cbc:Name", &part.name);
     w.close("cac:PartyName");
     w.open("cac:PostalAddress");
-    if let Some(adresse) = &part.adresse {
-        w.leaf("cbc:StreetName", adresse);
+    if let Some(address) = &part.address {
+        w.leaf("cbc:StreetName", address);
     }
     if let Some(poststed) = &part.poststed {
         w.leaf("cbc:CityName", poststed);
@@ -270,13 +270,13 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     w.leaf("cbc:RegistrationName", &part.name);
     w.leaf_attr(
         "cbc:CompanyID",
-        &format!("schemeID=\"{SCHEME_ORGNR}\""),
+        &format!("schemeID=\"{SCHEME_ORGNUMBER}\""),
         &part.orgnumber,
     );
     w.close("cac:PartyLegalEntity");
-    if let Some(epost) = &part.epost {
+    if let Some(email) = &part.email {
         w.open("cac:Contact");
-        w.leaf("cbc:ElectronicMail", epost);
+        w.leaf("cbc:ElectronicMail", email);
         w.close("cac:Contact");
     }
     w.close("cac:Party");
@@ -285,8 +285,8 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
 
 /// Renders the EHF document. Deterministic: the same invoice yields
 /// byte-identical XML forever.
-pub fn render(doc: &EhfDokument) -> String {
-    let root = doc.dokumenttype.root();
+pub fn render(doc: &EhfDocument) -> String {
+    let root = doc.document_type.root();
     let currency = &doc.currency;
     let money = |ore: i64| -> String { amount(ore) };
     let attr = format!("currencyID=\"{}\"", esc(currency));
@@ -301,7 +301,7 @@ pub fn render(doc: &EhfDokument) -> String {
         "<{root} xmlns=\"{}\" \
          xmlns:cac=\"urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2\" \
          xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\">\n",
-        doc.dokumenttype.namespace()
+        doc.document_type.namespace()
     ));
     w.depth = 1;
 
@@ -309,14 +309,14 @@ pub fn render(doc: &EhfDokument) -> String {
     w.leaf("cbc:ProfileID", PROFILE_ID);
     w.leaf("cbc:ID", &doc.fakturanr);
     w.leaf("cbc:IssueDate", &doc.invoice_date.to_string());
-    if doc.dokumenttype == Dokumenttype::Invoice
+    if doc.document_type == DocumentType::Invoice
         && let Some(due_date) = doc.due_date
     {
         w.leaf("cbc:DueDate", &due_date.to_string());
     }
-    match doc.dokumenttype {
-        Dokumenttype::Invoice => w.leaf("cbc:InvoiceTypeCode", doc.dokumenttype.type_code()),
-        Dokumenttype::CreditNote => w.leaf("cbc:CreditNoteTypeCode", doc.dokumenttype.type_code()),
+    match doc.document_type {
+        DocumentType::Invoice => w.leaf("cbc:InvoiceTypeCode", doc.document_type.type_code()),
+        DocumentType::CreditNote => w.leaf("cbc:CreditNoteTypeCode", doc.document_type.type_code()),
     }
     w.leaf("cbc:DocumentCurrencyCode", currency);
     if let Some(referanse) = &doc.kjopers_referanse {
@@ -351,7 +351,7 @@ pub fn render(doc: &EhfDokument) -> String {
         w.close("cac:Delivery");
     }
 
-    if doc.dokumenttype == Dokumenttype::Invoice
+    if doc.document_type == DocumentType::Invoice
         && let Some(account) = &doc.account_number
     {
         w.open("cac:PaymentMeans");
@@ -410,13 +410,13 @@ pub fn render(doc: &EhfDokument) -> String {
     w.leaf_attr("cbc:PayableAmount", &attr, &money(netto_sum + vat_sum));
     w.close("cac:LegalMonetaryTotal");
 
-    let line_tag = match doc.dokumenttype {
-        Dokumenttype::Invoice => "cac:InvoiceLine",
-        Dokumenttype::CreditNote => "cac:CreditNoteLine",
+    let line_tag = match doc.document_type {
+        DocumentType::Invoice => "cac:InvoiceLine",
+        DocumentType::CreditNote => "cac:CreditNoteLine",
     };
-    let quantity_tag = match doc.dokumenttype {
-        Dokumenttype::Invoice => "cbc:InvoicedQuantity",
-        Dokumenttype::CreditNote => "cbc:CreditedQuantity",
+    let quantity_tag = match doc.document_type {
+        DocumentType::Invoice => "cbc:InvoicedQuantity",
+        DocumentType::CreditNote => "cbc:CreditedQuantity",
     };
     for (i, linje) in doc.linjer.iter().enumerate() {
         let (kategori, bp) = tax_category(linje.vat_rate_bp);
@@ -456,20 +456,20 @@ mod tests {
         EhfPart {
             name: name.into(),
             orgnumber: orgnumber.into(),
-            adresse: Some("Storgata 1".into()),
+            address: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: vat,
-            epost: Some("post@example.no".into()),
+            email: Some("post@example.no".into()),
         }
     }
 
-    fn dokument(dokumenttype: Dokumenttype) -> EhfDokument {
-        EhfDokument {
-            dokumenttype,
+    fn document(document_type: DocumentType) -> EhfDocument {
+        EhfDocument {
+            document_type,
             fakturanr: "1001".into(),
-            krediterer: (dokumenttype == Dokumenttype::CreditNote).then(|| "1000".to_string()),
+            krediterer: (document_type == DocumentType::CreditNote).then(|| "1000".to_string()),
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn the_invoice_carries_the_peppol_profile_and_a_norwegian_participant_id() {
-        let xml = render(&dokument(Dokumenttype::Invoice));
+        let xml = render(&document(DocumentType::Invoice));
         assert!(xml.contains(CUSTOMIZATION_ID));
         assert!(xml.contains(PROFILE_ID));
         assert!(xml.contains("<cbc:EndpointID schemeID=\"0192\">915933149</cbc:EndpointID>"));
@@ -521,8 +521,8 @@ mod tests {
     /// bundet, og XSD-testen under fanger feil plassering.
     #[test]
     fn the_delivery_date_is_carried_on_both_document_kinds() {
-        for kind in [Dokumenttype::Invoice, Dokumenttype::CreditNote] {
-            let xml = render(&dokument(kind));
+        for kind in [DocumentType::Invoice, DocumentType::CreditNote] {
+            let xml = render(&document(kind));
             assert!(
                 xml.contains("<cbc:ActualDeliveryDate>2026-06-28</cbc:ActualDeliveryDate>"),
                 "{kind:?} mangler leveringstidspunkt"
@@ -540,7 +540,7 @@ mod tests {
     /// the element entirely rather than shipping an empty one.
     #[test]
     fn a_document_without_a_delivery_omits_the_element() {
-        let mut doc = dokument(Dokumenttype::Invoice);
+        let mut doc = document(DocumentType::Invoice);
         doc.delivery_date = None;
         doc.leveringssted = None;
         let xml = render(&doc);
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn amounts_are_integer_ore_with_a_dot_and_a_currency_code() {
-        let xml = render(&dokument(Dokumenttype::Invoice));
+        let xml = render(&document(DocumentType::Invoice));
         assert!(xml.contains(
             "<cbc:TaxInclusiveAmount currencyID=\"NOK\">3625.00</cbc:TaxInclusiveAmount>"
         ));
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn one_tax_group_per_rate() {
-        let xml = render(&dokument(Dokumenttype::Invoice));
+        let xml = render(&document(DocumentType::Invoice));
         assert_eq!(xml.matches("<cac:TaxSubtotal>").count(), 2);
         assert!(xml.contains("<cbc:TaxableAmount currencyID=\"NOK\">2500.00</cbc:TaxableAmount>"));
         assert!(xml.contains("<cbc:Percent>25.00</cbc:Percent>"));
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn a_kreditnota_uses_its_own_element_names_and_points_at_the_faktura() {
-        let xml = render(&dokument(Dokumenttype::CreditNote));
+        let xml = render(&document(DocumentType::CreditNote));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CreditNote "));
         assert!(xml.contains("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>"));
         assert!(xml.contains("<cac:CreditNoteLine>"));
@@ -610,29 +610,29 @@ mod tests {
 
     #[test]
     fn characters_needing_escaping_never_leak_through() {
-        let xml = render(&dokument(Dokumenttype::Invoice));
+        let xml = render(&document(DocumentType::Invoice));
         assert!(xml.contains("Kjøper &amp; Sønn AS"));
         assert!(!xml.contains("Kjøper & Sønn"));
     }
 
     #[test]
     fn the_same_faktura_yields_identical_xml() {
-        let a = render(&dokument(Dokumenttype::Invoice));
-        let b = render(&dokument(Dokumenttype::Invoice));
+        let a = render(&document(DocumentType::Invoice));
+        let b = render(&document(DocumentType::Invoice));
         assert_eq!(a, b, "renderen er deterministisk");
     }
 
     /// The XSD is the authority; xmllint runs it in CI as well.
     #[test]
     fn validates_against_the_ubl_schema() {
-        for (dokumenttype, schema) in [
-            (Dokumenttype::Invoice, "maindoc/UBL-Invoice-2.1.xsd"),
-            (Dokumenttype::CreditNote, "maindoc/UBL-CreditNote-2.1.xsd"),
+        for (document_type, schema) in [
+            (DocumentType::Invoice, "maindoc/UBL-Invoice-2.1.xsd"),
+            (DocumentType::CreditNote, "maindoc/UBL-CreditNote-2.1.xsd"),
         ] {
-            let xml = render(&dokument(dokumenttype));
+            let xml = render(&document(document_type));
             let dir = std::env::temp_dir().join(format!("regnmed-ehf-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
-            let path = dir.join(format!("{}.xml", dokumenttype.root()));
+            let path = dir.join(format!("{}.xml", document_type.root()));
             std::fs::write(&path, &xml).unwrap();
             let xsd = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/ehf/");
             let output = std::process::Command::new("xmllint")
@@ -648,7 +648,7 @@ mod tests {
             assert!(
                 output.status.success(),
                 "{} feilet skjemavalidering:\n{}",
-                dokumenttype.root(),
+                document_type.root(),
                 String::from_utf8_lossy(&output.stderr)
             );
         }

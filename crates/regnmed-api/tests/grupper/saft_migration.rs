@@ -562,11 +562,11 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
         .find(|k| k["navn"] == "Importert historikk")
         .expect("kontrollen finnes");
     assert_eq!(importert["ok"], true, "{importert}");
-    let detalj = importert["detalj"].as_str().unwrap();
-    assert!(detalj.contains("4 fil(er)"), "{detalj}");
+    let detail = importert["detalj"].as_str().unwrap();
+    assert!(detail.contains("4 fil(er)"), "{detail}");
     assert!(
-        detalj.contains(imports[0]["sha256"].as_str().unwrap()),
-        "full sha in the report: {detalj}"
+        detail.contains(imports[0]["sha256"].as_str().unwrap()),
+        "full sha in the report: {detail}"
     );
 
     // A continuation file with a bank opening 850 kr off: refused, and

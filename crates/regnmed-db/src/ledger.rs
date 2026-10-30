@@ -41,7 +41,7 @@ pub async fn create_company(pool: &PgPool, orgnumber: &str, name: &str) -> Resul
     Ok(id)
 }
 
-pub async fn find_company_by_orgnr(pool: &PgPool, orgnumber: &str) -> Result<Option<Uuid>> {
+pub async fn find_company_by_orgnumber(pool: &PgPool, orgnumber: &str) -> Result<Option<Uuid>> {
     let row = sqlx::query("select id from company where orgnr = $1")
         .bind(orgnumber)
         .fetch_optional(pool)

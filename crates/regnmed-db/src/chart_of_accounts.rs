@@ -156,7 +156,7 @@ pub async fn list_vouchers_paged(
     limit: i64,
     offset: i64,
     med_linjer: bool,
-    uten_vedlegg: bool,
+    without_attachment: bool,
 ) -> Result<VoucherPage> {
     let sok = sok.map(str::trim).filter(|s| !s.is_empty());
     let filter = "v.company_id = $1
@@ -181,7 +181,7 @@ pub async fn list_vouchers_paged(
         .bind(sok)
         .bind(limit)
         .bind(offset)
-        .bind(uten_vedlegg)
+        .bind(without_attachment)
         .fetch_one(pool)
         .await?;
 
@@ -198,7 +198,7 @@ pub async fn list_vouchers_paged(
     .bind(sok)
     .bind(limit)
     .bind(offset)
-    .bind(uten_vedlegg)
+    .bind(without_attachment)
     .fetch_all(pool)
     .await?;
 

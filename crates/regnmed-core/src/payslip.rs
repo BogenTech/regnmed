@@ -46,10 +46,10 @@ pub struct PayslipLine {
 #[derive(Debug, Clone)]
 pub struct PayslipInput {
     pub employer_name: String,
-    pub arbeidsgiver_orgnr: String,
-    pub arbeidsgiver_adresse: Option<String>,
+    pub employer_orgnumber: String,
+    pub employer_address: Option<String>,
     pub employee_name: String,
-    pub ansatt_stilling: Option<String>,
+    pub employee_position: Option<String>,
     /// Aksjeloven-style restraint: the date identifies, the number is
     /// not needed on a document that travels.
     pub employee_birth_date: Option<chrono::NaiveDate>,
@@ -115,8 +115,8 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     // Employer, top left.
     pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.employer_name);
     let mut y = 76.0;
-    if let Some(adresse) = &input.arbeidsgiver_adresse {
-        pdf.text(MARGIN, y, 9.0, Font::Regular, adresse);
+    if let Some(address) = &input.employer_address {
+        pdf.text(MARGIN, y, 9.0, Font::Regular, address);
         y += 12.0;
     }
     pdf.text(
@@ -124,7 +124,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         y,
         9.0,
         Font::Regular,
-        &format!("Org.nr {}", input.arbeidsgiver_orgnr),
+        &format!("Org.nr {}", input.employer_orgnumber),
     );
 
     // Title and period, top right.
@@ -148,7 +148,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     pdf.text(MARGIN, 130.0, 8.0, Font::Bold, "ARBEIDSTAKER");
     pdf.text(MARGIN, 144.0, 11.0, Font::Regular, &input.employee_name);
     let mut ay = 158.0;
-    if let Some(stilling) = &input.ansatt_stilling {
+    if let Some(stilling) = &input.employee_position {
         pdf.text(MARGIN, ay, 9.0, Font::Regular, stilling);
         ay += 12.0;
     }
@@ -275,10 +275,10 @@ mod tests {
     fn input() -> PayslipInput {
         PayslipInput {
             employer_name: "Testselskap AS".into(),
-            arbeidsgiver_orgnr: "923 609 016".into(),
-            arbeidsgiver_adresse: Some("Storgata 1, 0155 OSLO".into()),
+            employer_orgnumber: "923 609 016".into(),
+            employer_address: Some("Storgata 1, 0155 OSLO".into()),
             employee_name: "Kari Utvikler".into(),
-            ansatt_stilling: Some("Utvikler".into()),
+            employee_position: Some("Utvikler".into()),
             employee_birth_date: Some(date(1993, 2, 26)),
             year: 2026,
             month: 3,

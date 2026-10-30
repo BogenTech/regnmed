@@ -4,7 +4,9 @@
 //! dimension, and the SAF-T export carries Analysis elements.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -74,7 +76,7 @@ async fn a_prosjekt_carries_its_kunde() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let (_, supplier) = regnmed_db::create_party(
         &state.pool,
         company,
@@ -207,7 +209,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     regnmed_db::create_dimension(
         &state.pool,
         company,
@@ -344,7 +346,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     assert_eq!(rad["timer"]["ufakturert_ore"], 150_000, "på bordet");
 
     // The detail adds the NS 4102 sections for exactly this project.
-    let (status, detalj) = request(
+    let (status, detail) = request(
         &state,
         "GET",
         &format!("/companies/{company}/reports/prosjekt?year=2026&prosjekt=PL1"),
@@ -352,9 +354,9 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {detalj}");
-    assert_eq!(detalj["resultat_ore"], 800_000);
-    let inntekter = detalj["seksjoner"]
+    assert_eq!(status, StatusCode::OK, "body: {detail}");
+    assert_eq!(detail["resultat_ore"], 800_000);
+    let inntekter = detail["seksjoner"]
         .as_array()
         .unwrap()
         .iter()
@@ -410,7 +412,7 @@ async fn dimensions_hash_v3_reports_and_saft() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Register the dimension registry over the API.

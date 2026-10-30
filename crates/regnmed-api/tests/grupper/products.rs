@@ -5,7 +5,9 @@
 //! layer, and varetelling adjusts quantities AND posts the value change
 //! as an ordinary voucher. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -88,7 +90,7 @@ async fn products_stock_and_count() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Vare Handler");
     let base = format!("/companies/{company}");
 

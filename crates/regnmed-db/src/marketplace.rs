@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::ledger::{create_company, ensure_account, ensure_journal, find_company_by_orgnr};
+use crate::ledger::{create_company, ensure_account, ensure_journal, find_company_by_orgnumber};
 use crate::subledger::set_account_subledger;
 use crate::tenancy::ensure_company_member;
 
@@ -66,7 +66,7 @@ pub async fn onboard_company(
     facts: &RegistryFacts,
 ) -> Result<OnboardedCompany> {
     ensure!(
-        find_company_by_orgnr(pool, orgnumber).await?.is_none(),
+        find_company_by_orgnumber(pool, orgnumber).await?.is_none(),
         "company {orgnumber} is already onboarded"
     );
     let company_id = create_company(pool, orgnumber, registry_name)

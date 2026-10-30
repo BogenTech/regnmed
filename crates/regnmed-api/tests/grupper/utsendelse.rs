@@ -8,7 +8,9 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
@@ -141,7 +143,7 @@ async fn invoice_mail_rides_the_shared_rail() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Company reply-to + customer e-mail.

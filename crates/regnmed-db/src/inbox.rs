@@ -31,7 +31,7 @@ pub struct InboxRow {
     pub note: Option<String>,
     /// The governing attestation decision (newest row), if any.
     pub attestering: Option<String>,
-    pub attestert_av: Option<String>,
+    pub approved_by: Option<String>,
 }
 
 /// Stores an uploaded document. `expected_sha256` is what the client
@@ -126,7 +126,7 @@ pub async fn list_inbox(
             decided_by: r.get("decided_by"),
             note: r.get("note"),
             attestering: r.get("attestering"),
-            attestert_av: r.get("attestert_av"),
+            approved_by: r.get("attestert_av"),
         })
         .collect())
 }
@@ -194,7 +194,7 @@ pub async fn bokfor_inbox_document(
                 .bind(decided_by_person)
                 .fetch_one(&mut *tx)
                 .await?;
-        let maskinkrav = maskin_bokforer && policy.krev_for_maskin == Some(true);
+        let maskinkrav = maskin_bokforer && policy.require_for_machine == Some(true);
         if maskinkrav
             || policy
                 .amount_limit_ore

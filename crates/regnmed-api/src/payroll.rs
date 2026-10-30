@@ -22,7 +22,7 @@ use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
 
-fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
+fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
     json!({
         "id": a.id,
         "navn": a.name,
@@ -30,7 +30,7 @@ fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         // Birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
         "ansatt_fra": a.employed_from,
-        "ansatt_til": a.ansatt_til,
+        "ansatt_til": a.employed_to,
         "manedslonn_ore": a.manedslonn_ore,
         "timelonn_ore": a.timelonn_ore,
         "trekk_type": a.withholding_type,
@@ -44,7 +44,7 @@ fn ansatt_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "person": a.person_id.map(|pid| json!({
             "person_id": pid,
             "navn": a.person_name,
-            "epost": a.person_epost,
+            "epost": a.person_email,
         })),
     })
 }
@@ -57,7 +57,7 @@ pub async fn list_employees(
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let employees = regnmed_db::payroll::list_ansatte(&state.pool, company_id).await?;
     Ok(Json(json!({
-        "ansatte": employees.iter().map(ansatt_json).collect::<Vec<_>>()
+        "ansatte": employees.iter().map(employee_json).collect::<Vec<_>>()
     })))
 }
 
@@ -101,10 +101,10 @@ pub async fn create_employee(
     Json(request): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
-    let id = regnmed_db::payroll::create_ansatt(
+    let id = regnmed_db::payroll::create_employee(
         &state.pool,
         company_id,
-        &regnmed_db::payroll::NyAnsatt {
+        &regnmed_db::payroll::NewEmployee {
             fodselsnummer: request.fodselsnummer,
             name: request.name,
             stilling: request.stilling,
@@ -241,7 +241,7 @@ pub async fn run_payroll(
             "aga_feriepenger_ore": l.employer_contribution_holiday_pay_ore,
             "halv_trekk": l.calculation.half_withholding,
         })).collect::<Vec<_>>(),
-        "advarsler": run.advarsler,
+        "advarsler": run.warnings,
     })))
 }
 
@@ -264,7 +264,7 @@ pub async fn payslip_pdf(
     let role = require(&state, person.person_id, company_id, Right::PayslipReadOwn).await?;
     if !role.has(Right::PayslipReadAll) {
         let owner =
-            regnmed_db::payroll::ansatt_person(&state.pool, company_id, employee_id).await?;
+            regnmed_db::payroll::employee_person(&state.pool, company_id, employee_id).await?;
         if owner != Some(person.person_id) {
             return Err(ApiError::NotFound);
         }
@@ -329,7 +329,7 @@ pub async fn link_employee(
     Json(request): Json<LinkRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
-    regnmed_db::payroll::link_ansatt_person(
+    regnmed_db::payroll::link_employee_person(
         &state.pool,
         company_id,
         employee_id,
@@ -348,7 +348,7 @@ pub async fn unlink_employee(
     Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
-    regnmed_db::payroll::unlink_ansatt_person(
+    regnmed_db::payroll::unlink_employee_person(
         &state.pool,
         company_id,
         employee_id,
@@ -367,7 +367,7 @@ pub async fn employee_link_history(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let rader =
-        regnmed_db::payroll::ansatt_link_historikk(&state.pool, company_id, employee_id).await?;
+        regnmed_db::payroll::employee_link_history(&state.pool, company_id, employee_id).await?;
     Ok(Json(json!({
         "historikk": rader.iter().map(|h| json!({
             "endring": h.endring,

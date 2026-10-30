@@ -248,10 +248,10 @@ pub async fn order_to_invoice(
 pub async fn pdf(
     State(state): State<AppState>,
     person: AuthPerson,
-    Path((company_id, dokument_id)): Path<(Uuid, Uuid)>,
+    Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
     require(&state, person.person_id, company_id, Right::QuoteRead).await?;
-    let (filename, pdf) = regnmed_db::salgsdokument_pdf(&state.pool, company_id, dokument_id)
+    let (filename, pdf) = regnmed_db::salgsdokument_pdf(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(file_response(

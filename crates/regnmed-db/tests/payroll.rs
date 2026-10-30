@@ -9,7 +9,7 @@
 //! Requires DATABASE_URL; skips otherwise.
 
 use chrono::NaiveDate;
-use regnmed_db::payroll::{self, NyAnsatt, PayrollEntry};
+use regnmed_db::payroll::{self, NewEmployee, PayrollEntry};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -58,10 +58,10 @@ async fn company(pool: &PgPool) -> Uuid {
 }
 
 async fn employee(pool: &PgPool, company: Uuid, fnr: &str, name: &str, lonn: i64) -> Uuid {
-    payroll::create_ansatt(
+    payroll::create_employee(
         pool,
         company,
-        &NyAnsatt {
+        &NewEmployee {
             fodselsnummer: fnr.into(),
             name: name.into(),
             stilling: Some("Utvikler".into()),
@@ -289,10 +289,10 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
 async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
-    let a = payroll::create_ansatt(
+    let a = payroll::create_employee(
         &pool,
         company,
-        &NyAnsatt {
+        &NewEmployee {
             fodselsnummer: "08888797336".into(),
             name: "Tabell Trekksen".into(),
             stilling: None,
@@ -419,10 +419,10 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
-    let error = payroll::create_ansatt(
+    let error = payroll::create_employee(
         &pool,
         company,
-        &NyAnsatt {
+        &NewEmployee {
             fodselsnummer: "26829398613".into(),
             name: "Feil Nummer".into(),
             stilling: None,
@@ -538,10 +538,10 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     )
     .await
     .unwrap();
-    let a = payroll::create_ansatt(
+    let a = payroll::create_employee(
         &pool,
         company,
-        &NyAnsatt {
+        &NewEmployee {
             fodselsnummer: "25927898821".into(),
             name: "Timelønnet".into(),
             stilling: None,
@@ -724,7 +724,7 @@ async fn the_accrual_on_unpaid_feriepenger_is_posted() {
     assert_eq!(voucher_sum(&pool, k.voucher_id).await, 0);
     assert_eq!(account_amount(&pool, k.voucher_id, "5405").await, 71_910);
     assert_eq!(account_amount(&pool, k.voucher_id, "2780").await, -71_910);
-    assert!(k.advarsler.is_empty(), "{:?}", k.advarsler);
+    assert!(k.warnings.is_empty(), "{:?}", k.warnings);
 }
 
 /// The life cycle: the avgift is accrued on earning and reversed on
@@ -824,7 +824,7 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
         // be built per employee — 14,1 % of the total would be off by an
         // øre or two and turn the test into an approximation rather than
         // an invariant.
-        let per_ansatt: Vec<i64> = sqlx::query_scalar(
+        let per_employee: Vec<i64> = sqlx::query_scalar(
             "select coalesce(sum(l.feriepengeavsetning_ore - l.feriepenger_ore), 0)::bigint
              from payroll_line l join payroll_run r on r.id = l.run_id
              where r.company_id = $1 group by l.employee_id",
@@ -833,13 +833,13 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
         .fetch_all(&pool)
         .await
         .unwrap();
-        let ventet: i64 = per_ansatt
+        let ventet: i64 = per_employee
             .iter()
             .map(|s| regnmed_core::payroll::employer_contribution_accrual_target(*s, 1410))
             .sum();
 
         assert_eq!(
-            per_ansatt.iter().sum::<i64>(),
+            per_employee.iter().sum::<i64>(),
             -account_balance(&pool, company, "2940").await,
             "etter {month:02}/2026: lønnshistorikken skal forklare hele 2940"
         );
@@ -893,7 +893,7 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
 
     // The accrual covers only what the payroll run itself earned.
     assert_eq!(k.sum.employer_contribution_holiday_pay_ore, 71_910);
-    let advarsel = k.advarsler.join(" ");
+    let advarsel = k.warnings.join(" ");
     assert!(
         advarsel.contains("10000,00"),
         "differansen skal navngis: {advarsel}"

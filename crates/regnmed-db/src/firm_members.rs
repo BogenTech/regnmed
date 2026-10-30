@@ -15,12 +15,12 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-use crate::members::normaliser_epost;
+use crate::members::normalize_email;
 
 /// The firm roles (0005): `admin` runs the byrå, `ansatt` works in it.
 pub const ROLES: [&str; 2] = ["admin", "ansatt"];
 
-fn krev_rolle(role: &str) -> Result<()> {
+fn require_role(role: &str) -> Result<()> {
     ensure!(
         ROLES.contains(&role),
         "«{role}» er ikke en byrårolle — velg admin eller ansatt"
@@ -32,7 +32,7 @@ fn krev_rolle(role: &str) -> Result<()> {
 pub struct Byramedlem {
     pub person_id: Uuid,
     pub name: String,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub role: String,
     pub active: bool,
 }
@@ -57,7 +57,7 @@ pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedl
         .map(|r| Byramedlem {
             person_id: r.get("person_id"),
             name: r.get("navn"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             role: r.get("rolle"),
             active: r.get("aktiv"),
         })
@@ -95,7 +95,7 @@ pub(crate) async fn logg(
 /// Locks the firm's member rows, then requires at least one active admin.
 /// Same reasoning as the company version: without the lock, two
 /// concurrent demotions could each see "there is another admin".
-async fn krev_gjenvaerende_admin(tx: &mut Transaction<'_, Postgres>, firm_id: Uuid) -> Result<()> {
+async fn require_remaining_admin(tx: &mut Transaction<'_, Postgres>, firm_id: Uuid) -> Result<()> {
     let n: i64 = sqlx::query_scalar(
         "select count(*) from firm_member
          where firm_id = $1 and active and role = 'admin'",
@@ -118,14 +118,14 @@ async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, firm_id: Uuid) -> Re
     Ok(())
 }
 
-pub async fn sett_rolle(
+pub async fn set_role(
     pool: &PgPool,
     firm_id: Uuid,
     person_id: Uuid,
-    ny_rolle: &str,
+    new_role: &str,
     performed_by: Uuid,
 ) -> Result<()> {
-    krev_rolle(ny_rolle)?;
+    require_role(new_role)?;
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, firm_id).await?;
 
@@ -137,7 +137,7 @@ pub async fn sett_rolle(
     .fetch_optional(&mut *tx)
     .await?;
     let from = from.context("personen er ikke medlem av byrået")?;
-    if from == ny_rolle {
+    if from == new_role {
         tx.commit().await?;
         return Ok(());
     }
@@ -145,17 +145,17 @@ pub async fn sett_rolle(
     sqlx::query("update firm_member set role = $3 where firm_id = $1 and person_id = $2")
         .bind(firm_id)
         .bind(person_id)
-        .bind(ny_rolle)
+        .bind(new_role)
         .execute(&mut *tx)
         .await?;
-    krev_gjenvaerende_admin(&mut tx, firm_id).await?;
+    require_remaining_admin(&mut tx, firm_id).await?;
     logg(
         &mut tx,
         firm_id,
         person_id,
         "rolle_endret",
         Some(&from),
-        Some(ny_rolle),
+        Some(new_role),
         Some(performed_by),
         "admin",
     )
@@ -195,7 +195,7 @@ pub async fn sett_aktiv(
         .bind(active)
         .execute(&mut *tx)
         .await?;
-    krev_gjenvaerende_admin(&mut tx, firm_id).await?;
+    require_remaining_admin(&mut tx, firm_id).await?;
     logg(
         &mut tx,
         firm_id,
@@ -214,9 +214,9 @@ pub async fn sett_aktiv(
 #[derive(Debug, Clone)]
 pub struct Byrainvitasjon {
     pub id: Uuid,
-    pub epost: String,
+    pub email: String,
     pub role: String,
-    pub invitert_av: String,
+    pub invited_by: String,
     pub created_at: DateTime<Utc>,
     pub sist_sendt: Option<DateTime<Utc>>,
 }
@@ -227,15 +227,15 @@ pub struct Byrainvitasjon {
 pub async fn inviter(
     pool: &PgPool,
     firm_id: Uuid,
-    epost: &str,
+    email: &str,
     role: &str,
     invited_by: Uuid,
 ) -> Result<Uuid> {
-    krev_rolle(role)?;
-    let epost = normaliser_epost(epost);
+    require_role(role)?;
+    let email = normalize_email(email);
     ensure!(
-        epost.contains('@') && !epost.starts_with('@') && !epost.ends_with('@'),
-        "«{epost}» ser ikke ut som en e-postadresse"
+        email.contains('@') && !email.starts_with('@') && !email.ends_with('@'),
+        "«{email}» ser ikke ut som en e-postadresse"
     );
 
     let id = Uuid::new_v4();
@@ -245,7 +245,7 @@ pub async fn inviter(
     )
     .bind(id)
     .bind(firm_id)
-    .bind(&epost)
+    .bind(&email)
     .bind(role)
     .bind(invited_by)
     .execute(pool)
@@ -253,7 +253,7 @@ pub async fn inviter(
     if let Err(e) = res {
         if let Some(db) = e.as_database_error() {
             if db.code().as_deref() == Some("23505") {
-                bail!("{epost} er allerede invitert til dette byrået");
+                bail!("{email} er allerede invitert til dette byrået");
             }
         }
         return Err(e.into());
@@ -279,9 +279,9 @@ pub async fn list_invitasjoner(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrai
         .iter()
         .map(|r| Byrainvitasjon {
             id: r.get("id"),
-            epost: r.get("epost"),
+            email: r.get("epost"),
             role: r.get("role"),
-            invitert_av: r.get("invitert_av"),
+            invited_by: r.get("invitert_av"),
             created_at: r.get("created_at"),
             sist_sendt: r.get("sist_sendt"),
         })
@@ -292,7 +292,7 @@ pub async fn tilbakekall_invitasjon(
     pool: &PgPool,
     firm_id: Uuid,
     invitasjon_id: Uuid,
-    av: Uuid,
+    by: Uuid,
 ) -> Result<()> {
     let n = sqlx::query(
         "update firm_invitation set revoked_at = now(), revoked_by = $3
@@ -301,7 +301,7 @@ pub async fn tilbakekall_invitasjon(
     )
     .bind(firm_id)
     .bind(invitasjon_id)
-    .bind(av)
+    .bind(by)
     .execute(pool)
     .await?
     .rows_affected();
@@ -314,14 +314,11 @@ pub async fn tilbakekall_invitasjon(
 /// existing membership is never silently upgraded, the invitation is
 /// marked used and the standing membership wins.
 pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usize> {
-    let epost: Option<String> = sqlx::query_scalar("select email from person where id = $1")
+    let email: Option<String> = sqlx::query_scalar("select email from person where id = $1")
         .bind(person_id)
         .fetch_one(pool)
         .await?;
-    let Some(epost) = epost
-        .map(|e| normaliser_epost(&e))
-        .filter(|e| !e.is_empty())
-    else {
+    let Some(email) = email.map(|e| normalize_email(&e)).filter(|e| !e.is_empty()) else {
         return Ok(0);
     };
 
@@ -331,7 +328,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
          where epost = $1 and accepted_at is null and revoked_at is null
          for update",
     )
-    .bind(&epost)
+    .bind(&email)
     .fetch_all(&mut *tx)
     .await?;
 
@@ -386,8 +383,8 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
 pub struct Byraendring {
     pub name: String,
     pub endring: String,
-    pub fra_rolle: Option<String>,
-    pub til_rolle: Option<String>,
+    pub from_role: Option<String>,
+    pub to_role: Option<String>,
     pub performed_by: Option<String>,
     pub source: String,
     pub created_at: DateTime<Utc>,
@@ -413,8 +410,8 @@ pub async fn tilgangshistorikk(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrae
         .map(|r| Byraendring {
             name: r.get("navn"),
             endring: r.get("endring"),
-            fra_rolle: r.get("fra_rolle"),
-            til_rolle: r.get("til_rolle"),
+            from_role: r.get("fra_rolle"),
+            to_role: r.get("til_rolle"),
             performed_by: r.get("utfort_av"),
             source: r.get("kilde"),
             created_at: r.get("created_at"),
@@ -460,7 +457,7 @@ pub async fn firm_invitation_email_payload(
     .await?
     .context("ingen åpen invitasjon med den id-en")?;
 
-    let epost: String = row.get("epost");
+    let email: String = row.get("epost");
     let role: String = row.get("role");
     let firm_name: String = row.get("firm_name");
     let invited_by: String = row.get("invited_by");
@@ -483,7 +480,7 @@ pub async fn firm_invitation_email_payload(
     );
 
     Ok(crate::EmailPayload {
-        to: epost,
+        to: email,
         subject: format!("Du er invitert inn i {firm_name} i regnmed"),
         text,
         reply_to: None,

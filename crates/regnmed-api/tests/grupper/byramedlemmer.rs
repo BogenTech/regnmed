@@ -51,7 +51,7 @@ async fn request(
 
 /// The e-mail the TestIdp bakes into a token for this sub — invitations
 /// must be addressed to it for redemption to find them.
-fn epost_for(sub: &str) -> String {
+fn email_for(sub: &str) -> String {
     format!("{}@test.invalid", sub.replace('|', "."))
 }
 
@@ -70,14 +70,14 @@ async fn byra_members_are_invited_never_coregistered() {
         &state.pool,
         &grunnlegger_sub,
         Some("Grunnlegger Gro"),
-        Some(&epost_for(&grunnlegger_sub)),
+        Some(&email_for(&grunnlegger_sub)),
     )
     .await
     .unwrap();
-    let firm_orgnr = unique_orgnumber();
+    let firm_orgnumber = unique_orgnumber();
     let firm_id = regnmed_db::create_verified_firm(
         &state.pool,
-        &firm_orgnr,
+        &firm_orgnumber,
         "BYRÅTEST AS",
         "regnskap",
         "test",
@@ -94,7 +94,7 @@ async fn byra_members_are_invited_never_coregistered() {
             .unwrap();
     let error = regnmed_db::create_verified_firm(
         &state.pool,
-        &firm_orgnr,
+        &firm_orgnumber,
         "BYRÅTEST AS",
         "regnskap",
         "test",
@@ -146,14 +146,14 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // The admin invites an ansatt; the invitation stands although no
     // mail rail is configured in tests.
-    let ansatt_sub = format!("test|{}", Uuid::new_v4());
-    let ansatt_epost = epost_for(&ansatt_sub);
+    let employee_sub = format!("test|{}", Uuid::new_v4());
+    let employee_email = email_for(&employee_sub);
     let (status, response) = request(
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
         &grunnlegger_token,
-        Some(serde_json::json!({ "epost": ansatt_epost, "rolle": "ansatt" })),
+        Some(serde_json::json!({ "epost": employee_email, "rolle": "ansatt" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {response}");
@@ -166,7 +166,7 @@ async fn byra_members_are_invited_never_coregistered() {
         "POST",
         &format!("/firms/{firm_id}/invitations"),
         &grunnlegger_token,
-        Some(serde_json::json!({ "epost": ansatt_epost, "rolle": "ansatt" })),
+        Some(serde_json::json!({ "epost": employee_email, "rolle": "ansatt" })),
     )
     .await;
     assert_eq!(
@@ -177,7 +177,7 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // The invitee logs in: /me redeems the invitation and the client
     // portfolio is already in the same response.
-    let employee_token = idp.token(&ansatt_sub, "Ansatt Anne");
+    let employee_token = idp.token(&employee_sub, "Ansatt Anne");
     let (status, me) = request(&state, "GET", "/me", &employee_token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(me["nye_tilganger"], 1, "body: {me}");
@@ -264,19 +264,19 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // Promote the ansatt, and the founder may step down; the change
     // trail carries every step.
-    let ansatt_person: Uuid = sqlx::query_scalar(
+    let employee_person: Uuid = sqlx::query_scalar(
         "select person_id from firm_member fm join person p on p.id = fm.person_id
          where fm.firm_id = $1 and p.oidc_sub = $2",
     )
     .bind(firm_id)
-    .bind(&ansatt_sub)
+    .bind(&employee_sub)
     .fetch_one(&state.pool)
     .await
     .unwrap();
     let (status, _) = request(
         &state,
         "PUT",
-        &format!("/firms/{firm_id}/access/{ansatt_person}"),
+        &format!("/firms/{firm_id}/access/{employee_person}"),
         &grunnlegger_token,
         Some(serde_json::json!({ "rolle": "admin" })),
     )
@@ -320,7 +320,7 @@ async fn byra_members_are_invited_never_coregistered() {
         "POST",
         &format!("/firms/{firm_id}/invitations"),
         &employee_token,
-        Some(serde_json::json!({ "epost": epost_for(&tredje_sub), "rolle": "ansatt" })),
+        Some(serde_json::json!({ "epost": email_for(&tredje_sub), "rolle": "ansatt" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {response}");
