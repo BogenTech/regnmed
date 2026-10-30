@@ -29,9 +29,9 @@ pub struct BrregEntity {
     /// company that registered for mva in 2019 must not have the "MVA"
     /// note on documents dated before that.
     #[serde(default, rename = "registreringsdatoMerverdiavgiftsregisteret")]
-    pub registreringsdato_mva: Option<String>,
+    pub mva_registration_date: Option<String>,
     #[serde(default, rename = "registreringsdatoForetaksregisteret")]
-    pub registreringsdato_foretaksregisteret: Option<String>,
+    pub foretaksregisteret_registration_date: Option<String>,
     #[serde(default)]
     pub forretningsadresse: Option<Address>,
     /// Registered contact address — a better default for `company.email`
@@ -50,14 +50,16 @@ pub struct BrregEntity {
     #[serde(default, rename = "underTvangsavviklingEllerTvangsopplosning")]
     pub under_tvangsavvikling: bool,
     #[serde(default)]
-    pub slettedato: Option<String>,
+    #[serde(rename = "slettedato")]
+    pub deleted_date: Option<String>,
 }
 
 /// Registered share capital. Only meaningful for AS/ASA.
 #[derive(Debug, Deserialize)]
 pub struct Capital {
     #[serde(default)]
-    pub belop: Option<serde_json::Number>,
+    #[serde(rename = "belop")]
+    pub amount: Option<serde_json::Number>,
     #[serde(default, rename = "antallAksjer")]
     pub antall_aksjer: Option<i64>,
     #[serde(default)]
@@ -75,7 +77,7 @@ impl Capital {
         if self.currency.as_deref().is_some_and(|v| v != "NOK") {
             return None;
         }
-        let raw = self.belop.as_ref()?.to_string();
+        let raw = self.amount.as_ref()?.to_string();
         regnmed_core::currency::parse_rate(&raw).map(|micro| micro / 10_000)
     }
 }
@@ -149,11 +151,11 @@ impl BrregEntity {
         }
         let mut hendelser: Vec<(NaiveDate, bool)> = Vec::new();
         if self.registrert_i_mvaregisteret {
-            hendelser.push((date(&self.registreringsdato_mva).unwrap_or(i_dag), true));
+            hendelser.push((date(&self.mva_registration_date).unwrap_or(i_dag), true));
         }
         if self.registrert_i_foretaksregisteret {
             hendelser.push((
-                date(&self.registreringsdato_foretaksregisteret).unwrap_or(i_dag),
+                date(&self.foretaksregisteret_registration_date).unwrap_or(i_dag),
                 false,
             ));
         }
@@ -255,7 +257,7 @@ mod tests {
             entity.forretningsadresse.unwrap().one_line().unwrap(),
             "Øvre Bogenvei 67, 3152 TOLVSRØD"
         );
-        assert!(entity.slettedato.is_none());
+        assert!(entity.deleted_date.is_none());
     }
 
     fn entity(json: &str) -> BrregEntity {

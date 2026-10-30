@@ -113,8 +113,10 @@ pub struct MatchRequest {
     /// same valuta; realized agio posts in the same transaction.
     valuta_cent: Option<i64>,
     /// Agio accounts; defaults 8060 (gevinst) / 8160 (tap).
-    gevinstkonto: Option<String>,
-    tapskonto: Option<String>,
+    #[serde(rename = "gevinstkonto")]
+    gain_account: Option<String>,
+    #[serde(rename = "tapskonto")]
+    loss_account: Option<String>,
 }
 
 pub async fn create_match(
@@ -132,8 +134,8 @@ pub async fn create_match(
             request.entry_a,
             request.entry_b,
             valuta_cent,
-            request.gevinstkonto.as_deref().unwrap_or("8060"),
-            request.tapskonto.as_deref().unwrap_or("8160"),
+            request.gain_account.as_deref().unwrap_or("8060"),
+            request.loss_account.as_deref().unwrap_or("8160"),
             matched_by,
         )
         .await

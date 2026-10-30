@@ -91,8 +91,8 @@ pub struct EhfDokument {
     pub fakturanr: String,
     /// The invoice number a kreditnota credits.
     pub krediterer: Option<String>,
-    pub fakturadato: NaiveDate,
-    pub forfallsdato: Option<NaiveDate>,
+    pub invoice_date: NaiveDate,
+    pub due_date: Option<NaiveDate>,
     /// ISO 4217; "NOK" domestically.
     pub currency: String,
     /// Buyer's reference (EN 16931 BT-10) — many public recipients
@@ -103,11 +103,11 @@ pub struct EhfDokument {
     /// Leveringstidspunkt (EN 16931 BT-72). Mandatory on the Norwegian
     /// salgsdokument (bokføringsforskriften §5-1-1 nr. 4); `None` only
     /// for invoices issued before regnmed recorded it (#81).
-    pub leveringsdato: Option<NaiveDate>,
+    pub delivery_date: Option<NaiveDate>,
     /// Leveringssted (BT-71 / BG-15) as a single free-text line — we
     /// have no structured deliver-to address to split.
     pub leveringssted: Option<String>,
-    pub kontonummer: Option<String>,
+    pub account_number: Option<String>,
     pub kid: Option<String>,
     pub linjer: Vec<EhfLinje>,
 }
@@ -308,9 +308,9 @@ pub fn render(doc: &EhfDokument) -> String {
     w.leaf("cbc:CustomizationID", CUSTOMIZATION_ID);
     w.leaf("cbc:ProfileID", PROFILE_ID);
     w.leaf("cbc:ID", &doc.fakturanr);
-    w.leaf("cbc:IssueDate", &doc.fakturadato.to_string());
+    w.leaf("cbc:IssueDate", &doc.invoice_date.to_string());
     if doc.dokumenttype == Dokumenttype::Faktura
-        && let Some(forfall) = doc.forfallsdato
+        && let Some(forfall) = doc.due_date
     {
         w.leaf("cbc:DueDate", &forfall.to_string());
     }
@@ -336,10 +336,10 @@ pub fn render(doc: &EhfDokument) -> String {
     // cac:Delivery sits between the customer party and PaymentMeans in
     // the UBL 2.1 sequence — the XSD run in tests and CI enforces that,
     // so a wrong position fails loudly rather than shipping.
-    if doc.leveringsdato.is_some() || doc.leveringssted.is_some() {
+    if doc.delivery_date.is_some() || doc.leveringssted.is_some() {
         w.open("cac:Delivery");
-        if let Some(dato) = doc.leveringsdato {
-            w.leaf("cbc:ActualDeliveryDate", &dato.to_string());
+        if let Some(date) = doc.delivery_date {
+            w.leaf("cbc:ActualDeliveryDate", &date.to_string());
         }
         if let Some(sted) = &doc.leveringssted {
             w.open("cac:DeliveryLocation");
@@ -352,7 +352,7 @@ pub fn render(doc: &EhfDokument) -> String {
     }
 
     if doc.dokumenttype == Dokumenttype::Faktura
-        && let Some(konto) = &doc.kontonummer
+        && let Some(account) = &doc.account_number
     {
         w.open("cac:PaymentMeans");
         // UNCL4461 30: credit transfer.
@@ -361,7 +361,7 @@ pub fn render(doc: &EhfDokument) -> String {
             w.leaf("cbc:PaymentID", kid);
         }
         w.open("cac:PayeeFinancialAccount");
-        w.leaf("cbc:ID", konto);
+        w.leaf("cbc:ID", account);
         w.close("cac:PayeeFinancialAccount");
         w.close("cac:PaymentMeans");
     }
@@ -470,15 +470,15 @@ mod tests {
             dokumenttype,
             fakturanr: "1001".into(),
             krediterer: (dokumenttype == Dokumenttype::Kreditnota).then(|| "1000".to_string()),
-            fakturadato: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
-            forfallsdato: NaiveDate::from_ymd_opt(2026, 7, 15),
+            invoice_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
             kjopers_referanse: Some("Bestilling 42".into()),
             selger: part("Selger AS", "915933149", true),
             kjoper: part("Kjøper & Sønn AS", "923609016", true),
-            leveringsdato: NaiveDate::from_ymd_opt(2026, 6, 28),
+            delivery_date: NaiveDate::from_ymd_opt(2026, 6, 28),
             leveringssted: Some("Lagerveien 3, 0666 Oslo".into()),
-            kontonummer: Some("86011117947".into()),
+            account_number: Some("86011117947".into()),
             kid: Some("1234567897".into()),
             linjer: vec![
                 EhfLinje {
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn a_document_without_a_delivery_omits_the_element() {
         let mut doc = dokument(Dokumenttype::Faktura);
-        doc.leveringsdato = None;
+        doc.delivery_date = None;
         doc.leveringssted = None;
         let xml = render(&doc);
         assert!(!xml.contains("cac:Delivery"));

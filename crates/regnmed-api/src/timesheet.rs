@@ -36,7 +36,8 @@ async fn require_write(
 
 #[derive(Deserialize)]
 pub struct EntryRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     minutter: i32,
     #[serde(default)]
     beskrivelse: String,
@@ -52,7 +53,7 @@ pub struct EntryRequest {
 impl EntryRequest {
     fn draft(self) -> regnmed_db::TimeEntryDraft {
         regnmed_db::TimeEntryDraft {
-            dato: self.dato,
+            date: self.date,
             minutter: self.minutter,
             beskrivelse: self.beskrivelse,
             project: self.project,
@@ -151,7 +152,7 @@ pub async fn list(
             "entry_id": e.id,
             "person": e.person_name,
             "own": e.own,
-            "dato": e.dato.to_string(),
+            "dato": e.date.to_string(),
             "minutter": e.minutter,
             "beskrivelse": e.beskrivelse,
             "prosjekt": e.project,

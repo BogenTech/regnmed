@@ -30,15 +30,15 @@ pub async fn create_utlegg(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
     beskrivelse: &str,
-    belop_ore: i64,
+    amount_ore: i64,
     filename: &str,
     content_type: &str,
     content: &[u8],
     created_by: &str,
 ) -> Result<Uuid> {
-    ensure!(belop_ore > 0, "beløpet må være positivt");
+    ensure!(amount_ore > 0, "beløpet må være positivt");
     ensure!(!content.is_empty(), "kvitteringen er tom");
     let id = Uuid::now_v7();
     sqlx::query(
@@ -50,9 +50,9 @@ pub async fn create_utlegg(
     .bind(id)
     .bind(company_id)
     .bind(person_id)
-    .bind(dato)
+    .bind(date)
     .bind(beskrivelse)
-    .bind(belop_ore)
+    .bind(amount_ore)
     .bind(filename)
     .bind(content_type)
     .bind(content)
@@ -70,17 +70,17 @@ pub async fn create_kjoring(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
     beskrivelse: &str,
     km: i64,
     created_by: &str,
 ) -> Result<(Uuid, i64, i64)> {
     ensure!(km > 0, "km må være positivt");
     let satser = load_satser(pool).await?;
-    let sats = value_on(&satser, "km_godtgjorelse", dato)
-        .with_context(|| format!("ingen km-sats for {dato} i satsregisteret"))?;
-    let trekkfri_sats = value_on(&satser, "km_godtgjorelse_trekkfri", dato)
-        .with_context(|| format!("ingen trekkfri km-sats for {dato} i satsregisteret"))?;
+    let sats = value_on(&satser, "km_godtgjorelse", date)
+        .with_context(|| format!("ingen km-sats for {date} i satsregisteret"))?;
+    let trekkfri_sats = value_on(&satser, "km_godtgjorelse_trekkfri", date)
+        .with_context(|| format!("ingen trekkfri km-sats for {date} i satsregisteret"))?;
     let beregnet = mileage_allowance(km, sats, trekkfri_sats);
     let id = Uuid::now_v7();
     sqlx::query(
@@ -91,7 +91,7 @@ pub async fn create_kjoring(
     .bind(id)
     .bind(company_id)
     .bind(person_id)
-    .bind(dato)
+    .bind(date)
     .bind(beskrivelse)
     .bind(beregnet.amount_ore)
     .bind(km)
@@ -110,9 +110,9 @@ pub struct ExpenseRow {
     pub person_name: String,
     pub own: bool,
     pub kind: String,
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub beskrivelse: String,
-    pub belop_ore: i64,
+    pub amount_ore: i64,
     pub km: Option<i64>,
     pub sats_ore_per_km: Option<i64>,
     pub trekkpliktig_ore: Option<i64>,
@@ -157,9 +157,9 @@ pub async fn list_expenses(
             person_name: r.get("person_name"),
             own: r.get("own"),
             kind: r.get("kind"),
-            dato: r.get("dato"),
+            date: r.get("dato"),
             beskrivelse: r.get("beskrivelse"),
-            belop_ore: r.get("belop_ore"),
+            amount_ore: r.get("belop_ore"),
             km: r.get("km"),
             sats_ore_per_km: r.get("sats_ore_per_km"),
             trekkpliktig_ore: r.get("trekkpliktig_ore"),
@@ -238,10 +238,10 @@ pub async fn approve_expense(
     pool: &PgPool,
     company_id: Uuid,
     expense_id: Uuid,
-    konto: &str,
+    account: &str,
     mva_kode: Option<&str>,
     mva_konto: &str,
-    motkonto: &str,
+    contra_account: &str,
     decided_by: &str,
     decided_by_person: Uuid,
 ) -> Result<ApprovedExpense> {
@@ -273,8 +273,8 @@ pub async fn approve_expense(
         );
     }
     let kind: String = expense.get("kind");
-    let dato: NaiveDate = expense.get("dato");
-    let belop: i64 = expense.get("belop_ore");
+    let date: NaiveDate = expense.get("dato");
+    let amount: i64 = expense.get("belop_ore");
     let beskrivelse: String = expense.get("beskrivelse");
     let navn: String = expense.get("navn");
 
@@ -286,7 +286,7 @@ pub async fn approve_expense(
             // otherwise approval quietly books a deduction the company
             // has no right to, and the cost comes out too low.
             if mva_kode.is_some_and(crate::settings::krever_mva_registrering) {
-                crate::settings::krev_mva_registrert(pool, company_id, dato).await?;
+                crate::settings::krev_mva_registrert(pool, company_id, date).await?;
             }
             let (netto, mva) = match mva_kode {
                 Some(code) => {
@@ -297,14 +297,14 @@ pub async fn approve_expense(
                             .await?
                             .with_context(|| format!("unknown vat code {code}"))?;
                     let rates = load_vat_rates(pool).await?;
-                    let rate_bp = rate_on(&rates, &rate_class, dato)
-                        .with_context(|| format!("no rate for {dato}"))?;
-                    split_gross(belop, rate_bp)
+                    let rate_bp = rate_on(&rates, &rate_class, date)
+                        .with_context(|| format!("no rate for {date}"))?;
+                    split_gross(amount, rate_bp)
                 }
-                None => (belop, 0),
+                None => (amount, 0),
             };
             entries.push(EntryDraft {
-                account_number: konto.to_string(),
+                account_number: account.to_string(),
                 amount: Ore(netto),
                 vat_code: mva_kode.map(str::to_string),
                 description: Some(beskrivelse.clone()),
@@ -333,8 +333,8 @@ pub async fn approve_expense(
                 .get::<Option<i64>, _>("sats_ore_per_km")
                 .unwrap_or(0);
             entries.push(EntryDraft {
-                account_number: konto.to_string(),
-                amount: Ore(belop),
+                account_number: account.to_string(),
+                amount: Ore(amount),
                 vat_code: None,
                 description: Some(format!(
                     "{beskrivelse} — {km} km à {},{:02} kr",
@@ -359,8 +359,8 @@ pub async fn approve_expense(
         }
     }
     entries.push(EntryDraft {
-        account_number: motkonto.to_string(),
-        amount: Ore(-belop),
+        account_number: contra_account.to_string(),
+        amount: Ore(-amount),
         vat_code: None,
         description: Some(format!("Skyldig {navn}")),
         party_no: None,
@@ -376,7 +376,7 @@ pub async fn approve_expense(
     };
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
+        voucher_date: date,
         description: format!("{label} {navn}: {beskrivelse}"),
         reverses: None,
         entries,
@@ -407,7 +407,7 @@ pub async fn approve_expense(
     .bind(company_id)
     .bind(decided_by)
     .bind(posted.id)
-    .bind(motkonto)
+    .bind(contra_account)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -459,8 +459,8 @@ pub async fn pay_expense(
     pool: &PgPool,
     company_id: Uuid,
     expense_id: Uuid,
-    dato: NaiveDate,
-    bank_konto: &str,
+    date: NaiveDate,
+    bank_account: &str,
     paid_by: &str,
 ) -> Result<PaidExpense> {
     let mut tx = pool.begin().await?;
@@ -479,21 +479,21 @@ pub async fn pay_expense(
         status == "godkjent",
         "bare godkjente krav kan utbetales (kravet er {status})"
     );
-    let belop: i64 = expense.get("belop_ore");
-    let motkonto: String = expense
+    let amount: i64 = expense.get("belop_ore");
+    let contra_account: String = expense
         .get::<Option<String>, _>("motkonto")
         .unwrap_or_default();
     let navn: String = expense.get("navn");
 
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
+        voucher_date: date,
         description: format!("Utbetaling utlegg {navn}"),
         reverses: None,
         entries: vec![
             EntryDraft {
-                account_number: motkonto,
-                amount: Ore(belop),
+                account_number: contra_account,
+                amount: Ore(amount),
                 vat_code: None,
                 description: Some(expense.get("beskrivelse")),
                 party_no: None,
@@ -502,8 +502,8 @@ pub async fn pay_expense(
                 currency: None,
             },
             EntryDraft {
-                account_number: bank_konto.to_string(),
-                amount: Ore(-belop),
+                account_number: bank_account.to_string(),
+                amount: Ore(-amount),
                 vat_code: None,
                 description: None,
                 party_no: None,

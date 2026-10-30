@@ -195,8 +195,24 @@ the MCP tools and every customer integration (#45) see exactly what
 they saw before. Renaming the public API would be a breaking change for
 live machine clients, which is a versioning decision and not a refactor.
 
-**Still Norwegian**, deliberately: `belop_ore`, `dato` and `konto` as
-Rust field names (same shared-word problem, not yet done). The same goes for the modules whose core and db halves are
+`belop_ore`->`amount_ore`, `dato`->`date`, `konto`->`account` and the
+~65 compounds built on them (`forfallsdato`->`due_date`,
+`kontonummer`->`account_number`, `motkonto`->`contra_account`,
+`restbelop_ore`->`remaining_amount_ore`, ...) moved across all crates
+in one change, the wire again pinned with `#[serde(rename)]` -- 64 of
+them this time. That batch earned a stronger guard than the tool's own
+report: `scripts/wire-names.py` computes every serde struct's EFFECTIVE
+field names (the `rename` attribute where present, the field name
+otherwise) and the two sides were proven identical, so no reasoning
+about which attributes were needed had to be trusted. Two collisions
+the compiler caught, both worth knowing: `belop_a`/`belop_b` in
+`reskontro::match_valuta` are the CURRENCY cent amounts while
+`amount_a`/`amount_b` were already the NOK ore, so the Norwegian pair
+became `currency_amount_*`; and `let dato = date(...)` in
+`regnmed-db::mva`'s tests would have shadowed the test's own `date()`
+helper.
+
+**Still Norwegian**, deliberately: the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
 `regnmed-api::tilgang` (the single access guard, named all through

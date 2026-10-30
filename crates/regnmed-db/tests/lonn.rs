@@ -29,7 +29,7 @@ fn unique_orgnr() -> String {
     format!("{:09}", u64::from(n) % 1_000_000_000)
 }
 
-fn dato(y: i32, m: u32, d: u32) -> NaiveDate {
+fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
@@ -65,7 +65,7 @@ async fn ansatt(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) 
             fodselsnummer: fnr.into(),
             navn: navn.into(),
             stilling: Some("Utvikler".into()),
-            ansatt_fra: dato(2025, 1, 1),
+            ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(lonn),
             timelonn_ore: None,
             trekk_type: "prosent".into(),
@@ -92,14 +92,14 @@ async fn voucher_sum(pool: &PgPool, voucher_id: Uuid) -> i64 {
     .unwrap()
 }
 
-async fn konto_belop(pool: &PgPool, voucher_id: Uuid, konto: &str) -> i64 {
+async fn account_amount(pool: &PgPool, voucher_id: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
          join account a on a.id = e.account_id
          where e.voucher_id = $1 and a.number = $2",
     )
     .bind(voucher_id)
-    .bind(konto)
+    .bind(account)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -117,7 +117,7 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
         company,
         2026,
         3,
-        dato(2026, 3, 25),
+        date(2026, 3, 25),
         "I",
         &[Lonnspost {
             employee_id: a,
@@ -142,31 +142,31 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
     assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
 
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "5000").await,
+        account_amount(&pool, kjoring.voucher_id, "5000").await,
         5_000_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "2600").await,
+        account_amount(&pool, kjoring.voucher_id, "2600").await,
         -1_750_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "2930").await,
+        account_amount(&pool, kjoring.voucher_id, "2930").await,
         -3_250_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "5090").await,
+        account_amount(&pool, kjoring.voucher_id, "5090").await,
         510_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "2940").await,
+        account_amount(&pool, kjoring.voucher_id, "2940").await,
         -510_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "5400").await,
+        account_amount(&pool, kjoring.voucher_id, "5400").await,
         705_000
     );
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "2770").await,
+        account_amount(&pool, kjoring.voucher_id, "2770").await,
         -705_000
     );
 }
@@ -185,7 +185,7 @@ async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
         company,
         2026,
         6,
-        dato(2026, 6, 20),
+        date(2026, 6, 20),
         "I",
         &[Lonnspost {
             employee_id: a,
@@ -205,12 +205,12 @@ async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
 
     // 5000 carries ONLY ordinary pay — the feriepenger are not a new cost.
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "5000").await,
+        account_amount(&pool, kjoring.voucher_id, "5000").await,
         3_000_000
     );
     // 2940 is debited 4 000 000 (drawdown) and credited 306 000 (new accrual).
     assert_eq!(
-        konto_belop(&pool, kjoring.voucher_id, "2940").await,
+        account_amount(&pool, kjoring.voucher_id, "2940").await,
         4_000_000 - 306_000
     );
     // The avgift falls on everything actually paid out, feriepenger included.
@@ -228,7 +228,7 @@ async fn december_withholds_half() {
         company,
         2026,
         12,
-        dato(2026, 12, 15),
+        date(2026, 12, 15),
         "I",
         &[Lonnspost {
             employee_id: a,
@@ -258,7 +258,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
         company,
         2026,
         4,
-        dato(2026, 4, 25),
+        date(2026, 4, 25),
         "V",
         &[Lonnspost {
             employee_id: a,
@@ -279,7 +279,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
         company,
         2026,
         5,
-        dato(2026, 5, 25),
+        date(2026, 5, 25),
         "Ia",
         &[Lonnspost {
             employee_id: a,
@@ -305,7 +305,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
             fodselsnummer: "08888797336".into(),
             navn: "Tabell Trekksen".into(),
             stilling: None,
-            ansatt_fra: dato(2025, 1, 1),
+            ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(5_000_000),
             timelonn_ore: None,
             trekk_type: "tabell".into(),
@@ -325,7 +325,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
         company,
         2026,
         3,
-        dato(2026, 3, 25),
+        date(2026, 3, 25),
         "I",
         &[Lonnspost {
             employee_id: a,
@@ -360,7 +360,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
         company,
         2026,
         7,
-        dato(2026, 7, 25),
+        date(2026, 7, 25),
         "I",
         &post(),
         "Test",
@@ -374,7 +374,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
         company,
         2026,
         7,
-        dato(2026, 7, 25),
+        date(2026, 7, 25),
         "I",
         &post(),
         "Test",
@@ -417,7 +417,7 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 
     let ansatte = lonn::list_ansatte(&pool, company).await.unwrap();
     assert_eq!(ansatte.len(), 1);
-    assert_eq!(ansatte[0].fodselsdato, Some(dato(1993, 2, 26)));
+    assert_eq!(ansatte[0].birth_date, Some(date(1993, 2, 26)));
     assert!(
         !format!("{:?}", ansatte[0]).contains("26829398612"),
         "fødselsnummeret skal ikke ligge i ansattlisten"
@@ -435,7 +435,7 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
             fodselsnummer: "26829398613".into(),
             navn: "Feil Nummer".into(),
             stilling: None,
-            ansatt_fra: dato(2025, 1, 1),
+            ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(1),
             timelonn_ore: None,
             trekk_type: "ingen".into(),
@@ -474,7 +474,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
         company,
         2026,
         5,
-        dato(2026, 5, 25),
+        date(2026, 5, 25),
         "I",
         &post(0),
         "Test",
@@ -486,7 +486,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
         company,
         2026,
         6,
-        dato(2026, 6, 20),
+        date(2026, 6, 20),
         "I",
         &post(4_000_000),
         "Test",
@@ -497,7 +497,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     let slipp = lonn::lonnsslipp(&pool, company, juni.id, a).await.unwrap();
     assert_eq!(slipp.ansatt_navn, "Kari Utvikler");
     // Birth date, not fødselsnummer — on the payslip too.
-    assert_eq!(slipp.ansatt_fodselsdato, Some(dato(1993, 2, 26)));
+    assert_eq!(slipp.employee_birth_date, Some(date(1993, 2, 26)));
     // Brutto on the slip is EVERYTHING paid out; the trekkgrunnlag is less.
     assert_eq!(slipp.brutto_ore, 9_000_000);
     assert_eq!(slipp.trekkgrunnlag_ore, 5_000_000);
@@ -554,7 +554,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             fodselsnummer: "25927898821".into(),
             navn: "Timelønnet".into(),
             stilling: None,
-            ansatt_fra: dato(2025, 1, 1),
+            ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000), // 450 kr/t
             trekk_type: "prosent".into(),
@@ -582,7 +582,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             company,
             person,
             &regnmed_db::timesheet::TimeEntryDraft {
-                dato: dato(2026, 3, dag),
+                date: date(2026, 3, dag),
                 minutter: 400,
                 beskrivelse: "Arbeid".into(),
                 project: None,
@@ -600,7 +600,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         .await
         .unwrap();
     assert_eq!(g.minutter, 1200, "20 timer");
-    assert_eq!(g.belop_ore, 900_000, "20 t x 450 kr = 9 000 kr");
+    assert_eq!(g.amount_ore, 900_000, "20 t x 450 kr = 9 000 kr");
     assert!(!g.laast, "ikke låst ennå");
 
     let post = || {
@@ -618,7 +618,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         company,
         2026,
         3,
-        dato(2026, 3, 25),
+        date(2026, 3, 25),
         "I",
         &post(),
         "Test",
@@ -628,7 +628,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     assert!(feil.to_string().contains("ikke låst"), "{feil}");
 
     // Lock the month, and the run goes through.
-    regnmed_db::timesheet::set_timesheet_lock(&pool, company, dato(2026, 3, 31), "Test", None)
+    regnmed_db::timesheet::set_timesheet_lock(&pool, company, date(2026, 3, 31), "Test", None)
         .await
         .unwrap();
     let g = lonn::timegrunnlag(&pool, company, a, 2026, 3)
@@ -641,7 +641,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         company,
         2026,
         3,
-        dato(2026, 3, 25),
+        date(2026, 3, 25),
         "I",
         &post(),
         "Test",
@@ -677,14 +677,14 @@ async fn an_employee_without_a_portal_user_fails_clearly() {
 // ---------------------------------------------------------------------
 
 /// The balance of an account for the WHOLE company, not just one bilag.
-async fn konto_saldo(pool: &PgPool, company: Uuid, konto: &str) -> i64 {
+async fn account_balance(pool: &PgPool, company: Uuid, account: &str) -> i64 {
     sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
          join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company)
-    .bind(konto)
+    .bind(account)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -704,7 +704,7 @@ async fn kjor(
         company,
         2026,
         maned,
-        dato(2026, maned, 20),
+        date(2026, maned, 20),
         sone,
         &[Lonnspost {
             employee_id: a,
@@ -731,8 +731,8 @@ async fn the_accrual_on_unpaid_feriepenger_is_posted() {
     assert_eq!(k.sum.feriepengeavsetning_ore, 510_000);
     assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
     assert_eq!(voucher_sum(&pool, k.voucher_id).await, 0);
-    assert_eq!(konto_belop(&pool, k.voucher_id, "5405").await, 71_910);
-    assert_eq!(konto_belop(&pool, k.voucher_id, "2780").await, -71_910);
+    assert_eq!(account_amount(&pool, k.voucher_id, "5405").await, 71_910);
+    assert_eq!(account_amount(&pool, k.voucher_id, "2780").await, -71_910);
     assert!(k.advarsler.is_empty(), "{:?}", k.advarsler);
 }
 
@@ -762,8 +762,8 @@ async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
 
     // And afterwards both accounts stand at zero: no liability left, no
     // accrual left.
-    assert_eq!(konto_saldo(&pool, company, "2940").await, 0);
-    assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
+    assert_eq!(account_balance(&pool, company, "2940").await, 0);
+    assert_eq!(account_balance(&pool, company, "2780").await, 0);
 }
 
 /// A feriepenger liability that carries no accrual — because it was
@@ -779,7 +779,7 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
     let uten = kjor(&pool, company, a, 3, "V", None, 0).await;
     assert_eq!(uten.sum.aga_feriepenger_ore, 0);
-    assert_eq!(konto_saldo(&pool, company, "2780").await, 0);
+    assert_eq!(account_balance(&pool, company, "2780").await, 0);
 
     // The business moves to sone I. Now it owes avgift on EVERYTHING
     // outstanding, not only on this month's earning.
@@ -790,7 +790,7 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
         skyldig * 1410 / 10_000,
         "hele gjelden får avsetning, ikke bare den nye måneden"
     );
-    assert_eq!(konto_saldo(&pool, company, "2780").await, -143_820);
+    assert_eq!(account_balance(&pool, company, "2780").await, -143_820);
 }
 
 /// The invariant that keeps the accrual from drifting: after any run, the
@@ -808,7 +808,7 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
             company,
             2026,
             maned,
-            dato(2026, maned, 20),
+            date(2026, maned, 20),
             "I",
             &[
                 Lonnspost {
@@ -849,11 +849,11 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
 
         assert_eq!(
             per_ansatt.iter().sum::<i64>(),
-            -konto_saldo(&pool, company, "2940").await,
+            -account_balance(&pool, company, "2940").await,
             "etter {maned:02}/2026: lønnshistorikken skal forklare hele 2940"
         );
         assert_eq!(
-            -konto_saldo(&pool, company, "2780").await,
+            -account_balance(&pool, company, "2780").await,
             ventet,
             "etter {maned:02}/2026: 2780 skal være 14,1 % av hver ansatts gjeld"
         );
@@ -873,9 +873,9 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
     // The regnskapsfører accrues feriepenger manually, with no employee link.
     use regnmed_core::Ore;
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-    let linje = |konto: &str, belop: i64| EntryDraft {
-        account_number: konto.into(),
-        amount: Ore(belop),
+    let linje = |account: &str, amount: i64| EntryDraft {
+        account_number: account.into(),
+        amount: Ore(amount),
         vat_code: None,
         description: Some("Overtatt feriepengegjeld".into()),
         party_no: None,
@@ -888,7 +888,7 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
         company,
         &VoucherDraft {
             journal_code: "GL".into(),
-            voucher_date: dato(2026, 1, 1),
+            voucher_date: date(2026, 1, 1),
             description: "Åpningsbalanse feriepenger".into(),
             reverses: None,
             entries: vec![linje("5090", 1_000_000), linje("2940", -1_000_000)],

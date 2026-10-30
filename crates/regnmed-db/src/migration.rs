@@ -164,16 +164,16 @@ pub struct OpenItemsPlan {
     /// created by the import, listed here so nobody is surprised.
     pub nye_parter: Vec<String>,
     /// The account's balance right now; must be zero to import.
-    pub konto_saldo_ore: i64,
+    pub account_balance_ore: i64,
     pub advarsler: Vec<String>,
 }
 
-fn line_amount(kind: PartyKind, belop_ore: i64) -> i64 {
+fn line_amount(kind: PartyKind, amount_ore: i64) -> i64 {
     match kind {
         // A customer owing us is a debit; a supplier we owe is a credit.
         // Credit notes keep their own sign through the negation.
-        PartyKind::Customer => belop_ore,
-        PartyKind::Supplier => -belop_ore,
+        PartyKind::Customer => amount_ore,
+        PartyKind::Supplier => -amount_ore,
     }
 }
 
@@ -183,7 +183,7 @@ pub async fn plan_open_items(
     pool: &PgPool,
     company_id: Uuid,
     kind: PartyKind,
-    konto: &str,
+    account: &str,
     rader: &[OpenItemRow],
 ) -> Result<OpenItemsPlan> {
     let saldo: Option<i64> = sqlx::query_scalar(
@@ -192,10 +192,10 @@ pub async fn plan_open_items(
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .fetch_optional(pool)
     .await?;
-    let konto_saldo_ore = saldo.context("no such account")?;
+    let account_balance_ore = saldo.context("no such account")?;
 
     let mut nye_parter = Vec::new();
     let mut advarsler = Vec::new();
@@ -227,7 +227,7 @@ pub async fn plan_open_items(
         antall: rader.len(),
         sum_ore: rader.iter().map(|r| line_amount(kind, r.amount_ore)).sum(),
         nye_parter,
-        konto_saldo_ore,
+        account_balance_ore,
         advarsler,
     })
 }
@@ -248,15 +248,15 @@ pub async fn import_open_items(
     pool: &PgPool,
     company_id: Uuid,
     kind: PartyKind,
-    konto: &str,
-    motkonto: &str,
-    dato: NaiveDate,
+    account: &str,
+    contra_account: &str,
+    date: NaiveDate,
     rader: &[OpenItemRow],
     created_by: &str,
 ) -> Result<OpenItemsReport> {
     ensure!(!rader.is_empty(), "filen inneholder ingen åpne poster");
     ensure!(
-        konto != motkonto,
+        account != contra_account,
         "konto og motkonto kan ikke være den samme"
     );
 
@@ -267,13 +267,13 @@ pub async fn import_open_items(
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .fetch_optional(&mut *tx)
     .await?;
     let saldo = saldo.context("no such account")?;
     if saldo != 0 {
         bail!(
-            "konto {konto} har allerede saldo {} øre — åpne poster ERSTATTER samlelinjen, \
+            "konto {account} har allerede saldo {} øre — åpne poster ERSTATTER samlelinjen, \
              de legges ikke oppå den. Utelat kontoen fra åpningsbalansen (eller reverser \
              samlelinjen) og kjør importen på nytt",
             saldo
@@ -286,12 +286,12 @@ pub async fn import_open_items(
     let updated =
         sqlx::query("update account set reskontro_kind = $3 where company_id = $1 and number = $2")
             .bind(company_id)
-            .bind(konto)
+            .bind(account)
             .bind(kind.as_str())
             .execute(&mut *tx)
             .await?
             .rows_affected();
-    ensure!(updated == 1, "no account {konto}");
+    ensure!(updated == 1, "no account {account}");
 
     let mut advarsler = Vec::new();
     let mut opprettede_parter = 0usize;
@@ -323,7 +323,7 @@ pub async fn import_open_items(
             tekst = format!("{tekst} forfall {forfall}");
         }
         entries.push(EntryDraft {
-            account_number: konto.to_string(),
+            account_number: account.to_string(),
             amount: Ore(line_amount(kind, rad.amount_ore)),
             vat_code: None,
             description: Some(tekst),
@@ -335,7 +335,7 @@ pub async fn import_open_items(
     }
     let sum_ore: i64 = entries.iter().map(|e| e.amount.0).sum();
     entries.push(EntryDraft {
-        account_number: motkonto.to_string(),
+        account_number: contra_account.to_string(),
         amount: Ore(-sum_ore),
         vat_code: None,
         description: Some("Motpost åpne poster ved migrering".into()),
@@ -347,7 +347,7 @@ pub async fn import_open_items(
 
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
+        voucher_date: date,
         description: format!(
             "Åpne poster {} ved migrering",
             match kind {

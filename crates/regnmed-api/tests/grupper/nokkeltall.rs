@@ -34,9 +34,9 @@ async fn request(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, serd
     )
 }
 
-fn entry(konto: &str, amount: i64, party: Option<&str>) -> EntryDraft {
+fn entry(account: &str, amount: i64, party: Option<&str>) -> EntryDraft {
     EntryDraft {
-        account_number: konto.into(),
+        account_number: account.into(),
         amount: Ore(amount),
         vat_code: None,
         description: None,
@@ -47,11 +47,11 @@ fn entry(konto: &str, amount: i64, party: Option<&str>) -> EntryDraft {
     }
 }
 
-fn bilag(dato: chrono::NaiveDate, entries: Vec<EntryDraft>) -> VoucherDraft {
+fn bilag(date: chrono::NaiveDate, entries: Vec<EntryDraft>) -> VoucherDraft {
     VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: dato,
-        description: format!("Bilag {dato}"),
+        voucher_date: date,
+        description: format!("Bilag {date}"),
         reverses: None,
         entries,
     }

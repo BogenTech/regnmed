@@ -122,8 +122,8 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         },
         fakturanr: head.get::<i64, _>("invoice_no").to_string(),
         krediterer: krediterer_nr.map(|no| no.to_string()),
-        fakturadato: invoice_date,
-        forfallsdato: Some(head.get("due_date")),
+        invoice_date: invoice_date,
+        due_date: Some(head.get("due_date")),
         currency: head
             .get::<Option<String>, _>("valuta")
             .unwrap_or_else(|| "NOK".into()),
@@ -132,7 +132,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         kjopers_referanse: head.get::<Option<String>, _>("party_no"),
         // BT-72. Null only on invoices issued before #81 — the element
         // is then omitted rather than filled with a guess.
-        leveringsdato: head.get("delivery_date"),
+        delivery_date: head.get("delivery_date"),
         leveringssted: head.get("delivery_place"),
         selger: EhfPart {
             navn: head.get("selger_navn"),
@@ -161,7 +161,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             mva_registrert: false,
             epost: head.get("kjoper_epost"),
         },
-        kontonummer: head.get("bank_account"),
+        account_number: head.get("bank_account"),
         // cbc:PaymentID tells the payer how to mark the payment, so it
         // follows the bank agreement exactly as the printed KID does (#104).
         kid: head
@@ -257,10 +257,10 @@ pub struct Bokforingsforslag {
     pub selger_navn: Option<String>,
     pub orgnr: Option<String>,
     pub fakturanr: Option<String>,
-    pub dato: Option<chrono::NaiveDate>,
+    pub date: Option<chrono::NaiveDate>,
     pub forfall: Option<chrono::NaiveDate>,
     pub kid: Option<String>,
-    pub kontonummer: Option<String>,
+    pub account_number: Option<String>,
     pub netto_ore: Option<i64>,
     pub mva_ore: Option<i64>,
     pub brutto_ore: Option<i64>,
@@ -269,8 +269,8 @@ pub struct Bokforingsforslag {
     /// The account this supplier was posted to last time — the single
     /// most useful suggestion we can make, and it comes from the
     /// company's own history, not from a model.
-    pub konto: Option<String>,
-    pub konto_begrunnelse: Option<String>,
+    pub account: Option<String>,
+    pub account_reason: Option<String>,
     /// Per-field provenance, shown next to the value in the UI.
     pub begrunnelser: Vec<(String, String)>,
     pub advarsler: Vec<String>,
@@ -289,17 +289,17 @@ pub async fn inbox_forslag(
         selger_navn: None,
         orgnr: None,
         fakturanr: None,
-        dato: None,
+        date: None,
         forfall: None,
         kid: None,
-        kontonummer: None,
+        account_number: None,
         netto_ore: None,
         mva_ore: None,
         brutto_ore: None,
         leverandor_no: None,
         leverandor_navn: None,
-        konto: None,
-        konto_begrunnelse: None,
+        account: None,
+        account_reason: None,
         begrunnelser: Vec::new(),
         advarsler: Vec::new(),
     };
@@ -315,10 +315,10 @@ pub async fn inbox_forslag(
         forslag.selger_navn = Some(m.selger_navn.clone());
         forslag.orgnr = m.selger_orgnr.clone();
         forslag.fakturanr = Some(m.fakturanr.clone());
-        forslag.dato = m.fakturadato;
-        forslag.forfall = m.forfallsdato;
+        forslag.date = m.invoice_date;
+        forslag.forfall = m.due_date;
         forslag.kid = m.kid.clone();
-        forslag.kontonummer = m.kontonummer.clone();
+        forslag.account_number = m.account_number.clone();
         forslag.netto_ore = Some(m.netto_ore);
         forslag.mva_ore = Some(m.mva_ore);
         forslag.brutto_ore = Some(m.brutto_ore);
@@ -367,11 +367,11 @@ pub async fn inbox_forslag(
                     note("kid", &f.reason);
                 }
                 if let Some(f) = &t.account_number {
-                    forslag.kontonummer = Some(f.value.clone());
+                    forslag.account_number = Some(f.value.clone());
                     note("kontonummer", &f.reason);
                 }
                 if let Some(f) = &t.date {
-                    forslag.dato = Some(f.value);
+                    forslag.date = Some(f.value);
                     note("dato", &f.reason);
                 }
                 if let Some(f) = &t.due_date {
@@ -407,13 +407,13 @@ pub async fn inbox_forslag(
             Some(r) => {
                 let party_no: String = r.get("party_no");
                 forslag.leverandor_navn = Some(r.get("name"));
-                if let Some((konto, dato)) =
-                    siste_kostnadskonto(pool, company_id, &party_no).await?
+                if let Some((account, date)) =
+                    last_expense_account(pool, company_id, &party_no).await?
                 {
-                    forslag.konto_begrunnelse = Some(format!(
-                        "samme leverandør ble sist bokført på {konto} ({dato})"
+                    forslag.account_reason = Some(format!(
+                        "samme leverandør ble sist bokført på {account} ({date})"
                     ));
-                    forslag.konto = Some(konto);
+                    forslag.account = Some(account);
                 }
                 forslag.leverandor_no = Some(party_no);
             }
@@ -427,7 +427,7 @@ pub async fn inbox_forslag(
 
 /// The cost account most recently used on a voucher that also touched
 /// this supplier. Pure query over the company's own history.
-async fn siste_kostnadskonto(
+async fn last_expense_account(
     pool: &PgPool,
     company_id: Uuid,
     party_no: &str,

@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn kontonummer_mod11() {
+    fn account_number_mod11() {
         assert!(is_valid_account_number("86011117947"));
         assert!(is_valid_account_number("8601.11.17947"), "punktum godtas");
         assert!(is_valid_account_number("8601 11 17947"));

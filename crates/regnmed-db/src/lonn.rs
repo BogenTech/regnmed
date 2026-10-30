@@ -57,7 +57,7 @@ pub struct Ansatt {
     /// the same as in the aksjeeierbok: the list carries the birth date,
     /// not the fødselsnummer. The number is fetched only when the
     /// a-melding is to be built.
-    pub fodselsdato: Option<NaiveDate>,
+    pub birth_date: Option<NaiveDate>,
     pub ansatt_fra: NaiveDate,
     pub ansatt_til: Option<NaiveDate>,
     pub manedslonn_ore: Option<i64>,
@@ -156,10 +156,10 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Ansatt {
         id: r.get("id"),
         navn: r.get("navn"),
         stilling: r.get("stilling"),
-        fodselsdato: r
+        birth_date: r
             .get::<String, _>("fodselsnummer")
             .as_str()
-            .pipe_fodselsdato(),
+            .pipe_birth_date(),
         ansatt_fra: r.get("ansatt_fra"),
         ansatt_til: r.get("ansatt_til"),
         manedslonn_ore: r.get("manedslonn_ore"),
@@ -176,11 +176,11 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Ansatt {
     }
 }
 
-trait Fodselsdato {
-    fn pipe_fodselsdato(&self) -> Option<NaiveDate>;
+trait BirthDate {
+    fn pipe_birth_date(&self) -> Option<NaiveDate>;
 }
-impl Fodselsdato for &str {
-    fn pipe_fodselsdato(&self) -> Option<NaiveDate> {
+impl BirthDate for &str {
+    fn pipe_birth_date(&self) -> Option<NaiveDate> {
         regnmed_core::nin::birth_date(self)
     }
 }
@@ -204,7 +204,7 @@ pub struct Lonnskjoring {
     pub id: Uuid,
     pub ar: i32,
     pub maned: u32,
-    pub utbetalt_dato: NaiveDate,
+    pub paid_date: NaiveDate,
     pub sone: String,
     pub sum: Lonnssum,
     pub voucher_id: Uuid,
@@ -269,14 +269,14 @@ async fn feriepengehistorikk(
         .collect())
 }
 
-async fn konto_saldo(pool: &PgPool, company_id: Uuid, konto: &str) -> Result<i64> {
+async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Result<i64> {
     let saldo: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company_id)
-    .bind(konto)
+    .bind(account)
     .fetch_one(pool)
     .await?;
     Ok(saldo)
@@ -317,7 +317,7 @@ pub async fn kjor_lonn(
     company_id: Uuid,
     ar: i32,
     maned: u32,
-    utbetalt_dato: NaiveDate,
+    paid_date: NaiveDate,
     sone_slug: &str,
     poster: &[Lonnspost],
     created_by: &str,
@@ -335,11 +335,11 @@ pub async fn kjor_lonn(
 
     let alle_satser = satser(pool).await?;
     let aga_domene = sone.sats_domene();
-    let aga_bp = regnmed_core::rates::value_on(&alle_satser, &aga_domene, utbetalt_dato)
-        .ok_or_else(|| {
+    let aga_bp =
+        regnmed_core::rates::value_on(&alle_satser, &aga_domene, paid_date).ok_or_else(|| {
             anyhow::anyhow!(
                 "{}",
-                lonn::LonnError::ManglerSats(aga_domene.clone(), utbetalt_dato)
+                lonn::LonnError::ManglerSats(aga_domene.clone(), paid_date)
             )
         })?;
 
@@ -381,7 +381,7 @@ pub async fn kjor_lonn(
                 "{} har ingen førte timer i {maned:02}/{ar}",
                 ansatt.navn
             );
-            grunnlag.belop_ore
+            grunnlag.amount_ore
         } else {
             post.brutto_ore.or(ansatt.manedslonn_ore).with_context(|| {
                 format!("{} har verken månedslønn eller oppgitt beløp", ansatt.navn)
@@ -564,7 +564,7 @@ pub async fn kjor_lonn(
 
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: utbetalt_dato,
+        voucher_date: paid_date,
         description: format!("Lønnskjøring {maned:02}/{ar}"),
         reverses: None,
         entries,
@@ -608,7 +608,7 @@ pub async fn kjor_lonn(
     .bind(company_id)
     .bind(ar)
     .bind(maned as i32)
-    .bind(utbetalt_dato)
+    .bind(paid_date)
     .bind(sone_slug)
     .bind(sum.brutto_ore)
     .bind(sum.feriepenger_utbetalt_ore)
@@ -661,7 +661,7 @@ pub async fn kjor_lonn(
         id: run_id,
         ar,
         maned,
-        utbetalt_dato,
+        paid_date,
         sone: sone_slug.to_string(),
         sum,
         voucher_id: posted.id,
@@ -687,7 +687,7 @@ pub async fn kjor_lonn(
 /// either ignoring it or inventing an accrual for a liability we cannot
 /// attribute to anyone.
 async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<String>> {
-    let i_hovedboken = -konto_saldo(pool, company_id, KONTO_SKYLDIG_FERIEPENGER).await?;
+    let i_hovedboken = -account_balance(pool, company_id, KONTO_SKYLDIG_FERIEPENGER).await?;
     let fra_lonn: i64 = feriepengehistorikk(pool, company_id)
         .await?
         .values()
@@ -734,7 +734,7 @@ pub async fn list_kjoringer(
             id: r.get("id"),
             ar: r.get("ar"),
             maned: r.get::<i32, _>("maned") as u32,
-            utbetalt_dato: r.get("utbetalt_dato"),
+            paid_date: r.get("utbetalt_dato"),
             sone: r.get("sone"),
             sum: Lonnssum {
                 brutto_ore: r.get("brutto_ore"),
@@ -844,12 +844,12 @@ pub async fn lonnsslipp(
 
     let mut linjer = vec![Slipplinje {
         tekst: "Fastlønn".into(),
-        belop_ore: brutto,
+        amount_ore: brutto,
     }];
     if feriepenger != 0 {
         linjer.push(Slipplinje {
             tekst: "Feriepenger".into(),
-            belop_ore: feriepenger,
+            amount_ore: feriepenger,
         });
     }
 
@@ -862,13 +862,13 @@ pub async fn lonnsslipp(
         ansatt_stilling: row.get("stilling"),
         // Birth date, not fødselsnummer — even on a document sent to the
         // employee themselves.
-        ansatt_fodselsdato: row
+        employee_birth_date: row
             .get::<String, _>("fodselsnummer")
             .as_str()
-            .pipe_fodselsdato(),
+            .pipe_birth_date(),
         ar,
         maned: row.get::<i32, _>("maned") as u32,
-        utbetalt_dato: row.get("utbetalt_dato"),
+        paid_date: row.get("utbetalt_dato"),
         linjer,
         brutto_ore: brutto + feriepenger,
         trekkgrunnlag_ore: row.get("trekkgrunnlag_ore"),
@@ -909,7 +909,7 @@ pub async fn ansatt_person(
 pub struct Timegrunnlag {
     pub minutter: i64,
     pub timesats_ore: i64,
-    pub belop_ore: i64,
+    pub amount_ore: i64,
     /// The timesheet is locked through the end of this month.
     pub laast: bool,
 }
@@ -973,7 +973,7 @@ pub async fn timegrunnlag(
     Ok(Timegrunnlag {
         minutter,
         timesats_ore: timesats,
-        belop_ore: regnmed_core::lonn::timelonn(minutter, timesats),
+        amount_ore: regnmed_core::lonn::timelonn(minutter, timesats),
         laast,
     })
 }

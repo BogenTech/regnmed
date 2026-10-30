@@ -246,9 +246,9 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
 
     // Cost: 3 000 on the project; the bank leg carries no dimension and
     // must stay out of the project's economics.
-    let linje = |konto: &str, belop: i64, project: Option<&str>| EntryDraft {
-        account_number: konto.into(),
-        amount: Ore(belop),
+    let linje = |account: &str, amount: i64, project: Option<&str>| EntryDraft {
+        account_number: account.into(),
+        amount: Ore(amount),
         vat_code: None,
         description: Some("Materialkjøp".into()),
         party_no: None,
@@ -277,8 +277,8 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     // Hours: 60 min billed (through the ordinary timesheet invoice,
     // which adds 1 000 revenue on the project), 90 min still on the
     // table. Sats 1 000 kr/t.
-    let time = |dato: chrono::NaiveDate| regnmed_db::timesheet::TimeEntryDraft {
-        dato,
+    let time = |date: chrono::NaiveDate| regnmed_db::timesheet::TimeEntryDraft {
+        date,
         minutter: 60,
         beskrivelse: "Prosjektarbeid".into(),
         project: Some("PL1".into()),

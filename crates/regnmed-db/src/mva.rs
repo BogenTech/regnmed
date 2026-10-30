@@ -85,7 +85,7 @@ pub async fn mva_spesifikasjon(
 pub async fn terminordning_on(
     pool: &PgPool,
     company_id: uuid::Uuid,
-    dato: chrono::NaiveDate,
+    date: chrono::NaiveDate,
 ) -> Result<regnmed_core::mva::Terminordning> {
     let row: Option<String> = sqlx::query_scalar(
         "select ordning from mva_terminordning
@@ -93,7 +93,7 @@ pub async fn terminordning_on(
          order by valid_from desc limit 1",
     )
     .bind(company_id)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?;
     Ok(row

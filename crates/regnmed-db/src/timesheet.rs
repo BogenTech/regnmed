@@ -14,7 +14,7 @@ use crate::invoice::{InvoiceDraft, InvoiceLineDraft, IssuedInvoice, create_invoi
 
 #[derive(Debug)]
 pub struct TimeEntryDraft {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub minutter: i32,
     pub beskrivelse: String,
     /// Prosjekt dimension CODE (resolved against the registry).
@@ -62,7 +62,7 @@ async fn resolve_sats(
     pool: &PgPool,
     dimension_id: Uuid,
     person_id: Uuid,
-    dato: NaiveDate,
+    date: NaiveDate,
 ) -> Result<Option<i64>> {
     Ok(sqlx::query_scalar(
         "select timesats_ore from prosjekt_sats
@@ -73,7 +73,7 @@ async fn resolve_sats(
     )
     .bind(dimension_id)
     .bind(person_id)
-    .bind(dato)
+    .bind(date)
     .fetch_optional(pool)
     .await?)
 }
@@ -100,7 +100,7 @@ async fn resolve_billing(
         return Ok((true, draft.timesats_ore));
     }
     let sats = match project {
-        Some(p) => resolve_sats(pool, p.id, person_id, draft.dato).await?,
+        Some(p) => resolve_sats(pool, p.id, person_id, draft.date).await?,
         None => None,
     };
     ensure!(
@@ -141,7 +141,7 @@ pub async fn create_time_entry(
     .bind(id)
     .bind(company_id)
     .bind(person_id)
-    .bind(draft.dato)
+    .bind(draft.date)
     .bind(draft.minutter)
     .bind(&draft.beskrivelse)
     .bind(prosjekt_id)
@@ -188,7 +188,7 @@ pub async fn update_time_entry(
     .bind(entry_id)
     .bind(company_id)
     .bind(if own_only { Some(person_id) } else { None })
-    .bind(draft.dato)
+    .bind(draft.date)
     .bind(draft.minutter)
     .bind(&draft.beskrivelse)
     .bind(prosjekt_id)
@@ -233,7 +233,7 @@ pub struct TimeEntryRow {
     pub id: Uuid,
     pub person_name: String,
     pub own: bool,
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub minutter: i32,
     pub beskrivelse: String,
     pub project: Option<String>,
@@ -277,7 +277,7 @@ pub async fn list_time_entries(
             id: r.get("id"),
             person_name: r.get("person_name"),
             own: r.get("own"),
-            dato: r.get("dato"),
+            date: r.get("dato"),
             minutter: r.get("minutter"),
             beskrivelse: r.get("beskrivelse"),
             project: r.get("prosjekt"),
@@ -411,7 +411,7 @@ struct UnbilledRow {
     minutter: i64,
     /// The day the work was done — the leveringstidspunkt of an hours
     /// invoice is the last of these, not the day someone billed it.
-    dato: NaiveDate,
+    date: NaiveDate,
 }
 
 async fn unbilled_rows(
@@ -449,7 +449,7 @@ async fn unbilled_rows(
             kunde_navn: row.get("kunde_navn"),
             timesats_ore: row.get("timesats_ore"),
             minutter: i64::from(row.get::<i32, _>("minutter")),
-            dato: row.get("dato"),
+            date: row.get("dato"),
         })
         .collect())
 }
@@ -459,7 +459,7 @@ async fn unbilled_rows(
 /// delivered — the invoice date only says when someone got around to
 /// billing it, and may be weeks later.
 fn siste_arbeidsdag(rows: &[UnbilledRow]) -> Option<NaiveDate> {
-    rows.iter().map(|r| r.dato).max()
+    rows.iter().map(|r| r.date).max()
 }
 
 fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {

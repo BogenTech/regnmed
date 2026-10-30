@@ -236,7 +236,7 @@ pub fn read(text: &str) -> Hints {
         // --- Amounts ---
         // «Å betale» is the one number on an invoice that means exactly
         // one thing, so it beats «sum» and «total».
-        let belop_stikkord: &[(&str, &str)] = &[
+        let amount_keyword: &[(&str, &str)] = &[
             ("a betale", "«å betale»"),
             ("belop a betale", "«beløp å betale»"),
             ("total inkl", "«total inkl. mva»"),
@@ -244,17 +244,17 @@ pub fn read(text: &str) -> Hints {
             ("sum inkl", "«sum inkl. mva»"),
             ("totalsum", "«totalsum»"),
         ];
-        for (nokkel, vist) in belop_stikkord {
+        for (nokkel, vist) in amount_keyword {
             if lower.contains(nokkel)
-                && let Some(belop) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
-                && belop > 0
+                && let Some(amount) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
+                && amount > 0
             {
                 let stronger = hints
                     .amount_ore
                     .as_ref()
                     .is_none_or(|f| !f.reason.contains("å betale"));
                 if stronger {
-                    hints.amount_ore = Some(Finding::new(belop, format!("etter {vist}")));
+                    hints.amount_ore = Some(Finding::new(amount, format!("etter {vist}")));
                 }
                 break;
             }
@@ -263,10 +263,10 @@ pub fn read(text: &str) -> Hints {
             && (lower.contains("mva") || lower.contains("merverdiavgift"))
             && !lower.contains("orgnr")
             && !lower.contains("inkl")
-            && let Some(belop) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
-            && belop > 0
+            && let Some(amount) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
+            && amount > 0
         {
-            hints.vat_ore = Some(Finding::new(belop, "etter «mva»"));
+            hints.vat_ore = Some(Finding::new(amount, "etter «mva»"));
         }
     }
     hints

@@ -109,16 +109,16 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     .await
     .unwrap();
 
-    let dato = d(2026, 4, 3);
+    let date = d(2026, 4, 3);
     let utstedt = regnmed_db::invoice::create_kontantfaktura(
         &pool,
         company,
         &regnmed_db::InvoiceDraft {
             kontant_betalingsmiddel: None, // create_kontantfaktura sets it
             party_no: party_no.clone(),
-            invoice_date: dato,
-            due_date: dato,
-            delivery_date: dato,
+            invoice_date: date,
+            due_date: date,
+            delivery_date: date,
             delivery_place: None,
             journal_code: "GL".into(),
             receivable_account: "1500".into(),
@@ -225,7 +225,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
         &pool,
         company,
         &regnmed_db::cash_register::DagsoppgjorInn {
-            dato: d(2026, 4, 3),
+            date: d(2026, 4, 3),
             z_nummer: "0042".into(),
             salg: vec![
                 ("3000".into(), Some("3".into()), 12_500_00),
@@ -233,10 +233,10 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
             ],
             betaling: vec![("1900".into(), 4_800_00), ("1571".into(), 10_000_00)],
             mva_konto: "2700".into(),
-            kontantkonto: Some("1900".into()),
+            cash_account: Some("1900".into()),
             // 50 kr short in the till.
             opptalt_kontant_ore: Some(4_750_00),
-            differansekonto: "7830".into(),
+            difference_account: "7830".into(),
         },
         Some(("z-0042.txt", "text/plain", b"Z-rapport 0042")),
         "test",

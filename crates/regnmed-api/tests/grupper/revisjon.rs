@@ -290,9 +290,9 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
             .unwrap();
     }
 
-    let post = |konto: &'static str,
+    let post = |account: &'static str,
                 ore: i64,
-                motkonto: &'static str,
+                contra_account: &'static str,
                 party_no: Option<String>,
                 dag: u32| {
         let pool = state.pool.clone();
@@ -304,7 +304,7 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
                 reverses: None,
                 entries: vec![
                     EntryDraft {
-                        account_number: konto.into(),
+                        account_number: account.into(),
                         amount: Ore(ore),
                         vat_code: None,
                         description: None,
@@ -314,7 +314,7 @@ async fn the_reskontro_tie_out_names_the_konto_and_the_difference() {
                         currency: None,
                     },
                     EntryDraft {
-                        account_number: motkonto.into(),
+                        account_number: contra_account.into(),
                         amount: Ore(-ore),
                         vat_code: None,
                         description: None,

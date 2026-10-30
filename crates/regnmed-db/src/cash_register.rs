@@ -20,16 +20,16 @@ use uuid::Uuid;
 /// payment means, and optionally what was actually counted in the till.
 #[derive(Debug)]
 pub struct DagsoppgjorInn {
-    pub dato: NaiveDate,
+    pub date: NaiveDate,
     pub z_nummer: String,
     pub salg: Vec<(String, Option<String>, i64)>,
     pub betaling: Vec<(String, i64)>,
     pub mva_konto: String,
     /// The cash account, and what was counted in it. Both or neither —
     /// a counted amount without an account cannot be posted anywhere.
-    pub kontantkonto: Option<String>,
+    pub cash_account: Option<String>,
     pub opptalt_kontant_ore: Option<i64>,
-    pub differansekonto: String,
+    pub difference_account: String,
 }
 
 #[derive(Debug)]
@@ -48,14 +48,14 @@ pub async fn bokfor_dagsoppgjor(
     created_by: &str,
 ) -> Result<BokfortOppgjor> {
     ensure!(
-        inn.kontantkonto.is_some() == inn.opptalt_kontant_ore.is_some(),
+        inn.cash_account.is_some() == inn.opptalt_kontant_ore.is_some(),
         "opptalt kontantbeholdning krever at kontantkontoen oppgis, og omvendt"
     );
 
     // The rate is the one that applied on the settlement date, from the
     // same dated table the invoice engine and the spesifikasjon read.
     let mut salg = Vec::with_capacity(inn.salg.len());
-    for (konto, vat_code, brutto_ore) in &inn.salg {
+    for (account, vat_code, brutto_ore) in &inn.salg {
         let rate_bp = match vat_code {
             None => 0,
             Some(code) => sqlx::query_scalar::<_, i32>(
@@ -65,14 +65,14 @@ pub async fn bokfor_dagsoppgjor(
                  order by r.valid_from desc limit 1",
             )
             .bind(code)
-            .bind(inn.dato)
+            .bind(inn.date)
             .fetch_optional(pool)
             .await?
             .map(i64::from)
-            .with_context(|| format!("ingen mva-sats for kode {code} per {} ", inn.dato))?,
+            .with_context(|| format!("ingen mva-sats for kode {code} per {} ", inn.date))?,
         };
         salg.push(SalesLine {
-            account: konto.clone(),
+            account: account.clone(),
             vat_code: vat_code.clone(),
             rate_bp,
             gross_ore: *brutto_ore,
@@ -80,15 +80,15 @@ pub async fn bokfor_dagsoppgjor(
     }
 
     let oppgjor = DailySettlement {
-        date: inn.dato,
+        date: inn.date,
         z_number: inn.z_nummer.clone(),
         sales: salg,
         payments: inn
             .betaling
             .iter()
-            .map(|(konto, belop_ore)| PaymentLine {
-                account: konto.clone(),
-                amount_ore: *belop_ore,
+            .map(|(account, amount_ore)| PaymentLine {
+                account: account.clone(),
+                amount_ore: *amount_ore,
             })
             .collect(),
         vat_account: inn.mva_konto.clone(),
@@ -115,19 +115,19 @@ pub async fn bokfor_dagsoppgjor(
 
     let mut differanse = None;
     let mut differanse_ore = 0;
-    if let (Some(kontantkonto), Some(opptalt)) = (&inn.kontantkonto, inn.opptalt_kontant_ore) {
+    if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.opptalt_kontant_ore) {
         let registrert: i64 = inn
             .betaling
             .iter()
-            .filter(|(konto, _)| konto == kontantkonto)
-            .map(|(_, belop)| *belop)
+            .filter(|(account, _)| account == cash_account)
+            .map(|(_, amount)| *amount)
             .sum();
         differanse_ore = opptalt - registrert;
         if let Some(diff) = build_discrepancy(
-            inn.dato,
+            inn.date,
             &inn.z_nummer,
-            kontantkonto,
-            &inn.differansekonto,
+            cash_account,
+            &inn.difference_account,
             registrert,
             opptalt,
         ) {

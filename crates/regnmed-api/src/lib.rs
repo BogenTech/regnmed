@@ -291,7 +291,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/kontospesifikasjon",
-            get(reports::kontospesifikasjon),
+            get(reports::account_specification),
         )
         .route(
             "/companies/{company_id}/reports/bokforingsspesifikasjon",
@@ -956,13 +956,13 @@ async fn me(
         if let std::collections::hash_map::Entry::Vacant(e) = abonnement.entry(a.company_id) {
             let status = regnmed_db::abonnement::status_for(&state.pool, a.company_id).await?;
             use regnmed_core::abonnement::Status;
-            let dato = match status {
+            let date = match status {
                 Status::Aktiv => None,
                 Status::Prove { til } => Some(til),
                 Status::Frist { sperres } => Some(sperres),
                 Status::Sperret { siden } => Some(siden),
             };
-            e.insert(json!({ "status": status.slug(), "dato": dato.map(|d| d.to_string()) }));
+            e.insert(json!({ "status": status.slug(), "dato": date.map(|d| d.to_string()) }));
         }
     }
 

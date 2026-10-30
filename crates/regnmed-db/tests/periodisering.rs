@@ -108,8 +108,8 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         &PeriodiseringDraft {
             kilde_voucher: Some(kilde.id),
             beskrivelse: "Husleie 2026".into(),
-            resultatkonto: "6300".into(),
-            balansekonto: "1700".into(),
+            income_account: "6300".into(),
+            balance_account: "1700".into(),
             total_ore: total,
             fra: (2026, 1),
             til: (2026, 12),
@@ -174,8 +174,8 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         &PeriodiseringDraft {
             kilde_voucher: None,
             beskrivelse: "Forsikring".into(),
-            resultatkonto: "6300".into(),
-            balansekonto: "1700".into(),
+            income_account: "6300".into(),
+            balance_account: "1700".into(),
             total_ore: 120_000,
             fra: (2026, 1),
             til: (2026, 12),
@@ -230,8 +230,8 @@ async fn a_started_plan_cannot_be_rewritten() {
         &PeriodiseringDraft {
             kilde_voucher: None,
             beskrivelse: "Abonnement".into(),
-            resultatkonto: "6300".into(),
-            balansekonto: "1700".into(),
+            income_account: "6300".into(),
+            balance_account: "1700".into(),
             total_ore: 60_000,
             fra: (2026, 1),
             til: (2026, 6),
@@ -291,8 +291,8 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
     let plan = |resultat: &str, balanse: &str| PeriodiseringDraft {
         kilde_voucher: None,
         beskrivelse: "Husleie".into(),
-        resultatkonto: resultat.into(),
-        balansekonto: balanse.into(),
+        income_account: resultat.into(),
+        balance_account: balanse.into(),
         total_ore: 30_000,
         fra: (2026, 1),
         til: (2026, 3),

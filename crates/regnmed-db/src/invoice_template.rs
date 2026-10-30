@@ -11,7 +11,7 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::invoice::{interpoler_periodetekst, neste_intervall_dato};
+use regnmed_core::invoice::{interpoler_periodetekst, next_interval_date};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -25,8 +25,8 @@ pub use crate::invoice::InvoiceLineDraft as TemplateLineDraft;
 pub struct TemplateDraft {
     pub party_no: String,
     pub intervall: String,
-    pub neste_dato: NaiveDate,
-    pub slutt_dato: Option<NaiveDate>,
+    pub next_date: NaiveDate,
+    pub end_date: Option<NaiveDate>,
     pub forfall_dager: i32,
     pub merk_utsendelse: bool,
     pub lines: Vec<TemplateLineDraft>,
@@ -71,8 +71,8 @@ pub async fn create_template(
     .bind(company_id)
     .bind(party_id)
     .bind(&draft.intervall)
-    .bind(draft.neste_dato)
-    .bind(draft.slutt_dato)
+    .bind(draft.next_date)
+    .bind(draft.end_date)
     .bind(draft.forfall_dager)
     .bind(draft.merk_utsendelse)
     .bind(created_by)
@@ -120,7 +120,7 @@ pub async fn create_template_from_invoice(
     company_id: Uuid,
     invoice_id: Uuid,
     intervall: &str,
-    neste_dato: NaiveDate,
+    next_date: NaiveDate,
     forfall_dager: i32,
     merk_utsendelse: bool,
     created_by: &str,
@@ -160,8 +160,8 @@ pub async fn create_template_from_invoice(
         &TemplateDraft {
             party_no,
             intervall: intervall.to_string(),
-            neste_dato,
-            slutt_dato: None,
+            next_date,
+            end_date: None,
             forfall_dager,
             merk_utsendelse,
             lines,
@@ -179,8 +179,8 @@ pub async fn update_template(
     company_id: Uuid,
     template_id: Uuid,
     intervall: Option<&str>,
-    neste_dato: Option<NaiveDate>,
-    slutt_dato: Option<Option<NaiveDate>>,
+    next_date: Option<NaiveDate>,
+    end_date: Option<Option<NaiveDate>>,
     forfall_dager: Option<i32>,
     merk_utsendelse: Option<bool>,
     active: Option<bool>,
@@ -204,9 +204,9 @@ pub async fn update_template(
     .bind(template_id)
     .bind(company_id)
     .bind(intervall)
-    .bind(neste_dato)
-    .bind(slutt_dato.is_some())
-    .bind(slutt_dato.flatten())
+    .bind(next_date)
+    .bind(end_date.is_some())
+    .bind(end_date.flatten())
     .bind(forfall_dager)
     .bind(merk_utsendelse)
     .bind(active)
@@ -231,8 +231,8 @@ pub struct TemplateRow {
     pub party_no: String,
     pub party_name: String,
     pub intervall: String,
-    pub neste_dato: NaiveDate,
-    pub slutt_dato: Option<NaiveDate>,
+    pub next_date: NaiveDate,
+    pub end_date: Option<NaiveDate>,
     pub forfall_dager: i32,
     pub merk_utsendelse: bool,
     pub active: bool,
@@ -264,8 +264,8 @@ pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<Templ
             party_no: r.get("party_no"),
             party_name: r.get("party_name"),
             intervall: r.get("intervall"),
-            neste_dato: r.get("neste_dato"),
-            slutt_dato: r.get("slutt_dato"),
+            next_date: r.get("neste_dato"),
+            end_date: r.get("slutt_dato"),
             forfall_dager: r.get("forfall_dager"),
             merk_utsendelse: r.get("merk_utsendelse"),
             active: r.get("active"),
@@ -359,11 +359,11 @@ pub async fn generate_one(
     else {
         return Ok(None);
     };
-    let neste_dato: NaiveDate = template.get("neste_dato");
-    let slutt_dato: Option<NaiveDate> = template.get("slutt_dato");
+    let next_date: NaiveDate = template.get("neste_dato");
+    let end_date: Option<NaiveDate> = template.get("slutt_dato");
     if !template.get::<bool, _>("active")
-        || neste_dato > today
-        || slutt_dato.is_some_and(|slutt| neste_dato > slutt)
+        || next_date > today
+        || end_date.is_some_and(|slutt| next_date > slutt)
     {
         return Ok(None);
     }
@@ -383,12 +383,12 @@ pub async fn generate_one(
     let draft = InvoiceDraft {
         kontant_betalingsmiddel: None,
         party_no: template.get("party_no"),
-        invoice_date: neste_dato,
-        due_date: neste_dato + chrono::Days::new(template.get::<i32, _>("forfall_dager") as u64),
+        invoice_date: next_date,
+        due_date: next_date + chrono::Days::new(template.get::<i32, _>("forfall_dager") as u64),
         // A repeating invoice bills the period that starts on
         // `neste_dato`; that date is both when it is issued and when
         // the period's ytelse begins to be delivered.
-        delivery_date: neste_dato,
+        delivery_date: next_date,
         delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
@@ -398,7 +398,7 @@ pub async fn generate_one(
         lines: line_rows
             .iter()
             .map(|r| InvoiceLineDraft {
-                description: interpoler_periodetekst(r.get("description"), neste_dato),
+                description: interpoler_periodetekst(r.get("description"), next_date),
                 account_number: r.get("account_number"),
                 quantity_milli: r.get("quantity_milli"),
                 unit_price_ore: r.get("unit_price_ore"),
@@ -428,12 +428,12 @@ pub async fn generate_one(
         .bind(Uuid::now_v7())
         .bind(template_id)
         .bind(issued.invoice_id)
-        .bind(neste_dato)
+        .bind(next_date)
         .bind(merk_utsendelse)
         .execute(&mut *tx)
         .await?;
         let advanced =
-            neste_intervall_dato(neste_dato, &intervall).context("could not advance neste_dato")?;
+            next_interval_date(next_date, &intervall).context("could not advance neste_dato")?;
         sqlx::query(
             "update invoice_template set neste_dato = $2, updated_at = now() where id = $1",
         )
@@ -451,7 +451,7 @@ pub async fn generate_one(
             Ok(Some(GenerationOutcome {
                 template_id,
                 company_id,
-                generated_for: neste_dato,
+                generated_for: next_date,
                 invoice_no: Some(issued.invoice_no),
                 detail: None,
             }))
@@ -467,14 +467,14 @@ pub async fn generate_one(
             )
             .bind(Uuid::now_v7())
             .bind(template_id)
-            .bind(neste_dato)
+            .bind(next_date)
             .bind(&detail)
             .execute(pool)
             .await?;
             Ok(Some(GenerationOutcome {
                 template_id,
                 company_id,
-                generated_for: neste_dato,
+                generated_for: next_date,
                 invoice_no: None,
                 detail: Some(detail),
             }))

@@ -56,8 +56,8 @@ pub async fn status(
     Ok(Json(json!({
         "periode": periode.to_string(),
         "kontoer": linjer.iter().map(|l| json!({
-            "konto": l.konto,
-            "kontonavn": l.kontonavn,
+            "konto": l.account,
+            "kontonavn": l.account_name,
             "saldo_ore": l.saldo_ore,
             // Computed, never stored — a difference means the account was
             // posted to AFTER it was reconciled, which is worth saying
@@ -67,7 +67,7 @@ pub async fn status(
                 "id": a.id,
                 "saldo_ore": a.saldo_ore,
                 "forklaring": a.forklaring,
-                "avstemt_dato": a.avstemt_dato.to_string(),
+                "avstemt_dato": a.reconciled_date.to_string(),
                 "avstemt_av": a.avstemt_av,
                 "har_vedlegg": a.har_vedlegg,
                 "vedlegg_navn": a.vedlegg_navn,
@@ -78,7 +78,8 @@ pub async fn status(
 
 #[derive(Deserialize)]
 pub struct AvstemRequest {
-    konto: String,
+    #[serde(rename = "konto")]
+    account: String,
     periode: chrono::NaiveDate,
     forklaring: String,
 }
@@ -97,7 +98,7 @@ pub async fn avstem(
     let id = regnmed_db::balance_documentation::avstem(
         &state.pool,
         company_id,
-        &request.konto,
+        &request.account,
         request.periode,
         &request.forklaring,
         None,
@@ -111,7 +112,8 @@ pub async fn avstem(
 
 #[derive(Deserialize)]
 pub struct VedleggQuery {
-    konto: String,
+    #[serde(rename = "konto")]
+    account: String,
     periode: chrono::NaiveDate,
     forklaring: String,
     filename: String,
@@ -141,7 +143,7 @@ pub async fn avstem_med_vedlegg(
     let id = regnmed_db::balance_documentation::avstem(
         &state.pool,
         company_id,
-        &query.konto,
+        &query.account,
         query.periode,
         &query.forklaring,
         Some((&query.filename, &content_type, &body)),
@@ -177,7 +179,8 @@ pub async fn vedlegg(
 
 #[derive(Deserialize)]
 pub struct HistorikkQuery {
-    konto: String,
+    #[serde(rename = "konto")]
+    account: String,
     periode: chrono::NaiveDate,
 }
 
@@ -191,7 +194,7 @@ pub async fn historikk(
     let rader = regnmed_db::balance_documentation::historikk(
         &state.pool,
         company_id,
-        &query.konto,
+        &query.account,
         query.periode,
     )
     .await?;
@@ -200,7 +203,7 @@ pub async fn historikk(
             "id": a.id,
             "saldo_ore": a.saldo_ore,
             "forklaring": a.forklaring,
-            "avstemt_dato": a.avstemt_dato.to_string(),
+            "avstemt_dato": a.reconciled_date.to_string(),
             "avstemt_av": a.avstemt_av,
             "har_vedlegg": a.har_vedlegg,
             "vedlegg_navn": a.vedlegg_navn,

@@ -163,7 +163,7 @@ async fn seed_browser_demo() {
             navn: "Kaffekopp".into(),
             salgspris_ore: 149_00,
             vat_code: Some("3".into()),
-            konto: "3000".into(),
+            account: "3000".into(),
             lagerfort: true,
         },
     )
@@ -240,13 +240,13 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    let dato = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
     regnmed_db::aksjebok::record_hendelse(
         &state.pool,
         company,
         kari,
         "stiftelse",
-        dato(2025, 1, 2),
+        date(2025, 1, 2),
         100,
         Some(10_000_000),
         None,
@@ -261,7 +261,7 @@ async fn seed_browser_demo() {
         company,
         kari,
         "salg",
-        dato(2026, 6, 1),
+        date(2026, 6, 1),
         40,
         Some(6_000_000),
         Some(investor),
@@ -274,7 +274,7 @@ async fn seed_browser_demo() {
     regnmed_db::aksjebok::create_utbytte(
         &state.pool,
         company,
-        dato(2026, 5, 20),
+        date(2026, 5, 20),
         50_000,
         Some("Ordinær generalforsamling"),
         "Demo Bruker",
@@ -308,7 +308,7 @@ async fn seed_browser_demo() {
                 fodselsnummer: fnr.into(),
                 navn: navn.into(),
                 stilling: Some(stilling.into()),
-                ansatt_fra: dato(2025, 1, 1),
+                ansatt_fra: date(2025, 1, 1),
                 manedslonn_ore: Some(lonn),
                 timelonn_ore: None,
                 trekk_type: "prosent".into(),
@@ -333,7 +333,7 @@ async fn seed_browser_demo() {
         company,
         2026,
         5,
-        dato(2026, 5, 20),
+        date(2026, 5, 20),
         "I",
         &ansatte
             .iter()
@@ -353,7 +353,7 @@ async fn seed_browser_demo() {
         company,
         2026,
         6,
-        dato(2026, 6, 20),
+        date(2026, 6, 20),
         "I",
         &ansatte
             .iter()
@@ -379,7 +379,7 @@ async fn seed_browser_demo() {
             fodselsnummer: "25927898821".into(),
             navn: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),
-            ansatt_fra: dato(2025, 1, 1),
+            ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000),
             trekk_type: "prosent".into(),
@@ -405,7 +405,7 @@ async fn seed_browser_demo() {
             company,
             person,
             &regnmed_db::timesheet::TimeEntryDraft {
-                dato: dato(2026, 7, dag),
+                date: date(2026, 7, dag),
                 minutter,
                 beskrivelse: "Konsulentarbeid".into(),
                 project: None,
@@ -421,7 +421,7 @@ async fn seed_browser_demo() {
     regnmed_db::timesheet::set_timesheet_lock(
         &state.pool,
         company,
-        dato(2026, 7, 31),
+        date(2026, 7, 31),
         "Demo Bruker",
         Some("Låst for lønn"),
     )

@@ -58,7 +58,7 @@ pub async fn registry_preview(
         "adresse": enhet.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         "konkurs": enhet.konkurs,
         "under_avvikling": enhet.under_avvikling || enhet.under_tvangsavvikling,
-        "slettet": enhet.slettedato.is_some(),
+        "slettet": enhet.deleted_date.is_some(),
         "autorisasjon": { "regnskap": regnskap, "revisjon": revisjon },
     })))
 }
@@ -79,7 +79,7 @@ pub async fn onboard_company(
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
-    if enhet.slettedato.is_some() {
+    if enhet.deleted_date.is_some() {
         return Err(ApiError::BadRequest(
             "enheten er slettet i Enhetsregisteret".into(),
         ));
@@ -152,7 +152,7 @@ pub async fn create_firm(
         .ok_or_else(|| ApiError::BadRequest("orgnr finnes ikke i Enhetsregisteret".into()))?;
     // Same registry facts gate as company onboarding: a deleted,
     // bankrupt or liquidating enhet cannot become a firm either.
-    if enhet.slettedato.is_some() {
+    if enhet.deleted_date.is_some() {
         return Err(ApiError::BadRequest(
             "enheten er slettet i Enhetsregisteret".into(),
         ));

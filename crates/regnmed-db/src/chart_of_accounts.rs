@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::ledger::{PostedVoucher, post_voucher_in};
 
-pub struct KontoRow {
+pub struct AccountRow {
     pub number: String,
     pub name: String,
     pub vat_code: Option<String>,
@@ -29,7 +29,7 @@ pub struct KontoRow {
 /// Every account the company has, with computed balances. Accounts with
 /// zero postings are included — a freshly added account must be visible,
 /// or "add account" looks like it did nothing.
-pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<KontoRow>> {
+pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<AccountRow>> {
     let rows = sqlx::query(
         "select a.number, a.name, a.vat_code, a.active, a.reskontro_kind,
                 coalesce(sum(e.amount_ore), 0)::bigint as saldo_ore,
@@ -45,7 +45,7 @@ pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<KontoR
     .await?;
     Ok(rows
         .into_iter()
-        .map(|r| KontoRow {
+        .map(|r| AccountRow {
             number: r.get("number"),
             name: r.get("name"),
             vat_code: r.get("vat_code"),
@@ -272,7 +272,7 @@ pub async fn post_manual_voucher(
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
         if policy
-            .belopsgrense_ore
+            .amount_limit_ore
             .is_none_or(|grense| debetsum >= grense)
         {
             bail!(

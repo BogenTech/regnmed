@@ -348,13 +348,13 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     .await
     .unwrap();
 
-    let dato = date(2026, 10, 28);
+    let today = date(2026, 10, 28);
     let draft = regnmed_db::InvoiceDraft {
         kontant_betalingsmiddel: None,
         party_no: party_no.clone(),
-        invoice_date: dato,
-        due_date: dato,
-        delivery_date: dato,
+        invoice_date: today,
+        due_date: today,
+        delivery_date: today,
         delivery_place: None,
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
@@ -388,7 +388,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         company,
         "tilbud",
         &party_no,
-        dato,
+        today,
         &[regnmed_db::SalgsLineDraft {
             description: "Serverleie".into(),
             account_number: "3000".into(),
@@ -477,12 +477,12 @@ async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
     let person = regnmed_db::ensure_person(&pool, "sub-utlegg-mva", Some("André"), None)
         .await
         .unwrap();
-    let dato = date(2026, 10, 2);
+    let today = date(2026, 10, 2);
     let krav = regnmed_db::create_utlegg(
         &pool,
         company,
         person,
-        dato,
+        today,
         "ServeTheWorld faktura 1202053",
         397_50,
         "stw.pdf",

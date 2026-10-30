@@ -28,9 +28,9 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
-fn e(konto: &str, ore: i64) -> EntryDraft {
+fn e(account: &str, ore: i64) -> EntryDraft {
     EntryDraft {
-        account_number: konto.into(),
+        account_number: account.into(),
         amount: Ore(ore),
         vat_code: None,
         description: None,
@@ -88,7 +88,7 @@ async fn only_balance_accounts_with_a_saldo_are_listed_and_documented() {
     // 3000 is a resultatkonto and 2400 has no saldo: neither belongs on
     // a §11 list.
     assert_eq!(linjer.len(), 1, "{linjer:?}");
-    assert_eq!(linjer[0].konto, "1920");
+    assert_eq!(linjer[0].account, "1920");
     assert_eq!(linjer[0].saldo_ore, 50_000_00);
     assert!(linjer[0].avstemt.is_none());
 

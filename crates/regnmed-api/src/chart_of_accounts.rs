@@ -28,7 +28,7 @@ pub async fn list_accounts(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::BilagLes).await?;
-    let kontoer = regnmed_db::list_accounts(&state.pool, company_id)
+    let accounts = regnmed_db::list_accounts(&state.pool, company_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let standard: Vec<_> = regnmed_core::saft::standard_accounts()
@@ -36,7 +36,7 @@ pub async fn list_accounts(
         .map(|(number, name)| json!({ "number": format!("{number}"), "name": name }))
         .collect();
     Ok(Json(json!({
-        "kontoer": kontoer.iter().map(|k| json!({
+        "kontoer": accounts.iter().map(|k| json!({
             "number": k.number,
             "name": k.name,
             "vat_code": k.vat_code,

@@ -24,7 +24,7 @@ use crate::tilgang::{Rett, krev};
 fn policy_json(p: &regnmed_db::AttestationPolicy) -> serde_json::Value {
     json!({
         "aktiv": p.aktiv,
-        "belopsgrense_ore": p.belopsgrense_ore,
+        "belopsgrense_ore": p.amount_limit_ore,
         "attestant_person_id": p.attestant_person_id,
         "krev_for_maskin": p.krev_for_maskin,
         "created_by": p.created_by,
@@ -48,7 +48,8 @@ pub async fn get_policy(
 #[derive(Deserialize)]
 pub struct PolicyRequest {
     aktiv: bool,
-    belopsgrense_ore: Option<i64>,
+    #[serde(rename = "belopsgrense_ore")]
+    amount_limit_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
     /// #101: everything a machine posts needs a human's attestering,
     /// whatever it costs.
@@ -67,7 +68,7 @@ pub async fn set_policy(
         &state.pool,
         company_id,
         request.aktiv,
-        request.belopsgrense_ore,
+        request.amount_limit_ore,
         request.attestant_person_id,
         request.krev_for_maskin,
         created_by,

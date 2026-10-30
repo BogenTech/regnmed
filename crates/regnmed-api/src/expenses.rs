@@ -30,8 +30,10 @@ use crate::tilgang::{Rett, krev};
 #[derive(Deserialize)]
 pub struct UploadQuery {
     filename: String,
-    dato: chrono::NaiveDate,
-    belop_ore: i64,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
+    #[serde(rename = "belop_ore")]
+    amount_ore: i64,
     beskrivelse: String,
 }
 
@@ -54,9 +56,9 @@ pub async fn create_utlegg(
         &state.pool,
         company_id,
         person.person_id,
-        query.dato,
+        query.date,
         &query.beskrivelse,
-        query.belop_ore,
+        query.amount_ore,
         &query.filename,
         &content_type,
         &body,
@@ -69,7 +71,8 @@ pub async fn create_utlegg(
 
 #[derive(Deserialize)]
 pub struct KjoringRequest {
-    dato: chrono::NaiveDate,
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
     /// Route and purpose, e.g. "Oslo–Drammen t/r, kundemøte".
     beskrivelse: String,
     km: i64,
@@ -83,11 +86,11 @@ pub async fn create_kjoring(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::UtleggSkrivEgne).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let (id, belop_ore, trekkpliktig_ore) = regnmed_db::create_kjoring(
+    let (id, amount_ore, trekkpliktig_ore) = regnmed_db::create_kjoring(
         &state.pool,
         company_id,
         person.person_id,
-        request.dato,
+        request.date,
         &request.beskrivelse,
         request.km,
         created_by,
@@ -96,7 +99,7 @@ pub async fn create_kjoring(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "expense_id": id,
-        "belop_ore": belop_ore,
+        "belop_ore": amount_ore,
         "trekkpliktig_ore": trekkpliktig_ore,
     })))
 }
@@ -119,9 +122,9 @@ pub async fn list(
             "person": e.person_name,
             "own": e.own,
             "kind": e.kind,
-            "dato": e.dato.to_string(),
+            "dato": e.date.to_string(),
             "beskrivelse": e.beskrivelse,
-            "belop_ore": e.belop_ore,
+            "belop_ore": e.amount_ore,
             "km": e.km,
             "sats_ore_per_km": e.sats_ore_per_km,
             "trekkpliktig_ore": e.trekkpliktig_ore,
@@ -167,13 +170,15 @@ pub async fn receipt(
 #[derive(Deserialize, Default)]
 pub struct ApproveRequest {
     /// Kostnadskonto; defaults: utlegg 7790, kjøring 7100.
-    konto: Option<String>,
+    #[serde(rename = "konto")]
+    account: Option<String>,
     /// SAF-T code for inngående mva on utlegg (e.g. "1").
     mva_kode: Option<String>,
     /// Inngående mva-konto, default 2710.
     mva_konto: Option<String>,
     /// Mellomregning account, default 2910 (owed to employees).
-    motkonto: Option<String>,
+    #[serde(rename = "motkonto")]
+    contra_account: Option<String>,
 }
 
 pub async fn approve(
@@ -191,7 +196,7 @@ pub async fn approve(
             .fetch_optional(&state.pool)
             .await
             .map_err(anyhow::Error::from)?;
-    let default_konto = match kind.as_deref() {
+    let default_account = match kind.as_deref() {
         Some("kjoring") => "7100",
         _ => "7790",
     };
@@ -200,10 +205,10 @@ pub async fn approve(
         &state.pool,
         company_id,
         expense_id,
-        request.konto.as_deref().unwrap_or(default_konto),
+        request.account.as_deref().unwrap_or(default_account),
         request.mva_kode.as_deref(),
         request.mva_konto.as_deref().unwrap_or("2710"),
-        request.motkonto.as_deref().unwrap_or("2910"),
+        request.contra_account.as_deref().unwrap_or("2910"),
         decided_by,
         person.person_id,
     )
@@ -242,9 +247,11 @@ pub async fn reject(
 
 #[derive(Deserialize, Default)]
 pub struct PayRequest {
-    dato: Option<chrono::NaiveDate>,
+    #[serde(rename = "dato")]
+    date: Option<chrono::NaiveDate>,
     /// Bankkonto, default 1920.
-    konto: Option<String>,
+    #[serde(rename = "konto")]
+    account: Option<String>,
 }
 
 pub async fn pay(
@@ -255,7 +262,7 @@ pub async fn pay(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::UtleggUtbetal).await?;
     let request = body.map(|Json(r)| r).unwrap_or_default();
-    let dato = match request.dato {
+    let date = match request.date {
         Some(d) => d,
         None => sqlx::query_scalar("select current_date")
             .fetch_one(&state.pool)
@@ -267,8 +274,8 @@ pub async fn pay(
         &state.pool,
         company_id,
         expense_id,
-        dato,
-        request.konto.as_deref().unwrap_or("1920"),
+        date,
+        request.account.as_deref().unwrap_or("1920"),
         paid_by,
     )
     .await

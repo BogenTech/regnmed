@@ -301,8 +301,8 @@ pub async fn match_valuta(
     entry_a: Uuid,
     entry_b: Uuid,
     valuta_cent: i64,
-    gevinstkonto: &str,
-    tapskonto: &str,
+    gain_account: &str,
+    loss_account: &str,
     matched_by: &str,
 ) -> Result<i64> {
     ensure!(valuta_cent > 0, "valutabeløpet må være positivt");
@@ -334,16 +334,16 @@ pub async fn match_valuta(
         valuta_a.is_some() && valuta_a == valuta_b,
         "begge posteringene må være i samme valuta"
     );
-    let belop_a: i64 = pair
+    let currency_amount_a: i64 = pair
         .get::<Option<i64>, _>("belop_a")
         .context("entry_a mangler valutabeløp")?;
-    let belop_b: i64 = pair
+    let currency_amount_b: i64 = pair
         .get::<Option<i64>, _>("belop_b")
         .context("entry_b mangler valutabeløp")?;
     let amount_a: i64 = pair.get("amount_a");
     let amount_b: i64 = pair.get("amount_b");
     ensure!(
-        belop_a > 0 && belop_b < 0,
+        currency_amount_a > 0 && currency_amount_b < 0,
         "entry_a må være debetsiden (positivt valutabeløp), entry_b kreditsiden"
     );
 
@@ -359,21 +359,22 @@ pub async fn match_valuta(
         .await?;
         anyhow::Ok(sum)
     };
-    let rest_a = belop_a - matched_cent(entry_a, true).await?;
-    let rest_b = -belop_b - matched_cent(entry_b, false).await?;
+    let rest_a = currency_amount_a - matched_cent(entry_a, true).await?;
+    let rest_b = -currency_amount_b - matched_cent(entry_b, false).await?;
     ensure!(
         valuta_cent <= rest_a && valuta_cent <= rest_b,
         "åpent valutabeløp er {rest_a} / {rest_b} cent — kan ikke matche {valuta_cent}"
     );
 
     // NOK consumed per side, proportional to each entry's own booking.
-    let andel = |amount: i64, belop: i64| -> i64 {
+    let andel = |amount: i64, currency_amount: i64| -> i64 {
         let product = i128::from(valuta_cent) * i128::from(amount.abs());
-        let belop = i128::from(belop.abs());
-        i64::try_from((product + belop / 2) / belop).expect("NOK share fits in i64")
+        let currency_amount = i128::from(currency_amount.abs());
+        i64::try_from((product + currency_amount / 2) / currency_amount)
+            .expect("NOK share fits in i64")
     };
-    let nok_a = andel(amount_a, belop_a);
-    let nok_b = andel(amount_b, belop_b);
+    let nok_a = andel(amount_a, currency_amount_a);
+    let nok_b = andel(amount_b, currency_amount_b);
     let agio = nok_b - nok_a; // > 0: settlement brought more NOK → gevinst
     let felles = nok_a.min(nok_b);
 
@@ -400,10 +401,10 @@ pub async fn match_valuta(
         let today: NaiveDate = sqlx::query_scalar("select current_date")
             .fetch_one(&mut *tx)
             .await?;
-        let (resultatkonto, resultat_amount, party_amount) = if agio > 0 {
-            (gevinstkonto, -agio, agio)
+        let (income_account, resultat_amount, party_amount) = if agio > 0 {
+            (gain_account, -agio, agio)
         } else {
-            (tapskonto, -agio, agio)
+            (loss_account, -agio, agio)
         };
         let draft = VoucherDraft {
             journal_code: "GL".into(),
@@ -426,7 +427,7 @@ pub async fn match_valuta(
                     currency: None,
                 },
                 EntryDraft {
-                    account_number: resultatkonto.to_string(),
+                    account_number: income_account.to_string(),
                     amount: Ore(resultat_amount),
                     vat_code: None,
                     description: None,
@@ -480,10 +481,10 @@ pub async fn match_valuta(
 pub async fn kursregulering(
     pool: &PgPool,
     company_id: Uuid,
-    per_dato: NaiveDate,
-    balansekonto: &str,
-    gevinstkonto: &str,
-    tapskonto: &str,
+    as_of_date: NaiveDate,
+    balance_account: &str,
+    gain_account: &str,
+    loss_account: &str,
     created_by: &str,
 ) -> Result<Option<(i64, (i32, i64), (i32, i64))>> {
     let rows = sqlx::query(
@@ -502,7 +503,7 @@ pub async fn kursregulering(
            and v.voucher_date <= $2",
     )
     .bind(company_id)
-    .bind(per_dato)
+    .bind(as_of_date)
     .fetch_all(pool)
     .await?;
 
@@ -514,15 +515,15 @@ pub async fn kursregulering(
         if rest_nok == 0 {
             continue;
         }
-        let belop: i64 = row.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0);
+        let amount: i64 = row.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0);
         let matched_cent: i64 = row.get("matched_cent");
-        let rest_cent = if belop >= 0 {
-            belop - matched_cent
+        let rest_cent = if amount >= 0 {
+            amount - matched_cent
         } else {
-            belop + matched_cent
+            amount + matched_cent
         };
         let currency: String = row.get("valuta");
-        let (_, kurs) = crate::currency::require_kurs(pool, &currency, per_dato).await?;
+        let (_, kurs) = crate::currency::require_kurs(pool, &currency, as_of_date).await?;
         diff_total += regnmed_core::currency::nok_ore(rest_cent, kurs) - rest_nok;
     }
     if diff_total == 0 {
@@ -531,8 +532,8 @@ pub async fn kursregulering(
 
     use regnmed_core::Ore;
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-    let entry = |konto: &str, amount: i64, desc: &str| EntryDraft {
-        account_number: konto.to_string(),
+    let entry = |account: &str, amount: i64, desc: &str| EntryDraft {
+        account_number: account.to_string(),
         amount: Ore(amount),
         vat_code: None,
         description: Some(desc.to_string()),
@@ -541,36 +542,40 @@ pub async fn kursregulering(
         project: None,
         currency: None,
     };
-    let resultatkonto = if diff_total > 0 {
-        gevinstkonto
+    let income_account = if diff_total > 0 {
+        gain_account
     } else {
-        tapskonto
+        loss_account
     };
     let mut tx = pool.begin().await?;
     let regulering = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: per_dato,
-        description: format!("Urealisert kursregulering per {per_dato}"),
+        voucher_date: as_of_date,
+        description: format!("Urealisert kursregulering per {as_of_date}"),
         reverses: None,
         entries: vec![
-            entry(balansekonto, diff_total, "Kursregulering åpne valutaposter"),
-            entry(resultatkonto, -diff_total, "Urealisert kursdifferanse"),
+            entry(
+                balance_account,
+                diff_total,
+                "Kursregulering åpne valutaposter",
+            ),
+            entry(income_account, -diff_total, "Urealisert kursdifferanse"),
         ],
     };
     regulering.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let posted =
         crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
-    let neste_dag = per_dato
+    let neste_dag = as_of_date
         .succ_opt()
         .context("per_dato has no following day")?;
     let reversal = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: neste_dag,
-        description: format!("Reversering kursregulering per {per_dato}"),
+        description: format!("Reversering kursregulering per {as_of_date}"),
         reverses: Some(posted.id),
         entries: vec![
-            entry(balansekonto, -diff_total, "Reversering kursregulering"),
-            entry(resultatkonto, diff_total, "Reversering kursregulering"),
+            entry(balance_account, -diff_total, "Reversering kursregulering"),
+            entry(income_account, diff_total, "Reversering kursregulering"),
         ],
     };
     reversal.validate().map_err(|e| anyhow::anyhow!("{e}"))?;

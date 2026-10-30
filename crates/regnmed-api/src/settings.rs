@@ -44,8 +44,8 @@ pub async fn get_settings(
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.mva_registrert,
         "foretaksregistrert": reg.foretaksregistrert,
-        "registrering_historikk": historikk.iter().map(|(dato, r, kilde, notat)| json!({
-            "valid_from": dato.to_string(),
+        "registrering_historikk": historikk.iter().map(|(date, r, kilde, notat)| json!({
+            "valid_from": date.to_string(),
             "mva_registrert": r.mva_registrert,
             "foretaksregistrert": r.foretaksregistrert,
             "kilde": kilde,
@@ -107,7 +107,7 @@ pub async fn set_registrering(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::SelskapAdmin).await?;
     let valid_from = match request.valid_from {
-        Some(dato) => dato,
+        Some(date) => date,
         None => sqlx::query_scalar("select current_date")
             .fetch_one(&state.pool)
             .await

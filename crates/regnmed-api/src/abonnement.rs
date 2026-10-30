@@ -43,7 +43,7 @@ pub async fn subscription_status(
     krev(&state, person.person_id, company_id, Rett::SelskapLes).await?;
     let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
     use regnmed_core::abonnement::Status;
-    let dato = match status {
+    let date = match status {
         Status::Aktiv => None,
         Status::Prove { til } => Some(til),
         Status::Frist { sperres } => Some(sperres),
@@ -74,7 +74,7 @@ pub async fn subscription_status(
     let abo = regnmed_db::abonnement::stripe_abo_for(&state.pool, company_id).await?;
     Ok(Json(json!({
         "status": status.slug(),
-        "dato": dato.map(|d| d.to_string()),
+        "dato": date.map(|d| d.to_string()),
         "planer": planer,
         "kort": kort.filter(|k| k.aktiv).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
         "kort_mulig": state.stripe.is_some(),
@@ -373,7 +373,7 @@ pub async fn stripe_webhook(
             let drift = drift_company(&state).await?;
             let intent_id = object["id"].as_str().unwrap_or_default();
             let succeeded = kind == "payment_intent.succeeded";
-            let belop = if succeeded {
+            let amount = if succeeded {
                 object["amount_received"].as_i64().unwrap_or(0)
             } else {
                 object["amount"].as_i64().unwrap_or(0)
@@ -385,7 +385,7 @@ pub async fn stripe_webhook(
                 invoice_id,
                 intent_id,
                 succeeded,
-                belop,
+                amount,
                 detail,
             )
             .await?;

@@ -81,7 +81,7 @@ pub struct FakturaPdfInput {
     /// "Foretaksregisteret" is added for entities registered there (AS/ASA,
     /// foretaksregisterloven §10-2).
     pub selger_foretaksregistrert: bool,
-    pub selger_kontonummer: Option<String>,
+    pub seller_account_number: Option<String>,
 
     pub kjoper_navn: String,
     pub kjoper_nr: String,
@@ -89,14 +89,14 @@ pub struct FakturaPdfInput {
     pub kjoper_adresse: Option<String>,
 
     pub fakturanr: i64,
-    pub fakturadato: NaiveDate,
-    pub forfallsdato: NaiveDate,
+    pub invoice_date: NaiveDate,
+    pub due_date: NaiveDate,
     /// Leveringstidspunkt — bokføringsforskriften §5-1-1 nr. 4 requires
     /// it on every salgsdokument. `None` only for invoices issued
     /// before the field existed (#81): their stored PDF is what it is,
     /// and the document renders without the line rather than inventing
     /// a date it never recorded.
-    pub leveringsdato: Option<NaiveDate>,
+    pub delivery_date: Option<NaiveDate>,
     /// Leveringssted, same hjemmel — "der det er relevant".
     pub leveringssted: Option<String>,
     /// None when the seller has no KID/OCR agreement with the bank: a
@@ -191,10 +191,10 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             input.dokumenttype.nummerord().into(),
             input.fakturanr.to_string(),
         ),
-        ("Dato".into(), input.fakturadato.to_string()),
+        ("Dato".into(), input.invoice_date.to_string()),
     ];
     if input.dokumenttype == Dokumenttype::Faktura {
-        fakta.push(("Forfall".into(), input.forfallsdato.to_string()));
+        fakta.push(("Forfall".into(), input.due_date.to_string()));
     }
     // A kontantfaktura says what settled it, where a faktura says when
     // it falls due. §5-3 wants the salgsdokument to show that the
@@ -209,7 +209,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     // with the other document facts rather than in a footnote. On a
     // kreditnota it points at the ORIGINAL delivery — the one being
     // credited — not at the day the correction was written.
-    if let Some(levering) = input.leveringsdato {
+    if let Some(levering) = input.delivery_date {
         fakta.push(("Levering".into(), levering.to_string()));
     }
     if let Some(nr) = input.krediterer_nr {
@@ -362,13 +362,13 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         ly += 16.0;
         pdf.text(MARGIN, ly, 8.0, Font::Bold, "BETALINGSINFORMASJON");
         ly += 14.0;
-        if let Some(konto) = &input.selger_kontonummer {
+        if let Some(account) = &input.seller_account_number {
             pdf.text(
                 MARGIN,
                 ly,
                 9.0,
                 Font::Regular,
-                &format!("Kontonummer: {konto}"),
+                &format!("Kontonummer: {account}"),
             );
             ly += 13.0;
         }
@@ -396,7 +396,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             ly,
             9.0,
             Font::Regular,
-            &format!("Betales innen {} — {}", input.forfallsdato, kr(brutto)),
+            &format!("Betales innen {} — {}", input.due_date, kr(brutto)),
         );
     }
     pdf.finish()
@@ -438,15 +438,15 @@ mod tests {
             selger_adresse: Some("Storgata 1, 0155 Oslo".into()),
             selger_mva_registrert: true,
             selger_foretaksregistrert: true,
-            selger_kontonummer: Some("1234.56.78903".into()),
+            seller_account_number: Some("1234.56.78903".into()),
             kjoper_navn: "Kunde & Co AS".into(),
             kjoper_nr: "10000".into(),
             kjoper_orgnr: Some("911111111".into()),
             kjoper_adresse: None,
             fakturanr: 7,
-            fakturadato: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
-            forfallsdato: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
-            leveringsdato: NaiveDate::from_ymd_opt(2026, 7, 20),
+            invoice_date: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+            due_date: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
+            delivery_date: NaiveDate::from_ymd_opt(2026, 7, 20),
             leveringssted: None,
             kid: Some("000000071".into()),
             betalingsmiddel: None,

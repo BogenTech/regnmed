@@ -364,7 +364,7 @@ async fn list_subscriptions(
             let status =
                 regnmed_core::abonnement::status(a.opprettet, a.dekket_i_dag, a.siste_slutt, idag);
             // The date that matters for THIS status — same shape as /me.
-            let dato = match status {
+            let date = match status {
                 Status::Aktiv => a.valid_to,
                 Status::Prove { til } => Some(til),
                 Status::Frist { sperres } => Some(sperres),
@@ -377,7 +377,7 @@ async fn list_subscriptions(
                 "opprettet": a.opprettet.to_string(),
                 "plan": a.plan,
                 "status": status.slug(),
-                "dato": dato.map(|d| d.to_string()),
+                "dato": date.map(|d| d.to_string()),
             })
         }).collect::<Vec<_>>(),
     })))
@@ -443,7 +443,7 @@ async fn company_detail(
     let status = regnmed_db::abonnement::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
     use regnmed_core::abonnement::Status;
-    let dato = match status {
+    let date = match status {
         Status::Aktiv => None,
         Status::Prove { til } => Some(til),
         Status::Frist { sperres } => Some(sperres),
@@ -475,7 +475,7 @@ async fn company_detail(
         })).collect::<Vec<_>>(),
         "abonnement": {
             "status": status.slug(),
-            "dato": dato.map(|d| d.to_string()),
+            "dato": date.map(|d| d.to_string()),
             "dekning": dekning.iter().map(|d| json!({
                 "plan": d.plan,
                 "valid_from": d.valid_from.to_string(),

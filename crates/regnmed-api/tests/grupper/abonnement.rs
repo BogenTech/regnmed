@@ -215,8 +215,8 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
             .unwrap();
     }
     // Posted while the abonnement was in order.
-    let entry = |konto: &str, ore: i64| regnmed_core::voucher::EntryDraft {
-        account_number: konto.into(),
+    let entry = |account: &str, ore: i64| regnmed_core::voucher::EntryDraft {
+        account_number: account.into(),
         amount: regnmed_core::Ore(ore),
         vat_code: None,
         description: None,
@@ -373,7 +373,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
 
     // The faktura lives in the OPS COMPANY's hovedbok, with the
     // customer's orgnr on the party — the amount is the price list's.
-    let (belop, orgnr): (i64, String) = sqlx::query_as(
+    let (amount, orgnr): (i64, String) = sqlx::query_as(
         "select (select sum(l.net_ore)::bigint
                    from invoice_line l where l.invoice_id = i.id),
                 p.orgnr
@@ -396,7 +396,7 @@ async fn the_abonnement_faktura_through_our_own_engine_is_idempotent() {
     let pris = regnmed_db::abonnement::pris_pa(&state.pool, "standard", idag)
         .await
         .unwrap();
-    assert_eq!(belop, pris);
+    assert_eq!(amount, pris);
     let kunde_orgnr: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(kunde)
         .fetch_one(&state.pool)
@@ -691,9 +691,9 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     .await
     .unwrap();
     let linje =
-        |konto: &str, belop: i64, party: Option<String>| regnmed_core::voucher::EntryDraft {
-            account_number: konto.into(),
-            amount: regnmed_core::Ore(belop),
+        |account: &str, amount: i64, party: Option<String>| regnmed_core::voucher::EntryDraft {
+            account_number: account.into(),
+            amount: regnmed_core::Ore(amount),
             vat_code: None,
             description: None,
             party_no: party,

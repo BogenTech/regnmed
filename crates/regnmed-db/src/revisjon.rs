@@ -123,13 +123,13 @@ pub async fn build_revisjon_report(
     .bind(company_id)
     .fetch_all(pool)
     .await?;
-    let kontoer: Vec<ReskontroKonto> = reskontro
+    let accounts: Vec<ReskontroKonto> = reskontro
         .iter()
         .map(|r| {
             let mut part_kinds: Vec<String> = r.get("part_kinds");
             part_kinds.sort(); // array_agg has no order; the report is deterministic
             ReskontroKonto {
-                konto: r.get("number"),
+                account: r.get("number"),
                 flagg: r.get("reskontro_kind"),
                 hovedbok_ore: r.get("hovedbok_ore"),
                 reskontro_ore: r.get("reskontro_ore"),
@@ -141,7 +141,7 @@ pub async fn build_revisjon_report(
             }
         })
         .collect();
-    kontroller.push(regnmed_core::revisjon::reskontro_kontroll(&kontoer));
+    kontroller.push(regnmed_core::revisjon::reskontro_kontroll(&accounts));
 
     // 5. Balansekontroll.
     let total: i64 = sqlx::query_scalar(
@@ -314,7 +314,7 @@ pub async fn build_revisjon_report(
                 linjer.iter().filter(|l| l.avstemt.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = linjer
                 .iter()
-                .filter_map(|l| l.avvik_ore().map(|d| (l.konto.as_str(), d)))
+                .filter_map(|l| l.avvik_ore().map(|d| (l.account.as_str(), d)))
                 .collect();
             let mut deler = Vec::new();
             if !udokumentert.is_empty() {
@@ -325,7 +325,7 @@ pub async fn build_revisjon_report(
                     udokumentert
                         .iter()
                         .take(10)
-                        .map(|l| format!("{} {}", l.konto, l.kontonavn))
+                        .map(|l| format!("{} {}", l.account, l.account_name))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));

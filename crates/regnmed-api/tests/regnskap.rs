@@ -8,10 +8,10 @@ mod common;
 
 #[path = "grupper/budsjett.rs"]
 mod budsjett;
+#[path = "grupper/kontoplan.rs"]
+mod chart_of_accounts;
 #[path = "grupper/hovedbok.rs"]
 mod hovedbok;
-#[path = "grupper/kontoplan.rs"]
-mod kontoplan;
 #[path = "grupper/migrering.rs"]
 mod migrering;
 #[path = "grupper/nokkeltall.rs"]
