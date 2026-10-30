@@ -55,7 +55,7 @@ pub async fn bokfor_dagsoppgjor(
     // The rate is the one that applied on the settlement date, from the
     // same dated table the invoice engine and the spesifikasjon read.
     let mut salg = Vec::with_capacity(inn.salg.len());
-    for (account, vat_code, brutto_ore) in &inn.salg {
+    for (account, vat_code, gross_ore) in &inn.salg {
         let rate_bp = match vat_code {
             None => 0,
             Some(code) => sqlx::query_scalar::<_, i32>(
@@ -75,7 +75,7 @@ pub async fn bokfor_dagsoppgjor(
             account: account.clone(),
             vat_code: vat_code.clone(),
             rate_bp,
-            gross_ore: *brutto_ore,
+            gross_ore: *gross_ore,
         });
     }
 

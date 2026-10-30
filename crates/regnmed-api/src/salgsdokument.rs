@@ -97,7 +97,7 @@ async fn list_kind(
             "party_name": d.party_name,
             "doc_date": d.doc_date.to_string(),
             "status": d.status,
-            "netto_ore": d.netto_ore,
+            "netto_ore": d.net_ore,
             "tilbud_no": d.tilbud_no,
             "invoice_no": d.invoice_no,
         })).collect::<Vec<_>>(),

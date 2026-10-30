@@ -219,16 +219,16 @@ impl Stripe {
     pub async fn create_price(
         &self,
         product_name: &str,
-        brutto_ore: i64,
+        gross_ore: i64,
         interval: &str,
         plan: &str,
     ) -> Result<String> {
-        ensure!(brutto_ore > 0, "prisen må være positiv");
+        ensure!(gross_ore > 0, "prisen må være positiv");
         ensure!(
             interval == "month" || interval == "year",
             "intervallet må være month eller year"
         );
-        let amount = brutto_ore.to_string();
+        let amount = gross_ore.to_string();
         let body = self
             .post_form(
                 "/v1/prices",

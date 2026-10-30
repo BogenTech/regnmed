@@ -387,7 +387,7 @@ pub struct SalgsdokumentRow {
     pub party_name: String,
     pub doc_date: NaiveDate,
     pub status: String,
-    pub netto_ore: i64,
+    pub net_ore: i64,
     pub tilbud_no: Option<i64>,
     pub invoice_no: Option<i64>,
 }
@@ -424,7 +424,7 @@ pub async fn list_salgsdokumenter(
             party_name: r.get("party_name"),
             doc_date: r.get("doc_date"),
             status: r.get("status"),
-            netto_ore: r.get("netto_ore"),
+            net_ore: r.get("netto_ore"),
             tilbud_no: r.get("tilbud_no"),
             invoice_no: r.get("invoice_no"),
         })
@@ -492,7 +492,7 @@ pub async fn salgsdokument_pdf(
             antall_milli: line.quantity_milli,
             enhetspris_ore: line.unit_price_ore,
             vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
-            netto_ore: amounts.net_ore,
+            net_ore: amounts.net_ore,
             vat_ore: amounts.vat_ore,
         });
     }

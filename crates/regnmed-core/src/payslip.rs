@@ -37,14 +37,14 @@ const MANEDER: [&str; 12] = [
 
 /// One line on the slip: a pay element or a deduction.
 #[derive(Debug, Clone)]
-pub struct Slipplinje {
+pub struct PayslipLine {
     pub tekst: String,
     /// Positive adds to what is paid, negative is a deduction.
     pub amount_ore: i64,
 }
 
 #[derive(Debug, Clone)]
-pub struct LonnsslippInput {
+pub struct PayslipInput {
     pub arbeidsgiver_navn: String,
     pub arbeidsgiver_orgnr: String,
     pub arbeidsgiver_adresse: Option<String>,
@@ -54,28 +54,28 @@ pub struct LonnsslippInput {
     /// not needed on a document that travels.
     pub employee_birth_date: Option<chrono::NaiveDate>,
     pub ar: i32,
-    pub maned: u32,
+    pub month: u32,
     pub paid_date: chrono::NaiveDate,
-    pub linjer: Vec<Slipplinje>,
+    pub lines: Vec<PayslipLine>,
     /// Sum of every pay line — what "bruttolønn" means to the person
     /// reading the slip, feriepenger included.
-    pub brutto_ore: i64,
+    pub gross_ore: i64,
     /// What withholding was actually computed on. Lower than brutto
     /// exactly when trekkfrie feriepenger were paid, which is why the
     /// slip can explain the difference instead of leaving the employee
     /// to wonder.
-    pub trekkgrunnlag_ore: i64,
-    pub forskuddstrekk_ore: i64,
+    pub withholding_basis_ore: i64,
+    pub withholding_ore: i64,
     /// The skattekort percentage in basis points, when withholding is by
     /// percentage. None for frikort.
-    pub trekk_prosent_bp: Option<i64>,
+    pub withholding_percent_bp: Option<i64>,
     /// December's half withholding was applied.
-    pub halv_trekk: bool,
-    pub netto_ore: i64,
+    pub half_withholding: bool,
+    pub net_ore: i64,
     /// Feriepenger earned this month — money the employee has coming,
     /// not money paid now, so it is stated apart from the total.
-    pub feriepengeavsetning_ore: i64,
-    pub feriepenger_bp: i64,
+    pub holiday_pay_accrual_ore: i64,
+    pub holiday_pay_bp: i64,
     /// Year to date, through this run.
     pub hittil_brutto_ore: i64,
     pub hittil_trekk_ore: i64,
@@ -109,7 +109,7 @@ fn prosent(bp: i64) -> String {
 }
 
 /// Renders the payslip. Deterministic: same input, same bytes.
-pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
+pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
 
     // Employer, top left.
@@ -130,7 +130,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     // Title and period, top right.
     pdf.text_right(RIGHT, 60.0, 16.0, Font::Bold, "LØNNSSLIPP");
     let maned_navn = MANEDER
-        .get((input.maned as usize).saturating_sub(1))
+        .get((input.month as usize).saturating_sub(1))
         .copied()
         .unwrap_or("");
     let fakta = [
@@ -164,9 +164,9 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     pdf.rule(MARGIN, RIGHT, ly, 0.7);
     ly += 16.0;
 
-    for linje in &input.linjer {
-        pdf.text(MARGIN, ly, 10.0, Font::Regular, &linje.tekst);
-        pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(linje.amount_ore));
+    for line in &input.lines {
+        pdf.text(MARGIN, ly, 10.0, Font::Regular, &line.tekst);
+        pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(line.amount_ore));
         ly += 15.0;
     }
 
@@ -174,31 +174,25 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     pdf.rule(MARGIN, RIGHT, ly, 0.5);
     ly += 16.0;
     pdf.text(MARGIN, ly, 10.0, Font::Bold, "Bruttolønn");
-    pdf.text_right(RIGHT, ly, 10.0, Font::Bold, &kr(input.brutto_ore));
+    pdf.text_right(RIGHT, ly, 10.0, Font::Bold, &kr(input.gross_ore));
     ly += 18.0;
 
     // The withholding with its own explanation — the employee should
     // be able to see WHY it came out the way it did.
     let mut trekktekst = String::from("Forskuddstrekk");
-    if let Some(bp) = input.trekk_prosent_bp {
+    if let Some(bp) = input.withholding_percent_bp {
         trekktekst.push_str(&format!(
             " ({} av {})",
             prosent(bp),
-            kr(input.trekkgrunnlag_ore)
+            kr(input.withholding_basis_ore)
         ));
     } else {
         trekktekst.push_str(" (frikort)");
     }
     pdf.text(MARGIN, ly, 10.0, Font::Regular, &trekktekst);
-    pdf.text_right(
-        RIGHT,
-        ly,
-        10.0,
-        Font::Regular,
-        &kr(-input.forskuddstrekk_ore),
-    );
+    pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(-input.withholding_ore));
     ly += 14.0;
-    if input.halv_trekk {
+    if input.half_withholding {
         pdf.text(
             MARGIN,
             ly,
@@ -208,7 +202,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         );
         ly += 12.0;
     }
-    if input.brutto_ore != input.trekkgrunnlag_ore {
+    if input.gross_ore != input.withholding_basis_ore {
         pdf.text(
             MARGIN,
             ly,
@@ -223,7 +217,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
     pdf.rule(MARGIN, RIGHT, ly, 1.2);
     ly += 18.0;
     pdf.text(MARGIN, ly, 12.0, Font::Bold, "Til utbetaling");
-    pdf.text_right(RIGHT, ly, 12.0, Font::Bold, &kr(input.netto_ore));
+    pdf.text_right(RIGHT, ly, 12.0, Font::Bold, &kr(input.net_ore));
 
     // Earned, not paid: kept clearly outside the total.
     ly += 34.0;
@@ -236,7 +230,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         Font::Regular,
         &format!(
             "Feriepenger ({} av bruttolønn) — utbetales neste år",
-            prosent(input.feriepenger_bp)
+            prosent(input.holiday_pay_bp)
         ),
     );
     pdf.text_right(
@@ -244,7 +238,7 @@ pub fn render_lonnsslipp(input: &LonnsslippInput) -> Vec<u8> {
         ly,
         9.0,
         Font::Regular,
-        &kr(input.feriepengeavsetning_ore),
+        &kr(input.holiday_pay_accrual_ore),
     );
 
     // Year to date.
@@ -278,8 +272,8 @@ mod tests {
         chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()
     }
 
-    fn input() -> LonnsslippInput {
-        LonnsslippInput {
+    fn input() -> PayslipInput {
+        PayslipInput {
             arbeidsgiver_navn: "Testselskap AS".into(),
             arbeidsgiver_orgnr: "923 609 016".into(),
             arbeidsgiver_adresse: Some("Storgata 1, 0155 OSLO".into()),
@@ -287,20 +281,20 @@ mod tests {
             ansatt_stilling: Some("Utvikler".into()),
             employee_birth_date: Some(date(1993, 2, 26)),
             ar: 2026,
-            maned: 3,
+            month: 3,
             paid_date: date(2026, 3, 25),
-            linjer: vec![Slipplinje {
+            lines: vec![PayslipLine {
                 tekst: "Fastlønn".into(),
                 amount_ore: 5_000_000,
             }],
-            brutto_ore: 5_000_000,
-            trekkgrunnlag_ore: 5_000_000,
-            forskuddstrekk_ore: 1_750_000,
-            trekk_prosent_bp: Some(3500),
-            halv_trekk: false,
-            netto_ore: 3_250_000,
-            feriepengeavsetning_ore: 510_000,
-            feriepenger_bp: 1020,
+            gross_ore: 5_000_000,
+            withholding_basis_ore: 5_000_000,
+            withholding_ore: 1_750_000,
+            withholding_percent_bp: Some(3500),
+            half_withholding: false,
+            net_ore: 3_250_000,
+            holiday_pay_accrual_ore: 510_000,
+            holiday_pay_bp: 1020,
             hittil_brutto_ore: 15_000_000,
             hittil_trekk_ore: 5_250_000,
             hittil_feriepenger_ore: 1_530_000,
@@ -309,7 +303,7 @@ mod tests {
 
     #[test]
     fn renders_a_wellformed_pdf() {
-        let bytes = render_lonnsslipp(&input());
+        let bytes = render_payslip(&input());
         assert!(bytes.starts_with(b"%PDF-1.4"), "PDF header");
         assert!(bytes.ends_with(b"%%EOF\n"), "PDF trailer");
         assert!(bytes.windows(9).any(|w| w == b"startxref"), "xref table");
@@ -319,46 +313,46 @@ mod tests {
 
     #[test]
     fn is_deterministic() {
-        assert_eq!(render_lonnsslipp(&input()), render_lonnsslipp(&input()));
+        assert_eq!(render_payslip(&input()), render_payslip(&input()));
     }
 
     /// The employee should be able to see why the withholding came out
     /// as it did, and why the feriepenger were not withheld from.
     #[test]
     fn the_slip_explains_the_withholding() {
-        let tekst = String::from_utf8_lossy(&render_lonnsslipp(&input())).to_string();
+        let tekst = String::from_utf8_lossy(&render_payslip(&input())).to_string();
         assert!(tekst.contains("Forskuddstrekk"), "{tekst}");
         assert!(tekst.contains("35 %"), "trekksatsen skal stå");
 
         let mut juni = input();
-        juni.maned = 6;
+        juni.month = 6;
         // Brutto is everything paid out; the trekkgrunnlag is only the
         // ordinary pay.
-        juni.brutto_ore = 7_000_000;
-        juni.trekkgrunnlag_ore = 3_000_000;
-        juni.forskuddstrekk_ore = 1_050_000;
-        juni.linjer.push(Slipplinje {
+        juni.gross_ore = 7_000_000;
+        juni.withholding_basis_ore = 3_000_000;
+        juni.withholding_ore = 1_050_000;
+        juni.lines.push(PayslipLine {
             tekst: "Feriepenger".into(),
             amount_ore: 4_000_000,
         });
-        juni.netto_ore = 5_950_000;
-        let tekst = String::from_utf8_lossy(&render_lonnsslipp(&juni)).to_string();
+        juni.net_ore = 5_950_000;
+        let tekst = String::from_utf8_lossy(&render_payslip(&juni)).to_string();
         assert!(
             tekst.contains("uten forskuddstrekk"),
             "feriepengenes trekkfrihet skal forklares"
         );
 
         let mut desember = input();
-        desember.maned = 12;
-        desember.halv_trekk = true;
-        let tekst = String::from_utf8_lossy(&render_lonnsslipp(&desember)).to_string();
+        desember.month = 12;
+        desember.half_withholding = true;
+        let tekst = String::from_utf8_lossy(&render_payslip(&desember)).to_string();
         assert!(tekst.contains("Halvt forskuddstrekk"), "{tekst}");
     }
 
     /// The fødselsnummer must never end up in a document that travels.
     #[test]
     fn the_slip_shows_the_birth_date_not_the_fodselsnummer() {
-        let tekst = String::from_utf8_lossy(&render_lonnsslipp(&input())).to_string();
+        let tekst = String::from_utf8_lossy(&render_payslip(&input())).to_string();
         assert!(tekst.contains("1993-02-26"));
         assert!(!tekst.contains("26829398612"));
     }
@@ -366,10 +360,10 @@ mod tests {
     #[test]
     fn frikort_says_frikort() {
         let mut fri = input();
-        fri.trekk_prosent_bp = None;
-        fri.forskuddstrekk_ore = 0;
-        fri.netto_ore = 5_000_000;
-        let tekst = String::from_utf8_lossy(&render_lonnsslipp(&fri)).to_string();
+        fri.withholding_percent_bp = None;
+        fri.withholding_ore = 0;
+        fri.net_ore = 5_000_000;
+        let tekst = String::from_utf8_lossy(&render_payslip(&fri)).to_string();
         assert!(tekst.contains("frikort"), "{tekst}");
     }
 

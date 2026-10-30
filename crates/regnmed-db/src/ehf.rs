@@ -103,7 +103,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             // Rec 20 code, and "EA" (each) is the honest default.
             enhet: "EA".into(),
             enhetspris_ore: line.get("unit_price_ore"),
-            netto_ore: line.get("net_ore"),
+            net_ore: line.get("net_ore"),
             vat_rate_bp,
             vat_ore: line.get("vat_ore"),
         });
@@ -225,11 +225,11 @@ pub async fn inbox_ehf_forslag(
             (None, None)
         }
     };
-    if mottatt.netto_ore + mottatt.vat_ore != mottatt.brutto_ore {
+    if mottatt.net_ore + mottatt.vat_ore != mottatt.gross_ore {
         advarsler.push(format!(
             "netto + mva ({}) stemmer ikke med forfalt beløp ({}) — kontroller dokumentet",
-            mottatt.netto_ore + mottatt.vat_ore,
-            mottatt.brutto_ore
+            mottatt.net_ore + mottatt.vat_ore,
+            mottatt.gross_ore
         ));
     }
     if mottatt.currency != "NOK" {
@@ -261,9 +261,9 @@ pub struct Bokforingsforslag {
     pub forfall: Option<chrono::NaiveDate>,
     pub kid: Option<String>,
     pub account_number: Option<String>,
-    pub netto_ore: Option<i64>,
+    pub net_ore: Option<i64>,
     pub vat_ore: Option<i64>,
-    pub brutto_ore: Option<i64>,
+    pub gross_ore: Option<i64>,
     pub leverandor_no: Option<String>,
     pub leverandor_navn: Option<String>,
     /// The account this supplier was posted to last time — the single
@@ -293,9 +293,9 @@ pub async fn inbox_forslag(
         forfall: None,
         kid: None,
         account_number: None,
-        netto_ore: None,
+        net_ore: None,
         vat_ore: None,
-        brutto_ore: None,
+        gross_ore: None,
         leverandor_no: None,
         leverandor_navn: None,
         account: None,
@@ -319,9 +319,9 @@ pub async fn inbox_forslag(
         forslag.forfall = m.due_date;
         forslag.kid = m.kid.clone();
         forslag.account_number = m.account_number.clone();
-        forslag.netto_ore = Some(m.netto_ore);
+        forslag.net_ore = Some(m.net_ore);
         forslag.vat_ore = Some(m.vat_ore);
-        forslag.brutto_ore = Some(m.brutto_ore);
+        forslag.gross_ore = Some(m.gross_ore);
         forslag
             .begrunnelser
             .push(("alle".into(), "lest direkte fra EHF-dokumentet".into()));
@@ -379,15 +379,15 @@ pub async fn inbox_forslag(
                     note("forfall", &f.reason);
                 }
                 if let Some(f) = &t.amount_ore {
-                    forslag.brutto_ore = Some(f.value);
+                    forslag.gross_ore = Some(f.value);
                     note("brutto", &f.reason);
                 }
                 if let Some(f) = &t.vat_ore {
                     forslag.vat_ore = Some(f.value);
                     note("mva", &f.reason);
                 }
-                if let (Some(brutto), Some(vat)) = (forslag.brutto_ore, forslag.vat_ore) {
-                    forslag.netto_ore = Some(brutto - vat);
+                if let (Some(brutto), Some(vat)) = (forslag.gross_ore, forslag.vat_ore) {
+                    forslag.net_ore = Some(brutto - vat);
                 }
             }
         }

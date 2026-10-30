@@ -25,7 +25,6 @@ pub mod inbox;
 pub mod integration;
 pub mod invoice;
 pub mod invoice_template;
-pub mod lonn;
 pub mod mailq;
 pub mod mailq_in;
 pub mod marketplace;
@@ -33,6 +32,7 @@ pub mod members;
 pub mod migration;
 pub mod ocr;
 pub mod payments;
+pub mod payroll;
 pub mod period;
 pub mod platform;
 pub mod portal;
@@ -497,27 +497,27 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/employees",
-            get(lonn::list_employees).post(lonn::create_employee),
+            get(payroll::list_employees).post(payroll::create_employee),
         )
         .route(
             "/companies/{company_id}/employees/{employee_id}/link",
-            axum::routing::post(lonn::link_employee).delete(lonn::unlink_employee),
+            axum::routing::post(payroll::link_employee).delete(payroll::unlink_employee),
         )
         .route(
             "/companies/{company_id}/employees/{employee_id}/link/history",
-            get(lonn::employee_link_history),
+            get(payroll::employee_link_history),
         )
         .route(
             "/companies/{company_id}/payroll",
-            get(lonn::list_payroll).post(lonn::run_payroll),
+            get(payroll::list_payroll).post(payroll::run_payroll),
         )
         .route(
             "/companies/{company_id}/payroll/{run_id}/slip/{employee_id}",
-            get(lonn::payslip_pdf),
+            get(payroll::payslip_pdf),
         )
         .route(
             "/companies/{company_id}/payroll/hours/{employee_id}",
-            get(lonn::payroll_hours),
+            get(payroll::payroll_hours),
         )
         .route(
             "/companies/{company_id}/shareholders",

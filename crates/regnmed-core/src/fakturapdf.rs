@@ -24,7 +24,7 @@ pub struct PdfLinje {
     pub enhetspris_ore: i64,
     /// Basis points; None for lines without an mva code.
     pub vat_rate_bp: Option<i64>,
-    pub netto_ore: i64,
+    pub net_ore: i64,
     pub vat_ore: i64,
 }
 
@@ -296,14 +296,14 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         if let Some(bp) = linje.vat_rate_bp {
             pdf.text_right(col_vat, ly, 9.0, Font::Regular, &prosent(bp));
         }
-        pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(linje.netto_ore));
+        pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(linje.net_ore));
         ly += 15.0;
     }
     pdf.rule(MARGIN, RIGHT, ly - 5.0, 0.7);
     ly += 8.0;
 
     // Totals + mva spesifisert i NOK per sats (§5-1-1 nr. 6).
-    let netto: i64 = input.linjer.iter().map(|l| l.netto_ore).sum();
+    let netto: i64 = input.linjer.iter().map(|l| l.net_ore).sum();
     let vat: i64 = input.linjer.iter().map(|l| l.vat_ore).sum();
     let brutto = netto + vat;
     pdf.text_right(RIGHT - 110.0, ly, 9.0, Font::Regular, "Netto");
@@ -317,7 +317,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             .linjer
             .iter()
             .filter(|l| l.vat_rate_bp == Some(sats))
-            .map(|l| l.netto_ore)
+            .map(|l| l.net_ore)
             .sum();
         let avgift: i64 = input
             .linjer
@@ -456,7 +456,7 @@ mod tests {
                     antall_milli: 2500,
                     enhetspris_ore: 4_000_00,
                     vat_rate_bp: Some(2500),
-                    netto_ore: 10_000_00,
+                    net_ore: 10_000_00,
                     vat_ore: 2_500_00,
                 },
                 PdfLinje {
@@ -464,7 +464,7 @@ mod tests {
                     antall_milli: 1000,
                     enhetspris_ore: 500_00,
                     vat_rate_bp: None,
-                    netto_ore: 500_00,
+                    net_ore: 500_00,
                     vat_ore: 0,
                 },
             ],
@@ -530,7 +530,7 @@ mod tests {
         i.krediterer_nr = Some(7);
         for linje in &mut i.linjer {
             linje.antall_milli = -linje.antall_milli;
-            linje.netto_ore = -linje.netto_ore;
+            linje.net_ore = -linje.net_ore;
             linje.vat_ore = -linje.vat_ore;
         }
         let bytes = render_faktura_pdf(&i);

@@ -9,7 +9,7 @@
 //! Requires DATABASE_URL; skips otherwise.
 
 use chrono::NaiveDate;
-use regnmed_db::lonn::{self, Lonnspost, NyAnsatt};
+use regnmed_db::payroll::{self, NyAnsatt, PayrollEntry};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -57,8 +57,8 @@ async fn selskap(pool: &PgPool) -> Uuid {
     company
 }
 
-async fn ansatt(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) -> Uuid {
-    lonn::create_ansatt(
+async fn employee(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) -> Uuid {
+    payroll::create_ansatt(
         pool,
         company,
         &NyAnsatt {
@@ -68,10 +68,10 @@ async fn ansatt(pool: &PgPool, company: Uuid, fnr: &str, navn: &str, lonn: i64) 
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(lonn),
             timelonn_ore: None,
-            trekk_type: "prosent".into(),
-            trekk_prosent_bp: Some(3500),
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3500),
             trekk_tabell: None,
-            feriepenger_bp: 1020,
+            holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
         },
@@ -110,63 +110,57 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
     // 50 000 kr, 35 % trekk, sone I (14,1 %).
-    let a = ansatt(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
 
-    let kjoring = lonn::kjor_lonn(
+    let run = payroll::run_payroll(
         &pool,
         company,
         2026,
         3,
         date(2026, 3, 25),
         "I",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }],
         "Test",
     )
     .await
     .unwrap();
 
-    assert_eq!(kjoring.sum.brutto_ore, 5_000_000);
-    assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_750_000);
-    assert_eq!(kjoring.sum.netto_ore, 3_250_000);
+    assert_eq!(run.sum.gross_ore, 5_000_000);
+    assert_eq!(run.sum.withholding_ore, 1_750_000);
+    assert_eq!(run.sum.net_ore, 3_250_000);
     // 10,2 % feriepengeavsetning of the gross pay.
-    assert_eq!(kjoring.sum.feriepengeavsetning_ore, 510_000);
+    assert_eq!(run.sum.holiday_pay_accrual_ore, 510_000);
     // 14,1 % arbeidsgiveravgift, from the satsregister — not from the code.
-    assert_eq!(kjoring.sum.aga_ore, 705_000);
+    assert_eq!(run.sum.employer_contribution_ore, 705_000);
 
     // The bilag balances. Nothing else matters if this fails.
-    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "5000").await,
+        account_amount(&pool, run.voucher_id, "5000").await,
         5_000_000
     );
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "2600").await,
+        account_amount(&pool, run.voucher_id, "2600").await,
         -1_750_000
     );
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "2930").await,
+        account_amount(&pool, run.voucher_id, "2930").await,
         -3_250_000
     );
+    assert_eq!(account_amount(&pool, run.voucher_id, "5090").await, 510_000);
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "5090").await,
-        510_000
-    );
-    assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "2940").await,
+        account_amount(&pool, run.voucher_id, "2940").await,
         -510_000
     );
+    assert_eq!(account_amount(&pool, run.voucher_id, "5400").await, 705_000);
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "5400").await,
-        705_000
-    );
-    assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "2770").await,
+        account_amount(&pool, run.voucher_id, "2770").await,
         -705_000
     );
 }
@@ -178,20 +172,20 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
 async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
+    let a = employee(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
 
-    let kjoring = lonn::kjor_lonn(
+    let run = payroll::run_payroll(
         &pool,
         company,
         2026,
         6,
         date(2026, 6, 20),
         "I",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 4_000_000,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 4_000_000,
+            from_timesheet: false,
         }],
         "Test",
     )
@@ -199,93 +193,90 @@ async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
     .unwrap();
 
     // Withhold from ordinary pay only: 35 % of 30 000, not of 70 000.
-    assert_eq!(kjoring.sum.forskuddstrekk_ore, 1_050_000);
-    assert_eq!(kjoring.sum.netto_ore, 3_000_000 + 4_000_000 - 1_050_000);
-    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+    assert_eq!(run.sum.withholding_ore, 1_050_000);
+    assert_eq!(run.sum.net_ore, 3_000_000 + 4_000_000 - 1_050_000);
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 
     // 5000 carries ONLY ordinary pay — the feriepenger are not a new cost.
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "5000").await,
+        account_amount(&pool, run.voucher_id, "5000").await,
         3_000_000
     );
     // 2940 is debited 4 000 000 (drawdown) and credited 306 000 (new accrual).
     assert_eq!(
-        account_amount(&pool, kjoring.voucher_id, "2940").await,
+        account_amount(&pool, run.voucher_id, "2940").await,
         4_000_000 - 306_000
     );
     // The avgift falls on everything actually paid out, feriepenger included.
-    assert_eq!(kjoring.sum.aga_ore, 987_000); // 14,1 % av 70 000
+    assert_eq!(run.sum.employer_contribution_ore, 987_000); // 14,1 % av 70 000
 }
 
 #[tokio::test]
 async fn december_withholds_half() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
+    let a = employee(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
 
-    let kjoring = lonn::kjor_lonn(
+    let run = payroll::run_payroll(
         &pool,
         company,
         2026,
         12,
         date(2026, 12, 15),
         "I",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }],
         "Test",
     )
     .await
     .unwrap();
-    assert_eq!(
-        kjoring.sum.forskuddstrekk_ore, 875_000,
-        "halv skatt i desember"
-    );
-    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+    assert_eq!(run.sum.withholding_ore, 875_000, "halv skatt i desember");
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 }
 
 #[tokio::test]
 async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "26829398612", "Finnmarking", 4_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Finnmarking", 4_000_000).await;
 
-    let kjoring = lonn::kjor_lonn(
+    let run = payroll::run_payroll(
         &pool,
         company,
         2026,
         4,
         date(2026, 4, 25),
         "V",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }],
         "Test",
     )
     .await
     .unwrap();
-    assert_eq!(kjoring.sum.aga_ore, 0, "sone V er nullsats");
-    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+    assert_eq!(run.sum.employer_contribution_ore, 0, "sone V er nullsats");
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 
     // Sone Ia is refused: the fribeløp cannot be read out of a single rate.
-    let feil = lonn::kjor_lonn(
+    let feil = payroll::run_payroll(
         &pool,
         company,
         2026,
         5,
         date(2026, 5, 25),
         "Ia",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }],
         "Test",
     )
@@ -298,7 +289,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
 async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = lonn::create_ansatt(
+    let a = payroll::create_ansatt(
         &pool,
         company,
         &NyAnsatt {
@@ -308,10 +299,10 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(5_000_000),
             timelonn_ore: None,
-            trekk_type: "tabell".into(),
-            trekk_prosent_bp: None,
+            withholding_type: "tabell".into(),
+            withholding_percent_bp: None,
             trekk_tabell: Some(7100),
-            feriepenger_bp: 1020,
+            holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
         },
@@ -320,18 +311,18 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
     .await
     .unwrap();
 
-    let feil = lonn::kjor_lonn(
+    let feil = payroll::run_payroll(
         &pool,
         company,
         2026,
         3,
         date(2026, 3, 25),
         "I",
-        &[Lonnspost {
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }],
         "Test",
     )
@@ -345,17 +336,17 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
 async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "26829398612", "Kari", 4_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Kari", 4_000_000).await;
     let post = || {
-        vec![Lonnspost {
+        vec![PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
         }]
     };
 
-    let forste = lonn::kjor_lonn(
+    let forste = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -367,9 +358,9 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
     )
     .await
     .unwrap();
-    assert!(lonn::kjort_maned(&pool, company, 2026, 7).await.unwrap());
+    assert!(payroll::kjort_maned(&pool, company, 2026, 7).await.unwrap());
 
-    let feil = lonn::kjor_lonn(
+    let feil = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -413,13 +404,13 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
 async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    ansatt(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
 
-    let ansatte = lonn::list_ansatte(&pool, company).await.unwrap();
-    assert_eq!(ansatte.len(), 1);
-    assert_eq!(ansatte[0].birth_date, Some(date(1993, 2, 26)));
+    let employees = payroll::list_ansatte(&pool, company).await.unwrap();
+    assert_eq!(employees.len(), 1);
+    assert_eq!(employees[0].birth_date, Some(date(1993, 2, 26)));
     assert!(
-        !format!("{:?}", ansatte[0]).contains("26829398612"),
+        !format!("{:?}", employees[0]).contains("26829398612"),
         "fødselsnummeret skal ikke ligge i ansattlisten"
     );
 }
@@ -428,7 +419,7 @@ async fn the_employee_list_shows_the_birth_date_not_the_fodselsnummer() {
 async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let feil = lonn::create_ansatt(
+    let feil = payroll::create_ansatt(
         &pool,
         company,
         &NyAnsatt {
@@ -438,10 +429,10 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: Some(1),
             timelonn_ore: None,
-            trekk_type: "ingen".into(),
-            trekk_prosent_bp: None,
+            withholding_type: "ingen".into(),
+            withholding_percent_bp: None,
             trekk_tabell: None,
-            feriepenger_bp: 1020,
+            holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
         },
@@ -459,17 +450,17 @@ async fn an_invalid_fodselsnummer_is_rejected_at_registration() {
 async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
     let post = |fp: i64| {
-        vec![Lonnspost {
+        vec![PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: fp,
-            fra_timer: false,
+            gross_ore: None,
+            holiday_pay_ore: fp,
+            from_timesheet: false,
         }]
     };
 
-    lonn::kjor_lonn(
+    payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -481,7 +472,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     )
     .await
     .unwrap();
-    let juni = lonn::kjor_lonn(
+    let juni = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -494,37 +485,37 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     .await
     .unwrap();
 
-    let slipp = lonn::lonnsslipp(&pool, company, juni.id, a).await.unwrap();
+    let slipp = payroll::payslip(&pool, company, juni.id, a).await.unwrap();
     assert_eq!(slipp.ansatt_navn, "Kari Utvikler");
     // Birth date, not fødselsnummer — on the payslip too.
     assert_eq!(slipp.employee_birth_date, Some(date(1993, 2, 26)));
     // Brutto on the slip is EVERYTHING paid out; the trekkgrunnlag is less.
-    assert_eq!(slipp.brutto_ore, 9_000_000);
-    assert_eq!(slipp.trekkgrunnlag_ore, 5_000_000);
-    assert_eq!(slipp.forskuddstrekk_ore, 1_750_000);
-    assert_eq!(slipp.netto_ore, 7_250_000);
-    assert_eq!(slipp.trekk_prosent_bp, Some(3500));
+    assert_eq!(slipp.gross_ore, 9_000_000);
+    assert_eq!(slipp.withholding_basis_ore, 5_000_000);
+    assert_eq!(slipp.withholding_ore, 1_750_000);
+    assert_eq!(slipp.net_ore, 7_250_000);
+    assert_eq!(slipp.withholding_percent_bp, Some(3500));
     // Year to date through June: two months of pay + June's feriepenger.
     assert_eq!(slipp.hittil_brutto_ore, 5_000_000 + 9_000_000);
     assert_eq!(slipp.hittil_trekk_ore, 3_500_000);
     assert_eq!(slipp.hittil_feriepenger_ore, 1_020_000);
 
     // And it renders to a PDF that explains the trekkfrihet.
-    let pdf = regnmed_core::lonnsslipp::render_lonnsslipp(&slipp);
+    let pdf = regnmed_core::payslip::render_payslip(&slipp);
     assert!(pdf.starts_with(b"%PDF-1.4"));
     let tekst = String::from_utf8_lossy(&pdf).to_string();
     assert!(tekst.contains("uten forskuddstrekk"), "{tekst}");
     assert!(!tekst.contains("26829398612"), "fnr skal ikke i slippen");
 
     // The May slip sees only May in the year-to-date figures.
-    let mai_id = lonn::list_kjoringer(&pool, company, Some(2026))
+    let mai_id = payroll::list_kjoringer(&pool, company, Some(2026))
         .await
         .unwrap()
         .into_iter()
-        .find(|k| k.maned == 5)
+        .find(|k| k.month == 5)
         .unwrap();
-    assert_eq!(mai_id.ansatte.len(), 1, "listingen kjenner deltakerne");
-    let mai = lonn::lonnsslipp(&pool, company, mai_id.id, a)
+    assert_eq!(mai_id.employees.len(), 1, "listingen kjenner deltakerne");
+    let mai = payroll::payslip(&pool, company, mai_id.id, a)
         .await
         .unwrap();
     assert_eq!(mai.hittil_brutto_ore, 5_000_000);
@@ -547,7 +538,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     )
     .await
     .unwrap();
-    let a = lonn::create_ansatt(
+    let a = payroll::create_ansatt(
         &pool,
         company,
         &NyAnsatt {
@@ -557,10 +548,10 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000), // 450 kr/t
-            trekk_type: "prosent".into(),
-            trekk_prosent_bp: Some(3000),
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3000),
             trekk_tabell: None,
-            feriepenger_bp: 1020,
+            holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
         },
@@ -596,24 +587,24 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         .unwrap();
     }
 
-    let g = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+    let g = payroll::timegrunnlag(&pool, company, a, 2026, 3)
         .await
         .unwrap();
-    assert_eq!(g.minutter, 1200, "20 timer");
+    assert_eq!(g.minutes, 1200, "20 timer");
     assert_eq!(g.amount_ore, 900_000, "20 t x 450 kr = 9 000 kr");
     assert!(!g.laast, "ikke låst ennå");
 
     let post = || {
-        vec![Lonnspost {
+        vec![PayrollEntry {
             employee_id: a,
-            brutto_ore: None,
-            feriepenger_ore: 0,
-            fra_timer: true,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: true,
         }]
     };
 
     // Unlocked: refused.
-    let feil = lonn::kjor_lonn(
+    let feil = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -631,12 +622,12 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     regnmed_db::timesheet::set_timesheet_lock(&pool, company, date(2026, 3, 31), "Test", None)
         .await
         .unwrap();
-    let g = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+    let g = payroll::timegrunnlag(&pool, company, a, 2026, 3)
         .await
         .unwrap();
     assert!(g.laast);
 
-    let kjoring = lonn::kjor_lonn(
+    let run = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -648,9 +639,9 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     )
     .await
     .unwrap();
-    assert_eq!(kjoring.sum.brutto_ore, 900_000, "timene, ikke månedslønn");
-    assert_eq!(kjoring.sum.forskuddstrekk_ore, 270_000, "30 % av 9 000 kr");
-    assert_eq!(voucher_sum(&pool, kjoring.voucher_id).await, 0);
+    assert_eq!(run.sum.gross_ore, 900_000, "timene, ikke månedslønn");
+    assert_eq!(run.sum.withholding_ore, 270_000, "30 % av 9 000 kr");
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
 }
 
 /// Without a link to a portal user the timesheet does not know who the
@@ -659,9 +650,9 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
 async fn an_employee_without_a_portal_user_fails_clearly() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
 
-    let feil = lonn::timegrunnlag(&pool, company, a, 2026, 3)
+    let feil = payroll::timegrunnlag(&pool, company, a, 2026, 3)
         .await
         .unwrap_err();
     assert!(feil.to_string().contains("portalbruker"), "{feil}");
@@ -694,23 +685,23 @@ async fn kjor(
     pool: &PgPool,
     company: Uuid,
     a: Uuid,
-    maned: u32,
-    sone: &str,
+    month: u32,
+    zone: &str,
     brutto: Option<i64>,
-    feriepenger: i64,
-) -> lonn::Lonnskjoring {
-    lonn::kjor_lonn(
+    holiday_pay: i64,
+) -> payroll::Lonnskjoring {
+    payroll::run_payroll(
         pool,
         company,
         2026,
-        maned,
-        date(2026, maned, 20),
-        sone,
-        &[Lonnspost {
+        month,
+        date(2026, month, 20),
+        zone,
+        &[PayrollEntry {
             employee_id: a,
-            brutto_ore: brutto,
-            feriepenger_ore: feriepenger,
-            fra_timer: false,
+            gross_ore: brutto,
+            holiday_pay_ore: holiday_pay,
+            from_timesheet: false,
         }],
         "Test",
     )
@@ -722,14 +713,14 @@ async fn kjor(
 async fn the_accrual_on_unpaid_feriepenger_is_posted() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
+    let a = employee(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
 
     let k = kjor(&pool, company, a, 3, "I", None, 0).await;
 
     // 10,2 % of 50 000 = 5 100 kr of feriepenger owed; 14,1 % of that is
     // 719,10 kr of avgift accruing now and falling due on payout.
-    assert_eq!(k.sum.feriepengeavsetning_ore, 510_000);
-    assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
+    assert_eq!(k.sum.holiday_pay_accrual_ore, 510_000);
+    assert_eq!(k.sum.employer_contribution_holiday_pay_ore, 71_910);
     assert_eq!(voucher_sum(&pool, k.voucher_id).await, 0);
     assert_eq!(account_amount(&pool, k.voucher_id, "5405").await, 71_910);
     assert_eq!(account_amount(&pool, k.voucher_id, "2780").await, -71_910);
@@ -744,21 +735,21 @@ async fn the_accrual_on_unpaid_feriepenger_is_posted() {
 async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
+    let a = employee(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
 
     let opptjening = kjor(&pool, company, a, 3, "I", None, 0).await;
-    assert_eq!(opptjening.sum.aga_feriepenger_ore, 71_910);
+    assert_eq!(opptjening.sum.employer_contribution_holiday_pay_ore, 71_910);
 
     // Holiday taken: no ordinary pay, the feriepenger are paid out.
     let utbetaling = kjor(&pool, company, a, 4, "I", Some(0), 510_000).await;
 
     assert_eq!(
-        utbetaling.sum.aga_feriepenger_ore, -71_910,
+        utbetaling.sum.employer_contribution_holiday_pay_ore, -71_910,
         "avsetningen føres tilbake i sin helhet"
     );
     assert_eq!(voucher_sum(&pool, utbetaling.voucher_id).await, 0);
     // The avgift on what was paid out now sits in the ordinary aga line.
-    assert_eq!(utbetaling.sum.aga_ore, 71_910);
+    assert_eq!(utbetaling.sum.employer_contribution_ore, 71_910);
 
     // And afterwards both accounts stand at zero: no liability left, no
     // accrual left.
@@ -774,20 +765,20 @@ async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
 async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
+    let a = employee(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
 
     // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
     let uten = kjor(&pool, company, a, 3, "V", None, 0).await;
-    assert_eq!(uten.sum.aga_feriepenger_ore, 0);
+    assert_eq!(uten.sum.employer_contribution_holiday_pay_ore, 0);
     assert_eq!(account_balance(&pool, company, "2780").await, 0);
 
     // The business moves to sone I. Now it owes avgift on EVERYTHING
     // outstanding, not only on this month's earning.
     let med = kjor(&pool, company, a, 4, "I", None, 0).await;
-    let skyldig = 510_000 + 510_000;
+    let owed = 510_000 + 510_000;
     assert_eq!(
-        med.sum.aga_feriepenger_ore,
-        skyldig * 1410 / 10_000,
+        med.sum.employer_contribution_holiday_pay_ore,
+        owed * 1410 / 10_000,
         "hele gjelden får avsetning, ikke bare den nye måneden"
     );
     assert_eq!(account_balance(&pool, company, "2780").await, -143_820);
@@ -799,29 +790,29 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
 async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
-    let b = ansatt(&pool, company, "03048810194", "Per Invariant", 2_777_700).await;
+    let a = employee(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
+    let b = employee(&pool, company, "03048810194", "Per Invariant", 2_777_700).await;
 
-    for (maned, feriepenger) in [(3u32, 0i64), (4, 0), (5, 130_000), (6, 250_000)] {
-        lonn::kjor_lonn(
+    for (month, holiday_pay) in [(3u32, 0i64), (4, 0), (5, 130_000), (6, 250_000)] {
+        payroll::run_payroll(
             &pool,
             company,
             2026,
-            maned,
-            date(2026, maned, 20),
+            month,
+            date(2026, month, 20),
             "I",
             &[
-                Lonnspost {
+                PayrollEntry {
                     employee_id: a,
-                    brutto_ore: None,
-                    feriepenger_ore: feriepenger,
-                    fra_timer: false,
+                    gross_ore: None,
+                    holiday_pay_ore: holiday_pay,
+                    from_timesheet: false,
                 },
-                Lonnspost {
+                PayrollEntry {
                     employee_id: b,
-                    brutto_ore: None,
-                    feriepenger_ore: feriepenger,
-                    fra_timer: false,
+                    gross_ore: None,
+                    holiday_pay_ore: holiday_pay,
+                    from_timesheet: false,
                 },
             ],
             "Test",
@@ -844,18 +835,18 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
         .unwrap();
         let ventet: i64 = per_ansatt
             .iter()
-            .map(|s| regnmed_core::lonn::aga_avsetning_mal(*s, 1410))
+            .map(|s| regnmed_core::payroll::employer_contribution_accrual_target(*s, 1410))
             .sum();
 
         assert_eq!(
             per_ansatt.iter().sum::<i64>(),
             -account_balance(&pool, company, "2940").await,
-            "etter {maned:02}/2026: lønnshistorikken skal forklare hele 2940"
+            "etter {month:02}/2026: lønnshistorikken skal forklare hele 2940"
         );
         assert_eq!(
             -account_balance(&pool, company, "2780").await,
             ventet,
-            "etter {maned:02}/2026: 2780 skal være 14,1 % av hver ansatts gjeld"
+            "etter {month:02}/2026: 2780 skal være 14,1 % av hver ansatts gjeld"
         );
     }
 }
@@ -868,12 +859,12 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
 async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent() {
     let Some(pool) = pool().await else { return };
     let company = selskap(&pool).await;
-    let a = ansatt(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;
+    let a = employee(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;
 
     // The regnskapsfører accrues feriepenger manually, with no employee link.
     use regnmed_core::Ore;
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-    let linje = |account: &str, amount: i64| EntryDraft {
+    let line = |account: &str, amount: i64| EntryDraft {
         account_number: account.into(),
         amount: Ore(amount),
         vat_code: None,
@@ -891,7 +882,7 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
             voucher_date: date(2026, 1, 1),
             description: "Åpningsbalanse feriepenger".into(),
             reverses: None,
-            entries: vec![linje("5090", 1_000_000), linje("2940", -1_000_000)],
+            entries: vec![line("5090", 1_000_000), line("2940", -1_000_000)],
         },
         "Test",
     )
@@ -901,7 +892,7 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
     let k = kjor(&pool, company, a, 3, "I", None, 0).await;
 
     // The accrual covers only what the payroll run itself earned.
-    assert_eq!(k.sum.aga_feriepenger_ore, 71_910);
+    assert_eq!(k.sum.employer_contribution_holiday_pay_ore, 71_910);
     let advarsel = k.advarsler.join(" ");
     assert!(
         advarsel.contains("10000,00"),

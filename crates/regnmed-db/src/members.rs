@@ -506,7 +506,7 @@ pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usiz
             .execute(&mut *tx)
             .await?;
             if koblet.rows_affected() == 1 {
-                crate::lonn::logg_kobling(
+                crate::payroll::logg_kobling(
                     &mut tx,
                     company_id,
                     eid,

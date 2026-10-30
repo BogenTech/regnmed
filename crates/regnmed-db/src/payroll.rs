@@ -7,7 +7,9 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use regnmed_core::Ore;
-use regnmed_core::lonn::{self, Lonnsberegning, Lonnsgrunnlag, Lonnssum, Sone, Trekk};
+use regnmed_core::payroll::{
+    self, PayrollBasis, PayrollCalculation, PayrollTotals, Withholding, Zone,
+};
 use regnmed_core::rates::RatePeriod;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
@@ -15,7 +17,7 @@ use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
 
-/// NS 4102-kontoer for lønn. Overstyrbare per kjøring.
+/// NS 4102 accounts for payroll. Overridable per run.
 pub const KONTO_LONN: &str = "5000";
 pub const KONTO_FERIEPENGER_KOSTNAD: &str = "5090";
 pub const KONTO_AGA_KOSTNAD: &str = "5400";
@@ -40,10 +42,10 @@ pub struct NyAnsatt {
     pub ansatt_fra: NaiveDate,
     pub manedslonn_ore: Option<i64>,
     pub timelonn_ore: Option<i64>,
-    pub trekk_type: String,
-    pub trekk_prosent_bp: Option<i32>,
+    pub withholding_type: String,
+    pub withholding_percent_bp: Option<i32>,
     pub trekk_tabell: Option<i32>,
-    pub feriepenger_bp: i32,
+    pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
 }
@@ -62,10 +64,10 @@ pub struct Ansatt {
     pub ansatt_til: Option<NaiveDate>,
     pub manedslonn_ore: Option<i64>,
     pub timelonn_ore: Option<i64>,
-    pub trekk_type: String,
-    pub trekk_prosent_bp: Option<i32>,
+    pub withholding_type: String,
+    pub withholding_percent_bp: Option<i32>,
     pub trekk_tabell: Option<i32>,
-    pub feriepenger_bp: i32,
+    pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
     /// The linked portal user (migration 0036/0050), if any — who may
@@ -76,11 +78,11 @@ pub struct Ansatt {
 }
 
 impl Ansatt {
-    fn trekk(&self) -> Trekk {
-        match self.trekk_type.as_str() {
-            "prosent" => Trekk::Prosent(self.trekk_prosent_bp.unwrap_or(0) as i64),
-            "tabell" => Trekk::Tabell(self.trekk_tabell.unwrap_or(0)),
-            _ => Trekk::Ingen,
+    fn withholding(&self) -> Withholding {
+        match self.withholding_type.as_str() {
+            "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
+            "tabell" => Withholding::Table(self.trekk_tabell.unwrap_or(0)),
+            _ => Withholding::Ingen,
         }
     }
 
@@ -100,9 +102,9 @@ pub async fn create_ansatt(
         "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
     );
     ensure!(
-        matches!(ny.trekk_type.as_str(), "prosent" | "tabell" | "ingen"),
+        matches!(ny.withholding_type.as_str(), "prosent" | "tabell" | "ingen"),
         "ukjent trekktype «{}»",
-        ny.trekk_type
+        ny.withholding_type
     );
     let id = Uuid::new_v4();
     sqlx::query(
@@ -120,10 +122,10 @@ pub async fn create_ansatt(
     .bind(ny.ansatt_fra)
     .bind(ny.manedslonn_ore)
     .bind(ny.timelonn_ore)
-    .bind(&ny.trekk_type)
-    .bind(ny.trekk_prosent_bp)
+    .bind(&ny.withholding_type)
+    .bind(ny.withholding_percent_bp)
     .bind(ny.trekk_tabell)
-    .bind(ny.feriepenger_bp)
+    .bind(ny.holiday_pay_bp)
     .bind(&ny.bank_account)
     .bind(&ny.note)
     .bind(created_by)
@@ -164,10 +166,10 @@ fn ansatt_fra_rad(r: &sqlx::postgres::PgRow) -> Ansatt {
         ansatt_til: r.get("ansatt_til"),
         manedslonn_ore: r.get("manedslonn_ore"),
         timelonn_ore: r.get("timelonn_ore"),
-        trekk_type: r.get("trekk_type"),
-        trekk_prosent_bp: r.get("trekk_prosent_bp"),
+        withholding_type: r.get("trekk_type"),
+        withholding_percent_bp: r.get("trekk_prosent_bp"),
         trekk_tabell: r.get("trekk_tabell"),
-        feriepenger_bp: r.get("feriepenger_bp"),
+        holiday_pay_bp: r.get("feriepenger_bp"),
         bank_account: r.get("bank_account"),
         note: r.get("note"),
         person_id: r.get("person_id"),
@@ -187,31 +189,31 @@ impl BirthDate for &str {
 
 /// What one employee gets this month, decided by the caller.
 #[derive(Debug, Clone)]
-pub struct Lonnspost {
+pub struct PayrollEntry {
     pub employee_id: Uuid,
     /// Ordinary pay. None uses the employee's månedslønn, unless
-    /// `fra_timer` asks for the timesheet instead.
-    pub brutto_ore: Option<i64>,
+    /// `from_timesheet` asks for the timesheet instead.
+    pub gross_ore: Option<i64>,
     /// Feriepenger paid out this month (drawn from the liability).
-    pub feriepenger_ore: i64,
+    pub holiday_pay_ore: i64,
     /// Compute pay from hours logged this month × the employee's
     /// timelønn. Requires the timesheet month to be locked.
-    pub fra_timer: bool,
+    pub from_timesheet: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Lonnskjoring {
     pub id: Uuid,
     pub ar: i32,
-    pub maned: u32,
+    pub month: u32,
     pub paid_date: NaiveDate,
-    pub sone: String,
-    pub sum: Lonnssum,
+    pub zone: String,
+    pub sum: PayrollTotals,
     pub voucher_id: Uuid,
-    pub linjer: Vec<Lonnslinje>,
+    pub lines: Vec<Lonnslinje>,
     /// (employee_id, navn) for the run's lines — enough for the portal
     /// to offer a payslip per person without asking again.
-    pub ansatte: Vec<(Uuid, String)>,
+    pub employees: Vec<(Uuid, String)>,
     /// Things worth saying out loud about the run. Never fatal — a
     /// payroll run that balances is still a valid payroll run.
     pub advarsler: Vec<String>,
@@ -222,12 +224,12 @@ pub struct Lonnskjoring {
 pub struct Lonnslinje {
     pub employee_id: Uuid,
     pub navn: String,
-    pub beregning: Lonnsberegning,
-    pub feriepengeavsetning_ore: i64,
+    pub calculation: PayrollCalculation,
+    pub holiday_pay_accrual_ore: i64,
     /// This run's change to the accrued aga on the employee's unpaid
     /// feriepenger — positive when new feriepenger were earned, negative
     /// when they were paid out.
-    pub aga_feriepenger_ore: i64,
+    pub employer_contribution_holiday_pay_ore: i64,
 }
 
 /// Feriepenger owed and aga already accrued for one employee, derived
@@ -312,39 +314,39 @@ async fn satser(pool: &PgPool) -> Result<Vec<RatePeriod>> {
 /// increments, a payout, a rate change or a first run on an existing
 /// liability all settle themselves rather than leaving a residue.
 #[allow(clippy::too_many_arguments)]
-pub async fn kjor_lonn(
+pub async fn run_payroll(
     pool: &PgPool,
     company_id: Uuid,
     ar: i32,
-    maned: u32,
+    month: u32,
     paid_date: NaiveDate,
-    sone_slug: &str,
-    poster: &[Lonnspost],
+    zone_slug: &str,
+    poster: &[PayrollEntry],
     created_by: &str,
 ) -> Result<Lonnskjoring> {
-    ensure!((1..=12).contains(&maned), "måned må være 1-12");
+    ensure!((1..=12).contains(&month), "måned må være 1-12");
     ensure!(!poster.is_empty(), "lønnskjøringen har ingen ansatte");
-    let sone = Sone::fra_slug(sone_slug)
-        .with_context(|| format!("ukjent arbeidsgiveravgiftssone «{sone_slug}»"))?;
+    let zone = Zone::from_slug(zone_slug)
+        .with_context(|| format!("ukjent arbeidsgiveravgiftssone «{zone_slug}»"))?;
 
     // Sone Ia is refused BEFORE the rate lookup. Otherwise the error
     // would read "the rate is missing — add it", which is the exact
     // opposite of the right advice: entering 10,6 % as a flat rate is
     // precisely the mistake the fribeløp rule exists to prevent.
-    lonn::arbeidsgiveravgift(0, sone, 0).map_err(|e| anyhow::anyhow!("{e}"))?;
+    payroll::employer_contribution(0, zone, 0).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let alle_satser = satser(pool).await?;
-    let aga_domene = sone.sats_domene();
+    let aga_domene = zone.rate_domain();
     let aga_bp =
         regnmed_core::rates::value_on(&alle_satser, &aga_domene, paid_date).ok_or_else(|| {
             anyhow::anyhow!(
                 "{}",
-                lonn::LonnError::ManglerSats(aga_domene.clone(), paid_date)
+                payroll::PayrollError::MissingRate(aga_domene.clone(), paid_date)
             )
         })?;
 
-    let ansatte = list_ansatte(pool, company_id).await?;
-    let maned_start = NaiveDate::from_ymd_opt(ar, maned, 1).context("ugyldig måned")?;
+    let employees = list_ansatte(pool, company_id).await?;
+    let maned_start = NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")?;
     let maned_slutt = maned_start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
@@ -352,84 +354,90 @@ pub async fn kjor_lonn(
 
     let historikk = feriepengehistorikk(pool, company_id).await?;
 
-    let mut sum = Lonnssum::default();
-    let mut linjer = Vec::new();
+    let mut sum = PayrollTotals::default();
+    let mut lines = Vec::new();
 
     for post in poster {
-        let ansatt = ansatte
+        let employee = employees
             .iter()
             .find(|a| a.id == post.employee_id)
             .with_context(|| format!("ukjent ansatt {}", post.employee_id))?;
         ensure!(
-            ansatt.ansatt_i(maned_slutt, maned_start),
-            "{} var ikke ansatt i {maned}/{ar}",
-            ansatt.navn
+            employee.ansatt_i(maned_slutt, maned_start),
+            "{} var ikke ansatt i {month}/{ar}",
+            employee.navn
         );
-        let brutto = if post.fra_timer {
-            let grunnlag = timegrunnlag(pool, company_id, ansatt.id, ar, maned).await?;
+        let brutto = if post.from_timesheet {
+            let basis = timegrunnlag(pool, company_id, employee.id, ar, month).await?;
             // The hours must be LOCKED before they are paid. A payroll
             // run is insert-only; if the hours change afterwards the two
             // diverge forever with no way to reconcile them.
             ensure!(
-                grunnlag.laast,
-                "timelisten for {maned:02}/{ar} er ikke låst — lås måneden før timelønn \
+                basis.laast,
+                "timelisten for {month:02}/{ar} er ikke låst — lås måneden før timelønn \
                  utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
-                ansatt.navn
+                employee.navn
             );
             ensure!(
-                grunnlag.minutter > 0,
-                "{} har ingen førte timer i {maned:02}/{ar}",
-                ansatt.navn
+                basis.minutes > 0,
+                "{} har ingen førte timer i {month:02}/{ar}",
+                employee.navn
             );
-            grunnlag.amount_ore
+            basis.amount_ore
         } else {
-            post.brutto_ore.or(ansatt.manedslonn_ore).with_context(|| {
-                format!("{} har verken månedslønn eller oppgitt beløp", ansatt.navn)
-            })?
+            post.gross_ore
+                .or(employee.manedslonn_ore)
+                .with_context(|| {
+                    format!(
+                        "{} har verken månedslønn eller oppgitt beløp",
+                        employee.navn
+                    )
+                })?
         };
         ensure!(brutto >= 0, "brutto kan ikke være negativ");
 
-        let beregning = lonn::beregn(
-            &Lonnsgrunnlag {
-                brutto_ore: brutto,
-                feriepenger_ore: post.feriepenger_ore,
-                trekk: ansatt.trekk(),
+        let calculation = payroll::calculate(
+            &PayrollBasis {
+                gross_ore: brutto,
+                holiday_pay_ore: post.holiday_pay_ore,
+                withholding: employee.withholding(),
             },
-            maned,
+            month,
         )
-        .map_err(|e| anyhow::anyhow!("{}: {e}", ansatt.navn))?;
+        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.navn))?;
 
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
-        let avsetning = lonn::feriepengeavsetning(brutto, ansatt.feriepenger_bp as i64);
+        let avsetning = payroll::holiday_pay_accrual(brutto, employee.holiday_pay_bp as i64);
         // The avgift falls on what is actually paid out.
-        let aga = lonn::arbeidsgiveravgift(brutto + post.feriepenger_ore, sone, aga_bp)
+        let aga = payroll::employer_contribution(brutto + post.holiday_pay_ore, zone, aga_bp)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        sum.brutto_ore += beregning.brutto_ore;
-        sum.feriepenger_utbetalt_ore += beregning.feriepenger_ore;
-        sum.forskuddstrekk_ore += beregning.forskuddstrekk_ore;
-        sum.netto_ore += beregning.netto_ore;
+        sum.gross_ore += calculation.gross_ore;
+        sum.feriepenger_utbetalt_ore += calculation.holiday_pay_ore;
+        sum.withholding_ore += calculation.withholding_ore;
+        sum.net_ore += calculation.net_ore;
         // The accrual on unpaid feriepenger is a TARGET, not an
         // increment: after the run, the employee's accrued aga should be
         // the rate times what they actually have coming. The difference
         // is what the run books — which is also why a feriepenger
         // liability earned before this function existed is caught up on
         // the first run instead of standing uncovered.
-        let hist = historikk.get(&ansatt.id).copied().unwrap_or_default();
-        let skyldig_etter = hist.skyldig_ore + avsetning - post.feriepenger_ore;
-        let aga_feriepenger = lonn::aga_avsetning_mal(skyldig_etter, aga_bp) - hist.avsatt_aga_ore;
+        let hist = historikk.get(&employee.id).copied().unwrap_or_default();
+        let skyldig_etter = hist.skyldig_ore + avsetning - post.holiday_pay_ore;
+        let aga_feriepenger = payroll::employer_contribution_accrual_target(skyldig_etter, aga_bp)
+            - hist.avsatt_aga_ore;
 
-        sum.feriepengeavsetning_ore += avsetning;
-        sum.aga_ore += aga;
-        sum.aga_feriepenger_ore += aga_feriepenger;
+        sum.holiday_pay_accrual_ore += avsetning;
+        sum.employer_contribution_ore += aga;
+        sum.employer_contribution_holiday_pay_ore += aga_feriepenger;
 
-        linjer.push(Lonnslinje {
-            employee_id: ansatt.id,
-            navn: ansatt.navn.clone(),
-            beregning,
-            feriepengeavsetning_ore: avsetning,
-            aga_feriepenger_ore: aga_feriepenger,
+        lines.push(Lonnslinje {
+            employee_id: employee.id,
+            navn: employee.navn.clone(),
+            calculation,
+            holiday_pay_accrual_ore: avsetning,
+            employer_contribution_holiday_pay_ore: aga_feriepenger,
         });
     }
 
@@ -438,22 +446,22 @@ pub async fn kjor_lonn(
     // cost nor withholding, and a zero line is rejected by bilag
     // validation. Without this, that month could not be run at all.
     let mut entries = Vec::new();
-    if sum.brutto_ore != 0 {
+    if sum.gross_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_LONN.into(),
-            amount: Ore(sum.brutto_ore),
+            amount: Ore(sum.gross_ore),
             vat_code: None,
-            description: Some(format!("Lønn {maned:02}/{ar}")),
+            description: Some(format!("Lønn {month:02}/{ar}")),
             party_no: None,
             department: None,
             project: None,
             currency: None,
         });
     }
-    if sum.forskuddstrekk_ore != 0 {
+    if sum.withholding_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_FORSKUDDSTREKK.into(),
-            amount: Ore(-sum.forskuddstrekk_ore),
+            amount: Ore(-sum.withholding_ore),
             vat_code: None,
             description: Some("Forskuddstrekk".into()),
             party_no: None,
@@ -462,10 +470,10 @@ pub async fn kjor_lonn(
             currency: None,
         });
     }
-    if sum.netto_ore != 0 {
+    if sum.net_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_LONN.into(),
-            amount: Ore(-sum.netto_ore),
+            amount: Ore(-sum.net_ore),
             vat_code: None,
             description: Some("Netto til utbetaling".into()),
             party_no: None,
@@ -489,10 +497,10 @@ pub async fn kjor_lonn(
             currency: None,
         });
     }
-    if sum.feriepengeavsetning_ore != 0 {
+    if sum.holiday_pay_accrual_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_FERIEPENGER_KOSTNAD.into(),
-            amount: Ore(sum.feriepengeavsetning_ore),
+            amount: Ore(sum.holiday_pay_accrual_ore),
             vat_code: None,
             description: Some("Feriepengeavsetning".into()),
             party_no: None,
@@ -502,7 +510,7 @@ pub async fn kjor_lonn(
         });
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_FERIEPENGER.into(),
-            amount: Ore(-sum.feriepengeavsetning_ore),
+            amount: Ore(-sum.holiday_pay_accrual_ore),
             vat_code: None,
             description: Some("Avsatte feriepenger".into()),
             party_no: None,
@@ -511,12 +519,12 @@ pub async fn kjor_lonn(
             currency: None,
         });
     }
-    if sum.aga_ore != 0 {
+    if sum.employer_contribution_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_AGA_KOSTNAD.into(),
-            amount: Ore(sum.aga_ore),
+            amount: Ore(sum.employer_contribution_ore),
             vat_code: None,
-            description: Some(format!("Arbeidsgiveravgift sone {sone_slug}")),
+            description: Some(format!("Arbeidsgiveravgift sone {zone_slug}")),
             party_no: None,
             department: None,
             project: None,
@@ -524,7 +532,7 @@ pub async fn kjor_lonn(
         });
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_AGA.into(),
-            amount: Ore(-sum.aga_ore),
+            amount: Ore(-sum.employer_contribution_ore),
             vat_code: None,
             description: Some("Skyldig arbeidsgiveravgift".into()),
             party_no: None,
@@ -539,10 +547,10 @@ pub async fn kjor_lonn(
     // month, the accrual is reversed — the cost was taken in the year
     // they were earned, and the avgift on what was paid out is already in
     // the aga line above.
-    if sum.aga_feriepenger_ore != 0 {
+    if sum.employer_contribution_holiday_pay_ore != 0 {
         entries.push(EntryDraft {
             account_number: KONTO_AGA_FERIEPENGER_KOSTNAD.into(),
-            amount: Ore(sum.aga_feriepenger_ore),
+            amount: Ore(sum.employer_contribution_holiday_pay_ore),
             vat_code: None,
             description: Some("Arbeidsgiveravgift av påløpne feriepenger".into()),
             party_no: None,
@@ -552,7 +560,7 @@ pub async fn kjor_lonn(
         });
         entries.push(EntryDraft {
             account_number: KONTO_PAALOPT_AGA_FERIEPENGER.into(),
-            amount: Ore(-sum.aga_feriepenger_ore),
+            amount: Ore(-sum.employer_contribution_holiday_pay_ore),
             vat_code: None,
             description: Some("Påløpt arbeidsgiveravgift av feriepenger".into()),
             party_no: None,
@@ -565,7 +573,7 @@ pub async fn kjor_lonn(
     let draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: paid_date,
-        description: format!("Lønnskjøring {maned:02}/{ar}"),
+        description: format!("Lønnskjøring {month:02}/{ar}"),
         reverses: None,
         entries,
     };
@@ -576,7 +584,7 @@ pub async fn kjor_lonn(
     // are created on demand — letting the run fail on "unknown account"
     // would have been a regression for every company already using
     // payroll.
-    if sum.aga_feriepenger_ore != 0 {
+    if sum.employer_contribution_holiday_pay_ore != 0 {
         crate::ledger::ensure_account(
             pool,
             company_id,
@@ -607,16 +615,16 @@ pub async fn kjor_lonn(
     .bind(run_id)
     .bind(company_id)
     .bind(ar)
-    .bind(maned as i32)
+    .bind(month as i32)
     .bind(paid_date)
-    .bind(sone_slug)
-    .bind(sum.brutto_ore)
+    .bind(zone_slug)
+    .bind(sum.gross_ore)
     .bind(sum.feriepenger_utbetalt_ore)
-    .bind(sum.forskuddstrekk_ore)
-    .bind(sum.netto_ore)
-    .bind(sum.feriepengeavsetning_ore)
-    .bind(sum.aga_ore)
-    .bind(sum.aga_feriepenger_ore)
+    .bind(sum.withholding_ore)
+    .bind(sum.net_ore)
+    .bind(sum.holiday_pay_accrual_ore)
+    .bind(sum.employer_contribution_ore)
+    .bind(sum.employer_contribution_holiday_pay_ore)
     .bind(posted.id)
     .bind(created_by)
     .execute(&mut *tx)
@@ -625,14 +633,14 @@ pub async fn kjor_lonn(
         if e.to_string()
             .contains("payroll_run_company_id_ar_maned_key")
         {
-            anyhow::anyhow!("lønn for {maned:02}/{ar} er allerede kjørt")
+            anyhow::anyhow!("lønn for {month:02}/{ar} er allerede kjørt")
         } else {
             anyhow::anyhow!("{e}")
         }
     })?;
 
-    for l in &linjer {
-        let b = &l.beregning;
+    for l in &lines {
+        let b = &l.calculation;
         sqlx::query(
             "insert into payroll_line
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
@@ -643,15 +651,18 @@ pub async fn kjor_lonn(
         .bind(Uuid::new_v4())
         .bind(run_id)
         .bind(l.employee_id)
-        .bind(b.brutto_ore)
-        .bind(b.feriepenger_ore)
-        .bind(b.trekkgrunnlag_ore)
-        .bind(b.forskuddstrekk_ore)
-        .bind(b.netto_ore)
-        .bind(l.feriepengeavsetning_ore)
-        .bind(lonn::arbeidsgiveravgift(b.brutto_ore + b.feriepenger_ore, sone, aga_bp).unwrap_or(0))
-        .bind(l.aga_feriepenger_ore)
-        .bind(b.halv_trekk)
+        .bind(b.gross_ore)
+        .bind(b.holiday_pay_ore)
+        .bind(b.withholding_basis_ore)
+        .bind(b.withholding_ore)
+        .bind(b.net_ore)
+        .bind(l.holiday_pay_accrual_ore)
+        .bind(
+            payroll::employer_contribution(b.gross_ore + b.holiday_pay_ore, zone, aga_bp)
+                .unwrap_or(0),
+        )
+        .bind(l.employer_contribution_holiday_pay_ore)
+        .bind(b.half_withholding)
         .execute(&mut *tx)
         .await?;
     }
@@ -660,16 +671,16 @@ pub async fn kjor_lonn(
     Ok(Lonnskjoring {
         id: run_id,
         ar,
-        maned,
+        month,
         paid_date,
-        sone: sone_slug.to_string(),
+        zone: zone_slug.to_string(),
         sum,
         voucher_id: posted.id,
-        ansatte: linjer
+        employees: lines
             .iter()
             .map(|l| (l.employee_id, l.navn.clone()))
             .collect(),
-        linjer,
+        lines,
         advarsler: feriepengeavvik(pool, company_id)
             .await?
             .into_iter()
@@ -733,37 +744,37 @@ pub async fn list_kjoringer(
         .map(|r| Lonnskjoring {
             id: r.get("id"),
             ar: r.get("ar"),
-            maned: r.get::<i32, _>("maned") as u32,
+            month: r.get::<i32, _>("maned") as u32,
             paid_date: r.get("utbetalt_dato"),
-            sone: r.get("sone"),
-            sum: Lonnssum {
-                brutto_ore: r.get("brutto_ore"),
+            zone: r.get("sone"),
+            sum: PayrollTotals {
+                gross_ore: r.get("brutto_ore"),
                 feriepenger_utbetalt_ore: r.get("feriepenger_utbetalt_ore"),
-                forskuddstrekk_ore: r.get("forskuddstrekk_ore"),
-                netto_ore: r.get("netto_ore"),
-                feriepengeavsetning_ore: r.get("feriepengeavsetning_ore"),
-                aga_ore: r.get("aga_ore"),
-                aga_feriepenger_ore: r.get("aga_feriepenger_ore"),
+                withholding_ore: r.get("forskuddstrekk_ore"),
+                net_ore: r.get("netto_ore"),
+                holiday_pay_accrual_ore: r.get("feriepengeavsetning_ore"),
+                employer_contribution_ore: r.get("aga_ore"),
+                employer_contribution_holiday_pay_ore: r.get("aga_feriepenger_ore"),
             },
             voucher_id: r.get("voucher_id"),
-            linjer: Vec::new(),
-            ansatte: Vec::new(),
+            lines: Vec::new(),
+            employees: Vec::new(),
             advarsler: Vec::new(),
         })
         .collect::<Vec<_>>();
 
     // Who took part in each run, so the portal can offer a payslip per
     // person without another call.
-    for kjoring in &mut out {
-        let linjer = sqlx::query(
+    for run in &mut out {
+        let lines = sqlx::query(
             "select l.employee_id, e.navn from payroll_line l
              join employee e on e.id = l.employee_id
              where l.run_id = $1 order by e.navn",
         )
-        .bind(kjoring.id)
+        .bind(run.id)
         .fetch_all(pool)
         .await?;
-        kjoring.ansatte = linjer
+        run.employees = lines
             .iter()
             .map(|r| (r.get("employee_id"), r.get("navn")))
             .collect();
@@ -772,13 +783,13 @@ pub async fn list_kjoringer(
 }
 
 /// Guard used by the API before offering a run: which months already ran.
-pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, ar: i32, maned: u32) -> Result<bool> {
+pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, ar: i32, month: u32) -> Result<bool> {
     let n: i64 = sqlx::query_scalar(
         "select count(*) from payroll_run where company_id = $1 and ar = $2 and maned = $3",
     )
     .bind(company_id)
     .bind(ar)
-    .bind(maned as i32)
+    .bind(month as i32)
     .fetch_one(pool)
     .await?;
     if n > 1 {
@@ -792,13 +803,13 @@ pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, ar: i32, maned: u32) -
 /// Rendered on demand rather than stored: the payroll line is
 /// insert-only, so the same line yields the same slip forever — and not
 /// storing it means one fewer copy of personal data to protect.
-pub async fn lonnsslipp(
+pub async fn payslip(
     pool: &PgPool,
     company_id: Uuid,
     run_id: Uuid,
     employee_id: Uuid,
-) -> Result<regnmed_core::lonnsslipp::LonnsslippInput> {
-    use regnmed_core::lonnsslipp::{LonnsslippInput, Slipplinje};
+) -> Result<regnmed_core::payslip::PayslipInput> {
+    use regnmed_core::payslip::{PayslipInput, PayslipLine};
 
     let row = sqlx::query(
         "select r.ar, r.maned, r.utbetalt_dato,
@@ -823,7 +834,7 @@ pub async fn lonnsslipp(
 
     let ar: i32 = row.get("ar");
     let brutto: i64 = row.get("brutto_ore");
-    let feriepenger: i64 = row.get("feriepenger_ore");
+    let holiday_pay: i64 = row.get("feriepenger_ore");
 
     // Year to date, through this run.
     let hittil = sqlx::query(
@@ -842,19 +853,19 @@ pub async fn lonnsslipp(
     .fetch_one(pool)
     .await?;
 
-    let mut linjer = vec![Slipplinje {
+    let mut lines = vec![PayslipLine {
         tekst: "Fastlønn".into(),
         amount_ore: brutto,
     }];
-    if feriepenger != 0 {
-        linjer.push(Slipplinje {
+    if holiday_pay != 0 {
+        lines.push(PayslipLine {
             tekst: "Feriepenger".into(),
-            amount_ore: feriepenger,
+            amount_ore: holiday_pay,
         });
     }
 
-    let trekk_type: String = row.get("trekk_type");
-    Ok(LonnsslippInput {
+    let withholding_type: String = row.get("trekk_type");
+    Ok(PayslipInput {
         arbeidsgiver_navn: row.get("selskap"),
         arbeidsgiver_orgnr: row.get("orgnr"),
         arbeidsgiver_adresse: row.get("address"),
@@ -867,19 +878,19 @@ pub async fn lonnsslipp(
             .as_str()
             .pipe_birth_date(),
         ar,
-        maned: row.get::<i32, _>("maned") as u32,
+        month: row.get::<i32, _>("maned") as u32,
         paid_date: row.get("utbetalt_dato"),
-        linjer,
-        brutto_ore: brutto + feriepenger,
-        trekkgrunnlag_ore: row.get("trekkgrunnlag_ore"),
-        forskuddstrekk_ore: row.get("forskuddstrekk_ore"),
-        trekk_prosent_bp: (trekk_type == "prosent")
+        lines,
+        gross_ore: brutto + holiday_pay,
+        withholding_basis_ore: row.get("trekkgrunnlag_ore"),
+        withholding_ore: row.get("forskuddstrekk_ore"),
+        withholding_percent_bp: (withholding_type == "prosent")
             .then(|| row.get::<Option<i32>, _>("trekk_prosent_bp").map(i64::from))
             .flatten(),
-        halv_trekk: row.get("halv_trekk"),
-        netto_ore: row.get("netto_ore"),
-        feriepengeavsetning_ore: row.get("feriepengeavsetning_ore"),
-        feriepenger_bp: row.get::<i32, _>("feriepenger_bp") as i64,
+        half_withholding: row.get("halv_trekk"),
+        net_ore: row.get("netto_ore"),
+        holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
+        holiday_pay_bp: row.get::<i32, _>("feriepenger_bp") as i64,
         hittil_brutto_ore: hittil.get("brutto"),
         hittil_trekk_ore: hittil.get("trekk"),
         hittil_feriepenger_ore: hittil.get("feriepenger"),
@@ -907,7 +918,7 @@ pub async fn ansatt_person(
 /// Hours logged by an employee in one month, and what they come to.
 #[derive(Debug, Clone, Copy)]
 pub struct Timegrunnlag {
-    pub minutter: i64,
+    pub minutes: i64,
     pub timesats_ore: i64,
     pub amount_ore: i64,
     /// The timesheet is locked through the end of this month.
@@ -929,15 +940,15 @@ pub async fn timegrunnlag(
     company_id: Uuid,
     employee_id: Uuid,
     ar: i32,
-    maned: u32,
+    month: u32,
 ) -> Result<Timegrunnlag> {
-    let start = NaiveDate::from_ymd_opt(ar, maned, 1).context("ugyldig måned")?;
+    let start = NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")?;
     let slutt = start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
 
-    let ansatt = sqlx::query(
+    let employee = sqlx::query(
         "select person_id, timelonn_ore, navn from employee where id = $1 and company_id = $2",
     )
     .bind(employee_id)
@@ -945,16 +956,16 @@ pub async fn timegrunnlag(
     .fetch_optional(pool)
     .await?
     .context("no such ansatt")?;
-    let person_id: Option<Uuid> = ansatt.get("person_id");
-    let navn: String = ansatt.get("navn");
+    let person_id: Option<Uuid> = employee.get("person_id");
+    let navn: String = employee.get("navn");
     let person_id = person_id.with_context(|| {
         format!("{navn} er ikke koblet til en portalbruker — timeføringen vet ikke hvem det er")
     })?;
-    let timesats: i64 = ansatt
+    let timesats: i64 = employee
         .get::<Option<i64>, _>("timelonn_ore")
         .with_context(|| format!("{navn} har ingen timelønn"))?;
 
-    let minutter: Option<i64> = sqlx::query_scalar(
+    let minutes: Option<i64> = sqlx::query_scalar(
         "select sum(minutter)::bigint from time_entry
          where company_id = $1 and person_id = $2 and dato between $3 and $4",
     )
@@ -964,16 +975,16 @@ pub async fn timegrunnlag(
     .bind(slutt)
     .fetch_one(pool)
     .await?;
-    let minutter = minutter.unwrap_or(0);
+    let minutes = minutes.unwrap_or(0);
 
     let laast = crate::timesheet::timesheet_lock(pool, company_id)
         .await?
         .is_some_and(|through| through >= slutt);
 
     Ok(Timegrunnlag {
-        minutter,
+        minutes,
         timesats_ore: timesats,
-        amount_ore: regnmed_core::lonn::timelonn(minutter, timesats),
+        amount_ore: regnmed_core::payroll::hourly_pay(minutes, timesats),
         laast,
     })
 }

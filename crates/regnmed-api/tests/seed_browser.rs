@@ -301,20 +301,20 @@ async fn seed_browser_demo() {
             1250,
         ),
     ] {
-        regnmed_db::lonn::create_ansatt(
+        regnmed_db::payroll::create_ansatt(
             &state.pool,
             company,
-            &regnmed_db::lonn::NyAnsatt {
+            &regnmed_db::payroll::NyAnsatt {
                 fodselsnummer: fnr.into(),
                 navn: navn.into(),
                 stilling: Some(stilling.into()),
                 ansatt_fra: date(2025, 1, 1),
                 manedslonn_ore: Some(lonn),
                 timelonn_ore: None,
-                trekk_type: "prosent".into(),
-                trekk_prosent_bp: Some(trekk_bp),
+                withholding_type: "prosent".into(),
+                withholding_percent_bp: Some(trekk_bp),
                 trekk_tabell: None,
-                feriepenger_bp: fp_bp,
+                holiday_pay_bp: fp_bp,
                 bank_account: None,
                 note: None,
             },
@@ -323,12 +323,12 @@ async fn seed_browser_demo() {
         .await
         .unwrap();
     }
-    let ansatte = regnmed_db::lonn::list_ansatte(&state.pool, company)
+    let ansatte = regnmed_db::payroll::list_ansatte(&state.pool, company)
         .await
         .unwrap();
     // May: an ordinary month. Feriepenger are accrued, and the avgift on
     // them accrues — so June actually has something to draw down.
-    regnmed_db::lonn::kjor_lonn(
+    regnmed_db::payroll::run_payroll(
         &state.pool,
         company,
         2026,
@@ -337,18 +337,18 @@ async fn seed_browser_demo() {
         "I",
         &ansatte
             .iter()
-            .map(|a| regnmed_db::lonn::Lonnspost {
+            .map(|a| regnmed_db::payroll::PayrollEntry {
                 employee_id: a.id,
-                brutto_ore: None,
-                feriepenger_ore: 0,
-                fra_timer: false,
+                gross_ore: None,
+                holiday_pay_ore: 0,
+                from_timesheet: false,
             })
             .collect::<Vec<_>>(),
         "Demo Bruker",
     )
     .await
     .unwrap();
-    regnmed_db::lonn::kjor_lonn(
+    regnmed_db::payroll::run_payroll(
         &state.pool,
         company,
         2026,
@@ -357,12 +357,12 @@ async fn seed_browser_demo() {
         "I",
         &ansatte
             .iter()
-            .map(|a| regnmed_db::lonn::Lonnspost {
+            .map(|a| regnmed_db::payroll::PayrollEntry {
                 employee_id: a.id,
-                brutto_ore: None,
+                gross_ore: None,
                 // June: feriepenger are paid out, and they carry no withholding.
-                feriepenger_ore: 4_500_000,
-                fra_timer: false,
+                holiday_pay_ore: 4_500_000,
+                from_timesheet: false,
             })
             .collect::<Vec<_>>(),
         "Demo Bruker",
@@ -372,20 +372,20 @@ async fn seed_browser_demo() {
 
     // One hourly employee, linked to the demo user who logs hours, with
     // July hours and the month LOCKED — so "from hours" can actually be used.
-    let timo = regnmed_db::lonn::create_ansatt(
+    let timo = regnmed_db::payroll::create_ansatt(
         &state.pool,
         company,
-        &regnmed_db::lonn::NyAnsatt {
+        &regnmed_db::payroll::NyAnsatt {
             fodselsnummer: "25927898821".into(),
             navn: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),
             ansatt_fra: date(2025, 1, 1),
             manedslonn_ore: None,
             timelonn_ore: Some(45_000),
-            trekk_type: "prosent".into(),
-            trekk_prosent_bp: Some(3000),
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3000),
             trekk_tabell: None,
-            feriepenger_bp: 1020,
+            holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
         },
