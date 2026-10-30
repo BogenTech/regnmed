@@ -18,7 +18,7 @@ mod invoice;
 mod invoice_template;
 #[path = "grupper/products.rs"]
 mod products;
-#[path = "grupper/purring.rs"]
-mod purring;
+#[path = "grupper/reminders.rs"]
+mod reminders;
 #[path = "grupper/salgsdokument.rs"]
 mod salgsdokument;

@@ -244,7 +244,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {reminder}");
     let reminder_id = reminder["reminder_id"].as_str().unwrap();
-    let (status, purring_pdf) = send(
+    let (status, reminder_pdf) = send(
         &state,
         "GET",
         &format!("/companies/{company}/invoices/{unpaid_id}/reminders/{reminder_id}?format=pdf"),
@@ -253,8 +253,8 @@ async fn invoice_pdf_is_stored_served_and_verified() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(purring_pdf.starts_with(b"%PDF-1.4"));
-    assert!(find(&purring_pdf, b"/BaseFont /Courier").is_some());
+    assert!(reminder_pdf.starts_with(b"%PDF-1.4"));
+    assert!(find(&reminder_pdf, b"/BaseFont /Courier").is_some());
 
     // Settings are guarded: a bokforing member cannot change them.
     let clerk_sub = format!("test|{}", Uuid::new_v4());

@@ -3,7 +3,7 @@
 //! action" governs the CUSTOMERS' bookkeeping; the drift company's own
 //! invoicing is precisely the machine's job.
 //!
-//! Every function takes `idag` so the whole ladder is testable on a
+//! Every function takes `today` so the whole ladder is testable on a
 //! shifted clock. The decisions that change coverage are logged in the
 //! insert-only `abonnement_oppfolging` table (migration 0048) — which
 //! is also the machine's own memory: restoration happens ONLY for
@@ -12,14 +12,14 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::purring::{Steg, neste_skritt};
 use regnmed_core::rates::value_on;
+use regnmed_core::reminders::{Step, next_step};
 use regnmed_core::subscription::SPERR_ETTER_FORFALL_DAGER;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::purring::{ReminderDraft, create_reminder};
 use crate::rates::load_rates;
+use crate::reminders::{ReminderDraft, create_reminder};
 
 pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
 
@@ -28,7 +28,7 @@ pub const UTFORT_AV: &str = "regnmed abonnement-oppfolging";
 #[derive(Debug)]
 pub struct SubscriptionInvoice {
     pub company_id: Uuid,
-    pub company_navn: String,
+    pub company_name: String,
     /// The customer company's own e-mail (Firmaopplysninger) — the
     /// recipient; the party in the drift company carries none.
     pub epost: Option<String>,
@@ -75,7 +75,7 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
         .filter(|r| r.get::<i64, _>("remaining_ore") > 0)
         .map(|r| SubscriptionInvoice {
             company_id: r.get("company_id"),
-            company_navn: r.get("company_navn"),
+            company_name: r.get("company_navn"),
             epost: r.get("epost"),
             invoice_id: r.get("invoice_id"),
             invoice_no: r.get("invoice_no"),
@@ -89,60 +89,60 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
 }
 
 /// Takes the next reminder step for one invoice if the cadence says one
-/// is due — the pure rule decides, the satsregister prices the gebyr,
+/// is due — the pure rule decides, the rate register prices the fee,
 /// and `create_reminder` applies the statutory checks and posts the
-/// krav in one transaction. Returns the step taken.
+/// claim in one transaction. Returns the step taken.
 pub async fn purr(
     pool: &PgPool,
     drift: Uuid,
     faktura: &SubscriptionInvoice,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<Option<(Uuid, String)>> {
-    let siste = match (&faktura.last_steg, faktura.last_sent) {
+    let last = match (&faktura.last_steg, faktura.last_sent) {
         (Some(s), Some(d)) => Some((
-            Steg::parse(s).with_context(|| format!("ukjent steg «{s}» i historikken"))?,
+            Step::parse(s).with_context(|| format!("ukjent steg «{s}» i historikken"))?,
             d,
         )),
         _ => None,
     };
-    let Some(neste) = neste_skritt(siste, faktura.due_date, idag) else {
+    let Some(neste) = next_step(last, faktura.due_date, today) else {
         return Ok(None);
     };
-    let gebyr_ore = if neste.med_gebyr {
+    let fee_ore = if neste.with_fee {
         // Abonnement customers are companies: the næringsdrivende
         // ceiling (standardkompensasjon) applies, and we charge it.
-        let satser = load_rates(pool).await?;
-        value_on(&satser, "standardkompensasjon", idag)
+        let rates = load_rates(pool).await?;
+        value_on(&rates, "standardkompensasjon", today)
             .context("standardkompensasjon mangler i satsregisteret")?
     } else {
         0
     };
-    // The krav voucher needs its accounts; the drift company's starter
+    // The claim voucher needs its accounts; the operating company's starter
     // kontoplan does not include them. Idempotent, like fakturer_maned's
     // own ensures.
-    if gebyr_ore > 0 || neste.med_rente {
+    if fee_ore > 0 || neste.with_interest {
         crate::ensure_account(pool, drift, "3950", "Annen driftsrelatert inntekt").await?;
         crate::ensure_account(pool, drift, "8050", "Annen renteinntekt").await?;
     }
     let draft = ReminderDraft {
-        steg: neste.steg.as_str().into(),
-        sent_date: Some(idag),
-        grace_date: idag + chrono::Days::new(neste.grace_days as u64),
-        gebyr_ore,
-        med_rente: neste.med_rente,
+        step: neste.step.as_str().into(),
+        sent_date: Some(today),
+        grace_date: today + chrono::Days::new(neste.grace_days as u64),
+        fee_ore,
+        with_interest: neste.with_interest,
         naeringsdrivende: true,
-        gebyr_account: "3950".into(),
-        rente_account: "8050".into(),
+        fee_account: "3950".into(),
+        interest_account: "8050".into(),
     };
     let result = create_reminder(pool, drift, faktura.invoice_id, &draft, UTFORT_AV).await?;
     let reminder_id = result.reminder_id.context("purringen fikk ingen id")?;
-    Ok(Some((reminder_id, result.steg)))
+    Ok(Some((reminder_id, result.step)))
 }
 
 /// Ends the customer's coverage when the invoice is
-/// [`SPERR_ETTER_FORFALL_DAGER`] past forfall and a purring (or more)
+/// [`SPERR_ETTER_FORFALL_DAGER`] past the due date and a reminder (or more)
 /// has been sent — asked twice, still unpaid. Ending coverage does not
-/// block by itself: the ordinary frist runs on top
+/// block by itself: the ordinary deadline runs on top
 /// (`regnmed_core::abonnement::status`), so the customer still has 14
 /// days before the actual sperre. Logged in the oppfølging trail; a
 /// company without open coverage (already ended, or on Stripe) is left
@@ -150,14 +150,14 @@ pub async fn purr(
 pub async fn sperr_om_moden(
     pool: &PgPool,
     faktura: &SubscriptionInvoice,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<bool> {
     let reminded = faktura
         .last_steg
         .as_deref()
-        .and_then(Steg::parse)
-        .is_some_and(|s| s >= Steg::Purring);
-    if !reminded || idag < faktura.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
+        .and_then(Step::parse)
+        .is_some_and(|s| s >= Step::Demand);
+    if !reminded || today < faktura.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
         return Ok(false);
     }
     let apen: bool = sqlx::query_scalar(
@@ -170,7 +170,7 @@ pub async fn sperr_om_moden(
     if !apen {
         return Ok(false);
     }
-    crate::subscription::close_coverage(pool, faktura.company_id, idag).await?;
+    crate::subscription::close_coverage(pool, faktura.company_id, today).await?;
     logg(
         pool,
         faktura.company_id,
@@ -179,7 +179,7 @@ pub async fn sperr_om_moden(
         &format!(
             "faktura {} ubetalt {} dager etter forfall ({}) — dekningen avsluttet",
             faktura.invoice_no,
-            (idag - faktura.due_date).num_days(),
+            (today - faktura.due_date).num_days(),
             faktura.due_date
         ),
     )
@@ -213,16 +213,16 @@ pub async fn restore_if_paid(
     pool: &PgPool,
     drift: Uuid,
     company_id: Uuid,
-    idag: NaiveDate,
+    today: NaiveDate,
 ) -> Result<bool> {
-    let siste: Option<String> = sqlx::query_scalar(
+    let last: Option<String> = sqlx::query_scalar(
         "select aksjon from abonnement_oppfolging
          where company_id = $1 order by created_at desc limit 1",
     )
     .bind(company_id)
     .fetch_optional(pool)
     .await?;
-    if siste.as_deref() != Some("sperret") {
+    if last.as_deref() != Some("sperret") {
         return Ok(false);
     }
     let utestaaende = open_invoices(pool, drift)
@@ -244,7 +244,7 @@ pub async fn restore_if_paid(
         pool,
         company_id,
         &plan,
-        idag,
+        today,
         None,
         "innbetaling registrert — dekningen gjenopprettet automatisk (#75)",
         UTFORT_AV,
@@ -255,7 +255,7 @@ pub async fn restore_if_paid(
         company_id,
         None,
         "gjenopprettet",
-        &format!("alle abonnementsfakturaer betalt — dekning fra {idag}, plan {plan}"),
+        &format!("alle abonnementsfakturaer betalt — dekning fra {today}, plan {plan}"),
     )
     .await?;
     Ok(true)
@@ -266,12 +266,12 @@ pub async fn restore_if_paid(
 #[derive(Debug)]
 pub struct UnsentReminder {
     pub company_id: Uuid,
-    pub company_navn: String,
+    pub company_name: String,
     pub epost: Option<String>,
     pub invoice_id: Uuid,
     pub invoice_no: i64,
     pub reminder_id: Uuid,
-    pub steg: String,
+    pub step: String,
 }
 
 pub async fn unsent_reminders(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentReminder>> {
@@ -293,12 +293,12 @@ pub async fn unsent_reminders(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentRe
         .iter()
         .map(|r| UnsentReminder {
             company_id: r.get("company_id"),
-            company_navn: r.get("company_navn"),
+            company_name: r.get("company_navn"),
             epost: r.get("epost"),
             invoice_id: r.get("invoice_id"),
             invoice_no: r.get("invoice_no"),
             reminder_id: r.get("reminder_id"),
-            steg: r.get("steg"),
+            step: r.get("steg"),
         })
         .collect())
 }

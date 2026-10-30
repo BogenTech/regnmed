@@ -1,12 +1,12 @@
 //! Payment follow-up (web-first, engagement-guarded):
 //!
 //! - GET  /companies/{id}/invoices/overdue          overdue, with age bucket
-//! - GET  /companies/{id}/invoices/{iid}/reminders  purring history
+//! - GET  /companies/{id}/invoices/{iid}/reminders  dunning history
 //! - POST /companies/{id}/invoices/{iid}/reminders  record a step
 //!   (`?preview=true` computes and renders without writing anything)
 //! - GET  /companies/{id}/invoices/{iid}/reminders/{rid}?format=tekst
 //!
-//! Sending a purring is always an explicit human action — the endpoints
+//! Sending a reminder is always an explicit human action — the endpoints
 //! propose and record, nothing is sent automatically. Reading is open to
 //! every access level; recording requires bokforing or admin.
 
@@ -71,12 +71,12 @@ pub async fn list_reminders(
     Ok(Json(json!({
         "reminders": rows.iter().map(|r| json!({
             "reminder_id": r.reminder_id,
-            "steg": r.steg,
+            "steg": r.step,
             "sent_date": r.sent_date.to_string(),
             "frist_date": r.grace_date.to_string(),
             "remaining_ore": r.remaining_ore,
-            "gebyr_ore": r.gebyr_ore,
-            "rente_ore": r.rente_ore,
+            "gebyr_ore": r.fee_ore,
+            "rente_ore": r.interest_ore,
             "voucher": r.voucher.map(|(fy, no)| format!("{fy}-{no}")),
             "created_by": r.created_by,
         })).collect::<Vec<_>>(),
@@ -86,23 +86,27 @@ pub async fn list_reminders(
 #[derive(Deserialize)]
 pub struct CreateReminderRequest {
     /// paminnelse | purring | inkassovarsel
-    steg: String,
+    #[serde(rename = "steg")]
+    step: String,
     /// Defaults to today.
     sent_date: Option<chrono::NaiveDate>,
     #[serde(rename = "frist_date")]
     grace_date: chrono::NaiveDate,
-    /// Defaults to 0 (gebyrfritt skritt).
-    gebyr_ore: Option<i64>,
-    /// Krev påløpt forsinkelsesrente. Defaults to false.
-    #[serde(default)]
-    med_rente: bool,
-    /// The debtor is næringsdrivende → the gebyr ceiling is the standardkompensasjon.
+    /// Defaults to 0 (a fee-free step).
+    #[serde(rename = "gebyr_ore")]
+    fee_ore: Option<i64>,
+    /// Claim accrued late-payment interest. Defaults to false.
+    #[serde(default, rename = "med_rente")]
+    with_interest: bool,
+    /// The debtor is næringsdrivende → the fee ceiling is the standardkompensasjon.
     #[serde(default)]
     naeringsdrivende: bool,
-    /// Defaults: gebyr 3950 (annen driftsrelatert inntekt),
-    /// rente 8050 (annen renteinntekt).
-    gebyr_account: Option<String>,
-    rente_account: Option<String>,
+    /// Defaults: fee 3950 (annen driftsrelatert inntekt),
+    /// interest 8050 (annen renteinntekt).
+    #[serde(rename = "gebyr_account")]
+    fee_account: Option<String>,
+    #[serde(rename = "rente_account")]
+    interest_account: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -114,13 +118,13 @@ pub struct CreateQuery {
 fn result_json(r: &regnmed_db::ReminderResult) -> serde_json::Value {
     json!({
         "reminder_id": r.reminder_id,
-        "steg": r.steg,
+        "steg": r.step,
         "sent_date": r.sent_date.to_string(),
         "frist_date": r.grace_date.to_string(),
         "remaining_ore": r.remaining_ore,
-        "gebyr_ore": r.gebyr_ore,
-        "maks_gebyr_ore": r.maks_gebyr_ore,
-        "rente_ore": r.rente_ore,
+        "gebyr_ore": r.fee_ore,
+        "maks_gebyr_ore": r.max_fee_ore,
+        "rente_ore": r.interest_ore,
         "total_ore": r.total_ore,
         "kid": r.kid,
         "document": r.document,
@@ -137,14 +141,14 @@ pub async fn create_reminder(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::PurringSkriv).await?;
     let draft = regnmed_db::ReminderDraft {
-        steg: request.steg,
+        step: request.step,
         sent_date: request.sent_date,
         grace_date: request.grace_date,
-        gebyr_ore: request.gebyr_ore.unwrap_or(0),
-        med_rente: request.med_rente,
+        fee_ore: request.fee_ore.unwrap_or(0),
+        with_interest: request.with_interest,
         naeringsdrivende: request.naeringsdrivende,
-        gebyr_account: request.gebyr_account.unwrap_or_else(|| "3950".into()),
-        rente_account: request.rente_account.unwrap_or_else(|| "8050".into()),
+        fee_account: request.fee_account.unwrap_or_else(|| "3950".into()),
+        interest_account: request.interest_account.unwrap_or_else(|| "8050".into()),
     };
     let result = if query.preview {
         regnmed_db::preview_reminder(&state.pool, company_id, invoice_id, &draft).await

@@ -395,7 +395,7 @@ pub struct PlattformKunde {
     pub orgnr: Option<String>,
     pub epost: Option<String>,
     pub company_id: Uuid,
-    pub company_navn: String,
+    pub company_name: String,
     pub company_orgnr: String,
 }
 
@@ -433,7 +433,7 @@ pub async fn platform_list_customers(
             orgnr: r.get("orgnr"),
             epost: r.get("email"),
             company_id: r.get("company_id"),
-            company_navn: r.get("company_navn"),
+            company_name: r.get("company_navn"),
             company_orgnr: r.get("company_orgnr"),
         })
         .collect())

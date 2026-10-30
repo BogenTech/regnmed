@@ -23,8 +23,8 @@
 use chrono::NaiveDate;
 
 /// Rounds a basis-point calculation half away from zero.
-fn bp_av(amount_ore: i64, sats_bp: i64) -> i64 {
-    let n = amount_ore as i128 * sats_bp as i128;
+fn bp_av(amount_ore: i64, rate_bp: i64) -> i64 {
+    let n = amount_ore as i128 * rate_bp as i128;
     let d = 10_000i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
     (sign * ((n.abs() + d / 2) / d)) as i64
@@ -161,7 +161,7 @@ pub struct Lonnsberegning {
 ///
 /// Rounding is half away from zero, on the month's whole trekkgrunnlag.
 pub fn beregn(grunnlag: &Lonnsgrunnlag, maned: u32) -> Result<Lonnsberegning, LonnError> {
-    let sats_bp = match grunnlag.trekk {
+    let rate_bp = match grunnlag.trekk {
         Trekk::Tabell(nr) => return Err(LonnError::TabelltrekkIkkeStottet(nr)),
         Trekk::Ingen => 0,
         Trekk::Prosent(bp) => bp,
@@ -170,7 +170,7 @@ pub fn beregn(grunnlag: &Lonnsgrunnlag, maned: u32) -> Result<Lonnsberegning, Lo
     // Feriepenger never carry trekk; only ordinary pay does.
     let trekkgrunnlag = grunnlag.brutto_ore;
     let halv_trekk = maned == 12;
-    let effektiv_bp = if halv_trekk { sats_bp / 2 } else { sats_bp };
+    let effektiv_bp = if halv_trekk { rate_bp / 2 } else { rate_bp };
     let forskuddstrekk = bp_av(trekkgrunnlag, effektiv_bp);
 
     Ok(Lonnsberegning {
@@ -187,11 +187,11 @@ pub fn beregn(grunnlag: &Lonnsgrunnlag, maned: u32) -> Result<Lonnsberegning, Lo
 ///
 /// `sats_bp` comes from the satsregister — this function never knows a
 /// rate itself. Sone Ia is refused; see [`LonnError`].
-pub fn arbeidsgiveravgift(grunnlag_ore: i64, sone: Sone, sats_bp: i64) -> Result<i64, LonnError> {
+pub fn arbeidsgiveravgift(grunnlag_ore: i64, sone: Sone, rate_bp: i64) -> Result<i64, LonnError> {
     if sone == Sone::Ia {
         return Err(LonnError::SoneIaKreverFribelopsberegning);
     }
-    Ok(bp_av(grunnlag_ore, sats_bp))
+    Ok(bp_av(grunnlag_ore, rate_bp))
 }
 
 /// Pay for logged hours: minutes at an hourly rate, in øre.
@@ -230,8 +230,8 @@ pub fn timelonn(minutter: i64, timesats_ore: i64) -> i64 {
 /// opening balance — accrues **nothing** rather than a negative avgift.
 /// There is no such thing as owing negative arbeidsgiveravgift, and
 /// booking one would turn a bookkeeping gap into income.
-pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, sats_bp: i64) -> i64 {
-    bp_av(skyldige_feriepenger_ore.max(0), sats_bp)
+pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, rate_bp: i64) -> i64 {
+    bp_av(skyldige_feriepenger_ore.max(0), rate_bp)
 }
 
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
@@ -240,8 +240,8 @@ pub fn aga_avsetning_mal(skyldige_feriepenger_ore: i64, sats_bp: i64) -> i64 {
 /// turns 60 (§10 nr. 3 adds 2,3 prosentpoeng), and tariff agreements
 /// commonly raise it to 12 % / 14,3 % for five weeks' holiday. Which
 /// one applies is the caller's decision, recorded per employee.
-pub fn feriepengeavsetning(grunnlag_ore: i64, sats_bp: i64) -> i64 {
-    bp_av(grunnlag_ore, sats_bp)
+pub fn feriepengeavsetning(grunnlag_ore: i64, rate_bp: i64) -> i64 {
+    bp_av(grunnlag_ore, rate_bp)
 }
 
 /// What a month's payroll costs and owes, per employee, summed.

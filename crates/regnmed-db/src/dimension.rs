@@ -20,7 +20,7 @@ pub struct DimensionRow {
     /// The customer a prosjekt is for (#80) — party_no + name, None for
     /// avdelinger and unlinked projects.
     pub kunde: Option<String>,
-    pub kunde_navn: Option<String>,
+    pub customer_name: Option<String>,
     /// Whether hours on the prosjekt are billable unless the entry says
     /// otherwise (migration 0052). Always false for avdelinger.
     pub fakturerbar_default: bool,
@@ -59,7 +59,7 @@ pub async fn list_dimensions(
             name: r.get("name"),
             active: r.get("active"),
             kunde: r.get("kunde"),
-            kunde_navn: r.get("kunde_navn"),
+            customer_name: r.get("kunde_navn"),
             fakturerbar_default: r.get("fakturerbar_default"),
             min_timesats_ore: r.get("min_timesats_ore"),
         })

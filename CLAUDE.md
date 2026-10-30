@@ -284,12 +284,31 @@ file they appear in -- unlike `pris`/`kort`/`avvik`, which did not.
 `tests/grupper/terminordning.rs` it means OUTPUT VAT, but only as a
 `report["utgaende_ore"]` JSON key, so it was never eligible.
 
+`purring`->`reminders` followed, and the naming problem was real:
+the DB table is `invoice_reminder` and the route is `/reminders`, so
+"reminder" was already the English word for the WHOLE ladder -- which
+left the middle STEP needing its own word. `Steg`->`Step` with
+`Paminnelse`/`Purring`/`Inkassovarsel`->`Reminder`/`Demand`/
+`CollectionNotice`: the standard dunning-ladder names, and the step
+strings stored in the DB stay Norwegian as always. `reminders::Step::
+Reminder` reads redundantly; inventing a word for påminnelse would
+have been worse. With it: `PurringError`->`ReminderError`,
+`forsinkelsesrente`->`late_payment_interest`,
+`RentePeriode`->`InterestPeriod`, `neste_skritt`->`next_step`,
+`valider_steg`->`validate_step`, `build_krav_voucher`->
+`build_claim_voucher`, `rente`->`interest`, `gebyr`->`fee`.
+
+`Rett::PurringLes`/`PurringSkriv` were LEFT ALONE: they belong to the
+72-right vocabulary in `regnmed-api::tilgang`, and renaming two of 72
+is worse than renaming none. `tilgang.rs` was excluded from the pass
+by hand.
+
 **Still not one batch**: bare `hovedbok` reaches 31 files through
 `lonn`, `reskontro`, `aksjebok` and `year_end`, and `bilag` is wider
 still.
 
 **Still Norwegian**, deliberately: the modules whose core and db halves are
-both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
+both unconverted (`mva`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
 `regnmed-api::tilgang` (the single access guard, named all through
 docs/auth.md) and the test tree (`tests/grupper/`, the seven group

@@ -1,6 +1,6 @@
 //! Betalingsoppfølging over the web API: an overdue invoice surfaces
-//! with its aldersintervall, a gebyrfri påminnelse writes no voucher, a
-//! purring with gebyr + rente posts one (chain verifies), the legal
+//! with its age bucket, a fee-free reminder writes no voucher, a
+//! demand with fee + interest posts one (chain verifies), the legal
 //! guardrails reject bad skritt, and the history is immutable.
 //! Requires DATABASE_URL (skips otherwise).
 
@@ -41,7 +41,7 @@ async fn request(
 }
 
 #[tokio::test]
-async fn purring_loop_with_legal_guardrails() {
+async fn reminder_ladder_with_legal_guardrails() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -148,7 +148,7 @@ async fn purring_loop_with_legal_guardrails() {
 
     let reminders_uri = format!("/companies/{company}/invoices/{invoice_id}/reminders");
 
-    // Gebyrfri påminnelse: registered, but nothing posted.
+    // Fee-free reminder: registered, but nothing posted.
     let frist = (today + chrono::Days::new(14)).to_string();
     let (status, paminnelse) = request(
         &state,
@@ -169,7 +169,7 @@ async fn purring_loop_with_legal_guardrails() {
         "no krav voucher for a påminnelse"
     );
 
-    // Preview a purring with gebyr + rente: computed, rendered, not written.
+    // Preview a demand with fee + interest: computed, rendered, not written.
     let (status, preview) = request(
         &state,
         "POST",
@@ -213,8 +213,8 @@ async fn purring_loop_with_legal_guardrails() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {over}");
 
-    // The real purring: gebyr + rente become one posted voucher.
-    let (status, purring) = request(
+    // The real demand: fee + interest become one posted voucher.
+    let (status, demand) = request(
         &state,
         "POST",
         &reminders_uri,
@@ -230,24 +230,24 @@ async fn purring_loop_with_legal_guardrails() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {purring}");
+    assert_eq!(status, StatusCode::OK, "body: {demand}");
     assert!(
-        purring["voucher"].as_str().is_some(),
-        "krav posted: {purring}"
+        demand["voucher"].as_str().is_some(),
+        "krav posted: {demand}"
     );
-    let rente_ore = purring["rente_ore"].as_i64().unwrap();
-    assert!(rente_ore > 0);
+    let interest_ore = demand["rente_ore"].as_i64().unwrap();
+    assert!(interest_ore > 0);
     assert_eq!(
-        purring["total_ore"].as_i64().unwrap(),
-        12_500_00 + 3800 + rente_ore
+        demand["total_ore"].as_i64().unwrap(),
+        12_500_00 + 3800 + interest_ore
     );
-    assert_eq!(purring["kid"], issued["kid"], "KID follows the invoice");
+    assert_eq!(demand["kid"], issued["kid"], "KID follows the invoice");
     let report = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();
     assert_eq!(report.vouchers_checked, 3, "chain verifies with the krav");
 
-    // The krav is an open post on the same customer's reskontro; the
+    // The claim is an open post on the same customer's reskontro; the
     // invoice's own remaining is untouched.
     let (_, overdue) = request(
         &state,
@@ -267,7 +267,7 @@ async fn purring_loop_with_legal_guardrails() {
     assert_eq!(old_row["remaining_ore"], 12_500_00);
     assert_eq!(old_row["last_steg"], "purring");
 
-    // The purretrapp is one-way: a påminnelse after a purring is refused.
+    // The dunning ladder is one-way: a reminder after a demand is refused.
     let (status, back) = request(
         &state,
         "POST",
@@ -278,7 +278,7 @@ async fn purring_loop_with_legal_guardrails() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {back}");
 
-    // Inkassovarsel with under 14 days frist is rejected …
+    // A collection notice with under 14 days' deadline is rejected …
     let (status, short) = request(
         &state,
         "POST",
@@ -294,7 +294,7 @@ async fn purring_loop_with_legal_guardrails() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {short}");
-    // … and carries the lovtekst when the frist is lawful.
+    // … and carries the statutory text when the deadline is lawful.
     let (status, varsel) = request(
         &state,
         "POST",

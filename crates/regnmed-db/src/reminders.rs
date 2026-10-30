@@ -1,16 +1,16 @@
 //! Payment follow-up: overdue fakturaer (always computed from open
-//! items, never stored state) and purring steps — the regelverk is
-//! applied purely in `regnmed-core::purring`, the rates come from the
-//! satsregister, and any gebyr/interest claimed is posted in the same
+//! items, never stored state) and dunning steps — the rules are
+//! applied purely in `regnmed-core::reminders`, the rates come from the
+//! rate register, and any fee/interest claimed is posted in the same
 //! transaction that records the step (docs/purring.md).
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::purring::{
-    PurringDokument, RenteBeregning, Steg, TidligereSkritt, build_krav_voucher, forsinkelsesrente,
-    render_dokument, valider_steg,
-};
 use regnmed_core::rates::value_on;
+use regnmed_core::reminders::{
+    InterestCalculation, PreviousStep, ReminderDocument, Step, build_claim_voucher,
+    late_payment_interest, render_document, validate_step,
+};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ pub struct OverdueInvoice {
 }
 
 /// Open, overdue fakturaer as of `per_date`, with an age bucket and the
-/// last purring step. Kreditnotaer never count as overdue.
+/// last dunning step. Credit notes never count as overdue.
 pub async fn overdue_invoices(
     pool: &PgPool,
     company_id: Uuid,
@@ -90,31 +90,31 @@ pub async fn overdue_invoices(
 
 #[derive(Debug)]
 pub struct ReminderDraft {
-    pub steg: String,
+    pub step: String,
     /// None → dagens dato (current_date i databasen).
     pub sent_date: Option<NaiveDate>,
     pub grace_date: NaiveDate,
-    pub gebyr_ore: i64,
-    /// Claim accrued forsinkelsesrente on top of the principal.
-    pub med_rente: bool,
-    /// The debtor is næringsdrivende: the gebyr ceiling is the
+    pub fee_ore: i64,
+    /// Claim accrued late-payment interest on top of the principal.
+    pub with_interest: bool,
+    /// The debtor is næringsdrivende: the fee ceiling is the
     /// standardkompensasjon (forsinkelsesrenteloven §3a), not
     /// purregebyr_maks.
     pub naeringsdrivende: bool,
-    pub gebyr_account: String,
-    pub rente_account: String,
+    pub fee_account: String,
+    pub interest_account: String,
 }
 
 #[derive(Debug)]
 pub struct ReminderResult {
     pub reminder_id: Option<Uuid>,
-    pub steg: String,
+    pub step: String,
     pub sent_date: NaiveDate,
     pub grace_date: NaiveDate,
     pub remaining_ore: i64,
-    pub gebyr_ore: i64,
-    pub maks_gebyr_ore: i64,
-    pub rente_ore: i64,
+    pub fee_ore: i64,
+    pub max_fee_ore: i64,
+    pub interest_ore: i64,
     pub total_ore: i64,
     pub kid: String,
     pub document: String,
@@ -135,7 +135,7 @@ struct InvoiceFacts {
     journal_code: String,
     receivable_account: String,
     remaining_ore: i64,
-    historikk: Vec<TidligereSkritt>,
+    history: Vec<PreviousStep>,
 }
 
 async fn invoice_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result<InvoiceFacts> {
@@ -171,13 +171,13 @@ async fn invoice_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Res
     .bind(invoice_id)
     .fetch_all(pool)
     .await?;
-    let historikk = reminder_rows
+    let history = reminder_rows
         .iter()
         .map(|r| {
-            let steg = r.get::<String, _>("steg");
-            Ok(TidligereSkritt {
-                steg: Steg::parse(&steg).with_context(|| format!("ukjent steg {steg}"))?,
-                gebyr_ore: r.get("gebyr_ore"),
+            let step = r.get::<String, _>("steg");
+            Ok(PreviousStep {
+                step: Step::parse(&step).with_context(|| format!("ukjent steg {step}"))?,
+                fee_ore: r.get("gebyr_ore"),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -195,16 +195,16 @@ async fn invoice_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Res
         journal_code: row.get("journal_code"),
         receivable_account: row.get("receivable_account"),
         remaining_ore: row.get("remaining_ore"),
-        historikk,
+        history,
     })
 }
 
 struct PreparedReminder {
     facts: InvoiceFacts,
-    steg: Steg,
+    step: Step,
     sent_date: NaiveDate,
-    maks_gebyr_ore: i64,
-    rente: RenteBeregning,
+    max_fee_ore: i64,
+    interest: InterestCalculation,
     document: String,
 }
 
@@ -216,10 +216,10 @@ async fn prepare(
     invoice_id: Uuid,
     draft: &ReminderDraft,
 ) -> Result<PreparedReminder> {
-    let steg = Steg::parse(&draft.steg).with_context(|| {
+    let step = Step::parse(&draft.step).with_context(|| {
         format!(
             "ukjent steg {} (paminnelse|purring|inkassovarsel)",
-            draft.steg
+            draft.step
         )
     })?;
     let facts = invoice_facts(pool, company_id, invoice_id).await?;
@@ -236,54 +236,54 @@ async fn prepare(
                 .await?
         }
     };
-    let satser = load_rates(pool).await?;
+    let rates = load_rates(pool).await?;
     let gebyr_domene = if draft.naeringsdrivende {
         "standardkompensasjon"
     } else {
         "purregebyr_maks"
     };
-    let maks_gebyr_ore = value_on(&satser, gebyr_domene, sent_date).unwrap_or(0);
+    let max_fee_ore = value_on(&rates, gebyr_domene, sent_date).unwrap_or(0);
 
-    let rente = if draft.med_rente {
-        forsinkelsesrente(facts.remaining_ore, facts.due_date, sent_date, &satser)?
+    let interest = if draft.with_interest {
+        late_payment_interest(facts.remaining_ore, facts.due_date, sent_date, &rates)?
     } else {
-        RenteBeregning {
-            perioder: vec![],
+        InterestCalculation {
+            periods: vec![],
             sum_ore: 0,
         }
     };
-    valider_steg(
-        steg,
+    validate_step(
+        step,
         sent_date,
         draft.grace_date,
         facts.due_date,
-        draft.gebyr_ore,
-        maks_gebyr_ore,
-        &facts.historikk,
+        draft.fee_ore,
+        max_fee_ore,
+        &facts.history,
     )?;
 
-    let document = render_dokument(&PurringDokument {
-        steg,
-        selskap: facts.company_name.clone(),
+    let document = render_document(&ReminderDocument {
+        step,
+        company: facts.company_name.clone(),
         orgnr: facts.orgnr.clone(),
-        kunde_navn: facts.party_name.clone(),
-        kunde_nr: facts.party_no.clone(),
-        faktura_no: facts.invoice_no,
+        customer_name: facts.party_name.clone(),
+        customer_no: facts.party_no.clone(),
+        invoice_no: facts.invoice_no,
         invoice_date: facts.invoice_date,
         forfall: facts.due_date,
         sent_date,
         grace_date: draft.grace_date,
         remaining_amount_ore: facts.remaining_ore,
-        rente: rente.clone(),
-        gebyr_ore: draft.gebyr_ore,
+        interest: interest.clone(),
+        fee_ore: draft.fee_ore,
         kid: facts.kid_avtale.then(|| facts.kid.clone()),
     });
     Ok(PreparedReminder {
         facts,
-        steg,
+        step,
         sent_date,
-        maks_gebyr_ore,
-        rente,
+        max_fee_ore,
+        interest,
         document,
     })
 }
@@ -291,21 +291,21 @@ async fn prepare(
 fn result_of(p: &PreparedReminder, draft: &ReminderDraft) -> ReminderResult {
     ReminderResult {
         reminder_id: None,
-        steg: p.steg.as_str().to_string(),
+        step: p.step.as_str().to_string(),
         sent_date: p.sent_date,
         grace_date: draft.grace_date,
         remaining_ore: p.facts.remaining_ore,
-        gebyr_ore: draft.gebyr_ore,
-        maks_gebyr_ore: p.maks_gebyr_ore,
-        rente_ore: p.rente.sum_ore,
-        total_ore: p.facts.remaining_ore + draft.gebyr_ore + p.rente.sum_ore,
+        fee_ore: draft.fee_ore,
+        max_fee_ore: p.max_fee_ore,
+        interest_ore: p.interest.sum_ore,
+        total_ore: p.facts.remaining_ore + draft.fee_ore + p.interest.sum_ore,
         kid: p.facts.kid.clone(),
         document: p.document.clone(),
         voucher: None,
     }
 }
 
-/// Preview: computes the gebyr ceiling, interest and document without writing.
+/// Preview: computes the fee ceiling, interest and document without writing.
 pub async fn preview_reminder(
     pool: &PgPool,
     company_id: Uuid,
@@ -316,8 +316,8 @@ pub async fn preview_reminder(
     Ok(result_of(&prepared, draft))
 }
 
-/// Records the step: one transaction that posts gebyr/interest (when
-/// claimed) and inserts the purring row — if posting fails there is no
+/// Records the step: one transaction that posts fee/interest (when
+/// claimed) and inserts the reminder row — if posting fails there is no
 /// step at all, the same pattern as the bilagsinnboks.
 pub async fn create_reminder(
     pool: &PgPool,
@@ -327,21 +327,21 @@ pub async fn create_reminder(
     created_by: &str,
 ) -> Result<ReminderResult> {
     let prepared = prepare(pool, company_id, invoice_id, draft).await?;
-    let krav_ore = draft.gebyr_ore + prepared.rente.sum_ore;
+    let krav_ore = draft.fee_ore + prepared.interest.sum_ore;
 
     let mut tx = pool.begin().await?;
     let posted = if krav_ore > 0 {
-        let voucher = build_krav_voucher(
+        let voucher = build_claim_voucher(
             &prepared.facts.journal_code,
             prepared.sent_date,
-            prepared.steg,
+            prepared.step,
             prepared.facts.invoice_no,
             &prepared.facts.party_no,
             &prepared.facts.receivable_account,
-            &draft.gebyr_account,
-            draft.gebyr_ore,
-            &draft.rente_account,
-            prepared.rente.sum_ore,
+            &draft.fee_account,
+            draft.fee_ore,
+            &draft.interest_account,
+            prepared.interest.sum_ore,
         )?;
         Some(post_voucher_in(&mut tx, company_id, &voucher, created_by).await?)
     } else {
@@ -357,12 +357,12 @@ pub async fn create_reminder(
     )
     .bind(reminder_id)
     .bind(invoice_id)
-    .bind(prepared.steg.as_str())
+    .bind(prepared.step.as_str())
     .bind(prepared.sent_date)
     .bind(draft.grace_date)
     .bind(prepared.facts.remaining_ore)
-    .bind(draft.gebyr_ore)
-    .bind(prepared.rente.sum_ore)
+    .bind(draft.fee_ore)
+    .bind(prepared.interest.sum_ore)
     .bind(posted.as_ref().map(|p| p.id))
     .bind(&prepared.document)
     .bind(created_by)
@@ -379,17 +379,17 @@ pub async fn create_reminder(
 #[derive(Debug)]
 pub struct ReminderRow {
     pub reminder_id: Uuid,
-    pub steg: String,
+    pub step: String,
     pub sent_date: NaiveDate,
     pub grace_date: NaiveDate,
     pub remaining_ore: i64,
-    pub gebyr_ore: i64,
-    pub rente_ore: i64,
+    pub fee_ore: i64,
+    pub interest_ore: i64,
     pub voucher: Option<(i32, i64)>,
     pub created_by: String,
 }
 
-/// The purring history for a faktura, oldest first (insert-only — this is
+/// The dunning history for an invoice, oldest first (insert-only — this is
 /// hele hendelsesloggen).
 pub async fn list_reminders(
     pool: &PgPool,
@@ -414,12 +414,12 @@ pub async fn list_reminders(
         .iter()
         .map(|r| ReminderRow {
             reminder_id: r.get("id"),
-            steg: r.get("steg"),
+            step: r.get("steg"),
             sent_date: r.get("sent_date"),
             grace_date: r.get("frist_date"),
             remaining_ore: r.get("remaining_ore"),
-            gebyr_ore: r.get("gebyr_ore"),
-            rente_ore: r.get("rente_ore"),
+            fee_ore: r.get("gebyr_ore"),
+            interest_ore: r.get("rente_ore"),
             voucher: r
                 .get::<Option<i32>, _>("fiscal_year")
                 .zip(r.get::<Option<i64>, _>("voucher_number")),

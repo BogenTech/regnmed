@@ -159,28 +159,28 @@ pub async fn reminder_email_payload(
     .fetch_optional(pool)
     .await?
     .context("no such reminder")?;
-    let steg: String = row.get("steg");
+    let step: String = row.get("steg");
     let document: String = row.get("document");
-    let tittel = regnmed_core::purring::Steg::parse(&steg)
+    let title = regnmed_core::reminders::Step::parse(&step)
         .context("ukjent steg")?
-        .tittel();
+        .title();
 
     Ok(EmailPayload {
         to: recipient(override_to, &facts.party_email)?,
         subject: format!(
-            "{tittel} — faktura {} fra {}",
+            "{title} — faktura {} fra {}",
             facts.invoice_no, facts.company_name
         ),
         text: format!(
             "Hei,\n\nvedlagt følger {} for faktura {} fra {}.\n\nMed vennlig hilsen\n{}\n",
-            tittel.to_lowercase(),
+            title.to_lowercase(),
             facts.invoice_no,
             facts.company_name,
             facts.company_name
         ),
         reply_to: facts.company_email.filter(|e| !e.is_empty()),
         attachment: Some(MailDocument {
-            filename: format!("{steg}-faktura-{}.pdf", facts.invoice_no),
+            filename: format!("{step}-faktura-{}.pdf", facts.invoice_no),
             pdf: regnmed_core::fakturapdf::render_tekst_pdf(&document),
         }),
         invoice_id: Some(invoice_id),

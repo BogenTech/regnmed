@@ -314,7 +314,7 @@ async fn list_customers(
             "epost": k.epost,
             "selskap": {
                 "company_id": k.company_id,
-                "navn": k.company_navn,
+                "navn": k.company_name,
                 "orgnr": k.company_orgnr,
             },
         })).collect::<Vec<_>>(),

@@ -37,7 +37,7 @@ pub mod period;
 pub mod platform;
 pub mod portal;
 pub mod product;
-pub mod purring;
+pub mod reminders;
 pub mod reports;
 pub mod reskontro;
 pub mod roles;
@@ -731,15 +731,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/invoices/overdue",
-            get(purring::overdue),
+            get(reminders::overdue),
         )
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/reminders",
-            get(purring::list_reminders).post(purring::create_reminder),
+            get(reminders::list_reminders).post(reminders::create_reminder),
         )
         .route(
             "/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}",
-            get(purring::reminder_document),
+            get(reminders::reminder_document),
         )
         .route(
             "/companies/{company_id}/inbox",

@@ -427,7 +427,7 @@ async fn main() -> Result<()> {
             for u in &utfall {
                 match (&u.invoice_no, &u.detail) {
                     (Some(no), _) => {
-                        println!("{}: faktura {no}", u.company_navn);
+                        println!("{}: faktura {no}", u.company_name);
                         let (Some(stripe), Some(invoice_id), Some(gross)) =
                             (&stripe, u.invoice_id, u.gross_ore)
                         else {
@@ -457,7 +457,7 @@ async fn main() -> Result<()> {
                             Err(e) => println!("  korttrekk FEILET: {e:#}"),
                         }
                     }
-                    (None, Some(detail)) => println!("{}: {detail}", u.company_navn),
+                    (None, Some(detail)) => println!("{}: {detail}", u.company_name),
                     (None, None) => {}
                 }
             }
@@ -496,20 +496,20 @@ async fn main() -> Result<()> {
                 if f.epost.is_none() {
                     println!(
                         "{}: faktura {} — selskapet mangler e-postadresse, purres ikke",
-                        f.company_navn, f.invoice_no
+                        f.company_name, f.invoice_no
                     );
                     feil += 1;
                     continue;
                 }
                 match opf::purr(&pool, drift, f, idag).await {
-                    Ok(Some((_, steg))) => {
-                        println!("{}: faktura {} → {steg}", f.company_navn, f.invoice_no)
+                    Ok(Some((_, step))) => {
+                        println!("{}: faktura {} → {step}", f.company_name, f.invoice_no)
                     }
                     Ok(None) => {}
                     Err(e) => {
                         println!(
                             "{}: faktura {} — purring FEILET: {e:#}",
-                            f.company_navn, f.invoice_no
+                            f.company_name, f.invoice_no
                         );
                         feil += 1;
                     }
@@ -540,12 +540,12 @@ async fn main() -> Result<()> {
                     match sendt {
                         Ok(()) => println!(
                             "{}: faktura {} sendt til {epost}",
-                            f.company_navn, f.invoice_no
+                            f.company_name, f.invoice_no
                         ),
                         Err(e) => {
                             println!(
                                 "{}: faktura {} — utsendelse FEILET: {e:#}",
-                                f.company_navn, f.invoice_no
+                                f.company_name, f.invoice_no
                             );
                             feil += 1;
                         }
@@ -570,12 +570,12 @@ async fn main() -> Result<()> {
                     match sendt {
                         Ok(()) => println!(
                             "{}: {} for faktura {} sendt til {epost}",
-                            p.company_navn, p.steg, p.invoice_no
+                            p.company_name, p.step, p.invoice_no
                         ),
                         Err(e) => {
                             println!(
                                 "{}: {} for faktura {} — utsendelse FEILET: {e:#}",
-                                p.company_navn, p.steg, p.invoice_no
+                                p.company_name, p.step, p.invoice_no
                             );
                             feil += 1;
                         }
@@ -592,11 +592,11 @@ async fn main() -> Result<()> {
                 match opf::sperr_om_moden(&pool, f, idag).await {
                     Ok(true) => println!(
                         "{}: dekningen avsluttet — faktura {} ubetalt siden {}",
-                        f.company_navn, f.invoice_no, f.due_date
+                        f.company_name, f.invoice_no, f.due_date
                     ),
                     Ok(false) => {}
                     Err(e) => {
-                        println!("{}: sperring FEILET: {e:#}", f.company_navn);
+                        println!("{}: sperring FEILET: {e:#}", f.company_name);
                         feil += 1;
                     }
                 }
