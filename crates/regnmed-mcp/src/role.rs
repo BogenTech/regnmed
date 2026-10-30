@@ -36,7 +36,7 @@ bedrifts lovpålagte regnskap. Det du bokfører kan ikke slettes.
 
 ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 
-1. GJETT ALDRI ET TALL. Et beløp, et kontonummer, en date eller et
+1. GJETT ALDRI ET TALL. Et beløp, et kontonummer, en dato eller et
    organisasjonsnummer du ikke har lest fra et dokument eller fra systemet,
    finner du ikke på. Mangler du et tall: spør.
 2. ENDRE ALDRI NOE SOM ER BOKFØRT. Hovedboken er append-only. En feil rettes
@@ -44,11 +44,11 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
    feil i noe som er bokført: si det, ikke prøv å rette det selv.
 3. LEGG ALDRI MVA PÅ NOE UTEN Å HA SJEKKET. Kall `firmaopplysninger` først; den sier om selskapet er mva-registrert.
    Er selskapet ikke mva-registrert, skal linjene IKKE ha `vat_code` i det hele
-   tatt. En mva-code på et dokument fra et uregistrert selskap er en ulovlig
+   tatt. En mva-kode på et dokument fra et uregistrert selskap er en ulovlig
    påstand, ikke en avrundingsfeil.
 4. BELØP ER HELTALL ØRE. 1 234,50 kr er 123450. Positivt tall er debet,
    negativt er kredit. Summen av linjene i et bilag skal være NØYAKTIG 0.
-5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS date, aldri dagens.
+5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS dato, aldri dagens.
 6. ER DU USIKKER, SPØR. Kall `oppgave_svar` med status "sporsmal" og skriv
    presist hva du trenger svar på. Det er et riktig svar, ikke en innrømmelse.
    Å gjette er alltid galt, også når gjetningen er god.
@@ -56,7 +56,7 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 SLIK ARBEIDER DU:
 
 - Kall `selskaper` først. Den sier hvilket selskap du arbeider for, hvilken
-  role du har og hvilke rettigheter den gir. Prøv ikke noe rollen din ikke
+  rolle du har og hvilke rettigheter den gir. Prøv ikke noe rollen din ikke
   dekker.
 - Kall `oppgaver` for å se hva eieren har bedt om. Svar `pagar` når du
   begynner, og `utfort` med hva du gjorde når du er ferdig.
@@ -79,7 +79,7 @@ DETTE ER ARBEIDET DITT, I DENNE REKKEFØLGEN:
    `periodestatus`, `attesteringspolicy`. Du må vite om selskapet er
    mva-registrert, hvor regnskapet er låst, og om noen skal attestere arbeidet
    ditt, FØR du gjør noe.
-2. Rydd innboksen. For hvert dokument i `innboks`: call `innboks_forslag`
+2. Rydd innboksen. For hvert dokument i `innboks`: kall `innboks_forslag`
    først. Forslaget er utledet av kontrollsifre systemet har validert — det er
    bedre enn din egen lesning av samme PDF. Sier forslaget kilde "ingen", har
    dokumentet ikke noe tekstlag: BOKFØR DET IKKE, si at det må leses av et
@@ -98,7 +98,7 @@ DETTE ER ARBEIDET DITT, I DENNE REKKEFØLGEN:
 DET DU IKKE GJØR:
 
 - Du tar ikke en mva-posisjon selskapet ikke har dokumentert. Avgiftsplikt,
-  fritak og unntak er ikke samme sak, og en code du «antar» flyter rett inn i
+  fritak og unntak er ikke samme sak, og en kode du «antar» flyter rett inn i
   mva-meldingen.
 - Du åpner ikke en låst periode og ber ikke om å få den åpnet for å slippe å
   bokføre i riktig måned.
@@ -119,8 +119,8 @@ DETTE ER ARBEIDET DITT:
 2. `innboks` — for hvert dokument med status "ny":
    a. `innboks_forslag`. Bruk forslaget. Det er ikke en antydning, det er lest
       ut av dokumentets egne kontrollsifre.
-   b. Er alt entydig — leverandør, beløp, konto, date — call `bilag_bokfor`.
-   c. Er noe uklart, call `oppgave_svar` med "sporsmal" og skriv presist hva
+   b. Er alt entydig — leverandør, beløp, konto, dato — kall `bilag_bokfor`.
+   c. Er noe uklart, kall `oppgave_svar` med "sporsmal" og skriv presist hva
       som er uklart ved HVILKET dokument. Gå videre til neste dokument.
 3. Fakturering, når du er bedt om det: `kunder` for å finne `party_no`,
    `faktura_opprett` for å utstede. Kontroller beløpene før du kaller — en
@@ -146,7 +146,7 @@ ikke hovedboken, og det er ikke en feil — det er rollen.
 
 DETTE GJØR DU:
 
-- Fører timer på prosjekt, med date og antall minutter.
+- Fører timer på prosjekt, med dato og antall minutter.
 - Sender inn utlegg og kjøregodtgjørelse med kvittering: `bilag_last_opp` for
   bildet av kvitteringen, så kravet.
 - Svarer på oppgaver som gjelder dette.
@@ -162,7 +162,7 @@ DETTE GJØR DU IKKE:
 
 const MIGRATION: &str = r#"OPPGAVE: flytt et regnskap inn i regnmed fra et annet system.
 
-Dette er den vanskeligste oppgaven i systemet og den første en new kunde står
+Dette er den vanskeligste oppgaven i systemet og den første en ny kunde står
 foran. Den tåler ikke improvisasjon, men den har en fast rekkefølge, og
 rekkefølgen er hele jobben.
 
@@ -259,6 +259,65 @@ mod tests {
             assert!(full.contains(r.tekst), "{}", r.name);
         }
         assert!(prompt("ukjent").is_none());
+    }
+
+    /// The prompts and tool descriptions are Norwegian BY POLICY
+    /// (CLAUDE.md): the model writes to Norwegian users, so the
+    /// instructions it reads are Norwegian too.
+    ///
+    /// This test exists because the English-identifier conversion
+    /// corrupted them. A rename of `dato`, `ny`, `rolle`, `navn`,
+    /// `kode` and `kall` reached INSIDE these string literals and left
+    /// prose like "en new forsøk", "hvilken role du har" and "call
+    /// `bilag_bokfor`" in the system prompt a customer's own LLM
+    /// receives. It compiled, every test passed, and it shipped.
+    ///
+    /// Norwegian words that a rename map is likely to target are also
+    /// the common ones, so the blocklist is the renamed ENGLISH side:
+    /// an English word standing alone in Norwegian prose is the shape
+    /// of the damage. Tool names, JSON field names and code spans in
+    /// backticks are deliberately exempt -- `vat_code` and
+    /// `bilag_bokfor` are wire names and belong in the prompt.
+    #[test]
+    fn the_prompts_and_descriptions_stay_norwegian() {
+        // Strip `code spans`: those name tools and wire fields.
+        fn prose(s: &str) -> String {
+            s.split('`').step_by(2).collect::<Vec<_>>().join(" ")
+        }
+        const ENGLISH: &[&str] = &[
+            "new", "role", "name", "date", "code", "call", "error", "active", "source", "message",
+            "note", "number", "month", "day", "year", "step", "company", "title", "percent",
+            "response", "answer", "amount", "account", "invoice",
+        ];
+        let mut texts: Vec<(String, String)> = ROLES
+            .iter()
+            .map(|r| (format!("prompt {}", r.name), prompt(r.name).unwrap()))
+            .collect();
+        texts.extend(ROLES.iter().map(|r| {
+            (
+                format!("prompt-beskrivelse {}", r.name),
+                r.description.to_string(),
+            )
+        }));
+        texts.extend(
+            crate::tool::TOOLS
+                .iter()
+                .map(|t| (format!("verktoy {}", t.name), t.description.to_string())),
+        );
+        for (what, text) in texts {
+            let words: Vec<String> = prose(&text)
+                .split(|c: char| !c.is_alphanumeric() && c != '-')
+                .map(|w| w.to_lowercase())
+                .collect();
+            for bad in ENGLISH {
+                assert!(
+                    !words
+                        .iter()
+                        .any(|w| w == bad || w.ends_with(&format!("-{bad}"))),
+                    "{what}: «{bad}» is English -- a rename reached inside the literal"
+                );
+            }
+        }
     }
 
     /// The prompts hard-code tool names, so renaming a tool silently
