@@ -608,7 +608,7 @@ pub async fn credit_invoice(
         .bind(original_entry)
         .fetch_one(pool)
         .await?;
-    let items = crate::reskontro::party_items(pool, company_id, party_id, false).await?;
+    let items = crate::subledger::party_items(pool, company_id, party_id, false).await?;
     let remaining = items
         .iter()
         .find(|i| i.entry_id == original_entry)
@@ -616,7 +616,7 @@ pub async fn credit_invoice(
         .unwrap_or(0);
     let creditable = remaining.min(-credit.gross_ore);
     if creditable > 0 {
-        crate::reskontro::match_items(
+        crate::subledger::match_items(
             pool,
             company_id,
             original_entry,

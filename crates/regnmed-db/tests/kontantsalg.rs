@@ -66,7 +66,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     regnmed_db::update_company_settings(
@@ -265,13 +265,13 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     );
 
     // Two vouchers, not one: the discrepancy is a finding about the day.
-    let bilag: i64 =
+    let voucher: i64 =
         sqlx::query_scalar("select count(*)::bigint from voucher where company_id = $1")
             .bind(company)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(bilag, 2);
+    assert_eq!(voucher, 2);
 
     // The Z-report hangs on the settlement, per §5-4.
     let vedlegg: i64 = sqlx::query_scalar(

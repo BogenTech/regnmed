@@ -293,7 +293,7 @@ pub async fn customer_specification(
     path: Path<Uuid>,
     query: Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    reskontro_specification(state, person, path, query, "kunde").await
+    subledger_specification(state, person, path, query, "kunde").await
 }
 
 pub async fn supplier_specification(
@@ -302,13 +302,13 @@ pub async fn supplier_specification(
     path: Path<Uuid>,
     query: Query<PeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    reskontro_specification(state, person, path, query, "leverandor").await
+    subledger_specification(state, person, path, query, "leverandor").await
 }
 
 /// Kunde-/leverandørspesifikasjon (bokføringsforskriften §3-1 nr. 3–4):
 /// per party, inngående saldo + every posting with running saldo and
 /// bilagshenvisning + utgående saldo, for any period.
-async fn reskontro_specification(
+async fn subledger_specification(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -318,7 +318,7 @@ async fn reskontro_specification(
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let parties =
-        regnmed_db::reskontro_specification(&state.pool, company_id, kind, query.from, query.to)
+        regnmed_db::subledger_specification(&state.pool, company_id, kind, query.from, query.to)
             .await?;
     Ok(Json(json!({
         "parties": parties.iter().map(|p| json!({

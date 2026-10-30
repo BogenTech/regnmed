@@ -226,7 +226,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
         project: None,
         currency: None,
     };
-    let bilag = regnmed_db::post_voucher(
+    let voucher = regnmed_db::post_voucher(
         &state.pool,
         company,
         &regnmed_core::voucher::VoucherDraft {
@@ -248,7 +248,7 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
         "POST",
         &format!(
             "/companies/{company}/vouchers/{}/attachments?filename=kvittering.txt",
-            bilag.id
+            voucher.id
         ),
         &admin,
         "kvitteringens innhold",
@@ -454,13 +454,13 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
     make_invoiceable(&state.pool, kunde_b).await;
 
     let today = Utc::now().date_naive();
-    let fra = NaiveDateHelper::forste_i_maneden(today);
+    let from = NaiveDateHelper::forste_i_maneden(today);
     for customer in [kunde_a, kunde_b] {
         regnmed_db::subscription::open_coverage(
             &state.pool,
             customer,
             "standard",
-            fra,
+            from,
             None,
             "test: dekning",
             "test",
@@ -989,7 +989,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     let (code, response) = webhook_post(&state, &payload, &signatur).await;
     assert_eq!(code, StatusCode::OK);
     assert_eq!(response["handled"], "replay");
-    let bilag: i64 = sqlx::query_scalar(
+    let voucher: i64 = sqlx::query_scalar(
         "select count(*) from voucher
          where company_id = $1 and description like 'Kortbetaling%'",
     )
@@ -997,7 +997,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(bilag, 1, "replay skulle ikke gitt et nytt bilag");
+    assert_eq!(voucher, 1, "replay skulle ikke gitt et nytt bilag");
 }
 
 /// Card-first: with the card rail on, the abonnement cannot be started

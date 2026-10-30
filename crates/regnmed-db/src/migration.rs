@@ -71,7 +71,7 @@ pub async fn import_contacts(
                     .number
                     .as_deref()
                     .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
-                let created = crate::reskontro::create_party(
+                let created = crate::subledger::create_party(
                     pool,
                     company_id,
                     kind,

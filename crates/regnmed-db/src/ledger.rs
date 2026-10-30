@@ -336,8 +336,8 @@ pub async fn post_voucher_in(
         })?;
         account_ids.push(account.get("id"));
 
-        let reskontro_kind: Option<String> = account.get("reskontro_kind");
-        let party_id = match (&reskontro_kind, &entry.party_no) {
+        let subledger_kind: Option<String> = account.get("reskontro_kind");
+        let party_id = match (&subledger_kind, &entry.party_no) {
             (Some(kind), Some(party_no)) => {
                 let party = sqlx::query(
                     "select id, kind from party where company_id = $1 and party_no = $2",

@@ -203,7 +203,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     // The ledger is the only honest witness. A model that says it
     // posted and did not must fail here, which is exactly the claim an
     // agent's own report cannot settle.
-    let bilag: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
+    let voucher: i64 = sqlx::query_scalar("select count(*) from voucher where company_id = $1")
         .bind(company)
         .fetch_one(&state.pool)
         .await
@@ -216,9 +216,9 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    println!("bilag i hovedboken: {bilag}, debetsum: {debet:?} øre");
+    println!("bilag i hovedboken: {voucher}, debetsum: {debet:?} øre");
     assert_eq!(
-        bilag,
+        voucher,
         1,
         "agenten bokførte ikke bilaget: {}",
         outcome.note()

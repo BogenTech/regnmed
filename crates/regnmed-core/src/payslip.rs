@@ -53,7 +53,7 @@ pub struct PayslipInput {
     /// Aksjeloven-style restraint: the date identifies, the number is
     /// not needed on a document that travels.
     pub employee_birth_date: Option<chrono::NaiveDate>,
-    pub ar: i32,
+    pub year: i32,
     pub month: u32,
     pub paid_date: chrono::NaiveDate,
     pub lines: Vec<PayslipLine>,
@@ -134,7 +134,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         .copied()
         .unwrap_or("");
     let fakta = [
-        ("Periode", format!("{month_label} {}", input.ar)),
+        ("Periode", format!("{month_label} {}", input.year)),
         ("Utbetalt", input.paid_date.to_string()),
     ];
     let mut fy = 82.0;
@@ -248,7 +248,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         8.0,
         Font::Bold,
-        &format!("HITTIL I {}", input.ar),
+        &format!("HITTIL I {}", input.year),
     );
     ly += 14.0;
     for (text, amount) in [
@@ -280,7 +280,7 @@ mod tests {
             employee_name: "Kari Utvikler".into(),
             ansatt_stilling: Some("Utvikler".into()),
             employee_birth_date: Some(date(1993, 2, 26)),
-            ar: 2026,
+            year: 2026,
             month: 3,
             paid_date: date(2026, 3, 25),
             lines: vec![PayslipLine {

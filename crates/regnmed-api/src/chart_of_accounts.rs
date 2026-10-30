@@ -41,7 +41,7 @@ pub async fn list_accounts(
             "name": k.name,
             "vat_code": k.vat_code,
             "active": k.active,
-            "reskontro_kind": k.reskontro_kind,
+            "reskontro_kind": k.subledger_kind,
             "saldo_ore": k.balance_ore,
             "posteringer": k.posteringer,
         })).collect::<Vec<_>>(),

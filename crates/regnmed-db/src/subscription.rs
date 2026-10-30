@@ -65,8 +65,8 @@ pub async fn open_coverage(
     pool: &PgPool,
     company_id: Uuid,
     plan: &str,
-    fra: NaiveDate,
-    til: Option<NaiveDate>,
+    from: NaiveDate,
+    to: Option<NaiveDate>,
     note: &str,
     av: &str,
 ) -> Result<Uuid> {
@@ -79,8 +79,8 @@ pub async fn open_coverage(
     .bind(id)
     .bind(company_id)
     .bind(plan)
-    .bind(fra)
-    .bind(til)
+    .bind(from)
+    .bind(to)
     .bind(note.trim())
     .bind(av)
     .execute(pool)
@@ -96,13 +96,13 @@ pub async fn open_coverage(
 /// also the truthful one: a subscription cancelled the day it was taken
 /// out DID cover that day, and was paid for it. Hence `greatest`, rather
 /// than refusing to close the row and leaving access open forever.
-pub async fn close_coverage(pool: &PgPool, company_id: Uuid, til: NaiveDate) -> Result<()> {
+pub async fn close_coverage(pool: &PgPool, company_id: Uuid, to: NaiveDate) -> Result<()> {
     let n = sqlx::query(
         "update abonnement set valid_to = greatest($2, valid_from + 1)
          where company_id = $1 and valid_to is null",
     )
     .bind(company_id)
-    .bind(til)
+    .bind(to)
     .execute(pool)
     .await?
     .rows_affected();
@@ -460,7 +460,7 @@ pub async fn oppdater_stripe_status(
 pub async fn end_stripe_subscription(
     pool: &PgPool,
     subscription_id: &str,
-    til: NaiveDate,
+    to: NaiveDate,
 ) -> Result<Option<Uuid>> {
     let mut tx = pool.begin().await?;
     let company: Option<Uuid> = sqlx::query_scalar(
@@ -486,7 +486,7 @@ pub async fn end_stripe_subscription(
           where company_id = $1 and valid_to is null",
     )
     .bind(company)
-    .bind(til)
+    .bind(to)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -528,7 +528,7 @@ pub async fn post_stripe_payment(
     ] {
         crate::ensure_account(pool, drift_company_id, nr, name).await?;
     }
-    crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
+    crate::subledger::set_account_subledger(pool, drift_company_id, "1500", Some("kunde")).await?;
 
     let (customer_orgnumber, customer_name): (String, String) =
         sqlx::query_as("select orgnr, name from company where id = $1")
@@ -709,7 +709,7 @@ pub async fn set_price(
     pool: &PgPool,
     plan: &str,
     price_ore_per_month: i64,
-    fra: NaiveDate,
+    from: NaiveDate,
     source: &str,
 ) -> Result<()> {
     ensure!(!source.trim().is_empty(), "prisraden må ha en kilde");
@@ -720,7 +720,7 @@ pub async fn set_price(
     )
     .bind(plan)
     .bind(price_ore_per_month)
-    .bind(fra)
+    .bind(from)
     .bind(source.trim())
     .execute(pool)
     .await?;
@@ -926,7 +926,7 @@ pub async fn fakturer_maned(
     // refuses the party line — and the abonnement faktura MUST be on the
     // reskontro, since that is how the payment (KID via OCR/bank) closes
     // it.
-    crate::reskontro::set_account_reskontro(pool, drift_company_id, "1500", Some("kunde")).await?;
+    crate::subledger::set_account_subledger(pool, drift_company_id, "1500", Some("kunde")).await?;
 
     // Companies on the Stripe rail are billed BY STRIPE and booked by the
     // webhook. Excluding them here is what keeps the two rails from both
@@ -1031,7 +1031,7 @@ async fn party_for_customer(
             (id, no)
         }
         None => {
-            crate::reskontro::create_party(
+            crate::subledger::create_party(
                 pool,
                 drift,
                 "kunde",

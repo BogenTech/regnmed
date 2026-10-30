@@ -134,7 +134,7 @@ async fn betalingsliste_pain001_and_settlement() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     sqlx::query("update company set bank_account = '8601.11.17947' where id = $1")

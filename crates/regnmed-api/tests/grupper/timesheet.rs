@@ -69,7 +69,7 @@ async fn hours_lock_and_bill() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) = regnmed_db::create_party(
@@ -398,7 +398,7 @@ async fn timer_rights_mean_what_they_say() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =
@@ -571,7 +571,7 @@ async fn a_selection_of_the_grunnlag_bills_and_locks_exactly_itself() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =
@@ -916,7 +916,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =

@@ -29,8 +29,8 @@ pub struct PeriodiseringDraft {
     pub balance_account: String,
     /// Net amount in øre, ledger signs: a prepaid COST is positive.
     pub total_ore: i64,
-    pub fra: (i32, u32),
-    pub til: (i32, u32),
+    pub from: (i32, u32),
+    pub to: (i32, u32),
     pub department: Option<String>,
     pub project: Option<String>,
     pub note: Option<String>,
@@ -55,8 +55,8 @@ pub struct Periodisering {
     pub forte_maneder: i64,
 }
 
-fn first_of(ar: i32, month: u32) -> Result<NaiveDate> {
-    NaiveDate::from_ymd_opt(ar, month, 1).context("ugyldig måned")
+fn first_of(year: i32, month: u32) -> Result<NaiveDate> {
+    NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")
 }
 
 /// Creates a plan. The accounts are the caller's — we never guess one.
@@ -71,12 +71,12 @@ pub async fn create_periodisering(
         !draft.description.trim().is_empty(),
         "periodiseringen må ha en beskrivelse"
     );
-    let fra = first_of(draft.fra.0, draft.fra.1)?;
-    let til = first_of(draft.til.0, draft.til.1)?;
-    let antall = regnmed_core::accrual::month_count(draft.fra, draft.til);
+    let from = first_of(draft.from.0, draft.from.1)?;
+    let to = first_of(draft.to.0, draft.to.1)?;
+    let antall = regnmed_core::accrual::month_count(draft.from, draft.to);
     ensure!(
         antall > 0,
-        "til-måneden kan ikke være før fra-måneden ({fra} → {til})"
+        "til-måneden kan ikke være før fra-måneden ({from} → {to})"
     );
     // A plan whose parts round to nothing is a mistake, not a plan.
     ensure!(
@@ -101,13 +101,13 @@ pub async fn create_periodisering(
         .bind(account)
         .fetch_optional(pool)
         .await?;
-        let (active, reskontro) =
+        let (active, subledger) =
             funnet.with_context(|| format!("{role} {account} finnes ikke i kontoplanen"))?;
         ensure!(active, "{role} {account} er deaktivert");
         // Periodisering posts without a party, so a reskontro account
         // could never succeed — refusing now beats refusing monthly.
         ensure!(
-            reskontro.is_none(),
+            subledger.is_none(),
             "{role} {account} er en reskontrokonto og krever part på hver postering. \
              Periodisering fører uten part, så velg en annen konto"
         );
@@ -154,8 +154,8 @@ pub async fn create_periodisering(
     .bind(&draft.income_account)
     .bind(&draft.balance_account)
     .bind(draft.total_ore)
-    .bind(fra)
-    .bind(til)
+    .bind(from)
+    .bind(to)
     .bind(avdeling_id)
     .bind(prosjekt_id)
     .bind(draft.note.as_deref())
@@ -278,8 +278,8 @@ pub async fn periodiser_plan(
     .await?
     .context("ukjent periodisering")?;
 
-    let fra: NaiveDate = plan.get("fra_maned");
-    let til: NaiveDate = plan.get("til_maned");
+    let from: NaiveDate = plan.get("fra_maned");
+    let to: NaiveDate = plan.get("til_maned");
     let stoppet: Option<NaiveDate> = plan.get("stoppet_dato");
     let description: String = plan.get("beskrivelse");
     let income_account: String = plan.get("resultatkonto");
@@ -288,8 +288,8 @@ pub async fn periodiser_plan(
     let project: Option<String> = plan.get("prosjekt");
     let rader = regnmed_core::accrual::plan(
         plan.get("total_ore"),
-        (fra.year(), fra.month()),
-        (til.year(), til.month()),
+        (from.year(), from.month()),
+        (to.year(), to.month()),
     );
     let antall = rader.len();
 

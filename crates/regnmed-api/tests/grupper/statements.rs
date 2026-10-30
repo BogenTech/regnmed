@@ -247,7 +247,7 @@ fn party_entry(account: &str, ore: i64, party_no: &str) -> EntryDraft {
 }
 
 #[tokio::test]
-async fn reskontrospesifikasjon_carries_saldo_per_party() {
+async fn subledger_specification_carries_balance_per_party() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -281,10 +281,10 @@ async fn reskontrospesifikasjon_carries_saldo_per_party() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     let (_, kunde_a) =

@@ -71,7 +71,7 @@ async fn insert_lines(
 
 /// Creates a tilbud (status utkast) or a direct ordre (status
 /// bekreftet) with its own gap-free number.
-pub async fn create_salgsdokument(
+pub async fn create_sales_document(
     pool: &PgPool,
     company_id: Uuid,
     kind: &str,
@@ -379,7 +379,7 @@ async fn load_lines(pool: &PgPool, dokument_id: Uuid) -> Result<Vec<SalgsLineDra
 }
 
 #[derive(Debug)]
-pub struct SalgsdokumentRow {
+pub struct SalesDocumentRow {
     pub id: Uuid,
     pub kind: String,
     pub doc_no: i64,
@@ -392,11 +392,11 @@ pub struct SalgsdokumentRow {
     pub invoice_no: Option<i64>,
 }
 
-pub async fn list_salgsdokumenter(
+pub async fn list_sales_documents(
     pool: &PgPool,
     company_id: Uuid,
     kind: Option<&str>,
-) -> Result<Vec<SalgsdokumentRow>> {
+) -> Result<Vec<SalesDocumentRow>> {
     let rows = sqlx::query(
         "select s.id, s.kind, s.doc_no, p.party_no, p.name as party_name, s.doc_date,
                 s.status, t.doc_no as tilbud_no, i.invoice_no,
@@ -416,7 +416,7 @@ pub async fn list_salgsdokumenter(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| SalgsdokumentRow {
+        .map(|r| SalesDocumentRow {
             id: r.get("id"),
             kind: r.get("kind"),
             doc_no: r.get("doc_no"),

@@ -65,7 +65,7 @@ async fn seed_browser_demo() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     // Salgsdokumentet krever adresse for begge parter og en registrert

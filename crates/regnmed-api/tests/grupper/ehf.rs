@@ -122,10 +122,10 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
-    regnmed_db::set_account_reskontro(&state.pool, company, "2400", Some("leverandor"))
+    regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
     // Company details: EHF needs an address and an account number. The

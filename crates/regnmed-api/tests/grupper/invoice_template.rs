@@ -69,7 +69,7 @@ async fn recurring_invoices_generate_through_the_ordinary_path() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =

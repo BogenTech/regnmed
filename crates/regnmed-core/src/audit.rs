@@ -32,7 +32,7 @@ pub struct Check {
 /// assembles these with pure SUM queries; the reconciliation itself is
 /// the function below, so it can be tested without a database.
 #[derive(Debug, Clone)]
-pub struct ReskontroKonto {
+pub struct SubledgerAccount {
     pub account: String,
     /// The account's reskontro flag ('kunde'/'leverandor'). `None` means
     /// the account is not a reskontro account and is only in the list
@@ -42,7 +42,7 @@ pub struct ReskontroKonto {
     pub general_ledger_ore: i64,
     /// SUM(amount_ore) over the entries that carry a party: what the
     /// subledger holds for this account.
-    pub reskontro_ore: i64,
+    pub subledger_ore: i64,
     pub without_party_count: i64,
     pub with_party_count: i64,
     /// Postings whose party is of a different kind than the flag.
@@ -60,7 +60,7 @@ fn posteringer(n: i64) -> String {
     }
 }
 
-fn reskontrokontoer(n: usize) -> String {
+fn subledger_accounts(n: usize) -> String {
     if n == 1 {
         "1 reskontrokonto".into()
     } else {
@@ -87,10 +87,10 @@ fn reskontrokontoer(n: usize) -> String {
 ///    state is reachable without anything in the ledger being edited.
 ///
 /// Findings become AVVIK lines, never errors — the report reports.
-pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
+pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
     let mut deviations: Vec<String> = Vec::new();
     let mut flagget = 0usize;
-    let mut reskontro_sum = 0i64;
+    let mut subledger_sum = 0i64;
 
     for account in accounts {
         let Some(flagg) = account.flagg.as_deref() else {
@@ -101,22 +101,22 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
                  beløpet står i spesifikasjonen uten å stå på en reskontrokonto i hovedboken",
                 account.account,
                 posteringer(account.with_party_count),
-                Ore(account.reskontro_ore),
+                Ore(account.subledger_ore),
                 if kinds.is_empty() { "ukjent" } else { &kinds },
             ));
             continue;
         };
         flagget += 1;
-        reskontro_sum += account.reskontro_ore;
+        subledger_sum += account.subledger_ore;
 
         // 1. The tie-out itself.
-        let difference = account.general_ledger_ore - account.reskontro_ore;
+        let difference = account.general_ledger_ore - account.subledger_ore;
         if difference != 0 {
             deviations.push(format!(
                 "konto {}: hovedbok {} mot reskontro {} — differanse {} ({} øre), {} uten part",
                 account.account,
                 Ore(account.general_ledger_ore),
-                Ore(account.reskontro_ore),
+                Ore(account.subledger_ore),
                 Ore(difference),
                 difference,
                 posteringer(account.without_party_count),
@@ -160,8 +160,8 @@ pub fn reskontro_check(accounts: &[ReskontroKonto]) -> Check {
                 "{} avstemt mot hovedboken: summen av partenes poster er lik kontosaldoen \
                  øre for øre (til sammen {}); ingen part av feil type, og ingen part \
                  utenfor en reskontrokonto",
-                reskontrokontoer(flagget),
-                Ore(reskontro_sum),
+                subledger_accounts(flagget),
+                Ore(subledger_sum),
             )
         } else {
             deviations.join("\n")
@@ -346,12 +346,12 @@ mod tests {
     }
 
     /// A flagged account whose every posting carries a party.
-    fn avstemt(account: &str, kind: &str, ore: i64, count: i64) -> ReskontroKonto {
-        ReskontroKonto {
+    fn avstemt(account: &str, kind: &str, ore: i64, count: i64) -> SubledgerAccount {
+        SubledgerAccount {
             account: account.into(),
             flagg: Some(kind.into()),
             general_ledger_ore: ore,
-            reskontro_ore: ore,
+            subledger_ore: ore,
             without_party_count: 0,
             with_party_count: count,
             wrong_kind_count: 0,
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn a_reskontro_account_whose_parties_sum_to_the_balance_ties_out() {
-        let check = reskontro_check(&[avstemt("1500", "kunde", 12_500_00, 2)]);
+        let check = subledger_check(&[avstemt("1500", "kunde", 12_500_00, 2)]);
         assert!(check.ok, "{}", check.detalj);
         assert!(check.detalj.contains("1 reskontrokonto avstemt"));
         assert!(check.detalj.contains("12500,00"));
@@ -373,7 +373,7 @@ mod tests {
         // Zero is a saldo like any other: nothing on either side, no
         // finding. (Counting rows instead of amounts once made an
         // untouched account look like it held a party-less posting.)
-        let check = reskontro_check(&[avstemt("2400", "leverandor", 0, 0)]);
+        let check = subledger_check(&[avstemt("2400", "leverandor", 0, 0)]);
         assert!(check.ok, "{}", check.detalj);
     }
 
@@ -382,7 +382,7 @@ mod tests {
         let mut account = avstemt("1500", "kunde", 12_500_00, 1);
         account.general_ledger_ore = 15_000_00; // 2 500,00 posted without a party
         account.without_party_count = 1;
-        let check = reskontro_check(&[account]);
+        let check = subledger_check(&[account]);
         assert!(!check.ok);
         assert!(check.detalj.contains("konto 1500"), "{}", check.detalj);
         assert!(check.detalj.contains("hovedbok 15000,00"));
@@ -397,7 +397,7 @@ mod tests {
         // reporting only the difference would let that pass silently.
         let mut account = avstemt("1500", "kunde", 12_500_00, 1);
         account.without_party_count = 2;
-        let check = reskontro_check(&[account]);
+        let check = subledger_check(&[account]);
         assert!(!check.ok);
         assert!(
             check.detalj.contains("2 posteringer uten part"),
@@ -413,7 +413,7 @@ mod tests {
         account.wrong_kind_count = 1;
         account.feil_kind_ore = -3_000_00;
         account.part_kinds = vec!["kunde".into(), "leverandor".into()];
-        let check = reskontro_check(&[account]);
+        let check = subledger_check(&[account]);
         assert!(!check.ok);
         assert!(
             check
@@ -426,11 +426,11 @@ mod tests {
 
     #[test]
     fn a_party_on_an_unflagged_account_is_reported() {
-        let check = reskontro_check(&[ReskontroKonto {
+        let check = subledger_check(&[SubledgerAccount {
             account: "1500".into(),
             flagg: None,
             general_ledger_ore: 12_500_00,
-            reskontro_ore: 12_500_00,
+            subledger_ore: 12_500_00,
             without_party_count: 0,
             with_party_count: 3,
             wrong_kind_count: 0,
@@ -456,7 +456,7 @@ mod tests {
         uten_part.without_party_count = 1;
         let mut ikke_flagget = avstemt("2400", "leverandor", -8_000_00, 1);
         ikke_flagget.flagg = None;
-        let check = reskontro_check(&[uten_part, ikke_flagget]);
+        let check = subledger_check(&[uten_part, ikke_flagget]);
         assert!(!check.ok);
         assert_eq!(check.detalj.lines().count(), 2, "{}", check.detalj);
     }

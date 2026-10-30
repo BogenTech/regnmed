@@ -111,8 +111,8 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: total,
-            fra: (2026, 1),
-            til: (2026, 12),
+            from: (2026, 1),
+            to: (2026, 12),
             department: None,
             project: None,
             note: None,
@@ -177,8 +177,8 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: 120_000,
-            fra: (2026, 1),
-            til: (2026, 12),
+            from: (2026, 1),
+            to: (2026, 12),
             department: None,
             project: None,
             note: None,
@@ -233,8 +233,8 @@ async fn a_started_plan_cannot_be_rewritten() {
             income_account: "6300".into(),
             balance_account: "1700".into(),
             total_ore: 60_000,
-            fra: (2026, 1),
-            til: (2026, 6),
+            from: (2026, 1),
+            to: (2026, 6),
             department: None,
             project: None,
             note: None,
@@ -284,7 +284,7 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
 
@@ -294,8 +294,8 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         income_account: result.into(),
         balance_account: balance_sheet.into(),
         total_ore: 30_000,
-        fra: (2026, 1),
-        til: (2026, 3),
+        from: (2026, 1),
+        to: (2026, 3),
         department: None,
         project: None,
         note: None,

@@ -455,8 +455,42 @@ BEFORE a rename runs through it.
 `ny`->`new` was in this sweep deliberately -- it is the word that
 corrupted the prompts in #134 -- and the prompt test stayed green.
 
+Fourth sweep closed the last unconverted modules:
+`reskontro`->`subledger` (the word already chosen for `Right`'s
+`SubledgerRead`, so the vocabulary did not fork) and
+`salgsdokument`->`sales_document` in db and api, plus `bilag`->
+`voucher` and the short words `ar`->`year`, `fra`->`from`, `til`->`to`.
+
+**A correction to what the previous entry warned about.** `ar`, `fra`
+and `til` were called out as too short to sweep, because they appear
+inside English words. That was wrong about the TOOL and right only
+about the MEASURING script: `rename-identifiers.py` substitutes
+`\b%s\b`, so `\bar\b` never matched `chars` or `as_array` -- it was
+the segment-matching heuristic in the progress count that produced
+those false positives. All three went wide, 63 files, no collision.
+Worth keeping because the two risks look identical in a summary and
+are not: a word-boundary rename of a short word is safe, while a
+SUBSTRING scan of one is noise.
+
+`avvik` turned out to carry THREE meanings, not the two recorded
+earlier: an audit FINDING, a budget VARIANCE, and -- in
+`under_avvikling`, `under_tvangsavvikling`, `AVVIKLING_ORGNR` -- BRREG's
+LIQUIDATION status, which is a different word that merely starts the
+same. Word-boundary matching separates the third for free; the first
+two still need splitting, so `avvik` is still deferred.
+
 **How much is left** (measured 2026-10-30, segment-level match against
-a Norwegian word list, strings and comments excluded): **~2 100
+a Norwegian word list, strings and comments excluded): **~1 700
+Norwegian identifier occurrences, 460 distinct names -- 1,1 % of all
+identifiers**, down from 7 494 / 667 / 4,8 % nine batches ago. Per
+crate: api 731, db 711, core 236, cli 24, gov 20, mcp 13, agent 4,
+mail 0. Nothing above 35 remains: `antall` 33 (COUNT in most places,
+QUANTITY in product/inventory -- a split), `tall` 33, `tilgang` 18 (a
+local variable; the module is `access`), `avvik` 18, `inngaende` 13
+(OPENING balance vs INPUT vat -- a split), and a long tail of
+one-offs.
+
+SUPERSEDED, kept for the delta: **~2 100
 Norwegian identifier occurrences, 482 distinct names -- 1,3 % of all
 identifiers**, down from 7 494 / 667 / 4,8 % eight batches ago. Per
 crate: db 886, api 843, core 281, cli 37, gov 20, mcp 13, agent 4,

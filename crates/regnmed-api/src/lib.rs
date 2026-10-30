@@ -39,11 +39,11 @@ pub mod portal;
 pub mod product;
 pub mod reminders;
 pub mod reports;
-pub mod reskontro;
 pub mod roles;
-pub mod salgsdokument;
+pub mod sales_document;
 pub mod settings;
 pub mod share_register;
+pub mod subledger;
 pub mod subscription;
 pub mod timesheet;
 pub mod year_end;
@@ -380,23 +380,23 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/parties",
-            get(reskontro::list_parties).post(reskontro::create_party),
+            get(subledger::list_parties).post(subledger::create_party),
         )
         .route(
             "/companies/{company_id}/parties/{party_id}/items",
-            get(reskontro::party_items),
+            get(subledger::party_items),
         )
         .route(
             "/companies/{company_id}/reskontro/matches",
-            axum::routing::post(reskontro::create_match),
+            axum::routing::post(subledger::create_match),
         )
         .route(
             "/companies/{company_id}/reskontro/matches/{match_id}",
-            axum::routing::delete(reskontro::delete_match),
+            axum::routing::delete(subledger::delete_match),
         )
         .route(
             "/companies/{company_id}/accounts/{account_number}/reskontro",
-            axum::routing::put(reskontro::set_account_reskontro),
+            axum::routing::put(subledger::set_account_subledger),
         )
         .route(
             "/companies/{company_id}/accounts",
@@ -557,7 +557,7 @@ pub fn router(state: AppState) -> Router {
             get(year_end::list).post(year_end::avslutt),
         )
         .route(
-            "/companies/{company_id}/arsavslutning/{ar}/forslag",
+            "/companies/{company_id}/arsavslutning/{year}/forslag",
             get(year_end::forslag),
         )
         .route(
@@ -683,35 +683,35 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/quotes",
-            get(salgsdokument::list_quotes).post(salgsdokument::create_quote),
+            get(sales_document::list_quotes).post(sales_document::create_quote),
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}",
-            axum::routing::put(salgsdokument::update_quote),
+            axum::routing::put(sales_document::update_quote),
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}/status",
-            axum::routing::post(salgsdokument::quote_status),
+            axum::routing::post(sales_document::quote_status),
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}/order",
-            axum::routing::post(salgsdokument::quote_to_order),
+            axum::routing::post(sales_document::quote_to_order),
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}/pdf",
-            get(salgsdokument::pdf),
+            get(sales_document::pdf),
         )
         .route(
             "/companies/{company_id}/orders",
-            get(salgsdokument::list_orders).post(salgsdokument::create_order),
+            get(sales_document::list_orders).post(sales_document::create_order),
         )
         .route(
             "/companies/{company_id}/orders/{order_id}/invoice",
-            axum::routing::post(salgsdokument::order_to_invoice),
+            axum::routing::post(sales_document::order_to_invoice),
         )
         .route(
             "/companies/{company_id}/orders/{order_id}/pdf",
-            get(salgsdokument::pdf),
+            get(sales_document::pdf),
         )
         .route(
             "/companies/{company_id}/invoice-templates",
@@ -958,7 +958,7 @@ async fn me(
             use regnmed_core::subscription::Status;
             let date = match status {
                 Status::Aktiv => None,
-                Status::Trial { til } => Some(til),
+                Status::Trial { to } => Some(to),
                 Status::Grace { sperres } => Some(sperres),
                 Status::Blocked { siden } => Some(siden),
             };

@@ -111,8 +111,8 @@ async fn logg(
     company_id: Uuid,
     person_id: Uuid,
     endring: &str,
-    fra: Option<&str>,
-    til: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
     performed_by: Option<Uuid>,
     source: &str,
 ) -> Result<()> {
@@ -125,8 +125,8 @@ async fn logg(
     .bind(company_id)
     .bind(person_id)
     .bind(endring)
-    .bind(fra)
-    .bind(til)
+    .bind(from)
+    .bind(to)
     .bind(performed_by)
     .bind(source)
     .execute(&mut **tx)
@@ -179,18 +179,18 @@ pub async fn sett_rolle(
     let mut tx = pool.begin().await?;
     laas_medlemmer(&mut tx, company_id).await?;
 
-    let fra: Option<String> = sqlx::query_scalar(
+    let from: Option<String> = sqlx::query_scalar(
         "select role from company_member where company_id = $1 and person_id = $2 and active",
     )
     .bind(company_id)
     .bind(person_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let fra = fra.context(
+    let from = from.context(
         "personen er ikke et direkte medlem her — tilgang gjennom et oppdrag \
          endres ved å endre oppdraget",
     )?;
-    if fra == ny_rolle {
+    if from == ny_rolle {
         tx.commit().await?;
         return Ok(());
     }
@@ -207,7 +207,7 @@ pub async fn sett_rolle(
         company_id,
         person_id,
         "rolle_endret",
-        Some(&fra),
+        Some(&from),
         Some(ny_rolle),
         Some(performed_by),
         "admin",

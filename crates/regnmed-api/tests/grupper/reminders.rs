@@ -71,7 +71,7 @@ async fn reminder_ladder_with_legal_guardrails() {
             .await
             .unwrap();
     }
-    regnmed_db::set_account_reskontro(&state.pool, company, "1500", Some("kunde"))
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
     let (_, party_no) =
