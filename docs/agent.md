@@ -432,7 +432,7 @@ et felt ingen tenkte på. Begge vaktene er **sett feile** — med
 klartekstlagring svarer databasesjekken, og med nøkkelen lagt i svaret
 svarer lekkasjesjekken.
 
-Forseglingen er `regnmed-core::hemmelig`: XChaCha20-Poly1305, tilfeldig
+Forseglingen er `regnmed-core::secret`: XChaCha20-Poly1305, tilfeldig
 nonce per forsegling lagret foran chifferteksten. Autentisert, så en rad
 noen har endret i databasen FEILER framfor å dekryptere til noe annet —
 en forfalsket rad blir en feilmelding, ikke en tulle-API-nøkkel sendt

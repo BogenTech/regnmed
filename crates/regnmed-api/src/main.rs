@@ -64,11 +64,11 @@ async fn main() -> Result<()> {
     // leaving the rail off: a key that is almost right is a
     // configuration mistake someone would otherwise find weeks later,
     // when an agent silently has no model.
-    let forseglingsnokkel = match std::env::var("AGENT_SEALING_KEY") {
-        Ok(hex) => Some(regnmed_core::hemmelig::Nokkel::fra_hex(&hex)?),
+    let sealing_key = match std::env::var("AGENT_SEALING_KEY") {
+        Ok(hex) => Some(regnmed_core::secret::SealingKey::from_hex(&hex)?),
         Err(_) => None,
     };
-    if forseglingsnokkel.is_some() {
+    if sealing_key.is_some() {
         println!("hosted agents can store a provider key (AGENT_SEALING_KEY set)");
     }
 
@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
         stripe,
         drift_orgnr: std::env::var("REGNMED_DRIFT_ORGNR").ok(),
         portal_base: std::env::var("PORTAL_BASE_URL").ok(),
-        forseglingsnokkel,
+        sealing_key,
         regnid,
     });
 

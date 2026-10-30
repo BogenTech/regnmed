@@ -119,8 +119,8 @@ de vanlige. Målgruppen (norsk SMB) er overveldende kalenderår, så
 støtten er ikke prioritert. Men en antakelse ingen kan finne igjen er
 en felle, så den er behandlet slik:
 
-**Definisjonen bor ett sted.** `regnmed-core::regnskapsar` har
-`regnskapsar(dato)` og `regnskapsar_periode(år)` med enhetstester som
+**Definisjonen bor ett sted.** `regnmed-core::fiscal_year` har
+`fiscal_year::of(dato)` og `fiscal_year::period(år)` med enhetstester som
 fester dagens oppførsel. Posteringen (bilagsnummerserien) og SAF-T-ens
 `year=`-form går gjennom den. Testen
 `the_fiscal_year_is_the_calendar_year` er der for at en endring skal være en
@@ -132,7 +132,7 @@ Kartet er verifisert mot koden slik den står i dag:
 
 | Sted | Hva | Status |
 | --- | --- | --- |
-| `regnmed-core/src/regnskapsar.rs` | Selve definisjonen + periodegrensene | **sømstedet** |
+| `regnmed-core/src/fiscal_year.rs` | Selve definisjonen + periodegrensene | **sømstedet** |
 | `regnmed-db/src/ledger.rs` (post_voucher_in) | `fiscal_year` på bilaget = nummerserien per journal+år | går gjennom sømmen |
 | `regnmed-api/src/reports.rs` (saft_export) | `year=` → periode | går gjennom sømmen |
 | `regnmed-db/src/budsjett.rs` | `extract(year from voucher_date) = $2` i to spørringer (avvik + «fra fjoråret») | gjenstår — SQL-side |

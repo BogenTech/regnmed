@@ -170,7 +170,7 @@ pub fn tolk(text: &str) -> Forslag {
             let digits = digits_only(token);
             if forslag.orgnr.is_none()
                 && digits.len() == 9
-                && crate::orgnr::is_valid(&digits)
+                && crate::orgnumber::is_valid(&digits)
                 && (lower.contains("org")
                     || lower.contains("foretaksregister")
                     || lower.contains("mva"))

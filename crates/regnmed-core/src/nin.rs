@@ -22,19 +22,19 @@ use chrono::NaiveDate;
 const K1: [u32; 9] = [3, 7, 6, 1, 8, 9, 4, 5, 2];
 const K2: [u32; 10] = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
 
-fn digits(nummer: &str) -> Option<Vec<u32>> {
-    if nummer.len() != 11 || !nummer.chars().all(|c| c.is_ascii_digit()) {
+fn digits(number: &str) -> Option<Vec<u32>> {
+    if number.len() != 11 || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    Some(nummer.chars().map(|c| c.to_digit(10).unwrap()).collect())
+    Some(number.chars().map(|c| c.to_digit(10).unwrap()).collect())
 }
 
 /// Both control digits check out, and the number carries a real date.
 ///
 /// Accepts D-nummer (day + 40) — a foreign shareholder registered in
 /// Norway has one, and the oppgave uses the same field for it.
-pub fn is_valid(nummer: &str) -> bool {
-    let Some(d) = digits(nummer) else {
+pub fn is_valid(number: &str) -> bool {
+    let Some(d) = digits(number) else {
         return false;
     };
     let check = |weights: &[u32], n: usize| -> Option<u32> {
@@ -48,7 +48,7 @@ pub fn is_valid(nummer: &str) -> bool {
     if check(&K1, 9) != Some(d[9]) || check(&K2, 10) != Some(d[10]) {
         return false;
     }
-    fodselsdato(nummer).is_some()
+    birth_date(number).is_some()
 }
 
 /// The birth date encoded in the number — what aksjeeierboken shows.
@@ -69,46 +69,46 @@ pub fn is_valid(nummer: &str) -> bool {
 /// together with the two-digit year, per Skatteetatens rules. A number
 /// falling outside every range is not a birth number — 750-899 with
 /// year 54-99 is unallocated, and says so by returning None.
-pub fn fodselsdato(nummer: &str) -> Option<NaiveDate> {
-    let d = digits(nummer)?;
+pub fn birth_date(number: &str) -> Option<NaiveDate> {
+    let d = digits(number)?;
     let num = |slice: &[u32]| slice.iter().fold(0u32, |acc, x| acc * 10 + x);
-    let mut dag = num(&d[0..2]);
-    let mut maned = num(&d[2..4]);
-    let ar2 = num(&d[4..6]);
-    let individ = num(&d[6..9]);
+    let mut day = num(&d[0..2]);
+    let mut month = num(&d[2..4]);
+    let year2 = num(&d[4..6]);
+    let individual = num(&d[6..9]);
 
     // D-nummer: 40 has been added to the day.
-    if dag > 40 {
-        dag -= 40;
+    if day > 40 {
+        day -= 40;
     }
     // Synthetic (80) before H-nummer (40) — the order is unambiguous
     // because a month is never above 12 to begin with.
-    if maned > 80 {
-        maned -= 80;
-    } else if maned > 40 {
-        maned -= 40;
+    if month > 80 {
+        month -= 80;
+    } else if month > 40 {
+        month -= 40;
     }
 
-    let arhundre = match (individ, ar2) {
+    let century = match (individual, year2) {
         (0..=499, _) => 1900,
         (500..=749, 54..=99) => 1800,
         (500..=999, 0..=39) => 2000,
         (900..=999, 40..=99) => 1900,
         _ => return None,
     };
-    NaiveDate::from_ymd_opt((arhundre + ar2) as i32, maned, dag)
+    NaiveDate::from_ymd_opt((century + year2) as i32, month, day)
 }
 
 /// True for a D-nummer rather than an ordinary fødselsnummer.
-pub fn er_dnummer(nummer: &str) -> bool {
-    digits(nummer).is_some_and(|d| d[0] * 10 + d[1] > 40)
+pub fn is_dnumber(number: &str) -> bool {
+    digits(number).is_some_and(|d| d[0] * 10 + d[1] > 40)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn dato(y: i32, m: u32, d: u32) -> Option<NaiveDate> {
+    fn date(y: i32, m: u32, d: u32) -> Option<NaiveDate> {
         NaiveDate::from_ymd_opt(y, m, d)
     }
 
@@ -137,22 +137,22 @@ mod tests {
     #[test]
     fn a_synthetic_month_reads_as_the_real_month() {
         // 26.82.93 is 26 February 1993 with +80 on the month.
-        assert_eq!(fodselsdato("26829398612"), dato(1993, 2, 26));
-        assert_eq!(fodselsdato("08888797336"), dato(1987, 8, 8));
-        assert_eq!(fodselsdato("25927898821"), dato(1978, 12, 25));
-        assert!(!er_dnummer("26829398612"));
+        assert_eq!(birth_date("26829398612"), date(1993, 2, 26));
+        assert_eq!(birth_date("08888797336"), date(1987, 8, 8));
+        assert_eq!(birth_date("25927898821"), date(1978, 12, 25));
+        assert!(!is_dnumber("26829398612"));
     }
 
     #[test]
     fn dnummer_subtracts_40_from_the_day() {
-        assert!(er_dnummer("41019010110"));
-        assert_eq!(fodselsdato("41019010110"), dato(1990, 1, 1));
+        assert!(is_dnumber("41019010110"));
+        assert_eq!(birth_date("41019010110"), date(1990, 1, 1));
         assert!(is_valid("41019010110"));
     }
 
     #[test]
     fn hnummer_subtracts_40_from_the_month() {
-        assert_eq!(fodselsdato("01419010029"), dato(1990, 1, 1));
+        assert_eq!(birth_date("01419010029"), date(1990, 1, 1));
     }
 
     /// The century sits in the individnummer, not in the year — this is
@@ -161,25 +161,25 @@ mod tests {
     #[test]
     fn the_century_comes_from_the_individnummer() {
         // 500-749 with year 54-99 → the 1800s.
-        assert_eq!(fodselsdato("01016050012"), dato(1860, 1, 1));
+        assert_eq!(birth_date("01016050012"), date(1860, 1, 1));
         // 500-999 with year 00-39 → the 2000s.
-        assert_eq!(fodselsdato("01010550048"), dato(2005, 1, 1));
+        assert_eq!(birth_date("01010550048"), date(2005, 1, 1));
         // 900-999 with year 40-99 → the 1900s.
-        assert_eq!(fodselsdato("01016090073"), dato(1960, 1, 1));
+        assert_eq!(birth_date("01016090073"), date(1960, 1, 1));
     }
 
     #[test]
     fn an_individnummer_out_of_range_yields_no_date() {
         // 750-899 with year 54-99 is assigned to no century at all.
         // The check digits are fine — it is the date rule that says no.
-        assert_eq!(fodselsdato("01016075015"), None);
+        assert_eq!(birth_date("01016075015"), None);
         assert!(!is_valid("01016075015"));
     }
 
     #[test]
     fn an_impossible_date_is_rejected_even_with_valid_check_digits() {
         // There is no 31 February.
-        assert_eq!(fodselsdato("31029010059"), None);
+        assert_eq!(birth_date("31029010059"), None);
         assert!(!is_valid("31029010059"));
     }
 }

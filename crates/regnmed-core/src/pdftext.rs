@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn flate_komprimert_strom_leses() {
+    fn a_flate_compressed_stream_is_read() {
         use std::io::Write;
         let content = b"BT /F1 10 Tf 50 700 Td (Fakturanr 90210 fra Handelshuset AS) Tj ET";
         let mut encoder =

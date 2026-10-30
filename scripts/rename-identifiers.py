@@ -14,6 +14,11 @@ take production down, so this exists instead.
    sends or reads -- and guard 1 cannot see it, because the field name
    is code, not a string. Those are reported, never renamed silently.
 
+3. COMMENTS ARE PROSE, NOT CODE. `to -> two` turned "fails to open"
+   into "fails two open" across a module's doc comments. Comments are
+   skipped like literals; lines mentioning an old name are reported so
+   the genuine identifier references get fixed by hand.
+
 Three things it does NOT know, which are yours to check:
 
   - Cross-crate names. A map applied to a dependent will happily rename
@@ -36,7 +41,14 @@ import re, sys, pathlib
 # and treat the rest of a JSON schema as code. That is how a `COMPANY`
 # placeholder got renamed on one side of a `.replace()` and not the
 # other -- caught by a test, not by the guard that was supposed to.
-STR = re.compile(r'r(#*)"(?:(?!"\1).)*"\1|"(?:[^"\\\n]|\\.)*"', re.S)
+STR = re.compile(
+    r'r(#*)"(?:(?!"\1).)*"\1'   # raw string
+    r'|"(?:[^"\\\n]|\\.)*"'    # ordinary string
+    r'|//[^\n]*'                 # line comment, incl. /// and //!
+    r'|/\*(?:.|\n)*?\*/',        # block comment
+    re.S,
+)
+COMMENT = re.compile(r'^(?://|/\*)')
 DERIVE = re.compile(r'#\[derive\([^)]*\b(Serialize|Deserialize)\b[^)]*\)\]')
 
 
@@ -81,7 +93,12 @@ def rename(src, pairs):
         for a, b in pairs:
             seg = re.sub(r"\b%s\b" % re.escape(a), b, seg)
         parts.append(seg)
-        parts.append(captures(m.group(0), pairs))
+        tok = m.group(0)
+        # Comments are skipped for the same reason literals are, and for
+        # a worse one: a map entry like `to -> two` rewrites ordinary
+        # English prose ("fails two open"). Mentions of a renamed
+        # identifier in a comment are reported and fixed by hand.
+        parts.append(tok if COMMENT.match(tok) else captures(tok, pairs))
         last = m.end()
     seg = src[last:]
     for a, b in pairs:
@@ -96,7 +113,7 @@ def main():
         if line.strip() and not line.startswith("#"):
             a, b = line.split("\t")
             pairs.append((a.strip(), b.strip()))
-    wire = {}
+    wire, stale = {}, {}
     changed = 0
     for f in sys.argv[2:]:
         p = pathlib.Path(f)
@@ -106,8 +123,17 @@ def main():
         if hits:
             wire[f] = hits
         out = rename(src, pairs)
-        before = [captures(x, pairs) for x in STR.findall(src)]
-        after = STR.findall(out)
+        words = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(a) for a, _ in pairs))
+        mentions = [
+            (n, line)
+            for n, line in enumerate(src.splitlines(), 1)
+            if COMMENT.match(line.strip()) and words.search(line)
+        ]
+        if mentions:
+            stale[f] = mentions
+        toks = [m.group(0) for m in STR.finditer(src)]
+        before = [t if COMMENT.match(t) else captures(t, pairs) for t in toks]
+        after = [m.group(0) for m in STR.finditer(out)]
         if before != after:
             bad = [(x, y) for x, y in zip(before, after) if x != y][:3]
             print(f"REFUSED {f}: string literals changed, e.g. {bad}", file=sys.stderr)
@@ -115,7 +141,12 @@ def main():
         if out != src:
             p.write_text(out)
             changed += 1
-    print(f"rewrote {changed} file(s); every string literal byte-identical")
+    print(f"rewrote {changed} file(s); strings and comments byte-identical")
+    if stale:
+        print("\nCOMMENTS -- these still use an old name, fix the real ones by hand:")
+        for f, lines in stale.items():
+            for n, text in lines:
+                print(f"  {f}:{n}: {text.strip()[:96]}")
     if wire:
         print("\nWIRE CONTRACT -- these renamed names are serde fields:")
         for f, hits in wire.items():

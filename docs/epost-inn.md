@@ -93,7 +93,7 @@ Slipp inn / Avvis, avsenderlisten og de siste mottakene.
 
 ## Tester
 
-- `regnmed-core/src/epost.rs` — adressen er lesbar men ikke gjettbar og
+- `regnmed-core/src/email.rs` — adressen er lesbar men ikke gjettbar og
   holder skjemaets lengdekrav; avsender leses ut av visningsnavn;
   listen godtar adresse og domene, og et domene må matche helt
   (`grossisten.no.svindel.no` slipper ikke inn).

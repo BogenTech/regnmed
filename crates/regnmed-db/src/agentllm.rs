@@ -13,7 +13,7 @@
 
 use anyhow::{Result, ensure};
 use chrono::{DateTime, Utc};
-use regnmed_core::hemmelig::{Nokkel, apne, forsegl};
+use regnmed_core::secret::{SealingKey, open, seal};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -48,7 +48,7 @@ fn standard_url(leverandor: &str) -> Option<&'static str> {
 /// on the way in. Replacing the configuration is a new row.
 pub async fn sett_llm(
     pool: &PgPool,
-    nokkel: &Nokkel,
+    nokkel: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
     leverandor: &str,
@@ -112,7 +112,7 @@ pub async fn sett_llm(
     .bind(leverandor)
     .bind(url)
     .bind(modell)
-    .bind(forsegl(nokkel, api_nokkel.as_bytes())?)
+    .bind(seal(nokkel, api_nokkel.as_bytes())?)
     .bind(satt_av)
     .execute(pool)
     .await?;
@@ -180,7 +180,7 @@ pub async fn hent_llm(
 /// call that decrypts.
 pub async fn hent_llm_nokkel(
     pool: &PgPool,
-    nokkel: &Nokkel,
+    nokkel: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
 ) -> Result<Option<(LlmOppsett, String)>> {
@@ -200,7 +200,7 @@ pub async fn hent_llm_nokkel(
         return Ok(None);
     }
     let sealed: Vec<u8> = row.get::<Option<Vec<u8>>, _>("nokkel").unwrap_or_default();
-    let klar = String::from_utf8(apne(nokkel, &sealed)?)?;
+    let klar = String::from_utf8(open(nokkel, &sealed)?)?;
     Ok(Some((
         LlmOppsett {
             leverandor: row.get("leverandor"),
@@ -222,7 +222,7 @@ pub async fn hent_llm_nokkel(
 /// rather than acting on its behalf through some second door.
 pub async fn sett_klienthemmelighet(
     pool: &PgPool,
-    nokkel: &Nokkel,
+    nokkel: &SealingKey,
     company_id: Uuid,
     integration_id: Uuid,
     hemmelighet: &str,
@@ -237,7 +237,7 @@ pub async fn sett_klienthemmelighet(
     )
     .bind(integration_id)
     .bind(company_id)
-    .bind(forsegl(nokkel, hemmelighet.as_bytes())?)
+    .bind(seal(nokkel, hemmelighet.as_bytes())?)
     .execute(pool)
     .await?
     .rows_affected();
@@ -249,7 +249,7 @@ pub async fn sett_klienthemmelighet(
 /// about to ask the IdP for a token as this agent.
 pub async fn hent_klientlegitimasjon(
     pool: &PgPool,
-    nokkel: &Nokkel,
+    nokkel: &SealingKey,
     integration_id: Uuid,
 ) -> Result<Option<(String, String)>> {
     let row = sqlx::query(
@@ -266,7 +266,7 @@ pub async fn hent_klientlegitimasjon(
     };
     Ok(Some((
         row.get("oidc_sub"),
-        String::from_utf8(apne(nokkel, &sealed)?)?,
+        String::from_utf8(open(nokkel, &sealed)?)?,
     )))
 }
 

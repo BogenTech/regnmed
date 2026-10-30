@@ -60,11 +60,11 @@ pub async fn list(
         "farger": regnmed_db::AVATAR_FARGER,
         // Whether this installation can store a provider key at all
         // (docs/agent.md §8) — the portal offers the form only then.
-        "llm_tilgjengelig": state.forseglingsnokkel.is_some(),
+        "llm_tilgjengelig": state.sealing_key.is_some(),
         // Whether this installation can create an agent's identity for
         // the customer (docs/agent.md §8.6). False means the portal has
         // to ask for a client_id, as it always did.
-        "kan_opprette": state.regnid.is_some() && state.forseglingsnokkel.is_some(),
+        "kan_opprette": state.regnid.is_some() && state.sealing_key.is_some(),
         "leverandorer": regnmed_db::agentllm::LEVERANDORER
             .iter()
             .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
@@ -207,7 +207,7 @@ pub async fn opprett_agent(
             };
             // The secret has to be stored sealed, so refuse before
             // creating anything we would then have to throw away.
-            if state.forseglingsnokkel.is_none() {
+            if state.sealing_key.is_none() {
                 return Err(ApiError::BadRequest(
                     "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
                         .into(),
@@ -270,7 +270,7 @@ pub async fn opprett_agent(
 
     if let Some(hemmelighet) = hemmelighet {
         let nokkel = state
-            .forseglingsnokkel
+            .sealing_key
             .as_ref()
             .expect("sjekket før klienten ble opprettet");
         regnmed_db::agentllm::sett_klienthemmelighet(
@@ -298,7 +298,7 @@ pub async fn opprett_agent(
         .filter(|k| !k.is_empty());
     match (modell, api_nokkel) {
         (Some(modell), Some(api_nokkel)) => {
-            let Some(nokkel) = state.forseglingsnokkel.as_ref() else {
+            let Some(nokkel) = state.sealing_key.as_ref() else {
                 return Err(ApiError::BadRequest(
                     "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
                         .into(),
@@ -462,7 +462,7 @@ pub async fn llm(
         // Without a sealing key the rail is off, and the portal says so
         // rather than offering a form that would store a key we cannot
         // protect.
-        "tilgjengelig": state.forseglingsnokkel.is_some(),
+        "tilgjengelig": state.sealing_key.is_some(),
         "leverandorer": regnmed_db::agentllm::LEVERANDORER
             .iter()
             .map(|(navn, url)| json!({ "navn": navn, "base_url": url }))
@@ -493,7 +493,7 @@ pub async fn sett_llm(
     Json(request): Json<LlmRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
-    let Some(nokkel) = state.forseglingsnokkel.as_ref() else {
+    let Some(nokkel) = state.sealing_key.as_ref() else {
         return Err(ApiError::BadRequest(
             "vertsagenter er ikke satt opp på denne installasjonen (AGENT_SEALING_KEY mangler)"
                 .into(),

@@ -171,8 +171,8 @@ pub async fn saft_export(
 
     let (start, end) = match (query.year, query.from, query.to) {
         // year= betyr regnskapsåret; definisjonen ligger i
-        // regnmed-core::regnskapsar (docs/regelverk.md, #52).
-        (Some(year), None, None) => regnmed_core::regnskapsar::regnskapsar_periode(year)
+        // regnmed-core::fiscal_year (docs/regelverk.md, #52).
+        (Some(year), None, None) => regnmed_core::fiscal_year::period(year)
             .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?,
         (None, Some(from), Some(to)) if from <= to => (from, to),
         _ => {
@@ -427,10 +427,10 @@ pub async fn prosjektlonnsomhet(
                 .fetch_one(&state.pool)
                 .await
                 .map_err(anyhow::Error::from)?;
-            regnmed_core::regnskapsar::regnskapsar(today)
+            regnmed_core::fiscal_year::of(today)
         }
     };
-    let (from, to) = regnmed_core::regnskapsar::regnskapsar_periode(year)
+    let (from, to) = regnmed_core::fiscal_year::period(year)
         .ok_or_else(|| ApiError::BadRequest(format!("ugyldig år {year}")))?;
 
     let dims = regnmed_db::list_dimensions(&state.pool, company_id, person.person_id).await?;

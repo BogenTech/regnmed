@@ -51,7 +51,7 @@ konto before anything is written:
   exporting system, while regnmed never posts year-end closings
   (udisponert resultat is derived in the balanse report). Their file
   opening is therefore compared against the booked entries of the
-  file's **own fiscal year** (the `regnskapsar` seam): zero at a year
+  file's **own fiscal year** (the `fiscal_year` seam): zero at a year
   boundary, the year-to-date sum when one year arrives in several
   files.
 

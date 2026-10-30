@@ -162,10 +162,25 @@ literal before and after and assert they are byte-identical before
 writing. Also beware `matrise.rs`'s `START`/`SLUTT` marker strings, which
 must keep matching docs/auth.md verbatim.
 
-**The conversion is not done.** New code follows this now;
-`regnmed-agent` and the task queue were converted 2026-10-30. The rest
-of the workspace still carries Norwegian identifiers, and converting it
-is its own work, crate by crate, not a single sweep.
+**The conversion is not done.** New code follows this now. Converted so
+far (all 2026-10-30): `regnmed-agent` and the task queue,
+`regnmed-mcp`, `regnmed-gov`, and `regnmed-core`'s leaf modules
+(`hemmelig`->`secret`, `epost`->`email`, `orgnr`->`orgnumber`,
+`fnr`->`nin`, `regnskapsar`->`fiscal_year`, `pdftekst`->`pdftext`).
+The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
+Norwegian identifiers, and converting them is its own work, crate by
+crate, not a single sweep. `regnmed-api` has to move in lockstep with
+the portal: `dato`, `rolle`, `beskrivelse` and `belop_ore` are JSON
+field names the Svelte app reads, not internal names.
+
+`scripts/rename-identifiers.py` does the mechanical part with the
+guards each past breakage earned: string literals must come out
+byte-identical, serde fields are reported rather than renamed, inline
+format captures (`{name}`) move with the identifier they name, raw
+strings are matched before plain ones, and **comments are skipped like
+literals** — a map entry `to -> two` once rewrote a module's prose into
+"fails two open". Lines where a comment still mentions an old name are
+reported for a human to fix.
 
 ### Secrets policy (agreed 2026-07-26, docs/secrets.md)
 

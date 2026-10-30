@@ -114,7 +114,7 @@ som allerede finnes (ingen lagret tilstand, ingen ny SQL-vei):
   akkurat det prosjektet; ukjent kode er en høylytt 400, aldri en tom
   rapport.
 
-Året går gjennom `regnskapsar`-sømmen (#52). Portal: Rapporter →
+Året går gjennom `fiscal_year`-sømmen (#52). Portal: Rapporter →
 Prosjekt (rad-klikk åpner seksjonene), lenket fra
 dimensjonsregisteret.
 

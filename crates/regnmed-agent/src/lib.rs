@@ -20,7 +20,7 @@ pub mod llm;
 
 use anyhow::{Context, Result, bail};
 use futures_util::{StreamExt, stream};
-use regnmed_core::hemmelig::Nokkel;
+use regnmed_core::secret::SealingKey;
 use regnmed_mcp::client::Client;
 use regnmed_mcp::{Server, role, tool};
 use serde_json::{Value, json};
@@ -248,7 +248,7 @@ pub async fn run_loop(
 /// stored credentials, run the loop, and record the outcome.
 pub async fn run_task(
     pool: &PgPool,
-    key: &Nokkel,
+    key: &SealingKey,
     company_id: Uuid,
     task_id: Uuid,
     issuer: &str,

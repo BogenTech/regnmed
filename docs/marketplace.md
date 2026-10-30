@@ -37,7 +37,7 @@ Connecting further users to a created company (lønnsmottakere,
 
 `POST /companies {orgnr}` (portal: "Nytt selskap fra Enhetsregisteret"):
 
-1. Orgnr is checksum-validated (MOD11, `regnmed-core::orgnr`) before any
+1. Orgnr is checksum-validated (MOD11, `regnmed-core::orgnumber`) before any
    lookup.
 2. Facts are fetched from BRREG's open API (`regnmed-gov::brreg`;
    `BRREG_API_URL` overrides for tests/mirrors). Enheter that are
@@ -170,7 +170,7 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
 
 ## Where it is tested
 
-- `regnmed-core/src/orgnr.rs` — MOD11 checksum on real orgnrs.
+- `regnmed-core/src/orgnumber.rs` — MOD11 checksum on real orgnrs.
 - `regnmed-gov` — registry response parsing (tolerant to extra fields),
   license matching incl. inactive licenses not counting.
 - `regnmed-api/tests/grupper/engagement.rs` (real Postgres, also CI): the whole
