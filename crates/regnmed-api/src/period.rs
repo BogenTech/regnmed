@@ -132,8 +132,8 @@ pub async fn list_vouchers(
                     "vat_code": l.vat_code,
                     "description": l.description,
                     "party_no": l.party_no,
-                    "avdeling": l.avdeling,
-                    "prosjekt": l.prosjekt,
+                    "avdeling": l.department,
+                    "prosjekt": l.project,
                 })).collect::<Vec<_>>());
             }
             o

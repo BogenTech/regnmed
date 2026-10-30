@@ -6,25 +6,28 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
-use regnmed_core::valuta::gyldig_valutakode;
+use regnmed_core::currency::is_valid_currency_code;
 use sqlx::{PgPool, Row};
 
 pub async fn insert_kurs(
     pool: &PgPool,
-    valuta: &str,
+    currency: &str,
     dato: NaiveDate,
-    kurs_micro: i64,
+    rate_micro: i64,
     kilde: &str,
 ) -> Result<()> {
-    ensure!(gyldig_valutakode(valuta), "ugyldig valutakode {valuta}");
-    ensure!(kurs_micro > 0, "kursen må være positiv");
+    ensure!(
+        is_valid_currency_code(currency),
+        "ugyldig valutakode {currency}"
+    );
+    ensure!(rate_micro > 0, "kursen må være positiv");
     sqlx::query(
         "insert into valutakurs (valuta, dato, kurs_micro, kilde) values ($1, $2, $3, $4)
          on conflict (valuta, dato) do nothing",
     )
-    .bind(valuta)
+    .bind(currency)
     .bind(dato)
-    .bind(kurs_micro)
+    .bind(rate_micro)
     .bind(kilde)
     .execute(pool)
     .await?;
@@ -35,7 +38,7 @@ pub async fn insert_kurs(
 /// None before the register's coverage — the caller fails loudly.
 pub async fn kurs_for(
     pool: &PgPool,
-    valuta: &str,
+    currency: &str,
     dato: NaiveDate,
 ) -> Result<Option<(NaiveDate, i64)>> {
     let row = sqlx::query(
@@ -43,7 +46,7 @@ pub async fn kurs_for(
          where valuta = $1 and dato <= $2
          order by dato desc limit 1",
     )
-    .bind(valuta)
+    .bind(currency)
     .bind(dato)
     .fetch_optional(pool)
     .await?;
@@ -53,19 +56,19 @@ pub async fn kurs_for(
 /// Convenience with a clear error for the posting paths.
 pub async fn require_kurs(
     pool: &PgPool,
-    valuta: &str,
+    currency: &str,
     dato: NaiveDate,
 ) -> Result<(NaiveDate, i64)> {
-    kurs_for(pool, valuta, dato).await?.with_context(|| {
-        format!("ingen {valuta}-kurs på eller før {dato} — hent eller registrer kurser")
+    kurs_for(pool, currency, dato).await?.with_context(|| {
+        format!("ingen {currency}-kurs på eller før {dato} — hent eller registrer kurser")
     })
 }
 
 #[derive(Debug)]
 pub struct KursRow {
-    pub valuta: String,
+    pub currency: String,
     pub dato: NaiveDate,
-    pub kurs_micro: i64,
+    pub rate_micro: i64,
     pub kilde: String,
 }
 
@@ -80,9 +83,9 @@ pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<KursRow>> {
     Ok(rows
         .iter()
         .map(|r| KursRow {
-            valuta: r.get("valuta"),
+            currency: r.get("valuta"),
             dato: r.get("dato"),
-            kurs_micro: r.get("kurs_micro"),
+            rate_micro: r.get("kurs_micro"),
             kilde: r.get("kilde"),
         })
         .collect())

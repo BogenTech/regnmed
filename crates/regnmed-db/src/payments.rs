@@ -369,9 +369,9 @@ pub async fn settle_run(
             vat_code: None,
             description: Some("Remittering".into()),
             party_no: Some(r.get("party_no")),
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         })
         .collect();
     entries.push(EntryDraft {
@@ -380,9 +380,9 @@ pub async fn settle_run(
         vat_code: None,
         description: Some(format!("Betalingskjøring {run_id}")),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     });
     let draft = VoucherDraft {
         journal_code: "GL".into(),

@@ -61,7 +61,8 @@ pub struct Capital {
     #[serde(default, rename = "antallAksjer")]
     pub antall_aksjer: Option<i64>,
     #[serde(default)]
-    pub valuta: Option<String>,
+    #[serde(rename = "valuta")]
+    pub currency: Option<String>,
 }
 
 impl Capital {
@@ -71,11 +72,11 @@ impl Capital {
     pub fn amount_ore(&self) -> Option<i64> {
         // Capital in another currency is not comparable to the ledger's
         // øre, so it is not converted — better absent than wrong.
-        if self.valuta.as_deref().is_some_and(|v| v != "NOK") {
+        if self.currency.as_deref().is_some_and(|v| v != "NOK") {
             return None;
         }
         let raw = self.belop.as_ref()?.to_string();
-        regnmed_core::valuta::parse_kurs(&raw).map(|micro| micro / 10_000)
+        regnmed_core::currency::parse_rate(&raw).map(|micro| micro / 10_000)
     }
 }
 

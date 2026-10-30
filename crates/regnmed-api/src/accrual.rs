@@ -30,8 +30,10 @@ pub struct PeriodiseringRequest {
     fra_maned: u32,
     til_ar: i32,
     til_maned: u32,
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
+    #[serde(rename = "avdeling")]
+    department: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
     notat: Option<String>,
 }
 
@@ -51,8 +53,8 @@ pub async fn list(
             "total_ore": p.total_ore,
             "fra_maned": p.fra_maned.to_string(),
             "til_maned": p.til_maned.to_string(),
-            "avdeling": p.avdeling,
-            "prosjekt": p.prosjekt,
+            "avdeling": p.department,
+            "prosjekt": p.project,
             "notat": p.notat,
             "stoppet_dato": p.stoppet_dato.map(|d| d.to_string()),
             // Computed, never stored: what is left is the difference.
@@ -81,8 +83,8 @@ pub async fn create(
             total_ore: request.total_ore,
             fra: (request.fra_ar, request.fra_maned),
             til: (request.til_ar, request.til_maned),
-            avdeling: request.avdeling,
-            prosjekt: request.prosjekt,
+            department: request.department,
+            project: request.project,
             notat: request.notat,
         },
         person.name.as_deref().unwrap_or(&person.sub),

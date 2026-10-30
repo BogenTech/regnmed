@@ -445,9 +445,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some(format!("Lønn {maned:02}/{ar}")),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if sum.forskuddstrekk_ore != 0 {
@@ -457,9 +457,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Forskuddstrekk".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if sum.netto_ore != 0 {
@@ -469,9 +469,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Netto til utbetaling".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
 
@@ -484,9 +484,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Utbetalte feriepenger".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if sum.feriepengeavsetning_ore != 0 {
@@ -496,9 +496,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Feriepengeavsetning".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_FERIEPENGER.into(),
@@ -506,9 +506,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Avsatte feriepenger".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if sum.aga_ore != 0 {
@@ -518,9 +518,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some(format!("Arbeidsgiveravgift sone {sone_slug}")),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
         entries.push(EntryDraft {
             account_number: KONTO_SKYLDIG_AGA.into(),
@@ -528,9 +528,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Skyldig arbeidsgiveravgift".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
 
@@ -546,9 +546,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Arbeidsgiveravgift av påløpne feriepenger".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
         entries.push(EntryDraft {
             account_number: KONTO_PAALOPT_AGA_FERIEPENGER.into(),
@@ -556,9 +556,9 @@ pub async fn kjor_lonn(
             vat_code: None,
             description: Some("Påløpt arbeidsgiveravgift av feriepenger".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
 

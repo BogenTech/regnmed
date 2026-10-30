@@ -28,10 +28,10 @@ pub async fn list_rates(
     let kurser = regnmed_db::latest_kurser(&state.pool).await?;
     Ok(Json(json!({
         "rates": kurser.iter().map(|k| json!({
-            "valuta": k.valuta,
+            "valuta": k.currency,
             "dato": k.dato.to_string(),
-            "kurs": regnmed_core::valuta::kurs_str(k.kurs_micro),
-            "kurs_micro": k.kurs_micro,
+            "kurs": regnmed_core::currency::rate_str(k.rate_micro),
+            "kurs_micro": k.rate_micro,
             "kilde": k.kilde,
         })).collect::<Vec<_>>(),
     })))
@@ -39,7 +39,8 @@ pub async fn list_rates(
 
 #[derive(Deserialize)]
 pub struct ManualRateRequest {
-    valuta: String,
+    #[serde(rename = "valuta")]
+    currency: String,
     dato: chrono::NaiveDate,
     /// Decimal, e.g. "11.6543".
     kurs: String,
@@ -53,14 +54,14 @@ pub async fn add_rate(
     Json(request): Json<ManualRateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::ValutaSkriv).await?;
-    let kurs_micro = regnmed_core::valuta::parse_kurs(&request.kurs)
+    let rate_micro = regnmed_core::currency::parse_rate(&request.kurs)
         .ok_or_else(|| ApiError::BadRequest(format!("uparselig kurs {:?}", request.kurs)))?;
     let registered_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::insert_kurs(
         &state.pool,
-        &request.valuta.to_uppercase(),
+        &request.currency.to_uppercase(),
         request.dato,
-        kurs_micro,
+        rate_micro,
         request
             .kilde
             .as_deref()

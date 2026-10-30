@@ -42,7 +42,7 @@ pub struct MottattFaktura {
     pub fakturanr: String,
     pub fakturadato: Option<NaiveDate>,
     pub forfallsdato: Option<NaiveDate>,
-    pub valuta: String,
+    pub currency: String,
     pub selger_navn: String,
     /// Norwegian orgnr without prefix when the sender uses ICD 0192.
     pub selger_orgnr: Option<String>,
@@ -115,7 +115,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
         fakturanr: String::new(),
         fakturadato: None,
         forfallsdato: None,
-        valuta: "NOK".into(),
+        currency: "NOK".into(),
         selger_navn: String::new(),
         selger_orgnr: None,
         kjoper_orgnr: None,
@@ -189,7 +189,7 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
                     "ID" if path.len() == 2 => faktura.fakturanr = value,
                     "IssueDate" if path.len() == 2 => faktura.fakturadato = Some(date(&value)?),
                     "DueDate" if path.len() == 2 => faktura.forfallsdato = Some(date(&value)?),
-                    "DocumentCurrencyCode" if path.len() == 2 => faktura.valuta = value,
+                    "DocumentCurrencyCode" if path.len() == 2 => faktura.currency = value,
                     "PaymentID" => faktura.kid = Some(value),
                     "Name" if supplier && ends_with(&path, &["PartyName", "Name"]) => {
                         if !supplier_name_from_legal {
@@ -283,7 +283,7 @@ mod tests {
             krediterer: None,
             fakturadato: NaiveDate::from_ymd_opt(2026, 7, 3).unwrap(),
             forfallsdato: NaiveDate::from_ymd_opt(2026, 7, 17),
-            valuta: "NOK".into(),
+            currency: "NOK".into(),
             kjopers_referanse: None,
             selger: part("Grossisten AS", "915933149"),
             kjoper: part("Vår Klient AS", "923609016"),

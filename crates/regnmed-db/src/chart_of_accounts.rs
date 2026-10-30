@@ -122,8 +122,8 @@ pub struct BilagLinje {
     pub vat_code: Option<String>,
     pub description: Option<String>,
     pub party_no: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
 }
 
 pub struct BilagMedLinjer {
@@ -244,8 +244,8 @@ pub async fn list_vouchers_paged(
                 vat_code: row.get("vat_code"),
                 description: row.get("description"),
                 party_no: row.get("party_no"),
-                avdeling: row.get("avdeling"),
-                prosjekt: row.get("prosjekt"),
+                department: row.get("avdeling"),
+                project: row.get("prosjekt"),
             });
         }
     }

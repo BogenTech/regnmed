@@ -26,9 +26,9 @@ fn entry(account: &str, ore: i64) -> EntryDraft {
         vat_code: None,
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     }
 }
 

@@ -121,8 +121,10 @@ pub struct ManualLine {
     vat_code: Option<String>,
     party_no: Option<String>,
     description: Option<String>,
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
+    #[serde(rename = "avdeling")]
+    department: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
 }
 
 /// Same request shape as innboks-bokføring, minus the document — so the
@@ -156,9 +158,9 @@ pub async fn post_manual_voucher(
                 vat_code: l.vat_code.clone(),
                 description: l.description.clone(),
                 party_no: l.party_no.clone(),
-                avdeling: l.avdeling.clone(),
-                prosjekt: l.prosjekt.clone(),
-                valuta: None,
+                department: l.department.clone(),
+                project: l.project.clone(),
+                currency: None,
             })
             .collect(),
     };

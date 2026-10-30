@@ -117,13 +117,13 @@ pub struct SaftLine {
     pub customer_id: Option<String>,
     pub supplier_id: Option<String>,
     /// Dimension codes on the line → Analysis elements ("AVD"/"PRO").
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     /// Valutainformasjon (docs/valuta.md) → CurrencyCode /
     /// CurrencyAmount / ExchangeRate inside the amount structure.
-    pub valuta: Option<String>,
-    pub valutabelop_cent: Option<i64>,
-    pub kurs_micro: Option<i64>,
+    pub currency: Option<String>,
+    pub currency_amount_cent: Option<i64>,
+    pub rate_micro: Option<i64>,
 }
 
 /// An account's mapping onto Skatteetaten's grouping code list.
@@ -470,11 +470,11 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 x.leaf("RecordID", &line.line_no.to_string());
                 x.leaf("AccountID", &line.account_number);
                 // Schema order: Analysis directly after AccountID.
-                if let Some(avdeling) = &line.avdeling {
-                    render_analysis(x, "AVD", avdeling, line.amount_ore);
+                if let Some(department) = &line.department {
+                    render_analysis(x, "AVD", department, line.amount_ore);
                 }
-                if let Some(prosjekt) = &line.prosjekt {
-                    render_analysis(x, "PRO", prosjekt, line.amount_ore);
+                if let Some(project) = &line.project {
+                    render_analysis(x, "PRO", project, line.amount_ore);
                 }
                 if let Some(customer) = &line.customer_id {
                     x.leaf("CustomerID", customer);
@@ -491,10 +491,10 @@ fn entries(x: &mut Xml, input: &SaftInput) {
                 };
                 x.open(side);
                 x.leaf("Amount", &amount(line.amount_ore));
-                if let (Some(code), Some(cent)) = (&line.valuta, line.valutabelop_cent) {
+                if let (Some(code), Some(cent)) = (&line.currency, line.currency_amount_cent) {
                     x.leaf("CurrencyCode", code);
                     x.leaf("CurrencyAmount", &amount(cent));
-                    if let Some(kurs) = line.kurs_micro {
+                    if let Some(kurs) = line.rate_micro {
                         x.leaf(
                             "ExchangeRate",
                             &format!("{}.{:06}", kurs / 1_000_000, kurs % 1_000_000),
@@ -661,11 +661,11 @@ mod tests {
                             tax_percent_bp: None,
                             customer_id: Some("10001".into()),
                             supplier_id: None,
-                            avdeling: None,
-                            prosjekt: None,
-                            valuta: None,
-                            valutabelop_cent: None,
-                            kurs_micro: None,
+                            department: None,
+                            project: None,
+                            currency: None,
+                            currency_amount_cent: None,
+                            rate_micro: None,
                         },
                         SaftLine {
                             line_no: 2,
@@ -676,11 +676,11 @@ mod tests {
                             tax_percent_bp: Some(2500),
                             customer_id: None,
                             supplier_id: None,
-                            avdeling: Some("100".into()),
-                            prosjekt: Some("P42".into()),
-                            valuta: None,
-                            valutabelop_cent: None,
-                            kurs_micro: None,
+                            department: Some("100".into()),
+                            project: Some("P42".into()),
+                            currency: None,
+                            currency_amount_cent: None,
+                            rate_micro: None,
                         },
                         SaftLine {
                             line_no: 3,
@@ -691,11 +691,11 @@ mod tests {
                             tax_percent_bp: None,
                             customer_id: None,
                             supplier_id: None,
-                            avdeling: None,
-                            prosjekt: None,
-                            valuta: None,
-                            valutabelop_cent: None,
-                            kurs_micro: None,
+                            department: None,
+                            project: None,
+                            currency: None,
+                            currency_amount_cent: None,
+                            rate_micro: None,
                         },
                     ],
                 }],

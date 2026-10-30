@@ -327,9 +327,9 @@ async fn depreciate_next(
                     vat_code: None,
                     description: Some(format!("Lineær avskrivning måned {nr}/{levetid}")),
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
                 EntryDraft {
                     account_number: asset.get("balansekonto"),
@@ -337,9 +337,9 @@ async fn depreciate_next(
                     vat_code: None,
                     description: None,
                     party_no: None,
-                    avdeling: None,
-                    prosjekt: None,
-                    valuta: None,
+                    department: None,
+                    project: None,
+                    currency: None,
                 },
             ],
         };
@@ -463,9 +463,9 @@ pub async fn dispose_asset(
             vat_code: None,
             description: Some("Vederlag ved avhending".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if bokfort != 0 {
@@ -475,9 +475,9 @@ pub async fn dispose_asset(
             vat_code: None,
             description: Some("Utgang bokført verdi".into()),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if gevinst != 0 {
@@ -498,9 +498,9 @@ pub async fn dispose_asset(
                 .into(),
             ),
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
 

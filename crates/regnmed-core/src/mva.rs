@@ -301,9 +301,9 @@ pub fn omvendt_entries(
         vat_code: None,
         description: Some(tekst.to_string()),
         party_no: None,
-        avdeling: if dims { basis.avdeling.clone() } else { None },
-        prosjekt: if dims { basis.prosjekt.clone() } else { None },
-        valuta: None,
+        department: if dims { basis.department.clone() } else { None },
+        project: if dims { basis.project.clone() } else { None },
+        currency: None,
     };
     let mut ut = vec![entry(
         utgaende_konto,
@@ -436,9 +436,9 @@ mod tests {
             vat_code: Some(code.into()),
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: Some("P1".into()),
-            valuta: None,
+            department: None,
+            project: Some("P1".into()),
+            currency: None,
         };
 
         // Full deduction right: liability and deduction, both visible.
@@ -458,7 +458,7 @@ mod tests {
         // lands on the basis account — and carries its prosjekt.
         let uten = omvendt_entries(&basis("87"), 2500, "2701", "2711");
         assert_eq!(uten[1].account_number, "6800");
-        assert_eq!(uten[1].prosjekt.as_deref(), Some("P1"));
+        assert_eq!(uten[1].project.as_deref(), Some("P1"));
         assert_eq!(uten.iter().map(|e| e.amount.0).sum::<i64>(), 0);
 
         // A reversing voucher reverses the tax with it.

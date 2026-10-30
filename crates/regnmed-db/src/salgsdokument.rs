@@ -60,8 +60,8 @@ async fn insert_lines(
         .bind(line.quantity_milli)
         .bind(line.unit_price_ore)
         .bind(&line.vat_code)
-        .bind(&line.avdeling)
-        .bind(&line.prosjekt)
+        .bind(&line.department)
+        .bind(&line.project)
         .bind(line.product_id)
         .execute(&mut **tx)
         .await?;
@@ -323,7 +323,7 @@ pub async fn ordre_to_invoice(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: lines
             .iter()
@@ -333,8 +333,8 @@ pub async fn ordre_to_invoice(
                 quantity_milli: l.quantity_milli,
                 unit_price_ore: l.unit_price_ore,
                 vat_code: l.vat_code.clone(),
-                avdeling: l.avdeling.clone(),
-                prosjekt: l.prosjekt.clone(),
+                department: l.department.clone(),
+                project: l.project.clone(),
                 product_id: l.product_id,
             })
             .collect(),
@@ -371,8 +371,8 @@ async fn load_lines(pool: &PgPool, dokument_id: Uuid) -> Result<Vec<SalgsLineDra
             quantity_milli: r.get("quantity_milli"),
             unit_price_ore: r.get("unit_price_ore"),
             vat_code: r.get("vat_code"),
-            avdeling: r.get("avdeling"),
-            prosjekt: r.get("prosjekt"),
+            department: r.get("avdeling"),
+            project: r.get("prosjekt"),
             product_id: r.get("product_id"),
         })
         .collect())
@@ -481,8 +481,8 @@ pub async fn salgsdokument_pdf(
             unit_price_ore: line.unit_price_ore,
             vat_code: line.vat_code.clone(),
             rate_bp,
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
         });
     }
     let computed = compute(&inputs);
@@ -530,7 +530,7 @@ pub async fn salgsdokument_pdf(
         leveringsdato: None,
         leveringssted: None,
         kid: None,
-        valuta: None,
+        currency: None,
         motverdi_nok_ore: None,
         linjer: pdf_linjer,
     });

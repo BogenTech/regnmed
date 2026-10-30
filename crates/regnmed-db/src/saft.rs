@@ -211,11 +211,11 @@ pub async fn load_saft_input(
                     Some("leverandor") => row.get("party_no"),
                     _ => None,
                 },
-                avdeling: row.get("avdeling"),
-                prosjekt: row.get("prosjekt"),
-                valuta: row.get("valuta"),
-                valutabelop_cent: row.get("valutabelop_cent"),
-                kurs_micro: row.get("kurs_micro"),
+                department: row.get("avdeling"),
+                project: row.get("prosjekt"),
+                currency: row.get("valuta"),
+                currency_amount_cent: row.get("valutabelop_cent"),
+                rate_micro: row.get("kurs_micro"),
             });
     }
 

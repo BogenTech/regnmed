@@ -21,8 +21,8 @@ pub struct InvoiceLineDraft {
     pub quantity_milli: i64,
     pub unit_price_ore: i64,
     pub vat_code: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
     /// Product reference (docs/produkter.md) — for lager and
     /// traceability only; every value above is a copy taken at issue.
     pub product_id: Option<Uuid>,
@@ -55,7 +55,7 @@ pub struct InvoiceDraft {
     /// line amount is in the currency's MINOR UNIT (cent); posting
     /// converts to NOK at the dagskurs and the entries carry the
     /// valutainformasjon (hash format v4).
-    pub valuta: Option<String>,
+    pub currency: Option<String>,
     /// Forces the booking rate (kreditnota reverses at the ORIGINAL
     /// kurs so the NOK zeroes exactly). None = resolve by invoice date.
     pub valuta_kurs_micro: Option<i64>,
@@ -123,8 +123,8 @@ async fn resolve_lines(
             unit_price_ore: line.unit_price_ore,
             vat_code: line.vat_code.clone(),
             rate_bp,
-            avdeling: line.avdeling.clone(),
-            prosjekt: line.prosjekt.clone(),
+            department: line.department.clone(),
+            project: line.project.clone(),
         });
     }
     Ok(resolved)
@@ -237,7 +237,7 @@ pub async fn create_invoice_in(
     let kid = invoice_kid(invoice_no);
 
     let mut gross_nok_ore = computed.gross_ore;
-    let voucher = match &draft.valuta {
+    let voucher = match &draft.currency {
         None => build_voucher(
             &draft.journal_code,
             draft.invoice_date,
@@ -250,7 +250,7 @@ pub async fn create_invoice_in(
             &computed,
         )?,
         Some(code) => {
-            let kurs_micro = match draft.valuta_kurs_micro {
+            let rate_micro = match draft.valuta_kurs_micro {
                 Some(kurs) => kurs,
                 None => {
                     crate::currency::require_kurs(pool, code, draft.invoice_date)
@@ -265,7 +265,7 @@ pub async fn create_invoice_in(
                 &lines,
                 &computed,
                 code,
-                kurs_micro,
+                rate_micro,
             )?;
             gross_nok_ore = gross_nok;
             voucher
@@ -298,7 +298,7 @@ pub async fn create_invoice_in(
     .bind(posted.id)
     .bind(receivable_entry_id)
     .bind(created_by)
-    .bind(&draft.valuta)
+    .bind(&draft.currency)
     .bind(draft.delivery_date)
     .bind(&draft.delivery_place)
     .execute(&mut **tx)
@@ -321,8 +321,8 @@ pub async fn create_invoice_in(
         .bind(amounts.net_ore)
         .bind(&line.vat_code)
         .bind(amounts.vat_ore)
-        .bind(&line.avdeling)
-        .bind(&line.prosjekt)
+        .bind(&line.department)
+        .bind(&line.project)
         .bind(draft.lines[i].product_id)
         .execute(&mut **tx)
         .await?;
@@ -379,8 +379,8 @@ pub async fn create_invoice_in(
         // Stored on the invoice either way (OCR resolves payments BY
         // kid, #7) — but only PRINTED when the bank can honour it (#104).
         kid: company.get::<bool, _>("kid_avtale").then(|| kid.clone()),
-        valuta: draft.valuta.clone(),
-        motverdi_nok_ore: draft.valuta.as_ref().map(|_| gross_nok_ore),
+        currency: draft.currency.clone(),
+        motverdi_nok_ore: draft.currency.as_ref().map(|_| gross_nok_ore),
         linjer: lines
             .iter()
             .zip(&computed.lines)
@@ -436,17 +436,17 @@ fn build_valuta_voucher(
     credit_note: bool,
     lines: &[regnmed_core::invoice::InvoiceLineInput],
     computed: &regnmed_core::invoice::ComputedInvoice,
-    valuta: &str,
-    kurs_micro: i64,
+    currency: &str,
+    rate_micro: i64,
 ) -> Result<(regnmed_core::voucher::VoucherDraft, i64)> {
-    use regnmed_core::valuta::{Valuta, nok_ore};
+    use regnmed_core::currency::{Currency, nok_ore};
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 
-    let vat_nok = nok_ore(computed.vat_ore, kurs_micro);
+    let vat_nok = nok_ore(computed.vat_ore, rate_micro);
     let mut gross_nok = vat_nok;
     let mut entries = Vec::with_capacity(lines.len() + 2);
     for (line, amounts) in lines.iter().zip(&computed.lines) {
-        let net_nok = nok_ore(amounts.net_ore, kurs_micro);
+        let net_nok = nok_ore(amounts.net_ore, rate_micro);
         gross_nok += net_nok;
         entries.push(EntryDraft {
             account_number: line.account_number.clone(),
@@ -454,12 +454,12 @@ fn build_valuta_voucher(
             vat_code: line.vat_code.clone(),
             description: Some(line.description.clone()),
             party_no: None,
-            avdeling: line.avdeling.clone(),
-            prosjekt: line.prosjekt.clone(),
-            valuta: Some(Valuta {
-                valuta: valuta.to_string(),
-                belop_cent: -amounts.net_ore,
-                kurs_micro,
+            department: line.department.clone(),
+            project: line.project.clone(),
+            currency: Some(Currency {
+                code: currency.to_string(),
+                amount_cent: -amounts.net_ore,
+                rate_micro,
             }),
         });
     }
@@ -470,12 +470,12 @@ fn build_valuta_voucher(
             vat_code: None,
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: Some(Valuta {
-                valuta: valuta.to_string(),
-                belop_cent: -computed.vat_ore,
-                kurs_micro,
+            department: None,
+            project: None,
+            currency: Some(Currency {
+                code: currency.to_string(),
+                amount_cent: -computed.vat_ore,
+                rate_micro,
             }),
         });
     }
@@ -487,12 +487,12 @@ fn build_valuta_voucher(
             vat_code: None,
             description: None,
             party_no: Some(draft.party_no.clone()),
-            avdeling: None,
-            prosjekt: None,
-            valuta: Some(Valuta {
-                valuta: valuta.to_string(),
-                belop_cent: computed.gross_ore,
-                kurs_micro,
+            department: None,
+            project: None,
+            currency: Some(Currency {
+                code: currency.to_string(),
+                amount_cent: computed.gross_ore,
+                rate_micro,
             }),
         },
     );
@@ -500,7 +500,7 @@ fn build_valuta_voucher(
     let voucher = VoucherDraft {
         journal_code: draft.journal_code.clone(),
         voucher_date: draft.invoice_date,
-        description: format!("{label} {invoice_no} ({valuta})"),
+        description: format!("{label} {invoice_no} ({currency})"),
         reverses: None,
         entries,
     };
@@ -579,7 +579,7 @@ pub async fn credit_invoice(
         vat_account: "2700".into(),
         // A kreditnota reverses at the ORIGINAL kurs, so the NOK side
         // zeroes exactly — no fake agio out of a correction.
-        valuta: original.get("valuta"),
+        currency: original.get("valuta"),
         valuta_kurs_micro: original.get("kurs_micro"),
         lines: line_rows
             .iter()
@@ -589,8 +589,8 @@ pub async fn credit_invoice(
                 quantity_milli: -r.get::<i64, _>("quantity_milli"),
                 unit_price_ore: r.get("unit_price_ore"),
                 vat_code: r.get("vat_code"),
-                avdeling: r.get("avdeling"),
-                prosjekt: r.get("prosjekt"),
+                department: r.get("avdeling"),
+                project: r.get("prosjekt"),
                 product_id: r.get("product_id"),
             })
             .collect(),
@@ -753,9 +753,9 @@ pub async fn create_kontantfaktura(
                 vat_code: None,
                 description: Some(betalingsmiddel.trim().to_string()),
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
             regnmed_core::voucher::EntryDraft {
                 account_number: draft.receivable_account.clone(),
@@ -765,9 +765,9 @@ pub async fn create_kontantfaktura(
                 // The party goes on BOTH sides of the customer's history:
                 // the claim and its settlement.
                 party_no: Some(party_no),
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
         ],
     };

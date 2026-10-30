@@ -221,9 +221,9 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
         vat_code: None,
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     let bilag = regnmed_db::post_voucher(
         &state.pool,
@@ -697,9 +697,9 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             vat_code: None,
             description: None,
             party_no: party,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         };
     let posted = regnmed_db::post_voucher(
         &state.pool,

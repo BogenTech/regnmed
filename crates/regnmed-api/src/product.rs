@@ -35,8 +35,10 @@ pub struct DocLineRequest {
     pub quantity_milli: Option<i64>,
     pub unit_price_ore: Option<i64>,
     pub vat_code: Option<String>,
-    pub avdeling: Option<String>,
-    pub prosjekt: Option<String>,
+    #[serde(rename = "avdeling")]
+    pub department: Option<String>,
+    #[serde(rename = "prosjekt")]
+    pub project: Option<String>,
 }
 
 pub async fn resolve_lines(
@@ -56,8 +58,8 @@ pub async fn resolve_lines(
                 quantity_milli: line.quantity_milli.unwrap_or(1000),
                 unit_price_ore: line.unit_price_ore,
                 vat_code: line.vat_code,
-                avdeling: line.avdeling,
-                prosjekt: line.prosjekt,
+                department: line.department,
+                project: line.project,
             },
         )
         .await

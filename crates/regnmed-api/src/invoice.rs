@@ -41,7 +41,8 @@ pub struct CreateInvoiceRequest {
     vat_account: Option<String>,
     /// Document currency (docs/valuta.md); line amounts in its minor
     /// unit. None = NOK. Requires a kurs in the valutakurs table.
-    valuta: Option<String>,
+    #[serde(rename = "valuta")]
+    currency: Option<String>,
     /// Kontantsalg (#89, §5-3): what settled the ytelse on delivery
     /// ("Kort", "Vipps", "Kontant"). Present = kontantfaktura: the
     /// receivable is raised and settled in one transaction, and the
@@ -103,7 +104,7 @@ pub async fn create_invoice(
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),
-        valuta: request.valuta.map(|v| v.to_uppercase()),
+        currency: request.currency.map(|v| v.to_uppercase()),
         valuta_kurs_micro: None,
         lines: resolve_lines(&state, company_id, request.lines).await?,
     };

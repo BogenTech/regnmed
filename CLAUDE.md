@@ -185,10 +185,18 @@ above). Both crates re-export their modules with `pub use <mod>::*`, so
 callers were unaffected — only `pub mod`, `pub use` and `crate::<mod>::`
 paths moved.
 
-**Still Norwegian**, deliberately, because each is one word shared by
-core, db, api, a DB column AND the portal's JSON, so they have to move
-together: `avdeling`, `prosjekt`, `valuta`, `belop_ore`, `dato`,
-`konto`. The same goes for the modules whose core and db halves are
+`avdeling`->`department`, `prosjekt`->`project` and
+`valuta`->`currency` (module `valuta`->`currency`, `Valuta`->`Currency`
+whose ISO field is now `code`) moved across core, db, api, cli, gov and
+mcp in one change. **The wire did not move**: the JSON keys stay
+Norwegian, pinned by `#[serde(rename = "avdeling")]` and friends on the
+17 request/query fields that carry them, so the portal, docs/api.md,
+the MCP tools and every customer integration (#45) see exactly what
+they saw before. Renaming the public API would be a breaking change for
+live machine clients, which is a versioning decision and not a refactor.
+
+**Still Norwegian**, deliberately: `belop_ore`, `dato` and `konto` as
+Rust field names (same shared-word problem, not yet done). The same goes for the modules whose core and db halves are
 both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
 `abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
 `regnmed-api::tilgang` (the single access guard, named all through

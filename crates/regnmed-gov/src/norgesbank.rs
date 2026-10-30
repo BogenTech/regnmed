@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
-use regnmed_core::valuta::parse_kurs;
+use regnmed_core::currency::parse_rate;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,7 +157,7 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Quote>> {
                 Value::Number(n) => n.to_string(),
                 other => bail!("uventet observasjonsverdi {other}"),
             };
-            let kurs = parse_kurs(&raw)
+            let kurs = parse_rate(&raw)
                 .with_context(|| format!("uparselig kurs {raw:?} for {currency}"))?;
             noteringer.push(Quote {
                 currency: currency.clone(),

@@ -67,9 +67,9 @@ fn salg(dato: chrono::NaiveDate, netto: i64) -> VoucherDraft {
         vat_code: vat.map(str::to_string),
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     VoucherDraft {
         journal_code: "GL".into(),

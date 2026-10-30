@@ -220,8 +220,10 @@ pub struct PeriodQuery {
     to: NaiveDate,
     account: Option<String>,
     /// Dimension filters (resultat per avdeling/prosjekt).
-    avdeling: Option<String>,
-    prosjekt: Option<String>,
+    #[serde(rename = "avdeling")]
+    department: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
 }
 
 fn check_period(from: NaiveDate, to: NaiveDate) -> Result<(), ApiError> {
@@ -278,8 +280,8 @@ pub async fn kontospesifikasjon(
             "amount_ore": p.amount_ore,
             "saldo_ore": p.saldo_ore,
             "party_no": p.party_no,
-            "avdeling": p.avdeling,
-            "prosjekt": p.prosjekt,
+            "avdeling": p.department,
+            "prosjekt": p.project,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -388,8 +390,8 @@ pub async fn resultat(
         company_id,
         Some(query.from),
         query.to,
-        query.avdeling.as_deref(),
-        query.prosjekt.as_deref(),
+        query.department.as_deref(),
+        query.project.as_deref(),
     )
     .await?;
     let r = regnmed_core::regnskap::resultat(&lines);
@@ -397,15 +399,16 @@ pub async fn resultat(
         "seksjoner": r.seksjoner.iter().map(seksjon_json).collect::<Vec<_>>(),
         "driftsresultat_ore": r.driftsresultat_ore,
         "arsresultat_ore": r.arsresultat_ore,
-        "avdeling": query.avdeling,
-        "prosjekt": query.prosjekt,
+        "avdeling": query.department,
+        "prosjekt": query.project,
     })))
 }
 
 #[derive(Deserialize)]
 pub struct ProsjektRapportQuery {
     year: Option<i32>,
-    prosjekt: Option<String>,
+    #[serde(rename = "prosjekt")]
+    project: Option<String>,
 }
 
 /// Prosjektlønnsomhet (#71, docs/rapporter.md): does the project make
@@ -435,7 +438,7 @@ pub async fn prosjektlonnsomhet(
 
     let dims = regnmed_db::list_dimensions(&state.pool, company_id, person.person_id).await?;
     let timer = regnmed_db::timesheet_summary(&state.pool, company_id, from, to).await?;
-    let timer_for = |code: &str| timer.iter().find(|t| t.prosjekt.as_deref() == Some(code));
+    let timer_for = |code: &str| timer.iter().find(|t| t.project.as_deref() == Some(code));
     let timer_json = |t: Option<&regnmed_db::timesheet::ProsjektSum>| match t {
         Some(t) => json!({
             "minutter": t.minutter,
@@ -449,7 +452,7 @@ pub async fn prosjektlonnsomhet(
         }),
     };
 
-    if let Some(code) = &query.prosjekt {
+    if let Some(code) = &query.project {
         let dim = dims
             .iter()
             .find(|d| d.kind == "prosjekt" && &d.code == code)

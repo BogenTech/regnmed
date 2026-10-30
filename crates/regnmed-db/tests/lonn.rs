@@ -585,7 +585,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
                 dato: dato(2026, 3, dag),
                 minutter: 400,
                 beskrivelse: "Arbeid".into(),
-                prosjekt: None,
+                project: None,
                 fakturerbar: Some(false),
                 timesats_ore: None,
             },
@@ -879,9 +879,9 @@ async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent()
         vat_code: None,
         description: Some("Overtatt feriepengegjeld".into()),
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     regnmed_db::post_voucher(
         &pool,

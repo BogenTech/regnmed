@@ -261,9 +261,9 @@ pub async fn registrer_kortbetaling(
                 vat_code: None,
                 description: None,
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
             regnmed_core::voucher::EntryDraft {
                 account_number: "1500".into(),
@@ -271,9 +271,9 @@ pub async fn registrer_kortbetaling(
                 vat_code: None,
                 description: None,
                 party_no: Some(party_no),
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
         ],
     };
@@ -575,7 +575,7 @@ pub async fn bokfor_stripe_betaling(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: vec![crate::invoice::InvoiceLineDraft {
             description: format!("regnmed {plan} — {periode}"),
@@ -583,8 +583,8 @@ pub async fn bokfor_stripe_betaling(
             quantity_milli: 1000,
             unit_price_ore: netto,
             vat_code: Some(mva_kode),
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
             product_id: None,
         }],
     };
@@ -611,9 +611,9 @@ pub async fn bokfor_stripe_betaling(
                 vat_code: None,
                 description: None,
                 party_no: None,
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
             regnmed_core::voucher::EntryDraft {
                 account_number: "1500".into(),
@@ -629,9 +629,9 @@ pub async fn bokfor_stripe_betaling(
                     .fetch_one(&mut *tx)
                     .await?,
                 ),
-                avdeling: None,
-                prosjekt: None,
-                valuta: None,
+                department: None,
+                project: None,
+                currency: None,
             },
         ],
     };
@@ -1100,7 +1100,7 @@ async fn fakturer_en(
         journal_code: "GL".into(),
         receivable_account: "1500".into(),
         vat_account: "2700".into(),
-        valuta: None,
+        currency: None,
         valuta_kurs_micro: None,
         lines: vec![crate::invoice::InvoiceLineDraft {
             description: format!(
@@ -1112,8 +1112,8 @@ async fn fakturer_en(
             quantity_milli: 1000,
             unit_price_ore: pris,
             vat_code: Some(mva_kode),
-            avdeling: None,
-            prosjekt: None,
+            department: None,
+            project: None,
             product_id: None,
         }],
     };

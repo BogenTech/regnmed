@@ -124,7 +124,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         krediterer: krediterer_nr.map(|no| no.to_string()),
         fakturadato: invoice_date,
         forfallsdato: Some(head.get("due_date")),
-        valuta: head
+        currency: head
             .get::<Option<String>, _>("valuta")
             .unwrap_or_else(|| "NOK".into()),
         // BT-10 is the buyer's own reference; we send the customer
@@ -232,10 +232,10 @@ pub async fn inbox_ehf_forslag(
             mottatt.brutto_ore
         ));
     }
-    if mottatt.valuta != "NOK" {
+    if mottatt.currency != "NOK" {
         advarsler.push(format!(
             "fakturaen er i {} — bokfør med valuta (docs/valuta.md)",
-            mottatt.valuta
+            mottatt.currency
         ));
     }
     Ok(EhfForslag {
@@ -325,10 +325,10 @@ pub async fn inbox_forslag(
         forslag
             .begrunnelser
             .push(("alle".into(), "lest direkte fra EHF-dokumentet".into()));
-        if m.valuta != "NOK" {
+        if m.currency != "NOK" {
             forslag
                 .advarsler
-                .push(format!("fakturaen er i {} — bokfør med valuta", m.valuta));
+                .push(format!("fakturaen er i {} — bokfør med valuta", m.currency));
         }
     } else {
         // 2. A PDF text layer, or a plain-text document.

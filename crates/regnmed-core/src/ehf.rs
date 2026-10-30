@@ -94,7 +94,7 @@ pub struct EhfDokument {
     pub fakturadato: NaiveDate,
     pub forfallsdato: Option<NaiveDate>,
     /// ISO 4217; "NOK" domestically.
-    pub valuta: String,
+    pub currency: String,
     /// Buyer's reference (EN 16931 BT-10) — many public recipients
     /// reject invoices without it, so we send what we have.
     pub kjopers_referanse: Option<String>,
@@ -287,7 +287,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
 /// byte-identical XML forever.
 pub fn render(doc: &EhfDokument) -> String {
     let root = doc.dokumenttype.root();
-    let currency = &doc.valuta;
+    let currency = &doc.currency;
     let money = |ore: i64| -> String { amount(ore) };
     let attr = format!("currencyID=\"{}\"", esc(currency));
 
@@ -472,7 +472,7 @@ mod tests {
             krediterer: (dokumenttype == Dokumenttype::Kreditnota).then(|| "1000".to_string()),
             fakturadato: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             forfallsdato: NaiveDate::from_ymd_opt(2026, 7, 15),
-            valuta: "NOK".into(),
+            currency: "NOK".into(),
             kjopers_referanse: Some("Bestilling 42".into()),
             selger: part("Selger AS", "915933149", true),
             kjoper: part("Kjøper & Sønn AS", "923609016", true),

@@ -113,9 +113,9 @@ pub fn build_settlement(settlement: &DailySettlement) -> Result<VoucherDraft, Ca
             vat_code: None,
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     let mut vat_sum = 0;
@@ -128,9 +128,9 @@ pub fn build_settlement(settlement: &DailySettlement) -> Result<VoucherDraft, Ca
             vat_code: l.vat_code.clone(),
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     if vat_sum != 0 {
@@ -140,9 +140,9 @@ pub fn build_settlement(settlement: &DailySettlement) -> Result<VoucherDraft, Ca
             vat_code: None,
             description: None,
             party_no: None,
-            avdeling: None,
-            prosjekt: None,
-            valuta: None,
+            department: None,
+            project: None,
+            currency: None,
         });
     }
     Ok(VoucherDraft {
@@ -180,9 +180,9 @@ pub fn build_discrepancy(
         vat_code: None,
         description: None,
         party_no: None,
-        avdeling: None,
-        prosjekt: None,
-        valuta: None,
+        department: None,
+        project: None,
+        currency: None,
     };
     Some(VoucherDraft {
         journal_code: "GL".into(),
