@@ -359,7 +359,7 @@ pub async fn subledger_specification(
 }
 
 #[derive(Debug)]
-pub struct BokforingLine {
+pub struct BookkeepingLine {
     pub line_no: i32,
     pub account_number: String,
     pub account_name: String,
@@ -370,13 +370,13 @@ pub struct BokforingLine {
 }
 
 #[derive(Debug)]
-pub struct BokforingVoucher {
+pub struct BookkeepingVoucher {
     pub journal_code: String,
     pub fiscal_year: i32,
     pub voucher_number: i64,
     pub voucher_date: NaiveDate,
     pub description: String,
-    pub lines: Vec<BokforingLine>,
+    pub lines: Vec<BookkeepingLine>,
 }
 
 /// Bokføringsspesifikasjon: every voucher in the period in posting
@@ -386,7 +386,7 @@ pub async fn posting_specification(
     company_id: Uuid,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<BokforingVoucher>> {
+) -> Result<Vec<BookkeepingVoucher>> {
     let rows = sqlx::query(
         "select j.code as journal_code, v.fiscal_year, v.voucher_number, v.voucher_date,
                 v.description as voucher_description, v.chain_seq,
@@ -405,13 +405,13 @@ pub async fn posting_specification(
     .bind(to)
     .fetch_all(pool)
     .await?;
-    let mut vouchers: Vec<BokforingVoucher> = Vec::new();
+    let mut vouchers: Vec<BookkeepingVoucher> = Vec::new();
     let mut last_seq: Option<i64> = None;
     for row in &rows {
         let seq: i64 = row.get("chain_seq");
         if last_seq != Some(seq) {
             last_seq = Some(seq);
-            vouchers.push(BokforingVoucher {
+            vouchers.push(BookkeepingVoucher {
                 journal_code: row.get("journal_code"),
                 fiscal_year: row.get("fiscal_year"),
                 voucher_number: row.get("voucher_number"),
@@ -424,7 +424,7 @@ pub async fn posting_specification(
             .last_mut()
             .expect("voucher pushed above")
             .lines
-            .push(BokforingLine {
+            .push(BookkeepingLine {
                 line_no: row.get("line_no"),
                 account_number: row.get("account_number"),
                 account_name: row.get("account_name"),

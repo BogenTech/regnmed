@@ -79,7 +79,7 @@ pub struct PayslipInput {
     /// Year to date, through this run.
     pub hittil_brutto_ore: i64,
     pub hittil_trekk_ore: i64,
-    pub hittil_feriepenger_ore: i64,
+    pub ytd_holiday_pay_ore: i64,
 }
 
 fn kr(ore: i64) -> String {
@@ -254,7 +254,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     for (text, amount) in [
         ("Bruttolønn", input.hittil_brutto_ore),
         ("Forskuddstrekk", input.hittil_trekk_ore),
-        ("Feriepenger opptjent", input.hittil_feriepenger_ore),
+        ("Feriepenger opptjent", input.ytd_holiday_pay_ore),
     ] {
         pdf.text(MARGIN, ly, 9.0, Font::Regular, text);
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(amount));
@@ -297,7 +297,7 @@ mod tests {
             holiday_pay_bp: 1020,
             hittil_brutto_ore: 15_000_000,
             hittil_trekk_ore: 5_250_000,
-            hittil_feriepenger_ore: 1_530_000,
+            ytd_holiday_pay_ore: 1_530_000,
         }
     }
 

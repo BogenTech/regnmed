@@ -40,7 +40,7 @@ async fn company(pool: &PgPool) -> Uuid {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("5000", "Lønn til ansatte"),
         ("5090", "Feriepenger"),
         ("5400", "Arbeidsgiveravgift"),
@@ -50,7 +50,7 @@ async fn company(pool: &PgPool) -> Uuid {
         ("2940", "Skyldige feriepenger"),
         ("1920", "Bankinnskudd"),
     ] {
-        regnmed_db::ensure_account(pool, company, nr, name)
+        regnmed_db::ensure_account(pool, company, number, name)
             .await
             .unwrap();
     }
@@ -169,7 +169,7 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
 /// accrued in the year they were earned. Get this wrong and feriepenger
 /// are expensed twice, making the result systematically too low.
 #[tokio::test]
-async fn feriepenger_paid_out_reduce_the_liability_and_carry_no_withholding() {
+async fn holiday_pay_paid_out_reduces_the_liability_and_carries_no_withholding() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let a = employee(&pool, company, "08888797336", "Ola Ferierende", 3_000_000).await;
@@ -498,7 +498,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     // Year to date through June: two months of pay + June's feriepenger.
     assert_eq!(slipp.hittil_brutto_ore, 5_000_000 + 9_000_000);
     assert_eq!(slipp.hittil_trekk_ore, 3_500_000);
-    assert_eq!(slipp.hittil_feriepenger_ore, 1_020_000);
+    assert_eq!(slipp.ytd_holiday_pay_ore, 1_020_000);
 
     // And it renders to a PDF that explains the trekkfrihet.
     let pdf = regnmed_core::payslip::render_payslip(&slipp);
@@ -578,7 +578,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
                 description: "Arbeid".into(),
                 project: None,
                 billable: Some(false),
-                timesats_ore: None,
+                hourly_rate_ore: None,
             },
             false,
             "Test",
@@ -710,7 +710,7 @@ async fn kjor(
 }
 
 #[tokio::test]
-async fn the_accrual_on_unpaid_feriepenger_is_posted() {
+async fn the_accrual_on_unpaid_holiday_pay_is_posted() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
@@ -732,7 +732,7 @@ async fn the_accrual_on_unpaid_feriepenger_is_posted() {
 /// this wrong and the avgift is either expensed twice or left standing as
 /// a liability that never goes away.
 #[tokio::test]
-async fn the_accrual_is_reversed_when_the_feriepenger_are_paid_out() {
+async fn the_accrual_is_reversed_when_the_holiday_pay_is_paid_out() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let a = employee(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
@@ -768,8 +768,8 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     let a = employee(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
 
     // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
-    let uten = kjor(&pool, company, a, 3, "V", None, 0).await;
-    assert_eq!(uten.sum.employer_contribution_holiday_pay_ore, 0);
+    let without = kjor(&pool, company, a, 3, "V", None, 0).await;
+    assert_eq!(without.sum.employer_contribution_holiday_pay_ore, 0);
     assert_eq!(account_balance(&pool, company, "2780").await, 0);
 
     // The business moves to sone I. Now it owes avgift on EVERYTHING
@@ -787,7 +787,7 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
 /// The invariant that keeps the accrual from drifting: after any run, the
 /// balance of 2780 is exactly the rate times the balance of 2940.
 #[tokio::test]
-async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
+async fn the_accrual_is_always_the_rate_times_the_holiday_pay_liability() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let a = employee(&pool, company, "03048810003", "Turid Invariant", 4_321_000).await;
@@ -856,7 +856,7 @@ async fn the_accrual_is_always_the_rate_times_the_feriepenger_liability() {
 /// and therefore gets no avgift accrual. That is a real limitation, and
 /// the run says so instead of pretending otherwise.
 #[tokio::test]
-async fn an_unallocated_feriepenger_liability_warns_rather_than_staying_silent() {
+async fn an_unallocated_holiday_pay_liability_warns_rather_than_staying_silent() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let a = employee(&pool, company, "03048810275", "Åse Overtatt", 5_000_000).await;

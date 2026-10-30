@@ -63,24 +63,24 @@ impl Status {
 /// - `dekket_i_dag`: is there an abonnement row covering `idag`
 ///   (`valid_from <= idag` and `valid_to` null or `> idag` — `valid_to`
 ///   is EXCLUSIVE, as everywhere else).
-/// - `siste_slutt`: the latest `valid_to` among the rows that have
+/// - `last_end`: the latest `valid_to` among the rows that have
 ///   expired, if any. The deadline runs from the later of this and the
 ///   end of the trial, so a company that cancelled after two years is
 ///   not blocked "14 days after the trial" long past.
 pub fn status(
     opprettet: NaiveDate,
     dekket_i_dag: bool,
-    siste_slutt: Option<NaiveDate>,
+    last_end: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Status {
     if dekket_i_dag {
         return Status::Aktiv;
     }
     let trial_until = opprettet + chrono::Days::new(TRIAL_DAYS as u64);
-    if siste_slutt.is_none() && today < trial_until {
+    if last_end.is_none() && today < trial_until {
         return Status::Trial { to: trial_until };
     }
-    let grunnlag = siste_slutt.map_or(trial_until, |s| s.max(trial_until));
+    let grunnlag = last_end.map_or(trial_until, |s| s.max(trial_until));
     let sperres = grunnlag + chrono::Days::new(GRACE_DAYS as u64);
     if today < sperres {
         Status::Grace { sperres }

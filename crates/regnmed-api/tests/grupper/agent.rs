@@ -104,8 +104,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // A chart to post against: `bilag_for` is exercised for real below,
     // and without accounts it would fail for a reason that says nothing
     // about whether the tool matches the API.
-    for (nr, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+    for (number, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }

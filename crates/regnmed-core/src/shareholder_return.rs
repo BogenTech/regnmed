@@ -64,7 +64,7 @@ pub struct Company {
     pub name: String,
     pub address: Option<String>,
     pub postnummer: Option<String>,
-    pub poststed: Option<String>,
+    pub postal_city: Option<String>,
     pub contact_name: Option<String>,
     pub contact_email: Option<String>,
 }
@@ -145,7 +145,7 @@ pub struct SubForm {
     pub name: String,
     pub address: Option<String>,
     pub postnummer: Option<String>,
-    pub poststed: Option<String>,
+    pub postal_city: Option<String>,
     pub landkode: Option<String>,
     pub share_count: PriorYear,
     pub dividend: Vec<DividendEntry>,
@@ -198,7 +198,7 @@ impl Writer {
     }
 
     /// Opens an Altinn group, which always carries its own gruppeid.
-    fn gruppe(&mut self, tag: &str, gruppeid: u32) {
+    fn group(&mut self, tag: &str, gruppeid: u32) {
         self.open_attr(tag, &format!("gruppeid=\"{gruppeid}\""));
     }
 
@@ -267,8 +267,8 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         ),
     );
 
-    w.gruppe("GenerellInformasjon-grp-2587", 2587);
-    w.gruppe("Selskap-grp-2588", 2588);
+    w.group("GenerellInformasjon-grp-2587", 2587);
+    w.group("Selskap-grp-2588", 2588);
     w.felt(
         "EnhetOrganisasjonsnummer-datadef-18",
         18,
@@ -284,13 +284,13 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt_opt(
         "EnhetPoststed-datadef-6674",
         6674,
-        h.company.poststed.as_ref(),
+        h.company.postal_city.as_ref(),
     );
     w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &h.inntektsar.to_string());
     w.close("Selskap-grp-2588");
     if h.company.contact_name.is_some() || h.company.contact_email.is_some() {
-        w.gruppe("Kontaktperson-grp-3442", 3442);
+        w.group("Kontaktperson-grp-3442", 3442);
         w.felt_opt(
             "KontaktpersonSkjemaNavn-datadef-33918",
             33918,
@@ -305,8 +305,8 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     }
     w.close("GenerellInformasjon-grp-2587");
 
-    w.gruppe("Selskapsopplysninger-grp-2589", 2589);
-    w.gruppe("AksjekapitalForHeleSelskapet-grp-3443", 3443);
+    w.group("Selskapsopplysninger-grp-2589", 2589);
+    w.group("AksjekapitalForHeleSelskapet-grp-3443", 3443);
     w.felt(
         "AksjekapitalFjoraret-datadef-7129",
         7129,
@@ -319,7 +319,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     );
     w.close("AksjekapitalForHeleSelskapet-grp-3443");
     // One share class in v1: the class's figures are the company's.
-    w.gruppe("AksjekapitalIDenneAksjeklassen-grp-3444", 3444);
+    w.group("AksjekapitalIDenneAksjeklassen-grp-3444", 3444);
     w.felt(
         "AksjekapitalISINAksjetypeFjoraret-datadef-17663",
         17663,
@@ -331,7 +331,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         &amount(h.aksjekapital.this_year),
     );
     w.close("AksjekapitalIDenneAksjeklassen-grp-3444");
-    w.gruppe("PalydendePerAksje-grp-3447", 3447);
+    w.group("PalydendePerAksje-grp-3447", 3447);
     w.felt(
         "AksjeMvPalydendeFjoraret-datadef-23944",
         23944,
@@ -343,7 +343,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         &amount(h.palydende_ore.this_year),
     );
     w.close("PalydendePerAksje-grp-3447");
-    w.gruppe("AntallAksjerIDenneAksjeklassen-grp-3445", 3445);
+    w.group("AntallAksjerIDenneAksjeklassen-grp-3445", 3445);
     w.felt(
         "AksjerMvAntallFjoraret-datadef-29166",
         29166,
@@ -355,7 +355,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         &h.share_count.this_year.to_string(),
     );
     w.close("AntallAksjerIDenneAksjeklassen-grp-3445");
-    w.gruppe("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446", 3446);
+    w.group("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446", 3446);
     w.felt(
         "AksjekapitalInnbetaltFjoraret-datadef-8020",
         8020,
@@ -367,7 +367,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
         &amount(h.innbetalt_aksjekapital.this_year),
     );
     w.close("InnbetaltAksjekapitalIDenneAksjeklassen-grp-3446");
-    w.gruppe("InnbetaltOverkursIDenneAksjeklassen-grp-3448", 3448);
+    w.group("InnbetaltOverkursIDenneAksjeklassen-grp-3448", 3448);
     w.felt(
         "AksjeOverkursISINAksjetypeFjoraret-datadef-17662",
         17662,
@@ -382,9 +382,9 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.close("Selskapsopplysninger-grp-2589");
 
     if !h.dividend.is_empty() {
-        w.gruppe("Utbytte-grp-3449", 3449);
+        w.group("Utbytte-grp-3449", 3449);
         for u in &h.dividend {
-            w.gruppe(
+            w.group(
                 "UtdeltSkatterettsligUtbytteILopetAvInntektsaret-grp-3451",
                 3451,
             );
@@ -409,13 +409,13 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     }
 
     if !h.nyutstedelser.is_empty() {
-        w.gruppe("UtstedelseAvAksjerIfmStiftelseNyemisjonMv-grp-3452", 3452);
+        w.group("UtstedelseAvAksjerIfmStiftelseNyemisjonMv-grp-3452", 3452);
         for n in &h.nyutstedelser {
             let code = n
                 .type_
                 .code()
                 .ok_or(ReturnError::UverifisertKode(n.type_))?;
-            w.gruppe("AntallNyutstedteAksjer-grp-3453", 3453);
+            w.group("AntallNyutstedteAksjer-grp-3453", 3453);
             w.felt(
                 "AksjerNyutstedteStiftelseMvAntall-datadef-17668",
                 17668,
@@ -472,13 +472,13 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         ),
     );
 
-    w.gruppe("SelskapsOgAksjonaropplysninger-grp-3987", 3987);
-    w.gruppe("Selskapsidentifikasjon-grp-3986", 3986);
+    w.group("SelskapsOgAksjonaropplysninger-grp-3987", 3987);
+    w.group("Selskapsidentifikasjon-grp-3986", 3986);
     w.felt("EnhetOrganisasjonsnummer-datadef-18", 18, &u.orgnumber);
     w.felt("AksjeType-datadef-17659", 17659, SHARE_CLASS_ORDINARY);
     w.felt("Inntektsar-datadef-692", 692, &u.inntektsar.to_string());
     w.close("Selskapsidentifikasjon-grp-3986");
-    w.gruppe("NorskUtenlandskAksjonar-grp-3988", 3988);
+    w.group("NorskUtenlandskAksjonar-grp-3988", 3988);
     match id {
         ShareholderId::Fodselsnummer(f) => w.felt("AksjonarFodselsnummer-datadef-1156", 1156, f),
         ShareholderId::Organisasjonsnummer(o) => {
@@ -496,21 +496,25 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         7598,
         u.postnummer.as_ref(),
     );
-    w.felt_opt("AksjonarPoststed-datadef-7599", 7599, u.poststed.as_ref());
+    w.felt_opt(
+        "AksjonarPoststed-datadef-7599",
+        7599,
+        u.postal_city.as_ref(),
+    );
     w.felt_opt("AksjonarLandkode-datadef-17740", 17740, u.landkode.as_ref());
     if let Some(address) = u.address.as_ref().filter(|a| !a.trim().is_empty()) {
-        w.gruppe("Adresse-grp-7722", 7722);
+        w.group("Adresse-grp-7722", 7722);
         w.felt("AksjonarAdresse-datadef-1154", 1154, &kutt(address, 105));
         w.close("Adresse-grp-7722");
     }
     w.close("NorskUtenlandskAksjonar-grp-3988");
     w.close("SelskapsOgAksjonaropplysninger-grp-3987");
 
-    w.gruppe(
+    w.group(
         "AntallAksjerUtbytteOgTilbakebetalingAvTidligereInnbetaltKapit-grp-3990",
         3990,
     );
-    w.gruppe("AntallAksjerPerAksjonar-grp-3989", 3989);
+    w.group("AntallAksjerPerAksjonar-grp-3989", 3989);
     w.felt(
         "AksjerAntallFjoraret-datadef-29168",
         29168,
@@ -523,7 +527,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     );
     w.close("AntallAksjerPerAksjonar-grp-3989");
     for post in &u.dividend {
-        w.gruppe("UtdeltUtbyttePerAksjonar-grp-3991", 3991);
+        w.group("UtdeltUtbyttePerAksjonar-grp-3991", 3991);
         w.felt(
             "Aksjeutbytte-datadef-29169",
             29169,
@@ -549,14 +553,14 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         .filter(|b| b.type_.post() == FormItem::Acquisition)
         .collect();
     if !acquisitions.is_empty() {
-        w.gruppe("Transaksjoner-grp-3992", 3992);
-        w.gruppe("KjopArvGaveStiftelseNyemisjonMv-grp-3993", 3993);
+        w.group("Transaksjoner-grp-3992", 3992);
+        w.group("KjopArvGaveStiftelseNyemisjonMv-grp-3993", 3993);
         for b in acquisitions {
             let code = b
                 .type_
                 .code()
                 .ok_or(ReturnError::UverifisertKode(b.type_))?;
-            w.gruppe("AntallAksjerITilgang-grp-3998", 3998);
+            w.group("AntallAksjerITilgang-grp-3998", 3998);
             w.felt(
                 "AksjerKjopAntall-datadef-12153",
                 12153,
@@ -579,13 +583,13 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         .filter(|b| b.type_.post() == FormItem::Disposal)
         .collect();
     if !disposals.is_empty() {
-        w.gruppe("SalgArvGaveLikvidasjonPartiellLikvidasjonMv-grp-3995", 3995);
+        w.group("SalgArvGaveLikvidasjonPartiellLikvidasjonMv-grp-3995", 3995);
         for b in disposals {
             let code = b
                 .type_
                 .code()
                 .ok_or(ReturnError::UverifisertKode(b.type_))?;
-            w.gruppe("AksjerIAvgang-grp-4002", 4002);
+            w.group("AksjerIAvgang-grp-4002", 4002);
             w.felt(
                 "AksjerArvMvOmsattAntall-datadef-17752",
                 17752,
@@ -623,7 +627,7 @@ mod tests {
             name: "Mosegrodd Oransje Tiger AS".into(),
             address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
-            poststed: Some("OSLO".into()),
+            postal_city: Some("OSLO".into()),
             contact_name: Some("Kari Styreleder".into()),
             contact_email: Some("kari@example.no".into()),
         }
@@ -674,7 +678,7 @@ mod tests {
             name: "Kari Nordmann".into(),
             address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
-            poststed: Some("OSLO".into()),
+            postal_city: Some("OSLO".into()),
             landkode: None,
             share_count: PriorYear {
                 fjoraret: 0,

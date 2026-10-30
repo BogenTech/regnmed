@@ -616,13 +616,13 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         }],
     };
 
-    let uten = regnmed_db::create_invoice(&state.pool, company, &utsted(1), "test", None)
+    let without = regnmed_db::create_invoice(&state.pool, company, &utsted(1), "test", None)
         .await
         .unwrap();
     let (status, pdf) = send(
         &state,
         "GET",
-        &format!("/companies/{company}/invoices/{}/pdf", uten.invoice_id),
+        &format!("/companies/{company}/invoices/{}/pdf", without.invoice_id),
         &token,
         None,
     )
@@ -643,7 +643,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         "uten KID må dokumentet si hva betalingen skal merkes med"
     );
     // Verdien lagres likevel: OCR-importen slår opp faktura PÅ KID (#7).
-    assert!(!uten.kid.is_empty(), "KID-en beregnes og lagres uansett");
+    assert!(!without.kid.is_empty(), "KID-en beregnes og lagres uansett");
 
     // Avtalen kommer: fra nå skal den stå.
     regnmed_db::update_company_settings(&state.pool, company, None, None, None, None, Some(true))

@@ -342,12 +342,12 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
         .await
         .unwrap();
-    let (_, kunde_no) =
+    let (_, customer_no) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
     give_parties_address(&state.pool, company).await;
-    post("1500", 12_500_00, "3000", Some(kunde_no), 10).await;
+    post("1500", 12_500_00, "3000", Some(customer_no), 10).await;
     regnmed_db::set_account_subledger(&state.pool, company, "1500", None)
         .await
         .unwrap();
@@ -465,7 +465,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
     regnmed_db::set_account_subledger(&state.pool, clean, "2400", Some("leverandor"))
         .await
         .unwrap();
-    let (_, ren_kunde) =
+    let (_, pure_customer) =
         regnmed_db::create_party(&state.pool, clean, "kunde", "Kunde AS", None, None)
             .await
             .unwrap();
@@ -480,7 +480,7 @@ async fn the_reskontro_tie_out_names_the_account_and_the_difference() {
                 amount: Ore(7_000_00),
                 vat_code: None,
                 description: None,
-                party_no: Some(ren_kunde),
+                party_no: Some(pure_customer),
                 department: None,
                 project: None,
                 currency: None,
@@ -545,8 +545,8 @@ async fn undocumented_vouchers_are_counted_and_listable() {
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [("1920", "Bank"), ("6800", "Kontorkostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+    for (number, name) in [("1920", "Bank"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }

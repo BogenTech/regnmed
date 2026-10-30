@@ -314,12 +314,12 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1500", "Kundefordringer"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
@@ -387,7 +387,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 
     // Same door, same guard: a tilbud is where the number is first
     // promised to the customer.
-    let tilbud = regnmed_db::create_sales_document(
+    let quote = regnmed_db::create_sales_document(
         &pool,
         company,
         "tilbud",
@@ -407,7 +407,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     )
     .await;
     assert!(
-        tilbud.is_err(),
+        quote.is_err(),
         "a tilbud may not promise mva the seller cannot charge"
     );
 
@@ -469,12 +469,12 @@ async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("2710", "Inngående mva"),
         ("2910", "Mellomregning ansatte"),
         ("6420", "Leie datasystemer"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }

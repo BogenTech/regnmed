@@ -34,7 +34,7 @@ pub struct Shareholder {
     pub utenlandsk_id: Option<String>,
     pub address: Option<String>,
     pub postnummer: Option<String>,
-    pub poststed: Option<String>,
+    pub postal_city: Option<String>,
     pub landkode: Option<String>,
     pub note: Option<String>,
     /// Holding as of the requested date — computed, never stored.
@@ -77,7 +77,7 @@ pub struct NewShareholder {
     pub utenlandsk_id: Option<String>,
     pub address: Option<String>,
     pub postnummer: Option<String>,
-    pub poststed: Option<String>,
+    pub postal_city: Option<String>,
     pub landkode: Option<String>,
     pub note: Option<String>,
 }
@@ -143,7 +143,7 @@ pub async fn create_shareholder(
     .bind(&new.name)
     .bind(&new.address)
     .bind(&new.postnummer)
-    .bind(&new.poststed)
+    .bind(&new.postal_city)
     .bind(&new.landkode)
     .bind(&new.note)
     .bind(created_by)
@@ -161,7 +161,7 @@ pub async fn update_shareholder_contact(
     name: &str,
     address: Option<&str>,
     postnummer: Option<&str>,
-    poststed: Option<&str>,
+    postal_city: Option<&str>,
     landkode: Option<&str>,
 ) -> Result<()> {
     ensure!(!name.trim().is_empty(), "navn kan ikke være tomt");
@@ -175,7 +175,7 @@ pub async fn update_shareholder_contact(
     .bind(name)
     .bind(address)
     .bind(postnummer)
-    .bind(poststed)
+    .bind(postal_city)
     .bind(landkode)
     .execute(pool)
     .await?;
@@ -226,7 +226,7 @@ pub async fn aksjeeierbok(
                 utenlandsk_id: r.get("utenlandsk_id"),
                 address: r.get("adresse"),
                 postnummer: r.get("postnummer"),
-                poststed: r.get("poststed"),
+                postal_city: r.get("poststed"),
                 landkode: r.get("landkode"),
                 note: r.get("note"),
                 share_count: quantity,
@@ -600,14 +600,14 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     let orgnumber: String = company.get("orgnr");
     // The address is free text with us; the oppgave wants it split. The
     // same rule EHF uses, in one place.
-    let (gate, postnr, poststed) = crate::ehf::split_address(company.get("address"));
+    let (gate, postnr, postal_city) = crate::ehf::split_address(company.get("address"));
 
     // The fiscal year is the calendar year (docs/regelverk.md, #52) — and
     // for the aksjonærregisteroppgave it is the inntektsår that governs
     // anyway.
-    let siste_i_ar = NaiveDate::from_ymd_opt(year, 12, 31).context("ugyldig år")?;
+    let last_this_year = NaiveDate::from_ymd_opt(year, 12, 31).context("ugyldig år")?;
 
-    let bok = aksjeeierbok(pool, company_id, siste_i_ar).await?;
+    let bok = aksjeeierbok(pool, company_id, last_this_year).await?;
     ensure!(
         !bok.is_empty(),
         "aksjeeierboken er tom — registrer aksjonærene og stiftelsen før oppgaven"
@@ -677,7 +677,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 name: a.name.clone(),
                 address: a.address.clone(),
                 postnummer: a.postnummer.clone(),
-                poststed: a.poststed.clone(),
+                postal_city: a.postal_city.clone(),
                 landkode: a.landkode.clone(),
                 share_count: tax_return::PriorYear {
                     fjoraret: bevegelse.opening,
@@ -713,7 +713,7 @@ pub async fn bygg_oppgave(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 name: company.get("name"),
                 address: gate,
                 postnummer: postnr,
-                poststed,
+                postal_city,
                 contact_name: None,
                 contact_email: company.get("email"),
             },

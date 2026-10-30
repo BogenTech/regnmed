@@ -295,11 +295,11 @@ pub async fn build_audit_report(
     //
     // Measured at the latest closed period. Without one there is nothing
     // to document yet, and saying so beats inventing a deadline.
-    let siste_las: Option<chrono::NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
+    let last_lock: Option<chrono::NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
         .bind(company_id)
         .fetch_one(pool)
         .await?;
-    checks.push(match siste_las {
+    checks.push(match last_lock {
         None => Check {
             name: "Balansedokumentasjon".into(),
             ok: true,
@@ -407,7 +407,7 @@ pub async fn build_audit_report(
         .map(|a| AnchorInfo {
             tidspunkt: a.created_at.to_rfc3339(),
             root_hex: hex::encode(a.root_hash),
-            siste_sekvens: a.last_seq,
+            last_sequence: a.last_seq,
             vitner: a
                 .witnesses
                 .iter()

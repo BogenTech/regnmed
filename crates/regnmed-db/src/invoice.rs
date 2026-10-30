@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::fakturapdf::{DocumentType, FakturaPdfInput, PdfLinje, render_faktura_pdf};
+use regnmed_core::fakturapdf::{DocumentType, InvoicePdfInput, PdfLinje, render_invoice_pdf};
 use regnmed_core::invoice::{InvoiceLineInput, build_voucher, compute, invoice_kid};
 use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
@@ -351,7 +351,7 @@ pub async fn create_invoice_in(
     // påtegningen, og registreringsplikten i Foretaksregisteret gjelder
     // flere enn AS/ASA (#81).
     let reg = crate::settings::registrering_on(pool, company_id, draft.invoice_date).await?;
-    let pdf = render_faktura_pdf(&FakturaPdfInput {
+    let pdf = render_invoice_pdf(&InvoicePdfInput {
         document_type: if credits_invoice_id.is_some() {
             DocumentType::CreditNote
         } else if draft.kontant_betalingsmiddel.is_some() {

@@ -38,9 +38,9 @@ fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
         "opprettet": o.created_at.to_rfc3339(),
         "status": o.status,
         "avsluttet": regnmed_db::agent_task::AVSLUTTET.contains(&o.status.as_str()),
-        "siste_notat": o.siste_notat,
+        "siste_notat": o.last_note,
         "siste_av": o.last_by,
-        "siste_tidspunkt": o.siste_tidspunkt.map(|t| t.to_rfc3339()),
+        "siste_tidspunkt": o.last_timestamp.map(|t| t.to_rfc3339()),
     })
 }
 

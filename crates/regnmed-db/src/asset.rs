@@ -298,10 +298,12 @@ async fn depreciate_next(
         Some(p) => p.checked_add_months(chrono::Months::new(1)).unwrap(),
         None => month_start(acquisition_date),
     };
-    let nr = month_number(acquisition_date, period);
+    let number = month_number(acquisition_date, period);
     let voucher_date = month_end(period);
     // Due: month ended, plan not exhausted, asset still owned that month.
-    if voucher_date > through || nr > levetid || avhendet.is_some_and(|d| month_start(d) <= period)
+    if voucher_date > through
+        || number > levetid
+        || avhendet.is_some_and(|d| month_start(d) <= period)
     {
         return Ok(None);
     }
@@ -311,7 +313,7 @@ async fn depreciate_next(
         asset.get("kostpris_ore"),
         asset.get("restverdi_ore"),
         levetid,
-        nr,
+        number,
     );
     let name: String = asset.get("navn");
     let result = async {
@@ -325,7 +327,7 @@ async fn depreciate_next(
                     account_number: asset.get("avskrivningskonto"),
                     amount: Ore(amount),
                     vat_code: None,
-                    description: Some(format!("Lineær avskrivning måned {nr}/{levetid}")),
+                    description: Some(format!("Lineær avskrivning måned {number}/{levetid}")),
                     party_no: None,
                     department: None,
                     project: None,
@@ -541,7 +543,7 @@ pub async fn dispose_asset(
 
 #[derive(Debug)]
 pub struct DepreciationGroupRow {
-    pub gruppe: String,
+    pub group: String,
     pub description: String,
     pub opening_ore: i64,
     pub additions_ore: i64,
@@ -585,14 +587,14 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
         .min()
         .unwrap_or(year);
     let mut grupper = Vec::new();
-    for (gruppe, description) in DEPRECIATION_GROUPS {
+    for (group, description) in DEPRECIATION_GROUPS {
         let mut opening = 0i64;
         let mut rad: Option<DepreciationGroupRow> = None;
         for y in first_year..=year {
             let addition: i64 = assets
                 .iter()
                 .filter(|r| {
-                    r.get::<String, _>("saldogruppe") == *gruppe
+                    r.get::<String, _>("saldogruppe") == *group
                         && r.get::<NaiveDate, _>("anskaffelsesdato").year() == y
                 })
                 .map(|r| r.get::<i64, _>("kostpris_ore"))
@@ -600,7 +602,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
             let consideration: i64 = assets
                 .iter()
                 .filter(|r| {
-                    r.get::<String, _>("saldogruppe") == *gruppe
+                    r.get::<String, _>("saldogruppe") == *group
                         && r.get::<Option<NaiveDate>, _>("avhendet_dato")
                             .is_some_and(|d| d.year() == y)
                 })
@@ -610,13 +612,15 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
                 continue;
             }
             let jan1 = NaiveDate::from_ymd_opt(y, 1, 1).unwrap();
-            let rate_bp = value_on(&rates, &format!("saldogruppe_{gruppe}"), jan1)
-                .with_context(|| {
-                    format!("ingen sats for saldogruppe {gruppe} i {y} — satsregisteret dekker ikke året")
+            let rate_bp =
+                value_on(&rates, &format!("saldogruppe_{group}"), jan1).with_context(|| {
+                    format!(
+                        "ingen sats for saldogruppe {group} i {y} — satsregisteret dekker ikke året"
+                    )
                 })?;
             let year = tax_depreciation_year(opening, addition, consideration, rate_bp);
             rad = Some(DepreciationGroupRow {
-                gruppe: (*gruppe).to_string(),
+                group: (*group).to_string(),
                 description: (*description).to_string(),
                 opening_ore: opening,
                 additions_ore: addition,

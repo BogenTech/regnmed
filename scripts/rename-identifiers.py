@@ -139,13 +139,52 @@ def rename(src, pairs):
     return "".join(parts)
 
 
+def blank_literals(src):
+    """`src` with every string literal and comment replaced by spaces, so
+    line numbers hold but only CODE is searchable."""
+    out, last = [], 0
+    for m in STR.finditer(src):
+        out.append(src[last : m.start()])
+        out.append(re.sub(r"[^\n]", " ", m.group(0)))
+        last = m.end()
+    out.append(src[last:])
+    return "".join(out)
+
+
+def shadows(src, pairs):
+    """Pairs whose TARGET is already a live name in this file's code.
+
+    THE ONE COLLISION CLASS THE COMPILER DOES NOT CATCH. Every other
+    collision this conversion hit was a build error -- a renamed
+    function no longer matching its call site, two enums of one name.
+    But if `b` is already bound in the same scope, `a -> b` SHADOWS it:
+    the code still compiles, the wrong binding is read, and nothing
+    says a word. `nr -> number` would have done exactly that in nine
+    files that bind both. Reported, never refused: a target that
+    appears only as a module path (`crate::email::`) or in another
+    scope is usually fine, and only a human can tell which.
+    """
+    code = blank_literals(src)
+    found = []
+    for a, b in pairs:
+        if not re.search(r"\b%s\b" % re.escape(a), code):
+            continue
+        at = [
+            code[: m.start()].count("\n") + 1
+            for m in re.finditer(r"\b%s\b" % re.escape(b), code)
+        ]
+        if at:
+            found.append((a, b, at[:4]))
+    return found
+
+
 def main():
     pairs = []
     for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
         if line.strip() and not line.startswith("#"):
             a, b = line.split("\t")
             pairs.append((a.strip(), b.strip()))
-    wire, stale = {}, {}
+    wire, stale, shade = {}, {}, {}
     changed = 0
     for f in sys.argv[2:]:
         p = pathlib.Path(f)
@@ -154,6 +193,9 @@ def main():
         hits = sorted(fields & {a for a, _ in pairs})
         if hits:
             wire[f] = hits
+        risky = shadows(src, pairs)
+        if risky:
+            shade[f] = risky
         out = rename(src, pairs)
         words = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(a) for a, _ in pairs))
         mentions = [
@@ -179,6 +221,14 @@ def main():
         for f, lines in stale.items():
             for n, text in lines:
                 print(f"  {f}:{n}: {text.strip()[:96]}")
+    if shade:
+        print("\nSHADOWS -- the new name is ALREADY a name in this file's code.")
+        print("The compiler cannot see this one. Check the scopes by hand:")
+        for f, items in shade.items():
+            for a, b, at in items:
+                where = ", ".join(str(n) for n in at)
+                print(f"  {f}: {a} -> {b}, which already appears at line {where}")
+
     if wire:
         print("\nWIRE CONTRACT -- these renamed names are serde fields:")
         for f, hits in wire.items():

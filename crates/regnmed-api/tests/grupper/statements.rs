@@ -289,12 +289,12 @@ async fn subledger_specification_carries_balance_per_party() {
     regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    let (_, kunde_a) =
+    let (_, customer_a) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde A", None, None)
             .await
             .unwrap();
     give_parties_address(&state.pool, company).await;
-    let (_, kunde_b) =
+    let (_, customer_b) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde B", None, None)
             .await
             .unwrap();
@@ -313,7 +313,7 @@ async fn subledger_specification_carries_balance_per_party() {
         date(2025, 12, 15),
         "Salg A",
         vec![
-            party_entry("1500", 5_000_00, &kunde_a),
+            party_entry("1500", 5_000_00, &customer_a),
             entry("3000", -5_000_00),
         ],
     )
@@ -324,7 +324,7 @@ async fn subledger_specification_carries_balance_per_party() {
         date(2025, 12, 20),
         "Salg B",
         vec![
-            party_entry("1500", 2_000_00, &kunde_b),
+            party_entry("1500", 2_000_00, &customer_b),
             entry("3000", -2_000_00),
         ],
     )
@@ -336,7 +336,7 @@ async fn subledger_specification_carries_balance_per_party() {
         "Innbetaling A",
         vec![
             entry("1920", 5_000_00),
-            party_entry("1500", -5_000_00, &kunde_a),
+            party_entry("1500", -5_000_00, &customer_a),
         ],
     )
     .await;
@@ -357,7 +357,7 @@ async fn subledger_specification_carries_balance_per_party() {
         date(2026, 2, 1),
         "Salg A igjen",
         vec![
-            party_entry("1500", 3_000_00, &kunde_a),
+            party_entry("1500", 3_000_00, &customer_a),
             entry("3000", -3_000_00),
         ],
     )
@@ -375,7 +375,7 @@ async fn subledger_specification_carries_balance_per_party() {
     // Only kunder — the supplier must not leak into this report.
     assert_eq!(parties.len(), 2);
     let a = &parties[0];
-    assert_eq!(a["party_no"], kunde_a);
+    assert_eq!(a["party_no"], customer_a);
     assert_eq!(a["inngaende_ore"], 5_000_00);
     assert_eq!(a["utgaende_ore"], 3_000_00);
     let posts = a["posts"].as_array().unwrap();
@@ -391,7 +391,7 @@ async fn subledger_specification_carries_balance_per_party() {
     // B has no movement in the period, but the saldo exists and must be
     // in the spesifikasjon.
     let b = &parties[1];
-    assert_eq!(b["party_no"], kunde_b);
+    assert_eq!(b["party_no"], customer_b);
     assert_eq!(b["inngaende_ore"], 2_000_00);
     assert_eq!(b["utgaende_ore"], 2_000_00);
     assert!(b["posts"].as_array().unwrap().is_empty());

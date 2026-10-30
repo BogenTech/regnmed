@@ -138,7 +138,7 @@ fn kjoring_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
         "utbetalt_dato": k.paid_date,
         "sone": k.zone,
         "brutto_ore": k.sum.gross_ore,
-        "feriepenger_utbetalt_ore": k.sum.feriepenger_utbetalt_ore,
+        "feriepenger_utbetalt_ore": k.sum.holiday_pay_paid_ore,
         "forskuddstrekk_ore": k.sum.withholding_ore,
         "netto_ore": k.sum.net_ore,
         "feriepengeavsetning_ore": k.sum.holiday_pay_accrual_ore,
@@ -306,7 +306,7 @@ pub async fn payroll_hours(
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "minutter": g.minutes,
-        "timesats_ore": g.timesats_ore,
+        "timesats_ore": g.hourly_rate_ore,
         "belop_ore": g.amount_ore,
         "laast": g.laast,
     })))

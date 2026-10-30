@@ -38,7 +38,7 @@ fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::
         "utenlandsk_id": a.utenlandsk_id,
         "adresse": a.address,
         "postnummer": a.postnummer,
-        "poststed": a.poststed,
+        "poststed": a.postal_city,
         "landkode": a.landkode,
         "note": a.note,
         "antall_aksjer": a.share_count,
@@ -90,7 +90,8 @@ pub struct CreateShareholderRequest {
     #[serde(rename = "adresse")]
     address: Option<String>,
     postnummer: Option<String>,
-    poststed: Option<String>,
+    #[serde(rename = "poststed")]
+    postal_city: Option<String>,
     landkode: Option<String>,
     note: Option<String>,
 }
@@ -119,7 +120,7 @@ pub async fn create_shareholder(
             utenlandsk_id: request.utenlandsk_id,
             address: request.address,
             postnummer: request.postnummer,
-            poststed: request.poststed,
+            postal_city: request.postal_city,
             landkode: request.landkode,
             note: request.note,
         },
@@ -137,7 +138,8 @@ pub struct ContactRequest {
     #[serde(rename = "adresse")]
     address: Option<String>,
     postnummer: Option<String>,
-    poststed: Option<String>,
+    #[serde(rename = "poststed")]
+    postal_city: Option<String>,
     landkode: Option<String>,
 }
 
@@ -161,7 +163,7 @@ pub async fn update_contact(
         &request.name,
         request.address.as_deref(),
         request.postnummer.as_deref(),
-        request.poststed.as_deref(),
+        request.postal_city.as_deref(),
         request.landkode.as_deref(),
     )
     .await

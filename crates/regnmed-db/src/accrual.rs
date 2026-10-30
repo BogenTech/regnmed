@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::ledger::post_voucher_in;
 
 #[derive(Debug)]
-pub struct PeriodiseringDraft {
+pub struct AccrualDraft {
     pub kilde_voucher: Option<Uuid>,
     pub description: String,
     pub income_account: String,
@@ -37,7 +37,7 @@ pub struct PeriodiseringDraft {
 }
 
 #[derive(Debug)]
-pub struct Periodisering {
+pub struct Accrual {
     pub id: Uuid,
     pub description: String,
     pub income_account: String,
@@ -60,10 +60,10 @@ fn first_of(year: i32, month: u32) -> Result<NaiveDate> {
 }
 
 /// Creates a plan. The accounts are the caller's — we never guess one.
-pub async fn create_periodisering(
+pub async fn create_accrual(
     pool: &PgPool,
     company_id: Uuid,
-    draft: &PeriodiseringDraft,
+    draft: &AccrualDraft,
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(draft.total_ore != 0, "beløpet kan ikke være null");
@@ -165,7 +165,7 @@ pub async fn create_periodisering(
     Ok(id)
 }
 
-pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Periodisering>> {
+pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Accrual>> {
     let rows = sqlx::query(
         "select p.id, p.beskrivelse, p.resultatkonto, p.balansekonto, p.total_ore,
                 p.fra_maned, p.til_maned, p.notat, p.stoppet_dato,
@@ -187,7 +187,7 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Periodisering {
+        .map(|r| Accrual {
             id: r.get("id"),
             description: r.get("beskrivelse"),
             income_account: r.get("resultatkonto"),
@@ -208,7 +208,7 @@ pub async fn list_periodiseringer(pool: &PgPool, company_id: Uuid) -> Result<Vec
 /// Stops a plan: months already posted stand, the remaining ones are
 /// never posted. One-way — a plan is never deleted, because the vouchers
 /// already posted point at it.
-pub async fn stopp_periodisering(
+pub async fn stop_accrual(
     pool: &PgPool,
     company_id: Uuid,
     id: Uuid,
@@ -229,7 +229,7 @@ pub async fn stopp_periodisering(
 }
 
 #[derive(Debug)]
-pub struct PeriodiseringUtfall {
+pub struct AccrualOutcome {
     pub accrual_id: Uuid,
     pub description: String,
     pub period: NaiveDate,
@@ -240,7 +240,7 @@ pub struct PeriodiseringUtfall {
 
 /// Posts every month that has ended and is not yet posted, for every
 /// company. The monthly CronJob's entry point.
-pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<PeriodiseringUtfall>> {
+pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<AccrualOutcome>> {
     let planer: Vec<(Uuid, Uuid)> =
         sqlx::query("select id, company_id from periodisering order by company_id, created_at")
             .fetch_all(pool)
@@ -248,11 +248,11 @@ pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Per
             .iter()
             .map(|r| (r.get("id"), r.get("company_id")))
             .collect();
-    let mut utfall = Vec::new();
+    let mut outcome = Vec::new();
     for (id, company_id) in planer {
-        utfall.extend(periodiser_plan(pool, company_id, id, through).await?);
+        outcome.extend(periodiser_plan(pool, company_id, id, through).await?);
     }
-    Ok(utfall)
+    Ok(outcome)
 }
 
 /// Every due month for ONE plan. Each month is its own transaction, so a
@@ -262,7 +262,7 @@ pub async fn periodiser_plan(
     company_id: Uuid,
     accrual_id: Uuid,
     through: NaiveDate,
-) -> Result<Vec<PeriodiseringUtfall>> {
+) -> Result<Vec<AccrualOutcome>> {
     let plan = sqlx::query(
         "select p.beskrivelse, p.resultatkonto, p.balansekonto, p.total_ore,
                 p.fra_maned, p.til_maned, p.stoppet_dato,
@@ -301,7 +301,7 @@ pub async fn periodiser_plan(
     .fetch_all(pool)
     .await?;
 
-    let mut utfall = Vec::new();
+    let mut outcome = Vec::new();
     for (i, rad) in rader.iter().enumerate() {
         let period = NaiveDate::from_ymd_opt(rad.year, rad.month, 1).expect("gyldig måned");
         // Due: the month has ended, it is not already posted, and the
@@ -311,7 +311,7 @@ pub async fn periodiser_plan(
         {
             continue;
         }
-        utfall.push(
+        outcome.push(
             post_en_maned(
                 pool,
                 company_id,
@@ -330,7 +330,7 @@ pub async fn periodiser_plan(
             .await?,
         );
     }
-    Ok(utfall)
+    Ok(outcome)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -346,9 +346,9 @@ async fn post_en_maned(
     balance_account: &str,
     department: Option<&str>,
     project: Option<&str>,
-    nr: usize,
+    number: usize,
     count: usize,
-) -> Result<PeriodiseringUtfall> {
+) -> Result<AccrualOutcome> {
     let mut tx = pool.begin().await?;
     let result = async {
         let linje = |account: &str, amount: i64, dims: bool| EntryDraft {
@@ -356,7 +356,7 @@ async fn post_en_maned(
             amount: Ore(amount),
             // No vat_code, ever: the tax belongs to the source bilag.
             vat_code: None,
-            description: Some(format!("Periodisering måned {nr}/{count}")),
+            description: Some(format!("Periodisering måned {number}/{count}")),
             party_no: None,
             department: if dims {
                 department.map(str::to_owned)
@@ -404,7 +404,7 @@ async fn post_en_maned(
     match result {
         Ok(posted) => {
             tx.commit().await?;
-            Ok(PeriodiseringUtfall {
+            Ok(AccrualOutcome {
                 accrual_id,
                 description: description.to_string(),
                 period,
@@ -427,7 +427,7 @@ async fn post_en_maned(
             .bind(&detail)
             .execute(pool)
             .await?;
-            Ok(PeriodiseringUtfall {
+            Ok(AccrualOutcome {
                 accrual_id,
                 description: description.to_string(),
                 period,

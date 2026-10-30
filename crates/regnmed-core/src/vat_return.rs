@@ -99,7 +99,7 @@ pub fn build(
             Direction::Input => (None, None),
             // Everything else reports grunnlag + sats.
             Direction::Output
-            | Direction::Ingen
+            | Direction::None
             | Direction::Kostnadsmarkor
             | Direction::OmvendtMedFradrag
             | Direction::OmvendtUtenFradrag => (Some(grunnlag_kr), Some(line.rate_bp)),
@@ -324,13 +324,13 @@ mod tests {
             "full fradragsrett: kjøpet skal ikke koste avgift"
         );
 
-        let uten = message("87");
+        let without = message("87");
         assert_eq!(
-            uten.lines[0].fradrag_kr, 0,
+            without.lines[0].fradrag_kr, 0,
             "ingen fradragsrett, intet fradrag"
         );
         assert_eq!(
-            uten.fastsatt_kr, 25_000,
+            without.fastsatt_kr, 25_000,
             "uten fradragsrett skal avgiften betales i sin helhet"
         );
 

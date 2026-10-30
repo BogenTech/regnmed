@@ -237,7 +237,7 @@ type Foresporsel = (Option<Body>, Vec<(String, String)>);
 /// Turns the remaining arguments into a body and a query string.
 fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
     match v.body {
-        KroppMeny::Ingen => Ok((None, query(args))),
+        KroppMeny::None => Ok((None, query(args))),
         KroppMeny::Json => Ok((Some(Body::Json(Value::Object(args))), Vec::new())),
         KroppMeny::Fil => {
             let path = filepath(&mut args)?;

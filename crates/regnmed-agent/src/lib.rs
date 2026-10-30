@@ -265,7 +265,7 @@ pub async fn run_task(
     }
 
     let (settings, model_key) =
-        regnmed_db::agentllm::hent_llm_nokkel(pool, key, company_id, integration_id)
+        regnmed_db::agentllm::fetch_llm_key(pool, key, company_id, integration_id)
             .await?
             .context("the agent has no active model")?;
     let (client_id, secret) =
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn the_extra_instructions_sit_between_the_role_and_the_protocol() {
-        let uten = system_prompt("bokforer", None);
+        let without = system_prompt("bokforer", None);
         let med = system_prompt("bokforer", Some("Strøm bokføres på 6340."));
         // The role still opens the message, so nothing an owner writes
         // displaces the rules the role carries.
@@ -379,9 +379,9 @@ mod tests {
         // must be the last thing the model is told.
         let protokoll = closing_rules();
         assert!(med.trim_end().ends_with(protokoll.trim_end()));
-        assert!(uten.trim_end().ends_with(protokoll.trim_end()));
+        assert!(without.trim_end().ends_with(protokoll.trim_end()));
         // Empty instructions add nothing at all -- no stray heading.
-        assert_eq!(system_prompt("bokforer", Some("   ")), uten);
+        assert_eq!(system_prompt("bokforer", Some("   ")), without);
     }
 
     #[test]

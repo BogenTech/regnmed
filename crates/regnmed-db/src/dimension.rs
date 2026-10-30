@@ -26,7 +26,7 @@ pub struct DimensionRow {
     pub fakturerbar_default: bool,
     /// The VIEWER's effective timesats today (person-specific first,
     /// project default second) — what the grid shows as the row's sats.
-    pub min_timesats_ore: Option<i64>,
+    pub min_hourly_rate_ore: Option<i64>,
 }
 
 pub async fn list_dimensions(
@@ -61,7 +61,7 @@ pub async fn list_dimensions(
             customer: r.get("kunde"),
             customer_name: r.get("kunde_navn"),
             fakturerbar_default: r.get("fakturerbar_default"),
-            min_timesats_ore: r.get("min_timesats_ore"),
+            min_hourly_rate_ore: r.get("min_timesats_ore"),
         })
         .collect())
 }
@@ -69,7 +69,7 @@ pub async fn list_dimensions(
 /// Resolves a party_no to a party that actually IS a customer — the
 /// kind check lives here because a partial unique index cannot be an FK
 /// target (migration 0047).
-async fn kunde_id(pool: &PgPool, company_id: Uuid, party_no: &str) -> Result<Uuid> {
+async fn customer_id(pool: &PgPool, company_id: Uuid, party_no: &str) -> Result<Uuid> {
     sqlx::query_scalar(
         "select id from party where company_id = $1 and party_no = $2 and kind = 'kunde'",
     )
@@ -106,7 +106,7 @@ pub async fn create_dimension(
                 kind == "prosjekt",
                 "bare prosjekter kan knyttes til en kunde"
             );
-            Some(kunde_id(pool, company_id, party_no).await?)
+            Some(customer_id(pool, company_id, party_no).await?)
         }
         None => None,
     };
@@ -147,7 +147,7 @@ pub async fn update_dimension(
             "bare prosjekter kan være fakturerbare som standard"
         );
     }
-    let (sett_kunde, party_id) = match customer {
+    let (set_customer, party_id) = match customer {
         None => (false, None),
         Some("") => (true, None),
         Some(party_no) => {
@@ -155,7 +155,7 @@ pub async fn update_dimension(
                 kind == "prosjekt",
                 "bare prosjekter kan knyttes til en kunde"
             );
-            (true, Some(kunde_id(pool, company_id, party_no).await?))
+            (true, Some(customer_id(pool, company_id, party_no).await?))
         }
     };
     let updated = sqlx::query(
@@ -171,7 +171,7 @@ pub async fn update_dimension(
     .bind(code)
     .bind(name)
     .bind(active)
-    .bind(sett_kunde)
+    .bind(set_customer)
     .bind(party_id)
     .bind(fakturerbar_default)
     .execute(pool)
@@ -185,7 +185,7 @@ pub async fn update_dimension(
 pub struct ProsjektSatsRow {
     pub person_id: Option<Uuid>,
     pub person_name: Option<String>,
-    pub timesats_ore: i64,
+    pub hourly_rate_ore: i64,
     pub valid_from: chrono::NaiveDate,
     pub created_by: String,
 }
@@ -217,7 +217,7 @@ pub async fn list_prosjekt_satser(
             person_name: r
                 .get::<Option<Uuid>, _>("person_id")
                 .map(|_| r.get("person_navn")),
-            timesats_ore: r.get("timesats_ore"),
+            hourly_rate_ore: r.get("timesats_ore"),
             valid_from: r.get("valid_from"),
             created_by: r.get("created_by"),
         })
@@ -231,11 +231,11 @@ pub async fn set_prosjekt_sats(
     company_id: Uuid,
     code: &str,
     person_id: Option<Uuid>,
-    timesats_ore: i64,
+    hourly_rate_ore: i64,
     valid_from: chrono::NaiveDate,
     created_by: &str,
 ) -> Result<()> {
-    ensure!(timesats_ore >= 0, "timesats kan ikke være negativ");
+    ensure!(hourly_rate_ore >= 0, "timesats kan ikke være negativ");
     let dimension_id: Uuid = sqlx::query_scalar(
         "select id from dimension where company_id = $1 and kind = 'prosjekt' and code = $2",
     )
@@ -268,7 +268,7 @@ pub async fn set_prosjekt_sats(
     .bind(company_id)
     .bind(dimension_id)
     .bind(person_id)
-    .bind(timesats_ore)
+    .bind(hourly_rate_ore)
     .bind(valid_from)
     .bind(created_by)
     .execute(pool)

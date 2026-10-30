@@ -216,7 +216,7 @@ pub async fn balance(
     Ok(Json(json!({
         "year": rapport.year,
         "grupper": rapport.grupper.iter().map(|g| json!({
-            "gruppe": g.gruppe,
+            "gruppe": g.group,
             "beskrivelse": g.description,
             "inngaende_ore": g.opening_ore,
             "tilgang_ore": g.additions_ore,

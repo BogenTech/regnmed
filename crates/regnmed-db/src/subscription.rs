@@ -45,12 +45,9 @@ async fn fakta(
 /// Today's status for one company.
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     let today = Utc::now().date_naive();
-    let (opprettet, dekket, siste_slutt) = fakta(pool, company_id, today).await?;
+    let (opprettet, dekket, last_end) = fakta(pool, company_id, today).await?;
     Ok(regnmed_core::subscription::status(
-        opprettet,
-        dekket,
-        siste_slutt,
-        today,
+        opprettet, dekket, last_end, today,
     ))
 }
 
@@ -520,13 +517,13 @@ pub async fn post_stripe_payment(
 
     // Same self-configuring setup the monthly run does.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
-    for (nr, name) in [
+    for (number, name) in [
         ("1500", "Kundefordringer"),
         ("1570", "Kortoppgjør"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt, avgiftspliktig"),
     ] {
-        crate::ensure_account(pool, drift_company_id, nr, name).await?;
+        crate::ensure_account(pool, drift_company_id, number, name).await?;
     }
     crate::subledger::set_account_subledger(pool, drift_company_id, "1500", Some("kunde")).await?;
 
@@ -915,12 +912,12 @@ pub async fn fakturer_maned(
     // The ops company needs an account and a journal for the sale;
     // ensure is idempotent and makes the first run self-configuring.
     crate::ensure_journal(pool, drift_company_id, "GL", "Hovedbok").await?;
-    for (nr, name) in [
+    for (number, name) in [
         ("1500", "Kundefordringer"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt, avgiftspliktig"),
     ] {
-        crate::ensure_account(pool, drift_company_id, nr, name).await?;
+        crate::ensure_account(pool, drift_company_id, number, name).await?;
     }
     // The receivable account must carry reskontro, otherwise posting
     // refuses the party line — and the abonnement faktura MUST be on the
@@ -951,7 +948,7 @@ pub async fn fakturer_maned(
     .fetch_all(pool)
     .await?;
 
-    let mut utfall = Vec::new();
+    let mut outcome = Vec::new();
     for customer in &kunder {
         let company_id: Uuid = customer.get("id");
         let name: String = customer.get("name");
@@ -965,11 +962,11 @@ pub async fn fakturer_maned(
             today,
         )
         .await;
-        utfall.push(match result {
-            Ok(Some((nr, id, gross))) => InvoiceOutcome {
+        outcome.push(match result {
+            Ok(Some((number, id, gross))) => InvoiceOutcome {
                 company_id,
                 company_name: name,
-                invoice_no: Some(nr),
+                invoice_no: Some(number),
                 invoice_id: Some(id),
                 gross_ore: Some(gross),
                 detail: None,
@@ -994,7 +991,7 @@ pub async fn fakturer_maned(
             },
         });
     }
-    Ok(utfall)
+    Ok(outcome)
 }
 
 /// The customer party in the ops company's reskontro IS the customer

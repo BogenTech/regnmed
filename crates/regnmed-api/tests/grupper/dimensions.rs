@@ -56,7 +56,7 @@ async fn request(
 /// A prosjekt may carry its kunde (#80): editable metadata, never part
 /// of the chain. Only prosjekter, only actual customers, one at a time.
 #[tokio::test]
-async fn a_prosjekt_carries_its_kunde() {
+async fn a_prosjekt_carries_its_customer() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -286,7 +286,7 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
         description: "Prosjektarbeid".into(),
         project: Some("PL1".into()),
         billable: Some(true),
-        timesats_ore: Some(100_000),
+        hourly_rate_ore: Some(100_000),
     };
     regnmed_db::timesheet::create_time_entry(
         &state.pool,

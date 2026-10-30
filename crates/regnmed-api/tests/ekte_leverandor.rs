@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn a_real_model_can_use_our_tools_against_our_router() {
-    let Ok(nokkel) = std::env::var("OPEN_ROUTER_KEY") else {
+    let Ok(key) = std::env::var("OPEN_ROUTER_KEY") else {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
@@ -81,7 +81,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &key).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,
@@ -117,7 +117,7 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
 /// since the model's own report is a claim.
 #[tokio::test]
 async fn a_real_model_can_post_a_voucher_through_the_guards() {
-    let Ok(nokkel) = std::env::var("OPEN_ROUTER_KEY") else {
+    let Ok(key) = std::env::var("OPEN_ROUTER_KEY") else {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
@@ -145,8 +145,8 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         .unwrap();
     // A company has a chart of accounts; without these the agent is
     // right to refuse, and the test would be measuring the fixture.
-    for (nr, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+    for (number, name) in [("6800", "Kontorrekvisita"), ("1920", "Bankinnskudd")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
@@ -181,7 +181,7 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         &idp.token(&client_id, ""),
     ));
     let model =
-        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &nokkel).unwrap();
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &model_name, &key).unwrap();
 
     let outcome = regnmed_agent::run_loop(
         &model,

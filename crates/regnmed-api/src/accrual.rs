@@ -18,7 +18,7 @@ use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
-pub struct PeriodiseringRequest {
+pub struct AccrualRequest {
     kilde_voucher: Option<Uuid>,
     #[serde(rename = "beskrivelse")]
     description: String,
@@ -73,13 +73,13 @@ pub async fn create(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<PeriodiseringRequest>,
+    Json(request): Json<AccrualRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
-    let id = regnmed_db::accrual::create_periodisering(
+    let id = regnmed_db::accrual::create_accrual(
         &state.pool,
         company_id,
-        &regnmed_db::accrual::PeriodiseringDraft {
+        &regnmed_db::accrual::AccrualDraft {
             kilde_voucher: request.kilde_voucher,
             description: request.description,
             income_account: request.income_account,
@@ -108,7 +108,7 @@ pub async fn stopp(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    regnmed_db::accrual::stopp_periodisering(&state.pool, company_id, id, today)
+    regnmed_db::accrual::stop_accrual(&state.pool, company_id, id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "stoppet": today.to_string() })))
@@ -126,11 +126,11 @@ pub async fn kjor(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let utfall = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, today)
+    let outcome = regnmed_db::accrual::periodiser_plan(&state.pool, company_id, id, today)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "kjort": utfall.iter().map(|u| json!({
+        "kjort": outcome.iter().map(|u| json!({
             "period": u.period.to_string(),
             "belop_ore": u.amount_ore,
             "bilag": u.voucher.map(|(y, n)| format!("{y}-{n}")),

@@ -289,7 +289,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
 /// Only whoever has MEDLEM_ADMIN. A bookkeeper has full write access to
 /// the hovedbok and must still not be able to let anybody in.
 #[tokio::test]
-async fn bokforing_cannot_grant_others_access() {
+async fn bookkeeping_cannot_grant_others_access() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;

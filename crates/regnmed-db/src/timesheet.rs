@@ -26,7 +26,7 @@ pub struct TimeEntryDraft {
     /// (`sats_override`, i.e. TIMER_SATS_SKRIV) — otherwise the rate is
     /// resolved from the project's dated sats register on the entry's
     /// date (person-specific first, project default second).
-    pub timesats_ore: Option<i64>,
+    pub hourly_rate_ore: Option<i64>,
 }
 
 struct Prosjekt {
@@ -96,8 +96,8 @@ async fn resolve_billing(
     if !billable {
         return Ok((false, None));
     }
-    if sats_override && draft.timesats_ore.is_some() {
-        return Ok((true, draft.timesats_ore));
+    if sats_override && draft.hourly_rate_ore.is_some() {
+        return Ok((true, draft.hourly_rate_ore));
     }
     let rate = match project {
         Some(p) => resolve_sats(pool, p.id, person_id, draft.date).await?,
@@ -129,7 +129,7 @@ pub async fn create_time_entry(
 ) -> Result<Uuid> {
     check_draft(draft)?;
     let project = resolve_prosjekt(pool, company_id, &draft.project).await?;
-    let (billable, timesats_ore) =
+    let (billable, hourly_rate_ore) =
         resolve_billing(pool, person_id, draft, &project, sats_override).await?;
     let prosjekt_id = project.map(|p| p.id);
     let id = Uuid::now_v7();
@@ -146,7 +146,7 @@ pub async fn create_time_entry(
     .bind(&draft.description)
     .bind(prosjekt_id)
     .bind(billable)
-    .bind(timesats_ore)
+    .bind(hourly_rate_ore)
     .bind(created_by)
     .execute(pool)
     .await
@@ -177,7 +177,7 @@ pub async fn update_time_entry(
             .fetch_optional(pool)
             .await?
             .context("no such time entry")?;
-    let (billable, timesats_ore) =
+    let (billable, hourly_rate_ore) =
         resolve_billing(pool, owner, draft, &project, sats_override).await?;
     let prosjekt_id = project.map(|p| p.id);
     let updated = sqlx::query(
@@ -193,7 +193,7 @@ pub async fn update_time_entry(
     .bind(&draft.description)
     .bind(prosjekt_id)
     .bind(billable)
-    .bind(timesats_ore)
+    .bind(hourly_rate_ore)
     .execute(pool)
     .await
     .context("kunne ikke endre timene (låst måned eller fakturert?)")?;
@@ -238,7 +238,7 @@ pub struct TimeEntryRow {
     pub description: String,
     pub project: Option<String>,
     pub billable: bool,
-    pub timesats_ore: Option<i64>,
+    pub hourly_rate_ore: Option<i64>,
     pub invoice_no: Option<i64>,
 }
 
@@ -282,7 +282,7 @@ pub async fn list_time_entries(
             description: r.get("beskrivelse"),
             project: r.get("prosjekt"),
             billable: r.get("fakturerbar"),
-            timesats_ore: r.get("timesats_ore"),
+            hourly_rate_ore: r.get("timesats_ore"),
             invoice_no: r.get("invoice_no"),
         })
         .collect())
@@ -384,7 +384,7 @@ pub struct UnbilledGroup {
     /// explicit party_no from the caller.
     pub customer: Option<String>,
     pub customer_name: Option<String>,
-    pub timesats_ore: i64,
+    pub hourly_rate_ore: i64,
     pub minutes: i64,
     pub entry_ids: Vec<Uuid>,
     /// Who the hours belong to — the selection unit when billing part of
@@ -407,7 +407,7 @@ struct UnbilledRow {
     project: Option<String>,
     customer: Option<String>,
     customer_name: Option<String>,
-    timesats_ore: i64,
+    hourly_rate_ore: i64,
     minutes: i64,
     /// The day the work was done — the leveringstidspunkt of an hours
     /// invoice is the last of these, not the day someone billed it.
@@ -447,7 +447,7 @@ async fn unbilled_rows(
             project: row.get("prosjekt"),
             customer: row.get("kunde"),
             customer_name: row.get("kunde_navn"),
-            timesats_ore: row.get("timesats_ore"),
+            hourly_rate_ore: row.get("timesats_ore"),
             minutes: i64::from(row.get::<i32, _>("minutter")),
             date: row.get("dato"),
         })
@@ -458,7 +458,7 @@ async fn unbilled_rows(
 /// billed hours was worked. That is when the ytelse was fully
 /// delivered — the invoice date only says when someone got around to
 /// billing it, and may be weeks later.
-fn siste_arbeidsdag(rows: &[UnbilledRow]) -> Option<NaiveDate> {
+fn last_working_day(rows: &[UnbilledRow]) -> Option<NaiveDate> {
     rows.iter().map(|r| r.date).max()
 }
 
@@ -467,7 +467,7 @@ fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
     for row in rows {
         let group = match groups
             .iter_mut()
-            .find(|g| g.project == row.project && g.timesats_ore == row.timesats_ore)
+            .find(|g| g.project == row.project && g.hourly_rate_ore == row.hourly_rate_ore)
         {
             Some(group) => group,
             None => {
@@ -475,7 +475,7 @@ fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
                     project: row.project.clone(),
                     customer: row.customer.clone(),
                     customer_name: row.customer_name.clone(),
-                    timesats_ore: row.timesats_ore,
+                    hourly_rate_ore: row.hourly_rate_ore,
                     minutes: 0,
                     entry_ids: Vec::new(),
                     personer: Vec::new(),
@@ -529,7 +529,7 @@ fn hour_line(group: &UnbilledGroup, vat_code: Option<&str>) -> InvoiceLineDraft 
         },
         account_number: "3000".into(),
         quantity_milli: milli_hours(group.minutes),
-        unit_price_ore: group.timesats_ore,
+        unit_price_ore: group.hourly_rate_ore,
         vat_code: Some(vat_code.unwrap_or("3").to_string()),
         department: None,
         project: group.project.clone(),
@@ -601,7 +601,7 @@ pub async fn create_invoice_with_hours(
     // leveringsdato governs — it decided what this document delivers —
     // but hours worked after that date would make it a lie, so the
     // later of the two wins.
-    let siste_time = siste_arbeidsdag(&rows);
+    let last_hour = last_working_day(&rows);
     let groups = grupper(rows);
 
     let mut lines = draft.lines.clone();
@@ -611,7 +611,7 @@ pub async fn create_invoice_with_hours(
         party_no: draft.party_no.clone(),
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
-        delivery_date: siste_time
+        delivery_date: last_hour
             .filter(|d| *d > draft.delivery_date)
             .unwrap_or(draft.delivery_date),
         delivery_place: draft.delivery_place.clone(),
@@ -661,7 +661,7 @@ pub async fn bill_hours(
     }
     // Leveringstidspunktet er den siste arbeidsdagen som faktureres,
     // ikke fakturadatoen: timene ble levert da de ble utført.
-    let levering = siste_arbeidsdag(&rows).unwrap_or(invoice_date);
+    let levering = last_working_day(&rows).unwrap_or(invoice_date);
     let groups = grupper(rows);
     ensure!(!groups.is_empty(), "ingen ufakturerte fakturerbare timer");
 

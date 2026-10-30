@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::fakturapdf::{DocumentType, FakturaPdfInput, PdfLinje, render_faktura_pdf};
+use regnmed_core::fakturapdf::{DocumentType, InvoicePdfInput, PdfLinje, render_invoice_pdf};
 use regnmed_core::invoice::compute;
 use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
@@ -18,7 +18,7 @@ use crate::vat::load_vat_rates;
 
 pub use crate::invoice_template::TemplateLineDraft as SalgsLineDraft;
 
-fn tilbud_editable(status: &str) -> bool {
+fn quote_editable(status: &str) -> bool {
     matches!(status, "utkast" | "sendt")
 }
 
@@ -130,10 +130,10 @@ pub async fn create_sales_document(
 
 /// Edits a tilbud while it is editable (utkast/sendt). Lines replace
 /// the whole set. Ordrer are frozen confirmations — never edited.
-pub async fn update_tilbud(
+pub async fn update_quote(
     pool: &PgPool,
     company_id: Uuid,
-    tilbud_id: Uuid,
+    quote_id: Uuid,
     doc_date: Option<NaiveDate>,
     lines: Option<&[SalgsLineDraft]>,
 ) -> Result<()> {
@@ -142,14 +142,14 @@ pub async fn update_tilbud(
         "select status, doc_date from salgsdokument
          where id = $1 and company_id = $2 and kind = 'tilbud' for update",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
     .await?
     .context("no such tilbud")?;
     let status: String = row.get("status");
     ensure!(
-        tilbud_editable(&status),
+        quote_editable(&status),
         "tilbudet er {status} og kan ikke lenger endres"
     );
     // The rewritten lines are checked against the date the tilbud will
@@ -168,17 +168,17 @@ pub async fn update_tilbud(
         "update salgsdokument set doc_date = coalesce($3, doc_date), updated_at = now()
          where id = $1 and company_id = $2",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(company_id)
     .bind(doc_date)
     .execute(&mut *tx)
     .await?;
     if let Some(lines) = lines {
         sqlx::query("delete from salgsdokument_line where dokument_id = $1")
-            .bind(tilbud_id)
+            .bind(quote_id)
             .execute(&mut *tx)
             .await?;
-        insert_lines(&mut tx, tilbud_id, lines).await?;
+        insert_lines(&mut tx, quote_id, lines).await?;
     }
     tx.commit().await?;
     Ok(())
@@ -187,10 +187,10 @@ pub async fn update_tilbud(
 /// One-way tilbud transitions: utkast → sendt → akseptert | avslått
 /// (accepting or rejecting straight from utkast is allowed — the
 /// customer said yes across the table).
-pub async fn set_tilbud_status(
+pub async fn set_quote_status(
     pool: &PgPool,
     company_id: Uuid,
-    tilbud_id: Uuid,
+    quote_id: Uuid,
     new_status: &str,
 ) -> Result<()> {
     ensure!(
@@ -202,14 +202,14 @@ pub async fn set_tilbud_status(
         "select status from salgsdokument
          where id = $1 and company_id = $2 and kind = 'tilbud' for update",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
     .await?
     .context("no such tilbud")?;
     let allowed = match new_status {
         "sendt" => status == "utkast",
-        "akseptert" | "avslatt" => tilbud_editable(&status),
+        "akseptert" | "avslatt" => quote_editable(&status),
         _ => false,
     };
     ensure!(allowed, "kan ikke gå fra {status} til {new_status}");
@@ -217,7 +217,7 @@ pub async fn set_tilbud_status(
         "update salgsdokument set status = $3, updated_at = now()
          where id = $1 and company_id = $2",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(company_id)
     .bind(new_status)
     .execute(&mut *tx)
@@ -228,25 +228,25 @@ pub async fn set_tilbud_status(
 
 /// An accepted tilbud becomes an ordre: lines copied losslessly, chain
 /// linked, at most one ordre per tilbud (unique index).
-pub async fn tilbud_to_ordre(
+pub async fn quote_to_ordre(
     pool: &PgPool,
     company_id: Uuid,
-    tilbud_id: Uuid,
+    quote_id: Uuid,
     doc_date: NaiveDate,
     created_by: &str,
 ) -> Result<(Uuid, i64)> {
     let mut tx = pool.begin().await?;
-    let tilbud = sqlx::query(
+    let quote = sqlx::query(
         "select status, party_id from salgsdokument
          where id = $1 and company_id = $2 and kind = 'tilbud' for update",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
     .await?
     .context("no such tilbud")?;
     ensure!(
-        tilbud.get::<String, _>("status") == "akseptert",
+        quote.get::<String, _>("status") == "akseptert",
         "bare aksepterte tilbud blir ordre"
     );
 
@@ -260,9 +260,9 @@ pub async fn tilbud_to_ordre(
     .bind(ordre_id)
     .bind(company_id)
     .bind(doc_no)
-    .bind(tilbud.get::<Uuid, _>("party_id"))
+    .bind(quote.get::<Uuid, _>("party_id"))
     .bind(doc_date)
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(created_by)
     .execute(&mut *tx)
     .await
@@ -275,7 +275,7 @@ pub async fn tilbud_to_ordre(
                 unit_price_ore, vat_code, avdeling, prosjekt, product_id
          from salgsdokument_line where dokument_id = $1",
     )
-    .bind(tilbud_id)
+    .bind(quote_id)
     .bind(ordre_id)
     .execute(&mut *tx)
     .await?;
@@ -388,7 +388,7 @@ pub struct SalesDocumentRow {
     pub doc_date: NaiveDate,
     pub status: String,
     pub net_ore: i64,
-    pub tilbud_no: Option<i64>,
+    pub quote_no: Option<i64>,
     pub invoice_no: Option<i64>,
 }
 
@@ -425,7 +425,7 @@ pub async fn list_sales_documents(
             doc_date: r.get("doc_date"),
             status: r.get("status"),
             net_ore: r.get("netto_ore"),
-            tilbud_no: r.get("tilbud_no"),
+            quote_no: r.get("tilbud_no"),
             invoice_no: r.get("invoice_no"),
         })
         .collect())
@@ -503,11 +503,11 @@ pub async fn salgsdokument_pdf(
     // neste gang noen lastet det ned (#81).
     let reg = crate::settings::registrering_on(pool, company_id, doc_date).await?;
     let document_type = if kind == "tilbud" {
-        DocumentType::Tilbud
+        DocumentType::Quote
     } else {
         DocumentType::Ordrebekreftelse
     };
-    let pdf = render_faktura_pdf(&FakturaPdfInput {
+    let pdf = render_invoice_pdf(&InvoicePdfInput {
         betalingsmiddel: None,
         document_type,
         credits_number: None,

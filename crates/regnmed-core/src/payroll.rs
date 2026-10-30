@@ -121,7 +121,7 @@ pub enum Withholding {
     /// Table number — refused, see [`LonnError::TabelltrekkIkkeStottet`].
     Table(i32),
     /// Frikort or otherwise exempt.
-    Ingen,
+    None,
 }
 
 /// One employee's pay for one month.
@@ -162,8 +162,10 @@ pub struct PayrollCalculation {
 /// Rounding is half away from zero, on the month's whole trekkgrunnlag.
 pub fn calculate(basis: &PayrollBasis, month: u32) -> Result<PayrollCalculation, PayrollError> {
     let rate_bp = match basis.withholding {
-        Withholding::Table(nr) => return Err(PayrollError::TableWithholdingUnsupported(nr)),
-        Withholding::Ingen => 0,
+        Withholding::Table(number) => {
+            return Err(PayrollError::TableWithholdingUnsupported(number));
+        }
+        Withholding::None => 0,
         Withholding::Percent(bp) => bp,
     };
 
@@ -208,8 +210,8 @@ pub fn employer_contribution(
 /// them (docs/timer.md) — converting to fractional hours first would
 /// introduce a rounding step that serves no one. One division, rounded
 /// half away from zero, and the result is exact for whole hours.
-pub fn hourly_pay(minutes: i64, timesats_ore: i64) -> i64 {
-    let n = minutes as i128 * timesats_ore as i128;
+pub fn hourly_pay(minutes: i64, hourly_rate_ore: i64) -> i64 {
+    let n = minutes as i128 * hourly_rate_ore as i128;
     let d = 60i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
     (sign * ((n.abs() + d / 2) / d)) as i64
@@ -256,7 +258,7 @@ pub fn holiday_pay_accrual(basis_ore: i64, rate_bp: i64) -> i64 {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PayrollTotals {
     pub gross_ore: i64,
-    pub feriepenger_utbetalt_ore: i64,
+    pub holiday_pay_paid_ore: i64,
     pub withholding_ore: i64,
     pub net_ore: i64,
     pub holiday_pay_accrual_ore: i64,
@@ -309,7 +311,7 @@ mod tests {
     /// Feriepenger are paid without withholding — but they are still
     /// part of what the employee receives.
     #[test]
-    fn feriepenger_carry_no_withholding() {
+    fn holiday_pay_carries_no_withholding() {
         let g = PayrollBasis {
             gross_ore: 1_000_000,
             holiday_pay_ore: 4_000_000,
@@ -335,7 +337,7 @@ mod tests {
 
     #[test]
     fn frikort_withholds_nothing() {
-        let b = calculate(&basis(1_000_000, Withholding::Ingen), 5).unwrap();
+        let b = calculate(&basis(1_000_000, Withholding::None), 5).unwrap();
         assert_eq!(b.withholding_ore, 0);
         assert_eq!(b.net_ore, 1_000_000);
     }
@@ -368,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn feriepenger_by_ferieloven_and_by_tariff() {
+    fn holiday_pay_by_ferieloven_and_by_tariff() {
         // §10: 10,2 % of the grunnlag.
         assert_eq!(holiday_pay_accrual(50_000_000, 1020), 5_100_000);
         // From the year the employee turns 60: +2,3 percentage points.
@@ -424,7 +426,7 @@ mod tests {
     fn lonnssum_sums_cost_and_avgift() {
         let sum = PayrollTotals {
             gross_ore: 5_000_000,
-            feriepenger_utbetalt_ore: 1_000_000,
+            holiday_pay_paid_ore: 1_000_000,
             withholding_ore: 1_750_000,
             net_ore: 4_250_000,
             holiday_pay_accrual_ore: 510_000,
@@ -445,7 +447,7 @@ mod tests {
     /// The accrual is a TARGET, not a stream of increments — which is
     /// why it cannot drift.
     #[test]
-    fn aga_accrual_is_the_rate_times_feriepenger_owed() {
+    fn aga_accrual_is_the_rate_times_holiday_pay_owed() {
         // 51 000 kr of feriepenger owed, sone I at 14,1 %.
         assert_eq!(
             employer_contribution_accrual_target(5_100_000, 1410),

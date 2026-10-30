@@ -63,7 +63,7 @@ pub struct EhfPart {
     /// Street address; EHF requires an address with a country code.
     pub address: Option<String>,
     pub postnr: Option<String>,
-    pub poststed: Option<String>,
+    pub postal_city: Option<String>,
     /// ISO 3166-1 alpha-2; "NO" when unknown.
     pub land: String,
     /// Registered in Merverdiavgiftsregisteret (yields PartyTaxScheme).
@@ -247,8 +247,8 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     if let Some(address) = &part.address {
         w.leaf("cbc:StreetName", address);
     }
-    if let Some(poststed) = &part.poststed {
-        w.leaf("cbc:CityName", poststed);
+    if let Some(postal_city) = &part.postal_city {
+        w.leaf("cbc:CityName", postal_city);
     }
     if let Some(postnr) = &part.postnr {
         w.leaf("cbc:PostalZone", postnr);
@@ -458,7 +458,7 @@ mod tests {
             orgnumber: orgnumber.into(),
             address: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
-            poststed: Some("Oslo".into()),
+            postal_city: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: vat,
             email: Some("post@example.no".into()),
@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn a_kreditnota_uses_its_own_element_names_and_points_at_the_faktura() {
+    fn a_kreditnota_uses_its_own_element_names_and_points_at_the_invoice() {
         let xml = render(&document(DocumentType::CreditNote));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CreditNote "));
         assert!(xml.contains("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>"));
@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn the_same_faktura_yields_identical_xml() {
+    fn the_same_invoice_yields_identical_xml() {
         let a = render(&document(DocumentType::Invoice));
         let b = render(&document(DocumentType::Invoice));
         assert_eq!(a, b, "renderen er deterministisk");

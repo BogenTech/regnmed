@@ -425,7 +425,7 @@ sletting, så sporet fortsetter å si hva som var sant før.
 
 **Nøkkelen har ingen vei ut.** `GET …/integrations/{iid}/llm` svarer med
 leverandør, modell og `nokkel_lagret: true` — aldri verdien.
-`hent_llm_nokkel` er en egen funksjon fra `hent_llm` nettopp slik at det
+`fetch_llm_key` er en egen funksjon fra `hent_llm` nettopp slik at det
 å lese oppsettet for visning ikke kan bli kallet som dekrypterer. Testen
 sjekker mot HELE svarkroppen, ikke mot et felt: en lekkasje kommer som
 et felt ingen tenkte på. Begge vaktene er **sett feile** — med

@@ -48,12 +48,12 @@ async fn oppsett(pool: &PgPool) -> (Uuid, Uuid) {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1920", "Bank"),
         ("2400", "Leverandørgjeld"),
         ("3000", "Salg"),
     ] {
-        regnmed_db::ensure_account(pool, company, nr, name)
+        regnmed_db::ensure_account(pool, company, number, name)
             .await
             .unwrap();
     }

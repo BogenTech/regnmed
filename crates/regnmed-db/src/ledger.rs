@@ -153,7 +153,7 @@ async fn expand_omvendt(
     use regnmed_core::vat::{Direction, direction};
     let treffer = |e: &regnmed_core::voucher::EntryDraft| {
         matches!(
-            e.vat_code.as_deref().map_or(Direction::Ingen, direction),
+            e.vat_code.as_deref().map_or(Direction::None, direction),
             Direction::OmvendtMedFradrag | Direction::OmvendtUtenFradrag
         )
     };

@@ -56,13 +56,13 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1500", "Kundefordringer"),
         ("1900", "Kontanter"),
         ("2700", "Utgående mva"),
         ("3000", "Salgsinntekt"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }
@@ -212,7 +212,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [
+    for (number, name) in [
         ("1571", "Kortfordring"),
         ("1900", "Kontanter"),
         ("2700", "Utgående mva"),
@@ -220,7 +220,7 @@ async fn a_dagsoppgjor_posts_the_day_and_its_difference_separately() {
         ("3010", "Salg 15 %"),
         ("7830", "Kassadifferanse"),
     ] {
-        regnmed_db::ensure_account(&pool, company, nr, name)
+        regnmed_db::ensure_account(&pool, company, number, name)
             .await
             .unwrap();
     }

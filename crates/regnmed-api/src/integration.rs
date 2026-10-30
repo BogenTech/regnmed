@@ -174,7 +174,8 @@ pub struct AgentRequest {
     supplier: Option<String>,
     base_url: Option<String>,
     modell: Option<String>,
-    api_nokkel: Option<String>,
+    #[serde(rename = "api_nokkel")]
+    api_key: Option<String>,
 }
 
 /// Creates an agent in one call: identity, access, face, instructions
@@ -288,13 +289,13 @@ pub async fn opprett_agent(
     }
 
     if let Some(hemmelighet) = hemmelighet {
-        let nokkel = state
+        let key = state
             .sealing_key
             .as_ref()
             .expect("sjekket før klienten ble opprettet");
         regnmed_db::agentllm::sett_klienthemmelighet(
             &state.pool,
-            nokkel,
+            key,
             company_id,
             integration_id,
             &hemmelighet,
@@ -310,14 +311,14 @@ pub async fn opprett_agent(
         .as_deref()
         .map(str::trim)
         .filter(|m| !m.is_empty());
-    let api_nokkel = request
-        .api_nokkel
+    let api_key = request
+        .api_key
         .as_deref()
         .map(str::trim)
         .filter(|k| !k.is_empty());
-    match (modell, api_nokkel) {
-        (Some(modell), Some(api_nokkel)) => {
-            let Some(nokkel) = state.sealing_key.as_ref() else {
+    match (modell, api_key) {
+        (Some(modell), Some(api_key)) => {
+            let Some(key) = state.sealing_key.as_ref() else {
                 return Err(ApiError::BadRequest(
                     "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
                         .into(),
@@ -325,13 +326,13 @@ pub async fn opprett_agent(
             };
             regnmed_db::agentllm::sett_llm(
                 &state.pool,
-                nokkel,
+                key,
                 company_id,
                 integration_id,
                 request.supplier.as_deref().unwrap_or("openai"),
                 request.base_url.as_deref(),
                 modell,
-                api_nokkel,
+                api_key,
                 &by,
             )
             .await
@@ -350,7 +351,7 @@ pub async fn opprett_agent(
         "client_id": client_id,
         // Whether this agent can work on its own, or is waiting for
         // somebody to finish setting it up.
-        "klar": modell.is_some() && api_nokkel.is_some(),
+        "klar": modell.is_some() && api_key.is_some(),
         "advarsler": warnings,
     })))
 }
@@ -480,7 +481,8 @@ pub struct LlmRequest {
     modell: String,
     /// The customer's own key. Goes in sealed and never comes back out:
     /// [`llm`] reports whether one is set, never what it is.
-    api_nokkel: String,
+    #[serde(rename = "api_nokkel")]
+    api_key: String,
     /// The agent's own OIDC client secret (docs/agent.md §8.3). The
     /// worker needs it to get a token AS THE AGENT -- there is no
     /// second way into the ledger for it. Optional here so a key can be
@@ -538,7 +540,7 @@ pub async fn sett_llm(
         Right::IntegrationAdmin,
     )
     .await?;
-    let Some(nokkel) = state.sealing_key.as_ref() else {
+    let Some(key) = state.sealing_key.as_ref() else {
         return Err(ApiError::BadRequest(
             "vertsagenter er ikke satt opp på denne installasjonen (AGENT_SEALING_KEY mangler)"
                 .into(),
@@ -546,13 +548,13 @@ pub async fn sett_llm(
     };
     regnmed_db::agentllm::sett_llm(
         &state.pool,
-        nokkel,
+        key,
         company_id,
         integration_id,
         &request.supplier,
         request.base_url.as_deref(),
         &request.modell,
-        &request.api_nokkel,
+        &request.api_key,
         person.display(),
     )
     .await
@@ -562,7 +564,7 @@ pub async fn sett_llm(
     {
         regnmed_db::agentllm::sett_klienthemmelighet(
             &state.pool,
-            nokkel,
+            key,
             company_id,
             integration_id,
             hemmelighet,

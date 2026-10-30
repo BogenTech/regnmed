@@ -174,7 +174,7 @@ pub struct AnchorInfo {
     /// RFC 3339 timestamp of the snapshot.
     pub tidspunkt: String,
     pub root_hex: String,
-    pub siste_sekvens: i64,
+    pub last_sequence: i64,
     /// Human-readable witness descriptions ("rfc3161 https://…").
     pub vitner: Vec<String>,
 }
@@ -254,7 +254,7 @@ pub fn render_text(input: &AuditInput) -> String {
     for anchor in &input.anchors {
         line(&format!(
             "{}  sekvens {}  rot {}",
-            anchor.tidspunkt, anchor.siste_sekvens, anchor.root_hex
+            anchor.tidspunkt, anchor.last_sequence, anchor.root_hex
         ));
         for vitne in &anchor.vitner {
             line(&format!("    bevitnet: {vitne}"));
@@ -302,7 +302,7 @@ mod tests {
             anchors: vec![AnchorInfo {
                 tidspunkt: "2026-07-23T02:00:00+00:00".into(),
                 root_hex: "1c".repeat(32),
-                siste_sekvens: 13,
+                last_sequence: 13,
                 vitner: vec!["rfc3161 https://freetsa.org/tsr".into()],
             }],
         }

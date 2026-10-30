@@ -47,8 +47,8 @@ async fn selskap_med_overskudd(pool: &PgPool) -> Uuid {
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
-    for (nr, name) in [("1920", "Bank"), ("3000", "Salg"), ("6300", "Leie")] {
-        regnmed_db::ensure_account(pool, company, nr, name)
+    for (number, name) in [("1920", "Bank"), ("3000", "Salg"), ("6300", "Leie")] {
+        regnmed_db::ensure_account(pool, company, number, name)
             .await
             .unwrap();
     }
@@ -84,14 +84,14 @@ async fn selskap_med_overskudd(pool: &PgPool) -> Uuid {
     company
 }
 
-async fn balance(pool: &PgPool, company: Uuid, nr: &str) -> i64 {
+async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
     sqlx::query_scalar::<_, Option<i64>>(
         "select sum(e.amount_ore)::bigint from entry e
          join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = $2",
     )
     .bind(company)
-    .bind(nr)
+    .bind(number)
     .fetch_one(pool)
     .await
     .unwrap()

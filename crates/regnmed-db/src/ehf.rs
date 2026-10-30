@@ -16,7 +16,7 @@
 
 use anyhow::{Context, Result};
 use regnmed_core::ehf::{DocumentType, EhfDocument, EhfLinje, EhfPart};
-use regnmed_core::ehf_import::{MottattFaktura, parse};
+use regnmed_core::ehf_import::{ReceivedInvoice, parse};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -37,13 +37,13 @@ pub(crate) fn split_address(
         return (Some(address), None, None);
     };
     let resten = resten.trim();
-    let (postnr, poststed) = match resten.split_once(' ') {
-        Some((nr, sted)) if nr.len() == 4 && nr.chars().all(|c| c.is_ascii_digit()) => {
-            (Some(nr.to_string()), Some(sted.trim().to_string()))
+    let (postnr, postal_city) = match resten.split_once(' ') {
+        Some((number, sted)) if number.len() == 4 && number.chars().all(|c| c.is_ascii_digit()) => {
+            (Some(number.to_string()), Some(sted.trim().to_string()))
         }
         _ => return (Some(address), None, None),
     };
-    (Some(gate.trim().to_string()), postnr, poststed)
+    (Some(gate.trim().to_string()), postnr, postal_city)
 }
 
 /// Builds the EHF document for an issued invoice from its stored rows.
@@ -109,8 +109,9 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         });
     }
 
-    let (selger_gate, selger_postnr, selger_poststed) = split_address(head.get("selger_adresse"));
-    let (kjoper_gate, kjoper_postnr, kjoper_poststed) = split_address(head.get("kjoper_adresse"));
+    let (selger_gate, selger_postnr, seller_postal_city) =
+        split_address(head.get("selger_adresse"));
+    let (kjoper_gate, kjoper_postnr, buyer_postal_city) = split_address(head.get("kjoper_adresse"));
     let credits_number: Option<i64> = head.get("krediterer_nr");
     let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
 
@@ -139,7 +140,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             orgnumber: head.get("selger_orgnr"),
             address: selger_gate,
             postnr: selger_postnr,
-            poststed: selger_poststed,
+            postal_city: seller_postal_city,
             land: "NO".into(),
             // Registreringsstatus på fakturadatoen, ikke «bar dette
             // dokumentet mva» — en eksportfaktura fra en registrert
@@ -156,7 +157,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
                 .context("kjøperen mangler organisasjonsnummer — EHF krever mottakerens orgnr")?,
             address: kjoper_gate,
             postnr: kjoper_postnr,
-            poststed: kjoper_poststed,
+            postal_city: buyer_postal_city,
             land: "NO".into(),
             vat_registered: false,
             email: head.get("kjoper_epost"),
@@ -175,7 +176,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
 
 #[derive(Debug)]
 pub struct EhfSuggestion {
-    pub received: MottattFaktura,
+    pub received: ReceivedInvoice,
     /// The supplier in our register, matched on orgnr — None means the
     /// import would have to create one.
     pub supplier_no: Option<String>,

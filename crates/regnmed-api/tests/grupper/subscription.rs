@@ -210,8 +210,8 @@ async fn a_block_still_allows_documenting_what_is_already_booked() {
     let Some((state, _idp, company, admin)) = oppsett().await else {
         return;
     };
-    for (nr, name) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
-        regnmed_db::ensure_account(&state.pool, company, nr, name)
+    for (number, name) in [("1920", "Bankinnskudd"), ("6800", "Kontorkostnad")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
             .unwrap();
     }
@@ -358,7 +358,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
         .iter()
         .find(|u| u.company_id == customer)
         .expect("kundeselskapet i utfallet");
-    let nr = match vare.invoice_no {
+    let number = match vare.invoice_no {
         Some(n) => n,
         None => panic!("faktura skal være utstedt, men: {:?}", vare.detail),
     };
@@ -370,7 +370,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     let vare2 = andre.iter().find(|u| u.company_id == customer).unwrap();
     assert!(
         vare2.invoice_no.is_none(),
-        "måneden skal ikke kunne faktureres to ganger (første var {nr})"
+        "måneden skal ikke kunne faktureres to ganger (første var {number})"
     );
 
     // The faktura lives in the OPS COMPANY's hovedbok, with the
@@ -444,18 +444,18 @@ async fn driftsselskap(pool: &sqlx::PgPool, name: &str, vat_registered: bool) ->
 /// makes: the code on the line, the mva on the faktura, and the gross the
 /// card rail would charge.
 #[tokio::test]
-async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
-    let Some((state, _idp, kunde_a, _admin)) = oppsett().await else {
+async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
+    let Some((state, _idp, customer_a, _admin)) = oppsett().await else {
         return;
     };
-    let kunde_b = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kunde B AS")
+    let customer_b = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kunde B AS")
         .await
         .unwrap();
-    make_invoiceable(&state.pool, kunde_b).await;
+    make_invoiceable(&state.pool, customer_b).await;
 
     let today = Utc::now().date_naive();
     let from = NaiveDateHelper::forste_i_maneden(today);
-    for customer in [kunde_a, kunde_b] {
+    for customer in [customer_a, customer_b] {
         regnmed_db::subscription::open_coverage(
             &state.pool,
             customer,
@@ -473,11 +473,11 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
     let utenfor = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
 
     let linje = async |drift: Uuid, customer: Uuid| -> (String, i64, i64) {
-        let utfall =
+        let outcome =
             regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
                 .await
                 .unwrap();
-        let vare = utfall
+        let vare = outcome
             .iter()
             .find(|u| u.company_id == customer)
             .expect("kundeselskapet i utfallet");
@@ -498,12 +498,12 @@ async fn vat_on_our_own_faktura_follows_the_ops_company_registration() {
         .await
         .unwrap();
 
-    let (code, vat, net) = linje(registrert, kunde_a).await;
+    let (code, vat, net) = linje(registrert, customer_a).await;
     assert_eq!(code, "3", "registrert selger fakturerer utgående mva");
     assert_eq!(net, price);
     assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
 
-    let (code, vat, net) = linje(utenfor, kunde_b).await;
+    let (code, vat, net) = linje(utenfor, customer_b).await;
     assert_eq!(
         code, "7",
         "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
@@ -569,11 +569,11 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     )
     .await
     .unwrap();
-    let utfall =
+    let outcome =
         regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
             .await
             .unwrap();
-    let gross = utfall
+    let gross = outcome
         .iter()
         .find(|u| u.company_id == customer)
         .and_then(|u| u.gross_ore)
@@ -947,11 +947,11 @@ async fn a_card_charge_posts_once_and_only_once() {
     )
     .await
     .unwrap();
-    let utfall =
+    let outcome =
         regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
             .await
             .unwrap();
-    let invoice = utfall.iter().find(|u| u.company_id == customer).unwrap();
+    let invoice = outcome.iter().find(|u| u.company_id == customer).unwrap();
     let invoice_id = invoice.invoice_id.expect("faktura utstedt");
     let gross = invoice.gross_ore.unwrap();
 

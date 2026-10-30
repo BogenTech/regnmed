@@ -49,7 +49,8 @@ pub struct EntryRequest {
     billable: Option<bool>,
     /// Honored only with TIMER_SATS_SKRIV — otherwise the register's
     /// rate applies (docs/timer.md).
-    timesats_ore: Option<i64>,
+    #[serde(rename = "timesats_ore")]
+    hourly_rate_ore: Option<i64>,
 }
 
 impl EntryRequest {
@@ -60,7 +61,7 @@ impl EntryRequest {
             description: self.description,
             project: self.project,
             billable: self.billable,
-            timesats_ore: self.timesats_ore,
+            hourly_rate_ore: self.hourly_rate_ore,
         }
     }
 }
@@ -165,7 +166,7 @@ pub async fn list(
             "beskrivelse": e.description,
             "prosjekt": e.project,
             "fakturerbar": e.billable,
-            "timesats_ore": e.timesats_ore,
+            "timesats_ore": e.hourly_rate_ore,
             "invoice_no": e.invoice_no,
         })).collect::<Vec<_>>(),
     })))
@@ -229,7 +230,7 @@ pub async fn unbilled(
             "prosjekt": g.project,
             "kunde": g.customer,
             "kunde_navn": g.customer_name,
-            "timesats_ore": g.timesats_ore,
+            "timesats_ore": g.hourly_rate_ore,
             "minutter": g.minutes,
             "entries": g.entry_ids.len(),
             "personer": g.personer.iter().map(|p| json!({

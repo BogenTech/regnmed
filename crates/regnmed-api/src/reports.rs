@@ -586,7 +586,7 @@ pub async fn audit(
         "ankere": report.anchors.iter().map(|a| json!({
             "tidspunkt": a.tidspunkt,
             "root": a.root_hex,
-            "siste_sekvens": a.siste_sekvens,
+            "siste_sekvens": a.last_sequence,
             "vitner": a.vitner,
         })).collect::<Vec<_>>(),
     }))
