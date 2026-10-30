@@ -31,3 +31,4 @@ target
 #.idea/
 ui/node_modules/
 .env.*
+AGENTS.md
