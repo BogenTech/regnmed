@@ -4,7 +4,9 @@
 //! bilagsinnboks yields a posting suggestion computed from the original
 //! every time — never stored. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -151,7 +153,7 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     )
     .await
     .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     regnmed_db::update_party_contact(
         &state.pool,
         company,
@@ -332,23 +334,23 @@ async fn faktura_out_as_ehf_and_received_ehf_into_the_innboks() {
     assert_eq!(status, StatusCode::OK, "{uploaded}");
     let document_id = uploaded["document_id"].as_str().unwrap().to_string();
 
-    let (status, forslag) =
+    let (status, suggestion) =
         get_json(&state, &format!("{base}/inbox/{document_id}/ehf"), &token).await;
-    assert_eq!(status, StatusCode::OK, "{forslag}");
-    assert_eq!(forslag["fakturanr"], "90210");
-    assert_eq!(forslag["selger_navn"], "Handelshuset AS");
-    assert_eq!(forslag["selger_orgnr"], "974760673");
+    assert_eq!(status, StatusCode::OK, "{suggestion}");
+    assert_eq!(suggestion["fakturanr"], "90210");
+    assert_eq!(suggestion["selger_navn"], "Handelshuset AS");
+    assert_eq!(suggestion["selger_orgnr"], "974760673");
     assert_eq!(
-        forslag["leverandor_no"], supplier_no,
+        suggestion["leverandor_no"], supplier_no,
         "leverandøren gjenkjennes på orgnr"
     );
-    assert_eq!(forslag["netto_ore"], 2_000_00);
-    assert_eq!(forslag["mva_ore"], 500_00);
-    assert_eq!(forslag["brutto_ore"], 2_500_00);
-    assert_eq!(forslag["kid"], "0000000123456");
-    assert_eq!(forslag["linjer"][0]["beskrivelse"], "Kontorstoler");
-    assert_eq!(forslag["linjer"][0]["mva_sats_bp"], 2500);
-    assert_eq!(forslag["warnings"].as_array().unwrap().len(), 0);
+    assert_eq!(suggestion["netto_ore"], 2_000_00);
+    assert_eq!(suggestion["mva_ore"], 500_00);
+    assert_eq!(suggestion["brutto_ore"], 2_500_00);
+    assert_eq!(suggestion["kid"], "0000000123456");
+    assert_eq!(suggestion["linjer"][0]["beskrivelse"], "Kontorstoler");
+    assert_eq!(suggestion["linjer"][0]["mva_sats_bp"], 2500);
+    assert_eq!(suggestion["warnings"].as_array().unwrap().len(), 0);
 
     // The suggestion is derived, not stored: the document still sits
     // undecided in the innboks, and the content is the original.

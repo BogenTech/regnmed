@@ -55,7 +55,7 @@ pub async fn import_contacts(
         "lest": rader.len(),
         "opprettet": report.opprettet,
         "oppdatert": report.oppdatert,
-        "warnings": report.advarsler,
+        "warnings": report.warnings,
     })))
 }
 
@@ -110,7 +110,7 @@ pub async fn import_open_items(
             "konto_saldo_ore": plan.account_balance_ore,
             "kan_importeres": plan.account_balance_ore == 0,
             "nye_parter": plan.nye_parter,
-            "warnings": plan.advarsler,
+            "warnings": plan.warnings,
         })));
     }
 
@@ -139,6 +139,6 @@ pub async fn import_open_items(
         "antall": report.count,
         "sum_ore": report.sum_ore,
         "opprettede_parter": report.opprettede_parter,
-        "warnings": report.advarsler,
+        "warnings": report.warnings,
     })))
 }

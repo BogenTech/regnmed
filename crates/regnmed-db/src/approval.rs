@@ -23,7 +23,7 @@ pub struct AttestationPolicy {
     /// When true, a bilag posted by an INTEGRATION requires an approved
     /// attestering by a human regardless of the amount (#101, migration
     /// 0063). None = not chosen; the beløpsgrense alone governs.
-    pub krev_for_maskin: Option<bool>,
+    pub require_for_machine: Option<bool>,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
 }
@@ -33,7 +33,7 @@ fn policy_from_row(row: &sqlx::postgres::PgRow) -> AttestationPolicy {
         active: row.get("aktiv"),
         amount_limit_ore: row.get("belopsgrense_ore"),
         attestant_person_id: row.get("attestant_person_id"),
-        krev_for_maskin: row.get("krev_for_maskin"),
+        require_for_machine: row.get("krev_for_maskin"),
         created_by: row.get("created_by"),
         created_at: row.get("created_at"),
     }
@@ -81,7 +81,7 @@ pub async fn set_policy(
     active: bool,
     amount_limit_ore: Option<i64>,
     attestant_person_id: Option<Uuid>,
-    krev_for_maskin: Option<bool>,
+    require_for_machine: Option<bool>,
     created_by: &str,
 ) -> Result<()> {
     if let Some(grense) = amount_limit_ore {
@@ -109,7 +109,7 @@ pub async fn set_policy(
     .bind(active)
     .bind(amount_limit_ore)
     .bind(attestant_person_id)
-    .bind(krev_for_maskin)
+    .bind(require_for_machine)
     .bind(created_by)
     .execute(pool)
     .await?;

@@ -15,7 +15,7 @@
 //! documents already sitting there as well.
 
 use anyhow::{Context, Result};
-use regnmed_core::ehf::{Dokumenttype, EhfDokument, EhfLinje, EhfPart};
+use regnmed_core::ehf::{DocumentType, EhfDocument, EhfLinje, EhfPart};
 use regnmed_core::ehf_import::{MottattFaktura, parse};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -24,24 +24,24 @@ use uuid::Uuid;
 /// Addresses are free text in our master data; EHF wants them apart.
 /// A shape we do not recognize goes out whole as the street line —
 /// better a complete address in one field than a wrong split.
-pub(crate) fn split_adresse(
-    adresse: Option<String>,
+pub(crate) fn split_address(
+    address: Option<String>,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    let Some(adresse) = adresse
+    let Some(address) = address
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
     else {
         return (None, None, None);
     };
-    let Some((gate, resten)) = adresse.rsplit_once(',') else {
-        return (Some(adresse), None, None);
+    let Some((gate, resten)) = address.rsplit_once(',') else {
+        return (Some(address), None, None);
     };
     let resten = resten.trim();
     let (postnr, poststed) = match resten.split_once(' ') {
         Some((nr, sted)) if nr.len() == 4 && nr.chars().all(|c| c.is_ascii_digit()) => {
             (Some(nr.to_string()), Some(sted.trim().to_string()))
         }
-        _ => return (Some(adresse), None, None),
+        _ => return (Some(address), None, None),
     };
     (Some(gate.trim().to_string()), postnr, poststed)
 }
@@ -109,19 +109,19 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         });
     }
 
-    let (selger_gate, selger_postnr, selger_poststed) = split_adresse(head.get("selger_adresse"));
-    let (kjoper_gate, kjoper_postnr, kjoper_poststed) = split_adresse(head.get("kjoper_adresse"));
-    let krediterer_nr: Option<i64> = head.get("krediterer_nr");
+    let (selger_gate, selger_postnr, selger_poststed) = split_address(head.get("selger_adresse"));
+    let (kjoper_gate, kjoper_postnr, kjoper_poststed) = split_address(head.get("kjoper_adresse"));
+    let credits_number: Option<i64> = head.get("krediterer_nr");
     let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
 
-    let doc = EhfDokument {
-        dokumenttype: if head.get::<Option<Uuid>, _>("credits_invoice_id").is_some() {
-            Dokumenttype::CreditNote
+    let doc = EhfDocument {
+        document_type: if head.get::<Option<Uuid>, _>("credits_invoice_id").is_some() {
+            DocumentType::CreditNote
         } else {
-            Dokumenttype::Invoice
+            DocumentType::Invoice
         },
         fakturanr: head.get::<i64, _>("invoice_no").to_string(),
-        krediterer: krediterer_nr.map(|no| no.to_string()),
+        krediterer: credits_number.map(|no| no.to_string()),
         invoice_date: invoice_date,
         due_date: Some(head.get("due_date")),
         currency: head
@@ -137,7 +137,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         selger: EhfPart {
             name: head.get("selger_navn"),
             orgnumber: head.get("selger_orgnr"),
-            adresse: selger_gate,
+            address: selger_gate,
             postnr: selger_postnr,
             poststed: selger_poststed,
             land: "NO".into(),
@@ -145,7 +145,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             // dokumentet mva» — en eksportfaktura fra en registrert
             // selger skal fortsatt ha PartyTaxScheme (#81).
             vat_registered: reg.vat_registered,
-            epost: head.get("selger_epost"),
+            email: head.get("selger_epost"),
         },
         kjoper: EhfPart {
             name: head.get("kjoper_navn"),
@@ -154,12 +154,12 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             orgnumber: head
                 .get::<Option<String>, _>("kjoper_orgnr")
                 .context("kjøperen mangler organisasjonsnummer — EHF krever mottakerens orgnr")?,
-            adresse: kjoper_gate,
+            address: kjoper_gate,
             postnr: kjoper_postnr,
             poststed: kjoper_poststed,
             land: "NO".into(),
             vat_registered: false,
-            epost: head.get("kjoper_epost"),
+            email: head.get("kjoper_epost"),
         },
         account_number: head.get("bank_account"),
         // cbc:PaymentID tells the payer how to mark the payment, so it
@@ -174,28 +174,28 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
 }
 
 #[derive(Debug)]
-pub struct EhfForslag {
+pub struct EhfSuggestion {
     pub received: MottattFaktura,
     /// The supplier in our register, matched on orgnr — None means the
     /// import would have to create one.
     pub supplier_no: Option<String>,
     pub supplier_name: Option<String>,
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// Reads a stored inbox document as EHF and derives the posting
 /// suggestion. Nothing is written — the human posts it through the
 /// ordinary innboks flow (with attestering, when the policy is on).
-pub async fn inbox_ehf_forslag(
+pub async fn inbox_ehf_suggestion(
     pool: &PgPool,
     company_id: Uuid,
     document_id: Uuid,
-) -> Result<EhfForslag> {
+) -> Result<EhfSuggestion> {
     let (_, _, content) = crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
     let xml = String::from_utf8(content).context("dokumentet er ikke tekst — er det en EHF?")?;
     let received = parse(&xml).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let mut advarsler = Vec::new();
+    let mut warnings = Vec::new();
     let (supplier_no, supplier_name) = match &received.seller_orgnumber {
         Some(orgnumber) => {
             let row = sqlx::query(
@@ -212,7 +212,7 @@ pub async fn inbox_ehf_forslag(
                     Some(r.get::<String, _>("name")),
                 ),
                 None => {
-                    advarsler.push(format!(
+                    warnings.push(format!(
                         "leverandøren {} (orgnr {orgnumber}) finnes ikke i reskontroen ennå",
                         received.seller_name
                     ));
@@ -221,28 +221,28 @@ pub async fn inbox_ehf_forslag(
             }
         }
         None => {
-            advarsler.push("dokumentet oppgir ikke avsenderens organisasjonsnummer".into());
+            warnings.push("dokumentet oppgir ikke avsenderens organisasjonsnummer".into());
             (None, None)
         }
     };
     if received.net_ore + received.vat_ore != received.gross_ore {
-        advarsler.push(format!(
+        warnings.push(format!(
             "netto + mva ({}) stemmer ikke med forfalt beløp ({}) — kontroller dokumentet",
             received.net_ore + received.vat_ore,
             received.gross_ore
         ));
     }
     if received.currency != "NOK" {
-        advarsler.push(format!(
+        warnings.push(format!(
             "fakturaen er i {} — bokfør med valuta (docs/valuta.md)",
             received.currency
         ));
     }
-    Ok(EhfForslag {
+    Ok(EhfSuggestion {
         received,
         supplier_no,
         supplier_name,
-        advarsler,
+        warnings,
     })
 }
 
@@ -273,10 +273,10 @@ pub struct Bokforingsforslag {
     pub account_reason: Option<String>,
     /// Per-field provenance, shown next to the value in the UI.
     pub begrunnelser: Vec<(String, String)>,
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
-pub async fn inbox_forslag(
+pub async fn inbox_suggestion(
     pool: &PgPool,
     company_id: Uuid,
     document_id: Uuid,
@@ -284,7 +284,7 @@ pub async fn inbox_forslag(
     let (_, content_type, content) =
         crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
 
-    let mut forslag = Bokforingsforslag {
+    let mut suggestion = Bokforingsforslag {
         source: "ingen",
         seller_name: None,
         orgnumber: None,
@@ -301,7 +301,7 @@ pub async fn inbox_forslag(
         account: None,
         account_reason: None,
         begrunnelser: Vec::new(),
-        advarsler: Vec::new(),
+        warnings: Vec::new(),
     };
 
     // 1. EHF — the structured case, where nothing is guessed.
@@ -311,90 +311,90 @@ pub async fn inbox_forslag(
         .filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
         && let Ok(m) = regnmed_core::ehf_import::parse(xml)
     {
-        forslag.source = "ehf";
-        forslag.seller_name = Some(m.seller_name.clone());
-        forslag.orgnumber = m.seller_orgnumber.clone();
-        forslag.fakturanr = Some(m.fakturanr.clone());
-        forslag.date = m.invoice_date;
-        forslag.due_date = m.due_date;
-        forslag.kid = m.kid.clone();
-        forslag.account_number = m.account_number.clone();
-        forslag.net_ore = Some(m.net_ore);
-        forslag.vat_ore = Some(m.vat_ore);
-        forslag.gross_ore = Some(m.gross_ore);
-        forslag
+        suggestion.source = "ehf";
+        suggestion.seller_name = Some(m.seller_name.clone());
+        suggestion.orgnumber = m.seller_orgnumber.clone();
+        suggestion.fakturanr = Some(m.fakturanr.clone());
+        suggestion.date = m.invoice_date;
+        suggestion.due_date = m.due_date;
+        suggestion.kid = m.kid.clone();
+        suggestion.account_number = m.account_number.clone();
+        suggestion.net_ore = Some(m.net_ore);
+        suggestion.vat_ore = Some(m.vat_ore);
+        suggestion.gross_ore = Some(m.gross_ore);
+        suggestion
             .begrunnelser
             .push(("alle".into(), "lest direkte fra EHF-dokumentet".into()));
         if m.currency != "NOK" {
-            forslag
-                .advarsler
+            suggestion
+                .warnings
                 .push(format!("fakturaen er i {} — bokfør med valuta", m.currency));
         }
     } else {
         // 2. A PDF text layer, or a plain-text document.
         let text = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
-            regnmed_core::pdftext::extract(&content).inspect(|_| forslag.source = "pdf-tekst")
+            regnmed_core::pdftext::extract(&content).inspect(|_| suggestion.source = "pdf-tekst")
         } else {
             text.filter(|t| t.len() > 20)
-                .inspect(|_| forslag.source = "tekst")
+                .inspect(|_| suggestion.source = "tekst")
         };
         match text {
             None => {
-                forslag.advarsler.push(
+                suggestion.warnings.push(
                     "fant ingen lesbar tekst i dokumentet — et skannet bilde må bokføres manuelt \
                      (OCR er ikke en del av kjernen)"
                         .into(),
                 );
-                return Ok(forslag);
+                return Ok(suggestion);
             }
             Some(text) => {
                 let t = regnmed_core::voucher_hints::read(&text);
                 let mut note = |felt: &str, begrunnelse: &str| {
-                    forslag
+                    suggestion
                         .begrunnelser
                         .push((felt.to_string(), begrunnelse.to_string()));
                 };
                 if let Some(f) = &t.orgnumber {
-                    forslag.orgnumber = Some(f.value.clone());
+                    suggestion.orgnumber = Some(f.value.clone());
                     note("orgnr", &f.reason);
                 }
                 if let Some(f) = &t.invoice_number {
-                    forslag.fakturanr = Some(f.value.clone());
+                    suggestion.fakturanr = Some(f.value.clone());
                     note("fakturanr", &f.reason);
                 }
                 if let Some(f) = &t.kid {
-                    forslag.kid = Some(f.value.clone());
+                    suggestion.kid = Some(f.value.clone());
                     note("kid", &f.reason);
                 }
                 if let Some(f) = &t.account_number {
-                    forslag.account_number = Some(f.value.clone());
+                    suggestion.account_number = Some(f.value.clone());
                     note("kontonummer", &f.reason);
                 }
                 if let Some(f) = &t.date {
-                    forslag.date = Some(f.value);
+                    suggestion.date = Some(f.value);
                     note("dato", &f.reason);
                 }
                 if let Some(f) = &t.due_date {
-                    forslag.due_date = Some(f.value);
+                    suggestion.due_date = Some(f.value);
                     note("forfall", &f.reason);
                 }
                 if let Some(f) = &t.amount_ore {
-                    forslag.gross_ore = Some(f.value);
+                    suggestion.gross_ore = Some(f.value);
                     note("brutto", &f.reason);
                 }
                 if let Some(f) = &t.vat_ore {
-                    forslag.vat_ore = Some(f.value);
+                    suggestion.vat_ore = Some(f.value);
                     note("mva", &f.reason);
                 }
-                if let (Some(gross), Some(vat)) = (forslag.gross_ore, forslag.vat_ore) {
-                    forslag.net_ore = Some(gross - vat);
+                if let (Some(gross), Some(vat)) = (suggestion.gross_ore, suggestion.vat_ore) {
+                    suggestion.net_ore = Some(gross - vat);
                 }
             }
         }
     }
 
     // 3. The supplier, and what we posted for them last time.
-    if let Some(orgnumber) = &forslag.orgnumber {
+    if let Some(orgnumber) = &suggestion.orgnumber {
         let row = sqlx::query(
             "select party_no, name from party
              where company_id = $1 and kind = 'leverandor' and orgnr = $2 limit 1",
@@ -406,23 +406,23 @@ pub async fn inbox_forslag(
         match row {
             Some(r) => {
                 let party_no: String = r.get("party_no");
-                forslag.supplier_name = Some(r.get("name"));
+                suggestion.supplier_name = Some(r.get("name"));
                 if let Some((account, date)) =
                     last_expense_account(pool, company_id, &party_no).await?
                 {
-                    forslag.account_reason = Some(format!(
+                    suggestion.account_reason = Some(format!(
                         "samme leverandør ble sist bokført på {account} ({date})"
                     ));
-                    forslag.account = Some(account);
+                    suggestion.account = Some(account);
                 }
-                forslag.supplier_no = Some(party_no);
+                suggestion.supplier_no = Some(party_no);
             }
-            None => forslag.advarsler.push(format!(
+            None => suggestion.warnings.push(format!(
                 "orgnr {orgnumber} finnes ikke i leverandørreskontroen — opprett parten først"
             )),
         }
     }
-    Ok(forslag)
+    Ok(suggestion)
 }
 
 /// The cost account most recently used on a voucher that also touched
@@ -457,12 +457,12 @@ async fn last_expense_account(
 
 #[cfg(test)]
 mod tests {
-    use super::split_adresse;
+    use super::split_address;
 
     #[test]
     fn the_address_is_split_when_its_shape_is_recognisable() {
         assert_eq!(
-            split_adresse(Some("Storgata 1, 0155 Oslo".into())),
+            split_address(Some("Storgata 1, 0155 Oslo".into())),
             (
                 Some("Storgata 1".into()),
                 Some("0155".into()),
@@ -471,13 +471,13 @@ mod tests {
         );
         // Unknown shape: the whole address goes out as the street line, never misfiled.
         assert_eq!(
-            split_adresse(Some("Postboks 42 Sentrum".into())),
+            split_address(Some("Postboks 42 Sentrum".into())),
             (Some("Postboks 42 Sentrum".into()), None, None)
         );
         assert_eq!(
-            split_adresse(Some("Storgata 1, Oslo".into())),
+            split_address(Some("Storgata 1, Oslo".into())),
             (Some("Storgata 1, Oslo".into()), None, None)
         );
-        assert_eq!(split_adresse(None), (None, None, None));
+        assert_eq!(split_address(None), (None, None, None));
     }
 }

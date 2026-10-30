@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
-use regnmed_core::fakturapdf::{Dokumenttype, FakturaPdfInput, PdfLinje, render_faktura_pdf};
+use regnmed_core::fakturapdf::{DocumentType, FakturaPdfInput, PdfLinje, render_faktura_pdf};
 use regnmed_core::invoice::compute;
 use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
@@ -41,7 +41,7 @@ async fn next_doc_no(
 
 async fn insert_lines(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    dokument_id: Uuid,
+    document_id: Uuid,
     lines: &[SalgsLineDraft],
 ) -> Result<()> {
     ensure!(!lines.is_empty(), "dokumentet trenger minst én linje");
@@ -53,7 +53,7 @@ async fn insert_lines(
              values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(Uuid::now_v7())
-        .bind(dokument_id)
+        .bind(document_id)
         .bind((i + 1) as i32)
         .bind(&line.description)
         .bind(&line.account_number)
@@ -353,13 +353,13 @@ pub async fn ordre_to_invoice(
     Ok(issued)
 }
 
-async fn load_lines(pool: &PgPool, dokument_id: Uuid) -> Result<Vec<SalgsLineDraft>> {
+async fn load_lines(pool: &PgPool, document_id: Uuid) -> Result<Vec<SalgsLineDraft>> {
     let rows = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
                 vat_code, avdeling, prosjekt, product_id
          from salgsdokument_line where dokument_id = $1 order by line_no",
     )
-    .bind(dokument_id)
+    .bind(document_id)
     .fetch_all(pool)
     .await?;
     ensure!(!rows.is_empty(), "dokumentet har ingen linjer");
@@ -437,7 +437,7 @@ pub async fn list_sales_documents(
 pub async fn salgsdokument_pdf(
     pool: &PgPool,
     company_id: Uuid,
-    dokument_id: Uuid,
+    document_id: Uuid,
 ) -> Result<(String, Vec<u8>)> {
     let doc = sqlx::query(
         "select s.kind, s.doc_no, s.doc_date, p.party_no, p.name as party_name,
@@ -448,7 +448,7 @@ pub async fn salgsdokument_pdf(
          join company c on c.id = s.company_id
          where s.id = $1 and s.company_id = $2",
     )
-    .bind(dokument_id)
+    .bind(document_id)
     .bind(company_id)
     .fetch_optional(pool)
     .await?
@@ -457,7 +457,7 @@ pub async fn salgsdokument_pdf(
     let doc_date: NaiveDate = doc.get("doc_date");
 
     let rates = load_vat_rates(pool).await?;
-    let lines = load_lines(pool, dokument_id).await?;
+    let lines = load_lines(pool, document_id).await?;
     let mut pdf_linjer = Vec::with_capacity(lines.len());
     let mut inputs = Vec::with_capacity(lines.len());
     for line in &lines {
@@ -502,25 +502,25 @@ pub async fn salgsdokument_pdf(
     // dato. Uten dateringen ville et gammelt tilbud fått dagens status
     // neste gang noen lastet det ned (#81).
     let reg = crate::settings::registrering_on(pool, company_id, doc_date).await?;
-    let dokumenttype = if kind == "tilbud" {
-        Dokumenttype::Tilbud
+    let document_type = if kind == "tilbud" {
+        DocumentType::Tilbud
     } else {
-        Dokumenttype::Ordrebekreftelse
+        DocumentType::Ordrebekreftelse
     };
     let pdf = render_faktura_pdf(&FakturaPdfInput {
         betalingsmiddel: None,
-        dokumenttype,
-        krediterer_nr: None,
+        document_type,
+        credits_number: None,
         seller_name: doc.get("company_name"),
         seller_orgnumber: doc.get("orgnr"),
-        selger_adresse: doc.get("address"),
+        seller_address: doc.get("address"),
         seller_vat_registered: reg.vat_registered,
         selger_foretaksregistrert: reg.foretaksregistrert,
         seller_account_number: None,
         buyer_name: doc.get("party_name"),
-        kjoper_nr: doc.get("party_no"),
+        buyer_number: doc.get("party_no"),
         buyer_orgnumber: doc.get("party_orgnr"),
-        kjoper_adresse: doc.get("party_address"),
+        buyer_address: doc.get("party_address"),
         fakturanr: doc.get("doc_no"),
         invoice_date: doc_date,
         due_date: doc_date,
@@ -543,11 +543,11 @@ pub async fn salgsdokument_pdf(
 pub async fn salgsdokument_status(
     pool: &PgPool,
     company_id: Uuid,
-    dokument_id: Uuid,
+    document_id: Uuid,
 ) -> Result<String> {
     let status: Option<String> =
         sqlx::query_scalar("select status from salgsdokument where id = $1 and company_id = $2")
-            .bind(dokument_id)
+            .bind(document_id)
             .bind(company_id)
             .fetch_optional(pool)
             .await?;

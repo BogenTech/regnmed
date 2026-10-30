@@ -354,7 +354,7 @@ async fn events_cannot_be_changed_or_deleted() {
             fodselsnummer: None,
             orgnumber: Some("923609016".into()),
             utenlandsk_id: None,
-            adresse: None,
+            address: None,
             postnummer: None,
             poststed: None,
             landkode: None,

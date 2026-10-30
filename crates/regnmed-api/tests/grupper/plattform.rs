@@ -12,7 +12,9 @@
 use chrono::{Duration, Utc};
 use sqlx::Row;
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -57,11 +59,11 @@ async fn status(state: &AppState, method: &str, uri: &str, bearer: &str, body: &
 /// address) can find them.
 async fn person(state: &AppState, idp: &TestIdp, name: &str) -> (Uuid, String, String) {
     let sub = format!("plattform|{}", Uuid::new_v4());
-    let epost = format!("{}@test.invalid", sub.replace('|', "."));
-    let id = regnmed_db::ensure_person(&state.pool, &sub, Some(name), Some(&epost))
+    let email = format!("{}@test.invalid", sub.replace('|', "."));
+    let id = regnmed_db::ensure_person(&state.pool, &sub, Some(name), Some(&email))
         .await
         .unwrap();
-    (id, epost, idp.token(&sub, name))
+    (id, email, idp.token(&sub, name))
 }
 
 /// A person holding an active platform role, granted directly in the
@@ -329,7 +331,7 @@ async fn revocation_of_a_platform_role_is_immediate() {
         return;
     };
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
-    let (_, epost, token) = person(&state, &idp, "Ny Support").await;
+    let (_, email, token) = person(&state, &idp, "Ny Support").await;
 
     let to = (Utc::now() + Duration::days(14)).date_naive();
     let (code, response) = json_call(
@@ -337,7 +339,7 @@ async fn revocation_of_a_platform_role_is_immediate() {
         "POST",
         "/platform/members",
         &sysadmin,
-        &format!(r#"{{"epost":"{epost}","rolle":"support","valid_to":"{to}","notat":"sak 42"}}"#),
+        &format!(r#"{{"epost":"{email}","rolle":"support","valid_to":"{to}","notat":"sak 42"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{response}");
@@ -378,7 +380,7 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
         regnmed_db::create_party(&state.pool, company, "kunde", &name, None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
     let (code, response) = json_call(
         &state,
@@ -521,7 +523,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let (_, detalj) = json_call(
+    let (_, detail) = json_call(
         &state,
         "GET",
         &format!("/platform/companies/{company}"),
@@ -529,7 +531,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
         "",
     )
     .await;
-    assert_eq!(detalj["settings"]["address"], "Plattformgata 1");
+    assert_eq!(detail["settings"]["address"], "Plattformgata 1");
 
     // Coverage by hand: refuses without an active-status check bypass,
     // carries the mandatory note, and ending it flips the status off
@@ -543,7 +545,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{response}");
-    let (_, detalj) = json_call(
+    let (_, detail) = json_call(
         &state,
         "GET",
         &format!("/platform/companies/{company}"),
@@ -551,13 +553,13 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
         "",
     )
     .await;
-    assert_eq!(detalj["abonnement"]["status"], "aktiv");
+    assert_eq!(detail["abonnement"]["status"], "aktiv");
     assert!(
-        detalj["abonnement"]["dekning"][0]["note"]
+        detail["abonnement"]["dekning"][0]["note"]
             .as_str()
             .unwrap()
             .contains("supportsak 42"),
-        "the reason must be on the row: {detalj}"
+        "the reason must be on the row: {detail}"
     );
     // A second opening while active is refused.
     let (code, _) = json_call(
@@ -582,7 +584,7 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
     // valid_to passes — coverage opened today ends tomorrow at the
     // earliest ("the shortest truthful coverage is one day"), so
     // asserting on the row rather than the status is the honest check.
-    let (_, detalj) = json_call(
+    let (_, detail) = json_call(
         &state,
         "GET",
         &format!("/platform/companies/{company}"),
@@ -591,8 +593,8 @@ async fn the_back_office_edits_master_data_and_coverage_but_support_does_not() {
     )
     .await;
     assert!(
-        !detalj["abonnement"]["dekning"][0]["valid_to"].is_null(),
-        "the open row must be closed: {detalj}"
+        !detail["abonnement"]["dekning"][0]["valid_to"].is_null(),
+        "the open row must be closed: {detail}"
     );
 }
 

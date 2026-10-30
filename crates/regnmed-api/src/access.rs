@@ -970,7 +970,7 @@ pub async fn lookup(
     let egendefinerte = if ukjente.is_empty() {
         Vec::new()
     } else {
-        regnmed_db::roles::rettigheter_for(&state.pool, company_id, &ukjente)
+        regnmed_db::roles::rights_for(&state.pool, company_id, &ukjente)
             .await?
             .iter()
             .filter_map(|s| Right::from_slug(s))
@@ -1048,7 +1048,7 @@ mod tests {
     /// bundle, it comes from `UTLEGG_LES_ALLE`. Without that expansion
     /// the completeness test would fail on rettigheter no bundle names
     /// directly.
-    fn every_rettighet() -> Vec<Right> {
+    fn every_right() -> Vec<Right> {
         let mut v: Vec<Right> = LES_BUNT
             .iter()
             .chain(AUDITOR_BUNDLE)
@@ -1080,8 +1080,8 @@ mod tests {
     /// vocabulary, so the bundle cannot promise something nobody
     /// enforces.
     #[test]
-    fn the_ansatt_bundle_uses_only_known_rettigheter() {
-        let kjente: std::collections::BTreeSet<_> = every_rettighet().into_iter().collect();
+    fn the_employee_bundle_uses_only_known_rights() {
+        let kjente: std::collections::BTreeSet<_> = every_right().into_iter().collect();
         for r in EMPLOYEE_BUNDLE {
             assert!(
                 kjente.contains(r),
@@ -1093,7 +1093,7 @@ mod tests {
 
     /// The most important thing about the ansatt role is what it does NOT give.
     #[test]
-    fn an_ansatt_cannot_reach_the_hovedbok() {
+    fn an_employee_cannot_reach_the_hovedbok() {
         let a = Role::Employee;
         for nektet in [
             Right::VoucherRead,
@@ -1134,7 +1134,7 @@ mod tests {
     #[test]
     fn the_slugs_are_unique() {
         let mut sett = std::collections::BTreeSet::new();
-        for r in every_rettighet() {
+        for r in every_right() {
             assert!(sett.insert(r.slug()), "duplisert slug {}", r.slug());
         }
     }
@@ -1146,7 +1146,7 @@ mod tests {
     /// and it is what makes #59 behavior-preserving.
     #[test]
     fn the_built_in_roles_are_nested() {
-        for r in every_rettighet() {
+        for r in every_right() {
             if Role::Read.has(r) {
                 assert!(Role::Auditor.has(r), "revisor mangler {}", r.slug());
                 assert!(Role::Bookkeeping.has(r), "bokforing mangler {}", r.slug());
@@ -1223,7 +1223,7 @@ mod tests {
     /// a rolling deploy an old binary can meet a role it does not know —
     /// reading "ansatt" as "les" would have been an upgrade.
     #[test]
-    fn an_unknown_role_grants_no_rettigheter() {
+    fn an_unknown_role_grants_no_rights() {
         for ukjent in ["superbruker", "", "Ansatt", "LES"] {
             let r = Role::from_db(ukjent);
             assert_eq!(r, Role::Ukjent, "«{ukjent}»");
@@ -1266,7 +1266,7 @@ mod tests {
     /// test a new rettighet could be left standing in the grid without
     /// text — and a checkbox without an explanation is worse than no box.
     #[test]
-    fn every_rettighet_has_a_description_and_a_group() {
+    fn every_right_has_a_description_and_a_group() {
         for r in Right::ALLE {
             assert!(
                 !r.description().is_empty(),
@@ -1292,9 +1292,9 @@ mod tests {
     /// The rettighet list the portal shows must be complete and sorted
     /// without duplicates, including what is implied.
     #[test]
-    fn the_rettighet_list_is_complete() {
+    fn the_right_list_is_complete() {
         let admin = Role::Admin.rights();
-        assert_eq!(admin.len(), every_rettighet().len());
+        assert_eq!(admin.len(), every_right().len());
         let les = Role::Read.rights();
         assert!(les.contains(&Right::TimesheetReadOwn));
         assert!(!les.contains(&Right::TimesheetReadAll));

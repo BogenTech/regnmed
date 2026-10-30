@@ -89,7 +89,7 @@ enum Command {
         orgnumber: Option<String>,
         /// Invoice only this customer company (orgnr) — back-billing
         #[arg(long)]
-        bare_orgnr: Option<String>,
+        bare_orgnumber: Option<String>,
     },
     /// Automatic abonnement follow-up (#75, docs/abonnement.md §5.3):
     /// mail unsent abonnement invoices, take the next purring step on
@@ -108,7 +108,7 @@ enum Command {
     PlatformGrant {
         /// E-mail address of the person (they must have logged in once)
         #[arg(long)]
-        epost: String,
+        email: String,
         /// "systemadmin" or "support"
         #[arg(long)]
         role: String,
@@ -212,7 +212,7 @@ async fn resolve_company(
 ) -> Result<Uuid> {
     match (company, orgnumber) {
         (Some(id), _) => Ok(id),
-        (None, Some(orgnumber)) => regnmed_db::find_company_by_orgnr(pool, orgnumber)
+        (None, Some(orgnumber)) => regnmed_db::find_company_by_orgnumber(pool, orgnumber)
             .await?
             .with_context(|| format!("no company with orgnr {orgnumber}")),
         (None, None) => anyhow::bail!("pass --company or --orgnr"),
@@ -222,7 +222,7 @@ async fn resolve_company(
 /// Publishes one mail on the shared rail and logs it in the utsendelse
 /// trail — the log id doubles as Nats-Msg-Id, so a retried send is
 /// deduplicated by the stream (#75).
-async fn send_epost(
+async fn send_email(
     pool: &sqlx::PgPool,
     js: &regnmed_mail::jetstream::Context,
     drift: Uuid,
@@ -240,7 +240,7 @@ async fn send_epost(
         payload.invitation_id,
         &payload.to,
         &payload.subject,
-        regnmed_db::subscription_follow_up::UTFORT_AV,
+        regnmed_db::subscription_follow_up::PERFORMED_BY,
     )
     .await?;
     Ok(())
@@ -290,17 +290,17 @@ async fn main() -> Result<()> {
         Command::Demo => demo(&pool).await?,
         Command::Anchor => anchor(&pool).await?,
         Command::PlatformGrant {
-            epost,
+            email,
             role,
             to,
             note,
         } => {
-            let person_id = regnmed_db::person_by_email(&pool, &epost)
+            let person_id = regnmed_db::person_by_email(&pool, &email)
                 .await?
                 .context("no person with that e-mail — they must log in once first")?;
             let id =
                 regnmed_db::grant_platform_role(&pool, person_id, &role, to, &note, None).await?;
-            println!("granted {role} to {epost} until {to} (membership {id})");
+            println!("granted {role} to {email} until {to} (membership {id})");
         }
         Command::PlatformList => {
             let members = regnmed_db::list_platform_members(&pool).await?;
@@ -313,7 +313,7 @@ async fn main() -> Result<()> {
                     m.id,
                     if m.active { "AKTIV " } else { "avsluttet" },
                     m.name,
-                    m.epost.as_deref().unwrap_or("-"),
+                    m.email.as_deref().unwrap_or("-"),
                     m.role,
                     format_args!("{} → {}", m.valid_from, m.valid_to),
                     m.note,
@@ -400,13 +400,13 @@ async fn main() -> Result<()> {
         }
         Command::SubscriptionInvoice {
             orgnumber,
-            bare_orgnr,
+            bare_orgnumber,
         } => {
             let orgnumber = orgnumber
                 .or_else(|| std::env::var("REGNMED_DRIFT_ORGNR").ok())
                 .context("pass --orgnr eller sett REGNMED_DRIFT_ORGNR (driftsselskapet)")?;
             let drift = resolve_company(&pool, None, Some(&orgnumber)).await?;
-            let bare = match bare_orgnr.as_deref() {
+            let bare = match bare_orgnumber.as_deref() {
                 Some(o) => Some(resolve_company(&pool, None, Some(o)).await?),
                 None => None,
             };
@@ -497,7 +497,7 @@ async fn main() -> Result<()> {
             // purring must reach somebody: no e-mail address, no step —
             // reported loudly instead, until a human fixes the address.
             for f in &apne {
-                if f.epost.is_none() {
+                if f.email.is_none() {
                     println!(
                         "{}: faktura {} — selskapet mangler e-postadresse, purres ikke",
                         f.company_name, f.invoice_no
@@ -526,7 +526,7 @@ async fn main() -> Result<()> {
             // Nats-Msg-Id, so a retried send cannot double-deliver.
             if let Some(js) = &mailq {
                 for f in apne.iter().filter(|f| !f.sent) {
-                    let Some(epost) = &f.epost else {
+                    let Some(email) = &f.email else {
                         // Already counted above.
                         continue;
                     };
@@ -535,15 +535,15 @@ async fn main() -> Result<()> {
                             &pool,
                             drift,
                             f.invoice_id,
-                            Some(epost),
+                            Some(email),
                         )
                         .await?;
-                        send_epost(&pool, js, drift, payload).await
+                        send_email(&pool, js, drift, payload).await
                     }
                     .await;
                     match sent {
                         Ok(()) => println!(
-                            "{}: faktura {} sendt til {epost}",
+                            "{}: faktura {} sendt til {email}",
                             f.company_name, f.invoice_no
                         ),
                         Err(e) => {
@@ -556,7 +556,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 for p in opf::unsent_reminders(&pool, drift).await? {
-                    let Some(epost) = &p.epost else {
+                    let Some(email) = &p.email else {
                         continue;
                     };
                     let sent = async {
@@ -565,15 +565,15 @@ async fn main() -> Result<()> {
                             drift,
                             p.invoice_id,
                             p.reminder_id,
-                            Some(epost),
+                            Some(email),
                         )
                         .await?;
-                        send_epost(&pool, js, drift, payload).await
+                        send_email(&pool, js, drift, payload).await
                     }
                     .await;
                     match sent {
                         Ok(()) => println!(
-                            "{}: {} for faktura {} sendt til {epost}",
+                            "{}: {} for faktura {} sendt til {email}",
                             p.company_name, p.step, p.invoice_no
                         ),
                         Err(e) => {
@@ -805,17 +805,17 @@ async fn vat_return(
     validate: bool,
 ) -> Result<()> {
     let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
-    let ordning = regnmed_db::period_scheme_on(
+    let scheme = regnmed_db::period_scheme_on(
         pool,
         company_id,
         chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("valid year")?,
     )
     .await?;
-    let period = ordning.new_period(year, period).with_context(|| {
+    let period = scheme.new_period(year, period).with_context(|| {
         format!(
             "--termin must be 1-{} under ordningen {}",
-            ordning.period_count(),
-            ordning.as_str()
+            scheme.period_count(),
+            scheme.as_str()
         )
     })?;
 
@@ -824,19 +824,19 @@ async fn vat_return(
         .fetch_one(pool)
         .await?;
     let spes =
-        regnmed_db::vat_specification(pool, company_id, ordning.start(period), ordning.end(period))
+        regnmed_db::vat_specification(pool, company_id, scheme.start(period), scheme.end(period))
             .await?;
     anyhow::ensure!(
         !spes.is_empty(),
         "no VAT postings in {} — nothing to report",
-        ordning.label(period)
+        scheme.label(period)
     );
 
     let referanse = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
     let message = regnmed_core::vat_return::build(
         &orgnumber,
         period,
-        ordning,
+        scheme,
         &referanse,
         env!("CARGO_PKG_VERSION"),
         &spes,
@@ -894,7 +894,7 @@ async fn vat_report(
     use regnmed_core::vat::{Direction, direction};
 
     let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
-    let ordning = regnmed_db::period_scheme_on(
+    let scheme = regnmed_db::period_scheme_on(
         pool,
         company_id,
         chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,
@@ -902,14 +902,14 @@ async fn vat_report(
     .await?;
     let (start, end, label) = match period {
         Some(n) => {
-            let t = ordning.new_period(year, n).with_context(|| {
+            let t = scheme.new_period(year, n).with_context(|| {
                 format!(
                     "--termin must be 1-{} under ordningen {}",
-                    ordning.period_count(),
-                    ordning.as_str()
+                    scheme.period_count(),
+                    scheme.as_str()
                 )
             })?;
-            (ordning.start(t), ordning.end(t), ordning.label(t))
+            (scheme.start(t), scheme.end(t), scheme.label(t))
         }
         None => (
             chrono::NaiveDate::from_ymd_opt(year, 1, 1).context("invalid year")?,
@@ -1080,7 +1080,7 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
     regnmed_db::MIGRATOR.run(pool).await?;
 
     let orgnumber = "999888777";
-    let company = match regnmed_db::find_company_by_orgnr(pool, orgnumber).await? {
+    let company = match regnmed_db::find_company_by_orgnumber(pool, orgnumber).await? {
         Some(id) => id,
         None => regnmed_db::create_company(pool, orgnumber, "Demo AS").await?,
     };

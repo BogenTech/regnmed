@@ -24,7 +24,7 @@ pub const SELSKAPSROLLER: [&str; 4] = ["admin", "bokforing", "les", "ansatt"];
 pub const BYRAROLLER: [&str; 2] = ["admin", "ansatt"];
 
 #[derive(Debug, Clone)]
-pub struct AktivPlattformRolle {
+pub struct ActivePlatformRole {
     pub role: String,
     pub valid_to: NaiveDate,
 }
@@ -34,7 +34,7 @@ pub struct AktivPlattformRolle {
 pub async fn active_platform_role(
     pool: &PgPool,
     person_id: Uuid,
-) -> Result<Option<AktivPlattformRolle>> {
+) -> Result<Option<ActivePlatformRole>> {
     let row = sqlx::query(
         "select rolle, valid_to from platform_member
          where person_id = $1
@@ -45,7 +45,7 @@ pub async fn active_platform_role(
     .bind(person_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| AktivPlattformRolle {
+    Ok(row.map(|r| ActivePlatformRole {
         role: r.get("rolle"),
         valid_to: r.get("valid_to"),
     }))
@@ -56,7 +56,7 @@ pub struct PlattformMedlem {
     pub id: Uuid,
     pub person_id: Uuid,
     pub name: String,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub role: String,
     pub valid_from: NaiveDate,
     pub valid_to: NaiveDate,
@@ -81,7 +81,7 @@ pub async fn list_platform_members(pool: &PgPool) -> Result<Vec<PlattformMedlem>
             id: r.get("id"),
             person_id: r.get("person_id"),
             name: r.get("navn"),
-            epost: r.get("email"),
+            email: r.get("email"),
             role: r.get("rolle"),
             valid_from: r.get("valid_from"),
             valid_to: r.get("valid_to"),
@@ -159,8 +159,8 @@ pub async fn end_platform_member(pool: &PgPool, member_id: Uuid) -> Result<()> {
 
 /// Looks a person up by normalised e-mail, for granting roles and
 /// assigning memberships. Ambiguity is an error, not a guess.
-pub async fn person_by_email(pool: &PgPool, epost: &str) -> Result<Option<Uuid>> {
-    let norm = epost.trim().to_lowercase();
+pub async fn person_by_email(pool: &PgPool, email: &str) -> Result<Option<Uuid>> {
+    let norm = email.trim().to_lowercase();
     let rows = sqlx::query("select id from person where lower(email) = $1 and kind = 'menneske'")
         .bind(&norm)
         .fetch_all(pool)
@@ -323,7 +323,7 @@ pub struct PlattformTilknytning {
 pub struct PlattformBruker {
     pub person_id: Uuid,
     pub name: String,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub kind: String,
     pub tilknytninger: Vec<PlattformTilknytning>,
 }
@@ -368,7 +368,7 @@ pub async fn platform_list_users(pool: &PgPool, sok: Option<&str>) -> Result<Vec
             PlattformBruker {
                 person_id,
                 name: p.get("navn"),
-                epost: p.get("email"),
+                email: p.get("email"),
                 kind: p.get("kind"),
                 tilknytninger: connections
                     .iter()
@@ -393,10 +393,10 @@ pub struct PlattformKunde {
     pub party_no: String,
     pub name: String,
     pub orgnumber: Option<String>,
-    pub epost: Option<String>,
+    pub email: Option<String>,
     pub company_id: Uuid,
     pub company_name: String,
-    pub company_orgnr: String,
+    pub company_orgnumber: String,
 }
 
 /// Customers across all companies, each shown with the company it belongs
@@ -431,15 +431,15 @@ pub async fn platform_list_customers(
             party_no: r.get("party_no"),
             name: r.get("navn"),
             orgnumber: r.get("orgnr"),
-            epost: r.get("email"),
+            email: r.get("email"),
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),
-            company_orgnr: r.get("company_orgnr"),
+            company_orgnumber: r.get("company_orgnr"),
         })
         .collect())
 }
 
-async fn krev_menneske(pool: &PgPool, person_id: Uuid) -> Result<()> {
+async fn require_human(pool: &PgPool, person_id: Uuid) -> Result<()> {
     let kind: Option<String> = sqlx::query("select kind from person where id = $1")
         .bind(person_id)
         .fetch_optional(pool)
@@ -470,7 +470,7 @@ pub async fn platform_assign_company(
         SELSKAPSROLLER.contains(&role),
         "ukjent rolle «{role}» — plattformen tildeler bare de innebygde"
     );
-    krev_menneske(pool, person_id).await?;
+    require_human(pool, person_id).await?;
     let mut tx = pool.begin().await?;
     let existing = sqlx::query(
         "select role, active from company_member
@@ -548,7 +548,7 @@ pub async fn platform_assign_firm(
         BYRAROLLER.contains(&role),
         "ukjent byrårolle «{role}» — gyldige er admin og ansatt"
     );
-    krev_menneske(pool, person_id).await?;
+    require_human(pool, person_id).await?;
     let mut tx = pool.begin().await?;
     let existing = sqlx::query(
         "select role, active from firm_member

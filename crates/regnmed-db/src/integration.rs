@@ -23,7 +23,7 @@ pub struct Integration {
     pub name: String,
     pub kontakt: Option<String>,
     pub rate_limit_min: i32,
-    pub registrert_av: String,
+    pub registered_by: String,
     pub created_at: DateTime<Utc>,
     /// The face, docs/agent.md §8.1: a daisyUI colour and an icon name.
     /// Plain metadata -- never hashed, never part of authorization.
@@ -42,7 +42,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         name: r.get("navn"),
         kontakt: r.get("kontakt"),
         rate_limit_min: r.get("rate_limit_min"),
-        registrert_av: r.get("registrert_av"),
+        registered_by: r.get("registrert_av"),
         created_at: r.get("created_at"),
         avatar_farge: r.get("avatar_farge"),
         avatar_ikon: r.get("avatar_ikon"),

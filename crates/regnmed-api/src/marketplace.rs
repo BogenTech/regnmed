@@ -18,7 +18,7 @@ use crate::AppState;
 use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
-fn validate_orgnr(orgnumber: &str) -> Result<(), ApiError> {
+fn validate_orgnumber(orgnumber: &str) -> Result<(), ApiError> {
     if !regnmed_core::orgnumber::is_valid(orgnumber) {
         return Err(ApiError::BadRequest(format!(
             "{orgnumber} er ikke et gyldig organisasjonsnummer"
@@ -31,7 +31,7 @@ pub async fn registry_preview(
     _person: AuthPerson,
     Path(orgnumber): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&orgnumber)?;
+    validate_orgnumber(&orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
         .entity(&orgnumber)
         .await
@@ -74,7 +74,7 @@ pub async fn onboard_company(
     person: AuthPerson,
     Json(request): Json<OnboardRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&request.orgnumber)?;
+    validate_orgnumber(&request.orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
         .entity(&request.orgnumber)
         .await
@@ -146,7 +146,7 @@ pub async fn create_firm(
     person: AuthPerson,
     Json(request): Json<FirmRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    validate_orgnr(&request.orgnumber)?;
+    validate_orgnumber(&request.orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
         .entity(&request.orgnumber)
         .await

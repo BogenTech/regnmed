@@ -379,7 +379,7 @@ forespørsel for noe som skjer én gang.
 `person.email` fra hver innlogging, så en invitasjon til en privat
 adresse blir aldri løst inn om tokenet bærer jobbadressen.
 Normaliseringen (trimming og små bokstaver) skjer ett sted,
-`medlemmer::normaliser_epost`, og det er den normaliserte formen som
+`members::normalize_email`, og det er den normaliserte formen som
 lagres.
 
 **Svaret røper ikke om adressen alt har en bruker hos oss.** Et oppslag

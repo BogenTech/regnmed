@@ -4,7 +4,9 @@
 //! kreditnotaer get their own document, and purringer render to PDF on
 //! demand. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -91,7 +93,7 @@ async fn invoice_pdf_is_stored_served_and_verified() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Firmaopplysninger over the API (admin) — printed on the PDF.
@@ -352,7 +354,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
     )
     .await
     .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Eksportøren");
 
     // Avgiftsfritt salg: the document carries NO mva at all.
@@ -473,7 +475,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Tidlig Kunde", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Nyregistrert");
 
     // Faktura datert FØR registreringen.
@@ -586,7 +588,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Uten avtale");
 
     let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();

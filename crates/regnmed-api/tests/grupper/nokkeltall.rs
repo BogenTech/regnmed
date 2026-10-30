@@ -3,7 +3,9 @@
 //! and upcoming mva deadlines under the company's terminordning — all
 //! plain queries. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -98,7 +100,7 @@ async fn key_figures_result_liquidity_and_deadlines() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let (_, supplier) = regnmed_db::create_party(
         &state.pool,
         company,

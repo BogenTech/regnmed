@@ -4,7 +4,9 @@
 //! akseptert, double ordre, double faktura). Requires DATABASE_URL
 //! (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -91,7 +93,7 @@ async fn tilbud_ordre_faktura_chain() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kjøper AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
 
     // Tilbud 1: utkast, editable.

@@ -36,15 +36,15 @@ async fn scheme_period(
 ) -> Result<(regnmed_core::vat::PeriodScheme, Period), ApiError> {
     let jan1 = NaiveDate::from_ymd_opt(year, 1, 1)
         .ok_or_else(|| ApiError::BadRequest("invalid year".into()))?;
-    let ordning = regnmed_db::period_scheme_on(&state.pool, company_id, jan1).await?;
-    let period = ordning.new_period(year, period).ok_or_else(|| {
+    let scheme = regnmed_db::period_scheme_on(&state.pool, company_id, jan1).await?;
+    let period = scheme.new_period(year, period).ok_or_else(|| {
         ApiError::BadRequest(format!(
             "termin must be 1-{} under ordningen {}",
-            ordning.period_count(),
-            ordning.as_str()
+            scheme.period_count(),
+            scheme.as_str()
         ))
     })?;
-    Ok((ordning, period))
+    Ok((scheme, period))
 }
 
 #[derive(Deserialize)]
@@ -61,13 +61,13 @@ pub async fn vat_report(
     Query(query): Query<VatPeriodQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let (ordning, period) = scheme_period(&state, company_id, query.year, query.period).await?;
+    let (scheme, period) = scheme_period(&state, company_id, query.year, query.period).await?;
 
     let lines = regnmed_db::vat_specification(
         &state.pool,
         company_id,
-        ordning.start(period),
-        ordning.end(period),
+        scheme.start(period),
+        scheme.end(period),
     )
     .await?;
 
@@ -85,12 +85,12 @@ pub async fn vat_report(
     Ok(Json(json!({
         "year": period.year,
         "termin": period.number,
-        "ordning": ordning.as_str(),
-        "antall_perioder": ordning.period_count(),
-        "label": ordning.label(period),
-        "frist": ordning.deadline(period).to_string(),
-        "start": ordning.start(period).to_string(),
-        "end": ordning.end(period).to_string(),
+        "ordning": scheme.as_str(),
+        "antall_perioder": scheme.period_count(),
+        "label": scheme.label(period),
+        "frist": scheme.deadline(period).to_string(),
+        "start": scheme.start(period).to_string(),
+        "end": scheme.end(period).to_string(),
         "lines": lines.iter().map(|l| json!({
             "code": l.code,
             "description": l.description,
@@ -111,7 +111,7 @@ pub async fn vat_return(
     Query(query): Query<VatPeriodQuery>,
 ) -> Result<Response, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let (ordning, period) = scheme_period(&state, company_id, query.year, query.period).await?;
+    let (scheme, period) = scheme_period(&state, company_id, query.year, query.period).await?;
 
     let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
@@ -121,14 +121,14 @@ pub async fn vat_return(
     let spes = regnmed_db::vat_specification(
         &state.pool,
         company_id,
-        ordning.start(period),
-        ordning.end(period),
+        scheme.start(period),
+        scheme.end(period),
     )
     .await?;
     if spes.is_empty() {
         return Err(ApiError::BadRequest(format!(
             "no VAT postings in {} — nothing to report",
-            ordning.label(period)
+            scheme.label(period)
         )));
     }
 
@@ -136,7 +136,7 @@ pub async fn vat_return(
     let message = regnmed_core::vat_return::build(
         &orgnumber,
         period,
-        ordning,
+        scheme,
         &referanse,
         env!("CARGO_PKG_VERSION"),
         &spes,
@@ -573,7 +573,7 @@ pub async fn audit(
         "orgnr": report.orgnumber,
         "selskap": report.company,
         "generert": report.generert,
-        "generert_av": report.generert_av,
+        "generert_av": report.generated_by,
         "programversjon": report.programversjon,
         "kjede_sekvens": report.chain_sequence,
         "kjede_hode": report.chain_head_hex,
@@ -581,7 +581,7 @@ pub async fn audit(
         "kontroller": report.checks.iter().map(|k| json!({
             "navn": k.name,
             "ok": k.ok,
-            "detalj": k.detalj,
+            "detalj": k.detail,
         })).collect::<Vec<_>>(),
         "ankere": report.anchors.iter().map(|a| json!({
             "tidspunkt": a.tidspunkt,
@@ -606,29 +606,29 @@ pub async fn period_scheme(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let ordning = regnmed_db::period_scheme_on(&state.pool, company_id, today).await?;
+    let scheme = regnmed_db::period_scheme_on(&state.pool, company_id, today).await?;
     let year = chrono::Datelike::year(&today);
-    let perioder: Vec<serde_json::Value> = (1..=ordning.period_count())
-        .filter_map(|n| ordning.new_period(year, n))
+    let perioder: Vec<serde_json::Value> = (1..=scheme.period_count())
+        .filter_map(|n| scheme.new_period(year, n))
         .map(|t| {
             json!({
                 "termin": t.number,
-                "label": ordning.label(t),
-                "start": ordning.start(t).to_string(),
-                "end": ordning.end(t).to_string(),
-                "frist": ordning.deadline(t).to_string(),
+                "label": scheme.label(t),
+                "start": scheme.start(t).to_string(),
+                "end": scheme.end(t).to_string(),
+                "frist": scheme.deadline(t).to_string(),
             })
         })
         .collect();
     let history = regnmed_db::list_period_schemes(&state.pool, company_id).await?;
     Ok(Json(json!({
-        "ordning": ordning.as_str(),
-        "antall_perioder": ordning.period_count(),
+        "ordning": scheme.as_str(),
+        "antall_perioder": scheme.period_count(),
         "year": year,
         "perioder": perioder,
         "history": history.iter().map(|h| json!({
             "valid_from": h.valid_from.to_string(),
-            "ordning": h.ordning,
+            "ordning": h.scheme,
             "note": h.note,
             "created_by": h.created_by,
         })).collect::<Vec<_>>(),
@@ -636,9 +636,10 @@ pub async fn period_scheme(
 }
 
 #[derive(Deserialize)]
-pub struct SetOrdningRequest {
+pub struct SetSchemeRequest {
     /// to-maneder | arlig | primaernaering
-    ordning: String,
+    #[serde(rename = "ordning")]
+    scheme: String,
     valid_from: NaiveDate,
     /// Reference to Skatteetatens vedtak — the ordning is GRANTED,
     /// never inferred.
@@ -649,10 +650,10 @@ pub async fn set_period_scheme(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<SetOrdningRequest>,
+    Json(request): Json<SetSchemeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VatSchemeAdmin).await?;
-    let ordning = regnmed_core::vat::PeriodScheme::parse(&request.ordning).ok_or_else(|| {
+    let scheme = regnmed_core::vat::PeriodScheme::parse(&request.scheme).ok_or_else(|| {
         ApiError::BadRequest("ordning must be to-maneder, arlig or primaernaering".into())
     })?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
@@ -660,14 +661,14 @@ pub async fn set_period_scheme(
         &state.pool,
         company_id,
         request.valid_from,
-        ordning,
+        scheme,
         request.note.as_deref(),
         created_by,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(
-        json!({ "ordning": ordning.as_str(), "valid_from": request.valid_from.to_string() }),
+        json!({ "ordning": scheme.as_str(), "valid_from": request.valid_from.to_string() }),
     ))
 }
 
@@ -697,13 +698,13 @@ pub async fn nokkeltall(
 
     // Mva owed for the current period (net computed so far) and the next
     // deadlines, under the company's ordning.
-    let ordning = regnmed_db::period_scheme_on(&state.pool, company_id, today).await?;
-    let naa = ordning.period_of(today);
+    let scheme = regnmed_db::period_scheme_on(&state.pool, company_id, today).await?;
+    let naa = scheme.period_of(today);
     let spes = regnmed_db::vat_specification(
         &state.pool,
         company_id,
-        ordning.start(naa),
-        ordning.end(naa).min(today),
+        scheme.start(naa),
+        scheme.end(naa).min(today),
     )
     .await?;
     let output: i64 = spes
@@ -721,13 +722,13 @@ pub async fn nokkeltall(
     let this_year = chrono::Datelike::year(&today);
     let mut frister = Vec::new();
     for y in [this_year, this_year + 1] {
-        for n in 1..=ordning.period_count() {
-            if let Some(period) = ordning.new_period(y, n) {
-                let deadline = ordning.deadline(period);
+        for n in 1..=scheme.period_count() {
+            if let Some(period) = scheme.new_period(y, n) {
+                let deadline = scheme.deadline(period);
                 if deadline >= today && frister.len() < 2 {
                     frister.push(serde_json::json!({
                         "type": "mva",
-                        "label": ordning.label(period),
+                        "label": scheme.label(period),
                         "frist": deadline.to_string(),
                     }));
                 }

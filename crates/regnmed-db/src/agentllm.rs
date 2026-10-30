@@ -24,7 +24,7 @@ pub struct LlmOppsett {
     pub base_url: String,
     pub modell: String,
     pub active: bool,
-    pub satt_av: String,
+    pub set_by: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -55,7 +55,7 @@ pub async fn sett_llm(
     base_url: Option<&str>,
     modell: &str,
     api_nokkel: &str,
-    satt_av: &str,
+    set_by: &str,
 ) -> Result<()> {
     let supplier = supplier.trim();
     let modell = modell.trim();
@@ -113,7 +113,7 @@ pub async fn sett_llm(
     .bind(url)
     .bind(modell)
     .bind(seal(nokkel, api_nokkel.as_bytes())?)
-    .bind(satt_av)
+    .bind(set_by)
     .execute(pool)
     .await?;
     Ok(())
@@ -124,7 +124,7 @@ pub async fn fjern_llm(
     pool: &PgPool,
     company_id: Uuid,
     integration_id: Uuid,
-    satt_av: &str,
+    set_by: &str,
 ) -> Result<()> {
     let forrige = hent_llm(pool, company_id, integration_id).await?;
     let forrige = forrige.filter(|o| o.active);
@@ -142,7 +142,7 @@ pub async fn fjern_llm(
     .bind(forrige.supplier)
     .bind(forrige.base_url)
     .bind(forrige.modell)
-    .bind(satt_av)
+    .bind(set_by)
     .execute(pool)
     .await?;
     Ok(())
@@ -169,7 +169,7 @@ pub async fn hent_llm(
         base_url: r.get("base_url"),
         modell: r.get("modell"),
         active: r.get("aktiv"),
-        satt_av: r.get("satt_av"),
+        set_by: r.get("satt_av"),
         created_at: r.get("created_at"),
     }))
 }
@@ -207,7 +207,7 @@ pub async fn hent_llm_nokkel(
             base_url: row.get("base_url"),
             modell: row.get("modell"),
             active,
-            satt_av: row.get("satt_av"),
+            set_by: row.get("satt_av"),
             created_at: row.get("created_at"),
         },
         klar,

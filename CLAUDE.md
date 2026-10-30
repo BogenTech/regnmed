@@ -490,6 +490,49 @@ year. Also taken: `tall` -> `figures`, `vederlag` -> `consideration`,
 `har_tilgang` -> `has_access`, `OMVENDT_UTGAENDE/FRADRAG` ->
 `REVERSE_CHARGE_OUTPUT/DEDUCTION`.
 
+Fifth sweep took the long tail the old instrument had never named:
+`epost`->`email`, `adresse`->`address`, `dokumenttype`->`document_type`,
+`dokument`->`document`, `detalj`->`detail`, `advarsler`->`warnings`,
+`forslag`->`suggestion`, `ordning`->`scheme`, `orgnr`->`orgnumber`
+(finishing what core did long ago), the nine `krev_*` guards->`require_*`,
+`rolle`/`rettighet(er)`->`role`/`right(s)` in db and the request structs,
+the `ansatt_*` family->`employee_*`, and `av`->`by` (a function parameter
+meaning "by whom" in roles, members, firm_members, subscription and
+agent_task -- one meaning, so it went wide). 93 files, zero compile
+errors. The wire did not move: the only five diffs are struct NAMES
+(`RolleRequest`->`RoleRequest`, `SetOrdningRequest`->`SetSchemeRequest`),
+whose fields are byte-identical, and `pin-wire.py` pinned the nine serde
+fields (`epost`, `adresse`, `ordning`, `uten_vedlegg`, `krev_for_maskin`)
+before the rename.
+
+**THE MCP PLACEHOLDER TRAP FIRED AGAIN, on `dokument` this time**, and
+the test caught it inside a minute: `innboks_forslag: stien krever
+«document», men skjemaet nevner den ikke`. Four `{dokument}` placeholders
+in `regnmed-mcp`'s tool table are runtime substitutions against the tool
+schema's own Norwegian property name, so they must not move with the
+Rust identifier. Reverted; the schema property stays `dokument` exactly
+as `selskap` stays `selskap`. Second time that guard has paid for itself,
+which settles it: it is not a one-off.
+
+**BARE `nr` WAS DEFERRED, and the reason is a NEW CLASS of hazard.**
+Every collision this conversion has hit so far was a COMPILE ERROR --
+the `rate_on` trap, `OppgaveQuery`, `Bevegelse`/`Movement`, the `svar`
+boundary. `nr`->`number` is the first that would compile and be WRONG:
+nine files bind both `nr` and a `number` in overlapping scopes
+(`chart_of_accounts`, `reports`, `ledger`, `statements`, `vat`,
+`migration_csv` and three test files), so the rename would SHADOW rather
+than clash and nothing would say a word. Only the compounds were taken
+(`krediterer_nr`->`credits_number`, `kjoper_nr`->`buyer_number`,
+`maned_nr`->`month_number`). The lesson for the rest of the tail: before
+sweeping a short generic word, check whether its TARGET is already bound
+nearby -- a map entry whose target already exists in scope is a silent
+rename, not a loud one.
+
+**6 920 -> 5 719 of 187 739 segments (3,7 % -> 3,0 %), 875 -> 850
+distinct.** Nothing above 63: `nr` 63 (deferred above), `timesats` 44,
+`poststed` 43, `ingen` 43, `bokforing` 39, `faktura` 38, `nokkel` 37,
+`gruppe` 37, `plattform` 37, `feriepenger` 36.
+
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every
 figure above counted occurrences of a HAND-KEPT LIST of Norwegian

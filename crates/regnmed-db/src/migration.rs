@@ -33,7 +33,7 @@ use crate::ledger::{PostedVoucher, post_voucher_in};
 pub struct ContactsReport {
     pub opprettet: usize,
     pub oppdatert: usize,
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// Creates or updates parties from an imported contact list. Matching,
@@ -87,7 +87,7 @@ pub async fn import_contacts(
                     }
                     Err(e) => {
                         report
-                            .advarsler
+                            .warnings
                             .push(format!("{}: kunne ikke opprettes ({e})", rad.name));
                         continue;
                     }
@@ -107,7 +107,7 @@ pub async fn import_contacts(
         )
         .await;
         if let Err(e) = full {
-            report.advarsler.push(format!(
+            report.warnings.push(format!(
                 "{}: kontaktinfo delvis hoppet over ({e})",
                 rad.name
             ));
@@ -165,7 +165,7 @@ pub struct OpenItemsPlan {
     pub nye_parter: Vec<String>,
     /// The account's balance right now; must be zero to import.
     pub account_balance_ore: i64,
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 fn line_amount(kind: PartyKind, amount_ore: i64) -> i64 {
@@ -198,7 +198,7 @@ pub async fn plan_open_items(
     let account_balance_ore = balance.context("no such account")?;
 
     let mut nye_parter = Vec::new();
-    let mut advarsler = Vec::new();
+    let mut warnings = Vec::new();
     for rad in rader {
         let found = find_party(
             pool,
@@ -217,7 +217,7 @@ pub async fn plan_open_items(
         }
     }
     if !nye_parter.is_empty() {
-        advarsler.push(format!(
+        warnings.push(format!(
             "{} part(er) finnes ikke og opprettes ved import — importer kontaktlisten først \
              hvis du vil ha adresser og kontonumre med",
             nye_parter.len()
@@ -228,7 +228,7 @@ pub async fn plan_open_items(
         sum_ore: rader.iter().map(|r| line_amount(kind, r.amount_ore)).sum(),
         nye_parter,
         account_balance_ore,
-        advarsler,
+        warnings,
     })
 }
 
@@ -238,7 +238,7 @@ pub struct OpenItemsReport {
     pub count: usize,
     pub sum_ore: i64,
     pub opprettede_parter: usize,
-    pub advarsler: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// Posts the open items as ONE voucher: one party-carrying line per
@@ -293,7 +293,7 @@ pub async fn import_open_items(
             .rows_affected();
     ensure!(updated == 1, "no account {account}");
 
-    let mut advarsler = Vec::new();
+    let mut warnings = Vec::new();
     let mut opprettede_parter = 0usize;
     let mut entries = Vec::with_capacity(rader.len() + 1);
     for rad in rader {
@@ -363,7 +363,7 @@ pub async fn import_open_items(
     tx.commit().await?;
 
     if opprettede_parter > 0 {
-        advarsler.push(format!(
+        warnings.push(format!(
             "{opprettede_parter} part(er) ble opprettet fra postlisten uten kontaktopplysninger"
         ));
     }
@@ -372,7 +372,7 @@ pub async fn import_open_items(
         count: rader.len(),
         sum_ore,
         opprettede_parter,
-        advarsler,
+        warnings,
     })
 }
 

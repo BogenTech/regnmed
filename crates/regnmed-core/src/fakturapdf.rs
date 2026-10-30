@@ -34,7 +34,7 @@ pub struct PdfLinje {
 /// no KID, no betalingsinformasjon, rendered on demand from editable
 /// data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dokumenttype {
+pub enum DocumentType {
     Invoice,
     CreditNote,
     Tilbud,
@@ -46,37 +46,37 @@ pub enum Dokumenttype {
     Kontantfaktura,
 }
 
-impl Dokumenttype {
+impl DocumentType {
     fn tittel(self) -> &'static str {
         match self {
-            Dokumenttype::Invoice => "FAKTURA",
-            Dokumenttype::CreditNote => "KREDITNOTA",
-            Dokumenttype::Tilbud => "TILBUD",
-            Dokumenttype::Ordrebekreftelse => "ORDREBEKREFTELSE",
-            Dokumenttype::Kontantfaktura => "KONTANTFAKTURA",
+            DocumentType::Invoice => "FAKTURA",
+            DocumentType::CreditNote => "KREDITNOTA",
+            DocumentType::Tilbud => "TILBUD",
+            DocumentType::Ordrebekreftelse => "ORDREBEKREFTELSE",
+            DocumentType::Kontantfaktura => "KONTANTFAKTURA",
         }
     }
 
     fn nummerord(self) -> &'static str {
         match self {
-            Dokumenttype::Invoice => "Fakturanr",
-            Dokumenttype::CreditNote => "Kreditnotanr",
-            Dokumenttype::Tilbud => "Tilbudsnr",
-            Dokumenttype::Ordrebekreftelse => "Ordrenr",
-            Dokumenttype::Kontantfaktura => "Fakturanr",
+            DocumentType::Invoice => "Fakturanr",
+            DocumentType::CreditNote => "Kreditnotanr",
+            DocumentType::Tilbud => "Tilbudsnr",
+            DocumentType::Ordrebekreftelse => "Ordrenr",
+            DocumentType::Kontantfaktura => "Fakturanr",
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct FakturaPdfInput {
-    pub dokumenttype: Dokumenttype,
+    pub document_type: DocumentType,
     /// The invoice number of the faktura this one credits.
-    pub krediterer_nr: Option<i64>,
+    pub credits_number: Option<i64>,
 
     pub seller_name: String,
     pub seller_orgnumber: String,
-    pub selger_adresse: Option<String>,
+    pub seller_address: Option<String>,
     pub seller_vat_registered: bool,
     /// "Foretaksregisteret" is added for entities registered there (AS/ASA,
     /// foretaksregisterloven §10-2).
@@ -84,9 +84,9 @@ pub struct FakturaPdfInput {
     pub seller_account_number: Option<String>,
 
     pub buyer_name: String,
-    pub kjoper_nr: String,
+    pub buyer_number: String,
     pub buyer_orgnumber: Option<String>,
-    pub kjoper_adresse: Option<String>,
+    pub buyer_address: Option<String>,
 
     pub fakturanr: i64,
     pub invoice_date: NaiveDate,
@@ -155,7 +155,7 @@ fn prosent(bp: i64) -> String {
 }
 
 /// Orgnr grouped 3-3-3 as customary: "999888777" → "999 888 777".
-fn orgnr_display(orgnumber: &str) -> String {
+fn orgnumber_display(orgnumber: &str) -> String {
     if orgnumber.len() == 9 {
         format!(
             "{} {} {}",
@@ -170,17 +170,17 @@ fn orgnr_display(orgnumber: &str) -> String {
 
 pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
-    let tittel = input.dokumenttype.tittel();
-    let kreditnota = input.dokumenttype == Dokumenttype::CreditNote;
+    let tittel = input.document_type.tittel();
+    let kreditnota = input.document_type == DocumentType::CreditNote;
 
     // Seller block, top left.
     pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.seller_name);
     let mut y = 76.0;
-    if let Some(adresse) = &input.selger_adresse {
-        pdf.text(MARGIN, y, 9.0, Font::Regular, adresse);
+    if let Some(address) = &input.seller_address {
+        pdf.text(MARGIN, y, 9.0, Font::Regular, address);
         y += 12.0;
     }
-    let mut orglinje = format!("Org.nr {}", orgnr_display(&input.seller_orgnumber));
+    let mut orglinje = format!("Org.nr {}", orgnumber_display(&input.seller_orgnumber));
     if input.seller_vat_registered {
         orglinje.push_str(" MVA");
     }
@@ -193,18 +193,18 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     pdf.text_right(RIGHT, 60.0, 16.0, Font::Bold, tittel);
     let mut fakta: Vec<(String, String)> = vec![
         (
-            input.dokumenttype.nummerord().into(),
+            input.document_type.nummerord().into(),
             input.fakturanr.to_string(),
         ),
         ("Dato".into(), input.invoice_date.to_string()),
     ];
-    if input.dokumenttype == Dokumenttype::Invoice {
+    if input.document_type == DocumentType::Invoice {
         fakta.push(("Forfall".into(), input.due_date.to_string()));
     }
     // A kontantfaktura says what settled it, where a faktura says when
     // it falls due. §5-3 wants the salgsdokument to show that the
     // ytelse is paid.
-    if input.dokumenttype == Dokumenttype::Kontantfaktura {
+    if input.document_type == DocumentType::Kontantfaktura {
         fakta.push((
             "Betalt".into(),
             input.betalingsmiddel.clone().unwrap_or_else(|| "Ja".into()),
@@ -217,7 +217,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     if let Some(levering) = input.delivery_date {
         fakta.push(("Levering".into(), levering.to_string()));
     }
-    if let Some(nr) = input.krediterer_nr {
+    if let Some(nr) = input.credits_number {
         fakta.push(("Krediterer faktura".into(), nr.to_string()));
     }
     let mut fy = 82.0;
@@ -244,8 +244,8 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     pdf.text(MARGIN, 130.0, 8.0, Font::Bold, "FAKTURAMOTTAKER");
     pdf.text(MARGIN, 144.0, 11.0, Font::Regular, &input.buyer_name);
     let mut ky = 158.0;
-    if let Some(adresse) = &input.kjoper_adresse {
-        pdf.text(MARGIN, ky, 9.0, Font::Regular, adresse);
+    if let Some(address) = &input.buyer_address {
+        pdf.text(MARGIN, ky, 9.0, Font::Regular, address);
         ky += 12.0;
     }
     if let Some(orgnumber) = &input.buyer_orgnumber {
@@ -254,7 +254,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
             ky,
             9.0,
             Font::Regular,
-            &format!("Org.nr {}", orgnr_display(orgnumber)),
+            &format!("Org.nr {}", orgnumber_display(orgnumber)),
         );
         ky += 12.0;
     }
@@ -263,7 +263,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
         ky,
         9.0,
         Font::Regular,
-        &format!("Kundenr {}", input.kjoper_nr),
+        &format!("Kundenr {}", input.buyer_number),
     );
 
     // Line table. Columns: description | quantity | price | VAT | amount.
@@ -361,7 +361,7 @@ pub fn render_faktura_pdf(input: &FakturaPdfInput) -> Vec<u8> {
     // Payment block at a fixed distance below the totals.
     // Betalingsinformasjon only on an actual faktura — tilbud/ordre are
     // not payable and kreditnotaer are settlements.
-    if input.dokumenttype == Dokumenttype::Invoice {
+    if input.document_type == DocumentType::Invoice {
         ly += 30.0;
         pdf.rule(MARGIN, RIGHT, ly, 0.7);
         ly += 16.0;
@@ -436,18 +436,18 @@ mod tests {
 
     pub(super) fn input() -> FakturaPdfInput {
         FakturaPdfInput {
-            dokumenttype: Dokumenttype::Invoice,
-            krediterer_nr: None,
+            document_type: DocumentType::Invoice,
+            credits_number: None,
             seller_name: "Demo & Sønn AS".into(),
             seller_orgnumber: "999888777".into(),
-            selger_adresse: Some("Storgata 1, 0155 Oslo".into()),
+            seller_address: Some("Storgata 1, 0155 Oslo".into()),
             seller_vat_registered: true,
             selger_foretaksregistrert: true,
             seller_account_number: Some("1234.56.78903".into()),
             buyer_name: "Kunde & Co AS".into(),
-            kjoper_nr: "10000".into(),
+            buyer_number: "10000".into(),
             buyer_orgnumber: Some("911111111".into()),
-            kjoper_adresse: None,
+            buyer_address: None,
             fakturanr: 7,
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
@@ -531,8 +531,8 @@ mod tests {
     #[test]
     fn kreditnota_flips_title_and_drops_payment_block() {
         let mut i = input();
-        i.dokumenttype = Dokumenttype::CreditNote;
-        i.krediterer_nr = Some(7);
+        i.document_type = DocumentType::CreditNote;
+        i.credits_number = Some(7);
         for linje in &mut i.linjer {
             linje.quantity_milli = -linje.quantity_milli;
             linje.net_ore = -linje.net_ore;
@@ -589,9 +589,9 @@ mod tests {
 mod kontant_tests {
     use super::*;
 
-    fn input(dokumenttype: Dokumenttype) -> FakturaPdfInput {
+    fn input(document_type: DocumentType) -> FakturaPdfInput {
         let mut i = super::tests::input();
-        i.dokumenttype = dokumenttype;
+        i.document_type = document_type;
         i.betalingsmiddel = Some("Kort".into());
         i
     }
@@ -601,7 +601,7 @@ mod kontant_tests {
     /// cosmetic slip; it is a demand for a second payment.
     #[test]
     fn a_kontantfaktura_carries_no_kid_and_no_due_date() {
-        let pdf = render_faktura_pdf(&input(Dokumenttype::Kontantfaktura));
+        let pdf = render_faktura_pdf(&input(DocumentType::Kontantfaktura));
         let text = String::from_utf8_lossy(&pdf).to_string();
         assert!(text.contains("KONTANTFAKTURA"), "tittelen");
         assert!(text.contains("Betalt"), "at den er gjort opp");
@@ -615,7 +615,7 @@ mod kontant_tests {
         // An ordinary faktura still carries all of it — the guard is the
         // dokumenttype, not a global removal.
         let vanlig =
-            String::from_utf8_lossy(&render_faktura_pdf(&input(Dokumenttype::Invoice))).to_string();
+            String::from_utf8_lossy(&render_faktura_pdf(&input(DocumentType::Invoice))).to_string();
         assert!(vanlig.contains("KID"));
         assert!(vanlig.contains("Betales innen"));
     }

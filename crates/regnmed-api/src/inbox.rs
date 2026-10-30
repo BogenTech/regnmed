@@ -87,7 +87,7 @@ pub async fn list(
             "decided_by": d.decided_by,
             "note": d.note,
             "attestering": d.attestering,
-            "attestert_av": d.attestert_av,
+            "attestert_av": d.approved_by,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -206,16 +206,16 @@ pub async fn avvis(
 /// The posting suggestion derived from a stored EHF document — computed
 /// on every read, never stored (docs/ehf.md). When the document is not
 /// EHF the endpoint says so; the human then posts it by hand as before.
-pub async fn ehf_forslag(
+pub async fn ehf_suggestion(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherRead).await?;
-    let forslag = regnmed_db::inbox_ehf_forslag(&state.pool, company_id, document_id)
+    let suggestion = regnmed_db::inbox_ehf_suggestion(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    let m = &forslag.received;
+    let m = &suggestion.received;
     Ok(Json(json!({
         "er_kreditnota": m.er_kreditnota,
         "fakturanr": m.fakturanr,
@@ -234,9 +234,9 @@ pub async fn ehf_forslag(
             "netto_ore": l.net_ore,
             "mva_sats_bp": l.vat_rate_bp,
         })).collect::<Vec<_>>(),
-        "leverandor_no": forslag.supplier_no,
-        "leverandor_navn": forslag.supplier_name,
-        "warnings": forslag.advarsler,
+        "leverandor_no": suggestion.supplier_no,
+        "leverandor_navn": suggestion.supplier_name,
+        "warnings": suggestion.warnings,
     })))
 }
 
@@ -245,13 +245,13 @@ pub async fn ehf_forslag(
 /// layer is interpreted heuristically, a scanned image yields nothing —
 /// and says so. Every field carries a justification, and nothing is
 /// posted: the suggestion fills the form, the human decides.
-pub async fn forslag(
+pub async fn suggestion(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherRead).await?;
-    let f = regnmed_db::inbox_forslag(&state.pool, company_id, document_id)
+    let f = regnmed_db::inbox_suggestion(&state.pool, company_id, document_id)
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     Ok(Json(json!({
@@ -273,6 +273,6 @@ pub async fn forslag(
         "begrunnelser": f.begrunnelser.iter().map(|(felt, hvorfor)| json!({
             "felt": felt, "hvorfor": hvorfor,
         })).collect::<Vec<_>>(),
-        "warnings": f.advarsler,
+        "warnings": f.warnings,
     })))
 }

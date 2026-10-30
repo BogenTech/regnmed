@@ -99,7 +99,11 @@ const TILDELBARE: [Role; 4] = [Role::Employee, Role::Read, Role::Bookkeeping, Ro
 /// company's own ACTIVE roles. Without this a typo would be stored and
 /// then resolve to `Rolle::Ukjent` — an integration with a grant and no
 /// access, which looks like a bug in the API rather than in the request.
-async fn krev_gyldig_rolle(state: &AppState, company_id: Uuid, name: &str) -> Result<(), ApiError> {
+async fn require_valid_role(
+    state: &AppState,
+    company_id: Uuid,
+    name: &str,
+) -> Result<(), ApiError> {
     let name = name.trim();
     if TILDELBARE.iter().any(|r| r.slug() == name) {
         return Ok(());
@@ -132,7 +136,7 @@ pub async fn grant(
         Right::IntegrationAdmin,
     )
     .await?;
-    krev_gyldig_rolle(&state, company_id, &request.access).await?;
+    require_valid_role(&state, company_id, &request.access).await?;
     let by = person.display().to_string();
     let id = regnmed_db::grant_integration(
         &state.pool,
@@ -200,7 +204,7 @@ pub async fn opprett_agent(
         Right::IntegrationAdmin,
     )
     .await?;
-    krev_gyldig_rolle(&state, company_id, &request.access).await?;
+    require_valid_role(&state, company_id, &request.access).await?;
     let by = person.display().to_string();
 
     let oppgitt = request
@@ -262,7 +266,7 @@ pub async fn opprett_agent(
     // The face and the instructions are one update, and a failure here
     // is not worth losing the agent over: it is editable afterwards
     // from the same card, so say what went wrong and keep the agent.
-    let mut advarsler: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     let har_metadata = request.avatar_farge.is_some()
         || request.avatar_ikon.is_some()
         || request.system_prompt.is_some()
@@ -280,7 +284,7 @@ pub async fn opprett_agent(
         )
         .await
     {
-        advarsler.push(format!("agenten ble opprettet, men {e:#}"));
+        warnings.push(format!("agenten ble opprettet, men {e:#}"));
     }
 
     if let Some(hemmelighet) = hemmelighet {
@@ -335,7 +339,7 @@ pub async fn opprett_agent(
         }
         (None, None) => {}
         _ => {
-            advarsler.push(
+            warnings.push(
                 "agenten ble opprettet uten modell — både modell og API-nøkkel må oppgis".into(),
             );
         }
@@ -347,7 +351,7 @@ pub async fn opprett_agent(
         // Whether this agent can work on its own, or is waiting for
         // somebody to finish setting it up.
         "klar": modell.is_some() && api_nokkel.is_some(),
-        "advarsler": advarsler,
+        "advarsler": warnings,
     })))
 }
 
@@ -396,7 +400,7 @@ pub async fn endre(
 }
 
 #[derive(Deserialize)]
-pub struct RolleRequest {
+pub struct RoleRequest {
     access: String,
 }
 
@@ -407,7 +411,7 @@ pub async fn role(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, integration_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<RolleRequest>,
+    Json(request): Json<RoleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(
         &state,
@@ -416,7 +420,7 @@ pub async fn role(
         Right::IntegrationAdmin,
     )
     .await?;
-    krev_gyldig_rolle(&state, company_id, &request.access).await?;
+    require_valid_role(&state, company_id, &request.access).await?;
     regnmed_db::endre_integrasjonsrolle(
         &state.pool,
         company_id,
@@ -511,7 +515,7 @@ pub async fn llm(
             "leverandor": o.supplier,
             "base_url": o.base_url,
             "modell": o.modell,
-            "satt_av": o.satt_av,
+            "satt_av": o.set_by,
             "satt_at": o.created_at.to_rfc3339(),
             "nokkel_lagret": true,
         })),

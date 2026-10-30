@@ -34,12 +34,12 @@ fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
         "agent": o.agent,
         "melding": o.message,
         "frist": o.deadline.map(|d| d.to_string()),
-        "opprettet_av": o.opprettet_av,
+        "opprettet_av": o.created_by,
         "opprettet": o.created_at.to_rfc3339(),
         "status": o.status,
         "avsluttet": regnmed_db::agent_task::AVSLUTTET.contains(&o.status.as_str()),
         "siste_notat": o.siste_notat,
-        "siste_av": o.siste_av,
+        "siste_av": o.last_by,
         "siste_tidspunkt": o.siste_tidspunkt.map(|t| t.to_rfc3339()),
     })
 }
@@ -133,7 +133,7 @@ pub async fn hent(
         "historikk": trail.iter().map(|h| json!({
             "status": h.status,
             "notat": h.note,
-            "av": h.av,
+            "av": h.by,
             "tidspunkt": h.created_at.to_rfc3339(),
         })).collect::<Vec<_>>(),
     })))

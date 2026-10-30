@@ -34,7 +34,7 @@ fn month_end(month_start: NaiveDate) -> NaiveDate {
 
 /// 1-based month number of `period` in a plan starting at
 /// `anskaffelsesdato`'s month.
-fn maned_nr(acquisition_date: NaiveDate, period: NaiveDate) -> i32 {
+fn month_number(acquisition_date: NaiveDate, period: NaiveDate) -> i32 {
     (period.year() - acquisition_date.year()) * 12
         + (period.month() as i32 - acquisition_date.month() as i32)
         + 1
@@ -298,7 +298,7 @@ async fn depreciate_next(
         Some(p) => p.checked_add_months(chrono::Months::new(1)).unwrap(),
         None => month_start(acquisition_date),
     };
-    let nr = maned_nr(acquisition_date, period);
+    let nr = month_number(acquisition_date, period);
     let voucher_date = month_end(period);
     // Due: month ended, plan not exhausted, asset still owned that month.
     if voucher_date > through || nr > levetid || avhendet.is_some_and(|d| month_start(d) <= period)

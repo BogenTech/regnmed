@@ -414,9 +414,9 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     // Uncoded lines were always legitimate: this is exactly how an
     // unregistered company invoices, with the unrecoverable input VAT
     // carried in the price and never named as tax.
-    let mut uten_kode = draft.clone();
-    uten_kode.lines[0].vat_code = None;
-    let utstedt = regnmed_db::create_invoice(&pool, company, &uten_kode, "test", None)
+    let mut without_code = draft.clone();
+    without_code.lines[0].vat_code = None;
+    let utstedt = regnmed_db::create_invoice(&pool, company, &without_code, "test", None)
         .await
         .expect("an unregistered company must still be able to invoice");
     assert_eq!(utstedt.gross_ore, 5_565_29, "no VAT may be added");

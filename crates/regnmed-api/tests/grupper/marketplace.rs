@@ -14,10 +14,10 @@ use uuid::Uuid;
 use regnmed_api::{AppState, router};
 
 /// Valid orgnrs for the mock registry (checksum must pass regardless).
-const COMPANY_ORGNR: &str = "923609016"; // in BRREG, no autorisasjon
-const FIRM_ORGNR: &str = "974760673"; // in BRREG, autorisert regnskap
-const DELETED_ORGNR: &str = "971524960"; // slettet in BRREG
-const AVVIKLING_ORGNR: &str = "915933149"; // under avvikling in BRREG
+const COMPANY_ORGNUMBER: &str = "923609016"; // in BRREG, no autorisasjon
+const FIRM_ORGNUMBER: &str = "974760673"; // in BRREG, autorisert regnskap
+const DELETED_ORGNUMBER: &str = "971524960"; // slettet in BRREG
+const AVVIKLING_ORGNUMBER: &str = "915933149"; // under avvikling in BRREG
 
 /// One mock serving both registries' URL shapes.
 async fn start_mock_registries() -> String {
@@ -27,8 +27,8 @@ async fn start_mock_registries() -> String {
             "/enheter/{orgnumber}",
             get(|axum::extract::Path(orgnumber): axum::extract::Path<String>| async move {
                 let body = match orgnumber.as_str() {
-                    COMPANY_ORGNR => serde_json::json!({
-                        "organisasjonsnummer": COMPANY_ORGNR,
+                    COMPANY_ORGNUMBER => serde_json::json!({
+                        "organisasjonsnummer": COMPANY_ORGNUMBER,
                         "navn": "TESTSELSKAP AS",
                         "organisasjonsform": {"kode": "AS", "beskrivelse": "Aksjeselskap"},
                         "naeringskode1": {"kode": "62.010", "beskrivelse": "Programmeringstjenester"},
@@ -48,22 +48,22 @@ async fn start_mock_registries() -> String {
                                     "type": "Aksjekapital", "valuta": "NOK"},
                         "konkurs": false
                     }),
-                    AVVIKLING_ORGNR => serde_json::json!({
-                        "organisasjonsnummer": AVVIKLING_ORGNR,
+                    AVVIKLING_ORGNUMBER => serde_json::json!({
+                        "organisasjonsnummer": AVVIKLING_ORGNUMBER,
                         "navn": "AVVIKLES AS",
                         "organisasjonsform": {"kode": "AS", "beskrivelse": "Aksjeselskap"},
                         "underAvvikling": true,
                         "konkurs": false
                     }),
-                    FIRM_ORGNR => serde_json::json!({
-                        "organisasjonsnummer": FIRM_ORGNR,
+                    FIRM_ORGNUMBER => serde_json::json!({
+                        "organisasjonsnummer": FIRM_ORGNUMBER,
                         "navn": "TALL & ORDEN REGNSKAP AS",
                         "organisasjonsform": {"kode": "AS", "beskrivelse": "Aksjeselskap"},
                         "registrertIMvaregisteret": true,
                         "konkurs": false
                     }),
-                    DELETED_ORGNR => serde_json::json!({
-                        "organisasjonsnummer": DELETED_ORGNR,
+                    DELETED_ORGNUMBER => serde_json::json!({
+                        "organisasjonsnummer": DELETED_ORGNUMBER,
                         "navn": "SLETTET AS",
                         "slettedato": "2020-01-01"
                     }),
@@ -75,7 +75,7 @@ async fn start_mock_registries() -> String {
         .route(
             "/virksomheter/{orgnumber}",
             get(|axum::extract::Path(orgnumber): axum::extract::Path<String>| async move {
-                if orgnumber == FIRM_ORGNR {
+                if orgnumber == FIRM_ORGNUMBER {
                     (
                         StatusCode::OK,
                         axum::Json(serde_json::json!({
@@ -142,7 +142,7 @@ async fn onboarding_from_registries_end_to_end() {
     let token = idp.token(&sub, "Grunnlegger Gro");
 
     // Clean slate: earlier runs may have onboarded these orgnrs.
-    for orgnumber in [COMPANY_ORGNR, FIRM_ORGNR] {
+    for orgnumber in [COMPANY_ORGNUMBER, FIRM_ORGNUMBER] {
         sqlx::query("update company set orgnr = $2 where orgnr = $1")
             .bind(orgnumber)
             .bind(unique_orgnumber())
@@ -161,7 +161,7 @@ async fn onboarding_from_registries_end_to_end() {
     let (status, preview) = request(
         &state,
         "GET",
-        &format!("/registry/enheter/{COMPANY_ORGNR}"),
+        &format!("/registry/enheter/{COMPANY_ORGNUMBER}"),
         &token,
         None,
     )
@@ -181,7 +181,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/companies",
         &token,
-        Some(serde_json::json!({ "orgnr": COMPANY_ORGNR })),
+        Some(serde_json::json!({ "orgnr": COMPANY_ORGNUMBER })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {onboarded}");
@@ -255,7 +255,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/companies",
         &token,
-        Some(serde_json::json!({ "orgnr": COMPANY_ORGNR })),
+        Some(serde_json::json!({ "orgnr": COMPANY_ORGNUMBER })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "already onboarded");
@@ -264,7 +264,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/companies",
         &token,
-        Some(serde_json::json!({ "orgnr": DELETED_ORGNR })),
+        Some(serde_json::json!({ "orgnr": DELETED_ORGNUMBER })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "slettet enhet");
@@ -275,7 +275,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/companies",
         &token,
-        Some(serde_json::json!({ "orgnr": AVVIKLING_ORGNR })),
+        Some(serde_json::json!({ "orgnr": AVVIKLING_ORGNUMBER })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "under avvikling: {body}");
@@ -291,7 +291,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/firms",
         &token,
-        Some(serde_json::json!({ "orgnr": DELETED_ORGNR, "kind": "regnskap" })),
+        Some(serde_json::json!({ "orgnr": DELETED_ORGNUMBER, "kind": "regnskap" })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "slettet enhet: {body}");
@@ -307,7 +307,7 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/firms",
         &token,
-        Some(serde_json::json!({ "orgnr": COMPANY_ORGNR, "kind": "regnskap" })),
+        Some(serde_json::json!({ "orgnr": COMPANY_ORGNUMBER, "kind": "regnskap" })),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "no autorisasjon");
@@ -317,14 +317,14 @@ async fn onboarding_from_registries_end_to_end() {
         "POST",
         "/firms",
         &token,
-        Some(serde_json::json!({ "orgnr": FIRM_ORGNR, "kind": "regnskap" })),
+        Some(serde_json::json!({ "orgnr": FIRM_ORGNUMBER, "kind": "regnskap" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {firm}");
     assert_eq!(firm["navn"], "TALL & ORDEN REGNSKAP AS");
     let verified_at: Option<chrono::DateTime<chrono::Utc>> =
         sqlx::query_scalar("select autorisasjon_verified_at from firm where orgnr = $1")
-            .bind(FIRM_ORGNR)
+            .bind(FIRM_ORGNUMBER)
             .fetch_one(&state.pool)
             .await
             .unwrap();

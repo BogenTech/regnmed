@@ -25,7 +25,7 @@ use crate::Ore;
 pub struct Check {
     pub name: String,
     pub ok: bool,
-    pub detalj: String,
+    pub detail: String,
 }
 
 /// One account as the reskontro tie-out sees it. `regnmed-db::audit`
@@ -155,7 +155,7 @@ pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
     Check {
         name: "Reskontro mot hovedbok".into(),
         ok: deviations.is_empty(),
-        detalj: if deviations.is_empty() {
+        detail: if deviations.is_empty() {
             format!(
                 "{} avstemt mot hovedboken: summen av partenes poster er lik kontosaldoen \
                  øre for øre (til sammen {}); ingen part av feil type, og ingen part \
@@ -185,7 +185,7 @@ pub struct AuditInput {
     pub company: String,
     /// RFC 3339; passed in, never read from a clock here.
     pub generert: String,
-    pub generert_av: String,
+    pub generated_by: String,
     pub programversjon: String,
     pub chain_sequence: i64,
     pub chain_head_hex: String,
@@ -215,7 +215,7 @@ pub fn render_text(input: &AuditInput) -> String {
         input.company, input.orgnumber
     ));
     line(&format!("Generert:       {}", input.generert));
-    line(&format!("Generert av:    {}", input.generert_av));
+    line(&format!("Generert av:    {}", input.generated_by));
     line(&format!("Programversjon: regnmed {}", input.programversjon));
     line(&format!(
         "Kjedehode:      sekvens {}, hash {}",
@@ -241,8 +241,8 @@ pub fn render_text(input: &AuditInput) -> String {
         ));
         // A check may report several findings; each gets its own
         // indented line so the archived text stays readable.
-        for detalj in check.detalj.lines() {
-            line(&format!("       {detalj}"));
+        for detail in check.detail.lines() {
+            line(&format!("       {detail}"));
         }
     }
     line("");
@@ -283,7 +283,7 @@ mod tests {
             orgnumber: "999888777".into(),
             company: "Demo AS".into(),
             generert: "2026-07-23T12:00:00+00:00".into(),
-            generert_av: "Randi Revisor".into(),
+            generated_by: "Randi Revisor".into(),
             programversjon: "0.1.0".into(),
             chain_sequence: 13,
             chain_head_hex: "ab".repeat(32),
@@ -291,12 +291,12 @@ mod tests {
                 Check {
                     name: "Hash-kjede fra genesis".into(),
                     ok: true,
-                    detalj: "13 bilag verifisert".into(),
+                    detail: "13 bilag verifisert".into(),
                 },
                 Check {
                     name: "Reskontro mot hovedbok".into(),
                     ok: true,
-                    detalj: "1 reskontrokonto avstemt".into(),
+                    detail: "1 reskontrokonto avstemt".into(),
                 },
             ],
             anchors: vec![AnchorInfo {
@@ -322,7 +322,7 @@ mod tests {
     fn a_failed_check_flips_the_verdict() {
         let mut input = sample();
         input.checks[1].ok = false;
-        input.checks[1].detalj = "konto 1500 avviker med 100,00".into();
+        input.checks[1].detail = "konto 1500 avviker med 100,00".into();
         assert!(!input.alle_ok());
         let text = render_text(&input);
         assert!(text.contains("AVVIK FUNNET"));
@@ -340,7 +340,7 @@ mod tests {
     fn every_finding_gets_its_own_line_in_the_text() {
         let mut input = sample();
         input.checks[1].ok = false;
-        input.checks[1].detalj = "konto 1500 avviker\nkonto 2400 avviker".into();
+        input.checks[1].detail = "konto 1500 avviker\nkonto 2400 avviker".into();
         let text = render_text(&input);
         assert!(text.contains("       konto 1500 avviker\n       konto 2400 avviker\n"));
     }
@@ -363,9 +363,9 @@ mod tests {
     #[test]
     fn a_reskontro_account_whose_parties_sum_to_the_balance_ties_out() {
         let check = subledger_check(&[avstemt("1500", "kunde", 12_500_00, 2)]);
-        assert!(check.ok, "{}", check.detalj);
-        assert!(check.detalj.contains("1 reskontrokonto avstemt"));
-        assert!(check.detalj.contains("12500,00"));
+        assert!(check.ok, "{}", check.detail);
+        assert!(check.detail.contains("1 reskontrokonto avstemt"));
+        assert!(check.detail.contains("12500,00"));
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod tests {
         // finding. (Counting rows instead of amounts once made an
         // untouched account look like it held a party-less posting.)
         let check = subledger_check(&[avstemt("2400", "leverandor", 0, 0)]);
-        assert!(check.ok, "{}", check.detalj);
+        assert!(check.ok, "{}", check.detail);
     }
 
     #[test]
@@ -384,11 +384,11 @@ mod tests {
         account.without_party_count = 1;
         let check = subledger_check(&[account]);
         assert!(!check.ok);
-        assert!(check.detalj.contains("konto 1500"), "{}", check.detalj);
-        assert!(check.detalj.contains("hovedbok 15000,00"));
-        assert!(check.detalj.contains("reskontro 12500,00"));
-        assert!(check.detalj.contains("differanse 2500,00 (250000 øre)"));
-        assert!(check.detalj.contains("1 postering uten part"));
+        assert!(check.detail.contains("konto 1500"), "{}", check.detail);
+        assert!(check.detail.contains("hovedbok 15000,00"));
+        assert!(check.detail.contains("reskontro 12500,00"));
+        assert!(check.detail.contains("differanse 2500,00 (250000 øre)"));
+        assert!(check.detail.contains("1 postering uten part"));
     }
 
     #[test]
@@ -400,11 +400,11 @@ mod tests {
         let check = subledger_check(&[account]);
         assert!(!check.ok);
         assert!(
-            check.detalj.contains("2 posteringer uten part"),
+            check.detail.contains("2 posteringer uten part"),
             "{}",
-            check.detalj
+            check.detail
         );
-        assert!(check.detalj.contains("summerer til null"));
+        assert!(check.detail.contains("summerer til null"));
     }
 
     #[test]
@@ -417,10 +417,10 @@ mod tests {
         assert!(!check.ok);
         assert!(
             check
-                .detalj
+                .detail
                 .contains("konto 2400 er merket leverandor, men 1 postering bærer part av typen kunde (-3000,00)"),
             "{}",
-            check.detalj
+            check.detail
         );
     }
 
@@ -440,24 +440,24 @@ mod tests {
         assert!(!check.ok);
         assert!(
             check
-                .detalj
+                .detail
                 .contains("konto 1500 er ikke merket som reskontrokonto"),
             "{}",
-            check.detalj
+            check.detail
         );
-        assert!(check.detalj.contains("3 posteringer bærer part"));
-        assert!(check.detalj.contains("(12500,00, kunde)"));
+        assert!(check.detail.contains("3 posteringer bærer part"));
+        assert!(check.detail.contains("(12500,00, kunde)"));
     }
 
     #[test]
     fn several_accounts_yield_one_finding_line_each() {
-        let mut uten_part = avstemt("1500", "kunde", 12_500_00, 1);
-        uten_part.general_ledger_ore = 15_000_00;
-        uten_part.without_party_count = 1;
+        let mut without_party = avstemt("1500", "kunde", 12_500_00, 1);
+        without_party.general_ledger_ore = 15_000_00;
+        without_party.without_party_count = 1;
         let mut ikke_flagget = avstemt("2400", "leverandor", -8_000_00, 1);
         ikke_flagget.flagg = None;
-        let check = subledger_check(&[uten_part, ikke_flagget]);
+        let check = subledger_check(&[without_party, ikke_flagget]);
         assert!(!check.ok);
-        assert_eq!(check.detalj.lines().count(), 2, "{}", check.detalj);
+        assert_eq!(check.detail.lines().count(), 2, "{}", check.detail);
     }
 }

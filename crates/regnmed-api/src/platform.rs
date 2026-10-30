@@ -51,7 +51,7 @@ impl PlatformContext {
     /// Support may look and assign new memberships; everything else —
     /// customer registers, role changes, platform-user administration —
     /// is systemadmin territory.
-    fn krev_systemadmin(&self) -> Result<(), ApiError> {
+    fn require_systemadmin(&self) -> Result<(), ApiError> {
         if self.er_systemadmin() {
             Ok(())
         } else {
@@ -176,14 +176,14 @@ async fn list_members(
     State(state): State<AppState>,
     Extension(ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     let members = regnmed_db::list_platform_members(&state.pool).await?;
     Ok(Json(json!({
         "medlemmer": members.iter().map(|m| json!({
             "id": m.id,
             "person_id": m.person_id,
             "navn": m.name,
-            "epost": m.epost,
+            "epost": m.email,
             "rolle": m.role,
             "valid_from": m.valid_from.to_string(),
             "valid_to": m.valid_to.to_string(),
@@ -195,7 +195,8 @@ async fn list_members(
 
 #[derive(Deserialize)]
 pub struct GrantRequest {
-    epost: String,
+    #[serde(rename = "epost")]
+    email: String,
     #[serde(rename = "rolle")]
     role: String,
     valid_to: NaiveDate,
@@ -208,8 +209,8 @@ async fn grant_member(
     Extension(ctx): Extension<PlatformContext>,
     Json(body): Json<GrantRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
-    let person_id = regnmed_db::person_by_email(&state.pool, &body.epost)
+    ctx.require_systemadmin()?;
+    let person_id = regnmed_db::person_by_email(&state.pool, &body.email)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or_else(|| {
@@ -235,7 +236,7 @@ async fn end_member(
     Extension(ctx): Extension<PlatformContext>,
     Path(member_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     regnmed_db::end_platform_member(&state.pool, member_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -283,7 +284,7 @@ async fn list_users(
         "brukere": brukere.iter().map(|b| json!({
             "person_id": b.person_id,
             "navn": b.name,
-            "epost": b.epost,
+            "epost": b.email,
             "kind": b.kind,
             "tilknytninger": b.tilknytninger.iter().map(|t| json!({
                 "slag": t.slag,
@@ -305,7 +306,7 @@ async fn list_customers(
     Extension(ctx): Extension<PlatformContext>,
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     let kunder = regnmed_db::platform_list_customers(&state.pool, query.sok.as_deref()).await?;
     Ok(Json(json!({
         "kunder": kunder.iter().map(|k| json!({
@@ -313,11 +314,11 @@ async fn list_customers(
             "party_no": k.party_no,
             "navn": k.name,
             "orgnr": k.orgnumber,
-            "epost": k.epost,
+            "epost": k.email,
             "selskap": {
                 "company_id": k.company_id,
                 "navn": k.company_name,
-                "orgnr": k.company_orgnr,
+                "orgnr": k.company_orgnumber,
             },
         })).collect::<Vec<_>>(),
     })))
@@ -357,7 +358,7 @@ async fn list_subscriptions(
     State(state): State<AppState>,
     Extension(ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
     let today = chrono::Utc::now().date_naive();
     Ok(Json(json!({
@@ -417,7 +418,7 @@ async fn put_settings(
     Extension(ctx): Extension<PlatformContext>,
     Json(body): Json<SettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     if !IKONSTILER.contains(&body.ikonstil.as_str()) {
         return Err(ApiError::BadRequest(format!(
             "ukjent ikonstil «{}» — gyldige: {}",
@@ -463,7 +464,7 @@ async fn company_detail(
         "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
             "navn": m.name,
-            "epost": m.epost,
+            "epost": m.email,
             "rolle": m.role,
             "aktiv": m.active,
             "via": m.via,
@@ -471,7 +472,7 @@ async fn company_detail(
         })).collect::<Vec<_>>(),
         "invitasjoner": invitasjoner.iter().map(|i| json!({
             "id": i.id,
-            "epost": i.epost,
+            "epost": i.email,
             "rolle": i.role,
             "sist_sendt": i.sist_sendt.map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
@@ -506,7 +507,7 @@ async fn put_company_settings(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CompanySettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     regnmed_db::update_company_settings(
         &state.pool,
         company_id,
@@ -529,7 +530,7 @@ async fn deactivate_member(
     Extension(ctx): Extension<PlatformContext>,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
@@ -548,7 +549,7 @@ async fn restore_member(
     Extension(ctx): Extension<PlatformContext>,
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
@@ -578,7 +579,7 @@ async fn start_coverage(
     Path(company_id): Path<Uuid>,
     Json(request): Json<CoverageRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     let today = chrono::Utc::now().date_naive();
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     if matches!(status, regnmed_core::subscription::Status::Aktiv) {
@@ -609,7 +610,7 @@ async fn end_coverage(
     Extension(ctx): Extension<PlatformContext>,
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ctx.krev_systemadmin()?;
+    ctx.require_systemadmin()?;
     let today = chrono::Utc::now().date_naive();
     regnmed_db::subscription::close_coverage(&state.pool, company_id, today)
         .await

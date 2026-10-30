@@ -60,12 +60,12 @@ impl InboundMail {
     /// Wire shape → what the db layer stores. Undecodable or oversized
     /// attachments are dropped with a reason rather than failing the
     /// whole message: the rest of the mail is still evidence.
-    pub fn to_db(&self, raw: Vec<u8>) -> (regnmed_db::MottattEpost, Vec<String>) {
-        let mut advarsler = Vec::new();
+    pub fn to_db(&self, raw: Vec<u8>) -> (regnmed_db::ReceivedEmail, Vec<String>) {
+        let mut warnings = Vec::new();
         let mut attachments = Vec::new();
         for a in &self.attachments {
             match BASE64.decode(a.content_base64.as_bytes()) {
-                Ok(bytes) if bytes.len() > MAX_VEDLEGG_BYTES => advarsler.push(format!(
+                Ok(bytes) if bytes.len() > MAX_VEDLEGG_BYTES => warnings.push(format!(
                     "{} er større enn {} MB og ble ikke lagret",
                     a.filename,
                     MAX_VEDLEGG_BYTES / (1024 * 1024)
@@ -76,11 +76,11 @@ impl InboundMail {
                     content_type: a.content_type.clone(),
                     content: bytes,
                 }),
-                Err(_) => advarsler.push(format!("{} kunne ikke dekodes", a.filename)),
+                Err(_) => warnings.push(format!("{} kunne ikke dekodes", a.filename)),
             }
         }
         (
-            regnmed_db::MottattEpost {
+            regnmed_db::ReceivedEmail {
                 to: self.to.clone(),
                 from: self.from.clone(),
                 subject: self.subject.clone(),
@@ -89,7 +89,7 @@ impl InboundMail {
                 raw,
                 attachments,
             },
-            advarsler,
+            warnings,
         )
     }
 }
@@ -138,8 +138,8 @@ pub async fn run(js: jetstream::Context, pool: PgPool) -> Result<()> {
         let raw = message.payload.to_vec();
         match serde_json::from_slice::<InboundMail>(&raw) {
             Ok(mail) => {
-                let (db_mail, advarsler) = mail.to_db(raw);
-                for advarsel in &advarsler {
+                let (db_mail, warnings) = mail.to_db(raw);
+                for advarsel in &warnings {
                     eprintln!("e-post-inn ({}): {advarsel}", mail.message_id);
                 }
                 match regnmed_db::receive_mail(&pool, &db_mail).await {

@@ -98,7 +98,7 @@ pub async fn invoice_email_payload(
         .context("fakturaen mangler PDF")?;
     let (meta, pdf) = get_attachment(pool, company_id, attachment_id).await?;
 
-    let dokument = if facts.is_credit_note {
+    let document = if facts.is_credit_note {
         "kreditnota"
     } else {
         "faktura"
@@ -114,7 +114,7 @@ pub async fn invoice_email_payload(
         facts.company_name
     );
     let mut text = format!(
-        "Hei,\n\nvedlagt følger {dokument} {} fra {}.\n\nBeløp:   {} kr\n",
+        "Hei,\n\nvedlagt følger {document} {} fra {}.\n\nBeløp:   {} kr\n",
         facts.invoice_no,
         facts.company_name,
         Ore(facts.gross_ore)
@@ -220,7 +220,7 @@ pub async fn invitation_email_payload(
     .await?
     .context("ingen åpen invitasjon med den id-en")?;
 
-    let epost: String = row.get("epost");
+    let email: String = row.get("epost");
     let role: String = row.get("role");
     let company_name: String = row.get("company_name");
     let company_email: Option<String> = row.get("company_email");
@@ -246,7 +246,7 @@ pub async fn invitation_email_payload(
     text.push('\n');
 
     Ok(EmailPayload {
-        to: epost,
+        to: email,
         subject: format!("Du har fått tilgang til {company_name} i regnmed"),
         text,
         reply_to: company_email.filter(|e| !e.is_empty()),

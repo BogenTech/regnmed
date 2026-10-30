@@ -262,24 +262,24 @@ pub fn parse(xml: &str) -> Result<MottattFaktura, EhfImportError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ehf::{Dokumenttype, EhfDokument, EhfLinje, EhfPart, render};
+    use crate::ehf::{DocumentType, EhfDocument, EhfLinje, EhfPart, render};
 
     fn part(name: &str, orgnumber: &str) -> EhfPart {
         EhfPart {
             name: name.into(),
             orgnumber: orgnumber.into(),
-            adresse: Some("Storgata 1".into()),
+            address: Some("Storgata 1".into()),
             postnr: Some("0155".into()),
             poststed: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: true,
-            epost: None,
+            email: None,
         }
     }
 
-    fn dokument(dokumenttype: Dokumenttype) -> EhfDokument {
-        EhfDokument {
-            dokumenttype,
+    fn document(document_type: DocumentType) -> EhfDocument {
+        EhfDocument {
+            document_type,
             fakturanr: "F-2026-7".into(),
             krediterer: None,
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 3).unwrap(),
@@ -319,7 +319,7 @@ mod tests {
     /// importer carries: what we write, we can read.
     #[test]
     fn reads_our_own_faktura_back() {
-        let xml = render(&dokument(Dokumenttype::Invoice));
+        let xml = render(&document(DocumentType::Invoice));
         let received = parse(&xml).unwrap();
         assert!(!received.er_kreditnota);
         assert_eq!(received.fakturanr, "F-2026-7");
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn a_kreditnota_is_recognised() {
-        let xml = render(&dokument(Dokumenttype::CreditNote));
+        let xml = render(&document(DocumentType::CreditNote));
         let received = parse(&xml).unwrap();
         assert!(received.er_kreditnota);
         assert_eq!(received.linjer.len(), 2);

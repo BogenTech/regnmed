@@ -211,7 +211,7 @@ async fn seed_browser_demo() {
             fodselsnummer: Some("26829398612".into()),
             orgnumber: None,
             utenlandsk_id: None,
-            adresse: Some("Haråsveien 13E".into()),
+            address: Some("Haråsveien 13E".into()),
             postnummer: Some("0283".into()),
             poststed: Some("OSLO".into()),
             landkode: None,
@@ -230,7 +230,7 @@ async fn seed_browser_demo() {
             fodselsnummer: None,
             orgnumber: Some("923609016".into()),
             utenlandsk_id: None,
-            adresse: None,
+            address: None,
             postnummer: None,
             poststed: None,
             landkode: None,
@@ -301,10 +301,10 @@ async fn seed_browser_demo() {
             1250,
         ),
     ] {
-        regnmed_db::payroll::create_ansatt(
+        regnmed_db::payroll::create_employee(
             &state.pool,
             company,
-            &regnmed_db::payroll::NyAnsatt {
+            &regnmed_db::payroll::NewEmployee {
                 fodselsnummer: fnr.into(),
                 name: name.into(),
                 stilling: Some(stilling.into()),
@@ -372,10 +372,10 @@ async fn seed_browser_demo() {
 
     // One hourly employee, linked to the demo user who logs hours, with
     // July hours and the month LOCKED — so "from hours" can actually be used.
-    let timo = regnmed_db::payroll::create_ansatt(
+    let timo = regnmed_db::payroll::create_employee(
         &state.pool,
         company,
-        &regnmed_db::payroll::NyAnsatt {
+        &regnmed_db::payroll::NewEmployee {
             fodselsnummer: "25927898821".into(),
             name: "Timo Timeansatt".into(),
             stilling: Some("Konsulent".into()),

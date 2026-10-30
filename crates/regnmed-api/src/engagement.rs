@@ -80,7 +80,7 @@ pub async fn firm_requests(
         "requests": requests.iter().map(|r| json!({
             "request_id": r.request_id,
             "company": r.company_name,
-            "orgnr": r.company_orgnr,
+            "orgnr": r.company_orgnumber,
             "kind": r.kind,
             "message": r.message,
             "status": r.status,

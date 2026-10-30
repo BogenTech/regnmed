@@ -26,12 +26,12 @@ pub struct Oppgave {
     pub agent: Option<String>,
     pub message: String,
     pub deadline: Option<NaiveDate>,
-    pub opprettet_av: String,
+    pub created_by: String,
     pub created_at: DateTime<Utc>,
     /// Newest event's status, or "ny" when nothing has happened.
     pub status: String,
     pub siste_notat: Option<String>,
-    pub siste_av: Option<String>,
+    pub last_by: Option<String>,
     pub siste_tidspunkt: Option<DateTime<Utc>>,
 }
 
@@ -44,7 +44,7 @@ pub async fn opprett_oppgave(
     integration_id: Option<Uuid>,
     message: &str,
     deadline: Option<NaiveDate>,
-    opprettet_av: &str,
+    created_by: &str,
 ) -> Result<Uuid> {
     let message = message.trim();
     ensure!(!message.is_empty(), "oppgaven trenger en melding");
@@ -78,7 +78,7 @@ pub async fn opprett_oppgave(
     .bind(integration_id)
     .bind(message)
     .bind(deadline)
-    .bind(opprettet_av)
+    .bind(created_by)
     .execute(pool)
     .await?;
     Ok(id)
@@ -104,13 +104,13 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Oppgave {
         agent: r.get("agent"),
         message: r.get("melding"),
         deadline: r.get("frist"),
-        opprettet_av: r.get("opprettet_av"),
+        created_by: r.get("opprettet_av"),
         created_at: r.get("created_at"),
         status: r
             .get::<Option<String>, _>("status")
             .unwrap_or_else(|| "ny".to_string()),
         siste_notat: r.get("siste_notat"),
-        siste_av: r.get("siste_av"),
+        last_by: r.get("siste_av"),
         siste_tidspunkt: r.get("siste_tidspunkt"),
     }
 }
@@ -153,7 +153,7 @@ pub async fn hent_oppgave(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<O
 pub struct Hendelse {
     pub status: String,
     pub note: Option<String>,
-    pub av: String,
+    pub by: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -174,7 +174,7 @@ pub async fn history(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<He
         .map(|r| Hendelse {
             status: r.get("status"),
             note: r.get("notat"),
-            av: r.get("av"),
+            by: r.get("av"),
             created_at: r.get("created_at"),
         })
         .collect())
@@ -189,7 +189,7 @@ pub async fn answer(
     task_id: Uuid,
     status: &str,
     note: Option<&str>,
-    av: &str,
+    by: &str,
 ) -> Result<()> {
     ensure!(
         matches!(status, "pagar" | "sporsmal" | "utfort" | "avvist"),
@@ -216,7 +216,7 @@ pub async fn answer(
     .bind(task_id)
     .bind(status)
     .bind(note)
-    .bind(av)
+    .bind(by)
     .execute(pool)
     .await?;
     Ok(())

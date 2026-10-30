@@ -22,7 +22,7 @@ STYRTE den bare påtegningene på dokumentet, mens beløpene gikk sin
 egen vei. Et uregistrert selskap kunne altså utstede en faktura med
 25 % mva og fradragsføre inngående mva på et utlegg, uten innsigelse.
 
-Vakten er `settings::krev_mva_registrert`, slått opp på **dokumentets
+Vakten er `settings::require_vat_registered`, slått opp på **dokumentets
 dato** — aldri dagens, ellers endrer et gammelt bilag seg når noen
 laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen:
 

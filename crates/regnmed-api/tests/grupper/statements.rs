@@ -4,7 +4,9 @@
 //! lists vouchers in posting order, and resultat/balanse balance to the
 //! øre. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::NaiveDate;
@@ -291,12 +293,12 @@ async fn subledger_specification_carries_balance_per_party() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde A", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let (_, kunde_b) =
         regnmed_db::create_party(&state.pool, company, "kunde", "Kunde B", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let (_, supplier) =
         regnmed_db::create_party(&state.pool, company, "leverandor", "Grossisten", None, None)
             .await

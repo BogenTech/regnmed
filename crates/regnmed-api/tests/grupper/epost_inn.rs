@@ -267,10 +267,10 @@ async fn email_becomes_inbox_documents_and_an_unknown_sender_is_quarantined() {
             .contains("avsenderliste"),
         "{karantene}"
     );
-    let uten_vedlegg = by_id("<msg-3@grossisten.no>");
-    assert_eq!(uten_vedlegg["status"], "avvist");
+    let without_attachment = by_id("<msg-3@grossisten.no>");
+    assert_eq!(without_attachment["status"], "avvist");
     assert!(
-        uten_vedlegg["note"]
+        without_attachment["note"]
             .as_str()
             .unwrap()
             .contains("ingen vedlegg")

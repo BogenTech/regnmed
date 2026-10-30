@@ -163,13 +163,13 @@ pub fn parse_contacts(
         ],
         &["orgnr", "organisasjonsnummer", "kontonr", "kontonummer"],
     );
-    let orgnr_col = find_column_ranked(
+    let orgnumber_col = find_column_ranked(
         h,
         &["orgnr", "organisasjonsnummer", "org nr", "vat", "vatnumber"],
         &[],
     );
-    let epost_col = find_column_ranked(h, &["epost", "e post", "email", "e mail"], &[]);
-    let adresse_col = find_column_ranked(
+    let email_col = find_column_ranked(h, &["epost", "e post", "email", "e mail"], &[]);
+    let address_col = find_column_ranked(
         h,
         &["adresse", "gateadresse", "postadresse", "address"],
         &["epost", "e post", "email"],
@@ -206,13 +206,13 @@ pub fn parse_contacts(
             number: some_nonempty(cell(&fields, nummer_col)),
             name,
             orgnumber: some_nonempty(
-                cell(&fields, orgnr_col)
+                cell(&fields, orgnumber_col)
                     .chars()
                     .filter(|c| c.is_ascii_digit())
                     .collect(),
             ),
-            email: some_nonempty(cell(&fields, epost_col)),
-            address: some_nonempty(cell(&fields, adresse_col)),
+            email: some_nonempty(cell(&fields, email_col)),
+            address: some_nonempty(cell(&fields, address_col)),
             bank_account: some_nonempty(cell(&fields, account_col)),
         });
         let _ = i;
@@ -261,7 +261,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
         &["navn", "kundenavn", "leverandornavn", "name", "motpart"],
         &["kontaktperson"],
     );
-    let dokument_col = find_column_ranked(
+    let document_col = find_column_ranked(
         h,
         &[
             "fakturanr",
@@ -325,7 +325,7 @@ pub fn parse_open_items(text: &str) -> Result<Vec<OpenItemRow>, MigrationError> 
         rader.push(OpenItemRow {
             party,
             party_name: name,
-            document: some_nonempty(cell(&fields, dokument_col)),
+            document: some_nonempty(cell(&fields, document_col)),
             kid: some_nonempty(
                 cell(&fields, kid_col)
                     .chars()

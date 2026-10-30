@@ -147,7 +147,7 @@ pub async fn request_engagement(
 pub struct RequestRow {
     pub request_id: Uuid,
     pub company_name: String,
-    pub company_orgnr: String,
+    pub company_orgnumber: String,
     pub kind: String,
     pub message: Option<String>,
     pub status: String,
@@ -171,7 +171,7 @@ pub async fn firm_requests(pool: &PgPool, firm_id: Uuid) -> Result<Vec<RequestRo
         .map(|r| RequestRow {
             request_id: r.get("id"),
             company_name: r.get("name"),
-            company_orgnr: r.get("orgnr"),
+            company_orgnumber: r.get("orgnr"),
             kind: r.get("kind"),
             message: r.get("message"),
             status: r.get("status"),

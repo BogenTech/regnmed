@@ -55,8 +55,8 @@ async fn call(
 fn kommende(idp: &TestIdp, name: &str) -> (String, String, String) {
     let sub = format!("{name}|{}", Uuid::new_v4());
     // Normalised form: that is how it is stored and compared.
-    let epost = format!("{}@test.invalid", sub.replace('|', ".")).to_lowercase();
-    (sub.clone(), epost, idp.token(&sub, name))
+    let email = format!("{}@test.invalid", sub.replace('|', ".")).to_lowercase();
+    (sub.clone(), email, idp.token(&sub, name))
 }
 
 /// The same, but logged in: the person exists in the database.
@@ -90,14 +90,14 @@ async fn an_invitation_becomes_a_membership_on_login() {
     };
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
-    let (_, epost, ny_token) = kommende(&idp, "Nyansatt");
+    let (_, email, ny_token) = kommende(&idp, "Nyansatt");
     let (status, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
         // Upper case and spaces must make no difference.
-        Some(json!({"epost": format!("  {} ", epost.to_uppercase()), "rolle": "bokforing"})),
+        Some(json!({"epost": format!("  {} ", email.to_uppercase()), "rolle": "bokforing"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{response}");
@@ -111,7 +111,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
         None,
     )
     .await;
-    assert_eq!(liste["invitasjoner"][0]["epost"], epost);
+    assert_eq!(liste["invitasjoner"][0]["epost"], email);
 
     // The person does not exist yet — she logs in for the first time.
     let (status, me) = call(&state, "GET", "/me", &ny_token, None).await;
@@ -324,13 +324,13 @@ async fn the_trail_shows_who_granted_whom_access() {
     };
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
-    let (sub, epost, token) = kommende(&idp, "Spor");
+    let (sub, email, token) = kommende(&idp, "Spor");
     call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        Some(json!({"epost": epost, "rolle": "les"})),
+        Some(json!({"epost": email, "rolle": "les"})),
     )
     .await;
     call(&state, "GET", "/me", &token, None).await;
@@ -391,13 +391,13 @@ async fn a_revoked_invitation_grants_no_access() {
     };
     let (company, _, admin) = company_with_admin(&state, &idp).await;
 
-    let (_, angret_epost, angret_token) = kommende(&idp, "Angret");
+    let (_, revoked_email, angret_token) = kommende(&idp, "Angret");
     let (_, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        Some(json!({"epost": angret_epost, "rolle": "admin"})),
+        Some(json!({"epost": revoked_email, "rolle": "admin"})),
     )
     .await;
     let id = response["invitasjon_id"].as_str().unwrap();
@@ -445,13 +445,13 @@ async fn an_invitation_to_a_deactivated_role_yields_membership_without_access() 
     assert_eq!(status, StatusCode::OK, "{response}");
     let role_id = response["role_id"].as_str().unwrap().to_string();
 
-    let (_, epost, ny_token) = kommende(&idp, "Vikar");
+    let (_, email, ny_token) = kommende(&idp, "Vikar");
     let (status, response) = call(
         &state,
         "POST",
         &format!("/companies/{company}/invitations"),
         &admin,
-        Some(json!({"epost": epost, "rolle": "Midlertidig"})),
+        Some(json!({"epost": email, "rolle": "Midlertidig"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{response}");

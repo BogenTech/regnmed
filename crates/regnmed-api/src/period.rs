@@ -84,7 +84,8 @@ pub struct VoucherListQuery {
     /// the audit report's Dokumentasjon check, so whoever is
     /// tidying can see exactly which ones. Importjournalen is left out:
     /// its documentation is the source file, hashed in check 8.
-    uten_vedlegg: Option<bool>,
+    #[serde(rename = "uten_vedlegg")]
+    without_attachment: Option<bool>,
 }
 
 /// Vouchers newest-first, paged and filtered server-side. Without
@@ -110,7 +111,7 @@ pub async fn list_vouchers(
         limit,
         offset,
         med_linjer,
-        query.uten_vedlegg.unwrap_or(false),
+        query.without_attachment.unwrap_or(false),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

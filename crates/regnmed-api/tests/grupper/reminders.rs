@@ -4,7 +4,9 @@
 //! guardrails reject bad skritt, and the history is immutable.
 //! Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, gi_partene_adresse, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -78,7 +80,7 @@ async fn reminder_ladder_with_legal_guardrails() {
         regnmed_db::create_party(&state.pool, company, "kunde", "Sen Betaler AS", None, None)
             .await
             .unwrap();
-    gi_partene_adresse(&state.pool, company).await;
+    give_parties_address(&state.pool, company).await;
     let token = idp.token(&sub, "Kari Bokfører");
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)

@@ -105,7 +105,7 @@ pub async fn period_scheme_on(
 #[derive(Debug)]
 pub struct PeriodSchemeRow {
     pub valid_from: chrono::NaiveDate,
-    pub ordning: String,
+    pub scheme: String,
     pub note: Option<String>,
     pub created_by: String,
 }
@@ -125,7 +125,7 @@ pub async fn list_period_schemes(
         .iter()
         .map(|r| PeriodSchemeRow {
             valid_from: r.get("valid_from"),
-            ordning: r.get("ordning"),
+            scheme: r.get("ordning"),
             note: r.get("note"),
             created_by: r.get("created_by"),
         })
@@ -138,7 +138,7 @@ pub async fn set_period_scheme(
     pool: &PgPool,
     company_id: uuid::Uuid,
     valid_from: chrono::NaiveDate,
-    ordning: regnmed_core::vat::PeriodScheme,
+    scheme: regnmed_core::vat::PeriodScheme,
     note: Option<&str>,
     created_by: &str,
 ) -> Result<()> {
@@ -148,7 +148,7 @@ pub async fn set_period_scheme(
     )
     .bind(company_id)
     .bind(valid_from)
-    .bind(ordning.as_str())
+    .bind(scheme.as_str())
     .bind(note)
     .bind(created_by)
     .execute(pool)

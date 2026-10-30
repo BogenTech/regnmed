@@ -144,7 +144,7 @@ pub async fn make_invoiceable(pool: &sqlx::PgPool, company_id: Uuid) {
 /// The buyer's half of the same requirement: §5-1-2 wants an address for
 /// BOTH parties, so a fixture that issues an invoice needs one on the
 /// kunde too. Call after the parties exist.
-pub async fn gi_partene_adresse(pool: &sqlx::PgPool, company_id: Uuid) {
+pub async fn give_parties_address(pool: &sqlx::PgPool, company_id: Uuid) {
     sqlx::query(
         "update party set address = 'Lilleveien 3, 5003 Bergen'
          where company_id = $1 and (address is null or address = '')",
