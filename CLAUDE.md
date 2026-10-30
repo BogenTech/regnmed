@@ -113,37 +113,59 @@ testene venter på Postgres, ikke CPU. Installer: `cargo install
 cargo-nextest --locked` eller `curl -sSLf https://get.nexte.st/latest/mac
 | tar zxf - -C ~/.cargo/bin`.
 
-### Language policy (agreed 2026-07-29)
+### Language policy (REVISED 2026-10-30 — supersedes 2026-07-29)
 
-**Prose in the codebase is English. Domain nouns are Norwegian.**
+**Everything internal is English. Norwegian only where a user reads it.**
 
 | Where | Language | Why |
 | --- | --- | --- |
-| Comments, doc-comments | **English** | They explain *why* to whoever maintains this next. None of that reasoning is Norwegian-specific. |
-| Test function names | **English** | A test name is a sentence stating what must not break — same audience as a comment. |
-| Commit messages | **English** | Same. |
-| Domain nouns as identifiers | **Norwegian** | `bilag`, `hovedbok`, `reskontro`, `oppdrag`, `mva`, `sats`, `kontoplan` are statutory terms. "Voucher" is not quite *bilag*; "subledger" is not quite *reskontro*. The code implements XSDs and code lists that use these words — translating opens a gap between the code and the law it encodes. |
-| `docs/` | **Norwegian** | Audit-facing: revisorer and certification processes. See the documentation policy below. |
-| User-facing strings | **Norwegian** | Error messages, `Rett::beskrivelse()`, the portal. The users are Norwegian. |
+| Identifiers: functions, types, variables, constants | **English** | |
+| Database tables and columns | **English** | |
+| Log and error messages an operator reads | **English** | These are what someone reads at three in the morning. |
+| CLI commands and subcommands | **English** | |
+| Comments, doc-comments, test names, commit messages, branch names | **English** | |
+| `docs/` | **Norwegian** | Audit-facing: revisorer and certification processes. |
+| Strings a user reads | **Norwegian** | The portal, error messages shown in the UI, `Rett::beskrivelse()`, the note an agent writes back into a task. The users are Norwegian. |
+| Prompts given to a model | **Norwegian** | The model writes to Norwegian users. |
 
-So the normal shape is English sentences about Norwegian nouns:
+**What changed and why.** The 2026-07-29 rule kept domain nouns
+Norwegian as identifiers — `bilag`, `hovedbok`, `reskontro`, `oppdrag` —
+on the argument that they are statutory terms and translating them opens
+a gap between the code and the law it encodes.
+
+That argument is not wrong, but it was outweighed: **the project will
+onboard people who do not read Norwegian**, and a codebase whose
+identifiers they cannot parse leaves them guessing at exactly the
+moments precision matters. Norwegian identifiers are an anti-pattern
+here (André, 2026-10-30).
+
+The statutory precision does not disappear — it moves to where it is
+actually load-bearing: the user-facing strings, `docs/`, and the XSDs
+and code lists themselves, which are vendored verbatim and never
+translated.
+
+**The hard limit: applied migrations are append-only.** A table or
+column already applied in test or prod keeps its name forever. Map it to
+an English field instead:
 
 ```rust
-/// The role is locked (`for update`) before the rights list is rewritten:
-/// otherwise two concurrent edits would each delete the old list and let
-/// their own through — the union, i.e. more access than either asked for.
+system_prompt: r.get("systemprompt"),   // column predates the policy
 ```
 
-This was written down after a review found the repo had **drifted**, not
-chosen: ~990 Norwegian comment lines against ~1840 English, `regnmed-api`
-almost exactly half and half, early work English and recent work
-Norwegian. Mixed is worse than either pure choice — a maintainer can rely
-on neither language and has to read both.
+New tables and columns get English names from the start.
 
-Two traps when converting: `matrise.rs`'s `START`/`SLUTT` marker strings
-must keep matching docs/auth.md **verbatim**, and applied migrations are
-never edited (their comments are part of the append-only record, so
-`migrations/*.sql` stays as written).
+**Renaming existing code is a mechanical operation that must be
+verified.** A blanket regex renamed a SQL column inside a query string
+(`i.systemprompt` -> `i.system_prompt`), which 500'd every role endpoint,
+and renamed MCP tool names inside test fixtures. Collect every string
+literal before and after and assert they are byte-identical before
+writing. Also beware `matrise.rs`'s `START`/`SLUTT` marker strings, which
+must keep matching docs/auth.md verbatim.
+
+**The conversion is not done.** New code follows this now;
+`regnmed-agent` and the task queue were converted 2026-10-30. The rest
+of the workspace still carries Norwegian identifiers, and converting it
+is its own work, crate by crate, not a single sweep.
 
 ### Secrets policy (agreed 2026-07-26, docs/secrets.md)
 
