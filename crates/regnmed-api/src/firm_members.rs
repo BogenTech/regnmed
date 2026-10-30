@@ -30,7 +30,7 @@ pub(crate) async fn require_firm_admin(
     person_id: Uuid,
     firm_id: Uuid,
 ) -> Result<(), ApiError> {
-    if !regnmed_db::byramedlemmer::is_firm_admin(&state.pool, person_id, firm_id).await? {
+    if !regnmed_db::firm_members::is_firm_admin(&state.pool, person_id, firm_id).await? {
         return Err(ApiError::NotFound);
     }
     Ok(())
@@ -42,7 +42,7 @@ pub async fn list_access(
     Path(firm_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    let medlemmer = regnmed_db::byramedlemmer::list_medlemmer(&state.pool, firm_id).await?;
+    let medlemmer = regnmed_db::firm_members::list_medlemmer(&state.pool, firm_id).await?;
     Ok(Json(json!({
         "medlemmer": medlemmer.iter().map(|m| json!({
             "person_id": m.person_id,
@@ -66,7 +66,7 @@ pub async fn set_role(
     Json(request): Json<RolleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::byramedlemmer::sett_rolle(
+    regnmed_db::firm_members::sett_rolle(
         &state.pool,
         firm_id,
         person_id,
@@ -84,7 +84,7 @@ pub async fn revoke_access(
     Path((firm_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::byramedlemmer::sett_aktiv(&state.pool, firm_id, person_id, false, person.person_id)
+    regnmed_db::firm_members::sett_aktiv(&state.pool, firm_id, person_id, false, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -96,7 +96,7 @@ pub async fn restore_access(
     Path((firm_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::byramedlemmer::sett_aktiv(&state.pool, firm_id, person_id, true, person.person_id)
+    regnmed_db::firm_members::sett_aktiv(&state.pool, firm_id, person_id, true, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -108,7 +108,7 @@ pub async fn access_history(
     Path(firm_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    let rader = regnmed_db::byramedlemmer::tilgangshistorikk(&state.pool, firm_id).await?;
+    let rader = regnmed_db::firm_members::tilgangshistorikk(&state.pool, firm_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.navn,
@@ -128,7 +128,7 @@ pub async fn list_invitations(
     Path(firm_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    let rader = regnmed_db::byramedlemmer::list_invitasjoner(&state.pool, firm_id).await?;
+    let rader = regnmed_db::firm_members::list_invitasjoner(&state.pool, firm_id).await?;
     Ok(Json(json!({
         "invitasjoner": rader.iter().map(|i| json!({
             "id": i.id,
@@ -158,7 +158,7 @@ pub async fn invite(
     Json(request): Json<InviteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    let id = regnmed_db::byramedlemmer::inviter(
+    let id = regnmed_db::firm_members::inviter(
         &state.pool,
         firm_id,
         &request.epost,
@@ -184,7 +184,7 @@ pub async fn revoke_invitation(
     Path((firm_id, invitasjon_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_firm_admin(&state, person.person_id, firm_id).await?;
-    regnmed_db::byramedlemmer::tilbakekall_invitasjon(
+    regnmed_db::firm_members::tilbakekall_invitasjon(
         &state.pool,
         firm_id,
         invitasjon_id,
@@ -207,7 +207,7 @@ async fn try_send_firm_invitation(
     let Some(js) = &state.mailq else {
         return Err("e-postutsendelse er ikke konfigurert (NATS_URL)".into());
     };
-    let payload = regnmed_db::byramedlemmer::firm_invitation_email_payload(
+    let payload = regnmed_db::firm_members::firm_invitation_email_payload(
         &state.pool,
         firm_id,
         invitasjon_id,
@@ -221,7 +221,7 @@ async fn try_send_firm_invitation(
         .await
         .map_err(|e| format!("kunne ikke legge i utsendelseskøen: {e:#}"))?;
     let sent_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::byramedlemmer::log_firm_utsendelse(
+    regnmed_db::firm_members::log_firm_utsendelse(
         &state.pool,
         id,
         invitasjon_id,

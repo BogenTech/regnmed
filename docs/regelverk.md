@@ -135,7 +135,7 @@ Kartet er verifisert mot koden slik den står i dag:
 | `regnmed-core/src/fiscal_year.rs` | Selve definisjonen + periodegrensene | **sømstedet** |
 | `regnmed-db/src/ledger.rs` (post_voucher_in) | `fiscal_year` på bilaget = nummerserien per journal+år | går gjennom sømmen |
 | `regnmed-api/src/reports.rs` (saft_export) | `year=` → periode | går gjennom sømmen |
-| `regnmed-db/src/budsjett.rs` | `extract(year from voucher_date) = $2` i to spørringer (avvik + «fra fjoråret») | gjenstår — SQL-side |
+| `regnmed-db/src/budget.rs` | `extract(year from voucher_date) = $2` i to spørringer (avvik + «fra fjoråret») | gjenstår — SQL-side |
 | `regnmed-db/src/regnskap.rs` (nokkeltall) | Årets måneder + «samme dato i fjor» | gjenstår — SQL-side |
 | `regnmed-db/src/asset.rs` (saldo_rapport) | Skattemessig saldo per år | gjenstår, men se under |
 | Portalen | Årvelgerne viser «2026» | gjenstår — visning |

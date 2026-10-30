@@ -174,6 +174,26 @@ far (all 2026-10-30): `regnmed-agent` and the task queue,
 `bilagstolk`->`voucher_hints`, plus `pain001`'s Norwegian fields.
 `bank`, `camt053`, `ocr`, `pdf`, `anchor`, `money`, `error`, `xml`,
 `csvutil` and `kid` were already English.
+
+**Module and file names** in `regnmed-db` and `regnmed-api` are English
+for 20 and 16 modules respectively (`betaling`->`payments`,
+`innboks`->`inbox`, `medlemmer`->`members`, `roller`->`roles`,
+`plattform`->`platform`, `attestering`->`approval`,
+`balansedok`->`balance_documentation`, `arsavslutning`->`year_end`,
+`agentoppgave`->`agent_task`, and the counterparts of the core modules
+above). Both crates re-export their modules with `pub use <mod>::*`, so
+callers were unaffected — only `pub mod`, `pub use` and `crate::<mod>::`
+paths moved.
+
+**Still Norwegian**, deliberately, because each is one word shared by
+core, db, api, a DB column AND the portal's JSON, so they have to move
+together: `avdeling`, `prosjekt`, `valuta`, `belop_ore`, `dato`,
+`konto`. The same goes for the modules whose core and db halves are
+both unconverted (`mva`, `regnskap`, `revisjon`, `purring`, `lonn`,
+`abonnement`, `aksjebok`, `saft_import`, `salgsdokument`),
+`regnmed-api::tilgang` (the single access guard, named all through
+docs/auth.md) and the test tree (`tests/grupper/`, the seven group
+binaries).
 The rest of `regnmed-core`, `regnmed-db` and `regnmed-api` still carry
 Norwegian identifiers, and converting them is its own work, crate by
 crate, not a single sweep. `regnmed-api` has to move in lockstep with
@@ -697,7 +717,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    vinner over fakturabeløp** — bruttoimport ville blåst opp
    reskontroen i stillhet). Retningen bestemmes av parts-typen (kunde
    debet / leverandør kredit), aldri av filens fortegn; kreditnota
-   beholder sitt eget. `regnmed-db::migrering`: kontakter idempotent
+   beholder sitt eget. `regnmed-db::migration`: kontakter idempotent
    (orgnr → numerisk nummer → navn; kundenr 10001 forblir
    partsnummer), åpne poster som ETT bilag med partslinjer mot
    motkonto (2050) i én tx — krever NULL saldo på reskontrokontoen og
@@ -938,7 +958,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    docs: en autorisasjonstest som ikke er sett feile er ikke
    verifisert (axum kjører `Json`/`Query`-uttrekk FØR vakten — ugyldig
    kropp gir 422/400 og måler ingenting).
-   ETTERSLEP (closed #62): `regnmed-db::roller` skrev flerstegs rett mot
+   ETTERSLEP (closed #62): `regnmed-db::roles` skrev flerstegs rett mot
    poolen — nå ÉN transaksjon per endring, med `for update` på rollen
    før rettighetslisten skrives om. Uten det kunne (a) en rolle bli til
    uten rettigheter og uten rad i `company_role_change`, og (b)
@@ -1194,7 +1214,7 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    2026-08-03): `systemadmin`/`support` når administrative STAMDATA på
    tvers (personer, medlemskap, kunderegistre m/ eierselskap navngitt)
    og ALDRI noen hovedbok — egen sub-router `/platform/*`
-   (`regnmed-api::plattform`), `tilgang::krev`/tenancy URØRT,
+   (`regnmed-api::platform`), `tilgang::krev`/tenancy URØRT,
    `an_admin_crosses_no_company_boundary` uendret + ny test fester
    motsatt retning (plattformrolle = 404 på alt selskapsskopet).
    Migration 0049: `platform_member` (valid_to NOT NULL =

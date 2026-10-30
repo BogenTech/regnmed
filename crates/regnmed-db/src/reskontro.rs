@@ -522,7 +522,7 @@ pub async fn kursregulering(
             belop + matched_cent
         };
         let valuta: String = row.get("valuta");
-        let (_, kurs) = crate::valuta::require_kurs(pool, &valuta, per_dato).await?;
+        let (_, kurs) = crate::currency::require_kurs(pool, &valuta, per_dato).await?;
         diff_total += regnmed_core::valuta::nok_ore(rest_cent, kurs) - rest_nok;
     }
     if diff_total == 0 {

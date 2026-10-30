@@ -191,7 +191,7 @@ pub async fn inbox_ehf_forslag(
     company_id: Uuid,
     document_id: Uuid,
 ) -> Result<EhfForslag> {
-    let (_, _, content) = crate::innboks::get_inbox_document(pool, company_id, document_id).await?;
+    let (_, _, content) = crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
     let xml = String::from_utf8(content).context("dokumentet er ikke tekst — er det en EHF?")?;
     let mottatt = parse(&xml).map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -282,7 +282,7 @@ pub async fn inbox_forslag(
     document_id: Uuid,
 ) -> Result<Bokforingsforslag> {
     let (_, content_type, content) =
-        crate::innboks::get_inbox_document(pool, company_id, document_id).await?;
+        crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
 
     let mut forslag = Bokforingsforslag {
         kilde: "ingen",

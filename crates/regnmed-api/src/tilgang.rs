@@ -962,7 +962,7 @@ pub async fn slaa_opp(
     let egendefinerte = if ukjente.is_empty() {
         Vec::new()
     } else {
-        regnmed_db::roller::rettigheter_for(&state.pool, company_id, &ukjente)
+        regnmed_db::roles::rettigheter_for(&state.pool, company_id, &ukjente)
             .await?
             .iter()
             .filter_map(|s| Rett::fra_slug(s))

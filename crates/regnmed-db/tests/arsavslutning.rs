@@ -106,12 +106,12 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
     let Some(pool) = pool().await else { return };
     let company = selskap_med_overskudd(&pool).await;
 
-    let for_skatt = regnmed_db::arsavslutning::resultat_for_aret(&pool, company, 2025)
+    let for_skatt = regnmed_db::year_end::resultat_for_aret(&pool, company, 2025)
         .await
         .unwrap();
     assert_eq!(for_skatt, 60_000_00);
 
-    let avsluttet = regnmed_db::arsavslutning::avslutt_ar(&pool, company, 2025, 13_200_00, "test")
+    let avsluttet = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 13_200_00, "test")
         .await
         .unwrap();
     assert_eq!(avsluttet.resultat_for_skatt_ore, 60_000_00);
@@ -185,7 +185,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
             .is_none(),
         "ingen lås før avslutningen"
     );
-    regnmed_db::arsavslutning::avslutt_ar(&pool, company, 2025, 0, "test")
+    regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
         .await
         .unwrap();
     assert_eq!(
@@ -197,7 +197,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     );
 
     // Twice is refused — a correction is a reversing voucher.
-    let feil = regnmed_db::arsavslutning::avslutt_ar(&pool, company, 2025, 0, "test")
+    let feil = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
         .await
         .expect_err("et år kan ikke disponeres to ganger");
     assert!(feil.to_string().contains("allerede avsluttet"), "{feil}");
@@ -209,7 +209,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     regnmed_db::set_period_lock(&pool, company2, d(2025, 12, 31), "test", false)
         .await
         .unwrap();
-    let feil = regnmed_db::arsavslutning::avslutt_ar(&pool, company2, 2025, 0, "test")
+    let feil = regnmed_db::year_end::avslutt_ar(&pool, company2, 2025, 0, "test")
         .await
         .expect_err("låst år kan ikke avsluttes");
     assert!(feil.to_string().contains("låst til og med"), "{feil}");

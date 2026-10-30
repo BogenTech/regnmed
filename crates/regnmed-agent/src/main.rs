@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
                 // Without it this would be the one place two processes
                 // could run a task at once -- precisely when a backlog
                 // makes that most likely.
-                match regnmed_db::agentoppgave::claim_task(&pool, task_id, &name).await {
+                match regnmed_db::agent_task::claim_task(&pool, task_id, &name).await {
                     Ok(true) => {}
                     Ok(false) => {
                         println!("{task_id} is already being worked on, skipping");
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
                 // is written into that task's own trail either way.
                 let outcome =
                     regnmed_agent::run_task(&pool, &key, company_id, task_id, &issuer, &api).await;
-                if let Err(error) = regnmed_db::agentoppgave::release_task(&pool, task_id).await {
+                if let Err(error) = regnmed_db::agent_task::release_task(&pool, task_id).await {
                     eprintln!("could not release {task_id}: {error:#}");
                 }
                 match outcome {
@@ -173,7 +173,7 @@ async fn listen(
         // The claim, not the queue, is what guarantees one worker per
         // task (docs/agent.md §8.7). A redelivery after ack_wait, or a
         // backstop sweep running at the same moment, stops here.
-        match regnmed_db::agentoppgave::claim_task(pool, nudge.task_id, &name).await {
+        match regnmed_db::agent_task::claim_task(pool, nudge.task_id, &name).await {
             Ok(true) => {}
             Ok(false) => {
                 println!("{} is already being worked on, skipping", nudge.task_id);
@@ -191,7 +191,7 @@ async fn listen(
             regnmed_agent::run_task(pool, key, nudge.company_id, nudge.task_id, issuer, api).await;
         // Released whatever happened: the lease is not evidence, and a
         // failed run must not lock the task out of a later retry.
-        if let Err(error) = regnmed_db::agentoppgave::release_task(pool, nudge.task_id).await {
+        if let Err(error) = regnmed_db::agent_task::release_task(pool, nudge.task_id).await {
             eprintln!("could not release {}: {error:#}", nudge.task_id);
         }
         match outcome {

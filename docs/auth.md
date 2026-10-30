@@ -478,7 +478,7 @@ plattformrolle når **administrative stamdata på tvers av selskaper og
 byråer** — personer, medlemskap, invitasjoner-i-praksis (tildeling av
 medlemskap) og kunderegistre — og ingenting i noen hovedbok. Alt den
 kan ligger under `/platform/*` på sin egen sub-router
-(`regnmed-api::plattform`); tilgangsvakten `tilgang::krev` og
+(`regnmed-api::platform`); tilgangsvakten `tilgang::krev` og
 tenancy-oppslaget er uendret.
 
 To roller, lagret i `platform_member` (migrasjon 0049):

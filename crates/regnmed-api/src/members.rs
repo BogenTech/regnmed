@@ -28,7 +28,7 @@ pub async fn list_access(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let medlemmer = regnmed_db::medlemmer::list_medlemmer(&state.pool, company_id).await?;
+    let medlemmer = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
     Ok(Json(json!({
         "medlemmer": medlemmer.iter().map(|m| json!({
             "person_id": m.person_id,
@@ -55,10 +55,10 @@ pub struct RolleRequest {
 /// without any rettigheter — safe, but completely baffling to the person
 /// concerned.
 async fn krev_kjent_rolle(state: &AppState, company_id: Uuid, rolle: &str) -> Result<(), ApiError> {
-    if regnmed_db::medlemmer::ROLLER.contains(&rolle) {
+    if regnmed_db::members::ROLLER.contains(&rolle) {
         return Ok(());
     }
-    if regnmed_db::roller::finnes(&state.pool, company_id, rolle).await? {
+    if regnmed_db::roles::finnes(&state.pool, company_id, rolle).await? {
         return Ok(());
     }
     Err(ApiError::BadRequest(format!(
@@ -74,7 +74,7 @@ pub async fn set_role(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
     krev_kjent_rolle(&state, company_id, &request.rolle).await?;
-    regnmed_db::medlemmer::sett_rolle(
+    regnmed_db::members::sett_rolle(
         &state.pool,
         company_id,
         person_id,
@@ -92,7 +92,7 @@ pub async fn revoke_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::medlemmer::sett_aktiv(
+    regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
         person_id,
@@ -111,7 +111,7 @@ pub async fn restore_access(
     Path((company_id, person_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::medlemmer::sett_aktiv(
+    regnmed_db::members::sett_aktiv(
         &state.pool,
         company_id,
         person_id,
@@ -130,7 +130,7 @@ pub async fn access_history(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let rader = regnmed_db::medlemmer::tilgangshistorikk(&state.pool, company_id).await?;
+    let rader = regnmed_db::members::tilgangshistorikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.navn,
@@ -151,7 +151,7 @@ pub async fn list_invitations(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let rader = regnmed_db::medlemmer::list_invitasjoner(&state.pool, company_id).await?;
+    let rader = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
     Ok(Json(json!({
         "invitasjoner": rader.iter().map(|i| json!({
             "id": i.id,
@@ -191,7 +191,7 @@ pub async fn invite(
     if request.employee_id.is_some() {
         krev(&state, person.person_id, company_id, Rett::LonnSkriv).await?;
     }
-    let id = regnmed_db::medlemmer::inviter(
+    let id = regnmed_db::members::inviter(
         &state.pool,
         company_id,
         &request.epost,
@@ -222,7 +222,7 @@ pub async fn revoke_invitation(
     Path((company_id, invitasjon_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::medlemmer::tilbakekall_invitasjon(
+    regnmed_db::members::tilbakekall_invitasjon(
         &state.pool,
         company_id,
         invitasjon_id,

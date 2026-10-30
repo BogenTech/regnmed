@@ -26,7 +26,7 @@ Derfor:
   ført på vanlig måte med hele beløpet.
 
 Dette står både i `regnmed-core::accrual`, i
-`regnmed-db::periodisering` og i migrasjonen, fordi det er den ene
+`regnmed-db::accrual` og i migrasjonen, fordi det er den ene
 tingen som blir gjort feil hvis den ikke står noe sted.
 
 ## 2. Modellen

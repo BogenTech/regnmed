@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-use crate::medlemmer::normaliser_epost;
+use crate::members::normaliser_epost;
 
 /// The firm roles (0005): `admin` runs the byrå, `ansatt` works in it.
 pub const ROLLER: [&str; 2] = ["admin", "ansatt"];

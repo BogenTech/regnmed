@@ -35,7 +35,7 @@ pub async fn list_roles(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let egne = regnmed_db::roller::list_roller(&state.pool, company_id).await?;
+    let egne = regnmed_db::roles::list_roller(&state.pool, company_id).await?;
     let innebygde = [
         Rolle::Ansatt,
         Rolle::Les,
@@ -108,7 +108,7 @@ pub async fn create_role(
         .navn
         .ok_or_else(|| ApiError::BadRequest("rollen må ha et navn".into()))?;
     let godkjente = godkjenn(&request.rettigheter)?;
-    let id = regnmed_db::roller::opprett(
+    let id = regnmed_db::roles::opprett(
         &state.pool,
         company_id,
         &navn,
@@ -129,7 +129,7 @@ pub async fn set_rights(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
     let godkjente = godkjenn(&request.rettigheter)?;
-    regnmed_db::roller::sett_rettigheter(
+    regnmed_db::roles::sett_rettigheter(
         &state.pool,
         company_id,
         role_id,
@@ -147,7 +147,7 @@ pub async fn deactivate(
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::roller::sett_aktiv(&state.pool, company_id, role_id, false, person.person_id)
+    regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, false, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -159,7 +159,7 @@ pub async fn restore(
     Path((company_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    regnmed_db::roller::sett_aktiv(&state.pool, company_id, role_id, true, person.person_id)
+    regnmed_db::roles::sett_aktiv(&state.pool, company_id, role_id, true, person.person_id)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "ok": true })))
@@ -171,7 +171,7 @@ pub async fn history(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::MedlemAdmin).await?;
-    let rader = regnmed_db::roller::historikk(&state.pool, company_id).await?;
+    let rader = regnmed_db::roles::historikk(&state.pool, company_id).await?;
     Ok(Json(json!({
         "endringer": rader.iter().map(|e| json!({
             "navn": e.navn,

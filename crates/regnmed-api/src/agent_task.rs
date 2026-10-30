@@ -27,7 +27,7 @@ use crate::AppState;
 use crate::auth::{ApiError, AuthPerson};
 use crate::tilgang::{Rett, krev};
 
-fn oppgave_json(o: &regnmed_db::agentoppgave::Oppgave) -> serde_json::Value {
+fn oppgave_json(o: &regnmed_db::agent_task::Oppgave) -> serde_json::Value {
     json!({
         "oppgave_id": o.id,
         "integration_id": o.integration_id,
@@ -37,7 +37,7 @@ fn oppgave_json(o: &regnmed_db::agentoppgave::Oppgave) -> serde_json::Value {
         "opprettet_av": o.opprettet_av,
         "opprettet": o.created_at.to_rfc3339(),
         "status": o.status,
-        "avsluttet": regnmed_db::agentoppgave::AVSLUTTET.contains(&o.status.as_str()),
+        "avsluttet": regnmed_db::agent_task::AVSLUTTET.contains(&o.status.as_str()),
         "siste_notat": o.siste_notat,
         "siste_av": o.siste_av,
         "siste_tidspunkt": o.siste_tidspunkt.map(|t| t.to_rfc3339()),
@@ -61,7 +61,7 @@ pub async fn list(
     // A machine sees its own queue; a human sees everything, which is
     // the point of having given the orders.
     let for_integration = person.integration.as_ref().map(|i| i.id);
-    let rader = regnmed_db::agentoppgave::list_oppgaver(
+    let rader = regnmed_db::agent_task::list_oppgaver(
         &state.pool,
         company_id,
         for_integration,
@@ -88,7 +88,7 @@ pub async fn opprett(
     Json(request): Json<NyOppgave>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::IntegrasjonAdmin).await?;
-    let id = regnmed_db::agentoppgave::opprett_oppgave(
+    let id = regnmed_db::agent_task::opprett_oppgave(
         &state.pool,
         company_id,
         request.integration_id,
@@ -108,7 +108,7 @@ pub async fn hent(
     Path((company_id, oppgave_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
-    let oppgave = regnmed_db::agentoppgave::hent_oppgave(&state.pool, company_id, oppgave_id)
+    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     // Another agent's order is not this agent's business.
@@ -119,7 +119,7 @@ pub async fn hent(
     {
         return Err(ApiError::NotFound);
     }
-    let trail = regnmed_db::agentoppgave::historikk(&state.pool, company_id, oppgave_id).await?;
+    let trail = regnmed_db::agent_task::historikk(&state.pool, company_id, oppgave_id).await?;
     Ok(Json(json!({
         "oppgave": oppgave_json(&oppgave),
         "historikk": trail.iter().map(|h| json!({
@@ -146,7 +146,7 @@ pub async fn svar(
     Json(request): Json<Svar>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let tilgang = krev(&state, person.person_id, company_id, Rett::IntegrasjonLes).await?;
-    let oppgave = regnmed_db::agentoppgave::hent_oppgave(&state.pool, company_id, oppgave_id)
+    let oppgave = regnmed_db::agent_task::hent_oppgave(&state.pool, company_id, oppgave_id)
         .await?
         .ok_or(ApiError::NotFound)?;
     match person.integration.as_ref() {
@@ -167,7 +167,7 @@ pub async fn svar(
             }
         }
     }
-    regnmed_db::agentoppgave::svar(
+    regnmed_db::agent_task::svar(
         &state.pool,
         company_id,
         oppgave_id,

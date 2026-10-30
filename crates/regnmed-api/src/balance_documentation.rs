@@ -51,7 +51,8 @@ pub async fn status(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     let periode = periode_or_lock(&state, company_id, query.periode).await?;
-    let linjer = regnmed_db::balansedok::balanse_status(&state.pool, company_id, periode).await?;
+    let linjer =
+        regnmed_db::balance_documentation::balanse_status(&state.pool, company_id, periode).await?;
     Ok(Json(json!({
         "periode": periode.to_string(),
         "kontoer": linjer.iter().map(|l| json!({
@@ -93,7 +94,7 @@ pub async fn avstem(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let id = regnmed_db::balansedok::avstem(
+    let id = regnmed_db::balance_documentation::avstem(
         &state.pool,
         company_id,
         &request.konto,
@@ -137,7 +138,7 @@ pub async fn avstem_med_vedlegg(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let id = regnmed_db::balansedok::avstem(
+    let id = regnmed_db::balance_documentation::avstem(
         &state.pool,
         company_id,
         &query.konto,
@@ -159,7 +160,7 @@ pub async fn vedlegg(
 ) -> Result<impl IntoResponse, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
     let (navn, content_type, bytes) =
-        regnmed_db::balansedok::hent_vedlegg(&state.pool, company_id, id)
+        regnmed_db::balance_documentation::hent_vedlegg(&state.pool, company_id, id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok((
@@ -187,9 +188,13 @@ pub async fn historikk(
     Query(query): Query<HistorikkQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     krev(&state, person.person_id, company_id, Rett::RapportLes).await?;
-    let rader =
-        regnmed_db::balansedok::historikk(&state.pool, company_id, &query.konto, query.periode)
-            .await?;
+    let rader = regnmed_db::balance_documentation::historikk(
+        &state.pool,
+        company_id,
+        &query.konto,
+        query.periode,
+    )
+    .await?;
     Ok(Json(json!({
         "avstemminger": rader.iter().map(|a| json!({
             "id": a.id,

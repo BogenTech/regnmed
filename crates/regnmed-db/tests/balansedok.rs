@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::balansedok::{avstem, balanse_status, hent_vedlegg};
+use regnmed_db::balance_documentation::{avstem, balanse_status, hent_vedlegg};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -191,7 +191,7 @@ async fn posting_after_the_avstemming_shows_up_as_a_difference() {
     .unwrap();
     let linjer = balanse_status(&pool, company, periode).await.unwrap();
     assert_eq!(linjer[0].avvik_ore(), None);
-    let historikk = regnmed_db::balansedok::historikk(&pool, company, "1920", periode)
+    let historikk = regnmed_db::balance_documentation::historikk(&pool, company, "1920", periode)
         .await
         .unwrap();
     assert_eq!(historikk.len(), 2, "rettingen sletter ikke den forrige");

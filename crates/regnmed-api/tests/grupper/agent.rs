@@ -118,7 +118,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     ));
 
     // A task to answer, so the task tools have a real target.
-    let task = regnmed_db::agentoppgave::opprett_oppgave(
+    let task = regnmed_db::agent_task::opprett_oppgave(
         &state.pool,
         company,
         Some(integration_id),
@@ -631,7 +631,7 @@ async fn only_one_worker_can_hold_a_task() {
     regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
         .await
         .unwrap();
-    let task = regnmed_db::agentoppgave::opprett_oppgave(
+    let task = regnmed_db::agent_task::opprett_oppgave(
         &state.pool,
         company,
         None,
@@ -648,7 +648,7 @@ async fn only_one_worker_can_hold_a_task() {
     let forsok = futures_util::future::join_all((0..10).map(|i| {
         let pool = state.pool.clone();
         async move {
-            regnmed_db::agentoppgave::claim_task(&pool, task, &format!("worker-{i}"))
+            regnmed_db::agent_task::claim_task(&pool, task, &format!("worker-{i}"))
                 .await
                 .unwrap()
         }
@@ -664,7 +664,7 @@ async fn only_one_worker_can_hold_a_task() {
     // nothing — this is the redelivery case, where JetStream hands the
     // nudge out again after ack_wait on a task that is still running.
     assert!(
-        !regnmed_db::agentoppgave::claim_task(&state.pool, task, "sent-ute")
+        !regnmed_db::agent_task::claim_task(&state.pool, task, "sent-ute")
             .await
             .unwrap(),
         "en levende lås slipper ingen andre inn"
@@ -672,11 +672,11 @@ async fn only_one_worker_can_hold_a_task() {
 
     // Releasing opens it again: a failed run must not lock the task out
     // of a retry, so the lease is dropped whatever the outcome was.
-    regnmed_db::agentoppgave::release_task(&state.pool, task)
+    regnmed_db::agent_task::release_task(&state.pool, task)
         .await
         .unwrap();
     assert!(
-        regnmed_db::agentoppgave::claim_task(&state.pool, task, "neste")
+        regnmed_db::agent_task::claim_task(&state.pool, task, "neste")
             .await
             .unwrap(),
         "etter slipp kan neste worker ta den"
@@ -689,12 +689,12 @@ async fn only_one_worker_can_hold_a_task() {
          where oppgave_id = $1",
     )
     .bind(task)
-    .bind((regnmed_db::agentoppgave::CLAIM_TTL_MINUTES + 1).to_string())
+    .bind((regnmed_db::agent_task::CLAIM_TTL_MINUTES + 1).to_string())
     .execute(&state.pool)
     .await
     .unwrap();
     assert!(
-        regnmed_db::agentoppgave::claim_task(&state.pool, task, "overtar")
+        regnmed_db::agent_task::claim_task(&state.pool, task, "overtar")
             .await
             .unwrap(),
         "en forlatt lås kan overtas"

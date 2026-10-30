@@ -15,7 +15,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
-use crate::sats::load_satser;
+use crate::rates::load_satser;
 
 #[derive(Debug)]
 pub struct OverdueInvoice {

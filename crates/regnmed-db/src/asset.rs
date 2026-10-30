@@ -18,7 +18,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
-use crate::sats::load_satser;
+use crate::rates::load_satser;
 
 fn month_start(date: NaiveDate) -> NaiveDate {
     NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap()
