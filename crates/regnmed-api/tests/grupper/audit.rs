@@ -147,7 +147,7 @@ async fn revisor_generates_the_verification_report() {
     // §11 (#88): a balance account with a saldo must be documented, or
     // the report is right to call it a deviation. 1500 is the only one
     // here, and documenting it is what makes this ledger "healthy".
-    regnmed_db::balance_documentation::avstem(
+    regnmed_db::balance_documentation::reconcile(
         &state.pool,
         company,
         "1500",

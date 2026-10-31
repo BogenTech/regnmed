@@ -339,7 +339,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
         &state.pool,
         customer,
         "standard",
-        NaiveDateHelper::forste_i_maneden(today),
+        NaiveDateHelper::first_of_the_month(today),
         None,
         "test: dekning for fakturering",
         "test",
@@ -350,11 +350,10 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     // The `bare` narrowing: the dev database can hold thousands of
     // companies with coverage (the migration's seeding), and the test
     // must not invoice them all.
-    let forste =
-        regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
-            .await
-            .unwrap();
-    let vare = forste
+    let first = regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+        .await
+        .unwrap();
+    let vare = first
         .iter()
         .find(|u| u.company_id == customer)
         .expect("kundeselskapet i utfallet");
@@ -423,7 +422,7 @@ async fn driftsselskap(pool: &sqlx::PgPool, name: &str, vat_registered: bool) ->
         chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
         regnmed_db::Registrering {
             vat_registered,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "manuell",
         Some("testfixtur"),
@@ -454,7 +453,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
     make_invoiceable(&state.pool, customer_b).await;
 
     let today = Utc::now().date_naive();
-    let from = NaiveDateHelper::forste_i_maneden(today);
+    let from = NaiveDateHelper::first_of_the_month(today);
     for customer in [customer_a, customer_b] {
         regnmed_db::subscription::open_coverage(
             &state.pool,
@@ -516,20 +515,17 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
 
     // The same fact decides the Stripe Price: the card is charged the
     // gross, and post_stripe_payment asserts charge == fordring.
-    let brutto_registrert =
-        regnmed_db::subscription::brutto_for(&state.pool, registrert, "standard", "month", today)
+    let gross_registered =
+        regnmed_db::subscription::gross_before(&state.pool, registrert, "standard", "month", today)
             .await
             .unwrap();
-    let brutto_utenfor =
-        regnmed_db::subscription::brutto_for(&state.pool, utenfor, "standard", "month", today)
+    let gross_outside =
+        regnmed_db::subscription::gross_before(&state.pool, utenfor, "standard", "month", today)
             .await
             .unwrap();
-    assert!(
-        brutto_registrert > price,
-        "registrert selger trekker brutto"
-    );
+    assert!(gross_registered > price, "registrert selger trekker brutto");
     assert_eq!(
-        brutto_utenfor, price,
+        gross_outside, price,
         "kortet skal trekkes fakturaens beløp — en Stripe-pris med 25 % \
          på en uregistrert selger ville sprengt beløpskontrollen i \
          bokfor_stripe_betaling ved hvert eneste trekk"
@@ -538,7 +534,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
 
 struct NaiveDateHelper;
 impl NaiveDateHelper {
-    fn forste_i_maneden(d: chrono::NaiveDate) -> chrono::NaiveDate {
+    fn first_of_the_month(d: chrono::NaiveDate) -> chrono::NaiveDate {
         chrono::NaiveDate::from_ymd_opt(d.year(), d.month(), 1).unwrap()
     }
 }
@@ -562,7 +558,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         &state.pool,
         customer,
         "standard",
-        NaiveDateHelper::forste_i_maneden(today),
+        NaiveDateHelper::first_of_the_month(today),
         None,
         "test: dekning for oppfølging",
         "test",
@@ -579,8 +575,8 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .and_then(|u| u.gross_ore)
         .expect("faktura utstedt");
 
-    let mine = |apne: Vec<opf::SubscriptionInvoice>| {
-        apne.into_iter()
+    let mine = |open: Vec<opf::SubscriptionInvoice>| {
+        open.into_iter()
             .find(|f| f.company_id == customer)
             .expect("abonnementsfakturaen i listen")
     };
@@ -796,7 +792,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         &state.pool,
         oppsagt,
         "basis",
-        NaiveDateHelper::forste_i_maneden(today),
+        NaiveDateHelper::first_of_the_month(today),
         None,
         "test: dekning som sies opp",
         "test",
@@ -940,7 +936,7 @@ async fn a_card_charge_posts_once_and_only_once() {
         &state.pool,
         customer,
         "standard",
-        NaiveDateHelper::forste_i_maneden(today),
+        NaiveDateHelper::first_of_the_month(today),
         None,
         "test: kortvei",
         "test",

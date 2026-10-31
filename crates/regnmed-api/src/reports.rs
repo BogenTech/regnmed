@@ -132,12 +132,12 @@ pub async fn vat_return(
         )));
     }
 
-    let referanse = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
+    let reference = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
     let message = regnmed_core::vat_return::build(
         &orgnumber,
         period,
         scheme,
-        &referanse,
+        &reference,
         env!("CARGO_PKG_VERSION"),
         &spes,
     );

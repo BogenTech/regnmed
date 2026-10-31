@@ -612,7 +612,7 @@ pub enum Role {
     /// hovedbok — an upgrade, not a downgrade. And since `Ansatt`
     /// arrived there is no "weakest" role to fall back to either:
     /// `Ansatt` and `Les` are not comparable.
-    Ukjent,
+    Unknown,
     /// Self-service: own hours, own utlegg, own payslip. Not a step
     /// below `Les` — see [`ANSATT_BUNT`].
     Employee,
@@ -766,7 +766,7 @@ impl Role {
             "ansatt" => Self::Employee,
             "les" => Self::Read,
             "revisor" => Self::Auditor,
-            _ => Self::Ukjent,
+            _ => Self::Unknown,
         }
     }
 
@@ -777,7 +777,7 @@ impl Role {
             Self::Read => "les",
             Self::Employee => "ansatt",
             Self::Auditor => "revisor",
-            Self::Ukjent => "ukjent",
+            Self::Unknown => "ukjent",
         }
     }
 
@@ -808,7 +808,7 @@ impl Role {
                 "Alt — også hvem som har tilgang: medlemmer og roller, oppdrag, \
                  integrasjoner og abonnement."
             }
-            Self::Ukjent => "",
+            Self::Unknown => "",
         }
     }
 
@@ -818,7 +818,7 @@ impl Role {
     /// the model. A custom role (#60) need not be nested at all.
     fn bunter(self) -> &'static [&'static [Right]] {
         match self {
-            Self::Ukjent => &[],
+            Self::Unknown => &[],
             // Ansatt is NOT nested under the other three — it is its own
             // composition, and that is the whole point of the model.
             Self::Employee => &[EMPLOYEE_BUNDLE],
@@ -964,7 +964,7 @@ pub async fn lookup(
     let ukjente: Vec<String> = name
         .iter()
         .zip(&roles)
-        .filter(|(_, r)| **r == Role::Ukjent)
+        .filter(|(_, r)| **r == Role::Unknown)
         .map(|(n, _)| n.clone())
         .collect();
     let egendefinerte = if ukjente.is_empty() {
@@ -1224,10 +1224,10 @@ mod tests {
     /// reading "ansatt" as "les" would have been an upgrade.
     #[test]
     fn an_unknown_role_grants_no_rights() {
-        for ukjent in ["superbruker", "", "Ansatt", "LES"] {
-            let r = Role::from_db(ukjent);
-            assert_eq!(r, Role::Ukjent, "«{ukjent}»");
-            assert!(r.rights().is_empty(), "«{ukjent}» ga rettigheter");
+        for unknown in ["superbruker", "", "Ansatt", "LES"] {
+            let r = Role::from_db(unknown);
+            assert_eq!(r, Role::Unknown, "«{unknown}»");
+            assert!(r.rights().is_empty(), "«{unknown}» ga rettigheter");
         }
     }
 

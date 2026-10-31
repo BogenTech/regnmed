@@ -35,7 +35,7 @@ fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::
         // §4-5: birth date, not fødselsnummer.
         "fodselsdato": a.birth_date,
         "orgnr": a.orgnumber,
-        "utenlandsk_id": a.utenlandsk_id,
+        "utenlandsk_id": a.foreign_id,
         "adresse": a.address,
         "postnummer": a.postal_code,
         "poststed": a.postal_city,
@@ -70,10 +70,10 @@ pub async fn list_shareholders(
     let bok = regnmed_db::share_register::aksjeeierbok(&state.pool, company_id, date)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let totalt: i64 = bok.iter().map(|a| a.share_count).sum();
+    let total: i64 = bok.iter().map(|a| a.share_count).sum();
     Ok(Json(json!({
         "dato": date,
-        "totalt_antall_aksjer": totalt,
+        "totalt_antall_aksjer": total,
         "aksjonarer": bok.iter().map(shareholder_json).collect::<Vec<_>>(),
     })))
 }
@@ -87,7 +87,8 @@ pub struct CreateShareholderRequest {
     nin: Option<String>,
     #[serde(rename = "orgnr")]
     orgnumber: Option<String>,
-    utenlandsk_id: Option<String>,
+    #[serde(rename = "utenlandsk_id")]
+    foreign_id: Option<String>,
     #[serde(rename = "adresse")]
     address: Option<String>,
     #[serde(rename = "postnummer")]
@@ -120,7 +121,7 @@ pub async fn create_shareholder(
             name: request.name,
             nin: request.nin,
             orgnumber: request.orgnumber,
-            utenlandsk_id: request.utenlandsk_id,
+            foreign_id: request.foreign_id,
             address: request.address,
             postal_code: request.postal_code,
             postal_city: request.postal_city,
@@ -311,7 +312,7 @@ pub async fn list_dividends(
             "id": u.id,
             "besluttet_dato": u.decided_date,
             "per_aksje_ore": u.per_share_ore,
-            "totalt_ore": u.totalt_ore,
+            "totalt_ore": u.total_ore,
             "voucher_id": u.voucher_id,
             "note": u.note,
             "created_by": u.created_by,
@@ -353,7 +354,7 @@ pub async fn create_dividend(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "dividend_id": vedtak.id,
-        "totalt_ore": vedtak.totalt_ore,
+        "totalt_ore": vedtak.total_ore,
         "voucher_id": vedtak.voucher_id,
     })))
 }
@@ -440,12 +441,12 @@ pub async fn tax_return(
         "antall_aksjonarer": under.len(),
         "antall_aksjer": sett.hovedskjema.share_count.this_year,
         "antall_aksjer_fjoraret": sett.hovedskjema.share_count.last_year,
-        "aksjekapital_ore": sett.hovedskjema.aksjekapital.this_year,
-        "palydende_ore": sett.hovedskjema.palydende_ore.this_year,
+        "aksjekapital_ore": sett.hovedskjema.share_capital.this_year,
+        "palydende_ore": sett.hovedskjema.nominal_value_ore.this_year,
         "utbytte": sett.hovedskjema.dividend.iter().map(|u| json!({
             "dato": u.date,
             "per_aksje_ore": u.per_share_ore,
-            "totalt_ore": u.totalt_ore,
+            "totalt_ore": u.total_ore,
         })).collect::<Vec<_>>(),
         "aksjonarer": sett.underskjemaer.iter().map(|(id, u)| json!({
             "shareholder_id": id,

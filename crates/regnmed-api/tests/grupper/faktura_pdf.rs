@@ -336,7 +336,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
         chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "brreg",
         None,
@@ -463,7 +463,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
         chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "brreg",
         None,

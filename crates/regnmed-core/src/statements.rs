@@ -318,8 +318,8 @@ mod tests {
             line("7770", "Gebyr", 100_00),
         ];
         let r = result(&lines);
-        let annen = &r.sections[3];
-        assert_eq!(annen.lines.len(), 2);
-        assert_eq!(annen.sum_ore, 5_100_00);
+        let other = &r.sections[3];
+        assert_eq!(other.lines.len(), 2);
+        assert_eq!(other.sum_ore, 5_100_00);
     }
 }

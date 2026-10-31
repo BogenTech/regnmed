@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Run { company } => {
-            let tasks = regnmed_db::agentllm::apne_agentoppgaver(&pool, company).await?;
+            let tasks = regnmed_db::agentllm::open_agent_tasks(&pool, company).await?;
             if tasks.is_empty() {
                 println!("no open agent tasks");
                 return Ok(());

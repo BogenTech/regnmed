@@ -26,7 +26,7 @@ pub struct BalanceSheetLine {
     /// Booked saldo at period end, computed now.
     pub balance_ore: i64,
     /// The newest avstemming for the period, when there is one.
-    pub avstemt: Option<Avstemming>,
+    pub reconciled: Option<Avstemming>,
 }
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ impl BalanceSheetLine {
     /// difference is not "undocumented" — it is documented and then
     /// moved, which is a different thing to tell the reader.
     pub fn discrepancy_ore(&self) -> Option<i64> {
-        self.avstemt
+        self.reconciled
             .as_ref()
             .map(|a| self.balance_ore - a.balance_ore)
             .filter(|d| *d != 0)
@@ -83,7 +83,7 @@ pub async fn balance_status(
     let mut linjer = Vec::with_capacity(rows.len());
     for row in &rows {
         let account: String = row.get("konto");
-        let avstemt = sqlx::query(
+        let reconciled = sqlx::query(
             "select d.id, d.saldo_ore, d.forklaring, d.avstemt_dato,
                     coalesce(p.name, p.oidc_sub) as avstemt_av,
                     d.vedlegg_sha256 is not null as har_vedlegg, d.vedlegg_navn
@@ -110,7 +110,7 @@ pub async fn balance_status(
             account,
             account_name: row.get("kontonavn"),
             balance_ore: row.get("saldo_ore"),
-            avstemt,
+            reconciled,
         });
     }
     Ok(linjer)
@@ -120,7 +120,7 @@ pub async fn balance_status(
 /// the caller: the documented figure must be the ledger's own, or the
 /// whole control is a self-report.
 #[allow(clippy::too_many_arguments)]
-pub async fn avstem(
+pub async fn reconcile(
     pool: &PgPool,
     company_id: Uuid,
     account: &str,

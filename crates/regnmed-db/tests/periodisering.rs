@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
-use regnmed_db::accrual::{AccrualDraft, create_accrual, periodiser_plan};
+use regnmed_db::accrual::{AccrualDraft, accrue_plan, create_accrual};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -123,7 +123,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
     .unwrap();
 
     // Run as if it were 31 March: three months are due, nine are not.
-    let outcome = periodiser_plan(&pool, company, plan, d(2026, 3, 31))
+    let outcome = accrue_plan(&pool, company, plan, d(2026, 3, 31))
         .await
         .unwrap();
     assert_eq!(outcome.len(), 3, "{outcome:?}");
@@ -137,7 +137,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
 
     // Running again changes nothing — the partial unique index decides,
     // not a flag we remembered to set.
-    let igjen = periodiser_plan(&pool, company, plan, d(2026, 3, 31))
+    let igjen = accrue_plan(&pool, company, plan, d(2026, 3, 31))
         .await
         .unwrap();
     assert!(igjen.is_empty(), "{igjen:?}");
@@ -145,7 +145,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
 
     // The whole year: the parts sum EXACTLY to the total, and 1700 is
     // emptied to the øre — the property the feature stands on.
-    periodiser_plan(&pool, company, plan, d(2026, 12, 31))
+    accrue_plan(&pool, company, plan, d(2026, 12, 31))
         .await
         .unwrap();
     assert_eq!(balance(&pool, company, "6300").await, total);
@@ -187,7 +187,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
     )
     .await
     .unwrap();
-    periodiser_plan(&pool, company, plan, d(2026, 2, 28))
+    accrue_plan(&pool, company, plan, d(2026, 2, 28))
         .await
         .unwrap();
     assert_eq!(balance(&pool, company, "6300").await, 20_000);
@@ -196,7 +196,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         .await
         .unwrap();
     // Even asked for the whole year, nothing more is posted.
-    let etter = periodiser_plan(&pool, company, plan, d(2026, 12, 31))
+    let etter = accrue_plan(&pool, company, plan, d(2026, 12, 31))
         .await
         .unwrap();
     assert!(etter.is_empty(), "{etter:?}");
@@ -243,7 +243,7 @@ async fn a_started_plan_cannot_be_rewritten() {
     )
     .await
     .unwrap();
-    periodiser_plan(&pool, company, plan, d(2026, 1, 31))
+    accrue_plan(&pool, company, plan, d(2026, 1, 31))
         .await
         .unwrap();
 

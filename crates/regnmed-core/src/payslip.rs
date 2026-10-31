@@ -77,8 +77,8 @@ pub struct PayslipInput {
     pub holiday_pay_accrual_ore: i64,
     pub holiday_pay_bp: i64,
     /// Year to date, through this run.
-    pub hittil_brutto_ore: i64,
-    pub hittil_trekk_ore: i64,
+    pub year_to_date_gross_ore: i64,
+    pub year_to_date_withholding_ore: i64,
     pub ytd_holiday_pay_ore: i64,
 }
 
@@ -252,8 +252,8 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     );
     ly += 14.0;
     for (text, amount) in [
-        ("Bruttolønn", input.hittil_brutto_ore),
-        ("Forskuddstrekk", input.hittil_trekk_ore),
+        ("Bruttolønn", input.year_to_date_gross_ore),
+        ("Forskuddstrekk", input.year_to_date_withholding_ore),
         ("Feriepenger opptjent", input.ytd_holiday_pay_ore),
     ] {
         pdf.text(MARGIN, ly, 9.0, Font::Regular, text);
@@ -295,8 +295,8 @@ mod tests {
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
             holiday_pay_bp: 1020,
-            hittil_brutto_ore: 15_000_000,
-            hittil_trekk_ore: 5_250_000,
+            year_to_date_gross_ore: 15_000_000,
+            year_to_date_withholding_ore: 5_250_000,
             ytd_holiday_pay_ore: 1_530_000,
         }
     }

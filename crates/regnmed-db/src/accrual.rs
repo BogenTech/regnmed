@@ -240,7 +240,7 @@ pub struct AccrualOutcome {
 
 /// Posts every month that has ended and is not yet posted, for every
 /// company. The monthly CronJob's entry point.
-pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<AccrualOutcome>> {
+pub async fn accrue_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<AccrualOutcome>> {
     let planer: Vec<(Uuid, Uuid)> =
         sqlx::query("select id, company_id from periodisering order by company_id, created_at")
             .fetch_all(pool)
@@ -250,14 +250,14 @@ pub async fn periodiser_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Acc
             .collect();
     let mut outcome = Vec::new();
     for (id, company_id) in planer {
-        outcome.extend(periodiser_plan(pool, company_id, id, through).await?);
+        outcome.extend(accrue_plan(pool, company_id, id, through).await?);
     }
     Ok(outcome)
 }
 
 /// Every due month for ONE plan. Each month is its own transaction, so a
 /// failure in March does not roll back February.
-pub async fn periodiser_plan(
+pub async fn accrue_plan(
     pool: &PgPool,
     company_id: Uuid,
     accrual_id: Uuid,

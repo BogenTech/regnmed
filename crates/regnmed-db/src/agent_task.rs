@@ -124,7 +124,7 @@ pub async fn list_oppgaver(
     pool: &PgPool,
     company_id: Uuid,
     for_integration: Option<Uuid>,
-    bare_apne: bool,
+    only_open: bool,
 ) -> Result<Vec<Task>> {
     let rows = sqlx::query(&format!(
         "{SELECT} where o.company_id = $1
@@ -134,7 +134,7 @@ pub async fn list_oppgaver(
     ))
     .bind(company_id)
     .bind(for_integration)
-    .bind(bare_apne)
+    .bind(only_open)
     .fetch_all(pool)
     .await?;
     Ok(rows.iter().map(from_row).collect())

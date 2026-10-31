@@ -62,7 +62,7 @@ pub struct EhfPart {
     pub orgnumber: String,
     /// Street address; EHF requires an address with a country code.
     pub address: Option<String>,
-    pub postnr: Option<String>,
+    pub postal_code: Option<String>,
     pub postal_city: Option<String>,
     /// ISO 3166-1 alpha-2; "NO" when unknown.
     pub land: String,
@@ -97,7 +97,7 @@ pub struct EhfDocument {
     pub currency: String,
     /// Buyer's reference (EN 16931 BT-10) — many public recipients
     /// reject invoices without it, so we send what we have.
-    pub kjopers_referanse: Option<String>,
+    pub buyer_reference: Option<String>,
     pub selger: EhfPart,
     pub kjoper: EhfPart,
     /// Leveringstidspunkt (EN 16931 BT-72). Mandatory on the Norwegian
@@ -106,7 +106,7 @@ pub struct EhfDocument {
     pub delivery_date: Option<NaiveDate>,
     /// Leveringssted (BT-71 / BG-15) as a single free-text line — we
     /// have no structured deliver-to address to split.
-    pub leveringssted: Option<String>,
+    pub delivery_place: Option<String>,
     pub account_number: Option<String>,
     pub kid: Option<String>,
     pub linjer: Vec<EhfLinje>,
@@ -250,8 +250,8 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
     if let Some(postal_city) = &part.postal_city {
         w.leaf("cbc:CityName", postal_city);
     }
-    if let Some(postnr) = &part.postnr {
-        w.leaf("cbc:PostalZone", postnr);
+    if let Some(postal_code) = &part.postal_code {
+        w.leaf("cbc:PostalZone", postal_code);
     }
     w.open("cac:Country");
     w.leaf("cbc:IdentificationCode", &part.land);
@@ -319,8 +319,8 @@ pub fn render(doc: &EhfDocument) -> String {
         DocumentType::CreditNote => w.leaf("cbc:CreditNoteTypeCode", doc.document_type.type_code()),
     }
     w.leaf("cbc:DocumentCurrencyCode", currency);
-    if let Some(referanse) = &doc.kjopers_referanse {
-        w.leaf("cbc:BuyerReference", referanse);
+    if let Some(reference) = &doc.buyer_reference {
+        w.leaf("cbc:BuyerReference", reference);
     }
     if let Some(kreditert) = &doc.krediterer {
         w.open("cac:BillingReference");
@@ -336,12 +336,12 @@ pub fn render(doc: &EhfDocument) -> String {
     // cac:Delivery sits between the customer party and PaymentMeans in
     // the UBL 2.1 sequence — the XSD run in tests and CI enforces that,
     // so a wrong position fails loudly rather than shipping.
-    if doc.delivery_date.is_some() || doc.leveringssted.is_some() {
+    if doc.delivery_date.is_some() || doc.delivery_place.is_some() {
         w.open("cac:Delivery");
         if let Some(date) = doc.delivery_date {
             w.leaf("cbc:ActualDeliveryDate", &date.to_string());
         }
-        if let Some(sted) = &doc.leveringssted {
+        if let Some(sted) = &doc.delivery_place {
             w.open("cac:DeliveryLocation");
             w.open("cac:Address");
             w.leaf("cbc:StreetName", sted);
@@ -457,7 +457,7 @@ mod tests {
             name: name.into(),
             orgnumber: orgnumber.into(),
             address: Some("Storgata 1".into()),
-            postnr: Some("0155".into()),
+            postal_code: Some("0155".into()),
             postal_city: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: vat,
@@ -473,11 +473,11 @@ mod tests {
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
-            kjopers_referanse: Some("Bestilling 42".into()),
+            buyer_reference: Some("Bestilling 42".into()),
             selger: part("Selger AS", "915933149", true),
             kjoper: part("Kjøper & Sønn AS", "923609016", true),
             delivery_date: NaiveDate::from_ymd_opt(2026, 6, 28),
-            leveringssted: Some("Lagerveien 3, 0666 Oslo".into()),
+            delivery_place: Some("Lagerveien 3, 0666 Oslo".into()),
             account_number: Some("86011117947".into()),
             kid: Some("1234567897".into()),
             linjer: vec![
@@ -542,7 +542,7 @@ mod tests {
     fn a_document_without_a_delivery_omits_the_element() {
         let mut doc = document(DocumentType::Invoice);
         doc.delivery_date = None;
-        doc.leveringssted = None;
+        doc.delivery_place = None;
         let xml = render(&doc);
         assert!(!xml.contains("cac:Delivery"));
     }

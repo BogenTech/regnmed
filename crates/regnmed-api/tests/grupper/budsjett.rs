@@ -367,13 +367,13 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         None,
     )
     .await;
-    let annen = variance["seksjoner"]
+    let other = variance["seksjoner"]
         .as_array()
         .unwrap()
         .iter()
         .find(|s| s["heading"] == "Annen driftskostnad")
         .unwrap();
-    let gebyr = annen["linjer"]
+    let gebyr = other["linjer"]
         .as_array()
         .unwrap()
         .iter()

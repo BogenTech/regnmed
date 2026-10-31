@@ -80,7 +80,7 @@ pub struct InvoicePdfInput {
     pub seller_vat_registered: bool,
     /// "Foretaksregisteret" is added for entities registered there (AS/ASA,
     /// foretaksregisterloven §10-2).
-    pub selger_foretaksregistrert: bool,
+    pub seller_business_registered: bool,
     pub seller_account_number: Option<String>,
 
     pub buyer_name: String,
@@ -98,7 +98,7 @@ pub struct InvoicePdfInput {
     /// a date it never recorded.
     pub delivery_date: Option<NaiveDate>,
     /// Leveringssted, same hjemmel — "der det er relevant".
-    pub leveringssted: Option<String>,
+    pub delivery_place: Option<String>,
     /// None when the seller has no KID/OCR agreement with the bank: a
     /// KID the payer's bank cannot accept is a false instruction, not a
     /// harmless extra line (#104).
@@ -185,7 +185,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
         orglinje.push_str(" MVA");
     }
     pdf.text(MARGIN, y, 9.0, Font::Regular, &orglinje);
-    if input.selger_foretaksregistrert {
+    if input.seller_business_registered {
         pdf.text(MARGIN, y + 12.0, 9.0, Font::Regular, "Foretaksregisteret");
     }
 
@@ -230,7 +230,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     // den gir verdien 70 pt før etiketten, nok til en dato og ikke til
     // en adresse, så en adresse ville lagt seg OVER etiketten. Det er
     // en hel linje i stedet, høyrejustert som resten.
-    if let Some(sted) = &input.leveringssted {
+    if let Some(sted) = &input.delivery_place {
         pdf.text_right(
             RIGHT,
             fy,
@@ -442,7 +442,7 @@ mod tests {
             seller_orgnumber: "999888777".into(),
             seller_address: Some("Storgata 1, 0155 Oslo".into()),
             seller_vat_registered: true,
-            selger_foretaksregistrert: true,
+            seller_business_registered: true,
             seller_account_number: Some("1234.56.78903".into()),
             buyer_name: "Kunde & Co AS".into(),
             buyer_number: "10000".into(),
@@ -452,7 +452,7 @@ mod tests {
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 8, 7).unwrap(),
             delivery_date: NaiveDate::from_ymd_opt(2026, 7, 20),
-            leveringssted: None,
+            delivery_place: None,
             kid: Some("000000071".into()),
             payment_method: None,
             linjer: vec![
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn the_delivery_place_is_one_line_not_a_label_value_pair() {
         let mut i = input();
-        i.leveringssted = Some("Lagerveien 3, 0666 Oslo".into());
+        i.delivery_place = Some("Lagerveien 3, 0666 Oslo".into());
         let bytes = render_invoice_pdf(&i);
         assert!(find(&bytes, b"Leveringssted: Lagerveien 3, 0666 Oslo").is_some());
         // Etiketten skal ikke også stå alene et sted — da ville den

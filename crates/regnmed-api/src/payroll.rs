@@ -31,8 +31,8 @@ fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "fodselsdato": a.birth_date,
         "ansatt_fra": a.employed_from,
         "ansatt_til": a.employed_to,
-        "manedslonn_ore": a.manedslonn_ore,
-        "timelonn_ore": a.timelonn_ore,
+        "manedslonn_ore": a.monthly_salary_ore,
+        "timelonn_ore": a.hourly_wage_ore,
         "trekk_type": a.withholding_type,
         "trekk_prosent_bp": a.withholding_percent_bp,
         "trekk_tabell": a.withholding_table,
@@ -70,8 +70,10 @@ pub struct CreateEmployeeRequest {
     stilling: Option<String>,
     #[serde(rename = "ansatt_fra")]
     employed_from: chrono::NaiveDate,
-    manedslonn_ore: Option<i64>,
-    timelonn_ore: Option<i64>,
+    #[serde(rename = "manedslonn_ore")]
+    monthly_salary_ore: Option<i64>,
+    #[serde(rename = "timelonn_ore")]
+    hourly_wage_ore: Option<i64>,
     #[serde(default = "prosent")]
     #[serde(rename = "trekk_type")]
     withholding_type: String,
@@ -110,8 +112,8 @@ pub async fn create_employee(
             name: request.name,
             stilling: request.stilling,
             employed_from: request.employed_from,
-            manedslonn_ore: request.manedslonn_ore,
-            timelonn_ore: request.timelonn_ore,
+            monthly_salary_ore: request.monthly_salary_ore,
+            hourly_wage_ore: request.hourly_wage_ore,
             withholding_type: request.withholding_type,
             withholding_percent_bp: request.withholding_percent_bp,
             withholding_table: request.withholding_table,
@@ -131,7 +133,7 @@ pub struct YearQuery {
     year: Option<i32>,
 }
 
-fn kjoring_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
+fn run_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
     json!({
         "id": k.id,
         "ar": k.year,
@@ -162,7 +164,7 @@ pub async fn list_payroll(
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let runs = regnmed_db::payroll::list_kjoringer(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
-        "kjoringer": runs.iter().map(kjoring_json).collect::<Vec<_>>()
+        "kjoringer": runs.iter().map(run_json).collect::<Vec<_>>()
     })))
 }
 
@@ -230,7 +232,7 @@ pub async fn run_payroll(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     Ok(Json(json!({
-        "kjoring": kjoring_json(&run),
+        "kjoring": run_json(&run),
         "linjer": run.lines.iter().map(|l| json!({
             "employee_id": l.employee_id,
             "navn": l.name,

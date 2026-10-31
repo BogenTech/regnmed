@@ -515,7 +515,7 @@ pub async fn salgsdokument_pdf(
         seller_orgnumber: doc.get("orgnr"),
         seller_address: doc.get("address"),
         seller_vat_registered: reg.vat_registered,
-        selger_foretaksregistrert: reg.foretaksregistrert,
+        seller_business_registered: reg.business_registered,
         seller_account_number: None,
         buyer_name: doc.get("party_name"),
         buyer_number: doc.get("party_no"),
@@ -528,7 +528,7 @@ pub async fn salgsdokument_pdf(
         // delivered yet, so §5-1-1's leveringstidspunkt does not apply
         // and stating one would be a promise we did not make.
         delivery_date: None,
-        leveringssted: None,
+        delivery_place: None,
         kid: None,
         currency: None,
         motverdi_nok_ore: None,

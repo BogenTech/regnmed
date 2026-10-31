@@ -41,11 +41,11 @@ pub struct VatReturn {
     pub scheme: PeriodScheme,
     /// Reference into our own system, echoed back in feedback
     /// (regnskapssystemsreferanse).
-    pub referanse: String,
+    pub reference: String,
     pub system_version: String,
     pub lines: Vec<MeldingLine>,
     /// Sum of all line VAT amounts, melding signs, whole kroner.
-    pub fastsatt_kr: i64,
+    pub assessed_kr: i64,
 }
 
 #[derive(Debug)]
@@ -73,7 +73,7 @@ pub fn build(
     orgnumber: &str,
     period: Period,
     scheme: PeriodScheme,
-    referanse: &str,
+    reference: &str,
     system_version: &str,
     spes: &[SpecLine],
 ) -> VatReturn {
@@ -126,15 +126,15 @@ pub fn build(
     // ALSO deducts it when the deduction right is full. Summing only the
     // computed side billed every such customer 25 % of a basis they owed
     // nothing on.
-    let fastsatt_kr = lines.iter().map(|l| l.vat_kr + l.deduction_kr).sum();
+    let assessed_kr = lines.iter().map(|l| l.vat_kr + l.deduction_kr).sum();
     VatReturn {
         orgnumber: orgnumber.to_string(),
         period,
         scheme,
-        referanse: referanse.to_string(),
+        reference: reference.to_string(),
         system_version: system_version.to_string(),
         lines,
-        fastsatt_kr,
+        assessed_kr,
     }
 }
 
@@ -166,7 +166,7 @@ pub fn render(message: &VatReturn) -> String {
     x.depth = 1;
 
     x.open("innsending");
-    x.leaf("regnskapssystemsreferanse", &message.referanse);
+    x.leaf("regnskapssystemsreferanse", &message.reference);
     x.open("regnskapssystem");
     x.leaf("systemnavn", "regnmed");
     x.leaf("systemversjon", &message.system_version);
@@ -191,7 +191,7 @@ pub fn render(message: &VatReturn) -> String {
     x.close("periode");
     x.leaf("aar", &message.period.year.to_string());
     x.close("skattleggingsperiode");
-    x.leaf("fastsattMerverdiavgift", &message.fastsatt_kr.to_string());
+    x.leaf("fastsattMerverdiavgift", &message.assessed_kr.to_string());
     for line in &message.lines {
         x.open("mvaSpesifikasjonslinje");
         x.leaf("mvaKode", &line.code);
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(inn.basis_kr, None, "inngående lines carry no grunnlag");
         assert_eq!(inn.rate_bp, None);
 
-        assert_eq!(m.fastsatt_kr, 500, "fastsatt = sum of line effects");
+        assert_eq!(m.assessed_kr, 500, "fastsatt = sum of line effects");
     }
 
     /// Reverse charge, computed by hand.
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(med.lines[0].vat_kr, 25_000, "beregnet utgående avgift");
         assert_eq!(med.lines[0].deduction_kr, -25_000, "og fradraget for den");
         assert_eq!(
-            med.fastsatt_kr, 0,
+            med.assessed_kr, 0,
             "full fradragsrett: kjøpet skal ikke koste avgift"
         );
 
@@ -330,7 +330,7 @@ mod tests {
             "ingen fradragsrett, intet fradrag"
         );
         assert_eq!(
-            without.fastsatt_kr, 25_000,
+            without.assessed_kr, 25_000,
             "uten fradragsrett skal avgiften betales i sin helhet"
         );
 
@@ -339,7 +339,7 @@ mod tests {
         // charge the same import twice.
         let markor = message("21");
         assert!(markor.lines.is_empty(), "kode 21 er en kostnadsmarkør");
-        assert_eq!(markor.fastsatt_kr, 0, "og beregner ingen avgift");
+        assert_eq!(markor.assessed_kr, 0, "og beregner ingen avgift");
     }
 
     #[test]

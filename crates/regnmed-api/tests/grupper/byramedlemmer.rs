@@ -64,13 +64,13 @@ async fn byra_members_are_invited_never_coregistered() {
 
     // Founder registers the firm (db level — the API route in front of
     // this is Finanstilsynet-gated and covered in marketplace.rs).
-    let grunnlegger_sub = format!("test|{}", Uuid::new_v4());
-    let grunnlegger_token = idp.token(&grunnlegger_sub, "Grunnlegger Gro");
-    let grunnlegger = regnmed_db::ensure_person(
+    let founder_sub = format!("test|{}", Uuid::new_v4());
+    let founder_token = idp.token(&founder_sub, "Grunnlegger Gro");
+    let founder = regnmed_db::ensure_person(
         &state.pool,
-        &grunnlegger_sub,
+        &founder_sub,
         Some("Grunnlegger Gro"),
-        Some(&email_for(&grunnlegger_sub)),
+        Some(&email_for(&founder_sub)),
     )
     .await
     .unwrap();
@@ -81,14 +81,14 @@ async fn byra_members_are_invited_never_coregistered() {
         "BYRÅTEST AS",
         "regnskap",
         "test",
-        grunnlegger,
+        founder,
     )
     .await
     .unwrap();
 
     // First come, first served: a second person registering the same
     // orgnr is refused, not silently made co-admin.
-    let annen =
+    let other =
         regnmed_db::ensure_person(&state.pool, &format!("test|{}", Uuid::new_v4()), None, None)
             .await
             .unwrap();
@@ -98,7 +98,7 @@ async fn byra_members_are_invited_never_coregistered() {
         "BYRÅTEST AS",
         "regnskap",
         "test",
-        annen,
+        other,
     )
     .await
     .unwrap_err();
@@ -118,7 +118,7 @@ async fn byra_members_are_invited_never_coregistered() {
         "select kilde from firm_member_change where firm_id = $1 and person_id = $2",
     )
     .bind(firm_id)
-    .bind(grunnlegger)
+    .bind(founder)
     .fetch_one(&state.pool)
     .await
     .unwrap();
@@ -140,7 +140,7 @@ async fn byra_members_are_invited_never_coregistered() {
         regnmed_db::request_engagement(&state.pool, company, firm_id, None, klientadmin)
             .await
             .unwrap();
-    regnmed_db::decide_request(&state.pool, firm_id, request_id, grunnlegger, true)
+    regnmed_db::decide_request(&state.pool, firm_id, request_id, founder, true)
         .await
         .unwrap();
 
@@ -152,7 +152,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
-        &grunnlegger_token,
+        &founder_token,
         Some(serde_json::json!({ "epost": employee_email, "rolle": "ansatt" })),
     )
     .await;
@@ -165,7 +165,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/invitations"),
-        &grunnlegger_token,
+        &founder_token,
         Some(serde_json::json!({ "epost": employee_email, "rolle": "ansatt" })),
     )
     .await;
@@ -181,14 +181,14 @@ async fn byra_members_are_invited_never_coregistered() {
     let (status, me) = request(&state, "GET", "/me", &employee_token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(me["nye_tilganger"], 1, "body: {me}");
-    let klient = me["companies"]
+    let client = me["companies"]
         .as_array()
         .unwrap()
         .iter()
         .find(|c| c["company_id"] == company.to_string())
         .expect("firm membership reaches the client");
-    assert_eq!(klient["access"], "bokforing");
-    assert_eq!(klient["via"], "BYRÅTEST AS");
+    assert_eq!(client["access"], "bokforing");
+    assert_eq!(client["via"], "BYRÅTEST AS");
     let (_, mine) = request(&state, "GET", "/firms/mine", &employee_token, None).await;
     assert_eq!(mine["firms"][0]["role"], "ansatt");
 
@@ -221,7 +221,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "POST",
         &format!("/firms/{firm_id}/requests/{bogus}/decision"),
-        &grunnlegger_token,
+        &founder_token,
         Some(serde_json::json!({ "accept": true })),
     )
     .await;
@@ -240,8 +240,8 @@ async fn byra_members_are_invited_never_coregistered() {
     let (status, response) = request(
         &state,
         "PUT",
-        &format!("/firms/{firm_id}/access/{grunnlegger}"),
-        &grunnlegger_token,
+        &format!("/firms/{firm_id}/access/{founder}"),
+        &founder_token,
         Some(serde_json::json!({ "rolle": "ansatt" })),
     )
     .await;
@@ -255,8 +255,8 @@ async fn byra_members_are_invited_never_coregistered() {
     let (status, _) = request(
         &state,
         "DELETE",
-        &format!("/firms/{firm_id}/access/{grunnlegger}"),
-        &grunnlegger_token,
+        &format!("/firms/{firm_id}/access/{founder}"),
+        &founder_token,
         None,
     )
     .await;
@@ -277,7 +277,7 @@ async fn byra_members_are_invited_never_coregistered() {
         &state,
         "PUT",
         &format!("/firms/{firm_id}/access/{employee_person}"),
-        &grunnlegger_token,
+        &founder_token,
         Some(serde_json::json!({ "rolle": "admin" })),
     )
     .await;
@@ -285,8 +285,8 @@ async fn byra_members_are_invited_never_coregistered() {
     let (status, _) = request(
         &state,
         "DELETE",
-        &format!("/firms/{firm_id}/access/{grunnlegger}"),
-        &grunnlegger_token,
+        &format!("/firms/{firm_id}/access/{founder}"),
+        &founder_token,
         None,
     )
     .await;

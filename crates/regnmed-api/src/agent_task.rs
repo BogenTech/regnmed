@@ -48,7 +48,8 @@ fn task_json(o: &regnmed_db::agent_task::Task) -> serde_json::Value {
 pub struct TaskQuery {
     /// Default true: an agent asking "what should I do" wants the open
     /// ones. The history is one query parameter away.
-    apne: Option<bool>,
+    #[serde(rename = "apne")]
+    open: Option<bool>,
 }
 
 pub async fn list(
@@ -65,7 +66,7 @@ pub async fn list(
         &state.pool,
         company_id,
         for_integration,
-        query.apne.unwrap_or(true),
+        query.open.unwrap_or(true),
     )
     .await?;
     Ok(Json(json!({

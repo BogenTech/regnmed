@@ -365,7 +365,7 @@ pub async fn create_invoice_in(
         seller_orgnumber: company.get("orgnr"),
         seller_address: company.get("address"),
         seller_vat_registered: reg.vat_registered,
-        selger_foretaksregistrert: reg.foretaksregistrert,
+        seller_business_registered: reg.business_registered,
         seller_account_number: company.get("bank_account"),
         buyer_name: party.get("name"),
         buyer_number: draft.party_no.clone(),
@@ -375,7 +375,7 @@ pub async fn create_invoice_in(
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
         delivery_date: Some(draft.delivery_date),
-        leveringssted: draft.delivery_place.clone(),
+        delivery_place: draft.delivery_place.clone(),
         // Stored on the invoice either way (OCR resolves payments BY
         // kid, #7) — but only PRINTED when the bank can honour it (#104).
         kid: company.get::<bool, _>("kid_avtale").then(|| kid.clone()),

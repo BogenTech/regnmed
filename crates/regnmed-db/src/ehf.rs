@@ -37,13 +37,13 @@ pub(crate) fn split_address(
         return (Some(address), None, None);
     };
     let resten = resten.trim();
-    let (postnr, postal_city) = match resten.split_once(' ') {
+    let (postal_code, postal_city) = match resten.split_once(' ') {
         Some((number, sted)) if number.len() == 4 && number.chars().all(|c| c.is_ascii_digit()) => {
             (Some(number.to_string()), Some(sted.trim().to_string()))
         }
         _ => return (Some(address), None, None),
     };
-    (Some(gate.trim().to_string()), postnr, postal_city)
+    (Some(gate.trim().to_string()), postal_code, postal_city)
 }
 
 /// Builds the EHF document for an issued invoice from its stored rows.
@@ -109,9 +109,10 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         });
     }
 
-    let (selger_gate, selger_postnr, seller_postal_city) =
+    let (selger_gate, seller_postal_code, seller_postal_city) =
         split_address(head.get("selger_adresse"));
-    let (kjoper_gate, kjoper_postnr, buyer_postal_city) = split_address(head.get("kjoper_adresse"));
+    let (kjoper_gate, buyer_postal_code, buyer_postal_city) =
+        split_address(head.get("kjoper_adresse"));
     let credits_number: Option<i64> = head.get("krediterer_nr");
     let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
 
@@ -130,16 +131,16 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             .unwrap_or_else(|| "NOK".into()),
         // BT-10 is the buyer's own reference; we send the customer
         // number we know them by until an order reference exists.
-        kjopers_referanse: head.get::<Option<String>, _>("party_no"),
+        buyer_reference: head.get::<Option<String>, _>("party_no"),
         // BT-72. Null only on invoices issued before #81 — the element
         // is then omitted rather than filled with a guess.
         delivery_date: head.get("delivery_date"),
-        leveringssted: head.get("delivery_place"),
+        delivery_place: head.get("delivery_place"),
         selger: EhfPart {
             name: head.get("selger_navn"),
             orgnumber: head.get("selger_orgnr"),
             address: selger_gate,
-            postnr: selger_postnr,
+            postal_code: seller_postal_code,
             postal_city: seller_postal_city,
             land: "NO".into(),
             // Registreringsstatus på fakturadatoen, ikke «bar dette
@@ -156,7 +157,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
                 .get::<Option<String>, _>("kjoper_orgnr")
                 .context("kjøperen mangler organisasjonsnummer — EHF krever mottakerens orgnr")?,
             address: kjoper_gate,
-            postnr: kjoper_postnr,
+            postal_code: buyer_postal_code,
             postal_city: buyer_postal_city,
             land: "NO".into(),
             vat_registered: false,

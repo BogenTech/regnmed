@@ -27,8 +27,8 @@ pub struct Integration {
     pub created_at: DateTime<Utc>,
     /// The face, docs/agent.md §8.1: a daisyUI colour and an icon name.
     /// Plain metadata -- never hashed, never part of authorization.
-    pub avatar_farge: Option<String>,
-    pub avatar_ikon: Option<String>,
+    pub avatar_color: Option<String>,
+    pub avatar_icon: Option<String>,
     /// Extra instructions for THIS agent, appended to the role prompt
     /// (docs/agent.md §8.6). Text for a model, never authorization.
     pub system_prompt: Option<String>,
@@ -44,8 +44,8 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Integration {
         rate_limit_min: r.get("rate_limit_min"),
         registered_by: r.get("registrert_av"),
         created_at: r.get("created_at"),
-        avatar_farge: r.get("avatar_farge"),
-        avatar_ikon: r.get("avatar_ikon"),
+        avatar_color: r.get("avatar_farge"),
+        avatar_icon: r.get("avatar_ikon"),
         system_prompt: r.get("systemprompt"),
     }
 }
@@ -208,8 +208,8 @@ pub async fn update_integration(
     integration_id: Uuid,
     name: &str,
     contact: Option<&str>,
-    avatar_farge: Option<&str>,
-    avatar_ikon: Option<&str>,
+    avatar_color: Option<&str>,
+    avatar_icon: Option<&str>,
     system_prompt: Option<&str>,
 ) -> Result<()> {
     let name = name.trim();
@@ -218,8 +218,8 @@ pub async fn update_integration(
         v.map(str::trim).filter(|t| !t.is_empty())
     }
     let contact = tom(contact);
-    let farge = tom(avatar_farge);
-    let ikon = tom(avatar_ikon);
+    let color = tom(avatar_color);
+    let icon = tom(avatar_icon);
     let prompt = tom(system_prompt);
     if let Some(prompt) = prompt {
         // A cap, not a judgement of content: the whole prompt is sent
@@ -231,18 +231,18 @@ pub async fn update_integration(
             prompt.chars().count()
         );
     }
-    if let Some(farge) = farge {
+    if let Some(color) = color {
         ensure!(
-            AVATAR_FARGER.contains(&farge),
-            "ukjent farge «{farge}» — gyldige er {}",
+            AVATAR_FARGER.contains(&color),
+            "ukjent farge «{color}» — gyldige er {}",
             AVATAR_FARGER.join(", ")
         );
     }
-    if let Some(ikon) = ikon {
+    if let Some(icon) = icon {
         // The icon set belongs to the portal (`ikoner.js`), which falls
         // back when it does not know a name, so this only keeps the
         // column from becoming a place to put prose.
-        ensure!(ikon.chars().count() <= 40, "ikonnavnet er for langt");
+        ensure!(icon.chars().count() <= 40, "ikonnavnet er for langt");
     }
 
     let updated = sqlx::query(
@@ -256,8 +256,8 @@ pub async fn update_integration(
     .bind(company_id)
     .bind(name)
     .bind(contact)
-    .bind(farge)
-    .bind(ikon)
+    .bind(color)
+    .bind(icon)
     .bind(prompt)
     .execute(pool)
     .await?
@@ -365,8 +365,8 @@ pub struct GrantRow {
     pub rate_limit_min: i32,
     /// Calls today, from the usage counter.
     pub calls_today: i64,
-    pub avatar_farge: Option<String>,
-    pub avatar_ikon: Option<String>,
+    pub avatar_color: Option<String>,
+    pub avatar_icon: Option<String>,
     pub system_prompt: Option<String>,
     /// The governing LLM provider and model, when one is active
     /// (docs/agent.md §8). Joined here rather than fetched per row:
@@ -413,8 +413,8 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             revoked_by: r.get("revoked_by"),
             rate_limit_min: r.get("rate_limit_min"),
             calls_today: r.get("kall_i_dag"),
-            avatar_farge: r.get("avatar_farge"),
-            avatar_ikon: r.get("avatar_ikon"),
+            avatar_color: r.get("avatar_farge"),
+            avatar_icon: r.get("avatar_ikon"),
             system_prompt: r.get("systemprompt"),
             llm: r
                 .get::<Option<String>, _>("llm_leverandor")

@@ -64,7 +64,7 @@ pub async fn status(
             // posted to AFTER it was reconciled, which is worth saying
             // out loud rather than quietly re-baselining.
             "avvik_ore": l.discrepancy_ore(),
-            "avstemt": l.avstemt.as_ref().map(|a| json!({
+            "avstemt": l.reconciled.as_ref().map(|a| json!({
                 "id": a.id,
                 "saldo_ore": a.balance_ore,
                 "forklaring": a.forklaring,
@@ -78,7 +78,7 @@ pub async fn status(
 }
 
 #[derive(Deserialize)]
-pub struct AvstemRequest {
+pub struct ReconcileRequest {
     #[serde(rename = "konto")]
     account: String,
     #[serde(rename = "periode")]
@@ -86,18 +86,18 @@ pub struct AvstemRequest {
     forklaring: String,
 }
 
-pub async fn avstem(
+pub async fn reconcile(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<AvstemRequest>,
+    Json(request): Json<ReconcileRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let id = regnmed_db::balance_documentation::avstem(
+    let id = regnmed_db::balance_documentation::reconcile(
         &state.pool,
         company_id,
         &request.account,
@@ -143,7 +143,7 @@ pub async fn reconcile_with_attachment(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let id = regnmed_db::balance_documentation::avstem(
+    let id = regnmed_db::balance_documentation::reconcile(
         &state.pool,
         company_id,
         &query.account,

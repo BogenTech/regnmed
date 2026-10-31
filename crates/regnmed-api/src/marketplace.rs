@@ -108,11 +108,11 @@ pub async fn onboard_company(
         .map_err(anyhow::Error::from)?;
     let kapital = unit.kapital.as_ref();
     let facts = regnmed_db::RegistryFacts {
-        orgform: unit.organisasjonsform.as_ref().map(|k| k.code.clone()),
+        org_form: unit.organisasjonsform.as_ref().map(|k| k.code.clone()),
         address: unit.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         email: unit.epostadresse.clone(),
         naeringskode: unit.naeringskode1.as_ref().map(|k| k.code.clone()),
-        aksjekapital_ore: kapital.and_then(|k| k.amount_ore()),
+        share_capital_ore: kapital.and_then(|k| k.amount_ore()),
         share_count: kapital.and_then(|k| k.share_count),
         registreringer: unit.registration_timeline(today),
     };

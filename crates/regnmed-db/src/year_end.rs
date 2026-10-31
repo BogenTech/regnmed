@@ -72,7 +72,7 @@ pub async fn avslutt_ar(
         skattekostnad_ore >= 0,
         "skattekostnaden kan ikke være negativ — en skattefordel er utsatt skatt, som ikke er bygget"
     );
-    let (_, ar_slutt) = period(year)?;
+    let (_, end_of_year) = period(year)?;
 
     let alt_avsluttet: Option<i32> =
         sqlx::query_scalar("select ar from arsavslutning where company_id = $1 and ar = $2")
@@ -93,9 +93,9 @@ pub async fn avslutt_ar(
         .await?;
     if let Some(las) = las {
         ensure!(
-            las < ar_slutt,
+            las < end_of_year,
             "perioden er låst til og med {las}, så årsavslutningsbilaget for {year} \
-             (datert {ar_slutt}) kan ikke posteres. Årsavslutningen låser året selv — \
+             (datert {end_of_year}) kan ikke posteres. Årsavslutningen låser året selv — \
              lås derfor ikke {year} på forhånd"
         );
     }
@@ -160,7 +160,7 @@ pub async fn avslutt_ar(
 
     let draft = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: ar_slutt,
+        voucher_date: end_of_year,
         description: format!("Årsavslutning {year}"),
         reverses: None,
         entries,
@@ -191,7 +191,7 @@ pub async fn avslutt_ar(
     )
     .bind(Uuid::now_v7())
     .bind(company_id)
-    .bind(ar_slutt)
+    .bind(end_of_year)
     .bind(format!("årsavslutning {year} ({created_by})"))
     .execute(&mut *tx)
     .await?;

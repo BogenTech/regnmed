@@ -363,7 +363,7 @@ pub async fn generate_one(
     let end_date: Option<NaiveDate> = template.get("slutt_dato");
     if !template.get::<bool, _>("active")
         || next_date > today
-        || end_date.is_some_and(|slutt| next_date > slutt)
+        || end_date.is_some_and(|end| next_date > end)
     {
         return Ok(None);
     }

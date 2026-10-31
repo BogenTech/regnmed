@@ -353,7 +353,7 @@ async fn events_cannot_be_changed_or_deleted() {
             name: "Eier AS".into(),
             nin: None,
             orgnumber: Some("923609016".into()),
-            utenlandsk_id: None,
+            foreign_id: None,
             address: None,
             postal_code: None,
             postal_city: None,

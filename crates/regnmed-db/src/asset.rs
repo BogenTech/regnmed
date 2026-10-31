@@ -46,7 +46,7 @@ pub struct AssetDraft {
     pub acquisition_date: NaiveDate,
     pub cost_price_ore: i64,
     pub restverdi_ore: i64,
-    pub levetid_maneder: i32,
+    pub lifetime_months: i32,
     pub balance_account: String,
     pub depreciation_account: String,
     pub depreciation_group: String,
@@ -75,7 +75,7 @@ pub async fn create_asset(
     // At least 1 øre per month: rules out zero-amount months, so every
     // generated period always posts a voucher (the run-log invariant).
     ensure!(
-        draft.cost_price_ore - draft.restverdi_ore >= draft.levetid_maneder as i64,
+        draft.cost_price_ore - draft.restverdi_ore >= draft.lifetime_months as i64,
         "avskrivbart beløp må være minst 1 øre per måned av levetiden"
     );
     for account in [&draft.balance_account, &draft.depreciation_account] {
@@ -111,7 +111,7 @@ pub async fn create_asset(
             "kostpris under aktiveringsgrensen ({} kr) — kan kostnadsføres direkte",
             grense / 100
         ));
-    } else if draft.levetid_maneder < 36 {
+    } else if draft.lifetime_months < 36 {
         warning = Some("levetid under 3 år — driftsmidlet kan kostnadsføres direkte".to_string());
     }
 
@@ -128,7 +128,7 @@ pub async fn create_asset(
     .bind(draft.acquisition_date)
     .bind(draft.cost_price_ore)
     .bind(draft.restverdi_ore)
-    .bind(draft.levetid_maneder)
+    .bind(draft.lifetime_months)
     .bind(&draft.balance_account)
     .bind(&draft.depreciation_account)
     .bind(&draft.depreciation_group)
@@ -146,7 +146,7 @@ pub struct AssetRow {
     pub acquisition_date: NaiveDate,
     pub cost_price_ore: i64,
     pub restverdi_ore: i64,
-    pub levetid_maneder: i32,
+    pub lifetime_months: i32,
     pub balance_account: String,
     pub depreciation_account: String,
     pub depreciation_group: String,
@@ -182,7 +182,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 acquisition_date: r.get("anskaffelsesdato"),
                 cost_price_ore: cost_price,
                 restverdi_ore: r.get("restverdi_ore"),
-                levetid_maneder: r.get("levetid_maneder"),
+                lifetime_months: r.get("levetid_maneder"),
                 balance_account: r.get("balansekonto"),
                 depreciation_account: r.get("avskrivningskonto"),
                 depreciation_group: r.get("saldogruppe"),
@@ -284,7 +284,7 @@ async fn depreciate_next(
         return Ok(None);
     };
     let acquisition_date: NaiveDate = asset.get("anskaffelsesdato");
-    let levetid: i32 = asset.get("levetid_maneder");
+    let lifetime: i32 = asset.get("levetid_maneder");
     let avhendet: Option<NaiveDate> = asset.get("avhendet_dato");
 
     let last_done: Option<NaiveDate> = sqlx::query_scalar(
@@ -302,7 +302,7 @@ async fn depreciate_next(
     let voucher_date = month_end(period);
     // Due: month ended, plan not exhausted, asset still owned that month.
     if voucher_date > through
-        || number > levetid
+        || number > lifetime
         || avhendet.is_some_and(|d| month_start(d) <= period)
     {
         return Ok(None);
@@ -312,7 +312,7 @@ async fn depreciate_next(
     let amount = monthly_amount(
         asset.get("kostpris_ore"),
         asset.get("restverdi_ore"),
-        levetid,
+        lifetime,
         number,
     );
     let name: String = asset.get("navn");
@@ -327,7 +327,7 @@ async fn depreciate_next(
                     account_number: asset.get("avskrivningskonto"),
                     amount: Ore(amount),
                     vat_code: None,
-                    description: Some(format!("Lineær avskrivning måned {number}/{levetid}")),
+                    description: Some(format!("Lineær avskrivning måned {number}/{lifetime}")),
                     party_no: None,
                     department: None,
                     project: None,

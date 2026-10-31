@@ -534,10 +534,10 @@ async fn a_human_must_attest_what_a_machine_posts() {
     // Two agents, both with bokføring: one to post, one to try to be the
     // second pair of eyes.
     let agent_sub = format!("agent-{}", Uuid::new_v4());
-    let annen_sub = format!("agent-{}", Uuid::new_v4());
+    let other_sub = format!("agent-{}", Uuid::new_v4());
     for (sub, name) in [
         (&agent_sub, "Bokføringsagenten"),
-        (&annen_sub, "Hjelpeagenten"),
+        (&other_sub, "Hjelpeagenten"),
     ] {
         regnmed_db::grant_integration(
             &state.pool,
@@ -552,7 +552,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
         .unwrap();
     }
     let agent_token = idp.token(&agent_sub, "");
-    let annen_token = idp.token(&annen_sub, "");
+    let other_token = idp.token(&other_sub, "");
 
     // A policy with a HIGH threshold: nothing a human posts below it
     // needs attestering, and that is the point — the machine rule is a
@@ -621,7 +621,7 @@ async fn a_human_must_attest_what_a_machine_posts() {
         &state,
         "POST",
         &format!("/companies/{company}/inbox/{maskinens}/attester"),
-        &annen_token,
+        &other_token,
         Some("application/json"),
         Some(json!({"godkjent": true}).to_string().into_bytes()),
     )

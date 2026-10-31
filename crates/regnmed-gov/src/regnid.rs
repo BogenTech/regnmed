@@ -88,13 +88,13 @@ impl Regnid {
                 .unwrap_or("ukjent feil");
             bail!("påloggingstjenesten avviste registreringen ({status}): {hvorfor}");
         }
-        let hemmelighet = body["client_secret"]
+        let secret = body["client_secret"]
             .as_str()
             .filter(|s| !s.is_empty())
             .context("påloggingstjenesten svarte uten klienthemmelighet")?;
         Ok(MachineClient {
             client_id: body["client_id"].as_str().unwrap_or(client_id).to_string(),
-            client_secret: hemmelighet.to_string(),
+            client_secret: secret.to_string(),
         })
     }
 }

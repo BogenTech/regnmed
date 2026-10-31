@@ -48,8 +48,8 @@ pub async fn list(
             "revoked_by": g.revoked_by,
             "rate_limit_min": g.rate_limit_min,
             "kall_i_dag": g.calls_today,
-            "avatar_farge": g.avatar_farge,
-            "avatar_ikon": g.avatar_ikon,
+            "avatar_farge": g.avatar_color,
+            "avatar_ikon": g.avatar_icon,
             "system_prompt": g.system_prompt,
             "llm": g.llm.as_ref().map(|(lev, model)| json!({
                 "leverandor": lev, "modell": model
@@ -161,8 +161,10 @@ pub struct AgentRequest {
     access: String,
     #[serde(rename = "kontakt")]
     contact: Option<String>,
-    avatar_farge: Option<String>,
-    avatar_ikon: Option<String>,
+    #[serde(rename = "avatar_farge")]
+    avatar_color: Option<String>,
+    #[serde(rename = "avatar_ikon")]
+    avatar_icon: Option<String>,
     /// Extra instructions on top of the role prompt.
     system_prompt: Option<String>,
     /// An EXISTING client_id, for an agent the customer runs themselves
@@ -219,7 +221,7 @@ pub async fn opprett_agent(
 
     // Provision only when no client_id was given. A customer bringing
     // their own agent keeps the identity they already have.
-    let (client_id, hemmelighet) = match oppgitt {
+    let (client_id, secret) = match oppgitt {
         Some(client_id) => (client_id.to_string(), None),
         None => {
             let Some(cfg) = state.regnid.as_ref() else {
@@ -237,7 +239,7 @@ pub async fn opprett_agent(
                 ));
             }
             let client_id = format!("agent-{}", Uuid::now_v7().simple());
-            let klient = regnmed_gov::regnid::Regnid::new(
+            let client = regnmed_gov::regnid::Regnid::new(
                 cfg.base_url
                     .as_deref()
                     .unwrap_or_else(|| state.verifier.issuer()),
@@ -251,7 +253,7 @@ pub async fn opprett_agent(
             )
             .await
             .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-            (klient.client_id, Some(klient.client_secret))
+            (client.client_id, Some(client.client_secret))
         }
     };
 
@@ -271,8 +273,8 @@ pub async fn opprett_agent(
     // is not worth losing the agent over: it is editable afterwards
     // from the same card, so say what went wrong and keep the agent.
     let mut warnings: Vec<String> = Vec::new();
-    let har_metadata = request.avatar_farge.is_some()
-        || request.avatar_ikon.is_some()
+    let har_metadata = request.avatar_color.is_some()
+        || request.avatar_icon.is_some()
         || request.system_prompt.is_some()
         || request.contact.is_some();
     if har_metadata
@@ -282,8 +284,8 @@ pub async fn opprett_agent(
             integration_id,
             &request.name,
             request.contact.as_deref(),
-            request.avatar_farge.as_deref(),
-            request.avatar_ikon.as_deref(),
+            request.avatar_color.as_deref(),
+            request.avatar_icon.as_deref(),
             request.system_prompt.as_deref(),
         )
         .await
@@ -291,7 +293,7 @@ pub async fn opprett_agent(
         warnings.push(format!("agenten ble opprettet, men {e:#}"));
     }
 
-    if let Some(hemmelighet) = hemmelighet {
+    if let Some(secret) = secret {
         let key = state
             .sealing_key
             .as_ref()
@@ -301,7 +303,7 @@ pub async fn opprett_agent(
             key,
             company_id,
             integration_id,
-            &hemmelighet,
+            &secret,
         )
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
@@ -365,8 +367,10 @@ pub struct EndreRequest {
     name: String,
     #[serde(rename = "kontakt")]
     contact: Option<String>,
-    avatar_farge: Option<String>,
-    avatar_ikon: Option<String>,
+    #[serde(rename = "avatar_farge")]
+    avatar_color: Option<String>,
+    #[serde(rename = "avatar_ikon")]
+    avatar_icon: Option<String>,
     /// Extra instructions for this agent, on top of the role prompt
     /// (docs/agent.md §8.6). Empty clears them.
     system_prompt: Option<String>,
@@ -395,8 +399,8 @@ pub async fn endre(
         integration_id,
         &request.name,
         request.contact.as_deref(),
-        request.avatar_farge.as_deref(),
-        request.avatar_ikon.as_deref(),
+        request.avatar_color.as_deref(),
+        request.avatar_icon.as_deref(),
         request.system_prompt.as_deref(),
     )
     .await
@@ -492,7 +496,8 @@ pub struct LlmRequest {
     /// worker needs it to get a token AS THE AGENT -- there is no
     /// second way into the ledger for it. Optional here so a key can be
     /// replaced without re-entering this one.
-    klient_hemmelighet: Option<String>,
+    #[serde(rename = "klient_hemmelighet")]
+    client_secret: Option<String>,
 }
 
 /// The provider this agent uses, and whether a key is stored. The key
@@ -564,15 +569,15 @@ pub async fn sett_llm(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    if let Some(hemmelighet) = request.klient_hemmelighet.as_deref().map(str::trim)
-        && !hemmelighet.is_empty()
+    if let Some(secret) = request.client_secret.as_deref().map(str::trim)
+        && !secret.is_empty()
     {
         regnmed_db::agentllm::sett_klienthemmelighet(
             &state.pool,
             key,
             company_id,
             integration_id,
-            hemmelighet,
+            secret,
         )
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

@@ -458,7 +458,7 @@ async fn company_detail(
             "orgnr": s.orgnumber,
             "address": s.address,
             "bank_account": s.bank_account,
-            "orgform": s.orgform,
+            "orgform": s.org_form,
             "email": s.email,
         },
         "medlemmer": members.iter().map(|m| json!({
@@ -494,7 +494,8 @@ async fn company_detail(
 pub struct CompanySettingsRequest {
     address: Option<String>,
     bank_account: Option<String>,
-    orgform: Option<String>,
+    #[serde(rename = "orgform")]
+    org_form: Option<String>,
     email: Option<String>,
 }
 
@@ -513,7 +514,7 @@ async fn put_company_settings(
         company_id,
         request.address.as_deref(),
         request.bank_account.as_deref(),
-        request.orgform.as_deref(),
+        request.org_form.as_deref(),
         request.email.as_deref(),
         None,
     )

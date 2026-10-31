@@ -480,7 +480,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/expenses/kjoring",
-            axum::routing::post(expenses::create_kjoring),
+            axum::routing::post(expenses::create_expense_run),
         )
         .route(
             "/companies/{company_id}/expenses/{expense_id}/receipt",
@@ -573,7 +573,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon",
-            get(balance_documentation::status).post(balance_documentation::avstem),
+            get(balance_documentation::status).post(balance_documentation::reconcile),
         )
         .route(
             "/companies/{company_id}/balansedokumentasjon/vedlegg",

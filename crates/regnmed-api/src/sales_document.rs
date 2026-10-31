@@ -202,7 +202,8 @@ pub struct ToInvoiceRequest {
     /// Leveringstidspunkt (§5-1-1 nr. 4); omitted = the invoice date.
     #[serde(rename = "leveringsdato")]
     delivery_date: Option<chrono::NaiveDate>,
-    leveringssted: Option<String>,
+    #[serde(rename = "leveringssted")]
+    delivery_place: Option<String>,
 }
 
 pub async fn order_to_invoice(
@@ -229,7 +230,7 @@ pub async fn order_to_invoice(
         invoice_date,
         due_date,
         request.delivery_date.unwrap_or(invoice_date),
-        request.leveringssted.as_deref(),
+        request.delivery_place.as_deref(),
         created_by,
     )
     .await

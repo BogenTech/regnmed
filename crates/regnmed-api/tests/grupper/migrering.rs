@@ -149,7 +149,7 @@ async fn contacts_and_open_items_from_an_old_system() {
 
     // ---- Open items: preview before anything is posted ----
     // The file has both Beløp and Restbeløp — the remainder must win.
-    let apne = "Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n\
+    let open_items_csv = "Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n\
                 10001;Hansen AS;F-100;15.01.2026;29.01.2026;12 500,00;12 500,00;1234567897\n\
                 10002;Lille Bakeri;F-101;20.01.2026;03.02.2026;5 000,00;2 000,00;\n\
                 10003;Nykommer AS;F-102;22.01.2026;05.02.2026;1 000,00;1 000,00;\n";
@@ -157,7 +157,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         &state,
         &format!("{base}/import/open-items?kind=kunde&preview=true"),
         &token,
-        apne,
+        open_items_csv,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{preview}");
@@ -181,7 +181,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         &state,
         &format!("{base}/import/open-items?kind=kunde&dato=2026-01-01"),
         &token,
-        apne,
+        open_items_csv,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -230,7 +230,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         &state,
         &format!("{base}/import/open-items?kind=kunde"),
         &token,
-        apne,
+        open_items_csv,
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

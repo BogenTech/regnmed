@@ -439,7 +439,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         date(2026, 10, 1),
         regnmed_db::Registrering {
             vat_registered: true,
-            foretaksregistrert: true,
+            business_registered: true,
         },
         "manuell",
         Some("testfixtur"),

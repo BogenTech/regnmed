@@ -234,7 +234,7 @@ pub async fn build_audit_report(
     .bind(company_id)
     .fetch_one(pool)
     .await?;
-    let totalt: i64 = sqlx::query_scalar(
+    let total: i64 = sqlx::query_scalar(
         "select count(*)::bigint from voucher v
          where v.company_id = $1
            and not exists (select 1 from journal j
@@ -270,10 +270,10 @@ pub async fn build_audit_report(
         name: "Dokumentasjon".into(),
         ok: true,
         detail: if udokumenterte == 0 {
-            format!("alle {totalt} bilag utenfor importjournalen har vedlegg")
+            format!("alle {total} bilag utenfor importjournalen har vedlegg")
         } else {
             format!(
-                "{udokumenterte} av {totalt} bilag mangler vedlegg i regnmed \
+                "{udokumenterte} av {total} bilag mangler vedlegg i regnmed \
                  (informasjon, ikke avvik — dokumentasjonen kan finnes i annet \
                  oppbevaringsmedium; bokføringsloven §10 krever at den finnes, \
                  ikke at den ligger her). Eldste: {}",
@@ -311,7 +311,7 @@ pub async fn build_audit_report(
             let lines =
                 crate::balance_documentation::balance_status(pool, company_id, period).await?;
             let udokumentert: Vec<&crate::balance_documentation::BalanceSheetLine> =
-                lines.iter().filter(|l| l.avstemt.is_none()).collect();
+                lines.iter().filter(|l| l.reconciled.is_none()).collect();
             let flyttet: Vec<(&str, i64)> = lines
                 .iter()
                 .filter_map(|l| l.discrepancy_ore().map(|d| (l.account.as_str(), d)))

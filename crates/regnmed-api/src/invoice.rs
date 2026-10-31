@@ -35,7 +35,8 @@ pub struct CreateInvoiceRequest {
     delivery_date: Option<chrono::NaiveDate>,
     /// Leveringssted, required "der det er relevant" — typically a
     /// vareleveranse to an address other than the buyer's.
-    leveringssted: Option<String>,
+    #[serde(rename = "leveringssted")]
+    delivery_place: Option<String>,
     /// Defaults: journal GL, receivable 1500, VAT account 2700.
     journal: Option<String>,
     receivable_account: Option<String>,
@@ -101,7 +102,7 @@ pub async fn create_invoice(
         invoice_date: request.invoice_date,
         due_date: request.due_date,
         delivery_date: request.delivery_date.unwrap_or(request.invoice_date),
-        delivery_place: request.leveringssted,
+        delivery_place: request.delivery_place,
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         receivable_account: request.receivable_account.unwrap_or_else(|| "1500".into()),
         vat_account: request.vat_account.unwrap_or_else(|| "2700".into()),

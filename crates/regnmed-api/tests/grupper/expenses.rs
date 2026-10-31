@@ -190,7 +190,7 @@ async fn expenses_flow() {
     assert_eq!(status, StatusCode::OK, "body: {made}");
     assert_eq!(made["belop_ore"], 63_600);
     assert_eq!(made["trekkpliktig_ore"], 21_600);
-    let kjoring_id = made["expense_id"].as_str().unwrap().to_string();
+    let run_id = made["expense_id"].as_str().unwrap().to_string();
     // Before the register's coverage: refused loudly, never guessed.
     let (status, _) = request(
         &state,
@@ -209,7 +209,7 @@ async fn expenses_flow() {
     let (status, approved) = request(
         &state,
         "POST",
-        &format!("{base}/{kjoring_id}/approve"),
+        &format!("{base}/{run_id}/approve"),
         &token,
         Some("{}".to_string()),
     )

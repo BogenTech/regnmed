@@ -20,7 +20,7 @@ use regnmed_api::{AppState, router};
 
 /// Tenor test numbers (Skatteetaten's synthetic range) — valid check
 /// digits, no real person.
-const FNR: [&str; 3] = ["26829398612", "08888797336", "25927898821"];
+const NIN: [&str; 3] = ["26829398612", "08888797336", "25927898821"];
 
 async fn json_call(
     state: &AppState,
@@ -69,14 +69,14 @@ async fn setup() -> Option<(AppState, TestIdp, Uuid, String)> {
     Some((state, idp, company, token))
 }
 
-async fn new_employee(state: &AppState, company: Uuid, admin: &str, name: &str, fnr: &str) -> Uuid {
+async fn new_employee(state: &AppState, company: Uuid, admin: &str, name: &str, nin: &str) -> Uuid {
     let (code, response) = json_call(
         state,
         "POST",
         &format!("/companies/{company}/employees"),
         admin,
         &format!(
-            r#"{{"fodselsnummer":"{fnr}","navn":"{name}","ansatt_fra":"2026-01-01",
+            r#"{{"fodselsnummer":"{nin}","navn":"{name}","ansatt_fra":"2026-01-01",
                  "manedslonn_ore":5000000,"trekk_type":"prosent","trekk_prosent_bp":3000}}"#
         ),
     )
@@ -118,7 +118,7 @@ async fn an_invitation_carrying_an_employee_links_on_first_login() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let employee = new_employee(&state, company, &admin, "Kari Kobling", FNR[0]).await;
+    let employee = new_employee(&state, company, &admin, "Kari Kobling", NIN[0]).await;
 
     // The future user's address is derived the way TestIdp derives it,
     // so the /me redemption matches.
@@ -181,8 +181,8 @@ async fn a_conflicting_link_never_blocks_the_login() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let forste = new_employee(&state, company, &admin, "Allerede Ansatt", FNR[0]).await;
-    let andre = new_employee(&state, company, &admin, "Ny Ansatt", FNR[1]).await;
+    let first = new_employee(&state, company, &admin, "Allerede Ansatt", NIN[0]).await;
+    let andre = new_employee(&state, company, &admin, "Ny Ansatt", NIN[1]).await;
 
     let sub = format!("ansatt|{}", Uuid::new_v4());
     let email = format!("{}@test.invalid", sub.replace('|', "."));
@@ -196,15 +196,9 @@ async fn a_conflicting_link_never_blocks_the_login() {
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    regnmed_db::payroll::link_employee_person(
-        &state.pool,
-        company,
-        forste,
-        person_id,
-        admin_person,
-    )
-    .await
-    .unwrap();
+    regnmed_db::payroll::link_employee_person(&state.pool, company, first, person_id, admin_person)
+        .await
+        .unwrap();
 
     let (code, _) = json_call(
         &state,
@@ -234,7 +228,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     let Some((state, idp, company, admin)) = setup().await else {
         return;
     };
-    let employee = new_employee(&state, company, &admin, "Manuell Ansatt", FNR[2]).await;
+    let employee = new_employee(&state, company, &admin, "Manuell Ansatt", NIN[2]).await;
     let link_uri = format!("/companies/{company}/employees/{employee}/link");
 
     let medlem_sub = format!("les|{}", Uuid::new_v4());
@@ -256,7 +250,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     assert_eq!(code, StatusCode::OK, "{response}");
 
     // Relinking to someone else without unlinking first is refused.
-    let annen = regnmed_db::ensure_person(
+    let other = regnmed_db::ensure_person(
         &state.pool,
         &format!("les|{}", Uuid::new_v4()),
         Some("Annen"),
@@ -269,7 +263,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         "POST",
         &link_uri,
         &admin,
-        &format!(r#"{{"person_id":"{annen}"}}"#),
+        &format!(r#"{{"person_id":"{other}"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
@@ -281,7 +275,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     );
 
     // The same person cannot be a second employee in the company.
-    let tvilling = new_employee(&state, company, &admin, "Tvilling", FNR[0]).await;
+    let tvilling = new_employee(&state, company, &admin, "Tvilling", NIN[0]).await;
     let (code, response) = json_call(
         &state,
         "POST",
