@@ -32,7 +32,7 @@ pub struct Arsavslutning {
     pub voucher: (i32, i64),
     pub result_before_tax_ore: i64,
     pub tax_expense_ore: i64,
-    pub disponert_ore: i64,
+    pub allocated_ore: i64,
     pub created_by: String,
 }
 
@@ -101,7 +101,7 @@ pub async fn close_year(
     }
 
     let result_before_tax_ore = result_for_the_year(pool, company_id, year).await?;
-    let disponert_ore = result_before_tax_ore - tax_expense_ore;
+    let allocated_ore = result_before_tax_ore - tax_expense_ore;
 
     let linje = |account: &str, amount: i64, text: &str| EntryDraft {
         account_number: account.to_string(),
@@ -125,15 +125,15 @@ pub async fn close_year(
     // A zero result still closes the year — the year happened, and the
     // arsavslutning row is what says so. The voucher just has no
     // disposition lines then.
-    if disponert_ore != 0 {
+    if allocated_ore != 0 {
         entries.push(linje(
             regnmed_core::statements::ALLOCATION_ACCOUNT,
-            disponert_ore,
+            allocated_ore,
             "Disponering av årets resultat",
         ));
         entries.push(linje(
             RETAINED_EARNINGS_ACCOUNT,
-            -disponert_ore,
+            -allocated_ore,
             "Overført til annen egenkapital",
         ));
     }
@@ -176,7 +176,7 @@ pub async fn close_year(
     .bind(posted.id)
     .bind(result_before_tax_ore)
     .bind(tax_expense_ore)
-    .bind(disponert_ore)
+    .bind(allocated_ore)
     .bind(created_by)
     .execute(&mut *tx)
     .await?;
@@ -198,7 +198,7 @@ pub async fn close_year(
         voucher: (posted.fiscal_year, posted.voucher_number),
         result_before_tax_ore,
         tax_expense_ore,
-        disponert_ore,
+        allocated_ore,
         created_by: created_by.to_string(),
     })
 }
@@ -220,7 +220,7 @@ pub async fn list_arsavslutninger(pool: &PgPool, company_id: Uuid) -> Result<Vec
         voucher: (r.get("fiscal_year"), r.get("voucher_number")),
         result_before_tax_ore: r.get("resultat_for_skatt_ore"),
         tax_expense_ore: r.get("skattekostnad_ore"),
-        disponert_ore: r.get("disponert_ore"),
+        allocated_ore: r.get("disponert_ore"),
         created_by: r.get("created_by"),
     })
     .collect())

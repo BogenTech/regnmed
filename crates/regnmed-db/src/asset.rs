@@ -416,7 +416,7 @@ pub async fn depreciate_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Dep
 #[derive(Debug)]
 pub struct Disposal {
     pub posted_ore: i64,
-    pub gevinst_ore: i64,
+    pub gain_ore: i64,
     pub voucher: Option<(i32, i64)>,
 }
 
@@ -455,7 +455,7 @@ pub async fn dispose_asset(
         "driftsmidlet er allerede avhendet"
     );
     let posted = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
-    let gevinst = consideration_ore - posted;
+    let gain = consideration_ore - posted;
 
     let mut entries = Vec::new();
     if consideration_ore != 0 {
@@ -482,17 +482,17 @@ pub async fn dispose_asset(
             currency: None,
         });
     }
-    if gevinst != 0 {
+    if gain != 0 {
         entries.push(EntryDraft {
-            account_number: if gevinst > 0 {
+            account_number: if gain > 0 {
                 gain_account.to_string()
             } else {
                 loss_account.to_string()
             },
-            amount: Ore(-gevinst),
+            amount: Ore(-gain),
             vat_code: None,
             description: Some(
-                if gevinst > 0 {
+                if gain > 0 {
                     "Gevinst ved avgang"
                 } else {
                     "Tap ved avgang"
@@ -536,7 +536,7 @@ pub async fn dispose_asset(
     tx.commit().await?;
     Ok(Disposal {
         posted_ore: posted,
-        gevinst_ore: gevinst,
+        gain_ore: gain,
         voucher: voucher.map(|p| (p.fiscal_year, p.voucher_number)),
     })
 }

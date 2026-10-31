@@ -88,11 +88,11 @@ pub struct Svar {
 
 #[derive(Deserialize)]
 struct Respons {
-    choices: Vec<Valg>,
+    choices: Vec<Choice>,
 }
 
 #[derive(Deserialize)]
-struct Valg {
+struct Choice {
     message: Beskjed,
 }
 
@@ -105,11 +105,11 @@ struct Beskjed {
 #[derive(Deserialize)]
 struct RawCall {
     id: String,
-    function: RaaFunksjon,
+    function: RawFunction,
 }
 
 #[derive(Deserialize)]
-struct RaaFunksjon {
+struct RawFunction {
     name: String,
     /// The provider sends the arguments as a JSON *string*, not an
     /// object. A model can produce an invalid one, so parsing failure is
@@ -170,17 +170,17 @@ impl Llm {
 
         let response: Respons = serde_json::from_str(&body)
             .with_context(|| format!("uventet reply fra leverandøren: {}", truncate(&body, 400)))?;
-        let Some(valg) = response.choices.into_iter().next() else {
+        let Some(choice) = response.choices.into_iter().next() else {
             bail!("leverandøren svarte uten noe valg");
         };
 
-        let raa: Option<Value> = serde_json::from_str::<Value>(&body)
+        let raw: Option<Value> = serde_json::from_str::<Value>(&body)
             .ok()
             .and_then(|v| v["choices"][0]["message"]["tool_calls"].as_array().cloned())
             .map(Value::Array);
 
         let mut calls = Vec::new();
-        for rå in valg.message.tool_calls.unwrap_or_default() {
+        for rå in choice.message.tool_calls.unwrap_or_default() {
             // An unparseable argument list is the model's mistake, and
             // the loop hands it back as a tool error so it can correct
             // itself — exactly what a human tool user would get.
@@ -193,9 +193,9 @@ impl Llm {
             });
         }
         Ok(Svar {
-            text: valg.message.content,
+            text: choice.message.content,
             calls,
-            raw_tool_calls: raa,
+            raw_tool_calls: raw,
         })
     }
 }

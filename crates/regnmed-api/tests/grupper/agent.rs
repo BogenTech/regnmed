@@ -28,7 +28,7 @@ use regnmed_mcp::{Server, client::Client};
 /// Serves the router on an ephemeral port and returns its base URL.
 /// The task is left running for the test's lifetime; the process ends
 /// when the test does.
-async fn tjen(state: AppState) -> String {
+async fn serve(state: AppState) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -65,8 +65,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let eier_sub = format!("test|{}", Uuid::new_v4());
-    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
     let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Agentverktoy AS")
@@ -110,7 +110,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
             .unwrap();
     }
 
-    let base = tjen(state.clone()).await;
+    let base = serve(state.clone()).await;
     let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
@@ -132,7 +132,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     // Arguments good enough to reach the endpoint. Tools whose action
     // needs a document, a file or a party are exercised by name below
     // instead — reaching them here would mean inventing a bilag.
-    let aar = json!({"from": "2026-01-01", "to": "2026-12-31"});
+    let year = json!({"from": "2026-01-01", "to": "2026-12-31"});
     let argumenter: BTreeMap<&str, Value> = BTreeMap::from([
         ("selskaper", json!({})),
         ("firmaopplysninger", json!({})),
@@ -140,14 +140,14 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("periodestatus", json!({})),
         ("attesteringspolicy", json!({})),
         ("bilag_liste", json!({"limit": 5})),
-        ("saldobalanse", aar.clone()),
-        ("kontospesifikasjon", aar.clone()),
-        ("resultat", aar.clone()),
+        ("saldobalanse", year.clone()),
+        ("kontospesifikasjon", year.clone()),
+        ("resultat", year.clone()),
         ("balanse", json!({"date": "2026-12-31"})),
         ("mva_rapport", json!({"year": 2026, "termin": 1})),
         ("nokkeltall", json!({"year": 2026})),
-        ("kundespesifikasjon", aar.clone()),
-        ("leverandorspesifikasjon", aar.clone()),
+        ("kundespesifikasjon", year.clone()),
+        ("leverandorspesifikasjon", year.clone()),
         ("revisjonsrapport", json!({})),
         ("innboks", json!({})),
         ("kunder", json!({})),
@@ -373,11 +373,11 @@ fn skriv_midlertidig(name: &str, innhold: &[u8]) -> String {
 /// the test can assert that the tool actually ran against the real API
 /// rather than that the loop merely claimed it did.
 #[derive(Clone, Default)]
-struct FalskLeverandor {
+struct FakeSupplier {
     sett: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
-async fn tjen_leverandor(mock: FalskLeverandor, reply: Vec<Value>) -> String {
+async fn serve_supplier(mock: FakeSupplier, reply: Vec<Value>) -> String {
     let reply = std::sync::Arc::new(std::sync::Mutex::new(reply.into_iter()));
     let app =
         axum::Router::new().route(
@@ -415,8 +415,8 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let eier_sub = format!("test|{}", Uuid::new_v4());
-    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
     let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Vertsagent AS")
@@ -441,15 +441,15 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     .await
     .unwrap();
 
-    let base = tjen(state.clone()).await;
+    let base = serve(state.clone()).await;
     let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
 
-    let mock = FalskLeverandor::default();
-    let supplier = tjen_leverandor(
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(
         mock.clone(),
         vec![
             // Turn 1: ask for a real tool with real arguments.
@@ -552,15 +552,15 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     )
     .await
     .unwrap();
-    let base = tjen(state.clone()).await;
+    let base = serve(state.clone()).await;
     let server = Server::new(Client::new(
         &base,
         Some(company.to_string()),
         &idp.token(&client_id, ""),
     ));
 
-    let mock = FalskLeverandor::default();
-    let supplier = tjen_leverandor(
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(
         mock.clone(),
         vec![json!({"choices":[{"message":{"role":"assistant",
             "content":"FERDIG: brukte svaret ditt"}}]})],

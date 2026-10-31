@@ -21,7 +21,7 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct DailySettlementInput {
     pub date: NaiveDate,
-    pub z_nummer: String,
+    pub z_number: String,
     pub sale: Vec<(String, Option<String>, i64)>,
     pub payment: Vec<(String, i64)>,
     pub vat_account: String,
@@ -33,7 +33,7 @@ pub struct DailySettlementInput {
 }
 
 #[derive(Debug)]
-pub struct BokfortOppgjor {
+pub struct PostedSettlement {
     pub voucher: (i32, i64),
     /// The difference voucher, when there was a difference at all.
     pub difference: Option<(i32, i64)>,
@@ -46,7 +46,7 @@ pub async fn post_daily_settlement(
     inn: &DailySettlementInput,
     z_rapport: Option<(&str, &str, &[u8])>,
     created_by: &str,
-) -> Result<BokfortOppgjor> {
+) -> Result<PostedSettlement> {
     ensure!(
         inn.cash_account.is_some() == inn.counted_cash_ore.is_some(),
         "opptalt kontantbeholdning krever at kontantkontoen oppgis, og omvendt"
@@ -79,9 +79,9 @@ pub async fn post_daily_settlement(
         });
     }
 
-    let oppgjor = DailySettlement {
+    let settlement = DailySettlement {
         date: inn.date,
-        z_number: inn.z_nummer.clone(),
+        z_number: inn.z_number.clone(),
         sales: sale,
         payments: inn
             .payment
@@ -93,7 +93,7 @@ pub async fn post_daily_settlement(
             .collect(),
         vat_account: inn.vat_account.clone(),
     };
-    let draft = build_settlement(&oppgjor).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let draft = build_settlement(&settlement).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let mut tx = pool.begin().await?;
     let posted = crate::post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
@@ -125,7 +125,7 @@ pub async fn post_daily_settlement(
         difference_ore = opptalt - registered;
         if let Some(diff) = build_discrepancy(
             inn.date,
-            &inn.z_nummer,
+            &inn.z_number,
             cash_account,
             &inn.difference_account,
             registered,
@@ -136,7 +136,7 @@ pub async fn post_daily_settlement(
         }
     }
     tx.commit().await?;
-    Ok(BokfortOppgjor {
+    Ok(PostedSettlement {
         voucher: (posted.fiscal_year, posted.voucher_number),
         difference,
         difference_ore,

@@ -152,7 +152,7 @@ pub async fn create_budget(
     name: &str,
     note: Option<&str>,
     fra_ar: Option<i32>,
-    justering_bp: i64,
+    adjustment_bp: i64,
     created_by: &str,
 ) -> Result<Uuid> {
     ensure!(!name.trim().is_empty(), "budsjettet trenger et navn");
@@ -186,7 +186,7 @@ pub async fn create_budget(
     if let Some(from) = fra_ar {
         let rows = monthly_actuals(&mut tx, company_id, from).await?;
         for (account_id, number, month, ledger_ore) in rows {
-            let amount = scale_ore(presentation_ore(&number, ledger_ore), justering_bp);
+            let amount = scale_ore(presentation_ore(&number, ledger_ore), adjustment_bp);
             if amount == 0 {
                 continue;
             }
@@ -367,7 +367,7 @@ fn account_entry<'a>(
 pub struct VarianceWithBudget {
     /// Which budget the numbers were compared against — None when the
     /// year has none, and then everything budgeted reads zero.
-    pub budsjett: Option<BudgetRow>,
+    pub budget: Option<BudgetRow>,
     pub rapport: VarianceReport,
 }
 
@@ -382,11 +382,11 @@ pub async fn avviksrapport(
     budget_id: Option<Uuid>,
     t_o_m_maned: u32,
 ) -> Result<VarianceWithBudget> {
-    let budsjett = match budget_id {
+    let budget = match budget_id {
         Some(id) => Some(get_budget(pool, company_id, id).await?),
         None => default_budget(pool, company_id, year).await?,
     };
-    if let Some(b) = &budsjett {
+    if let Some(b) = &budget {
         ensure!(
             b.year == year,
             "budsjettet gjelder {} — ikke {year}",
@@ -422,7 +422,7 @@ pub async fn avviksrapport(
     }
 
     // Budsjett: allerede i presentasjonsfortegn.
-    if let Some(b) = &budsjett {
+    if let Some(b) = &budget {
         for line in budget_lines(pool, company_id, b.id).await? {
             let account = account_entry(&mut figures, &line.account_number, line.account_name);
             account.budget[(line.month - 1) as usize] += line.amount_ore;
@@ -431,7 +431,7 @@ pub async fn avviksrapport(
 
     let figures: Vec<AccountFigures> = figures.into_values().collect();
     Ok(VarianceWithBudget {
-        budsjett,
+        budget,
         rapport: variance(&figures, t_o_m_maned),
     })
 }

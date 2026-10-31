@@ -113,14 +113,14 @@ async fn require_valid_role(
     if own.iter().any(|r| r.active && r.name == name) {
         return Ok(());
     }
-    let valg: Vec<&str> = TILDELBARE
+    let choice: Vec<&str> = TILDELBARE
         .iter()
         .map(|r| r.slug())
         .chain(own.iter().filter(|r| r.active).map(|r| r.name.as_str()))
         .collect();
     Err(ApiError::BadRequest(format!(
         "«{name}» er ingen rolle i dette selskapet — velg en av: {}",
-        valg.join(", ")
+        choice.join(", ")
     )))
 }
 
@@ -197,7 +197,7 @@ pub struct AgentRequest {
 /// get a token and do nothing at all — it is inert. The reverse order
 /// would leave the customer looking at an agent in their own list that
 /// can never authenticate.
-pub async fn opprett_agent(
+pub async fn create_agent(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,

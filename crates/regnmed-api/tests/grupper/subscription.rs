@@ -350,7 +350,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     // The `bare` narrowing: the dev database can hold thousands of
     // companies with coverage (the migration's seeding), and the test
     // must not invoice them all.
-    let first = regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+    let first = regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
         .await
         .unwrap();
     let vare = first
@@ -363,7 +363,7 @@ async fn the_subscription_invoice_through_our_own_engine_is_idempotent() {
     };
 
     // Kjøring nummer to: samme måned, ingen ny faktura.
-    let andre = regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+    let andre = regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
         .await
         .unwrap();
     let vare2 = andre.iter().find(|u| u.company_id == customer).unwrap();
@@ -469,11 +469,11 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
     }
 
     let registered = driftsselskap(&state.pool, "Drift Registrert AS", true).await;
-    let utenfor = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
+    let outside = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
 
     let linje = async |drift: Uuid, customer: Uuid| -> (String, i64, i64) {
         let outcome =
-            regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+            regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
                 .await
                 .unwrap();
         let vare = outcome
@@ -502,7 +502,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
     assert_eq!(net, price);
     assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
 
-    let (code, vat, net) = linje(utenfor, customer_b).await;
+    let (code, vat, net) = linje(outside, customer_b).await;
     assert_eq!(
         code, "7",
         "uregistrert selger skal ha «ingen mva-behandling», ikke kode 3"
@@ -520,7 +520,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
             .await
             .unwrap();
     let gross_outside =
-        regnmed_db::subscription::gross_before(&state.pool, utenfor, "standard", "month", today)
+        regnmed_db::subscription::gross_before(&state.pool, outside, "standard", "month", today)
             .await
             .unwrap();
     assert!(gross_registered > price, "registrert selger trekker brutto");
@@ -566,7 +566,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     .await
     .unwrap();
     let outcome =
-        regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+        regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
             .await
             .unwrap();
     let gross = outcome
@@ -944,7 +944,7 @@ async fn a_card_charge_posts_once_and_only_once() {
     .await
     .unwrap();
     let outcome =
-        regnmed_db::subscription::fakturer_maned(&state.pool, drift, today, Some(customer))
+        regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
             .await
             .unwrap();
     let invoice = outcome.iter().find(|u| u.company_id == customer).unwrap();

@@ -306,7 +306,7 @@ pub async fn list_dividends(
         Right::ShareRegisterRead,
     )
     .await?;
-    let rows = regnmed_db::share_register::list_utbytte(&state.pool, company_id, q.year).await?;
+    let rows = regnmed_db::share_register::list_dividends(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
         "utbytte": rows.iter().map(|u| json!({
             "id": u.id,
@@ -342,7 +342,7 @@ pub async fn create_dividend(
         Right::ShareRegisterWrite,
     )
     .await?;
-    let vedtak = regnmed_db::share_register::create_utbytte(
+    let vedtak = regnmed_db::share_register::create_dividend(
         &state.pool,
         company_id,
         request.decided_date,

@@ -36,8 +36,8 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let eier_sub = format!("test|{}", Uuid::new_v4());
-    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
     let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Ekte Agent AS")
@@ -128,8 +128,8 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     let Some(state) = test_state(&idp).await else {
         return;
     };
-    let eier_sub = format!("test|{}", Uuid::new_v4());
-    let owner = regnmed_db::ensure_person(&state.pool, &eier_sub, Some("Eier Eiersen"), None)
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
         .await
         .unwrap();
     let company =

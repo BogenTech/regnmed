@@ -23,7 +23,7 @@ pub struct DimensionRow {
     pub customer_name: Option<String>,
     /// Whether hours on the prosjekt are billable unless the entry says
     /// otherwise (migration 0052). Always false for avdelinger.
-    pub fakturerbar_default: bool,
+    pub billable_default: bool,
     /// The VIEWER's effective timesats today (person-specific first,
     /// project default second) — what the grid shows as the row's sats.
     pub min_hourly_rate_ore: Option<i64>,
@@ -60,7 +60,7 @@ pub async fn list_dimensions(
             active: r.get("active"),
             customer: r.get("kunde"),
             customer_name: r.get("kunde_navn"),
-            fakturerbar_default: r.get("fakturerbar_default"),
+            billable_default: r.get("fakturerbar_default"),
             min_hourly_rate_ore: r.get("min_timesats_ore"),
         })
         .collect())
@@ -139,9 +139,9 @@ pub async fn update_dimension(
     name: Option<&str>,
     active: Option<bool>,
     customer: Option<&str>,
-    fakturerbar_default: Option<bool>,
+    billable_default: Option<bool>,
 ) -> Result<()> {
-    if fakturerbar_default == Some(true) {
+    if billable_default == Some(true) {
         ensure!(
             kind == "prosjekt",
             "bare prosjekter kan være fakturerbare som standard"
@@ -173,7 +173,7 @@ pub async fn update_dimension(
     .bind(active)
     .bind(set_customer)
     .bind(party_id)
-    .bind(fakturerbar_default)
+    .bind(billable_default)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no {kind} with code {code}");

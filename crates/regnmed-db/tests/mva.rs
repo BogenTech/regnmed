@@ -152,9 +152,9 @@ async fn specification_reports_basis_and_tax_per_period() {
     assert_eq!(inn.tax_ore, 2_000_00);
     assert_eq!(inn.rate_bp, 2500);
 
-    let utg = lines.iter().find(|l| l.code == "3").unwrap();
-    assert_eq!(utg.basis_ore, -10_000_00, "sales base is a credit");
-    assert_eq!(utg.tax_ore, -2_500_00);
+    let output_line = lines.iter().find(|l| l.code == "3").unwrap();
+    assert_eq!(output_line.basis_ore, -10_000_00, "sales base is a credit");
+    assert_eq!(output_line.tax_ore, -2_500_00);
 
     // 2017 report: 10 % on code 33, from the dated rate table.
     let lines_2017 =
@@ -393,7 +393,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
         "tilbud",
         &party_no,
         today,
-        &[regnmed_db::SalgsLineDraft {
+        &[regnmed_db::SalesLineDraft {
             description: "Serverleie".into(),
             account_number: "3000".into(),
             quantity_milli: 1000,
@@ -427,10 +427,10 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     // through. Refusing every code broke that rail; this pins it.
     let mut code_seven = draft.clone();
     code_seven.lines[0].vat_code = Some("7".into());
-    let utenfor = regnmed_db::create_invoice(&pool, company, &code_seven, "test", None)
+    let outside = regnmed_db::create_invoice(&pool, company, &code_seven, "test", None)
         .await
         .expect("code 7 says the sale is outside the vat act — always allowed");
-    assert_eq!(utenfor.gross_ore, 5_565_29, "code 7 adds no tax");
+    assert_eq!(outside.gross_ore, 5_565_29, "code 7 adds no tax");
 
     // And once the registration is on record, the original draft stands.
     regnmed_db::record_registrering(
@@ -461,7 +461,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 /// company the whole gross is the cost — which is also why the
 /// on-charge has to cover it (#99).
 #[tokio::test]
-async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
+async fn an_unregistered_company_cannot_deduct_input_vat_on_an_expense() {
     let Some(pool) = pool().await else { return };
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Utlegg Uregistrert AS")
         .await
@@ -482,7 +482,7 @@ async fn an_unregistered_company_cannot_deduct_input_vat_on_an_utlegg() {
         .await
         .unwrap();
     let today = date(2026, 10, 2);
-    let krav = regnmed_db::create_utlegg(
+    let krav = regnmed_db::create_expense(
         &pool,
         company,
         person,

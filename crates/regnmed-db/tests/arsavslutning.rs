@@ -111,11 +111,11 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
         .unwrap();
     assert_eq!(for_skatt, 60_000_00);
 
-    let avsluttet = regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test")
+    let closed = regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test")
         .await
         .unwrap();
-    assert_eq!(avsluttet.result_before_tax_ore, 60_000_00);
-    assert_eq!(avsluttet.disponert_ore, 46_800_00, "etter skatt");
+    assert_eq!(closed.result_before_tax_ore, 60_000_00);
+    assert_eq!(closed.allocated_ore, 46_800_00, "etter skatt");
 
     // The tax is accrued, the result is in equity.
     assert_eq!(

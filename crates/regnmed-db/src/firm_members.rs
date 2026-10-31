@@ -37,7 +37,7 @@ pub struct Byramedlem {
     pub active: bool,
 }
 
-pub async fn list_medlemmer(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedlem>> {
+pub async fn list_members(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byramedlem>> {
     let rows = sqlx::query(
         "select p.id as person_id,
                 coalesce(p.name, p.oidc_sub) as navn,
@@ -110,7 +110,7 @@ async fn require_remaining_admin(tx: &mut Transaction<'_, Postgres>, firm_id: Uu
     Ok(())
 }
 
-async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, firm_id: Uuid) -> Result<()> {
+async fn lock_members(tx: &mut Transaction<'_, Postgres>, firm_id: Uuid) -> Result<()> {
     sqlx::query("select 1 from firm_member where firm_id = $1 for update")
         .bind(firm_id)
         .fetch_all(&mut **tx)
@@ -127,7 +127,7 @@ pub async fn set_role(
 ) -> Result<()> {
     require_role(new_role)?;
     let mut tx = pool.begin().await?;
-    laas_medlemmer(&mut tx, firm_id).await?;
+    lock_members(&mut tx, firm_id).await?;
 
     let from: Option<String> = sqlx::query_scalar(
         "select role from firm_member where firm_id = $1 and person_id = $2 and active",
@@ -174,7 +174,7 @@ pub async fn set_active(
     performed_by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    laas_medlemmer(&mut tx, firm_id).await?;
+    lock_members(&mut tx, firm_id).await?;
 
     let rad =
         sqlx::query("select role, active from firm_member where firm_id = $1 and person_id = $2")
@@ -261,7 +261,7 @@ pub async fn inviter(
     Ok(id)
 }
 
-pub async fn list_invitasjoner(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrainvitasjon>> {
+pub async fn list_invitations(pool: &PgPool, firm_id: Uuid) -> Result<Vec<Byrainvitasjon>> {
     let rows = sqlx::query(
         "select i.id, i.epost, i.role, i.created_at,
                 coalesce(p.name, p.oidc_sub) as invitert_av,
@@ -313,7 +313,7 @@ pub async fn revoke_invitation(
 /// Called from `/me` next to the company redemption; same semantics: an
 /// existing membership is never silently upgraded, the invitation is
 /// marked used and the standing membership wins.
-pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usize> {
+pub async fn redeem_invitations(pool: &PgPool, person_id: Uuid) -> Result<usize> {
     let email: Option<String> = sqlx::query_scalar("select email from person where id = $1")
         .bind(person_id)
         .fetch_one(pool)

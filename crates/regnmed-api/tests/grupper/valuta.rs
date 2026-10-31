@@ -328,7 +328,7 @@ async fn valuta_invoice_agio_and_regulation() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, regulering) = request(
+    let (status, revaluation) = request(
         &state,
         "POST",
         &format!("{base}/currency/regulate"),
@@ -336,9 +336,9 @@ async fn valuta_invoice_agio_and_regulation() {
         Some(serde_json::json!({ "dato": "2026-12-31", "balansekonto": "1508" }).to_string()),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {regulering}");
-    assert_eq!(regulering["diff_ore"], 100_00, "200 EUR × (12,00 − 11,50)");
-    assert!(regulering["voucher"].is_string() && regulering["reversal"].is_string());
+    assert_eq!(status, StatusCode::OK, "body: {revaluation}");
+    assert_eq!(revaluation["diff_ore"], 100_00, "200 EUR × (12,00 − 11,50)");
+    assert!(revaluation["voucher"].is_string() && revaluation["reversal"].is_string());
     assert_eq!(
         balance(&state, company, "1508").await,
         0,

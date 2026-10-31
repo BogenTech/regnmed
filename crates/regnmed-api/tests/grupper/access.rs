@@ -255,12 +255,12 @@ async fn an_outsider_gets_404_not_403() {
     regnmed_db::ensure_person(&state.pool, &sub, Some("Fremmed"), None)
         .await
         .unwrap();
-    let fremmed = idp.token(&sub, "Fremmed");
+    let stranger = idp.token(&sub, "Fremmed");
 
     for uri in LESING {
         let uri = uri.replace("{c}", &company.to_string());
         assert_eq!(
-            status(&state, "GET", &uri, &fremmed, "").await,
+            status(&state, "GET", &uri, &stranger, "").await,
             StatusCode::NOT_FOUND,
             "{uri} lekket at selskapet finnes"
         );
@@ -268,7 +268,7 @@ async fn an_outsider_gets_404_not_403() {
     for (method, uri, body) in SKRIVING {
         let uri = uri.replace("{c}", &company.to_string());
         assert_eq!(
-            status(&state, method, &uri, &fremmed, body).await,
+            status(&state, method, &uri, &stranger, body).await,
             StatusCode::NOT_FOUND,
             "{method} {uri} lekket at selskapet finnes"
         );
@@ -568,7 +568,7 @@ async fn an_employee_gets_only_their_own_payslip() {
 /// because it is subject to audit, while an **internal reader** does
 /// not.
 #[tokio::test]
-async fn lonn_is_not_general_reading() {
+async fn payroll_is_not_general_reading() {
     let Some((state, idp, company, admin, bookkeeping, les)) = setup().await else {
         return;
     };
@@ -1000,7 +1000,7 @@ async fn a_role_without_a_log_row_never_comes_into_being() {
         return;
     };
     let spokelse = Uuid::new_v4();
-    let res = regnmed_db::roles::opprett(
+    let res = regnmed_db::roles::create(
         &state.pool,
         company,
         "Halvferdig",
@@ -1064,10 +1064,10 @@ async fn rights_are_never_read_half_written() {
     .unwrap();
 
     // Lock the role, the way a concurrent rettighet change does.
-    let mut laas = state.pool.begin().await.unwrap();
+    let mut lock = state.pool.begin().await.unwrap();
     sqlx::query("select id from company_role where id = $1 for update")
         .bind(role_id)
-        .fetch_one(&mut *laas)
+        .fetch_one(&mut *lock)
         .await
         .unwrap();
 
@@ -1097,7 +1097,7 @@ async fn rights_are_never_read_half_written() {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
 
-    laas.commit().await.unwrap();
+    lock.commit().await.unwrap();
     skriver.await.unwrap().unwrap();
     let sett = regnmed_db::roles::rights_for(&state.pool, company, &name)
         .await

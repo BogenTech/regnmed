@@ -26,12 +26,19 @@ paths properly, which is a different tool.
 """
 import pathlib, re, sys
 
+# Literals are NOT blanked, and that is deliberate even though it hides
+# real staleness: docs/ legitimately cites SQL columns, JSON keys, stored
+# status values and right slugs, every one of which lives only in a
+# literal. Blanking them was tried -- it took the report from 62 spans to
+# 471, which no human reads. The cost is the blind spot this docstring
+# describes: `lonnsslipp` survives in a download filename and `avslutt`
+# survived in prose, so each looked live.
 code = "\n".join(
     p.read_text() for p in pathlib.Path("crates").rglob("*.rs")
 )
 SPAN = re.compile(r"`([^`\n]+)`")
 # Rust-ish: a path with ::, or snake_case with _, or CamelCase.
-RUSTY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(\(\))?$")
+RUSTY = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*(::[A-Za-z_][A-Za-z0-9_]*)+(\(\))?$|^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(\(\))?$")
 
 hits = {}
 for doc in sorted(pathlib.Path("docs").rglob("*.md")):
@@ -42,7 +49,7 @@ for doc in sorted(pathlib.Path("docs").rglob("*.md")):
                 continue
             if "::" not in s and "_" not in s and not re.search(r"[a-z][A-Z]", s):
                 continue  # a bare word: too noisy to judge
-            parts = [p for p in s.split("::") if p]
+            parts = [p for p in s.split("::") if p and "-" not in p]
             # The last segment is the name; earlier ones are modules.
             if all(re.search(r"\b%s\b" % re.escape(p), code) for p in parts):
                 continue

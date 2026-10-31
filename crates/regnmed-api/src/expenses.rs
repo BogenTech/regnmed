@@ -38,7 +38,7 @@ pub struct UploadQuery {
     description: String,
 }
 
-pub async fn create_utlegg(
+pub async fn create_expense(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -53,7 +53,7 @@ pub async fn create_utlegg(
         .unwrap_or("application/octet-stream")
         .to_string();
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let id = regnmed_db::create_utlegg(
+    let id = regnmed_db::create_expense(
         &state.pool,
         company_id,
         person.person_id,

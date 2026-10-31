@@ -18,7 +18,7 @@ SAF-T Cash Register.
 
 ## 2. Kontantfaktura
 
-`DocumentType::Kontantfaktura` er et ANNET DOKUMENT, ikke en faktura med
+`DocumentType::CashInvoice` er et ANNET DOKUMENT, ikke en faktura med
 et flagg: tittelen KONTANTFAKTURA, «Betalt: <betalingsmiddel>» blant
 dokumentfaktaene, og **ingen KID, ingen forfallsdato, ingen
 betalingsinformasjon**. Å be noen betale det de allerede har betalt er

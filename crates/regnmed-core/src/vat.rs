@@ -58,16 +58,16 @@ impl std::fmt::Display for Period {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeriodScheme {
     ToManeder,
-    Arlig,
-    Primaernaering,
+    Yearly,
+    PrimaryIndustry,
 }
 
 impl PeriodScheme {
     pub fn parse(s: &str) -> Option<PeriodScheme> {
         match s {
             "to-maneder" => Some(PeriodScheme::ToManeder),
-            "arlig" => Some(PeriodScheme::Arlig),
-            "primaernaering" => Some(PeriodScheme::Primaernaering),
+            "arlig" => Some(PeriodScheme::Yearly),
+            "primaernaering" => Some(PeriodScheme::PrimaryIndustry),
             _ => None,
         }
     }
@@ -75,8 +75,8 @@ impl PeriodScheme {
     pub fn as_str(self) -> &'static str {
         match self {
             PeriodScheme::ToManeder => "to-maneder",
-            PeriodScheme::Arlig => "arlig",
-            PeriodScheme::Primaernaering => "primaernaering",
+            PeriodScheme::Yearly => "arlig",
+            PeriodScheme::PrimaryIndustry => "primaernaering",
         }
     }
 
@@ -134,8 +134,8 @@ impl PeriodScheme {
                 5 => date(t.year, 12, 10),
                 _ => date(t.year + 1, 2, 10),
             },
-            PeriodScheme::Arlig => date(t.year + 1, 3, 10),
-            PeriodScheme::Primaernaering => date(t.year + 1, 4, 10),
+            PeriodScheme::Yearly => date(t.year + 1, 3, 10),
+            PeriodScheme::PrimaryIndustry => date(t.year + 1, 4, 10),
         }
     }
 
@@ -143,8 +143,8 @@ impl PeriodScheme {
     pub fn label(self, t: Period) -> String {
         match self {
             PeriodScheme::ToManeder => t.to_string(),
-            PeriodScheme::Arlig => format!("Årstermin {}", t.year),
-            PeriodScheme::Primaernaering => format!("Årstermin {} (primærnæring)", t.year),
+            PeriodScheme::Yearly => format!("Årstermin {}", t.year),
+            PeriodScheme::PrimaryIndustry => format!("Årstermin {} (primærnæring)", t.year),
         }
     }
 }
@@ -219,7 +219,7 @@ pub enum Direction {
     /// supplier invoice, NOT a tax calculation. Reported nowhere — the
     /// tax on that same import is calculated under 81/83 or 14/15, and a
     /// melding line here would charge it a second time.
-    Kostnadsmarkor,
+    CostMarker,
     /// No VAT effect (codes 0, 5, 51, 52, 6, 7, 85).
     None,
 }
@@ -250,7 +250,7 @@ pub fn direction(code: &str) -> Direction {
         "1" | "11" | "12" | "13" | "14" | "15" => Direction::Input,
         "81" | "83" | "86" | "88" | "91" => Direction::ReverseChargeDeductible,
         "82" | "84" | "87" | "89" | "92" => Direction::ReverseChargeNonDeductible,
-        "20" | "21" | "22" => Direction::Kostnadsmarkor,
+        "20" | "21" | "22" => Direction::CostMarker,
         _ => Direction::None,
     }
 }
@@ -277,9 +277,9 @@ pub fn reverse_charge_entries(
     output_account: &str,
     deduction_account: &str,
 ) -> Vec<crate::voucher::EntryDraft> {
-    let retning = basis.vat_code.as_deref().map_or(Direction::None, direction);
+    let code_direction = basis.vat_code.as_deref().map_or(Direction::None, direction);
     if !matches!(
-        retning,
+        code_direction,
         Direction::ReverseChargeDeductible | Direction::ReverseChargeNonDeductible
     ) {
         return Vec::new();
@@ -308,7 +308,7 @@ pub fn reverse_charge_entries(
         "Beregnet mva, omvendt avgiftsplikt/innførsel",
         false,
     )];
-    match retning {
+    match code_direction {
         Direction::ReverseChargeDeductible => ut.push(entry(
             deduction_account,
             tax,
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(direction("82"), Direction::ReverseChargeNonDeductible);
         assert_eq!(direction("91"), Direction::ReverseChargeDeductible);
         // Import COST markers compute nothing — 81/14 do.
-        assert_eq!(direction("21"), Direction::Kostnadsmarkor);
+        assert_eq!(direction("21"), Direction::CostMarker);
         // A zero-rated import basis is still a basis, not a marker.
         assert_eq!(direction("85"), Direction::None);
         assert_eq!(direction("14"), Direction::Input, "fradragssiden alene");
@@ -498,7 +498,7 @@ mod tests {
             date(2027, 2, 10)
         );
 
-        let year = PeriodScheme::Arlig;
+        let year = PeriodScheme::Yearly;
         assert_eq!(year.period_count(), 1);
         let period = year.period_of(date(2026, 11, 3));
         assert_eq!(period.number, 1);
@@ -511,14 +511,14 @@ mod tests {
             "aarstermin har ingen 2. periode"
         );
 
-        let pn = PeriodScheme::Primaernaering;
+        let pn = PeriodScheme::PrimaryIndustry;
         assert_eq!(
             pn.deadline(pn.period_of(date(2026, 5, 1))),
             date(2027, 4, 10)
         );
 
-        assert_eq!(PeriodScheme::parse("arlig"), Some(PeriodScheme::Arlig));
+        assert_eq!(PeriodScheme::parse("arlig"), Some(PeriodScheme::Yearly));
         assert_eq!(PeriodScheme::parse("kvartal"), None);
-        assert_eq!(PeriodScheme::Primaernaering.as_str(), "primaernaering");
+        assert_eq!(PeriodScheme::PrimaryIndustry.as_str(), "primaernaering");
     }
 }

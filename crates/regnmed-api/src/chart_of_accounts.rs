@@ -43,7 +43,7 @@ pub async fn list_accounts(
             "active": k.active,
             "reskontro_kind": k.subledger_kind,
             "saldo_ore": k.balance_ore,
-            "posteringer": k.posteringer,
+            "posteringer": k.postings,
         })).collect::<Vec<_>>(),
         "standard": standard,
     })))

@@ -109,7 +109,7 @@ pub async fn create_role(
         .name
         .ok_or_else(|| ApiError::BadRequest("rollen må ha et navn".into()))?;
     let approved = godkjenn(&request.rights)?;
-    let id = regnmed_db::roles::opprett(
+    let id = regnmed_db::roles::create(
         &state.pool,
         company_id,
         &name,

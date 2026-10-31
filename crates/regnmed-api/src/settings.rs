@@ -39,7 +39,7 @@ pub async fn get_settings(
         "email": s.email,
         // KID is a bank agreement, not a property of the invoice number
         // (#104): off means the document carries no KID at all.
-        "kid_avtale": s.kid_avtale,
+        "kid_avtale": s.kid_agreement,
         // Registreringsstatus (§5-1-2, #81): lagret og datert, aldri
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.vat_registered,
@@ -61,7 +61,8 @@ pub struct UpdateSettingsRequest {
     #[serde(rename = "orgform")]
     org_form: Option<String>,
     email: Option<String>,
-    kid_avtale: Option<bool>,
+    #[serde(rename = "kid_avtale")]
+    kid_agreement: Option<bool>,
 }
 
 pub async fn update_settings(
@@ -78,7 +79,7 @@ pub async fn update_settings(
         request.bank_account.as_deref(),
         request.org_form.as_deref(),
         request.email.as_deref(),
-        request.kid_avtale,
+        request.kid_agreement,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

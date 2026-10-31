@@ -31,7 +31,7 @@ pub struct TimeEntryDraft {
 
 struct Project {
     id: Uuid,
-    fakturerbar_default: bool,
+    billable_default: bool,
 }
 
 async fn resolve_project(
@@ -52,7 +52,7 @@ async fn resolve_project(
     ensure!(row.get::<bool, _>("active"), "prosjekt {code} er avsluttet");
     Ok(Some(Project {
         id: row.get("id"),
-        fakturerbar_default: row.get("fakturerbar_default"),
+        billable_default: row.get("fakturerbar_default"),
     }))
 }
 
@@ -92,7 +92,7 @@ async fn resolve_billing(
 ) -> Result<(bool, Option<i64>)> {
     let billable = draft
         .billable
-        .unwrap_or_else(|| project.as_ref().is_some_and(|p| p.fakturerbar_default));
+        .unwrap_or_else(|| project.as_ref().is_some_and(|p| p.billable_default));
     if !billable {
         return Ok((false, None));
     }

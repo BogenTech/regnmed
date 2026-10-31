@@ -280,7 +280,7 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 
 En **kontantfaktura** dokumenterer en ytelse som er betalt ved levering
 — kort, Vipps eller kontanter. Dokumentet er et annet dokument, ikke en
-faktura med et flagg: `DocumentType::Kontantfaktura` gir tittelen
+faktura med et flagg: `DocumentType::CashInvoice` gir tittelen
 KONTANTFAKTURA, «Betalt: <betalingsmiddel>» blant dokumentfaktaene, og
 **ingen KID, ingen forfallsdato og ingen betalingsinformasjon**. Å be
 noen betale det de allerede har betalt er ikke en skjønnhetsfeil, det er

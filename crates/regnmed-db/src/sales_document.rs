@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::invoice::{InvoiceDraft, InvoiceLineDraft, IssuedInvoice, create_invoice_in};
 use crate::vat::load_vat_rates;
 
-pub use crate::invoice_template::TemplateLineDraft as SalgsLineDraft;
+pub use crate::invoice_template::TemplateLineDraft as SalesLineDraft;
 
 fn quote_editable(status: &str) -> bool {
     matches!(status, "utkast" | "sendt")
@@ -42,7 +42,7 @@ async fn next_doc_no(
 async fn insert_lines(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     document_id: Uuid,
-    lines: &[SalgsLineDraft],
+    lines: &[SalesLineDraft],
 ) -> Result<()> {
     ensure!(!lines.is_empty(), "dokumentet trenger minst én linje");
     for (i, line) in lines.iter().enumerate() {
@@ -77,7 +77,7 @@ pub async fn create_sales_document(
     kind: &str,
     party_no: &str,
     doc_date: NaiveDate,
-    lines: &[SalgsLineDraft],
+    lines: &[SalesLineDraft],
     created_by: &str,
 ) -> Result<(Uuid, i64)> {
     ensure!(
@@ -135,7 +135,7 @@ pub async fn update_quote(
     company_id: Uuid,
     quote_id: Uuid,
     doc_date: Option<NaiveDate>,
-    lines: Option<&[SalgsLineDraft]>,
+    lines: Option<&[SalesLineDraft]>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
@@ -353,7 +353,7 @@ pub async fn order_to_invoice(
     Ok(issued)
 }
 
-async fn load_lines(pool: &PgPool, document_id: Uuid) -> Result<Vec<SalgsLineDraft>> {
+async fn load_lines(pool: &PgPool, document_id: Uuid) -> Result<Vec<SalesLineDraft>> {
     let rows = sqlx::query(
         "select description, account_number, quantity_milli, unit_price_ore,
                 vat_code, avdeling, prosjekt, product_id
@@ -365,7 +365,7 @@ async fn load_lines(pool: &PgPool, document_id: Uuid) -> Result<Vec<SalgsLineDra
     ensure!(!rows.is_empty(), "dokumentet har ingen linjer");
     Ok(rows
         .iter()
-        .map(|r| SalgsLineDraft {
+        .map(|r| SalesLineDraft {
             description: r.get("description"),
             account_number: r.get("account_number"),
             quantity_milli: r.get("quantity_milli"),

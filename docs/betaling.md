@@ -36,7 +36,7 @@ lagret); KID valideres MOD10/MOD11.
 
 `party.bank_account` (og selskapets eget, fra Firmaopplysninger) er
 redigerbar kontaktinfo, MOD11-validert før lagring
-(`regnmed-core::pain001::gyldig_kontonummer` — samme sykliske vekter
+(`regnmed-core::pain001::is_valid_account_number` — samme sykliske vekter
 som KID MOD11; punktum og mellomrom normaliseres bort). En post hvis
 leverandør mangler gyldig kontonummer avvises høyt ved
 listeopprettelse — og flagges i portalens betalbare liste.

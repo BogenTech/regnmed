@@ -766,6 +766,94 @@ variants keep growing the list of words that stay -- `fusjon`,
 split the last two for free: lowercase `kjop` went wide to
 `purchase` while `Kjop` the variant stayed put.
 
+Tenth sweep took the 11-down-to-7 band, 94 entries over 100 files,
+and it is the one that reached the FLOOR: `fakturerbar_default`->
+`billable_default`, `list_medlemmer`/`laas_medlemmer`->`list_members`/
+`lock_members`, `los_inn_invitasjoner`->`redeem_invitations`,
+`Kontantfaktura`->`CashInvoice`, `disponert_ore`->`allocated_ore`,
+`StripeAboEier`->`StripeSubscriptionOwner`, `Lonnskjoring`->
+`PayrollRun`, `kid_avtale`->`kid_agreement`, `Valg`->`Choice`,
+`kilde_voucher`->`source_voucher`, `kjor`->`run`, `opprett`->`create`,
+`gevinst`->`gain`, `create_utlegg`->`create_expense`,
+`Timegrunnlag`->`HourBasis`, `talt_milli`->`counted_milli`,
+`create_utbytte`->`create_dividend`, `grossist`->`wholesaler`,
+`kjoper`->`buyer`, `overkurs`->`share_premium`, `Arlig`->`Yearly`,
+`Primaernaering`->`PrimaryIndustry`, `Fil`/`FilBinaer`->`File`/
+`FileBinary`, `Raa`->`Raw`, `maskin`->`machine`,
+`BokfortOppgjor`->`PostedSettlement`, `posteringer`->`postings`,
+`organisasjonsnummer`->`organization_number`, `fordeling`->
+`distribution`, `minutter`->`minutes`, `fakturert`/`ufakturert`->
+`billed`/`unbilled`, `regulering`->`revaluation`,
+`Kostnadsmarkor`->`CostMarker`, `SalgsLineDraft`->`SalesLineDraft`.
+ZERO compile errors, 8 serde fields pinned, wire diff two struct
+NAMES (`Valg`->`Choice`, `RaaFunksjon`->`RawFunction`, both LLM
+response types whose fields are the providers' and did not move).
+
+**A `use X as Y` ALIAS was finally caught, the one this file warned
+about two batches ago.** `use tool::{Body as KroppMeny, Tool}` in
+`regnmed-mcp` survived the `kropp`->`body` sweep because an alias has
+no `::` for the module-path pass to see. It exists because the file
+holds TWO `Body` types, so it is now `ToolBody` -- named for what it
+is rather than for the collision.
+
+**14 SHADOWS reports, and ONE was created by the rename itself.**
+`lonn`->`payroll` put a `payroll: i64` PARAMETER next to the
+`payroll::create_employee` call it makes -- which compiles, because a
+module path and a value binding are different namespaces in Rust, but
+it is exactly the shape that reads as a bug. Before the rename there
+was no collision at all (`lonn: i64` beside `payroll::`), so this is
+the first time a rename MANUFACTURED a report rather than finding an
+existing one. Both sites renamed to `monthly_ore`. The other 13 were
+the benign patterns already catalogued: an api handler calling the db
+function of the same name through a qualified path
+(`list_invitations`, `list_dividends`, `list_members`), module paths
+in a route table (`dimension::create`, `asset::create`),
+`axum::serve` beside a local `serve`, `MIGRATOR.run` beside a local
+`run`, and struct fields spelling the target.
+
+**THE SWEEP HAS HIT ITS FLOOR.** Nothing above 9 is convertible any
+more: `nyemisjon` 23, `kontinuitet` 20, `skattefri` 19, `stiftelse`
+15, `likvidasjon` 15, `fusjon`/`fisjon` 14, `arv` 12, `overforing`
+12, `partiell` 10, `salg` 10 and `aksjer` 9 are `TransactionType`
+variants that stay by the decision recorded above; `ia` 12 is
+`Zone::Ia`; `maskinporten` 11 and `finanstilsynet` 10 are
+institutions; `selskap` 10 is the MCP wire placeholder. What is left
+below that is a 600-name tail at 1-7 occurrences each, which is
+per-file work and not a dictionary sweep.
+
+**2 698 -> 2 267 of 188 643 segments (1,4 % -> 1,2 %), 678 -> 630
+distinct**, measured on one instrument both sides; `x02`, `coord`,
+`br`, `dep`, `timeline`, `last4`, `dict`, `newline`, `pkcs8` and the
+test-persona name `bjorn` joined the STOP set.
+
+**`stale-docs.py` WIDENED, and it paid immediately.** Its path regex
+rejected any span containing a hyphen, so EVERY
+`regnmed-core::module` reference in docs/ was skipped unexamined --
+the most common way docs/ names our code. Allowing a hyphenated first
+segment (and dropping that segment from the plain-text check, since a
+crate name is a directory and not an identifier) cost two extra
+reports and found two genuinely stale spans at once:
+`regnmed-core::pain001::gyldig_kontonummer` (now
+`is_valid_account_number`) and `regnmed-db::asset::saldo_rapport`
+(now `balance_report`). Four more stale `regnmed-core::lonn*` spans
+in docs/lonn.md and docs/regelverk.md were fixed in the same pass,
+plus `DocumentType::Kontantfaktura`, `timegrunnlag`, `maskin` and a
+CLI command: **docs/agent.md documented `regnmed-agent kjor` when the
+clap variant has been `Run` for several batches** -- the
+clap-variant-is-a-command-name warning, found in the docs rather than
+by typing it.
+
+**Blanking literals in that guard was TRIED AND REJECTED**, and the
+reason is worth keeping because it looks like an obvious improvement.
+`lonnsslipp` survives in the tree only inside a download filename and
+`avslutt` survived only in prose, so each made a stale doc reference
+look live -- the same blind spot twice. But docs/ legitimately cites
+SQL columns, JSON keys, stored status values and right slugs, and
+every one of those lives ONLY in a literal: blanking took the report
+from 62 spans to 471, which no human reads. The blind spot is the
+price of a report anyone will actually look at, and it is now written
+in the script rather than rediscovered.
+
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every
 figure above counted occurrences of a HAND-KEPT LIST of Norwegian
@@ -777,10 +865,10 @@ identifier segment that is not English -- and lives in
 `scripts/norwegian-left.py` so the series is reproducible instead of
 depending on a file in someone's scratchpad:
 
-**2 771 of 188 562 identifier segments (1,5 %), 688 distinct**
-(2026-10-31, after the ninth sweep; the first reading of this
-instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 896,
-core 862, db 703, gov 156, mcp 58, agent 56, cli 40, mail 0.
+**2 267 of 188 643 identifier segments (1,2 %), 630 distinct**
+(2026-10-31, after the tenth sweep; the first reading of this
+instrument was 6 920 / 187 624 / 3,7 %). Per crate: core 766,
+api 717, db 535, gov 130, agent 45, cli 39, mcp 35, mail 0.
 `counterparty` and `subledger` joined the STOP set -- English names
 this conversion INTRODUCED that `/usr/share/dict/words` does not
 carry, so the instrument counted its own output as Norwegian -- and

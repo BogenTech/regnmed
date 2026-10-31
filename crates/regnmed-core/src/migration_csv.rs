@@ -149,7 +149,7 @@ pub fn parse_contacts(
         ],
         &["kontaktperson", "contact person"],
     );
-    let nummer_col = find_column_ranked(
+    let number_col = find_column_ranked(
         h,
         &[
             "kundenr",
@@ -203,7 +203,7 @@ pub fn parse_contacts(
             .unwrap_or(default_kind);
         rader.push(ContactRow {
             kind,
-            number: some_nonempty(cell(&fields, nummer_col)),
+            number: some_nonempty(cell(&fields, number_col)),
             name,
             orgnumber: some_nonempty(
                 cell(&fields, orgnumber_col)

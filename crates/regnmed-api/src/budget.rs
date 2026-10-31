@@ -67,7 +67,8 @@ pub struct CreateBudgetRequest {
     /// Seed the lines from this year's ACTUALS…
     fra_ar: Option<i32>,
     /// …scaled by basis points (500 = +5 %).
-    justering_bp: Option<i64>,
+    #[serde(rename = "justering_bp")]
+    adjustment_bp: Option<i64>,
 }
 
 pub async fn create_budget(
@@ -89,7 +90,7 @@ pub async fn create_budget(
         &name,
         request.note.as_deref(),
         request.fra_ar,
-        request.justering_bp.unwrap_or(0),
+        request.adjustment_bp.unwrap_or(0),
         created_by,
     )
     .await
@@ -215,7 +216,7 @@ pub async fn variance(
         "t_o_m_maned": r.through_month,
         // Which plan these numbers are measured against — never "the
         // budget", always a named version.
-        "budsjett": result.budsjett.as_ref().map(budget_json),
+        "budsjett": result.budget.as_ref().map(budget_json),
         "seksjoner": r.sections.iter().map(|s| json!({
             "heading": s.heading,
             "budsjett_hittil_ore": s.budget_ytd_ore,

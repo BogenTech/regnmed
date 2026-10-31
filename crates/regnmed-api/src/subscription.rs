@@ -600,7 +600,7 @@ mod tests {
 
         // An invoice with no subscription anywhere is somebody else's —
         // the caller turns an empty id into an acknowledged no-op.
-        let fremmed = json!({ "id": "in_3" });
-        assert_eq!(invoice_subscription(&fremmed), "");
+        let stranger = json!({ "id": "in_3" });
+        assert_eq!(invoice_subscription(&stranger), "");
     }
 }

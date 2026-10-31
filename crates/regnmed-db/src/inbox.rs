@@ -189,12 +189,12 @@ pub async fn bokfor_inbox_document(
         // An agent's bilag is worth a look because nobody saw it, not
         // because of its size (#101, migration 0063) — so the machine
         // rule is OR'ed with the threshold, never folded into it.
-        let maskin_bokforer: bool =
+        let machine_posts: bool =
             sqlx::query_scalar("select kind = 'integrasjon' from person where id = $1")
                 .bind(decided_by_person)
                 .fetch_one(&mut *tx)
                 .await?;
-        let maskinkrav = maskin_bokforer && policy.require_for_machine == Some(true);
+        let maskinkrav = machine_posts && policy.require_for_machine == Some(true);
         if maskinkrav
             || policy
                 .amount_limit_ore

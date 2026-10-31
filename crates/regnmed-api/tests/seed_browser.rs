@@ -271,7 +271,7 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    regnmed_db::share_register::create_utbytte(
+    regnmed_db::share_register::create_dividend(
         &state.pool,
         company,
         date(2026, 5, 20),
@@ -283,7 +283,7 @@ async fn seed_browser_demo() {
     .unwrap();
 
     // Employees + one month run, so the Lønn section has something to show.
-    for (nin, name, stilling, lonn, trekk_bp, fp_bp) in [
+    for (nin, name, stilling, monthly_ore, trekk_bp, fp_bp) in [
         (
             "26829398612",
             "Kari Utvikler",
@@ -309,7 +309,7 @@ async fn seed_browser_demo() {
                 name: name.into(),
                 stilling: Some(stilling.into()),
                 employed_from: date(2025, 1, 1),
-                monthly_salary_ore: Some(lonn),
+                monthly_salary_ore: Some(monthly_ore),
                 hourly_wage_ore: None,
                 withholding_type: "prosent".into(),
                 withholding_percent_bp: Some(trekk_bp),

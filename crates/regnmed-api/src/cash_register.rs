@@ -36,7 +36,8 @@ pub struct BetalingLinje {
 pub struct DailySettlementRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
-    z_nummer: String,
+    #[serde(rename = "z_nummer")]
+    z_number: String,
     #[serde(rename = "salg")]
     sale: Vec<SaleLine>,
     #[serde(rename = "betaling")]
@@ -58,7 +59,7 @@ pub struct DailySettlementRequest {
 fn til_inn(request: DailySettlementRequest) -> regnmed_db::cash_register::DailySettlementInput {
     regnmed_db::cash_register::DailySettlementInput {
         date: request.date,
-        z_nummer: request.z_nummer,
+        z_number: request.z_number,
         sale: request
             .sale
             .into_iter()
@@ -76,7 +77,7 @@ fn til_inn(request: DailySettlementRequest) -> regnmed_db::cash_register::DailyS
     }
 }
 
-fn response(posted: regnmed_db::cash_register::BokfortOppgjor) -> Json<serde_json::Value> {
+fn response(posted: regnmed_db::cash_register::PostedSettlement) -> Json<serde_json::Value> {
     Json(json!({
         "bilag": format!("{}-{}", posted.voucher.0, posted.voucher.1),
         "differanse_ore": posted.difference_ore,

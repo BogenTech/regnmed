@@ -123,7 +123,7 @@ pub async fn create_invoice(
                     .into(),
             )
         })?;
-        let issued = regnmed_db::invoice::create_kontantfaktura(
+        let issued = regnmed_db::invoice::create_cash_invoice(
             &state.pool,
             company_id,
             &draft,

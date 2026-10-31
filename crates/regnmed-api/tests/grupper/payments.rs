@@ -142,7 +142,7 @@ async fn betalingsliste_pain001_and_settlement() {
         .execute(&state.pool)
         .await
         .unwrap();
-    let (grossist_id, grossist_no) = regnmed_db::create_party(
+    let (wholesaler_id, wholesaler_no) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -167,7 +167,7 @@ async fn betalingsliste_pain001_and_settlement() {
     let bad = regnmed_db::update_party_contact(
         &state.pool,
         company,
-        grossist_id,
+        wholesaler_id,
         None,
         None,
         Some("86011117948"),
@@ -177,7 +177,7 @@ async fn betalingsliste_pain001_and_settlement() {
     regnmed_db::update_party_contact(
         &state.pool,
         company,
-        grossist_id,
+        wholesaler_id,
         None,
         None,
         Some("8601 11 17947"),
@@ -189,7 +189,7 @@ async fn betalingsliste_pain001_and_settlement() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &leverandorfaktura(date(7, 1), 12_500_00, &grossist_no),
+        &leverandorfaktura(date(7, 1), 12_500_00, &wholesaler_no),
         "test",
     )
     .await
@@ -197,7 +197,7 @@ async fn betalingsliste_pain001_and_settlement() {
     regnmed_db::post_voucher(
         &state.pool,
         company,
-        &leverandorfaktura(date(7, 5), 800_00, &grossist_no),
+        &leverandorfaktura(date(7, 5), 800_00, &wholesaler_no),
         "test",
     )
     .await
@@ -330,7 +330,7 @@ async fn betalingsliste_pain001_and_settlement() {
         -500_00,
         "bare den kontoløse posten står igjen"
     );
-    let open_grossist: i64 = sqlx::query_scalar(
+    let open_wholesaler: i64 = sqlx::query_scalar(
         "select count(*) from entry e
          where e.party_id = $1
            and e.amount_ore <> coalesce((select sum(m.amount_ore) from reskontro_match m
@@ -338,11 +338,11 @@ async fn betalingsliste_pain001_and_settlement() {
                              + coalesce((select sum(-m.amount_ore) from reskontro_match m
                                          where m.entry_b = e.id), 0)",
     )
-    .bind(grossist_id)
+    .bind(wholesaler_id)
     .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(open_grossist, 0, "grossistens reskontro er i null");
+    assert_eq!(open_wholesaler, 0, "grossistens reskontro er i null");
     let (status, _) = request(
         &state,
         "POST",

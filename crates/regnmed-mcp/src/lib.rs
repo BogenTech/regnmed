@@ -22,7 +22,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
 
 use client::{Body, Client};
-use tool::{Body as KroppMeny, Tool};
+use tool::{Body as ToolBody, Tool};
 
 /// The protocol revision we implement. A client that asks for another
 /// one is answered with ours, which is what the spec prescribes — the
@@ -181,10 +181,10 @@ fn get_prompt(params: &Map<String, Value>) -> Result<Value, ProtocolError> {
         .and_then(Value::as_str)
         .ok_or_else(|| ProtocolError::UgyldigParam("mangler «name»".into()))?;
     let text = role::prompt(name).ok_or_else(|| {
-        let valg: Vec<&str> = role::ROLES.iter().map(|r| r.name).collect();
+        let choice: Vec<&str> = role::ROLES.iter().map(|r| r.name).collect();
         ProtocolError::UgyldigParam(format!(
             "ingen rolle «{name}» — velg en av: {}",
-            valg.join(", ")
+            choice.join(", ")
         ))
     })?;
     Ok(json!({
@@ -236,9 +236,9 @@ type Foresporsel = (Option<Body>, Vec<(String, String)>);
 /// Turns the remaining arguments into a body and a query string.
 fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
     match v.body {
-        KroppMeny::None => Ok((None, query(args))),
-        KroppMeny::Json => Ok((Some(Body::Json(Value::Object(args))), Vec::new())),
-        KroppMeny::Fil => {
+        ToolBody::None => Ok((None, query(args))),
+        ToolBody::Json => Ok((Some(Body::Json(Value::Object(args))), Vec::new())),
+        ToolBody::File => {
             let path = filepath(&mut args)?;
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("kunne ikke lese {path}"))?;
@@ -250,7 +250,7 @@ fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
                     query(args),
                 )),
                 _ => Ok((
-                    Some(Body::Raa {
+                    Some(Body::Raw {
                         bytes: text.into_bytes(),
                         content_type: content_type(&path).to_string(),
                     }),
@@ -258,7 +258,7 @@ fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
                 )),
             }
         }
-        KroppMeny::FilBinaer => {
+        ToolBody::FileBinary => {
             let path = filepath(&mut args)?;
             let bytes = std::fs::read(&path).with_context(|| format!("kunne ikke lese {path}"))?;
             let mut q = query(args);
@@ -270,7 +270,7 @@ fn build_body(v: &Tool, mut args: Map<String, Value>) -> Result<Foresporsel> {
             use sha2::{Digest, Sha256};
             q.push(("sha256".to_string(), hex::encode(Sha256::digest(&bytes))));
             Ok((
-                Some(Body::Raa {
+                Some(Body::Raw {
                     bytes,
                     content_type: content_type(&path).to_string(),
                 }),

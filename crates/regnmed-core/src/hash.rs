@@ -305,15 +305,15 @@ mod tests {
     #[test]
     fn v4_hashes_the_valuta_and_differs_from_v3() {
         let original = chain_hash(&GENESIS_HASH, &sample_v4());
-        let mut endret = sample_v4();
-        endret.entries[0].currency.as_mut().unwrap().rate_micro = 11_654_301;
-        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
-        let mut endret = sample_v4();
-        endret.entries[0].currency.as_mut().unwrap().amount_cent = 107_252;
-        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
-        let mut endret = sample_v4();
-        endret.entries[0].currency.as_mut().unwrap().code = "USD".into();
-        assert_ne!(original, chain_hash(&GENESIS_HASH, &endret));
+        let mut changed = sample_v4();
+        changed.entries[0].currency.as_mut().unwrap().rate_micro = 11_654_301;
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &changed));
+        let mut changed = sample_v4();
+        changed.entries[0].currency.as_mut().unwrap().amount_cent = 107_252;
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &changed));
+        let mut changed = sample_v4();
+        changed.entries[0].currency.as_mut().unwrap().code = "USD".into();
+        assert_ne!(original, chain_hash(&GENESIS_HASH, &changed));
 
         let mut as_v3 = sample_v4();
         as_v3.hash_version = 3;

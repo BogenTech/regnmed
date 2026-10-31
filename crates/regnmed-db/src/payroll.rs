@@ -205,7 +205,7 @@ pub struct PayrollEntry {
 }
 
 #[derive(Debug, Clone)]
-pub struct Lonnskjoring {
+pub struct PayrollRun {
     pub id: Uuid,
     pub year: i32,
     pub month: u32,
@@ -326,7 +326,7 @@ pub async fn run_payroll(
     zone_slug: &str,
     poster: &[PayrollEntry],
     created_by: &str,
-) -> Result<Lonnskjoring> {
+) -> Result<PayrollRun> {
     ensure!((1..=12).contains(&month), "måned må være 1-12");
     ensure!(!poster.is_empty(), "lønnskjøringen har ingen ansatte");
     let zone = Zone::from_slug(zone_slug)
@@ -371,12 +371,12 @@ pub async fn run_payroll(
             employee.name
         );
         let gross = if post.from_timesheet {
-            let basis = timegrunnlag(pool, company_id, employee.id, year, month).await?;
+            let basis = hour_basis(pool, company_id, employee.id, year, month).await?;
             // The hours must be LOCKED before they are paid. A payroll
             // run is insert-only; if the hours change afterwards the two
             // diverge forever with no way to reconcile them.
             ensure!(
-                basis.laast,
+                basis.locked,
                 "timelisten for {month:02}/{year} er ikke låst — lås måneden før timelønn \
                  utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
                 employee.name
@@ -671,7 +671,7 @@ pub async fn run_payroll(
     }
     tx.commit().await?;
 
-    Ok(Lonnskjoring {
+    Ok(PayrollRun {
         id: run_id,
         year,
         month,
@@ -702,12 +702,12 @@ pub async fn run_payroll(
 /// attribute to anyone.
 async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<String>> {
     let i_hovedboken = -account_balance(pool, company_id, ACCOUNT_HOLIDAY_PAY_OWED).await?;
-    let fra_lonn: i64 = feriepengehistorikk(pool, company_id)
+    let from_payroll: i64 = feriepengehistorikk(pool, company_id)
         .await?
         .values()
         .map(|h| h.skyldig_ore)
         .sum();
-    if i_hovedboken == fra_lonn {
+    if i_hovedboken == from_payroll {
         return Ok(None);
     }
     Ok(Some(format!(
@@ -716,8 +716,8 @@ async fn feriepengeavvik(pool: &PgPool, company_id: Uuid) -> Result<Option<Strin
          knyttes til, så det er ikke beregnet arbeidsgiveravgift på den — \
          avsetningen på konto {ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY} må i så fall føres manuelt.",
         kroner(i_hovedboken),
-        kroner(fra_lonn),
-        kroner(i_hovedboken - fra_lonn),
+        kroner(from_payroll),
+        kroner(i_hovedboken - from_payroll),
     )))
 }
 
@@ -729,7 +729,7 @@ pub async fn list_kjoringer(
     pool: &PgPool,
     company_id: Uuid,
     year: Option<i32>,
-) -> Result<Vec<Lonnskjoring>> {
+) -> Result<Vec<PayrollRun>> {
     let rows = sqlx::query(
         "select id, ar, maned, utbetalt_dato, sone, brutto_ore,
                 feriepenger_utbetalt_ore, forskuddstrekk_ore, netto_ore,
@@ -744,7 +744,7 @@ pub async fn list_kjoringer(
     .await?;
     let mut out = rows
         .iter()
-        .map(|r| Lonnskjoring {
+        .map(|r| PayrollRun {
             id: r.get("id"),
             year: r.get("ar"),
             month: r.get::<i32, _>("maned") as u32,
@@ -920,12 +920,12 @@ pub async fn employee_person(
 
 /// Hours logged by an employee in one month, and what they come to.
 #[derive(Debug, Clone, Copy)]
-pub struct Timegrunnlag {
+pub struct HourBasis {
     pub minutes: i64,
     pub hourly_rate_ore: i64,
     pub amount_ore: i64,
     /// The timesheet is locked through the end of this month.
-    pub laast: bool,
+    pub locked: bool,
 }
 
 /// What an employee's logged hours amount to for one month.
@@ -938,13 +938,13 @@ pub struct Timegrunnlag {
 /// run is insert-only, so if hours change afterwards the two disagree
 /// forever with no way to reconcile. The månedslås exists for exactly
 /// this order of operations (docs/timer.md: lock for lønn, then bill).
-pub async fn timegrunnlag(
+pub async fn hour_basis(
     pool: &PgPool,
     company_id: Uuid,
     employee_id: Uuid,
     year: i32,
     month: u32,
-) -> Result<Timegrunnlag> {
+) -> Result<HourBasis> {
     let start = NaiveDate::from_ymd_opt(year, month, 1).context("ugyldig måned")?;
     let end = start
         .checked_add_months(chrono::Months::new(1))
@@ -980,15 +980,15 @@ pub async fn timegrunnlag(
     .await?;
     let minutes = minutes.unwrap_or(0);
 
-    let laast = crate::timesheet::timesheet_lock(pool, company_id)
+    let locked = crate::timesheet::timesheet_lock(pool, company_id)
         .await?
         .is_some_and(|through| through >= end);
 
-    Ok(Timegrunnlag {
+    Ok(HourBasis {
         minutes,
         hourly_rate_ore: hourly_rate,
         amount_ore: regnmed_core::payroll::hourly_pay(minutes, hourly_rate),
-        laast,
+        locked,
     })
 }
 

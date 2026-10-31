@@ -415,10 +415,10 @@ async fn the_overview_is_shared_but_subscriptions_are_systemadmin_territory() {
         return;
     };
     // A stranger probes nothing: 404 on both, like the rest of /platform.
-    let (_, _, fremmed) = person(&state, &idp, "Fremmed").await;
+    let (_, _, stranger) = person(&state, &idp, "Fremmed").await;
     for uri in ["/platform/overview", "/platform/subscriptions"] {
         assert_eq!(
-            status(&state, "GET", uri, &fremmed, "").await,
+            status(&state, "GET", uri, &stranger, "").await,
             StatusCode::NOT_FOUND,
             "{uri} must not exist for a non-platform person"
         );

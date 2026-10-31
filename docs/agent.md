@@ -233,7 +233,7 @@ til en agent».
 | Hver rolle bærer grunnreglene og navngir verktøyene sine | `regnmed-mcp` (enhetstester) |
 | `null` i et argument droppes framfor å bli sendt | `regnmed-mcp` (enhetstester) |
 
-De to tilgangsvaktene er **sett feile**: med `maskin`-filteret fjernet
+De to tilgangsvaktene er **sett feile**: med `machine`-filteret fjernet
 fra `Access::has` inviterer roboten medlemmer inn i selskapet, og med
 `maskinkrav` fjernet fra bokføringstransaksjonen bokfører agenten et
 49-kroners bilag uten at noen har sett det.
@@ -487,7 +487,7 @@ ikke bygget, og det hører sammen med steg 3.
 
 ### 8.3 Workeren (levert)
 
-`crates/regnmed-agent` — eget binær, `regnmed-agent kjor`. Den tar åpne
+`crates/regnmed-agent` — eget binær, `regnmed-agent run`. Den tar åpne
 agentoppgaver som er stilet til en agent med aktiv modell, kjører dem, og
 skriver utfallet i `agent_oppgave_hendelse`.
 

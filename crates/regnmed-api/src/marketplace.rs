@@ -49,7 +49,7 @@ pub async fn registry_preview(
         .unwrap_or(false);
 
     Ok(Json(json!({
-        "orgnr": unit.organisasjonsnummer,
+        "orgnr": unit.organization_number,
         "navn": unit.name,
         "organisasjonsform": unit.organisasjonsform.as_ref().map(|k| k.code.clone()),
         "naeringskode": unit.naeringskode1.as_ref().map(|k| format!("{} {}", k.code, k.description)),
@@ -106,14 +106,14 @@ pub async fn onboard_company(
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let kapital = unit.kapital.as_ref();
+    let capital = unit.capital.as_ref();
     let facts = regnmed_db::RegistryFacts {
         org_form: unit.organisasjonsform.as_ref().map(|k| k.code.clone()),
         address: unit.forretningsadresse.as_ref().and_then(|a| a.one_line()),
         email: unit.epostadresse.clone(),
         naeringskode: unit.naeringskode1.as_ref().map(|k| k.code.clone()),
-        share_capital_ore: kapital.and_then(|k| k.amount_ore()),
-        share_count: kapital.and_then(|k| k.share_count),
+        share_capital_ore: capital.and_then(|k| k.amount_ore()),
+        share_count: capital.and_then(|k| k.share_count),
         registreringer: unit.registration_timeline(today),
     };
     let onboarded = regnmed_db::onboard_company(

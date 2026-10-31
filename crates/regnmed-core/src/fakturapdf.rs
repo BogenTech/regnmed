@@ -43,7 +43,7 @@ pub enum DocumentType {
     /// on delivery. Carries NO KID, NO forfallsdato and no payment
     /// instructions — telling someone to pay what they already paid is
     /// not a detail, it is a wrong document.
-    Kontantfaktura,
+    CashInvoice,
 }
 
 impl DocumentType {
@@ -53,7 +53,7 @@ impl DocumentType {
             DocumentType::CreditNote => "KREDITNOTA",
             DocumentType::Quote => "TILBUD",
             DocumentType::Ordrebekreftelse => "ORDREBEKREFTELSE",
-            DocumentType::Kontantfaktura => "KONTANTFAKTURA",
+            DocumentType::CashInvoice => "KONTANTFAKTURA",
         }
     }
 
@@ -63,7 +63,7 @@ impl DocumentType {
             DocumentType::CreditNote => "Kreditnotanr",
             DocumentType::Quote => "Tilbudsnr",
             DocumentType::Ordrebekreftelse => "Ordrenr",
-            DocumentType::Kontantfaktura => "Fakturanr",
+            DocumentType::CashInvoice => "Fakturanr",
         }
     }
 }
@@ -204,7 +204,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     // A kontantfaktura says what settled it, where a faktura says when
     // it falls due. §5-3 wants the salgsdokument to show that the
     // ytelse is paid.
-    if input.document_type == DocumentType::Kontantfaktura {
+    if input.document_type == DocumentType::CashInvoice {
         facts.push((
             "Betalt".into(),
             input.payment_method.clone().unwrap_or_else(|| "Ja".into()),
@@ -600,8 +600,8 @@ mod cash_tests {
     /// the buyer where to transfer money — and by when — is not a
     /// cosmetic slip; it is a demand for a second payment.
     #[test]
-    fn a_kontantfaktura_carries_no_kid_and_no_due_date() {
-        let pdf = render_invoice_pdf(&input(DocumentType::Kontantfaktura));
+    fn a_cash_invoice_carries_no_kid_and_no_due_date() {
+        let pdf = render_invoice_pdf(&input(DocumentType::CashInvoice));
         let text = String::from_utf8_lossy(&pdf).to_string();
         assert!(text.contains("KONTANTFAKTURA"), "tittelen");
         assert!(text.contains("Betalt"), "at den er gjort opp");
