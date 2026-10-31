@@ -4,7 +4,7 @@
   // roles as sets of rights), but it lives under Oppdrag → Tilgang where
   // a fresh admin never looks. This card guides the FIRST invitations
   // and disappears once the company has a second direct member. Role
-  // descriptions come from the server (/roles → Rolle::beskrivelse) —
+  // descriptions come from the server (/roles → Role::description) —
   // one copy, next to the bundles that make them true.
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
