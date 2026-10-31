@@ -140,26 +140,61 @@ pub struct TokenExchangeRequest {
     redirect_uri: String,
 }
 
+#[derive(Deserialize)]
+pub struct TokenRefreshRequest {
+    refresh_token: String,
+}
+
+fn portal_client_id() -> String {
+    std::env::var("PORTAL_OIDC_CLIENT_ID").unwrap_or_else(|_| "regnmed-portal".into())
+}
+
 /// Proxies the authorization-code exchange to the IdP's token endpoint.
 pub async fn token_exchange(
     State(_state): State<AppState>,
     Json(request): Json<TokenExchangeRequest>,
 ) -> Result<Response, ApiError> {
+    let client_id = portal_client_id();
+    token_endpoint_exchange(&[
+        ("grant_type", "authorization_code"),
+        ("client_id", client_id.as_str()),
+        ("code", request.code.as_str()),
+        ("redirect_uri", request.redirect_uri.as_str()),
+        ("code_verifier", request.code_verifier.as_str()),
+    ])
+    .await
+}
+
+/// Proxies the refresh exchange, so an hour-old access token does not
+/// mean a new login. The issuer ROTATES: the response carries a
+/// replacement refresh token and the one just spent is dead, which is
+/// why the body is passed through verbatim — the client must store
+/// both tokens again.
+pub async fn token_refresh(
+    State(_state): State<AppState>,
+    Json(request): Json<TokenRefreshRequest>,
+) -> Result<Response, ApiError> {
+    let client_id = portal_client_id();
+    token_endpoint_exchange(&[
+        ("grant_type", "refresh_token"),
+        ("client_id", client_id.as_str()),
+        ("refresh_token", request.refresh_token.as_str()),
+    ])
+    .await
+}
+
+/// The one rail to the issuer's token endpoint: the browser never talks
+/// to the IdP (no CORS), the IdP's error detail stays in our log while
+/// the browser gets a plain failure, and a successful body is passed
+/// through byte for byte.
+async fn token_endpoint_exchange(form: &[(&str, &str)]) -> Result<Response, ApiError> {
     let issuer = std::env::var("OIDC_ISSUER")
         .map_err(|_| ApiError::BadRequest("OIDC_ISSUER is not configured".into()))?;
-    let client_id =
-        std::env::var("PORTAL_OIDC_CLIENT_ID").unwrap_or_else(|_| "regnmed-portal".into());
     let token_endpoint = format!("{}/token", issuer.trim_end_matches('/'));
 
     let response = reqwest::Client::new()
         .post(&token_endpoint)
-        .form(&[
-            ("grant_type", "authorization_code"),
-            ("client_id", client_id.as_str()),
-            ("code", request.code.as_str()),
-            ("redirect_uri", request.redirect_uri.as_str()),
-            ("code_verifier", request.code_verifier.as_str()),
-        ])
+        .form(form)
         .send()
         .await
         .map_err(|e| ApiError::BadRequest(format!("IdP unreachable: {e}")))?;

@@ -1,8 +1,9 @@
 // OIDC authorization code + PKCE mot regnid. Token-utvekslingen proxyes
 // via /auth/token (samme origin), så IdP-en trenger ingen browser-CORS,
 // og regnmed ser aldri et passord — proxyen videresender bare
-// engangskoden. Tokenene ligger i sessionStorage; 401 sender brukeren
-// tilbake til innlogging.
+// engangskoden. Tokenene ligger i sessionStorage; et 401 veksler
+// refresh-tokenet via /auth/refresh, og bare en feilet veksling sender
+// brukeren tilbake til innlogging.
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
@@ -25,6 +26,38 @@ export function saveTokens(t) {
 export function clearTokens() {
   sessionStorage.removeItem("regnmed-tokens");
   session.authed = false;
+}
+
+// Én veksling i luften om gangen, delt av alle som ser et 401.
+// Utstederen ROTERER refresh-tokenet: svaret bærer en erstatter, og det
+// vi nettopp brukte er dødt. To samtidige vekslinger ville derfor sendt
+// det samme tokenet to ganger, og den andre blir avvist — altså utlogging
+// midt i arbeidet.
+let refreshing = null;
+
+export function refresh() {
+  if (refreshing) return refreshing;
+  const t = tokens();
+  if (!t || !t.refresh_token) return Promise.resolve(false);
+  refreshing = (async () => {
+    try {
+      const response = await fetch("/auth/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: t.refresh_token }),
+      });
+      if (!response.ok) return false;
+      // Behold det svaret ikke gjentar — id_token utstedes ikke på nytt,
+      // og utloggingen trenger det som id_token_hint.
+      saveTokens(Object.assign({}, t, await response.json()));
+      return true;
+    } catch (e) {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
 }
 
 function b64url(bytes) {

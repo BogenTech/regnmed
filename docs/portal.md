@@ -47,9 +47,29 @@ data virker som i produksjon.
 OIDC authorization code + **PKCE** against regnid. The code→token
 exchange is proxied through `POST /auth/token` (server-to-server), so
 the IdP needs no browser CORS and the SPA never talks cross-origin.
-Tokens live in sessionStorage; a 401 sends the user back to login.
+Tokens live in sessionStorage.
 Logout goes through regnid's `end_session` with `id_token_hint`
 (RP-initiated logout). regnmed still never sees a password.
+
+**Økten holdes i live av refresh-tokenet, ikke av en ny innlogging.**
+Tilgangstokenet lever en time, refresh-tokenet 30 dager. Et `401`
+veksler derfor refresh-tokenet gjennom `POST /auth/refresh` — samme
+proxy-skinne som `/auth/token`, samme grunn (ingen browser-CORS, og
+utstederens feildetalj blir på serveren) — og forsøker kallet én gang
+til; bare en feilet veksling sender brukeren tilbake til innlogging.
+
+Utstederen **ROTERER**: svaret bærer en erstatter, og tokenet vi nettopp
+brukte er dødt. Derfor (a) videresender proxyen svaret ordrett slik at
+erstatteren når klienten, og (b) deler alle som ser et `401` ÉN veksling
+i luften (`refreshing` i `auth.svelte.js`) — to samtidige vekslinger
+ville sendt samme token to ganger, og den andre blir avvist, altså
+utlogging midt i arbeidet.
+
+Tokenene ligger fortsatt i **sessionStorage**, så økten dør når fanen
+lukkes selv om refresh-tokenet har 29 dager igjen. Det er et bevisst
+valg, ikke en forglemmelse: localStorage ville holdt økten på tvers av
+faner og omstarter, men lagt et 30-dagers token igjen på maskinen.
+Avveiningen tas av eieren, ikke av et refaktoreringsvalg.
 
 The public client `regnmed-portal` must have the portal's origin
 registered: `{origin}/callback` as redirect URI and `{origin}/` as

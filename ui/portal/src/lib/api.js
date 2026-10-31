@@ -1,8 +1,9 @@
 // API-klienten — portert fra app.js. Ingen tilgangslogikk her: serveren
-// nekter, klienten viser. 401 tømmer økten; App.svelte reagerer på
-// session.authed og viser innloggingen.
+// nekter, klienten viser. Et 401 forsøkes vekslet én gang mot
+// refresh-tokenet; holder ikke det, tømmes økten og App.svelte reagerer
+// på session.authed og viser innloggingen.
 
-import { tokens, clearTokens } from "./auth.svelte.js";
+import { tokens, clearTokens, refresh } from "./auth.svelte.js";
 
 export async function api(path, options = {}) {
   const t = tokens();
@@ -10,11 +11,23 @@ export async function api(path, options = {}) {
     clearTokens();
     throw new Error("ikke innlogget");
   }
-  options.headers = Object.assign(
-    { authorization: "Bearer " + t.access_token },
-    options.headers || {},
-  );
-  const response = await fetch(path, options);
+  const attempt = (access_token) =>
+    fetch(
+      path,
+      Object.assign({}, options, {
+        headers: Object.assign(
+          { authorization: "Bearer " + access_token },
+          options.headers || {},
+        ),
+      }),
+    );
+  let response = await attempt(t.access_token);
+  // Tilgangstokenet lever en time, refresh-tokenet 30 dager. Ett forsøk
+  // bak den delte vekslingen i auth.svelte.js — et 401 etter det er en
+  // død økt, ikke et utløpt token.
+  if (response.status === 401 && (await refresh())) {
+    response = await attempt(tokens().access_token);
+  }
   if (response.status === 401) {
     clearTokens();
     throw new Error("utløpt økt");

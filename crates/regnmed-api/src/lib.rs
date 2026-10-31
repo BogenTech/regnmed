@@ -123,6 +123,7 @@ pub fn router(state: AppState) -> Router {
         .route("/ny", get(portal::ny_redirect))
         .route("/portal-config", get(portal::portal_config))
         .route("/auth/token", axum::routing::post(portal::token_exchange))
+        .route("/auth/refresh", axum::routing::post(portal::token_refresh))
         .route("/health", get(health))
         .route("/me", get(me))
         // Public by design: root hashes only — every independent copy of
