@@ -1,30 +1,73 @@
 // OIDC authorization code + PKCE mot regnid. Token-utvekslingen proxyes
 // via /auth/token (samme origin), så IdP-en trenger ingen browser-CORS,
 // og regnmed ser aldri et passord — proxyen videresender bare
-// engangskoden. Tokenene ligger i sessionStorage; 401 sender brukeren
-// tilbake til innlogging.
+// engangskoden.
+//
+// INGEN TOKENER LAGRES I NETTLESEREN. Tilgangstokenet lever én time og
+// ligger bare i minnet her, så det dør med fanen. Refresh-tokenet lever
+// 30 dager og ligger i en HttpOnly-cookie proxyen setter: siden kan
+// ikke lese det, bare be om en veksling (`POST /auth/refresh`). Kode som
+// kjører i siden kan altså bruke den økten som alt er i gang, men aldri
+// hente seg en ny — og en omlasting trenger ingen ny innlogging, siden
+// cookien fortsatt er der. Begrunnelsen står i docs/portal.md.
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
   authed: false,
 });
 
+let access = null;
+
 export function tokens() {
-  try {
-    return JSON.parse(sessionStorage.getItem("regnmed-tokens"));
-  } catch (e) {
-    return null;
-  }
+  return access;
 }
 
 export function saveTokens(t) {
-  sessionStorage.setItem("regnmed-tokens", JSON.stringify(t));
+  access = t;
   session.authed = true;
 }
 
 export function clearTokens() {
-  sessionStorage.removeItem("regnmed-tokens");
+  access = null;
   session.authed = false;
+}
+
+// Én veksling i luften om gangen innenfor fanen, delt av alle som ser
+// et 401 — ellers ville tre samtidige kall spent cookien tre ganger.
+let refreshing = null;
+
+// Veksler cookien inn i et nytt tilgangstoken. Svarer false når økten
+// er slutt; da, og bare da, skal brukeren logge inn igjen.
+export function refresh() {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      for (let forsok = 0; forsok < 2; forsok++) {
+        const response = await fetch("/auth/refresh", { method: "POST" });
+        if (response.ok) {
+          // id_token utstedes ikke på nytt av refresh-grantet, så det vi
+          // alt har beholdes — utloggingen bruker det som id_token_hint.
+          saveTokens(Object.assign({}, access, await response.json()));
+          return true;
+        }
+        // 401 = ingen cookie, altså ingen økt å redde. 400 = utstederen
+        // avviste den, og det kan være ROTASJONEN: to faner kan veksle
+        // samtidig, og taperen fikk avslag på et token som nettopp ble
+        // byttet ut. Vinnerens Set-Cookie havner i den DELTE cookie-
+        // burken, så ett forsøk til bærer det nye tokenet av seg selv.
+        // (Smett igjen: rekker avslaget fram før vinnerens svar er
+        // lagret, blir det likevel en utlogging — som før, aldri verre.)
+        if (response.status !== 400) return false;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return false;
+    } catch (e) {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
 }
 
 function b64url(bytes) {
@@ -87,7 +130,7 @@ export async function handleCallback() {
   history.replaceState(null, "", "/");
 }
 
-export function logout() {
+export async function logout() {
   const t = tokens();
   clearTokens();
   // Send the user BACK here after the issuer has ended its session.
@@ -100,6 +143,15 @@ export function logout() {
   // The URI must be pre-registered on the client (it is, for this
   // origin); client_id goes along so the issuer can validate it even
   // when there is no id_token to take it from.
+  // Tøm cookien før utstederen tar over navigasjonen: uten dette
+  // overlever refresh-tokenet utloggingen, og neste besøk logger stille
+  // inn igjen — på en delt maskin som forrige bruker.
+  try {
+    await fetch("/auth/logout", { method: "POST" });
+  } catch (e) {
+    // Nettet kan svikte; da er det eneste rette å logge ut hos
+    // utstederen likevel, så økten ikke ser levende ut.
+  }
   const params = new URLSearchParams();
   if (t && t.id_token) params.set("id_token_hint", t.id_token);
   params.set("client_id", session.config.client_id);

@@ -56,11 +56,19 @@ API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed
 # which is the signal that no dependency crept in; all of the growth is
 # in the JS chunk where hand-written components live.
 #
-# 544 buys roughly six more cards before this has to be looked at again.
-# When it does, the question to ask FIRST is whether the CSS moved: JS
-# growth in step with the feature list is the SPA doing its job, CSS
-# growth without a theme change is a dependency nobody meant to add.
-PORTAL_DIST_BUDGET_KB=544
+# 544 bought roughly six more cards before this had to be looked at
+# again. When it does, the question to ask FIRST is whether the CSS
+# moved: JS growth in step with the feature list is the SPA doing its
+# job, CSS growth without a theme change is a dependency nobody meant to
+# add.
+#
+# It was looked at, and the headroom turned out to be spent already: the
+# dist measured exactly 544 KB before the session-keepalive flow added
+# 317 bytes -- one byte over, which a budget equal to the current size
+# turns into a red build. The CSS did not move (144 KB, byte-identical),
+# so this is the first case: hand-written JS, no new dependency. Raised
+# to 552 to leave the gate somewhere to stand.
+PORTAL_DIST_BUDGET_KB=552
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 

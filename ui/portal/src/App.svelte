@@ -1,5 +1,5 @@
 <script>
-  import { session, tokens, handleCallback } from "./lib/auth.svelte.js";
+  import { session, tokens, refresh, handleCallback } from "./lib/auth.svelte.js";
   import { route } from "./lib/router.svelte.js";
   import { me, loadMe } from "./lib/me.svelte.js";
   import { FLYTTET_TIL_ADMIN } from "./lib/meny.js";
@@ -72,7 +72,10 @@
         return;
       }
     }
-    session.authed = !!tokens();
+    // Ingenting ligger lagret: etter en omlasting avgjør refresh-cookien
+    // om økten lever, så oppstarten veksler den én gang før
+    // innloggingen i det hele tatt vises.
+    session.authed = !!tokens() || (await refresh());
     boot.done = true;
   }
   start();

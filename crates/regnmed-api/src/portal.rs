@@ -12,10 +12,14 @@
 //! code→token exchange is proxied here (`POST /auth/token`), server-to-
 //! server, so the IdP needs no browser CORS either. regnmed still never
 //! sees a password — the proxy only forwards the one-time code.
+//!
+//! The proxy also KEEPS the refresh token: it goes back as an HttpOnly
+//! cookie and `POST /auth/refresh` spends it, so the 30-day credential
+//! never exists anywhere JavaScript can reach it. See docs/portal.md.
 
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::header;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
@@ -140,26 +144,135 @@ pub struct TokenExchangeRequest {
     redirect_uri: String,
 }
 
+/// The refresh token NEVER reaches JavaScript. It lives 30 days, which
+/// makes it the most valuable thing in the whole session, and the one
+/// place a 30-day credential can sit where an XSS cannot read it is an
+/// HttpOnly cookie. This proxy is already the only code that talks to
+/// the token endpoint, so it is also the natural keeper: the browser is
+/// handed the hour-long access token and nothing else.
+const REFRESH_COOKIE: &str = "regnmed_refresh";
+
+/// Matches regnid's REFRESH_TTL_DAYS. A cookie that outlives the token
+/// only means a refresh that fails; one that dies first logs the user
+/// out early, so this errs long.
+const REFRESH_COOKIE_MAX_AGE: i64 = 30 * 24 * 3600;
+
+fn portal_client_id() -> String {
+    std::env::var("PORTAL_OIDC_CLIENT_ID").unwrap_or_else(|_| "regnmed-portal".into())
+}
+
+/// `Secure` always, EXCEPT on a loopback host. Deriving it from
+/// X-Forwarded-Proto would fail open the day a proxy stops setting the
+/// header; a hostname cannot drift that way, and no deployment of ours
+/// is served from localhost.
+fn is_local_host(headers: &HeaderMap) -> bool {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+    let host = host.split(':').next().unwrap_or_default();
+    host == "localhost" || host == "127.0.0.1" || host.ends_with(".localhost")
+}
+
+/// `Path=/auth` so the cookie is sent to the two routes that spend it
+/// and to nothing else; `SameSite=Strict` because both are POSTed by
+/// our own page.
+fn refresh_cookie(headers: &HeaderMap, value: &str, max_age: i64) -> String {
+    let secure = if is_local_host(headers) {
+        ""
+    } else {
+        " Secure;"
+    };
+    format!(
+        "{REFRESH_COOKIE}={value}; Path=/auth; Max-Age={max_age}; HttpOnly;{secure} SameSite=Strict"
+    )
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|c| {
+            c.trim()
+                .strip_prefix(name)?
+                .strip_prefix('=')
+                .map(str::to_string)
+        })
+}
+
 /// Proxies the authorization-code exchange to the IdP's token endpoint.
 pub async fn token_exchange(
     State(_state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<TokenExchangeRequest>,
 ) -> Result<Response, ApiError> {
-    let issuer = std::env::var("OIDC_ISSUER")
-        .map_err(|_| ApiError::BadRequest("OIDC_ISSUER is not configured".into()))?;
-    let client_id =
-        std::env::var("PORTAL_OIDC_CLIENT_ID").unwrap_or_else(|_| "regnmed-portal".into());
-    let token_endpoint = format!("{}/token", issuer.trim_end_matches('/'));
-
-    let response = reqwest::Client::new()
-        .post(&token_endpoint)
-        .form(&[
+    let client_id = portal_client_id();
+    token_endpoint_exchange(
+        &headers,
+        &[
             ("grant_type", "authorization_code"),
             ("client_id", client_id.as_str()),
             ("code", request.code.as_str()),
             ("redirect_uri", request.redirect_uri.as_str()),
             ("code_verifier", request.code_verifier.as_str()),
-        ])
+        ],
+    )
+    .await
+}
+
+/// Spends the refresh cookie, so an hour-old access token does not mean
+/// a new login. Nothing is read from the request body: the credential is
+/// the cookie, which the page cannot read, forge or send anywhere else.
+///
+/// 401 means there is no cookie (nobody is logged in here) and 400 means
+/// the issuer refused one — the browser retries only the second, because
+/// the issuer ROTATES and a parallel tab may have just won the race.
+pub async fn token_refresh(
+    State(_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let refresh = cookie_value(&headers, REFRESH_COOKIE)
+        .ok_or(ApiError::Unauthorized("ingen økt å fornye"))?;
+    let client_id = portal_client_id();
+    token_endpoint_exchange(
+        &headers,
+        &[
+            ("grant_type", "refresh_token"),
+            ("client_id", client_id.as_str()),
+            ("refresh_token", refresh.as_str()),
+        ],
+    )
+    .await
+}
+
+/// Drops the refresh cookie. Without this the cookie would survive the
+/// logout and the next visit would silently sign the user back in — on a
+/// shared machine, as whoever was there before.
+pub async fn auth_logout(headers: HeaderMap) -> Response {
+    (
+        StatusCode::NO_CONTENT,
+        [(header::SET_COOKIE, refresh_cookie(&headers, "", 0))],
+    )
+        .into_response()
+}
+
+/// The one rail to the issuer's token endpoint: the browser never talks
+/// to the IdP (no CORS), the IdP's error detail stays in our log while
+/// the browser gets a plain failure, and the refresh token is SPLIT OFF
+/// into a cookie instead of being passed through to the page.
+async fn token_endpoint_exchange(
+    headers: &HeaderMap,
+    form: &[(&str, &str)],
+) -> Result<Response, ApiError> {
+    let issuer = std::env::var("OIDC_ISSUER")
+        .map_err(|_| ApiError::BadRequest("OIDC_ISSUER is not configured".into()))?;
+    let token_endpoint = format!("{}/token", issuer.trim_end_matches('/'));
+
+    let response = reqwest::Client::new()
+        .post(&token_endpoint)
+        .form(form)
         .send()
         .await
         .map_err(|e| ApiError::BadRequest(format!("IdP unreachable: {e}")))?;
@@ -171,5 +284,27 @@ pub async fn token_exchange(
         eprintln!("token exchange failed ({status}): {body}");
         return Err(ApiError::BadRequest("innlogging avvist av utsteder".into()));
     }
-    Ok(([(header::CONTENT_TYPE, "application/json")], body).into_response())
+
+    let mut parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|_| ApiError::BadRequest("uventet svar fra utsteder".into()))?;
+    let refresh = parsed
+        .as_object_mut()
+        .and_then(|o| o.remove("refresh_token"))
+        .and_then(|v| v.as_str().map(str::to_string));
+
+    let mut response = (
+        [(header::CONTENT_TYPE, "application/json")],
+        parsed.to_string(),
+    )
+        .into_response();
+    if let Some(refresh) = refresh {
+        let cookie = refresh_cookie(headers, &refresh, REFRESH_COOKIE_MAX_AGE);
+        response.headers_mut().insert(
+            header::SET_COOKIE,
+            cookie
+                .parse()
+                .map_err(|_| ApiError::BadRequest("ugyldig token fra utsteder".into()))?,
+        );
+    }
+    Ok(response)
 }

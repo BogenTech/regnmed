@@ -254,7 +254,7 @@ endepunktene når noe selskaps hovedbok.
 
 ### Portalen selv
 
-`/`, `/callback`, `/assets/*`, `/ny`, `/portal-config` og `/auth/token`
-betjener nettportalen (docs/portal.md), sammen med PWA-filene
+`/`, `/callback`, `/assets/*`, `/ny`, `/portal-config`, `/auth/token`,
+`/auth/refresh` og `/auth/logout` betjener nettportalen (docs/portal.md), sammen med PWA-filene
 `/manifest.webmanifest`, `/sw.js` og `/icon-192.png` / `/icon-512.png`.
 De er ikke en del av integrasjons-API-et.
