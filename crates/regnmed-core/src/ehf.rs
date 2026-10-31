@@ -78,7 +78,7 @@ pub struct EhfLinje {
     pub quantity_milli: i64,
     /// UN/ECE Rec 20 unit code; "EA" (each) by default.
     pub unit: String,
-    pub enhetspris_ore: i64,
+    pub unit_price_ore: i64,
     pub net_ore: i64,
     /// Basis points; None = no mva code on the line.
     pub vat_rate_bp: Option<i64>,
@@ -439,7 +439,7 @@ pub fn render(doc: &EhfDocument) -> String {
         w.close("cac:ClassifiedTaxCategory");
         w.close("cac:Item");
         w.open("cac:Price");
-        w.leaf_attr("cbc:PriceAmount", &attr, &money(linje.enhetspris_ore));
+        w.leaf_attr("cbc:PriceAmount", &attr, &money(linje.unit_price_ore));
         w.close("cac:Price");
         w.close(line_tag);
     }
@@ -485,7 +485,7 @@ mod tests {
                     description: "Konsulentbistand".into(),
                     quantity_milli: 2_000,
                     unit: "HUR".into(),
-                    enhetspris_ore: 1_250_00,
+                    unit_price_ore: 1_250_00,
                     net_ore: 2_500_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 625_00,
@@ -494,7 +494,7 @@ mod tests {
                     description: "Utlegg uten mva".into(),
                     quantity_milli: 1_000,
                     unit: "EA".into(),
-                    enhetspris_ore: 500_00,
+                    unit_price_ore: 500_00,
                     net_ore: 500_00,
                     vat_rate_bp: None,
                     vat_ore: 0,
@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn a_kreditnota_uses_its_own_element_names_and_points_at_the_invoice() {
+    fn a_credit_note_uses_its_own_element_names_and_points_at_the_invoice() {
         let xml = render(&document(DocumentType::CreditNote));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CreditNote "));
         assert!(xml.contains("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>"));

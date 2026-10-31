@@ -47,7 +47,7 @@ fn shareholder_json(a: &regnmed_db::share_register::Shareholder) -> serde_json::
 }
 
 #[derive(Deserialize)]
-pub struct BokQuery {
+pub struct BookQuery {
     /// The aksjeeierbok is a function of a date; today when unset.
     #[serde(rename = "dato")]
     date: Option<chrono::NaiveDate>,
@@ -57,7 +57,7 @@ pub async fn list_shareholders(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Query(q): Query<BokQuery>,
+    Query(q): Query<BookQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(
         &state,
@@ -67,14 +67,14 @@ pub async fn list_shareholders(
     )
     .await?;
     let date = q.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let bok = regnmed_db::share_register::aksjeeierbok(&state.pool, company_id, date)
+    let book = regnmed_db::share_register::aksjeeierbok(&state.pool, company_id, date)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let total: i64 = bok.iter().map(|a| a.share_count).sum();
+    let total: i64 = book.iter().map(|a| a.share_count).sum();
     Ok(Json(json!({
         "dato": date,
         "totalt_antall_aksjer": total,
-        "aksjonarer": bok.iter().map(shareholder_json).collect::<Vec<_>>(),
+        "aksjonarer": book.iter().map(shareholder_json).collect::<Vec<_>>(),
     })))
 }
 
@@ -396,7 +396,7 @@ pub async fn tax_return(
     // Always rendered, but an error is only fatal when somebody actually
     // asks for the file. The preview must SHOW what is blocking the
     // filing — a blank page helps nobody understand why.
-    let hoved = regnmed_core::shareholder_return::render_main_form(&sett.hovedskjema);
+    let hoved = regnmed_core::shareholder_return::render_main_form(&sett.main_form);
     let under: Vec<_> = sett
         .underskjemaer
         .iter()
@@ -439,11 +439,11 @@ pub async fn tax_return(
         "hindringer": hindringer,
         "inntektsar": q.year,
         "antall_aksjonarer": under.len(),
-        "antall_aksjer": sett.hovedskjema.share_count.this_year,
-        "antall_aksjer_fjoraret": sett.hovedskjema.share_count.last_year,
-        "aksjekapital_ore": sett.hovedskjema.share_capital.this_year,
-        "palydende_ore": sett.hovedskjema.nominal_value_ore.this_year,
-        "utbytte": sett.hovedskjema.dividend.iter().map(|u| json!({
+        "antall_aksjer": sett.main_form.share_count.this_year,
+        "antall_aksjer_fjoraret": sett.main_form.share_count.last_year,
+        "aksjekapital_ore": sett.main_form.share_capital.this_year,
+        "palydende_ore": sett.main_form.nominal_value_ore.this_year,
+        "utbytte": sett.main_form.dividend.iter().map(|u| json!({
             "dato": u.date,
             "per_aksje_ore": u.per_share_ore,
             "totalt_ore": u.total_ore,
@@ -453,7 +453,7 @@ pub async fn tax_return(
             "navn": u.name,
             "antall_fjoraret": u.share_count.last_year,
             "antall": u.share_count.this_year,
-            "antall_bevegelser": u.bevegelser.len(),
+            "antall_bevegelser": u.movements.len(),
         })).collect::<Vec<_>>(),
     }))
     .into_response())

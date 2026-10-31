@@ -695,6 +695,77 @@ Nothing above 23 remains, and the top of the list is statutory:
 `argang` 20, `verdi` 14, `skattekostnad` 14, `beregning` 14,
 `fusjon`/`fisjon` 14.
 
+Ninth sweep took the 23-down-to-10 band in one 85-entry map, 79
+files: `argang`->`vintage` (`KodelisteArgang`->`CodeListVintage`),
+`beregning`->`calculation`, `dekket`->`covered`, `etter`->`after`
+(`SPERR_ETTER_FORFALL_DAGER`->`BLOCK_AFTER_DUE_DAYS`),
+`noteringer`->`quotes`, `verdi`->`value`,
+`skattekostnad_ore`->`tax_expense_ore`,
+`salgspris_ore`->`sales_price_ore`,
+`hovedskjema`/`underskjema`->`main_form`/`sub_form`,
+`bevegelser`->`movements`, `gebyr`->`fee`,
+`enhetspris_ore`->`unit_price_ore`, `forklaring`->`explanation`,
+`kurs`->`exchange_rate` (`KursRow`->`ExchangeRateRow`),
+`kreditnota`->`credit_note`, `prosent`->`percent`,
+`tidspunkt`->`timestamp`, `lytter`->`listener`, `medlem`->`member`,
+`restverdi_ore`->`residual_value_ore`, `fakturerbar`->`billable`,
+`kontantfaktura`->`cash_invoice`, `disponert`->`allocated`,
+`nyutstedelser`->`new_issues`, `trekkpliktig`->`taxable`,
+`nokkeltall`->`key_figures`, `avslutt`->`close`,
+`innsyn`->`access_log`, `bok`->`book`, `inntektsaar`->`income_year`
+and the generic words down to 10.
+
+**A NEW TRAP, and the compiler caught it: a function name can live
+inside a string literal.** `#[serde(default = "prosent")]` names the
+default-value function, so the string guard held it byte-identical
+while `fn prosent` became `fn percent`, and the build failed with
+`cannot find function `prosent``. Five attributes in the workspace
+are of this shape (`serde(default = ...)`, `with`,
+`serialize_with`, `deserialize_with`), and the trap needs no test
+because E0425 is the cheapest guard there is -- what it needs is for
+the error to be READ correctly: it means a name moved out from under
+a literal that still points at it, not that the rename was wrong.
+Unlike the MCP placeholder, which compiles and fails at runtime.
+
+Ten SHADOWS reports, all benign on inspection, and the pattern of
+the benign ones is now clear: a struct FIELD of the target name in a
+different struct (`unit_price_ore`, `value_ore`, `customers`), a
+target bound in a different function of the same file (`limit` in
+`chart_of_accounts`, `member_id` and `open` in two test fns), and
+`Iterator::next` next to a local `next`. One produced a redundant
+`value: value` field init, which clippy would have flagged.
+`fn groups` beside `let mut groups` in `timesheet.rs` is legal and
+PRE-EXISTED in Norwegian (`fn grupper` / `let mut grupper`) -- the
+rename carried the shape over, it did not create it.
+
+**docs/ had a stale reference the stale-docs guard could not see.**
+docs/auth.md said the manual-coverage rule came from `avslutt`,
+while the only `avslutt` in the tree was the FISCAL YEAR close; the
+real function is `platform::end_coverage`. `stale-docs.py` matches a
+span's parts as plain text ANYWHERE in `crates/`, so a reference to
+the WRONG function reads as valid as long as the name exists
+somewhere. It surfaced only because this rename removed `avslutt`
+from the tree entirely. Recorded in the script's own docstring;
+narrowing it would mean resolving paths properly, a different tool.
+
+**3 308 -> 2 771 of 188 562 segments (1,8 % -> 1,5 %), 728 -> 688
+distinct** -- measured on ONE instrument both sides, because 267 of
+the segments the previous reading counted were never Norwegian at
+all (`org` in `org_form`, `inline`, `endpoint`, `pkcs1`, `prev`,
+`nonempty`, `dotenvy`, `database`, `jsonwebtoken`, `marketplace`,
+`concat`, `stderr`, `merkle`, `formatter`, and the abbreviations
+`fy`, `eid`, `ack`), now in the STOP set. Reporting the raw
+3 575 -> 2 771 would have credited the rename with the instrument's
+own correction.
+
+STATUTORY, and deliberately not taken: the `TransactionType`
+variants keep growing the list of words that stay -- `fusjon`,
+`fisjon`, `partiell` (`PartiellLikvidasjonLikedelt`/`Skjevdelt`),
+`arv`, `overforing` (`KonserninternOverforing`,
+`OverforingMedKontinuitet`), `Kjop` and `Salg`. Case-sensitivity
+split the last two for free: lowercase `kjop` went wide to
+`purchase` while `Kjop` the variant stayed put.
+
 **THE PROGRESS NUMBER WAS MEASURING THE WRONG THING, and it read 1,1 %
 while 875 distinct Norwegian segments were still in the tree.** Every
 figure above counted occurrences of a HAND-KEPT LIST of Norwegian
@@ -706,14 +777,15 @@ identifier segment that is not English -- and lives in
 `scripts/norwegian-left.py` so the series is reproducible instead of
 depending on a file in someone's scratchpad:
 
-**3 575 of 188 408 identifier segments (1,9 %), 752 distinct**
-(2026-10-30, after the eighth sweep; the first reading of this
-instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 1 128,
-core 1 094, db 944, gov 212, agent 79, mcp 65, cli 52, mail 1.
+**2 771 of 188 562 identifier segments (1,5 %), 688 distinct**
+(2026-10-31, after the ninth sweep; the first reading of this
+instrument was 6 920 / 187 624 / 3,7 %). Per crate: api 896,
+core 862, db 703, gov 156, mcp 58, agent 56, cli 40, mail 0.
 `counterparty` and `subledger` joined the STOP set -- English names
 this conversion INTRODUCED that `/usr/share/dict/words` does not
 carry, so the instrument counted its own output as Norwegian -- and
-`html`, `addr` and `ct` followed, which were never Norwegian at all. Per crate: db 2 371, api 2 289, core 1 708, gov 235,
+`html`, `addr`, `ct` and the ninth sweep's 23 followed, which were
+never Norwegian at all. Per crate: db 2 371, api 2 289, core 1 708, gov 235,
 mcp 113, cli 111, agent 92, mail 1. It OVERCOUNTS by a few percent
 (residual abbreviations like `rfind`, `hexdigit`, `x86`), which is the
 right direction for a gate: it can only claim done when it is near

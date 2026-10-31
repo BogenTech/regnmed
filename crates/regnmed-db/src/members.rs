@@ -40,7 +40,7 @@ pub fn normalize_email(raw: &str) -> String {
 }
 
 #[derive(Debug, Clone)]
-pub struct Medlem {
+pub struct Member {
     pub person_id: Uuid,
     pub name: String,
     pub email: Option<String>,
@@ -58,7 +58,7 @@ pub struct Medlem {
 /// is how the question is asked ("who can get in here?"), but they are
 /// marked differently: someone who arrived through an oppdrag can only be
 /// removed by ending the oppdrag.
-pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medlem>> {
+pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Member>> {
     let rows = sqlx::query(
         "select p.id as person_id,
                 coalesce(p.name, p.oidc_sub) as navn,
@@ -94,7 +94,7 @@ pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Medle
     .await?;
     Ok(rows
         .iter()
-        .map(|r| Medlem {
+        .map(|r| Member {
             person_id: r.get("person_id"),
             name: r.get("navn"),
             email: r.get("epost"),
@@ -328,7 +328,7 @@ pub async fn inviter(
             Some(false) => bail!("den ansatte er alt koblet til en portalbruker"),
             Some(true) => {}
         }
-        let apen: bool = sqlx::query_scalar(
+        let open: bool = sqlx::query_scalar(
             "select exists (select 1 from company_invitation
                             where employee_id = $1
                               and accepted_at is null and revoked_at is null)",
@@ -337,7 +337,7 @@ pub async fn inviter(
         .fetch_one(pool)
         .await?;
         ensure!(
-            !apen,
+            !open,
             "den ansatte har alt en åpen invitasjon — trekk den tilbake først"
         );
     }

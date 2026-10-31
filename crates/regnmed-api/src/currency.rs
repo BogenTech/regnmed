@@ -62,7 +62,7 @@ pub async fn add_rate(
             ApiError::BadRequest(format!("uparselig kurs {:?}", request.exchange_rate))
         })?;
     let registered_by = person.name.as_deref().unwrap_or(&person.sub);
-    regnmed_db::insert_kurs(
+    regnmed_db::insert_exchange_rate(
         &state.pool,
         &request.currency.to_uppercase(),
         request.date,
@@ -98,12 +98,12 @@ pub async fn fetch_rates(
         .filter(|v| !v.is_empty())
         .collect();
     let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
-    let noteringer = client
+    let quotes = client
         .fetch_rates(&valutaer, request.days.unwrap_or(10))
         .await
         .map_err(|e| ApiError::BadRequest(format!("Norges Bank: {e:#}")))?;
-    for n in &noteringer {
-        regnmed_db::insert_kurs(
+    for n in &quotes {
+        regnmed_db::insert_exchange_rate(
             &state.pool,
             &n.currency,
             n.date,
@@ -112,7 +112,7 @@ pub async fn fetch_rates(
         )
         .await?;
     }
-    Ok(Json(json!({ "fetched": noteringer.len() })))
+    Ok(Json(json!({ "fetched": quotes.len() })))
 }
 
 #[derive(Deserialize)]

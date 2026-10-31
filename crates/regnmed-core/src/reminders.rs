@@ -551,10 +551,10 @@ mod tests {
             (date(2026, 1, 1), 1200),
         ]
         .into_iter()
-        .map(|(valid_from, verdi)| RatePeriod {
+        .map(|(valid_from, value)| RatePeriod {
             domain: "forsinkelsesrente".into(),
             valid_from,
-            value: verdi,
+            value,
         })
         .collect()
     }
@@ -563,34 +563,37 @@ mod tests {
     fn interest_is_segmented_across_a_rate_change_and_is_pinned() {
         // 10 000 kr, due 2025-06-15, claimed as of 2025-07-15: 15 days at
         // 12.50 % + 15 days at 12.25 %, actual days / 365.
-        let beregning =
+        let calculation =
             late_payment_interest(1_000_000, date(2025, 6, 15), date(2025, 7, 15), &rates())
                 .unwrap();
-        assert_eq!(beregning.periods.len(), 2);
+        assert_eq!(calculation.periods.len(), 2);
         assert_eq!(
-            beregning.periods[0].from,
+            calculation.periods[0].from,
             date(2025, 6, 16),
             "fra dagen etter forfall"
         );
-        assert_eq!(beregning.periods[0].to, date(2025, 6, 30));
-        assert_eq!(beregning.periods[0].days, 15);
+        assert_eq!(calculation.periods[0].to, date(2025, 6, 30));
+        assert_eq!(calculation.periods[0].days, 15);
         assert_eq!(
-            beregning.periods[0].interest_ore, 5137,
+            calculation.periods[0].interest_ore, 5137,
             "10000 × 12,5 % × 15/365"
         );
-        assert_eq!(beregning.periods[1].from, date(2025, 7, 1));
-        assert_eq!(beregning.periods[1].days, 15);
-        assert_eq!(beregning.periods[1].interest_ore, 5034);
-        assert_eq!(beregning.sum_ore, 10_171, "periodene summerer til totalen");
+        assert_eq!(calculation.periods[1].from, date(2025, 7, 1));
+        assert_eq!(calculation.periods[1].days, 15);
+        assert_eq!(calculation.periods[1].interest_ore, 5034);
+        assert_eq!(
+            calculation.sum_ore, 10_171,
+            "periodene summerer til totalen"
+        );
     }
 
     #[test]
     fn no_interest_through_the_forfall_day_itself() {
-        let beregning =
+        let calculation =
             late_payment_interest(1_000_000, date(2025, 6, 15), date(2025, 6, 15), &rates())
                 .unwrap();
-        assert_eq!(beregning.sum_ore, 0);
-        assert!(beregning.periods.is_empty());
+        assert_eq!(calculation.sum_ore, 0);
+        assert!(calculation.periods.is_empty());
     }
 
     #[test]
@@ -678,7 +681,7 @@ mod tests {
             Err(ReminderError::FeeAboveMax { max_ore: 3800 })
         );
         // The dunning ladder is one-way.
-        let etter_varsel = &[PreviousStep {
+        let after_notice = &[PreviousStep {
             step: Step::CollectionNotice,
             fee_ore: 0,
         }][..];
@@ -688,12 +691,12 @@ mod tests {
                 date(2026, 2, 1),
                 date(2026, 2, 15),
                 0,
-                etter_varsel
+                after_notice
             ),
             Err(ReminderError::StepBackwards { .. })
         ));
         // At most two fee-bearing steps.
-        let to_gebyr = &[
+        let two_fees = &[
             PreviousStep {
                 step: Step::Demand,
                 fee_ore: 3500,
@@ -709,7 +712,7 @@ mod tests {
                 date(2026, 3, 1),
                 date(2026, 3, 16),
                 3800,
-                to_gebyr
+                two_fees
             ),
             Err(ReminderError::TooManyFees)
         );
@@ -720,7 +723,7 @@ mod tests {
                 date(2026, 3, 1),
                 date(2026, 3, 16),
                 0,
-                to_gebyr
+                two_fees
             ),
             Ok(())
         );

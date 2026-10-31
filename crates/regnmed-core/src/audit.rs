@@ -172,7 +172,7 @@ pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
 #[derive(Debug, Clone)]
 pub struct AnchorInfo {
     /// RFC 3339 timestamp of the snapshot.
-    pub tidspunkt: String,
+    pub timestamp: String,
     pub root_hex: String,
     pub last_sequence: i64,
     /// Human-readable witness descriptions ("rfc3161 https://…").
@@ -254,7 +254,7 @@ pub fn render_text(input: &AuditInput) -> String {
     for anchor in &input.anchors {
         line(&format!(
             "{}  sekvens {}  rot {}",
-            anchor.tidspunkt, anchor.last_sequence, anchor.root_hex
+            anchor.timestamp, anchor.last_sequence, anchor.root_hex
         ));
         for vitne in &anchor.vitner {
             line(&format!("    bevitnet: {vitne}"));
@@ -300,7 +300,7 @@ mod tests {
                 },
             ],
             anchors: vec![AnchorInfo {
-                tidspunkt: "2026-07-23T02:00:00+00:00".into(),
+                timestamp: "2026-07-23T02:00:00+00:00".into(),
                 root_hex: "1c".repeat(32),
                 last_sequence: 13,
                 vitner: vec!["rfc3161 https://freetsa.org/tsr".into()],

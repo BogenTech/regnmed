@@ -150,25 +150,25 @@ impl BrregEntity {
         fn date(raw: &Option<String>) -> Option<NaiveDate> {
             NaiveDate::parse_from_str(raw.as_deref()?.trim(), "%Y-%m-%d").ok()
         }
-        let mut hendelser: Vec<(NaiveDate, bool)> = Vec::new();
+        let mut events: Vec<(NaiveDate, bool)> = Vec::new();
         if self.registered_in_vat_register {
-            hendelser.push((date(&self.mva_registration_date).unwrap_or(i_dag), true));
+            events.push((date(&self.mva_registration_date).unwrap_or(i_dag), true));
         }
         if self.registrert_i_foretaksregisteret {
-            hendelser.push((
+            events.push((
                 date(&self.foretaksregisteret_registration_date).unwrap_or(i_dag),
                 false,
             ));
         }
-        if hendelser.is_empty() {
+        if events.is_empty() {
             // Registered in neither: still recorded, so the absence of a
             // påtegning is an observation rather than a missing row.
             return vec![(i_dag, false, false)];
         }
-        hendelser.sort_by_key(|(d, _)| *d);
+        events.sort_by_key(|(d, _)| *d);
         let (mut vat, mut foretak) = (false, false);
         let mut rader: Vec<(NaiveDate, bool, bool)> = Vec::new();
-        for (d, is_vat) in hendelser {
+        for (d, is_vat) in events {
             if is_vat {
                 vat = true;
             } else {

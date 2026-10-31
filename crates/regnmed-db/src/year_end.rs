@@ -31,7 +31,7 @@ pub struct Arsavslutning {
     pub year: i32,
     pub voucher: (i32, i64),
     pub result_before_tax_ore: i64,
-    pub skattekostnad_ore: i64,
+    pub tax_expense_ore: i64,
     pub disponert_ore: i64,
     pub created_by: String,
 }
@@ -61,15 +61,15 @@ pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, year: i32) -> 
 /// computes the latter for anleggsmidler), so deriving it here would be
 /// inventing a tax return. Zero is a legitimate answer and must be
 /// stated, never assumed.
-pub async fn avslutt_ar(
+pub async fn close_year(
     pool: &PgPool,
     company_id: Uuid,
     year: i32,
-    skattekostnad_ore: i64,
+    tax_expense_ore: i64,
     created_by: &str,
 ) -> Result<Arsavslutning> {
     ensure!(
-        skattekostnad_ore >= 0,
+        tax_expense_ore >= 0,
         "skattekostnaden kan ikke være negativ — en skattefordel er utsatt skatt, som ikke er bygget"
     );
     let (_, end_of_year) = period(year)?;
@@ -101,7 +101,7 @@ pub async fn avslutt_ar(
     }
 
     let result_before_tax_ore = result_for_the_year(pool, company_id, year).await?;
-    let disponert_ore = result_before_tax_ore - skattekostnad_ore;
+    let disponert_ore = result_before_tax_ore - tax_expense_ore;
 
     let linje = |account: &str, amount: i64, text: &str| EntryDraft {
         account_number: account.to_string(),
@@ -114,15 +114,11 @@ pub async fn avslutt_ar(
         currency: None,
     };
     let mut entries = Vec::with_capacity(4);
-    if skattekostnad_ore != 0 {
-        entries.push(linje(
-            TAX_EXPENSE_ACCOUNT,
-            skattekostnad_ore,
-            "Skattekostnad",
-        ));
+    if tax_expense_ore != 0 {
+        entries.push(linje(TAX_EXPENSE_ACCOUNT, tax_expense_ore, "Skattekostnad"));
         entries.push(linje(
             TAX_PAYABLE_ACCOUNT,
-            -skattekostnad_ore,
+            -tax_expense_ore,
             "Betalbar skatt",
         ));
     }
@@ -179,7 +175,7 @@ pub async fn avslutt_ar(
     .bind(year)
     .bind(posted.id)
     .bind(result_before_tax_ore)
-    .bind(skattekostnad_ore)
+    .bind(tax_expense_ore)
     .bind(disponert_ore)
     .bind(created_by)
     .execute(&mut *tx)
@@ -201,7 +197,7 @@ pub async fn avslutt_ar(
         year,
         voucher: (posted.fiscal_year, posted.voucher_number),
         result_before_tax_ore,
-        skattekostnad_ore,
+        tax_expense_ore,
         disponert_ore,
         created_by: created_by.to_string(),
     })
@@ -223,7 +219,7 @@ pub async fn list_arsavslutninger(pool: &PgPool, company_id: Uuid) -> Result<Vec
         year: r.get("ar"),
         voucher: (r.get("fiscal_year"), r.get("voucher_number")),
         result_before_tax_ore: r.get("resultat_for_skatt_ore"),
-        skattekostnad_ore: r.get("skattekostnad_ore"),
+        tax_expense_ore: r.get("skattekostnad_ore"),
         disponert_ore: r.get("disponert_ore"),
         created_by: r.get("created_by"),
     })

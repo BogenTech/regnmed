@@ -273,7 +273,7 @@ pub async fn post_manual_voucher(
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
         if policy
             .amount_limit_ore
-            .is_none_or(|grense| debetsum >= grense)
+            .is_none_or(|limit| debetsum >= limit)
         {
             bail!(
                 "attesteringspolicyen krever attestering for bilag på dette beløpet — \

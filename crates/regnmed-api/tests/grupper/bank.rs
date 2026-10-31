@@ -229,7 +229,7 @@ async fn import_auto_match_manual_match_and_permissions() {
 
     // Post the gebyr voucher (dated two days after the bank booking),
     // then match it manually.
-    let gebyr = VoucherDraft {
+    let fee = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: NaiveDate::from_ymd_opt(2026, 1, 29).unwrap(),
         description: "Bankgebyr".into(),
@@ -257,7 +257,7 @@ async fn import_auto_match_manual_match_and_permissions() {
             },
         ],
     };
-    regnmed_db::post_voucher(&state.pool, company, &gebyr, "test")
+    regnmed_db::post_voucher(&state.pool, company, &fee, "test")
         .await
         .unwrap();
 

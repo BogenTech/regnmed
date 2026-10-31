@@ -111,7 +111,7 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
         .unwrap();
     assert_eq!(for_skatt, 60_000_00);
 
-    let avsluttet = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 13_200_00, "test")
+    let avsluttet = regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test")
         .await
         .unwrap();
     assert_eq!(avsluttet.result_before_tax_ore, 60_000_00);
@@ -185,7 +185,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
             .is_none(),
         "ingen lås før avslutningen"
     );
-    regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
+    regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test")
         .await
         .unwrap();
     assert_eq!(
@@ -197,7 +197,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     );
 
     // Twice is refused — a correction is a reversing voucher.
-    let error = regnmed_db::year_end::avslutt_ar(&pool, company, 2025, 0, "test")
+    let error = regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test")
         .await
         .expect_err("et år kan ikke disponeres to ganger");
     assert!(error.to_string().contains("allerede avsluttet"), "{error}");
@@ -209,7 +209,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     regnmed_db::set_period_lock(&pool, company2, d(2025, 12, 31), "test", false)
         .await
         .unwrap();
-    let error = regnmed_db::year_end::avslutt_ar(&pool, company2, 2025, 0, "test")
+    let error = regnmed_db::year_end::close_year(&pool, company2, 2025, 0, "test")
         .await
         .expect_err("låst år kan ikke avsluttes");
     assert!(error.to_string().contains("låst til og med"), "{error}");

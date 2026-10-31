@@ -143,7 +143,7 @@ pub struct Grouping {
 // governed 2025, regardless of what is newest. A year no vendored list
 // covers fails loudly (docs/regelverk.md, yearly regelverksrevisjon:
 // vendor the new list, extend ARGANGER — one reviewed commit).
-struct KodelisteArgang {
+struct CodeListVintage {
     label: &'static str,
     first: i32,
     last: i32,
@@ -152,7 +152,7 @@ struct KodelisteArgang {
     names: OnceLock<Vec<(u32, &'static str)>>,
 }
 
-static ARGANGER: [KodelisteArgang; 1] = [KodelisteArgang {
+static ARGANGER: [CodeListVintage; 1] = [CodeListVintage {
     label: "2025-2026",
     first: 2025,
     last: 2026,
@@ -161,13 +161,13 @@ static ARGANGER: [KodelisteArgang; 1] = [KodelisteArgang {
     names: OnceLock::new(),
 }];
 
-fn argang_for(inntektsaar: i32) -> Result<&'static KodelisteArgang, String> {
+fn vintage_for(income_year: i32) -> Result<&'static CodeListVintage, String> {
     ARGANGER
         .iter()
-        .find(|a| (a.first..=a.last).contains(&inntektsaar))
+        .find(|a| (a.first..=a.last).contains(&income_year))
         .ok_or_else(|| {
             format!(
-                "ingen næringsspesifikasjonsliste dekker inntektsår {inntektsaar} \
+                "ingen næringsspesifikasjonsliste dekker inntektsår {income_year} \
                  (vendored: {}) — vendor Skatteetatens liste for året og utvid \
                  registeret (docs/regelverk.md)",
                 ARGANGER
@@ -179,7 +179,7 @@ fn argang_for(inntektsaar: i32) -> Result<&'static KodelisteArgang, String> {
         })
 }
 
-impl KodelisteArgang {
+impl CodeListVintage {
     fn grouping_table(&self) -> &[(u32, &'static str, &'static str)] {
         self.grouping.get_or_init(|| {
             let mut rows: Vec<(u32, &str, &str)> = self
@@ -247,8 +247,8 @@ impl KodelisteArgang {
 
 /// The label of the code-list vintage governing an inntektsår, or a
 /// loud error naming what is vendored.
-pub fn kodeliste_argang(inntektsaar: i32) -> Result<&'static str, String> {
-    argang_for(inntektsaar).map(|a| a.label)
+pub fn code_list_vintage(income_year: i32) -> Result<&'static str, String> {
+    vintage_for(income_year).map(|a| a.label)
 }
 
 /// The standard accounts (code + Norwegian description) from the NEWEST
@@ -267,22 +267,22 @@ pub fn standard_accounts() -> &'static [(u32, &'static str)] {
 /// GIVEN INNTEKTSÅR: exact match when the account is itself a standard
 /// account, otherwise the nearest standard account by number (ties go
 /// down). Errs when no vendored list covers the year.
-pub fn grouping_for(account_number: &str, inntektsaar: i32) -> Result<Option<Grouping>, String> {
-    Ok(argang_for(inntektsaar)?.grouping_for(account_number))
+pub fn grouping_for(account_number: &str, income_year: i32) -> Result<Option<Grouping>, String> {
+    Ok(vintage_for(income_year)?.grouping_for(account_number))
 }
 
 /// Renders the complete audit file as UTF-8 XML. Fails loudly when no
 /// vendored code list covers the exported inntektsår (the year of the
 /// selection start date).
 pub fn render(input: &SaftInput) -> Result<String, String> {
-    let argang = argang_for(input.start.year())?;
+    let vintage = vintage_for(input.start.year())?;
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(r#"<AuditFile xmlns="urn:StandardAuditFile-Taxation-Financial:NO">"#);
     x.depth = 1;
 
     header(&mut x, input);
-    master_files(&mut x, input, argang);
+    master_files(&mut x, input, vintage);
     entries(&mut x, input);
 
     x.depth = 0;
@@ -317,7 +317,7 @@ fn header(x: &mut Xml, input: &SaftInput) {
     x.close("Header");
 }
 
-fn master_files(x: &mut Xml, input: &SaftInput, argang: &KodelisteArgang) {
+fn master_files(x: &mut Xml, input: &SaftInput, vintage: &CodeListVintage) {
     x.open("MasterFiles");
 
     if !input.accounts.is_empty() {
@@ -328,7 +328,7 @@ fn master_files(x: &mut Xml, input: &SaftInput, argang: &KodelisteArgang) {
             x.leaf("AccountDescription", &trunc(&account.name, 256));
             // The schema makes the grouping mandatory; an unmappable account
             // number would be a data error caught long before export.
-            let grouping = argang
+            let grouping = vintage
                 .grouping_for(&account.number)
                 .expect("account number is numeric and the grouping table is non-empty");
             x.leaf("GroupingCategory", grouping.category);
@@ -806,10 +806,10 @@ mod tests {
     /// using the nearest vintage (docs/regelverk.md, issue #50).
     #[test]
     fn code_list_is_selected_per_inntektsaar() {
-        assert_eq!(kodeliste_argang(2025).unwrap(), "2025-2026");
-        assert_eq!(kodeliste_argang(2026).unwrap(), "2025-2026");
+        assert_eq!(code_list_vintage(2025).unwrap(), "2025-2026");
+        assert_eq!(code_list_vintage(2026).unwrap(), "2025-2026");
         for uncovered in [2024, 2027] {
-            let err = kodeliste_argang(uncovered).unwrap_err();
+            let err = code_list_vintage(uncovered).unwrap_err();
             assert!(err.contains("2025-2026"), "{err}");
             assert!(grouping_for("1920", uncovered).is_err());
         }

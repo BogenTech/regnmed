@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn a_kreditnota_keeps_its_negative_sign() {
+    fn a_credit_note_keeps_its_negative_sign() {
         let csv = "Navn;Fakturanr;Restbeløp\n\
                    Hansen AS;F-101;-1 000,00\n\
                    Hansen AS;F-102;0,00\n";

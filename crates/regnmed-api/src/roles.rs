@@ -108,12 +108,12 @@ pub async fn create_role(
     let name = request
         .name
         .ok_or_else(|| ApiError::BadRequest("rollen må ha et navn".into()))?;
-    let godkjente = godkjenn(&request.rights)?;
+    let approved = godkjenn(&request.rights)?;
     let id = regnmed_db::roles::opprett(
         &state.pool,
         company_id,
         &name,
-        &godkjente,
+        &approved,
         person.person_id,
         person.display(),
     )
@@ -129,12 +129,12 @@ pub async fn set_rights(
     Json(request): Json<RoleRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let godkjente = godkjenn(&request.rights)?;
+    let approved = godkjenn(&request.rights)?;
     regnmed_db::roles::set_rights(
         &state.pool,
         company_id,
         role_id,
-        &godkjente,
+        &approved,
         person.person_id,
     )
     .await

@@ -243,12 +243,12 @@ mod tests {
         .into();
         apply_mapping(&mut file, &mapping).unwrap();
         assert_eq!(file.accounts.len(), 2, "two foreign accounts merged");
-        let kunder = file
+        let customers = file
             .accounts
             .iter()
             .find(|a| a.account_id == "1500")
             .unwrap();
-        assert_eq!(kunder.opening_ore, 150_00, "openings summed");
+        assert_eq!(customers.opening_ore, 150_00, "openings summed");
         assert_eq!(file.transactions[0].lines[0].account_id, "1500");
         // Openings still balance after the merge.
         assert_eq!(file.accounts.iter().map(|a| a.opening_ore).sum::<i64>(), 0);

@@ -279,14 +279,14 @@ async fn platform_access_is_logged_and_visible_to_the_company() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let innsyn = response["innsyn"].as_array().unwrap();
+    let access_log = response["innsyn"].as_array().unwrap();
     assert_eq!(
-        innsyn.len(),
+        access_log.len(),
         1,
         "the assignment call must be visible: {response}"
     );
-    assert_eq!(innsyn[0]["rolle"], "support");
-    assert_eq!(innsyn[0]["method"], "POST");
+    assert_eq!(access_log[0]["rolle"], "support");
+    assert_eq!(access_log[0]["method"], "POST");
 
     // `les` has membership but not member administration: 403, not 404.
     assert_eq!(
@@ -391,8 +391,8 @@ async fn the_customer_register_names_the_company_and_carries_no_ledger() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let kunder = response["kunder"].as_array().unwrap();
-    let customer = kunder
+    let customers = response["kunder"].as_array().unwrap();
+    let customer = customers
         .iter()
         .find(|k| k["party_id"] == party_id.to_string())
         .expect("the seeded customer must be findable");
@@ -629,20 +629,20 @@ async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
     assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
 
     // An ordinary member: deactivated, logged as plattform, access gone.
-    let (medlem_id, _, medlem_token) = person(&state, &idp, "Medlem").await;
-    regnmed_db::ensure_company_member(&state.pool, company, medlem_id, "les")
+    let (member_id, _, member_token) = person(&state, &idp, "Medlem").await;
+    regnmed_db::ensure_company_member(&state.pool, company, member_id, "les")
         .await
         .unwrap();
     let (code, _) = json_call(
         &state,
         "DELETE",
-        &format!("/platform/companies/{company}/members/{medlem_id}"),
+        &format!("/platform/companies/{company}/members/{member_id}"),
         &sysadmin,
         "",
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let (_, me) = json_call(&state, "GET", "/me", &medlem_token, "").await;
+    let (_, me) = json_call(&state, "GET", "/me", &member_token, "").await;
     assert!(
         me["companies"]
             .as_array()
@@ -656,7 +656,7 @@ async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
          where company_id = $1 and person_id = $2 and endring = 'deaktivert'",
     )
     .bind(company)
-    .bind(medlem_id)
+    .bind(member_id)
     .fetch_one(&state.pool)
     .await
     .unwrap()
@@ -667,7 +667,7 @@ async fn platform_deactivation_is_logged_and_cannot_orphan_a_company() {
     let (code, _) = json_call(
         &state,
         "POST",
-        &format!("/platform/companies/{company}/members/{medlem_id}/restore"),
+        &format!("/platform/companies/{company}/members/{member_id}/restore"),
         &sysadmin,
         "",
     )

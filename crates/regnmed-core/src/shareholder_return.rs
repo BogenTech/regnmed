@@ -31,7 +31,7 @@ pub enum ReturnError {
     /// A movement whose RF-1086 code we have not verified. Filing it
     /// with a guessed code would corrupt the shareholder's own
     /// aksjeoppgave, so we refuse.
-    UverifisertKode(TransactionType),
+    UnverifiedCode(TransactionType),
     /// Neither fødselsnummer, organisasjonsnummer nor utenlandsk
     /// aksjonær-ID — the oppgave has no way to name this shareholder.
     ManglerIdentitet(String),
@@ -40,7 +40,7 @@ pub enum ReturnError {
 impl std::fmt::Display for ReturnError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UverifisertKode(t) => write!(
+            Self::UnverifiedCode(t) => write!(
                 f,
                 "transaksjonstypen «{}» kan ikke leveres: RF-1086-koden for den er ikke \
                  publisert i XSD-en eller rettledningen, og regnmed gjetter den ikke \
@@ -107,7 +107,7 @@ pub struct MainForm {
     pub paid_in_share_capital: PriorYear,
     pub overkurs: PriorYear,
     pub dividend: Vec<Distribution>,
-    pub nyutstedelser: Vec<NewIssue>,
+    pub new_issues: Vec<NewIssue>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ pub struct SubForm {
     pub country_code: Option<String>,
     pub share_count: PriorYear,
     pub dividend: Vec<DividendEntry>,
-    pub bevegelser: Vec<ShareMovement>,
+    pub movements: Vec<ShareMovement>,
 }
 
 // ---------------------------------------------------------------- writer
@@ -236,7 +236,7 @@ fn amount(ore: i64) -> String {
 }
 
 /// `xs:dateTime` at midnight, matching Skatteetatens own example.
-fn tidspunkt(date: NaiveDate) -> String {
+fn timestamp(date: NaiveDate) -> String {
     format!("{}T00:00:00", date.format("%Y-%m-%d"))
 }
 
@@ -252,9 +252,9 @@ fn kutt(text: &str, maks: usize) -> String {
 // ------------------------------------------------------------ hovedskjema
 
 pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
-    for n in &h.nyutstedelser {
+    for n in &h.new_issues {
         if n.type_.code().is_none() {
-            return Err(ReturnError::UverifisertKode(n.type_));
+            return Err(ReturnError::UnverifiedCode(n.type_));
         }
     }
 
@@ -401,20 +401,17 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjeUtbytteTidspunkt-datadef-17667",
                 17667,
-                &tidspunkt(u.date),
+                &timestamp(u.date),
             );
             w.close("UtdeltSkatterettsligUtbytteILopetAvInntektsaret-grp-3451");
         }
         w.close("Utbytte-grp-3449");
     }
 
-    if !h.nyutstedelser.is_empty() {
+    if !h.new_issues.is_empty() {
         w.group("UtstedelseAvAksjerIfmStiftelseNyemisjonMv-grp-3452", 3452);
-        for n in &h.nyutstedelser {
-            let code = n
-                .type_
-                .code()
-                .ok_or(ReturnError::UverifisertKode(n.type_))?;
+        for n in &h.new_issues {
+            let code = n.type_.code().ok_or(ReturnError::UnverifiedCode(n.type_))?;
             w.group("AntallNyutstedteAksjer-grp-3453", 3453);
             w.felt(
                 "AksjerNyutstedteStiftelseMvAntall-datadef-17668",
@@ -430,7 +427,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjerNyutstedteStiftelseMvTidspunkt-datadef-17671",
                 17671,
-                &tidspunkt(n.date),
+                &timestamp(n.date),
             );
             w.felt(
                 "AksjerNyutstedteStiftelseMvPalydende-datadef-23947",
@@ -457,9 +454,9 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     let Some(id) = &u.id else {
         return Err(ReturnError::ManglerIdentitet(u.name.clone()));
     };
-    for b in &u.bevegelser {
+    for b in &u.movements {
         if b.type_.code().is_none() {
-            return Err(ReturnError::UverifisertKode(b.type_));
+            return Err(ReturnError::UnverifiedCode(b.type_));
         }
     }
 
@@ -545,14 +542,14 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         w.felt(
             "AksjerUtbytteTidspunkt-datadef-17769",
             17769,
-            &tidspunkt(post.date),
+            &timestamp(post.date),
         );
         w.close("UtdeltUtbyttePerAksjonar-grp-3991");
     }
     w.close("AntallAksjerUtbytteOgTilbakebetalingAvTidligereInnbetaltKapit-grp-3990");
 
     let acquisitions: Vec<_> = u
-        .bevegelser
+        .movements
         .iter()
         .filter(|b| b.type_.post() == FormItem::Acquisition)
         .collect();
@@ -560,10 +557,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         w.group("Transaksjoner-grp-3992", 3992);
         w.group("KjopArvGaveStiftelseNyemisjonMv-grp-3993", 3993);
         for b in acquisitions {
-            let code = b
-                .type_
-                .code()
-                .ok_or(ReturnError::UverifisertKode(b.type_))?;
+            let code = b.type_.code().ok_or(ReturnError::UnverifiedCode(b.type_))?;
             w.group("AntallAksjerITilgang-grp-3998", 3998);
             w.felt(
                 "AksjerKjopAntall-datadef-12153",
@@ -571,7 +565,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
                 &b.quantity.to_string(),
             );
             w.felt("AksjeErvervType-datadef-17745", 17745, code);
-            w.felt("AksjerErvervsdato-datadef-17746", 17746, &tidspunkt(b.date));
+            w.felt("AksjerErvervsdato-datadef-17746", 17746, &timestamp(b.date));
             if let Some(ore) = b.amount_ore {
                 w.felt("AksjeAnskaffelsesverdi-datadef-17636", 17636, &amount(ore));
             }
@@ -582,17 +576,14 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     }
 
     let disposals: Vec<_> = u
-        .bevegelser
+        .movements
         .iter()
         .filter(|b| b.type_.post() == FormItem::Disposal)
         .collect();
     if !disposals.is_empty() {
         w.group("SalgArvGaveLikvidasjonPartiellLikvidasjonMv-grp-3995", 3995);
         for b in disposals {
-            let code = b
-                .type_
-                .code()
-                .ok_or(ReturnError::UverifisertKode(b.type_))?;
+            let code = b.type_.code().ok_or(ReturnError::UnverifiedCode(b.type_))?;
             w.group("AksjerIAvgang-grp-4002", 4002);
             w.felt(
                 "AksjerArvMvOmsattAntall-datadef-17752",
@@ -603,7 +594,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjerArvMvOmsattTidspunkt-datadef-17754",
                 17754,
-                &tidspunkt(b.date),
+                &timestamp(b.date),
             );
             if let Some(ore) = b.amount_ore {
                 w.felt("AksjerArvMvOmsatt-datadef-17755", 17755, &amount(ore));
@@ -637,7 +628,7 @@ mod tests {
         }
     }
 
-    fn hovedskjema() -> MainForm {
+    fn main_form() -> MainForm {
         MainForm {
             company: company(),
             inntektsar: 2026,
@@ -663,7 +654,7 @@ mod tests {
                 per_share_ore: 50_000,
                 total_ore: 5_000_000,
             }],
-            nyutstedelser: vec![NewIssue {
+            new_issues: vec![NewIssue {
                 date: d(2026, 1, 2),
                 type_: TransactionType::Stiftelse,
                 new_shares: 100,
@@ -674,7 +665,7 @@ mod tests {
         }
     }
 
-    fn underskjema() -> SubForm {
+    fn sub_form() -> SubForm {
         SubForm {
             orgnumber: "314259521".into(),
             inntektsar: 2026,
@@ -693,7 +684,7 @@ mod tests {
                 amount_ore: 5_000_000,
                 share_count: 100,
             }],
-            bevegelser: vec![ShareMovement {
+            movements: vec![ShareMovement {
                 date: d(2026, 1, 2),
                 type_: TransactionType::Stiftelse,
                 quantity: 100,
@@ -732,13 +723,13 @@ mod tests {
 
     #[test]
     fn the_main_form_validates_against_the_official_xsd() {
-        let xml = render_main_form(&hovedskjema()).unwrap();
+        let xml = render_main_form(&main_form()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveHovedskjema.xsd", "hoved");
     }
 
     #[test]
     fn the_sub_form_validates_against_the_official_xsd() {
-        let xml = render_sub_form(&underskjema()).unwrap();
+        let xml = render_sub_form(&sub_form()).unwrap();
         valider(&xml, "aksjonaerregisteroppgaveUnderskjema.xsd", "under");
     }
 
@@ -746,16 +737,16 @@ mod tests {
     fn a_year_without_transactions_is_still_a_valid_return() {
         // The common case: the same owners as last year, nothing
         // happened. Then there is no code to be unsure about.
-        let mut h = hovedskjema();
-        h.nyutstedelser.clear();
+        let mut h = main_form();
+        h.new_issues.clear();
         h.dividend.clear();
         valider(
             &render_main_form(&h).unwrap(),
             "aksjonaerregisteroppgaveHovedskjema.xsd",
             "hoved-stille",
         );
-        let mut u = underskjema();
-        u.bevegelser.clear();
+        let mut u = sub_form();
+        u.movements.clear();
         u.dividend.clear();
         valider(
             &render_sub_form(&u).unwrap(),
@@ -766,7 +757,7 @@ mod tests {
 
     #[test]
     fn a_corporate_shareholder_and_a_foreign_id_both_validate() {
-        let mut u = underskjema();
+        let mut u = sub_form();
         u.id = Some(ShareholderId::Organisasjonsnummer("923609016".into()));
         u.name = "Equinor ASA".into();
         valider(
@@ -775,7 +766,7 @@ mod tests {
             "under-selskap",
         );
 
-        let mut u = underskjema();
+        let mut u = sub_form();
         u.id = Some(ShareholderId::Foreign("UTL000000123".into()));
         u.country_code = Some("SE".into());
         valider(
@@ -789,7 +780,7 @@ mod tests {
     /// truncated, not stop an otherwise correct filing.
     #[test]
     fn a_long_shareholder_name_is_truncated_rather_than_failing() {
-        let mut u = underskjema();
+        let mut u = sub_form();
         u.id = Some(ShareholderId::Organisasjonsnummer("923609016".into()));
         u.name = "Æ".repeat(60);
         let xml = render_sub_form(&u).unwrap();
@@ -806,22 +797,22 @@ mod tests {
     /// we do not know its code — and then we say so instead of guessing.
     #[test]
     fn an_unverified_transaction_type_is_refused_loudly() {
-        let mut u = underskjema();
-        u.bevegelser = vec![ShareMovement {
+        let mut u = sub_form();
+        u.movements = vec![ShareMovement {
             date: d(2026, 6, 1),
             type_: TransactionType::Salg,
             quantity: 10,
             amount_ore: Some(1_000_000),
         }];
         let error = render_sub_form(&u).unwrap_err();
-        assert_eq!(error, ReturnError::UverifisertKode(TransactionType::Salg));
+        assert_eq!(error, ReturnError::UnverifiedCode(TransactionType::Salg));
         assert!(error.to_string().contains("salg"), "{error}");
         assert!(error.to_string().contains("gjetter"), "{error}");
     }
 
     #[test]
     fn a_shareholder_without_an_identity_is_refused() {
-        let mut u = underskjema();
+        let mut u = sub_form();
         u.id = None;
         assert!(matches!(
             render_sub_form(&u).unwrap_err(),
@@ -832,12 +823,12 @@ mod tests {
     #[test]
     fn the_rendering_is_deterministic() {
         assert_eq!(
-            render_main_form(&hovedskjema()).unwrap(),
-            render_main_form(&hovedskjema()).unwrap()
+            render_main_form(&main_form()).unwrap(),
+            render_main_form(&main_form()).unwrap()
         );
         assert_eq!(
-            render_sub_form(&underskjema()).unwrap(),
-            render_sub_form(&underskjema()).unwrap()
+            render_sub_form(&sub_form()).unwrap(),
+            render_sub_form(&sub_form()).unwrap()
         );
     }
 
@@ -846,6 +837,6 @@ mod tests {
         assert_eq!(amount(10_000_000), "100000.00");
         assert_eq!(amount(12_345), "123.45");
         assert_eq!(amount(0), "0.00");
-        assert_eq!(tidspunkt(d(2026, 1, 2)), "2026-01-02T00:00:00");
+        assert_eq!(timestamp(d(2026, 1, 2)), "2026-01-02T00:00:00");
     }
 }

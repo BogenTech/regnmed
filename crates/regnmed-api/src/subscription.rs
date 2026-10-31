@@ -47,7 +47,7 @@ pub async fn subscription_status(
         Status::Active => None,
         Status::Trial { to } => Some(to),
         Status::Grace { blocked_from } => Some(blocked_from),
-        Status::Blocked { siden } => Some(siden),
+        Status::Blocked { since } => Some(since),
     };
     let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;
     let prices = regnmed_db::subscription::list_prices(&state.pool).await?;

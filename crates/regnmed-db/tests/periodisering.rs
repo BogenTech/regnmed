@@ -196,10 +196,10 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         .await
         .unwrap();
     // Even asked for the whole year, nothing more is posted.
-    let etter = accrue_plan(&pool, company, plan, d(2026, 12, 31))
+    let after = accrue_plan(&pool, company, plan, d(2026, 12, 31))
         .await
         .unwrap();
-    assert!(etter.is_empty(), "{etter:?}");
+    assert!(after.is_empty(), "{after:?}");
     assert_eq!(
         balance(&pool, company, "6300").await,
         20_000,

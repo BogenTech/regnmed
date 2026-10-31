@@ -28,8 +28,8 @@ pub struct CreateAssetRequest {
     acquisition_date: chrono::NaiveDate,
     #[serde(rename = "kostpris_ore")]
     cost_price_ore: i64,
-    #[serde(default)]
-    restverdi_ore: i64,
+    #[serde(default, rename = "restverdi_ore")]
+    residual_value_ore: i64,
     #[serde(rename = "levetid_maneder")]
     lifetime_months: i32,
     /// Defaults: balanse 1250, avskrivning 6000.
@@ -57,7 +57,7 @@ pub async fn create(
             name: request.name,
             acquisition_date: request.acquisition_date,
             cost_price_ore: request.cost_price_ore,
-            restverdi_ore: request.restverdi_ore,
+            residual_value_ore: request.residual_value_ore,
             lifetime_months: request.lifetime_months,
             balance_account: request.balance_account.unwrap_or_else(|| "1250".into()),
             depreciation_account: request
@@ -86,7 +86,7 @@ pub async fn list(
             "navn": a.name,
             "anskaffelsesdato": a.acquisition_date.to_string(),
             "kostpris_ore": a.cost_price_ore,
-            "restverdi_ore": a.restverdi_ore,
+            "restverdi_ore": a.residual_value_ore,
             "levetid_maneder": a.lifetime_months,
             "balansekonto": a.balance_account,
             "avskrivningskonto": a.depreciation_account,
@@ -217,7 +217,7 @@ pub async fn balance(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "year": rapport.year,
-        "grupper": rapport.grupper.iter().map(|g| json!({
+        "grupper": rapport.groups.iter().map(|g| json!({
             "gruppe": g.group,
             "beskrivelse": g.description,
             "inngaende_ore": g.opening_ore,

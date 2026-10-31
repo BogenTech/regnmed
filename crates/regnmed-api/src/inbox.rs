@@ -217,7 +217,7 @@ pub async fn ehf_suggestion(
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
     let m = &suggestion.received;
     Ok(Json(json!({
-        "er_kreditnota": m.er_kreditnota,
+        "er_kreditnota": m.is_credit_note,
         "fakturanr": m.invoice_number,
         "fakturadato": m.invoice_date.map(|d| d.to_string()),
         "forfallsdato": m.due_date.map(|d| d.to_string()),

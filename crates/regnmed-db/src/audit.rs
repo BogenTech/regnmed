@@ -405,7 +405,7 @@ pub async fn build_audit_report(
         .await?
         .into_iter()
         .map(|a| AnchorInfo {
-            tidspunkt: a.created_at.to_rfc3339(),
+            timestamp: a.created_at.to_rfc3339(),
             root_hex: hex::encode(a.root_hash),
             last_sequence: a.last_seq,
             vitner: a

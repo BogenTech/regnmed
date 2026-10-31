@@ -472,7 +472,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     )
     .await
     .unwrap();
-    let juni = payroll::run_payroll(
+    let june = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -485,23 +485,23 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     .await
     .unwrap();
 
-    let slipp = payroll::payslip(&pool, company, juni.id, a).await.unwrap();
-    assert_eq!(slipp.employee_name, "Kari Utvikler");
+    let slip = payroll::payslip(&pool, company, june.id, a).await.unwrap();
+    assert_eq!(slip.employee_name, "Kari Utvikler");
     // Birth date, not fødselsnummer — on the payslip too.
-    assert_eq!(slipp.employee_birth_date, Some(date(1993, 2, 26)));
+    assert_eq!(slip.employee_birth_date, Some(date(1993, 2, 26)));
     // Brutto on the slip is EVERYTHING paid out; the trekkgrunnlag is less.
-    assert_eq!(slipp.gross_ore, 9_000_000);
-    assert_eq!(slipp.withholding_basis_ore, 5_000_000);
-    assert_eq!(slipp.withholding_ore, 1_750_000);
-    assert_eq!(slipp.net_ore, 7_250_000);
-    assert_eq!(slipp.withholding_percent_bp, Some(3500));
+    assert_eq!(slip.gross_ore, 9_000_000);
+    assert_eq!(slip.withholding_basis_ore, 5_000_000);
+    assert_eq!(slip.withholding_ore, 1_750_000);
+    assert_eq!(slip.net_ore, 7_250_000);
+    assert_eq!(slip.withholding_percent_bp, Some(3500));
     // Year to date through June: two months of pay + June's feriepenger.
-    assert_eq!(slipp.year_to_date_gross_ore, 5_000_000 + 9_000_000);
-    assert_eq!(slipp.year_to_date_withholding_ore, 3_500_000);
-    assert_eq!(slipp.ytd_holiday_pay_ore, 1_020_000);
+    assert_eq!(slip.year_to_date_gross_ore, 5_000_000 + 9_000_000);
+    assert_eq!(slip.year_to_date_withholding_ore, 3_500_000);
+    assert_eq!(slip.ytd_holiday_pay_ore, 1_020_000);
 
     // And it renders to a PDF that explains the trekkfrihet.
-    let pdf = regnmed_core::payslip::render_payslip(&slipp);
+    let pdf = regnmed_core::payslip::render_payslip(&slip);
     assert!(pdf.starts_with(b"%PDF-1.4"));
     let text = String::from_utf8_lossy(&pdf).to_string();
     assert!(text.contains("uten forskuddstrekk"), "{text}");

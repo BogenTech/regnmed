@@ -346,14 +346,14 @@ pub async fn approve_expense(
                 project: None,
                 currency: None,
             });
-            let trekkpliktig: i64 = expense
+            let taxable: i64 = expense
                 .get::<Option<i64>, _>("trekkpliktig_ore")
                 .unwrap_or(0);
-            if trekkpliktig > 0 {
+            if taxable > 0 {
                 warning = Some(format!(
                     "trekkpliktig del {},{:02} kr skal lønnsinnberettes — a-melding er ikke støttet ennå (#46)",
-                    trekkpliktig / 100,
-                    trekkpliktig % 100
+                    taxable / 100,
+                    taxable % 100
                 ));
             }
         }

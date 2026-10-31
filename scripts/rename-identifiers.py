@@ -162,12 +162,20 @@ def shadows(src, pairs):
     says a word. This check was written for `nr -> number`, on a grep
     that said nine files bind both -- and its FIRST RUN disproved
     that: the grep had read comments, and code-only it is five files
-    of disjoint `for` loops. No instance of the hazard has turned up
-    yet in this repo. The class is real; the check stays, because the
-    grep that claimed one was not evidence either way. Reported,
-    never refused: a target that
-    appears only as a module path (`crate::email::`) or in another
-    scope is usually fine, and only a human can tell which.
+    of disjoint `for` loops.
+
+    THEN IT FIRED FOR REAL, and this check had named the file before
+    the run: `tests/grupper/migrering.rs` held a CSV body in `apne`
+    and the open items read back in `open`, and `apne -> open` made
+    the third call site pass the Vec where the &str belonged. The
+    compiler caught that one only because the types differ -- two
+    &str would have compiled and posted the wrong body. So the class
+    is not theoretical and the reports are not noise.
+
+    Reported, never refused: most are benign -- struct fields of the
+    same name in different structs, a target in another function, a
+    module path (`crate::email::`) -- and only a human can tell
+    which. Read every line of the report.
     """
     code = blank_literals(src)
     found = []

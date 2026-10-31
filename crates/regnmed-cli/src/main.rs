@@ -718,9 +718,9 @@ async fn main() -> Result<()> {
                 .filter(|c| !c.is_empty())
                 .collect();
             let client = regnmed_gov::norgesbank::NorgesBankClient::from_env();
-            let noteringer = client.fetch_rates(&valutaer, days).await?;
-            for n in &noteringer {
-                regnmed_db::insert_kurs(
+            let quotes = client.fetch_rates(&valutaer, days).await?;
+            for n in &quotes {
+                regnmed_db::insert_exchange_rate(
                     &pool,
                     &n.currency,
                     n.date,
@@ -735,7 +735,7 @@ async fn main() -> Result<()> {
                     regnmed_core::currency::rate_str(n.rate_micro)
                 );
             }
-            println!("{} noteringer lagret", noteringer.len());
+            println!("{} noteringer lagret", quotes.len());
         }
         Command::SaftExport {
             company,
@@ -1024,12 +1024,12 @@ async fn saft_export(
     // exact standard account for (legal — nearest is used — but worth a
     // review).
     use chrono::Datelike;
-    let inntektsaar = start.year();
-    let argang =
-        regnmed_core::saft::kodeliste_argang(inntektsaar).map_err(|e| anyhow::anyhow!("{e}"))?;
-    eprintln!("næringsspesifikasjon kodeliste-årgang: {argang}");
+    let income_year = start.year();
+    let vintage =
+        regnmed_core::saft::code_list_vintage(income_year).map_err(|e| anyhow::anyhow!("{e}"))?;
+    eprintln!("næringsspesifikasjon kodeliste-årgang: {vintage}");
     for account in &input.accounts {
-        match regnmed_core::saft::grouping_for(&account.number, inntektsaar)
+        match regnmed_core::saft::grouping_for(&account.number, income_year)
             .map_err(|e| anyhow::anyhow!("{e}"))?
         {
             Some(g) if !g.exact => eprintln!(

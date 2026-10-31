@@ -27,7 +27,7 @@ use crate::ledger::post_voucher_in;
 pub struct ProductDraft {
     pub number: String,
     pub name: String,
-    pub salgspris_ore: i64,
+    pub sales_price_ore: i64,
     pub vat_code: Option<String>,
     pub account: String,
     pub stocked: bool,
@@ -44,7 +44,7 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     .bind(company_id)
     .bind(&draft.number)
     .bind(&draft.name)
-    .bind(draft.salgspris_ore)
+    .bind(draft.sales_price_ore)
     .bind(&draft.vat_code)
     .bind(&draft.account)
     .bind(draft.stocked)
@@ -67,7 +67,7 @@ pub async fn update_product(
     company_id: Uuid,
     number: &str,
     name: Option<&str>,
-    salgspris_ore: Option<i64>,
+    sales_price_ore: Option<i64>,
     vat_code: Option<Option<&str>>,
     account: Option<&str>,
     active: Option<bool>,
@@ -87,7 +87,7 @@ pub async fn update_product(
     .bind(company_id)
     .bind(number)
     .bind(name)
-    .bind(salgspris_ore)
+    .bind(sales_price_ore)
     .bind(vat_code.is_some())
     .bind(vat_code.flatten())
     .bind(account)
@@ -103,7 +103,7 @@ pub async fn update_product(
 pub struct ProductRow {
     pub number: String,
     pub name: String,
-    pub salgspris_ore: i64,
+    pub sales_price_ore: i64,
     pub vat_code: Option<String>,
     pub account: String,
     pub active: bool,
@@ -123,7 +123,7 @@ pub async fn list_products(pool: &PgPool, company_id: Uuid) -> Result<Vec<Produc
         .map(|r| ProductRow {
             number: r.get("nummer"),
             name: r.get("navn"),
-            salgspris_ore: r.get("salgspris_ore"),
+            sales_price_ore: r.get("salgspris_ore"),
             vat_code: r.get("vat_code"),
             account: r.get("konto"),
             active: r.get("aktiv"),
@@ -318,14 +318,14 @@ where
     .bind(product_id)
     .fetch_all(executor)
     .await?;
-    let bevegelser: Vec<Movement> = rows
+    let movements: Vec<Movement> = rows
         .iter()
         .map(|r| Movement {
             quantity_milli: r.get("antall_milli"),
             cost_ore: r.get("kostpris_ore"),
         })
         .collect();
-    Ok(value_stock(&bevegelser))
+    Ok(value_stock(&movements))
 }
 
 #[derive(Debug)]
@@ -333,7 +333,7 @@ pub struct InventoryRow {
     pub number: String,
     pub name: String,
     pub quantity_milli: i64,
-    pub verdi_ore: i64,
+    pub value_ore: i64,
     pub gjennomsnitt_ore: Option<i64>,
 }
 
@@ -355,7 +355,7 @@ pub async fn inventory_status(pool: &PgPool, company_id: Uuid) -> Result<Vec<Inv
             number: p.get("nummer"),
             name: p.get("navn"),
             quantity_milli: status.quantity_milli,
-            verdi_ore: status.value_ore,
+            value_ore: status.value_ore,
             gjennomsnitt_ore: status.average_ore(),
         });
     }
@@ -432,7 +432,7 @@ pub struct TellingJustering {
 pub struct TellingResult {
     pub justeringer: Vec<TellingJustering>,
     /// Inventory value after the count (gjennomsnittsmetoden).
-    pub verdi_ore: i64,
+    pub value_ore: i64,
     /// Booked balance on the lager account before adjustment (only
     /// computed when posting was requested).
     pub posted_ore: Option<i64>,
@@ -503,34 +503,34 @@ pub async fn varetelling(
             .bind(company_id)
             .fetch_all(&mut *tx)
             .await?;
-    let mut verdi_ore = 0i64;
+    let mut value_ore = 0i64;
     for id in product_ids {
-        verdi_ore += product_status(&mut *tx, id).await?.value_ore;
+        value_ore += product_status(&mut *tx, id).await?.value_ore;
     }
 
     let mut posted_ore = None;
     let mut voucher = None;
-    if let Some(konti) = post {
+    if let Some(accounts) = post {
         let posted: i64 = sqlx::query_scalar(
             "select coalesce(sum(e.amount_ore), 0)::bigint
              from entry e join account a on a.id = e.account_id
              where a.company_id = $1 and a.number = $2",
         )
         .bind(company_id)
-        .bind(&konti.inventory_account)
+        .bind(&accounts.inventory_account)
         .fetch_one(&mut *tx)
         .await?;
         posted_ore = Some(posted);
-        let change = verdi_ore - posted;
+        let change = value_ore - posted;
         if change != 0 {
             let draft = VoucherDraft {
-                journal_code: konti.journal_code.clone(),
+                journal_code: accounts.journal_code.clone(),
                 voucher_date: date,
                 description: format!("Varetelling {date}"),
                 reverses: None,
                 entries: vec![
                     EntryDraft {
-                        account_number: konti.inventory_account.clone(),
+                        account_number: accounts.inventory_account.clone(),
                         amount: Ore(change),
                         vat_code: None,
                         description: Some("Varelager etter telling".into()),
@@ -540,7 +540,7 @@ pub async fn varetelling(
                         currency: None,
                     },
                     EntryDraft {
-                        account_number: konti.change_account.clone(),
+                        account_number: accounts.change_account.clone(),
                         amount: Ore(-change),
                         vat_code: None,
                         description: Some("Beholdningsendring".into()),
@@ -559,7 +559,7 @@ pub async fn varetelling(
     tx.commit().await?;
     Ok(TellingResult {
         justeringer,
-        verdi_ore,
+        value_ore,
         posted_ore,
         voucher,
     })

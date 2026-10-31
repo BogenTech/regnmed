@@ -100,8 +100,8 @@ async fn a_project_carries_its_customer() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "body: {response}");
-    let (_, liste) = request(&state, "GET", &base, &token, None).await;
-    let p9 = liste["dimensions"]
+    let (_, list) = request(&state, "GET", &base, &token, None).await;
+    let p9 = list["dimensions"]
         .as_array()
         .unwrap()
         .iter()
@@ -146,8 +146,8 @@ async fn a_project_carries_its_customer() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (_, liste) = request(&state, "GET", &base, &token, None).await;
-    let p9 = liste["dimensions"]
+    let (_, list) = request(&state, "GET", &base, &token, None).await;
+    let p9 = list["dimensions"]
         .as_array()
         .unwrap()
         .iter()

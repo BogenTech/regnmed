@@ -14,10 +14,10 @@ mod budsjett;
 mod chart_of_accounts;
 #[path = "grupper/hovedbok.rs"]
 mod hovedbok;
+#[path = "grupper/nokkeltall.rs"]
+mod key_figures;
 #[path = "grupper/migrering.rs"]
 mod migrering;
-#[path = "grupper/nokkeltall.rs"]
-mod nokkeltall;
 #[path = "grupper/reports.rs"]
 mod reports;
 #[path = "grupper/saft_migration.rs"]

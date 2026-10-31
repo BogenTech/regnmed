@@ -67,11 +67,11 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
         .await
         .unwrap();
 
-    let lytter = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = lytter.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
     let serve_state = state.clone();
     tokio::spawn(async move {
-        let _ = axum::serve(lytter, regnmed_api::router(serve_state)).await;
+        let _ = axum::serve(listener, regnmed_api::router(serve_state)).await;
     });
     let base = format!("http://{addr}");
 
@@ -168,11 +168,11 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
         .await
         .unwrap();
 
-    let lytter = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = lytter.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
     let serve_state = state.clone();
     tokio::spawn(async move {
-        let _ = axum::serve(lytter, regnmed_api::router(serve_state)).await;
+        let _ = axum::serve(listener, regnmed_api::router(serve_state)).await;
     });
 
     let server = regnmed_mcp::Server::new(regnmed_mcp::client::Client::new(

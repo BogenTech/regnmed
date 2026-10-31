@@ -520,7 +520,7 @@ stamdata:
 - `POST …/subscription` (+ `/end`) — åpner/avslutter dekning manuelt for
   supporttilfellene kort/faktura-maskineriet ikke dekker; åpningen
   krever obligatorisk referanse som står på dekningsraden, avslutningen
-  følger «korteste sanne dekning er én dag»-regelen fra `avslutt`.
+  følger «korteste sanne dekning er én dag»-regelen fra `platform::end_coverage`.
 - `GET/PUT /platform/settings` — plattforminnstillinger (migrasjon 0053,
   innsettings-bare rader, nyeste per nøkkel): i dag ikonstilen i
   portalmenyen, **låst globalt** av systemadmin og servert alle via det

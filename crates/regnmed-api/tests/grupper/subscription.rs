@@ -468,7 +468,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
         .unwrap();
     }
 
-    let registrert = driftsselskap(&state.pool, "Drift Registrert AS", true).await;
+    let registered = driftsselskap(&state.pool, "Drift Registrert AS", true).await;
     let utenfor = driftsselskap(&state.pool, "Drift Uregistrert AS", false).await;
 
     let linje = async |drift: Uuid, customer: Uuid| -> (String, i64, i64) {
@@ -497,7 +497,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
         .await
         .unwrap();
 
-    let (code, vat, net) = linje(registrert, customer_a).await;
+    let (code, vat, net) = linje(registered, customer_a).await;
     assert_eq!(code, "3", "registrert selger fakturerer utgående mva");
     assert_eq!(net, price);
     assert!(vat > 0, "25 % skulle vært beregnet, men mva_ore = {vat}");
@@ -516,7 +516,7 @@ async fn vat_on_our_own_invoice_follows_the_ops_company_registration() {
     // The same fact decides the Stripe Price: the card is charged the
     // gross, and post_stripe_payment asserts charge == fordring.
     let gross_registered =
-        regnmed_db::subscription::gross_before(&state.pool, registrert, "standard", "month", today)
+        regnmed_db::subscription::gross_before(&state.pool, registered, "standard", "month", today)
             .await
             .unwrap();
     let gross_outside =
@@ -612,12 +612,12 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .unwrap()
         .expect("purring");
     assert_eq!(steg, "purring");
-    let gebyr: i64 = sqlx::query_scalar("select gebyr_ore from invoice_reminder where id = $1")
+    let fee: i64 = sqlx::query_scalar("select gebyr_ore from invoice_reminder where id = $1")
         .bind(reminder_id)
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    assert!(gebyr > 0, "purringen bærer gebyret");
+    assert!(fee > 0, "purringen bærer gebyret");
 
     // Not yet 30 days past forfall: coverage stands.
     let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
@@ -632,7 +632,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             .await
             .unwrap()
     );
-    let (apen, log): (bool, String) = (
+    let (open, log): (bool, String) = (
         sqlx::query_scalar(
             "select exists(select 1 from abonnement where company_id = $1 and valid_to is null)",
         )
@@ -649,7 +649,7 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .await
         .unwrap(),
     );
-    assert!(!apen, "ingen åpen dekning igjen");
+    assert!(!open, "ingen åpen dekning igjen");
     assert_eq!(log, "sperret");
     // A second look the day after changes nothing — no open row left.
     assert!(
@@ -1204,7 +1204,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     // everything for free. Same day on purpose: taken out and cancelled in
     // one run is exactly the case CHECK (valid_to > valid_from) made
     // unclosable, and nothing reported it.
-    let apen: i64 = sqlx::query_scalar(
+    let open: i64 = sqlx::query_scalar(
         "select count(*) from abonnement where company_id = $1 and valid_to is null",
     )
     .bind(customer)
@@ -1212,7 +1212,7 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
     .await
     .unwrap();
     assert_eq!(
-        apen, 0,
+        open, 0,
         "dekningen skulle vært avsluttet, ikke bare abonnementsraden"
     );
 }

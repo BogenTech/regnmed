@@ -16,14 +16,15 @@ use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
-pub struct AvsluttRequest {
+pub struct CloseRequest {
     #[serde(rename = "ar")]
     year: i32,
     /// Skattekostnaden for året, i øre. Kalleren regner den ut —
     /// skattemessig resultat er ikke regnskapsmessig resultat, og å
     /// utlede den her ville vært å dikte opp en skattemelding. 0 er et
     /// gyldig svar som må oppgis.
-    skattekostnad_ore: i64,
+    #[serde(rename = "skattekostnad_ore")]
+    tax_expense_ore: i64,
 }
 
 pub async fn list(
@@ -38,7 +39,7 @@ pub async fn list(
             "ar": a.year,
             "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
             "resultat_for_skatt_ore": a.result_before_tax_ore,
-            "skattekostnad_ore": a.skattekostnad_ore,
+            "skattekostnad_ore": a.tax_expense_ore,
             "disponert_ore": a.disponert_ore,
             "created_by": a.created_by,
         })).collect::<Vec<_>>(),
@@ -63,19 +64,19 @@ pub async fn suggestion(
     })))
 }
 
-pub async fn avslutt(
+pub async fn close(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
-    Json(request): Json<AvsluttRequest>,
+    Json(request): Json<CloseRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
     require(&state, person.person_id, company_id, Right::PeriodLock).await?;
-    let a = regnmed_db::year_end::avslutt_ar(
+    let a = regnmed_db::year_end::close_year(
         &state.pool,
         company_id,
         request.year,
-        request.skattekostnad_ore,
+        request.tax_expense_ore,
         person.name.as_deref().unwrap_or(&person.sub),
     )
     .await
@@ -84,7 +85,7 @@ pub async fn avslutt(
         "ar": a.year,
         "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
         "resultat_for_skatt_ore": a.result_before_tax_ore,
-        "skattekostnad_ore": a.skattekostnad_ore,
+        "skattekostnad_ore": a.tax_expense_ore,
         "disponert_ore": a.disponert_ore,
     })))
 }

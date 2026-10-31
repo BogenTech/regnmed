@@ -26,7 +26,7 @@ pub const GRACE_DAYS: i64 = 14;
 /// the debtor has been asked twice by then. Ending coverage does not
 /// block by itself: the ordinary [`FRIST_DAGER`] grace runs on top, so
 /// the actual sperre lands ~44 days past forfall.
-pub const SPERR_ETTER_FORFALL_DAGER: i64 = 30;
+pub const BLOCK_AFTER_DUE_DAYS: i64 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -38,7 +38,7 @@ pub enum Status {
     /// running: writing works, the warning stands.
     Grace { blocked_from: NaiveDate },
     /// The deadline has passed: writing actions are refused.
-    Blocked { siden: NaiveDate },
+    Blocked { since: NaiveDate },
 }
 
 impl Status {
@@ -69,11 +69,11 @@ impl Status {
 ///   not blocked "14 days after the trial" long past.
 pub fn status(
     created: NaiveDate,
-    dekket_i_dag: bool,
+    covered_today: bool,
     last_end: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Status {
-    if dekket_i_dag {
+    if covered_today {
         return Status::Active;
     }
     let trial_until = created + chrono::Days::new(TRIAL_DAYS as u64);
@@ -86,7 +86,7 @@ pub fn status(
         Status::Grace { blocked_from }
     } else {
         Status::Blocked {
-            siden: blocked_from,
+            since: blocked_from,
         }
     }
 }
@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(
             status(created, false, None, blocked_from),
             Status::Blocked {
-                siden: blocked_from
+                since: blocked_from
             }
         );
         let _ = trial_until;

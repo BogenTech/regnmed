@@ -63,6 +63,9 @@ pain001 mcp llm rpc stdio pwa spa sse cors pkce sso iban bic bban scor mod10 mod
 btreemap hashmap vecdeque jsonrpc nin orgnumber subledger voucher timesheet
 withholding invoiceable milli payslip ytd nok kr km gov spes ops opf webhook avatar
 mailq agentllm ntry x86 x2 ee
+org inline endpoint pkcs1 prev nonempty dotenvy dotenv dedup database jsonwebtoken
+marketplace onboarded concat stderr merkle taskqueue flagged formatter eid ack fy
+x30 x01
 """.split()
 )
 
