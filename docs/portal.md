@@ -47,7 +47,6 @@ data virker som i produksjon.
 OIDC authorization code + **PKCE** against regnid. The code→token
 exchange is proxied through `POST /auth/token` (server-to-server), so
 the IdP needs no browser CORS and the SPA never talks cross-origin.
-Tokens live in localStorage.
 Logout goes through regnid's `end_session` with `id_token_hint`
 (RP-initiated logout). regnmed still never sees a password.
 
@@ -58,35 +57,64 @@ proxy-skinne som `/auth/token`, samme grunn (ingen browser-CORS, og
 utstederens feildetalj blir på serveren) — og forsøker kallet én gang
 til; bare en feilet veksling sender brukeren tilbake til innlogging.
 
-Utstederen **ROTERER**: svaret bærer en erstatter, og tokenet vi nettopp
-brukte er dødt. Derfor (a) videresender proxyen svaret ordrett slik at
-erstatteren når klienten, og (b) deler alle som ser et `401` ÉN veksling
-i luften (`refreshing` i `auth.svelte.js`) — to samtidige vekslinger
-ville sendt samme token to ganger, og den andre blir avvist, altså
-utlogging midt i arbeidet.
+**INGEN TOKENER LAGRES I NETTLESEREN** (avgjort 2026-10-31). De to
+tokenene har ulik verdi og ligger derfor ikke på samme sted:
 
-Tokenene ligger i **localStorage** (valgt 2026-10-31), ikke
-sessionStorage. I sessionStorage døde økten når fanen ble lukket selv om
-refresh-tokenet hadde 29 dager igjen — altså var halve problemet
-uløst. Prisen er at et 30-dagers token ligger igjen på maskinen: en delt
-nettleserprofil eller en ulåst skjerm arver økten. XSS-flaten flytter
-seg knapt, siden kode som kan lese localStorage alt kjører i siden og kan
-kalle API-et med tokenet i minnet uansett; det er den delte maskinen som
-er den reelle kostnaden, og den er tatt uttrykkelig.
+| Token | Levetid | Hvor | Hva XSS kan gjøre med det |
+| --- | --- | --- | --- |
+| access | 1 time | en variabel i `auth.svelte.js` | bruke timen som alt er i gang |
+| refresh | 30 dager | `HttpOnly`-cookie, `Path=/auth` | ingenting — siden kan ikke lese den |
+
+Veien dit var `sessionStorage` → `localStorage` → cookie, og
+mellomstasjonen ble forkastet med vilje. `sessionStorage` og
+`localStorage` er like åpne for XSS — samme origin, samme JS — så
+flyttingen mellom dem endret ikke XSS-flaten for tilgangstokenet. Det
+den ville endret, er hva et innbrudd er verdt: et 30-dagers
+refresh-token i `localStorage` gjør ett XSS-vindu om til en måneds
+fornybar tilgang, mens et tilgangstoken i minnet er over om en time.
+**Det er levetiden som er risikoen, ikke lageret** — så det lange
+tokenet ble lagt der JavaScript ikke rekker.
+
+Det er proxyen som kan holde det: den er alt det eneste som snakker med
+token-endepunktet, så den deler svaret — tilgangstokenet til siden,
+refresh-tokenet ut som `Set-Cookie`. En omlasting har derfor ingenting i
+minnet, og oppstarten veksler cookien ÉN gang før innloggingen vises;
+økten overlever både lukket fane og omstartet maskin uten at noe
+langlivet ligger i et lager siden kan lese. Testen
+`the_refresh_token_leaves_only_as_an_httponly_cookie` fester at
+`refresh_token` ikke finnes i noe svar til nettleseren (sett feile).
+
+Cookien er `HttpOnly`, `SameSite=Strict` og `Path=/auth` — bare de to
+rutene som faktisk bruker den ser den — og `Secure` alltid UNNTATT på en
+loopback-vert. `X-Forwarded-Proto` ville sviktet åpent den dagen en
+proxy slutter å sette headeren; et vertsnavn kan ikke drive på den
+måten.
+
+`POST /auth/logout` tømmer cookien, og det er ikke pynt: uten den
+overlever refresh-tokenet utloggingen, og neste besøk logger stille inn
+igjen — på en delt maskin som forrige bruker.
 
 PKCE-flighten (`regnmed-pkce`) blir liggende i sessionStorage. Den
 gjelder én fane og brukes én gang, og skal dø med fanen.
 
-**Følgefeilen localStorage åpner, og dempningen:** `refreshing` deles
-bare innenfor én fane, mens lageret deles mellom dem, så to faner kan
-veksle samme token samtidig — og taperen får avslag på et token som
-nettopp er rotert bort. Vekslingen leser derfor lageret om igjen når
-utstederen sier nei: står det et annet refresh-token der enn det som ble
-sendt, har nabofanen alt fornyet økten, og kallet prøves om igjen med
-det nye tokenet i stedet for å sende brukeren til innlogging. Smetten
-som står igjen er smal — rekker avslaget fram før vinnerens svar er
-lagret, blir det likevel en utlogging — og utfallet er da det samme som
-før denne endringen, aldri verre.
+**Rotasjonen, og kappløpet mellom faner.** Utstederen ROTERER: svaret
+bærer en erstatter, og tokenet vi nettopp brukte er dødt. Innenfor én
+fane deles ÉN veksling (`refreshing` i `auth.svelte.js`), men cookien
+deles mellom faner, så to faner kan fortsatt veksle samtidig — og
+taperen får avslag på et token som nettopp ble byttet ut. Her hjelper
+cookien av seg selv: vinnerens `Set-Cookie` havner i den DELTE
+cookie-burken, så taperen prøver ganske enkelt én gang til og bærer det
+nye tokenet uten å vite om det. Derfor skiller `/auth/refresh` mellom
+`401` (ingen cookie — ingen økt å redde, ikke prøv igjen) og `400`
+(utstederen avviste — kan være rotasjonen, prøv én gang til). Smetten
+som står igjen er smal: rekker avslaget fram før vinnerens svar er
+lagret, blir det likevel en utlogging — samme utfall som før denne
+endringen, aldri verre.
+
+ÆRLIG BEGRENSNING: `end_session` tilbakekaller ikke refresh-tokenet hos
+utstederen, så et token noen alt har stjålet dør først når det utløper.
+Vi slipper cookien, som er alt vi rår over; en `revoke`-rute hører i
+regnid.
 
 The public client `regnmed-portal` must have the portal's origin
 registered: `{origin}/callback` as redirect URI and `{origin}/` as

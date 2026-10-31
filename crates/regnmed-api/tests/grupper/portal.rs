@@ -110,42 +110,54 @@ async fn the_portal_is_served_from_the_binary() {
     }
 }
 
-/// POSTs JSON to the portal's own auth routes (no bearer — these run
-/// before there is a token).
-async fn post_json(state: &AppState, uri: &str, body: serde_json::Value) -> Svar {
-    let response = router(state.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(uri)
-                .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+/// POSTs to the portal's own auth routes (no bearer — these run before
+/// there is a token) and returns the status, the Set-Cookie and the body.
+async fn post_auth(
+    state: &AppState,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Option<serde_json::Value>,
+) -> (StatusCode, String, String) {
+    let mut request = Request::builder().method("POST").uri(uri);
+    if let Some(cookie) = cookie {
+        request = request.header("cookie", cookie);
+    }
+    let request = match body {
+        Some(body) => request
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+        None => request.body(Body::empty()).unwrap(),
+    };
+    let response = router(state.clone()).oneshot(request).await.unwrap();
     let status = response.status();
+    let set_cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
     let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
         .await
         .unwrap();
-    Svar {
+    (
         status,
-        content_type: String::new(),
-        cache_control: String::new(),
-        location: String::new(),
-        body: String::from_utf8_lossy(&bytes).to_string(),
-    }
+        set_cookie,
+        String::from_utf8_lossy(&bytes).to_string(),
+    )
 }
 
-/// A stand-in for regnid's token endpoint that ROTATES like the real one:
-/// a refresh token can be spent exactly once, and the response carries
-/// its replacement. Returns the base URL.
+/// A stand-in for regnid's token endpoint that ROTATES like the real
+/// one: a refresh token can be spent exactly once, and the response
+/// carries its replacement. Returns the base URL.
 async fn start_mock_token_endpoint() -> String {
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex};
 
-    // The tokens still alive. Spending one consumes it and mints the next.
-    let live: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::from(["r1".to_string()])));
+    // The tokens still alive, and a counter so an access token is never
+    // named after the refresh token that bought it — otherwise asserting
+    // "the refresh token is not in the body" matches its own substring.
+    let live: Arc<Mutex<(usize, HashSet<String>)>> = Arc::new(Mutex::new((0, HashSet::new())));
     let app = axum::Router::new().route(
         "/token",
         axum::routing::post(move |form: String| {
@@ -157,35 +169,47 @@ async fn start_mock_token_endpoint() -> String {
                         .unwrap_or_default()
                         .to_string()
                 };
-                if field("grant_type") != "refresh_token" || field("client_id").is_empty() {
-                    return (
+                let mint = || {
+                    let mut live = live.lock().unwrap();
+                    live.0 += 1;
+                    let n = live.0;
+                    live.1.insert(format!("r{n}"));
+                    (
+                        StatusCode::OK,
+                        axum::Json(serde_json::json!({
+                            "access_token": format!("at{n}"),
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                            "refresh_token": format!("r{n}"),
+                            "id_token": "idt",
+                        })),
+                    )
+                };
+                match field("grant_type").as_str() {
+                    // The login itself: the issuer hands out the first
+                    // refresh token here, which is where the cookie is born.
+                    "authorization_code" => mint(),
+                    "refresh_token" => {
+                        let spent = field("refresh_token");
+                        if !live.lock().unwrap().1.remove(&spent) {
+                            // The detail a reused token produces at the
+                            // issuer — it must never reach the browser.
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "error": "invalid_grant",
+                                    "error_description":
+                                        format!("refresh token already used: {spent}")
+                                })),
+                            );
+                        }
+                        mint()
+                    }
+                    _ => (
                         StatusCode::BAD_REQUEST,
                         axum::Json(serde_json::json!({"error": "unsupported_grant_type"})),
-                    );
+                    ),
                 }
-                let spent = field("refresh_token");
-                if !live.lock().unwrap().remove(&spent) {
-                    // The detail a reused token produces at the issuer —
-                    // it must never reach the browser.
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        axum::Json(serde_json::json!({
-                            "error": "invalid_grant",
-                            "error_description": format!("refresh token already used: {spent}")
-                        })),
-                    );
-                }
-                let next = format!("{spent}-neste");
-                live.lock().unwrap().insert(next.clone());
-                (
-                    StatusCode::OK,
-                    axum::Json(serde_json::json!({
-                        "access_token": format!("at-for-{next}"),
-                        "token_type": "Bearer",
-                        "expires_in": 3600,
-                        "refresh_token": next,
-                    })),
-                )
             }
         }),
     );
@@ -195,11 +219,15 @@ async fn start_mock_token_endpoint() -> String {
     format!("http://{addr}")
 }
 
-/// An hour-old access token must not mean a new login: /auth/refresh
-/// spends the refresh token at the issuer and hands the whole answer
-/// back, rotation included.
+/// THE security property of the whole flow: the 30-day refresh token
+/// never reaches the page. It leaves this server only as an HttpOnly
+/// cookie, so an XSS can spend the hour that is already running and
+/// cannot mint itself another one.
+///
+/// And the usability property it buys: an hour-old access token does not
+/// mean a new login — /auth/refresh spends the cookie and rotates it.
 #[tokio::test]
-async fn a_refresh_exchange_passes_the_rotation_through() {
+async fn the_refresh_token_leaves_only_as_an_httponly_cookie() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
         return;
@@ -210,53 +238,55 @@ async fn a_refresh_exchange_passes_the_rotation_through() {
         std::env::set_var("OIDC_ISSUER", &mock);
     }
 
-    let response = post_json(
-        &state,
-        "/auth/refresh",
-        serde_json::json!({"refresh_token": "r1"}),
-    )
-    .await;
-    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
-    let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
-    assert_eq!(body["access_token"], "at-for-r1-neste");
-    // The REPLACEMENT must reach the client. Dropping it here would log
-    // the user out an hour later, with nothing in any log to say why.
-    assert_eq!(body["refresh_token"], "r1-neste");
+    // Nothing to renew before anyone has logged in, and saying so with
+    // 401 rather than 400 is what stops the browser from retrying.
+    let (status, _, _) = post_auth(&state, "/auth/refresh", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    // Spending the same token twice is what a missing single-flight in
-    // the browser does (ui/portal/src/lib/auth.svelte.js). The issuer
-    // refuses it, and the browser gets a plain failure: the issuer's own
-    // detail stays server-side.
-    let response = post_json(
-        &state,
-        "/auth/refresh",
-        serde_json::json!({"refresh_token": "r1"}),
-    )
-    .await;
-    assert_eq!(response.status, StatusCode::BAD_REQUEST);
-    assert!(
-        !response.body.contains("invalid_grant"),
-        "{}",
-        response.body
-    );
-    assert!(!response.body.contains("already used"), "{}", response.body);
-
-    // The rotated token works, so the session continues from here.
-    let response = post_json(
-        &state,
-        "/auth/refresh",
-        serde_json::json!({"refresh_token": "r1-neste"}),
-    )
-    .await;
-    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
-
-    // The authorization-code route still answers on its own grant: the
-    // two share one rail to the issuer, and the mock only knows refresh.
-    let response = post_json(
+    // The login. The issuer returns a refresh token; the browser must not.
+    let (status, cookie, body) = post_auth(
         &state,
         "/auth/token",
-        serde_json::json!({"code": "c", "code_verifier": "v", "redirect_uri": "http://x/callback"}),
+        None,
+        Some(serde_json::json!({"code": "c", "code_verifier": "v", "redirect_uri": "http://x/callback"})),
     )
     .await;
-    assert_eq!(response.status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        !body.contains("refresh_token") && !body.contains("r1"),
+        "the refresh token reached the page: {body}"
+    );
+    assert!(body.contains("at1"), "{body}");
+    for attribute in ["regnmed_refresh=r1", "HttpOnly", "SameSite=Strict"] {
+        assert!(cookie.contains(attribute), "{attribute} missing: {cookie}");
+    }
+    // Only the two routes that spend it ever see it.
+    assert!(cookie.contains("Path=/auth"), "{cookie}");
+
+    // An hour later: the cookie buys a new access token, and ROTATES.
+    let (status, cookie2, body) =
+        post_auth(&state, "/auth/refresh", Some("regnmed_refresh=r1"), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("at2"), "{body}");
+    assert!(!body.contains("refresh_token"), "{body}");
+    assert!(
+        cookie2.contains("regnmed_refresh=r2"),
+        "the replacement must reach the browser, or the session dies an \
+         hour later with nothing in any log to say why: {cookie2}"
+    );
+
+    // Spending the same token twice is what two tabs racing does. The
+    // issuer refuses it, and its own detail stays server-side.
+    let (status, _, body) =
+        post_auth(&state, "/auth/refresh", Some("regnmed_refresh=r1"), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(!body.contains("invalid_grant"), "{body}");
+    assert!(!body.contains("already used"), "{body}");
+
+    // Logout drops the cookie. Without this the next visit on a shared
+    // machine signs the previous user back in.
+    let (status, cookie, _) = post_auth(&state, "/auth/logout", None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(cookie.contains("Max-Age=0"), "{cookie}");
+    assert!(cookie.contains("HttpOnly"), "{cookie}");
 }

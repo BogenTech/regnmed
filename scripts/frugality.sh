@@ -63,11 +63,11 @@ API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed
 # add.
 #
 # It was looked at, and the headroom turned out to be spent already: the
-# dist measured exactly 544 KB before the refresh flow added 461 bytes.
-# The CSS did not move (144 KB, byte-identical), so this is the first
-# case: hand-written JS, no new dependency. Raised to 552 to leave the
-# gate somewhere to stand -- a budget equal to the current size no
-# longer measures frugality, it just forbids the next line of code.
+# dist measured exactly 544 KB before the session-keepalive flow added
+# 317 bytes -- one byte over, which a budget equal to the current size
+# turns into a red build. The CSS did not move (144 KB, byte-identical),
+# so this is the first case: hand-written JS, no new dependency. Raised
+# to 552 to leave the gate somewhere to stand.
 PORTAL_DIST_BUDGET_KB=552
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"

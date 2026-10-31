@@ -22,7 +22,7 @@ export async function api(path, options = {}) {
       }),
     );
   let response = await attempt(t.access_token);
-  // Tilgangstokenet lever en time, refresh-tokenet 30 dager. Ett forsøk
+  // Tilgangstokenet lever en time, refresh-cookien 30 dager. Ett forsøk
   // bak den delte vekslingen i auth.svelte.js — et 401 etter det er en
   // død økt, ikke et utløpt token.
   if (response.status === 401 && (await refresh())) {

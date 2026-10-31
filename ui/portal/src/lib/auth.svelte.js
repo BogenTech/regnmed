@@ -1,69 +1,66 @@
 // OIDC authorization code + PKCE mot regnid. Token-utvekslingen proxyes
 // via /auth/token (samme origin), så IdP-en trenger ingen browser-CORS,
 // og regnmed ser aldri et passord — proxyen videresender bare
-// engangskoden. Tokenene ligger i localStorage; et 401 veksler
-// refresh-tokenet via /auth/refresh, og bare en feilet veksling sender
-// brukeren tilbake til innlogging.
+// engangskoden.
 //
-// localStorage, ikke sessionStorage: refresh-tokenet lever 30 dager, og
-// i sessionStorage døde økten likevel med fanen. Prisen er et token som
-// ligger igjen på maskinen, altså en delt maskin eller en ulåst skjerm
-// — avveiningen er tatt uttrykkelig (docs/portal.md).
+// INGEN TOKENER LAGRES I NETTLESEREN. Tilgangstokenet lever én time og
+// ligger bare i minnet her, så det dør med fanen. Refresh-tokenet lever
+// 30 dager og ligger i en HttpOnly-cookie proxyen setter: siden kan
+// ikke lese det, bare be om en veksling (`POST /auth/refresh`). Kode som
+// kjører i siden kan altså bruke den økten som alt er i gang, men aldri
+// hente seg en ny — og en omlasting trenger ingen ny innlogging, siden
+// cookien fortsatt er der. Begrunnelsen står i docs/portal.md.
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
   authed: false,
 });
 
+let access = null;
+
 export function tokens() {
-  try {
-    return JSON.parse(localStorage.getItem("regnmed-tokens"));
-  } catch (e) {
-    return null;
-  }
+  return access;
 }
 
 export function saveTokens(t) {
-  localStorage.setItem("regnmed-tokens", JSON.stringify(t));
+  access = t;
   session.authed = true;
 }
 
 export function clearTokens() {
-  localStorage.removeItem("regnmed-tokens");
+  access = null;
   session.authed = false;
 }
 
-// Én veksling i luften om gangen, delt av alle som ser et 401.
-// Utstederen ROTERER refresh-tokenet: svaret bærer en erstatter, og det
-// vi nettopp brukte er dødt. To samtidige vekslinger ville derfor sendt
-// det samme tokenet to ganger, og den andre blir avvist — altså utlogging
-// midt i arbeidet.
+// Én veksling i luften om gangen innenfor fanen, delt av alle som ser
+// et 401 — ellers ville tre samtidige kall spent cookien tre ganger.
 let refreshing = null;
 
+// Veksler cookien inn i et nytt tilgangstoken. Svarer false når økten
+// er slutt; da, og bare da, skal brukeren logge inn igjen.
 export function refresh() {
   if (refreshing) return refreshing;
-  const t = tokens();
-  if (!t || !t.refresh_token) return Promise.resolve(false);
   refreshing = (async () => {
     try {
-      const response = await fetch("/auth/refresh", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refresh_token: t.refresh_token }),
-      });
-      // `refreshing` deles bare innenfor ÉN fane, og localStorage deles
-      // mellom dem: to faner kan derfor veksle samme token samtidig, og
-      // taperen får avslag på et token som nettopp er rotert bort. Sto
-      // det et annet token i lageret enn det vi sendte, har nabofanen
-      // alt fornyet økten — da er dette ikke en død økt, og kallet skal
-      // prøves om igjen med det nye tokenet. (Smett igjen: rekker
-      // avslaget fram før vinnerens svar er lagret, blir det likevel en
-      // utlogging — samme utfall som i dag, aldri verre.)
-      if (!response.ok) return (tokens() || {}).refresh_token !== t.refresh_token;
-      // Behold det svaret ikke gjentar — id_token utstedes ikke på nytt,
-      // og utloggingen trenger det som id_token_hint.
-      saveTokens(Object.assign({}, t, await response.json()));
-      return true;
+      for (let forsok = 0; forsok < 2; forsok++) {
+        const response = await fetch("/auth/refresh", { method: "POST" });
+        if (response.ok) {
+          // id_token utstedes ikke på nytt av refresh-grantet, så det vi
+          // alt har beholdes — utloggingen bruker det som id_token_hint.
+          saveTokens(Object.assign({}, access, await response.json()));
+          return true;
+        }
+        // 401 = ingen cookie, altså ingen økt å redde. 400 = utstederen
+        // avviste den, og det kan være ROTASJONEN: to faner kan veksle
+        // samtidig, og taperen fikk avslag på et token som nettopp ble
+        // byttet ut. Vinnerens Set-Cookie havner i den DELTE cookie-
+        // burken, så ett forsøk til bærer det nye tokenet av seg selv.
+        // (Smett igjen: rekker avslaget fram før vinnerens svar er
+        // lagret, blir det likevel en utlogging — som før, aldri verre.)
+        if (response.status !== 400) return false;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return false;
     } catch (e) {
       return false;
     } finally {
@@ -133,7 +130,7 @@ export async function handleCallback() {
   history.replaceState(null, "", "/");
 }
 
-export function logout() {
+export async function logout() {
   const t = tokens();
   clearTokens();
   // Send the user BACK here after the issuer has ended its session.
@@ -146,6 +143,15 @@ export function logout() {
   // The URI must be pre-registered on the client (it is, for this
   // origin); client_id goes along so the issuer can validate it even
   // when there is no id_token to take it from.
+  // Tøm cookien før utstederen tar over navigasjonen: uten dette
+  // overlever refresh-tokenet utloggingen, og neste besøk logger stille
+  // inn igjen — på en delt maskin som forrige bruker.
+  try {
+    await fetch("/auth/logout", { method: "POST" });
+  } catch (e) {
+    // Nettet kan svikte; da er det eneste rette å logge ut hos
+    // utstederen likevel, så økten ikke ser levende ut.
+  }
   const params = new URLSearchParams();
   if (t && t.id_token) params.set("id_token_hint", t.id_token);
   params.set("client_id", session.config.client_id);
