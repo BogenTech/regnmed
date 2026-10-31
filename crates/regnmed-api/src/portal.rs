@@ -188,6 +188,24 @@ fn refresh_cookie(headers: &HeaderMap, value: &str, max_age: i64) -> String {
     )
 }
 
+/// The device code, while a flow is in flight. It is a credential — spend
+/// it after approval and you get a token — so it is kept the same way the
+/// refresh token is, out of the page's reach. Five minutes, matching the
+/// issuer's own lifetime for it.
+const DEVICE_COOKIE: &str = "regnmed_device";
+const DEVICE_COOKIE_MAX_AGE: i64 = 300;
+
+fn device_cookie(headers: &HeaderMap, value: &str, max_age: i64) -> String {
+    let secure = if is_local_host(headers) {
+        ""
+    } else {
+        " Secure;"
+    };
+    format!(
+        "{DEVICE_COOKIE}={value}; Path=/auth; Max-Age={max_age}; HttpOnly;{secure} SameSite=Strict"
+    )
+}
+
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(header::COOKIE)?
@@ -245,6 +263,141 @@ pub async fn token_refresh(
         ],
     )
     .await
+}
+
+/// Starts a device flow (RFC 8628) for a screen that cannot reasonably
+/// take a password: a car display, a borrowed PC. Answers with the code to
+/// show, a QR of the page that approves it, and how long it is good for.
+///
+/// The device code itself goes into an HttpOnly cookie, so the page shows
+/// the user code and holds nothing it could leak.
+pub async fn device_start(
+    State(_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let issuer = std::env::var("OIDC_ISSUER")
+        .map_err(|_| ApiError::BadRequest("OIDC_ISSUER is not configured".into()))?;
+    let client_id = portal_client_id();
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/device_authorization",
+            issuer.trim_end_matches('/')
+        ))
+        .form(&[("client_id", client_id.as_str())])
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("IdP unreachable: {e}")))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        eprintln!("device authorization failed ({status}): {body}");
+        return Err(ApiError::BadRequest(
+            "utstederen støtter ikke innlogging fra en annen enhet".into(),
+        ));
+    }
+
+    let mut parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|_| ApiError::BadRequest("uventet svar fra utsteder".into()))?;
+    let object = parsed
+        .as_object_mut()
+        .ok_or_else(|| ApiError::BadRequest("uventet svar fra utsteder".into()))?;
+    let device_code = object
+        .remove("device_code")
+        .and_then(|v| v.as_str().map(str::to_string))
+        .ok_or_else(|| ApiError::BadRequest("utstederen ga ingen enhetskode".into()))?;
+
+    // The QR encodes the URL that approves THIS code, so scanning it lands
+    // on the approval page with nothing left to type.
+    if let Some(url) = object
+        .get("verification_uri_complete")
+        .and_then(|v| v.as_str())
+    {
+        match regnmed_core::qr::svg(url) {
+            Ok(svg) => {
+                object.insert("qr".into(), serde_json::Value::String(svg));
+            }
+            // A URL too long to encode is a configuration we would rather
+            // name than hide: the code and the address still work.
+            Err(err) => eprintln!("no QR for {url}: {err}"),
+        }
+    }
+
+    let mut response = (
+        [(header::CONTENT_TYPE, "application/json")],
+        parsed.to_string(),
+    )
+        .into_response();
+    let cookie = device_cookie(&headers, &device_code, DEVICE_COOKIE_MAX_AGE);
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        cookie
+            .parse()
+            .map_err(|_| ApiError::BadRequest("ugyldig kode fra utsteder".into()))?,
+    );
+    Ok(response)
+}
+
+/// Asks whether the sign-in has been approved yet. 202 means keep waiting
+/// — the status code carries that, so the page does not parse prose — and
+/// a success answers with the access token, exactly like a login.
+///
+/// NO refresh cookie is set here, and that is the point of the grant: this
+/// screen may not be the user's own, so the session dies with the hour.
+pub async fn device_poll(
+    State(_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let device_code = cookie_value(&headers, DEVICE_COOKIE)
+        .ok_or(ApiError::Unauthorized("ingen pågående innlogging"))?;
+    let issuer = std::env::var("OIDC_ISSUER")
+        .map_err(|_| ApiError::BadRequest("OIDC_ISSUER is not configured".into()))?;
+    let client_id = portal_client_id();
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/token", issuer.trim_end_matches('/')))
+        .form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ("client_id", client_id.as_str()),
+            ("device_code", device_code.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("IdP unreachable: {e}")))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if status.is_success() {
+        // Approved. The device code is spent, so the cookie goes too.
+        let mut response = ([(header::CONTENT_TYPE, "application/json")], body).into_response();
+        if let Ok(cookie) = device_cookie(&headers, "", 0).parse() {
+            response.headers_mut().insert(header::SET_COOKIE, cookie);
+        }
+        return Ok(response);
+    }
+
+    // RFC 8628 §3.5: one error means "not yet", every other one ends the
+    // flow. Translating it to a status code is what lets the page poll
+    // without reading the issuer's wording.
+    let pending = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string))
+        .is_some_and(|error| error == "authorization_pending" || error == "slow_down");
+    if pending {
+        return Ok(StatusCode::ACCEPTED.into_response());
+    }
+
+    eprintln!("device poll ended ({status}): {body}");
+    let mut response = (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        "{\"error\":\"avbrutt\"}",
+    )
+        .into_response();
+    if let Ok(cookie) = device_cookie(&headers, "", 0).parse() {
+        response.headers_mut().insert(header::SET_COOKIE, cookie);
+    }
+    Ok(response)
 }
 
 /// Drops the refresh cookie. Without this the cookie would survive the
