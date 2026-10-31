@@ -342,8 +342,11 @@ pub async fn device_start(
 /// — the status code carries that, so the page does not parse prose — and
 /// a success answers with the access token, exactly like a login.
 ///
-/// NO refresh cookie is set here, and that is the point of the grant: this
-/// screen may not be the user's own, so the session dies with the hour.
+/// A refresh cookie is set here ONLY when the issuer sends a refresh
+/// token, which it does only when the person approving ticked "this is my
+/// own screen". The default answer leaves this page with an hour and
+/// nothing to renew it with -- the point of the grant -- while a car
+/// display the owner signed into keeps its session like any other login.
 pub async fn device_poll(
     State(_state): State<AppState>,
     headers: HeaderMap,
@@ -368,10 +371,29 @@ pub async fn device_poll(
     let body = response.text().await.unwrap_or_default();
 
     if status.is_success() {
-        // Approved. The device code is spent, so the cookie goes too.
-        let mut response = ([(header::CONTENT_TYPE, "application/json")], body).into_response();
+        // The refresh token never reaches the page, exactly as on the
+        // ordinary login: it is lifted out of the body into an HttpOnly
+        // cookie, and absent when the screen was not trusted.
+        let mut parsed: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| ApiError::BadRequest("uventet svar fra utsteder".into()))?;
+        let refresh = parsed
+            .as_object_mut()
+            .and_then(|o| o.remove("refresh_token"))
+            .and_then(|v| v.as_str().map(str::to_string));
+
+        let mut response = (
+            [(header::CONTENT_TYPE, "application/json")],
+            parsed.to_string(),
+        )
+            .into_response();
+        // Two cookies: the spent device code goes, the session may come.
         if let Ok(cookie) = device_cookie(&headers, "", 0).parse() {
-            response.headers_mut().insert(header::SET_COOKIE, cookie);
+            response.headers_mut().append(header::SET_COOKIE, cookie);
+        }
+        if let Some(refresh) = refresh
+            && let Ok(cookie) = refresh_cookie(&headers, &refresh, REFRESH_COOKIE_MAX_AGE).parse()
+        {
+            response.headers_mut().append(header::SET_COOKIE, cookie);
         }
         return Ok(response);
     }

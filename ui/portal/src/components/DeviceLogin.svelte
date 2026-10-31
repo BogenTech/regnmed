@@ -72,7 +72,8 @@
   <div class="font-mono text-2xl tracking-widest">{data.user_code}</div>
   <p class="text-xs opacity-60 mt-1">Varer i {minutter}</p>
   <p class="text-xs opacity-60 mt-3 text-center">
-    Denne skjermen blir logget ut etter en time, og lagrer ingen innlogging.
+    Denne skjermen blir logget ut etter en time. Er det din egen skjerm,
+    kan du velge å holde den innlogget når du godkjenner på telefonen.
   </p>
 {/if}
 
