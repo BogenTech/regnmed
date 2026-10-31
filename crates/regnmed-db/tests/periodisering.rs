@@ -106,7 +106,7 @@ async fn a_prepaid_cost_is_spread_over_its_months_and_sums_exactly() {
         &pool,
         company,
         &AccrualDraft {
-            kilde_voucher: Some(source.id),
+            source_voucher: Some(source.id),
             description: "Husleie 2026".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
@@ -172,7 +172,7 @@ async fn stopping_leaves_posted_months_alone_and_posts_no_more() {
         &pool,
         company,
         &AccrualDraft {
-            kilde_voucher: None,
+            source_voucher: None,
             description: "Forsikring".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
@@ -228,7 +228,7 @@ async fn a_started_plan_cannot_be_rewritten() {
         &pool,
         company,
         &AccrualDraft {
-            kilde_voucher: None,
+            source_voucher: None,
             description: "Abonnement".into(),
             income_account: "6300".into(),
             balance_account: "1700".into(),
@@ -289,7 +289,7 @@ async fn a_plan_refuses_an_account_it_could_never_post_to() {
         .unwrap();
 
     let plan = |result: &str, balance_sheet: &str| AccrualDraft {
-        kilde_voucher: None,
+        source_voucher: None,
         description: "Husleie".into(),
         income_account: result.into(),
         balance_account: balance_sheet.into(),

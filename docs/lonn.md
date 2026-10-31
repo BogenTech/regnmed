@@ -195,7 +195,7 @@ månedslønn: minutter ført i måneden × den ansattes timesats. **Alle**
 førte timer teller, fakturerbare eller ikke — arbeidsgiver skylder lønn
 for utført arbeid uansett om en kunde faktureres for det.
 
-Regnestykket ligger i `regnmed-core::lonn::timelonn` og går fra minutter
+Regnestykket ligger i `regnmed-core::payroll::hourly_pay` og går fra minutter
 direkte, uten et mellomsteg om desimaltimer som bare ville lagt til en
 avrunding. Én divisjon, halvt vekk fra null.
 
@@ -223,7 +223,7 @@ ansatt.
 Migration 0036 legger derfor til en **valgfri, eksplisitt** kobling
 (`employee.person_id`), satt av en admin. Den gjettes ikke ut fra navn —
 det ville koblet feil person til feil lønn første gang to ansatte het
-det samme. Mangler koblingen, sier `timegrunnlag` fra i stedet for å
+det samme. Mangler koblingen, sier `hour_basis` fra i stedet for å
 returnere null timer.
 
 ### Hvordan koblingen settes (migration 0050)
@@ -258,7 +258,7 @@ er trygt å kjøre.
 
 ## Lønnsslipp
 
-`regnmed-core::lonnsslipp` rendrer slippen med den samme hand-rolled
+`regnmed-core::payslip` rendrer slippen med den samme hand-rolled
 PDF-skriveren som fakturaen — samme begrunnelse: et dokument vi står
 ansvarlig for, uten en motor med skjult oppførsel.
 
@@ -314,7 +314,7 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
 
-- `regnmed-core::lonn` — prosenttrekk, trekkfrie feriepenger, halv skatt
+- `regnmed-core::payroll` — prosenttrekk, trekkfrie feriepenger, halv skatt
   i desember, frikort, avrunding halvt vekk fra null, og at tabelltrekk
   og sone Ia nektes med begrunnelse.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
@@ -335,7 +335,7 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   ansatt, og at manuell kobling nekter omkobling uten frakobling,
   person som alt er en annen ansatt, og maskinidentiteter — med begge
   hendelsene navngitt i historikken.
-- `regnmed-db/tests/lonn.rs` — mot ekte Postgres: at bilaget balanserer
+- `regnmed-db/tests/payroll.rs` — mot ekte Postgres: at bilaget balanserer
   eksakt, at hver konto får riktig beløp, at utbetalte feriepenger
   reduserer gjelden i stedet for å bli kostnad, at sone V er nullsats,
   at samme måned ikke kan kjøres to ganger, at kjøringer og identitet
@@ -344,7 +344,7 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 - Timelønn: at beløpet regnes fra minutter, at en ULÅST måned nektes,
   at kjøringen går etter låsing og gir riktig brutto og trekk, og at en
   ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.
-- `regnmed-core::lonnsslipp` — velformet og deterministisk PDF, at
+- `regnmed-core::payslip` — velformet og deterministisk PDF, at
   slippen forklarer trekkgrunnlaget, feriepengenes trekkfrihet og
   desembers halve trekk, at frikort sier frikort, og at
   fødselsnummeret ikke er i dokumentet.

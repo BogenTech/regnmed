@@ -414,7 +414,7 @@ async fn main() -> Result<()> {
                 .fetch_one(&pool)
                 .await?;
             let outcome =
-                regnmed_db::subscription::fakturer_maned(&pool, drift, today, bare).await?;
+                regnmed_db::subscription::invoice_month(&pool, drift, today, bare).await?;
             if outcome.is_empty() {
                 println!("ingen selskaper med dekning å fakturere");
             }

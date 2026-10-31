@@ -109,13 +109,13 @@ async fn expenses_flow() {
         .await
         .unwrap();
     let made: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let utlegg_id = made["expense_id"].as_str().unwrap().to_string();
+    let expense_id = made["expense_id"].as_str().unwrap().to_string();
 
     // Receipt round-trips integrity-checked; content is DB-immutable.
     let response = router(state.clone())
         .oneshot(
             Request::builder()
-                .uri(format!("{base}/{utlegg_id}/receipt"))
+                .uri(format!("{base}/{expense_id}/receipt"))
                 .header("authorization", format!("Bearer {token}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -128,12 +128,12 @@ async fn expenses_flow() {
         .unwrap();
     assert_eq!(bytes.to_vec(), receipt);
     let tamper = sqlx::query("update expense set receipt_content = 'forfalsket' where id = $1")
-        .bind(Uuid::parse_str(&utlegg_id).unwrap())
+        .bind(Uuid::parse_str(&expense_id).unwrap())
         .execute(&state.pool)
         .await;
     assert!(tamper.is_err(), "receipt is immutable from submission");
     let tamper = sqlx::query("delete from expense where id = $1")
-        .bind(Uuid::parse_str(&utlegg_id).unwrap())
+        .bind(Uuid::parse_str(&expense_id).unwrap())
         .execute(&state.pool)
         .await;
     assert!(tamper.is_err(), "claims are never deleted");
@@ -142,7 +142,7 @@ async fn expenses_flow() {
     let (status, approved) = request(
         &state,
         "POST",
-        &format!("{base}/{utlegg_id}/approve"),
+        &format!("{base}/{expense_id}/approve"),
         &token,
         Some(serde_json::json!({ "mva_kode": "1" }).to_string()),
     )
@@ -166,7 +166,7 @@ async fn expenses_flow() {
     let (status, _) = request(
         &state,
         "POST",
-        &format!("{base}/{utlegg_id}/approve"),
+        &format!("{base}/{expense_id}/approve"),
         &token,
         Some("{}".to_string()),
     )
@@ -268,7 +268,7 @@ async fn expenses_flow() {
     let (status, paid) = request(
         &state,
         "POST",
-        &format!("{base}/{utlegg_id}/pay"),
+        &format!("{base}/{expense_id}/pay"),
         &token,
         Some(serde_json::json!({ "dato": "2026-07-05" }).to_string()),
     )
@@ -283,7 +283,7 @@ async fn expenses_flow() {
     let (status, _) = request(
         &state,
         "POST",
-        &format!("{base}/{utlegg_id}/pay"),
+        &format!("{base}/{expense_id}/pay"),
         &token,
         Some("{}".to_string()),
     )

@@ -98,8 +98,8 @@ pub struct EhfDocument {
     /// Buyer's reference (EN 16931 BT-10) — many public recipients
     /// reject invoices without it, so we send what we have.
     pub buyer_reference: Option<String>,
-    pub selger: EhfPart,
-    pub kjoper: EhfPart,
+    pub seller: EhfPart,
+    pub buyer: EhfPart,
     /// Leveringstidspunkt (EN 16931 BT-72). Mandatory on the Norwegian
     /// salgsdokument (bokføringsforskriften §5-1-1 nr. 4); `None` only
     /// for invoices issued before regnmed recorded it (#81).
@@ -330,8 +330,8 @@ pub fn render(doc: &EhfDocument) -> String {
         w.close("cac:BillingReference");
     }
 
-    write_party(&mut w, "cac:AccountingSupplierParty", &doc.selger);
-    write_party(&mut w, "cac:AccountingCustomerParty", &doc.kjoper);
+    write_party(&mut w, "cac:AccountingSupplierParty", &doc.seller);
+    write_party(&mut w, "cac:AccountingCustomerParty", &doc.buyer);
 
     // cac:Delivery sits between the customer party and PaymentMeans in
     // the UBL 2.1 sequence — the XSD run in tests and CI enforces that,
@@ -474,8 +474,8 @@ mod tests {
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
             buyer_reference: Some("Bestilling 42".into()),
-            selger: part("Selger AS", "915933149", true),
-            kjoper: part("Kjøper & Sønn AS", "923609016", true),
+            seller: part("Selger AS", "915933149", true),
+            buyer: part("Kjøper & Sønn AS", "923609016", true),
             delivery_date: NaiveDate::from_ymd_opt(2026, 6, 28),
             delivery_place: Some("Lagerveien 3, 0666 Oslo".into()),
             account_number: Some("86011117947".into()),
@@ -529,10 +529,10 @@ mod tests {
             );
             assert!(xml.contains("<cbc:StreetName>Lagerveien 3, 0666 Oslo</cbc:StreetName>"));
             let delivery = xml.find("<cac:Delivery>").expect("cac:Delivery");
-            let kjoper = xml
+            let buyer = xml
                 .find("<cac:AccountingCustomerParty>")
                 .expect("kjøperparten");
-            assert!(delivery > kjoper, "cac:Delivery must follow the buyer");
+            assert!(delivery > buyer, "cac:Delivery must follow the buyer");
         }
     }
 

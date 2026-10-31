@@ -9,7 +9,7 @@ mod common;
 #[path = "grupper/audit.rs"]
 mod audit;
 #[path = "grupper/budsjett.rs"]
-mod budsjett;
+mod budget;
 #[path = "grupper/kontoplan.rs"]
 mod chart_of_accounts;
 #[path = "grupper/hovedbok.rs"]

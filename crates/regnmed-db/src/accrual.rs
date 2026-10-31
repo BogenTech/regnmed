@@ -23,7 +23,7 @@ use crate::ledger::post_voucher_in;
 
 #[derive(Debug)]
 pub struct AccrualDraft {
-    pub kilde_voucher: Option<Uuid>,
+    pub source_voucher: Option<Uuid>,
     pub description: String,
     pub income_account: String,
     pub balance_account: String,
@@ -149,7 +149,7 @@ pub async fn create_accrual(
     )
     .bind(id)
     .bind(company_id)
-    .bind(draft.kilde_voucher)
+    .bind(draft.source_voucher)
     .bind(draft.description.trim())
     .bind(&draft.income_account)
     .bind(&draft.balance_account)

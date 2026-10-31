@@ -19,7 +19,8 @@ use crate::auth::{ApiError, AuthPerson};
 
 #[derive(Deserialize)]
 pub struct AccrualRequest {
-    kilde_voucher: Option<Uuid>,
+    #[serde(rename = "kilde_voucher")]
+    source_voucher: Option<Uuid>,
     #[serde(rename = "beskrivelse")]
     description: String,
     #[serde(rename = "resultatkonto")]
@@ -80,7 +81,7 @@ pub async fn create(
         &state.pool,
         company_id,
         &regnmed_db::accrual::AccrualDraft {
-            kilde_voucher: request.kilde_voucher,
+            source_voucher: request.source_voucher,
             description: request.description,
             income_account: request.income_account,
             balance_account: request.balance_account,
@@ -116,7 +117,7 @@ pub async fn stopp(
 
 /// Runs every due month for one plan now, rather than waiting for the
 /// CronJob. Idempotent by the partial unique index, like the CronJob.
-pub async fn kjor(
+pub async fn run(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, id)): Path<(Uuid, Uuid)>,

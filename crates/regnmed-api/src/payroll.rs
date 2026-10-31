@@ -133,7 +133,7 @@ pub struct YearQuery {
     year: Option<i32>,
 }
 
-fn run_json(k: &regnmed_db::payroll::Lonnskjoring) -> serde_json::Value {
+fn run_json(k: &regnmed_db::payroll::PayrollRun) -> serde_json::Value {
     json!({
         "id": k.id,
         "ar": k.year,
@@ -303,15 +303,14 @@ pub async fn payroll_hours(
     Query(q): Query<HoursQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
-    let g =
-        regnmed_db::payroll::timegrunnlag(&state.pool, company_id, employee_id, q.year, q.month)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let g = regnmed_db::payroll::hour_basis(&state.pool, company_id, employee_id, q.year, q.month)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "minutter": g.minutes,
         "timesats_ore": g.hourly_rate_ore,
         "belop_ore": g.amount_ore,
-        "laast": g.laast,
+        "laast": g.locked,
     })))
 }
 

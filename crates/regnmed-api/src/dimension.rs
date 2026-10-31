@@ -33,7 +33,7 @@ pub async fn list(
             "active": d.active,
             "kunde": d.customer,
             "kunde_navn": d.customer_name,
-            "fakturerbar_default": d.fakturerbar_default,
+            "fakturerbar_default": d.billable_default,
             // The CALLER's effective rate today — what their grid rows
             // will bill at. Not other people's rates.
             "min_timesats_ore": d.min_hourly_rate_ore,
@@ -81,7 +81,8 @@ pub struct UpdateRequest {
     customer: Option<String>,
     /// Whether hours on the prosjekt are billable unless the entry says
     /// otherwise (migration 0052).
-    fakturerbar_default: Option<bool>,
+    #[serde(rename = "fakturerbar_default")]
+    billable_default: Option<bool>,
 }
 
 pub async fn update(
@@ -99,7 +100,7 @@ pub async fn update(
         request.name.as_deref(),
         request.active,
         request.customer.as_deref(),
-        request.fakturerbar_default,
+        request.billable_default,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

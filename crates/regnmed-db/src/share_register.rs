@@ -467,7 +467,7 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<ShareE
 /// The per-shareholder split is never stored: it is the share count on the
 /// decision date times utbytte per aksje, so the parts always sum to the
 /// whole.
-pub async fn create_utbytte(
+pub async fn create_dividend(
     pool: &PgPool,
     company_id: Uuid,
     decided_date: NaiveDate,
@@ -546,7 +546,7 @@ pub async fn create_utbytte(
     })
 }
 
-pub async fn list_utbytte(
+pub async fn list_dividends(
     pool: &PgPool,
     company_id: Uuid,
     year: Option<i32>,
@@ -615,7 +615,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
         "aksjeeierboken er tom — registrer aksjonærene og stiftelsen før oppgaven"
     );
 
-    let utbytte_rader = list_utbytte(pool, company_id, Some(year)).await?;
+    let dividend_rows = list_dividends(pool, company_id, Some(year)).await?;
 
     let mut shares_this_year = 0i64;
     let mut shares_last_year = 0i64;
@@ -653,12 +653,12 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                     new_shares: h.quantity,
                     shares_after: 0, // fylles når totalen er kjent
                     nominal_value_ore,
-                    overkurs_ore: 0,
+                    share_premium_ore: 0,
                 });
             }
         }
 
-        let dividend = utbytte_rader
+        let dividend = dividend_rows
             .iter()
             .filter_map(|u| {
                 let eid = regnmed_core::share_register::holding(&events, u.decided_date);
@@ -730,8 +730,8 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 this_year: shares_this_year,
             },
             paid_in_share_capital: share_capital,
-            overkurs: tax_return::PriorYear::default(),
-            dividend: utbytte_rader
+            share_premium: tax_return::PriorYear::default(),
+            dividend: dividend_rows
                 .iter()
                 .map(|u| tax_return::Distribution {
                     date: u.decided_date,

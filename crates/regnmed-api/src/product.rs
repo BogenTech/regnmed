@@ -268,7 +268,8 @@ pub async fn register_movement(
 pub struct CountLine {
     #[serde(rename = "produkt")]
     product: String,
-    talt_milli: i64,
+    #[serde(rename = "talt_milli")]
+    counted_milli: i64,
 }
 
 #[derive(Deserialize)]
@@ -305,7 +306,7 @@ pub async fn count(
         .iter()
         .map(|l| regnmed_db::TellingLinje {
             number: l.product.clone(),
-            talt_milli: l.talt_milli,
+            counted_milli: l.counted_milli,
         })
         .collect();
     let result = regnmed_db::varetelling(
@@ -322,7 +323,7 @@ pub async fn count(
         "justeringer": result.justeringer.iter().map(|j| json!({
             "produkt": j.number,
             "bokfort_milli": j.bokfort_milli,
-            "talt_milli": j.talt_milli,
+            "talt_milli": j.counted_milli,
         })).collect::<Vec<_>>(),
         "verdi_ore": result.value_ore,
         "bokfort_ore": result.posted_ore,

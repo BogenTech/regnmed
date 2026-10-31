@@ -31,11 +31,11 @@ pub enum Body {
     /// `fil` is read from disk and sent as the body (text formats:
     /// SAF-T XML, CSV). With `mapping` present it is sent as the JSON
     /// envelope the import endpoint accepts instead.
-    Fil,
+    File,
     /// `fil` is read as bytes and uploaded, with `filename` and the
     /// content hash in the query — so a retry after a lost reply cannot
     /// turn one bilag into two (#102's idempotence rule).
-    FilBinaer,
+    FileBinary,
 }
 
 pub struct Tool {
@@ -253,7 +253,7 @@ pub const TOOLS: &[Tool] = &[
                       Filen hashes før sending, så en ny forsøk etter et tapt svar ikke blir to bilag.",
         method: "POST",
         path: "/companies/{selskap}/inbox",
-        body: Body::FilBinaer,
+        body: Body::FileBinary,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til filen på denne maskinen"},
             "filename":{"type":"string","description":"Navnet dokumentet skal lagres med. Standard: filnavnet."}},
@@ -392,7 +392,7 @@ pub const TOOLS: &[Tool] = &[
                       kontoplanen må avstemmes.",
         method: "POST",
         path: "/companies/{selskap}/import/saft/analyze",
-        body: Body::Fil,
+        body: Body::File,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"}},
             "additionalProperties":false}"#,
@@ -406,7 +406,7 @@ pub const TOOLS: &[Tool] = &[
                       fil kan ikke importeres to ganger (innholdet hashes).",
         method: "POST",
         path: "/companies/{selskap}/import/saft",
-        body: Body::Fil,
+        body: Body::File,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"},
             "mapping":{"type":"object","description":"Kontoavstemming fra saft_analyser: {\"gammel konto\": \"NS 4102-konto\"}. Utelates = filens egne kontonummer brukes.",
@@ -429,7 +429,7 @@ pub const TOOLS: &[Tool] = &[
                       som lister det som ble funnet. Idempotent på organisasjonsnummer.",
         method: "POST",
         path: "/companies/{selskap}/import/contacts",
-        body: Body::Fil,
+        body: Body::File,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]}},
@@ -442,7 +442,7 @@ pub const TOOLS: &[Tool] = &[
                       veien, og hvilke kunder som vil bli opprettet.",
         method: "POST",
         path: "/companies/{selskap}/import/open-items",
-        body: Body::Fil,
+        body: Body::File,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]},

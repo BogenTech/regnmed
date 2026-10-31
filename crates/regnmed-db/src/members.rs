@@ -58,7 +58,7 @@ pub struct Member {
 /// is how the question is asked ("who can get in here?"), but they are
 /// marked differently: someone who arrived through an oppdrag can only be
 /// removed by ending the oppdrag.
-pub async fn list_medlemmer(pool: &PgPool, company_id: Uuid) -> Result<Vec<Member>> {
+pub async fn list_members(pool: &PgPool, company_id: Uuid) -> Result<Vec<Member>> {
     let rows = sqlx::query(
         "select p.id as person_id,
                 coalesce(p.name, p.oidc_sub) as navn,
@@ -159,7 +159,7 @@ async fn require_remaining_admin(
 }
 
 /// Locks the company's member rows for the rest of the transaction.
-async fn laas_medlemmer(tx: &mut Transaction<'_, Postgres>, company_id: Uuid) -> Result<()> {
+async fn lock_members(tx: &mut Transaction<'_, Postgres>, company_id: Uuid) -> Result<()> {
     sqlx::query("select 1 from company_member where company_id = $1 for update")
         .bind(company_id)
         .fetch_all(&mut **tx)
@@ -177,7 +177,7 @@ pub async fn set_role(
 ) -> Result<()> {
     require_assignable(new_role)?;
     let mut tx = pool.begin().await?;
-    laas_medlemmer(&mut tx, company_id).await?;
+    lock_members(&mut tx, company_id).await?;
 
     let from: Option<String> = sqlx::query_scalar(
         "select role from company_member where company_id = $1 and person_id = $2 and active",
@@ -231,7 +231,7 @@ pub async fn set_active(
     source: &str,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    laas_medlemmer(&mut tx, company_id).await?;
+    lock_members(&mut tx, company_id).await?;
 
     let rad = sqlx::query(
         "select role, active from company_member where company_id = $1 and person_id = $2",
@@ -364,7 +364,7 @@ pub async fn inviter(
     Ok(id)
 }
 
-pub async fn list_invitasjoner(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitation>> {
+pub async fn list_invitations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Invitation>> {
     let rows = sqlx::query(
         "select i.id, i.epost, i.role, i.created_at, i.employee_id,
                 coalesce(p.name, p.oidc_sub) as invitert_av,
@@ -426,7 +426,7 @@ pub async fn revoke_invitation(
 /// is safer than an invitation being able to raise access unnoticed.
 ///
 /// Returns the number of invitations redeemed.
-pub async fn los_inn_invitasjoner(pool: &PgPool, person_id: Uuid) -> Result<usize> {
+pub async fn redeem_invitations(pool: &PgPool, person_id: Uuid) -> Result<usize> {
     let email: Option<String> = sqlx::query_scalar("select email from person where id = $1")
         .bind(person_id)
         .fetch_one(pool)

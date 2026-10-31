@@ -94,7 +94,7 @@ pub struct NewIssue {
     /// Total share count after the event.
     pub shares_after: i64,
     pub nominal_value_ore: i64,
-    pub overkurs_ore: i64,
+    pub share_premium_ore: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ pub struct MainForm {
     pub nominal_value_ore: PriorYear,
     pub share_count: PriorYear,
     pub paid_in_share_capital: PriorYear,
-    pub overkurs: PriorYear,
+    pub share_premium: PriorYear,
     pub dividend: Vec<Distribution>,
     pub new_issues: Vec<NewIssue>,
 }
@@ -371,12 +371,12 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
     w.felt(
         "AksjeOverkursISINAksjetypeFjoraret-datadef-17662",
         17662,
-        &amount(h.overkurs.last_year),
+        &amount(h.share_premium.last_year),
     );
     w.felt(
         "AksjeOverkursISINAksjetype-datadef-17661",
         17661,
-        &amount(h.overkurs.this_year),
+        &amount(h.share_premium.this_year),
     );
     w.close("InnbetaltOverkursIDenneAksjeklassen-grp-3448");
     w.close("Selskapsopplysninger-grp-2589");
@@ -437,7 +437,7 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
             w.felt(
                 "AksjerNyutstedteStiftelseMvOverkurs-datadef-23948",
                 23948,
-                &amount(n.overkurs_ore),
+                &amount(n.share_premium_ore),
             );
             w.close("AntallNyutstedteAksjer-grp-3453");
         }
@@ -648,7 +648,7 @@ mod tests {
                 last_year: 0,
                 this_year: 10_000_000,
             },
-            overkurs: PriorYear::default(),
+            share_premium: PriorYear::default(),
             dividend: vec![Distribution {
                 date: d(2026, 5, 20),
                 per_share_ore: 50_000,
@@ -660,7 +660,7 @@ mod tests {
                 new_shares: 100,
                 shares_after: 100,
                 nominal_value_ore: 100_000,
-                overkurs_ore: 0,
+                share_premium_ore: 0,
             }],
         }
     }

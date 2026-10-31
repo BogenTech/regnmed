@@ -26,7 +26,7 @@ use crate::vat::load_vat_rates;
 /// claim onto the voucher at approval — oppbevaringsplikten covers the
 /// original documentation, not a copy of our making.
 #[allow(clippy::too_many_arguments)]
-pub async fn create_utlegg(
+pub async fn create_expense(
     pool: &PgPool,
     company_id: Uuid,
     person_id: Uuid,

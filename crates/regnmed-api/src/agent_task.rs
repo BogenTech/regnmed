@@ -84,7 +84,7 @@ pub struct NewTask {
     deadline: Option<chrono::NaiveDate>,
 }
 
-pub async fn opprett(
+pub async fn create(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,

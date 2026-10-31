@@ -183,14 +183,14 @@ pub fn router(state: AppState) -> Router {
         // themselves.
         .route(
             "/companies/{company_id}/agents",
-            axum::routing::post(integration::opprett_agent),
+            axum::routing::post(integration::create_agent),
         )
         // Oppgaver til en agent (#103): the owner says what to do, the
         // agent reports back, and the trail outlives the chat it was
         // asked in.
         .route(
             "/companies/{company_id}/agent/oppgaver",
-            get(agent_task::list).post(agent_task::opprett),
+            get(agent_task::list).post(agent_task::create),
         )
         .route(
             "/companies/{company_id}/agent/oppgaver/{task_id}",
@@ -476,7 +476,7 @@ pub fn router(state: AppState) -> Router {
         .route("/companies/{company_id}/expenses", get(expenses::list))
         .route(
             "/companies/{company_id}/expenses/utlegg",
-            axum::routing::post(expenses::create_utlegg),
+            axum::routing::post(expenses::create_expense),
         )
         .route(
             "/companies/{company_id}/expenses/kjoring",
@@ -597,7 +597,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/periodiseringer/{id}/kjor",
-            axum::routing::post(accrual::kjor),
+            axum::routing::post(accrual::run),
         )
         .route(
             "/companies/{company_id}/periodiseringer/{id}/kjoringer",
@@ -937,8 +937,8 @@ async fn me(
     // fresh login, because the portal calls /me when the session starts.
     // Putting the lookup in the extractor would cost a query on EVERY
     // request for something that happens once.
-    let nye = regnmed_db::members::los_inn_invitasjoner(&state.pool, person.person_id).await?
-        + regnmed_db::firm_members::los_inn_invitasjoner(&state.pool, person.person_id).await?;
+    let nye = regnmed_db::members::redeem_invitations(&state.pool, person.person_id).await?
+        + regnmed_db::firm_members::redeem_invitations(&state.pool, person.person_id).await?;
 
     let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
 

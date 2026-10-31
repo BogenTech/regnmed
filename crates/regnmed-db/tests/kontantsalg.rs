@@ -48,7 +48,7 @@ async fn balance(pool: &PgPool, company: Uuid, number: &str) -> i64 {
 /// past it would make the revisor's tie-out quietly incomplete. So the
 /// claim exists, carries the party, and is closed the instant it exists.
 #[tokio::test]
-async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
+async fn a_cash_invoice_settles_its_own_receivable_through_the_subledger() {
     let Some(pool) = pool().await else { return };
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Kontantsalg AS")
         .await
@@ -110,7 +110,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     .unwrap();
 
     let date = d(2026, 4, 3);
-    let issued = regnmed_db::invoice::create_kontantfaktura(
+    let issued = regnmed_db::invoice::create_cash_invoice(
         &pool,
         company,
         &regnmed_db::InvoiceDraft {
@@ -230,7 +230,7 @@ async fn a_daily_settlement_posts_the_day_and_its_difference_separately() {
         company,
         &regnmed_db::cash_register::DailySettlementInput {
             date: d(2026, 4, 3),
-            z_nummer: "0042".into(),
+            z_number: "0042".into(),
             sale: vec![
                 ("3000".into(), Some("3".into()), 12_500_00),
                 ("3010".into(), Some("31".into()), 2_300_00),

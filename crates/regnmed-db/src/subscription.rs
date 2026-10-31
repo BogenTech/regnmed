@@ -344,7 +344,7 @@ pub async fn stripe_abo_for(pool: &PgPool, company_id: Uuid) -> Result<Option<St
 }
 
 #[derive(Debug, Clone)]
-pub struct StripeAboEier {
+pub struct StripeSubscriptionOwner {
     pub company_id: Uuid,
     pub plan: String,
     pub interval: String,
@@ -357,7 +357,7 @@ pub struct StripeAboEier {
 pub async fn stripe_abo_by_subscription(
     pool: &PgPool,
     subscription_id: &str,
-) -> Result<Option<StripeAboEier>> {
+) -> Result<Option<StripeSubscriptionOwner>> {
     let row = sqlx::query(
         "select company_id, plan, interval from abonnement_stripe
          where stripe_subscription_id = $1",
@@ -365,7 +365,7 @@ pub async fn stripe_abo_by_subscription(
     .bind(subscription_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| StripeAboEier {
+    Ok(row.map(|r| StripeSubscriptionOwner {
         company_id: r.get("company_id"),
         plan: r.get("plan"),
         interval: r.get("interval"),
@@ -901,7 +901,7 @@ pub struct InvoiceOutcome {
 /// the run row is unique per (company, year, month) and is written in the
 /// same transaction as the faktura. `bare` narrows to a single customer
 /// company (back-billing, testing); None = everyone with coverage.
-pub async fn fakturer_maned(
+pub async fn invoice_month(
     pool: &PgPool,
     drift_company_id: Uuid,
     today: NaiveDate,
@@ -952,7 +952,7 @@ pub async fn fakturer_maned(
     for customer in &customers {
         let company_id: Uuid = customer.get("id");
         let name: String = customer.get("name");
-        let result = fakturer_en(
+        let result = invoice_one(
             pool,
             drift_company_id,
             company_id,
@@ -1055,7 +1055,7 @@ async fn party_for_customer(
     Ok(party_no)
 }
 
-async fn fakturer_en(
+async fn invoice_one(
     pool: &PgPool,
     drift: Uuid,
     customer: Uuid,

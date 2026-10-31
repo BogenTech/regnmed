@@ -355,7 +355,7 @@ pub async fn create_invoice_in(
         document_type: if credits_invoice_id.is_some() {
             DocumentType::CreditNote
         } else if draft.cash_payment_method.is_some() {
-            DocumentType::Kontantfaktura
+            DocumentType::CashInvoice
         } else {
             DocumentType::Invoice
         },
@@ -698,7 +698,7 @@ pub async fn list_invoices(
 /// `oppgjorskonto` is where the money landed: 1900 kontanter, 1920 bank,
 /// or the card acquirer's clearing account. The caller names it; we do
 /// not guess how someone was paid.
-pub async fn create_kontantfaktura(
+pub async fn create_cash_invoice(
     pool: &PgPool,
     company_id: Uuid,
     draft: &InvoiceDraft,
@@ -738,7 +738,7 @@ pub async fn create_kontantfaktura(
         )
     };
 
-    let oppgjor = regnmed_core::voucher::VoucherDraft {
+    let settlement = regnmed_core::voucher::VoucherDraft {
         journal_code: draft.journal_code.clone(),
         voucher_date: draft.invoice_date,
         description: format!(
@@ -771,7 +771,7 @@ pub async fn create_kontantfaktura(
             },
         ],
     };
-    let posted = crate::post_voucher_in(&mut tx, company_id, &oppgjor, created_by).await?;
+    let posted = crate::post_voucher_in(&mut tx, company_id, &settlement, created_by).await?;
     let betalings_entry: Uuid = sqlx::query_scalar(
         "select e.id from entry e join account a on a.id = e.account_id
          where e.voucher_id = $1 and a.number = $2",

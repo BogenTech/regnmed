@@ -169,7 +169,7 @@ pub struct CompanySettings {
     pub email: Option<String>,
     /// Has the company a KID/OCR agreement with its bank? Governs
     /// whether a KID is printed at all (#104).
-    pub kid_avtale: bool,
+    pub kid_agreement: bool,
 }
 
 pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<CompanySettings> {
@@ -187,7 +187,7 @@ pub async fn company_settings(pool: &PgPool, company_id: Uuid) -> Result<Company
         bank_account: row.get("bank_account"),
         org_form: row.get("orgform"),
         email: row.get("email"),
-        kid_avtale: row.get("kid_avtale"),
+        kid_agreement: row.get("kid_avtale"),
     })
 }
 
@@ -199,7 +199,7 @@ pub async fn update_company_settings(
     bank_account: Option<&str>,
     org_form: Option<&str>,
     email: Option<&str>,
-    kid_avtale: Option<bool>,
+    kid_agreement: Option<bool>,
 ) -> Result<()> {
     if let Some(email) = email {
         let email = email.trim();
@@ -229,7 +229,7 @@ pub async fn update_company_settings(
     .bind(clear(org_form))
     .bind(email.is_some())
     .bind(clear(email))
-    .bind(kid_avtale)
+    .bind(kid_agreement)
     .execute(pool)
     .await?;
     ensure!(updated.rows_affected() == 1, "no such company");

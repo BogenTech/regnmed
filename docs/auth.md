@@ -676,7 +676,7 @@ kommer til senere og for rader som ble skrevet før den fantes.
 `right_slugs` filtrerer det samme, så `/me` ikke lover en maskin
 knapper som kommer til å feile.
 
-`maskin` er sann når minst én av veiene inn til selskapet er et
+`machine` er sann når minst én av veiene inn til selskapet er et
 `integration_grant` (`via = 'integrasjon'` fra
 `company_access_for_person` — samme spørring, ingen ekstra kostnad på
 forespørselsveien).

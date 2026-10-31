@@ -28,7 +28,7 @@ pub async fn list_access(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let members = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
+    let members = regnmed_db::members::list_members(&state.pool, company_id).await?;
     Ok(Json(json!({
         "medlemmer": members.iter().map(|m| json!({
             "person_id": m.person_id,
@@ -156,7 +156,7 @@ pub async fn list_invitations(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
-    let rader = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
+    let rader = regnmed_db::members::list_invitations(&state.pool, company_id).await?;
     Ok(Json(json!({
         "invitasjoner": rader.iter().map(|i| json!({
             "id": i.id,

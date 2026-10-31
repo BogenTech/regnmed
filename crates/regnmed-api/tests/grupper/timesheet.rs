@@ -375,7 +375,7 @@ async fn timer_rights_mean_what_they_say() {
         .unwrap();
     // A company-defined role carrying exactly the two ALLE-rights: the
     // enforcement must read the rettighet, not the role name.
-    regnmed_db::roles::opprett(
+    regnmed_db::roles::create(
         &state.pool,
         company,
         "Timesjef",
@@ -880,12 +880,12 @@ async fn an_invoice_carries_products_and_selected_hours() {
         return;
     };
     let admin_sub = format!("test|{}", Uuid::new_v4());
-    let fakturist_sub = format!("test|{}", Uuid::new_v4());
+    let invoicer_sub = format!("test|{}", Uuid::new_v4());
     let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Astrid Admin"), None)
         .await
         .unwrap();
-    let fakturist =
-        regnmed_db::ensure_person(&state.pool, &fakturist_sub, Some("Fia Fakturist"), None)
+    let invoicer =
+        regnmed_db::ensure_person(&state.pool, &invoicer_sub, Some("Fia Fakturist"), None)
             .await
             .unwrap();
     let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kombinert AS")
@@ -895,7 +895,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
     regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
         .await
         .unwrap();
-    regnmed_db::roles::opprett(
+    regnmed_db::roles::create(
         &state.pool,
         company,
         "Fakturist",
@@ -905,7 +905,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
     )
     .await
     .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, fakturist, "Fakturist")
+    regnmed_db::ensure_company_member(&state.pool, company, invoicer, "Fakturist")
         .await
         .unwrap();
     regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
@@ -929,7 +929,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
             .unwrap();
     give_parties_address(&state.pool, company).await;
     let admin_token = idp.token(&admin_sub, "Astrid Admin");
-    let fakturist_token = idp.token(&fakturist_sub, "Fia Fakturist");
+    let invoicer_token = idp.token(&invoicer_sub, "Fia Fakturist");
 
     // One billable hour at 1000 kr, logged by the admin.
     let (status, created) = request(
@@ -966,7 +966,7 @@ async fn an_invoice_carries_products_and_selected_hours() {
         &state,
         "POST",
         &format!("/companies/{company}/invoices"),
-        &fakturist_token,
+        &invoicer_token,
         Some(body.clone()),
     )
     .await;

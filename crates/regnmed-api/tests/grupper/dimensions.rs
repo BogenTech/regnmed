@@ -307,18 +307,11 @@ async fn prosjektlonnsomhet_composes_ledger_and_hours() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let mut ufakturert = time(chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
-    ufakturert.minutes = 90;
-    regnmed_db::timesheet::create_time_entry(
-        &state.pool,
-        company,
-        person,
-        &ufakturert,
-        true,
-        "Test",
-    )
-    .await
-    .unwrap();
+    let mut unbilled = time(chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
+    unbilled.minutes = 90;
+    regnmed_db::timesheet::create_time_entry(&state.pool, company, person, &unbilled, true, "Test")
+        .await
+        .unwrap();
 
     // The overview: one row for PL1 with everything composed.
     let (status, rapport) = request(

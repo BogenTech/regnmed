@@ -57,7 +57,7 @@ async fn company(pool: &PgPool) -> Uuid {
     company
 }
 
-async fn employee(pool: &PgPool, company: Uuid, nin: &str, name: &str, lonn: i64) -> Uuid {
+async fn employee(pool: &PgPool, company: Uuid, nin: &str, name: &str, monthly_ore: i64) -> Uuid {
     payroll::create_employee(
         pool,
         company,
@@ -66,7 +66,7 @@ async fn employee(pool: &PgPool, company: Uuid, nin: &str, name: &str, lonn: i64
             name: name.into(),
             stilling: Some("Utvikler".into()),
             employed_from: date(2025, 1, 1),
-            monthly_salary_ore: Some(lonn),
+            monthly_salary_ore: Some(monthly_ore),
             hourly_wage_ore: None,
             withholding_type: "prosent".into(),
             withholding_percent_bp: Some(3500),
@@ -587,12 +587,12 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
         .unwrap();
     }
 
-    let g = payroll::timegrunnlag(&pool, company, a, 2026, 3)
+    let g = payroll::hour_basis(&pool, company, a, 2026, 3)
         .await
         .unwrap();
     assert_eq!(g.minutes, 1200, "20 timer");
     assert_eq!(g.amount_ore, 900_000, "20 t x 450 kr = 9 000 kr");
-    assert!(!g.laast, "ikke låst ennå");
+    assert!(!g.locked, "ikke låst ennå");
 
     let post = || {
         vec![PayrollEntry {
@@ -622,10 +622,10 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
     regnmed_db::timesheet::set_timesheet_lock(&pool, company, date(2026, 3, 31), "Test", None)
         .await
         .unwrap();
-    let g = payroll::timegrunnlag(&pool, company, a, 2026, 3)
+    let g = payroll::hour_basis(&pool, company, a, 2026, 3)
         .await
         .unwrap();
-    assert!(g.laast);
+    assert!(g.locked);
 
     let run = payroll::run_payroll(
         &pool,
@@ -652,7 +652,7 @@ async fn an_employee_without_a_portal_user_fails_clearly() {
     let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Uten kobling", 4_000_000).await;
 
-    let error = payroll::timegrunnlag(&pool, company, a, 2026, 3)
+    let error = payroll::hour_basis(&pool, company, a, 2026, 3)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("portalbruker"), "{error}");
@@ -681,7 +681,7 @@ async fn account_balance(pool: &PgPool, company: Uuid, account: &str) -> i64 {
     .unwrap()
 }
 
-async fn kjor(
+async fn run(
     pool: &PgPool,
     company: Uuid,
     a: Uuid,
@@ -689,7 +689,7 @@ async fn kjor(
     zone: &str,
     gross: Option<i64>,
     holiday_pay: i64,
-) -> payroll::Lonnskjoring {
+) -> payroll::PayrollRun {
     payroll::run_payroll(
         pool,
         company,
@@ -715,7 +715,7 @@ async fn the_accrual_on_unpaid_holiday_pay_is_posted() {
     let company = company(&pool).await;
     let a = employee(&pool, company, "26829398612", "Kari Avsetning", 5_000_000).await;
 
-    let k = kjor(&pool, company, a, 3, "I", None, 0).await;
+    let k = run(&pool, company, a, 3, "I", None, 0).await;
 
     // 10,2 % of 50 000 = 5 100 kr of feriepenger owed; 14,1 % of that is
     // 719,10 kr of avgift accruing now and falling due on payout.
@@ -737,11 +737,11 @@ async fn the_accrual_is_reversed_when_the_holiday_pay_is_paid_out() {
     let company = company(&pool).await;
     let a = employee(&pool, company, "08888797336", "Ola Feriepenger", 5_000_000).await;
 
-    let opptjening = kjor(&pool, company, a, 3, "I", None, 0).await;
+    let opptjening = run(&pool, company, a, 3, "I", None, 0).await;
     assert_eq!(opptjening.sum.employer_contribution_holiday_pay_ore, 71_910);
 
     // Holiday taken: no ordinary pay, the feriepenger are paid out.
-    let utbetaling = kjor(&pool, company, a, 4, "I", Some(0), 510_000).await;
+    let utbetaling = run(&pool, company, a, 4, "I", Some(0), 510_000).await;
 
     assert_eq!(
         utbetaling.sum.employer_contribution_holiday_pay_ore, -71_910,
@@ -768,13 +768,13 @@ async fn a_liability_without_an_accrual_is_caught_up_on_the_next_run() {
     let a = employee(&pool, company, "25927898821", "Nils Sonebytte", 5_000_000).await;
 
     // Sone V is a zero rate: feriepenger are earned, no avgift is accrued.
-    let without = kjor(&pool, company, a, 3, "V", None, 0).await;
+    let without = run(&pool, company, a, 3, "V", None, 0).await;
     assert_eq!(without.sum.employer_contribution_holiday_pay_ore, 0);
     assert_eq!(account_balance(&pool, company, "2780").await, 0);
 
     // The business moves to sone I. Now it owes avgift on EVERYTHING
     // outstanding, not only on this month's earning.
-    let med = kjor(&pool, company, a, 4, "I", None, 0).await;
+    let med = run(&pool, company, a, 4, "I", None, 0).await;
     let owed = 510_000 + 510_000;
     assert_eq!(
         med.sum.employer_contribution_holiday_pay_ore,
@@ -889,7 +889,7 @@ async fn an_unallocated_holiday_pay_liability_warns_rather_than_staying_silent()
     .await
     .unwrap();
 
-    let k = kjor(&pool, company, a, 3, "I", None, 0).await;
+    let k = run(&pool, company, a, 3, "I", None, 0).await;
 
     // The accrual covers only what the payroll run itself earned.
     assert_eq!(k.sum.employer_contribution_holiday_pay_ore, 71_910);

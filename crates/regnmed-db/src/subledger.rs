@@ -549,7 +549,7 @@ pub async fn kursregulering(
         loss_account
     };
     let mut tx = pool.begin().await?;
-    let regulering = VoucherDraft {
+    let revaluation = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: as_of_date,
         description: format!("Urealisert kursregulering per {as_of_date}"),
@@ -563,9 +563,9 @@ pub async fn kursregulering(
             entry(income_account, -diff_total, "Urealisert kursdifferanse"),
         ],
     };
-    regulering.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
+    revaluation.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let posted =
-        crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
+        crate::ledger::post_voucher_in(&mut tx, company_id, &revaluation, created_by).await?;
     let next_day = as_of_date
         .succ_opt()
         .context("per_dato has no following day")?;

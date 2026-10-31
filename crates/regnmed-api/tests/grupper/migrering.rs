@@ -242,7 +242,7 @@ async fn contacts_and_open_items_from_an_old_system() {
     assert!(error.contains("ERSTATTER"), "{error}");
 
     // ---- Supplier items land on the credit side ----
-    let leverandorer = "Leverandørnr;Navn;Bilagsnr;Dato;Saldo\n\
+    let suppliers = "Leverandørnr;Navn;Bilagsnr;Dato;Saldo\n\
                         20001;Grossisten AS;I-77;2026-02-01;4 500,00\n";
     let (status, body) = post_csv(
         &state,
@@ -256,7 +256,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         &state,
         &format!("{base}/import/open-items?kind=leverandor&dato=2026-02-01"),
         &token,
-        leverandorer,
+        suppliers,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");

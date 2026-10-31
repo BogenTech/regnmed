@@ -16,7 +16,7 @@ use serde_json::Value;
 /// as.
 pub enum Body {
     Json(Value),
-    Raa {
+    Raw {
         bytes: Vec<u8>,
         content_type: String,
     },
@@ -222,7 +222,7 @@ impl Client {
         req = match body {
             None => req,
             Some(Body::Json(v)) => req.json(&v),
-            Some(Body::Raa {
+            Some(Body::Raw {
                 bytes,
                 content_type,
             }) => req

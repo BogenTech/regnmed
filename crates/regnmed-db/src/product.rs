@@ -410,7 +410,7 @@ pub async fn list_movements(
 #[derive(Debug, Clone)]
 pub struct TellingLinje {
     pub number: String,
-    pub talt_milli: i64,
+    pub counted_milli: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -422,15 +422,15 @@ pub struct TellingKonti {
 }
 
 #[derive(Debug)]
-pub struct TellingJustering {
+pub struct StocktakeAdjustment {
     pub number: String,
     pub bokfort_milli: i64,
-    pub talt_milli: i64,
+    pub counted_milli: i64,
 }
 
 #[derive(Debug)]
 pub struct TellingResult {
-    pub justeringer: Vec<TellingJustering>,
+    pub justeringer: Vec<StocktakeAdjustment>,
     /// Inventory value after the count (gjennomsnittsmetoden).
     pub value_ore: i64,
     /// Booked balance on the lager account before adjustment (only
@@ -473,7 +473,7 @@ pub async fn varetelling(
         );
         let product_id: Uuid = product.get("id");
         let status = product_status(&mut *tx, product_id).await?;
-        let diff = linje.talt_milli - status.quantity_milli;
+        let diff = linje.counted_milli - status.quantity_milli;
         if diff != 0 {
             sqlx::query(
                 "insert into inventory_movement
@@ -490,10 +490,10 @@ pub async fn varetelling(
             .execute(&mut *tx)
             .await?;
         }
-        justeringer.push(TellingJustering {
+        justeringer.push(StocktakeAdjustment {
             number: linje.number.clone(),
             bokfort_milli: status.quantity_milli,
-            talt_milli: linje.talt_milli,
+            counted_milli: linje.counted_milli,
         });
     }
 

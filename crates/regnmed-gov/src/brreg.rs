@@ -10,7 +10,8 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct BrregEntity {
-    pub organisasjonsnummer: String,
+    #[serde(rename = "organisasjonsnummer")]
+    pub organization_number: String,
     #[serde(rename = "navn")]
     pub name: String,
     #[serde(default)]
@@ -39,8 +40,8 @@ pub struct BrregEntity {
     /// than an empty field the user has to discover.
     #[serde(default)]
     pub epostadresse: Option<String>,
-    #[serde(default)]
-    pub kapital: Option<Capital>,
+    #[serde(default, rename = "kapital")]
+    pub capital: Option<Capital>,
     #[serde(default)]
     pub konkurs: bool,
     /// Voluntary liquidation, and the compulsory kind. Neither is
@@ -348,7 +349,7 @@ mod tests {
                 "kapital": {"belop": 30000.0, "antallAksjer": 1000,
                             "type": "Aksjekapital", "valuta": "NOK"}}"#,
         );
-        let k = e.kapital.unwrap();
+        let k = e.capital.unwrap();
         assert_eq!(k.amount_ore(), Some(3_000_000));
         assert_eq!(k.share_count, Some(1000));
     }
@@ -361,7 +362,7 @@ mod tests {
             r#"{"organisasjonsnummer": "1", "navn": "Æ AS",
                 "kapital": {"belop": 25000.0, "valuta": "EUR"}}"#,
         );
-        assert_eq!(e.kapital.unwrap().amount_ore(), None);
+        assert_eq!(e.capital.unwrap().amount_ore(), None);
     }
 
     /// An entity without a registered address must not become the string

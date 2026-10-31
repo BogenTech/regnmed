@@ -175,7 +175,7 @@ pub async fn dispose(
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
         "bokfort_ore": disposal.posted_ore,
-        "gevinst_ore": disposal.gevinst_ore,
+        "gevinst_ore": disposal.gain_ore,
         "voucher": disposal.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))
 }

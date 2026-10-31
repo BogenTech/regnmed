@@ -111,7 +111,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
 
     let (selger_gate, seller_postal_code, seller_postal_city) =
         split_address(head.get("selger_adresse"));
-    let (kjoper_gate, buyer_postal_code, buyer_postal_city) =
+    let (buyer_street, buyer_postal_code, buyer_postal_city) =
         split_address(head.get("kjoper_adresse"));
     let credits_number: Option<i64> = head.get("krediterer_nr");
     let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
@@ -136,7 +136,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
         // is then omitted rather than filled with a guess.
         delivery_date: head.get("delivery_date"),
         delivery_place: head.get("delivery_place"),
-        selger: EhfPart {
+        seller: EhfPart {
             name: head.get("selger_navn"),
             orgnumber: head.get("selger_orgnr"),
             address: selger_gate,
@@ -149,14 +149,14 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             vat_registered: reg.vat_registered,
             email: head.get("selger_epost"),
         },
-        kjoper: EhfPart {
+        buyer: EhfPart {
             name: head.get("kjoper_navn"),
             // Without an orgnr we cannot address the receiver in Peppol;
             // the endpoint says so rather than shipping a blank id.
             orgnumber: head
                 .get::<Option<String>, _>("kjoper_orgnr")
                 .context("kjøperen mangler organisasjonsnummer — EHF krever mottakerens orgnr")?,
-            address: kjoper_gate,
+            address: buyer_street,
             postal_code: buyer_postal_code,
             postal_city: buyer_postal_city,
             land: "NO".into(),

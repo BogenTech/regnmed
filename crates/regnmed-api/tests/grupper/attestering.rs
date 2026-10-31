@@ -114,7 +114,7 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
     regnmed_db::set_account_subledger(&state.pool, company, "2400", Some("leverandor"))
         .await
         .unwrap();
-    let (leverandor_id, _) = regnmed_db::create_party(
+    let (supplier_id, _) = regnmed_db::create_party(
         &state.pool,
         company,
         "leverandor",
@@ -127,7 +127,7 @@ async fn attestering_requires_four_eyes_for_posting_and_payment() {
     regnmed_db::update_party_contact(
         &state.pool,
         company,
-        leverandor_id,
+        supplier_id,
         None,
         None,
         Some("86011117947"),

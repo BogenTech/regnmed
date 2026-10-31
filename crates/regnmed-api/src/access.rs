@@ -876,12 +876,12 @@ pub struct Access {
     /// machine never holds a rettighet that governs WHO HAS ACCESS.
     /// One seam, so it covers roles added later and rows written before
     /// the rule existed.
-    maskin: bool,
+    machine: bool,
 }
 
 impl Access {
     pub fn has(&self, right: Right) -> bool {
-        if self.maskin && !right.can_be_delegated() {
+        if self.machine && !right.can_be_delegated() {
             return false;
         }
         // The implication (`_ALLE` medfører `_EGNE`) is a property of the
@@ -898,7 +898,7 @@ impl Access {
     /// Whether this is a machine caller — the attestering policy and the
     /// portal both want to know.
     pub fn is_machine(&self) -> bool {
-        self.maskin
+        self.machine
     }
 
     pub fn is_admin(&self) -> bool {
@@ -927,7 +927,7 @@ impl Access {
             )
             // Same filter as `har`, or `/me` would promise a machine
             // controls that are going to fail.
-            .filter(|r| !self.maskin || r.can_be_delegated())
+            .filter(|r| !self.machine || r.can_be_delegated())
             .map(|r| r.slug())
             .collect();
         ut.sort_unstable();
@@ -956,7 +956,7 @@ pub async fn lookup(
     if tilganger.is_empty() {
         return Ok(None);
     }
-    let maskin = tilganger.iter().any(|a| a.via == "integrasjon");
+    let machine = tilganger.iter().any(|a| a.via == "integrasjon");
     let mut name: Vec<String> = tilganger.into_iter().map(|a| a.access).collect();
     name.sort();
     name.dedup();
@@ -980,7 +980,7 @@ pub async fn lookup(
     Ok(Some(Access {
         roles,
         egendefinerte,
-        maskin,
+        machine,
     }))
 }
 
@@ -1235,7 +1235,7 @@ mod tests {
     /// deliberate: both read everything else the same way, but only one
     /// has an audit duty that requires the lønn data.
     #[test]
-    fn a_revisor_sees_lonn_but_an_internal_reader_does_not() {
+    fn an_auditor_sees_payroll_but_an_internal_reader_does_not() {
         for right in [Right::PayrollRead, Right::PayslipReadAll] {
             assert!(Role::Auditor.has(right), "revisor mangler {}", right.slug());
             assert!(

@@ -52,7 +52,7 @@ pub struct SubledgerAccount {
     pub part_kinds: Vec<String>,
 }
 
-fn posteringer(n: i64) -> String {
+fn postings(n: i64) -> String {
     if n == 1 {
         "1 postering".into()
     } else {
@@ -100,7 +100,7 @@ pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
                 "konto {} er ikke merket som reskontrokonto, men {} bærer part ({}, {}) — \
                  beløpet står i spesifikasjonen uten å stå på en reskontrokonto i hovedboken",
                 account.account,
-                posteringer(account.with_party_count),
+                postings(account.with_party_count),
                 Ore(account.subledger_ore),
                 if kinds.is_empty() { "ukjent" } else { &kinds },
             ));
@@ -119,14 +119,14 @@ pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
                 Ore(account.subledger_ore),
                 Ore(difference),
                 difference,
-                posteringer(account.without_party_count),
+                postings(account.without_party_count),
             ));
         } else if account.without_party_count > 0 {
             deviations.push(format!(
                 "konto {}: {} uten part — de summerer til null, så saldoen stemmer, \
                  men beløpene står ikke i noen partsspesifikasjon",
                 account.account,
-                posteringer(account.without_party_count),
+                postings(account.without_party_count),
             ));
         }
 
@@ -141,7 +141,7 @@ pub fn subledger_check(accounts: &[SubledgerAccount]) -> Check {
             deviations.push(format!(
                 "konto {} er merket {flagg}, men {} bærer part av typen {} ({})",
                 account.account,
-                posteringer(account.wrong_kind_count),
+                postings(account.wrong_kind_count),
                 if error.is_empty() {
                     "en annen".to_string()
                 } else {

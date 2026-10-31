@@ -205,7 +205,7 @@ async fn onboarding_from_registries_end_to_end() {
     assert_eq!(settings["email"], "post@testselskap.no");
     assert_eq!(settings["orgform"], "AS");
 
-    let (naering, kapital, shares): (Option<String>, Option<i64>, Option<i64>) = sqlx::query_as(
+    let (naering, capital, shares): (Option<String>, Option<i64>, Option<i64>) = sqlx::query_as(
         "select naeringskode, aksjekapital_ore, antall_aksjer from company where id = $1::uuid",
     )
     .bind(company_id)
@@ -214,7 +214,7 @@ async fn onboarding_from_registries_end_to_end() {
     .unwrap();
     assert_eq!(naering.as_deref(), Some("62.010"));
     // 30 000 kr as integer øre — the registry sends a JSON float.
-    assert_eq!(kapital, Some(3_000_000));
+    assert_eq!(capital, Some(3_000_000));
     assert_eq!(shares, Some(1000));
 
     // The two registers have INDEPENDENT dates, so the timeline has one

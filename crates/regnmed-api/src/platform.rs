@@ -334,11 +334,11 @@ async fn overview(
     let figures = regnmed_db::platform_overview(&state.pool).await?;
     let abo = regnmed_db::platform_list_subscriptions(&state.pool).await?;
     let today = chrono::Utc::now().date_naive();
-    let mut fordeling = std::collections::BTreeMap::new();
+    let mut distribution = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
             regnmed_core::subscription::status(a.created, a.covered_today, a.last_end, today);
-        *fordeling.entry(status.slug()).or_insert(0i64) += 1;
+        *distribution.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
         "selskaper": figures.selskaper,
@@ -346,7 +346,7 @@ async fn overview(
         "brukere": figures.brukere,
         "integrasjoner": figures.integrasjoner,
         "plattformbrukere": figures.plattformbrukere,
-        "abonnement": fordeling,
+        "abonnement": distribution,
     })))
 }
 
@@ -441,8 +441,8 @@ async fn company_detail(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
-    let members = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
-    let invitations = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
+    let members = regnmed_db::members::list_members(&state.pool, company_id).await?;
+    let invitations = regnmed_db::members::list_invitations(&state.pool, company_id).await?;
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
     use regnmed_core::subscription::Status;

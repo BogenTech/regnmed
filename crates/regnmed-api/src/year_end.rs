@@ -40,7 +40,7 @@ pub async fn list(
             "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
             "resultat_for_skatt_ore": a.result_before_tax_ore,
             "skattekostnad_ore": a.tax_expense_ore,
-            "disponert_ore": a.disponert_ore,
+            "disponert_ore": a.allocated_ore,
             "created_by": a.created_by,
         })).collect::<Vec<_>>(),
     })))
@@ -86,6 +86,6 @@ pub async fn close(
         "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
         "resultat_for_skatt_ore": a.result_before_tax_ore,
         "skattekostnad_ore": a.tax_expense_ore,
-        "disponert_ore": a.disponert_ore,
+        "disponert_ore": a.allocated_ore,
     })))
 }

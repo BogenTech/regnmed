@@ -85,22 +85,22 @@ pub fn build(
         // Ledger → melding: negate (payable-positive) and round to kroner.
         let vat_kr = kroner(-line.tax_ore);
         let basis_kr = kroner(-line.basis_ore);
-        let retning = direction(&line.code);
+        let code_direction = direction(&line.code);
         // Cost markers are not tax calculations, and using them is not
         // even mandatory — the import's tax is reported under 81/14.
         // Skipped like code 0 rather than emitted with a zeroed amount:
         // a line carrying a 25 % sats invites the recipient to compute
         // the very tax we already reported elsewhere.
-        if retning == Direction::Kostnadsmarkor {
+        if code_direction == Direction::CostMarker {
             continue;
         }
-        let (basis, rate) = match retning {
+        let (basis, rate) = match code_direction {
             // Fradrag lines carry only the deducted amount.
             Direction::Input => (None, None),
             // Everything else reports grunnlag + sats.
             Direction::Output
             | Direction::None
-            | Direction::Kostnadsmarkor
+            | Direction::CostMarker
             | Direction::ReverseChargeDeductible
             | Direction::ReverseChargeNonDeductible => (Some(basis_kr), Some(line.rate_bp)),
         };
@@ -116,7 +116,7 @@ pub fn build(
             // booked tax (the XSD calls it «Bokført beløp for
             // merverdiavgift»), while the fastsatte total is the net
             // effect on what is payable.
-            deduction_kr: match retning {
+            deduction_kr: match code_direction {
                 Direction::ReverseChargeDeductible => -vat_kr,
                 _ => 0,
             },
@@ -184,7 +184,7 @@ pub fn render(message: &VatReturn) -> String {
         // Both yearly ordninger are skattleggingsperiodeAar in the
         // schema; primærnæring is a registration matter, not a
         // structural one (docs/mva.md).
-        PeriodScheme::Arlig | PeriodScheme::Primaernaering => {
+        PeriodScheme::Yearly | PeriodScheme::PrimaryIndustry => {
             x.leaf("skattleggingsperiodeAar", "aarlig")
         }
     }
@@ -264,13 +264,17 @@ mod tests {
         let m = message();
         assert_eq!(m.lines.len(), 2, "code 0 is not reported");
 
-        let utg = m.lines.iter().find(|l| l.code == "3").unwrap();
+        let output_line = m.lines.iter().find(|l| l.code == "3").unwrap();
         assert_eq!(
-            utg.vat_kr, 2500,
+            output_line.vat_kr, 2500,
             "utgående: ledger credit → payable positive, kroner"
         );
-        assert_eq!(utg.basis_kr, Some(10_000), "10000,49 rounds to 10000");
-        assert_eq!(utg.rate_bp, Some(2500));
+        assert_eq!(
+            output_line.basis_kr,
+            Some(10_000),
+            "10000,49 rounds to 10000"
+        );
+        assert_eq!(output_line.rate_bp, Some(2500));
 
         let inn = m.lines.iter().find(|l| l.code == "1").unwrap();
         assert_eq!(inn.vat_kr, -2000, "fradrag is negative in the melding");
@@ -409,7 +413,7 @@ mod tests {
     #[test]
     fn yearly_period_renders_skattleggingsperiode_aar() {
         let mut message = message();
-        message.scheme = PeriodScheme::Arlig;
+        message.scheme = PeriodScheme::Yearly;
         message.period = Period {
             year: 2026,
             number: 1,

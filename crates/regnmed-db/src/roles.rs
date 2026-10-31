@@ -124,7 +124,7 @@ async fn log(
 
 /// Creates a role. `godkjente` are the rettigheter the caller has
 /// checked may be delegated — this module does not know the vocabulary.
-pub async fn opprett(
+pub async fn create(
     pool: &PgPool,
     company_id: Uuid,
     name: &str,
