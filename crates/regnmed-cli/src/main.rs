@@ -36,16 +36,18 @@ enum Command {
     Depreciate,
     /// Post every due month of every periodisering across all companies
     /// (docs/periodisering.md, #87). Run monthly (cron/CronJob).
+    #[command(name = "periodiser")]
     Accrue,
     /// Start or end a company's abonnement (ops, docs/abonnement.md,
     /// #65). There is no API route for this — the abonnement is driven by
     /// ops, like migrate and anchor.
+    #[command(name = "abonnement")]
     Subscription {
         /// Company id (or use --orgnr)
         #[arg(long)]
         company: Option<Uuid>,
         /// Organization number of the company
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
         /// "tegn" starts coverage from today; "avslutt" sets the end
         /// date (exclusive) on the open coverage
@@ -55,40 +57,42 @@ enum Command {
         #[arg(long, default_value = "standard")]
         plan: String,
         /// End date for "avslutt" (YYYY-MM-DD, EXCLUSIVE); defaults to today
-        #[arg(long)]
+        #[arg(long = "til")]
         to: Option<chrono::NaiveDate>,
         /// Agreement/decision reference explaining the row (required for tegn)
-        #[arg(long)]
+        #[arg(long = "note")]
         note: Option<String>,
     },
     /// Show the price list, or add a new dated price row
     /// (docs/abonnement.md §4). The price is data: a change is a new row
     /// with its kilde, never a rewrite — existing rows stand as history,
     /// and the faktura uses the price in force on the invoicing day.
+    #[command(name = "abonnement-pris")]
     SubscriptionPrice {
         /// Plan (omit everything to just show the price list)
         #[arg(long)]
         plan: Option<String>,
         /// New price in ØRE per month excl. mva (9900 = 99 kr)
-        #[arg(long)]
+        #[arg(long = "pris-ore")]
         pris_ore: Option<i64>,
         /// Date the new price applies from (YYYY-MM-DD); defaults to today
-        #[arg(long)]
+        #[arg(long = "fra")]
         from: Option<chrono::NaiveDate>,
         /// Decision reference (required when a price is set)
-        #[arg(long)]
+        #[arg(long = "kilde")]
         source: Option<String>,
     },
     /// Invoice the current month for every company with coverage, into
     /// the OPS COMPANY's hovedbok (docs/abonnement.md, #65). Idempotent;
     /// run monthly (cron/CronJob). The ops company is named by --orgnr or
     /// REGNMED_DRIFT_ORGNR.
+    #[command(name = "abonnement-faktura")]
     SubscriptionInvoice {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
         /// Invoice only this customer company (orgnr) — back-billing
-        #[arg(long)]
+        #[arg(long = "bare-orgnr")]
         bare_orgnumber: Option<String>,
     },
     /// Automatic abonnement follow-up (#75, docs/abonnement.md §5.3):
@@ -97,9 +101,10 @@ enum Command {
     /// it when the payment lands. Idempotent; run daily (CronJob).
     /// Sending needs NATS_URL — without it the bookkeeping steps still
     /// run and the unsent mail is reported as failure.
+    #[command(name = "abonnement-oppfolging")]
     SubscriptionFollowUp {
         /// Organization number of the ops company (or REGNMED_DRIFT_ORGNR)
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
     },
     /// Grant a platform role (docs/auth.md §8). This is the BOOTSTRAP
@@ -113,10 +118,10 @@ enum Command {
         #[arg(long)]
         role: String,
         /// Expiry date (YYYY-MM-DD, EXCLUSIVE) — platform roles always end
-        #[arg(long)]
+        #[arg(long = "til")]
         to: chrono::NaiveDate,
         /// Why this person holds the role (appointment/case reference)
-        #[arg(long)]
+        #[arg(long = "notat")]
         note: String,
     },
     /// List platform role memberships, active and ended
@@ -144,7 +149,7 @@ enum Command {
         #[arg(long, conflicts_with = "orgnr")]
         company: Option<Uuid>,
         /// Organization number of the company to export
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
         /// Fiscal year to export (whole calendar year)
         #[arg(long, conflicts_with_all = ["from", "to"])]
@@ -171,7 +176,7 @@ enum Command {
         #[arg(long, conflicts_with = "orgnr")]
         company: Option<Uuid>,
         /// Organization number of the company
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
         /// Year to report
         #[arg(long)]
@@ -188,7 +193,7 @@ enum Command {
         #[arg(long, conflicts_with = "orgnr")]
         company: Option<Uuid>,
         /// Organization number of the company
-        #[arg(long)]
+        #[arg(long = "orgnr")]
         orgnumber: Option<String>,
         /// Year of the VAT period
         #[arg(long)]
@@ -1294,4 +1299,98 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
 
     println!("demo company id: {company}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    /// THE OPS INTERFACE IS A CONTRACT, and nothing was checking it.
+    ///
+    /// A clap variant IS a command name and a field IS a flag, so the
+    /// English-identifier conversion moved both without touching a
+    /// string literal: `AbonnementFaktura` -> `SubscriptionInvoice`
+    /// renamed `regnmed abonnement-faktura`, and `orgnr` -> `orgnumber`
+    /// renamed `--orgnr`. Three CronJobs in deploy/shared called
+    /// commands the binary no longer had, and every example in
+    /// docs/abonnement.md, docs/deploy.md and docs/saft/README.md was
+    /// wrong. It was found by running `--help` in the test cluster, not
+    /// by any check in CI.
+    ///
+    /// The per-batch grep for `#[command(name` / `#[arg(long =` could
+    /// not catch it: it only sees changes to pins that already exist,
+    /// never a rename that silently creates a NEW unpinned name. So the
+    /// surface is pinned HERE, as data. A rename that moves it fails
+    /// this test and the message names the command.
+    ///
+    /// Adding a command or flag means adding it below ON PURPOSE —
+    /// which is the point, because that edit is where someone asks
+    /// whether deploy/ and docs/ need to change too.
+    const SURFACE: &[(&str, &[&str])] = &[
+        ("migrate", &[]),
+        ("verify-ledger", &["company"]),
+        ("demo", &[]),
+        ("anchor", &[]),
+        ("generate-invoices", &[]),
+        ("depreciate", &[]),
+        ("periodiser", &[]),
+        (
+            "abonnement",
+            &["aksjon", "company", "orgnr", "plan", "til", "note"],
+        ),
+        ("abonnement-pris", &["fra", "kilde", "plan", "pris-ore"]),
+        ("abonnement-faktura", &["bare-orgnr", "orgnr"]),
+        ("abonnement-oppfolging", &["orgnr"]),
+        ("platform-grant", &["email", "notat", "role", "til"]),
+        ("platform-list", &[]),
+        ("platform-end", &["id"]),
+        ("fetch-rates", &["currencies", "days"]),
+        (
+            "saft-export",
+            &["company", "contact", "from", "orgnr", "out", "to", "year"],
+        ),
+        ("mva-report", &["company", "orgnr", "termin", "year"]),
+        (
+            "mva-melding",
+            &["company", "orgnr", "out", "termin", "validate", "year"],
+        ),
+    ];
+
+    #[test]
+    fn the_ops_interface_has_not_moved() {
+        let cmd = Cli::command();
+        let mut actual: Vec<(String, Vec<String>)> = cmd
+            .get_subcommands()
+            .filter(|s| s.get_name() != "help")
+            .map(|s| {
+                let mut flags: Vec<String> = s
+                    .get_arguments()
+                    .filter_map(|a| a.get_long())
+                    .filter(|l| *l != "help")
+                    .map(str::to_string)
+                    .collect();
+                flags.sort();
+                (s.get_name().to_string(), flags)
+            })
+            .collect();
+        actual.sort();
+
+        let mut want: Vec<(String, Vec<String>)> = SURFACE
+            .iter()
+            .map(|(n, fs)| {
+                let mut fs: Vec<String> = fs.iter().map(|f| f.to_string()).collect();
+                fs.sort();
+                (n.to_string(), fs)
+            })
+            .collect();
+        want.sort();
+
+        assert_eq!(
+            actual, want,
+            "the CLI surface moved. deploy/shared/*.yaml and docs/ type these \
+             names verbatim: pin the Rust rename with #[command(name = \"...\")] \
+             or #[arg(long = \"...\")], or change deploy/ and docs/ in the same commit."
+        );
+    }
 }

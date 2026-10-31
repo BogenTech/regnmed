@@ -246,6 +246,57 @@ JSON is -- `#[command(name = "mva-report")]`, `#[arg(long = "termin")]`
 user-facing decision. Verify with `regnmed mva-melding --help`, not by
 reading the enum.
 
+**AND IT HAPPENED AGAIN, FIVE BATCHES LATER, AND SHIPPED TO TEST.**
+The rule above was written and then not applied to the commands added
+after it. `AbonnementFaktura`/`AbonnementOppfolging`/`Periodiser`
+became `SubscriptionInvoice`/`SubscriptionFollowUp`/`Accrue`, and
+`orgnr`->`orgnumber`, `til`->`to`, `notat`->`note`, `kilde`->`source`,
+`fra`->`from` moved `--orgnr`, `--til`, `--notat`, `--kilde` and
+`--fra` with them. Consequences, all live in the test cluster:
+
+- **THREE DEPLOYED CRONJOBS CALLED COMMANDS THE BINARY NO LONGER
+  HAD** -- `deploy/shared` runs `/app/regnmed abonnement-faktura`,
+  `abonnement-oppfolging` and `periodiser`, so subscription
+  invoicing, the dunning ladder and accrual posting would all have
+  failed on their next run. prod was saved only by pinning an older
+  release (v0.6.12 still has the Norwegian variants); the next
+  release from main would have broken it.
+- Every example in docs/abonnement.md, docs/deploy.md and
+  docs/saft/README.md was wrong.
+- The code CONTRADICTED ITSELF: doc comments still said
+  "(or use --orgnr)" and "--til is required", and
+  `abonnement-pris`'s own error text still demanded `--kilde` and
+  `--pris-ore`, while the flags had become `--source` and
+  `--pris-ore`/`--from`. A lying `--help` is worse than a renamed one.
+
+Fixed by PINNING, not by rewriting the manifests: the rule above
+already decided that translating the ops interface is a separate
+user-facing decision, and a pin is one file instead of edits across
+`deploy/shared`, the prod patches and four documents -- and it cannot
+break prod.
+
+**THE REAL LESSON IS ABOUT THE GUARD, NOT THE RENAME.** The
+per-batch check was `git diff crates/regnmed-cli/src/main.rs | grep
+'command(name\|arg(long'`, and it CANNOT catch this: it only sees
+changes to pins that already exist, never a rename that silently
+creates a new UNPINNED name. It reported "no clap changes" on every
+batch that did this. So the surface is now pinned as DATA in
+`the_ops_interface_has_not_moved` (crates/regnmed-cli, `SURFACE`):
+every command with its full flag list, compared against
+`Cli::command()`. A rename that moves either fails the test and the
+message says to pin it or to change `deploy/` and `docs/` in the same
+commit. Its FIRST RUN found a flag the hand-written list had missed
+(`verify-ledger --company`), and it was SEEN TO FAIL on a removed
+pin -- the report showed `subscription-follow-up` standing where
+`abonnement-oppfolging` belongs.
+
+**And none of it was found by CI.** It was found by running
+`regnmed --help` inside the test cluster, which is what
+"Verify with `--help`, not by reading the enum" meant and nobody had
+automated. Eleven rename PRs went green through `cargo nextest`,
+`cargo fmt`, the string guard, the wire guard and the shadow guard
+with the ops interface broken the whole time.
+
 `revisjon`->`audit` moved next (modules in core and db, plus
 `Kontroll`->`Check`, `kontroller`->`checks`, `ankere`->`anchors`,
 `kjede_*`->`chain_*`, `hovedbok_ore`->`general_ledger_ore`). NOTHING
