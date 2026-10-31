@@ -84,6 +84,18 @@ seed() {
         --post-logout-redirect-uri http://regnmed.localhost/ \
         --post-logout-redirect-uri http://api.regnmed.localhost/ \
         --audience regnmed >/dev/null 2>&1 || true
+    # The device grant ("Logg inn med telefonen", RFC 8628) is an
+    # allowlist entry per client, so it is asked for separately — and
+    # separately from creation, so an existing client gets it too.
+    # NOT silenced like the two above: a duplicate is the expected way
+    # those fail, while this one replaces the list and has no reason to,
+    # so a failure here means the button is dead and should say so.
+    kubectl -n regnmed exec deploy/regnid -- /app/regnid set-grants \
+        --client-id regnmed-portal \
+        --grant-type authorization_code \
+        --grant-type refresh_token \
+        --grant-type urn:ietf:params:oauth:grant-type:device_code \
+        >/dev/null
 }
 
 case "${1:-}" in

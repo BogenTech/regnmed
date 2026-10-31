@@ -70,6 +70,30 @@ export function refresh() {
   return refreshing;
 }
 
+// Innlogging fra en annen enhet (RFC 8628): skjermen her viser en kode,
+// og en telefon som alt er innlogget godkjenner den. Enhetskoden er en
+// legitimasjon og ligger derfor i en HttpOnly-cookie proxyen setter —
+// siden viser brukerkoden og holder ingenting.
+//
+// Økten som kommer ut av dette har INGEN refresh-cookie, med vilje: denne
+// skjermen er kanskje ikke brukerens egen, så den varer én time.
+export async function startDevice() {
+  const response = await fetch("/auth/device", { method: "POST" });
+  if (!response.ok) throw new Error("Kunne ikke starte innlogging fra en annen enhet.");
+  return await response.json();
+}
+
+// true = godkjent og innlogget, false = ingen har svart ennå,
+// null = avvist, utløpt eller brukt. Statuskoden bærer forskjellen, så
+// siden aldri tolker utstederens ordlyd.
+export async function pollDevice() {
+  const response = await fetch("/auth/device/poll", { method: "POST" });
+  if (response.status === 202) return false;
+  if (!response.ok) return null;
+  saveTokens(await response.json());
+  return true;
+}
+
 function b64url(bytes) {
   return btoa(String.fromCharCode.apply(null, new Uint8Array(bytes)))
     .replace(/\+/g, "-")

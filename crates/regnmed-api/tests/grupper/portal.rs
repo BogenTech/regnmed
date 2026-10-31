@@ -290,3 +290,136 @@ async fn the_refresh_token_leaves_only_as_an_httponly_cookie() {
     assert!(cookie.contains("Max-Age=0"), "{cookie}");
     assert!(cookie.contains("HttpOnly"), "{cookie}");
 }
+
+/// A stand-in for regnid's device-flow endpoints. The token endpoint says
+/// "not yet" once and then approves, which is the sequence the page has to
+/// survive without a human watching it.
+async fn start_mock_device_endpoints() -> String {
+    use std::sync::{Arc, Mutex};
+
+    let polls: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    let app = axum::Router::new()
+        .route(
+            "/device_authorization",
+            axum::routing::post(|| async {
+                axum::Json(serde_json::json!({
+                    "device_code": "dc-secret",
+                    "user_code": "WDJB-MJHT",
+                    "verification_uri": "http://idp.test/device",
+                    "verification_uri_complete": "http://idp.test/device?user_code=WDJB-MJHT",
+                    "expires_in": 300,
+                    "interval": 5,
+                }))
+            }),
+        )
+        .route(
+            "/token",
+            axum::routing::post(move |form: String| {
+                let polls = polls.clone();
+                async move {
+                    assert!(
+                        form.contains("device_code=dc-secret"),
+                        "the proxy must spend the cookie, not something else: {form}"
+                    );
+                    let mut polls = polls.lock().unwrap();
+                    *polls += 1;
+                    if *polls == 1 {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            axum::Json(serde_json::json!({"error": "authorization_pending"})),
+                        );
+                    }
+                    (
+                        StatusCode::OK,
+                        axum::Json(serde_json::json!({
+                            "access_token": "device-at",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                            // The issuer MUST NOT send one for this grant; if
+                            // it ever did, the assertion below catches it.
+                        })),
+                    )
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+/// Signing in on a screen that cannot take a password: the code and the QR
+/// go to the page, the device code does not, and the session that comes
+/// out carries NO refresh cookie — which is the whole reason this grant is
+/// safe to use on a car display or a borrowed PC.
+#[tokio::test]
+async fn signing_in_from_another_device_leaves_no_credential_in_the_page() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let mock = start_mock_device_endpoints().await;
+    unsafe {
+        std::env::set_var("OIDC_ISSUER", &mock);
+    }
+
+    // Nothing in flight: there is no code to spend, and 401 is what stops
+    // the page from polling forever.
+    let (status, _, _) = post_auth(&state, "/auth/device/poll", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, cookie, body) = post_auth(&state, "/auth/device", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("WDJB-MJHT"),
+        "the page needs the code: {body}"
+    );
+    assert!(
+        !body.contains("dc-secret"),
+        "the device code reached the page: {body}"
+    );
+    for attribute in ["regnmed_device=dc-secret", "HttpOnly", "SameSite=Strict"] {
+        assert!(cookie.contains(attribute), "{attribute} missing: {cookie}");
+    }
+    // A QR of the approval URL, so nobody has to type anything.
+    assert!(body.contains("<svg"), "no QR in {body}");
+    assert!(
+        body.contains("viewBox=\\\"0 0 37 37\\\""),
+        "the 43-byte URL should land on version 3 (29 + 8 quiet): {body}"
+    );
+
+    // Nobody has answered yet. 202, not an error — the page keeps waiting.
+    let (status, _, _) = post_auth(
+        &state,
+        "/auth/device/poll",
+        Some("regnmed_device=dc-secret"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    // Approved.
+    let (status, cookie, body) = post_auth(
+        &state,
+        "/auth/device/poll",
+        Some("regnmed_device=dc-secret"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("device-at"), "{body}");
+    // THE property: no 30-day credential is left on a screen the user may
+    // not own. The session simply ends when the hour does.
+    assert!(
+        !cookie.contains(REFRESH_COOKIE_NAME),
+        "a refresh cookie on a borrowed device is exactly what this grant avoids: {cookie}"
+    );
+    // The device code is spent, so its cookie goes with it.
+    assert!(cookie.contains("regnmed_device=;"), "{cookie}");
+    assert!(cookie.contains("Max-Age=0"), "{cookie}");
+}
+
+/// Named here rather than imported: the api crate keeps it private, and a
+/// test that spelled it differently from the server would pass while the
+/// server leaked.
+const REFRESH_COOKIE_NAME: &str = "regnmed_refresh";

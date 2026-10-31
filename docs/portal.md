@@ -116,6 +116,58 @@ utstederen, så et token noen alt har stjålet dør først når det utløper.
 Vi slipper cookien, som er alt vi rår over; en `revoke`-rute hører i
 regnid.
 
+### Innlogging fra en annen enhet: QR-kode (RFC 8628)
+
+En bilskjerm, en TV, en lånt PC: et langt passord fra en
+passordbehandler finnes ikke der. Derfor tilbyr innloggingssiden
+«Logg inn med telefonen», som kjører **device authorization grant**
+(RFC 8628) mot regnid:
+
+1. Portalen ber `POST /auth/device`. Proxyen kaller regnids
+   `/device_authorization` og får en **enhetskode** (legitimasjonen) og
+   en **brukerkode** (de ni tegnene et menneske leser).
+2. Svaret til siden bærer brukerkoden, adressen og et **QR-bilde** av
+   godkjenningssiden med koden ferdig utfylt. Enhetskoden gjør det
+   ikke: den legges i en HttpOnly-cookie (`regnmed_device`, fem
+   minutter, `Path=/auth`) av samme grunn som refresh-tokenet — siden
+   skal ikke holde en legitimasjon.
+3. Telefonen skanner, lander på regnids `/device`, ser hvilken tjeneste
+   som spør og hvilken kode, og godkjenner eller avviser.
+4. Skjermen spør `POST /auth/device/poll` hvert femte sekund. **202
+   betyr «ingen har svart ennå»** — statuskoden bærer forskjellen, så
+   siden aldri tolker utstederens ordlyd. 200 bærer tilgangstokenet,
+   400 avslutter.
+
+**INGEN refresh-cookie settes her, og det er hele poenget.** Skjermen er
+kanskje ikke brukerens egen, så økten varer én time og skjermen må spørre
+på nytt. Resten av portalen får 30 dager gjennom `/auth/refresh`; denne
+veien får bevisst ikke det. En «husk denne enheten» ville vært en egen,
+uttrykkelig avgjørelse — ikke en bieffekt.
+
+**Risikoen her er overtalelse, ikke avlytting.** Device-code-phishing
+virker ved at noen sender deg en kode og en plausibel grunn til å
+godkjenne den; ditt eget trykk gjør resten. Mottrekkene ligger i regnid
+og er dokumentert i regnids README: koden varer fem minutter, gjetting
+strupes per adresse, og godkjenningssiden sier rett ut at man bare skal
+godkjenne en kode som står på en skjerm foran en.
+
+**Siden viser med vilje IKKE enhetens IP-adresse eller nettleser.** Den
+IP-en regnid ser er vår egen proxys, ikke bilskjermens, og gjennom
+Traefik kan den ikke bæres videre ærlig; en videresendt IP ville dessuten
+kunne forfalskes av hvem som helst som når `/device_authorization`, siden
+portalklienten er offentlig. En oppdiktet detalj presentert som faktum er
+verre enn ingen detalj — sammenligningen av koden er vernet som holder.
+
+QR-koden rendres av `regnmed-core::qr` — håndrullet som alt annet format
+i den kisten, byte-modus, feilrettingsnivå L, versjon 1–5 (de versjonene
+som har ÉN rettingsblokk, så interleaving-halvdelen av standarden
+forsvinner). En nyttelast som ikke passer sier fra høyt i stedet for å
+lage noe et kamera ikke kan lese. **Verifisert mot en uavhengig koder
+(segno) modul for modul** på hver versjon, og i tillegg dekodet og
+EC-regnet på nytt fra bunnen av; `the_modules_are_pinned` fester
+resultatet. Ingen QR-pakke i portalen: `ui/portal/dist` har ikke plass
+(547 KB av 552), og en koder i Rust koster ingenting der.
+
 The public client `regnmed-portal` must have the portal's origin
 registered: `{origin}/callback` as redirect URI and `{origin}/` as
 post-logout URI. The portal derives both from `location.origin`, so the

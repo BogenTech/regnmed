@@ -57,6 +57,16 @@ echo "==> regnid: client regnmed-portal for port $PORT"
     --audience regnmed) >/dev/null 2>&1 ||
     echo "    (already registered — delete it in /admin/clients to change ports)"
 
+# The device grant (RFC 8628) is what "Logg inn med telefonen" uses, and
+# grants are an allowlist per client — so it has to be asked for, whether
+# the client was just created or was already there.
+echo "==> regnid: device grant on regnmed-portal"
+(cd "$REGNID_DIR" && cargo run --quiet -- set-grants \
+    --client-id regnmed-portal \
+    --grant-type authorization_code \
+    --grant-type refresh_token \
+    --grant-type urn:ietf:params:oauth:grant-type:device_code) >/dev/null
+
 cat <<EOF
 
 Put this in .env (gitignored):

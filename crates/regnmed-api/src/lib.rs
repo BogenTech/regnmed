@@ -125,6 +125,11 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/auth/refresh", axum::routing::post(portal::token_refresh))
         .route("/auth/logout", axum::routing::post(portal::auth_logout))
+        .route("/auth/device", axum::routing::post(portal::device_start))
+        .route(
+            "/auth/device/poll",
+            axum::routing::post(portal::device_poll),
+        )
         .route("/health", get(health))
         .route("/me", get(me))
         // Public by design: root hashes only — every independent copy of
