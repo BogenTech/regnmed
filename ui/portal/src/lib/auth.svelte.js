@@ -75,8 +75,9 @@ export function refresh() {
 // legitimasjon og ligger derfor i en HttpOnly-cookie proxyen setter —
 // siden viser brukerkoden og holder ingenting.
 //
-// Økten som kommer ut av dette har INGEN refresh-cookie, med vilje: denne
-// skjermen er kanskje ikke brukerens egen, så den varer én time.
+// Økten som kommer ut av dette får BARE refresh-cookie hvis den som
+// godkjente sa at skjermen er sin egen. Uten det varer den én time og dør
+// med fanen — en lånt PC skal ikke sitte igjen med en måneds tilgang.
 export async function startDevice() {
   const response = await fetch("/auth/device", { method: "POST" });
   if (!response.ok) throw new Error("Kunne ikke starte innlogging fra en annen enhet.");

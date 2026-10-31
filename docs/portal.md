@@ -138,11 +138,18 @@ passordbehandler finnes ikke der. Derfor tilbyr innloggingssiden
    siden aldri tolker utstederens ordlyd. 200 bærer tilgangstokenet,
    400 avslutter.
 
-**INGEN refresh-cookie settes her, og det er hele poenget.** Skjermen er
-kanskje ikke brukerens egen, så økten varer én time og skjermen må spørre
-på nytt. Resten av portalen får 30 dager gjennom `/auth/refresh`; denne
-veien får bevisst ikke det. En «husk denne enheten» ville vært en egen,
-uttrykkelig avgjørelse — ikke en bieffekt.
+**Refresh-cookie settes bare når den som godkjenner sier at skjermen er
+sin egen.** Godkjenningssiden spør: uten avhuking varer økten én time og
+skjermen må spørre på nytt — en lånt PC skal ikke sitte igjen med en
+måneds tilgang. Med avhuking svarer regnid med et refresh-token, proxyen
+løfter det ut av kroppen og inn i `regnmed_refresh` som på en vanlig
+innlogging, og en bilskjerm overlever en omlasting.
+
+Valget ligger på **telefonen**, ikke på skjermen, og det er grunnen til
+at det er trygt å tilby: bare den som holder telefonen kan se om det er
+sin egen bil eller en kiosk, og en angriper som har lurt noen til å
+godkjenne en kode ville uansett huket av selv. Standardsvaret er det
+trygge, altså det som skjer når ingen velger.
 
 **Risikoen her er overtalelse, ikke avlytting.** Device-code-phishing
 virker ved at noen sender deg en kode og en plausibel grunn til å

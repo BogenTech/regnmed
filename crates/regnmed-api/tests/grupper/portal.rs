@@ -131,12 +131,16 @@ async fn post_auth(
     };
     let response = router(state.clone()).oneshot(request).await.unwrap();
     let status = response.status();
+    // ALL of them: a response may set two (spend one cookie, open
+    // another), and reading only the first makes a `!contains` assertion
+    // pass for a cookie that is simply second in line.
     let set_cookie = response
         .headers()
-        .get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("\n");
     let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
         .await
         .unwrap();
@@ -295,6 +299,13 @@ async fn the_refresh_token_leaves_only_as_an_httponly_cookie() {
 /// "not yet" once and then approves, which is the sequence the page has to
 /// survive without a human watching it.
 async fn start_mock_device_endpoints() -> String {
+    start_mock_device_endpoints_with(false).await
+}
+
+/// `trusted` is the issuer's half of "this is my own screen": it answers
+/// the approved poll with a refresh token, exactly as regnid does when the
+/// approver ticked the box.
+async fn start_mock_device_endpoints_with(trusted: bool) -> String {
     use std::sync::{Arc, Mutex};
 
     let polls: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
@@ -329,16 +340,17 @@ async fn start_mock_device_endpoints() -> String {
                             axum::Json(serde_json::json!({"error": "authorization_pending"})),
                         );
                     }
-                    (
-                        StatusCode::OK,
-                        axum::Json(serde_json::json!({
-                            "access_token": "device-at",
-                            "token_type": "Bearer",
-                            "expires_in": 3600,
-                            // The issuer MUST NOT send one for this grant; if
-                            // it ever did, the assertion below catches it.
-                        })),
-                    )
+                    let mut body = serde_json::json!({
+                        "access_token": "device-at",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    });
+                    // Absent unless the approver called the screen their
+                    // own. The assertions below pin both halves.
+                    if trusted {
+                        body["refresh_token"] = serde_json::json!("device-rt");
+                    }
+                    (StatusCode::OK, axum::Json(body))
                 }
             }),
         );
@@ -417,6 +429,60 @@ async fn signing_in_from_another_device_leaves_no_credential_in_the_page() {
     // The device code is spent, so its cookie goes with it.
     assert!(cookie.contains("regnmed_device=;"), "{cookie}");
     assert!(cookie.contains("Max-Age=0"), "{cookie}");
+}
+
+/// The other answer: the person approving said the screen is their own, so
+/// the issuer sends a refresh token and this page keeps its session across
+/// a reload like any ordinary login — with the token itself never reaching
+/// the page.
+#[tokio::test]
+async fn a_screen_its_owner_trusts_keeps_its_session_across_a_reload() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let mock = start_mock_device_endpoints_with(true).await;
+    unsafe {
+        std::env::set_var("OIDC_ISSUER", &mock);
+    }
+
+    let (status, _, _) = post_auth(&state, "/auth/device", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    // First poll is the mock's "not yet".
+    let (status, _, _) = post_auth(
+        &state,
+        "/auth/device/poll",
+        Some("regnmed_device=dc-secret"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    let (status, cookie, body) = post_auth(
+        &state,
+        "/auth/device/poll",
+        Some("regnmed_device=dc-secret"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("device-at"), "{body}");
+    // The credential is lifted out of the body into an HttpOnly cookie,
+    // exactly as on the ordinary login. A page that can read it can leak
+    // it.
+    assert!(
+        !body.contains("device-rt"),
+        "the refresh token reached the page: {body}"
+    );
+    assert!(
+        cookie.contains("regnmed_refresh=device-rt"),
+        "a trusted screen must keep its session: {cookie}"
+    );
+    for attribute in ["HttpOnly", "SameSite=Strict", "Path=/auth"] {
+        assert!(cookie.contains(attribute), "{attribute} missing: {cookie}");
+    }
+    // And the spent device code still goes, in the same response.
+    assert!(cookie.contains("regnmed_device=;"), "{cookie}");
 }
 
 /// Named here rather than imported: the api crate keeps it private, and a
