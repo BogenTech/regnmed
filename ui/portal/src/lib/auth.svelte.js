@@ -1,9 +1,14 @@
 // OIDC authorization code + PKCE mot regnid. Token-utvekslingen proxyes
 // via /auth/token (samme origin), så IdP-en trenger ingen browser-CORS,
 // og regnmed ser aldri et passord — proxyen videresender bare
-// engangskoden. Tokenene ligger i sessionStorage; et 401 veksler
+// engangskoden. Tokenene ligger i localStorage; et 401 veksler
 // refresh-tokenet via /auth/refresh, og bare en feilet veksling sender
 // brukeren tilbake til innlogging.
+//
+// localStorage, ikke sessionStorage: refresh-tokenet lever 30 dager, og
+// i sessionStorage døde økten likevel med fanen. Prisen er et token som
+// ligger igjen på maskinen, altså en delt maskin eller en ulåst skjerm
+// — avveiningen er tatt uttrykkelig (docs/portal.md).
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
@@ -12,19 +17,19 @@ export const session = $state({
 
 export function tokens() {
   try {
-    return JSON.parse(sessionStorage.getItem("regnmed-tokens"));
+    return JSON.parse(localStorage.getItem("regnmed-tokens"));
   } catch (e) {
     return null;
   }
 }
 
 export function saveTokens(t) {
-  sessionStorage.setItem("regnmed-tokens", JSON.stringify(t));
+  localStorage.setItem("regnmed-tokens", JSON.stringify(t));
   session.authed = true;
 }
 
 export function clearTokens() {
-  sessionStorage.removeItem("regnmed-tokens");
+  localStorage.removeItem("regnmed-tokens");
   session.authed = false;
 }
 
@@ -46,7 +51,15 @@ export function refresh() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ refresh_token: t.refresh_token }),
       });
-      if (!response.ok) return false;
+      // `refreshing` deles bare innenfor ÉN fane, og localStorage deles
+      // mellom dem: to faner kan derfor veksle samme token samtidig, og
+      // taperen får avslag på et token som nettopp er rotert bort. Sto
+      // det et annet token i lageret enn det vi sendte, har nabofanen
+      // alt fornyet økten — da er dette ikke en død økt, og kallet skal
+      // prøves om igjen med det nye tokenet. (Smett igjen: rekker
+      // avslaget fram før vinnerens svar er lagret, blir det likevel en
+      // utlogging — samme utfall som i dag, aldri verre.)
+      if (!response.ok) return (tokens() || {}).refresh_token !== t.refresh_token;
       // Behold det svaret ikke gjentar — id_token utstedes ikke på nytt,
       // og utloggingen trenger det som id_token_hint.
       saveTokens(Object.assign({}, t, await response.json()));

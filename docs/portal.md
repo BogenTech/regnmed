@@ -47,7 +47,7 @@ data virker som i produksjon.
 OIDC authorization code + **PKCE** against regnid. The code→token
 exchange is proxied through `POST /auth/token` (server-to-server), so
 the IdP needs no browser CORS and the SPA never talks cross-origin.
-Tokens live in sessionStorage.
+Tokens live in localStorage.
 Logout goes through regnid's `end_session` with `id_token_hint`
 (RP-initiated logout). regnmed still never sees a password.
 
@@ -65,11 +65,28 @@ i luften (`refreshing` i `auth.svelte.js`) — to samtidige vekslinger
 ville sendt samme token to ganger, og den andre blir avvist, altså
 utlogging midt i arbeidet.
 
-Tokenene ligger fortsatt i **sessionStorage**, så økten dør når fanen
-lukkes selv om refresh-tokenet har 29 dager igjen. Det er et bevisst
-valg, ikke en forglemmelse: localStorage ville holdt økten på tvers av
-faner og omstarter, men lagt et 30-dagers token igjen på maskinen.
-Avveiningen tas av eieren, ikke av et refaktoreringsvalg.
+Tokenene ligger i **localStorage** (valgt 2026-10-31), ikke
+sessionStorage. I sessionStorage døde økten når fanen ble lukket selv om
+refresh-tokenet hadde 29 dager igjen — altså var halve problemet
+uløst. Prisen er at et 30-dagers token ligger igjen på maskinen: en delt
+nettleserprofil eller en ulåst skjerm arver økten. XSS-flaten flytter
+seg knapt, siden kode som kan lese localStorage alt kjører i siden og kan
+kalle API-et med tokenet i minnet uansett; det er den delte maskinen som
+er den reelle kostnaden, og den er tatt uttrykkelig.
+
+PKCE-flighten (`regnmed-pkce`) blir liggende i sessionStorage. Den
+gjelder én fane og brukes én gang, og skal dø med fanen.
+
+**Følgefeilen localStorage åpner, og dempningen:** `refreshing` deles
+bare innenfor én fane, mens lageret deles mellom dem, så to faner kan
+veksle samme token samtidig — og taperen får avslag på et token som
+nettopp er rotert bort. Vekslingen leser derfor lageret om igjen når
+utstederen sier nei: står det et annet refresh-token der enn det som ble
+sendt, har nabofanen alt fornyet økten, og kallet prøves om igjen med
+det nye tokenet i stedet for å sende brukeren til innlogging. Smetten
+som står igjen er smal — rekker avslaget fram før vinnerens svar er
+lagret, blir det likevel en utlogging — og utfallet er da det samme som
+før denne endringen, aldri verre.
 
 The public client `regnmed-portal` must have the portal's origin
 registered: `{origin}/callback` as redirect URI and `{origin}/` as
