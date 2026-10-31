@@ -67,7 +67,7 @@ pub async fn status(
             "avstemt": l.reconciled.as_ref().map(|a| json!({
                 "id": a.id,
                 "saldo_ore": a.balance_ore,
-                "forklaring": a.forklaring,
+                "forklaring": a.explanation,
                 "avstemt_dato": a.reconciled_date.to_string(),
                 "avstemt_av": a.reconciled_by,
                 "har_vedlegg": a.has_attachment,
@@ -83,7 +83,8 @@ pub struct ReconcileRequest {
     account: String,
     #[serde(rename = "periode")]
     period: chrono::NaiveDate,
-    forklaring: String,
+    #[serde(rename = "forklaring")]
+    explanation: String,
 }
 
 pub async fn reconcile(
@@ -102,7 +103,7 @@ pub async fn reconcile(
         company_id,
         &request.account,
         request.period,
-        &request.forklaring,
+        &request.explanation,
         None,
         person.person_id,
         today,
@@ -118,7 +119,8 @@ pub struct AttachmentQuery {
     account: String,
     #[serde(rename = "periode")]
     period: chrono::NaiveDate,
-    forklaring: String,
+    #[serde(rename = "forklaring")]
+    explanation: String,
     filename: String,
 }
 
@@ -148,7 +150,7 @@ pub async fn reconcile_with_attachment(
         company_id,
         &query.account,
         query.period,
-        &query.forklaring,
+        &query.explanation,
         Some((&query.filename, &content_type, &body)),
         person.person_id,
         today,
@@ -206,7 +208,7 @@ pub async fn history(
         "avstemminger": rader.iter().map(|a| json!({
             "id": a.id,
             "saldo_ore": a.balance_ore,
-            "forklaring": a.forklaring,
+            "forklaring": a.explanation,
             "avstemt_dato": a.reconciled_date.to_string(),
             "avstemt_av": a.reconciled_by,
             "har_vedlegg": a.has_attachment,

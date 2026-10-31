@@ -84,8 +84,8 @@ pub async fn set_policy(
     require_for_machine: Option<bool>,
     created_by: &str,
 ) -> Result<()> {
-    if let Some(grense) = amount_limit_ore {
-        ensure!(grense >= 0, "beløpsgrensen kan ikke være negativ");
+    if let Some(limit) = amount_limit_ore {
+        ensure!(limit >= 0, "beløpsgrensen kan ikke være negativ");
     }
     if let Some(attestant) = attestant_person_id {
         // A positive list, not "everything that is not les". When there

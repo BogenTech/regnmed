@@ -427,10 +427,9 @@ pub async fn run_payroll(
         // liability earned before this function existed is caught up on
         // the first run instead of standing uncovered.
         let hist = history.get(&employee.id).copied().unwrap_or_default();
-        let skyldig_etter = hist.skyldig_ore + avsetning - post.holiday_pay_ore;
+        let owed_after = hist.skyldig_ore + avsetning - post.holiday_pay_ore;
         let employer_contribution_holiday_pay =
-            payroll::employer_contribution_accrual_target(skyldig_etter, aga_bp)
-                - hist.avsatt_aga_ore;
+            payroll::employer_contribution_accrual_target(owed_after, aga_bp) - hist.avsatt_aga_ore;
 
         sum.holiday_pay_accrual_ore += avsetning;
         sum.employer_contribution_ore += aga;

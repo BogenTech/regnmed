@@ -523,7 +523,8 @@ pub async fn kursregulering(
             amount + matched_cent
         };
         let currency: String = row.get("valuta");
-        let (_, exchange_rate) = crate::currency::require_kurs(pool, &currency, as_of_date).await?;
+        let (_, exchange_rate) =
+            crate::currency::require_exchange_rate(pool, &currency, as_of_date).await?;
         diff_total += regnmed_core::currency::nok_ore(rest_cent, exchange_rate) - rest_nok;
     }
     if diff_total == 0 {
@@ -565,12 +566,12 @@ pub async fn kursregulering(
     regulering.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let posted =
         crate::ledger::post_voucher_in(&mut tx, company_id, &regulering, created_by).await?;
-    let neste_dag = as_of_date
+    let next_day = as_of_date
         .succ_opt()
         .context("per_dato has no following day")?;
     let reversal = VoucherDraft {
         journal_code: "GL".into(),
-        voucher_date: neste_dag,
+        voucher_date: next_day,
         description: format!("Reversering kursregulering per {as_of_date}"),
         reverses: Some(posted.id),
         entries: vec![

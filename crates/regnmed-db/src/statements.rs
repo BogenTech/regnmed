@@ -458,7 +458,7 @@ pub struct Nokkeltall {
     pub leverandorgjeld_ore: i64,
 }
 
-pub async fn nokkeltall(
+pub async fn key_figures(
     pool: &sqlx::PgPool,
     company_id: uuid::Uuid,
     year: i32,

@@ -29,10 +29,10 @@ use regnmed_mcp::{Server, client::Client};
 /// The task is left running for the test's lifetime; the process ends
 /// when the test does.
 async fn tjen(state: AppState) -> String {
-    let lytter = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = lytter.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        let _ = axum::serve(lytter, router(state)).await;
+        let _ = axum::serve(listener, router(state)).await;
     });
     format!("http://{addr}")
 }
@@ -195,8 +195,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
 
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.
-    let mut dekket: Vec<&str> = argumenter.keys().copied().collect();
-    dekket.push("bilag_for");
+    let mut covered: Vec<&str> = argumenter.keys().copied().collect();
+    covered.push("bilag_for");
     // Exercised further down instead, where there is a real document,
     // a real file or a real task to act on.
     let senere = [
@@ -213,7 +213,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     ];
     for v in regnmed_mcp::tool::TOOLS {
         assert!(
-            dekket.contains(&v.name) || senere.contains(&v.name),
+            covered.contains(&v.name) || senere.contains(&v.name),
             "verktøyet «{}» er ikke dekket av denne testen",
             v.name
         );
@@ -387,17 +387,17 @@ async fn tjen_leverandor(mock: FalskLeverandor, reply: Vec<Value>) -> String {
                 let reply = reply.clone();
                 async move {
                     mock.sett.lock().unwrap().push(body);
-                    let neste = reply.lock().unwrap().next();
-                    axum::Json(neste.unwrap_or_else(
+                    let next = reply.lock().unwrap().next();
+                    axum::Json(next.unwrap_or_else(
                         || json!({"choices":[{"message":{"content":"FERDIG: tom"}}]}),
                     ))
                 }
             }),
         );
-    let lytter = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = lytter.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        let _ = axum::serve(lytter, app).await;
+        let _ = axum::serve(listener, app).await;
     });
     format!("http://{addr}")
 }

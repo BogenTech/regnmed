@@ -128,7 +128,7 @@ pub async fn opprett(
     pool: &PgPool,
     company_id: Uuid,
     name: &str,
-    godkjente: &[String],
+    approved: &[String],
     by: Uuid,
     by_name: &str,
 ) -> Result<Uuid> {
@@ -158,13 +158,13 @@ pub async fn opprett(
         }
         return Err(e.into());
     }
-    set_rights_in(&mut tx, id, godkjente).await?;
+    set_rights_in(&mut tx, id, approved).await?;
     log(
         &mut tx,
         company_id,
         id,
         "opprettet",
-        Some(&godkjente.join(" ")),
+        Some(&approved.join(" ")),
         by,
     )
     .await?;
@@ -199,7 +199,7 @@ pub async fn set_rights(
     pool: &PgPool,
     company_id: Uuid,
     role_id: Uuid,
-    godkjente: &[String],
+    approved: &[String],
     by: Uuid,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
@@ -213,13 +213,13 @@ pub async fn set_rights(
     .fetch_optional(&mut *tx)
     .await?;
     ensure!(finnes.is_some(), "ukjent rolle");
-    set_rights_in(&mut tx, role_id, godkjente).await?;
+    set_rights_in(&mut tx, role_id, approved).await?;
     log(
         &mut tx,
         company_id,
         role_id,
         "rettigheter_endret",
-        Some(&godkjente.join(" ")),
+        Some(&approved.join(" ")),
         by,
     )
     .await?;

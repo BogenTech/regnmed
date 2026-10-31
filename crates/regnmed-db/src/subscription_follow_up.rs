@@ -14,7 +14,7 @@ use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
 use regnmed_core::rates::value_on;
 use regnmed_core::reminders::{Step, next_step};
-use regnmed_core::subscription::SPERR_ETTER_FORFALL_DAGER;
+use regnmed_core::subscription::BLOCK_AFTER_DUE_DAYS;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -105,10 +105,10 @@ pub async fn purr(
         )),
         _ => None,
     };
-    let Some(neste) = next_step(last, invoice.due_date, today) else {
+    let Some(next) = next_step(last, invoice.due_date, today) else {
         return Ok(None);
     };
-    let fee_ore = if neste.with_fee {
+    let fee_ore = if next.with_fee {
         // Abonnement customers are companies: the næringsdrivende
         // ceiling (standardkompensasjon) applies, and we charge it.
         let rates = load_rates(pool).await?;
@@ -120,16 +120,16 @@ pub async fn purr(
     // The claim voucher needs its accounts; the operating company's starter
     // kontoplan does not include them. Idempotent, like fakturer_maned's
     // own ensures.
-    if fee_ore > 0 || neste.with_interest {
+    if fee_ore > 0 || next.with_interest {
         crate::ensure_account(pool, drift, "3950", "Annen driftsrelatert inntekt").await?;
         crate::ensure_account(pool, drift, "8050", "Annen renteinntekt").await?;
     }
     let draft = ReminderDraft {
-        step: neste.step.as_str().into(),
+        step: next.step.as_str().into(),
         sent_date: Some(today),
-        grace_date: today + chrono::Days::new(neste.grace_days as u64),
+        grace_date: today + chrono::Days::new(next.grace_days as u64),
         fee_ore,
-        with_interest: neste.with_interest,
+        with_interest: next.with_interest,
         naeringsdrivende: true,
         fee_account: "3950".into(),
         interest_account: "8050".into(),
@@ -157,17 +157,17 @@ pub async fn sperr_om_moden(
         .as_deref()
         .and_then(Step::parse)
         .is_some_and(|s| s >= Step::Demand);
-    if !reminded || today < invoice.due_date + chrono::Days::new(SPERR_ETTER_FORFALL_DAGER as u64) {
+    if !reminded || today < invoice.due_date + chrono::Days::new(BLOCK_AFTER_DUE_DAYS as u64) {
         return Ok(false);
     }
-    let apen: bool = sqlx::query_scalar(
+    let open: bool = sqlx::query_scalar(
         "select exists(select 1 from abonnement
          where company_id = $1 and valid_to is null)",
     )
     .bind(invoice.company_id)
     .fetch_one(pool)
     .await?;
-    if !apen {
+    if !open {
         return Ok(false);
     }
     crate::subscription::close_coverage(pool, invoice.company_id, today).await?;

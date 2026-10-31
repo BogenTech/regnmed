@@ -109,14 +109,14 @@ async fn contacts_and_open_items_from_an_old_system() {
     let base = format!("/companies/{company}");
 
     // ---- Kontakter: Tripletex-aktig eksport ----
-    let kunder = "Kundenr;Navn;Organisasjonsnummer;E-post;Adresse;Kontonummer\n\
+    let customers = "Kundenr;Navn;Organisasjonsnummer;E-post;Adresse;Kontonummer\n\
                   10001;Hansen AS;915933149;post@hansen.no;Storgata 1, 0155 Oslo;8601.11.17947\n\
                   10002;Lille Bakeri;;bakeri@example.no;;\n";
     let (status, body) = post_csv(
         &state,
         &format!("{base}/import/contacts?kind=kunde"),
         &token,
-        kunder,
+        customers,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -141,7 +141,7 @@ async fn contacts_and_open_items_from_an_old_system() {
         &state,
         &format!("{base}/import/contacts?kind=kunde"),
         &token,
-        kunder,
+        customers,
     )
     .await;
     assert_eq!(body["opprettet"], 0);

@@ -14,6 +14,15 @@ prose is deliberately quoting as HISTORY ("it was called X until
 2026-10-29"). 60 of the 83 it first found were one of those. Gating
 would mean an allowlist that churns on every doc edit. So it reports,
 and a human reads it -- run it with every rename batch.
+
+KNOWN BLIND SPOT: a span's parts are matched as plain text ANYWHERE
+in the tree, so a reference to the WRONG function still reads as
+valid as long as the name exists somewhere. docs/auth.md said the
+manual-coverage rule came from `avslutt` while the only `avslutt` in
+the tree was the FISCAL YEAR close; the real function is
+`platform::end_coverage`. That surfaced only when a rename removed
+`avslutt` from the tree entirely. Narrowing this would mean resolving
+paths properly, which is a different tool.
 """
 import pathlib, re, sys
 

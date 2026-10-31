@@ -98,7 +98,7 @@ fn kr(ore: i64) -> String {
     format!("{sign}{grouped},{rest}")
 }
 
-fn prosent(bp: i64) -> String {
+fn percent(bp: i64) -> String {
     let hele = bp / 100;
     let desimal = bp % 100;
     if desimal == 0 {
@@ -133,12 +133,12 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         .get((input.month as usize).saturating_sub(1))
         .copied()
         .unwrap_or("");
-    let fakta = [
+    let facts = [
         ("Periode", format!("{month_label} {}", input.year)),
         ("Utbetalt", input.paid_date.to_string()),
     ];
     let mut fy = 82.0;
-    for (label, value) in &fakta {
+    for (label, value) in &facts {
         pdf.text_right(RIGHT - 70.0, fy, 9.0, Font::Regular, label);
         pdf.text_right(RIGHT, fy, 9.0, Font::Bold, value);
         fy += 12.0;
@@ -183,7 +183,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     if let Some(bp) = input.withholding_percent_bp {
         trekktekst.push_str(&format!(
             " ({} av {})",
-            prosent(bp),
+            percent(bp),
             kr(input.withholding_basis_ore)
         ));
     } else {
@@ -230,7 +230,7 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         Font::Regular,
         &format!(
             "Feriepenger ({} av bruttolønn) — utbetales neste år",
-            prosent(input.holiday_pay_bp)
+            percent(input.holiday_pay_bp)
         ),
     );
     pdf.text_right(
@@ -324,19 +324,19 @@ mod tests {
         assert!(text.contains("Forskuddstrekk"), "{text}");
         assert!(text.contains("35 %"), "trekksatsen skal stå");
 
-        let mut juni = input();
-        juni.month = 6;
+        let mut june = input();
+        june.month = 6;
         // Brutto is everything paid out; the trekkgrunnlag is only the
         // ordinary pay.
-        juni.gross_ore = 7_000_000;
-        juni.withholding_basis_ore = 3_000_000;
-        juni.withholding_ore = 1_050_000;
-        juni.lines.push(PayslipLine {
+        june.gross_ore = 7_000_000;
+        june.withholding_basis_ore = 3_000_000;
+        june.withholding_ore = 1_050_000;
+        june.lines.push(PayslipLine {
             text: "Feriepenger".into(),
             amount_ore: 4_000_000,
         });
-        juni.net_ore = 5_950_000;
-        let text = String::from_utf8_lossy(&render_payslip(&juni)).to_string();
+        june.net_ore = 5_950_000;
+        let text = String::from_utf8_lossy(&render_payslip(&june)).to_string();
         assert!(
             text.contains("uten forskuddstrekk"),
             "feriepengenes trekkfrihet skal forklares"
@@ -372,8 +372,8 @@ mod tests {
         assert_eq!(kr(5_000_000), "50 000,00");
         assert_eq!(kr(-1_750_000), "-17 500,00");
         assert_eq!(kr(123_455), "1 234,55");
-        assert_eq!(prosent(3500), "35 %");
-        assert_eq!(prosent(1020), "10,20 %");
-        assert_eq!(prosent(1250), "12,50 %");
+        assert_eq!(percent(3500), "35 %");
+        assert_eq!(percent(1020), "10,20 %");
+        assert_eq!(percent(1250), "12,50 %");
     }
 }

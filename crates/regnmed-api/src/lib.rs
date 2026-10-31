@@ -323,7 +323,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/reports/nokkeltall",
-            get(reports::nokkeltall),
+            get(reports::key_figures),
         )
         .route(
             "/companies/{company_id}/reports/avvik",
@@ -557,7 +557,7 @@ pub fn router(state: AppState) -> Router {
         .route("/companies/{company_id}/assets/saldo", get(asset::balance))
         .route(
             "/companies/{company_id}/arsavslutning",
-            get(year_end::list).post(year_end::avslutt),
+            get(year_end::list).post(year_end::close),
         )
         .route(
             "/companies/{company_id}/arsavslutning/{year}/forslag",
@@ -963,7 +963,7 @@ async fn me(
                 Status::Active => None,
                 Status::Trial { to } => Some(to),
                 Status::Grace { blocked_from } => Some(blocked_from),
-                Status::Blocked { siden } => Some(siden),
+                Status::Blocked { since } => Some(since),
             };
             e.insert(json!({ "status": status.slug(), "dato": date.map(|d| d.to_string()) }));
         }

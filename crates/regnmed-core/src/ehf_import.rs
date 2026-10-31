@@ -38,7 +38,7 @@ pub struct MottattLinje {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedInvoice {
     /// True for CreditNote — the amounts flip when the bilag is proposed.
-    pub er_kreditnota: bool,
+    pub is_credit_note: bool,
     pub invoice_number: String,
     pub invoice_date: Option<NaiveDate>,
     pub due_date: Option<NaiveDate>,
@@ -111,7 +111,7 @@ pub fn parse(xml: &str) -> Result<ReceivedInvoice, EhfImportError> {
 
     let mut path: Vec<String> = Vec::new();
     let mut invoice = ReceivedInvoice {
-        er_kreditnota: false,
+        is_credit_note: false,
         invoice_number: String::new(),
         invoice_date: None,
         due_date: None,
@@ -147,7 +147,7 @@ pub fn parse(xml: &str) -> Result<ReceivedInvoice, EhfImportError> {
                         }
                         "CreditNote" => {
                             root_seen = true;
-                            invoice.er_kreditnota = true;
+                            invoice.is_credit_note = true;
                         }
                         _ => {}
                     }
@@ -297,7 +297,7 @@ mod tests {
                     description: "Varekjøp".into(),
                     quantity_milli: 3_000,
                     unit: "EA".into(),
-                    enhetspris_ore: 400_00,
+                    unit_price_ore: 400_00,
                     net_ore: 1_200_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 300_00,
@@ -306,7 +306,7 @@ mod tests {
                     description: "Frakt".into(),
                     quantity_milli: 1_000,
                     unit: "EA".into(),
-                    enhetspris_ore: 100_00,
+                    unit_price_ore: 100_00,
                     net_ore: 100_00,
                     vat_rate_bp: Some(2500),
                     vat_ore: 25_00,
@@ -321,7 +321,7 @@ mod tests {
     fn reads_our_own_invoice_back() {
         let xml = render(&document(DocumentType::Invoice));
         let received = parse(&xml).unwrap();
-        assert!(!received.er_kreditnota);
+        assert!(!received.is_credit_note);
         assert_eq!(received.invoice_number, "F-2026-7");
         assert_eq!(
             received.invoice_date,
@@ -346,10 +346,10 @@ mod tests {
     }
 
     #[test]
-    fn a_kreditnota_is_recognised() {
+    fn a_credit_note_is_recognised() {
         let xml = render(&document(DocumentType::CreditNote));
         let received = parse(&xml).unwrap();
-        assert!(received.er_kreditnota);
+        assert!(received.is_credit_note);
         assert_eq!(received.linjer.len(), 2);
         assert_eq!(received.gross_ore, 1_625_00);
     }

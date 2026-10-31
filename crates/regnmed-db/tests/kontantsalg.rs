@@ -174,7 +174,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     assert_eq!(med_part, 2, "krav og oppgjør, begge med part");
 
     // And the open item is closed — nothing is left outstanding.
-    let apen: i64 = sqlx::query_scalar(
+    let open: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint from entry e
          join account a on a.id = e.account_id
          where a.company_id = $1 and a.number = '1500'
@@ -185,7 +185,7 @@ async fn a_kontantfaktura_settles_its_own_receivable_through_the_reskontro() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(apen, 0, "ingen åpen post etter et kontantsalg");
+    assert_eq!(open, 0, "ingen åpen post etter et kontantsalg");
 
     // The stored salgsdokument is a KONTANTFAKTURA, not a faktura with a
     // KID for money already received.

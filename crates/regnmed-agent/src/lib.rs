@@ -127,14 +127,14 @@ fn closing_rules() -> String {
 /// a refusal, and the note carries the raw text either way.
 fn interpret(text: &str) -> Outcome {
     let t = text.trim();
-    let etter = |p: &str| t[p.len()..].trim().to_string();
+    let after = |p: &str| t[p.len()..].trim().to_string();
     let u = t.to_uppercase();
     if u.starts_with("SPØRSMÅL:") || u.starts_with("SPORSMAL:") {
-        Outcome::Question(etter("SPØRSMÅL:"))
+        Outcome::Question(after("SPØRSMÅL:"))
     } else if u.starts_with("AVVIST:") {
-        Outcome::Refused(etter("AVVIST:"))
+        Outcome::Refused(after("AVVIST:"))
     } else if u.starts_with("FERDIG:") {
-        Outcome::Done(etter("FERDIG:"))
+        Outcome::Done(after("FERDIG:"))
     } else if t.ends_with('?') {
         Outcome::Question(t.to_string())
     } else {

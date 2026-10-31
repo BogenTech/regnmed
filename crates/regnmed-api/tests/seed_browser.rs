@@ -161,7 +161,7 @@ async fn seed_browser_demo() {
         &regnmed_db::ProductDraft {
             number: "V1".into(),
             name: "Kaffekopp".into(),
-            salgspris_ore: 149_00,
+            sales_price_ore: 149_00,
             vat_code: Some("3".into()),
             account: "3000".into(),
             stocked: true,

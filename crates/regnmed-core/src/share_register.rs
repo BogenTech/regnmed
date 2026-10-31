@@ -398,8 +398,8 @@ mod tests {
     /// against an official source — not because they looked plausible.
     #[test]
     fn only_verified_codes_exist() {
-        let med_kode: Vec<_> = ALL.iter().filter(|t| t.code().is_some()).collect();
-        assert_eq!(med_kode.len(), 2, "{med_kode:?}");
+        let with_code: Vec<_> = ALL.iter().filter(|t| t.code().is_some()).collect();
+        assert_eq!(with_code.len(), 2, "{with_code:?}");
         assert_eq!(TransactionType::Stiftelse.code(), Some("N"));
         assert_eq!(TransactionType::Nyemisjon.code(), Some("N"));
         assert_eq!(TransactionType::Kjop.code(), None);

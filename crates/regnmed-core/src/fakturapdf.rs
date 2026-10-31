@@ -21,7 +21,7 @@ pub struct PdfLinje {
     pub description: String,
     /// Tusendeler: 1 stk = 1000.
     pub quantity_milli: i64,
-    pub enhetspris_ore: i64,
+    pub unit_price_ore: i64,
     /// Basis points; None for lines without an mva code.
     pub vat_rate_bp: Option<i64>,
     pub net_ore: i64,
@@ -146,7 +146,7 @@ fn quantity(milli: i64) -> String {
     }
 }
 
-fn prosent(bp: i64) -> String {
+fn percent(bp: i64) -> String {
     if bp % 100 == 0 {
         format!("{} %", bp / 100)
     } else {
@@ -171,7 +171,7 @@ fn orgnumber_display(orgnumber: &str) -> String {
 pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     let mut pdf = Pdf::new();
     let tittel = input.document_type.tittel();
-    let kreditnota = input.document_type == DocumentType::CreditNote;
+    let credit_note = input.document_type == DocumentType::CreditNote;
 
     // Seller block, top left.
     pdf.text(MARGIN, 60.0, 13.0, Font::Bold, &input.seller_name);
@@ -191,7 +191,7 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
 
     // Title + document facts, top right.
     pdf.text_right(RIGHT, 60.0, 16.0, Font::Bold, tittel);
-    let mut fakta: Vec<(String, String)> = vec![
+    let mut facts: Vec<(String, String)> = vec![
         (
             input.document_type.nummerord().into(),
             input.invoice_number.to_string(),
@@ -199,13 +199,13 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
         ("Dato".into(), input.invoice_date.to_string()),
     ];
     if input.document_type == DocumentType::Invoice {
-        fakta.push(("Forfall".into(), input.due_date.to_string()));
+        facts.push(("Forfall".into(), input.due_date.to_string()));
     }
     // A kontantfaktura says what settled it, where a faktura says when
     // it falls due. §5-3 wants the salgsdokument to show that the
     // ytelse is paid.
     if input.document_type == DocumentType::Kontantfaktura {
-        fakta.push((
+        facts.push((
             "Betalt".into(),
             input.payment_method.clone().unwrap_or_else(|| "Ja".into()),
         ));
@@ -215,13 +215,13 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
     // kreditnota it points at the ORIGINAL delivery — the one being
     // credited — not at the day the correction was written.
     if let Some(levering) = input.delivery_date {
-        fakta.push(("Levering".into(), levering.to_string()));
+        facts.push(("Levering".into(), levering.to_string()));
     }
     if let Some(number) = input.credits_number {
-        fakta.push(("Krediterer faktura".into(), number.to_string()));
+        facts.push(("Krediterer faktura".into(), number.to_string()));
     }
     let mut fy = 82.0;
-    for (label, value) in &fakta {
+    for (label, value) in &facts {
         pdf.text_right(RIGHT - 70.0, fy, 9.0, Font::Regular, label);
         pdf.text_right(RIGHT, fy, 9.0, Font::Bold, value);
         fy += 12.0;
@@ -297,9 +297,9 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
             Font::Regular,
             &quantity(linje.quantity_milli),
         );
-        pdf.text_right(col_price, ly, 9.0, Font::Regular, &kr(linje.enhetspris_ore));
+        pdf.text_right(col_price, ly, 9.0, Font::Regular, &kr(linje.unit_price_ore));
         if let Some(bp) = linje.vat_rate_bp {
-            pdf.text_right(col_vat, ly, 9.0, Font::Regular, &prosent(bp));
+            pdf.text_right(col_vat, ly, 9.0, Font::Regular, &percent(bp));
         }
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(linje.net_ore));
         ly += 15.0;
@@ -335,14 +335,14 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
             ly,
             9.0,
             Font::Regular,
-            &format!("Mva {} av {}", prosent(rate), kr(basis)),
+            &format!("Mva {} av {}", percent(rate), kr(basis)),
         );
         pdf.text_right(RIGHT, ly, 9.0, Font::Regular, &kr(avgift));
         ly += 14.0;
     }
     pdf.rule(RIGHT - 220.0, RIGHT, ly - 4.0, 0.7);
     ly += 6.0;
-    let betales = if kreditnota {
+    let betales = if credit_note {
         "Å godskrive"
     } else {
         "Å betale"
@@ -459,7 +459,7 @@ mod tests {
                 PdfLinje {
                     description: "Konsulentbistand".into(),
                     quantity_milli: 2500,
-                    enhetspris_ore: 4_000_00,
+                    unit_price_ore: 4_000_00,
                     vat_rate_bp: Some(2500),
                     net_ore: 10_000_00,
                     vat_ore: 2_500_00,
@@ -467,7 +467,7 @@ mod tests {
                 PdfLinje {
                     description: "Bøker".into(),
                     quantity_milli: 1000,
-                    enhetspris_ore: 500_00,
+                    unit_price_ore: 500_00,
                     vat_rate_bp: None,
                     net_ore: 500_00,
                     vat_ore: 0,
@@ -529,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn kreditnota_flips_title_and_drops_payment_block() {
+    fn credit_note_flips_title_and_drops_payment_block() {
         let mut i = input();
         i.document_type = DocumentType::CreditNote;
         i.credits_number = Some(7);
@@ -580,8 +580,8 @@ mod tests {
         assert_eq!(quantity(2500), "2,5");
         assert_eq!(quantity(1000), "1");
         assert_eq!(quantity(333), "0,333");
-        assert_eq!(prosent(2500), "25 %");
-        assert_eq!(prosent(1150), "11,50 %");
+        assert_eq!(percent(2500), "25 %");
+        assert_eq!(percent(1150), "11,50 %");
     }
 }
 

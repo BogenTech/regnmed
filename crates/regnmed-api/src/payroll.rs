@@ -74,7 +74,7 @@ pub struct CreateEmployeeRequest {
     monthly_salary_ore: Option<i64>,
     #[serde(rename = "timelonn_ore")]
     hourly_wage_ore: Option<i64>,
-    #[serde(default = "prosent")]
+    #[serde(default = "percent")]
     #[serde(rename = "trekk_type")]
     withholding_type: String,
     #[serde(rename = "trekk_prosent_bp")]
@@ -90,7 +90,7 @@ pub struct CreateEmployeeRequest {
     note: Option<String>,
 }
 
-fn prosent() -> String {
+fn percent() -> String {
     "prosent".into()
 }
 fn lovens_minimum() -> i32 {

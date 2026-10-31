@@ -294,7 +294,7 @@ mod tests {
     /// treatment was invisible: it produced a plausible number.
     #[test]
     fn reverse_charge_with_full_deduction_is_a_wash() {
-        let kjop = |code: &str| {
+        let purchase = |code: &str| {
             vec![SpecLine {
                 code: code.into(),
                 description: "Tjenester kjøpt fra utlandet".into(),
@@ -312,7 +312,7 @@ mod tests {
                 PeriodScheme::ToManeder,
                 "r",
                 "0.1.0",
-                &kjop(code),
+                &purchase(code),
             )
         };
 

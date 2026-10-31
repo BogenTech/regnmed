@@ -231,11 +231,11 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
     let employee = new_employee(&state, company, &admin, "Manuell Ansatt", NIN[2]).await;
     let link_uri = format!("/companies/{company}/employees/{employee}/link");
 
-    let medlem_sub = format!("les|{}", Uuid::new_v4());
-    let medlem = regnmed_db::ensure_person(&state.pool, &medlem_sub, Some("Medlem"), None)
+    let member_sub = format!("les|{}", Uuid::new_v4());
+    let member = regnmed_db::ensure_person(&state.pool, &member_sub, Some("Medlem"), None)
         .await
         .unwrap();
-    regnmed_db::ensure_company_member(&state.pool, company, medlem, "les")
+    regnmed_db::ensure_company_member(&state.pool, company, member, "les")
         .await
         .unwrap();
 
@@ -244,7 +244,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         "POST",
         &link_uri,
         &admin,
-        &format!(r#"{{"person_id":"{medlem}"}}"#),
+        &format!(r#"{{"person_id":"{member}"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{response}");
@@ -281,7 +281,7 @@ async fn manual_linking_refuses_relink_conflicts_and_machines() {
         "POST",
         &format!("/companies/{company}/employees/{tvilling}/link"),
         &admin,
-        &format!(r#"{{"person_id":"{medlem}"}}"#),
+        &format!(r#"{{"person_id":"{member}"}}"#),
     )
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);

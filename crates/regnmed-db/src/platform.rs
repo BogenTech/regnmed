@@ -209,7 +209,7 @@ pub struct PlatformAccessLog {
     pub created_at: DateTime<Utc>,
 }
 
-async fn innsyn(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlatformAccessLog>> {
+async fn access_log(pool: &PgPool, column: &str, id: Uuid) -> Result<Vec<PlatformAccessLog>> {
     // `column` is one of two literals below — never caller input.
     let sql = format!(
         "select coalesce(p.name, p.oidc_sub) as navn, l.rolle, l.method, l.path, l.created_at
@@ -239,14 +239,14 @@ pub async fn platform_access_for_company(
     pool: &PgPool,
     company_id: Uuid,
 ) -> Result<Vec<PlatformAccessLog>> {
-    innsyn(pool, "company_id", company_id).await
+    access_log(pool, "company_id", company_id).await
 }
 
 pub async fn platform_access_for_firm(
     pool: &PgPool,
     firm_id: Uuid,
 ) -> Result<Vec<PlatformAccessLog>> {
-    innsyn(pool, "firm_id", firm_id).await
+    access_log(pool, "firm_id", firm_id).await
 }
 
 #[derive(Debug, Clone)]
@@ -656,7 +656,7 @@ pub struct PlatformSubscription {
     pub orgnumber: String,
     pub name: String,
     pub created: NaiveDate,
-    pub dekket_i_dag: bool,
+    pub covered_today: bool,
     pub last_end: Option<NaiveDate>,
     /// Plan on the row covering today, if any.
     pub plan: Option<String>,
@@ -692,7 +692,7 @@ pub async fn platform_list_subscriptions(pool: &PgPool) -> Result<Vec<PlatformSu
             orgnumber: r.get("orgnr"),
             name: r.get("name"),
             created: r.get("opprettet"),
-            dekket_i_dag: r.get("dekket"),
+            covered_today: r.get("dekket"),
             last_end: r.get("siste_slutt"),
             plan: r.get("plan"),
             valid_to: r.get("valid_to"),

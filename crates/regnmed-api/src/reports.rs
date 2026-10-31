@@ -584,7 +584,7 @@ pub async fn audit(
             "detalj": k.detail,
         })).collect::<Vec<_>>(),
         "ankere": report.anchors.iter().map(|a| json!({
-            "tidspunkt": a.tidspunkt,
+            "tidspunkt": a.timestamp,
             "root": a.root_hex,
             "siste_sekvens": a.last_sequence,
             "vitner": a.vitner,
@@ -682,7 +682,7 @@ pub struct NokkeltallQuery {
 /// Key figures for the overview (docs/rapporter.md, #36): plain queries
 /// over numbers we already have — result, liquidity picture and upcoming
 /// mva deadlines under the company's terminordning.
-pub async fn nokkeltall(
+pub async fn key_figures(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
@@ -694,7 +694,7 @@ pub async fn nokkeltall(
         .await
         .map_err(anyhow::Error::from)?;
     let year = query.year.unwrap_or(chrono::Datelike::year(&today));
-    let figures = regnmed_db::nokkeltall(&state.pool, company_id, year, today).await?;
+    let figures = regnmed_db::key_figures(&state.pool, company_id, year, today).await?;
 
     // Mva owed for the current period (net computed so far) and the next
     // deadlines, under the company's ordning.

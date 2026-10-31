@@ -43,10 +43,10 @@ fn matrix() -> String {
 
     // Grouped like the portal, and within the group in the vocabulary's
     // own order — it is written to be read.
-    let mut grupper: Vec<&'static str> = Right::ALLE.iter().map(|r| r.group()).collect();
-    grupper.dedup();
+    let mut groups: Vec<&'static str> = Right::ALLE.iter().map(|r| r.group()).collect();
+    groups.dedup();
     let mut sett = Vec::new();
-    for g in grupper {
+    for g in groups {
         if sett.contains(&g) {
             continue;
         }

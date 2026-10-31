@@ -76,7 +76,8 @@ pub struct CreateProductRequest {
     number: String,
     #[serde(rename = "navn")]
     name: String,
-    salgspris_ore: i64,
+    #[serde(rename = "salgspris_ore")]
+    sales_price_ore: i64,
     vat_code: Option<String>,
     /// Defaults to 3000.
     #[serde(rename = "konto")]
@@ -98,7 +99,7 @@ pub async fn create(
         &regnmed_db::ProductDraft {
             number: request.number,
             name: request.name,
-            salgspris_ore: request.salgspris_ore,
+            sales_price_ore: request.sales_price_ore,
             vat_code: request.vat_code,
             account: request.account.unwrap_or_else(|| "3000".into()),
             stocked: request.stocked,
@@ -120,7 +121,7 @@ pub async fn list(
         "products": products.iter().map(|p| json!({
             "nummer": p.number,
             "navn": p.name,
-            "salgspris_ore": p.salgspris_ore,
+            "salgspris_ore": p.sales_price_ore,
             "vat_code": p.vat_code,
             "konto": p.account,
             "aktiv": p.active,
@@ -142,7 +143,8 @@ where
 pub struct UpdateProductRequest {
     #[serde(rename = "navn")]
     name: Option<String>,
-    salgspris_ore: Option<i64>,
+    #[serde(rename = "salgspris_ore")]
+    sales_price_ore: Option<i64>,
     #[serde(default, deserialize_with = "double_option")]
     vat_code: Option<Option<String>>,
     #[serde(rename = "konto")]
@@ -165,7 +167,7 @@ pub async fn update(
         company_id,
         &number,
         request.name.as_deref(),
-        request.salgspris_ore,
+        request.sales_price_ore,
         request.vat_code.as_ref().map(|v| v.as_deref()),
         request.account.as_deref(),
         request.active,
@@ -188,10 +190,10 @@ pub async fn inventory(
             "nummer": r.number,
             "navn": r.name,
             "antall_milli": r.quantity_milli,
-            "verdi_ore": r.verdi_ore,
+            "verdi_ore": r.value_ore,
             "gjennomsnitt_ore": r.gjennomsnitt_ore,
         })).collect::<Vec<_>>(),
-        "verdi_ore": rows.iter().map(|r| r.verdi_ore).sum::<i64>(),
+        "verdi_ore": rows.iter().map(|r| r.value_ore).sum::<i64>(),
     })))
 }
 
@@ -292,7 +294,7 @@ pub async fn count(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InventoryWrite).await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let konti = regnmed_db::TellingKonti {
+    let accounts = regnmed_db::TellingKonti {
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         inventory_account: request.inventory_account.unwrap_or_else(|| "1460".into()),
         change_account: request.change_account.unwrap_or_else(|| "4390".into()),
@@ -311,7 +313,7 @@ pub async fn count(
         company_id,
         request.date,
         &linjer,
-        post.then_some(&konti),
+        post.then_some(&accounts),
         created_by,
     )
     .await
@@ -322,7 +324,7 @@ pub async fn count(
             "bokfort_milli": j.bokfort_milli,
             "talt_milli": j.talt_milli,
         })).collect::<Vec<_>>(),
-        "verdi_ore": result.verdi_ore,
+        "verdi_ore": result.value_ore,
         "bokfort_ore": result.posted_ore,
         "voucher": result.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))

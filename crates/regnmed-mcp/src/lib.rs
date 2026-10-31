@@ -212,7 +212,7 @@ fn fill_path(
             .ok_or_else(|| anyhow!("ubalansert sti-mal: {mal}"))?
             + start;
         let felt = path[start + 1..end].to_string();
-        let verdi = match args.remove(&felt) {
+        let value = match args.remove(&felt) {
             Some(Value::String(s)) => s,
             Some(Value::Null) | None if felt == "selskap" => {
                 standard_selskap.map(str::to_string).ok_or_else(|| {
@@ -225,7 +225,7 @@ fn fill_path(
             Some(annet) if !annet.is_null() => annet.to_string(),
             _ => bail!("«{felt}» mangler i kallet"),
         };
-        path.replace_range(start..=end, &verdi);
+        path.replace_range(start..=end, &value);
     }
     Ok(path)
 }

@@ -300,7 +300,7 @@ async fn byra_members_are_invited_never_coregistered() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let endringer: Vec<&str> = history["endringer"]
+    let changes: Vec<&str> = history["endringer"]
         .as_array()
         .unwrap()
         .iter()
@@ -308,8 +308,8 @@ async fn byra_members_are_invited_never_coregistered() {
         .collect();
     for forventet in ["lagt_til", "rolle_endret", "deaktivert"] {
         assert!(
-            endringer.contains(&forventet),
-            "missing {forventet}: {endringer:?}"
+            changes.contains(&forventet),
+            "missing {forventet}: {changes:?}"
         );
     }
 

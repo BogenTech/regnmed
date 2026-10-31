@@ -114,7 +114,7 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Quote>> {
     let series = data["dataSets"][0]["series"]
         .as_object()
         .context("mangler dataSets[0].series")?;
-    let mut noteringer = Vec::new();
+    let mut quotes = Vec::new();
     for (key, serie) in series {
         let indexes: Vec<usize> = key
             .split(':')
@@ -159,15 +159,15 @@ pub fn parse_sdmx(body: &Value) -> Result<Vec<Quote>> {
             };
             let exchange_rate = parse_rate(&raw)
                 .with_context(|| format!("uparselig kurs {raw:?} for {currency}"))?;
-            noteringer.push(Quote {
+            quotes.push(Quote {
                 currency: currency.clone(),
                 date,
                 rate_micro: exchange_rate / divisor,
             });
         }
     }
-    noteringer.sort_by(|a, b| (&a.currency, a.date).cmp(&(&b.currency, b.date)));
-    Ok(noteringer)
+    quotes.sort_by(|a, b| (&a.currency, a.date).cmp(&(&b.currency, b.date)));
+    Ok(quotes)
 }
 
 #[cfg(test)]
@@ -180,9 +180,9 @@ mod tests {
             "../../../docs/valuta/norges-bank-exr-sample.json"
         ))
         .unwrap();
-        let noteringer = parse_sdmx(&sample).unwrap();
-        let eur: Vec<_> = noteringer.iter().filter(|n| n.currency == "EUR").collect();
-        let sek: Vec<_> = noteringer.iter().filter(|n| n.currency == "SEK").collect();
+        let quotes = parse_sdmx(&sample).unwrap();
+        let eur: Vec<_> = quotes.iter().filter(|n| n.currency == "EUR").collect();
+        let sek: Vec<_> = quotes.iter().filter(|n| n.currency == "SEK").collect();
         assert_eq!(eur.len(), 2);
         assert_eq!(eur[0].date, NaiveDate::from_ymd_opt(2026, 7, 23).unwrap());
         assert_eq!(eur[0].rate_micro, 11_648_500);

@@ -237,12 +237,12 @@ async fn prepare(
         }
     };
     let rates = load_rates(pool).await?;
-    let gebyr_domene = if draft.naeringsdrivende {
+    let fee_domain = if draft.naeringsdrivende {
         "standardkompensasjon"
     } else {
         "purregebyr_maks"
     };
-    let max_fee_ore = value_on(&rates, gebyr_domene, sent_date).unwrap_or(0);
+    let max_fee_ore = value_on(&rates, fee_domain, sent_date).unwrap_or(0);
 
     let interest = if draft.with_interest {
         late_payment_interest(facts.remaining_ore, facts.due_date, sent_date, &rates)?

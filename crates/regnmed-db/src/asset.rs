@@ -45,7 +45,7 @@ pub struct AssetDraft {
     pub name: String,
     pub acquisition_date: NaiveDate,
     pub cost_price_ore: i64,
-    pub restverdi_ore: i64,
+    pub residual_value_ore: i64,
     pub lifetime_months: i32,
     pub balance_account: String,
     pub depreciation_account: String,
@@ -69,13 +69,13 @@ pub async fn create_asset(
         draft.depreciation_group
     );
     ensure!(
-        draft.restverdi_ore >= 0 && draft.restverdi_ore < draft.cost_price_ore,
+        draft.residual_value_ore >= 0 && draft.residual_value_ore < draft.cost_price_ore,
         "restverdi må være mellom 0 og kostpris"
     );
     // At least 1 øre per month: rules out zero-amount months, so every
     // generated period always posts a voucher (the run-log invariant).
     ensure!(
-        draft.cost_price_ore - draft.restverdi_ore >= draft.lifetime_months as i64,
+        draft.cost_price_ore - draft.residual_value_ore >= draft.lifetime_months as i64,
         "avskrivbart beløp må være minst 1 øre per måned av levetiden"
     );
     for account in [&draft.balance_account, &draft.depreciation_account] {
@@ -102,14 +102,14 @@ pub async fn create_asset(
     }
 
     let rates = load_rates(pool).await?;
-    let grense = value_on(&rates, "aktiveringsgrense", draft.acquisition_date);
+    let limit = value_on(&rates, "aktiveringsgrense", draft.acquisition_date);
     let mut warning = None;
-    if let Some(grense) = grense
-        && draft.cost_price_ore < grense
+    if let Some(limit) = limit
+        && draft.cost_price_ore < limit
     {
         warning = Some(format!(
             "kostpris under aktiveringsgrensen ({} kr) — kan kostnadsføres direkte",
-            grense / 100
+            limit / 100
         ));
     } else if draft.lifetime_months < 36 {
         warning = Some("levetid under 3 år — driftsmidlet kan kostnadsføres direkte".to_string());
@@ -127,7 +127,7 @@ pub async fn create_asset(
     .bind(&draft.name)
     .bind(draft.acquisition_date)
     .bind(draft.cost_price_ore)
-    .bind(draft.restverdi_ore)
+    .bind(draft.residual_value_ore)
     .bind(draft.lifetime_months)
     .bind(&draft.balance_account)
     .bind(&draft.depreciation_account)
@@ -145,7 +145,7 @@ pub struct AssetRow {
     pub name: String,
     pub acquisition_date: NaiveDate,
     pub cost_price_ore: i64,
-    pub restverdi_ore: i64,
+    pub residual_value_ore: i64,
     pub lifetime_months: i32,
     pub balance_account: String,
     pub depreciation_account: String,
@@ -181,7 +181,7 @@ pub async fn list_assets(pool: &PgPool, company_id: Uuid) -> Result<Vec<AssetRow
                 name: r.get("navn"),
                 acquisition_date: r.get("anskaffelsesdato"),
                 cost_price_ore: cost_price,
-                restverdi_ore: r.get("restverdi_ore"),
+                residual_value_ore: r.get("restverdi_ore"),
                 lifetime_months: r.get("levetid_maneder"),
                 balance_account: r.get("balansekonto"),
                 depreciation_account: r.get("avskrivningskonto"),
@@ -557,7 +557,7 @@ pub struct DepreciationGroupRow {
 #[derive(Debug)]
 pub struct BalanceReport {
     pub year: i32,
-    pub grupper: Vec<DepreciationGroupRow>,
+    pub groups: Vec<DepreciationGroupRow>,
     /// Regnskapsmessig bokført verdi ved årets utgang.
     pub posted_ore: i64,
     /// Sum utgående skattemessig saldo.
@@ -586,7 +586,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
         .map(|r| r.get::<NaiveDate, _>("anskaffelsesdato").year())
         .min()
         .unwrap_or(year);
-    let mut grupper = Vec::new();
+    let mut groups = Vec::new();
     for (group, description) in DEPRECIATION_GROUPS {
         let mut opening = 0i64;
         let mut rad: Option<DepreciationGroupRow> = None;
@@ -633,7 +633,7 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
             opening = year.closing_ore;
         }
         if let Some(rad) = rad {
-            grupper.push(rad);
+            groups.push(rad);
         }
     }
 
@@ -653,10 +653,10 @@ pub async fn balance_report(pool: &PgPool, company_id: Uuid, year: i32) -> Resul
     .bind(year_end)
     .fetch_one(pool)
     .await?;
-    let skattemessig: i64 = grupper.iter().map(|g| g.closing_ore).sum();
+    let skattemessig: i64 = groups.iter().map(|g| g.closing_ore).sum();
     Ok(BalanceReport {
         year,
-        grupper,
+        groups,
         posted_ore: posted,
         skattemessig_ore: skattemessig,
         forskjell_ore: posted - skattemessig,

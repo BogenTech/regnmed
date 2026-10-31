@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn beregning_is_integer_and_sign_preserving() {
+    fn calculation_is_integer_and_sign_preserving() {
         assert_eq!(vat_of_base(1_000_000, 2500), 250_000);
         assert_eq!(vat_of_base(-1_000_000, 2500), -250_000);
         assert_eq!(vat_of_base(2, 2500), 1, "0,5 øre rounds away from zero");

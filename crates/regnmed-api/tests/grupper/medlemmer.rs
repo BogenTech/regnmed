@@ -103,7 +103,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
     assert_eq!(status, StatusCode::OK, "{response}");
 
     // The address is normalised, so the invitation reads in lower case.
-    let (_, liste) = call(
+    let (_, list) = call(
         &state,
         "GET",
         &format!("/companies/{company}/invitations"),
@@ -111,7 +111,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
         None,
     )
     .await;
-    assert_eq!(liste["invitasjoner"][0]["epost"], email);
+    assert_eq!(list["invitasjoner"][0]["epost"], email);
 
     // The person does not exist yet — she logs in for the first time.
     let (status, me) = call(&state, "GET", "/me", &ny_token, None).await;
@@ -121,7 +121,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
     assert_eq!(me["companies"][0]["access"], "bokforing");
 
     // The invitation is used up, not left lying around.
-    let (_, liste) = call(
+    let (_, list) = call(
         &state,
         "GET",
         &format!("/companies/{company}/invitations"),
@@ -129,7 +129,7 @@ async fn an_invitation_becomes_a_membership_on_login() {
         None,
     )
     .await;
-    assert_eq!(liste["invitasjoner"].as_array().unwrap().len(), 0);
+    assert_eq!(list["invitasjoner"].as_array().unwrap().len(), 0);
 
     // And it is not redeemed a second time.
     let (_, me) = call(&state, "GET", "/me", &ny_token, None).await;
@@ -249,7 +249,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
         .unwrap();
 
     // The person shows up as a member, but marked as not editable.
-    let (_, liste) = call(
+    let (_, list) = call(
         &state,
         "GET",
         &format!("/companies/{company}/access"),
@@ -257,7 +257,7 @@ async fn oppdrag_access_cannot_be_changed_from_here() {
         None,
     )
     .await;
-    let via_oppdrag = liste["medlemmer"]
+    let via_oppdrag = list["medlemmer"]
         .as_array()
         .unwrap()
         .iter()
@@ -364,18 +364,18 @@ async fn the_trail_shows_who_granted_whom_access() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{response}");
-    let endringer = response["endringer"].as_array().unwrap();
+    let changes = response["endringer"].as_array().unwrap();
     // Nyeste først.
-    assert_eq!(endringer[0]["endring"], "deaktivert");
-    assert_eq!(endringer[0]["utfort_av"], "Admin");
-    assert_eq!(endringer[1]["endring"], "rolle_endret");
-    assert_eq!(endringer[1]["fra_rolle"], "les");
-    assert_eq!(endringer[1]["til_rolle"], "bokforing");
+    assert_eq!(changes[0]["endring"], "deaktivert");
+    assert_eq!(changes[0]["utfort_av"], "Admin");
+    assert_eq!(changes[1]["endring"], "rolle_endret");
+    assert_eq!(changes[1]["fra_rolle"], "les");
+    assert_eq!(changes[1]["til_rolle"], "bokforing");
     // The redemption has no actor — the person redeemed it themselves,
     // and who invited them is on the invitation.
-    assert_eq!(endringer[2]["endring"], "lagt_til");
-    assert_eq!(endringer[2]["kilde"], "invitasjon");
-    assert!(endringer[2]["utfort_av"].is_null());
+    assert_eq!(changes[2]["endring"], "lagt_til");
+    assert_eq!(changes[2]["kilde"], "invitasjon");
+    assert!(changes[2]["utfort_av"].is_null());
 
     // And the access is genuinely gone.
     let (_, me) = call(&state, "GET", "/me", &token, None).await;

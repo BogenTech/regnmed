@@ -102,7 +102,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             // Our quantities are unitless counts; EN 16931 wants a UN/ECE
             // Rec 20 code, and "EA" (each) is the honest default.
             unit: "EA".into(),
-            enhetspris_ore: line.get("unit_price_ore"),
+            unit_price_ore: line.get("unit_price_ore"),
             net_ore: line.get("net_ore"),
             vat_rate_bp,
             vat_ore: line.get("vat_ore"),

@@ -425,9 +425,9 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
     // unregistered company's line is CORRECTLY coded, and the
     // abonnement rail picks it on purpose — so the guard must let it
     // through. Refusing every code broke that rail; this pins it.
-    let mut kode_sju = draft.clone();
-    kode_sju.lines[0].vat_code = Some("7".into());
-    let utenfor = regnmed_db::create_invoice(&pool, company, &kode_sju, "test", None)
+    let mut code_seven = draft.clone();
+    code_seven.lines[0].vat_code = Some("7".into());
+    let utenfor = regnmed_db::create_invoice(&pool, company, &code_seven, "test", None)
         .await
         .expect("code 7 says the sale is outside the vat act — always allowed");
     assert_eq!(utenfor.gross_ore, 5_565_29, "code 7 adds no tax");

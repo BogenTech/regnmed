@@ -476,8 +476,8 @@ pub async fn create_utbytte(
     created_by: &str,
 ) -> Result<DividendResolution> {
     ensure!(per_share_ore > 0, "utbytte per aksje må være positivt");
-    let bok = aksjeeierbok(pool, company_id, decided_date).await?;
-    let quantity: i64 = bok.iter().map(|a| a.share_count).sum();
+    let book = aksjeeierbok(pool, company_id, decided_date).await?;
+    let quantity: i64 = book.iter().map(|a| a.share_count).sum();
     ensure!(
         quantity > 0,
         "aksjeeierboken er tom den {decided_date} — registrer stiftelsen først"
@@ -587,7 +587,7 @@ pub async fn list_utbytte(
 
 /// Everything the RF-1086 filing needs, built from the aksjeeierbok.
 pub struct ReturnSet {
-    pub hovedskjema: tax_return::MainForm,
+    pub main_form: tax_return::MainForm,
     pub underskjemaer: Vec<(Uuid, tax_return::SubForm)>,
 }
 
@@ -609,9 +609,9 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     // anyway.
     let last_this_year = NaiveDate::from_ymd_opt(year, 12, 31).context("ugyldig år")?;
 
-    let bok = aksjeeierbok(pool, company_id, last_this_year).await?;
+    let book = aksjeeierbok(pool, company_id, last_this_year).await?;
     ensure!(
-        !bok.is_empty(),
+        !book.is_empty(),
         "aksjeeierboken er tom — registrer aksjonærene og stiftelsen før oppgaven"
     );
 
@@ -619,7 +619,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
 
     let mut shares_this_year = 0i64;
     let mut shares_last_year = 0i64;
-    let mut nyutstedelser: Vec<tax_return::NewIssue> = Vec::new();
+    let mut new_issues: Vec<tax_return::NewIssue> = Vec::new();
     let mut underskjemaer = Vec::new();
 
     // The nominal value is known through the events only when somebody
@@ -628,15 +628,15 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     // from count x nominal value.
     let nominal_value_ore = nominal_value_ore(pool, company_id).await?;
 
-    for a in &bok {
+    for a in &book {
         let events = hendelser_for(pool, a.id).await?;
         let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, year);
         shares_this_year += bevegelse.closing;
         shares_last_year += bevegelse.opening;
 
-        let mut bevegelser = Vec::new();
+        let mut movements = Vec::new();
         for h in events.iter().filter(|h| h.date.year() == year) {
-            bevegelser.push(tax_return::ShareMovement {
+            movements.push(tax_return::ShareMovement {
                 date: h.date,
                 type_: h.type_,
                 quantity: h.quantity,
@@ -647,7 +647,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 h.type_,
                 TransactionType::Stiftelse | TransactionType::Nyemisjon
             ) {
-                nyutstedelser.push(tax_return::NewIssue {
+                new_issues.push(tax_return::NewIssue {
                     date: h.date,
                     type_: h.type_,
                     new_shares: h.quantity,
@@ -686,7 +686,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                     this_year: bevegelse.closing,
                 },
                 dividend,
-                bevegelser,
+                movements,
             },
         ));
     }
@@ -694,8 +694,8 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     // "Antall aksjer etter stiftelse/nyemisjon" is the total ON THE
     // EVENT'S DATE, not at year end. With one emisjon they are the same
     // number; with two, the year-end total would be wrong for the first.
-    nyutstedelser.sort_by_key(|n| n.date);
-    for n in &mut nyutstedelser {
+    new_issues.sort_by_key(|n| n.date);
+    for n in &mut new_issues {
         n.shares_after = aksjeeierbok(pool, company_id, n.date)
             .await?
             .iter()
@@ -709,7 +709,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     };
 
     Ok(ReturnSet {
-        hovedskjema: tax_return::MainForm {
+        main_form: tax_return::MainForm {
             company: tax_return::Company {
                 orgnumber,
                 name: company.get("name"),
@@ -739,7 +739,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                     total_ore: u.total_ore,
                 })
                 .collect(),
-            nyutstedelser,
+            new_issues,
         },
         underskjemaer,
     })

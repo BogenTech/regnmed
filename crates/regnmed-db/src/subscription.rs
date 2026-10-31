@@ -14,7 +14,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 /// The facts the status rule needs, fetched in one query.
-async fn fakta(
+async fn facts(
     pool: &PgPool,
     company_id: Uuid,
     today: NaiveDate,
@@ -45,9 +45,9 @@ async fn fakta(
 /// Today's status for one company.
 pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
     let today = Utc::now().date_naive();
-    let (created, dekket, last_end) = fakta(pool, company_id, today).await?;
+    let (created, covered, last_end) = facts(pool, company_id, today).await?;
     Ok(regnmed_core::subscription::status(
-        created, dekket, last_end, today,
+        created, covered, last_end, today,
     ))
 }
 
@@ -406,14 +406,14 @@ pub async fn save_stripe_subscription(
     }
     // Coverage only if the company does not already have an open row —
     // an existing customer on the old rail keeps the one it has.
-    let dekket: bool = sqlx::query_scalar(
+    let covered: bool = sqlx::query_scalar(
         "select exists(select 1 from abonnement
                         where company_id = $1 and valid_to is null)",
     )
     .bind(company_id)
     .fetch_one(&mut *tx)
     .await?;
-    if !dekket {
+    if !covered {
         sqlx::query(
             "insert into abonnement (id, company_id, plan, valid_from, valid_to, note, created_by)
              values ($1,$2,$3,current_date,null,$4,$5)",
@@ -930,7 +930,7 @@ pub async fn fakturer_maned(
     // invoicing the same month: the cron runs on the 1st, while Stripe
     // bills on the subscription's own anniversary, so the run-log check
     // alone would not save us — it would only notice after the fact.
-    let kunder = sqlx::query(
+    let customers = sqlx::query(
         "select c.id, c.orgnr, c.name, a.plan
          from company c
          join abonnement a on a.company_id = c.id
@@ -949,7 +949,7 @@ pub async fn fakturer_maned(
     .await?;
 
     let mut outcome = Vec::new();
-    for customer in &kunder {
+    for customer in &customers {
         let company_id: Uuid = customer.get("id");
         let name: String = customer.get("name");
         let result = fakturer_en(

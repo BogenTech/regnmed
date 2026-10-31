@@ -373,15 +373,15 @@ async fn budgets_are_versioned_and_the_variance_names_its_version() {
         .iter()
         .find(|s| s["heading"] == "Annen driftskostnad")
         .unwrap();
-    let gebyr = other["linjer"]
+    let fee = other["linjer"]
         .as_array()
         .unwrap()
         .iter()
         .find(|l| l["account"] == "7770")
         .unwrap();
-    assert_eq!(gebyr["budsjett_hittil_ore"], 0);
-    assert_eq!(gebyr["faktisk_hittil_ore"], 750_00);
-    assert_eq!(gebyr["avvik_hittil_ore"], 750_00);
+    assert_eq!(fee["budsjett_hittil_ore"], 0);
+    assert_eq!(fee["faktisk_hittil_ore"], 750_00);
+    assert_eq!(fee["avvik_hittil_ore"], 750_00);
 
     // Drafts can be discarded.
     let (status, _) = request(

@@ -253,7 +253,7 @@ pub async fn create_invoice_in(
             let rate_micro = match draft.exchange_rate_micro {
                 Some(exchange_rate) => exchange_rate,
                 None => {
-                    crate::currency::require_kurs(pool, code, draft.invoice_date)
+                    crate::currency::require_exchange_rate(pool, code, draft.invoice_date)
                         .await?
                         .1
                 }
@@ -387,7 +387,7 @@ pub async fn create_invoice_in(
             .map(|(line, amounts)| PdfLinje {
                 description: line.description.clone(),
                 quantity_milli: line.quantity_milli,
-                enhetspris_ore: line.unit_price_ore,
+                unit_price_ore: line.unit_price_ore,
                 vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
                 net_ore: amounts.net_ore,
                 vat_ore: amounts.vat_ore,

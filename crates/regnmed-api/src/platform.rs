@@ -307,9 +307,9 @@ async fn list_customers(
     Query(query): Query<SokQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.require_systemadmin()?;
-    let kunder = regnmed_db::platform_list_customers(&state.pool, query.sok.as_deref()).await?;
+    let customers = regnmed_db::platform_list_customers(&state.pool, query.sok.as_deref()).await?;
     Ok(Json(json!({
-        "kunder": kunder.iter().map(|k| json!({
+        "kunder": customers.iter().map(|k| json!({
             "party_id": k.party_id,
             "party_no": k.party_no,
             "navn": k.name,
@@ -337,7 +337,7 @@ async fn overview(
     let mut fordeling = std::collections::BTreeMap::new();
     for a in &abo {
         let status =
-            regnmed_core::subscription::status(a.created, a.dekket_i_dag, a.last_end, today);
+            regnmed_core::subscription::status(a.created, a.covered_today, a.last_end, today);
         *fordeling.entry(status.slug()).or_insert(0i64) += 1;
     }
     Ok(Json(json!({
@@ -365,13 +365,13 @@ async fn list_subscriptions(
         "abonnementer": abo.iter().map(|a| {
             use regnmed_core::subscription::Status;
             let status =
-                regnmed_core::subscription::status(a.created, a.dekket_i_dag, a.last_end, today);
+                regnmed_core::subscription::status(a.created, a.covered_today, a.last_end, today);
             // The date that matters for THIS status — same shape as /me.
             let date = match status {
                 Status::Active => a.valid_to,
                 Status::Trial { to } => Some(to),
                 Status::Grace { blocked_from } => Some(blocked_from),
-                Status::Blocked { siden } => Some(siden),
+                Status::Blocked { since } => Some(since),
             };
             json!({
                 "company_id": a.company_id,
@@ -442,7 +442,7 @@ async fn company_detail(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let s = regnmed_db::company_settings(&state.pool, company_id).await?;
     let members = regnmed_db::members::list_medlemmer(&state.pool, company_id).await?;
-    let invitasjoner = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
+    let invitations = regnmed_db::members::list_invitasjoner(&state.pool, company_id).await?;
     let status = regnmed_db::subscription::status_for(&state.pool, company_id).await?;
     let dekning = regnmed_db::coverage_rows(&state.pool, company_id).await?;
     use regnmed_core::subscription::Status;
@@ -450,7 +450,7 @@ async fn company_detail(
         Status::Active => None,
         Status::Trial { to } => Some(to),
         Status::Grace { blocked_from } => Some(blocked_from),
-        Status::Blocked { siden } => Some(siden),
+        Status::Blocked { since } => Some(since),
     };
     Ok(Json(json!({
         "settings": {
@@ -470,7 +470,7 @@ async fn company_detail(
             "via": m.via,
             "kan_endres": m.kan_endres,
         })).collect::<Vec<_>>(),
-        "invitasjoner": invitasjoner.iter().map(|i| json!({
+        "invitasjoner": invitations.iter().map(|i| json!({
             "id": i.id,
             "epost": i.email,
             "rolle": i.role,
@@ -663,7 +663,7 @@ async fn assign_firm(
     Ok(Json(json!({ "tildelt": true })))
 }
 
-fn innsyn_json(rader: &[regnmed_db::PlatformAccessLog]) -> serde_json::Value {
+fn access_log_json(rader: &[regnmed_db::PlatformAccessLog]) -> serde_json::Value {
     json!({
         "innsyn": rader.iter().map(|r| json!({
             "navn": r.name,
@@ -685,7 +685,7 @@ pub async fn company_platform_access(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::MemberAdmin).await?;
     let rader = regnmed_db::platform_access_for_company(&state.pool, company_id).await?;
-    Ok(Json(innsyn_json(&rader)))
+    Ok(Json(access_log_json(&rader)))
 }
 
 /// The byrå twin, for firm admins.
@@ -696,5 +696,5 @@ pub async fn firm_platform_access(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     crate::firm_members::require_firm_admin(&state, person.person_id, firm_id).await?;
     let rader = regnmed_db::platform_access_for_firm(&state.pool, firm_id).await?;
-    Ok(Json(innsyn_json(&rader)))
+    Ok(Json(access_log_json(&rader)))
 }

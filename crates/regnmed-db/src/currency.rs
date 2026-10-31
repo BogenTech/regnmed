@@ -9,7 +9,7 @@ use chrono::NaiveDate;
 use regnmed_core::currency::is_valid_currency_code;
 use sqlx::{PgPool, Row};
 
-pub async fn insert_kurs(
+pub async fn insert_exchange_rate(
     pool: &PgPool,
     currency: &str,
     date: NaiveDate,
@@ -36,7 +36,7 @@ pub async fn insert_kurs(
 
 /// The rate in effect on `dato`: the newest notering on or before it.
 /// None before the register's coverage — the caller fails loudly.
-pub async fn kurs_for(
+pub async fn exchange_rate_for(
     pool: &PgPool,
     currency: &str,
     date: NaiveDate,
@@ -54,18 +54,20 @@ pub async fn kurs_for(
 }
 
 /// Convenience with a clear error for the posting paths.
-pub async fn require_kurs(
+pub async fn require_exchange_rate(
     pool: &PgPool,
     currency: &str,
     date: NaiveDate,
 ) -> Result<(NaiveDate, i64)> {
-    kurs_for(pool, currency, date).await?.with_context(|| {
-        format!("ingen {currency}-kurs på eller før {date} — hent eller registrer kurser")
-    })
+    exchange_rate_for(pool, currency, date)
+        .await?
+        .with_context(|| {
+            format!("ingen {currency}-kurs på eller før {date} — hent eller registrer kurser")
+        })
 }
 
 #[derive(Debug)]
-pub struct KursRow {
+pub struct ExchangeRateRow {
     pub currency: String,
     pub date: NaiveDate,
     pub rate_micro: i64,
@@ -73,7 +75,7 @@ pub struct KursRow {
 }
 
 /// The newest rate per currency (the portal's kurser card).
-pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<KursRow>> {
+pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<ExchangeRateRow>> {
     let rows = sqlx::query(
         "select distinct on (valuta) valuta, dato, kurs_micro, kilde
          from valutakurs order by valuta, dato desc",
@@ -82,7 +84,7 @@ pub async fn latest_kurser(pool: &PgPool) -> Result<Vec<KursRow>> {
     .await?;
     Ok(rows
         .iter()
-        .map(|r| KursRow {
+        .map(|r| ExchangeRateRow {
             currency: r.get("valuta"),
             date: r.get("dato"),
             rate_micro: r.get("kurs_micro"),

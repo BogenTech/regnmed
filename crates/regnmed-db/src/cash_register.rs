@@ -116,19 +116,19 @@ pub async fn post_daily_settlement(
     let mut difference = None;
     let mut difference_ore = 0;
     if let (Some(cash_account), Some(opptalt)) = (&inn.cash_account, inn.counted_cash_ore) {
-        let registrert: i64 = inn
+        let registered: i64 = inn
             .payment
             .iter()
             .filter(|(account, _)| account == cash_account)
             .map(|(_, amount)| *amount)
             .sum();
-        difference_ore = opptalt - registrert;
+        difference_ore = opptalt - registered;
         if let Some(diff) = build_discrepancy(
             inn.date,
             &inn.z_nummer,
             cash_account,
             &inn.difference_account,
-            registrert,
+            registered,
             opptalt,
         ) {
             let d = crate::post_voucher_in(&mut tx, company_id, &diff, created_by).await?;

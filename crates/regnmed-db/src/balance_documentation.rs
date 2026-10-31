@@ -33,7 +33,7 @@ pub struct BalanceSheetLine {
 pub struct Avstemming {
     pub id: Uuid,
     pub balance_ore: i64,
-    pub forklaring: String,
+    pub explanation: String,
     pub reconciled_date: NaiveDate,
     pub reconciled_by: String,
     pub has_attachment: bool,
@@ -100,7 +100,7 @@ pub async fn balance_status(
         .map(|r| Avstemming {
             id: r.get("id"),
             balance_ore: r.get("saldo_ore"),
-            forklaring: r.get("forklaring"),
+            explanation: r.get("forklaring"),
             reconciled_date: r.get("avstemt_dato"),
             reconciled_by: r.get("avstemt_av"),
             has_attachment: r.get("har_vedlegg"),
@@ -125,13 +125,13 @@ pub async fn reconcile(
     company_id: Uuid,
     account: &str,
     period: NaiveDate,
-    forklaring: &str,
+    explanation: &str,
     attachment: Option<(&str, &str, &[u8])>,
     reconciled_by: Uuid,
     reconciled_date: NaiveDate,
 ) -> Result<Uuid> {
     ensure!(
-        !forklaring.trim().is_empty(),
+        !explanation.trim().is_empty(),
         "avstemmingen må forklare hva saldoen består av"
     );
     let finnes: bool = sqlx::query_scalar(
@@ -182,7 +182,7 @@ pub async fn reconcile(
     .bind(account)
     .bind(period)
     .bind(balance_ore)
-    .bind(forklaring.trim())
+    .bind(explanation.trim())
     .bind(bytes)
     .bind(name)
     .bind(type_)
@@ -252,7 +252,7 @@ pub async fn history(
     .map(|r| Avstemming {
         id: r.get("id"),
         balance_ore: r.get("saldo_ore"),
-        forklaring: r.get("forklaring"),
+        explanation: r.get("forklaring"),
         reconciled_date: r.get("avstemt_dato"),
         reconciled_by: r.get("avstemt_av"),
         has_attachment: r.get("har_vedlegg"),

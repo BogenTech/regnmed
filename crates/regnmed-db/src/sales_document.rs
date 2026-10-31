@@ -490,7 +490,7 @@ pub async fn salgsdokument_pdf(
         pdf_linjer.push(PdfLinje {
             description: line.description.clone(),
             quantity_milli: line.quantity_milli,
-            enhetspris_ore: line.unit_price_ore,
+            unit_price_ore: line.unit_price_ore,
             vat_rate_bp: line.vat_code.as_ref().map(|_| line.rate_bp),
             net_ore: amounts.net_ore,
             vat_ore: amounts.vat_ore,

@@ -462,7 +462,7 @@ fn last_working_day(rows: &[UnbilledRow]) -> Option<NaiveDate> {
     rows.iter().map(|r| r.date).max()
 }
 
-fn grupper(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
+fn groups(rows: Vec<UnbilledRow>) -> Vec<UnbilledGroup> {
     let mut groups: Vec<UnbilledGroup> = Vec::new();
     for row in rows {
         let group = match groups
@@ -511,7 +511,7 @@ pub async fn unbilled_groups(
     project: Option<&str>,
     through: Option<NaiveDate>,
 ) -> Result<Vec<UnbilledGroup>> {
-    Ok(grupper(
+    Ok(groups(
         unbilled_rows(pool, company_id, project, through).await?,
     ))
 }
@@ -602,7 +602,7 @@ pub async fn create_invoice_with_hours(
     // but hours worked after that date would make it a lie, so the
     // later of the two wins.
     let last_hour = last_working_day(&rows);
-    let groups = grupper(rows);
+    let groups = groups(rows);
 
     let mut lines = draft.lines.clone();
     lines.extend(groups.iter().map(|g| hour_line(g, vat_code)));
@@ -662,7 +662,7 @@ pub async fn bill_hours(
     // Leveringstidspunktet er den siste arbeidsdagen som faktureres,
     // ikke fakturadatoen: timene ble levert da de ble utført.
     let levering = last_working_day(&rows).unwrap_or(invoice_date);
-    let groups = grupper(rows);
+    let groups = groups(rows);
     ensure!(!groups.is_empty(), "ingen ufakturerte fakturerbare timer");
 
     let lines = groups.iter().map(|g| hour_line(g, vat_code)).collect();

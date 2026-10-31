@@ -250,7 +250,7 @@ CronJobben `regnmed abonnement-oppfolging` lukker livssyklusen:
    noen: selskap uten e-postadresse purres ikke, men rapporteres
    høylytt til noen retter adressen.
 3. **Sperr**: står fakturaen ubetalt
-   `SPERR_ETTER_FORFALL_DAGER` (30) dager etter forfall OG en purring
+   `BLOCK_AFTER_DUE_DAYS` (30) dager etter forfall OG en purring
    er sendt i en TIDLIGERE kjøring, avsluttes dekningen. Det sperrer
    ikke i seg selv — den vanlige fristen på 14 dager løper oppå
    (statusen er fortsatt beregnet, aldri lagret), så selve sperren

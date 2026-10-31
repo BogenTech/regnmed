@@ -168,9 +168,9 @@ impl Llm {
             );
         }
 
-        let respons: Respons = serde_json::from_str(&body)
+        let response: Respons = serde_json::from_str(&body)
             .with_context(|| format!("uventet reply fra leverandøren: {}", truncate(&body, 400)))?;
-        let Some(valg) = respons.choices.into_iter().next() else {
+        let Some(valg) = response.choices.into_iter().next() else {
             bail!("leverandøren svarte uten noe valg");
         };
 
@@ -232,8 +232,8 @@ mod tests {
             }]
         })
         .to_string();
-        let respons: Respons = serde_json::from_str(&body).unwrap();
-        let calls = &respons.choices[0].message.tool_calls.as_ref().unwrap()[0];
+        let response: Respons = serde_json::from_str(&body).unwrap();
+        let calls = &response.choices[0].message.tool_calls.as_ref().unwrap()[0];
         assert_eq!(calls.function.name, "saldobalanse");
         let args: Map<String, Value> = serde_json::from_str(&calls.function.arguments).unwrap();
         assert_eq!(args["year"], 2026);
@@ -251,9 +251,9 @@ mod tests {
             }]
         })
         .to_string();
-        let respons: Respons = serde_json::from_str(&body).unwrap();
+        let response: Respons = serde_json::from_str(&body).unwrap();
         assert_eq!(
-            respons.choices[0].message.content.as_deref(),
+            response.choices[0].message.content.as_deref(),
             Some("ferdig")
         );
     }
