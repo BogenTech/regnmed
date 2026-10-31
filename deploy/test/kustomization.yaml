@@ -65,7 +65,7 @@ images:
     # v0.1.0, and the number an operator reads here should be the one
     # whose notes say what it contains. sha- tags remain valid for
     # deploying something unreleased.
-    newTag: v0.1.4
+    newTag: v0.1.5
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml
