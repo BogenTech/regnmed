@@ -29,6 +29,24 @@ pub async fn ensure_person(
     name: Option<&str>,
     email: Option<&str>,
 ) -> Result<Uuid> {
+    // Called on EVERY authenticated request. The common case — a known
+    // person whose name and e-mail did not change — must be a plain read:
+    // the upsert below writes (and waits for the synchronous standby) even
+    // when nothing changes.
+    if let Some(row) = sqlx::query("select id, name, email from person where oidc_sub = $1")
+        .bind(oidc_sub)
+        .fetch_optional(pool)
+        .await?
+    {
+        let stored_name: Option<String> = row.get("name");
+        let stored_email: Option<String> = row.get("email");
+        let changes = |new: Option<&str>, old: &Option<String>| {
+            new.is_some_and(|n| old.as_deref() != Some(n))
+        };
+        if !changes(name, &stored_name) && !changes(email, &stored_email) {
+            return Ok(row.get("id"));
+        }
+    }
     let row = sqlx::query(
         "insert into person (id, oidc_sub, name, email) values ($1, $2, $3, $4)
          on conflict (oidc_sub) do update

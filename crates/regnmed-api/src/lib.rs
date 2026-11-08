@@ -885,8 +885,37 @@ pub fn router(state: AppState) -> Router {
         // Hardening on EVERY response (#64): nosniff and Referrer-Policy
         // always, CSP on HTML. One seam, so no endpoint can forget.
         .layer(axum::middleware::from_fn(herding::security_headers))
+        .layer(axum::middleware::from_fn(request_timing))
         .layer(catch_panic_layer())
         .with_state(state)
+}
+
+/// Requests slower than this are logged with their duration.
+const SLOW_REQUEST_MS: u128 = 250;
+
+/// Measures every request: `Server-Timing: app;dur=…` on the response, so the
+/// browser's devtools show server time apart from the network, and a log line
+/// for anything slow. The path is logged without its query string, which can
+/// carry search terms and hashes.
+async fn request_timing(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let started = std::time::Instant::now();
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    let mut response = next.run(request).await;
+    let elapsed = started.elapsed();
+    if let Ok(value) =
+        axum::http::HeaderValue::from_str(&format!("app;dur={:.1}", elapsed.as_secs_f64() * 1000.0))
+    {
+        response.headers_mut().insert("server-timing", value);
+    }
+    if elapsed.as_millis() >= SLOW_REQUEST_MS {
+        eprintln!(
+            "slow request: {method} {path} -> {} in {} ms",
+            response.status().as_u16(),
+            elapsed.as_millis()
+        );
+    }
+    response
 }
 
 /// One bad request must NEVER take the process down for everybody else.
@@ -1013,4 +1042,28 @@ async fn me(
             }))
             .collect::<Vec<_>>(),
     })))
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use axum::{Router, body::Body, http::Request, routing::get};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn every_response_carries_server_timing() {
+        let app = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(super::request_timing));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/?q=secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let timing = response.headers()["server-timing"].to_str().unwrap();
+        assert!(timing.starts_with("app;dur="), "{timing}");
+    }
 }

@@ -83,15 +83,26 @@ spec:
       number: 1
       dataDurability: preferred
     parameters:
-      shared_buffers: 128MB
+      # Sized for the 4 GB boxes it shares with glugg (2026-11-08): a quarter
+      # of the container for shared buffers, the planner told the OS cache
+      # is there. A bigger box is the next step, not a bigger share of this.
+      shared_buffers: 256MB
+      effective_cache_size: 768MB
+      work_mem: 8MB
+      maintenance_work_mem: 128MB
       max_connections: "100"
       # Why: deploy/base/postgres.yaml (a half-open connection is invisible).
       authentication_timeout: 10s
+      # Per-query statistics, so slow queries are measured, not guessed. CNPG
+      # loads the library and creates the extension when these are set.
+      pg_stat_statements.max: "5000"
+      pg_stat_statements.track: top
   resources:
     requests:
-      memory: 256Mi
+      memory: 768Mi
+      cpu: 250m
     limits:
-      memory: 512Mi
+      memory: 1Gi
 ---
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore

@@ -106,8 +106,12 @@ use sqlx::postgres::PgPoolOptions;
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
 
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    // The portal fires ~20 requests on load and each holds a connection for
+    // its queries; at 5 per process they queued (2026-11-08). Connections
+    // open lazily, so 20 is a ceiling, not a cost: two API replicas plus jobs
+    // stay well under Postgres's max_connections of 100.
     PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(20)
         .connect(database_url)
         .await
 }
