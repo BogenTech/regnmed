@@ -55,9 +55,20 @@ spec:
               command: ["/bin/sh", "-ec"]
               args:
                 - |
+                  # A new pod can be refused for its first seconds while a
+                  # NetworkPolicy controller admits it (Hetzner, 2026-11-08);
+                  # wait for a completed query, not pg_isready (docs/deploy.md).
+                  for i in $(seq 1 30); do
+                    psql -h postgres -U regnmed -d regnmed -qtAXc 'select 1' >/dev/null 2>&1 && break
+                    sleep 2
+                  done
                   stamp=$(date +%Y%m%d-%H%M%S)
+                  find /backup -name '*.partial' -delete
+                  # Written as .partial and renamed on success: a failed dump
+                  # must never be the newest *.dump the restore drill picks.
                   for db in regnmed regnid; do
-                    pg_dump -h postgres -U regnmed -Fc -f "/backup/$db-$stamp.dump" "$db"
+                    pg_dump -h postgres -U regnmed -Fc -f "/backup/$db-$stamp.dump.partial" "$db"
+                    mv "/backup/$db-$stamp.dump.partial" "/backup/$db-$stamp.dump"
                   done
                   find /backup -name '*.dump' -mtime +14 -delete
                   ls -lh /backup | tail -5
@@ -112,6 +123,10 @@ spec:
               command: ["/bin/sh", "-ec"]
               args:
                 - |
+                  for i in $(seq 1 30); do
+                    psql -h postgres -U regnmed -d regnmed -qtAXc 'select 1' >/dev/null 2>&1 && break
+                    sleep 2
+                  done
                   latest=$(ls -t /backup/regnmed-*.dump | head -1)
                   echo "restoring $latest into regnmed_restore_check"
                   dropdb   -h postgres -U regnmed --if-exists regnmed_restore_check
