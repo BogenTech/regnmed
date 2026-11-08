@@ -1,0 +1,125 @@
+# Prod's Postgres on CloudNativePG (the Hetzner cluster's operator, installed
+# by the platform — bisand/hetzner platform/cnpg.yaml). Replaces base's
+# single-pod Deployment, which patches/postgres.yaml deletes.
+#
+# Two instances on two boxes, synchronous to the standby while it is up: the
+# boxes have local disks only (local-path), so replication is what survives a
+# lost box, not the volume. A primary left alone still takes writes
+# (dataDurability: preferred) — the ledger keeps taking postings, not freezing.
+#
+# Everything that already says `postgres:5432` keeps working: base's Service
+# of that name is re-pointed at the PRIMARY (patches/postgres.yaml), so the
+# database URLs in db-credentials, the backup and the restore-verify jobs are
+# unchanged.
+#
+# The login is the secret `postgres-login` (type kubernetes.io/basic-auth,
+# username regnmed), created out-of-band like every other credential — and
+# with the SAME password as db-credentials' URLs, or nothing can log in:
+#   kubectl -n regnmed create secret generic postgres-login \
+#     --type=kubernetes.io/basic-auth \
+#     --from-literal=username=regnmed --from-literal=password=<db-credentials' password>
+#
+# TWO BACKUPS, for two different questions. CNPG's Barman Cloud plugin archives
+# every WAL segment and takes a nightly base backup to Hetzner Object Storage —
+# that is the RECOVERY path (point in time, onto a fresh cluster). The nightly
+# pg_dump + weekly restore-and-verify-ledger drill (deploy/shared/backup.yaml)
+# stays: it is the AUDIT evidence that a restored ledger still verifies.
+#
+# The bucket is the platform's `bogenhuset` (hel1), under its own server name
+# (s3://bogenhuset/cnpg/regnmed-prod). Not a bucket of regnmed's own: a Hetzner
+# S3 key reaches every bucket in the project, so a second bucket would separate
+# nothing. The key is the secret `regnmed-db-s3` (ACCESS_KEY_ID,
+# ACCESS_SECRET_KEY), made by hand like every other credential.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: regnmed
+spec:
+  instances: 2
+  # Ubuntu 26.04's AppArmor stops a container's processes signalling each
+  # other, and Postgres hangs at its first connection — the same trap as
+  # homelab's 2026-10-29 outage (docs/deploy.md). The rest is CNPG's default,
+  # which this field replaces.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 26
+    runAsGroup: 26
+    fsGroup: 26
+    seccompProfile: { type: RuntimeDefault }
+    appArmorProfile: { type: Unconfined }
+  affinity:
+    podAntiAffinityType: required
+  storage: { size: 20Gi }
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: postgres-s3
+        serverName: regnmed-prod
+  bootstrap:
+    initdb:
+      database: regnmed
+      owner: regnmed
+      secret: { name: postgres-login }
+  managed:
+    roles:
+      # What the docker image's superuser gave on homelab, and no more:
+      # regnid creates its own database at startup, the restore-verify job
+      # creates and drops a scratch one, and migration 0004 creates
+      # regnmed_app.
+      - name: regnmed
+        ensure: present
+        login: true
+        createdb: true
+        createrole: true
+        passwordSecret: { name: postgres-login }
+  postgresql:
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+    parameters:
+      shared_buffers: 128MB
+      max_connections: "100"
+      # Why: deploy/base/postgres.yaml (a half-open connection is invisible).
+      authentication_timeout: 10s
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-s3
+  namespace: regnmed
+spec:
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: s3://bogenhuset/cnpg
+    endpointURL: https://hel1.your-objectstorage.com
+    s3Credentials:
+      accessKeyId: { name: regnmed-db-s3, key: ACCESS_KEY_ID }
+      secretAccessKey: { name: regnmed-db-s3, key: ACCESS_SECRET_KEY }
+    wal: { compression: gzip }
+    data: { compression: gzip }
+  # Hetzner's S3 rejects the newer AWS SDK's default request checksums.
+  instanceSidecarConfiguration:
+    env:
+      - { name: AWS_REQUEST_CHECKSUM_CALCULATION, value: when_required }
+      - { name: AWS_RESPONSE_CHECKSUM_VALIDATION, value: when_required }
+---
+# A base backup every night at 03:00 (glugg 02:30 and test 02:45 share the bucket).
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-daily
+  namespace: regnmed
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster: { name: postgres }
+  method: plugin
+  pluginConfiguration: { name: barman-cloud.cloudnative-pg.io }
