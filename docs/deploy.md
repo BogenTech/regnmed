@@ -13,9 +13,10 @@ deploy/shared  what the SERVED environments run and the laptop does not:
 deploy/local   k3d in colima, *.localhost, no TLS, local-path storage —
                the integration proving ground (scripts/dev-cluster.sh,
                2 GB VM)
-deploy/test    prod-shaped: replicated storage, secrets out of git, every
-               scheduled job running, and the card rail against Stripe
-               TEST mode
+deploy/test    prod-shaped: secrets out of git, every scheduled job
+               running, and the card rail against Stripe TEST mode.
+               Runs on the Hetzner cluster (arm64, CloudNativePG) since
+               2026-11-08 — see «Test på Hetzner» below
 deploy/prod    real domains, TLS, secrets out of git, backups with
                restore-verification, TSA-witnessed anchoring
 ```
@@ -27,6 +28,37 @@ An environment that skips them tests nothing about them. What it does
 *not* share with production: one API replica instead of two, small
 volumes, and no external TSA witness — a timestamp is a claim about a
 real ledger, and test roots are not that.
+
+### Test på Hetzner (2026-11-08)
+
+Test flyttet først, som generalprøve for at prod skal samme vei
+(bisand/hetzner, PLAN.md fase 3 og 4). Plattformen der eier clusteret;
+regnmed er en *tenant*: `tenants/regnmed/test.yaml` lager navnerommet
+`regnmed-test`, en ServiceAccount som bare er admin der, en
+NetworkPolicy som bare slipper inn Traefik, monitoring og CNPG-operatoren,
+og Flux-objektene som henter `deploy/test` fra main. Overlayet kan derfor
+ikke røre noe utenfor sitt eget navnerom — heller ikke Namespace-objektet,
+som overlayet sletter fra base.
+
+Det som skiller test fra prod i rørleggingen:
+
+- **Postgres er CloudNativePG** (`deploy/test/postgres.yaml`): to
+  instanser på to bokser, synkron replikering mens standby lever. Tjenesten
+  `postgres` er pekt om til primæren, så alle URL-er, backupjobben og
+  restore-sjekken er uendret. Innloggingen er `postgres-login`
+  (basic-auth, samme passord som i `db-credentials`).
+- **Lokale disker** (local-path). Backupvolumet ligger på én boks; mistes
+  den, mistes de siste 14 dumpene, og neste natt fyller på igjen.
+  CNPG-backup til objektlagring (egen bøtte og nøkkel) er prods
+  gjenopprettingsvei og kommer i fase 4.
+- **postbud nås gjennom en Tailscale-egressproxy** (`deploy/test/postbud.yaml`),
+  siden podene der ikke er på tailnettet selv.
+- **TLS fra cert-manager** via plattformens `letsencrypt`-utsteder
+  (HTTP-01 gjennom Traefik). Trafikken kommer inn på plattformens
+  Floating IP, og vertsnavnene må peke dit før sertifikatet kan utstedes.
+- **arm64.** Imagene er multi-arch fra samme tagg (images.yml bygger
+  amd64 og arm64 nativt og slår dem sammen), så homelab og Hetzner kan
+  kjøre samme tagg under flyttingen.
 
 **Stripe runs in test mode there**, with dummy cards, so the chain that
 has only ever run in integration tests — invoice issued, card charged

@@ -1,40 +1,36 @@
-# Test postgres: password from the out-of-band secret, room to breathe
-# (still frugal — raise consciously, with docs/frugality.md in mind).
+# Base's single-pod Postgres is replaced by the CNPG cluster in ../postgres.yaml.
+$patch: delete
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
   namespace: regnmed
+---
+$patch: delete
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: regnmed
+---
+# The Service keeps its name — every URL says `postgres:5432` — and follows
+# whichever CNPG instance is primary now, so a failover moves it too.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: regnmed
 spec:
-  template:
-    spec:
-      containers:
-        - name: postgres
-          args:
-            - -c
-            - shared_buffers=128MB
-            - -c
-            - max_connections=100
-            # Repeated from base on purpose: a strategic-merge patch
-            # REPLACES the args list, so a flag only in base would be
-            # silently dropped here (docs/deploy.md).
-            - -c
-            - authentication_timeout=10s
-          env:
-            - name: POSTGRES_USER
-              value: regnmed
-            - name: POSTGRES_PASSWORD
-              value: null
-              valueFrom:
-                secretKeyRef:
-                  name: db-credentials
-                  key: password
-            - name: POSTGRES_DB
-              value: regnmed
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-          resources:
-            requests:
-              memory: 256Mi
-            limits:
-              memory: 512Mi
+  selector:
+    $patch: replace
+    cnpg.io/cluster: postgres
+    cnpg.io/instanceRole: primary
+---
+# The namespace belongs to the cluster, not to the overlay: on Hetzner the
+# platform's tenant stub (bisand/hetzner tenants/regnmed) creates it, and the
+# ServiceAccount this overlay is applied as may not touch cluster-scoped objects.
+$patch: delete
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: regnmed

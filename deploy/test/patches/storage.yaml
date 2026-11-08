@@ -1,47 +1,25 @@
-# Test volumes: the same REPLICATED class as production, at a fraction of
-# the size.
+# Test volumes on the Hetzner cluster: its default class (local-path — each
+# volume is a directory on ONE box's disk), at a fraction of prod's size.
 #
-# The class matters more than the size here. Test exists to find the
-# machinery broken while that is cheap, and volume behaviour — a node
-# lost, a volume reattached elsewhere, an expansion — is exactly the kind
-# of thing that must not be met for the first time in production. A
-# node-local class in test would prove none of it.
+# Postgres is not here: CNPG owns its volumes (../postgres.yaml) and survives
+# a lost box by replicating to a second instance, not by replicated storage.
+# What is left is the dump volume and NATS, and both are tied to the box they
+# landed on: lose that box and test loses its last 14 dumps, which the next
+# night starts refilling. Acceptable for test; prod's recovery path is CNPG's
+# object-storage backups (bisand/hetzner PLAN.md, phase 4).
 #
 # The pairing rule from deploy/prod/patches/storage.yaml still holds:
 # backup keeps 14 nightly `pg_dump -Fc`, and -Fc does nothing for JPEG or
-# PDF, so backup needs `retention × database`. A full 5Gi database would
-# therefore need 70Gi of backup — and 15Gi is what is here.
-#
-# THAT IS DELIBERATE AND IT IS A THRESHOLD: 15Gi holds 14 nights while the
-# test database is under ~1 GB, which is far more than a test environment
-# that gets seeded and reset should ever hold. If test grows past that,
-# the honest fix is to reset it, not to grow the volume — a test database
-# accumulating a year of data is a test environment nobody trusts to
-# restore. Break the relationship without noticing and the backup job
-# starts failing while the database still looks healthy, which is exactly
-# the failure test exists to catch before production meets it.
-#
-# Replication multiplies these too: at Longhorn's default of 3 replicas
-# this is ~63Gi of raw disk, on a pool of ~631Gi shared with production
-# and GlusterFS.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-data
-  namespace: regnmed
-spec:
-  storageClassName: longhorn
-  resources:
-    requests:
-      storage: 5Gi
----
+# PDF, so backup needs `retention × database`. 15Gi holds 14 nights while
+# the test database is under ~1 GB. If test grows past that, the honest fix
+# is to reset it, not to grow the volume. (local-path does not enforce the
+# size; it is the arithmetic, and the request the scheduler sees.)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: backup-data
   namespace: regnmed
 spec:
-  storageClassName: longhorn
   resources:
     requests:
       storage: 15Gi
@@ -52,7 +30,6 @@ metadata:
   name: nats-data
   namespace: regnmed
 spec:
-  storageClassName: longhorn
   resources:
     requests:
       storage: 1Gi
