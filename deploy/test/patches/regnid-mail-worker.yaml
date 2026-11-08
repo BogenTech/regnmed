@@ -4,7 +4,9 @@
 # the platform's outbound mail service. It is reached over the tailnet, so
 # POSTBUD_URL is a 100.x address and never a public one — a hostname that
 # resolved differently inside and outside the cluster is how mail quietly
-# starts leaving by the wrong door.
+# starts leaving by the wrong door. On Hetzner the pods are not on the
+# tailnet themselves, so the address is the egress proxy in ../postbud.yaml,
+# which forwards to that same 100.x address.
 #
 # Why this transport and not `smtp` straight at the relay: the mail worker
 # NAKs and retries a failed delivery up to five times, and through SMTP
@@ -34,7 +36,7 @@ spec:
             - name: MAIL_FROM
               value: regnmed <no-reply@regnmed.no>
             - name: POSTBUD_URL
-              value: http://100.121.55.58:30080
+              value: http://postbud:30080
             - name: POSTBUD_API_KEY
               valueFrom:
                 secretKeyRef:

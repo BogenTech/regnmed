@@ -1,6 +1,6 @@
 # Test ingress: the SAME three-host shape as production, under test.*.
-# EDIT THE HOSTS to your real test domains (they must match the
-# ISSUER/OIDC_ISSUER/PORTAL_BASE_URL values in patches/).
+# The hosts must match the ISSUER/OIDC_ISSUER/PORTAL_BASE_URL values in
+# patches/.
 #
 # Three hosts rather than two, for the same reason as prod: the portal is
 # what a human opens and the API is what an integration calls, and the
@@ -9,21 +9,9 @@
 # `connect-src 'self'` in the CSP still means what it says. Testing a
 # two-host shape would test a topology production does not have.
 #
-# NO TLS BLOCK, AND NO cert-manager ANNOTATION — deliberately, and for the
-# same reason as production (the long note in deploy/prod/ingress.yaml):
-# nginx-proxy-manager terminates TLS one hop earlier and forwards plain HTTP
-# to Traefik's MetalLB address, so a certificate requested here would never be
-# presented to anyone, and cert-manager's HTTP-01 self-check cannot even
-# complete — NPM answers the challenge path and force-redirects to HTTPS.
-#
-# Test therefore uses a REAL browser-trusted certificate from NPM, not a
-# staging one. That is a difference from what this file said before, and it
-# costs the thing staging was protecting: production ACME rate limits are per
-# registered domain, so test.regnmed.no and regnmed.no share a budget. NPM
-# renews on its own schedule and does not reissue per deploy, so the risk is
-# much smaller than a cluster that reissues on every rebuild — but it is no
-# longer zero, which is worth knowing before automating anything that
-# recreates NPM proxy hosts.
+# TLS is cert-manager's, through the Hetzner platform's shared ClusterIssuer
+# `letsencrypt` (HTTP-01 via Traefik). Traffic arrives on the platform's
+# Floating IP; the hosts' DNS must point there before a certificate can issue.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
