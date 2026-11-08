@@ -69,6 +69,7 @@ pub async fn upload_inbox_document(
     if let Some(filename) = duplicate {
         bail!("nøyaktig dette dokumentet ligger allerede i innboksen som «{filename}»");
     }
+    let in_row = crate::blob::blobs().store(content).await?;
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into inbox_document (id, company_id, filename, content_type, byte_size,
@@ -81,7 +82,7 @@ pub async fn upload_inbox_document(
     .bind(content_type)
     .bind(content.len() as i64)
     .bind(digest.as_slice())
-    .bind(content)
+    .bind(in_row)
     .bind(uploaded_by)
     .execute(pool)
     .await?;
@@ -146,11 +147,11 @@ pub async fn get_inbox_document(
     .fetch_optional(pool)
     .await?
     .context("no such inbox document")?;
-    let content: Vec<u8> = row.get("content");
     let stored: Vec<u8> = row.get("sha256");
-    if sha256(&content).as_slice() != stored.as_slice() {
-        bail!("inbox document {document_id} failed its hash check");
-    }
+    let content = crate::blob::blobs()
+        .load(row.get("content"), &stored)
+        .await
+        .with_context(|| format!("inbox document {document_id}"))?;
     Ok((row.get("filename"), row.get("content_type"), content))
 }
 
@@ -171,7 +172,7 @@ pub async fn bokfor_inbox_document(
     let mut tx = pool.begin().await?;
 
     let document = sqlx::query(
-        "select filename, content_type, sha256, content, status
+        "select filename, content_type, byte_size, sha256, content, status
          from inbox_document where id = $1 and company_id = $2 for update",
     )
     .bind(document_id)
@@ -239,7 +240,10 @@ pub async fn bokfor_inbox_document(
 
     let posted = post_voucher_in(&mut tx, company_id, draft, decided_by).await?;
 
-    let content: Vec<u8> = document.get("content");
+    // The attachment names the same bytes: in the row when the document
+    // holds them, otherwise the same object in the store (content-addressed,
+    // so nothing is copied).
+    let content: Option<Vec<u8>> = document.get("content");
     sqlx::query(
         "insert into attachment (id, company_id, voucher_id, filename, content_type,
                                  byte_size, sha256, content, uploaded_by)
@@ -250,7 +254,7 @@ pub async fn bokfor_inbox_document(
     .bind(posted.id)
     .bind(document.get::<String, _>("filename"))
     .bind(document.get::<String, _>("content_type"))
-    .bind(content.len() as i64)
+    .bind(document.get::<i64, _>("byte_size"))
     .bind(document.get::<Vec<u8>, _>("sha256"))
     .bind(&content)
     .bind(decided_by)

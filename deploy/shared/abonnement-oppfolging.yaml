@@ -27,6 +27,12 @@ spec:
             - name: oppfolging
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              # Document store (docs/blob-store.md). Optional: without the
+              # Secret, documents stay in the database.
+              envFrom:
+                - secretRef:
+                    name: blob-store
+                    optional: true
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532

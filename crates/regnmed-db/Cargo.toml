@@ -14,6 +14,9 @@ hex.workspace = true
 chrono.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
+# Object store client (blob.rs): two signed calls, hand-rolled over these.
+reqwest.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 dotenvy.workspace = true
