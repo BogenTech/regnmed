@@ -10,17 +10,13 @@
 #
 # - HOSTS: test.* (ingress.yaml). Same three-host shape as prod, so the
 #   portal/API/IdP split is exercised, not just assumed.
-# - CLUSTER: test runs on the Hetzner cluster (arm64, bisand/hetzner, tenant
-#   `regnmed-test`) while prod is still on homelab — test is the rehearsal
-#   for prod's move (that repo's PLAN.md, phase 3). So test differs from prod
-#   in plumbing too: Postgres is a CloudNativePG cluster (postgres.yaml),
-#   volumes are local-path (patches/storage.yaml), postbud is reached through
-#   a Tailscale egress proxy (postbud.yaml), and the namespace is created by
-#   the platform, not by this overlay.
-# - TLS: cert-manager inside the cluster, through the platform's shared
-#   `letsencrypt` ClusterIssuer (HTTP-01 via Traefik). Production ACME, so
-#   test shares the per-domain rate limit with regnmed.no — certificates
-#   persist in secrets, so that costs one issue per host, not one per deploy.
+# - TLS: terminated by nginx-proxy-manager, same as prod, with a real
+#   browser-trusted certificate. This USED to be a Let's Encrypt staging
+#   issuer inside the cluster, which was better in one respect — it kept
+#   test off production ACME rate limits, shared per registered domain with
+#   regnmed.no. That option disappeared with cert-manager: NPM owns TLS and
+#   the challenge path, so nothing in the cluster can complete HTTP-01. See
+#   ingress.yaml.
 # - STRIPE IN TEST MODE: the card rail runs against Stripe's test
 #   environment with dummy cards, so abonnement invoicing and the webhook
 #   that posts payment are exercised end to end. The keys come from a
@@ -29,23 +25,31 @@
 # - SIZES: smaller volumes and one API replica. Test proves behavior, not
 #   capacity.
 #
-# What is deliberately the SAME as prod: the backup drill runs and verifies,
-# and the images are pinned. A test environment that skips those tests
-# nothing about them.
+# What is deliberately the SAME as prod: the storage class is replicated,
+# the backup drill runs and verifies, and the images are pinned. A test
+# environment that skips those tests nothing about them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Test and production will share the Hetzner cluster once prod moves, so the
-# namespace differs — both inherit `regnmed` from base. The tenant stub in
-# bisand/hetzner creates `regnmed-test` and confines this overlay to it.
+# Test and production run in the SAME cluster (five nodes is thin for two),
+# so the namespace has to differ or the two overlays overwrite each other —
+# both inherit `regnmed` from base. This rewrites every resource, including
+# the Namespace object itself, so nothing is left pointing at production.
+#
+# It is not isolation. A namespace separates names, not resources: test can
+# still starve prod for CPU, memory or Longhorn space. ResourceQuotas are
+# the next step if that starts to matter.
 namespace: regnmed-test
 
 resources:
   - ../base
   - ../shared
   - ingress.yaml
-  - postgres.yaml
-  - postbud.yaml
+  # cert-issuer.yaml is NOT listed here on purpose, and its absence is not an
+  # oversight — it is staged for the cutover when Traefik takes 80/443 from
+  # nginx-proxy-manager. Reactivating it is also what puts test back on
+  # STAGING certificates; until then test shares production's ACME rate limit
+  # with regnmed.no. The file has the steps.
 # Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
 # deliberately unpullable, so an unpinned overlay fails loudly instead of
 # silently running something. newName points at the registry, newTag at an

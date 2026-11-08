@@ -13,12 +13,13 @@ deploy/shared  what the SERVED environments run and the laptop does not:
 deploy/local   k3d in colima, *.localhost, no TLS, local-path storage —
                the integration proving ground (scripts/dev-cluster.sh,
                2 GB VM)
-deploy/test    prod-shaped: secrets out of git, every scheduled job
-               running, and the card rail against Stripe TEST mode.
-               Runs on the Hetzner cluster (arm64, CloudNativePG) since
-               2026-11-08 — see «Test på Hetzner» below
+deploy/test    prod-shaped: replicated storage, secrets out of git, every
+               scheduled job running, and the card rail against Stripe
+               TEST mode. Runs on homelab
 deploy/prod    real domains, TLS, secrets out of git, backups with
-               restore-verification, TSA-witnessed anchoring
+               restore-verification, TSA-witnessed anchoring. Runs on
+               the Hetzner cluster since 2026-11-08 — see «Prod på
+               Hetzner» below
 ```
 
 **Test is prod-shaped, not local-shaped.** That is the whole point of
@@ -29,59 +30,47 @@ An environment that skips them tests nothing about them. What it does
 volumes, and no external TSA witness — a timestamp is a claim about a
 real ledger, and test roots are not that.
 
-### Test på Hetzner (2026-11-08)
+### Prod på Hetzner (2026-11-08)
 
-Test flyttet først, som generalprøve for at prod skal samme vei
-(bisand/hetzner, PLAN.md fase 3 og 4). Plattformen der eier clusteret;
-regnmed er en *tenant*: `tenants/regnmed/test.yaml` lager navnerommet
-`regnmed-test`, en ServiceAccount som bare er admin der, en
-NetworkPolicy som bare slipper inn Traefik, monitoring og CNPG-operatoren,
-og Flux-objektene som henter `deploy/test` fra main. Overlayet kan derfor
-ikke røre noe utenfor sitt eget navnerom — heller ikke Namespace-objektet,
-som overlayet sletter fra base.
+Prod flyttet fra homelab til Hetzner-clusteret (bisand/hetzner, PLAN.md
+fase 4); test ble igjen på homelab, så Hetzner bærer prod alene. Test kjørte
+først en generalprøve på Hetzner med samme oppsett, og flyttingen av prod
+fulgte den: frys på homelab, `pg_dump` av begge databasene, restore inn i
+CNPG-primæren, `verify-ledger` før noe startet (67 bilag, 65 vedlegg, 11
+ankere OK), så DNS.
 
-Det som skiller test fra prod i rørleggingen:
+Plattformen eier clusteret; regnmed er en *tenant*:
+`tenants/regnmed/prod.yaml` lager navnerommet `regnmed`, en ServiceAccount
+som bare er admin der, en NetworkPolicy som bare slipper inn Traefik,
+monitoring og CNPG-operatoren, og Flux-objektene som henter `deploy/prod`
+fra høyeste release-tagg. Overlayet kan ikke røre noe utenfor navnerommet —
+heller ikke Namespace-objektet, som overlayet sletter fra base.
 
-- **Postgres er CloudNativePG** (`deploy/test/postgres.yaml`): to
-  instanser på to bokser, synkron replikering mens standby lever. Tjenesten
-  `postgres` er pekt om til primæren, så alle URL-er, backupjobben og
-  restore-sjekken er uendret. Innloggingen er `postgres-login`
-  (basic-auth, samme passord som i `db-credentials`).
-- **Lokale disker** (local-path). Backupvolumet ligger på én boks; mistes
-  den, mistes de siste 14 dumpene, og neste natt fyller på igjen.
-  CNPG-backup til objektlagring (egen bøtte og nøkkel) er prods
-  gjenopprettingsvei og kommer i fase 4.
-- **postbud nås gjennom en Tailscale-egressproxy** (`deploy/test/postbud.yaml`),
-  siden podene der ikke er på tailnettet selv.
-- **TLS fra cert-manager** via plattformens `letsencrypt`-utsteder
-  (HTTP-01 gjennom Traefik). Trafikken kommer inn på plattformens
-  Floating IP, og vertsnavnene må peke dit før sertifikatet kan utstedes.
-- **arm64.** Imagene er multi-arch fra samme tagg (images.yml bygger
-  amd64 og arm64 nativt og slår dem sammen), så homelab og Hetzner kan
-  kjøre samme tagg under flyttingen.
+Det som skiller prod fra test i rørleggingen:
 
-**Stripe runs in test mode there**, with dummy cards, so the chain that
-has only ever run in integration tests — invoice issued, card charged
-off-session, webhook posting the payment and closing the reskontro item
-— runs against the real Stripe API. The keys come from a
-`stripe-credentials` secret created out-of-band: docs/secrets.md is
-absolute, and `sk_test_…` is still a key.
-
-Det ga full uttelling 2026-07-31: den første ekte leveransen fra Stripe
-avslørte at `invoice.subscription` er FJERNET i API-versjon
-2026-05-27.dahlia (feltet ligger nå under
-`parent.subscription_details`). Webhooken svarte 200, Stripe førte
-leveransen som vellykket — og fakturaen ble aldri til. Ingen
-integrasjonstest kunne fanget det: testens payload var skrevet ut fra
-hva koden leser, så den bekreftet kodens egen antakelse. Samme dag
-avdekket en oppsigelse på tegningsdagen at dekningsraden ikke kunne
-lukkes (`valid_to > valid_from`), slik at selskapet beholdt tilgangen
-gratis. Begge feilene var USYNLIGE ovenfra — derfor kjøres ekte trafikk
-mot testmiljøet før produksjon, og derfor kontrolleres hovedboken
-etterpå, ikke svarkoden.
-
-`kubectl kustomize deploy/<overlay>` renders any of them; the restructure
-kept the local render byte-identical, so dev-cluster.sh is unchanged.
+- **Postgres er CloudNativePG** (`deploy/prod/postgres.yaml`): to
+  instanser på to bokser, synkron replikering mens standby lever.
+  Tjenesten `postgres` er pekt om til primæren, så alle URL-er,
+  backupjobben og restore-sjekken er uendret. Innloggingen er
+  `postgres-login` (basic-auth, samme passord som i `db-credentials`).
+- **To backuper**: CNPG arkiverer hver WAL-fil og tar en nattlig
+  basebackup til `s3://bogenhuset/cnpg/regnmed-prod` (30 dager) — det er
+  gjenopprettingsveien. `pg_dump` + ukentlig restore-og-`verify-ledger`
+  består — det er revisjonsbeviset.
+- **Ett sted**: alt ligger i Helsinki sammen med databasen
+  (`patches/site.yaml`). Clusteret spenner over to datasentre ~25 ms fra
+  hverandre, og med API-et i Falkenstein tok `/anchors` ~1 s mot 0,12 s
+  samlet.
+- **postbud nås gjennom en Tailscale-egressproxy** (`deploy/prod/postbud.yaml`,
+  `tag:regnmed`), siden podene ikke er på tailnettet selv.
+- **TLS fra cert-manager** via plattformens `letsencrypt` (HTTP-01 gjennom
+  Traefik) på plattformens Floating IP 65.109.248.196; HTTP svarer 301 til
+  HTTPS, og `www.regnmed.no` sendes til `regnmed.no`.
+- **arm64.** Imagene er multi-arch fra samme tagg (images.yml bygger amd64
+  og arm64 nativt og slår dem sammen), så homelab-test og Hetzner-prod
+  kjører samme tagg.
+- **DNS** for regnmed.no ligger hos Domeneshop (flyttet fra Cloudflare
+  2026-11-08).
 
 ## Utrulling: clusteret HENTER, GitHub dytter aldri
 
