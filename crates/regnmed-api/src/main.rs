@@ -12,6 +12,9 @@ async fn main() -> Result<()> {
         .await
         .context("connecting to database")?;
 
+    // Fails here on a half-configured object store, not on the first upload.
+    println!("{}", regnmed_db::blob::blobs().describe());
+
     let verifier = Arc::new(Verifier::from_env().await?);
     let mailq = regnmed_api::mailq::connect_from_env()
         .await

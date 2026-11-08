@@ -42,7 +42,7 @@ async fn json_call(
         .await
         .unwrap();
     let code = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024 * 1024)
         .await
         .unwrap();
     (
@@ -716,7 +716,7 @@ async fn the_icon_style_is_validated_and_served_platform_wide() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024 * 1024)
         .await
         .unwrap();
     let config: serde_json::Value = serde_json::from_slice(&bytes).unwrap();

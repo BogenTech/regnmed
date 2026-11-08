@@ -387,3 +387,55 @@ async fn ensure_person_does_not_write_an_unchanged_person() {
         .unwrap();
     assert_eq!(name, "Kari Nordmann");
 }
+
+/// Migration 0070: the only update an attachment row allows is emptying
+/// its content, and only when the stored hash is the hash of the bytes
+/// removed. Afterwards the bytes must come from the object store.
+#[tokio::test]
+async fn an_attachment_row_allows_only_a_verified_offload() {
+    let Some(pool) = pool().await else { return };
+    let company = seeded_company(&pool).await;
+    let voucher =
+        regnmed_db::post_voucher(&pool, company, &sale(date(2026, 2, 1), 50_00, None), "test")
+            .await
+            .unwrap();
+    let meta = regnmed_db::add_attachment(
+        &pool,
+        company,
+        voucher.id,
+        "k.pdf",
+        "application/pdf",
+        b"%PDF-kvittering",
+        "test",
+    )
+    .await
+    .unwrap();
+
+    let refused = |sql: &'static str| {
+        let pool = pool.clone();
+        async move { sqlx::query(sql).bind(meta.id).execute(&pool).await.is_err() }
+    };
+    assert!(refused("update attachment set filename = 'x.pdf' where id = $1").await);
+    assert!(
+        refused("update attachment set content = null, sha256 = sha256('x'::bytea) where id = $1")
+            .await
+    );
+    assert!(refused("update attachment set content = 'other'::bytea where id = $1").await);
+    assert!(refused("delete from attachment where id = $1").await);
+
+    sqlx::query("update attachment set content = null where id = $1")
+        .bind(meta.id)
+        .execute(&pool)
+        .await
+        .expect("a verified offload is allowed");
+    assert!(
+        refused("update attachment set content = '%PDF-kvittering'::bytea where id = $1").await,
+        "content cannot come back"
+    );
+    // This test process has no object store, so the bytes are now
+    // unreachable — and that is reported, never served as empty.
+    let err = regnmed_db::get_attachment(&pool, company, meta.id)
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("object store"), "{err:#}");
+}

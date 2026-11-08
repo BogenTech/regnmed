@@ -557,6 +557,31 @@ a client could be routed to a NATS that had not finished opening its
 JetStream store. The mail worker deliberately has **no** probe; the
 manifest explains why.
 
+## Dokumentlagring (docs/blob-store.md)
+
+Dokumentene ligger i objektlagring, ikke i databasen. Hvert miljø får en
+Secret `blob-store` med de seks `BLOB_S3_*`-variablene, laget for hånd
+(nøkkelen er Hetzner-prosjektets S3-nøkkel, samme som homelab bruker til
+Longhorn-backup):
+
+```sh
+kubectl -n regnmed create secret generic blob-store \
+  --from-literal=BLOB_S3_ENDPOINT=https://hel1.your-objectstorage.com \
+  --from-literal=BLOB_S3_BUCKET=bogenhuset \
+  --from-literal=BLOB_S3_REGION=hel1 \
+  --from-literal=BLOB_S3_PREFIX=regnmed-prod/documents/ \
+  --from-literal=BLOB_S3_ACCESS_KEY=… --from-literal=BLOB_S3_SECRET_KEY=…
+```
+
+Alle regnmed-containere leser den med valgfri `envFrom` (deploy/base,
+deploy/shared); uten Secret-en lagres dokumentene i databasen. Etter at
+den finnes og podene er startet på nytt, flyttes eksisterende dokumenter
+med én kjøring av `regnmed offload-documents`.
+
+**For backup betyr det:** `pg_dump` inneholder ikke lenger dokumentene, og
+gjenopprettingsøvelsens `verify-ledger` leser dem fra lagringen — øvelsen
+beviser dermed også at hvert dokument fortsatt finnes og er uendret.
+
 ## Backups — restored weekly, or they don't count
 
 `deploy/shared/backup.yaml` (prod and test both run it):

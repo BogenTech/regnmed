@@ -164,7 +164,8 @@ pub async fn reconcile(
         Some((name, type_, bytes)) => {
             ensure!(!bytes.is_empty(), "vedlegget er tomt");
             let sha = sha256(bytes).to_vec();
-            (Some(name), Some(type_), Some(bytes), Some(sha))
+            let in_row = crate::blob::blobs().store(bytes).await?;
+            (Some(name), Some(type_), in_row, Some(sha))
         }
         None => (None, None, None, None),
     };
@@ -210,13 +211,12 @@ pub async fn fetch_attachment(
     .fetch_optional(pool)
     .await?
     .context("ukjent avstemming")?;
-    let bytes: Option<Vec<u8>> = row.get("vedlegg");
-    let bytes = bytes.context("avstemmingen har ikke vedlegg")?;
-    let lagret: Vec<u8> = row.get("vedlegg_sha256");
-    ensure!(
-        sha256(&bytes).to_vec() == lagret,
-        "vedlegget er endret siden det ble lagret — hashen stemmer ikke"
-    );
+    let lagret: Option<Vec<u8>> = row.get("vedlegg_sha256");
+    let lagret = lagret.context("avstemmingen har ikke vedlegg")?;
+    let bytes = crate::blob::blobs()
+        .load(row.get("vedlegg"), &lagret)
+        .await
+        .context("vedlegget er endret siden det ble lagret — hashen stemmer ikke")?;
     Ok((
         row.get::<Option<String>, _>("vedlegg_navn")
             .unwrap_or_default(),

@@ -40,6 +40,7 @@ pub async fn create_expense(
 ) -> Result<Uuid> {
     ensure!(amount_ore > 0, "beløpet må være positivt");
     ensure!(!content.is_empty(), "kvitteringen er tom");
+    let in_row = crate::blob::blobs().store(content).await?;
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore,
@@ -55,7 +56,7 @@ pub async fn create_expense(
     .bind(amount_ore)
     .bind(filename)
     .bind(content_type)
-    .bind(content)
+    .bind(in_row)
     .bind(sha256(content).to_vec())
     .bind(created_by)
     .execute(pool)
@@ -206,12 +207,11 @@ pub async fn expense_receipt(
     .fetch_optional(pool)
     .await?
     .context("no such utlegg")?;
-    let content: Vec<u8> = row.get("receipt_content");
     let stored: Vec<u8> = row.get("receipt_sha256");
-    ensure!(
-        sha256(&content).to_vec() == stored,
-        "receipt content fails integrity check"
-    );
+    let content = crate::blob::blobs()
+        .load(row.get("receipt_content"), &stored)
+        .await
+        .with_context(|| format!("receipt of expense {expense_id}"))?;
     Ok((
         row.get("receipt_filename"),
         row.get("receipt_content_type"),
@@ -248,7 +248,8 @@ pub async fn approve_expense(
     let mut tx = pool.begin().await?;
     let expense = sqlx::query(
         "select kind, dato, beskrivelse, belop_ore, km, sats_ore_per_km, trekkpliktig_ore,
-                receipt_filename, receipt_content_type, receipt_content, status, person_id,
+                receipt_filename, receipt_content_type, receipt_content, receipt_sha256,
+                status, person_id,
                 coalesce((select p.name from person p where p.id = expense.person_id), '') as navn
          from expense where id = $1 and company_id = $2 for update",
     )
@@ -385,7 +386,10 @@ pub async fn approve_expense(
     let posted = post_voucher_in(&mut tx, company_id, &draft, decided_by).await?;
 
     if kind == "utlegg" {
-        let content: Vec<u8> = expense.get("receipt_content");
+        let stored: Vec<u8> = expense.get("receipt_sha256");
+        let content = crate::blob::blobs()
+            .load(expense.get("receipt_content"), &stored)
+            .await?;
         add_attachment_in(
             &mut tx,
             company_id,

@@ -4,7 +4,8 @@
 //! swapped or altered document is detectable even if the database's
 //! triggers were somehow bypassed.
 
-use anyhow::{Context, Result, bail, ensure};
+use crate::blob::blobs;
+use anyhow::{Context, Result, ensure};
 use regnmed_core::hash::sha256;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -66,6 +67,7 @@ pub async fn add_attachment_in(
     ensure!(belongs, "no such voucher in this company");
 
     let digest = sha256(content);
+    let in_row = blobs().store(content).await?;
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into attachment (id, company_id, voucher_id, filename, content_type,
@@ -79,7 +81,7 @@ pub async fn add_attachment_in(
     .bind(content_type)
     .bind(content.len() as i64)
     .bind(digest.as_slice())
-    .bind(content)
+    .bind(in_row)
     .bind(uploaded_by)
     .execute(&mut **tx)
     .await?;
@@ -138,11 +140,11 @@ pub async fn get_attachment(
     .fetch_optional(pool)
     .await?
     .context("no such attachment")?;
-    let content: Vec<u8> = row.get("content");
     let stored: Vec<u8> = row.get("sha256");
-    if sha256(&content).as_slice() != stored.as_slice() {
-        bail!("attachment {attachment_id} failed its hash check — dokumentasjon altered");
-    }
+    let content = blobs()
+        .load(row.get("content"), &stored)
+        .await
+        .with_context(|| format!("attachment {attachment_id}"))?;
     Ok((
         AttachmentMeta {
             id: row.get("id"),
@@ -163,15 +165,15 @@ pub async fn verify_attachments(pool: &PgPool, company_id: Uuid) -> Result<i64> 
         .bind(company_id)
         .fetch_all(pool)
         .await?;
+    // From the row or the object store, re-hashed either way: a missing
+    // object fails here as loudly as altered bytes do.
     for row in &rows {
         let id: Uuid = row.get("id");
         let stored: Vec<u8> = row.get("sha256");
-        let content: Vec<u8> = row.get("content");
-        if sha256(&content).as_slice() != stored.as_slice() {
-            bail!(
-                "attachment {id}: content does not match its stored hash — dokumentasjon altered"
-            );
-        }
+        blobs()
+            .load(row.get("content"), &stored)
+            .await
+            .with_context(|| format!("attachment {id}: dokumentasjon altered or missing"))?;
     }
     Ok(rows.len() as i64)
 }

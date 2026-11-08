@@ -24,6 +24,10 @@ enum Command {
     },
     /// Create a demo company, post vouchers, attempt tampering, verify (dev only)
     Demo,
+    /// Move every document still stored in the database to the object store
+    /// (BLOB_S3_*): write, read back, compare, then empty the row's content
+    /// (docs/blob-store.md). Safe to re-run and to interrupt.
+    OffloadDocuments,
     /// Snapshot every company's chain head under one Merkle root and, when
     /// ANCHOR_TSA_URL is set, witness the root with an RFC 3161 timestamp
     /// (docs/anchoring.md). Run periodically (cron/CronJob).
@@ -261,8 +265,17 @@ async fn main() -> Result<()> {
     let pool = regnmed_db::connect(&url)
         .await
         .context("connecting to database")?;
+    // Read the document store's configuration now: a half-configured
+    // environment fails here, not halfway through a job.
+    let blobs = regnmed_db::blob::blobs();
 
     match cli.command {
+        Command::OffloadDocuments => {
+            println!("{}", blobs.describe());
+            for (table, count) in regnmed_db::blob::offload_documents(&pool).await? {
+                println!("{table}: {count} moved to the object store");
+            }
+        }
         Command::Migrate => {
             regnmed_db::MIGRATOR.run(&pool).await?;
             println!("migrations up to date");
@@ -1331,6 +1344,7 @@ mod tests {
         ("migrate", &[]),
         ("verify-ledger", &["company"]),
         ("demo", &[]),
+        ("offload-documents", &[]),
         ("anchor", &[]),
         ("generate-invoices", &[]),
         ("depreciate", &[]),

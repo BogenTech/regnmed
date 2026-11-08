@@ -1864,6 +1864,8 @@ dependencies = [
  "dotenvy",
  "hex",
  "regnmed-core",
+ "reqwest",
+ "sha2",
  "sqlx",
  "tokio",
  "uuid",

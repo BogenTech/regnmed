@@ -39,6 +39,12 @@ spec:
         - name: api
           image: regnmed:dev
           imagePullPolicy: IfNotPresent
+          # Document store (docs/blob-store.md). Optional: without the
+          # Secret, documents stay in the database.
+          envFrom:
+            - secretRef:
+                name: blob-store
+                optional: true
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
@@ -113,6 +119,12 @@ spec:
             - name: generate
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              # Document store (docs/blob-store.md). Optional: without the
+              # Secret, documents stay in the database.
+              envFrom:
+                - secretRef:
+                    name: blob-store
+                    optional: true
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532
@@ -154,6 +166,12 @@ spec:
             - name: depreciate
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              # Document store (docs/blob-store.md). Optional: without the
+              # Secret, documents stay in the database.
+              envFrom:
+                - secretRef:
+                    name: blob-store
+                    optional: true
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532
@@ -196,6 +214,12 @@ spec:
             - name: periodiser
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              # Document store (docs/blob-store.md). Optional: without the
+              # Secret, documents stay in the database.
+              envFrom:
+                - secretRef:
+                    name: blob-store
+                    optional: true
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532
@@ -234,6 +258,12 @@ spec:
             - name: anchor
               image: regnmed:dev
               imagePullPolicy: IfNotPresent
+              # Document store (docs/blob-store.md). Optional: without the
+              # Secret, documents stay in the database.
+              envFrom:
+                - secretRef:
+                    name: blob-store
+                    optional: true
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532

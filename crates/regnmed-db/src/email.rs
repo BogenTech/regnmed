@@ -222,12 +222,13 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
         _ => None,
     };
 
+    let raw_in_row = crate::blob::blobs().store(&mail.raw).await?;
     let mut tx = pool.begin().await?;
     let mail_id = Uuid::now_v7();
     let inserted = sqlx::query(
         "insert into inbox_mail (id, company_id, message_id, from_address, subject, body,
-                                 raw, antall_vedlegg, status, note)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                 raw, raw_sha256, antall_vedlegg, status, note)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          on conflict (company_id, message_id) do nothing",
     )
     .bind(mail_id)
@@ -236,7 +237,8 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
     .bind(&from)
     .bind(&mail.subject)
     .bind(&mail.text)
-    .bind(&mail.raw)
+    .bind(raw_in_row)
+    .bind(regnmed_core::hash::sha256(&mail.raw).as_slice())
     .bind(attachment.len() as i32)
     .bind(status)
     .bind(&note)
@@ -252,6 +254,7 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
     // releasable later without the sender resending anything.
     for a in &attachment {
         let digest = regnmed_core::hash::sha256(&a.content);
+        let in_row = crate::blob::blobs().store(&a.content).await?;
         sqlx::query(
             "insert into inbox_mail_attachment (id, mail_id, filename, content_type,
                                                 byte_size, sha256, content)
@@ -263,7 +266,7 @@ pub async fn receive_mail(pool: &PgPool, mail: &ReceivedEmail) -> Result<Mottak>
         .bind(&a.content_type)
         .bind(a.content.len() as i64)
         .bind(digest.as_slice())
-        .bind(&a.content)
+        .bind(in_row)
         .execute(&mut *tx)
         .await?;
         if status == "mottatt" {
@@ -298,6 +301,7 @@ async fn insert_document(
     bytes: &[u8],
 ) -> Result<()> {
     let digest = regnmed_core::hash::sha256(bytes);
+    let in_row = crate::blob::blobs().store(bytes).await?;
     sqlx::query(
         "insert into inbox_document (id, company_id, filename, content_type, byte_size,
                                      sha256, content, uploaded_by, inbox_mail_id)
@@ -309,7 +313,7 @@ async fn insert_document(
     .bind(content_type)
     .bind(bytes.len() as i64)
     .bind(digest.as_slice())
-    .bind(bytes)
+    .bind(in_row)
     // The sender's address IS the uploader — that is who handed us the
     // document, and the innboks shows it.
     .bind(from)
@@ -404,12 +408,11 @@ pub async fn release_mail(
     let mut tx = pool.begin().await?;
     let mut count = 0usize;
     for a in &attachments {
-        let content: Vec<u8> = a.get("content");
         let stored: Vec<u8> = a.get("sha256");
-        ensure!(
-            regnmed_core::hash::sha256(&content).as_slice() == stored.as_slice(),
-            "vedlegget feilet hash-sjekken"
-        );
+        let content = crate::blob::blobs()
+            .load(a.get("content"), &stored)
+            .await
+            .context("vedlegget feilet hash-sjekken")?;
         insert_document(
             &mut tx,
             company_id,
