@@ -290,6 +290,63 @@ fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     outer.finalize().into()
 }
 
+/// The document columns, with the column holding each one's hash.
+const DOCUMENT_COLUMNS: [(&str, &str, &str); 6] = [
+    ("attachment", "content", "sha256"),
+    ("inbox_document", "content", "sha256"),
+    ("inbox_mail_attachment", "content", "sha256"),
+    ("inbox_mail", "raw", "raw_sha256"),
+    ("expense", "receipt_content", "receipt_sha256"),
+    ("balanse_dokumentasjon", "vedlegg", "vedlegg_sha256"),
+];
+
+/// Moves every document still held in a row to the object store: write,
+/// read back and compare, and only then empty the row's content column
+/// (migration 0070 allows exactly that update, and only when the stored
+/// hash is the hash of the bytes removed). Safe to re-run and to interrupt:
+/// a row is either untouched or provably in the store. Returns rows moved
+/// per table.
+pub async fn offload_documents(pool: &sqlx::PgPool) -> Result<Vec<(&'static str, u64)>> {
+    use sqlx::Row;
+    let store = blobs();
+    ensure!(
+        matches!(store, Blobs::S3(_)),
+        "no object store configured (BLOB_S3_*)"
+    );
+    let mut moved = Vec::new();
+    for (table, content, hash) in DOCUMENT_COLUMNS {
+        let mut count = 0u64;
+        loop {
+            // Batches keep memory bounded however large the documents are.
+            let rows = sqlx::query(&format!(
+                "select id, {content} as content from {table}
+                 where {content} is not null order by id limit 50"
+            ))
+            .fetch_all(pool)
+            .await?;
+            if rows.is_empty() {
+                break;
+            }
+            for row in rows {
+                let id: uuid::Uuid = row.get("id");
+                let bytes: Vec<u8> = row.get("content");
+                store.offload(&bytes).await?;
+                sqlx::query(&format!(
+                    "update {table} set {content} = null, {hash} = $2 where id = $1"
+                ))
+                .bind(id)
+                .bind(sha256(&bytes).as_slice())
+                .execute(pool)
+                .await
+                .with_context(|| format!("emptying {table} {id}"))?;
+                count += 1;
+            }
+        }
+        moved.push((table, count));
+    }
+    Ok(moved)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,61 +417,4 @@ mod tests {
         assert_eq!(blobs.load(None, &sha256(&bytes)).await.unwrap(), bytes);
         blobs.offload(&bytes).await.unwrap();
     }
-}
-
-/// The document columns, with the column holding each one's hash.
-const DOCUMENT_COLUMNS: [(&str, &str, &str); 6] = [
-    ("attachment", "content", "sha256"),
-    ("inbox_document", "content", "sha256"),
-    ("inbox_mail_attachment", "content", "sha256"),
-    ("inbox_mail", "raw", "raw_sha256"),
-    ("expense", "receipt_content", "receipt_sha256"),
-    ("balanse_dokumentasjon", "vedlegg", "vedlegg_sha256"),
-];
-
-/// Moves every document still held in a row to the object store: write,
-/// read back and compare, and only then empty the row's content column
-/// (migration 0070 allows exactly that update, and only when the stored
-/// hash is the hash of the bytes removed). Safe to re-run and to interrupt:
-/// a row is either untouched or provably in the store. Returns rows moved
-/// per table.
-pub async fn offload_documents(pool: &sqlx::PgPool) -> Result<Vec<(&'static str, u64)>> {
-    use sqlx::Row;
-    let store = blobs();
-    ensure!(
-        matches!(store, Blobs::S3(_)),
-        "no object store configured (BLOB_S3_*)"
-    );
-    let mut moved = Vec::new();
-    for (table, content, hash) in DOCUMENT_COLUMNS {
-        let mut count = 0u64;
-        loop {
-            // Batches keep memory bounded however large the documents are.
-            let rows = sqlx::query(&format!(
-                "select id, {content} as content from {table}
-                 where {content} is not null order by id limit 50"
-            ))
-            .fetch_all(pool)
-            .await?;
-            if rows.is_empty() {
-                break;
-            }
-            for row in rows {
-                let id: uuid::Uuid = row.get("id");
-                let bytes: Vec<u8> = row.get("content");
-                store.offload(&bytes).await?;
-                sqlx::query(&format!(
-                    "update {table} set {content} = null, {hash} = $2 where id = $1"
-                ))
-                .bind(id)
-                .bind(sha256(&bytes).as_slice())
-                .execute(pool)
-                .await
-                .with_context(|| format!("emptying {table} {id}"))?;
-                count += 1;
-            }
-        }
-        moved.push((table, count));
-    }
-    Ok(moved)
 }
