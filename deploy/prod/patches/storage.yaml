@@ -1,130 +1,23 @@
-# Production volumes: size, and which storage they come from.
+# Prod volumes on the Hetzner cluster: its default class (local-path — each
+# volume is a directory on ONE box's disk).
 #
-# ---------------------------------------------------------------------
-# STORAGE CLASS
-# ---------------------------------------------------------------------
-# The base manifests name no storageClassName, so the local k3d cluster
-# gets whatever is default there (local-path — a directory on the one
-# node). That is right for a laptop and wrong for production: a
-# node-local volume means the database dies with its node.
+# Postgres is not here: CNPG owns its volumes (../postgres.yaml) and survives
+# a lost box by replicating to a second instance and archiving to object
+# storage — the recovery path. What is left is the dump volume (the audit
+# drill) and NATS, both tied to the box they landed on: lose that box and
+# the last 14 dumps go with it, while CNPG's archive still holds everything.
 #
-# Production therefore names a REPLICATED class. `longhorn` is the
-# default here; any distributed provisioner works (Ceph/Rook via
-# `rook-ceph-block`, OpenEBS Mayastor, a cloud provider's class). It is
-# named in exactly this one file, so switching is one edit.
-#
-# What the choice must give us, whatever the name:
-#   - replication across nodes (the database survives losing one)
-#   - `allowVolumeExpansion: true` (volumes below can grow; see sizing)
-#   - snapshots, ideally with a backup target
-#
-# ReadWriteOnce is correct and stays. Nothing here needs shared access:
-# Postgres is a single writer, and the two backup CronJobs that share
-# /backup never run at the same time (01:30 nightly vs 04:00 Sundays),
-# so the volume detaches and reattaches cleanly if they land on
-# different nodes.
-#
-# ---------------------------------------------------------------------
-# WHAT ACTUALLY FILLS THE DATABASE
-# ---------------------------------------------------------------------
-# Not the ledger — vouchers and entries are small rows. The weight is
-# four bytea columns:
-#
-#   attachment.content            bilagsvedlegg, incl. our own invoice PDFs
-#   inbox_document.content        what people upload or mail in
-#   expense.receipt_content       phone photos of receipts
-#   inbox_mail(.attachment)       the raw message, and the decoded parts
-#
-# Each upload is capped at 20 MB (DefaultBodyLimit in regnmed-api), and
-# the realistic average is a phone photo: a few hundred KB. Our own
-# invoice PDFs are ~3 KB and round to nothing beside them. The ledger is
-# append-only, so this grows monotonically for the life of the business.
-#
-# THE ASSUMPTION THESE NUMBERS ENCODE — change the numbers when it stops
-# being true, rather than discovering it when a volume fills:
-#
-#   25 client companies × 1500 bilag/year × ~300 KB attached ≈ 11 GB/year
-#
-# 20Gi buys roughly two years at that rate. It was 50Gi when this file
-# assumed dedicated disks; the cluster it actually runs on shares ~631Gi of
-# usable Longhorn space between prod, test and GlusterFS, and 50Gi + 150Gi
-# at three replicas would have claimed nearly all of it for a database with
-# no data in it yet. Longhorn has allowVolumeExpansion, so growing is one
-# edit — see the threshold below for when.
-#
-# ---------------------------------------------------------------------
-# THE BACKUP VOLUME IS NOT INDEPENDENT
-# ---------------------------------------------------------------------
-# backup.yaml keeps 14 nightly `pg_dump -Fc` files, and -Fc compression
-# does nothing for content that is already JPEG or PDF — so a dump is
-# about the size of the data it dumps, and the volume needs
-# `retention × database`.
-#
-# The pair that shipped before this was already broken in that
-# direction: 2Gi of database against 10Gi of backups, where a full
-# database needs ~28Gi of dumps. The BACKUP volume would have filled
-# first, and the nightly job would have begun failing while the database
-# still looked healthy.
-#
-# 60Gi does NOT hold 14 nights of a full 20Gi database — that would need
-# 280Gi. It holds 14 nights while the database is under ~4 GB, which the
-# rate above puts at at least the first four months, and longer in
-# practice because early months are the emptiest.
-#
-# SO THIS IS A THRESHOLD, NOT A SIZE. When the database passes ~4 GB,
-# either expand backup-data or cut the retention in shared/backup.yaml —
-# and do it deliberately, because the failure mode is the one described
-# above: backups stop while the database still looks healthy. Check it
-# from the restore-verification job's own output, which runs weekly and
-# is the thing that notices first.
-#
-# ---------------------------------------------------------------------
-# REPLICATION MULTIPLIES ALL OF IT
-# ---------------------------------------------------------------------
-# These are the sizes Kubernetes reports. A replicated class stores each
-# one N times across nodes, and Longhorn's default N is 3:
-#
-#   postgres  20Gi  × 3 =  60Gi raw
-#   backup    60Gi  × 3 = 180Gi raw
-#   nats       1Gi  × 3 =   3Gi raw
-#                          ~243Gi of raw disk across the pool
-#
-# Test adds ~63Gi on the same pool, against ~631Gi usable (three 932GB
-# disks less the 300Gi each reserved for GlusterFS). That leaves real
-# headroom to grow into rather than a pool that is full on day one.
-#
-# Still worth considering `numberOfReplicas: 2` on the BACKUP volume
-# specifically (via a Longhorn StorageClass, per-volume): its contents are
-# already a copy, and a third replica of a copy is thin value.
-#
-# Full daily dumps also do not scale with blob storage — they re-copy
-# every unchanged photo, nightly. PITR (CloudNativePG) ships WAL
-# instead, and the trigger to adopt it is the database passing ~20 GB,
-# not a date.
-#
-# Volume snapshots from the storage layer are a FASTER recovery tier,
-# not a replacement for the dumps: a block snapshot of a running
-# Postgres is crash-consistent (Postgres recovers from it, as from a
-# power cut), but it proves nothing about the ledger. The weekly
-# restore-verification exists to prove exactly that, and it stays.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-data
-  namespace: regnmed
-spec:
-  storageClassName: longhorn
-  resources:
-    requests:
-      storage: 20Gi
----
+# The pairing rule still holds: backup keeps 14 nightly `pg_dump -Fc`, and
+# -Fc does nothing for JPEG or PDF, so backup needs `retention × database`.
+# 60Gi holds 14 nights of a database up to ~4 GB (it was 62 MB on
+# 2026-11-08). local-path does not enforce the size; it is the arithmetic,
+# and the request the scheduler sees.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: backup-data
   namespace: regnmed
 spec:
-  storageClassName: longhorn
   resources:
     requests:
       storage: 60Gi
@@ -135,7 +28,6 @@ metadata:
   name: nats-data
   namespace: regnmed
 spec:
-  storageClassName: longhorn
   resources:
     requests:
       storage: 1Gi

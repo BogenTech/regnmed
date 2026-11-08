@@ -24,15 +24,16 @@ kind: Kustomization
 resources:
   - ../base
   - ingress.yaml
-  # cert-issuer.yaml is NOT listed here on purpose, and its absence is not an
-  # oversight — it is staged for the cutover when Traefik takes 80/443 from
-  # nginx-proxy-manager. The file itself has the four steps. Adding it back
-  # without also restoring the tls:/annotation pairs in ingress.yaml creates
-  # an issuer nothing uses.
   # Shared with deploy/test — described once, not copied. Anything that
   # differs between the two is a patch below, so a fix to the backup
   # drill cannot land in one environment and miss the other.
   - ../shared
+  # The Hetzner cluster's plumbing (since 2026-11-08): Postgres on
+  # CloudNativePG with object-storage backups, and postbud through a
+  # Tailscale egress proxy. patches/postgres.yaml also removes the Namespace
+  # object — the platform's tenant stub creates `regnmed`.
+  - postgres.yaml
+  - postbud.yaml
 # Base names the images `regnmed:dev` / `regnid:dev` — buildable locally and
 # deliberately unpullable, so an unpinned overlay fails loudly instead of
 # silently running something. newName points at the registry, newTag at an
@@ -53,13 +54,13 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: v0.6.17
+    newTag: sha-10d87ca
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     # A RELEASE tag, like regnmed's above: regnid started cutting
     # releases with v0.1.0, and the number an operator reads here should
     # be the one whose notes say what it contains.
-    newTag: v0.1.5
+    newTag: sha-5cda8e9
 patches:
   - path: patches/postgres.yaml
   - path: patches/storage.yaml
