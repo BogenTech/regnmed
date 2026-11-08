@@ -85,7 +85,10 @@ impl Blobs {
         );
         let v: Vec<String> = values.into_iter().flatten().collect();
         Ok(Blobs::S3(Arc::new(S3 {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .context("object store client")?,
             endpoint: v[0].trim_end_matches('/').to_string(),
             bucket: v[1].clone(),
             region: v[2].clone(),
@@ -165,38 +168,61 @@ impl S3 {
 
     async fn put(&self, digest: &[u8; 32], bytes: &[u8]) -> Result<()> {
         let path = self.path(digest);
-        let headers = self.signed_headers("PUT", &path, &hex::encode(digest));
-        let mut req = self.client.put(format!("{}{path}", self.endpoint));
-        for (k, v) in headers {
-            req = req.header(k, v);
-        }
-        let resp = req
-            .body(bytes.to_vec())
-            .send()
+        self.send("PUT", &path, &hex::encode(digest), Some(bytes))
             .await
-            .context("object store PUT")?;
-        ensure!(
-            resp.status().is_success(),
-            "object store PUT {path}: {}",
-            resp.status()
-        );
-        Ok(())
+            .map(drop)
     }
 
     async fn get(&self, digest: &[u8]) -> Result<Vec<u8>> {
         let path = self.path(digest);
-        let headers = self.signed_headers("GET", &path, EMPTY_SHA256);
-        let mut req = self.client.get(format!("{}{path}", self.endpoint));
-        for (k, v) in headers {
-            req = req.header(k, v);
+        self.send("GET", &path, EMPTY_SHA256, None).await
+    }
+
+    /// One signed request, retried on what is the store's trouble rather
+    /// than ours: timeouts, connection errors, 429 and 5xx. Hetzner's
+    /// object storage answers an occasional 504 for an object that is
+    /// there (seen 2026-11-08); a 404 is not retried — that object is gone.
+    async fn send(
+        &self,
+        method: &str,
+        path: &str,
+        payload_hash: &str,
+        body: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        const ATTEMPTS: u32 = 5;
+        let mut last = String::new();
+        for attempt in 0..ATTEMPTS {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(200 << attempt)).await;
+            }
+            // Signed per attempt: the signature carries the time.
+            let url = format!("{}{path}", self.endpoint);
+            let mut req = match body {
+                Some(bytes) => self.client.put(url).body(bytes.to_vec()),
+                None => self.client.get(url),
+            };
+            for (k, v) in self.signed_headers(method, path, payload_hash) {
+                req = req.header(k, v);
+            }
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                    Ok(bytes) => return Ok(bytes.to_vec()),
+                    Err(e) => last = format!("reading the body: {e}"),
+                },
+                Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                    bail!("object store {method} {path}: 404 — the object is missing")
+                }
+                Ok(resp)
+                    if resp.status().is_server_error()
+                        || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS =>
+                {
+                    last = resp.status().to_string();
+                }
+                Ok(resp) => bail!("object store {method} {path}: {}", resp.status()),
+                Err(e) => last = e.to_string(),
+            }
         }
-        let resp = req.send().await.context("object store GET")?;
-        ensure!(
-            resp.status().is_success(),
-            "object store GET {path}: {} — the document's bytes are missing",
-            resp.status()
-        );
-        Ok(resp.bytes().await.context("object store body")?.to_vec())
+        bail!("object store {method} {path}: unavailable after {ATTEMPTS} attempts ({last})")
     }
 
     fn signed_headers(
