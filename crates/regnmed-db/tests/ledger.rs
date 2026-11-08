@@ -342,3 +342,48 @@ async fn saft_input_splits_balances_at_the_period_boundary() {
     assert!(xml.contains("<OpeningDebitBalance>100.00</OpeningDebitBalance>"));
     assert!(xml.contains("<ClosingDebitBalance>150.00</ClosingDebitBalance>"));
 }
+
+/// ensure_person runs on every authenticated request, so an unchanged
+/// person must not be written: a row's xmin moves only when it is updated.
+#[tokio::test]
+async fn ensure_person_does_not_write_an_unchanged_person() {
+    let Some(pool) = pool().await else { return };
+    let sub = format!("test-{}", Uuid::new_v4());
+    let xmin = |pool: PgPool, sub: String| async move {
+        sqlx::query_scalar::<_, String>("select xmin::text from person where oidc_sub = $1")
+            .bind(sub)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+
+    let id = regnmed_db::ensure_person(&pool, &sub, Some("Kari"), Some("kari@example.no"))
+        .await
+        .unwrap();
+    let before = xmin(pool.clone(), sub.clone()).await;
+
+    let again = regnmed_db::ensure_person(&pool, &sub, Some("Kari"), Some("kari@example.no"))
+        .await
+        .unwrap();
+    let no_claims = regnmed_db::ensure_person(&pool, &sub, None, None)
+        .await
+        .unwrap();
+    assert_eq!((again, no_claims), (id, id));
+    assert_eq!(
+        xmin(pool.clone(), sub.clone()).await,
+        before,
+        "unchanged person was written"
+    );
+
+    // A changed name is still recorded.
+    regnmed_db::ensure_person(&pool, &sub, Some("Kari Nordmann"), None)
+        .await
+        .unwrap();
+    assert_ne!(xmin(pool.clone(), sub.clone()).await, before);
+    let name: String = sqlx::query_scalar("select name from person where oidc_sub = $1")
+        .bind(&sub)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Kari Nordmann");
+}
