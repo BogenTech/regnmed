@@ -54,7 +54,7 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: v0.6.18
+    newTag: v0.6.19
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     # A RELEASE tag, like regnmed's above: regnid started cutting
@@ -74,3 +74,6 @@ patches:
   - path: patches/abonnement-cronjob.yaml
   - path: patches/abonnement-oppfolging-cronjob.yaml
   - path: patches/agent-worker.yaml
+  - path: patches/site.yaml
+    target:
+      kind: Deployment

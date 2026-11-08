@@ -49,6 +49,9 @@ spec:
     seccompProfile: { type: RuntimeDefault }
     appArmorProfile: { type: Unconfined }
   affinity:
+    # Helsinki, with the apps (patches/site.yaml): queries must not cross
+    # sites. One instance per box, so the two land on two of hel1's three.
+    nodeSelector: { glugg.no/site: hel1 }
     podAntiAffinityType: required
   storage: { size: 20Gi }
   plugins:

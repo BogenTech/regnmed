@@ -1,0 +1,19 @@
+# Every Deployment prefers Helsinki, where the database is (../postgres.yaml
+# requires it). The Hetzner cluster spans two sites, hel1 and fsn1, about
+# 25 ms apart, and a request makes many queries: with the API in fsn1 and
+# Postgres in hel1, /anchors took ~1 s (2026-11-08). Preferred, not required,
+# so prod still schedules if hel1's boxes are full or down.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: any
+spec:
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: glugg.no/site, operator: In, values: [hel1] }
