@@ -62,7 +62,11 @@ oppstart. I clusterne kommer de fra Secret-en `blob-store`
 | test (homelab) | `bogenhuset` (hel1) | `regnmed-test/documents/` |
 
 S3-klienten er håndskrevet (PUT og GET med AWS Signature V4 over sha2 og
-reqwest), testet mot AWS' publiserte eksempelsignatur og mot Hetzner.
+reqwest), testet mot AWS' publiserte eksempelsignatur og mot Hetzner. Den
+prøver på nytt (fem forsøk, økende pause) ved tidsavbrudd, 429 og 5xx —
+Hetzner svarte sporadisk 504 for et objekt som fantes, og første
+`verify-ledger` i prod feilet på det (2026-11-08). En 404 prøves ikke på
+nytt: da er objektet borte, og det meldes som det.
 
 ## Ikke gjort ennå
 

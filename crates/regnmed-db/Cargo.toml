@@ -17,6 +17,7 @@ uuid.workspace = true
 # Object store client (blob.rs): two signed calls, hand-rolled over these.
 reqwest.workspace = true
 sha2.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 dotenvy.workspace = true
