@@ -182,6 +182,13 @@ impl S3 {
     /// than ours: timeouts, connection errors, 429 and 5xx. Hetzner's
     /// object storage answers an occasional 504 for an object that is
     /// there (seen 2026-11-08); a 404 is not retried — that object is gone.
+    ///
+    /// It also sits on the odd GET before answering: 62 of 65 attachment
+    /// reads in prod came back at once while three small ones waited 2.6,
+    /// 5.5 and 17 s for headers, the body then arriving instantly
+    /// (2026-11-09). A GET without headers after HEADERS is abandoned and
+    /// sent again, which rarely meets the same stall. PUTs keep the
+    /// client's 30 s: their "headers" wait includes uploading the body.
     async fn send(
         &self,
         method: &str,
@@ -191,6 +198,7 @@ impl S3 {
     ) -> Result<Vec<u8>> {
         const ATTEMPTS: u32 = 5;
         const SLOW: std::time::Duration = std::time::Duration::from_secs(2);
+        const HEADERS: std::time::Duration = std::time::Duration::from_secs(3);
         let mut last = String::new();
         for attempt in 0..ATTEMPTS {
             if attempt > 0 {
@@ -209,7 +217,15 @@ impl S3 {
             // retry used to be silent, so a 48 s audit report in prod
             // (2026-11-09) showed nothing but its total.
             let started = std::time::Instant::now();
-            let outcome = req.send().await;
+            let sent = req.send();
+            let outcome = if body.is_none() {
+                match tokio::time::timeout(HEADERS, sent).await {
+                    Ok(r) => r.map_err(anyhow::Error::from),
+                    Err(_) => Err(anyhow::anyhow!("no response headers within {HEADERS:?}")),
+                }
+            } else {
+                sent.await.map_err(anyhow::Error::from)
+            };
             let headers_ms = started.elapsed().as_millis();
             let note = |what: &str| {
                 eprintln!(
@@ -243,7 +259,7 @@ impl S3 {
                 }
                 Ok(resp) => bail!("object store {method} {path}: {}", resp.status()),
                 Err(e) => {
-                    last = format!("{:#}", anyhow::Error::from(e));
+                    last = format!("{e:#}");
                     note(&last);
                 }
             }
@@ -454,6 +470,47 @@ mod tests {
         );
         assert!(blobs.load(Some(b"endret".to_vec()), &hash).await.is_err());
         assert!(blobs.load(None, &hash).await.is_err());
+    }
+
+    /// The store sits on the first GET and answers the second at once,
+    /// as Hetzner's did in prod: the stalled attempt is abandoned after
+    /// HEADERS and the object still comes back, long before the client's
+    /// 30 s timeout would have fired.
+    #[tokio::test]
+    async fn a_get_that_gets_no_headers_is_sent_again() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            for n in 0.. {
+                let (mut conn, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 4096];
+                let _ = conn.read(&mut buf).await;
+                if n == 0 {
+                    held.push(conn); // never answered
+                } else {
+                    let _ = conn
+                        .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\nbilag")
+                        .await;
+                }
+            }
+        });
+        let s3 = S3 {
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap(),
+            endpoint: format!("http://{addr}"),
+            bucket: "b".into(),
+            region: "r".into(),
+            prefix: "p/".into(),
+            access_key: "k".into(),
+            secret_key: "s".into(),
+        };
+        let started = std::time::Instant::now();
+        assert_eq!(s3.get(&[0u8; 32]).await.unwrap(), b"bilag");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     /// Round trip against a real object store, only when one is configured

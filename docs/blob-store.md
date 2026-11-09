@@ -68,6 +68,15 @@ Hetzner svarte sporadisk 504 for et objekt som fantes, og første
 `verify-ledger` i prod feilet på det (2026-11-08). En 404 prøves ikke på
 nytt: da er objektet borte, og det meldes som det.
 
+Hetzner holder også en og annen GET før den svarer: av 65 vedlegg i
+prods revisjonsrapport kom 62 straks, mens tre små (15–54 KB) ventet
+2,6, 5,5 og 17 s på svarhodene og så kom på et øyeblikk (2026-11-09,
+målt etter at nett og DNS var utelukket). En GET uten svarhoder etter
+3 s blir derfor forlatt og sendt på nytt — et nytt forsøk treffer
+sjelden samme stopp. PUT beholder 30 s, siden ventetiden der også
+rommer opplastingen. Hvert feilet forsøk, og hvert vellykket som tok
+over 2 s, logges med tidene sine.
+
 ## Versjonering
 
 Hashen avslører et endret eller slettet objekt, men gjenoppretter det
