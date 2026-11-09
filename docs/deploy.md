@@ -175,6 +175,32 @@ være releasen, og hver release skal forklare seg):
    `curl -s https://regnmed.no/portal-config` skal bære
    `"versjon": "vX.Y.Z"`.
 
+**Hvilket nummer** (vedtatt 2026-11-09). Vi blir på 0.x — 1.0 er for
+tidlig. Innenfor 0.x betyr tallene dette:
+
+- **Minor (0.7.0, 0.8.0, …):** ny funksjonalitet, en migrasjon, en ny
+  miljøvariabel eller hemmelighet, en ny CLI-kommando, et nytt eller
+  endret API-endepunkt — alt en driftsperson eller en integrasjon merker.
+  Under 1.0 går også brytende endringer her.
+- **Patch (0.7.1, …):** feilrettinger og interne endringer, ingenting
+  annet.
+
+Grunnen: 0.6.x fikk 25 patch-releaser fra 2026-08-08 til 2026-11-09,
+blant dem en ny innloggingsmodell, innlogging med telefon og dokumenter
+flyttet til objektlager med migrasjon — og seks releaser på én dag uten
+notater. Nummeret sa ingenting om hva som endret seg.
+
+**Slipp samlet, ikke per retting.** Test ruller allerede på hver push til
+main; iterer der, og bruk `-rcN` når noe skal modnes. En release kuttes
+når endringen virker, ikke etter hvert steg underveis — og hver release
+har notater.
+
+**1.0 er en API-avgjørelse, ikke en milepæl i tid.** Den tas når den
+offentlige API-flaten (docs/api.md, JSON-feltnavnene, MCP-verktøyenes
+skjemaer) erklæres stabil. Fra da krever en brytende endring der en
+major, og det er da nummeret begynner å bety noe for kunder med
+integrasjoner (#45).
+
 **`paths-ignore` gjelder IKKE tagg-pusher.** `images.yml` ignorerer
 `deploy/**`, `docs/**` og `*.md` på main, så workflowens egen tagg-bump i
 `deploy/test` ikke utløser en ny runde av seg selv. Det er lett å tro at
