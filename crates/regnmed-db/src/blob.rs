@@ -190,6 +190,7 @@ impl S3 {
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         const ATTEMPTS: u32 = 5;
+        const SLOW: std::time::Duration = std::time::Duration::from_secs(2);
         let mut last = String::new();
         for attempt in 0..ATTEMPTS {
             if attempt > 0 {
@@ -204,10 +205,31 @@ impl S3 {
             for (k, v) in self.signed_headers(method, path, payload_hash) {
                 req = req.header(k, v);
             }
-            match req.send().await {
+            // Every failed or slow attempt is logged with its timing: a
+            // retry used to be silent, so a 48 s audit report in prod
+            // (2026-11-09) showed nothing but its total.
+            let started = std::time::Instant::now();
+            let outcome = req.send().await;
+            let headers_ms = started.elapsed().as_millis();
+            let note = |what: &str| {
+                eprintln!(
+                    "object store {method} {path} attempt {}: {what}, headers after {headers_ms} ms, {} ms in all",
+                    attempt + 1,
+                    started.elapsed().as_millis()
+                )
+            };
+            match outcome {
                 Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                    Ok(bytes) => return Ok(bytes.to_vec()),
-                    Err(e) => last = format!("reading the body: {e}"),
+                    Ok(bytes) => {
+                        if started.elapsed() > SLOW {
+                            note(&format!("slow, {} bytes", bytes.len()));
+                        }
+                        return Ok(bytes.to_vec());
+                    }
+                    Err(e) => {
+                        last = format!("reading the body: {:#}", anyhow::Error::from(e));
+                        note(&last);
+                    }
                 },
                 Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
                     bail!("object store {method} {path}: 404 — the object is missing")
@@ -217,9 +239,13 @@ impl S3 {
                         || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS =>
                 {
                     last = resp.status().to_string();
+                    note(&last);
                 }
                 Ok(resp) => bail!("object store {method} {path}: {}", resp.status()),
-                Err(e) => last = e.to_string(),
+                Err(e) => {
+                    last = format!("{:#}", anyhow::Error::from(e));
+                    note(&last);
+                }
             }
         }
         bail!("object store {method} {path}: unavailable after {ATTEMPTS} attempts ({last})")
