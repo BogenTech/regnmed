@@ -287,7 +287,11 @@ async fn period_lock_and_attachments_end_to_end() {
     let tampered = regnmed_db::verify_attachments(&state.pool, company)
         .await
         .expect_err("altered dokumentasjon must fail verification");
-    assert!(tampered.to_string().contains("altered"), "got: {tampered}");
+    let tampered = format!("{tampered:#}");
+    assert!(
+        tampered.contains("does not match its stored hash — altered"),
+        "got: {tampered}"
+    );
     // Restore for a clean dev database.
     sqlx::query("update attachment set content = $2 where id = $1")
         .bind(Uuid::parse_str(&attachment_id).unwrap())

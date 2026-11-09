@@ -80,7 +80,8 @@ pub async fn build_audit_report(
         Err(e) => Check {
             name: "Bilagsvedlegg".into(),
             ok: false,
-            detail: e.to_string(),
+            // The whole chain: "unavailable" and "altered" must read differently.
+            detail: format!("{e:#}"),
         },
     });
 
