@@ -435,3 +435,29 @@ pub async fn build_audit_report(
         anchors,
     })
 }
+
+/// The report as the API serves it (`GET .../reports/revisjon`, and the
+/// audit-report job's result). The JSON keys are the public wire names.
+pub fn audit_json(report: &AuditInput) -> serde_json::Value {
+    serde_json::json!({
+        "orgnr": report.orgnumber,
+        "selskap": report.company,
+        "generert": report.generert,
+        "generert_av": report.generated_by,
+        "programversjon": report.programversjon,
+        "kjede_sekvens": report.chain_sequence,
+        "kjede_hode": report.chain_head_hex,
+        "alle_ok": report.alle_ok(),
+        "kontroller": report.checks.iter().map(|k| serde_json::json!({
+            "navn": k.name,
+            "ok": k.ok,
+            "detalj": k.detail,
+        })).collect::<Vec<_>>(),
+        "ankere": report.anchors.iter().map(|a| serde_json::json!({
+            "tidspunkt": a.timestamp,
+            "root": a.root_hex,
+            "siste_sekvens": a.last_sequence,
+            "vitner": a.vitner,
+        })).collect::<Vec<_>>(),
+    })
+}

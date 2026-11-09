@@ -208,37 +208,20 @@ pub async fn create_firm(
 /// against the imported history). Each file lands in one transaction
 /// or not at all.
 
-/// The body is either raw SAF-T XML, or (content-type application/json)
-/// a wizard envelope `{"file": "<xml>", "mapping": {"15000": "1500"}}`
-/// from the kontoplan mapping step.
-/// Returns the parsed (possibly mapped) file together with the raw XML
-/// source — the import log hashes the source document, not the mapping.
-fn parse_import_body(
+/// The body is raw SAF-T XML, or (content-type application/json) the
+/// wizard envelope -- see `regnmed_db::saft_import::parse_import_body`.
+pub(crate) fn parse_import_body(
     headers: &axum::http::HeaderMap,
     body: String,
 ) -> Result<(regnmed_core::saft_import::SaftFile, String), ApiError> {
-    let is_json = headers
+    regnmed_db::saft_import::parse_import_body(is_json(headers), body).map_err(ApiError::BadRequest)
+}
+
+pub(crate) fn is_json(headers: &axum::http::HeaderMap) -> bool {
+    headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("application/json"));
-    if !is_json {
-        let file = regnmed_core::saft_import::parse(&body)
-            .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
-        return Ok((file, body));
-    }
-    #[derive(serde::Deserialize)]
-    struct Envelope {
-        file: String,
-        #[serde(default)]
-        mapping: std::collections::HashMap<String, String>,
-    }
-    let envelope: Envelope = serde_json::from_str(&body)
-        .map_err(|e| ApiError::BadRequest(format!("ugyldig konvolutt: {e}")))?;
-    let mut file = regnmed_core::saft_import::parse(&envelope.file)
-        .map_err(|e| ApiError::BadRequest(format!("SAF-T: {e}")))?;
-    regnmed_core::chart_of_accounts::apply_mapping(&mut file, &envelope.mapping)
-        .map_err(ApiError::BadRequest)?;
-    Ok((file, envelope.file))
+        .is_some_and(|ct| ct.contains("application/json"))
 }
 
 pub async fn import_saft(

@@ -71,3 +71,10 @@ test("/me is never cached: it redeems invitations", async () => {
   await api("/me");
   assert.equal(calls, 2);
 });
+
+test("a job's status is never cached: it is polled until it changes", async () => {
+  calls = 0;
+  await api("/companies/x/jobs/1");
+  await api("/companies/x/jobs/1");
+  assert.equal(calls, 2);
+});

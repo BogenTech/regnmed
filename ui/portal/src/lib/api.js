@@ -11,7 +11,8 @@ import { tokens, clearTokens, refresh } from "./auth.svelte.js";
 // Someone else's change can be up to FRESH_MS old after a section switch,
 // exactly like a page left open. Returning to the tab empties it too. The
 // text is stored, not the object, so a section that mutates its response
-// can never alter the cache. /me redeems invitations and is never cached.
+// can never alter the cache. /me redeems invitations and is never cached,
+// nor is a job's status, which is polled until it changes.
 const FRESH_MS = 30_000;
 const cache = new Map(); // path -> { at, text }
 const inflight = new Map(); // path -> Promise<text|Response>
@@ -38,7 +39,8 @@ export async function api(path, options = {}) {
       clearCache(); // anything read while the write was in flight
     }
   }
-  if (path === "/me") return request(path, options);
+  // A job's status is polled until it changes, so it is never cached.
+  if (path === "/me" || path.includes("/jobs/")) return request(path, options);
   const hit = cache.get(path);
   if (hit && Date.now() - hit.at < FRESH_MS) return JSON.parse(hit.text);
   // Two identical reads at once (two cards needing the same list) share a call.

@@ -650,3 +650,126 @@ async fn imports_one_file_per_year_and_refuses_mismatched_openings() {
         "explains that ordinary bookkeeping closed the door: {body}"
     );
 }
+
+/// Polls a job until it is finished (docs/jobs.md). Without NATS the API
+/// runs the job itself, so this exercises the same code the worker runs.
+async fn wait_for_job(
+    state: &AppState,
+    company: Uuid,
+    job_id: &str,
+    bearer: &str,
+) -> serde_json::Value {
+    for _ in 0..200 {
+        let (status, job) = request(
+            state,
+            "GET",
+            &format!("/companies/{company}/jobs/{job_id}"),
+            bearer,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{job}");
+        if job["status"] == "done" || job["status"] == "failed" {
+            return job;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("job {job_id} did not finish");
+}
+
+#[tokio::test]
+async fn a_saft_import_and_the_audit_report_run_as_background_jobs() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let viewer_sub = format!("test|{}", Uuid::new_v4());
+    let outsider_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Jo Jobb"), None)
+        .await
+        .unwrap();
+    let viewer = regnmed_db::ensure_person(&state.pool, &viewer_sub, Some("Lars Leser"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_person(&state.pool, &outsider_sub, Some("Ute"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Jobb AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, viewer, "bokforing")
+        .await
+        .unwrap();
+    let admin_token = idp.token(&admin_sub, "Jo Jobb");
+    let viewer_token = idp.token(&viewer_sub, "Lars Leser");
+    let outsider_token = idp.token(&outsider_sub, "Ute");
+    let uri = format!("/companies/{company}/jobs/saft-import");
+
+    // A file that is not SAF-T is refused at once, not as a failed job.
+    let (status, body) = request(&state, "POST", &uri, &admin_token, Some("<x/>".into())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    // Starting an import takes the same right as the synchronous import.
+    let (status, _) = request(&state, "POST", &uri, &viewer_token, Some(foreign_saft())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, started) = request(&state, "POST", &uri, &admin_token, Some(foreign_saft())).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{started}");
+    let job_id = started["job_id"].as_str().unwrap().to_owned();
+
+    // Reading it does too, and an outsider cannot tell it exists.
+    let job_uri = format!("/companies/{company}/jobs/{job_id}");
+    let (status, _) = request(&state, "GET", &job_uri, &viewer_token, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = request(&state, "GET", &job_uri, &outsider_token, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let job = wait_for_job(&state, company, &job_id, &admin_token).await;
+    assert_eq!(job["status"], "done", "{job}");
+    assert_eq!(job["result"]["vouchers"], 2);
+    assert_eq!(job["result"]["opening_posted"], true);
+    assert_eq!(
+        regnmed_db::verify_chain(&state.pool, company)
+            .await
+            .unwrap()
+            .vouchers_checked,
+        3
+    );
+
+    // The same file again fails AS A JOB, with the reason readable.
+    let (_, again) = request(&state, "POST", &uri, &admin_token, Some(foreign_saft())).await;
+    let job = wait_for_job(
+        &state,
+        company,
+        again["job_id"].as_str().unwrap(),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(job["status"], "failed");
+    assert!(job["error"].as_str().unwrap().len() > 5, "{job}");
+
+    // The audit report: any member who may read reports.
+    let (status, started) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/jobs/audit-report"),
+        &viewer_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{started}");
+    let job = wait_for_job(
+        &state,
+        company,
+        started["job_id"].as_str().unwrap(),
+        &viewer_token,
+    )
+    .await;
+    assert_eq!(job["status"], "done", "{job}");
+    assert_eq!(job["result"]["alle_ok"], true, "{job}");
+    assert!(job["result"]["tekst"].as_str().unwrap().contains("Jobb AS"));
+}

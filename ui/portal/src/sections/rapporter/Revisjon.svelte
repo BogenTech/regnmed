@@ -2,24 +2,33 @@
   // Revisorens verifikasjonsrapport (#24): kontrollene kjøres og
   // AVVIK VISES SOM LINJER — en feilet kontroll skal aldri skjules
   // bak en feilmelding eller utelates fra rapporten.
-  import { api } from "../../lib/api.js";
+  import { runJob } from "../../lib/jobs.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import { download } from "../../lib/download.js";
+  import { saveText } from "../../lib/download.js";
 
   let { companyId } = $props();
 
   let data = $state(null);
+  let status = $state("queued");
 
+  // Every control re-walks the whole ledger, so the report is a
+  // background job (docs/jobs.md) instead of a request held open.
   $effect(() => {
     data = null;
-    api("/companies/" + companyId + "/reports/revisjon")
-      .then((svar) => (data = svar))
+    const id = companyId;
+    runJob(id, "audit-report", {}, (s) => (status = s))
+      .then((result) => {
+        if (id === companyId) data = result;
+      })
       .catch((error) => toast(error.message, false));
   });
 </script>
 
 {#if !data}
-  <span class="loading loading-spinner loading-sm"></span>
+  <div class="flex items-center gap-2 text-sm" role="status">
+    <span class="loading loading-spinner loading-sm"></span>
+    {status === "running" ? "Kjører kontrollene over hele hovedboken …" : "Starter kontrollene …"}
+  </div>
 {:else}
   <div class="alert {data.alle_ok ? 'alert-success' : 'alert-error'} mb-4">
     {data.alle_ok ? "Alle kontroller OK" : "Avvik funnet — se kontrollene under"}
@@ -67,11 +76,7 @@
 
   <button
     class="btn btn-outline btn-sm"
-    onclick={() =>
-      download(
-        "/companies/" + companyId + "/reports/revisjon?format=tekst",
-        "verifikasjonsrapport.txt",
-      )}
+    onclick={() => saveText(data.tekst, "verifikasjonsrapport_" + data.orgnr + ".txt")}
   >
     Last ned rapport (tekst)
   </button>

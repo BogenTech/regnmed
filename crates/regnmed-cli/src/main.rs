@@ -1,3 +1,5 @@
+mod work;
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
@@ -28,6 +30,16 @@ enum Command {
     /// (BLOB_S3_*): write, read back, compare, then empty the row's content
     /// (docs/blob-store.md). Safe to re-run and to interrupt.
     OffloadDocuments,
+    /// Run background jobs (docs/jobs.md): listen on the job queue and
+    /// sweep for jobs it missed. Run as many replicas as the load needs.
+    Work {
+        /// Jobs this process runs at once (default: JOB_CONCURRENCY, else 2).
+        #[arg(long)]
+        concurrency: Option<usize>,
+        /// Run what is waiting, then exit.
+        #[arg(long)]
+        once: bool,
+    },
     /// Snapshot every company's chain head under one Merkle root and, when
     /// ANCHOR_TSA_URL is set, witness the root with an RFC 3161 timestamp
     /// (docs/anchoring.md). Run periodically (cron/CronJob).
@@ -270,6 +282,12 @@ async fn main() -> Result<()> {
     let blobs = regnmed_db::blob::blobs();
 
     match cli.command {
+        Command::Work { concurrency, once } => {
+            let concurrency = concurrency
+                .or_else(|| std::env::var("JOB_CONCURRENCY").ok()?.parse().ok())
+                .unwrap_or(2);
+            work::run(pool, concurrency, once).await?;
+        }
         Command::OffloadDocuments => {
             println!("{}", blobs.describe());
             for (table, count) in regnmed_db::blob::offload_documents(&pool).await? {
@@ -1345,6 +1363,7 @@ mod tests {
         ("verify-ledger", &["company"]),
         ("demo", &[]),
         ("offload-documents", &[]),
+        ("work", &["concurrency", "once"]),
         ("anchor", &[]),
         ("generate-invoices", &[]),
         ("depreciate", &[]),

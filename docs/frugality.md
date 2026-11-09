@@ -27,6 +27,15 @@ OOM-killed at that limit. The binary budgets are ~2× measured reality:
 tight enough to catch an accidentally vendored embedding model or a
 debug-symbol regression, loose enough for normal growth.
 
+### The job worker (not gated)
+
+`regnmed work` (docs/jobs.md) has a 256 Mi container limit and no gate
+yet. Measured 2026-11-09 on a release build: 11 MB idle, **55 MB peak**
+while importing a 10 MB SAF-T file (10 429 vouchers). The limit allows
+two such imports at once (`JOB_CONCURRENCY=2`) with room to spare. A gate
+would need a SAF-T fixture of that size in CI; until then, re-measure
+when a new job kind lands.
+
 ## Raising a budget
 
 Budgets may be raised — consciously. The change goes in
