@@ -77,7 +77,23 @@ spec:
         createdb: true
         createrole: true
         passwordSecret: { name: postgres-login }
+      # Read-only access for verifying a release against prod data
+      # (docs/deploy.md). pg_read_all_data grants SELECT on everything and
+      # nothing else, so the server -- not the person typing -- refuses a
+      # write. No password: it logs in only over the pod's local socket, as
+      # the `local` ident map below allows, so it needs no secret and is
+      # reachable only by someone who can already `kubectl exec` into the pod.
+      - name: regnmed_readonly
+        ensure: present
+        login: true
+        disablePassword: true
+        inRoles: [pg_read_all_data]
   postgresql:
+    # Lets the pod's OS user (postgres) log in as regnmed_readonly over the
+    # local socket -- CNPG's `local all all peer map=local` rule matches
+    # first, so the line must join that map rather than add an hba rule.
+    pg_ident:
+      - local postgres regnmed_readonly
     synchronous:
       method: any
       number: 1

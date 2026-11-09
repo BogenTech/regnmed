@@ -53,6 +53,13 @@ Det som skiller prod fra test i rørleggingen:
   Tjenesten `postgres` er pekt om til primæren, så alle URL-er,
   backupjobben og restore-sjekken er uendret. Innloggingen er
   `postgres-login` (basic-auth, samme passord som i `db-credentials`).
+- **Lesetilgang for verifisering**: rollen `regnmed_readonly`
+  (`pg_read_all_data`, ingen skriverettigheter, intet passord) logger inn
+  bare over podens lokale socket, så det er serveren — ikke den som
+  skriver — som nekter en skriving:
+  `kubectl -n regnmed exec -i postgres-1 -c postgres -- psql -U regnmed_readonly -d regnmed`
+  (bytt til den som er primær; standby svarer også, bare et øyeblikk
+  på etterskudd).
 - **To backuper**: CNPG arkiverer hver WAL-fil og tar en nattlig
   basebackup til `s3://bogenhuset/cnpg/regnmed-prod` (30 dager) — det er
   gjenopprettingsveien. `pg_dump` + ukentlig restore-og-`verify-ledger`
