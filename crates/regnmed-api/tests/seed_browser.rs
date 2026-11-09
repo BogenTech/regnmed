@@ -474,3 +474,234 @@ async fn seed_browser_demo() {
     std::fs::write(format!("{out_dir}/company.txt"), company.to_string()).unwrap();
     println!("seeded company {company}");
 }
+
+/// Hand-run timing of the imports and exports that are candidates for the
+/// background worker (docs/jobs.md, "measure before moving"): no-op unless
+/// REGNMED_BENCH is set. Builds one company at a large SMB's yearly
+/// volume through the real router and prints how long each call takes.
+#[tokio::test]
+async fn bench_import_paths() {
+    use axum::body::Body;
+    use axum::http::Request;
+    use regnmed_core::Ore;
+    use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+    use std::time::Instant;
+    use tower::ServiceExt;
+
+    if std::env::var("REGNMED_BENCH").is_err() {
+        return;
+    }
+    let n = |var: &str, default: usize| {
+        std::env::var(var)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    };
+    let (customers, open_items, bank_vouchers, statement_tx) = (
+        n("BENCH_CUSTOMERS", 2_000),
+        n("BENCH_OPEN_ITEMS", 5_000),
+        n("BENCH_BANK_VOUCHERS", 10_000),
+        n("BENCH_STATEMENT_TX", 2_000),
+    );
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("bench|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Bench"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Benk AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    common::make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("2050", "Annen egenkapital"),
+        ("1920", "Bank"),
+        ("3000", "Salgsinntekt"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let token = idp.token(&sub, "Bench");
+    let base = format!("/companies/{company}");
+    let call = |method: &'static str, uri: String, body: String, ct: &'static str| {
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            let started = Instant::now();
+            let response = regnmed_api::router(state)
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(&uri)
+                        .header("authorization", format!("Bearer {token}"))
+                        .header("content-type", ct)
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let took = started.elapsed();
+            assert!(
+                status.is_success(),
+                "{method} {uri}: {status} {}",
+                String::from_utf8_lossy(&bytes[..bytes.len().min(500)])
+            );
+            println!(
+                "BENCH {:>8.1} ms  {method} {}  ({} bytes out)",
+                took.as_secs_f64() * 1000.0,
+                uri.split('?')
+                    .next()
+                    .unwrap()
+                    .replace(&format!("/companies/{company}"), ""),
+                bytes.len()
+            );
+            bytes
+        }
+    };
+
+    // Contacts.
+    let mut csv = String::from("Kundenr;Navn;Organisasjonsnummer;E-post;Adresse;Kontonummer\n");
+    for i in 0..customers {
+        csv.push_str(&format!(
+            "{};Kunde {i} AS;;k{i}@example.no;Gate {i}, 0155 Oslo;\n",
+            10_000 + i
+        ));
+    }
+    println!("BENCH contacts: {customers} rows, {} bytes", csv.len());
+    call(
+        "POST",
+        format!("{base}/import/contacts?kind=kunde"),
+        csv,
+        "text/csv",
+    )
+    .await;
+
+    // Open items, spread over the customers.
+    let mut csv =
+        String::from("Kundenr;Navn;Fakturanr;Fakturadato;Forfallsdato;Beløp;Restbeløp;KID\n");
+    for i in 0..open_items {
+        let c = i % customers;
+        csv.push_str(&format!(
+            "{};Kunde {c} AS;F-{i};15.12.2025;14.01.2026;{},00;{},00;\n",
+            10_000 + c,
+            1_000 + i,
+            1_000 + i
+        ));
+    }
+    println!("BENCH open items: {open_items} rows, {} bytes", csv.len());
+    call(
+        "POST",
+        format!("{base}/import/open-items?kind=kunde&preview=true"),
+        csv.clone(),
+        "text/csv",
+    )
+    .await;
+    call(
+        "POST",
+        format!("{base}/import/open-items?kind=kunde&dato=2026-01-01"),
+        csv,
+        "text/csv",
+    )
+    .await;
+
+    // A year of bank movements, each with a unique amount so the matching
+    // engine meets no ties.
+    let day = |i: usize| {
+        chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + chrono::Days::new((i % 365) as u64)
+    };
+    let amount = |i: usize| 500_00 + i as i64 * 7;
+    let started = Instant::now();
+    for i in 0..bank_vouchers {
+        let entry = |account: &str, ore: i64| EntryDraft {
+            account_number: account.into(),
+            amount: Ore(ore),
+            vat_code: None,
+            description: None,
+            party_no: None,
+            department: None,
+            project: None,
+            currency: None,
+        };
+        regnmed_db::post_voucher(
+            &state.pool,
+            company,
+            &VoucherDraft {
+                journal_code: "GL".into(),
+                voucher_date: day(i),
+                description: format!("Innbetaling {i}"),
+                reverses: None,
+                entries: vec![entry("1920", amount(i)), entry("3000", -amount(i))],
+            },
+            "bench",
+        )
+        .await
+        .unwrap();
+    }
+    println!(
+        "BENCH posted {bank_vouchers} bank vouchers in {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
+
+    // A camt.053 statement: every other entry matches a posted voucher.
+    let mut ntry = String::new();
+    for j in 0..statement_tx {
+        let (amt, dt) = if j % 2 == 0 {
+            (amount(j), day(j))
+        } else {
+            (3_00 + j as i64, day(j))
+        };
+        ntry.push_str(&format!(
+            "<Ntry><Amt Ccy=\"NOK\">{}.{:02}</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>\
+             <BookgDt><Dt>{dt}</Dt></BookgDt><AddtlNtryInf>Tx {j}</AddtlNtryInf></Ntry>\n",
+            amt / 100,
+            amt % 100
+        ));
+    }
+    let camt = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt>
+<Id>BENCH-{}</Id><Acct><Id><IBAN>NO9386011117947</IBAN></Id></Acct>
+{ntry}</Stmt></BkToCstmrStmt></Document>"#,
+        Uuid::new_v4()
+    );
+    println!(
+        "BENCH camt.053: {statement_tx} entries, {} bytes",
+        camt.len()
+    );
+    call(
+        "POST",
+        format!("{base}/bank/statements?account=1920"),
+        camt,
+        "application/xml",
+    )
+    .await;
+    call(
+        "GET",
+        format!("{base}/bank/reconciliation?account=1920"),
+        String::new(),
+        "application/json",
+    )
+    .await;
+    call(
+        "GET",
+        format!("{base}/reports/saft?year=2026&contact_first=Bench&contact_last=Benk"),
+        String::new(),
+        "application/json",
+    )
+    .await;
+    println!("BENCH company {company}");
+}

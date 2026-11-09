@@ -91,6 +91,39 @@ fil på 10 MB).
 `regnmed work --once` kjører det som venter og avslutter — nyttig for å
 tømme køen for hånd.
 
+## Det som IKKE ble jobber (målt 2026-11-09)
+
+Regelen er å måle før noe flyttes, og målingen av de neste kandidatene
+fant igjen kode som var tregere enn arbeidet den gjorde. Etter rettingen
+var ingen av dem lenge nok til å forsvare en jobb og en ventevisning.
+Målt lokalt mot ett selskap i stor SMB-størrelse
+(`REGNMED_BENCH=1 cargo test -p regnmed-api --test seed_browser
+bench_import_paths -- --nocapture`, volumene styres med `BENCH_*`):
+
+| Kall | Mengde | Før | Etter |
+|---|---|---|---|
+| Kontaktimport | 2 000 kunder | 8,8 s | 3,2 s |
+| Åpne poster, forhåndsvisning | 5 000 poster mot 2 000 kunder | 12,8 s | 0,06 s |
+| Åpne poster, import | samme | 36,2 s | 4,7 s |
+| Bankutskrift (camt.053) | 2 000 transaksjoner mot 10 000 posteringer | 2,9 s | — |
+| Bankavstemming | samme | 0,17 s | — |
+| SAF-T-eksport | 12,6 MB | 0,77 s | — |
+
+- **Hver rad i en importfil slo opp parten sin med en egen spørring**, og
+  `lower(name) = …` gjorde den til en gjennomgang av alle selskapets
+  parter — N rader × P parter. Nå leses partene én gang per fil
+  (`PartyIndex` i `regnmed-db::migration`), med samme rekkefølge:
+  organisasjonsnummer, så numerisk kundenummer, så navn.
+- **Posteringen slo opp konto og part på nytt for hver linje.** Et bilag
+  med 5 000 linjer på én konto mot 2 000 parter gjorde 10 000 oppslag;
+  nå slås hver konto og part opp én gang per bilag. Kjedehashen og alle
+  kontrollene er de samme.
+
+Kontaktimport og åpne poster er engangshandlinger ved migrering, og et
+vanlig SMB har noen hundre poster (under ett sekund). Bankutskriften er
+månedlig og har sjelden over noen hundre linjer (400 linjer: 0,25 s).
+Blir noe av dette en jobb senere, er det på ny måling.
+
 ## Ytelsesfunn som kom med (2026-11-09)
 
 Målingene for dette arbeidet fant to feil som var verre enn ventetiden de

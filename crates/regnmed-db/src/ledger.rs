@@ -296,6 +296,13 @@ pub async fn post_voucher_in(
     let mut party_ids: Vec<Option<Uuid>> = Vec::with_capacity(draft.entries.len());
     let mut dimension_ids: Vec<(Option<Uuid>, Option<Uuid>)> =
         Vec::with_capacity(draft.entries.len());
+    // Looked up once per voucher, not once per line: an open-items
+    // migration posts 5 000 lines on one account across ~2 000 parties,
+    // and a query per line was most of its 12 s (2026-11-09).
+    let mut accounts: std::collections::HashMap<&str, (Uuid, Option<String>)> =
+        std::collections::HashMap::new();
+    let mut parties: std::collections::HashMap<&str, (Uuid, String)> =
+        std::collections::HashMap::new();
     for (i, entry) in draft.entries.iter().enumerate() {
         // Valuta sanity: the NOK amount is authoritative, but it must
         // agree with cent × kurs within 1 kr — anything larger is a
@@ -320,35 +327,50 @@ pub async fn post_voucher_in(
             resolve_dimension(tx, company_id, i, "avdeling", &entry.department).await?;
         let project_id = resolve_dimension(tx, company_id, i, "prosjekt", &entry.project).await?;
         dimension_ids.push((department_id, project_id));
-        let account = sqlx::query(
-            "select id, reskontro_kind from account
-             where company_id = $1 and number = $2 and active",
-        )
-        .bind(company_id)
-        .bind(&entry.account_number)
-        .fetch_optional(&mut **tx)
-        .await?
-        .with_context(|| {
-            format!(
-                "entry line {}: no active account {} for this company",
-                i + 1,
-                entry.account_number
-            )
-        })?;
-        account_ids.push(account.get("id"));
-
-        let subledger_kind: Option<String> = account.get("reskontro_kind");
-        let party_id = match (&subledger_kind, &entry.party_no) {
-            (Some(kind), Some(party_no)) => {
-                let party = sqlx::query(
-                    "select id, kind from party where company_id = $1 and party_no = $2",
+        let (account_id, subledger_kind) = match accounts.get(entry.account_number.as_str()) {
+            Some(found) => found.clone(),
+            None => {
+                let account = sqlx::query(
+                    "select id, reskontro_kind from account
+                     where company_id = $1 and number = $2 and active",
                 )
                 .bind(company_id)
-                .bind(party_no)
+                .bind(&entry.account_number)
                 .fetch_optional(&mut **tx)
                 .await?
-                .with_context(|| format!("entry line {}: no party {party_no}", i + 1))?;
-                let party_kind: String = party.get("kind");
+                .with_context(|| {
+                    format!(
+                        "entry line {}: no active account {} for this company",
+                        i + 1,
+                        entry.account_number
+                    )
+                })?;
+                let found: (Uuid, Option<String>) =
+                    (account.get("id"), account.get("reskontro_kind"));
+                accounts.insert(&entry.account_number, found.clone());
+                found
+            }
+        };
+        account_ids.push(account_id);
+
+        let party_id = match (&subledger_kind, &entry.party_no) {
+            (Some(kind), Some(party_no)) => {
+                let (party_id, party_kind) = match parties.get(party_no.as_str()) {
+                    Some(found) => found.clone(),
+                    None => {
+                        let party = sqlx::query(
+                            "select id, kind from party where company_id = $1 and party_no = $2",
+                        )
+                        .bind(company_id)
+                        .bind(party_no)
+                        .fetch_optional(&mut **tx)
+                        .await?
+                        .with_context(|| format!("entry line {}: no party {party_no}", i + 1))?;
+                        let found: (Uuid, String) = (party.get("id"), party.get("kind"));
+                        parties.insert(party_no, found.clone());
+                        found
+                    }
+                };
                 if &party_kind != kind {
                     bail!(
                         "entry line {}: party {party_no} is a {party_kind}, but account {} is a {kind}-reskontro account",
@@ -356,7 +378,7 @@ pub async fn post_voucher_in(
                         entry.account_number
                     );
                 }
-                Some(party.get("id"))
+                Some(party_id)
             }
             (Some(kind), None) => bail!(
                 "entry line {}: account {} is a {kind}-reskontro account and requires a party",
