@@ -28,6 +28,35 @@ Adressene:
 - `/ny` → permanent redirect til `/`. Det var appens adresse mens
   migreringen pågikk; gamle bokmerker skal ikke lande i en 404.
 
+## Fart: komprimering, seksjoner ved behov, svarbuffer (2026-11-09)
+
+Tre grep som gjør portalen rask å bruke, uten å endre hva serveren
+garanterer:
+
+- **Gzip på tekst.** `compression_layer()` i `regnmed-api` komprimerer
+  JS, CSS, HTML, JSON og XML over 1 kB. PDF-er, bilder og opplastede
+  dokumenter går urørt (allerede komprimert eller opake — å presse et
+  vedlegg på 20 MB koster CPU for ingenting). Gzip og ikke brotli: den
+  gjenbruker flate2 og holder minnet per strøm lite (frugality-budsjettet
+  på 64 MB). Testet i `text_is_gzipped_and_documents_are_not`.
+- **Seksjonene lastes ved behov.** Første nedlasting er skallet og
+  oversikten (106 kB JS, 39 kB komprimert — før: 408 kB ukomprimert).
+  Hver seksjon er en egen bit (`lib/lazy.svelte.js`); etter oppstart
+  forhåndslastes resten i ledig tid, så et menyklikk likevel ikke venter
+  på nettet. Feiler en bit (typisk: en ny versjon er rullet ut mens fanen
+  sto åpen), ber siden om omlasting i stedet for å vise en tom flate.
+- **Svarbuffer for GET** (`lib/api.js`). Et svar gjenbrukes i 30 sekunder,
+  så et seksjonsbytte frem og tilbake er øyeblikkelig. **Enhver endring
+  (POST/PUT/DELETE) tømmer hele bufferet**, før og etter kallet, så egne
+  endringer vises alltid straks; et lesekall som startet før en endring
+  lagres ikke etter den (generasjonsteller). Andres endringer kan være
+  opptil 30 sekunder gamle ved et seksjonsbytte — som en side som står
+  åpen. Bufferet tømmes når fanen blir synlig igjen, ligger bare i minnet
+  (dør med fanen), og lagrer teksten, så en seksjon som endrer svaret sitt
+  aldri endrer bufferet. `/me` bufres aldri: den løser inn invitasjoner.
+  Bufferet påvirker bare visningen — hver endring valideres av serveren
+  som før. Testet med `npm test` (kjøres i CI-jobben `portal`).
+
 Historikk: fram til 2026-07-29 var portalen rammeverksfri og uten
 byggesteg (`app.js` + `theme.js` + generert `app.css`, `include_str!`).
 Vedtaket om å bytte, og hvorfor, står i #76.

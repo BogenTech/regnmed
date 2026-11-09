@@ -885,9 +885,43 @@ pub fn router(state: AppState) -> Router {
         // Hardening on EVERY response (#64): nosniff and Referrer-Policy
         // always, CSP on HTML. One seam, so no endpoint can forget.
         .layer(axum::middleware::from_fn(herding::security_headers))
+        .layer(compression_layer())
         .layer(axum::middleware::from_fn(request_timing))
         .layer(catch_panic_layer())
         .with_state(state)
+}
+
+/// Gzip for text only: the portal bundle (~400 KB -> ~120 KB) and JSON.
+/// PDFs, images and uploaded documents are already compressed or opaque,
+/// and squeezing a 20 MB attachment would cost CPU for nothing. Gzip, not
+/// brotli: it reuses flate2 and keeps per-stream memory small, which the
+/// 64 MB frugality budget cares about.
+fn compression_layer()
+-> tower_http::compression::CompressionLayer<impl tower_http::compression::Predicate> {
+    use tower_http::compression::predicate::{Predicate, SizeAbove};
+    let text = |_: axum::http::StatusCode,
+                _: axum::http::Version,
+                headers: &axum::http::HeaderMap,
+                _: &axum::http::Extensions| {
+        headers
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(is_compressible)
+    };
+    tower_http::compression::CompressionLayer::new().compress_when(SizeAbove::new(1024).and(text))
+}
+
+fn is_compressible(content_type: &str) -> bool {
+    let mime = content_type.split(';').next().unwrap_or("").trim();
+    mime.starts_with("text/")
+        || matches!(
+            mime,
+            "application/json"
+                | "application/javascript"
+                | "application/manifest+json"
+                | "application/xml"
+                | "image/svg+xml"
+        )
 }
 
 /// Requests slower than this are logged with their duration.
@@ -1065,5 +1099,44 @@ mod timing_tests {
             .unwrap();
         let timing = response.headers()["server-timing"].to_str().unwrap();
         assert!(timing.starts_with("app;dur="), "{timing}");
+    }
+
+    #[tokio::test]
+    async fn text_is_gzipped_and_documents_are_not() {
+        let big = "x".repeat(4096);
+        let (js, pdf) = (big.clone(), big);
+        let app = Router::new()
+            .route(
+                "/app.js",
+                get(move || async move { ([("content-type", "text/javascript")], js) }),
+            )
+            .route(
+                "/a.pdf",
+                get(move || async move { ([("content-type", "application/pdf")], pdf) }),
+            )
+            .route("/small", get(|| async { axum::Json("tiny") }))
+            .layer(super::compression_layer());
+        let encoding = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri(path)
+                            .header("accept-encoding", "gzip")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                response
+                    .headers()
+                    .get("content-encoding")
+                    .map(|v| v.to_str().unwrap().to_owned())
+            }
+        };
+        assert_eq!(encoding("/app.js").await.as_deref(), Some("gzip"));
+        assert_eq!(encoding("/a.pdf").await, None);
+        assert_eq!(encoding("/small").await, None);
     }
 }
