@@ -61,7 +61,25 @@ impl Verifier {
             let jwks: JwkSet = serde_json::from_str(&raw).context("parsing OIDC_JWKS_FILE")?;
             return Ok(Self::from_jwks(&issuer, audience, jwks));
         }
-        Self::discover(&issuer, audience).await
+        // A pod that just started may not resolve the IdP yet (test's
+        // homelab DNS answered EAI_AGAIN twice on 2026-11-09), and the IdP
+        // may be restarting in the same rollout: retry for ~30 s before
+        // giving up, instead of crash-looping on the first miss.
+        let mut delay = std::time::Duration::from_secs(1);
+        for attempt in 1.. {
+            match Self::discover(&issuer, audience.clone()).await {
+                Ok(v) => return Ok(v),
+                Err(e) if attempt < 6 => {
+                    eprintln!(
+                        "OIDC discovery attempt {attempt} failed, retrying in {delay:?}: {e:#}"
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!()
     }
 
     pub async fn discover(issuer: &str, audience: Option<String>) -> Result<Self> {
