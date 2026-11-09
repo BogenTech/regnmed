@@ -12,49 +12,35 @@
   import Toasts from "./components/Toasts.svelte";
   import Dialog from "./components/Dialog.svelte";
   import Oversikt from "./sections/oversikt/Oversikt.svelte";
-  import Faktura from "./sections/faktura/Faktura.svelte";
-  import Produkter from "./sections/produkter/Produkter.svelte";
-  import Prosjekter from "./sections/prosjekter/Prosjekter.svelte";
-  import Timer from "./sections/timer/Timer.svelte";
-  import Lonn from "./sections/lonn/Lonn.svelte";
-  import Utlegg from "./sections/utlegg/Utlegg.svelte";
-  import Anlegg from "./sections/anlegg/Anlegg.svelte";
-  import Aksjonaerer from "./sections/aksjonaerer/Aksjonaerer.svelte";
-  import Reskontro from "./sections/reskontro/Reskontro.svelte";
-  import Mva from "./sections/mva/Mva.svelte";
-  import Rapporter from "./sections/rapporter/Rapporter.svelte";
-  import Bank from "./sections/bank/Bank.svelte";
-  import Bilag from "./sections/bilag/Bilag.svelte";
-  import Hovedbok from "./sections/hovedbok/Hovedbok.svelte";
-  import Kunder from "./sections/kunder/Kunder.svelte";
-  import Leverandorer from "./sections/leverandorer/Leverandorer.svelte";
-  import Admin from "./sections/admin/Admin.svelte";
-  import Byra from "./sections/byra/Byra.svelte";
-  import Plattform from "./components/Plattform.svelte";
+  import { lazy, preloadWhenIdle } from "./lib/lazy.svelte.js";
 
   // Alle seksjonene i menyen (lib/meny.js) er portert (#76 steg 2).
   // Brukere/Oppdrag/Periode bor nå som faner i Administrasjon; gamle
   // adresser rutes dit under (FLYTTET_TIL_ADMIN).
+  // The overview is in the main bundle (it is where you land); the rest
+  // are separate chunks loaded on first visit (lib/lazy.svelte.js).
   const SECTIONS = {
-    oversikt: Oversikt,
-    faktura: Faktura,
-    produkter: Produkter,
-    prosjekter: Prosjekter,
-    timer: Timer,
-    lonn: Lonn,
-    utlegg: Utlegg,
-    anlegg: Anlegg,
-    aksjonarer: Aksjonaerer,
-    reskontro: Reskontro,
-    mva: Mva,
-    rapporter: Rapporter,
-    bank: Bank,
-    bilag: Bilag,
-    hovedbok: Hovedbok,
-    kunder: Kunder,
-    leverandorer: Leverandorer,
-    admin: Admin,
+    oversikt: { component: Oversikt, preload() {} },
+    faktura: lazy(() => import("./sections/faktura/Faktura.svelte")),
+    produkter: lazy(() => import("./sections/produkter/Produkter.svelte")),
+    prosjekter: lazy(() => import("./sections/prosjekter/Prosjekter.svelte")),
+    timer: lazy(() => import("./sections/timer/Timer.svelte")),
+    lonn: lazy(() => import("./sections/lonn/Lonn.svelte")),
+    utlegg: lazy(() => import("./sections/utlegg/Utlegg.svelte")),
+    anlegg: lazy(() => import("./sections/anlegg/Anlegg.svelte")),
+    aksjonarer: lazy(() => import("./sections/aksjonaerer/Aksjonaerer.svelte")),
+    reskontro: lazy(() => import("./sections/reskontro/Reskontro.svelte")),
+    mva: lazy(() => import("./sections/mva/Mva.svelte")),
+    rapporter: lazy(() => import("./sections/rapporter/Rapporter.svelte")),
+    bank: lazy(() => import("./sections/bank/Bank.svelte")),
+    bilag: lazy(() => import("./sections/bilag/Bilag.svelte")),
+    hovedbok: lazy(() => import("./sections/hovedbok/Hovedbok.svelte")),
+    kunder: lazy(() => import("./sections/kunder/Kunder.svelte")),
+    leverandorer: lazy(() => import("./sections/leverandorer/Leverandorer.svelte")),
+    admin: lazy(() => import("./sections/admin/Admin.svelte")),
   };
+  const Byra = lazy(() => import("./sections/byra/Byra.svelte"));
+  const Plattform = lazy(() => import("./components/Plattform.svelte"));
 
   let boot = $state({ done: false, error: null });
 
@@ -86,6 +72,10 @@
   koSend();
 
   $effect(() => {
+    if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform]);
+  });
+
+  $effect(() => {
     if (boot.done && session.authed && !me.loaded) {
       loadMe().catch((error) => {
         if (error.message !== "ikke innlogget" && error.message !== "utløpt økt") {
@@ -95,6 +85,21 @@
     }
   });
 </script>
+
+{#snippet laster(bit)}
+  {#if bit.error}
+    <!-- Typically a new release went out while the tab was open: the old
+         chunks no longer exist on the server. -->
+    <div class="alert alert-warning">
+      <span>Kunne ikke laste siden. Last inn på nytt for å hente siste versjon.</span>
+      <button class="btn btn-sm" onclick={() => location.reload()}>Last inn på nytt</button>
+    </div>
+  {:else}
+    <div class="flex justify-center p-12">
+      <span class="loading loading-spinner loading-md"></span>
+    </div>
+  {/if}
+{/snippet}
 
 <Toasts />
 <Dialog />
@@ -119,10 +124,19 @@
     {#if FLYTTET_TIL_ADMIN[route.section]}
       <!-- Gamle bokmerker (#/c/{id}/brukere osv.) lander på riktig fane
            i Administrasjon-konsollen i stedet for en død adresse. -->
-      <Admin companyId={route.companyId} extra={FLYTTET_TIL_ADMIN[route.section]} />
+      {@const Admin = SECTIONS.admin.component}
+      {#if Admin}
+        <Admin companyId={route.companyId} extra={FLYTTET_TIL_ADMIN[route.section]} />
+      {:else}
+        {@render laster(SECTIONS.admin)}
+      {/if}
     {:else if SECTIONS[route.section]}
-      {@const Section = SECTIONS[route.section]}
-      <Section companyId={route.companyId} extra={route.extra} query={route.query} />
+      {@const Section = SECTIONS[route.section].component}
+      {#if Section}
+        <Section companyId={route.companyId} extra={route.extra} query={route.query} />
+      {:else}
+        {@render laster(SECTIONS[route.section])}
+      {/if}
     {:else}
       <!-- Ukjent seksjonsnavn i adressen: si fra, ikke vis en tom side. -->
       <div class="alert alert-warning">
@@ -131,9 +145,17 @@
     {/if}
   </Shell>
 {:else if route.view === "byra"}
-  <Byra firmId={route.firmId} />
+  {#if Byra.component}
+    <Byra.component firmId={route.firmId} />
+  {:else}
+    {@render laster(Byra)}
+  {/if}
 {:else if route.view === "plattform"}
-  <Plattform />
+  {#if Plattform.component}
+    <Plattform.component />
+  {:else}
+    {@render laster(Plattform)}
+  {/if}
 {:else}
   <Companies />
 {/if}

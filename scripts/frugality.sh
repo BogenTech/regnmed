@@ -68,7 +68,13 @@ API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed
 # turns into a red build. The CSS did not move (144 KB, byte-identical),
 # so this is the first case: hand-written JS, no new dependency. Raised
 # to 552 to leave the gate somewhere to stand.
-PORTAL_DIST_BUDGET_KB=552
+#
+# Raised to 568 on 2026-11-09 when the sections became lazy-loaded chunks:
+# the TOTAL grew 13 KB (558 KB; each chunk carries its own import glue),
+# while what a browser downloads before the first page FELL from 408 KB
+# of JS to 106 KB. The CSS did not move. This gate measures the whole
+# dist, which is the embedded size, not the first download.
+PORTAL_DIST_BUDGET_KB=568
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 
