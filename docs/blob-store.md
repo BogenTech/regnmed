@@ -68,10 +68,34 @@ Hetzner svarte sporadisk 504 for et objekt som fantes, og første
 `verify-ledger` i prod feilet på det (2026-11-08). En 404 prøves ikke på
 nytt: da er objektet borte, og det meldes som det.
 
+## Versjonering
+
+Hashen avslører et endret eller slettet objekt, men gjenoppretter det
+ikke. Derfor har `bogenhuset` versjonering slått på (2026-11-09): et
+overskrevet eller slettet objekt blir liggende som en eldre versjon og kan
+hentes tilbake med `versionId`. Versjonering gjelder hele bøtta og kan bare
+settes på pause, aldri slås helt av.
+
+Livssyklusreglene holder lagringen innenfor det fastprisen dekker, fordi
+backupverktøyene i samme bøtte sletter gamle data hver dag:
+
+| Prefiks | Eldre versjoner beholdes |
+|---|---|
+| `regnmed-prod/` | 30 dager |
+| `regnmed-test/` | 7 dager |
+| `backupstore/` (Longhorn), `cnpg/` (Postgres-backup) | 1 dag |
+
+Ufullførte opplastinger fjernes etter 2 dager. Dokumentene skrives aldri
+over og slettes aldri (innholdsadressert), så de 30 dagene koster bare
+plass hvis noe har gått galt — og det er vinduet for å oppdage og rette
+det. Den ukentlige gjenopprettingskontrollen (`backup-verify`, søndag 04:00)
+kjører `verify-ledger`, som leser hvert dokument fra bøtta — et
+forsvunnet objekt meldes altså innen en uke, godt før versjonen utløper.
+
 ## Ikke gjort ennå
 
-- **Versjonering eller object lock på bøtta.** Hashen avslører et endret
-  eller slettet objekt, men gjenoppretter det ikke. Til det trengs
-  versjonering (eller WORM) på bøtta — et oppfølgingssteg.
+- **Object lock (WORM).** Versjonering beskytter mot uhell, ikke mot en
+  som har bøttenøkkelen og sletter versjonene også. Object lock må slås på
+  når bøtta opprettes, og krever derfor en ny bøtte.
 - **`payment_run.file`** (noen kB pain.001-XML på en kjøringsrad som
   endres gjennom statusene) ligger fortsatt i databasen.
