@@ -1,0 +1,68 @@
+# The background-job worker (docs/jobs.md): SAF-T imports and the audit
+# report run here instead of inside an HTTP request.
+#
+# SCALING OUT is what it is built for. Every replica joins the same
+# JetStream consumer and claims jobs in the database, so more replicas
+# means more jobs at once and never the same job twice. Each replica runs
+# JOB_CONCURRENCY jobs side by side. Raise replicas when jobs wait in the
+# queue; the overlays set the number.
+#
+# Without NATS the worker still works, by sweeping the job table every few
+# seconds; with it, a job starts the moment it is created and the sweep
+# (every 30 s, every replica) only catches what a lost message missed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-worker
+  namespace: regnmed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regnmed-worker
+  template:
+    metadata:
+      labels:
+        app: regnmed-worker
+    spec:
+      # A rolling update lets running jobs finish (the worker drains for up
+      # to 110 s on SIGTERM). A job that outlives this is taken over by
+      # another replica once its heartbeat lapses.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: regnmed:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/app/regnmed", "work"]
+          envFrom:
+            - secretRef:
+                name: blob-store
+                optional: true
+          env:
+            - name: JOB_CONCURRENCY
+              value: "2"
+            - name: NATS_URL
+              value: nats://nats:4222
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: regnmed-url
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              # A SAF-T import holds the whole file and its parsed form
+              # while it posts; two of them at once need room the API's
+              # 64 Mi never had. Measured figures go in docs/frugality.md.
+              memory: 256Mi

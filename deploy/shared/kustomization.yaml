@@ -17,3 +17,4 @@ resources:
   - abonnement-faktura.yaml
   - abonnement-oppfolging.yaml
   - agent-worker.yaml
+  - job-worker.yaml

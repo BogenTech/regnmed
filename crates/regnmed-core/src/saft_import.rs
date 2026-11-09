@@ -93,15 +93,21 @@ pub fn parse(xml: &str) -> Result<SaftFile, SaftImportError> {
     };
     let mut line_amount = (0i64, true); // magnitude, debit
 
-    let mut line_no; // XML source line, for error messages only
+    // XML source line, for error messages only. Counted incrementally:
+    // recounting from the start of the file on every event made parsing
+    // quadratic -- a 10 MB export took more than ten minutes.
+    let mut line_no = 1;
+    let mut counted_to = 0;
     loop {
         let event = reader
             .read_event()
             .map_err(|e| SaftImportError::Xml(e.to_string()))?;
-        line_no = xml[..reader.buffer_position() as usize]
-            .matches('\n')
-            .count()
-            + 1;
+        let position = reader.buffer_position() as usize;
+        line_no += xml.as_bytes()[counted_to..position]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .count();
+        counted_to = position;
         match event {
             Event::Start(start) => {
                 let local = String::from_utf8_lossy(start.local_name().as_ref()).into_owned();
@@ -370,6 +376,53 @@ mod tests {
         assert_eq!(tx.lines[1].tax_code.as_deref(), Some("3"));
         let sum: i64 = tx.lines.iter().map(|l| l.amount_ore).sum();
         assert_eq!(sum, 0, "signs survive the round-trip");
+    }
+
+    fn transactions_xml(count: usize, bad_date_at: Option<usize>) -> String {
+        let mut xml = String::from("<AuditFile>\n<GeneralLedgerEntries>\n<Journal>\n");
+        for i in 0..count {
+            let date = if Some(i) == bad_date_at {
+                "not-a-date"
+            } else {
+                "2026-02-01"
+            };
+            xml.push_str(&format!(
+                "<Transaction>\n<TransactionID>{i}</TransactionID>\n\
+                 <TransactionDate>{date}</TransactionDate>\n<Description>t</Description>\n\
+                 <Line>\n<AccountID>1920</AccountID>\n<DebitAmount><Amount>1.00</Amount></DebitAmount>\n</Line>\n\
+                 <Line>\n<AccountID>3000</AccountID>\n<CreditAmount><Amount>1.00</Amount></CreditAmount>\n</Line>\n\
+                 </Transaction>\n"
+            ));
+        }
+        xml.push_str("</Journal>\n</GeneralLedgerEntries>\n</AuditFile>\n");
+        xml
+    }
+
+    #[test]
+    fn an_error_names_the_line_it_is_on() {
+        // Each transaction is 13 lines; the header is 3. Transaction 2's
+        // date sits on line 3 + 2*13 + 3.
+        match parse(&transactions_xml(5, Some(2))) {
+            Err(SaftImportError::BadField(line, "TransactionDate")) => assert_eq!(line, 32),
+            other => panic!("expected a BadField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parsing_time_grows_linearly_with_the_file() {
+        // ~4 MB. Counting newlines from the start on every event made this
+        // take minutes; linear parsing takes well under a second even in a
+        // debug build. The bound is loose on purpose -- it only has to
+        // tell those two apart.
+        let xml = transactions_xml(15_000, None);
+        let started = std::time::Instant::now();
+        let file = parse(&xml).unwrap();
+        assert_eq!(file.transactions.len(), 15_000);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

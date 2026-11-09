@@ -56,6 +56,30 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+/// The import body is either raw SAF-T XML, or (`is_json`) the kontoplan
+/// wizard's envelope `{"file": "<xml>", "mapping": {"15000": "1500"}}`.
+/// Returns the parsed (possibly mapped) file together with the raw XML
+/// source -- the import log hashes the source document, not the mapping.
+/// The error is a message for the user.
+pub fn parse_import_body(is_json: bool, body: String) -> Result<(SaftFile, String), String> {
+    if !is_json {
+        let file = regnmed_core::saft_import::parse(&body).map_err(|e| format!("SAF-T: {e}"))?;
+        return Ok((file, body));
+    }
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        file: String,
+        #[serde(default)]
+        mapping: std::collections::HashMap<String, String>,
+    }
+    let envelope: Envelope =
+        serde_json::from_str(&body).map_err(|e| format!("ugyldig konvolutt: {e}"))?;
+    let mut file =
+        regnmed_core::saft_import::parse(&envelope.file).map_err(|e| format!("SAF-T: {e}"))?;
+    regnmed_core::chart_of_accounts::apply_mapping(&mut file, &envelope.mapping)?;
+    Ok((file, envelope.file))
+}
+
 pub async fn import_saft(
     pool: &PgPool,
     company_id: Uuid,

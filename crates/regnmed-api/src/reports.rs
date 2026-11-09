@@ -569,28 +569,7 @@ pub async fn audit(
         ));
     }
 
-    Ok(Json(json!({
-        "orgnr": report.orgnumber,
-        "selskap": report.company,
-        "generert": report.generert,
-        "generert_av": report.generated_by,
-        "programversjon": report.programversjon,
-        "kjede_sekvens": report.chain_sequence,
-        "kjede_hode": report.chain_head_hex,
-        "alle_ok": report.alle_ok(),
-        "kontroller": report.checks.iter().map(|k| json!({
-            "navn": k.name,
-            "ok": k.ok,
-            "detalj": k.detail,
-        })).collect::<Vec<_>>(),
-        "ankere": report.anchors.iter().map(|a| json!({
-            "tidspunkt": a.timestamp,
-            "root": a.root_hex,
-            "siste_sekvens": a.last_sequence,
-            "vitner": a.vitner,
-        })).collect::<Vec<_>>(),
-    }))
-    .into_response())
+    Ok(Json(regnmed_db::audit::audit_json(&report)).into_response())
 }
 
 /// The company's mva-terminordning (docs/mva.md, #51): current

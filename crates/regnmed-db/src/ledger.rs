@@ -483,35 +483,35 @@ pub async fn post_voucher_in(
 /// both the link (prev_hash) and the content (hash) at every step, and
 /// finally comparing the result against the chain head.
 pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport> {
-    let vouchers = sqlx::query(
-        "select v.id, v.chain_seq, v.fiscal_year, v.voucher_number, v.voucher_date,
-                v.description, v.reverses_voucher_id, v.created_by, v.created_at,
-                v.prev_hash, v.hash, v.hash_version, j.code as journal_code
-         from voucher v
-         join journal j on j.id = v.journal_id
-         where v.company_id = $1
-         order by v.chain_seq",
-    )
-    .bind(company_id)
-    .fetch_all(pool)
-    .await?;
-
+    // Walked in pages, with one entry query per page: one query per
+    // voucher made a 20 000-voucher company take seconds, and loading the
+    // whole ledger at once would not fit the 64 MB container.
+    const PAGE: i64 = 1000;
     let mut prev = GENESIS_HASH;
-    for row in &vouchers {
-        let id: Uuid = row.get("id");
-        let chain_seq: i64 = row.get("chain_seq");
-        let stored_prev = to_hash32(row.get("prev_hash"))?;
-        let stored_hash = to_hash32(row.get("hash"))?;
-
-        if stored_prev != prev {
-            bail!(
-                "chain broken at seq {chain_seq} (voucher {id}): \
-                 stored prev_hash does not match the previous voucher's hash"
-            );
+    let mut checked: i64 = 0;
+    let mut after_seq: i64 = 0;
+    loop {
+        let vouchers = sqlx::query(
+            "select v.id, v.chain_seq, v.fiscal_year, v.voucher_number, v.voucher_date,
+                    v.description, v.reverses_voucher_id, v.created_by, v.created_at,
+                    v.prev_hash, v.hash, v.hash_version, j.code as journal_code
+             from voucher v
+             join journal j on j.id = v.journal_id
+             where v.company_id = $1 and v.chain_seq > $2
+             order by v.chain_seq
+             limit $3",
+        )
+        .bind(company_id)
+        .bind(after_seq)
+        .bind(PAGE)
+        .fetch_all(pool)
+        .await?;
+        if vouchers.is_empty() {
+            break;
         }
-
+        let ids: Vec<Uuid> = vouchers.iter().map(|r| r.get("id")).collect();
         let entry_rows = sqlx::query(
-            "select e.line_no, a.number as account_number, e.amount_ore, e.vat_code,
+            "select e.voucher_id, e.line_no, a.number as account_number, e.amount_ore, e.vat_code,
                     e.description, p.party_no,
                     da.code as avdeling, dp.code as prosjekt,
                     e.valuta, e.valutabelop_cent, e.kurs_micro
@@ -520,28 +520,19 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
              left join party p on p.id = e.party_id
              left join dimension da on da.id = e.avdeling_id
              left join dimension dp on dp.id = e.prosjekt_id
-             where e.voucher_id = $1
-             order by e.line_no",
+             where e.voucher_id = any($1)
+             order by e.voucher_id, e.line_no",
         )
-        .bind(id)
+        .bind(&ids)
         .fetch_all(pool)
         .await?;
-
-        let input = VoucherHashInput {
-            hash_version: row.get("hash_version"),
-            company_id,
-            chain_seq,
-            journal_code: row.get("journal_code"),
-            fiscal_year: row.get("fiscal_year"),
-            voucher_number: row.get("voucher_number"),
-            voucher_date: row.get("voucher_date"),
-            description: row.get("description"),
-            reverses: row.get("reverses_voucher_id"),
-            created_by: row.get("created_by"),
-            created_at: row.get::<DateTime<Utc>, _>("created_at"),
-            entries: entry_rows
-                .iter()
-                .map(|e| EntryHashInput {
+        let mut entries: std::collections::HashMap<Uuid, Vec<EntryHashInput>> =
+            std::collections::HashMap::with_capacity(ids.len());
+        for e in &entry_rows {
+            entries
+                .entry(e.get("voucher_id"))
+                .or_default()
+                .push(EntryHashInput {
                     line_no: e.get("line_no"),
                     account_number: e.get("account_number"),
                     amount: Ore(e.get("amount_ore")),
@@ -557,17 +548,47 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
                             rate_micro: e.get::<Option<i64>, _>("kurs_micro").unwrap_or(0),
                         }
                     }),
-                })
-                .collect(),
-        };
-
-        if chain_hash(&prev, &input) != stored_hash {
-            bail!(
-                "content tampered at seq {chain_seq} (voucher {id}): \
-                 recomputed hash does not match the stored hash"
-            );
+                });
         }
-        prev = stored_hash;
+
+        for row in &vouchers {
+            let id: Uuid = row.get("id");
+            let chain_seq: i64 = row.get("chain_seq");
+            let stored_prev = to_hash32(row.get("prev_hash"))?;
+            let stored_hash = to_hash32(row.get("hash"))?;
+
+            if stored_prev != prev {
+                bail!(
+                    "chain broken at seq {chain_seq} (voucher {id}): \
+                     stored prev_hash does not match the previous voucher's hash"
+                );
+            }
+
+            let input = VoucherHashInput {
+                hash_version: row.get("hash_version"),
+                company_id,
+                chain_seq,
+                journal_code: row.get("journal_code"),
+                fiscal_year: row.get("fiscal_year"),
+                voucher_number: row.get("voucher_number"),
+                voucher_date: row.get("voucher_date"),
+                description: row.get("description"),
+                reverses: row.get("reverses_voucher_id"),
+                created_by: row.get("created_by"),
+                created_at: row.get::<DateTime<Utc>, _>("created_at"),
+                entries: entries.remove(&id).unwrap_or_default(),
+            };
+
+            if chain_hash(&prev, &input) != stored_hash {
+                bail!(
+                    "content tampered at seq {chain_seq} (voucher {id}): \
+                     recomputed hash does not match the stored hash"
+                );
+            }
+            prev = stored_hash;
+            after_seq = chain_seq;
+            checked += 1;
+        }
     }
 
     let head = sqlx::query("select last_seq, last_hash from chain_head where company_id = $1")
@@ -578,18 +599,15 @@ pub async fn verify_chain(pool: &PgPool, company_id: Uuid) -> Result<ChainReport
     let last_seq: i64 = head.get("last_seq");
     let last_hash = to_hash32(head.get("last_hash"))?;
 
-    if last_seq != vouchers.len() as i64 {
-        bail!(
-            "chain head is at seq {last_seq} but {} vouchers exist",
-            vouchers.len()
-        );
+    if last_seq != checked {
+        bail!("chain head is at seq {last_seq} but {checked} vouchers exist");
     }
     if last_hash != prev {
         bail!("chain head hash does not match the last voucher's hash");
     }
 
     Ok(ChainReport {
-        vouchers_checked: vouchers.len() as i64,
+        vouchers_checked: checked,
     })
 }
 

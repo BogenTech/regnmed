@@ -160,22 +160,39 @@ pub async fn get_attachment(
 }
 
 /// Re-hashes every attachment for a company against its stored digest.
+///
+/// The rows are listed without their bytes, and each document is then
+/// loaded and checked on its own, eight at a time: holding every
+/// attachment in memory at once would not fit the container, and one
+/// object-store round trip after another made this the slowest part of
+/// the audit report.
 pub async fn verify_attachments(pool: &PgPool, company_id: Uuid) -> Result<i64> {
-    let rows = sqlx::query("select id, sha256, content from attachment where company_id = $1")
-        .bind(company_id)
-        .fetch_all(pool)
+    use futures_util::{StreamExt, TryStreamExt};
+    let rows: Vec<(Uuid, Vec<u8>)> =
+        sqlx::query_as("select id, sha256 from attachment where company_id = $1")
+            .bind(company_id)
+            .fetch_all(pool)
+            .await?;
+    let count = rows.len() as i64;
+    futures_util::stream::iter(rows)
+        .map(|(id, stored)| async move {
+            // From the row or the object store, re-hashed either way: a
+            // missing object fails here as loudly as altered bytes do.
+            let in_row: Option<Vec<u8>> =
+                sqlx::query_scalar("select content from attachment where id = $1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await?;
+            blobs()
+                .load(in_row, &stored)
+                .await
+                .with_context(|| format!("attachment {id}: dokumentasjon altered or missing"))?;
+            anyhow::Ok(())
+        })
+        .buffer_unordered(8)
+        .try_collect::<Vec<()>>()
         .await?;
-    // From the row or the object store, re-hashed either way: a missing
-    // object fails here as loudly as altered bytes do.
-    for row in &rows {
-        let id: Uuid = row.get("id");
-        let stored: Vec<u8> = row.get("sha256");
-        blobs()
-            .load(row.get("content"), &stored)
-            .await
-            .with_context(|| format!("attachment {id}: dokumentasjon altered or missing"))?;
-    }
-    Ok(rows.len() as i64)
+    Ok(count)
 }
 
 fn hex(bytes: &[u8]) -> String {

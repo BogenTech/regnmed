@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+futures-util.workspace = true
 regnmed-core.workspace = true
 
 anyhow.workspace = true
@@ -16,6 +17,9 @@ sqlx.workspace = true
 uuid.workspace = true
 # Object store client (blob.rs): two signed calls, hand-rolled over these.
 reqwest.workspace = true
+# Job inputs (the SAF-T wizard envelope) and results (job.rs).
+serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 

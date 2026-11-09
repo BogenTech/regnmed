@@ -25,6 +25,7 @@ pub mod inbox;
 pub mod integration;
 pub mod invoice;
 pub mod invoice_template;
+pub mod jobs;
 pub mod mailq;
 pub mod mailq_in;
 pub mod marketplace;
@@ -160,6 +161,17 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/import/saft/analyze",
             axum::routing::post(marketplace::analyze_saft),
         )
+        // Background jobs (docs/jobs.md): 202 at once, the work runs in
+        // `regnmed work`.
+        .route(
+            "/companies/{company_id}/jobs/saft-import",
+            axum::routing::post(jobs::create_saft_import),
+        )
+        .route(
+            "/companies/{company_id}/jobs/audit-report",
+            axum::routing::post(jobs::create_audit_report),
+        )
+        .route("/companies/{company_id}/jobs/{job_id}", get(jobs::get))
         .route(
             "/companies/{company_id}/import/saft/log",
             axum::routing::get(marketplace::saft_import_log),

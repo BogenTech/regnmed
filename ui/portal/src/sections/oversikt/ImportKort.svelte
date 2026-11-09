@@ -5,6 +5,7 @@
   // (harHistorikk), siden systemer som Conta eksporterer én SAF-T-fil
   // per regnskapsår. Manuell åpningsbalanse krever fortsatt tom hovedbok.
   import { api, post } from "../../lib/api.js";
+  import { runJob } from "../../lib/jobs.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
 
@@ -22,6 +23,19 @@
   });
 
   let xml = $state(null);
+  // Set while an import runs in the background: "queued" or "running".
+  let importStatus = $state(null);
+
+  // The import runs as a background job (docs/jobs.md): years of history
+  // take longer than a request should be held open.
+  async function startImport(options) {
+    importStatus = "queued";
+    try {
+      importDone(await runJob(companyId, "saft-import", options, (s) => (importStatus = s)));
+    } finally {
+      importStatus = null;
+    }
+  }
   let analysis = $state(null);
   let mapping = $state({}); // account_id -> NS 4102-nummer (bind per rad)
   let missing = $state({}); // account_id -> true når feltet sto tomt
@@ -55,7 +69,7 @@
         body: xml,
       });
       if (!svar.needs_mapping) {
-        importDone(await api("/companies/" + companyId + "/import/saft", { method: "POST", body: xml }));
+        await startImport({ body: xml });
         return;
       }
       // Kontoplan-wizard: forslagene er heuristikk — admin bestemmer.
@@ -83,13 +97,10 @@
       return;
     }
     try {
-      importDone(
-        await api("/companies/" + companyId + "/import/saft", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ file: xml, mapping: endringer }),
-        }),
-      );
+      await startImport({
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file: xml, mapping: endringer }),
+      });
     } catch (error) {
       toast(error.message, false);
     }
@@ -128,7 +139,20 @@
       annen kontoplan, foreslår vi mapping til NS 4102 som du godkjenner først.
     {/if}
   </p>
-  <input type="file" class="file-input" accept=".xml" onchange={fileChosen} />
+  <input
+    type="file"
+    class="file-input"
+    accept=".xml"
+    onchange={fileChosen}
+    disabled={importStatus !== null}
+  />
+  {#if importStatus}
+    <div class="flex items-center gap-2 mt-2 text-sm" role="status">
+      <span class="loading loading-spinner loading-sm"></span>
+      {importStatus === "queued" ? "Importen står i kø …" : "Importerer historikken …"}
+      <span class="opacity-60">Du kan gå videre i portalen; den fortsetter i bakgrunnen.</span>
+    </div>
+  {/if}
   {#if importer.length}
     <table class="table table-xs mt-3">
       <thead>
@@ -179,7 +203,11 @@
             {/each}
           </tbody>
         </table>
-        <button class="btn btn-sm btn-primary mt-2" onclick={importMapped}>
+        <button
+          class="btn btn-sm btn-primary mt-2"
+          onclick={importMapped}
+          disabled={importStatus !== null}
+        >
           Importer med denne mappingen
         </button>
       </div>

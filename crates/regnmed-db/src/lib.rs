@@ -30,6 +30,7 @@ pub mod inbox;
 pub mod integration;
 pub mod invoice;
 pub mod invoice_template;
+pub mod job;
 pub mod ledger;
 pub mod marketplace;
 pub mod members;

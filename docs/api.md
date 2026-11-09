@@ -144,6 +144,9 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/import/saft` | POST |
 | `/companies/{company_id}/import/saft/analyze` | POST |
 | `/companies/{company_id}/import/saft/log` | GET |
+| `/companies/{company_id}/jobs/saft-import` | POST |
+| `/companies/{company_id}/jobs/audit-report` | POST |
+| `/companies/{company_id}/jobs/{job_id}` | GET |
 | `/companies/{company_id}/inbox` | GET POST |
 | `/companies/{company_id}/inbox/mail` | GET |
 | `/companies/{company_id}/inbox/mail/{mail_id}/reject` | POST |
