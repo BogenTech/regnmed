@@ -186,7 +186,7 @@ pub async fn verify_attachments(pool: &PgPool, company_id: Uuid) -> Result<i64> 
             blobs()
                 .load(in_row, &stored)
                 .await
-                .with_context(|| format!("attachment {id}: dokumentasjon altered or missing"))?;
+                .with_context(|| format!("attachment {id}"))?;
             anyhow::Ok(())
         })
         .buffer_unordered(8)

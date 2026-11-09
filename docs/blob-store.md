@@ -68,14 +68,17 @@ Hetzner svarte sporadisk 504 for et objekt som fantes, og første
 `verify-ledger` i prod feilet på det (2026-11-08). En 404 prøves ikke på
 nytt: da er objektet borte, og det meldes som det.
 
-Hetzner holder også en og annen GET før den svarer: av 65 vedlegg i
-prods revisjonsrapport kom 62 straks, mens tre små (15–54 KB) ventet
-2,6, 5,5 og 17 s på svarhodene og så kom på et øyeblikk (2026-11-09,
-målt etter at nett og DNS var utelukket). En GET uten svarhoder etter
-3 s blir derfor forlatt og sendt på nytt — et nytt forsøk treffer
-sjelden samme stopp. PUT beholder 30 s, siden ventetiden der også
-rommer opplastingen. Hvert feilet forsøk, og hvert vellykket som tok
-over 2 s, logges med tidene sine.
+Hetzner holder også en og annen GET i mange sekunder før den svarer:
+av 65 vedlegg i prods revisjonsrapport kom 62 straks, mens tre små
+(15–54 KB) ventet 2,6, 5,5 og 17 s på svarhodene (2026-11-09, målt
+etter at nett og DNS var utelukket). Stoppet hører til OBJEKTET, ikke
+forsøket: v0.8.3 forlot en GET uten svarhoder etter 3 s og sendte den på
+nytt, og møtte samme stopp fem ganger på rad — revisjonsrapporten meldte
+da et vedlegg som feilet som ikke var endret, bare tregt. Rullet tilbake
+i v0.8.4: hvert forsøk venter klientens 30 s. Hvert feilet forsøk, og
+hvert vellykket som tok over 2 s, logges med tidene sine, og
+revisjonsrapporten viser hele feilkjeden, så «utilgjengelig» og «endret»
+aldri leses likt.
 
 ## Versjonering
 
