@@ -57,6 +57,19 @@ pub async fn build_audit_report(
         },
     });
 
+    // The reports read monthly totals (migration 0072), not the entries
+    // directly; this proves they summarize the journal just re-hashed.
+    let totals = crate::verify_month_totals(pool, company_id).await?;
+    checks.push(Check {
+        name: "Rapportgrunnlag".into(),
+        ok: totals.is_empty(),
+        detail: if totals.is_empty() {
+            "månedssummene rapportene leser er lik summen av posteringene, konto for konto og måned for måned".into()
+        } else {
+            format!("månedssummer som avviker fra posteringene: {}", totals.join("; "))
+        },
+    });
+
     // 2. Attachment content hashes.
     checks.push(match crate::verify_attachments(pool, company_id).await {
         Ok(count) => Check {

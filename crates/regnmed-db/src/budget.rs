@@ -215,12 +215,11 @@ async fn monthly_actuals(
 ) -> Result<Vec<(Uuid, String, i32, i64)>> {
     let rows = sqlx::query(
         "select a.id, a.number,
-                extract(month from v.voucher_date)::int as maned,
-                sum(e.amount_ore)::bigint as belop
-         from entry e
-         join voucher v on v.id = e.voucher_id
-         join account a on a.id = e.account_id
-         where v.company_id = $1 and extract(year from v.voucher_date) = $2
+                extract(month from t.month)::int as maned,
+                sum(t.debit_ore + t.credit_ore)::bigint as belop
+         from account_month_total t
+         join account a on a.id = t.account_id
+         where t.company_id = $1 and extract(year from t.month) = $2
            and a.number >= '3000'
          group by a.id, a.number, maned
          order by a.number, maned",
@@ -400,12 +399,11 @@ pub async fn avviksrapport(
     // Faktisk: hovedbokens egne summer, per konto per måned.
     let rows = sqlx::query(
         "select a.number, a.name,
-                extract(month from v.voucher_date)::int as maned,
-                sum(e.amount_ore)::bigint as belop
-         from entry e
-         join voucher v on v.id = e.voucher_id
-         join account a on a.id = e.account_id
-         where v.company_id = $1 and extract(year from v.voucher_date) = $2
+                extract(month from t.month)::int as maned,
+                sum(t.debit_ore + t.credit_ore)::bigint as belop
+         from account_month_total t
+         join account a on a.id = t.account_id
+         where t.company_id = $1 and extract(year from t.month) = $2
            and a.number >= '3000'
          group by a.number, a.name, maned",
     )

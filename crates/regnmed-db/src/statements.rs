@@ -3,8 +3,11 @@
 //! that feed the income statement and balance sheet in `regnmed-core::statements`.
 //!
 //! All of it is `SUM(amount_ore)` and ordered SELECTs over the immutable
-//! ledger — never stored state, so the reports are correct the moment a
-//! voucher is posted and reproducible for any historical period.
+//! ledger, so the reports are correct the moment a voucher is posted and
+//! reproducible for any historical period. Sums over whole months read the
+//! monthly totals (`crate::ledger_totals`), which the posting transaction
+//! keeps in step with the entries -- same answer, without walking the
+//! whole history.
 
 use anyhow::Result;
 use chrono::NaiveDate;
@@ -29,39 +32,43 @@ pub async fn trial_balance(
     from: NaiveDate,
     to: NaiveDate,
 ) -> Result<Vec<TrialBalanceRow>> {
-    let rows = sqlx::query(
-        "select a.number, a.name,
-                coalesce(sum(e.amount_ore) filter (where v.voucher_date < $2), 0)::bigint as inngaende,
-                coalesce(sum(e.amount_ore) filter (where v.voucher_date between $2 and $3
-                                                     and e.amount_ore > 0), 0)::bigint as debet,
-                coalesce(sum(e.amount_ore) filter (where v.voucher_date between $2 and $3
-                                                     and e.amount_ore < 0), 0)::bigint as kredit,
-                coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $3), 0)::bigint as utgaende
-         from account a
-         join entry e on e.account_id = a.id
-         join voucher v on v.id = e.voucher_id
-         where a.company_id = $1 and v.voucher_date <= $3
-         group by a.number, a.name
-         having coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $3), 0) <> 0
-             or coalesce(sum(e.amount_ore) filter (where v.voucher_date between $2 and $3), 0) <> 0
-             or coalesce(sum(e.amount_ore) filter (where v.voucher_date < $2), 0) <> 0
-         order by a.number",
-    )
-    .bind(company_id)
-    .bind(from)
-    .bind(to)
-    .fetch_all(pool)
-    .await?;
+    // Opening = everything before the period. Both sums read through the
+    // monthly totals (crate::ledger_totals), so the cost follows the number
+    // of accounts and months, not the size of the history.
+    let mut rows: std::collections::BTreeMap<String, TrialBalanceRow> = Default::default();
+    if let Some(day_before) = from.pred_opt() {
+        for a in crate::account_sums(pool, company_id, None, day_before).await? {
+            rows.insert(
+                a.number.clone(),
+                TrialBalanceRow {
+                    opening_ore: a.balance_ore(),
+                    debit_ore: 0,
+                    credit_ore: 0,
+                    closing_ore: a.balance_ore(),
+                    number: a.number,
+                    name: a.name,
+                },
+            );
+        }
+    }
+    for a in crate::account_sums(pool, company_id, Some(from), to).await? {
+        let row = rows.entry(a.number.clone()).or_insert(TrialBalanceRow {
+            number: a.number,
+            name: a.name,
+            opening_ore: 0,
+            debit_ore: 0,
+            credit_ore: 0,
+            closing_ore: 0,
+        });
+        row.debit_ore = a.debit_ore;
+        row.credit_ore = a.credit_ore;
+        row.closing_ore = row.opening_ore + a.debit_ore + a.credit_ore;
+    }
+    // Listed when it has a balance on either side or the period moved it
+    // net -- the rule the query over the entries had.
     Ok(rows
-        .iter()
-        .map(|r| TrialBalanceRow {
-            number: r.get("number"),
-            name: r.get("name"),
-            opening_ore: r.get("inngaende"),
-            debit_ore: r.get("debet"),
-            credit_ore: r.get("kredit"),
-            closing_ore: r.get("utgaende"),
-        })
+        .into_values()
+        .filter(|r| r.opening_ore != 0 || r.closing_ore != 0)
         .collect())
 }
 
@@ -77,6 +84,18 @@ pub async fn balance_lines(
     department: Option<&str>,
     project: Option<&str>,
 ) -> Result<Vec<BalanceLine>> {
+    if department.is_none() && project.is_none() {
+        return Ok(crate::account_sums(pool, company_id, from, to)
+            .await?
+            .into_iter()
+            .map(|a| BalanceLine {
+                balance_ore: a.balance_ore(),
+                number: a.number,
+                name: a.name,
+            })
+            .collect());
+    }
+    // A dimension is not in the monthly totals; filtered sets are small.
     let rows = sqlx::query(
         "select a.number, a.name, sum(e.amount_ore)::bigint as saldo
          from account a
@@ -185,7 +204,6 @@ pub async fn account_specification(
                 coalesce(e.description, v.description) as description,
                 e.amount_ore, p.party_no,
                 da.code as avdeling, dp.code as prosjekt,
-                ib.saldo as inngaende,
                 sum(e.amount_ore) over (partition by a.number
                     order by v.voucher_date, v.chain_seq, e.line_no)::bigint as bevegelse
          from entry e
@@ -195,11 +213,6 @@ pub async fn account_specification(
          left join party p on p.id = e.party_id
          left join dimension da on da.id = e.avdeling_id
          left join dimension dp on dp.id = e.prosjekt_id
-         left join lateral (
-             select coalesce(sum(e2.amount_ore), 0)::bigint as saldo
-             from entry e2 join voucher v2 on v2.id = e2.voucher_id
-             where e2.account_id = a.id and v2.voucher_date < $3
-         ) ib on true
          where v.company_id = $1
            and ($2::text is null or a.number = $2)
            and v.voucher_date between $3 and $4
@@ -211,6 +224,17 @@ pub async fn account_specification(
     .bind(to)
     .fetch_all(pool)
     .await?;
+    // Inngående saldo per account. It used to be a lateral subquery, which
+    // Postgres ran once PER ROW over the account's whole history: 20 s for
+    // one month at 40 000 entries.
+    let opening: std::collections::HashMap<String, i64> = match from.pred_opt() {
+        Some(day_before) => crate::account_sums(pool, company_id, None, day_before)
+            .await?
+            .into_iter()
+            .map(|a| (a.number.clone(), a.balance_ore()))
+            .collect(),
+        None => Default::default(),
+    };
     Ok(rows
         .iter()
         .map(|r| AccountPost {
@@ -222,7 +246,11 @@ pub async fn account_specification(
             voucher_date: r.get("voucher_date"),
             description: r.get("description"),
             amount_ore: r.get("amount_ore"),
-            balance_ore: r.get::<i64, _>("inngaende") + r.get::<i64, _>("bevegelse"),
+            balance_ore: opening
+                .get(r.get::<&str, _>("number"))
+                .copied()
+                .unwrap_or(0)
+                + r.get::<i64, _>("bevegelse"),
             party_no: r.get("party_no"),
             department: r.get("avdeling"),
             project: r.get("prosjekt"),
@@ -468,13 +496,12 @@ pub async fn key_figures(
     // The result accounts are 3xxx–8xxx; presentation flips the sign
     // (income is credit in the hovedbok).
     let month_rows = sqlx::query(
-        "select extract(month from v.voucher_date)::int as maned,
-                coalesce(-sum(e.amount_ore), 0)::bigint as resultat
-         from entry e
-         join voucher v on v.id = e.voucher_id
-         join account a on a.id = e.account_id
-         where v.company_id = $1 and a.number >= '3000'
-           and v.voucher_date between $2 and $3
+        "select extract(month from t.month)::int as maned,
+                coalesce(-sum(t.debit_ore + t.credit_ore), 0)::bigint as resultat
+         from account_month_total t
+         join account a on a.id = t.account_id
+         where t.company_id = $1 and a.number >= '3000'
+           and t.month between $2 and $3
          group by 1",
     )
     .bind(company_id)
@@ -501,24 +528,14 @@ pub async fn key_figures(
     let fjor_cutoff = cutoff
         .with_year(cutoff.year() - 1)
         .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(cutoff.year() - 1, 2, 28).unwrap());
-    let resultat_between = |from: chrono::NaiveDate, to: chrono::NaiveDate| {
-        let pool = pool.clone();
-        async move {
-            let sum: i64 = sqlx::query_scalar(
-                "select coalesce(-sum(e.amount_ore), 0)::bigint
-                 from entry e
-                 join voucher v on v.id = e.voucher_id
-                 join account a on a.id = e.account_id
-                 where v.company_id = $1 and a.number >= '3000'
-                   and v.voucher_date between $2 and $3",
-            )
-            .bind(company_id)
-            .bind(from)
-            .bind(to)
-            .fetch_one(&pool)
-            .await?;
-            anyhow::Ok(sum)
-        }
+    let resultat_between = |from: chrono::NaiveDate, to: chrono::NaiveDate| async move {
+        let sum: i64 = crate::account_sums(pool, company_id, Some(from), to)
+            .await?
+            .iter()
+            .filter(|a| a.number.as_str() >= "3000")
+            .map(|a| -a.balance_ore())
+            .sum();
+        anyhow::Ok(sum)
     };
     let result_ytd =
         resultat_between(chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap(), cutoff).await?;
@@ -529,11 +546,10 @@ pub async fn key_figures(
     .await?;
 
     let bank: i64 = sqlx::query_scalar(
-        "select coalesce(sum(e.amount_ore), 0)::bigint
-         from entry e
-         join voucher v on v.id = e.voucher_id
-         join account a on a.id = e.account_id
-         where v.company_id = $1 and a.number like '19%'",
+        "select coalesce(sum(t.debit_ore + t.credit_ore), 0)::bigint
+         from account_month_total t
+         join account a on a.id = t.account_id
+         where t.company_id = $1 and a.number like '19%'",
     )
     .bind(company_id)
     .fetch_one(pool)

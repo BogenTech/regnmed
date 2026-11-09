@@ -25,6 +25,7 @@ it is never an error that hides the document.
 | Kontroll | What it proves |
 | --- | --- |
 | Hash-kjede fra genesis | every voucher re-hashed from stored content; links and chain head intact ([ledger.md](ledger.md)) |
+| Rapportgrunnlag | the monthly totals every report reads equal the sum of the entries, account by account and month by month ([hovedbok.md](hovedbok.md#lesemodellen)) — the reports summarize exactly the journal the first check re-hashed |
 | Bilagsvedlegg | attachment bytes re-hashed against stored SHA-256 ([perioder.md](perioder.md)) |
 | Ekstern forankring | anchored heads still on the live chain; stored roots recompute from their leaves ([anchoring.md](anchoring.md)) |
 | Reskontro mot hovedbok | Σ reskontro = kontosaldo, konto for konto — se avsnittet under |

@@ -167,7 +167,7 @@ async fn revisor_generates_the_verification_report() {
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
     let checks = report["kontroller"].as_array().unwrap();
-    assert_eq!(checks.len(), 10);
+    assert_eq!(checks.len(), 11);
     for check in checks {
         assert_eq!(check["ok"], true, "{check}");
     }

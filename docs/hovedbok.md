@@ -10,7 +10,7 @@ frie veien, med de samme vaktene.
 
 - `GET /companies/{id}/accounts` (BilagLes) — selskapets kontoer med
   navn, aktiv-flagg, reskontro-merke og BEREGNET saldo/antall
-  posteringer (SUM over entry, aldri lagret), PLUSS standardkatalogen.
+  posteringer (fra månedssummene, se «Lesemodellen»), PLUSS standardkatalogen.
 - **Standardkatalogen** er Skatteetatens kontoliste (254 kontoer,
   1000–8800, vendored i `regnmed-core::saft` — samme navneliste
   SAF-T-veiviseren matcher mot). Den følger med i svaret og vises i
@@ -61,6 +61,53 @@ frie veien, med de samme vaktene.
   filteret fantes på serveren fra #4, seksjonen tok det i bruk). Et
   bilag MED dokument hører fortsatt hjemme i innboksen; skjemaet sier
   det.
+
+## Lesemodellen
+
+Rapportene leser ikke hver postering selskapet noen gang har ført. De
+leser **månedssummer per konto** (`account_month_total`, migrasjon
+0072): debet, kredit og antall posteringer per konto per kalendermåned.
+En sum over et datointervall tar hele måneder fra summene og bare de
+delvise månedene i kantene fra posteringene selv
+(`regnmed-db::ledger_totals::account_sums`). Svaret er nøyaktig det
+samme som `SUM(amount_ore)` over posteringene — det er hele poenget,
+og det er testet mot posteringene for over to hundre intervaller,
+inkludert første og siste dag i måneden og skuddårsdagen.
+
+**Hovedboken er fortsatt fasiten.** Månedssummene er en hurtigbuffer
+over den, ingen egen sannhet:
+
+- **Holdt i takt i samme transaksjon.** En trigger på `entry`
+  oppdaterer summen når posteringen settes inn, så bilaget og summen
+  committes eller rulles tilbake sammen. Det finnes ingen «ikke
+  oppdatert ennå» — ingen leser ser det ene uten det andre. Postering
+  er allerede serialisert per selskap (kjedehodet låses), så det gir
+  ingen ny ventetid; målt ~0,13 ms per posteringslinje.
+- **Bare triggeren skriver.** Funksjonen er `SECURITY DEFINER`, og
+  applikasjonsrollen har bare `SELECT` på tabellen — samme lagdeling
+  som hovedboken selv. Posteringer kan aldri endres eller slettes, så
+  en sum kan bare vokse.
+- **Kontrollert mot posteringene.** `regnmed verify-ledger` (og dermed
+  den ukentlige gjenopprettingskontrollen av backupen) og
+  revisjonsrapportens kontroll «Rapportgrunnlag» sammenligner hver
+  månedssum med summen av posteringene og navngir konto og måned som
+  avviker.
+
+Dimensjonsfiltrerte rapporter (avdeling/prosjekt) og reskontroen leser
+fortsatt posteringene direkte: dimensjoner og parter er ikke i
+månedssummene, og de filtrerte mengdene er små.
+
+Målt 2026-11-09 på et selskap med 40 000 posteringer over to år:
+
+| Spørring | Før | Etter |
+|---|---|---|
+| Saldobalanse for et år | 79 ms | under 1 ms |
+| Kontospesifikasjon, alle kontoer, én måned | 20 s | 21 ms |
+| Kontospesifikasjon, bankkontoen, ett år (10 000 linjer) | over 2 min (avbrutt) | 77 ms |
+
+Kontospesifikasjonen var en feil, ikke bare treg: inngående saldo ble
+regnet i en underspørring som Postgres kjørte én gang PER RAD over
+kontoens hele historikk. Den leses nå én gang fra månedssummene.
 
 ## Verifisert mot virkeligheten (2026-08-06)
 

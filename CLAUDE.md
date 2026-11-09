@@ -36,7 +36,12 @@ verifiable ("don't trust us — verify"), which is also the pitch to revisorer.
   + `cargo sqlx prepare` once CI has a database fixture.
 - **Money is integer øre (`Ore(i64)`), never floats.** Positive = debit,
   negative = credit. Balances are always `SUM(amount_ore)` — never stored
-  mutable state.
+  mutable state. The one cache over it is `account_month_total`
+  (migration 0072, docs/hovedbok.md "Lesemodellen"): monthly debit/credit
+  per account, written ONLY by a trigger inside the posting transaction
+  (so it is exact, never "catching up"), read by the reports through
+  `regnmed-db::ledger_totals`, and checked against the entries by
+  `verify-ledger` and the audit report.
 - **The ledger is append-only**, enforced in three layers:
   1. Domain: corrections are reversing vouchers (`reverses_voucher_id`), never edits.
   2. Database: append-only triggers reject UPDATE/DELETE/TRUNCATE on
