@@ -439,3 +439,157 @@ async fn an_attachment_row_allows_only_a_verified_offload() {
         .unwrap_err();
     assert!(format!("{err:#}").contains("object store"), "{err:#}");
 }
+
+/// Debit and credit per account over `[from, to]`, summed straight from the
+/// entries: what the monthly totals (migration 0072) must reproduce.
+async fn sums_from_entries(
+    pool: &PgPool,
+    company: Uuid,
+    from: Option<NaiveDate>,
+    to: NaiveDate,
+) -> Vec<(String, i64, i64)> {
+    sqlx::query_as(
+        "select a.number,
+                coalesce(sum(e.amount_ore) filter (where e.amount_ore > 0), 0)::bigint,
+                coalesce(sum(e.amount_ore) filter (where e.amount_ore < 0), 0)::bigint
+         from entry e join voucher v on v.id = e.voucher_id join account a on a.id = e.account_id
+         where v.company_id = $1 and ($2::date is null or v.voucher_date >= $2)
+           and v.voucher_date <= $3
+         group by a.number order by a.number",
+    )
+    .bind(company)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn reports_read_from_the_monthly_totals_match_the_entries_exactly() {
+    let Some(pool) = pool().await else { return };
+    let company = seeded_company(&pool).await;
+
+    // Two years of postings on scattered days, refunds included, posted out
+    // of date order (backdating is allowed) -- deterministic, no rand dep.
+    let mut seed: u64 = 0x2026_1109;
+    let mut next = |m: u64| {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (seed >> 33) % m
+    };
+    let mut days = Vec::new();
+    for _ in 0..160 {
+        let day = date(2025, 1, 1) + chrono::Days::new(next(730));
+        let ore = (next(500_000) as i64 + 1) * if next(5) == 0 { -1 } else { 1 };
+        regnmed_db::post_voucher(&pool, company, &sale(day, ore, None), "test")
+            .await
+            .unwrap();
+        days.push(day);
+    }
+    // The edges themselves: a month's first and last day.
+    for day in [date(2025, 4, 1), date(2025, 4, 30), date(2025, 1, 31)] {
+        regnmed_db::post_voucher(&pool, company, &sale(day, 1234, None), "test")
+            .await
+            .unwrap();
+        days.push(day);
+    }
+    // A posting that fails rolls its totals back with it.
+    let mut bad = sale(date(2025, 6, 15), 777, None);
+    bad.entries[1].account_number = "9999".into();
+    regnmed_db::post_voucher(&pool, company, &bad, "test")
+        .await
+        .expect_err("unknown account");
+
+    assert!(
+        regnmed_db::verify_month_totals(&pool, company)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let mut ranges: Vec<(Option<NaiveDate>, NaiveDate)> = vec![
+        (None, date(2026, 12, 31)),
+        (None, date(2025, 6, 14)),
+        (Some(date(2025, 1, 1)), date(2025, 12, 31)),
+        (Some(date(2025, 3, 1)), date(2025, 3, 31)),
+        (Some(date(2025, 3, 2)), date(2025, 3, 30)),
+        (Some(date(2025, 2, 28)), date(2025, 3, 1)),
+        (Some(date(2026, 7, 4)), date(2026, 7, 4)),
+        (Some(date(2025, 11, 17)), date(2026, 2, 3)),
+        (Some(date(2025, 1, 1)), date(2025, 4, 1)),
+        (None, date(2025, 4, 1)),
+        (Some(date(2025, 1, 31)), date(2025, 4, 30)),
+        (Some(date(2025, 4, 30)), date(2025, 6, 30)),
+    ];
+    for _ in 0..40 {
+        let a = date(2024, 12, 1) + chrono::Days::new(next(800));
+        let b = a + chrono::Days::new(next(400));
+        ranges.push((if next(4) == 0 { None } else { Some(a) }, b));
+    }
+    ranges.extend(days.iter().map(|d| (Some(*d), *d)));
+    for (from, to) in ranges {
+        let read: Vec<(String, i64, i64)> = regnmed_db::account_sums(&pool, company, from, to)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|a| (a.number, a.debit_ore, a.credit_ore))
+            .collect();
+        assert_eq!(
+            read,
+            sums_from_entries(&pool, company, from, to).await,
+            "{from:?}..{to}"
+        );
+    }
+
+    // The trial balance built on them closes on the entries' own sum.
+    let tb = regnmed_db::trial_balance(&pool, company, date(2026, 3, 10), date(2026, 8, 20))
+        .await
+        .unwrap();
+    let closing = sums_from_entries(&pool, company, None, date(2026, 8, 20)).await;
+    let opening = sums_from_entries(&pool, company, None, date(2026, 3, 9)).await;
+    for row in &tb {
+        let c = closing
+            .iter()
+            .find(|c| c.0 == row.number)
+            .map_or(0, |c| c.1 + c.2);
+        let o = opening
+            .iter()
+            .find(|o| o.0 == row.number)
+            .map_or(0, |o| o.1 + o.2);
+        assert_eq!((row.opening_ore, row.closing_ore), (o, c), "{}", row.number);
+    }
+    assert_eq!(tb.len(), closing.len());
+
+    // A total that drifts from its entries (only the owner role can write
+    // one) is named by the check verify-ledger runs.
+    sqlx::query(
+        "update account_month_total t set debit_ore = debit_ore + 1
+         from account a where a.id = t.account_id
+           and t.company_id = $1 and a.number = '1920' and t.month = '2025-04-01'",
+    )
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let problems = regnmed_db::verify_month_totals(&pool, company)
+        .await
+        .unwrap();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].starts_with("account 1920 2025-04"),
+        "{problems:?}"
+    );
+    // Put it back: a full `verify-ledger` over the shared dev database
+    // must stay green.
+    sqlx::query(
+        "update account_month_total t set debit_ore = debit_ore - 1
+         from account a where a.id = t.account_id
+           and t.company_id = $1 and a.number = '1920' and t.month = '2025-04-01'",
+    )
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+}

@@ -321,6 +321,16 @@ async fn main() -> Result<()> {
                     anchors.problems.is_empty(),
                     "anchored history no longer matches the live chain"
                 );
+                // The reports read the monthly totals (migration 0072); they
+                // must equal the journal they summarize.
+                let totals = regnmed_db::verify_month_totals(&pool, id).await?;
+                for problem in &totals {
+                    eprintln!("company {id}: MONTH TOTAL MISMATCH — {problem}");
+                }
+                anyhow::ensure!(
+                    totals.is_empty(),
+                    "the monthly totals the reports read disagree with the entries"
+                );
             }
         }
         Command::Demo => demo(&pool).await?,

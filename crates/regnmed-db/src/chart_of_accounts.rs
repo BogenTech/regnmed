@@ -32,10 +32,10 @@ pub struct AccountRow {
 pub async fn list_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<AccountRow>> {
     let rows = sqlx::query(
         "select a.number, a.name, a.vat_code, a.active, a.reskontro_kind,
-                coalesce(sum(e.amount_ore), 0)::bigint as saldo_ore,
-                count(e.id)::bigint as posteringer
+                coalesce(sum(t.debit_ore + t.credit_ore), 0)::bigint as saldo_ore,
+                coalesce(sum(t.entry_count), 0)::bigint as posteringer
          from account a
-         left join entry e on e.account_id = a.id
+         left join account_month_total t on t.account_id = a.id
          where a.company_id = $1
          group by a.id
          order by a.number",
