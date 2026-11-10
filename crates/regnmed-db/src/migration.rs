@@ -25,6 +25,7 @@ use regnmed_core::Ore;
 use regnmed_core::migration_csv::{ContactRow, OpenItemRow, PartyKind};
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::ledger::{PostedVoucher, post_voucher_in};
@@ -47,17 +48,14 @@ pub async fn import_contacts(
     rader: &[ContactRow],
 ) -> Result<ContactsReport> {
     let mut report = ContactsReport::default();
+    let mut indexes: HashMap<&str, PartyIndex> = HashMap::new();
     for rad in rader {
         let kind = rad.kind.as_str();
-        let existing = find_party(
-            pool,
-            company_id,
-            kind,
-            rad.number.as_deref(),
-            &rad.name,
-            rad.orgnumber.as_deref(),
-        )
-        .await?;
+        if !indexes.contains_key(kind) {
+            indexes.insert(kind, PartyIndex::load(pool, company_id, kind).await?);
+        }
+        let index = indexes.get_mut(kind).expect("just inserted");
+        let existing = index.find(rad.number.as_deref(), &rad.name, rad.orgnumber.as_deref());
         let party_id = match existing {
             Some((id, _)) => {
                 report.oppdatert += 1;
@@ -81,8 +79,9 @@ pub async fn import_contacts(
                 )
                 .await;
                 match created {
-                    Ok((id, _)) => {
+                    Ok((id, party_no)) => {
                         report.created += 1;
+                        index.add(id, &party_no, rad.orgnumber.as_deref(), &rad.name);
                         id
                     }
                     Err(e) => {
@@ -127,32 +126,83 @@ pub async fn import_contacts(
     Ok(report)
 }
 
-async fn find_party(
-    pool: &PgPool,
-    company_id: Uuid,
-    kind: &str,
-    number: Option<&str>,
-    name: &str,
-    orgnumber: Option<&str>,
-) -> Result<Option<(Uuid, String)>> {
-    let row = sqlx::query(
-        "select id, name from party
-         where company_id = $1 and kind = $2
-           and ( ($3::text is not null and orgnr = $3)
-              or ($4::text is not null and party_no = $4)
-              or lower(name) = lower($5) )
-         order by ($3::text is not null and orgnr = $3) desc,
-                  ($4::text is not null and party_no = $4) desc
-         limit 1",
-    )
-    .bind(company_id)
-    .bind(kind)
-    .bind(orgnumber.filter(|o| !o.is_empty()))
-    .bind(number.filter(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty()))
-    .bind(name)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|r| (r.get("id"), r.get("name"))))
+/// A company's parties of one kind, read once per file. Each row of an
+/// import used to run its own lookup, and `lower(name) = ...` made that a
+/// scan of every party, so a file of N rows against P parties cost N x P
+/// (5 000 open items against 2 000 customers: 12.8 s for a preview that
+/// writes nothing, 2026-11-09). The match order is unchanged: orgnr, then
+/// a numeric vendor number as party_no, then the name ignoring case.
+struct PartyIndex {
+    by_orgnumber: HashMap<String, (Uuid, String)>,
+    by_number: HashMap<String, (Uuid, String)>,
+    by_name: HashMap<String, (Uuid, String)>,
+    /// Highest numeric party_no, for numbering parties created mid-file.
+    max_number: Option<i64>,
+}
+
+impl PartyIndex {
+    async fn load<'e, E: sqlx::PgExecutor<'e>>(
+        executor: E,
+        company_id: Uuid,
+        kind: &str,
+    ) -> Result<Self> {
+        let rows = sqlx::query(
+            "select id, party_no, orgnr, name from party
+             where company_id = $1 and kind = $2 order by party_no",
+        )
+        .bind(company_id)
+        .bind(kind)
+        .fetch_all(executor)
+        .await?;
+        let mut index = PartyIndex {
+            by_orgnumber: HashMap::new(),
+            by_number: HashMap::new(),
+            by_name: HashMap::new(),
+            max_number: None,
+        };
+        for r in rows {
+            let orgnumber: Option<String> = r.get("orgnr");
+            index.add(
+                r.get("id"),
+                r.get::<&str, _>("party_no"),
+                orgnumber.as_deref(),
+                r.get("name"),
+            );
+        }
+        Ok(index)
+    }
+
+    fn add(&mut self, id: Uuid, party_no: &str, orgnumber: Option<&str>, name: &str) {
+        let value = (id, party_no.to_string());
+        if let Some(o) = orgnumber.filter(|o| !o.is_empty()) {
+            self.by_orgnumber
+                .entry(o.to_string())
+                .or_insert(value.clone());
+        }
+        self.by_number
+            .entry(party_no.to_string())
+            .or_insert(value.clone());
+        self.by_name.entry(name.to_lowercase()).or_insert(value);
+        if let Ok(n) = party_no.parse::<i64>() {
+            self.max_number = Some(self.max_number.map_or(n, |m| m.max(n)));
+        }
+    }
+
+    /// The party a row refers to, as (id, party_no).
+    fn find(
+        &self,
+        number: Option<&str>,
+        name: &str,
+        orgnumber: Option<&str>,
+    ) -> Option<(Uuid, String)> {
+        let numeric = number.filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+        orgnumber
+            .filter(|o| !o.is_empty())
+            .and_then(|o| self.by_orgnumber.get(o))
+            .or_else(|| numeric.and_then(|n| self.by_number.get(n)))
+            .or_else(|| self.by_name.get(&name.to_lowercase()))
+            .cloned()
+    }
 }
 
 #[derive(Debug)]
@@ -197,18 +247,15 @@ pub async fn plan_open_items(
     .await?;
     let account_balance_ore = balance.context("no such account")?;
 
+    let index = PartyIndex::load(pool, company_id, kind.as_str()).await?;
     let mut nye_parter = Vec::new();
     let mut warnings = Vec::new();
     for rad in rader {
-        let found = find_party(
-            pool,
-            company_id,
-            kind.as_str(),
+        let found = index.find(
             Some(rad.party.as_str()),
             rad.party_name.as_deref().unwrap_or(&rad.party),
             None,
-        )
-        .await?;
+        );
         if found.is_none() {
             let name = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
             if !nye_parter.contains(&name) {
@@ -296,21 +343,15 @@ pub async fn import_open_items(
     let mut warnings = Vec::new();
     let mut opprettede_parter = 0usize;
     let mut entries = Vec::with_capacity(rader.len() + 1);
+    let mut index = PartyIndex::load(&mut *tx, company_id, kind.as_str()).await?;
     for rad in rader {
         let name = rad.party_name.clone().unwrap_or_else(|| rad.party.clone());
-        let found = find_party_in(
-            &mut tx,
-            company_id,
-            kind.as_str(),
-            Some(rad.party.as_str()),
-            &name,
-        )
-        .await?;
-        let party_no = match found {
-            Some(no) => no,
+        let party_no = match index.find(Some(rad.party.as_str()), &name, None) {
+            Some((_, no)) => no,
             None => {
-                let no =
-                    create_party_in(&mut tx, company_id, kind.as_str(), &name, &rad.party).await?;
+                let (id, no) =
+                    create_party_in(&mut tx, company_id, kind, &name, &rad.party, &index).await?;
+                index.add(id, &no, None, &name);
                 opprettede_parter += 1;
                 no
             }
@@ -376,66 +417,70 @@ pub async fn import_open_items(
     })
 }
 
-async fn find_party_in(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    company_id: Uuid,
-    kind: &str,
-    number: Option<&str>,
-    name: &str,
-) -> Result<Option<String>> {
-    let numeric = number.filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
-    let row = sqlx::query(
-        "select party_no from party
-         where company_id = $1 and kind = $2
-           and ( ($3::text is not null and party_no = $3) or lower(name) = lower($4) )
-         order by ($3::text is not null and party_no = $3) desc
-         limit 1",
-    )
-    .bind(company_id)
-    .bind(kind)
-    .bind(numeric)
-    .bind(name)
-    .fetch_optional(&mut **tx)
-    .await?;
-    Ok(row.map(|r| r.get("party_no")))
-}
-
 async fn create_party_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
-    kind: &str,
+    kind: PartyKind,
     name: &str,
     vendor_ref: &str,
-) -> Result<String> {
+    index: &PartyIndex,
+) -> Result<(Uuid, String)> {
     let numeric = (!vendor_ref.is_empty() && vendor_ref.chars().all(|c| c.is_ascii_digit()))
         .then(|| vendor_ref.to_string());
     let party_no = match numeric {
         Some(no) => no,
         None => {
-            let first: i64 = if kind == "kunde" { 10_000 } else { 20_000 };
-            let next: i64 = sqlx::query_scalar(
-                "select coalesce(max(party_no::bigint) + 1, $2)
-                 from party where company_id = $1 and kind = $3",
-            )
-            .bind(company_id)
-            .bind(first)
-            .bind(kind)
-            .fetch_one(&mut **tx)
-            .await?;
-            next.to_string()
+            let first: i64 = match kind {
+                PartyKind::Customer => 10_000,
+                PartyKind::Supplier => 20_000,
+            };
+            index.max_number.map_or(first, |m| m + 1).to_string()
         }
     };
+    let id = Uuid::now_v7();
     sqlx::query(
         "insert into party (id, company_id, party_no, kind, name)
          values ($1, $2, $3, $4, $5)",
     )
-    .bind(Uuid::now_v7())
+    .bind(id)
     .bind(company_id)
     .bind(&party_no)
-    .bind(kind)
+    .bind(kind.as_str())
     .bind(name)
     .execute(&mut **tx)
     .await
     .context("creating party from open items")?;
-    Ok(party_no)
+    Ok((id, party_no))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The order the per-row SQL used: orgnr beats a numeric vendor
+    /// number, which beats the name; names match ignoring case; a
+    /// non-numeric vendor number is never read as a party_no.
+    #[test]
+    fn the_index_matches_orgnumber_then_number_then_name() {
+        let (a, b, c) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+        let mut index = PartyIndex {
+            by_orgnumber: HashMap::new(),
+            by_number: HashMap::new(),
+            by_name: HashMap::new(),
+            max_number: None,
+        };
+        index.add(a, "10001", Some("915933149"), "Hansen AS");
+        index.add(b, "10002", None, "Lille Bakeri");
+        index.add(c, "S-9", None, "Øvre Ørsta");
+        let id = |r: Option<(Uuid, String)>| r.map(|(id, _)| id);
+        assert_eq!(
+            id(index.find(Some("10002"), "Lille Bakeri", Some("915933149"))),
+            Some(a)
+        );
+        assert_eq!(id(index.find(Some("10002"), "Hansen AS", None)), Some(b));
+        assert_eq!(id(index.find(None, "LILLE BAKERI", None)), Some(b));
+        assert_eq!(id(index.find(None, "øvre ørsta", None)), Some(c));
+        assert_eq!(id(index.find(Some("S-9"), "Ukjent", None)), None);
+        assert_eq!(index.max_number, Some(10002), "S-9 is not a number");
+    }
 }
