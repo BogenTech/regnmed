@@ -34,6 +34,81 @@ pub const ACCOUNT_SALARY_PAYABLE: &str = "2930";
 pub const ACCOUNT_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY_COST: &str = "5405";
 pub const ACCOUNT_ACCRUED_EMPLOYER_CONTRIBUTION_HOLIDAY_PAY: &str = "2780";
 
+/// The arbeidsforhold facts the a-melding requires (F290/F291,
+/// migration 0073). Every field is optional in the register; the
+/// a-melding refuses a missing one by name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EmploymentDetails {
+    /// The underenhet (virksomhet) the employee works at.
+    pub business_unit_orgnumber: Option<String>,
+    pub occupation_code: Option<String>,
+    pub position_percent_bp: Option<i32>,
+    pub full_time_hours_per_week_hundredths: Option<i32>,
+    pub working_hours_scheme: Option<String>,
+    pub employment_form: Option<String>,
+    pub last_salary_change: Option<NaiveDate>,
+}
+
+/// Checks what the DB constraints cannot say in words, and what they
+/// cannot check at all: MOD11, the half-yearly code lists, and that the
+/// virksomhet is an underenhet rather than the company itself.
+fn validate_details(d: &EmploymentDetails, company_orgnumber: &str) -> Result<()> {
+    use regnmed_core::amelding::{EMPLOYMENT_FORMS, WORKING_HOURS_SCHEMES};
+    if let Some(n) = &d.business_unit_orgnumber {
+        ensure!(
+            regnmed_core::orgnumber::is_valid(n),
+            "virksomhetens organisasjonsnummer «{n}» er ugyldig"
+        );
+        // shortcut: not checked against Enhetsregisteret that it is an
+        // underenhet OF this company; do it when the BRREG lookup is wired
+        // into the employee form.
+        ensure!(
+            n != company_orgnumber,
+            "virksomheten skal være underenheten i Enhetsregisteret der den ansatte jobber,              ikke selskapets eget organisasjonsnummer (a-meldingen, F290)"
+        );
+    }
+    if let Some(code) = &d.occupation_code {
+        // shortcut: format only; the full STYRK-08 catalogue is not vendored.
+        ensure!(
+            code.len() == 7 && code.bytes().all(|b| b.is_ascii_digit()),
+            "yrkeskoden skal være 7 siffer fra SSBs yrkeskatalog (STYRK-08)"
+        );
+    }
+    if let Some(bp) = d.position_percent_bp {
+        ensure!(
+            (0..=10000).contains(&bp),
+            "stillingsprosenten må være mellom 0 og 100"
+        );
+    }
+    if let Some(h) = d.full_time_hours_per_week_hundredths {
+        ensure!(
+            (1..=16800).contains(&h),
+            "timer per uke for full stilling må være mellom 0 og 168"
+        );
+    }
+    if let Some(code) = &d.working_hours_scheme {
+        ensure!(
+            WORKING_HOURS_SCHEMES.contains(&code.as_str()),
+            "ukjent arbeidstidsordning «{code}»"
+        );
+    }
+    if let Some(code) = &d.employment_form {
+        ensure!(
+            EMPLOYMENT_FORMS.contains(&code.as_str()),
+            "ukjent ansettelsesform «{code}»"
+        );
+    }
+    Ok(())
+}
+
+async fn company_orgnumber(pool: &PgPool, company_id: Uuid) -> Result<String> {
+    sqlx::query_scalar("select orgnr from company where id = $1")
+        .bind(company_id)
+        .fetch_optional(pool)
+        .await?
+        .context("no such company")
+}
+
 #[derive(Debug, Clone)]
 pub struct NewEmployee {
     pub nin: String,
@@ -48,6 +123,7 @@ pub struct NewEmployee {
     pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
+    pub details: EmploymentDetails,
 }
 
 #[derive(Debug, Clone)]
@@ -75,9 +151,35 @@ pub struct Employee {
     pub person_id: Option<Uuid>,
     pub person_name: Option<String>,
     pub person_email: Option<String>,
+    pub details: EmploymentDetails,
 }
 
 impl Employee {
+    /// What the a-melding would refuse for this employee, by the same
+    /// names its errors use. Empty means the arbeidsforhold is complete.
+    pub fn amelding_missing(&self) -> Vec<&'static str> {
+        let d = &self.details;
+        let employment = regnmed_core::amelding::Employment {
+            id: self.id.to_string(),
+            start_date: self.employed_from,
+            end_date: self.employed_to,
+            full_time_hours_per_week_hundredths: d
+                .full_time_hours_per_week_hundredths
+                .map(i64::from),
+            occupation_code: d.occupation_code.clone(),
+            working_hours_scheme: d.working_hours_scheme.clone(),
+            position_percent_bp: d.position_percent_bp.map(i64::from),
+            last_salary_change: d.last_salary_change,
+            employment_form: d.employment_form.clone(),
+        };
+        let mut missing = Vec::new();
+        if d.business_unit_orgnumber.is_none() {
+            missing.push("virksomhet");
+        }
+        missing.extend(employment.missing());
+        missing
+    }
+
     fn withholding(&self) -> Withholding {
         match self.withholding_type.as_str() {
             "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
@@ -109,13 +211,19 @@ pub async fn create_employee(
         "ukjent trekktype «{}»",
         new.withholding_type
     );
+    validate_details(&new.details, &company_orgnumber(pool, company_id).await?)?;
+    let d = &new.details;
     let id = Uuid::new_v4();
     sqlx::query(
         "insert into employee
              (id, company_id, fodselsnummer, navn, stilling, ansatt_fra,
               manedslonn_ore, timelonn_ore, trekk_type, trekk_prosent_bp,
-              trekk_tabell, feriepenger_bp, bank_account, note, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+              trekk_tabell, feriepenger_bp, bank_account, note, created_by,
+              business_unit_orgnumber, occupation_code, position_percent_bp,
+              full_time_hours_per_week_hundredths, working_hours_scheme,
+              employment_form, last_salary_change)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                 $16,$17,$18,$19,$20,$21,$22)",
     )
     .bind(id)
     .bind(company_id)
@@ -132,10 +240,49 @@ pub async fn create_employee(
     .bind(&new.bank_account)
     .bind(&new.note)
     .bind(created_by)
+    .bind(&d.business_unit_orgnumber)
+    .bind(&d.occupation_code)
+    .bind(d.position_percent_bp)
+    .bind(d.full_time_hours_per_week_hundredths)
+    .bind(&d.working_hours_scheme)
+    .bind(&d.employment_form)
+    .bind(d.last_salary_change)
     .execute(pool)
     .await
     .context("den ansatte finnes allerede i dette registeret")?;
     Ok(id)
+}
+
+/// Replaces the employee's arbeidsforhold details (all seven, so a field
+/// can be cleared). Payroll lines already run are untouched: the
+/// a-melding for a past month reads what is true when it is built.
+pub async fn update_employment_details(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    d: &EmploymentDetails,
+) -> Result<()> {
+    validate_details(d, &company_orgnumber(pool, company_id).await?)?;
+    let updated = sqlx::query(
+        "update employee set
+             business_unit_orgnumber = $3, occupation_code = $4,
+             position_percent_bp = $5, full_time_hours_per_week_hundredths = $6,
+             working_hours_scheme = $7, employment_form = $8, last_salary_change = $9
+         where id = $1 and company_id = $2",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .bind(&d.business_unit_orgnumber)
+    .bind(&d.occupation_code)
+    .bind(d.position_percent_bp)
+    .bind(d.full_time_hours_per_week_hundredths)
+    .bind(&d.working_hours_scheme)
+    .bind(&d.employment_form)
+    .bind(d.last_salary_change)
+    .execute(pool)
+    .await?;
+    ensure!(updated.rows_affected() == 1, "ukjent ansatt");
+    Ok(())
 }
 
 pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employee>> {
@@ -143,6 +290,9 @@ pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employe
         "select e.id, e.fodselsnummer, e.navn, e.stilling, e.ansatt_fra, e.ansatt_til,
                 e.manedslonn_ore, e.timelonn_ore, e.trekk_type, e.trekk_prosent_bp,
                 e.trekk_tabell, e.feriepenger_bp, e.bank_account, e.note,
+                e.business_unit_orgnumber, e.occupation_code, e.position_percent_bp,
+                e.full_time_hours_per_week_hundredths, e.working_hours_scheme,
+                e.employment_form, e.last_salary_change,
                 e.person_id,
                 coalesce(p.name, p.oidc_sub) as person_navn,
                 p.email as person_epost
@@ -178,6 +328,15 @@ fn employee_from_row(r: &sqlx::postgres::PgRow) -> Employee {
         person_id: r.get("person_id"),
         person_name: r.get("person_navn"),
         person_email: r.get("person_epost"),
+        details: EmploymentDetails {
+            business_unit_orgnumber: r.get("business_unit_orgnumber"),
+            occupation_code: r.get("occupation_code"),
+            position_percent_bp: r.get("position_percent_bp"),
+            full_time_hours_per_week_hundredths: r.get("full_time_hours_per_week_hundredths"),
+            working_hours_scheme: r.get("working_hours_scheme"),
+            employment_form: r.get("employment_form"),
+            last_salary_change: r.get("last_salary_change"),
+        },
     }
 }
 
@@ -233,6 +392,9 @@ pub struct Lonnslinje {
     /// feriepenger — positive when new feriepenger were earned, negative
     /// when they were paid out.
     pub employer_contribution_holiday_pay_ore: i64,
+    /// `fixed` or `hourly` (migration 0073) — the a-melding reports them
+    /// under different descriptions. None when the run could not tell.
+    pub pay_kind: Option<&'static str>,
 }
 
 /// Feriepenger owed and aga already accrued for one employee, derived
@@ -370,6 +532,19 @@ pub async fn run_payroll(
             "{} var ikke ansatt i {month}/{year}",
             employee.name
         );
+        // Decided here, where it is known, and stored: inferring it later
+        // from which wage the employee happens to have would be a guess.
+        let pay_kind = if post.from_timesheet {
+            Some("hourly")
+        } else if post.gross_ore.is_none() {
+            Some("fixed") // the employee's månedslønn
+        } else {
+            match (employee.monthly_salary_ore, employee.hourly_wage_ore) {
+                (Some(_), None) => Some("fixed"),
+                (None, Some(_)) => Some("hourly"),
+                _ => None,
+            }
+        };
         let gross = if post.from_timesheet {
             let basis = hour_basis(pool, company_id, employee.id, year, month).await?;
             // The hours must be LOCKED before they are paid. A payroll
@@ -441,6 +616,7 @@ pub async fn run_payroll(
             calculation,
             holiday_pay_accrual_ore: avsetning,
             employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
+            pay_kind,
         });
     }
 
@@ -648,8 +824,9 @@ pub async fn run_payroll(
             "insert into payroll_line
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
-                  feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+                  feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
+                  pay_kind)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
         )
         .bind(Uuid::new_v4())
         .bind(run_id)
@@ -666,6 +843,7 @@ pub async fn run_payroll(
         )
         .bind(l.employer_contribution_holiday_pay_ore)
         .bind(b.half_withholding)
+        .bind(l.pay_kind)
         .execute(&mut *tx)
         .await?;
     }

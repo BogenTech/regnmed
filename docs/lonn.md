@@ -217,22 +217,52 @@ allerede den ordinære satsen per sone, og det ER den beregningskoden
 (F197-tabellen). Et selskap med sektorunntak er feil i kjøringen før det
 blir feil i meldingen.
 
-### Hva modellen IKKE har — og renderen nekter for
+### Arbeidsforholdet (migration 0073)
 
-Hvert punkt gir en feilmelding med feltets navn, aldri en standardverdi.
+Feltene forretningsreglene krever om arbeidsforholdet ligger nå på
+`employee`, alle valgfrie i registeret og redigerbare som resten av
+vilkårene:
 
-1. **Virksomhet (underenhet).** Arbeidsforholdet skal knyttes til en
-   underenhet i Enhetsregisteret (F290, avvisning) — ikke til den
-   juridiske enheten. Selskapet har bare sitt eget orgnr.
-2. **Yrkeskode** — 7 sifre fra SSBs yrkeskatalog (STYRK-08, F115B).
-   `employee.stilling` er fritekst og kan ikke brukes.
-3. **Stillingsprosent** (F291).
-4. **Antall timer per uke for full stilling** (F291; F526-reglene binder
-   den til arbeidstidsordningen).
-5. **Arbeidstidsordning** — `ikkeSkift`, `skift365`, … (F291).
-6. **Siste lønnsendringsdato** (F291).
-7. **Ansettelsesform** — `fast`, `midlertidig`, … (F291, fra 2021).
-8. **Hele kroner.** Forskuddstrekk og summene å betale er heltall i
+| A-meldingen | Kolonne | Regel |
+| --- | --- | --- |
+| `virksomhet` | `business_unit_orgnumber` | F290: underenheten i Enhetsregisteret, MOD11 og ALDRI selskapets eget orgnr |
+| `yrke` | `occupation_code` | F115B: 7 siffer (STYRK-08) — bare formatet sjekkes, katalogen er ikke vendored |
+| `stillingsprosent` | `position_percent_bp` | F291: 0–100 %, i basispunkter |
+| `antallTimerPerUkeSomEnFullStillingTilsvarer` | `full_time_hours_per_week_hundredths` | F291, i hundredeler |
+| `arbeidstidsordning` | `working_hours_scheme` | F291: kodelisten i `regnmed-core::amelding` |
+| `formForAnsettelse` | `employment_form` | F291: kodelisten i `regnmed-core::amelding` |
+| `sisteLoennsendringsdato` | `last_salary_change` | F291 |
+
+Kodelistene sjekkes i applikasjonen, ikke med en check-constraint: de
+endres per halvår (R1/R2), og en migrasjon per kodelisteendring ville
+vært feil sted. API-et serverer listene fra den ene kopien renderen
+sjekker mot (`koder` på `GET …/employees`).
+
+`Employee::amelding_missing()` sier hva a-meldingen ville nektet for, med
+**de samme navnene som renderens feilmeldinger** — en enhetstest i
+`amelding` fester at `Employment::missing()` og `render` nevner samme
+felt. Portalen viser det som «mangler N» per ansatt, med et skjema
+(`PUT …/employees/{eid}/employment`, `LONN_SKRIV`) som erstatter alle
+sju feltene, så et felt kan tømmes igjen. Ansatte registrert før 0073
+har ingen av dem, og ingenting fylles inn for dem: det som mangler,
+mangler synlig.
+
+Virksomheten ligger per ANSATT fordi det er der den hører hjemme — et
+selskap med to underenheter har ansatte på begge. Renderen tar i dag ÉN
+virksomhet per melding; koblingen fra databasen må derfor nekte en
+kjøring der de ansatte står på ulike underenheter, til renderen grupperer
+per virksomhet (inkludert avgiften, som da må fordeles).
+
+**Fastlønn eller timelønn** lagres nå per lønnslinje
+(`payroll_line.pay_kind`), bestemt i kjøringen der det er kjent:
+timelister → `hourly`, månedslønnen → `fixed`, et oppgitt beløp →
+den ansattes ENE lønnsform; har den ansatte begge eller ingen, lagres
+NULL, og meldingen nekter heller enn å gjette. Linjer fra før 0073 er
+NULL.
+
+### Hva modellen fortsatt IKKE har — og renderen nekter for
+
+1. **Hele kroner.** Forskuddstrekk og summene å betale er heltall i
    skjemaet, mens lønnskjøringen regner trekk og aga i øre. Renderen
    runder IKKE — da ville meldingen sprike fra det som er bokført på
    2600/2770. Avrundingsregelen hører hjemme i
@@ -251,22 +281,15 @@ Renderen nekter også, med eget navn:
   hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
   er ikke modellert.
 
-Og to hull som ikke er felt, men oppslag:
+Og ett hull som ikke er et felt, men et oppslag:
 
-9. **Fastlønn eller timelønn?** `payroll_line` lagrer bare brutto, ikke
-   hvilken av de to den kom fra. Kjøringen vet det; linjen husker det
-   ikke. Det må lagres (ny kolonne) — å utlede det i ettertid av om den
-   ansatte HAR en timesats er gjetting.
-10. **Arbeidsforhold uten lønn.** Et aktivt arbeidsforhold skal
+2. **Arbeidsforhold uten lønn.** Et aktivt arbeidsforhold skal
     rapporteres hver måned til sluttdato er meldt (F108), også en måned
     uten utbetaling. En lønnskjøring har bare linjer for dem som fikk
     lønn.
 
-Feltene 2–7 er egenskaper ved arbeidsforholdet, og hører på `employee`
-(ny migrasjon, engelske kolonnenavn) med skjema i portalen. Det er
-bevisst IKKE gjort i denne leveransen: hvilke felt som skal være
-obligatoriske ved registrering, og hva som skjer med ansatte som
-finnes fra før, er en produktavgjørelse.
+Renderen er heller ikke koblet til databasen ennå: ingen kode bygger en
+`Melding` av en lagret kjøring. Det er neste steg, sammen med punkt 1.
 
 ### Formatet på vei inn
 
@@ -285,9 +308,9 @@ systembrukeren finnes.
 Rekkefølgen er omtrent den de bør tas i.
 
 1. **A-meldingen.** Månedlig, frist den 5. Renderen finnes og er
-   validert mot XSD-en (se «A-meldingen» under), men den NEKTER for
-   alle ekte kjøringer i dag fordi modellen mangler feltene
-   forretningsreglene krever, og innsending venter på
+   validert mot XSD-en (se «A-meldingen» under), og arbeidsforholdets
+   felt finnes nå (0073), men den er ikke koblet til databasen, nekter
+   øre der skjemaet vil ha hele kroner, og innsending venter på
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.

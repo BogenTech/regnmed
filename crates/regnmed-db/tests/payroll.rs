@@ -74,6 +74,7 @@ async fn employee(pool: &PgPool, company: Uuid, nin: &str, name: &str, monthly_o
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
+            details: Default::default(),
         },
         "Test",
     )
@@ -305,6 +306,7 @@ async fn tabelltrekk_stops_the_run_rather_than_guessing() {
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
+            details: Default::default(),
         },
         "Test",
     )
@@ -435,6 +437,7 @@ async fn an_invalid_nin_is_rejected_at_registration() {
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
+            details: Default::default(),
         },
         "Test",
     )
@@ -554,6 +557,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
+            details: Default::default(),
         },
         "Test",
     )
@@ -899,4 +903,149 @@ async fn an_unallocated_holiday_pay_liability_warns_rather_than_staying_silent()
         "differansen skal navngis: {advarsel}"
     );
     assert!(advarsel.contains("2780"), "{advarsel}");
+}
+
+fn complete_details(business_unit: &str) -> payroll::EmploymentDetails {
+    payroll::EmploymentDetails {
+        business_unit_orgnumber: Some(business_unit.into()),
+        occupation_code: Some("2512101".into()),
+        position_percent_bp: Some(10000),
+        full_time_hours_per_week_hundredths: Some(3750),
+        working_hours_scheme: Some("ikkeSkift".into()),
+        employment_form: Some("fast".into()),
+        last_salary_change: Some(date(2025, 1, 1)),
+    }
+}
+
+/// The arbeidsforhold facts (0073) start missing, are listed by the
+/// a-melding's own names, and disappear from the list once set.
+#[tokio::test]
+async fn employment_details_close_the_amelding_gaps() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+
+    let before = &payroll::list_ansatte(&pool, company).await.unwrap()[0];
+    assert_eq!(
+        before.amelding_missing(),
+        vec![
+            "virksomhet",
+            "antall timer per uke for full stilling",
+            "yrkeskode",
+            "arbeidstidsordning",
+            "stillingsprosent",
+            "siste lønnsendringsdato",
+            "ansettelsesform",
+        ]
+    );
+
+    // 974760673 is a valid org number and not the test company's.
+    let details = complete_details("974760673");
+    payroll::update_employment_details(&pool, company, id, &details)
+        .await
+        .unwrap();
+    let after = &payroll::list_ansatte(&pool, company).await.unwrap()[0];
+    assert_eq!(after.details, details);
+    assert!(after.amelding_missing().is_empty());
+
+    // A full replacement: clearing a field brings it back on the list.
+    let cleared = payroll::EmploymentDetails {
+        occupation_code: None,
+        ..details
+    };
+    payroll::update_employment_details(&pool, company, id, &cleared)
+        .await
+        .unwrap();
+    let again = &payroll::list_ansatte(&pool, company).await.unwrap()[0];
+    assert_eq!(again.amelding_missing(), vec!["yrkeskode"]);
+}
+
+#[tokio::test]
+async fn employment_details_are_validated_before_storage() {
+    let Some(pool) = pool().await else { return };
+    // A MOD11-valid org number for the company itself, or the "own
+    // number" case below would be refused by MOD11 and prove nothing.
+    let own = std::iter::repeat_with(unique_orgnumber)
+        .find(|n| regnmed_core::orgnumber::is_valid(n))
+        .unwrap();
+    let company = regnmed_db::create_company(&pool, &own, "Lønnstest AS")
+        .await
+        .unwrap();
+    let id = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+
+    let refused = [
+        ("selskapets eget orgnr", complete_details(&own)),
+        ("MOD11", complete_details("974760674")),
+        (
+            "yrkeskode",
+            payroll::EmploymentDetails {
+                occupation_code: Some("2512".into()),
+                ..complete_details("974760673")
+            },
+        ),
+        (
+            "kodeliste",
+            payroll::EmploymentDetails {
+                working_hours_scheme: Some("turnus".into()),
+                ..complete_details("974760673")
+            },
+        ),
+        (
+            "kodeliste",
+            payroll::EmploymentDetails {
+                employment_form: Some("vikar".into()),
+                ..complete_details("974760673")
+            },
+        ),
+        (
+            "over 100 %",
+            payroll::EmploymentDetails {
+                position_percent_bp: Some(10001),
+                ..complete_details("974760673")
+            },
+        ),
+    ];
+    for (why, details) in refused {
+        assert!(
+            payroll::update_employment_details(&pool, company, id, &details)
+                .await
+                .is_err(),
+            "{why} skulle vært avvist"
+        );
+    }
+    let stored = &payroll::list_ansatte(&pool, company).await.unwrap()[0];
+    assert_eq!(stored.details, payroll::EmploymentDetails::default());
+}
+
+/// Fastlønn and timelønn are reported under different descriptions, so
+/// the run records which it paid — where it is known, never inferred.
+#[tokio::test]
+async fn a_run_records_whether_it_paid_fixed_salary() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[payroll::PayrollEntry {
+            employee_id: id,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let kind: Option<String> =
+        sqlx::query_scalar("select pay_kind from payroll_line where run_id = $1")
+            .bind(run.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(kind.as_deref(), Some("fixed"));
 }
