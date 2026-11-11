@@ -102,10 +102,14 @@ jobs:
             exit 1
           fi
 
+      # Through the same fallback as ci.yml: Ubuntu's archive first, the
+      # same signed package from another mirror when it is unreachable
+      # (2026-11-11). ring compiles C for the musl target, so a real
+      # musl-gcc is needed — and it must be there, not merely attempted.
       - name: Install musl toolchain
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq musl-tools
+          scripts/ci-apt-install.sh musl-tools
+          musl-gcc --version | head -1
 
       # The arm64 runner image does not promise rustup, so both legs get
       # the toolchain the same way ci.yml does.

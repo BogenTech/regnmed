@@ -73,19 +73,12 @@ jobs:
       # archive for it.
     steps:
       - uses: actions/checkout@v7
-      # xmllint is the one tool that must come from outside. Ubuntu's archive
-      # first (fast, short timeouts); if it cannot be reached — 2026-11-11
-      # the runners resolved packages.microsoft.com but not *.ubuntu.com for
-      # hours — Homebrew, preinstalled and served from GitHub's registry.
+      # xmllint is the one tool that must come from outside. The script
+      # falls back to a mirror on another domain when Ubuntu's archive is
+      # unreachable — 2026-11-11 the runners resolved packages.microsoft.com
+      # but not *.ubuntu.com for hours.
       - name: Install xmllint (XSD validation)
-        run: |
-          apt_opts="-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
-          if ! { sudo apt-get $apt_opts update && sudo apt-get $apt_opts install -y --no-install-recommends libxml2-utils; }; then
-            echo "::warning::Ubuntu's archive unreachable — installing xmllint from Homebrew"
-            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-            brew install libxml2
-            echo "$(brew --prefix libxml2)/bin" >> "$GITHUB_PATH"
-          fi
+        run: scripts/ci-apt-install.sh libxml2-utils
       # The XSD tests skip politely without xmllint. In CI that would be a
       # green run that validated nothing, so its absence fails here.
       - name: xmllint is present
