@@ -10,6 +10,9 @@
 //!
 //! Each run SUBMITS a melding for the synthetic Tenor company 311032240
 //! (systembruker approved 2026-11-11), so a run is a real delivery in test.
+//! It is the same company and employment test.regnmed.no reports, so each
+//! run adds another October income for that person in Skatteetaten's test
+//! register — harmless there, but a reason not to run it casually.
 
 use chrono::{NaiveDate, Utc};
 use regnmed_core::amelding::{Employment, Income, IncomeKind, Melding, Recipient};
@@ -38,7 +41,13 @@ fn melding() -> Melding {
             name: "daglig leder (syntetisk)".into(),
             nin: "12855599579".into(),
             employment: Employment {
-                id: "regnmed-live-1".into(),
+                // The regnmed employee id test.regnmed.no reports for
+                // this person (regnmed sends employee.id). Skatteetaten
+                // wants every arbeidsforhold it has seen reported each
+                // month until it ends, so a test-only id here became a
+                // deviation in every later month the cluster sent
+                // (MAGNET_EDAG-108, 2026-11).
+                id: "5947e923-7884-4441-9e3b-cfb0846677a1".into(),
                 start_date: d(2026, 1, 1),
                 end_date: None,
                 full_time_hours_per_week_hundredths: Some(3750),
