@@ -217,6 +217,37 @@ For a regnskapsfører acting on behalf of clients, the client company
 Autorisasjon). This maps 1:1 onto regnmed's engagement model — the same
 firm→client relationship, expressed in the government's registry.
 
+## A-melding API (crates/regnmed-gov/src/amelding.rs)
+
+`AmeldingClient` sender en a-melding og henter tilbakemeldingen, begge
+med kundens **systembrukertoken**
+(`TokenProvider::token_for_systemuser`, scopene i `amelding::SCOPES`:
+`skatteetaten:innrapporteringamelding digdir:dialogporten`). Kroppen er
+`regnmed_core::amelding::render_json` (docs/lonn.md).
+
+- `submit` → `POST {AMELDING_URL}/v1/innsending/{periode}/{opplysningspliktig}`
+  med `idempotencyKey`; svaret er en kvittering (`dialogId`,
+  `forsendelseId`, `meldingsId`), ikke en dom. Feil fra Skatteetaten
+  (`kode`, `melding`, `spesifisering`) sendes videre ordrett.
+- `feedback` → dialogen i Dialogporten (`DIALOGPORTEN_URL`), den
+  `Information`-transmissionen som er relatert til innsendingen, og
+  dens `Api`-URL. `None` til den finnes.
+- `from_env` peker på TESTMILJØET når variablene mangler — produksjon
+  velges uttrykkelig, aldri ved et uhell.
+
+**Prøvd mot ekte testmiljø 2026-11-11**:
+`crates/regnmed-gov/tests/amelding_live.rs` rendrer en melding med
+regnmeds egen kode, sender den med klienten og venter på dommen —
+`mottatt`, `avvik: []`, etter 24 s. Testen hopper over seg selv uten
+`AMELDING_LIVE=1` og kjører aldri i CI; hver kjøring er en ekte
+innsending i test (og legges til periodens summer — se docs/lonn.md om
+hvorfor en ny melding for samme måned ADDERER).
+
+Ikke bygget: koblingen til lagrede lønnskjøringer (innsendingsspor med
+idempotensnøkkel og meldingsId, erstatningsmelding), API-endepunkt og
+portal, og hendelsesabonnement (`altinn:events.subscribe`) i stedet for
+å spørre etter tilbakemeldingen.
+
 ## Mva-melding APIs (crates/regnmed-gov/src/mvamelding.rs)
 
 - **Validation** (implemented): POST the melding XML to Skatteetaten's

@@ -18,6 +18,13 @@
 //! accepted by Skatteetaten and wrong at NAV, which is worse than a
 //! melding that is never sent.
 //!
+//! The melding is built ONCE as a small typed tree ([`Node`]) and written
+//! either as XML ([`render`], validated against the XSD) or as JSON
+//! ([`render_json`], what Skatteetatens REST API takes —
+//! `innrapportering-amelding-api` 0.1.2). The JSON is the same tree field
+//! for field; only lists, whole-kroner numbers and booleans are typed
+//! differently. One builder means the two formats cannot drift apart.
+//!
 //! Amounts are integer øre throughout. The two fields the schema types as
 //! whole kroner (forskuddstrekk and the sums to pay) are refused when the
 //! øre part is not zero: the rounding rule belongs in the payroll
@@ -271,11 +278,153 @@ fn identifier(field: &'static str, value: &str) -> Result<(), AmeldingError> {
     }
 }
 
-fn whole_kroner(field: &'static str, ore: i64) -> Result<String, AmeldingError> {
+fn whole_kroner(field: &'static str, ore: i64) -> Result<i64, AmeldingError> {
     if ore % 100 != 0 {
         return Err(AmeldingError::NotWholeKroner { field, ore });
     }
-    Ok((ore / 100).to_string())
+    Ok(ore / 100)
+}
+
+/// A leaf's value. The XML writes all three as text; the JSON types them
+/// as the OpenAPI schema does (`BeloepSomHeltall` is a number, `Boolsk` a
+/// boolean, everything else — decimals included — a string).
+enum Value {
+    Text(String),
+    Int(i64),
+    Bool(bool),
+}
+
+enum Node {
+    Leaf(&'static str, Value),
+    Group(&'static str, Vec<Node>),
+}
+
+/// Builds the tree with the same open/leaf/close calls the XML writer had.
+struct Tree {
+    stack: Vec<(&'static str, Vec<Node>)>,
+}
+
+impl Tree {
+    fn new(root: &'static str) -> Self {
+        Tree {
+            stack: vec![(root, Vec::new())],
+        }
+    }
+
+    fn push(&mut self, node: Node) {
+        self.stack.last_mut().expect("tree is open").1.push(node);
+    }
+
+    fn open(&mut self, name: &'static str) {
+        self.stack.push((name, Vec::new()));
+    }
+
+    fn close(&mut self, name: &'static str) {
+        let (open, children) = self.stack.pop().expect("tree is open");
+        debug_assert_eq!(open, name, "mismatched close");
+        self.push(Node::Group(open, children));
+    }
+
+    fn leaf(&mut self, name: &'static str, value: &str) {
+        self.push(Node::Leaf(name, Value::Text(value.to_string())));
+    }
+
+    fn int(&mut self, name: &'static str, value: i64) {
+        self.push(Node::Leaf(name, Value::Int(value)));
+    }
+
+    fn boolean(&mut self, name: &'static str, value: bool) {
+        self.push(Node::Leaf(name, Value::Bool(value)));
+    }
+
+    fn finish(mut self) -> Node {
+        let (root, children) = self.stack.pop().expect("tree is open");
+        debug_assert!(self.stack.is_empty(), "unclosed group");
+        Node::Group(root, children)
+    }
+}
+
+fn write_xml(x: &mut Xml, node: &Node) {
+    match node {
+        Node::Leaf(name, Value::Text(t)) => x.leaf(name, t),
+        Node::Leaf(name, Value::Int(i)) => x.leaf(name, &i.to_string()),
+        Node::Leaf(name, Value::Bool(b)) => x.leaf(name, if *b { "true" } else { "false" }),
+        Node::Group(name, children) => {
+            x.open(name);
+            for c in children {
+                write_xml(x, c);
+            }
+            x.close(name);
+        }
+    }
+}
+
+/// The elements the OpenAPI schema types as arrays. In XML they are just
+/// repeated; in JSON every occurrence goes into one list, even a single one.
+const JSON_LISTS: &[&str] = &[
+    "virksomhet",
+    "inntektsmottaker",
+    "arbeidsforhold",
+    "inntekt",
+    "forskuddstrekk",
+    "loennOgGodtgjoerelse",
+    "sumForskuddstrekkPerLoennsutbetalingsdato",
+];
+
+fn json_string(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+fn write_json_value(out: &mut String, node: &Node) {
+    match node {
+        Node::Leaf(_, Value::Text(t)) => json_string(out, t),
+        Node::Leaf(_, Value::Int(i)) => out.push_str(&i.to_string()),
+        Node::Leaf(_, Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
+        Node::Group(_, children) => write_json_object(out, children),
+    }
+}
+
+/// Keys in order of first occurrence; list elements gathered under one key.
+fn write_json_object(out: &mut String, children: &[Node]) {
+    let name = |n: &Node| match n {
+        Node::Leaf(name, _) | Node::Group(name, _) => *name,
+    };
+    out.push('{');
+    let mut seen: Vec<&str> = Vec::new();
+    for child in children {
+        let key = name(child);
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        if seen.len() > 1 {
+            out.push(',');
+        }
+        json_string(out, key);
+        out.push(':');
+        if JSON_LISTS.contains(&key) {
+            out.push('[');
+            for (i, item) in children.iter().filter(|c| name(c) == key).enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_json_value(out, item);
+            }
+            out.push(']');
+        } else {
+            write_json_value(out, child);
+        }
+    }
+    out.push('}');
 }
 
 fn required<'a, T>(
@@ -300,7 +449,37 @@ fn coded(field: &'static str, value: &str, codes: &[&str]) -> Result<(), Ameldin
     }
 }
 
+/// The melding as XML, validated against the vendored XSD v2.3.
 pub fn render(m: &Melding) -> Result<String, AmeldingError> {
+    let leveranse = build(m)?;
+    let mut x = Xml::new();
+    x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    x.raw(&format!(r#"<melding xmlns="{NAMESPACE}">"#));
+    x.depth = 1;
+    write_xml(&mut x, &leveranse);
+    x.depth = 0;
+    x.raw("</melding>");
+    Ok(x.out)
+}
+
+/// The melding as the JSON body of `POST /v1/innsending/{periode}/{opplysningspliktig}`.
+/// Same validation, same tree as [`render`].
+pub fn render_json(m: &Melding) -> Result<String, AmeldingError> {
+    let Node::Group(_, children) = build(m)? else {
+        unreachable!("build returns the Leveranse group")
+    };
+    let mut out = String::from("{\"leveranse\":");
+    write_json_object(&mut out, &children);
+    out.push('}');
+    Ok(out)
+}
+
+/// The kalendermåned the melding reports: the month of the payment date.
+pub fn period(m: &Melding) -> String {
+    m.payment_date.format("%Y-%m").to_string()
+}
+
+fn build(m: &Melding) -> Result<Node, AmeldingError> {
     for n in [Some(&m.orgnumber), m.business_orgnumber.as_ref()]
         .into_iter()
         .flatten()
@@ -337,11 +516,7 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
         });
     }
 
-    let mut x = Xml::new();
-    x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
-    x.raw(&format!(r#"<melding xmlns="{NAMESPACE}">"#));
-    x.depth = 1;
-    x.open("Leveranse");
+    let mut x = Tree::new("Leveranse");
     x.leaf(
         "leveringstidspunkt",
         // With an explicit UTC designator: a zone-less xsd:dateTime would be
@@ -378,16 +553,16 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
     x.open("betalingsinformasjon");
     // F523/F522: from 2026-01 the sum is reported per payment date.
     if year < 2026 {
-        x.leaf("sumForskuddstrekk", &withholding_kr);
+        x.int("sumForskuddstrekk", withholding_kr);
     }
-    x.leaf(
+    x.int(
         "sumArbeidsgiveravgift",
-        &whole_kroner("arbeidsgiveravgift", m.employer_contribution_ore)?,
+        whole_kroner("arbeidsgiveravgift", m.employer_contribution_ore)?,
     );
     if year >= 2026 {
         x.open("sumForskuddstrekkPerLoennsutbetalingsdato");
         x.leaf("loennsutbetalingsdato", &m.payment_date.to_string());
-        x.leaf("beloep", &withholding_kr);
+        x.int("beloep", withholding_kr);
         x.close("sumForskuddstrekkPerLoennsutbetalingsdato");
     }
     x.close("betalingsinformasjon");
@@ -411,13 +586,10 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
     x.close("arbeidsgiveravgift");
     x.close("virksomhet");
     x.close("oppgave");
-    x.close("Leveranse");
-    x.depth = 0;
-    x.raw("</melding>");
-    Ok(x.out)
+    Ok(x.finish())
 }
 
-fn recipient(x: &mut Xml, r: &Recipient) -> Result<(), AmeldingError> {
+fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
     if !crate::nin::is_valid(&r.nin) {
         return Err(AmeldingError::InvalidNin(r.name.clone()));
     }
@@ -477,17 +649,17 @@ fn recipient(x: &mut Xml, r: &Recipient) -> Result<(), AmeldingError> {
         x.open("forskuddstrekk");
         x.leaf("beskrivelse", "ordinaert");
         // F278-2: reported as a negative amount.
-        x.leaf(
+        x.int(
             "beloep",
-            &whole_kroner("forskuddstrekk", -r.withholding_ore)?,
+            whole_kroner("forskuddstrekk", -r.withholding_ore)?,
         );
         x.close("forskuddstrekk");
     }
     for i in r.income.iter().filter(|i| i.amount_ore != 0) {
         x.open("inntekt");
         x.leaf("fordel", "kontantytelse");
-        x.leaf("utloeserArbeidsgiveravgift", "true");
-        x.leaf("inngaarIGrunnlagForTrekk", "true");
+        x.boolean("utloeserArbeidsgiveravgift", true);
+        x.boolean("inngaarIGrunnlagForTrekk", true);
         x.leaf("beloep", &decimal(i.amount_ore));
         x.open("loennsinntekt");
         x.leaf("beskrivelse", i.kind.code());
@@ -613,6 +785,78 @@ mod tests {
         assert!(xml.contains("<sumArbeidsgiveravgift>7473</sumArbeidsgiveravgift>"));
         assert!(xml.contains("<stillingsprosent>100.00</stillingsprosent>"));
         assert!(xml.contains("<beskrivelse>feriepenger</beskrivelse>"));
+    }
+
+    #[test]
+    fn the_json_is_the_same_tree_with_the_schemas_types() {
+        let m = melding();
+        let json: serde_json::Value = serde_json::from_str(&render_json(&m).unwrap()).unwrap();
+        let l = &json["leveranse"];
+        assert_eq!(l["kalendermaaned"], "2026-03");
+        assert_eq!(l["kildesystem"], "regnmed");
+        assert_eq!(l["opplysningspliktig"]["norskIdentifikator"], "935115086");
+        let o = &l["oppgave"];
+        // BeloepSomHeltall is a number; F523 per-date list from 2026.
+        assert_eq!(o["betalingsinformasjon"]["sumArbeidsgiveravgift"], 7473);
+        assert_eq!(
+            o["betalingsinformasjon"]["sumForskuddstrekkPerLoennsutbetalingsdato"],
+            serde_json::json!([{"loennsutbetalingsdato": "2026-03-25", "beloep": 15000}])
+        );
+        // The schema's arrays are arrays even with one element.
+        let v = &o["virksomhet"][0];
+        assert_eq!(v["norskIdentifikator"], "974760673");
+        let r = &v["inntektsmottaker"][0];
+        assert_eq!(r["norskIdentifikator"], "26829398612");
+        assert_eq!(r["arbeidsforhold"][0]["stillingsprosent"], "100.00");
+        assert_eq!(r["forskuddstrekk"][0]["beloep"], -15000);
+        let inntekt = r["inntekt"].as_array().unwrap();
+        assert_eq!(inntekt.len(), 2);
+        // Decimals stay strings; Boolsk is a boolean.
+        assert_eq!(inntekt[0]["beloep"], "50000.00");
+        assert_eq!(inntekt[0]["utloeserArbeidsgiveravgift"], true);
+        assert_eq!(inntekt[1]["loennsinntekt"]["beskrivelse"], "feriepenger");
+        assert_eq!(
+            v["arbeidsgiveravgift"]["loennOgGodtgjoerelse"][0]["avgiftsgrunnlagBeloep"],
+            "53000.00"
+        );
+        assert_eq!(period(&m), "2026-03");
+    }
+
+    /// Both formats come from one tree, so every leaf value in the XML is
+    /// in the JSON too — the guard against the two drifting apart.
+    #[test]
+    fn xml_and_json_carry_the_same_values() {
+        let m = melding();
+        let xml = render(&m).unwrap();
+        let json = render_json(&m).unwrap();
+        let leaves: Vec<&str> = xml
+            .lines()
+            .filter_map(|l| {
+                l.split_once('>')
+                    .and_then(|(_, rest)| rest.split_once("</"))
+            })
+            .map(|(value, _)| value)
+            .filter(|v| !v.is_empty())
+            .collect();
+        assert!(leaves.len() > 20, "{leaves:?}");
+        for v in leaves {
+            assert!(json.contains(v), "{v} is in the XML but not the JSON");
+        }
+    }
+
+    #[test]
+    fn json_strings_are_escaped() {
+        let mut m = melding();
+        m.source_system = "regn\"med\\ \u{1}".into();
+        let json: serde_json::Value = serde_json::from_str(&render_json(&m).unwrap()).unwrap();
+        assert_eq!(json["leveranse"]["kildesystem"], "regn\"med\\ \u{1}");
+    }
+
+    #[test]
+    fn json_is_refused_exactly_where_xml_is() {
+        let mut m = melding();
+        m.recipients[0].employment.occupation_code = None;
+        assert_eq!(render_json(&m), render(&m));
     }
 
     #[test]

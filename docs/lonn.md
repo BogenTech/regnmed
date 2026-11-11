@@ -330,9 +330,30 @@ OpenAPI-skjemaet `Amelding` (`innrapportering-amelding-api` 0.1.2 på
 SwaggerHub), ikke XML. Modellen er den samme felt for felt — `leveranse`,
 `oppgave`, `inntektsmottaker`, `arbeidsforhold` med samme navn og samme
 påkrevde felt — så XSD-en er fortsatt fasiten for innholdet, og XML-en
-kan lastes opp manuelt i Skatteetatens testmiljø. Men innsendingssteget
-må serialisere samme tre som JSON. Det bygges sammen med klienten, når
-systembrukeren finnes.
+kan lastes opp manuelt i Skatteetatens testmiljø.
+
+Derfor bygger renderen meldingen ÉN gang, som et lite typet tre, og
+skriver det enten som XML (`render`, validert mot XSD-en) eller som JSON
+(`render_json`, det REST-API-et tar). Samme validering, samme felt; bare
+typene skiller: lister er lister også med ett element,
+`BeloepSomHeltall` er JSON-tall, `Boolsk` er `true`/`false`, og
+desimaltall forblir strenger. En test fester at hver verdi i XML-en også
+står i JSON-en, så de to formatene ikke kan gli fra hverandre.
+
+Klienten (`regnmed-gov::amelding`, docs/gov.md) sender JSON-en med
+kundens systembrukertoken og henter tilbakemeldingen via Dialogporten.
+Den er prøvd mot Skatteetatens testmiljø med en melding rendret av
+regnmed selv: `mottatt`, ingen avvik.
+
+**To meldinger for samme måned LEGGES SAMMEN.** En ny melding med ny
+`meldingsId` for samme kalendermåned kommer i tillegg til den forrige —
+periodesummene i tilbakemeldingen ble doblet da testen ble kjørt to
+ganger. Derfor: et nytt forsøk på SAMME innsending skal gjenbruke
+`idempotencyKey` (da svarer Skatteetaten med første kvittering), og en
+rettet melding skal være en erstatningsmelding (`erstatterMeldingsId`),
+ikke en ny. Ingen av delene er modellert ennå — innsending fra regnmed
+krever et lagret innsendingsspor (idempotensnøkkel og meldingsId per
+kjøring) før den kobles på.
 
 ## Hva som IKKE er bygget
 

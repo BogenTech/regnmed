@@ -181,7 +181,7 @@ impl TokenProvider {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -189,7 +189,9 @@ mod tests {
     use rsa::pkcs1::EncodeRsaPrivateKey;
     use rsa::traits::PublicKeyParts;
 
-    fn test_config(token_endpoint: &str) -> (MaskinportenConfig, jsonwebtoken::DecodingKey) {
+    pub(crate) fn test_config(
+        token_endpoint: &str,
+    ) -> (MaskinportenConfig, jsonwebtoken::DecodingKey) {
         let private = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
         let pem = private.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
         let decoding = jsonwebtoken::DecodingKey::from_rsa_components(

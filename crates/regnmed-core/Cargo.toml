@@ -16,3 +16,7 @@ quick-xml.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+# Tests only: proves the hand-rolled JSON parses and has the schema's types.
+serde_json.workspace = true

@@ -6,12 +6,15 @@
 //! - [`mvamelding`]: Skatteetaten's mva-melding validation API. The
 //!   Altinn3 submission (instance) flow follows once real test
 //!   credentials exist; see docs/gov.md.
+//! - [`amelding`]: Skatteetatens a-melding API — submission with a
+//!   systembruker token and the feedback via Dialogporten.
 //! - [`tsa`]: RFC 3161 timestamping — the external witness for anchor
 //!   roots (docs/anchoring.md).
 //!
 //! Nothing here touches the ledger: regnmed-core builds the documents,
 //! this crate moves them.
 
+pub mod amelding;
 pub mod brreg;
 pub mod finanstilsynet;
 pub mod maskinporten;
