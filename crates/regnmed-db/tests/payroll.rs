@@ -174,6 +174,51 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
     );
 }
 
+/// A company missing a payroll account is told which ones, in Norwegian,
+/// before anything is posted — not the ledger's English "no active
+/// account" for the first one it trips on.
+#[tokio::test]
+async fn a_run_names_every_missing_account_before_posting() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    sqlx::query(
+        "update account set active = false where company_id = $1 and number in ('5000', '2930')",
+    )
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let err = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[PayrollEntry {
+            employee_id: a,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            from_timesheet: false,
+        }],
+        "Test",
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("konto 2930, 5000"), "{err}");
+    assert!(err.contains("Hovedbok → Kontoplan"), "{err}");
+    let runs: i64 = sqlx::query_scalar("select count(*) from payroll_run where company_id = $1")
+        .bind(company)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(runs, 0);
+}
+
 /// Feriepenger paid out are not a new cost — they draw down the liability
 /// accrued in the year they were earned. Get this wrong and feriepenger
 /// are expensed twice, making the result systematically too low.

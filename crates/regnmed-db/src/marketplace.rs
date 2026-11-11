@@ -12,15 +12,24 @@ use crate::subledger::set_account_subledger;
 use crate::tenancy::ensure_company_member;
 
 /// Starter kontoplan (NS 4102 core) every onboarded company gets:
-/// enough to invoice, pay, and reconcile from day one.
+/// enough to invoice, pay, reconcile and run payroll from day one
+/// (the payroll accounts are `payroll::ACCOUNT_*`; 5405/2780 are
+/// created by the run itself when first needed).
 const STARTER_ACCOUNTS: &[(&str, &str)] = &[
     ("1500", "Kundefordringer"),
     ("1920", "Bankinnskudd"),
     ("2400", "Leverandørgjeld"),
+    ("2600", "Forskuddstrekk"),
     ("2700", "Utgående merverdiavgift"),
     ("2710", "Inngående merverdiavgift"),
+    ("2770", "Skyldig arbeidsgiveravgift"),
+    ("2930", "Skyldig lønn"),
+    ("2940", "Skyldige feriepenger"),
     ("3000", "Salgsinntekt, avgiftspliktig"),
     ("4300", "Innkjøp av varer for videresalg"),
+    ("5000", "Lønn til ansatte"),
+    ("5090", "Feriepenger"),
+    ("5400", "Arbeidsgiveravgift"),
     ("6300", "Leie lokale"),
     ("6800", "Kontorkostnad"),
     ("7770", "Bank- og kortgebyr"),
@@ -196,4 +205,30 @@ pub async fn create_verified_firm(
     .await?;
     tx.commit().await?;
     Ok(firm_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::STARTER_ACCOUNTS;
+    use crate::payroll::*;
+
+    /// A freshly onboarded company can run payroll: every account a run
+    /// posts to is seeded (5405/2780 excepted — the run creates them).
+    #[test]
+    fn the_starter_chart_carries_every_payroll_account() {
+        for account in [
+            ACCOUNT_SALARY,
+            ACCOUNT_HOLIDAY_PAY_COST,
+            ACCOUNT_EMPLOYER_CONTRIBUTION_COST,
+            ACCOUNT_WITHHOLDING,
+            ACCOUNT_HOLIDAY_PAY_OWED,
+            ACCOUNT_EMPLOYER_CONTRIBUTION_PAYABLE,
+            ACCOUNT_SALARY_PAYABLE,
+        ] {
+            assert!(
+                STARTER_ACCOUNTS.iter().any(|(n, _)| *n == account),
+                "{account} missing from STARTER_ACCOUNTS"
+            );
+        }
+    }
 }

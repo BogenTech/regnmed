@@ -431,9 +431,15 @@ Prøvd: API-testen spiller Altinn mot en etterligning (validering,
 hendelser for fremmede dialoger og ressurser ignoreres, tilbakemeldingen
 lagres uten knappetrykk, samme hendelse to ganger henter ikke på nytt,
 en erstatning abonnerer ikke på nytt), og live mot TT02 er abonnementet
-opprettet, lest tilbake og slettet gjennom vår egen klient. Selve
-leveransen til webhooken kan først prøves når den kjører på en offentlig
-adresse (testklyngen) — før det står abonnementet som `validated: false`.
+opprettet, lest tilbake og slettet gjennom vår egen klient.
+
+**Prøvd ende til ende i testklyngen 2026-11-11**, uten knappetrykk: fra
+test.regnmed.no ble oktober-meldingen til Tenor-selskapet 311032240
+sendt; leveransen abonnerte selskapet selv (abonnement 126913 mot
+`https://api.test.regnmed.no/webhooks/altinn`), og 15 sekunder senere
+lå tilbakemeldingen lagret med `created_by = altinn-events` —
+`mottatt`, 0 avvik — før noen trykket «Hent tilbakemelding». Altinn
+validerte et abonnement mot den samme webhooken på under 5 sekunder.
 
 ## Hva som IKKE er bygget
 

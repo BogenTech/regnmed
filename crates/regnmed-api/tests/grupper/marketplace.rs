@@ -186,7 +186,7 @@ async fn onboarding_from_registries_end_to_end() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {onboarded}");
     assert_eq!(onboarded["navn"], "TESTSELSKAP AS");
-    assert_eq!(onboarded["seeded_accounts"], 10);
+    assert_eq!(onboarded["seeded_accounts"], 17);
     let company_id = onboarded["company_id"].as_str().unwrap();
 
     // Master data is taken from the register rather than asked for: the

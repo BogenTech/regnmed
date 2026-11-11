@@ -785,6 +785,35 @@ pub async fn run_payroll(
         .await?;
     }
 
+    // The ledger would refuse the first missing account on its own, in
+    // English and one at a time; the user needs every missing one, in
+    // Norwegian, with where to fix it.
+    let mut wanted: Vec<&str> = draft
+        .entries
+        .iter()
+        .map(|e| e.account_number.as_str())
+        .collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    let active: Vec<String> = sqlx::query_scalar(
+        "select number from account where company_id = $1 and active and number = any($2)",
+    )
+    .bind(company_id)
+    .bind(&wanted)
+    .fetch_all(pool)
+    .await?;
+    let missing: Vec<&str> = wanted
+        .into_iter()
+        .filter(|n| !active.iter().any(|a| a == n))
+        .collect();
+    ensure!(
+        missing.is_empty(),
+        "Lønnskjøringen bokfører på konto {}, som selskapet ikke har som aktiv konto. \
+         Legg {} til under Hovedbok → Kontoplan og kjør lønnen på nytt.",
+        missing.join(", "),
+        if missing.len() == 1 { "den" } else { "dem" }
+    );
+
     let mut tx = pool.begin().await?;
     let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
 
