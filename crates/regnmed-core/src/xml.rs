@@ -68,3 +68,24 @@ impl Xml {
         self.out.push_str(">\n");
     }
 }
+
+/// Integer øre → "1234.56", sign included. XML decimals always use a dot,
+/// whatever the locale of the reader.
+pub(crate) fn decimal(ore: i64) -> String {
+    let sign = if ore < 0 { "-" } else { "" };
+    format!(
+        "{sign}{}.{:02}",
+        ore.unsigned_abs() / 100,
+        ore.unsigned_abs() % 100
+    )
+}
+
+/// Basis points as the Norwegian kodelister write a sats: "25", "14.1",
+/// "11.11" (the mva-melding and the a-melding's aga table both use it).
+pub(crate) fn rate(bp: i64) -> String {
+    match (bp / 100, bp % 100) {
+        (whole, 0) => format!("{whole}"),
+        (whole, frac) if frac % 10 == 0 => format!("{whole}.{}", frac / 10),
+        (whole, frac) => format!("{whole}.{frac:02}"),
+    }
+}

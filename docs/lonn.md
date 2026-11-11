@@ -199,8 +199,9 @@ en melding som aldri sendes.
 | A-meldingen | Kilde i regnmed |
 | --- | --- |
 | `opplysningspliktig/norskIdentifikator` | selskapets orgnr |
-| `kalendermaaned` | `payroll_run.ar` / `maned` |
-| `meldingsId` | `payroll_run.id` |
+| `kalendermaaned` | måneden til `payroll_run.utbetalt_dato` — IKKE lønnsmåneden: a-meldingen rapporterer det som ble utbetalt, i måneden det ble utbetalt. En marskjøring utbetalt 2. april hører i aprilmeldingen |
+| `meldingsId` | `payroll_run.id` (sjekket mot XSD-ens tegnsett) |
+| `leveringstidspunkt` | tidspunktet meldingen lages, i UTC med `Z` — uten sone leses det som norsk tid |
 | `inntektsmottaker/norskIdentifikator` | `employee.fodselsnummer` — leses ÉTT sted, som i RF-1086 |
 | `arbeidsforhold/arbeidsforholdId` | `employee.id` (stabil på tvers av måneder, F108) |
 | `arbeidsforhold/typeArbeidsforhold` | alltid `ordinaertArbeidsforhold` |
@@ -208,7 +209,7 @@ en melding som aldri sendes.
 | `inntekt` `fastloenn` / `timeloenn` / `feriepenger` | `payroll_line.brutto_ore`, `feriepenger_ore` — kombinasjon 111: `kontantytelse`, utløser aga, inngår i trekkgrunnlaget |
 | `forskuddstrekk` (`ordinaert`, negativt, F278-2) | `payroll_line.forskuddstrekk_ore` |
 | `sumForskuddstrekkPerLoennsutbetalingsdato` (fra 2026-01, F523) | `payroll_run.utbetalt_dato` + sum trekk |
-| `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale) |
+| `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale). Må være NØYAKTIG grunnlaget × satsen (F185); ellers nektes meldingen med begge tallene |
 | `loennOgGodtgjoerelse`: beregningskode, sone, grunnlag, sats | `generelleNaeringer`; `payroll_run.sone` (I→`1`, Ia→`1a`, …); summen av inntektene (F184); satsen fra satsregisteret på utbetalingsdatoen |
 
 `generelleNaeringer` er ikke en ny antakelse: lønnskjøringen bruker
@@ -238,6 +239,17 @@ Hvert punkt gir en feilmelding med feltets navn, aldri en standardverdi.
    `payroll::calculate`/`employer_contribution` med kilde, og må
    verifiseres før den skrives. Inntil da nektes nesten enhver ekte
    kjøring på dette punktet alene.
+
+Renderen nekter også, med eget navn:
+
+- **Avgift som ikke er grunnlag × sats** (F185). Lønnskjøringen runder
+  aga per ansatt; Skatteetaten regner på summen. Spriker de, sier
+  feilmeldingen begge tallene i stedet for at meldingen sendes med en
+  avgift den selv motsier.
+- **Negative beløp** — trekk og inntekt har faste fortegn (F277,
+  F278-2). En korreksjon er et reverserende bilag og en ny kjøring i
+  hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
+  er ikke modellert.
 
 Og to hull som ikke er felt, men oppslag:
 
@@ -448,7 +460,12 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   avgiftsgrunnlaget er summen av inntektene; at hvert av de seks
   manglende arbeidsforholdsfeltene og virksomheten nektes med navn; at
   øre der skjemaet vil ha kroner nektes framfor å rundes; og at koder
-  utenfor kodelisten, ugyldig fødselsnummer og orgnr nektes.
+  utenfor kodelisten, ugyldig fødselsnummer og orgnr nektes. Etter
+  review: at kalendermåneden følger utbetalingsdatoen (også over
+  årsskiftet, der trekkformatet skifter), at avgift som ikke er grunnlag
+  × sats nektes, at negative beløp nektes, at meldingsId, kildesystem og
+  år utenfor XSD-ens grenser nektes, at leveringstidspunktet har `Z`, og
+  en melding med to mottakere der den ene har frikort.
 - `regnmed-core::payslip` — velformet og deterministisk PDF, at
   slippen forklarer trekkgrunnlaget, feriepengenes trekkfrihet og
   desembers halve trekk, at frikort sier frikort, og at

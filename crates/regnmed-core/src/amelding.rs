@@ -24,10 +24,10 @@
 //! calculation that booked the amount, not in a renderer that would make
 //! the melding disagree with the ledger.
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 
 use crate::payroll::Zone;
-use crate::xml::Xml;
+use crate::xml::{Xml, decimal, rate};
 
 pub const NAMESPACE: &str = "urn:ske:fastsetting:innsamling:a-meldingen:v2_3";
 
@@ -68,6 +68,25 @@ pub enum AmeldingError {
         field: &'static str,
         ore: i64,
     },
+    /// A value the XSD or an avvisning rule constrains (identifier
+    /// pattern, kildesystem length, kalendermåned range).
+    InvalidValue {
+        field: &'static str,
+        value: String,
+    },
+    /// Forskuddstrekk and income are reported with fixed signs (F277,
+    /// F278-2); a negative booked amount is a correction this renderer
+    /// does not model.
+    Negative {
+        who: String,
+        field: &'static str,
+        ore: i64,
+    },
+    /// The booked arbeidsgiveravgift is not basis × sats (F185).
+    ContributionMismatch {
+        booked_ore: i64,
+        computed_ore: i64,
+    },
     NoRecipients,
 }
 
@@ -90,6 +109,26 @@ impl std::fmt::Display for AmeldingError {
                 "«{field}» skal leveres i hele kroner, men det bokførte beløpet er {ore} øre \
                  — regnmed runder ikke av i a-meldingen, da ville den sprike fra hovedboken \
                  (se docs/lonn.md)"
+            ),
+            Self::InvalidValue { field, value } => {
+                write!(
+                    f,
+                    "«{value}» er ikke en gyldig verdi for «{field}» i a-meldingen"
+                )
+            }
+            Self::Negative { who, field, ore } => write!(
+                f,
+                "{field} for {who} er negativt ({ore} øre) — a-meldingen tar ikke \
+                 korreksjoner som negative beløp, og regnmed modellerer dem ikke ennå"
+            ),
+            Self::ContributionMismatch {
+                booked_ore,
+                computed_ore,
+            } => write!(
+                f,
+                "bokført arbeidsgiveravgift er {booked_ore} øre, men avgiftsgrunnlaget × \
+                 satsen er {computed_ore} øre — Skatteetaten krever at de er like (F185), \
+                 og regnmed sender ikke en melding som spriker fra hovedboken"
             ),
             Self::NoRecipients => write!(f, "lønnskjøringen har ingen inntektsmottakere"),
         }
@@ -160,15 +199,16 @@ pub struct Melding {
     /// Unique per delivery; the payroll run id.
     pub message_id: String,
     pub replaces_message_id: Option<String>,
-    pub delivered_at: NaiveDateTime,
-    pub year: i32,
-    pub month: u32,
+    pub delivered_at: DateTime<Utc>,
     pub source_system: String,
     /// The opplysningspliktig: the legal entity.
     pub orgnumber: String,
     /// The virksomhet: the underenhet in Enhetsregisteret the employees
     /// work at (F290). Not the legal entity's own number.
     pub business_orgnumber: Option<String>,
+    /// The lønnsutbetalingsdato. The melding's kalendermåned is the
+    /// month of THIS date, not the payroll month: the a-melding reports
+    /// what was paid when it was paid.
     pub payment_date: NaiveDate,
     pub zone: Zone,
     pub employer_contribution_rate_bp: i64,
@@ -190,10 +230,21 @@ fn zone_code(zone: Zone) -> &'static str {
     }
 }
 
-/// Øre as xsd:decimal, always two decimals so output is byte-stable.
-fn amount(ore: i64) -> String {
-    let sign = if ore < 0 { "-" } else { "" };
-    format!("{sign}{}.{:02}", ore.abs() / 100, ore.abs() % 100)
+/// The XSD's RestriksjonIdentifikator: `[0-9a-zA-Z_.-]*`, at most 150,
+/// and F181E's minimum of one character.
+fn identifier(field: &'static str, value: &str) -> Result<(), AmeldingError> {
+    let ok = (1..=150).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
+    if ok {
+        Ok(())
+    } else {
+        Err(AmeldingError::InvalidValue {
+            field,
+            value: value.to_string(),
+        })
+    }
 }
 
 fn whole_kroner(field: &'static str, ore: i64) -> Result<String, AmeldingError> {
@@ -242,6 +293,25 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
     if m.recipients.is_empty() {
         return Err(AmeldingError::NoRecipients);
     }
+    identifier("meldingsId", &m.message_id)?;
+    if let Some(id) = &m.replaces_message_id {
+        identifier("erstatterMeldingsId", id)?;
+    }
+    // F181F: at least one character; RestriksjonTekstfelt: at most 255.
+    if !(1..=255).contains(&m.source_system.chars().count()) {
+        return Err(AmeldingError::InvalidValue {
+            field: "kildesystem",
+            value: m.source_system.clone(),
+        });
+    }
+    let (year, month) = (m.payment_date.year(), m.payment_date.month());
+    // The XSD's own bounds on kalendermaaned.
+    if !(2014..=2099).contains(&year) {
+        return Err(AmeldingError::InvalidValue {
+            field: "kalendermaaned",
+            value: m.payment_date.to_string(),
+        });
+    }
 
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
@@ -250,9 +320,11 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
     x.open("Leveranse");
     x.leaf(
         "leveringstidspunkt",
-        &m.delivered_at.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        // With an explicit UTC designator: a zone-less xsd:dateTime would be
+        // read as Norwegian local time.
+        &m.delivered_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
     );
-    x.leaf("kalendermaaned", &format!("{:04}-{:02}", m.year, m.month));
+    x.leaf("kalendermaaned", &format!("{year:04}-{month:02}"));
     x.leaf("kildesystem", &m.source_system);
     if let Some(id) = &m.replaces_message_id {
         x.leaf("erstatterMeldingsId", id);
@@ -262,19 +334,33 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
     x.leaf("norskIdentifikator", &m.orgnumber);
     x.close("opplysningspliktig");
 
+    let basis_ore: i64 = m
+        .recipients
+        .iter()
+        .flat_map(|r| &r.income)
+        .map(|i| i.amount_ore)
+        .sum();
+    let computed_ore = crate::payroll::bp_of(basis_ore, m.employer_contribution_rate_bp);
+    if computed_ore != m.employer_contribution_ore {
+        return Err(AmeldingError::ContributionMismatch {
+            booked_ore: m.employer_contribution_ore,
+            computed_ore,
+        });
+    }
+
     x.open("oppgave");
     let withholding: i64 = m.recipients.iter().map(|r| r.withholding_ore).sum();
     let withholding_kr = whole_kroner("forskuddstrekk", withholding)?;
     x.open("betalingsinformasjon");
     // F523/F522: from 2026-01 the sum is reported per payment date.
-    if m.year < 2026 {
+    if year < 2026 {
         x.leaf("sumForskuddstrekk", &withholding_kr);
     }
     x.leaf(
         "sumArbeidsgiveravgift",
         &whole_kroner("arbeidsgiveravgift", m.employer_contribution_ore)?,
     );
-    if m.year >= 2026 {
+    if year >= 2026 {
         x.open("sumForskuddstrekkPerLoennsutbetalingsdato");
         x.leaf("loennsutbetalingsdato", &m.payment_date.to_string());
         x.leaf("beloep", &withholding_kr);
@@ -284,20 +370,18 @@ pub fn render(m: &Melding) -> Result<String, AmeldingError> {
 
     x.open("virksomhet");
     x.leaf("norskIdentifikator", business);
-    let mut basis_ore = 0;
     for r in &m.recipients {
         recipient(&mut x, r)?;
-        basis_ore += r.income.iter().map(|i| i.amount_ore).sum::<i64>();
     }
     // F184: every inntekt here triggers avgift, so the basis is their sum.
     x.open("arbeidsgiveravgift");
     x.open("loennOgGodtgjoerelse");
     x.leaf("beregningskodeForArbeidsgiveravgift", "generelleNaeringer");
     x.leaf("sone", zone_code(m.zone));
-    x.leaf("avgiftsgrunnlagBeloep", &amount(basis_ore));
+    x.leaf("avgiftsgrunnlagBeloep", &decimal(basis_ore));
     x.leaf(
         "prosentsatsForAvgiftsberegning",
-        &crate::vat_return::rate(m.employer_contribution_rate_bp),
+        &rate(m.employer_contribution_rate_bp),
     );
     x.close("loennOgGodtgjoerelse");
     x.close("arbeidsgiveravgift");
@@ -315,6 +399,17 @@ fn recipient(x: &mut Xml, r: &Recipient) -> Result<(), AmeldingError> {
     }
     let e = &r.employment;
     let who = r.name.as_str();
+    let negative = |field, ore: i64| AmeldingError::Negative {
+        who: who.to_string(),
+        field,
+        ore,
+    };
+    if r.withholding_ore < 0 {
+        return Err(negative("forskuddstrekket", r.withholding_ore));
+    }
+    if let Some(i) = r.income.iter().find(|i| i.amount_ore < 0) {
+        return Err(negative("inntekten", i.amount_ore));
+    }
     let hours = required(
         &e.full_time_hours_per_week_hundredths,
         who,
@@ -345,11 +440,11 @@ fn recipient(x: &mut Xml, r: &Recipient) -> Result<(), AmeldingError> {
     }
     x.leaf(
         "antallTimerPerUkeSomEnFullStillingTilsvarer",
-        &amount(*hours),
+        &decimal(*hours),
     );
     x.leaf("yrke", occupation);
     x.leaf("arbeidstidsordning", scheme);
-    x.leaf("stillingsprosent", &amount(*percent));
+    x.leaf("stillingsprosent", &decimal(*percent));
     x.leaf("sisteLoennsendringsdato", &last_change.to_string());
     x.leaf("formForAnsettelse", form);
     x.close("arbeidsforhold");
@@ -369,7 +464,7 @@ fn recipient(x: &mut Xml, r: &Recipient) -> Result<(), AmeldingError> {
         x.leaf("fordel", "kontantytelse");
         x.leaf("utloeserArbeidsgiveravgift", "true");
         x.leaf("inngaarIGrunnlagForTrekk", "true");
-        x.leaf("beloep", &amount(i.amount_ore));
+        x.leaf("beloep", &decimal(i.amount_ore));
         x.open("loennsinntekt");
         x.leaf("beskrivelse", i.kind.code());
         x.close("loennsinntekt");
@@ -405,9 +500,7 @@ mod tests {
         Melding {
             message_id: "9b8f6c1e-0d2a-4f3b-8e7c-6a5b4c3d2e1f".into(),
             replaces_message_id: None,
-            delivered_at: d(2026, 4, 2).and_hms_opt(10, 15, 0).unwrap(),
-            year: 2026,
-            month: 3,
+            delivered_at: d(2026, 4, 2).and_hms_opt(8, 15, 0).unwrap().and_utc(),
             source_system: "regnmed".into(),
             orgnumber: "935115086".into(),
             business_orgnumber: Some("974760673".into()),
@@ -472,7 +565,7 @@ mod tests {
     #[test]
     fn before_2026_the_withholding_is_one_sum_and_still_validates() {
         let mut m = melding();
-        m.year = 2025;
+        m.payment_date = d(2025, 3, 25);
         m.recipients[0].employment.end_date = Some(d(2025, 3, 31));
         m.replaces_message_id = Some("earlier-id".into());
         let xml = render(&m).unwrap();
@@ -545,8 +638,10 @@ mod tests {
                 ore: 1_500_050
             })
         );
+        // Basis 53 000,50 kr × 14,1 % = 7 473,07 kr: consistent, but øre.
         let mut m = melding();
-        m.employer_contribution_ore = 747_301;
+        m.recipients[0].income[0].amount_ore = 5_000_050;
+        m.employer_contribution_ore = 747_307;
         assert!(matches!(
             render(&m),
             Err(AmeldingError::NotWholeKroner {
@@ -573,6 +668,96 @@ mod tests {
             render(&m),
             Err(AmeldingError::InvalidOrgnumber(_))
         ));
+    }
+
+    #[test]
+    fn the_calendar_month_is_the_month_the_pay_was_paid() {
+        // A March run paid on 2 April belongs in April's melding.
+        let mut m = melding();
+        m.payment_date = d(2026, 4, 2);
+        let xml = render(&m).unwrap();
+        assert!(xml.contains("<kalendermaaned>2026-04</kalendermaaned>"));
+        // Paid on 31 December 2025: the old single sum, not the per-date one.
+        m.payment_date = d(2025, 12, 31);
+        let xml = render(&m).unwrap();
+        assert!(xml.contains("<kalendermaaned>2025-12</kalendermaaned>"));
+        assert!(xml.contains("<sumForskuddstrekk>"));
+        validate(&xml, "paid-in-december");
+    }
+
+    #[test]
+    fn the_delivery_time_carries_its_zone() {
+        let xml = render(&melding()).unwrap();
+        assert!(xml.contains("<leveringstidspunkt>2026-04-02T08:15:00Z</leveringstidspunkt>"));
+    }
+
+    #[test]
+    fn a_booked_contribution_that_is_not_basis_times_rate_is_refused() {
+        let mut m = melding();
+        m.employer_contribution_ore = 747_400;
+        assert_eq!(
+            render(&m),
+            Err(AmeldingError::ContributionMismatch {
+                booked_ore: 747_400,
+                computed_ore: 747_300
+            })
+        );
+    }
+
+    #[test]
+    fn negative_withholding_and_income_are_refused() {
+        let mut m = melding();
+        m.recipients[0].withholding_ore = -1_500_000;
+        assert!(matches!(render(&m), Err(AmeldingError::Negative { .. })));
+        let mut m = melding();
+        m.recipients[0].income[1].amount_ore = -300_000;
+        m.employer_contribution_ore = 662_700;
+        assert!(matches!(render(&m), Err(AmeldingError::Negative { .. })));
+    }
+
+    #[test]
+    fn identifiers_and_kildesystem_outside_the_schema_are_refused() {
+        let invalid = |m: Melding| matches!(render(&m), Err(AmeldingError::InvalidValue { .. }));
+        let mut m = melding();
+        m.message_id = "run 42".into();
+        assert!(invalid(m));
+        let mut m = melding();
+        m.message_id = String::new();
+        assert!(invalid(m));
+        let mut m = melding();
+        m.replaces_message_id = Some("førre".into());
+        assert!(invalid(m));
+        let mut m = melding();
+        m.source_system = String::new();
+        assert!(invalid(m));
+        let mut m = melding();
+        m.payment_date = d(2013, 12, 20);
+        assert!(invalid(m));
+    }
+
+    #[test]
+    fn a_frikort_recipient_next_to_an_ordinary_one_validates() {
+        let mut m = melding();
+        let mut second = m.recipients[0].clone();
+        second.name = "Ola Nordmann".into();
+        second.nin = "08888797336".into();
+        second.employment.id = "employee-2".into();
+        second.income = vec![Income {
+            kind: IncomeKind::HourlyWage,
+            amount_ore: 1_000_000,
+        }];
+        second.withholding_ore = 0;
+        m.recipients.push(second);
+        // 63 000 kr × 14,1 % = 8 883 kr.
+        m.employer_contribution_ore = 888_300;
+        let xml = render(&m).unwrap();
+        assert_eq!(xml.matches("<inntektsmottaker>").count(), 2);
+        // Only the recipient with trekk carries a forskuddstrekk element.
+        assert_eq!(xml.matches("<forskuddstrekk>").count(), 1);
+        assert!(xml.contains("<avgiftsgrunnlagBeloep>63000.00</avgiftsgrunnlagBeloep>"));
+        assert!(xml.contains("<sumArbeidsgiveravgift>8883</sumArbeidsgiveravgift>"));
+        assert!(xml.contains("<beskrivelse>timeloenn</beskrivelse>"));
+        validate(&xml, "two-recipients");
     }
 
     #[test]
