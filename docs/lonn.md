@@ -37,6 +37,16 @@ Netto går til **2930**, ikke til bank: selve utbetalingen er
 betalingslistens jobb (docs/betaling.md), så lønnskjøring og utbetaling
 er to atskilte, sporbare handlinger.
 
+**Kontoene finnes fra første dag.** Startkontoplanen et selskap får ved
+onboarding (`regnmed-db::marketplace`, `STARTER_ACCOUNTS`) har de sju
+kontoene over med navnene i tabellen — 5090, 2930 og 2940 står ikke i
+Skatteetatens standardkatalog, så brukeren skulle ellers måttet finne på
+navn selv. 5405/2780 opprettes av kjøringen første gang de trengs.
+**Selskaper onboardet før 2026-11-11 er ikke migrert**: mangler en
+konto, nekter kjøringen FØR noe bokføres og navngir hver konto som
+mangler («Legg dem til under Hovedbok → Kontoplan»), i stedet for
+hovedbokens engelske feilmelding for den første den snubler i.
+
 **Utbetalte feriepenger er ikke en ny kostnad.** De trekker ned gjelden
 som ble avsatt i opptjeningsåret. Bommer man på dette, kostnadsføres
 feriepenger to ganger og resultatet blir systematisk for lavt — derfor
@@ -592,6 +602,9 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir
   null avsetning framfor negativ avgift.
+- At startkontoplanen bærer hver `payroll::ACCOUNT_*` (enhetstest i
+  `regnmed-db::marketplace`), og mot ekte Postgres at en kjøring med to
+  deaktiverte kontoer nekter med begge numrene og ingen kjøring lagret.
 - Mot ekte Postgres: at avsetningen bokføres på 5405/2780 og bilaget
   fortsatt balanserer, at den føres tilbake i sin helhet ved
   ferieutbetaling og etterlater begge kontoene på null, at gjeld
