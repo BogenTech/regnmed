@@ -45,8 +45,8 @@ Connecting further users to a created company (lønnsmottakere,
    refused — the last two are not bankruptcy, so the konkurs check
    alone missed them.
 3. The company is created with the **registry name**, the onboarding
-   person becomes admin, and a starter NS 4102 kontoplan (10 accounts)
-   is seeded with 1500/2400 flagged as kunde-/leverandør-reskontro —
+   person becomes admin, and a starter NS 4102 kontoplan (17 accounts,
+   payroll included — docs/lonn.md) is seeded with 1500/2400 flagged as kunde-/leverandør-reskontro —
    invoice-ready from the first minute. An orgnr can only be onboarded
    once.
 
