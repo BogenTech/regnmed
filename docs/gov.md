@@ -498,6 +498,45 @@ dekker alle tre API-ene alene, så det er nok å begynne med.
 rapportering. Skulle det endres, blir det et eget system i
 revisorområdet — aldri blandet inn i regnskapsførersystemet.
 
+### Registrert 2026-11-11: ÉTT system, ikke to
+
+To funn under selve registreringen i TT02 endret planen over, og
+begge er Altinns egne regler, ikke vår slutning:
+
+1. **Én Maskinporten-klient kan bare knyttes til ett system**
+   (`AUTH.VLD-00004`). Systembrukertokenet finner systemet gjennom
+   klient-id-en, så to systemer ville krevd to klienter med hver sin
+   nøkkel og hver sin `TokenProvider`.
+2. **Forespørselen velger pakkene, ikke systemet.** En
+   klient-systembrukerforespørsel (`…/systemuser/request/vendor/agent`)
+   har sin egen `accesspackages`-liste. OG-regelen (regel 1) gjelder
+   altså pakkene på SYSTEMBRUKEREN — og den får én pakke, den
+   forespørselen ber om. Anbefalingen «én pakke per system» over løser
+   derfor et problem som ikke oppstår når forespørselen alltid ber om
+   én.
+
+Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
+med begge kundeformene: `rights` med de tre Skatteetaten-ressursene
+(egen virksomhet) og `accessPackages` med de tre REGN-pakkene
+(regnskapsfører). Hver forespørsel ber om sin del: en standard
+systembruker om rettighetene, en klient-systembruker om ÉN pakke.
+Registreringen godtok ressursene (`AUTH.VLD-00003` ville sagt fra om
+noen ikke fantes).
+
+**`isVisible` må være `false`** når systemet har klientpakker
+(`AUTH.VLD-00018`). Systemet listes da ikke i Altinn for en kunde å
+velge selv — hver systembruker starter som en forespørsel regnmed
+sender, og kunden godkjenner den via `confirmUrl`. Det var planen
+uansett: tilgangen skal begynne i regnmed, der kunden alt er.
+
+Registreringen er kode, ikke klikk: `scripts/altinn-system.py`
+(`show`/`register`/`update`) holder hele definisjonen, så produksjon
+registreres med samme innhold når testen er verifisert. Etter
+registreringen svarer `scripts/maskinporten-scope-test.py <scope>
+--systemuser 935115086` fortsatt **MP-303** — riktig, ingen kunde har
+godkjent en systembruker ennå. Neste steg er en forespørsel for et
+syntetisk testselskap (Tenor), godkjent med TestID.
+
 ## Status & verification
 
 - Implemented and locked by tests (no credentials needed): grant-JWT
