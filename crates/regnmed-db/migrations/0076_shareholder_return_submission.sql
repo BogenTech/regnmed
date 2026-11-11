@@ -41,7 +41,9 @@ create table shareholder_return_submission_event (
     submission_id    uuid not null references shareholder_return_submission (id),
     -- receipt: Skatteetaten confirmed the oppgave (the Leveransebekreftelse).
     -- failed:  no receipt; the SAME submission is retried with the same keys.
-    kind             text not null check (kind in ('receipt', 'failed')),
+    -- outcome: Skatteetaten's answer from Dialogporten (Acceptance,
+    --          Rejection, ...), verbatim in detail.
+    kind             text not null check (kind in ('receipt', 'failed', 'outcome')),
     dialog_id        text,
     forsendelse_id   text,
     -- oppgavegiversLeveranseReferanse.
@@ -50,13 +52,15 @@ create table shareholder_return_submission_event (
     created_by       text not null check (created_by <> ''),
     created_at       timestamptz not null default now(),
     check (kind <> 'receipt' or (dialog_id is not null and forsendelse_id is not null)),
-    check (kind <> 'failed' or detail is not null)
+    check (kind = 'receipt' or detail is not null)
 );
 
 -- One receipt per submission: a second would be a second delivery the
 -- record cannot explain.
 create unique index shareholder_return_submission_one_receipt
     on shareholder_return_submission_event (submission_id) where kind = 'receipt';
+create unique index shareholder_return_submission_one_outcome
+    on shareholder_return_submission_event (submission_id) where kind = 'outcome';
 
 create trigger shareholder_return_submission_append_only
     before update or delete on shareholder_return_submission

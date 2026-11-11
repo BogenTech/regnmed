@@ -38,12 +38,15 @@ pub struct Submission {
 pub enum SubmissionStatus {
     /// Stored, no receipt. `last_error` is the latest failed attempt.
     NotDelivered { last_error: Option<String> },
-    /// Skatteetaten's Leveransebekreftelse.
+    /// Skatteetaten's Leveransebekreftelse. `outcome` is its answer on
+    /// the content once fetched (`regnmed_gov::shareholder_return::Outcome`
+    /// as JSON): `kind` is `Acceptance` when approved.
     Delivered {
         dialog_id: String,
         forsendelse_id: String,
         reference: Option<String>,
         at: DateTime<Utc>,
+        outcome: Option<serde_json::Value>,
     },
 }
 
@@ -51,7 +54,14 @@ impl SubmissionStatus {
     pub fn slug(&self) -> &'static str {
         match self {
             Self::NotDelivered { .. } => "ikke_levert",
-            Self::Delivered { .. } => "levert",
+            Self::Delivered { outcome: None, .. } => "levert",
+            Self::Delivered {
+                outcome: Some(o), ..
+            } => match o["kind"].as_str() {
+                Some("Acceptance") => "godkjent",
+                Some("Rejection") => "avvist",
+                _ => "behandlet",
+            },
         }
     }
 }
@@ -244,6 +254,30 @@ pub async fn record_failure(
     Ok(())
 }
 
+/// Skatteetaten's answer to a delivered filing. Once per submission
+/// (unique index); a second arrival is the same answer fetched twice and
+/// is ignored.
+pub async fn record_outcome(
+    pool: &PgPool,
+    submission_id: Uuid,
+    outcome: serde_json::Value,
+    created_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into shareholder_return_submission_event
+             (id, submission_id, kind, detail, created_by)
+         values ($1,$2,'outcome',$3,$4)
+         on conflict (submission_id) where kind = 'outcome' do nothing",
+    )
+    .bind(Uuid::new_v4())
+    .bind(submission_id)
+    .bind(outcome)
+    .bind(created_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// The year's filings, newest first, each with its computed status.
 pub async fn list_submissions(
     pool: &PgPool,
@@ -301,6 +335,10 @@ async fn status(pool: &PgPool, submission_id: Uuid) -> Result<SubmissionStatus> 
             forsendelse_id: r.get("forsendelse_id"),
             reference: r.get("reference"),
             at: r.get("created_at"),
+            outcome: events
+                .iter()
+                .find(|e| kind(e, "outcome"))
+                .and_then(|e| e.get("detail")),
         },
         None => SubmissionStatus::NotDelivered {
             last_error: events

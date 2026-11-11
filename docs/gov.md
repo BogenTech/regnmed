@@ -277,8 +277,11 @@ and paper are gone (docs/aksjonaer.md).
   — POST hovedskjema → POST underskjema (×N) → POST bekreft, each call
   with its own stored `idempotencyKey`, all under the company's
   systembruker token. First live filing accepted by the test environment
-  2026-11-11 (Tenor company 311032240). The record and retry rules are in
-  docs/aksjonaer.md, «Innsending». The API turns the rail on whenever
+  2026-11-11 (Tenor company 311032240) and **approved** — the answer is
+  an `Acceptance` transmission in the receipt's Dialogporten dialog, so
+  the rail's token also carries `digdir:dialogporten`. The record, the
+  retry rules and the verified transaction codes are in
+  docs/aksjonaer.md. The API turns the rail on whenever
   MASKINPORTEN_* is set, against the TEST base URL unless
   `AKSJONAERREGISTER_URL` points elsewhere.
 

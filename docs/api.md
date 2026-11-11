@@ -209,6 +209,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/quotes/{quote_id}/status` | POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave` | GET |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions` | GET POST |
+| `/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome` | POST |
 | `/companies/{company_id}/reports/avvik` | GET |
 | `/companies/{company_id}/reports/balanse` | GET |
 | `/companies/{company_id}/reports/bokforingsspesifikasjon` | GET |

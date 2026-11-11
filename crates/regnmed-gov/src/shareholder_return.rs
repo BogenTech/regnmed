@@ -13,6 +13,13 @@
 //!    — closes the filing. Answers the `Leveransebekreftelse`
 //!    (`dialogId`, `forsendelseId`), the only proof of delivery.
 //!
+//! **The outcome** is not in this API: Skatteetaten answers in the
+//! receipt's Dialogporten dialog with a transmission related to our
+//! `forsendelseId` — `Acceptance` («Innsending av godkjent
+//! Aksjonærregisteroppgave …», about a minute after filing in test) or,
+//! by Dialogporten's vocabulary, `Rejection` — carrying a tilbakemelding
+//! PDF and XML. Established against the test environment 2026-11-11.
+//!
 //! Every call carries the **systembruker token for the company** (the
 //! oppgavegiver). A key reused with the same body gets the first answer
 //! back, so a retry of a filing that never got its receipt resends every
@@ -24,12 +31,26 @@ use uuid::Uuid;
 
 use crate::maskinporten::TokenProvider;
 
-pub const SCOPES: &str = "skatteetaten:innrapporteringaksjonaerregisteroppgave";
+pub const SCOPES: &str = "skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten";
 
 pub struct ShareholderReturnClient {
     /// `https://api-test.sits.no/api/aksjonaerregister/v1` in test.
     pub base_url: String,
+    /// `https://platform.tt02.altinn.no/dialogporten/api/v1` in test.
+    pub dialogporten_url: String,
     http: reqwest::Client,
+}
+
+/// Skatteetaten's answer to one filing, from Dialogporten.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct Outcome {
+    /// Dialogporten's transmission type: `Acceptance`, `Rejection`, ...
+    pub kind: String,
+    pub transmission_id: String,
+    /// The Norwegian title, e.g. «Innsending av godkjent ...».
+    pub title: Option<String>,
+    /// (file name, URL) of each tilbakemelding document, for a person.
+    pub documents: Vec<(String, String)>,
 }
 
 /// Skatteetatens `Leveransebekreftelse`. Proof of delivery, not of an
@@ -58,20 +79,59 @@ struct MainFormId {
 }
 
 impl ShareholderReturnClient {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>, dialogporten_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
+            dialogporten_url: dialogporten_url.into().trim_end_matches('/').to_string(),
             http: reqwest::Client::new(),
         }
     }
 
-    /// Reads AKSJONAERREGISTER_URL, defaulting to the TEST environment —
-    /// production is opted into, never fallen into.
+    /// Reads AKSJONAERREGISTER_URL and DIALOGPORTEN_URL, defaulting to the
+    /// TEST environment — production is opted into, never fallen into.
     pub fn from_env() -> Self {
+        let var =
+            |name: &str, default: &str| std::env::var(name).unwrap_or_else(|_| default.into());
         Self::new(
-            std::env::var("AKSJONAERREGISTER_URL")
-                .unwrap_or_else(|_| "https://api-test.sits.no/api/aksjonaerregister/v1".into()),
+            var(
+                "AKSJONAERREGISTER_URL",
+                "https://api-test.sits.no/api/aksjonaerregister/v1",
+            ),
+            var(
+                "DIALOGPORTEN_URL",
+                "https://platform.tt02.altinn.no/dialogporten/api/v1",
+            ),
         )
+    }
+
+    /// Skatteetaten's answer to the filing with this receipt, or `None`
+    /// while it has not been produced.
+    pub async fn outcome(
+        &self,
+        tokens: &TokenProvider,
+        orgnumber: &str,
+        dialog_id: &str,
+        forsendelse_id: &str,
+    ) -> Result<Option<Outcome>> {
+        let token = tokens.token_for_systemuser(orgnumber).await?;
+        let response = self
+            .http
+            .get(format!(
+                "{}/enduser/dialogs/{dialog_id}",
+                self.dialogporten_url
+            ))
+            .bearer_auth(token)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .context("reading the dialog in Dialogporten")?;
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            bail!("Dialogporten returned {status}: {body}");
+        }
+        let dialog: serde_json::Value = serde_json::from_str(&body)?;
+        Ok(outcome_in(&dialog, forsendelse_id))
     }
 
     /// Files one oppgave: hovedskjema, every underskjema, bekreft.
@@ -140,6 +200,38 @@ impl ShareholderReturnClient {
         }
         Ok(body)
     }
+}
+
+/// The transmission answering `forsendelse_id`: related to it, and not
+/// our own submission.
+fn outcome_in(dialog: &serde_json::Value, forsendelse_id: &str) -> Option<Outcome> {
+    let t = dialog["transmissions"]
+        .as_array()?
+        .iter()
+        .find(|t| t["relatedTransmissionId"] == forsendelse_id && t["type"] != "Submission")?;
+    let nb = |texts: &serde_json::Value| {
+        texts.as_array().and_then(|v| {
+            v.iter()
+                .find(|x| x["languageCode"] == "nb")
+                .or(v.first())
+                .and_then(|x| x["value"].as_str())
+                .map(str::to_string)
+        })
+    };
+    Some(Outcome {
+        kind: t["type"].as_str()?.to_string(),
+        transmission_id: t["id"].as_str()?.to_string(),
+        title: nb(&t["content"]["title"]["value"]),
+        documents: t["attachments"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| {
+                let url = a["urls"].as_array()?.first()?["url"].as_str()?.to_string();
+                Some((nb(&a["displayName"]).unwrap_or_default(), url))
+            })
+            .collect(),
+    })
 }
 
 #[cfg(test)]
@@ -237,7 +329,7 @@ mod tests {
         let (base, seen) = mock(false).await;
         let (config, _) = crate::maskinporten::tests::test_config(&format!("{base}/token"));
         let tokens = TokenProvider::new(config);
-        let client = ShareholderReturnClient::new(format!("{base}/v1/"));
+        let client = ShareholderReturnClient::new(format!("{base}/v1/"), "unused");
         let keys: Vec<Uuid> = (0..4).map(|_| Uuid::new_v4()).collect();
         let form = |xml, i: usize| Form {
             xml,
@@ -276,11 +368,36 @@ mod tests {
         );
     }
 
+    /// The dialog as Dialogporten returned it in test 2026-11-11, trimmed.
+    #[test]
+    fn the_outcome_is_the_transmission_answering_our_forsendelse() {
+        let dialog = serde_json::json!({"transmissions": [
+            {"id": "f-1", "type": "Submission", "relatedTransmissionId": null,
+             "content": {"title": {"value": [{"languageCode": "nb", "value": "Dere har sendt inn"}]}}},
+            {"id": "a-1", "type": "Acceptance", "relatedTransmissionId": "f-1",
+             "content": {"title": {"value": [{"languageCode": "nb",
+                "value": "Innsending av godkjent Aksjonærregisteroppgave for organisasjonsnummer 311032240"}]}},
+             "attachments": [{"displayName": [{"languageCode": "nb", "value": "tilbakemelding.pdf"}],
+                              "urls": [{"consumerType": "Gui", "url": "https://x/doc.pdf"}]}]},
+            {"id": "f-2", "type": "Submission", "relatedTransmissionId": null}
+        ]});
+        let o = outcome_in(&dialog, "f-1").unwrap();
+        assert_eq!(o.kind, "Acceptance");
+        assert_eq!(o.transmission_id, "a-1");
+        assert!(o.title.unwrap().contains("godkjent"));
+        assert_eq!(
+            o.documents,
+            vec![("tilbakemelding.pdf".into(), "https://x/doc.pdf".into())]
+        );
+        // A later filing in the same dialog has no answer yet.
+        assert_eq!(outcome_in(&dialog, "f-2"), None);
+    }
+
     #[tokio::test]
     async fn a_refused_sub_form_stops_before_bekreft_and_says_which() {
         let (base, seen) = mock(true).await;
         let (config, _) = crate::maskinporten::tests::test_config(&format!("{base}/token"));
-        let client = ShareholderReturnClient::new(format!("{base}/v1"));
+        let client = ShareholderReturnClient::new(format!("{base}/v1"), "unused");
         let f = |xml| Form {
             xml,
             idempotency_key: Uuid::new_v4(),

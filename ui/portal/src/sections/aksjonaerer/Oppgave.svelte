@@ -13,7 +13,32 @@
 
   let innsending = $state({ mulig: false, innsendinger: [] });
   let sender = $state(false);
-  let levert = $derived(innsending.innsendinger.some((i) => i.status === "levert"));
+  let levert = $derived(innsending.innsendinger.some((i) => i.status !== "ikke_levert"));
+
+  const STATUS = {
+    ikke_levert: "Ikke levert",
+    levert: "Levert — venter på svar",
+    godkjent: "Godkjent av Skatteetaten",
+    avvist: "Avvist av Skatteetaten",
+    behandlet: "Behandlet av Skatteetaten",
+  };
+
+  async function hentSvar(i) {
+    try {
+      const svar = await post(
+        "/companies/" + companyId + "/reports/aksjonaeroppgave/submissions/" + i.id + "/outcome",
+        {},
+      );
+      toast(
+        svar.status === "levert" ? "Skatteetaten har ikke svart ennå" : STATUS[svar.status],
+        svar.status !== "avvist",
+      );
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      await hentInnsendinger();
+    }
+  }
 
   async function hentInnsendinger() {
     try {
@@ -124,7 +149,7 @@
       {#each innsending.innsendinger as i (i.id)}
         <li class="flex flex-wrap items-center gap-2">
           <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
-          <span>{i.status === "levert" ? "Levert" : "Ikke levert"}</span>
+          <span class={i.status === "avvist" ? "text-error" : ""}>{STATUS[i.status]}</span>
           <span class="opacity-70">{i.antall_underskjema} underskjema</span>
           {#if i.kvittering}
             <span class="text-xs opacity-60" title="Skatteetatens forsendelse-id">
@@ -133,6 +158,14 @@
           {/if}
           {#if i.siste_feil}
             <span class="text-warning text-xs" title={i.siste_feil}>siste forsøk feilet</span>
+          {/if}
+          {#each i.svar?.dokumenter || [] as [navn, url] (url)}
+            <a class="link text-xs" href={url} target="_blank" rel="noopener">{navn}</a>
+          {/each}
+          {#if i.status === "levert"}
+            <button class="btn btn-ghost btn-xs" onclick={() => hentSvar(i)}>
+              Hent svar fra Skatteetaten
+            </button>
           {/if}
         </li>
       {/each}

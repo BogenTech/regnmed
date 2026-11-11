@@ -613,6 +613,10 @@ pub fn router(state: AppState) -> Router {
                 .post(share_register::submit_tax_return),
         )
         .route(
+            "/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome",
+            axum::routing::post(share_register::tax_return_outcome),
+        )
+        .route(
             "/companies/{company_id}/assets",
             get(asset::list).post(asset::create),
         )

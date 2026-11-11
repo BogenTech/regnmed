@@ -59,6 +59,12 @@ pub enum TransactionType {
     SammenslaingDelingAksjeklasse,
     // Post 25 — avgang.
     Salg,
+    // The giving side of the transfers with continuity above: the same
+    // statutory names, reported in post 25 with the same codes.
+    ArvGaveMedKontinuitetAvgang,
+    AvgiftspliktigArvGaveMedKontinuitetAvgang,
+    OverforingMedKontinuitetAvgang,
+    FordelingEktefellerSkilsmisseAvgang,
     Likvidasjon,
     PartiellLikvidasjonLikedelt,
     PartiellLikvidasjonSkjevdelt,
@@ -111,6 +117,12 @@ impl TransactionType {
             SkattefriFisjon => "skattefri fisjon",
             SammenslaingDelingAksjeklasse => "sammenslåing/deling av aksjeklasse",
             Salg => "salg",
+            ArvGaveMedKontinuitetAvgang => "arv/gave med skattemessig kontinuitet",
+            AvgiftspliktigArvGaveMedKontinuitetAvgang => {
+                "avgiftspliktig arv/gave med skattemessig kontinuitet"
+            }
+            OverforingMedKontinuitetAvgang => "overføring med skattemessig kontinuitet",
+            FordelingEktefellerSkilsmisseAvgang => "fordeling mellom ektefeller ved skilsmisse",
             Likvidasjon => "likvidasjon",
             PartiellLikvidasjonLikedelt => "likedelt partiell likvidasjon",
             PartiellLikvidasjonSkjevdelt => "skjevdelt partiell likvidasjon",
@@ -151,6 +163,12 @@ impl TransactionType {
             SkattefriFisjon => "skattefri_fisjon",
             SammenslaingDelingAksjeklasse => "sammenslaing_deling_aksjeklasse",
             Salg => "salg",
+            ArvGaveMedKontinuitetAvgang => "arv_gave_med_kontinuitet_avgang",
+            AvgiftspliktigArvGaveMedKontinuitetAvgang => {
+                "avgiftspliktig_arv_gave_med_kontinuitet_avgang"
+            }
+            OverforingMedKontinuitetAvgang => "overforing_med_kontinuitet_avgang",
+            FordelingEktefellerSkilsmisseAvgang => "fordeling_ektefeller_skilsmisse_avgang",
             Likvidasjon => "likvidasjon",
             PartiellLikvidasjonLikedelt => "partiell_likvidasjon_likedelt",
             PartiellLikvidasjonSkjevdelt => "partiell_likvidasjon_skjevdelt",
@@ -173,6 +191,10 @@ impl TransactionType {
             | SkattefriFisjon
             | SammenslaingDelingAksjeklasse => FormItem::AcquisitionReallocation,
             Salg
+            | ArvGaveMedKontinuitetAvgang
+            | AvgiftspliktigArvGaveMedKontinuitetAvgang
+            | OverforingMedKontinuitetAvgang
+            | FordelingEktefellerSkilsmisseAvgang
             | Likvidasjon
             | PartiellLikvidasjonLikedelt
             | PartiellLikvidasjonSkjevdelt
@@ -191,35 +213,95 @@ impl TransactionType {
     /// The code RF-1086 expects in the `Transaksjonstype` field — or
     /// `None` when we have not verified it.
     ///
-    /// **This is the honest gap in #43.** Skatteetaten does not publish
-    /// this code list: it is not enumerated in either XSD (both fields
-    /// are unconstrained `Tekst35`), and the rettledning names the
-    /// transaction types without giving their codes. The list is
-    /// distributed to sluttbrukersystemer through the SBS channel —
-    /// Skatteetatens own release notes speak of "kodelister" for
-    /// RF-1086 as a separate artifact.
+    /// The codes themselves are enumerated in Skatteetatens current XSDs
+    /// (vendored in docs/aksjonaer/, one list per post), and the API
+    /// rejects anything outside them. **The XSDs give no names.** A code
+    /// is mapped here only where an official Skatteetaten artifact pairs
+    /// it with the name of the transaction: the RF-1086/RF-1086-U
+    /// «Detaljert design» spreadsheets (2024) and the example filings on
+    /// skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/
+    /// aksjonarregisteroppgaven-sbs/ (docs/aksjonaer.md, «Transaksjonskoder»).
     ///
-    /// So we return `Some` only for codes taken from an official
-    /// Skatteetaten artifact, and the renderer refuses to file anything
-    /// else rather than guess. A wrong transaksjonstype is not a
-    /// cosmetic error: it flows into the shareholder's own aksjeoppgave
-    /// (RF-1088) and changes inngangsverdi and skjermingsgrunnlag. A
-    /// loud refusal is recoverable; a silently mis-filed transaction is
-    /// not.
+    /// Everything else stays `None` and the renderer refuses it rather
+    /// than guess. A wrong transaksjonstype is not a cosmetic error: it
+    /// flows into the shareholder's own aksjeoppgave (RF-1088) and
+    /// changes inngangsverdi and skjermingsgrunnlag. A loud refusal is
+    /// recoverable; a silently mis-filed transaction is not. Types whose
+    /// company-level counterpart the hovedskjema does not render yet
+    /// (fusjon, fisjon, omdanning, flytting, likvidasjon, spleis, post
+    /// 24) stay `None` for that reason too, even where the code is named.
     pub fn code(self) -> Option<&'static str> {
         use TransactionType::*;
         match self {
-            // Verified: Skatteetatens published RF-1086 example files a
-            // stiftelse/nyemisjon as "N", in both the hovedskjema's
-            // AksjerNyutstedteStiftelseMvType and the underskjema's
-            // AksjeErvervType.
-            Stiftelse | Nyemisjon => Some("N"),
+            // «Kjøp» (K) / «Salg» (R): design VAL_45; example
+            // kjopogsalg_underskjema_*.
+            Kjop => Some("K"),
+            Salg => Some("R"),
+            // «Stiftelse» (T): design, post 9 check message; examples
+            // stiftelseavselskap_* and nyemisjon_* (both a founding).
+            Stiftelse => Some("T"),
+            // «Nyemisjon» (N), «Nyemisjon ansattaksjer» (NAK): design.
+            Nyemisjon => Some("N"),
+            NyemisjonAnsattaksjer => Some("NAK"),
+            // «Bytte av aksjer til/fra selskap utenfor Norge» (AE): design.
+            BytteAksjerUtenforNorge => Some("AE"),
+            // Transfers with continuity, both sides: design VAL_13, VAL_56,
+            // VAL_24, VAL_57; example skattemessig_kontinuitet_underskjema_*.
+            ArvGaveMedKontinuitet | ArvGaveMedKontinuitetAvgang => Some("GK"),
+            AvgiftspliktigArvGaveMedKontinuitet | AvgiftspliktigArvGaveMedKontinuitetAvgang => {
+                Some("AK")
+            }
+            OverforingMedKontinuitet | OverforingMedKontinuitetAvgang => Some("OK"),
+            FordelingEktefellerSkilsmisse | FordelingEktefellerSkilsmisseAvgang => Some("ES"),
+            _ => None,
+        }
+    }
+
+    /// The type the other side of a two-sided transfer gets.
+    pub fn counterpart(self) -> Option<TransactionType> {
+        use TransactionType::*;
+        Some(match self {
+            Kjop => Salg,
+            Salg => Kjop,
+            ArvGaveMedKontinuitet => ArvGaveMedKontinuitetAvgang,
+            ArvGaveMedKontinuitetAvgang => ArvGaveMedKontinuitet,
+            AvgiftspliktigArvGaveMedKontinuitet => AvgiftspliktigArvGaveMedKontinuitetAvgang,
+            AvgiftspliktigArvGaveMedKontinuitetAvgang => AvgiftspliktigArvGaveMedKontinuitet,
+            OverforingMedKontinuitet => OverforingMedKontinuitetAvgang,
+            OverforingMedKontinuitetAvgang => OverforingMedKontinuitet,
+            FordelingEktefellerSkilsmisse => FordelingEktefellerSkilsmisseAvgang,
+            FordelingEktefellerSkilsmisseAvgang => FordelingEktefellerSkilsmisse,
+            _ => return None,
+        })
+    }
+
+    /// Which identity of the other party the oppgave must carry: the
+    /// giver on a tilgang, the receiver on an avgang (design VAL_13,
+    /// VAL_56, VAL_24, VAL_57).
+    pub fn counterparty_required(self) -> Option<CounterpartyId> {
+        use TransactionType::*;
+        match self {
+            ArvGaveMedKontinuitet
+            | ArvGaveMedKontinuitetAvgang
+            | OverforingMedKontinuitet
+            | OverforingMedKontinuitetAvgang => Some(CounterpartyId::NinOrOrgnumber),
+            AvgiftspliktigArvGaveMedKontinuitet
+            | AvgiftspliktigArvGaveMedKontinuitetAvgang
+            | FordelingEktefellerSkilsmisse
+            | FordelingEktefellerSkilsmisseAvgang => Some(CounterpartyId::Nin),
             _ => None,
         }
     }
 }
 
-pub const ALL: [TransactionType; 31] = {
+/// The identity a transfer must name its other party by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CounterpartyId {
+    Nin,
+    NinOrOrgnumber,
+}
+
+pub const ALL: [TransactionType; 35] = {
     use TransactionType::*;
     [
         Kjop,
@@ -247,6 +329,10 @@ pub const ALL: [TransactionType; 31] = {
         SkattefriFisjon,
         SammenslaingDelingAksjeklasse,
         Salg,
+        ArvGaveMedKontinuitetAvgang,
+        AvgiftspliktigArvGaveMedKontinuitetAvgang,
+        OverforingMedKontinuitetAvgang,
+        FordelingEktefellerSkilsmisseAvgang,
         Likvidasjon,
         PartiellLikvidasjonLikedelt,
         PartiellLikvidasjonSkjevdelt,
@@ -392,16 +478,65 @@ mod tests {
         assert_eq!(TransactionType::from_slug("finnes-ikke"), None);
     }
 
-    /// Pins the honest limitation: we have verified the code only for
-    /// stiftelse/nyemisjon, from Skatteetaten's own example. Should
-    /// anyone add further codes, it must be because they were verified
-    /// against an official source — not because they looked plausible.
+    /// Pins which codes are verified, and against what. A code is added
+    /// only with its source next to it in `code()` — never because it
+    /// looked plausible. Every code must also be in the XSD's own list
+    /// for the post it is filed in.
     #[test]
     fn only_verified_codes_exist() {
+        use TransactionType::*;
         let with_code: Vec<_> = ALL.iter().filter(|t| t.code().is_some()).collect();
-        assert_eq!(with_code.len(), 2, "{with_code:?}");
-        assert_eq!(TransactionType::Stiftelse.code(), Some("N"));
-        assert_eq!(TransactionType::Nyemisjon.code(), Some("N"));
-        assert_eq!(TransactionType::Kjop.code(), None);
+        assert_eq!(with_code.len(), 14, "{with_code:?}");
+        assert_eq!(Stiftelse.code(), Some("T"));
+        assert_eq!(Nyemisjon.code(), Some("N"));
+        assert_eq!(Kjop.code(), Some("K"));
+        assert_eq!(Salg.code(), Some("R"));
+        assert_eq!(
+            ArvUtenKontinuitet.code(),
+            None,
+            "A is unnamed in every source"
+        );
+        assert_eq!(
+            Likvidasjon.code(),
+            None,
+            "named L, but the hovedskjema side is not built"
+        );
+
+        // KodelisteErvervtype (post 23) and KodelisteSKD_RF1086_TransTyper_p25
+        // in the vendored underskjema XSD.
+        const POST_23: &[&str] = &[
+            "K", "A", "G", "GK", "AK", "GS", "T", "N", "NF", "O", "UP", "IP", "M", "OK", "KI",
+            "NE", "AE", "FS", "ES", "NK", "NAK", "YA", "YAP", "TN", "TH",
+        ];
+        const POST_25: &[&str] = &[
+            "R", "A", "G", "GK", "AK", "GS", "L", "PLD", "PLS", "UP", "IP", "UII", "UE", "O", "W",
+            "OK", "FS", "AE", "ES", "YA", "YAP",
+        ];
+        for t in with_code {
+            let list = match t.post() {
+                FormItem::Acquisition => POST_23,
+                FormItem::Disposal => POST_25,
+                FormItem::AcquisitionReallocation => panic!("post 24 is not rendered: {t:?}"),
+            };
+            assert!(
+                list.contains(&t.code().unwrap()),
+                "{t:?} not in its post's list"
+            );
+        }
+    }
+
+    #[test]
+    fn a_transfer_with_continuity_has_a_matching_other_side() {
+        for t in ALL {
+            if let Some(other) = t.counterpart() {
+                assert_eq!(other.counterpart(), Some(t));
+                assert_ne!(t.is_acquisition(), other.is_acquisition());
+                assert!(
+                    t.code().is_some(),
+                    "{t:?}: a transfer type must be fileable"
+                );
+                assert_eq!(t.counterparty_required(), other.counterparty_required());
+            }
+        }
     }
 }

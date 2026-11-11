@@ -200,6 +200,8 @@ pub async fn transaction_types(
                 "navn": t.name(),
                 "tilgang": t.is_acquisition(),
                 "leverbar": t.code().is_some(),
+                // The type the other side of a transfer gets, when there is one.
+                "motpart_type": t.counterpart().map(|c| c.slug()),
             })
         })
         .collect();
@@ -484,13 +486,20 @@ fn submission_json(
             forsendelse_id,
             reference,
             at,
+            outcome,
         } => {
             v["kvittering"] = json!({
                 "dialog_id": dialog_id,
                 "forsendelse_id": forsendelse_id,
                 "leveranse_referanse": reference,
                 "mottatt": at,
-            })
+            });
+            if let Some(o) = outcome {
+                v["svar"] = json!({
+                    "tittel": o["title"],
+                    "dokumenter": o["documents"],
+                });
+            }
         }
     }
     v
@@ -606,5 +615,60 @@ pub async fn submit_tax_return(
     let (s, status) =
         regnmed_db::shareholder_return_submission::submission(&state.pool, company_id, s.id)
             .await?;
+    Ok(Json(submission_json(&s, &status)))
+}
+
+/// Fetches Skatteetaten's answer (godkjent/avvist) for a delivered filing
+/// from Dialogporten and stores it. Answers with the filing as it stands —
+/// still `levert` while Skatteetaten has not answered.
+pub async fn tax_return_outcome(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, submission_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
+    let Some(rail) = state.shareholder_return.clone() else {
+        return Err(ApiError::BadRequest(
+            "innsending av aksjonærregisteroppgaven er ikke satt opp på denne serveren \
+             (Maskinporten)"
+                .into(),
+        ));
+    };
+    use regnmed_db::shareholder_return_submission as db;
+    let (s, status) = db::submission(&state.pool, company_id, submission_id)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    if let db::SubmissionStatus::Delivered {
+        dialog_id,
+        forsendelse_id,
+        outcome: None,
+        ..
+    } = &status
+    {
+        let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+            .await?
+            .orgnumber;
+        let outcome = rail
+            .client
+            .outcome(&rail.tokens, &orgnumber, dialog_id, forsendelse_id)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;
+        if let Some(o) = outcome {
+            db::record_outcome(
+                &state.pool,
+                s.id,
+                serde_json::to_value(o).expect("Outcome serializes"),
+                person.display(),
+            )
+            .await?;
+        }
+    }
+    let (s, status) = db::submission(&state.pool, company_id, submission_id).await?;
     Ok(Json(submission_json(&s, &status)))
 }
