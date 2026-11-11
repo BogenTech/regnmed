@@ -402,6 +402,16 @@ systemregisteret knyttet til vår klient-id, og oppgi tilgangspakkene
 API-ene krever. Det er nå det høyest prioriterte neste steget på denne
 skinnen — ikke fordi det haster mest, men fordi det låser opp mest.
 
+**Bestilt 2026-11-11** (sporet i #180): Digdirs registreringsskjema
+«Sluttbrukersystem i Altinn 3» sendt for **test**, med
+funksjonsområdene Innsending av skjema/data, Overvåke/hente fra innboks,
+Systembruker og Klientdelegering. Samme dag signerte BogenTech
+**bruksvilkårene for sluttbrukersystemleverandører i Altinn** i
+Samarbeidsportalen. Vilkårene kreves først før produksjon (§1.1), men
+§1.2 legger et krav på oss før vi går dit: kunden er fullt ansvarlig
+for det vi gjør i Altinn på deres vegne, så hver kunde må ha en avtale
+med oss som viderefører vilkårene. regnmed har ingen kundevilkår ennå.
+
 Den fjerde, mva-valideringen, låses ikke opp av systembruker i det hele
 tatt — den er fastsetting, og venter på #26 for godt (se over).
 
