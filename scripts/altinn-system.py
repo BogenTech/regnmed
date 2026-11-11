@@ -4,6 +4,8 @@
     scripts/altinn-system.py show       # slik systemet står registrert
     scripts/altinn-system.py register   # første gang
     scripts/altinn-system.py update     # etter endring i SYSTEM under
+    scripts/altinn-system.py request <orgnr>   # standard systembruker for et selskap
+    scripts/altinn-system.py status <id>       # en forespørsels status og confirmUrl
 
 ÉTT system, ikke to: en Maskinporten-klient kan bare knyttes til ett
 system (AUTH.VLD-00004), og systembrukertokenet finner systemet gjennom
@@ -22,7 +24,9 @@ env-fil når testintegrasjonen er verifisert. Leser
 """
 import base64, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, uuid
 
-PLATFORM = "https://platform.tt02.altinn.no/authentication/api/v1/systemregister/vendor"
+AUTH = "https://platform.tt02.altinn.no/authentication/api/v1"
+PLATFORM = f"{AUTH}/systemregister/vendor"
+REQUESTS = f"{AUTH}/systemuser/request/vendor"
 VENDOR = "935115086"
 SYSTEM_ID = f"{VENDOR}_regnmed"
 
@@ -107,12 +111,12 @@ def token(scope):
         return json.load(r)["access_token"]
 
 
-def call(method, url, body=None):
+def call(method, url, body=None, scope="altinn:authentication/systemregister.write"):
     req = urllib.request.Request(
         url, method=method,
         data=json.dumps(body).encode() if body is not None else None,
         headers={
-            "Authorization": f"Bearer {token('altinn:authentication/systemregister.write')}",
+            "Authorization": f"Bearer {token(scope)}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
@@ -138,5 +142,16 @@ if __name__ == "__main__":
         call("POST", PLATFORM, SYSTEM)
     elif cmd == "update":
         call("PUT", f"{PLATFORM}/{SYSTEM_ID}", SYSTEM)
+    elif cmd == "request" and len(sys.argv) == 3:
+        # Egen virksomhet: alle tre ressursene. Svaret har confirmUrl, som
+        # daglig leder (eller en med tilgangsstyring) åpner og godkjenner.
+        call("POST", REQUESTS, {
+            "systemId": SYSTEM_ID,
+            "partyOrgNo": sys.argv[2],
+            "rights": SYSTEM["rights"],
+        }, scope="altinn:authentication/systemuser.request.write")
+    elif cmd == "status" and len(sys.argv) == 3:
+        call("GET", f"{REQUESTS}/{sys.argv[2]}",
+             scope="altinn:authentication/systemuser.request.read")
     else:
         sys.exit(__doc__)

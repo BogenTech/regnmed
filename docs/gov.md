@@ -534,8 +534,33 @@ Registreringen er kode, ikke klikk: `scripts/altinn-system.py`
 registreres med samme innhold når testen er verifisert. Etter
 registreringen svarer `scripts/maskinporten-scope-test.py <scope>
 --systemuser 935115086` fortsatt **MP-303** — riktig, ingen kunde har
-godkjent en systembruker ennå. Neste steg er en forespørsel for et
-syntetisk testselskap (Tenor), godkjent med TestID.
+godkjent en systembruker ennå.
+
+**Første systembruker, 2026-11-11.** Forespørsel
+(`scripts/altinn-system.py request <orgnr>`, rettighetene til egen
+virksomhet) sendt for det syntetiske Tenor-selskapet KREATIV INNESLUTTET
+TIGER AS (311032240) og godkjent av dets daglige leder med TestID i
+TT02 (`status <id>` → `Accepted`). Deretter utstedte test-Maskinporten
+systembrukertoken for alle tre scopene (a-melding, skattekort,
+aksjonærregister) med `--systemuser 311032240`, og tokenet bærer
+`authorization_details` med `systemuser_id` og
+`system_id: 935115086_regnmed` — samme form som Skatteetatens eget
+eksempel. Hele kjeden fra registrering til token er dermed prøvd mot
+ekte testmiljø; neste ledd er et ekte kall mot et av Skatteetatens
+API-er med tokenet.
+
+Tre ting å vite til neste gang:
+
+- **Tenor-listen blander hovedenheter og underenheter.** En
+  systembruker gis av den juridiske enheten; underenhetens
+  «Relasjoner»-fane peker til hovedenheten, og daglig leder står i
+  hovedenhetens kildedata (`rollegrupper`, kode `DAGL`).
+- **Godkjenning i TT02 skjer med TestID, ikke BankID.** Test-ID-porten
+  tilbyr også BankID, men det er BankIDs testmiljø, som krever
+  test-BankID med kodebrikke. Velg «TestID på nivå høyt» og skriv inn
+  det syntetiske fødselsnummeret.
+- **Godkjenningssiden viste «levert av N/A»** med riktig orgnr — TT02
+  kjenner ikke BogenTechs navn. Sjekk at navnet vises i produksjon.
 
 ## Status & verification
 
