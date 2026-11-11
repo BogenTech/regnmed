@@ -27,7 +27,7 @@
 //! Skatteetaten's own code list, quoted in `mva::direction`.
 
 use crate::vat::{Direction, Period, PeriodScheme, SpecLine, direction};
-use crate::xml::Xml;
+use crate::xml::{Xml, rate};
 
 pub const NAMESPACE: &str =
     "no:skatteetaten:fastsetting:avgift:mva:skattemeldingformerverdiavgift:v1.0";
@@ -147,15 +147,6 @@ fn periode_name(period: Period) -> &'static str {
         4 => "juli-august",
         5 => "september-oktober",
         _ => "november-desember",
-    }
-}
-
-/// Sats as the kodeliste expects: "25", "11.11".
-fn rate(bp: i64) -> String {
-    match (bp / 100, bp % 100) {
-        (whole, 0) => format!("{whole}"),
-        (whole, frac) if frac % 10 == 0 => format!("{whole}.{}", frac / 10),
-        (whole, frac) => format!("{whole}.{frac:02}"),
     }
 }
 

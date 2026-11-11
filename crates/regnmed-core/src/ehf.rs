@@ -127,19 +127,6 @@ fn esc(text: &str) -> String {
     out
 }
 
-/// Integer øre → "1234.56". XML decimals always use a dot, whatever the
-/// locale of the reader.
-fn amount(ore: i64) -> String {
-    let negative = ore < 0;
-    let abs = ore.abs();
-    format!(
-        "{}{}.{:02}",
-        if negative { "-" } else { "" },
-        abs / 100,
-        abs % 100
-    )
-}
-
 /// Basis points → "25.00".
 fn percent(bp: i64) -> String {
     let negative = bp < 0;
@@ -288,7 +275,7 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
 pub fn render(doc: &EhfDocument) -> String {
     let root = doc.document_type.root();
     let currency = &doc.currency;
-    let money = |ore: i64| -> String { amount(ore) };
+    let money = |ore: i64| -> String { crate::xml::decimal(ore) };
     let attr = format!("currencyID=\"{}\"", esc(currency));
 
     let netto_sum: i64 = doc.linjer.iter().map(|l| l.net_ore).sum();

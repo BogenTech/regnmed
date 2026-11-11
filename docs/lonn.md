@@ -174,12 +174,121 @@ listingen.
 Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 `admin`.
 
+## A-meldingen
+
+`regnmed-core::amelding::render` gjør én lønnskjøring om til én
+a-melding, håndrullet og deterministisk som RF-1086, og validert mot
+Skatteetatens offisielle XSD v2.3 (vendored i docs/amelding/, med kilde,
+versjon og hash i docs/amelding/README.md) i enhetstestene og i CI.
+**Den sender ingenting** og er ikke koblet til databasen ennå — se
+hullene under.
+
+### XSD-en er det minste, ikke det hele
+
+XSD-en er slapp: hver kode er en fri streng, og nesten alt i et
+arbeidsforhold er valgfritt. Det som faktisk avgjør om en melding blir
+godtatt, står i tre regneark Skatteetaten publiserer per halvår (R1/R2,
+lenket i docs/amelding/README.md): kodelisten, inntektskombinasjonene og
+forretningsreglene. Renderen bruker bare koder som står der, og nekter
+der forretningsreglene krever et felt modellen ikke har. Et oppdiktet
+felt blir godtatt av Skatteetaten og er feil hos NAV — det er verre enn
+en melding som aldri sendes.
+
+### Hva modellen allerede har
+
+| A-meldingen | Kilde i regnmed |
+| --- | --- |
+| `opplysningspliktig/norskIdentifikator` | selskapets orgnr |
+| `kalendermaaned` | måneden til `payroll_run.utbetalt_dato` — IKKE lønnsmåneden: a-meldingen rapporterer det som ble utbetalt, i måneden det ble utbetalt. En marskjøring utbetalt 2. april hører i aprilmeldingen |
+| `meldingsId` | `payroll_run.id` (sjekket mot XSD-ens tegnsett) |
+| `leveringstidspunkt` | tidspunktet meldingen lages, i UTC med `Z` — uten sone leses det som norsk tid |
+| `inntektsmottaker/norskIdentifikator` | `employee.fodselsnummer` — leses ÉTT sted, som i RF-1086 |
+| `arbeidsforhold/arbeidsforholdId` | `employee.id` (stabil på tvers av måneder, F108) |
+| `arbeidsforhold/typeArbeidsforhold` | alltid `ordinaertArbeidsforhold` |
+| `arbeidsforhold/startdato`, `sluttdato` | `employee.ansatt_fra`, `ansatt_til` |
+| `inntekt` `fastloenn` / `timeloenn` / `feriepenger` | `payroll_line.brutto_ore`, `feriepenger_ore` — kombinasjon 111: `kontantytelse`, utløser aga, inngår i trekkgrunnlaget |
+| `forskuddstrekk` (`ordinaert`, negativt, F278-2) | `payroll_line.forskuddstrekk_ore` |
+| `sumForskuddstrekkPerLoennsutbetalingsdato` (fra 2026-01, F523) | `payroll_run.utbetalt_dato` + sum trekk |
+| `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale). Må være NØYAKTIG grunnlaget × satsen (F185); ellers nektes meldingen med begge tallene |
+| `loennOgGodtgjoerelse`: beregningskode, sone, grunnlag, sats | `generelleNaeringer`; `payroll_run.sone` (I→`1`, Ia→`1a`, …); summen av inntektene (F184); satsen fra satsregisteret på utbetalingsdatoen |
+
+`generelleNaeringer` er ikke en ny antakelse: lønnskjøringen bruker
+allerede den ordinære satsen per sone, og det ER den beregningskoden
+(F197-tabellen). Et selskap med sektorunntak er feil i kjøringen før det
+blir feil i meldingen.
+
+### Hva modellen IKKE har — og renderen nekter for
+
+Hvert punkt gir en feilmelding med feltets navn, aldri en standardverdi.
+
+1. **Virksomhet (underenhet).** Arbeidsforholdet skal knyttes til en
+   underenhet i Enhetsregisteret (F290, avvisning) — ikke til den
+   juridiske enheten. Selskapet har bare sitt eget orgnr.
+2. **Yrkeskode** — 7 sifre fra SSBs yrkeskatalog (STYRK-08, F115B).
+   `employee.stilling` er fritekst og kan ikke brukes.
+3. **Stillingsprosent** (F291).
+4. **Antall timer per uke for full stilling** (F291; F526-reglene binder
+   den til arbeidstidsordningen).
+5. **Arbeidstidsordning** — `ikkeSkift`, `skift365`, … (F291).
+6. **Siste lønnsendringsdato** (F291).
+7. **Ansettelsesform** — `fast`, `midlertidig`, … (F291, fra 2021).
+8. **Hele kroner.** Forskuddstrekk og summene å betale er heltall i
+   skjemaet, mens lønnskjøringen regner trekk og aga i øre. Renderen
+   runder IKKE — da ville meldingen sprike fra det som er bokført på
+   2600/2770. Avrundingsregelen hører hjemme i
+   `payroll::calculate`/`employer_contribution` med kilde, og må
+   verifiseres før den skrives. Inntil da nektes nesten enhver ekte
+   kjøring på dette punktet alene.
+
+Renderen nekter også, med eget navn:
+
+- **Avgift som ikke er grunnlag × sats** (F185). Lønnskjøringen runder
+  aga per ansatt; Skatteetaten regner på summen. Spriker de, sier
+  feilmeldingen begge tallene i stedet for at meldingen sendes med en
+  avgift den selv motsier.
+- **Negative beløp** — trekk og inntekt har faste fortegn (F277,
+  F278-2). En korreksjon er et reverserende bilag og en ny kjøring i
+  hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
+  er ikke modellert.
+
+Og to hull som ikke er felt, men oppslag:
+
+9. **Fastlønn eller timelønn?** `payroll_line` lagrer bare brutto, ikke
+   hvilken av de to den kom fra. Kjøringen vet det; linjen husker det
+   ikke. Det må lagres (ny kolonne) — å utlede det i ettertid av om den
+   ansatte HAR en timesats er gjetting.
+10. **Arbeidsforhold uten lønn.** Et aktivt arbeidsforhold skal
+    rapporteres hver måned til sluttdato er meldt (F108), også en måned
+    uten utbetaling. En lønnskjøring har bare linjer for dem som fikk
+    lønn.
+
+Feltene 2–7 er egenskaper ved arbeidsforholdet, og hører på `employee`
+(ny migrasjon, engelske kolonnenavn) med skjema i portalen. Det er
+bevisst IKKE gjort i denne leveransen: hvilke felt som skal være
+obligatoriske ved registrering, og hva som skjer med ansatte som
+finnes fra før, er en produktavgjørelse.
+
+### Formatet på vei inn
+
+Skatteetatens nye API-er (REST og filopplasting, scope
+`skatteetaten:innrapporteringamelding`, systembruker) tar **JSON** etter
+OpenAPI-skjemaet `Amelding` (`innrapportering-amelding-api` 0.1.2 på
+SwaggerHub), ikke XML. Modellen er den samme felt for felt — `leveranse`,
+`oppgave`, `inntektsmottaker`, `arbeidsforhold` med samme navn og samme
+påkrevde felt — så XSD-en er fortsatt fasiten for innholdet, og XML-en
+kan lastes opp manuelt i Skatteetatens testmiljø. Men innsendingssteget
+må serialisere samme tre som JSON. Det bygges sammen med klienten, når
+systembrukeren finnes.
+
 ## Hva som IKKE er bygget
 
 Rekkefølgen er omtrent den de bør tas i.
 
-1. **A-meldingen.** Månedlig, frist den 5., via Altinn. Krever
-   Maskinporten-scope vi ikke har (docs/gov.md). Uten den er dette
+1. **A-meldingen.** Månedlig, frist den 5. Renderen finnes og er
+   validert mot XSD-en (se «A-meldingen» under), men den NEKTER for
+   alle ekte kjøringer i dag fordi modellen mangler feltene
+   forretningsreglene krever, og innsending venter på
+   Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
 2. **Skattekort fra Skatteetatens API.** I dag registreres trekket
@@ -344,6 +453,19 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 - Timelønn: at beløpet regnes fra minutter, at en ULÅST måned nektes,
   at kjøringen går etter låsing og gir riktig brutto og trekk, og at en
   ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.
+- `regnmed-core::amelding` — en månedsmelding validert mot den
+  offisielle XSD-en med xmllint (sett feile på et feilstavet element),
+  også en 2025-melding med én trekksum og en erstatningsmelding; at
+  trekket er negativt per mottaker og positivt per utbetalingsdato, at
+  avgiftsgrunnlaget er summen av inntektene; at hvert av de seks
+  manglende arbeidsforholdsfeltene og virksomheten nektes med navn; at
+  øre der skjemaet vil ha kroner nektes framfor å rundes; og at koder
+  utenfor kodelisten, ugyldig fødselsnummer og orgnr nektes. Etter
+  review: at kalendermåneden følger utbetalingsdatoen (også over
+  årsskiftet, der trekkformatet skifter), at avgift som ikke er grunnlag
+  × sats nektes, at negative beløp nektes, at meldingsId, kildesystem og
+  år utenfor XSD-ens grenser nektes, at leveringstidspunktet har `Z`, og
+  en melding med to mottakere der den ene har frikort.
 - `regnmed-core::payslip` — velformet og deterministisk PDF, at
   slippen forklarer trekkgrunnlaget, feriepengenes trekkfrihet og
   desembers halve trekk, at frikort sier frikort, og at

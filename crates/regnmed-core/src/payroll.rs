@@ -23,7 +23,7 @@
 use chrono::NaiveDate;
 
 /// Rounds a basis-point calculation half away from zero.
-fn bp_of(amount_ore: i64, rate_bp: i64) -> i64 {
+pub(crate) fn bp_of(amount_ore: i64, rate_bp: i64) -> i64 {
     let n = amount_ore as i128 * rate_bp as i128;
     let d = 10_000i128;
     let sign = if (n < 0) != (d < 0) { -1 } else { 1 };
