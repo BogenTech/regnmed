@@ -245,9 +245,10 @@ hvorfor en ny melding for samme måned ADDERER).
 
 Koblingen til lagrede lønnskjøringer — innsendingssporet med
 idempotensnøkkel, meldingsId og erstatningsmelding, API-endepunktene og
-portalknappene — står i docs/lonn.md («Innsendingssporet»). Ikke bygget:
-hendelsesabonnement (`altinn:events.subscribe`) i stedet for at noen
-trykker «Hent tilbakemelding».
+portalknappene — står i docs/lonn.md («Innsendingssporet»), og
+tilbakemeldingen som Altinn-hendelse (`regnmed-gov::altinn_events`,
+webhook `/webhooks/altinn`) i «Tilbakemelding som hendelse». Merk:
+Events-API-et krever et VEKSLET Altinn-token, ikke Maskinporten-tokenet.
 
 ## Mva-melding APIs (crates/regnmed-gov/src/mvamelding.rs)
 

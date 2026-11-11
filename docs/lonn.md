@@ -395,6 +395,46 @@ filen.
 portalen: «Send til Skatteetaten» → `levert` → «Hent tilbakemelding» →
 `mottatt, 0 avvik`, for det syntetiske Tenor-selskapet 311032240.
 
+### Tilbakemelding som hendelse (migration 0075)
+
+Altinns bruksvilkår (§1.2.4) foretrekker hendelser framfor polling, og
+Dialogporten publiserer en hendelse hver gang en forsendelse opprettes i
+en dialog — også Skatteetatens tilbakemelding. Når API-et har
+`ALTINN_EVENTS_ENDPOINT` (vår offentlige webhook, f.eks.
+`https://api.test.regnmed.no/webhooks/altinn`), abonnerer regnmed
+selskapet på `dialogporten.dialog.transmission.created.v1` for ressursen
+`ske-innrapportering-amelding` første gang en a-melding leveres, én gang
+per selskap (`altinn_event_subscription`, innsettings-bar, unik per
+selskap/filter/endepunkt). Feiler abonnementet, logges det og
+innsendingen står likevel — knappen er reserveveien.
+
+**Events-API-et tar ikke et Maskinporten-token.** Det svarer 401, og
+godtar det samme tokenet etter veksling til et Altinn-token på
+`/authentication/api/v1/exchange/maskinporten` (prøvd mot TT02
+2026-11-11). Vekslet fra et systembrukertoken kjører abonnementet SOM
+systembrukeren (`consumer: /systemuser/<id>`), og det er det som gir
+tilgang til kundens hendelser. Scopet `altinn:events.subscribe` ligger i
+`amelding::SCOPES`, så det er samme token-leverandør som innsendingen.
+
+**Webhooken `POST /webhooks/altinn` er åpen, og stoler derfor ikke på
+noe den får.** Altinn verken autentiserer eller signerer leveransene. En
+hendelse er bare et hint om hvilken dialog man skal se på: regnmed slår
+opp leverte innsendinger som venter på tilbakemelding og har den
+dialogen i kvitteringen, og henter tilbakemeldingen gjennom sin EGEN
+systembruker-autentiserte klient. Valideringshendelsen
+(`platform.events.validatesubscription`) besvares med 200, og det gjør
+alle andre også — en ukjent dialog er ikke en feil Altinn skal prøve på
+nytt. En falsk hendelse kan altså i verste fall få regnmed til å hente en
+tilbakemelding som venter, aldri til å lagre noe den ikke selv har hentet.
+
+Prøvd: API-testen spiller Altinn mot en etterligning (validering,
+hendelser for fremmede dialoger og ressurser ignoreres, tilbakemeldingen
+lagres uten knappetrykk, samme hendelse to ganger henter ikke på nytt,
+en erstatning abonnerer ikke på nytt), og live mot TT02 er abonnementet
+opprettet, lest tilbake og slettet gjennom vår egen klient. Selve
+leveransen til webhooken kan først prøves når den kjører på en offentlig
+adresse (testklyngen) — før det står abonnementet som `validated: false`.
+
 ## Hva som IKKE er bygget
 
 Rekkefølgen er omtrent den de bør tas i.

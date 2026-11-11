@@ -23,10 +23,20 @@ struct Skatteetaten {
     fail_next: bool,
     /// (idempotencyKey, body) per call that reached the API.
     calls: Vec<(String, serde_json::Value)>,
+    /// Bodies of Altinn Events subscriptions created.
+    subscriptions: Vec<serde_json::Value>,
+    /// Times the tilbakemelding itself was fetched.
+    feedback_fetches: usize,
+    /// Unique per mock, as real dialog ids are: the test database is
+    /// shared, and a fixed id would match other tests' submissions.
+    dialog_id: String,
 }
 
 async fn mock_skatteetaten() -> (String, Arc<Mutex<Skatteetaten>>) {
-    let seen = Arc::new(Mutex::new(Skatteetaten::default()));
+    let seen = Arc::new(Mutex::new(Skatteetaten {
+        dialog_id: Uuid::new_v4().to_string(),
+        ..Default::default()
+    }));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let feedback = format!("{base}/tb/v1/forsendelser/t-info");
@@ -52,7 +62,7 @@ async fn mock_skatteetaten() -> (String, Arc<Mutex<Skatteetaten>>) {
                     (
                         StatusCode::OK,
                         Json(serde_json::json!({
-                            "dialogId": "d-1", "forsendelseId": "t-sub", "meldingsId": melding
+                            "dialogId": s.dialog_id, "forsendelseId": "t-sub", "meldingsId": melding
                         })),
                     )
                 },
@@ -71,8 +81,30 @@ async fn mock_skatteetaten() -> (String, Arc<Mutex<Skatteetaten>>) {
             }),
         )
         .route(
+            "/authentication/api/v1/exchange/maskinporten",
+            get(|| async { "\"altinn-token\"" }),
+        )
+        .route(
+            "/events/api/v1/subscriptions",
+            post(
+                |State(seen): State<Arc<Mutex<Skatteetaten>>>,
+                 headers: HeaderMap,
+                 Json(body): Json<serde_json::Value>| async move {
+                    // The Events API takes the exchanged token only.
+                    assert_eq!(headers["authorization"], "Bearer altinn-token");
+                    let end_point = body["endPoint"].clone();
+                    seen.lock().unwrap().subscriptions.push(body);
+                    (
+                        StatusCode::CREATED,
+                        Json(serde_json::json!({"id": 42, "endPoint": end_point, "validated": false})),
+                    )
+                },
+            ),
+        )
+        .route(
             "/tb/v1/forsendelser/t-info",
             get(|State(seen): State<Arc<Mutex<Skatteetaten>>>| async move {
+                seen.lock().unwrap().feedback_fetches += 1;
                 let melding = seen.lock().unwrap().calls[0].1["leveranse"]["meldingsId"].clone();
                 Json(serde_json::json!({"mottak": [{"mottattLeveranse": [
                     {"meldingsId": melding, "mottakstatus": "mottatt", "avvik": []}
@@ -113,12 +145,21 @@ async fn call(
     )
 }
 
-#[tokio::test]
-async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
+struct Fixture {
+    state: AppState,
+    skatteetaten: Arc<Mutex<Skatteetaten>>,
+    orgnumber: String,
+    /// `/companies/{c}/payroll/{run}/amelding/submissions`
+    submissions: String,
+    admin: String,
+    auditor: String,
+}
+
+/// A company with a MOD11-valid number, one complete employee and a March
+/// run, wired to the mock Skatteetaten.
+async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
     let idp = TestIdp::new();
-    let Some(mut state) = test_state(&idp).await else {
-        return;
-    };
+    let mut state = test_state(&idp).await?;
     let (base, skatteetaten) = mock_skatteetaten().await;
     state.amelding = Some(Arc::new(AmeldingRail {
         tokens: regnmed_gov::maskinporten::TokenProvider::new(
@@ -132,6 +173,8 @@ async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
             },
         ),
         client: regnmed_gov::amelding::AmeldingClient::new(base.clone(), format!("{base}/dp")),
+        events: regnmed_gov::altinn_events::EventsClient::new(base.clone()),
+        events_endpoint: events_endpoint.map(str::to_string),
     }));
 
     // A real company has a MOD11-valid number; the systembruker token needs one.
@@ -169,7 +212,7 @@ async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
             .unwrap();
         tokens.push(idp.token(&sub, role));
     }
-    let (admin, auditor) = (&tokens[0], &tokens[1]);
+    let admin = &tokens[0];
 
     // 40 000 kr at 35 % and sone I: whole kroner throughout.
     let (code, created) = call(
@@ -207,6 +250,31 @@ async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
         "/companies/{company}/payroll/{}/amelding/submissions",
         run.id
     );
+
+    Some(Fixture {
+        state,
+        skatteetaten,
+        orgnumber,
+        submissions,
+        admin: tokens[0].clone(),
+        auditor: tokens[1].clone(),
+    })
+}
+
+#[tokio::test]
+async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
+    let Some(Fixture {
+        state,
+        skatteetaten,
+        submissions,
+        admin,
+        auditor,
+        ..
+    }) = setup(None).await
+    else {
+        return;
+    };
+    let (admin, auditor) = (&admin, &auditor);
 
     // Only LONN_KJOR sends; the revisor may read the record.
     let (code, _) = call(&state, "POST", &submissions, auditor, "{}").await;
@@ -276,4 +344,83 @@ async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
         s.calls[1].1["leveranse"]["erstatterMeldingsId"],
         sent["melding_id"]
     );
+}
+
+/// The feedback arrives as an Altinn event: the first delivery subscribes
+/// the company once, and an event naming the dialog makes regnmed fetch
+/// and store the feedback through its OWN authenticated client. The event
+/// is never trusted: unknown dialogs and other resources change nothing.
+#[tokio::test]
+async fn the_feedback_arrives_as_an_altinn_event() {
+    let Some(f) = setup(Some("https://regnmed.test/webhooks/altinn")).await else {
+        return;
+    };
+    let (state, admin) = (&f.state, &f.admin);
+
+    let (code, sent) = call(state, "POST", &f.submissions, admin, "{}").await;
+    assert_eq!(code, StatusCode::OK, "{sent}");
+    {
+        let s = f.skatteetaten.lock().unwrap();
+        assert_eq!(s.subscriptions.len(), 1, "subscribed on the first delivery");
+        let sub = &s.subscriptions[0];
+        assert_eq!(sub["endPoint"], "https://regnmed.test/webhooks/altinn");
+        assert_eq!(
+            sub["subjectFilter"],
+            format!("urn:altinn:organization:identifier-no:{}", f.orgnumber)
+        );
+        assert_eq!(
+            sub["typeFilter"],
+            "dialogporten.dialog.transmission.created.v1"
+        );
+    }
+
+    // Altinn validates the endpoint before it sends anything.
+    let (code, _) = call(
+        state,
+        "POST",
+        "/webhooks/altinn",
+        "",
+        r#"{"id":"v","source":"https://platform.altinn.no/events/api/v1/subscriptions/42",
+            "type":"platform.events.validatesubscription","specversion":"1.0"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+
+    let dialog = f.skatteetaten.lock().unwrap().dialog_id.clone();
+    let event = |resource: &str, dialog: &str| {
+        format!(
+            r#"{{"type":"dialogporten.dialog.transmission.created.v1",
+                "resource":"urn:altinn:resource:{resource}","resourceinstance":"{dialog}"}}"#
+        )
+    };
+
+    // Events that name nothing of ours are answered and ignored.
+    for other in [
+        event("ske-innrapportering-amelding", "nope"),
+        event("something-else", &dialog),
+    ] {
+        let (code, _) = call(state, "POST", "/webhooks/altinn", "", &other).await;
+        assert_eq!(code, StatusCode::OK);
+    }
+    assert_eq!(f.skatteetaten.lock().unwrap().feedback_fetches, 0);
+
+    // The feedback transmission: fetched and stored, no button pressed.
+    let feedback_event = event("ske-innrapportering-amelding", &dialog);
+    let (code, _) = call(state, "POST", "/webhooks/altinn", "", &feedback_event).await;
+    assert_eq!(code, StatusCode::OK);
+    let (_, listed) = call(state, "GET", &f.submissions, admin, "").await;
+    assert_eq!(listed["innsendinger"][0]["status"], "tilbakemelding");
+    assert_eq!(
+        listed["innsendinger"][0]["tilbakemelding"]["mottakstatus"],
+        "mottatt"
+    );
+
+    // The same event again fetches nothing: the submission no longer waits.
+    call(state, "POST", "/webhooks/altinn", "", &feedback_event).await;
+    assert_eq!(f.skatteetaten.lock().unwrap().feedback_fetches, 1);
+
+    // A replacement does not subscribe the company a second time.
+    let (code, _) = call(state, "POST", &f.submissions, admin, r#"{"erstatt":true}"#).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(f.skatteetaten.lock().unwrap().subscriptions.len(), 1);
 }

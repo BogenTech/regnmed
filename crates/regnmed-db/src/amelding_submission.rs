@@ -330,3 +330,80 @@ async fn status(pool: &PgPool, submission_id: Uuid) -> Result<SubmissionStatus> 
         },
     })
 }
+
+/// Delivered submissions still waiting for feedback whose receipt names
+/// this Dialogporten dialog — what an incoming event points at. The
+/// event itself is untrusted; this is the only thing taken from it.
+pub async fn awaiting_feedback_for_dialog(
+    pool: &PgPool,
+    dialog_id: &str,
+) -> Result<Vec<(Uuid, Submission)>> {
+    let rows = sqlx::query(&format!(
+        "select s.company_id, {} from amelding_submission s
+         join amelding_submission_event r
+           on r.submission_id = s.id and r.kind = 'receipt' and r.dialog_id = $1
+         where not exists (select 1 from amelding_submission_event f
+                           where f.submission_id = s.id and f.kind = 'feedback')",
+        COLUMNS
+            .split(", ")
+            .map(|c| format!("s.{}", c.trim()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+    .bind(dialog_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| (r.get("company_id"), from_row(r)))
+        .collect())
+}
+
+/// Altinn's id for the company's subscription to `type_filter` events on
+/// `resource_filter` delivered to `end_point`, if regnmed has made one.
+pub async fn event_subscription(
+    pool: &PgPool,
+    company_id: Uuid,
+    resource_filter: &str,
+    type_filter: &str,
+    end_point: &str,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "select altinn_id from altinn_event_subscription
+         where company_id = $1 and resource_filter = $2 and type_filter = $3
+           and end_point = $4",
+    )
+    .bind(company_id)
+    .bind(resource_filter)
+    .bind(type_filter)
+    .bind(end_point)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn record_event_subscription(
+    pool: &PgPool,
+    company_id: Uuid,
+    altinn_id: i64,
+    resource_filter: &str,
+    type_filter: &str,
+    end_point: &str,
+    created_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into altinn_event_subscription
+             (id, company_id, altinn_id, resource_filter, type_filter, end_point, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7)
+         on conflict (company_id, resource_filter, type_filter, end_point) do nothing",
+    )
+    .bind(Uuid::new_v4())
+    .bind(company_id)
+    .bind(altinn_id)
+    .bind(resource_filter)
+    .bind(type_filter)
+    .bind(end_point)
+    .bind(created_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}

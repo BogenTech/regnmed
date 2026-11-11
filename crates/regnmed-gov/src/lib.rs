@@ -8,12 +8,15 @@
 //!   credentials exist; see docs/gov.md.
 //! - [`amelding`]: Skatteetatens a-melding API — submission with a
 //!   systembruker token and the feedback via Dialogporten.
+//! - [`altinn_events`]: Altinn Events subscriptions, so Skatteetatens
+//!   feedback arrives as an event instead of being asked for.
 //! - [`tsa`]: RFC 3161 timestamping — the external witness for anchor
 //!   roots (docs/anchoring.md).
 //!
 //! Nothing here touches the ledger: regnmed-core builds the documents,
 //! this crate moves them.
 
+pub mod altinn_events;
 pub mod amelding;
 pub mod brreg;
 pub mod finanstilsynet;

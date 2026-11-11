@@ -99,6 +99,11 @@ pub struct AppState {
 pub struct AmeldingRail {
     pub tokens: regnmed_gov::maskinporten::TokenProvider,
     pub client: regnmed_gov::amelding::AmeldingClient,
+    pub events: regnmed_gov::altinn_events::EventsClient,
+    /// Our public webhook (ALTINN_EVENTS_ENDPOINT, e.g.
+    /// `https://api.test.regnmed.no/webhooks/altinn`). None: no subscriptions,
+    /// and the feedback is fetched with the button.
+    pub events_endpoint: Option<String>,
 }
 
 /// regnmed's own credentials at the IdP, for provisioning agent
@@ -558,6 +563,9 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/payroll/{run_id}/amelding/submissions/{submission_id}/feedback",
             axum::routing::post(payroll::amelding_feedback),
         )
+        // Altinn Events' webhook (docs/lonn.md): public by necessity, and
+        // therefore trusts nothing it is told.
+        .route("/webhooks/altinn", axum::routing::post(payroll::altinn_event))
         .route(
             "/companies/{company_id}/payroll/{run_id}/slip/{employee_id}",
             get(payroll::payslip_pdf),
