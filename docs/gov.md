@@ -412,7 +412,8 @@ Systembruker og Klientdelegering. Samme dag signerte BogenTech
 Samarbeidsportalen. Vilkårene kreves først før produksjon (§1.1), men
 §1.2 legger et krav på oss før vi går dit: kunden er fullt ansvarlig
 for det vi gjør i Altinn på deres vegne, så hver kunde må ha en avtale
-med oss som viderefører vilkårene. regnmed har ingen kundevilkår ennå.
+med oss som viderefører vilkårene. Utkastet står i docs/kundevilkar.md
+(ikke gjeldende før juridisk gjennomgang og aksept i portalen).
 
 **Token-siden er klar før tildelingen** (2026-11-11):
 `TokenProvider::token_for_systemuser(orgnr)` i
