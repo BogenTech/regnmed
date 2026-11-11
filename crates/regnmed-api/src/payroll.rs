@@ -5,6 +5,8 @@
 //! - GET/POST /companies/{id}/payroll               payroll runs
 //! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
 //! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
+//! - GET/POST /companies/{id}/payroll/{rid}/amelding/submissions   send + record
+//! - POST /companies/{id}/payroll/{rid}/amelding/submissions/{sid}/feedback
 //! - GET      /companies/{id}/payroll/preview       computation without posting
 //!
 //! Reading requires access; registering employees and running payroll
@@ -278,6 +280,196 @@ pub async fn amelding(
         "arbeidsgiveravgift_ore": m.employer_contribution_ore,
     }))
     .into_response())
+}
+
+/// Skatteetatens verdict on THIS melding inside a tilbakemelding (which
+/// covers the whole month): its `mottakstatus` and `avvik`.
+fn verdict(feedback: &serde_json::Value, melding_id: &str) -> serde_json::Value {
+    let received = feedback["mottak"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|m| m["mottattLeveranse"].as_array().into_iter().flatten())
+        .find(|l| l["meldingsId"] == melding_id);
+    match received {
+        Some(l) => json!({ "mottakstatus": l["mottakstatus"], "avvik": l["avvik"] }),
+        None => json!({ "mottakstatus": null, "avvik": null }),
+    }
+}
+
+fn submission_json(
+    s: &regnmed_db::amelding_submission::Submission,
+    status: &regnmed_db::amelding_submission::SubmissionStatus,
+) -> serde_json::Value {
+    use regnmed_db::amelding_submission::SubmissionStatus as S;
+    let mut v = json!({
+        "id": s.id,
+        "melding_id": s.melding_id,
+        "periode": s.period,
+        "erstatter_melding_id": s.replaces_melding_id,
+        "opprettet": s.created_at,
+        "opprettet_av": s.created_by,
+        "status": status.slug(),
+    });
+    match status {
+        S::NotDelivered { last_error } => v["siste_feil"] = json!(last_error),
+        S::Delivered {
+            dialog_id,
+            forsendelse_id,
+        } => {
+            v["dialog_id"] = json!(dialog_id);
+            v["forsendelse_id"] = json!(forsendelse_id);
+        }
+        S::Feedback {
+            dialog_id,
+            forsendelse_id,
+            feedback,
+        } => {
+            v["dialog_id"] = json!(dialog_id);
+            v["forsendelse_id"] = json!(forsendelse_id);
+            v["tilbakemelding"] = verdict(feedback, &s.melding_id);
+        }
+    }
+    v
+}
+
+pub async fn list_amelding_submissions(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, run_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
+    let list =
+        regnmed_db::amelding_submission::list_submissions(&state.pool, company_id, run_id).await?;
+    Ok(Json(json!({
+        "innsendinger": list.iter().map(|(s, st)| submission_json(s, st)).collect::<Vec<_>>(),
+        "innsending_mulig": state.amelding.is_some(),
+    })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct SubmitRequest {
+    /// Send a run that is already delivered as a replacement melding.
+    #[serde(default, rename = "erstatt")]
+    replace: bool,
+}
+
+/// Sends the run's a-melding to Skatteetaten (docs/lonn.md,
+/// «Innsendingssporet»). The submission is STORED before it is sent: an
+/// undelivered one is resent as it is (same body, same idempotency key),
+/// and a delivered run is only sent again as an explicit replacement —
+/// two meldinger for one month add up at Skatteetaten.
+pub async fn submit_amelding(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, run_id)): Path<(Uuid, Uuid)>,
+    request: Option<Json<SubmitRequest>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    let Some(rail) = state.amelding.clone() else {
+        return Err(ApiError::BadRequest(
+            "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
+        ));
+    };
+    let replace = request.map(|Json(r)| r.replace).unwrap_or_default();
+    let by = person.display();
+    let s = regnmed_db::amelding_submission::prepare_submission(
+        &state.pool,
+        company_id,
+        run_id,
+        replace,
+        by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+        .await?
+        .orgnumber;
+    match rail
+        .client
+        .submit(
+            &rail.tokens,
+            &orgnumber,
+            &s.period,
+            s.body.clone(),
+            s.idempotency_key,
+        )
+        .await
+    {
+        Ok(receipt) => {
+            regnmed_db::amelding_submission::record_receipt(
+                &state.pool,
+                s.id,
+                &receipt.dialog_id,
+                &receipt.forsendelse_id,
+                by,
+            )
+            .await?;
+        }
+        Err(e) => {
+            regnmed_db::amelding_submission::record_failure(&state.pool, s.id, &e.to_string(), by)
+                .await?;
+            return Err(ApiError::BadRequest(format!(
+                "Skatteetaten tok ikke imot a-meldingen: {e}. Den er lagret og sendes uendret \
+                 (samme idempotensnøkkel) neste gang du sender — den telles ikke dobbelt."
+            )));
+        }
+    }
+    let (s, status) =
+        regnmed_db::amelding_submission::submission(&state.pool, company_id, s.id).await?;
+    Ok(Json(submission_json(&s, &status)))
+}
+
+/// Fetches Skatteetatens tilbakemelding for a delivered submission and
+/// stores it. Answers with the submission as it stands — still
+/// `levert` when Skatteetaten has not answered yet.
+pub async fn amelding_feedback(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, _run_id, submission_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    use regnmed_db::amelding_submission::SubmissionStatus as S;
+    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    let (s, status) =
+        regnmed_db::amelding_submission::submission(&state.pool, company_id, submission_id)
+            .await
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if let S::Delivered {
+        dialog_id,
+        forsendelse_id,
+    } = &status
+    {
+        let Some(rail) = state.amelding.clone() else {
+            return Err(ApiError::BadRequest(
+                "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
+            ));
+        };
+        let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+            .await?
+            .orgnumber;
+        let receipt = regnmed_gov::amelding::Receipt {
+            dialog_id: dialog_id.clone(),
+            forsendelse_id: forsendelse_id.clone(),
+            meldings_id: s.melding_id.clone(),
+        };
+        if let Some(feedback) = rail
+            .client
+            .feedback(&rail.tokens, &orgnumber, &receipt)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente tilbakemeldingen: {e}")))?
+        {
+            regnmed_db::amelding_submission::record_feedback(
+                &state.pool,
+                s.id,
+                feedback,
+                person.display(),
+            )
+            .await?;
+        }
+    }
+    let (s, status) =
+        regnmed_db::amelding_submission::submission(&state.pool, company_id, submission_id).await?;
+    Ok(Json(submission_json(&s, &status)))
 }
 
 #[derive(Deserialize)]

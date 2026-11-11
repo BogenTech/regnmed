@@ -351,9 +351,49 @@ periodesummene i tilbakemeldingen ble doblet da testen ble kjørt to
 ganger. Derfor: et nytt forsøk på SAMME innsending skal gjenbruke
 `idempotencyKey` (da svarer Skatteetaten med første kvittering), og en
 rettet melding skal være en erstatningsmelding (`erstatterMeldingsId`),
-ikke en ny. Ingen av delene er modellert ennå — innsending fra regnmed
-krever et lagret innsendingsspor (idempotensnøkkel og meldingsId per
-kjøring) før den kobles på.
+ikke en ny. Begge deler er nå modellert i innsendingssporet under.
+
+### Innsendingssporet (migration 0074)
+
+**Det som sendes, lagres før det sendes.** `amelding_submission` holder
+én rad per innsending: kjøringen, `meldingsId` (ny per innsending — en
+erstatning trenger sin egen, så det er IKKE kjøringens id),
+`idempotencyKey`, kalendermåneden, `erstatterMeldingsId` og **den
+eksakte JSON-kroppen**. Hva som skjedde med den står i
+`amelding_submission_event` (`receipt`, `failed`, `feedback`); statusen
+— `ikke_levert`, `levert`, `tilbakemelding` — beregnes av hendelsene og
+lagres aldri. Begge tabellene er innsettings-bare som hovedboken, og
+databasen tillater én kvittering og én tilbakemelding per innsending.
+
+`regnmed-db::amelding_submission::prepare_submission` avgjør hva som
+sendes:
+
+- **Finnes en innsending uten kvittering, sendes DEN** — samme kropp,
+  samme nøkkel, byte for byte. Et nettverksbrudd eller et 503 fra
+  Skatteetaten blir altså aldri en melding til, og feilen står i sporet
+  (`siste_feil`).
+- **Er kjøringen levert, nektes en ny melding** med beskjed om at den
+  ville blitt lagt til. Bare `erstatt: true` lager en ny, og da som
+  erstatning for den sist leverte, med ny `meldingsId` og ny nøkkel.
+- Ellers rendres en ny fra kjøringen slik den står (`amelding_for_run`,
+  med alle hindringene samlet om noe mangler).
+
+To trykk samtidig gir ÉN innsending: kjøringens rad låses
+(`for update`) i transaksjonen som avgjør. Testen
+`concurrent_sends_create_one_submission` ble sett feile uten låsen.
+
+API: `POST …/payroll/{rid}/amelding/submissions` (`LONN_KJOR`; body
+`{"erstatt": bool}`) sender og lagrer kvittering eller feil;
+`GET …/submissions` (`LONN_LES`) lister sporet uten kropp;
+`POST …/submissions/{sid}/feedback` henter og lagrer tilbakemeldingen og
+viser DENNE meldingens `mottakstatus` og `avvik` fra den. Innsending er
+på når API-et har Maskinporten-klienten (`MASKINPORTEN_*`, scopene settes
+av skinnen selv); uten den sier endepunktet det, og portalen tilbyr bare
+filen.
+
+**Prøvd ende til ende mot Skatteetatens testmiljø 2026-11-11** fra
+portalen: «Send til Skatteetaten» → `levert` → «Hent tilbakemelding» →
+`mottatt, 0 avvik`, for det syntetiske Tenor-selskapet 311032240.
 
 ## Hva som IKKE er bygget
 

@@ -1197,3 +1197,183 @@ async fn another_companys_run_is_unknown() {
             .is_err()
     );
 }
+
+/// A run with everything the a-melding needs, ready to submit.
+async fn submittable_run(pool: &PgPool) -> (Uuid, Uuid) {
+    let company = company(pool).await;
+    let id = employee(pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    payroll::update_employment_details(pool, company, id, &complete_details("974760673"))
+        .await
+        .unwrap();
+    let run = payroll::run_payroll(
+        pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[run_entry(id, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    (company, run.id)
+}
+
+/// The rule the record exists for: an undelivered submission is retried
+/// AS IT IS — same body, same idempotency key — and a delivered one is
+/// never followed by a second melding, only by an explicit replacement.
+#[tokio::test]
+async fn a_submission_is_retried_unchanged_and_replaced_only_on_request() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let (company, run) = submittable_run(&pool).await;
+
+    let first = sub::prepare_submission(&pool, company, run, false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(first.period, "2026-03");
+    assert!(
+        first
+            .body
+            .contains(&format!("\"meldingsId\":\"{}\"", first.melding_id))
+    );
+    assert!(
+        first
+            .body
+            .contains("\"norskIdentifikator\":\"26829398612\"")
+    );
+
+    // The call failed: the retry is the same submission, byte for byte.
+    sub::record_failure(&pool, first.id, "connection reset", "Test")
+        .await
+        .unwrap();
+    let retry = sub::prepare_submission(&pool, company, run, false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(retry.id, first.id);
+    assert_eq!(retry.idempotency_key, first.idempotency_key);
+    assert_eq!(retry.body, first.body);
+    let (_, status) = sub::submission(&pool, company, first.id).await.unwrap();
+    assert_eq!(
+        status,
+        sub::SubmissionStatus::NotDelivered {
+            last_error: Some("connection reset".into())
+        }
+    );
+
+    // Delivered: sending again is refused unless it is a replacement.
+    sub::record_receipt(&pool, first.id, "d-1", "t-1", "Test")
+        .await
+        .unwrap();
+    let err = sub::prepare_submission(&pool, company, run, false, "Test")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("allerede levert"), "{err}");
+    let replacement = sub::prepare_submission(&pool, company, run, true, "Test")
+        .await
+        .unwrap();
+    assert_ne!(replacement.id, first.id);
+    assert_ne!(replacement.idempotency_key, first.idempotency_key);
+    assert_eq!(
+        replacement.replaces_melding_id.as_deref(),
+        Some(first.melding_id.as_str())
+    );
+    assert!(
+        replacement
+            .body
+            .contains(&format!("\"erstatterMeldingsId\":\"{}\"", first.melding_id))
+    );
+
+    // A second receipt for the same submission is a delivery the record
+    // could not explain: refused by the database.
+    assert!(
+        sub::record_receipt(&pool, first.id, "d-2", "t-2", "Test")
+            .await
+            .is_err()
+    );
+    // The same feedback fetched twice is stored once.
+    for _ in 0..2 {
+        sub::record_feedback(&pool, first.id, serde_json::json!({"mottak": []}), "Test")
+            .await
+            .unwrap();
+    }
+    let list = sub::list_submissions(&pool, company, run).await.unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].0.id, replacement.id, "newest first");
+    assert_eq!(list[1].1.slug(), "tilbakemelding");
+}
+
+#[tokio::test]
+async fn the_submission_record_is_append_only_and_needs_a_buildable_run() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let (first_company, run) = submittable_run(&pool).await;
+    let s = sub::prepare_submission(&pool, first_company, run, false, "Test")
+        .await
+        .unwrap();
+    for sql in [
+        "update amelding_submission set body = 'x' where id = $1",
+        "delete from amelding_submission where id = $1",
+    ] {
+        assert!(
+            sqlx::query(sql).bind(s.id).execute(&pool).await.is_err(),
+            "{sql} skulle vært avvist"
+        );
+    }
+
+    // No arbeidsforhold details: the record refuses before storing anything.
+    let company2 = company(&pool).await;
+    let id = employee(
+        &pool,
+        company2,
+        "26829398612",
+        "Ola Ufullstendig",
+        4_000_000,
+    )
+    .await;
+    let run2 = payroll::run_payroll(
+        &pool,
+        company2,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[run_entry(id, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let err = sub::prepare_submission(&pool, company2, run2.id, false, "Test")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("arbeidsforholdet mangler"), "{err}");
+    assert!(
+        sub::list_submissions(&pool, company2, run2.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Two sends at once: the run row is the lock, so there is ONE melding.
+#[tokio::test]
+async fn concurrent_sends_create_one_submission() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let (company, run) = submittable_run(&pool).await;
+    let (a, b) = tokio::join!(
+        sub::prepare_submission(&pool, company, run, false, "Test"),
+        sub::prepare_submission(&pool, company, run, false, "Test"),
+    );
+    assert_eq!(a.unwrap().id, b.unwrap().id);
+    assert_eq!(
+        sub::list_submissions(&pool, company, run)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
