@@ -648,6 +648,23 @@ async fn payroll_is_not_general_reading() {
             "{name} skulle ikke fått endre arbeidsforholdet"
         );
     }
+    // The a-melding carries every employee's fødselsnummer, so it needs
+    // LONN_KJOR — the revisor READS lønn but does not get the file.
+    let amelding = format!("/companies/{company}/payroll/{}/amelding", Uuid::new_v4());
+    for (name, token) in [("revisor", &auditor), ("les", &les), ("ansatt", &employee)] {
+        assert_eq!(
+            status(&state, "GET", &amelding, token, "").await,
+            StatusCode::FORBIDDEN,
+            "{name} skulle ikke fått a-meldingen"
+        );
+    }
+    for (name, token) in [("bokforing", &bookkeeping), ("admin", &admin)] {
+        assert_ne!(
+            status(&state, "GET", &amelding, token, "").await,
+            StatusCode::FORBIDDEN,
+            "{name} skulle nådd a-meldingen"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------

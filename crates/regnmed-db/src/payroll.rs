@@ -158,8 +158,19 @@ impl Employee {
     /// What the a-melding would refuse for this employee, by the same
     /// names its errors use. Empty means the arbeidsforhold is complete.
     pub fn amelding_missing(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if self.details.business_unit_orgnumber.is_none() {
+            missing.push("virksomhet");
+        }
+        missing.extend(self.employment().missing());
+        missing
+    }
+
+    /// The arbeidsforhold as the a-melding renderer takes it. The id is
+    /// the employee id: stable across months (F108).
+    fn employment(&self) -> regnmed_core::amelding::Employment {
         let d = &self.details;
-        let employment = regnmed_core::amelding::Employment {
+        regnmed_core::amelding::Employment {
             id: self.id.to_string(),
             start_date: self.employed_from,
             end_date: self.employed_to,
@@ -171,13 +182,7 @@ impl Employee {
             position_percent_bp: d.position_percent_bp.map(i64::from),
             last_salary_change: d.last_salary_change,
             employment_form: d.employment_form.clone(),
-        };
-        let mut missing = Vec::new();
-        if d.business_unit_orgnumber.is_none() {
-            missing.push("virksomhet");
         }
-        missing.extend(employment.missing());
-        missing
     }
 
     fn withholding(&self) -> Withholding {
@@ -1354,4 +1359,179 @@ pub async fn employee_link_history(
             created_at: r.get("created_at"),
         })
         .collect())
+}
+
+/// One stored payroll run made ready for the a-melding (docs/lonn.md).
+///
+/// `hindrances` are what stops the melding from being delivered, in
+/// words a payroll person can act on — ALL of them at once, not the
+/// first one the renderer trips over. `melding` is built regardless, so
+/// the caller can still render and show the renderer's own verdict once
+/// the list is empty.
+pub struct AmeldingDraft {
+    pub melding: regnmed_core::amelding::Melding,
+    pub hindrances: Vec<String>,
+}
+
+/// Builds the a-melding for a stored run. The fødselsnummer is read HERE
+/// and nowhere else in the payroll module, as for RF-1086.
+pub async fn amelding_for_run(
+    pool: &PgPool,
+    company_id: Uuid,
+    run_id: Uuid,
+    delivered_at: chrono::DateTime<chrono::Utc>,
+) -> Result<AmeldingDraft> {
+    use regnmed_core::amelding::{Income, IncomeKind, Melding, Recipient};
+
+    let run = sqlx::query(
+        "select ar, maned, utbetalt_dato, sone, aga_ore from payroll_run
+         where id = $1 and company_id = $2",
+    )
+    .bind(run_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("ukjent lønnskjøring")?;
+    let (year, month): (i32, i32) = (run.get("ar"), run.get("maned"));
+    let paid_date: NaiveDate = run.get("utbetalt_dato");
+    let zone_slug: String = run.get("sone");
+    let zone = Zone::from_slug(&zone_slug)
+        .with_context(|| format!("ukjent arbeidsgiveravgiftssone «{zone_slug}»"))?;
+
+    let mut hindrances = Vec::new();
+    let rate_bp =
+        regnmed_core::rates::value_on(&rates(pool).await?, &zone.rate_domain(), paid_date)
+            .unwrap_or_else(|| {
+                hindrances.push(format!(
+                    "arbeidsgiveravgiftssatsen for sone {zone_slug} på {paid_date} finnes ikke i \
+                 satsregisteret"
+                ));
+                0
+            });
+
+    let employees = list_ansatte(pool, company_id).await?;
+    let nins: std::collections::HashMap<Uuid, String> =
+        sqlx::query("select id, fodselsnummer from employee where company_id = $1")
+            .bind(company_id)
+            .fetch_all(pool)
+            .await?
+            .iter()
+            .map(|r| (r.get("id"), r.get("fodselsnummer")))
+            .collect();
+    let lines = sqlx::query(
+        "select employee_id, brutto_ore, feriepenger_ore, forskuddstrekk_ore, pay_kind
+         from payroll_line where run_id = $1",
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut recipients = Vec::new();
+    let mut business_units = std::collections::BTreeSet::new();
+    for line in &lines {
+        let employee_id: Uuid = line.get("employee_id");
+        let employee = employees
+            .iter()
+            .find(|e| e.id == employee_id)
+            .context("lønnslinjen peker på en ansatt som ikke finnes")?;
+        let missing = employee.amelding_missing();
+        if !missing.is_empty() {
+            hindrances.push(format!(
+                "{}: arbeidsforholdet mangler {}",
+                employee.name,
+                missing.join(", ")
+            ));
+        }
+        business_units.extend(employee.details.business_unit_orgnumber.clone());
+
+        let gross: i64 = line.get("brutto_ore");
+        let mut income = Vec::new();
+        if gross != 0 {
+            match line.get::<Option<String>, _>("pay_kind").as_deref() {
+                Some("fixed") => income.push(Income {
+                    kind: IncomeKind::FixedSalary,
+                    amount_ore: gross,
+                }),
+                Some(_) => income.push(Income {
+                    kind: IncomeKind::HourlyWage,
+                    amount_ore: gross,
+                }),
+                // Not stored (a run from before migration 0073, or one
+                // that could not tell): never guessed now.
+                None => hindrances.push(format!(
+                    "{}: det ble ikke lagret om lønnen i denne kjøringen var fastlønn eller \
+                     timelønn, og regnmed gjetter det ikke i ettertid",
+                    employee.name
+                )),
+            }
+        }
+        let holiday_pay: i64 = line.get("feriepenger_ore");
+        if holiday_pay != 0 {
+            income.push(Income {
+                kind: IncomeKind::HolidayPay,
+                amount_ore: holiday_pay,
+            });
+        }
+        recipients.push(Recipient {
+            name: employee.name.clone(),
+            nin: nins.get(&employee_id).cloned().unwrap_or_default(),
+            employment: employee.employment(),
+            income,
+            withholding_ore: line.get("forskuddstrekk_ore"),
+        });
+    }
+
+    // shortcut: one virksomhet per melding, as the renderer takes it;
+    // group per virksomhet (and split the avgift) when a customer has
+    // employees on two underenheter.
+    if business_units.len() > 1 {
+        hindrances.push(format!(
+            "de ansatte i kjøringen står på ulike virksomheter ({}) — regnmed lager foreløpig \
+             bare a-melding for én virksomhet om gangen",
+            business_units
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    // F108: an active arbeidsforhold is reported every month until its
+    // end date, paid or not. A run only has lines for those who were
+    // paid, and a melding without the others is wrong at NAV.
+    let month_start = NaiveDate::from_ymd_opt(year, month as u32, 1).context("ugyldig måned")?;
+    let month_end = month_start
+        .checked_add_months(chrono::Months::new(1))
+        .and_then(|d| d.pred_opt())
+        .context("ugyldig måned")?;
+    for e in &employees {
+        let paid = lines
+            .iter()
+            .any(|l| l.get::<Uuid, _>("employee_id") == e.id);
+        if !paid && e.employed_in(month_end, month_start) {
+            hindrances.push(format!(
+                "{} var ansatt i {month:02}/{year}, men har ingen linje i kjøringen — \
+                 a-meldingen skal rapportere arbeidsforholdet hver måned også uten lønn (F108), \
+                 og det er ikke bygget ennå",
+                e.name
+            ));
+        }
+    }
+
+    Ok(AmeldingDraft {
+        melding: Melding {
+            message_id: run_id.to_string(),
+            replaces_message_id: None,
+            delivered_at,
+            source_system: "regnmed".into(),
+            orgnumber: company_orgnumber(pool, company_id).await?,
+            business_orgnumber: business_units.into_iter().next(),
+            payment_date: paid_date,
+            zone,
+            employer_contribution_rate_bp: rate_bp,
+            employer_contribution_ore: run.get("aga_ore"),
+            recipients,
+        },
+        hindrances,
+    })
 }

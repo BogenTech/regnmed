@@ -1,5 +1,5 @@
 <script>
-  import { post } from "../../lib/api.js";
+  import { api, post } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { download } from "../../lib/download.js";
@@ -40,6 +40,19 @@
     const ledig = MANEDER.findIndex((_, i) => !kjortIAr.has(i + 1));
     maned = ledig >= 0 ? ledig + 1 : 1;
   });
+
+  // A-meldingen for én lagret kjøring: alt som hindrer levering listes
+  // samlet, og filen kan lastes ned først når listen er tom.
+  let amelding = $state(null); // { kjoring, svar }
+
+  async function sjekkAmelding(k) {
+    try {
+      const svar = await api("/companies/" + companyId + "/payroll/" + k.id + "/amelding");
+      amelding = { kjoring: k, svar };
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
 
   async function kjor() {
     const valgte = linjer
@@ -96,8 +109,8 @@
   </p>
   <div class="alert alert-warning text-sm mb-3">
     <div>
-      <b>A-melding leveres ikke herfra.</b> Denne kjøringen er regnskapsføring, ikke rapportering —
-      a-meldingen må fortsatt leveres på annen måte (frist den 5.). Se docs/lonn.md.
+      <b>A-meldingen sendes ikke herfra ennå.</b> Den kan lages som fil fra en kjøring, men innsending
+      venter på tilgang i Altinn — lever den fortsatt på annen måte (frist den 5.). Se docs/lonn.md.
     </div>
   </div>
 
@@ -120,6 +133,7 @@
               Aga feriepenger
             </th>
             <th>Lønnsslipp</th>
+            <th>A-melding</th>
           </tr>
         </thead>
         <tbody>
@@ -154,11 +168,58 @@
                   </button>
                 {/each}
               </td>
+              <td>
+                <button class="btn btn-xs btn-ghost" onclick={() => sjekkAmelding(k)}>Sjekk</button>
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+    {#if amelding}
+      {@const k = amelding.kjoring}
+      {@const svar = amelding.svar}
+      <div class="card border border-base-300 card-sm mb-4 max-w-2xl">
+        <div class="card-body">
+          <h4 class="font-semibold text-sm">
+            A-melding for {MANEDER[k.maned - 1]} {k.ar}
+            <span class="opacity-70 font-normal">
+              — rapporteres for {svar.kalendermaaned} (utbetalingsmåneden)
+            </span>
+          </h4>
+          {#if svar.leverbar}
+            <p class="text-sm">
+              Klar: {svar.inntektsmottakere} inntektsmottaker{svar.inntektsmottakere === 1
+                ? ""
+                : "e"}, arbeidsgiveravgift {kr(svar.arbeidsgiveravgift_ore)}.
+            </p>
+            <div class="flex gap-2">
+              <button
+                class="btn btn-sm btn-primary"
+                onclick={() =>
+                  download(
+                    "/companies/" + companyId + "/payroll/" + k.id + "/amelding?format=xml",
+                    "a-melding-" + svar.kalendermaaned + ".xml",
+                  )}
+              >
+                Last ned XML
+              </button>
+              <button class="btn btn-ghost btn-sm" onclick={() => (amelding = null)}>Lukk</button>
+            </div>
+          {:else}
+            <p class="text-sm mb-1">Kan ikke lages ennå — dette må rettes først:</p>
+            <ul class="list-disc ml-5 text-sm text-warning mb-2">
+              {#each svar.hindringer as h, i (i)}
+                <li>{h}</li>
+              {/each}
+            </ul>
+            <button class="btn btn-ghost btn-sm w-fit" onclick={() => (amelding = null)}>
+              Lukk
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
   {/if}
 
   {#if aktive.length}

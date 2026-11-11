@@ -4,6 +4,7 @@
 //! - PUT  /companies/{id}/employees/{eid}/employment  arbeidsforhold for the a-melding
 //! - GET/POST /companies/{id}/payroll               payroll runs
 //! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
+//! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
 //! - GET      /companies/{id}/payroll/preview       computation without posting
 //!
 //! Reading requires access; registering employees and running payroll
@@ -210,6 +211,73 @@ pub async fn update_employment(
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "updated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct AmeldingQuery {
+    /// `json` (default) previews; `xml` downloads the melding itself.
+    format: Option<String>,
+}
+
+/// The a-melding for one stored payroll run (docs/lonn.md).
+///
+/// The JSON form lists EVERYTHING that blocks delivery, so the
+/// payroll person can fix it in one pass; `format=xml` returns the
+/// melding only when that list is empty. Submission is not here: it
+/// needs the Altinn systembruker (#180, docs/gov.md).
+///
+/// `LONN_KJOR`, not `LONN_LES`: the file carries every employee's
+/// fødselsnummer, which the rest of the payroll API never shows — the
+/// person who runs payroll and files the melding needs it, a reader
+/// (or a revisor) does not.
+pub async fn amelding(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, run_id)): Path<(Uuid, Uuid)>,
+    Query(q): Query<AmeldingQuery>,
+) -> Result<Response, ApiError> {
+    use axum::response::IntoResponse;
+    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    let draft =
+        regnmed_db::payroll::amelding_for_run(&state.pool, company_id, run_id, chrono::Utc::now())
+            .await
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let mut hindringer = draft.hindrances;
+    // The renderer's own verdict only once ours is clean — otherwise it
+    // repeats the first item of the list in other words.
+    let xml = if hindringer.is_empty() {
+        regnmed_core::amelding::render(&draft.melding)
+            .map_err(|e| hindringer.push(e.to_string()))
+            .ok()
+    } else {
+        None
+    };
+    let m = &draft.melding;
+    if q.format.as_deref() == Some("xml") {
+        let Some(xml) = xml else {
+            return Err(ApiError::BadRequest(hindringer.join("\n")));
+        };
+        let filename = format!(
+            "a-melding-{}-{:02}.xml",
+            m.payment_date.format("%Y"),
+            m.payment_date.format("%m")
+        );
+        return Ok(file_response(
+            Vis::Attachment,
+            &filename,
+            "application/xml",
+            xml,
+        ));
+    }
+    Ok(Json(json!({
+        "leverbar": hindringer.is_empty(),
+        "hindringer": hindringer,
+        // The month of the PAYMENT date, which is what the melding reports.
+        "kalendermaaned": m.payment_date.format("%Y-%m").to_string(),
+        "inntektsmottakere": m.recipients.len(),
+        "arbeidsgiveravgift_ore": m.employer_contribution_ore,
+    }))
+    .into_response())
 }
 
 #[derive(Deserialize)]

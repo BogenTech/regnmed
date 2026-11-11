@@ -180,8 +180,9 @@ Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 a-melding, håndrullet og deterministisk som RF-1086, og validert mot
 Skatteetatens offisielle XSD v2.3 (vendored i docs/amelding/, med kilde,
 versjon og hash i docs/amelding/README.md) i enhetstestene og i CI.
-**Den sender ingenting** og er ikke koblet til databasen ennå — se
-hullene under.
+**Den sender ingenting** — innsending venter på Altinn-systembrukeren
+(#180). Fra en lagret kjøring lages meldingen av
+`regnmed-db::payroll::amelding_for_run`, se «Fra lagret kjøring» under.
 
 ### XSD-en er det minste, ikke det hele
 
@@ -249,9 +250,9 @@ mangler synlig.
 
 Virksomheten ligger per ANSATT fordi det er der den hører hjemme — et
 selskap med to underenheter har ansatte på begge. Renderen tar i dag ÉN
-virksomhet per melding; koblingen fra databasen må derfor nekte en
-kjøring der de ansatte står på ulike underenheter, til renderen grupperer
-per virksomhet (inkludert avgiften, som da må fordeles).
+virksomhet per melding; `amelding_for_run` nekter derfor en kjøring der
+de ansatte står på ulike underenheter, til renderen grupperer per
+virksomhet (inkludert avgiften, som da må fordeles).
 
 **Fastlønn eller timelønn** lagres nå per lønnslinje
 (`payroll_line.pay_kind`), bestemt i kjøringen der det er kjent:
@@ -288,8 +289,38 @@ Og ett hull som ikke er et felt, men et oppslag:
     uten utbetaling. En lønnskjøring har bare linjer for dem som fikk
     lønn.
 
-Renderen er heller ikke koblet til databasen ennå: ingen kode bygger en
-`Melding` av en lagret kjøring. Det er neste steg, sammen med punkt 1.
+### Fra lagret kjøring
+
+`GET /companies/{id}/payroll/{rid}/amelding` (`LONN_KJOR`) bygger
+meldingen av en lagret kjøring med `amelding_for_run`. JSON-svaret er en
+forhåndsvisning som lister **alle** hindringene samlet, med navn — så
+lønnsansvarlig kan rette alt i én runde i stedet for å møte dem én og én
+fra renderen. `?format=xml` gir filen, og bare når listen er tom.
+Renderens egen dom tas med først når vår liste er tom, ellers sier den
+det første punktet en gang til med andre ord.
+
+Hindringene `amelding_for_run` finner:
+
+- arbeidsforhold som mangler felt (samme navn som renderen bruker);
+- lønnslinjer uten lagret lønnsform (`pay_kind` NULL — kjøringer fra før
+  0073, eller et oppgitt beløp for en ansatt med begge lønnsformer);
+- ansatte på ulike virksomheter i samme kjøring;
+- ansatte som var ansatt i kjøringens måned, men ikke har noen linje i
+  den (punkt 2 over) — en melding uten dem er feil hos NAV, så den
+  nektes i stedet for å sendes ufullstendig;
+- manglende aga-sats i satsregisteret på utbetalingsdatoen.
+
+Fødselsnummeret leses ÉTT sted, her, som i RF-1086. Derfor krever
+endepunktet `LONN_KJOR` og ikke `LONN_LES`: filen bærer alle ansattes
+fødselsnummer, som resten av lønns-API-et aldri viser — den som kjører
+lønn og leverer meldingen trenger det, en leser (eller revisor) gjør
+ikke. Tilgangstesten fester begge sider og er sett feile.
+
+`meldingsId` er kjøringens id; `leveringstidspunkt` er når filen lages.
+Erstatningsmelding (`erstatterMeldingsId`) er ikke modellert.
+
+Portalen har en «Sjekk»-knapp per kjøring som viser hindringene, eller
+«Last ned XML» når meldingen kan lages.
 
 ### Formatet på vei inn
 
@@ -309,8 +340,9 @@ Rekkefølgen er omtrent den de bør tas i.
 
 1. **A-meldingen.** Månedlig, frist den 5. Renderen finnes og er
    validert mot XSD-en (se «A-meldingen» under), og arbeidsforholdets
-   felt finnes nå (0073), men den er ikke koblet til databasen, nekter
-   øre der skjemaet vil ha hele kroner, og innsending venter på
+   felt finnes nå (0073), og den lages fra en lagret kjøring, men den
+   nekter øre der skjemaet vil ha hele kroner og arbeidsforhold uten
+   lønn i måneden, og innsending venter på
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
