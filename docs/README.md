@@ -51,6 +51,7 @@ CLAUDE.md).
 | [secrets.md](secrets.md) | Ingenting hemmelig i repoet, heller ikke kryptert — hvor Maskinporten-nøkkelen faktisk ligger, og én nøkkel per maskin |
 | [auth.md](auth.md) | **Hvem kan gjøre hva, og hvor er det håndhevet** — aktørene, rettighetsvokabularet, de innebygde og egendefinerte rollene, og den maskinsjekkede tilgangsmatrisen |
 | [abonnement.md](abonnement.md) | Regnmeds egen kasse: statuser beregnet aldri lagret, prislisten som data, fakturering gjennom egen motor — og sperren som aldri tar hovedboken som gissel |
+| [kundevilkar.md](kundevilkar.md) | **UTKAST** — kundevilkår og databehandleravtale som viderefører Digdirs og Skatteetatens bruksvilkår for sluttbrukersystemer, med sporingstabell krav for krav |
 | [gov.md](gov.md) | The government rail: Maskinporten, Skatteetaten APIs, operational setup |
 | [frugality.md](frugality.md) | The resource budget and the CI gate that enforces it |
 | [deploy.md](deploy.md) | Base + overlays, production checklist, bootstrap of the first login, verified backups, TLS |
