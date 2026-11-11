@@ -233,17 +233,23 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      # contents: write so the final step can commit the new image tag into
-      # deploy/test. That commit is the deploy: Flux watches main and
-      # reconciles it (bisand/hetzner tenants/regnmed). Git stays the single
-      # source of truth, and no cluster credential exists in GitHub at all —
-      # the cluster pulls, this workflow never reaches it.
-      contents: write
+      # The final step commits the new image tag into deploy/test. That
+      # commit is the deploy: Flux watches main and reconciles it
+      # (bisand/hetzner tenants/regnmed). Git stays the single source of
+      # truth, and no cluster credential exists in GitHub at all — the
+      # cluster pulls, this workflow never reaches it.
+      #
+      # The push goes through the ROLL_DEPLOY_KEY deploy key, not
+      # GITHUB_TOKEN: main's ruleset requires the `test` check, and GitHub
+      # will not let github-actions[bot] bypass a ruleset, while a deploy
+      # key can be named as a bypass actor (2026-11-11).
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.ROLL_DEPLOY_KEY }}
 
       - name: Log in to ghcr.io
         uses: docker/login-action@v4
