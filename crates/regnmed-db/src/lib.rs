@@ -7,6 +7,7 @@
 pub mod accrual;
 pub mod agent_task;
 pub mod agentllm;
+pub mod amelding_submission;
 pub mod anchor;
 pub mod approval;
 pub mod asset;

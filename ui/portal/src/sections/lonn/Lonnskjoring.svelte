@@ -3,6 +3,7 @@
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { download } from "../../lib/download.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import { AGA_SONER, MANEDER } from "./konstanter.js";
 
@@ -43,16 +44,66 @@
 
   // A-meldingen for én lagret kjøring: alt som hindrer levering listes
   // samlet, og filen kan lastes ned først når listen er tom.
-  let amelding = $state(null); // { kjoring, svar }
+  let amelding = $state(null); // { kjoring, svar, innsendinger, mulig }
+  let sender = $state(false);
+
+  const ameldingSti = (k) => "/companies/" + companyId + "/payroll/" + k.id + "/amelding";
 
   async function sjekkAmelding(k) {
     try {
-      const svar = await api("/companies/" + companyId + "/payroll/" + k.id + "/amelding");
-      amelding = { kjoring: k, svar };
+      const [svar, liste] = await Promise.all([
+        api(ameldingSti(k)),
+        api(ameldingSti(k) + "/submissions"),
+      ]);
+      amelding = { kjoring: k, svar, innsendinger: liste.innsendinger, mulig: liste.innsending_mulig };
     } catch (error) {
       toast(error.message, false);
     }
   }
+
+  // Innsendingen lagres FØR den sendes: feiler den, sendes samme melding
+  // uendret neste gang. Er den levert, kan kjøringen bare sendes på nytt
+  // som erstatning — to meldinger for samme måned legges sammen hos
+  // Skatteetaten (docs/lonn.md).
+  async function sendAmelding(k, erstatt) {
+    if (
+      erstatt &&
+      !(await bekreft(
+        "Sende a-meldingen på nytt som en erstatning? Den forrige meldingen for kjøringen erstattes hos Skatteetaten.",
+        { tittel: "Erstatt a-melding", ok: "Send erstatning" },
+      ))
+    ) {
+      return;
+    }
+    sender = true;
+    try {
+      await post(ameldingSti(k) + "/submissions", { erstatt });
+      toast("A-meldingen er levert — hent tilbakemeldingen om litt", true);
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      sender = false;
+      await sjekkAmelding(k);
+    }
+  }
+
+  async function hentTilbakemelding(k, innsending) {
+    try {
+      const svar = await post(ameldingSti(k) + "/submissions/" + innsending.id + "/feedback", {});
+      if (svar.status !== "tilbakemelding") {
+        toast("Skatteetaten har ikke svart ennå — prøv igjen om litt", false);
+      }
+      await sjekkAmelding(k);
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  const STATUS = {
+    ikke_levert: "ikke levert",
+    levert: "levert, venter på tilbakemelding",
+    tilbakemelding: "tilbakemelding mottatt",
+  };
 
   async function kjor() {
     const valgte = linjer
@@ -109,8 +160,9 @@
   </p>
   <div class="alert alert-warning text-sm mb-3">
     <div>
-      <b>A-meldingen sendes ikke herfra ennå.</b> Den kan lages som fil fra en kjøring, men innsending
-      venter på tilgang i Altinn — lever den fortsatt på annen måte (frist den 5.). Se docs/lonn.md.
+      <b>A-meldingen sendes herfra bare der innsending er satt opp.</b> Den kan alltid lages som fil
+      fra en kjøring; sjekk at Skatteetaten har svart «mottatt» uten avvik før fristen den 5. Se
+      docs/lonn.md.
     </div>
   </div>
 
@@ -193,19 +245,31 @@
                 ? ""
                 : "e"}, arbeidsgiveravgift {kr(svar.arbeidsgiveravgift_ore)}.
             </p>
-            <div class="flex gap-2">
+            {@const levert = amelding.innsendinger.some((i) => i.status !== "ikke_levert")}
+            <div class="flex flex-wrap gap-2">
+              {#if amelding.mulig}
+                <button
+                  class="btn btn-sm btn-primary"
+                  disabled={sender}
+                  onclick={() => sendAmelding(k, levert)}
+                >
+                  {levert ? "Send som erstatning" : "Send til Skatteetaten"}
+                </button>
+              {/if}
               <button
-                class="btn btn-sm btn-primary"
+                class="btn btn-sm"
                 onclick={() =>
-                  download(
-                    "/companies/" + companyId + "/payroll/" + k.id + "/amelding?format=xml",
-                    "a-melding-" + svar.kalendermaaned + ".xml",
-                  )}
+                  download(ameldingSti(k) + "?format=xml", "a-melding-" + svar.kalendermaaned + ".xml")}
               >
                 Last ned XML
               </button>
               <button class="btn btn-ghost btn-sm" onclick={() => (amelding = null)}>Lukk</button>
             </div>
+            {#if !amelding.mulig}
+              <p class="text-xs opacity-70">
+                Innsending er ikke satt opp på denne serveren — lever filen selv.
+              </p>
+            {/if}
           {:else}
             <p class="text-sm mb-1">Kan ikke lages ennå — dette må rettes først:</p>
             <ul class="list-disc ml-5 text-sm text-warning mb-2">
@@ -216,6 +280,32 @@
             <button class="btn btn-ghost btn-sm w-fit" onclick={() => (amelding = null)}>
               Lukk
             </button>
+          {/if}
+          {#if amelding.innsendinger.length}
+            <h5 class="font-semibold text-xs mt-2">Innsendinger</h5>
+            <ul class="text-sm">
+              {#each amelding.innsendinger as i (i.id)}
+                <li class="flex flex-wrap items-center gap-2">
+                  <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
+                  <span>{STATUS[i.status]}</span>
+                  {#if i.erstatter_melding_id}<span class="badge badge-sm">erstatning</span>{/if}
+                  {#if i.tilbakemelding}
+                    <span class={i.tilbakemelding.avvik?.length ? "text-warning" : ""}>
+                      — {i.tilbakemelding.mottakstatus ?? "ukjent"}, {i.tilbakemelding.avvik?.length ??
+                        0} avvik
+                    </span>
+                  {/if}
+                  {#if i.siste_feil}
+                    <span class="text-warning text-xs" title={i.siste_feil}>siste forsøk feilet</span>
+                  {/if}
+                  {#if i.status === "levert"}
+                    <button class="btn btn-ghost btn-xs" onclick={() => hentTilbakemelding(k, i)}>
+                      Hent tilbakemelding
+                    </button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
           {/if}
         </div>
       </div>

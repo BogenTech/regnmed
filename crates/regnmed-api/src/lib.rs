@@ -90,6 +90,15 @@ pub struct AppState {
     /// client_id is needed — the old path still works, it just is not
     /// the only one.
     pub regnid: Option<RegnidCfg>,
+    /// The a-melding rail (docs/lonn.md, «Innsendingssporet»): systembruker
+    /// tokens from Maskinporten and Skatteetatens client. None when
+    /// MASKINPORTEN_* is unset — the submit endpoint then says so.
+    pub amelding: Option<Arc<AmeldingRail>>,
+}
+
+pub struct AmeldingRail {
+    pub tokens: regnmed_gov::maskinporten::TokenProvider,
+    pub client: regnmed_gov::amelding::AmeldingClient,
 }
 
 /// regnmed's own credentials at the IdP, for provisioning agent
@@ -540,6 +549,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/payroll/{run_id}/amelding",
             get(payroll::amelding),
+        )
+        .route(
+            "/companies/{company_id}/payroll/{run_id}/amelding/submissions",
+            get(payroll::list_amelding_submissions).post(payroll::submit_amelding),
+        )
+        .route(
+            "/companies/{company_id}/payroll/{run_id}/amelding/submissions/{submission_id}/feedback",
+            axum::routing::post(payroll::amelding_feedback),
         )
         .route(
             "/companies/{company_id}/payroll/{run_id}/slip/{employee_id}",

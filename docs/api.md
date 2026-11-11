@@ -139,6 +139,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/employees/{employee_id}/link/history` | GET |
 | `/companies/{company_id}/payroll` | GET POST |
 | `/companies/{company_id}/payroll/{run_id}/amelding` | GET |
+| `/companies/{company_id}/payroll/{run_id}/amelding/submissions` | GET POST |
+| `/companies/{company_id}/payroll/{run_id}/amelding/submissions/{submission_id}/feedback` | POST |
 | `/companies/{company_id}/payroll/{run_id}/slip/{employee_id}` | GET |
 | `/companies/{company_id}/payroll/hours/{employee_id}` | GET |
 | `/companies/{company_id}/import/contacts` | POST |

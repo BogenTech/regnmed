@@ -97,6 +97,24 @@ async fn main() -> Result<()> {
         println!("agents can be created from the portal (regnid provisioning set)");
     }
 
+    // The a-melding rail (docs/lonn.md): on when the Maskinporten client
+    // is configured. The scopes are the rail's own, whatever
+    // MASKINPORTEN_SCOPES says, and the client defaults to Skatteetatens
+    // TEST environment unless AMELDING_URL/DIALOGPORTEN_URL say otherwise.
+    let amelding = match std::env::var("MASKINPORTEN_CLIENT_ID") {
+        Ok(_) => {
+            let mut config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+            config.scopes = regnmed_gov::amelding::SCOPES.into();
+            let client = regnmed_gov::amelding::AmeldingClient::from_env();
+            println!("a-melding submission is on ({})", client.base_url);
+            Some(std::sync::Arc::new(regnmed_api::AmeldingRail {
+                tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
+                client,
+            }))
+        }
+        Err(_) => None,
+    };
+
     let app = router(AppState {
         pool,
         verifier,
@@ -107,6 +125,7 @@ async fn main() -> Result<()> {
         portal_base: std::env::var("PORTAL_BASE_URL").ok(),
         sealing_key,
         regnid,
+        amelding,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

@@ -243,10 +243,11 @@ regnmeds egen kode, sender den med klienten og venter på dommen —
 innsending i test (og legges til periodens summer — se docs/lonn.md om
 hvorfor en ny melding for samme måned ADDERER).
 
-Ikke bygget: koblingen til lagrede lønnskjøringer (innsendingsspor med
-idempotensnøkkel og meldingsId, erstatningsmelding), API-endepunkt og
-portal, og hendelsesabonnement (`altinn:events.subscribe`) i stedet for
-å spørre etter tilbakemeldingen.
+Koblingen til lagrede lønnskjøringer — innsendingssporet med
+idempotensnøkkel, meldingsId og erstatningsmelding, API-endepunktene og
+portalknappene — står i docs/lonn.md («Innsendingssporet»). Ikke bygget:
+hendelsesabonnement (`altinn:events.subscribe`) i stedet for at noen
+trykker «Hent tilbakemelding».
 
 ## Mva-melding APIs (crates/regnmed-gov/src/mvamelding.rs)
 

@@ -6,6 +6,8 @@
 
 mod common;
 
+#[path = "grupper/amelding.rs"]
+mod amelding;
 #[path = "grupper/ansattkobling.rs"]
 mod ansattkobling;
 #[path = "grupper/assets.rs"]

@@ -99,6 +99,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         // with a client_id the caller supplies, which is the path that
         // does not depend on another service being up.
         regnid: None,
+        amelding: None,
     })
 }
 
