@@ -107,9 +107,15 @@ async fn main() -> Result<()> {
             config.scopes = regnmed_gov::amelding::SCOPES.into();
             let client = regnmed_gov::amelding::AmeldingClient::from_env();
             println!("a-melding submission is on ({})", client.base_url);
+            let events_endpoint = std::env::var("ALTINN_EVENTS_ENDPOINT").ok();
+            if let Some(endpoint) = &events_endpoint {
+                println!("a-melding feedback arrives as Altinn events at {endpoint}");
+            }
             Some(std::sync::Arc::new(regnmed_api::AmeldingRail {
                 tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
                 client,
+                events: regnmed_gov::altinn_events::EventsClient::from_env(),
+                events_endpoint,
             }))
         }
         Err(_) => None,

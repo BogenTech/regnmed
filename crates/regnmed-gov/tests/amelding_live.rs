@@ -110,3 +110,36 @@ async fn skatteetaten_receives_our_melding_without_deviations() {
     }
     panic!("no feedback within three minutes");
 }
+
+/// The Altinn Events subscription, through our own client against TT02:
+/// token exchange, subscribe, read back, unsubscribe. The endpoint is our
+/// test domain; Altinn will not validate it unless the webhook is deployed
+/// there, which is why `validated` is printed and not asserted.
+#[tokio::test]
+async fn an_events_subscription_can_be_made_and_removed() {
+    if std::env::var("AMELDING_LIVE").as_deref() != Ok("1") {
+        eprintln!("skipping: AMELDING_LIVE=1 not set");
+        return;
+    }
+    let mut config = MaskinportenConfig::from_env().expect("MASKINPORTEN_* from the test env file");
+    config.scopes = SCOPES.into();
+    let tokens = TokenProvider::new(config);
+    let events = regnmed_gov::altinn_events::EventsClient::from_env();
+    let endpoint = "https://api.test.regnmed.no/webhooks/altinn";
+
+    let created = events
+        .subscribe_amelding(&tokens, COMPANY, endpoint)
+        .await
+        .unwrap();
+    assert_eq!(created.end_point, endpoint);
+    let read = events
+        .subscription(&tokens, COMPANY, created.id)
+        .await
+        .unwrap();
+    assert_eq!(read.id, created.id);
+    eprintln!("subscription {} validated={}", read.id, read.validated);
+    events
+        .unsubscribe(&tokens, COMPANY, created.id)
+        .await
+        .unwrap();
+}

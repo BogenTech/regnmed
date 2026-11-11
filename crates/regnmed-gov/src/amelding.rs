@@ -23,7 +23,10 @@ use uuid::Uuid;
 use crate::maskinporten::TokenProvider;
 
 /// The scopes a provider for this module must request.
-pub const SCOPES: &str = "skatteetaten:innrapporteringamelding digdir:dialogporten";
+/// `altinn:events.subscribe` rides along so the same provider can create
+/// the feedback subscription (`altinn_events`).
+pub const SCOPES: &str =
+    "skatteetaten:innrapporteringamelding digdir:dialogporten altinn:events.subscribe";
 
 pub struct AmeldingClient {
     /// `https://innrapporteringamelding.api.skatteetaten-test.no` in test.

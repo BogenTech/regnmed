@@ -405,6 +405,7 @@ pub async fn submit_amelding(
                 by,
             )
             .await?;
+            ensure_event_subscription(&state, &rail, company_id, &orgnumber, by).await;
         }
         Err(e) => {
             regnmed_db::amelding_submission::record_failure(&state.pool, s.id, &e.to_string(), by)
@@ -423,6 +424,137 @@ pub async fn submit_amelding(
 /// Fetches Skatteetatens tilbakemelding for a delivered submission and
 /// stores it. Answers with the submission as it stands — still
 /// `levert` when Skatteetaten has not answered yet.
+/// Fetches the feedback for a delivered submission and stores it when
+/// Skatteetaten has produced it. Shared by the button and the webhook.
+async fn fetch_feedback(
+    state: &AppState,
+    rail: &crate::AmeldingRail,
+    company_id: Uuid,
+    s: &regnmed_db::amelding_submission::Submission,
+    status: &regnmed_db::amelding_submission::SubmissionStatus,
+    by: &str,
+) -> anyhow::Result<()> {
+    let regnmed_db::amelding_submission::SubmissionStatus::Delivered {
+        dialog_id,
+        forsendelse_id,
+    } = status
+    else {
+        return Ok(());
+    };
+    let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+        .await?
+        .orgnumber;
+    let receipt = regnmed_gov::amelding::Receipt {
+        dialog_id: dialog_id.clone(),
+        forsendelse_id: forsendelse_id.clone(),
+        meldings_id: s.melding_id.clone(),
+    };
+    if let Some(feedback) = rail
+        .client
+        .feedback(&rail.tokens, &orgnumber, &receipt)
+        .await?
+    {
+        regnmed_db::amelding_submission::record_feedback(&state.pool, s.id, feedback, by).await?;
+    }
+    Ok(())
+}
+
+/// Subscribes the company to Dialogporten's transmission events for its
+/// a-melding dialogs, once, so the feedback arrives at `/webhooks/altinn`.
+/// Best effort: without it the «Hent tilbakemelding» button still works,
+/// so a failure is logged, never returned to the person who just sent.
+async fn ensure_event_subscription(
+    state: &AppState,
+    rail: &crate::AmeldingRail,
+    company_id: Uuid,
+    orgnumber: &str,
+    by: &str,
+) {
+    use regnmed_gov::altinn_events::{AMELDING_RESOURCE, TRANSMISSION_CREATED};
+    let Some(endpoint) = &rail.events_endpoint else {
+        return;
+    };
+    let result = async {
+        if regnmed_db::amelding_submission::event_subscription(
+            &state.pool,
+            company_id,
+            AMELDING_RESOURCE,
+            TRANSMISSION_CREATED,
+            endpoint,
+        )
+        .await?
+        .is_some()
+        {
+            return Ok(());
+        }
+        let subscription = rail
+            .events
+            .subscribe_amelding(&rail.tokens, orgnumber, endpoint)
+            .await?;
+        regnmed_db::amelding_submission::record_event_subscription(
+            &state.pool,
+            company_id,
+            subscription.id,
+            AMELDING_RESOURCE,
+            TRANSMISSION_CREATED,
+            endpoint,
+            by,
+        )
+        .await
+    }
+    .await;
+    if let Err(e) = result {
+        eprintln!("altinn events: could not subscribe company {company_id}: {e:#}");
+    }
+}
+
+/// `POST /webhooks/altinn` — Altinn Events' webhook. Public: Altinn does not
+/// authenticate or sign its deliveries, so NOTHING in the event is trusted.
+/// It is a hint naming a dialog; the feedback is then fetched through our
+/// own systembruker-authenticated client, and only for a submission we
+/// delivered and are still waiting on. The answer is always 2xx — an
+/// unknown dialog is not an error worth Altinn retrying, and a failed
+/// fetch leaves the button as the fallback.
+pub async fn altinn_event(
+    State(state): State<AppState>,
+    Json(event): Json<regnmed_gov::altinn_events::CloudEvent>,
+) -> axum::http::StatusCode {
+    use regnmed_gov::altinn_events::{AMELDING_RESOURCE, VALIDATE_SUBSCRIPTION};
+    let ok = axum::http::StatusCode::OK;
+    if event.kind == VALIDATE_SUBSCRIPTION {
+        return ok;
+    }
+    let (Some(rail), Some(AMELDING_RESOURCE), Some(dialog)) = (
+        state.amelding.clone(),
+        event.resource.as_deref(),
+        event.resourceinstance.as_deref(),
+    ) else {
+        return ok;
+    };
+    let waiting =
+        match regnmed_db::amelding_submission::awaiting_feedback_for_dialog(&state.pool, dialog)
+            .await
+        {
+            Ok(waiting) => waiting,
+            Err(e) => {
+                eprintln!("altinn events: looking up dialog {dialog}: {e:#}");
+                return ok;
+            }
+        };
+    for (company_id, s) in waiting {
+        let result = async {
+            let (_, status) =
+                regnmed_db::amelding_submission::submission(&state.pool, company_id, s.id).await?;
+            fetch_feedback(&state, &rail, company_id, &s, &status, "altinn-events").await
+        }
+        .await;
+        if let Err(e) = result {
+            eprintln!("altinn events: feedback for submission {}: {e:#}", s.id);
+        }
+    }
+    ok
+}
+
 pub async fn amelding_feedback(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -434,38 +566,15 @@ pub async fn amelding_feedback(
         regnmed_db::amelding_submission::submission(&state.pool, company_id, submission_id)
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    if let S::Delivered {
-        dialog_id,
-        forsendelse_id,
-    } = &status
-    {
+    if matches!(status, S::Delivered { .. }) {
         let Some(rail) = state.amelding.clone() else {
             return Err(ApiError::BadRequest(
                 "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
             ));
         };
-        let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
-            .await?
-            .orgnumber;
-        let receipt = regnmed_gov::amelding::Receipt {
-            dialog_id: dialog_id.clone(),
-            forsendelse_id: forsendelse_id.clone(),
-            meldings_id: s.melding_id.clone(),
-        };
-        if let Some(feedback) = rail
-            .client
-            .feedback(&rail.tokens, &orgnumber, &receipt)
+        fetch_feedback(&state, &rail, company_id, &s, &status, person.display())
             .await
-            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente tilbakemeldingen: {e}")))?
-        {
-            regnmed_db::amelding_submission::record_feedback(
-                &state.pool,
-                s.id,
-                feedback,
-                person.display(),
-            )
-            .await?;
-        }
+            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente tilbakemeldingen: {e}")))?;
     }
     let (s, status) =
         regnmed_db::amelding_submission::submission(&state.pool, company_id, submission_id).await?;
