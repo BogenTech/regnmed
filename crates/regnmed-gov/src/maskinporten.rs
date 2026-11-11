@@ -7,10 +7,19 @@
 //! `skatteetaten:mvameldingvalidering`. Tokens are cached until shortly
 //! before expiry.
 //!
+//! A **systembruker** token ([`TokenProvider::token_for_systemuser`]) is
+//! the same grant plus a Rich Authorization Request naming the customer
+//! that owns the system user (docs.digdir.no, «Systembruker for
+//! virksomheter»). Maskinporten answers only if that customer has
+//! approved a system user for our system in Altinn; Skatteetaten's
+//! innrapportering APIs (a-melding, skattekort, RF-1086) refuse anything
+//! else. One customer per token, so the cache is per customer.
+//!
 //! Environments: test `https://test.maskinporten.no`, production
 //! `https://maskinporten.no`. Client registration happens in Digdir's
 //! Samarbeidsportalen; see docs/gov.md for the operational steps.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -61,7 +70,9 @@ impl MaskinportenConfig {
 pub struct TokenProvider {
     config: MaskinportenConfig,
     http: reqwest::Client,
-    cache: Mutex<Option<CachedToken>>,
+    /// Keyed by the system user's owner org number; `None` is our own
+    /// organisation's plain token.
+    cache: Mutex<HashMap<Option<String>, CachedToken>>,
 }
 
 struct CachedToken {
@@ -80,20 +91,36 @@ impl TokenProvider {
         Self {
             config,
             http: reqwest::Client::new(),
-            cache: Mutex::new(None),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 
     /// A valid access token — cached, or freshly fetched with a signed
     /// JWT grant.
     pub async fn token(&self) -> Result<String> {
-        if let Some(cached) = self.cache.lock().unwrap().as_ref()
+        self.fetch(None).await
+    }
+
+    /// A token carrying the system user that `orgnumber` (the customer,
+    /// or for a client system user the accounting firm) has approved for
+    /// our system in Altinn.
+    pub async fn token_for_systemuser(&self, orgnumber: &str) -> Result<String> {
+        anyhow::ensure!(
+            regnmed_core::orgnumber::is_valid(orgnumber),
+            "invalid org number for system user token: {orgnumber}"
+        );
+        self.fetch(Some(orgnumber)).await
+    }
+
+    async fn fetch(&self, systemuser_org: Option<&str>) -> Result<String> {
+        let key = systemuser_org.map(str::to_owned);
+        if let Some(cached) = self.cache.lock().unwrap().get(&key)
             && cached.valid_until > Instant::now()
         {
             return Ok(cached.access_token.clone());
         }
 
-        let assertion = self.grant_assertion()?;
+        let assertion = self.grant_assertion(systemuser_org)?;
         let response = self
             .http
             .post(&self.config.token_endpoint)
@@ -114,19 +141,22 @@ impl TokenProvider {
 
         // Refresh a bit early so a token never expires mid-request.
         let valid_until = Instant::now() + Duration::from_secs(token.expires_in.saturating_sub(30));
-        *self.cache.lock().unwrap() = Some(CachedToken {
-            access_token: token.access_token.clone(),
-            valid_until,
-        });
+        self.cache.lock().unwrap().insert(
+            key,
+            CachedToken {
+                access_token: token.access_token.clone(),
+                valid_until,
+            },
+        );
         Ok(token.access_token)
     }
 
     /// The signed JWT grant. Maskinporten requires exp − iat ≤ 120 s.
-    fn grant_assertion(&self) -> Result<String> {
+    fn grant_assertion(&self, systemuser_org: Option<&str>) -> Result<String> {
         let mut header = Header::new(Algorithm::RS256);
         header.kid = self.config.kid.clone();
         let now = chrono::Utc::now().timestamp();
-        let claims = serde_json::json!({
+        let mut claims = serde_json::json!({
             "aud": self.config.audience,
             "iss": self.config.client_id,
             "scope": self.config.scopes,
@@ -134,6 +164,17 @@ impl TokenProvider {
             "exp": now + 120,
             "jti": uuid::Uuid::new_v4().to_string(),
         });
+        if let Some(org) = systemuser_org {
+            // shortcut: no `externalRef`, so one system user per customer per
+            // system; add it if a customer ever needs several.
+            claims["authorization_details"] = serde_json::json!([{
+                "type": "urn:altinn:systemuser",
+                "systemuser_org": {
+                    "authority": "iso6523-actorid-upis",
+                    "ID": format!("0192:{org}"),
+                },
+            }]);
+        }
         jsonwebtoken::encode(&header, &claims, &self.config.encoding_key)
             .context("signing Maskinporten grant")
     }
@@ -192,7 +233,7 @@ mod tests {
     fn grant_assertion_has_the_required_claims() {
         let (config, decoding) = test_config("http://unused.invalid/token");
         let provider = TokenProvider::new(config);
-        let assertion = provider.grant_assertion().unwrap();
+        let assertion = provider.grant_assertion(None).unwrap();
 
         let mut validation = jsonwebtoken::Validation::new(Algorithm::RS256);
         validation.set_audience(&["https://test.maskinporten.no/"]);
@@ -207,6 +248,43 @@ mod tests {
         let exp = token.claims["exp"].as_i64().unwrap();
         assert!(exp - iat <= 120, "Maskinporten rejects grants over 120 s");
         assert!(token.claims["jti"].is_string());
+        assert!(
+            token.claims.get("authorization_details").is_none(),
+            "a plain token must not claim a system user"
+        );
+    }
+
+    /// The RAR shape from Digdir's «Systembruker for virksomheter»:
+    /// type urn:altinn:systemuser, customer org in ISO 6523 form.
+    #[test]
+    fn systemuser_grant_names_the_customer() {
+        let (config, decoding) = test_config("http://unused.invalid/token");
+        let provider = TokenProvider::new(config);
+        let assertion = provider.grant_assertion(Some("935115086")).unwrap();
+
+        let mut validation = jsonwebtoken::Validation::new(Algorithm::RS256);
+        validation.set_audience(&["https://test.maskinporten.no/"]);
+        let token =
+            jsonwebtoken::decode::<serde_json::Value>(&assertion, &decoding, &validation).unwrap();
+        assert_eq!(
+            token.claims["authorization_details"],
+            serde_json::json!([{
+                "type": "urn:altinn:systemuser",
+                "systemuser_org": {"authority": "iso6523-actorid-upis", "ID": "0192:935115086"},
+            }])
+        );
+        assert_eq!(token.claims["scope"], "skatteetaten:mvameldingvalidering");
+    }
+
+    #[tokio::test]
+    async fn systemuser_token_refuses_an_invalid_org_number() {
+        let (config, _) = test_config("http://unused.invalid/token");
+        let provider = TokenProvider::new(config);
+        let err = provider
+            .token_for_systemuser("935115087")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid org number"), "{err}");
     }
 
     /// Full token flow against a local mock of the token endpoint,
@@ -255,6 +333,18 @@ mod tests {
             hits.load(Ordering::SeqCst),
             1,
             "second call served from cache"
+        );
+
+        // A system user token is a different token: it must not be served
+        // from the plain token's cache entry, and is cached per customer.
+        provider.token_for_systemuser("935115086").await.unwrap();
+        provider.token_for_systemuser("935115086").await.unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "one fetch per customer");
+        provider.token_for_systemuser("974760673").await.unwrap();
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            3,
+            "another customer, another token"
         );
     }
 }

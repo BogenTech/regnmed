@@ -2,6 +2,11 @@
 """Spør Maskinporten om et scope faktisk er tilgjengelig for klienten.
 
     scripts/maskinporten-scope-test.py skatteetaten:innrapporteringamelding
+    scripts/maskinporten-scope-test.py <scope> --systemuser <orgnr>
+
+Med --systemuser bes det om et systembruker-token for kunden <orgnr>
+(authorization_details, urn:altinn:systemuser) — det regnmed-gov sender
+fra `TokenProvider::token_for_systemuser`.
 
 Svaret skiller mellom tilstandene som ellers blandes sammen:
 
@@ -12,6 +17,8 @@ Svaret skiller mellom tilstandene som ellers blandes sammen:
   IKKE PÅ KLIENTEN  «invalid scopes for client» — scopet er ukjent for
                     klienten
   OPPSETTFEIL       invalid_grant: nøkkel, kid eller klient-id
+  INGEN SYSTEMBRUKER  MP-303 (bare med --systemuser): grantet er gyldig,
+                    men kunden har ingen godkjent systembruker for oss
 
 Skillet mellom «ikke tildelt» og «ikke på klienten» er hele grunnen til
 at skriptet finnes: det ene løses i portalen, det andre bare av
@@ -31,6 +38,7 @@ for line in open(os.path.expanduser("~/.config/regnmed/maskinporten-test.env")):
         k, v = line.split("=", 1); env[k] = v
 
 scope = sys.argv[1]
+systemuser = sys.argv[sys.argv.index("--systemuser") + 1] if "--systemuser" in sys.argv else None
 now = int(time.time())
 header = {"alg": "RS256", "typ": "JWT"}
 if env.get("MASKINPORTEN_KID"): header["kid"] = env["MASKINPORTEN_KID"]
@@ -41,6 +49,11 @@ claims = {
     "iat": now, "exp": now + 60,
     "jti": str(uuid.uuid4()),
 }
+if systemuser:
+    claims["authorization_details"] = [{
+        "type": "urn:altinn:systemuser",
+        "systemuser_org": {"authority": "iso6523-actorid-upis", "ID": f"0192:{systemuser}"},
+    }]
 signing_input = f"{b64(json.dumps(header,separators=(',',':')).encode())}.{b64(json.dumps(claims,separators=(',',':')).encode())}"
 sig = subprocess.run(
     ["openssl", "dgst", "-sha256", "-sign", env["MASKINPORTEN_KEY_FILE"]],
@@ -63,6 +76,8 @@ except urllib.error.HTTPError as e:
         verdict = "IKKE TILDELT — Skatteetaten må gi virksomheten tilgang (bestilles)"
     elif "invalid scopes for client" in detail:
         verdict = "IKKE PÅ KLIENTEN — legg scopet til på klienten i Samarbeidsportalen"
+    elif "invalid_altinn_customer_configuration" in detail:
+        verdict = "INGEN SYSTEMBRUKER (MP-303) — grantet er godtatt, men kunden har ikke godkjent noen systembruker for systemet vårt i Altinn"
     elif "invalid_grant" in detail:
         verdict = "OPPSETTFEIL — sjekk nøkkel, MASKINPORTEN_KID og klient-id"
     else:

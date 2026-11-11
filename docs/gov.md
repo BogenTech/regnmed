@@ -59,7 +59,8 @@ opplysninger» først.
 
 Gjenstår:
 
-1. Legg de fire tildelte scopene på testklienten i Samarbeidsportalen
+1. ~~Legg de fire tildelte scopene på testklienten~~ **GJORT
+   2026-08-10** (alle fire GRANTED, se under). Legg de fire tildelte scopene på testklienten i Samarbeidsportalen
    (tildelingen gjelder organisasjonen; klienten må fortsatt bære
    scopene), registrer denne maskinens nye nøkkel (se nøkkelnotatet
    under), og kjør valideringsrundturen (steg 4 under) — empirisk
@@ -220,7 +221,7 @@ firm→client relationship, expressed in the government's registry.
 
 - **Validation** (implemented): POST the melding XML to Skatteetaten's
   validation endpoint (test:
-  `https://idporten-api-sbstest.sits.no/api/mva/grensesnittstoette/mva-melding/valider`,
+  `https://idporten-api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider`,
   override with `MVA_VALIDATION_URL`). The returned
   `valideringsresultat` is kept verbatim — it is documentation of a
   control — and any avvik fail the CLI run.
@@ -270,6 +271,7 @@ og skiller de tre tilstandene som ellers blandes sammen:
 | `IKKE TILDELT` | «Consumer has not been granted access» — Skatteetaten har ikke gitt virksomheten tilgang. **Må bestilles.** |
 | `IKKE PÅ KLIENTEN` | «invalid scopes for client» — scopet er ukjent for klienten |
 | `OPPSETTFEIL` | `invalid_grant`: nøkkel, kid eller klient-id |
+| `INGEN SYSTEMBRUKER` | MP-303, bare med `--systemuser <orgnr>`: grantet er gyldig, men kunden har ikke godkjent noen systembruker for systemet vårt i Altinn |
 
 **Å huke av et scope i Samarbeidsportalen gir ingen tilgang.** Det er
 den viktigste lærdommen her, og den er testet: da a-melding-scopet ble
@@ -411,6 +413,21 @@ Samarbeidsportalen. Vilkårene kreves først før produksjon (§1.1), men
 §1.2 legger et krav på oss før vi går dit: kunden er fullt ansvarlig
 for det vi gjør i Altinn på deres vegne, så hver kunde må ha en avtale
 med oss som viderefører vilkårene. regnmed har ingen kundevilkår ennå.
+
+**Token-siden er klar før tildelingen** (2026-11-11):
+`TokenProvider::token_for_systemuser(orgnr)` i
+`crates/regnmed-gov/src/maskinporten.rs` legger Digdirs RAR-utvidelse
+i grantet — `authorization_details` med `type: urn:altinn:systemuser`
+og kundens orgnr som `0192:<orgnr>` (docs.digdir.no, «Systembruker for
+virksomheter») — og cacher ett token per kunde, adskilt fra vårt eget.
+Formen er festet i enhetstest. Prøvd mot ekte test-Maskinporten samme
+dag med `scripts/maskinporten-scope-test.py <scope> --systemuser
+935115086`: svaret er **MP-303** `invalid_altinn_customer_configuration`
+(«No access or invalid configuration of the requested system-user»),
+mens samme scope uten systembruker svarer GRANTED. Grantet er altså
+godtatt; det som mangler er systemet i systemregisteret og en godkjent
+systembruker — nøyaktig det bestillingen over låser opp. `externalRef`
+er bevisst utelatt (én systembruker per kunde per system).
 
 Den fjerde, mva-valideringen, låses ikke opp av systembruker i det hele
 tatt — den er fastsetting, og venter på #26 for godt (se over).
