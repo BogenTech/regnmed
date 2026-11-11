@@ -14,6 +14,7 @@
   import Brukere from "../brukere/Brukere.svelte";
   import Oppdrag from "../oppdrag/Oppdrag.svelte";
   import Periode from "../periode/Periode.svelte";
+  import Kundevilkar from "./Kundevilkar.svelte";
 
   let { companyId, extra } = $props();
 
@@ -164,6 +165,7 @@
     <span class="loading loading-spinner loading-lg"></span>
   {:else if data.settings}
     <Firmaopplysninger {companyId} settings={data.settings} onDone={reload} />
+    <Kundevilkar {companyId} />
   {:else}
     <div class="alert alert-info"><span>Firmaopplysninger krever lesetilgang til selskapet.</span></div>
   {/if}

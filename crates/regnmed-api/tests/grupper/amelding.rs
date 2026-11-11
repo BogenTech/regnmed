@@ -213,6 +213,16 @@ async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
         tokens.push(idp.token(&sub, role));
     }
     let admin = &tokens[0];
+    // Filing on the company's behalf needs its acceptance of the terms.
+    let (code, accepted) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/terms/accept"),
+        admin,
+        &serde_json::json!({ "versjon": *regnmed_api::terms::VERSION }).to_string(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{accepted}");
 
     // 40 000 kr at 35 % and sone I: whole kroner throughout.
     let (code, created) = call(

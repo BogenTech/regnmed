@@ -365,6 +365,11 @@ ikke en ny. Begge deler er nå modellert i innsendingssporet under.
 
 ### Innsendingssporet (migration 0074)
 
+**Først kundevilkårene.** Innsendingen nekter til en administrator har
+godtatt kundevilkårene for selskapet (docs/kundevilkar.md, «Aksept»):
+Digdirs og Skatteetatens vilkår tillater ingen innsending på kundens vegne
+uten en avtale med kunden.
+
 **Det som sendes, lagres før det sendes.** `amelding_submission` holder
 én rad per innsending: kjøringen, `meldingsId` (ny per innsending — en
 erstatning trenger sin egen, så det er IKKE kjøringens id),

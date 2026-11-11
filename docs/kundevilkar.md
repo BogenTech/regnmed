@@ -11,6 +11,21 @@
 > advokaten står i §17. Sporingstabellen i §16 viser hvilket krav hvert
 > punkt dekker.
 
+## Aksept (hvordan regnmed håndhever §1.4)
+
+Teksten i denne fila **er** vilkårene: binæren serverer den uendret på
+`/vilkar` (ren tekst) og `/terms` (JSON), og versjonen er SHA-256 av
+teksten. En administrator (`SELSKAP_ADMIN`, som aldri kan gis til en
+integrasjon) godtar den under Administrasjon → Firmaopplysninger; aksepten
+lagres innsettings-bart i `terms_acceptance` (migrasjon 0077) med
+selskap, person, navn, tidspunkt og hashen. Hver innsending til
+myndighetene (a-melding, aksjonærregisteroppgave) nekter til gjeldende
+versjon er godtatt.
+
+**Endres denne fila, endres versjonen**, og hvert selskap må godta på
+nytt før neste innsending. Det gjelder også skrivefeil — det er prisen
+for at «godtatt» alltid betyr én bestemt tekst.
+
 ## 1. Parter og omfang
 
 1.1 Disse vilkårene gjelder mellom **BogenTech AS** (org.nr. 935 115 086),
