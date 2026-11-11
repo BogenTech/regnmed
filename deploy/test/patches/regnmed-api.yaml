@@ -126,3 +126,50 @@ spec:
                 secretKeyRef:
                   name: stripe-credentials
                   key: webhook-secret
+            # The a-melding rail against Skatteetatens TEST environment
+            # (docs/lonn.md, docs/gov.md). The cluster has its OWN
+            # Maskinporten key on the shared test client — generated on the
+            # node by scripts/maskinporten-cluster-key.sh, which creates the
+            # secret below (key.pem, client-id, kid) and prints the public
+            # JWK to register in Samarbeidsportalen. The secret MUST exist
+            # before this patch rolls out: the key is a mounted file, and
+            # without it the pod cannot start. AMELDING_URL,
+            # DIALOGPORTEN_URL and ALTINN_PLATFORM_URL default to test.
+            - name: MASKINPORTEN_TOKEN_ENDPOINT
+              value: https://test.maskinporten.no/token
+            - name: MASKINPORTEN_AUDIENCE
+              value: https://test.maskinporten.no/
+            - name: MASKINPORTEN_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: maskinporten-credentials
+                  key: client-id
+            - name: MASKINPORTEN_KID
+              valueFrom:
+                secretKeyRef:
+                  name: maskinporten-credentials
+                  key: kid
+            - name: MASKINPORTEN_KEY_FILE
+              value: /secrets/maskinporten/key.pem
+            # Required by MaskinportenConfig::from_env, then overridden by
+            # the rail's own scope list (regnmed-gov::amelding::SCOPES).
+            - name: MASKINPORTEN_SCOPES
+              value: skatteetaten:innrapporteringamelding
+            # Our public webhook: the first delivered a-melding subscribes
+            # the company to its feedback events here (docs/lonn.md,
+            # «Tilbakemelding som hendelse»).
+            - name: ALTINN_EVENTS_ENDPOINT
+              value: https://api.test.regnmed.no/webhooks/altinn
+          volumeMounts:
+            - name: maskinporten
+              mountPath: /secrets/maskinporten
+              readOnly: true
+      # The app runs as 65532 (base); secret files are root-owned, so the
+      # key is group-readable to fsGroup 65532 and to nobody else.
+      securityContext:
+        fsGroup: 65532
+      volumes:
+        - name: maskinporten
+          secret:
+            secretName: maskinporten-credentials
+            defaultMode: 0440
