@@ -23,6 +23,7 @@ pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod norgesbank;
 pub mod regnid;
+pub mod shareholder_return;
 pub mod stripe;
 pub mod tsa;
 pub mod vat_return;

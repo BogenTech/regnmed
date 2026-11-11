@@ -11,7 +11,11 @@
 
   let { companyId } = $props();
 
-  const year = new Date().getFullYear();
+  // Oppgaven for et år leveres i januar året etter (frist 31. januar), så
+  // fram til juni står forrige inntektsår først.
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  let year = $state(now.getMonth() < 5 ? thisYear - 1 : thisYear);
 
   let data = $state(null);
 
@@ -54,7 +58,21 @@
     onDone={reload}
   />
   <Utbytte {companyId} utbytte={data.utbytte} onDone={reload} />
+  <div class="flex justify-end mb-2">
+    <select
+      class="select select-sm w-fit"
+      aria-label="Inntektsår for aksjonærregisteroppgaven"
+      bind:value={year}
+      onchange={reload}
+    >
+      {#each [thisYear, thisYear - 1, thisYear - 2] as y (y)}
+        <option value={y}>Inntektsår {y}</option>
+      {/each}
+    </select>
+  </div>
   {#if data.oppgave}
     <Oppgave {companyId} oppgave={data.oppgave} {year} />
+  {:else}
+    <p class="text-sm opacity-70">Ingen aksjonærregisteroppgave for {year}.</p>
   {/if}
 {/if}

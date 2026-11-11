@@ -631,6 +631,14 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     for a in &book {
         let events = hendelser_for(pool, a.id).await?;
         let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, year);
+        // Registered but no shares at either end of the year and no
+        // movement in it: not a shareholder that year, so no underskjema.
+        if bevegelse.opening == 0
+            && bevegelse.closing == 0
+            && !events.iter().any(|h| h.date.year() == year)
+        {
+            continue;
+        }
         shares_this_year += bevegelse.closing;
         shares_last_year += bevegelse.opening;
 

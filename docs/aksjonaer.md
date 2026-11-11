@@ -162,25 +162,66 @@ feiler.
 kodene verifiseres mot testmiljøet og legges inn i `kode()` med kilde —
 ett sted, med en test som teller hvor mange koder som er verifiserte.
 
-## Innsending (ikke bygget, og hvorfor)
+## Innsending (#182)
 
-API-et hos Skatteetaten har fem endepunkter: POST hovedskjema → POST
-underskjema (én per aksjonær) → POST bekreft, pluss GET dokument(er).
-`idempotencyKey` er påkrevd per kall.
+Skatteetatens API (OpenAPI 1.3.0, SwaggerHub
+`skatteetaten/innrapportering-aksjonaerregister-api`) tar én oppgave i
+tre steg, hvert med sin egen `idempotencyKey`:
 
-Vi implementerer **ikke** innsendingen nå, av samme grunn som
-mva-meldingens innsending venter (docs/gov.md, #8): den krever
+1. `POST {base}/{inntektsår}/1086H` — hovedskjemaet (XML). Svarer med
+   `hovedskjemaId`.
+2. `POST {base}/{inntektsår}/{hovedskjemaId}/1086U` — ett underskjema per
+   aksjonær (XML).
+3. `POST {base}/{inntektsår}/{hovedskjemaId}/bekreft?antall_underskjema=N`
+   — lukker oppgaven og svarer med **leveransebekreftelsen**
+   (`dialogId`, `forsendelseId`, `oppgavegiversLeveranseReferanse`).
 
-- Maskinporten-scope `skatteetaten:innrapporteringaksjonaerregisteroppgave`
-  (må bestilles hos Skatteetaten), og
-- **Altinn systembruker** med tilgangspakke (f.eks.
-  `regnskapsforer-med-signeringsrettighet`) — en nyere
-  Digdir-mekanisme vi ikke har satt opp.
+Hvert kall bærer **systembrukertokenet for selskapet**
+(`TokenProvider::token_for_systemuser`, scope
+`skatteetaten:innrapporteringaksjonaerregisteroppgave`). Klienten er
+`regnmed-gov::shareholder_return`; base-URL-en er testmiljøet
+(`https://api-test.sits.no/api/aksjonaerregister/v1`) med mindre
+`AKSJONAERREGISTER_URL` sier noe annet — produksjon velges, man havner
+ikke der.
 
-Å skrive en klient mot et API vi ikke kan kjøre ville vært gjetting i
-enda et lag. Rendringen er den halvparten vi kan stå inne for, og
-XML-filene kan lastes ned og leveres gjennom et system som har
-tilgangene.
+**Verifisert mot Skatteetatens testmiljø 2026-11-11**: en oppgave for det
+syntetiske Tenor-selskapet 311032240 (stiftelse, én aksjonær, kode `N`)
+ble tatt imot og bekreftet på 3,3 sekunder
+(`crates/regnmed-gov/tests/shareholder_return_live.rs`, kjøres for hånd
+med `AKSJONAER_LIVE=1`).
+
+### Det som sendes, lagres før det sendes
+
+Samme regel som a-meldingen (docs/lonn.md): migrasjon 0076 lagrer
+hovedskjemaet, hvert underskjema og **nøkkelen hvert kall alltid sendes
+med** før første HTTP-kall. Alt er innsettings-bart; status beregnes av
+hendelsesloggen (`receipt` / `failed`) og lagres aldri.
+
+- **Ingen kvittering, samme innhold** (et kall feilet, nettet falt): neste
+  innsending sender *det lagrede* på nytt, kall for kall, med de samme
+  nøklene. Skatteetaten svarer da med sitt første svar i stedet for å
+  åpne en oppgave til.
+- **Ingen kvittering, endret aksjeeierbok:** den gamle står som historikk
+  og en ny lagres med nye nøkler. Den gamle nådde aldri `bekreft`, så
+  Skatteetaten har ikke tatt den.
+- **Kvittering finnes:** nektes. Hvordan Skatteetaten behandler en andre
+  oppgave for samme år er ikke verifisert, så vi sender ingen.
+- **Uverifiserte transaksjonskoder** stopper innsendingen med hindringene
+  navngitt, akkurat som forhåndsvisningen.
+
+Kvitteringen (`dialogId`, `forsendelseId`, referansen) er beviset på
+levering og står på innsendingen for alltid.
+
+### Ikke bygget ennå
+
+- **Behandlingsstatus** (`GODKJENT`/`AVVIST`). Prefill-endepunktet (som
+  for inntektsår N+1 skal svare med oppgaven for N) ga 404 rett etter
+  levering i test; tilbakemeldingen i Dialogporten er ikke undersøkt.
+  Vi viser «levert», ikke mer.
+- **Transaksjonskodene utover `N`** — verifiseres mot testmiljøet nå som
+  innsending virker (#182 punkt 3).
+- **Kundevilkår før produksjon** (#185, Digdirs vilkår §1.2).
+- **Korrigering** av en levert oppgave.
 
 ## Endepunkter
 
@@ -193,6 +234,8 @@ tilgangene.
 | GET/POST | `/companies/{id}/share-events` | hendelser |
 | GET/POST | `/companies/{id}/dividends` | utbyttevedtak |
 | GET | `/companies/{id}/reports/aksjonaeroppgave?year=&format=` | oppgaven |
+| GET | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | innsendinger m/ status og kvittering |
+| POST | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | send oppgaven til Skatteetaten (`AKSJEBOK_SKRIV`) |
 
 Lesing er åpen for alle tilgangsnivåer — revisor skal kunne lese
 aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
@@ -218,10 +261,19 @@ aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
 - `regnmed-core::aksjebok` — foldingen, at retningen ligger i typen, at
   utgående i fjor er inngående i år, og at **bare verifiserte koder
   finnes** (testen teller dem).
-- `regnmed-core::aksjonaeroppgave` — begge skjemaene mot Skatteetatens
+- `regnmed-core::shareholder_return` — begge skjemaene mot Skatteetatens
   XSD-er, året uten transaksjoner, selskaps- og utenlandsk aksjonær,
   navnekutting, determinisme, og at en uverifisert kode nektes.
-- `regnmed-api/tests/grupper/aksjonaer.rs` — hele veien: beregnet eierandel per
+- `regnmed-gov::shareholder_return` — kallrekkefølgen (hovedskjema,
+  hvert underskjema, bekreft) med hver sin nøkkel, og at et avvist
+  underskjema stopper FØR `bekreft`.
+- `regnmed-api/tests/grupper/share_register.rs` —
+  `the_return_is_filed_once_and_retried_with_the_same_keys`: et nytt
+  forsøk er de samme kallene med de samme nøklene, en endret
+  aksjeeierbok gir en ny innsending uten gjenbrukte nøkler, og et levert
+  år sendes ikke igjen. En registrert aksjonær uten aksjer i året får
+  ikke underskjema.
+- `regnmed-api/tests/grupper/share_register.rs` — hele veien: beregnet eierandel per
   dato, at fødselsnummeret ikke er i listingen men *er* i innsendingen,
   at ingen kan avhende flere aksjer enn de eier, at utbyttet får bilag,
   at hendelser og identitet ikke kan endres eller slettes (databasen
