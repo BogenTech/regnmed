@@ -7,6 +7,7 @@
 //! on any machine, or chain verification breaks.
 
 pub mod accrual;
+pub mod amelding;
 pub mod anchor;
 pub mod assets;
 pub mod audit;

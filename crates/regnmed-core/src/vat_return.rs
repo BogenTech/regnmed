@@ -151,7 +151,7 @@ fn periode_name(period: Period) -> &'static str {
 }
 
 /// Sats as the kodeliste expects: "25", "11.11".
-fn rate(bp: i64) -> String {
+pub(crate) fn rate(bp: i64) -> String {
     match (bp / 100, bp % 100) {
         (whole, 0) => format!("{whole}"),
         (whole, frac) if frac % 10 == 0 => format!("{whole}.{}", frac / 10),

@@ -40,7 +40,7 @@ CLAUDE.md).
 | [attestering.md](attestering.md) | Godkjenningsflyt før bokføring og betaling: valgfri policy, insert-only beslutningsspor, fire øyne håndhevet i transaksjonen |
 | [portal.md](portal.md) | The web portal: SPA architecture, OIDC+PKCE, theme contract |
 | [marketplace.md](marketplace.md) | Onboarding from BRREG; firm autorisasjon via Finanstilsynet |
-| [lonn.md](lonn.md) | Lønn, første del: fastlønn, prosenttrekk, aga per sone og feriepengeavsetning som ett bilag — og den lange listen over hva som ennå IKKE er bygget, a-meldingen først |
+| [lonn.md](lonn.md) | Lønn, første del: fastlønn, prosenttrekk, aga per sone og feriepengeavsetning som ett bilag; a-meldingen rendret og XSD-validert, men nektet for hvert felt modellen mangler (vendored skjema i [amelding/](amelding/README.md)) — og den lange listen over hva som ennå IKKE er bygget |
 | [aksjonaer.md](aksjonaer.md) | Aksjeeierbok (aksjeloven §4-5) og aksjonærregisteroppgaven RF-1086: eierandelen beregnet fra hendelser, fødselsdato i boken og fødselsnummer bare i innsendingen, og kodene vi ikke gjetter |
 | [skattemelding.md](skattemelding.md) | Skattemelding og næringsspesifikasjon (#11) — kartlagt, ikke bygget: innsending krever ID-porten, ikke Maskinporten, og versjon-per-inntektsår er ikke publisert |
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |
