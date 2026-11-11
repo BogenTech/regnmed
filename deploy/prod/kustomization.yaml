@@ -54,7 +54,7 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: v0.8.5
+    newTag: v0.9.0
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     # A RELEASE tag, like regnmed's above: regnid started cutting
