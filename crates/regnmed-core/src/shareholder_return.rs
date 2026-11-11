@@ -35,6 +35,13 @@ pub enum ReturnError {
     /// Neither fødselsnummer, organisasjonsnummer nor utenlandsk
     /// aksjonær-ID — the oppgave has no way to name this shareholder.
     ManglerIdentitet(String),
+    /// A transfer with continuity whose other party cannot be named the
+    /// way Skatteetaten requires (fødselsnummer, or for some types
+    /// organisasjonsnummer).
+    MissingCounterparty {
+        shareholder: String,
+        type_: TransactionType,
+    },
 }
 
 impl std::fmt::Display for ReturnError {
@@ -51,6 +58,16 @@ impl std::fmt::Display for ReturnError {
                 f,
                 "aksjonæren «{name}» mangler fødselsnummer, organisasjonsnummer og \
                  utenlandsk aksjonær-ID — oppgaven kan ikke identifisere eieren"
+            ),
+            Self::MissingCounterparty { shareholder, type_ } => write!(
+                f,
+                "«{}» for «{shareholder}» krever motpartens {} — registrer hendelsen med \
+                 motpart, og motparten med det nummeret",
+                type_.name(),
+                match type_.counterparty_required() {
+                    Some(crate::share_register::CounterpartyId::Nin) => "fødselsnummer",
+                    _ => "fødselsnummer eller organisasjonsnummer",
+                }
             ),
         }
     }
@@ -135,6 +152,9 @@ pub struct ShareMovement {
     /// Acquisition value (anskaffelsesverdi) on an acquisition, or the
     /// consideration (vederlag) on a disposal, when known.
     pub amount_ore: Option<i64>,
+    /// The other party of a transfer: the giver on a tilgang, the
+    /// receiver on an avgang. Filed only where Skatteetaten requires it.
+    pub counterparty: Option<ShareholderId>,
 }
 
 #[derive(Debug, Clone)]
@@ -450,6 +470,29 @@ pub fn render_main_form(h: &MainForm) -> Result<String, ReturnError> {
 
 // ----------------------------------------------------------- underskjema
 
+/// The other party's identity to file for this movement, if its type
+/// requires one; an error when it is required and missing or of a kind
+/// the type does not accept.
+fn counterparty_fields(
+    u: &SubForm,
+    b: &ShareMovement,
+) -> Result<Option<ShareholderId>, ReturnError> {
+    use crate::share_register::CounterpartyId;
+    let Some(required) = b.type_.counterparty_required() else {
+        return Ok(None);
+    };
+    match (&b.counterparty, required) {
+        (Some(id @ ShareholderId::Nin(_)), _)
+        | (Some(id @ ShareholderId::Organisasjonsnummer(_)), CounterpartyId::NinOrOrgnumber) => {
+            Ok(Some(id.clone()))
+        }
+        _ => Err(ReturnError::MissingCounterparty {
+            shareholder: u.name.clone(),
+            type_: b.type_,
+        }),
+    }
+}
+
 pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
     let Some(id) = &u.id else {
         return Err(ReturnError::ManglerIdentitet(u.name.clone()));
@@ -458,6 +501,7 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
         if b.type_.code().is_none() {
             return Err(ReturnError::UnverifiedCode(b.type_));
         }
+        counterparty_fields(u, b)?;
     }
 
     let mut w = Writer::new();
@@ -569,6 +613,17 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
             if let Some(ore) = b.amount_ore {
                 w.felt("AksjeAnskaffelsesverdi-datadef-17636", 17636, &amount(ore));
             }
+            match counterparty_fields(u, b)? {
+                Some(ShareholderId::Nin(n)) => {
+                    w.felt("AksjonarTidligereFodselsnummer-datadef-26530", 26530, &n)
+                }
+                Some(ShareholderId::Organisasjonsnummer(o)) => w.felt(
+                    "AksjonarTidligereOrganisasjonsnummer-datadef-26531",
+                    26531,
+                    &o,
+                ),
+                _ => {}
+            }
             w.close("AntallAksjerITilgang-grp-3998");
         }
         w.close("KjopArvGaveStiftelseNyemisjonMv-grp-3993");
@@ -598,6 +653,17 @@ pub fn render_sub_form(u: &SubForm) -> Result<String, ReturnError> {
             );
             if let Some(ore) = b.amount_ore {
                 w.felt("AksjerArvMvOmsatt-datadef-17755", 17755, &amount(ore));
+            }
+            match counterparty_fields(u, b)? {
+                Some(ShareholderId::Nin(n)) => {
+                    w.felt("AksjonarOvertakendeFodselsnummer-datadef-26532", 26532, &n)
+                }
+                Some(ShareholderId::Organisasjonsnummer(o)) => w.felt(
+                    "AksjonarOvertakendeOrganisasjonsnummer-datadef-26533",
+                    26533,
+                    &o,
+                ),
+                _ => {}
             }
             w.close("AksjerIAvgang-grp-4002");
         }
@@ -688,6 +754,7 @@ mod tests {
                 date: d(2026, 1, 2),
                 type_: TransactionType::Stiftelse,
                 quantity: 100,
+                counterparty: None,
                 amount_ore: Some(10_000_000),
             }],
         }
@@ -793,21 +860,88 @@ mod tests {
         assert!(!xml.contains(&"Æ".repeat(36)));
     }
 
-    /// The core of the honest limitation: we cannot file a sale, because
-    /// we do not know its code — and then we say so instead of guessing.
+    /// The core of the honest limitation: an inheritance without
+    /// continuity has a code (`A`, by every appearance) that no
+    /// Skatteetaten source names — so we say so instead of guessing.
     #[test]
     fn an_unverified_transaction_type_is_refused_loudly() {
         let mut u = sub_form();
         u.movements = vec![ShareMovement {
             date: d(2026, 6, 1),
-            type_: TransactionType::Salg,
+            type_: TransactionType::ArvUtenKontinuitet,
             quantity: 10,
+            counterparty: None,
             amount_ore: Some(1_000_000),
         }];
         let error = render_sub_form(&u).unwrap_err();
-        assert_eq!(error, ReturnError::UnverifiedCode(TransactionType::Salg));
-        assert!(error.to_string().contains("salg"), "{error}");
+        assert_eq!(
+            error,
+            ReturnError::UnverifiedCode(TransactionType::ArvUtenKontinuitet)
+        );
+        assert!(error.to_string().contains("arv uten"), "{error}");
         assert!(error.to_string().contains("gjetter"), "{error}");
+    }
+
+    /// A gift with continuity names the other party on both sides, in the
+    /// XSD's own fields — Skatteetaten's example
+    /// skattemessig_kontinuitet_underskjema_* in our renderer's words.
+    #[test]
+    fn a_transfer_with_continuity_names_the_other_party_and_validates() {
+        let giver = "12866696975";
+        let receiver = "26909499304";
+        let mut received = sub_form();
+        received.movements = vec![ShareMovement {
+            date: d(2026, 2, 1),
+            type_: TransactionType::OverforingMedKontinuitet,
+            quantity: 40,
+            counterparty: Some(ShareholderId::Nin(giver.into())),
+            amount_ore: None,
+        }];
+        let xml = render_sub_form(&received).unwrap();
+        assert!(xml.contains("<AksjeErvervType-datadef-17745 orid=\"17745\">OK<"));
+        assert!(xml.contains(&format!(
+            "<AksjonarTidligereFodselsnummer-datadef-26530 orid=\"26530\">{giver}<"
+        )));
+        valider(
+            &xml,
+            "aksjonaerregisteroppgaveUnderskjema.xsd",
+            "under-ok-inn",
+        );
+
+        let mut given = sub_form();
+        given.movements = vec![ShareMovement {
+            date: d(2026, 2, 1),
+            type_: TransactionType::OverforingMedKontinuitetAvgang,
+            quantity: 40,
+            counterparty: Some(ShareholderId::Nin(receiver.into())),
+            amount_ore: None,
+        }];
+        let xml = render_sub_form(&given).unwrap();
+        assert!(xml.contains("<AksjerArvMvOmsattType-datadef-17753 orid=\"17753\">OK<"));
+        assert!(xml.contains(&format!(
+            "<AksjonarOvertakendeFodselsnummer-datadef-26532 orid=\"26532\">{receiver}<"
+        )));
+        valider(
+            &xml,
+            "aksjonaerregisteroppgaveUnderskjema.xsd",
+            "under-ok-ut",
+        );
+
+        // AK and ES require a fødselsnummer: an org.nr is refused, as is none.
+        given.movements[0].type_ = TransactionType::FordelingEktefellerSkilsmisseAvgang;
+        given.movements[0].counterparty =
+            Some(ShareholderId::Organisasjonsnummer("923609016".into()));
+        assert!(matches!(
+            render_sub_form(&given).unwrap_err(),
+            ReturnError::MissingCounterparty { .. }
+        ));
+        given.movements[0].counterparty = None;
+        assert!(
+            render_sub_form(&given)
+                .unwrap_err()
+                .to_string()
+                .contains("fødselsnummer")
+        );
     }
 
     #[test]

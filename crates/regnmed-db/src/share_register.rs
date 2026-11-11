@@ -631,21 +631,43 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
     for a in &book {
         let events = hendelser_for(pool, a.id).await?;
         let bevegelse: YearMovement = regnmed_core::share_register::year_movement(&events, year);
+        // Registered but no shares at either end of the year and no
+        // movement in it: not a shareholder that year, so no underskjema.
+        if bevegelse.opening == 0
+            && bevegelse.closing == 0
+            && !events.iter().any(|h| h.date.year() == year)
+        {
+            continue;
+        }
         shares_this_year += bevegelse.closing;
         shares_last_year += bevegelse.opening;
 
+        // Same rows, same order as `hendelser_for`, so they pair by index.
+        let counterparties = counterparties_for(pool, a.id).await?;
         let mut movements = Vec::new();
-        for h in events.iter().filter(|h| h.date.year() == year) {
+        for (h, counterparty) in events.iter().zip(&counterparties) {
+            if h.date.year() != year {
+                continue;
+            }
+            // Filed only where Skatteetaten requires it (transfers with
+            // continuity); the renderer refuses when it is missing.
+            let counterparty = match (h.type_.counterparty_required(), counterparty) {
+                (Some(_), Some(id)) => filing_id(pool, *id).await?,
+                _ => None,
+            };
             movements.push(tax_return::ShareMovement {
                 date: h.date,
                 type_: h.type_,
                 quantity: h.quantity,
                 amount_ore: h.consideration_ore,
+                counterparty,
             });
-            // New issues are reported at company level too.
+            // New issues are reported at company level too (post 9).
             if matches!(
                 h.type_,
-                TransactionType::Stiftelse | TransactionType::Nyemisjon
+                TransactionType::Stiftelse
+                    | TransactionType::Nyemisjon
+                    | TransactionType::NyemisjonAnsattaksjer
             ) {
                 new_issues.push(tax_return::NewIssue {
                     date: h.date,
@@ -751,21 +773,46 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
 /// carried on [`Aksjonaer`] — that struct is what the aksjeeierbok and
 /// the portal show, and per aksjeloven §4-5 it holds only the birth
 /// date. The number exists for one purpose, and takes one path.
-async fn aksjonaerid(pool: &PgPool, a: &Shareholder) -> Result<Option<tax_return::ShareholderId>> {
-    if let Some(orgnumber) = &a.orgnumber {
-        return Ok(Some(tax_return::ShareholderId::Organisasjonsnummer(
-            orgnumber.clone(),
-        )));
-    }
-    if let Some(utl) = &a.foreign_id {
-        return Ok(Some(tax_return::ShareholderId::Foreign(utl.clone())));
-    }
-    let nin: Option<String> =
-        sqlx::query_scalar("select fodselsnummer from shareholder where id = $1")
-            .bind(a.id)
+/// The counterparty of each of the shareholder's events, in
+/// `hendelser_for`'s order (including the rows it skips, so the two zip).
+async fn counterparties_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<Option<Uuid>>> {
+    let rows = sqlx::query(
+        "select type, motpart_id from share_event
+         where shareholder_id = $1 order by dato, created_at",
+    )
+    .bind(shareholder_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .filter(|r| TransactionType::from_slug(&r.get::<String, _>("type")).is_some())
+        .map(|r| r.get("motpart_id"))
+        .collect())
+}
+
+/// How the oppgave names a shareholder: organisasjonsnummer, utenlandsk
+/// aksjonær-ID or fødselsnummer.
+async fn filing_id(
+    pool: &PgPool,
+    shareholder_id: Uuid,
+) -> Result<Option<tax_return::ShareholderId>> {
+    let r =
+        sqlx::query("select orgnr, utenlandsk_id, fodselsnummer from shareholder where id = $1")
+            .bind(shareholder_id)
             .fetch_one(pool)
             .await?;
-    Ok(nin.map(tax_return::ShareholderId::Nin))
+    Ok(if let Some(o) = r.get::<Option<String>, _>("orgnr") {
+        Some(tax_return::ShareholderId::Organisasjonsnummer(o))
+    } else if let Some(u) = r.get::<Option<String>, _>("utenlandsk_id") {
+        Some(tax_return::ShareholderId::Foreign(u))
+    } else {
+        r.get::<Option<String>, _>("fodselsnummer")
+            .map(tax_return::ShareholderId::Nin)
+    })
+}
+
+async fn aksjonaerid(pool: &PgPool, a: &Shareholder) -> Result<Option<tax_return::ShareholderId>> {
+    filing_id(pool, a.id).await
 }
 
 /// Pålydende per aksje, derived from the founding event when it carries

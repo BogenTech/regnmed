@@ -1,11 +1,83 @@
 <script>
-  import { api } from "../../lib/api.js";
+  import { api, post } from "../../lib/api.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
   import { kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { saveText } from "../../lib/download.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, oppgave, year } = $props();
+
+  const sti = () =>
+    "/companies/" + companyId + "/reports/aksjonaeroppgave/submissions?year=" + year;
+
+  let innsending = $state({ mulig: false, innsendinger: [] });
+  let sender = $state(false);
+  let levert = $derived(innsending.innsendinger.some((i) => i.status !== "ikke_levert"));
+
+  const STATUS = {
+    ikke_levert: "Ikke levert",
+    levert: "Levert — venter på svar",
+    godkjent: "Godkjent av Skatteetaten",
+    avvist: "Avvist av Skatteetaten",
+    behandlet: "Behandlet av Skatteetaten",
+  };
+
+  async function hentSvar(i) {
+    try {
+      const svar = await post(
+        "/companies/" + companyId + "/reports/aksjonaeroppgave/submissions/" + i.id + "/outcome",
+        {},
+      );
+      toast(
+        svar.status === "levert" ? "Skatteetaten har ikke svart ennå" : STATUS[svar.status],
+        svar.status !== "avvist",
+      );
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      await hentInnsendinger();
+    }
+  }
+
+  async function hentInnsendinger() {
+    try {
+      const svar = await api(sti());
+      innsending = { mulig: svar.innsending_mulig, innsendinger: svar.innsendinger };
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  $effect(() => {
+    year;
+    hentInnsendinger();
+  });
+
+  async function sendInn() {
+    if (
+      !(await bekreft(
+        "Sende aksjonærregisteroppgaven for " +
+          year +
+          " til Skatteetaten? Hovedskjema og " +
+          oppgave.antall_aksjonarer +
+          " underskjema sendes slik de står over.",
+        { tittel: "Send RF-1086", ok: "Send inn" },
+      ))
+    ) {
+      return;
+    }
+    sender = true;
+    try {
+      await post(sti(), {});
+      toast("Aksjonærregisteroppgaven er levert", true);
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      sender = false;
+      await hentInnsendinger();
+    }
+  }
 
   async function lastNed() {
     try {
@@ -51,11 +123,52 @@
       </div>
     </div>
   {/if}
-  <button class="btn btn-sm btn-outline" disabled={!oppgave.leverbar} onclick={lastNed}>
-    Last ned RF-1086 (XML)
-  </button>
-  <p class="text-xs opacity-60 mt-2">
-    Innsending krever Maskinporten-scope og Altinn systembruker (docs/gov.md). Filene kan lastes ned
-    og leveres via et system som har det.
-  </p>
+  <div class="flex flex-wrap gap-2">
+    {#if innsending.mulig}
+      <button
+        class="btn btn-sm btn-primary"
+        disabled={!oppgave.leverbar || levert || sender}
+        onclick={sendInn}
+      >
+        {levert ? "Levert" : "Send til Skatteetaten"}
+      </button>
+    {/if}
+    <button class="btn btn-sm btn-outline" disabled={!oppgave.leverbar} onclick={lastNed}>
+      Last ned RF-1086 (XML)
+    </button>
+  </div>
+  {#if !innsending.mulig}
+    <p class="text-xs opacity-60 mt-2">
+      Innsending er ikke satt opp på denne serveren — last ned filene og lever dem via et system som
+      har tilgang.
+    </p>
+  {/if}
+  {#if innsending.innsendinger.length}
+    <h5 class="font-semibold text-xs mt-3">Innsendinger</h5>
+    <ul class="text-sm">
+      {#each innsending.innsendinger as i (i.id)}
+        <li class="flex flex-wrap items-center gap-2">
+          <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
+          <span class={i.status === "avvist" ? "text-error" : ""}>{STATUS[i.status]}</span>
+          <span class="opacity-70">{i.antall_underskjema} underskjema</span>
+          {#if i.kvittering}
+            <span class="text-xs opacity-60" title="Skatteetatens forsendelse-id">
+              {i.kvittering.forsendelse_id}
+            </span>
+          {/if}
+          {#if i.siste_feil}
+            <span class="text-warning text-xs" title={i.siste_feil}>siste forsøk feilet</span>
+          {/if}
+          {#each i.svar?.dokumenter || [] as [navn, url] (url)}
+            <a class="link text-xs" href={url} target="_blank" rel="noopener">{navn}</a>
+          {/each}
+          {#if i.status === "levert"}
+            <button class="btn btn-ghost btn-xs" onclick={() => hentSvar(i)}>
+              Hent svar fra Skatteetaten
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
 </Card>

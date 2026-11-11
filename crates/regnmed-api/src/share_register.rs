@@ -200,6 +200,8 @@ pub async fn transaction_types(
                 "navn": t.name(),
                 "tilgang": t.is_acquisition(),
                 "leverbar": t.code().is_some(),
+                // The type the other side of a transfer gets, when there is one.
+                "motpart_type": t.counterpart().map(|c| c.slug()),
             })
         })
         .collect();
@@ -457,4 +459,216 @@ pub async fn tax_return(
         })).collect::<Vec<_>>(),
     }))
     .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct SubmissionQuery {
+    year: i32,
+}
+
+fn submission_json(
+    s: &regnmed_db::shareholder_return_submission::Submission,
+    status: &regnmed_db::shareholder_return_submission::SubmissionStatus,
+) -> serde_json::Value {
+    use regnmed_db::shareholder_return_submission::SubmissionStatus::*;
+    let mut v = json!({
+        "id": s.id,
+        "inntektsar": s.income_year,
+        "antall_underskjema": s.sub_forms.len(),
+        "status": status.slug(),
+        "opprettet_av": s.created_by,
+        "opprettet": s.created_at,
+    });
+    match status {
+        NotDelivered { last_error } => v["siste_feil"] = json!(last_error),
+        Delivered {
+            dialog_id,
+            forsendelse_id,
+            reference,
+            at,
+            outcome,
+        } => {
+            v["kvittering"] = json!({
+                "dialog_id": dialog_id,
+                "forsendelse_id": forsendelse_id,
+                "leveranse_referanse": reference,
+                "mottatt": at,
+            });
+            if let Some(o) = outcome {
+                v["svar"] = json!({
+                    "tittel": o["title"],
+                    "dokumenter": o["documents"],
+                });
+            }
+        }
+    }
+    v
+}
+
+/// The year's filings to Skatteetaten, newest first.
+pub async fn list_tax_return_submissions(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(q): Query<SubmissionQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
+    let rows = regnmed_db::shareholder_return_submission::list_submissions(
+        &state.pool,
+        company_id,
+        q.year,
+    )
+    .await?;
+    Ok(Json(json!({
+        "innsending_mulig": state.shareholder_return.is_some(),
+        "innsendinger": rows.iter().map(|(s, st)| submission_json(s, st)).collect::<Vec<_>>(),
+    })))
+}
+
+/// Files the year's oppgave with Skatteetaten (docs/aksjonaer.md,
+/// «Innsending»): stored first, sent second, so a failed attempt is
+/// retried with the same keys and never files twice.
+pub async fn submit_tax_return(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(q): Query<SubmissionQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterWrite,
+    )
+    .await?;
+    let Some(rail) = state.shareholder_return.clone() else {
+        return Err(ApiError::BadRequest(
+            "innsending av aksjonærregisteroppgaven er ikke satt opp på denne serveren \
+             (Maskinporten)"
+                .into(),
+        ));
+    };
+    let by = person.display();
+    let s = regnmed_db::shareholder_return_submission::prepare_submission(
+        &state.pool,
+        company_id,
+        q.year,
+        by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+        .await?
+        .orgnumber;
+    use regnmed_gov::shareholder_return::Form;
+    let subs: Vec<_> = s
+        .sub_forms
+        .iter()
+        .map(|(_, xml, key)| Form {
+            xml,
+            idempotency_key: *key,
+        })
+        .collect();
+    match rail
+        .client
+        .submit(
+            &rail.tokens,
+            &orgnumber,
+            s.income_year,
+            Form {
+                xml: &s.main_form,
+                idempotency_key: s.main_key,
+            },
+            &subs,
+            s.confirm_key,
+        )
+        .await
+    {
+        Ok(receipt) => {
+            regnmed_db::shareholder_return_submission::record_receipt(
+                &state.pool,
+                s.id,
+                &receipt.dialog_id,
+                &receipt.forsendelse_id,
+                receipt.oppgavegivers_leveranse_referanse.as_deref(),
+                by,
+            )
+            .await?;
+        }
+        Err(e) => {
+            let e = format!("{e:#}");
+            regnmed_db::shareholder_return_submission::record_failure(&state.pool, s.id, &e, by)
+                .await?;
+            return Err(ApiError::BadRequest(format!(
+                "Skatteetaten tok ikke imot aksjonærregisteroppgaven: {e}. Den er lagret og \
+                 sendes uendret (samme idempotensnøkler) neste gang du sender, så lenge \
+                 aksjeeierboken ikke er endret — den leveres ikke to ganger."
+            )));
+        }
+    }
+    let (s, status) =
+        regnmed_db::shareholder_return_submission::submission(&state.pool, company_id, s.id)
+            .await?;
+    Ok(Json(submission_json(&s, &status)))
+}
+
+/// Fetches Skatteetaten's answer (godkjent/avvist) for a delivered filing
+/// from Dialogporten and stores it. Answers with the filing as it stands —
+/// still `levert` while Skatteetaten has not answered.
+pub async fn tax_return_outcome(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, submission_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(
+        &state,
+        person.person_id,
+        company_id,
+        Right::ShareRegisterRead,
+    )
+    .await?;
+    let Some(rail) = state.shareholder_return.clone() else {
+        return Err(ApiError::BadRequest(
+            "innsending av aksjonærregisteroppgaven er ikke satt opp på denne serveren \
+             (Maskinporten)"
+                .into(),
+        ));
+    };
+    use regnmed_db::shareholder_return_submission as db;
+    let (s, status) = db::submission(&state.pool, company_id, submission_id)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    if let db::SubmissionStatus::Delivered {
+        dialog_id,
+        forsendelse_id,
+        outcome: None,
+        ..
+    } = &status
+    {
+        let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+            .await?
+            .orgnumber;
+        let outcome = rail
+            .client
+            .outcome(&rail.tokens, &orgnumber, dialog_id, forsendelse_id)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;
+        if let Some(o) = outcome {
+            db::record_outcome(
+                &state.pool,
+                s.id,
+                serde_json::to_value(o).expect("Outcome serializes"),
+                person.display(),
+            )
+            .await?;
+        }
+    }
+    let (s, status) = db::submission(&state.pool, company_id, submission_id).await?;
+    Ok(Json(submission_json(&s, &status)))
 }

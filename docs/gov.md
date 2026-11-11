@@ -264,7 +264,7 @@ Events-API-et krever et VEKSLET Altinn-token, ikke Maskinporten-tokenet.
   developed against the actual test environment instead of guessed.
   Tracked in issue #8.
 
-## Aksjonærregisteroppgaven (crates/regnmed-core::aksjonaeroppgave)
+## Aksjonærregisteroppgaven (crates/regnmed-core::shareholder_return)
 
 RF-1086 rides the same rail, and is the most urgent of them:
 **from June 2026 an end-user system is the only way to file** — Altinn.no
@@ -273,18 +273,17 @@ and paper are gone (docs/aksjonaer.md).
 - **Rendering** (implemented): hovedskjema + one underskjema per
   shareholder, validated against Skatteetatens official XSDs (vendored
   in `docs/aksjonaer/`) in unit tests, the integration test and CI.
-- **Submission** (pending, same posture as the mva-melding): scope
-  `skatteetaten:innrapporteringaksjonaerregisteroppgave` must be ordered
-  from Skatteetaten, and the API additionally requires an **Altinn
-  systembruker** with an access package
-  (`regnskapsforer-med-signeringsrettighet`, `ansvarlig-revisor`, …) —
-  a newer Digdir mechanism we have not set up. The flow is POST
-  hovedskjema → POST underskjema (×N) → POST bekreft, each call carrying
-  a unique `idempotencyKey`.
-
-Not implemented until we can run it against the real test environment,
-for the same reason as #8: a client written against an API we cannot
-execute is guesswork in another layer.
+- **Submission** (implemented, #182): `regnmed-gov::shareholder_return`
+  — POST hovedskjema → POST underskjema (×N) → POST bekreft, each call
+  with its own stored `idempotencyKey`, all under the company's
+  systembruker token. First live filing accepted by the test environment
+  2026-11-11 (Tenor company 311032240) and **approved** — the answer is
+  an `Acceptance` transmission in the receipt's Dialogporten dialog, so
+  the rail's token also carries `digdir:dialogporten`. The record, the
+  retry rules and the verified transaction codes are in
+  docs/aksjonaer.md. The API turns the rail on whenever
+  MASKINPORTEN_* is set, against the TEST base URL unless
+  `AKSJONAERREGISTER_URL` points elsewhere.
 
 ## Er scopet faktisk tilgjengelig? Spør Maskinporten
 

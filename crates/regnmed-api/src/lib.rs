@@ -94,6 +94,15 @@ pub struct AppState {
     /// tokens from Maskinporten and Skatteetatens client. None when
     /// MASKINPORTEN_* is unset — the submit endpoint then says so.
     pub amelding: Option<Arc<AmeldingRail>>,
+    /// The aksjonærregisteroppgave rail (docs/aksjonaer.md, «Innsending»):
+    /// the same Maskinporten client with the RF-1086 scope. None when
+    /// MASKINPORTEN_* is unset.
+    pub shareholder_return: Option<Arc<ShareholderReturnRail>>,
+}
+
+pub struct ShareholderReturnRail {
+    pub tokens: regnmed_gov::maskinporten::TokenProvider,
+    pub client: regnmed_gov::shareholder_return::ShareholderReturnClient,
 }
 
 pub struct AmeldingRail {
@@ -597,6 +606,15 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/reports/aksjonaeroppgave",
             get(share_register::tax_return),
+        )
+        .route(
+            "/companies/{company_id}/reports/aksjonaeroppgave/submissions",
+            get(share_register::list_tax_return_submissions)
+                .post(share_register::submit_tax_return),
+        )
+        .route(
+            "/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome",
+            axum::routing::post(share_register::tax_return_outcome),
         )
         .route(
             "/companies/{company_id}/assets",

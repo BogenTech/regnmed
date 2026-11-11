@@ -110,77 +110,159 @@ Aksjonærnavn er begrenset til 35 tegn i skjemaet. Et langt selskapsnavn
 **kortes ned** framfor å stoppe en ellers riktig levering — identiteten
 ligger i organisasjonsnummeret, ikke i navnet.
 
-### Den ærlige begrensningen: transaksjonstypekodene
+### Transaksjonskodene (verifisert 2026-11-11)
 
-Dette er den ene tingen #43 ikke kan love, og den er verdt å lese nøye.
+Hver bevegelse rapporteres med en **transaksjonstypekode**
+(`AksjeErvervType` i post 23, `AksjerArvMvOmsattType` i post 25,
+`AksjerNyutstedteStiftelseMvType` i post 9). Tre kilder, alle
+Skatteetatens egne:
 
-Hver bevegelse skal rapporteres med en **transaksjonstypekode**
-(`AksjeErvervType`, `AksjerArvMvOmsattType`,
-`AksjerNyutstedteStiftelseMvType`). Vi har verifisert at:
+1. **XSD-ene** (vendret i `docs/aksjonaer/`, hentet fra
+   Skatteetaten/api-dokumentasjon 2026-11-11) har nå én `enumeration` per
+   post — `KodelisteErvervtype` (post 23), `…_TransTyper_p25` osv. — og
+   API-et avviser alt utenfor dem (`cvc-enumeration-valid`, prøvd med
+   `XX`). XSD-ene gir **koder, ikke navn**.
+2. **«Detaljert design»** for RF-1086 og RF-1086-U (2024, regneark på
+   skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/
+   aksjonarregisteroppgaven-sbs/) parer kodene med navn i
+   valideringsreglene, f.eks. «Ved 'Arv/gave m/skattem. kontinuitet' (GK)
+   må avgivers fødselsnummer …».
+3. **Eksempelfilene** på samme side (`stiftelseavselskap_*`,
+   `kjopogsalg_*`, `skattemessig_kontinuitet_*`, …).
 
-- ingen av feltene er begrenset i XSD-en — alle tre er ubundet
-  `Tekst35`, uten `enumeration`;
-- rettledningen RF-1087 **navngir** transaksjonstypene (post 23 tilgang,
-  post 24 omfordeling, post 25 avgang) men oppgir ingen koder;
-- kodelistene finnes som et eget artefakt distribuert til
-  sluttbrukersystemer — Skatteetatens egne SBS-nyheter omtaler
-  «kodelister ... for RF-1086» som noe som kan endres uavhengig av
-  skjemaet.
+En kode legges inn i `TransactionType::code()` **bare når en av disse
+navngir den**, med kilden i en kommentar:
 
-Vi har altså de autoritative **navnene** (og bruker dem), men ikke
-kodene. Den eneste koden vi kan belegge er `N` for
-stiftelse/nyemisjon, fra etatens eget publiserte eksempel.
+| Type | Kode | Kilde |
+| --- | --- | --- |
+| stiftelse | `T` | eksempel `stiftelseavselskap_*`; design (post 9) |
+| nyemisjon | `N` | design |
+| nyemisjon ansattaksjer | `NAK` | design |
+| kjøp / salg | `K` / `R` | eksempel `kjopogsalg_*`; design VAL_45 |
+| bytte av aksjer til/fra selskap utenfor Norge | `AE` | design |
+| arv/gave med skattemessig kontinuitet (begge sider) | `GK` | design VAL_13, VAL_24 |
+| avgiftspliktig arv/gave med kontinuitet (begge sider) | `AK` | design VAL_56, VAL_57 |
+| overføring med skattemessig kontinuitet (begge sider) | `OK` | eksempel `skattemessig_kontinuitet_*` |
+| fordeling mellom ektefeller ved skilsmisse (begge sider) | `ES` | design VAL_56, VAL_57 |
 
-**Derfor gjetter vi ikke.** `Transaksjonstype::kode()` returnerer `Some`
-bare for verifiserte koder, og rendringen **nekter høylytt** for resten:
+**En feil vi fant og rettet:** regnmed rapporterte stiftelse som `N`,
+etter eksempelet i API-dokumentasjonen. Både etatens egne eksempelfiler
+for stiftelse og designets kontrollmelding bruker `T`, og `N` er
+nyemisjon. `N` er en gyldig kode, så API-et tok imot det uten å si fra —
+det er nettopp den feilen en høylytt nektelse skal hindre.
 
-```
-transaksjonstypen «salg» kan ikke leveres: RF-1086-koden for den er ikke
-publisert i XSD-en eller rettledningen, og regnmed gjetter den ikke
-```
+**Overføringer med kontinuitet** krever motpartens identitet
+(designets VAL_13/56/24/57): mottakeren oppgir avgivers fødselsnummer
+(`26530`) eller org.nr (`26531`), avgiveren oppgir mottakers (`26532`/
+`26533`) — `AK` og `ES` bare fødselsnummer. Aksjeeierboken fikk derfor
+egne **avgangstyper** for de fire (`…_avgang`, samme navn og kode), og
+typelisten forteller portalen hvilken type motparten får
+(`motpart_type`). Mangler motpartens nummer, nekter rendringen.
 
-Begrunnelsen er ikke pedanteri. Transaksjonstypen flyter videre inn i
+**Fortsatt uten kode, med vilje:**
+
+- **Ingen kilde navngir koden:** arv og gave *uten* kontinuitet (koden er
+  etter alt å dømme `A`/`G`, men ingen kilde sier det), konsernintern
+  overføring, nyemisjon ved konvertering av fordring og ved konsernintern
+  overføring, stiftelse/nyemisjon med inntektsfradrag (`TH` heter
+  «Fradrag for investering i oppstartsselskap» — trolig det samme, men
+  ikke med det navnet).
+- **Koden er navngitt, men hovedskjemaets side er ikke bygget:** fusjon
+  og fisjon (`UP`/`IP`, `U`/`I`), omdanning (`M`), flytting (`FS`),
+  likvidasjon (`L`, `PLS`), sletting av egne aksjer (`W`), spleis (`V`)
+  og hele post 24 (fondsemisjon `E`, splitt `S`, sammenslåing `SD`).
+  Disse hendelsene skal også stå på selskapsnivå, og en oppgave der
+  underskjemaet sier én ting og hovedskjemaet ingenting, er feil selv om
+  koden er riktig.
+
+**Derfor gjetter vi ikke.** Transaksjonstypen flyter videre inn i
 aksjonærens **egen** aksjeoppgave (RF-1088) og bestemmer inngangsverdi
 og skjermingsgrunnlag. En høylytt nektelse er noe man kan rette; en
-stille feilrapportert transaksjon er det ikke.
+stille feilrapportert transaksjon er det ikke. Forhåndsvisningen viser
+fortsatt tallene og lister hindringene under `leverbar: false`; bare
+`format=xml` og innsendingen stopper.
 
-Praktisk betydning:
+Testen `only_verified_codes_exist` teller kodene og krever at hver
+av dem står i XSD-ens liste for posten den rapporteres i.
 
-- Et år **uten** eierbevegelser — det vanligste for et lite AS — rendres
-  fullt ut, med aksjonærer og utbytte.
-- **Stiftelsesåret** rendres, fordi `N` er verifisert.
-- Et år med **salg, arv, gave, fusjon, splitt** o.l. stopper, og sier
-  hvilken type som mangler kode.
+## Innsending (#182)
 
-Forhåndsvisningen (`format` utelatt) **dør ikke** av dette: den viser
-tallene og lister hindringene under `leverbar: false`, slik at brukeren
-ser både regnskapet og hva som stanser leveringen. Bare `format=xml`
-feiler.
+Skatteetatens API (OpenAPI 1.3.0, SwaggerHub
+`skatteetaten/innrapportering-aksjonaerregister-api`) tar én oppgave i
+tre steg, hvert med sin egen `idempotencyKey`:
 
-**Slik lukkes gapet:** når Maskinporten-scopet
-`skatteetaten:innrapporteringaksjonaerregisteroppgave` er tildelt, kan
-kodene verifiseres mot testmiljøet og legges inn i `kode()` med kilde —
-ett sted, med en test som teller hvor mange koder som er verifiserte.
+1. `POST {base}/{inntektsår}/1086H` — hovedskjemaet (XML). Svarer med
+   `hovedskjemaId`.
+2. `POST {base}/{inntektsår}/{hovedskjemaId}/1086U` — ett underskjema per
+   aksjonær (XML).
+3. `POST {base}/{inntektsår}/{hovedskjemaId}/bekreft?antall_underskjema=N`
+   — lukker oppgaven og svarer med **leveransebekreftelsen**
+   (`dialogId`, `forsendelseId`, `oppgavegiversLeveranseReferanse`).
 
-## Innsending (ikke bygget, og hvorfor)
+Hvert kall bærer **systembrukertokenet for selskapet**
+(`TokenProvider::token_for_systemuser`, scope
+`skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten`).
+Klienten er
+`regnmed-gov::shareholder_return`; base-URL-en er testmiljøet
+(`https://api-test.sits.no/api/aksjonaerregister/v1`) med mindre
+`AKSJONAERREGISTER_URL` sier noe annet — produksjon velges, man havner
+ikke der.
 
-API-et hos Skatteetaten har fem endepunkter: POST hovedskjema → POST
-underskjema (én per aksjonær) → POST bekreft, pluss GET dokument(er).
-`idempotencyKey` er påkrevd per kall.
+**Verifisert mot Skatteetatens testmiljø 2026-11-11**: en oppgave for det
+syntetiske Tenor-selskapet 311032240 med stiftelse (`T`), salg (`K`/`R`)
+og overføring med skattemessig kontinuitet (`OK` på begge sider, med
+motpartens fødselsnummer) ble tatt imot og **godkjent** av Skatteetaten
+etter om lag halvannet minutt
+(`crates/regnmed-gov/tests/shareholder_return_live.rs`, kjøres for hånd
+med `AKSJONAER_LIVE=1`; testen venter på svaret og krever godkjenning).
 
-Vi implementerer **ikke** innsendingen nå, av samme grunn som
-mva-meldingens innsending venter (docs/gov.md, #8): den krever
+### Svaret: godkjent eller avvist
 
-- Maskinporten-scope `skatteetaten:innrapporteringaksjonaerregisteroppgave`
-  (må bestilles hos Skatteetaten), og
-- **Altinn systembruker** med tilgangspakke (f.eks.
-  `regnskapsforer-med-signeringsrettighet`) — en nyere
-  Digdir-mekanisme vi ikke har satt opp.
+Skatteetaten svarer ikke i innsendings-API-et, men i **Dialogporten**:
+kvitteringens `dialogId` peker på en dialog der svaret er en
+overføring (`transmission`) med `relatedTransmissionId` lik vår
+`forsendelseId` — `Acceptance` («Innsending av godkjent
+Aksjonærregisteroppgave for organisasjonsnummer …») eller etter
+Dialogportens vokabular `Rejection` — med tilbakemeldingen som PDF og
+XML. `POST …/submissions/{id}/outcome` henter og lagrer det
+(hendelse `outcome`, én per innsending); statusen blir `godkjent`,
+`avvist` eller `behandlet`. Portalen har en knapp for det, og lenker til
+tilbakemeldingsdokumentene (de åpnes med innlogging hos Skatteetaten).
 
-Å skrive en klient mot et API vi ikke kan kjøre ville vært gjetting i
-enda et lag. Rendringen er den halvparten vi kan stå inne for, og
-XML-filene kan lastes ned og leveres gjennom et system som har
-tilgangene.
+Alle innsendinger for samme selskap og år havner i **samme dialog**, hver
+med sin egen `forsendelseId`; en ny oppgave for et år som alt er levert
+ble godkjent i test uten innvendinger. Hvordan den forholder seg til den
+forrige (erstatter eller legges til) er ikke bekreftet, og derfor nekter
+regnmed fortsatt en andre innsending for et levert år.
+
+### Det som sendes, lagres før det sendes
+
+Samme regel som a-meldingen (docs/lonn.md): migrasjon 0076 lagrer
+hovedskjemaet, hvert underskjema og **nøkkelen hvert kall alltid sendes
+med** før første HTTP-kall. Alt er innsettings-bart; status beregnes av
+hendelsesloggen (`receipt` / `failed` / `outcome`) og lagres aldri.
+
+- **Ingen kvittering, samme innhold** (et kall feilet, nettet falt): neste
+  innsending sender *det lagrede* på nytt, kall for kall, med de samme
+  nøklene. Skatteetaten svarer da med sitt første svar i stedet for å
+  åpne en oppgave til.
+- **Ingen kvittering, endret aksjeeierbok:** den gamle står som historikk
+  og en ny lagres med nye nøkler. Den gamle nådde aldri `bekreft`, så
+  Skatteetaten har ikke tatt den.
+- **Kvittering finnes:** nektes, se over.
+- **Uverifiserte transaksjonskoder** stopper innsendingen med hindringene
+  navngitt, akkurat som forhåndsvisningen.
+
+Kvitteringen (`dialogId`, `forsendelseId`, referansen) er beviset på
+levering og står på innsendingen for alltid.
+
+### Ikke bygget ennå
+
+- **Kundevilkår før produksjon** (#185, Digdirs vilkår §1.2;
+  utkastet står i docs/kundevilkar.md).
+- **Korrigering** av en levert oppgave.
+- **Svaret automatisk** (Altinn Events, slik a-meldingen har det) — i dag
+  hentes det med knappen.
 
 ## Endepunkter
 
@@ -193,6 +275,9 @@ tilgangene.
 | GET/POST | `/companies/{id}/share-events` | hendelser |
 | GET/POST | `/companies/{id}/dividends` | utbyttevedtak |
 | GET | `/companies/{id}/reports/aksjonaeroppgave?year=&format=` | oppgaven |
+| GET | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | innsendinger m/ status og kvittering |
+| POST | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | send oppgaven til Skatteetaten (`AKSJEBOK_SKRIV`) |
+| POST | `/companies/{id}/reports/aksjonaeroppgave/submissions/{sid}/outcome` | hent Skatteetatens svar fra Dialogporten |
 
 Lesing er åpen for alle tilgangsnivåer — revisor skal kunne lese
 aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
@@ -218,10 +303,19 @@ aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
 - `regnmed-core::aksjebok` — foldingen, at retningen ligger i typen, at
   utgående i fjor er inngående i år, og at **bare verifiserte koder
   finnes** (testen teller dem).
-- `regnmed-core::aksjonaeroppgave` — begge skjemaene mot Skatteetatens
+- `regnmed-core::shareholder_return` — begge skjemaene mot Skatteetatens
   XSD-er, året uten transaksjoner, selskaps- og utenlandsk aksjonær,
   navnekutting, determinisme, og at en uverifisert kode nektes.
-- `regnmed-api/tests/grupper/aksjonaer.rs` — hele veien: beregnet eierandel per
+- `regnmed-gov::shareholder_return` — kallrekkefølgen (hovedskjema,
+  hvert underskjema, bekreft) med hver sin nøkkel, og at et avvist
+  underskjema stopper FØR `bekreft`.
+- `regnmed-api/tests/grupper/share_register.rs` —
+  `the_return_is_filed_once_and_retried_with_the_same_keys`: et nytt
+  forsøk er de samme kallene med de samme nøklene, en endret
+  aksjeeierbok gir en ny innsending uten gjenbrukte nøkler, og et levert
+  år sendes ikke igjen. En registrert aksjonær uten aksjer i året får
+  ikke underskjema.
+- `regnmed-api/tests/grupper/share_register.rs` — hele veien: beregnet eierandel per
   dato, at fødselsnummeret ikke er i listingen men *er* i innsendingen,
   at ingen kan avhende flere aksjer enn de eier, at utbyttet får bilag,
   at hendelser og identitet ikke kan endres eller slettes (databasen

@@ -33,7 +33,8 @@
     if (motpart) {
       body.motpart_id = motpart;
       // Motparten går motsatt vei av hovedhendelsen.
-      body.motpart_type = typeInfo && typeInfo.tilgang ? "salg" : "kjop";
+      body.motpart_type =
+        typeInfo?.motpart_type || (typeInfo && typeInfo.tilgang ? "salg" : "kjop");
     }
     try {
       await post("/companies/" + companyId + "/share-events", body);
@@ -96,7 +97,11 @@
         {#each typer as t (t.slug)}
           <!-- ⚠: transaksjonstypen kan registreres, men ikke leveres —
                en feil type flyter inn i aksjonærens RF-1088. -->
-          <option value={t.slug}>{t.navn}{t.leverbar ? "" : " ⚠"}</option>
+          <option value={t.slug}
+            >{t.navn}{!t.tilgang && typer.some((o) => o.tilgang && o.navn === t.navn)
+              ? " (avgang)"
+              : ""}{t.leverbar ? "" : " ⚠"}</option
+          >
         {/each}
       </select>
       <div class="grid grid-cols-3 gap-2">

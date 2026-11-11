@@ -52,6 +52,7 @@ pub mod saft_import;
 pub mod sales_document;
 pub mod settings;
 pub mod share_register;
+pub mod shareholder_return_submission;
 pub mod statements;
 pub mod subledger;
 pub mod subscription;

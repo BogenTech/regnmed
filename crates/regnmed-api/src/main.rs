@@ -121,6 +121,25 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
+    // The aksjonærregisteroppgave rail: same client, its own scope, and
+    // Skatteetatens TEST environment unless AKSJONAERREGISTER_URL says otherwise.
+    let shareholder_return = match std::env::var("MASKINPORTEN_CLIENT_ID") {
+        Ok(_) => {
+            let mut config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+            config.scopes = regnmed_gov::shareholder_return::SCOPES.into();
+            let client = regnmed_gov::shareholder_return::ShareholderReturnClient::from_env();
+            println!(
+                "aksjonærregisteroppgave submission is on ({})",
+                client.base_url
+            );
+            Some(std::sync::Arc::new(regnmed_api::ShareholderReturnRail {
+                tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
+                client,
+            }))
+        }
+        Err(_) => None,
+    };
+
     let app = router(AppState {
         pool,
         verifier,
@@ -132,6 +151,7 @@ async fn main() -> Result<()> {
         sealing_key,
         regnid,
         amelding,
+        shareholder_return,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

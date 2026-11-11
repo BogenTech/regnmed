@@ -100,6 +100,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         // does not depend on another service being up.
         regnid: None,
         amelding: None,
+        shareholder_return: None,
     })
 }
 
