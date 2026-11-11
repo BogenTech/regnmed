@@ -31,6 +31,9 @@ name: ci
 on:
   push:
     branches: [main]
+    # images.yml's roll commit. Pushed with a deploy key it would trigger
+    # this workflow (GITHUB_TOKEN pushes never did), and it changes no code.
+    paths-ignore: [deploy/test/kustomization.yaml]
   pull_request:
   # Manual retrigger: push events can be dropped wholesale during GitHub
   # Actions incidents (seen 2026-08-06), and a commit whose event was
