@@ -562,6 +562,52 @@ Tre ting å vite til neste gang:
 - **Godkjenningssiden viste «levert av N/A»** med riktig orgnr — TT02
   kjenner ikke BogenTechs navn. Sjekk at navnet vises i produksjon.
 
+### Første a-melding, 2026-11-11: mottatt uten avvik
+
+Første ekte kall mot Skatteetatens a-melding-API, med
+systembrukertokenet over: `POST /v1/innsending/2026-10/311032240` på
+`innrapporteringamelding.api.skatteetaten-test.no`
+(`innrapportering-amelding-api` 0.1.2, påkrevd header
+`idempotencyKey`). Innholdet var en hel månedsmelding for det
+syntetiske selskapet — underenhet 314752538, én inntektsmottaker (den
+daglige lederen), fastlønn 40 000, forskuddstrekk 14 000, aga 14,1 % =
+5 640 — i nøyaktig den formen `regnmed-core::amelding` rendrer, bare
+som JSON. Svaret var **200** med `dialogId`, `forsendelseId` og
+`meldingsId`.
+
+Tilbakemeldingen kom 21 sekunder senere: `mottakstatus: "mottatt"`,
+**`avvik: []`**, summene speilet tilbake og `kildesystem: "regnmed"`.
+Den inneholder også kontonummer og KID for innbetaling av
+arbeidsgiveravgift, forskuddstrekk og finansskatt — det
+betalingslisten (#33) trenger for å betale dem.
+
+Det som er verdt å vite til klienten skal bygges:
+
+- **JSON-en er samme tre som XML-en**, felt for felt med samme navn.
+  Gjentatte elementer blir lister (`virksomhet`, `inntektsmottaker`,
+  `arbeidsforhold`, `inntekt`, `forskuddstrekk`,
+  `loennOgGodtgjoerelse`, `sumForskuddstrekkPerLoennsutbetalingsdato`);
+  `BeloepSomHeltall` er JSON-tall, `BeloepSomDesimaltall` og
+  `Desimaltall` er strenger, `Boolsk` er `true`/`false`. Renderen
+  trenger altså en JSON-serialisering av samme modell, ikke en ny
+  modell.
+- **Tilbakemeldingen slås IKKE opp med `forsendelseId`.** Den gir 404
+  (`AMLD_1050`). Den finnes som en EGEN transmission i dialogen —
+  type `Information`, `relatedTransmissionId` = innsendingens
+  `forsendelseId` — og vedleggets URL med `consumerType: "Api"` peker
+  på `ameldingtilbakemelding.api.skatteetaten-test.no/v1/forsendelser/<den
+  transmissionens id>`. Veien er altså
+  `GET platform.tt02.altinn.no/dialogporten/api/v1/enduser/dialogs/<dialogId>`
+  → finn transmissionen → hent URL-en. Det er det Skatteetaten mener
+  med «lytt på hendelser hos Dialogporten»; i drift skal det skje via
+  `altinn:events.subscribe` (bruksvilkårene §1.2.4: hendelser, ikke
+  polling).
+- **Dialogportens sluttbruker-API godtar systembrukertokenet** når
+  scope-et er `digdir:dialogporten skatteetaten:innrapporteringamelding`
+  og `authorization_details` er det samme — ingen egen pålogging.
+- Tokenet for innsending, tilbakemelding og Dialogporten er ett og
+  samme systembrukertoken for kunden; bare scopene varierer.
+
 ## Status & verification
 
 - Implemented and locked by tests (no credentials needed): grant-JWT
