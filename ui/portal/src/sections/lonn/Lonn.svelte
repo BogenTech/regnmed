@@ -25,6 +25,7 @@
     ]);
     data = {
       ansatte: employees.ansatte,
+      koder: employees.koder,
       kjoringer: payroll.kjoringer,
       invitasjoner: invitasjoner ? invitasjoner.invitasjoner : null,
       medlemmer: medlemmer ? medlemmer.medlemmer : null,
@@ -47,6 +48,7 @@
   <Ansatte
     {companyId}
     ansatte={data.ansatte}
+    koder={data.koder}
     invitasjoner={data.invitasjoner}
     medlemmer={data.medlemmer}
     onDone={reload}

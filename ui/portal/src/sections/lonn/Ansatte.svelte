@@ -3,8 +3,9 @@
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
+  import Arbeidsforhold, { tomt, fraAnsatt, tilPayload } from "./Arbeidsforhold.svelte";
 
-  let { companyId, ansatte, invitasjoner, medlemmer, onDone } = $props();
+  let { companyId, ansatte, koder, invitasjoner, medlemmer, onDone } = $props();
 
   let navn = $state("");
   let fnr = $state("");
@@ -14,6 +15,7 @@
   let trekk = $state("");
   let fp = $state("10.2");
   let epost = $state("");
+  let forhold = $state(tomt());
 
   function nullstill() {
     navn = "";
@@ -24,6 +26,7 @@
     trekk = "";
     fp = "10.2";
     epost = "";
+    forhold = tomt();
   }
 
   async function opprett() {
@@ -39,6 +42,7 @@
           ? Math.round(parseFloat(trekk.trim().replace(",", ".")) * 100)
           : null,
         feriepenger_bp: Math.round(parseFloat(fp.trim().replace(",", ".")) * 100),
+        ...tilPayload(forhold),
       });
       // Invitasjonen kobler den ansatte til portalbrukeren når hun selv
       // logger inn med adressen — admin velger aldri en person fra en
@@ -74,6 +78,24 @@
 
   function apneKobling(a) {
     kobling = { ansatt: a, epost: "", personId: "" };
+  }
+
+  // Arbeidsforholdet for a-meldingen, ett om gangen.
+  let redigering = $state(null); // { ansatt, verdi }
+
+  async function lagreArbeidsforhold() {
+    try {
+      await send(
+        "PUT",
+        "/companies/" + companyId + "/employees/" + redigering.ansatt.id + "/employment",
+        tilPayload(redigering.verdi),
+      );
+      toast("Arbeidsforholdet er lagret", true);
+      redigering = null;
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
   }
 
   const invitasjonFor = (a) => (invitasjoner || []).find((i) => i.employee_id === a.id);
@@ -152,6 +174,7 @@
             <th class="text-right">Trekk</th>
             <th class="text-right">Feriepenger</th>
             <th>Portalbruker</th>
+            <th>A-melding</th>
           </tr>
         </thead>
         <tbody>
@@ -194,11 +217,50 @@
                   </button>
                 {/if}
               </td>
+              <td class="text-xs">
+                {#if a.amelding_mangler.length}
+                  <span
+                    class="text-warning"
+                    title={"Mangler: " + a.amelding_mangler.join(", ")}
+                  >
+                    mangler {a.amelding_mangler.length}
+                  </span>
+                {:else}
+                  <span class="opacity-70">komplett</span>
+                {/if}
+                <button
+                  class="btn btn-ghost btn-xs whitespace-nowrap"
+                  onclick={() => (redigering = { ansatt: a, verdi: fraAnsatt(a) })}
+                >
+                  Arbeidsforhold …
+                </button>
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+    {#if redigering}
+      <div class="card border border-base-300 card-sm mb-4 max-w-md">
+        <div class="card-body">
+          <h4 class="font-semibold text-sm">Arbeidsforhold for {redigering.ansatt.navn}</h4>
+          <p class="text-xs opacity-70 mb-2">
+            Det a-meldingen krever om arbeidsforholdet. Det som mangler gjettes aldri — a-meldingen
+            nektes til feltet er fylt ut.
+          </p>
+          {#if redigering.ansatt.amelding_mangler.length}
+            <p class="text-xs text-warning mb-2">
+              Mangler: {redigering.ansatt.amelding_mangler.join(", ")}
+            </p>
+          {/if}
+          <Arbeidsforhold bind:value={redigering.verdi} {koder} />
+          <div class="flex gap-2 mt-2">
+            <button class="btn btn-sm btn-primary" onclick={lagreArbeidsforhold}>Lagre</button>
+            <button class="btn btn-ghost btn-sm" onclick={() => (redigering = null)}>Avbryt</button>
+          </div>
+        </div>
+      </div>
+    {/if}
     {#if kobling}
       <div class="card border border-base-300 card-sm mb-4 max-w-lg">
         <div class="card-body">
@@ -274,6 +336,12 @@
       placeholder="E-post — inviter til portalen og koble (valgfritt)"
       bind:value={epost}
     />
+    <details class="text-sm">
+      <summary class="cursor-pointer opacity-70">
+        Arbeidsforhold for a-meldingen (kan fylles ut senere)
+      </summary>
+      <div class="mt-2"><Arbeidsforhold bind:value={forhold} {koder} /></div>
+    </details>
     <button class="btn btn-sm" onclick={opprett}>Registrer ansatt</button>
   </div>
 </Card>

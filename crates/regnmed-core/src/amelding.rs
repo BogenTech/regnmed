@@ -31,8 +31,9 @@ use crate::xml::{Xml, decimal, rate};
 
 pub const NAMESPACE: &str = "urn:ske:fastsetting:innsamling:a-meldingen:v2_3";
 
-/// Arbeidstidsordning codes in the kodeliste (R1 2026).
-const WORKING_HOURS_SCHEMES: &[&str] = &[
+/// Arbeidstidsordning codes in the kodeliste (R1 2026). Public so the
+/// API validates input against the same list the renderer accepts.
+pub const WORKING_HOURS_SCHEMES: &[&str] = &[
     "ikkeSkift",
     "andreSkift",
     "doegnkontinuerligSkiftOgTurnus355",
@@ -42,7 +43,7 @@ const WORKING_HOURS_SCHEMES: &[&str] = &[
 ];
 
 /// FormForAnsettelse codes in the kodeliste (R1 2026).
-const EMPLOYMENT_FORMS: &[&str] = &[
+pub const EMPLOYMENT_FORMS: &[&str] = &[
     "fast",
     "midlertidig",
     "fastAnsattUtleid",
@@ -164,7 +165,8 @@ pub struct Income {
 }
 
 /// An ordinaertArbeidsforhold. The `Option` fields are what F291 requires
-/// and the payroll model does not hold yet; `None` is refused.
+/// and an employee may not have filled in yet (migration 0073); `None` is
+/// refused.
 #[derive(Debug, Clone)]
 pub struct Employment {
     /// Stable per employee across meldinger (F108) — the employee id.
@@ -180,6 +182,28 @@ pub struct Employment {
     pub position_percent_bp: Option<i64>,
     pub last_salary_change: Option<NaiveDate>,
     pub employment_form: Option<String>,
+}
+
+impl Employment {
+    /// The F291 fields this employment lacks, named exactly as
+    /// [`render`]'s `Missing` error names them — so the portal can say
+    /// what to fill in before a melding is ever attempted.
+    pub fn missing(&self) -> Vec<&'static str> {
+        [
+            (
+                self.full_time_hours_per_week_hundredths.is_none(),
+                "antall timer per uke for full stilling",
+            ),
+            (self.occupation_code.is_none(), "yrkeskode"),
+            (self.working_hours_scheme.is_none(), "arbeidstidsordning"),
+            (self.position_percent_bp.is_none(), "stillingsprosent"),
+            (self.last_salary_change.is_none(), "siste lønnsendringsdato"),
+            (self.employment_form.is_none(), "ansettelsesform"),
+        ]
+        .into_iter()
+        .filter_map(|(absent, field)| absent.then_some(field))
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -592,6 +616,11 @@ mod tests {
     }
 
     #[test]
+    fn a_complete_employment_misses_nothing() {
+        assert!(melding().recipients[0].employment.missing().is_empty());
+    }
+
+    #[test]
     fn every_field_the_model_lacks_is_refused_by_name() {
         type Clear = fn(&mut Employment);
         let cases: [(Clear, &str); 6] = [
@@ -608,6 +637,9 @@ mod tests {
         for (clear, field) in cases {
             let mut m = melding();
             clear(&mut m.recipients[0].employment);
+            // The portal's checklist names the same field the renderer
+            // refuses on.
+            assert_eq!(m.recipients[0].employment.missing(), vec![field]);
             assert_eq!(
                 render(&m),
                 Err(AmeldingError::Missing {

@@ -317,6 +317,7 @@ async fn seed_browser_demo() {
                 holiday_pay_bp: fp_bp,
                 bank_account: None,
                 note: None,
+                details: Default::default(),
             },
             "Demo Bruker",
         )
@@ -388,6 +389,7 @@ async fn seed_browser_demo() {
             holiday_pay_bp: 1020,
             bank_account: None,
             note: None,
+            details: Default::default(),
         },
         "Demo Bruker",
     )

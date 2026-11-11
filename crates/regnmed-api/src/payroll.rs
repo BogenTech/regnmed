@@ -1,6 +1,7 @@
 //! Lønn (docs/lonn.md, first part of #46):
 //!
 //! - GET/POST /companies/{id}/employees             employee register
+//! - PUT  /companies/{id}/employees/{eid}/employment  arbeidsforhold for the a-melding
 //! - GET/POST /companies/{id}/payroll               payroll runs
 //! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
 //! - GET      /companies/{id}/payroll/preview       computation without posting
@@ -39,6 +40,11 @@ fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "feriepenger_bp": a.holiday_pay_bp,
         "bank_account": a.bank_account,
         "note": a.note,
+        // The arbeidsforhold facts the a-melding requires (0073), and
+        // which of them are still missing — named as the a-melding's own
+        // refusal names them.
+        "arbeidsforhold": details_json(&a.details),
+        "amelding_mangler": a.amelding_missing(),
         // The linked portal user (docs/lonn.md, 0050) — null when the
         // employee has no portal access.
         "person": a.person_id.map(|pid| json!({
@@ -49,6 +55,54 @@ fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
     })
 }
 
+fn details_json(d: &regnmed_db::payroll::EmploymentDetails) -> serde_json::Value {
+    json!({
+        "virksomhet_orgnr": d.business_unit_orgnumber,
+        "yrkeskode": d.occupation_code,
+        "stillingsprosent_bp": d.position_percent_bp,
+        "timer_per_uke_hundredeler": d.full_time_hours_per_week_hundredths,
+        "arbeidstidsordning": d.working_hours_scheme,
+        "ansettelsesform": d.employment_form,
+        "siste_lonnsendring": d.last_salary_change,
+    })
+}
+
+/// The arbeidsforhold fields as they arrive on the wire — on employee
+/// registration and on its own PUT.
+#[derive(Deserialize, Default)]
+pub struct EmploymentDetailsRequest {
+    #[serde(rename = "virksomhet_orgnr")]
+    business_unit_orgnumber: Option<String>,
+    #[serde(rename = "yrkeskode")]
+    occupation_code: Option<String>,
+    #[serde(rename = "stillingsprosent_bp")]
+    position_percent_bp: Option<i32>,
+    #[serde(rename = "timer_per_uke_hundredeler")]
+    full_time_hours_per_week_hundredths: Option<i32>,
+    #[serde(rename = "arbeidstidsordning")]
+    working_hours_scheme: Option<String>,
+    #[serde(rename = "ansettelsesform")]
+    employment_form: Option<String>,
+    #[serde(rename = "siste_lonnsendring")]
+    last_salary_change: Option<chrono::NaiveDate>,
+}
+
+impl EmploymentDetailsRequest {
+    fn into_details(self) -> regnmed_db::payroll::EmploymentDetails {
+        // An empty string from a form field means "not given", not a code.
+        let text = |v: Option<String>| v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        regnmed_db::payroll::EmploymentDetails {
+            business_unit_orgnumber: text(self.business_unit_orgnumber),
+            occupation_code: text(self.occupation_code),
+            position_percent_bp: self.position_percent_bp,
+            full_time_hours_per_week_hundredths: self.full_time_hours_per_week_hundredths,
+            working_hours_scheme: text(self.working_hours_scheme),
+            employment_form: text(self.employment_form),
+            last_salary_change: self.last_salary_change,
+        }
+    }
+}
+
 pub async fn list_employees(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -57,7 +111,13 @@ pub async fn list_employees(
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let employees = regnmed_db::payroll::list_ansatte(&state.pool, company_id).await?;
     Ok(Json(json!({
-        "ansatte": employees.iter().map(employee_json).collect::<Vec<_>>()
+        "ansatte": employees.iter().map(employee_json).collect::<Vec<_>>(),
+        // The kodeliste values the a-melding accepts, served from the one
+        // copy the renderer checks against.
+        "koder": {
+            "arbeidstidsordning": regnmed_core::amelding::WORKING_HOURS_SCHEMES,
+            "ansettelsesform": regnmed_core::amelding::EMPLOYMENT_FORMS,
+        },
     })))
 }
 
@@ -88,6 +148,8 @@ pub struct CreateEmployeeRequest {
     holiday_pay_bp: i32,
     bank_account: Option<String>,
     note: Option<String>,
+    #[serde(flatten)]
+    details: EmploymentDetailsRequest,
 }
 
 fn percent() -> String {
@@ -120,12 +182,34 @@ pub async fn create_employee(
             holiday_pay_bp: request.holiday_pay_bp,
             bank_account: request.bank_account,
             note: request.note,
+            details: request.details.into_details(),
         },
         person.display(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "employee_id": id })))
+}
+
+/// Sets the arbeidsforhold facts the a-melding requires. A full
+/// replacement: a field left out is cleared, so the form can undo a
+/// mistake.
+pub async fn update_employment(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<EmploymentDetailsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
+    regnmed_db::payroll::update_employment_details(
+        &state.pool,
+        company_id,
+        employee_id,
+        &request.into_details(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "updated": true })))
 }
 
 #[derive(Deserialize)]

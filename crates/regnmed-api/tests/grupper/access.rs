@@ -480,6 +480,7 @@ async fn an_employee_gets_only_their_own_payslip() {
                 holiday_pay_bp: 1020,
                 bank_account: None,
                 note: None,
+                details: Default::default(),
             },
             "Test",
         )
@@ -628,6 +629,25 @@ async fn payroll_is_not_general_reading() {
         StatusCode::FORBIDDEN,
         "revisor skulle ikke fått registrere ansatte"
     );
+    // Nor change an arbeidsforhold. `{}` is a valid body (every field is
+    // optional), so a 403 here is the guard and not the extractor.
+    for (name, token) in [("revisor", &auditor), ("les", &les), ("ansatt", &employee)] {
+        assert_eq!(
+            status(
+                &state,
+                "PUT",
+                &format!(
+                    "/companies/{company}/employees/{}/employment",
+                    Uuid::new_v4()
+                ),
+                token,
+                "{}",
+            )
+            .await,
+            StatusCode::FORBIDDEN,
+            "{name} skulle ikke fått endre arbeidsforholdet"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------

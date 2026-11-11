@@ -522,6 +522,10 @@ pub fn router(state: AppState) -> Router {
             get(payroll::list_employees).post(payroll::create_employee),
         )
         .route(
+            "/companies/{company_id}/employees/{employee_id}/employment",
+            axum::routing::put(payroll::update_employment),
+        )
+        .route(
             "/companies/{company_id}/employees/{employee_id}/link",
             axum::routing::post(payroll::link_employee).delete(payroll::unlink_employee),
         )
