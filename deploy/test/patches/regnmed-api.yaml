@@ -160,6 +160,15 @@ spec:
             # «Tilbakemelding som hendelse»).
             - name: ALTINN_EVENTS_ENDPOINT
               value: https://api.test.regnmed.no/webhooks/altinn
+            # Brønnøysund's TEST register: it holds Tenor's synthetic
+            # companies (e.g. 311032240), which are the ones Maskinporten,
+            # Skatteetaten and Altinn TT02 know. So every external register
+            # test talks to is a test one, and a test company can be
+            # onboarded through the normal portal flow. New REAL org
+            # numbers can no longer be onboarded in test (decided
+            # 2026-11-11); companies already in the test database stay.
+            - name: BRREG_API_URL
+              value: https://data.ppe.brreg.no/enhetsregisteret/api
           volumeMounts:
             - name: maskinporten
               mountPath: /secrets/maskinporten
