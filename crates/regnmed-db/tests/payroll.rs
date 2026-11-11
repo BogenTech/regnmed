@@ -33,8 +33,16 @@ fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
+/// MOD11-valid, like every real company's (onboarding checks it) — the
+/// a-melding renderer refuses anything else.
+fn valid_orgnumber() -> String {
+    std::iter::repeat_with(unique_orgnumber)
+        .find(|n| regnmed_core::orgnumber::is_valid(n))
+        .unwrap()
+}
+
 async fn company(pool: &PgPool) -> Uuid {
-    let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Lønnstest AS")
+    let company = regnmed_db::create_company(pool, &valid_orgnumber(), "Lønnstest AS")
         .await
         .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
@@ -965,9 +973,7 @@ async fn employment_details_are_validated_before_storage() {
     let Some(pool) = pool().await else { return };
     // A MOD11-valid org number for the company itself, or the "own
     // number" case below would be refused by MOD11 and prove nothing.
-    let own = std::iter::repeat_with(unique_orgnumber)
-        .find(|n| regnmed_core::orgnumber::is_valid(n))
-        .unwrap();
+    let own = valid_orgnumber();
     let company = regnmed_db::create_company(&pool, &own, "Lønnstest AS")
         .await
         .unwrap();
@@ -1048,4 +1054,146 @@ async fn a_run_records_whether_it_paid_fixed_salary() {
             .await
             .unwrap();
     assert_eq!(kind.as_deref(), Some("fixed"));
+}
+
+fn run_entry(employee_id: Uuid, gross_ore: Option<i64>) -> PayrollEntry {
+    PayrollEntry {
+        employee_id,
+        gross_ore,
+        holiday_pay_ore: 0,
+        from_timesheet: false,
+    }
+}
+
+/// A stored run with complete arbeidsforhold renders to an a-melding the
+/// renderer accepts — fødselsnummer, fastlønn and the run's own avgift.
+#[tokio::test]
+async fn a_stored_run_with_complete_employments_renders() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    // 40 000 kr at 35 % trekk and 14,1 % aga: whole kroner throughout
+    // (14 000 trekk, 5 640 aga), so the kroner rule does not interfere.
+    let id = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+        .await
+        .unwrap();
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[run_entry(id, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+    let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+    assert!(xml.contains("<norskIdentifikator>26829398612</norskIdentifikator>"));
+    assert!(xml.contains("<beskrivelse>fastloenn</beskrivelse>"));
+    assert!(xml.contains("<sumArbeidsgiveravgift>5640</sumArbeidsgiveravgift>"));
+    assert!(xml.contains(&format!("<meldingsId>{}</meldingsId>", run.id)));
+}
+
+/// Everything that blocks delivery is listed at once, in words — not the
+/// first thing the renderer trips over.
+#[tokio::test]
+async fn every_hindrance_is_listed_before_anything_is_rendered() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let complete = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    payroll::update_employment_details(&pool, company, complete, &complete_details("974760673"))
+        .await
+        .unwrap();
+    // No arbeidsforhold details at all.
+    let incomplete = employee(&pool, company, "03048810003", "Ola Ufullstendig", 3_000_000).await;
+    // Employed this month, but not in the run.
+    employee(&pool, company, "15076500565", "Per Ulønnet", 3_000_000).await;
+    // Both wage forms and an explicit amount: the run cannot tell which
+    // it paid, so it stores nothing.
+    let both = payroll::create_employee(
+        &pool,
+        company,
+        &NewEmployee {
+            nin: "07045020090".into(),
+            name: "Eva Begge".into(),
+            stilling: None,
+            employed_from: date(2025, 1, 1),
+            monthly_salary_ore: Some(3_000_000),
+            hourly_wage_ore: Some(30_000),
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3000),
+            withholding_table: None,
+            holiday_pay_bp: 1020,
+            bank_account: None,
+            note: None,
+            details: complete_details("974760673"),
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[
+            run_entry(complete, None),
+            run_entry(incomplete, None),
+            run_entry(both, Some(1_000_000)),
+        ],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    let all = draft.hindrances.join("\n");
+    assert_eq!(draft.hindrances.len(), 3, "{all}");
+    assert!(
+        all.contains("Ola Ufullstendig: arbeidsforholdet mangler virksomhet"),
+        "{all}"
+    );
+    assert!(
+        all.contains("Eva Begge: det ble ikke lagret om lønnen"),
+        "{all}"
+    );
+    assert!(all.contains("Per Ulønnet var ansatt i 03/2026"), "{all}");
+    assert!(!all.contains("Kari"), "{all}");
+}
+
+#[tokio::test]
+async fn another_companys_run_is_unknown() {
+    let Some(pool) = pool().await else { return };
+    let mine = company(&pool).await;
+    let theirs = company(&pool).await;
+    let id = employee(&pool, theirs, "26829398612", "Kari Utvikler", 4_000_000).await;
+    let run = payroll::run_payroll(
+        &pool,
+        theirs,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[run_entry(id, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert!(
+        payroll::amelding_for_run(&pool, mine, run.id, chrono::Utc::now())
+            .await
+            .is_err()
+    );
 }

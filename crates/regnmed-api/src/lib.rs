@@ -538,6 +538,10 @@ pub fn router(state: AppState) -> Router {
             get(payroll::list_payroll).post(payroll::run_payroll),
         )
         .route(
+            "/companies/{company_id}/payroll/{run_id}/amelding",
+            get(payroll::amelding),
+        )
+        .route(
             "/companies/{company_id}/payroll/{run_id}/slip/{employee_id}",
             get(payroll::payslip_pdf),
         )
