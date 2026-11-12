@@ -54,6 +54,7 @@ pub mod vat;
 pub mod vat_return;
 pub mod voucher;
 pub mod voucher_hints;
+pub mod withholding_table;
 pub(crate) mod xml;
 
 pub use error::LedgerError;

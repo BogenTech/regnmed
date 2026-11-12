@@ -137,24 +137,46 @@ arbeidsforholdet (alder, tariff), ikke en systeminnstilling.
 **Den ekstra arbeidsgiveravgiften på 5 % over 750 000 kroner ble fjernet
 fra 2025.** Den finnes ikke i registeret fordi den ikke finnes.
 
-## To ting vi nekter å gjøre
+## Tabelltrekk
 
-Begge følger samme doktrine som RF-1086-kodene (docs/aksjonaer.md): der
-vi ikke kan regne riktig, sier vi fra i stedet for å tilnærme.
+Tabelltrekket regnes ikke ut av en tabell vi har tastet inn, men av
+**Skatteetatens egen trekkrutine**: `github.com/Skatteetaten/trekktabell`
+(Java, `trekkrutine2026`) er det programmet Skatteetaten selv lager den
+publiserte tabellfila med. `regnmed-core::withholding_table` er en port
+av den, og den er **sjekket mot hele den publiserte fila for 2026**
+(«trekktabeller i tekstformat», `alleTabelleneIEnFilTilSkatteetatenNo.txt`,
+1 063 799 rader, alle tabellnumre og alle sju perioder): hver rad gir
+nøyaktig samme trekk. Et deterministisk utvalg (hver 211. rad, 5 043
+rader) ligger i `docs/lonn/trekktabell-2026-utvalg.txt` og kjøres i CI;
+hele fila kan kjøres lokalt med `TREKKTABELL_FILE=…`.
 
-### Tabelltrekk
+**Rutinen regner med flyttall, med vilje.** regnmed bruker aldri
+flyttall for penger, men her er myndighetens rutine definert i
+IEEE-doubles, og den eneste måten å lande på Skatteetatens kroner er å
+gjøre de samme operasjonene i samme rekkefølge og runde likt (Javas
+`Math.round`). Inn og ut går hele kroner; ingen flyttall når hovedboken.
 
-Trekktabellene er Skatteetatens datafiler. Uten dem finnes det ingen
-forsvarlig måte å regne tabelltrekk på, og en tilnærming ville blitt den
-ansattes restskatt. En kjøring med `trekk_type = 'tabell'` stopper:
+I lønnskjøringen: månedstabellen, trekkgrunnlaget i hele kroner (øre
+under en krone flytter aldri trekket over neste 100-kronerstrinn), og
+**halvt tabelltrekk i desember** — som for prosenttrekk, fordi
+10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie som
+før.
 
-> tabelltrekk (tabell 7100) er ikke støttet: trekktabellene er
-> Skatteetatens datafiler, og regnmed tilnærmer dem ikke
+Det kjøringen fortsatt **nekter**, med begrunnelse:
 
-Et skattekort med trekktabell som hentes fra Skatteetaten (under),
-lagres som tabell — slik kortet sier — og kjøringen nekter fortsatt.
-Det er riktig rekkefølge: tallet blir aldri feil i stillhet, og
-tabelltrekket er neste bit som må bygges.
+- **Tabeller over 12 måneder** (7350, 7500, 7700, 6350, 6500, 6700,
+  0100, 0101, 7150, 7160): de trekker fullt i desember og i
+  feriepengene, og `calculate` gjør ikke det.
+- **Et år uten konstanter.** Satsene i trekkrutinen endres hvert år
+  (trinnskatt, personfradrag, trygdeavgift); et år som ikke er lagt inn
+  stopper kjøringen i stedet for å bruke fjorårets. Nytt år = ny
+  `Constants` i `withholding_table` + nytt utvalg fra Skatteetatens fil,
+  og det hører til den årlige regelverksrevisjonen.
+
+## Det vi fortsatt nekter å gjøre
+
+Samme doktrine som RF-1086-kodene (docs/aksjonaer.md): der vi ikke kan
+regne riktig, sier vi fra i stedet for å tilnærme.
 
 ### Sone Ia
 
@@ -191,7 +213,7 @@ men brukes ikke.
 | Kortet sier | regnmed |
 | --- | --- |
 | Trekkprosent over 10,5 måneder | **settes** (prosenten leses som desimaltekst, aldri som flyttall) |
-| Trekktabell over 10,5 måneder | **settes** som tabell — kjøringen nekter tabelltrekk (over) |
+| Trekktabell over 10,5 måneder | **settes** som tabell, og kjøringen regner tabelltrekket (over) |
 | Frikort uten beløpsgrense, eller «ikke trekkplikt» | **settes** til ingen trekk |
 | Frikort med beløpsgrense | beholdes — 50 % over grensen regnes ikke ut ennå |
 | Trekk over 11 eller 12 måneder (bl.a. kildeskatt) | beholdes — `calculate` trekker halvt i desember og ikke i feriepenger, som bare stemmer for 10,5 |
@@ -521,11 +543,9 @@ Rekkefølgen er omtrent den de bør tas i.
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
-2. **Tabelltrekk** (se over). Skattekortene hentes nå (over), og de
-   fleste vanlige kort har trekktabell — dette er derfor det neste.
-3. **Frikort med beløpsgrense og kort over 11/12 måneder** (kildeskatt),
+2. **Frikort med beløpsgrense og kort over 11/12 måneder** (kildeskatt),
    som skattekorthentingen i dag beholder med merknad.
-4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+3. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
 ## Timelønn fra timeføringen
@@ -667,9 +687,15 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   trekket med merknad, at et nytt svarkall ikke henter noe på nytt, og
   at kortet ikke kan endres. Testen er sett feile med 10,5-månedsvakten
   fjernet.
-- `regnmed-core::payroll` — prosenttrekk, trekkfrie feriepenger, halv skatt
-  i desember, frikort, avrunding halvt vekk fra null, og at tabelltrekk
-  og sone Ia nektes med begrunnelse.
+- `regnmed-core::withholding_table` — hver rad i utvalget fra
+  Skatteetatens publiserte 2026-fil (og hele fila, 1 063 799 rader, når
+  `TREKKTABELL_FILE` er satt — kjørt 2026-11-12, alle like), rutinens egne
+  kontroller (trygdeavgiftsgrensene 125 188 / 143 175, aldri mer enn
+  grunnlaget), og at ukjente tabeller og år nektes.
+- `regnmed-core::payroll` — prosenttrekk, tabelltrekk (og halvt i
+  desember), trekkfrie feriepenger, halv skatt i desember, frikort,
+  avrunding halvt vekk fra null, og at 12-månederstabeller og sone Ia
+  nektes med begrunnelse.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir

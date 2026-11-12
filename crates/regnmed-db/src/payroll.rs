@@ -5,7 +5,7 @@
 //! later; the numbers in the hovedbok are the bilag, not the lines.
 
 use anyhow::{Context, Result, bail, ensure};
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use regnmed_core::Ore;
 use regnmed_core::payroll::{
     self, PayrollBasis, PayrollCalculation, PayrollTotals, Withholding, Zone,
@@ -585,6 +585,9 @@ pub async fn run_payroll(
                 holiday_pay_ore: post.holiday_pay_ore,
                 withholding: employee.withholding(),
             },
+            // Pay is taxed in the year it is paid, so December's pay paid
+            // in January takes January's tables -- like the aga rate.
+            paid_date.year(),
             month,
         )
         .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;

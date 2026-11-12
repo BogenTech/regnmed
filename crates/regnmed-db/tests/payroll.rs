@@ -339,52 +339,94 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
     assert!(error.to_string().contains("fribeløpet"), "{error}");
 }
 
+/// Tabelltrekk follows Skatteetaten's own routine and lands in the run
+/// and the bilag; a 12-month table is refused rather than guessed.
 #[tokio::test]
-async fn tabelltrekk_stops_the_run_rather_than_guessing() {
+async fn tabelltrekk_follows_the_table_and_twelve_month_tables_stop_the_run() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
-    let a = payroll::create_employee(
-        &pool,
-        company,
-        &NewEmployee {
-            nin: "08888797336".into(),
-            name: "Tabell Trekksen".into(),
-            stilling: None,
-            employed_from: date(2025, 1, 1),
-            monthly_salary_ore: Some(5_000_000),
-            hourly_wage_ore: None,
-            withholding_type: "tabell".into(),
-            withholding_percent_bp: None,
-            withholding_table: Some(7100),
-            holiday_pay_bp: 1020,
-            bank_account: None,
-            note: None,
-            details: Default::default(),
-        },
-        "Test",
-    )
-    .await
-    .unwrap();
+    let employee = |nin: &'static str, table: i32| NewEmployee {
+        nin: nin.into(),
+        name: format!("Tabell {table}"),
+        stilling: None,
+        employed_from: date(2025, 1, 1),
+        monthly_salary_ore: Some(5_000_000),
+        hourly_wage_ore: None,
+        withholding_type: "tabell".into(),
+        withholding_percent_bp: None,
+        withholding_table: Some(table),
+        holiday_pay_bp: 1020,
+        bank_account: None,
+        note: None,
+        details: Default::default(),
+    };
+    let run = |id| PayrollEntry {
+        employee_id: id,
+        gross_ore: None,
+        holiday_pay_ore: 0,
+        from_timesheet: false,
+    };
+    let ordinary = payroll::create_employee(&pool, company, &employee("08888797336", 8000), "Test")
+        .await
+        .unwrap();
+    let twelve = payroll::create_employee(&pool, company, &employee("15929998666", 7350), "Test")
+        .await
+        .unwrap();
 
-    let error = payroll::run_payroll(
+    let expected_kr = regnmed_core::withholding_table::withholding_kr(
+        2026,
+        8000,
+        regnmed_core::withholding_table::Period::Month,
+        50_000,
+    )
+    .unwrap();
+    let posted = payroll::run_payroll(
         &pool,
         company,
         2026,
         3,
         date(2026, 3, 25),
         "I",
-        &[PayrollEntry {
-            employee_id: a,
-            gross_ore: None,
-            holiday_pay_ore: 0,
-            from_timesheet: false,
-        }],
+        &[run(ordinary)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(posted.sum.withholding_ore, expected_kr * 100);
+    assert!(
+        expected_kr > 10_000 && expected_kr < 20_000,
+        "{expected_kr}"
+    );
+
+    let error = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        4,
+        date(2026, 4, 25),
+        "I",
+        &[run(twelve)],
         "Test",
     )
     .await
     .unwrap_err();
-    assert!(error.to_string().contains("tabelltrekk"), "{error}");
-    assert!(error.to_string().contains("tilnærmer dem ikke"), "{error}");
+    assert!(error.to_string().contains("12 måneder"), "{error}");
+
+    // December's pay paid in January is taxed in January's year, whose
+    // tables are not in regnmed yet: refused, never last year's.
+    let error = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        12,
+        date(2027, 1, 5),
+        "I",
+        &[run(ordinary)],
+        "Test",
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("2027"), "{error}");
 }
 
 #[tokio::test]
