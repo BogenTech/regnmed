@@ -1,8 +1,11 @@
 //! Utlegg and kjøregodtgjørelse (docs/utlegg.md, #42):
 //!
-//! - GET  /companies/{id}/expenses                    list w/ status
+//! - GET  /companies/{id}/expenses?status=&limit=&offset=
+//!                                                    list + tab counts
+//! - GET  /companies/{id}/expenses/{eid}              one claim
 //! - POST /companies/{id}/expenses/utlegg?filename=   raw receipt body
 //! - POST /companies/{id}/expenses/kjoring            km claim
+//! - GET  /companies/{id}/expenses/kjoring?dato=      the km-sats that day
 //! - GET  /companies/{id}/expenses/{eid}/receipt
 //! - POST /companies/{id}/expenses/{eid}/approve      posts + attaches
 //! - POST /companies/{id}/expenses/{eid}/reject       note required
@@ -33,8 +36,8 @@ pub struct UploadQuery {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     #[serde(rename = "belop_ore")]
-    amount_ore: i64,
-    #[serde(rename = "beskrivelse")]
+    amount_ore: Option<i64>,
+    #[serde(rename = "beskrivelse", default)]
     description: String,
 }
 
@@ -59,7 +62,9 @@ pub async fn create_expense(
         person.person_id,
         query.date,
         &query.description,
-        query.amount_ore,
+        query
+            .amount_ore
+            .ok_or_else(|| ApiError::BadRequest("oppgi beløpet".into()))?,
         &query.filename,
         &content_type,
         &body,
@@ -75,9 +80,33 @@ pub struct RunRequest {
     #[serde(rename = "dato")]
     date: chrono::NaiveDate,
     /// Route and purpose, e.g. "Oslo–Drammen t/r, kundemøte".
-    #[serde(rename = "beskrivelse")]
+    #[serde(rename = "beskrivelse", default)]
     description: String,
-    km: i64,
+    km: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct RateQuery {
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
+}
+
+/// The satser a kjøring on `dato` would be paid with — so the form can
+/// show the amount, and the trekkpliktig part, before anyone submits.
+pub async fn mileage_rate(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<RateQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+    let (rate, trekkfri) = regnmed_db::mileage_rates(&state.pool, query.date)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({
+        "sats_ore_per_km": rate,
+        "trekkfri_ore_per_km": trekkfri,
+    })))
 }
 
 pub async fn create_expense_run(
@@ -94,7 +123,9 @@ pub async fn create_expense_run(
         person.person_id,
         request.date,
         &request.description,
-        request.km,
+        request
+            .km
+            .ok_or_else(|| ApiError::BadRequest("oppgi antall kilometer".into()))?,
         created_by,
     )
     .await
@@ -106,36 +137,102 @@ pub async fn create_expense_run(
     })))
 }
 
+#[derive(Deserialize, Default)]
+pub struct ListQuery {
+    /// `apne` (innsendt + godkjent), `utbetalt`, `avvist`, … — empty = all.
+    status: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
+    json!({
+        "expense_id": e.id,
+        "person": e.person_name,
+        "own": e.own,
+        "kind": e.kind,
+        "dato": e.date.to_string(),
+        "beskrivelse": e.description,
+        "belop_ore": e.amount_ore,
+        "km": e.km,
+        "sats_ore_per_km": e.sats_ore_per_km,
+        "trekkfri_ore": e.trekkfri_ore,
+        "trekkpliktig_ore": e.trekkpliktig_ore,
+        "receipt_filename": e.receipt_filename,
+        "status": e.status,
+        "avvist_note": e.avvist_note,
+        "decided_by": e.decided_by,
+        "decided_at": e.decided_at,
+        "voucher": e.voucher,
+        "utbetalt_voucher": e.paid_voucher,
+        "utbetalt_at": e.utbetalt_at,
+        "created_at": e.created_at,
+    })
+}
+
+/// A viewer sees their own claims; with UTLEGG_LES_ALLE, the company's.
+/// The scope is decided by the right, not by the role — then it moves
+/// by itself when roles are recomposed (#60).
+async fn scope(state: &AppState, person: Uuid, company_id: Uuid) -> Result<bool, ApiError> {
+    let role = require(state, person, company_id, Right::ExpenseReadOwn).await?;
+    Ok(!role.has(Right::ExpenseReadAll))
+}
+
 pub async fn list(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // En ansatt ser sine egne krav; alle andre ser selskapets. Omfanget
-    // decided by the rettighet, not by the role — then it moves by
-    // itself when roles are recomposed (#60).
-    let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    let only_own = !role.has(Right::ExpenseReadAll);
-    let expenses =
-        regnmed_db::list_expenses(&state.pool, company_id, person.person_id, only_own).await?;
+    let only_own = scope(&state, person.person_id, company_id).await?;
+    let page = regnmed_db::list_expenses(
+        &state.pool,
+        company_id,
+        person.person_id,
+        only_own,
+        &regnmed_db::ExpenseFilter {
+            status: query.status,
+            expense_id: None,
+            limit: query.limit.unwrap_or(200),
+            offset: query.offset.unwrap_or(0),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "expenses": expenses.iter().map(|e| json!({
-            "expense_id": e.id,
-            "person": e.person_name,
-            "own": e.own,
-            "kind": e.kind,
-            "dato": e.date.to_string(),
-            "beskrivelse": e.description,
-            "belop_ore": e.amount_ore,
-            "km": e.km,
-            "sats_ore_per_km": e.sats_ore_per_km,
-            "trekkpliktig_ore": e.trekkpliktig_ore,
-            "receipt_filename": e.receipt_filename,
-            "status": e.status,
-            "avvist_note": e.avvist_note,
-            "voucher": e.voucher,
-        })).collect::<Vec<_>>(),
+        "expenses": page.rows.iter().map(expense_json).collect::<Vec<_>>(),
+        "total": page.total,
+        "counts": {
+            "innsendt": page.counts.innsendt,
+            "godkjent": page.counts.godkjent,
+            "utbetalt": page.counts.utbetalt,
+            "avvist": page.counts.avvist,
+        },
     })))
+}
+
+pub async fn get(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // Someone else's claim, seen with only UTLEGG_LES_EGNE, answers as
+    // though it does not exist — the same rule as the receipt.
+    let only_own = scope(&state, person.person_id, company_id).await?;
+    let page = regnmed_db::list_expenses(
+        &state.pool,
+        company_id,
+        person.person_id,
+        only_own,
+        &regnmed_db::ExpenseFilter {
+            expense_id: Some(expense_id),
+            limit: 1,
+            ..Default::default()
+        },
+    )
+    .await?;
+    let expense = page.rows.first().ok_or(ApiError::NotFound)?;
+    Ok(Json(expense_json(expense)))
 }
 
 pub async fn receipt(

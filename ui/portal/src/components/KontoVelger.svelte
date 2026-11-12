@@ -10,7 +10,7 @@
   // scroll there), and any overflow container would clip an absolutely
   // positioned dropdown. Fixed positioning escapes it; the list closes
   // on scroll/resize so it cannot drift away from its input.
-  let { kontoer = [], standard = [], value = $bindable(""), cls = "input input-sm w-24" } = $props();
+  let { kontoer = [], standard = [], value = $bindable(""), cls = "input input-sm w-24", id = undefined } = $props();
 
   let open = $state(false);
   let inputEl = $state(null);
@@ -46,6 +46,7 @@
 <svelte:window onscrollcapture={() => (open = false)} onresize={() => (open = false)} />
 
 <input
+  {id}
   bind:this={inputEl}
   class={cls}
   placeholder="Konto"

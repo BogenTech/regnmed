@@ -355,7 +355,7 @@ async fn an_employee_cannot_reach_the_hovedbok() {
 
 #[tokio::test]
 async fn an_employee_may_do_their_own() {
-    let Some((state, idp, company, _admin, _bookkeeping, _les)) = setup().await else {
+    let Some((state, idp, company, admin, _bookkeeping, _les)) = setup().await else {
         return;
     };
     let employee = person_with_role(&state, &idp, company, "ansatt").await;
@@ -391,6 +391,62 @@ async fn an_employee_may_do_their_own() {
         .await,
         StatusCode::FORBIDDEN,
         "ansatt skulle fått sende inn eget utlegg"
+    );
+
+    // One claim page each: their own opens, a colleague's does not exist.
+    let (code, own) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/expenses/kjoring"),
+        &employee,
+        r#"{"dato":"2026-01-16","beskrivelse":"Kundebesøk igjen","km":12}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{own}");
+    let (code, other) = json_call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/expenses/kjoring"),
+        &admin,
+        r#"{"dato":"2026-01-16","beskrivelse":"Styremøte","km":40}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{other}");
+    let own_id = own["expense_id"].as_str().unwrap();
+    let other_id = other["expense_id"].as_str().unwrap();
+    assert_eq!(
+        status(
+            &state,
+            "GET",
+            &format!("/companies/{company}/expenses/{own_id}"),
+            &employee,
+            ""
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(
+            &state,
+            "GET",
+            &format!("/companies/{company}/expenses/{other_id}"),
+            &employee,
+            ""
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "en kollegas krav finnes ikke for den som bare ser sine egne"
+    );
+    assert_eq!(
+        status(
+            &state,
+            "GET",
+            &format!("/companies/{company}/expenses/{own_id}"),
+            &admin,
+            ""
+        )
+        .await,
+        StatusCode::OK
     );
 }
 

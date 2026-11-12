@@ -111,6 +111,42 @@ async fn expenses_flow() {
     let made: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let expense_id = made["expense_id"].as_str().unwrap().to_string();
 
+    // The same receipt again is a double submission, not a second claim.
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{base}/utlegg?filename=taxi-igjen.txt&dato=2026-07-01&belop_ore=62500&beskrivelse=Taxi"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "text/plain")
+                .body(Body::from(receipt.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let message = String::from_utf8_lossy(&bytes);
+    assert!(message.contains("allerede sendt inn"), "{message}");
+    // A missing amount is a sentence, not a deserializer error.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/kjoring"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-07-01", "beskrivelse": "Tur" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body.to_string().contains("oppgi antall kilometer"),
+        "{body}"
+    );
+
     // Receipt round-trips integrity-checked; content is DB-immutable.
     let response = router(state.clone())
         .oneshot(
@@ -172,6 +208,19 @@ async fn expenses_flow() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "decisions are one-way");
+
+    // The form asks for the satser first, so it can show the amount.
+    let (status, rate) = request(
+        &state,
+        "GET",
+        &format!("{base}/kjoring?dato=2026-03-10"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rate}");
+    assert_eq!(rate["sats_ore_per_km"], 530);
+    assert_eq!(rate["trekkfri_ore_per_km"], 350);
 
     // Kjøregodtgjørelse: 120 km on 2026-03-10 → 5,30/3,50 kr satser.
     let (status, made) = request(
@@ -302,6 +351,26 @@ async fn expenses_flow() {
     assert!(statuses.contains(&"utbetalt".into()));
     assert!(statuses.contains(&"godkjent".into()));
     assert!(statuses.contains(&"avvist".into()));
+    assert_eq!(listed["total"], 3);
+    assert_eq!(listed["counts"]["utbetalt"], 1);
+    assert_eq!(listed["counts"]["godkjent"], 1);
+    assert_eq!(listed["counts"]["avvist"], 1);
+    assert_eq!(listed["counts"]["innsendt"], 0);
+    // The tabs: «åpne» is what still owes money, the rest are done.
+    let (_, open) = request(&state, "GET", &format!("{base}?status=apne"), &token, None).await;
+    assert_eq!(open["total"], 1);
+    assert_eq!(open["expenses"][0]["expense_id"], run_id.as_str());
+    let (status, _) = request(&state, "GET", &format!("{base}?status=tull"), &token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // One claim, with both vouchers it produced.
+    let (status, one) = request(&state, "GET", &format!("{base}/{expense_id}"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{one}");
+    assert_eq!(one["status"], "utbetalt");
+    assert!(
+        one["voucher"].is_string() && one["utbetalt_voucher"].is_string(),
+        "{one}"
+    );
+    assert_ne!(one["voucher"], one["utbetalt_voucher"]);
     let report = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();

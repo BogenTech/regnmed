@@ -1,36 +1,42 @@
 <script>
-  // Utlegg og kjøregodtgjørelse (#42): refusjonskrav med innboksens
-  // disiplin — kvitteringen er uforanderlig fra innsending, og statusen
-  // går bare én vei: innsendt → godkjent/avvist → utbetalt.
-  import { api } from "../../lib/api.js";
-  import { toast } from "../../lib/toast.svelte.js";
-  import NyttUtlegg from "./NyttUtlegg.svelte";
-  import Kjoregodtgjorelse from "./Kjoregodtgjorelse.svelte";
-  import KravListe from "./KravListe.svelte";
+  // Utlegg og kjøregodtgjørelse (#42): kravene først — det er dem folk
+  // kommer for («når får jeg pengene?», «hva venter på meg?»). Hvert krav,
+  // og skjemaet for et nytt, har sin egen adresse (#/c/{id}/utlegg/{…}).
+  // Statusen går bare én vei: innsendt → godkjent/avvist → utbetalt.
+  import { harRett } from "../../lib/me.svelte.js";
+  import ExpenseList from "./ExpenseList.svelte";
+  import NewExpense from "./NewExpense.svelte";
+  import ExpenseDetail from "./ExpenseDetail.svelte";
 
   let { companyId, extra } = $props();
 
-  let data = $state(null);
-
-  async function load(id) {
-    const expenses = await api("/companies/" + id + "/expenses");
-    data = { expenses: expenses.expenses };
-  }
-
-  function reload() {
-    load(companyId).catch((error) => toast(error.message, false));
-  }
-
-  $effect(() => {
-    data = null;
-    load(companyId).catch((error) => toast(error.message, false));
-  });
+  const TABS = [
+    ["", "Åpne"],
+    ["utbetalt", "Utbetalt"],
+    ["avvist", "Avvist"],
+  ];
+  const isId = (s) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(s || "");
+  let tab = $derived(TABS.some(([k]) => k === (extra || "")) ? extra || "" : null);
+  let canSubmit = $derived(harRett(companyId, "UTLEGG_SKRIV_EGNE"));
+  let seesAll = $derived(harRett(companyId, "UTLEGG_LES_ALLE"));
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner loading-lg"></span>
+{#if isId(extra)}
+  {#key companyId + extra}
+    <ExpenseDetail {companyId} expenseId={extra} />
+  {/key}
+{:else if extra === "ny"}
+  {#key companyId}<NewExpense {companyId} />{/key}
+{:else if tab === null}
+  <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>
 {:else}
-  <NyttUtlegg {companyId} onDone={reload} />
-  <Kjoregodtgjorelse {companyId} onDone={reload} />
-  <KravListe {companyId} expenses={data.expenses} onDone={reload} />
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-2xl font-bold mr-auto">{seesAll ? "Utlegg" : "Mine utlegg"}</h1>
+    {#if canSubmit}
+      <a class="btn btn-primary" href={"#/c/" + companyId + "/utlegg/ny"}>Nytt utlegg eller kjøring</a>
+    {/if}
+  </div>
+  {#key companyId + tab}
+    <ExpenseList {companyId} {tab} tabs={TABS} {seesAll} />
+  {/key}
 {/if}

@@ -40,6 +40,34 @@ pub async fn create_expense(
 ) -> Result<Uuid> {
     ensure!(amount_ore > 0, "beløpet må være positivt");
     ensure!(!content.is_empty(), "kvitteringen er tom");
+    ensure!(!description.trim().is_empty(), "skriv hva utlegget gjaldt");
+    let digest = sha256(content).to_vec();
+    let mut tx = pool.begin().await?;
+    // The same receipt twice is a double-click or a resubmission, never
+    // two expenses — refused while the first claim stands. A REJECTED
+    // claim does not block: resubmitting with a better description is
+    // the normal way back. The advisory lock makes two simultaneous
+    // submissions of the same bytes take turns.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
+        .bind(company_id)
+        .bind(&digest)
+        .execute(&mut *tx)
+        .await?;
+    let earlier: Option<(NaiveDate, String)> = sqlx::query_as(
+        "select dato, beskrivelse from expense
+         where company_id = $1 and receipt_sha256 = $2 and status <> 'avvist'
+         limit 1",
+    )
+    .bind(company_id)
+    .bind(&digest)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some((date, what)) = earlier {
+        bail!(
+            "denne kvitteringen er allerede sendt inn («{what}», {})",
+            date.format("%d.%m.%Y")
+        );
+    }
     let in_row = crate::blob::blobs().store(content).await?;
     let id = Uuid::now_v7();
     sqlx::query(
@@ -57,11 +85,24 @@ pub async fn create_expense(
     .bind(filename)
     .bind(content_type)
     .bind(in_row)
-    .bind(sha256(content).to_vec())
+    .bind(digest)
     .bind(created_by)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(id)
+}
+
+/// Statens km-sats and its trekkfri part on `date`, from the
+/// satsregister — what a kjøring that day is paid. Outside the
+/// register's coverage: an error, never a guess.
+pub async fn mileage_rates(pool: &PgPool, date: NaiveDate) -> Result<(i64, i64)> {
+    let rates = load_rates(pool).await?;
+    let rate = value_on(&rates, "km_godtgjorelse", date)
+        .with_context(|| format!("ingen km-sats for {date} i satsregisteret"))?;
+    let trekkfri = value_on(&rates, "km_godtgjorelse_trekkfri", date)
+        .with_context(|| format!("ingen trekkfri km-sats for {date} i satsregisteret"))?;
+    Ok((rate, trekkfri))
 }
 
 /// Registers one kjøring. The satser valid on `dato` are resolved from
@@ -76,12 +117,9 @@ pub async fn create_expense_run(
     km: i64,
     created_by: &str,
 ) -> Result<(Uuid, i64, i64)> {
-    ensure!(km > 0, "km må være positivt");
-    let rates = load_rates(pool).await?;
-    let rate = value_on(&rates, "km_godtgjorelse", date)
-        .with_context(|| format!("ingen km-sats for {date} i satsregisteret"))?;
-    let trekkfri_sats = value_on(&rates, "km_godtgjorelse_trekkfri", date)
-        .with_context(|| format!("ingen trekkfri km-sats for {date} i satsregisteret"))?;
+    ensure!(km > 0, "oppgi antall kilometer");
+    ensure!(!description.trim().is_empty(), "skriv strekning og formål");
+    let (rate, trekkfri_sats) = mileage_rates(pool, date).await?;
     let beregnet = mileage_allowance(km, rate, trekkfri_sats);
     let id = Uuid::now_v7();
     sqlx::query(
@@ -116,15 +154,50 @@ pub struct ExpenseRow {
     pub amount_ore: i64,
     pub km: Option<i64>,
     pub sats_ore_per_km: Option<i64>,
+    pub trekkfri_ore: Option<i64>,
     pub trekkpliktig_ore: Option<i64>,
     pub receipt_filename: Option<String>,
     pub status: String,
     pub avvist_note: Option<String>,
+    pub decided_by: Option<String>,
+    pub decided_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The kostnad voucher posted at approval.
     pub voucher: Option<String>,
+    /// The utbetaling voucher.
+    pub paid_voucher: Option<String>,
     pub utbetalt_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// `bare_egne` scopes the list to the viewer's own claims — what an
+/// Which claims a list shows. `status` is a TAB, not a stored value:
+/// `apne` = innsendt + godkjent (money not yet out), or one of the
+/// stored statuses. `expense_id` picks one claim (the detail page).
+#[derive(Debug, Default, Clone)]
+pub struct ExpenseFilter {
+    pub status: Option<String>,
+    pub expense_id: Option<Uuid>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+#[derive(Debug, Default)]
+pub struct ExpenseCounts {
+    pub innsendt: i64,
+    pub godkjent: i64,
+    pub utbetalt: i64,
+    pub avvist: i64,
+}
+
+#[derive(Debug)]
+pub struct ExpensePage {
+    pub rows: Vec<ExpenseRow>,
+    /// Rows matching the filter, before paging.
+    pub total: i64,
+    /// Per status over the viewer's whole scope — the tab counters.
+    pub counts: ExpenseCounts,
+}
+
+/// `only_own` scopes the list to the viewer's own claims — what an
 /// ansatt gets. For everyone else the flag is false and the list is the
 /// whole company's, with `own` marking the viewer's own rows.
 pub async fn list_expenses(
@@ -132,26 +205,50 @@ pub async fn list_expenses(
     company_id: Uuid,
     viewer: Uuid,
     only_own: bool,
-) -> Result<Vec<ExpenseRow>> {
+    filter: &ExpenseFilter,
+) -> Result<ExpensePage> {
+    let statuses: Option<Vec<&str>> = match filter.status.as_deref() {
+        None | Some("") => None,
+        Some("apne") => Some(vec!["innsendt", "godkjent"]),
+        Some(s @ ("innsendt" | "godkjent" | "utbetalt" | "avvist")) => Some(vec![s]),
+        Some(other) => bail!("ukjent status «{other}»"),
+    };
     let rows = sqlx::query(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
                 e.kind, e.dato, e.beskrivelse, e.belop_ore, e.km, e.sats_ore_per_km,
-                e.trekkpliktig_ore, e.receipt_filename, e.status, e.avvist_note,
-                e.utbetalt_at,
-                v.fiscal_year, v.voucher_number
+                e.trekkfri_ore, e.trekkpliktig_ore, e.receipt_filename, e.status,
+                e.avvist_note, e.decided_by, e.decided_at, e.utbetalt_at, e.created_at,
+                v.fiscal_year, v.voucher_number,
+                pv.fiscal_year as paid_year, pv.voucher_number as paid_number,
+                count(*) over () as total
          from expense e
          join person p on p.id = e.person_id
          left join voucher v on v.id = e.voucher_id
+         left join voucher pv on pv.id = e.utbetalt_voucher_id
          where e.company_id = $1 and ($3 = false or e.person_id = $2)
+           and ($4::text[] is null or e.status = any($4))
+           and ($5::uuid is null or e.id = $5)
          order by e.created_at desc
-         limit 200",
+         limit $6 offset $7",
     )
     .bind(company_id)
     .bind(viewer)
     .bind(only_own)
+    .bind(statuses)
+    .bind(filter.expense_id)
+    .bind(filter.limit.clamp(1, 500))
+    .bind(filter.offset.max(0))
     .fetch_all(pool)
     .await?;
-    Ok(rows
+    let voucher = |r: &sqlx::postgres::PgRow, year: &str, no: &str| match (
+        r.get::<Option<i32>, _>(year),
+        r.get::<Option<i64>, _>(no),
+    ) {
+        (Some(year), Some(no)) => Some(format!("{year}-{no}")),
+        _ => None,
+    };
+    let total = rows.first().map(|r| r.get::<i64, _>("total")).unwrap_or(0);
+    let rows = rows
         .iter()
         .map(|r| ExpenseRow {
             id: r.get("id"),
@@ -163,20 +260,46 @@ pub async fn list_expenses(
             amount_ore: r.get("belop_ore"),
             km: r.get("km"),
             sats_ore_per_km: r.get("sats_ore_per_km"),
+            trekkfri_ore: r.get("trekkfri_ore"),
             trekkpliktig_ore: r.get("trekkpliktig_ore"),
             receipt_filename: r.get("receipt_filename"),
             status: r.get("status"),
             avvist_note: r.get("avvist_note"),
-            voucher: match (
-                r.get::<Option<i32>, _>("fiscal_year"),
-                r.get::<Option<i64>, _>("voucher_number"),
-            ) {
-                (Some(year), Some(no)) => Some(format!("{year}-{no}")),
-                _ => None,
-            },
+            decided_by: r.get("decided_by"),
+            decided_at: r.get("decided_at"),
+            voucher: voucher(r, "fiscal_year", "voucher_number"),
+            paid_voucher: voucher(r, "paid_year", "paid_number"),
             utbetalt_at: r.get("utbetalt_at"),
+            created_at: r.get("created_at"),
         })
-        .collect())
+        .collect();
+
+    let mut counts = ExpenseCounts::default();
+    for r in sqlx::query(
+        "select status, count(*) as n from expense
+         where company_id = $1 and ($3 = false or person_id = $2)
+         group by status",
+    )
+    .bind(company_id)
+    .bind(viewer)
+    .bind(only_own)
+    .fetch_all(pool)
+    .await?
+    {
+        let n: i64 = r.get("n");
+        match r.get::<String, _>("status").as_str() {
+            "innsendt" => counts.innsendt = n,
+            "godkjent" => counts.godkjent = n,
+            "utbetalt" => counts.utbetalt = n,
+            "avvist" => counts.avvist = n,
+            _ => {}
+        }
+    }
+    Ok(ExpensePage {
+        rows,
+        total,
+        counts,
+    })
 }
 
 /// The receipt, integrity-checked against the stored SHA-256 on every
@@ -352,7 +475,7 @@ pub async fn approve_expense(
                 .unwrap_or(0);
             if taxable > 0 {
                 warning = Some(format!(
-                    "trekkpliktig del {},{:02} kr skal lønnsinnberettes — a-melding er ikke støttet ennå (#46)",
+                    "trekkpliktig del {},{:02} kr skal lønnsinnberettes — regnmed tar den ikke med i a-meldingen ennå, så den må meldes særskilt",
                     taxable / 100,
                     taxable % 100
                 ));
