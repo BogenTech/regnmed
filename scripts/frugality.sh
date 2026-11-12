@@ -4,8 +4,9 @@
 # principle, so it is enforced like any other invariant — in CI.
 #
 # Measures, against hard budgets:
-#   1. Release binary sizes (regnmed-api, regnmed CLI).
-#   2. regnmed-api peak RSS: the server runs against a real Postgres,
+#   1. Release binary sizes (regnmed-api, regnmed CLI, regnmed-agent).
+#   2. The portal's first load: the gzipped files index.html names.
+#   3. regnmed-api peak RSS: the server runs against a real Postgres,
 #      serves a few hundred requests, and its high-water mark
 #      (Linux: VmHWM; macOS: polled ps rss) must stay under the same
 #      64 MB limit the k8s deployment enforces (deploy/local).
@@ -35,46 +36,24 @@ CLI_BIN_BUDGET_MB=12
 # behind the API rather than beside it.
 AGENT_BIN_BUDGET_MB=8
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
-# The compiled Svelte portal (#76) ships inside the binary; its own
-# budget keeps the SPA from quietly absorbing heavy dependencies.
-# Measured 2026-08-03: 407 KB (288 KB JS + 128 KB CSS). The CSS grew
-# ~32 KB when every built-in daisyUI theme was enabled (`themes: all`
-# in ui/portal/src/app.css) — that is 35 blocks of colour variables,
-# and it gzips to ~21 KB. Budget deliberately left at 512 KB: the
-# theme list is now complete, so it will not keep growing.
-# Briefly raised to 576 on 2026-08-06 and lowered back the same day:
-# the "46 KB steelzombie cost" that motivated the raise was mostly the
-# build scanning its own previous dist for class names (fixed with
-# `@source not "../dist"` in app.css). The deterministic build fits the
-# original budget with room to spare.
+# The compiled Svelte portal (#76): what a browser must download, gzipped,
+# before the first page can draw -- every /assets/ file index.html names
+# (the entry JS and the CSS, plus any modulepreload Vite adds). Taken from
+# index.html rather than a glob so a renamed entry cannot slip past.
 #
-# Raised 512 -> 544 on 2026-08-07 (#87). This one is NOT the 2026-08-06
-# mistake repeating itself: that raise papered over a build bug, and the
-# measurement moved 46 KB in one commit. Here the deterministic build is
-# 514 KB, up 5 KB from 509, and the 5 KB is one feature's markup — the
-# periodiseringskortet. The CSS did not move at all (143 KB, unchanged),
-# which is the signal that no dependency crept in; all of the growth is
-# in the JS chunk where hand-written components live.
+# Changed 2026-11-12 from the TOTAL uncompressed dist (568 KB budget, last
+# raised 544 -> 552 -> 568 in two weeks; main had reached 582 KB). The
+# total summed every lazy section chunk, so it grew with every feature and
+# measured nothing a user waits for; the embedded size is already inside
+# the regnmed-api binary budget. Measured 2026-11-12: 62 KB gz (entry JS
+# + CSS), of which the CSS alone is 24 KB. The 24 lazy chunks (~109 KB gz) are deliberately
+# NOT budgeted -- a section loads when it is opened, not before.
 #
-# 544 bought roughly six more cards before this had to be looked at
-# again. When it does, the question to ask FIRST is whether the CSS
-# moved: JS growth in step with the feature list is the SPA doing its
-# job, CSS growth without a theme change is a dependency nobody meant to
-# add.
-#
-# It was looked at, and the headroom turned out to be spent already: the
-# dist measured exactly 544 KB before the session-keepalive flow added
-# 317 bytes -- one byte over, which a budget equal to the current size
-# turns into a red build. The CSS did not move (144 KB, byte-identical),
-# so this is the first case: hand-written JS, no new dependency. Raised
-# to 552 to leave the gate somewhere to stand.
-#
-# Raised to 568 on 2026-11-09 when the sections became lazy-loaded chunks:
-# the TOTAL grew 13 KB (558 KB; each chunk carries its own import glue),
-# while what a browser downloads before the first page FELL from 408 KB
-# of JS to 106 KB. The CSS did not move. This gate measures the whole
-# dist, which is the embedded size, not the first download.
-PORTAL_DIST_BUDGET_KB=568
+# The CSS keeps its own line because it answers the old question first:
+# CSS growth without a theme change is a dependency nobody meant to add
+# (all daisyUI themes are already enabled, `themes: all` in app.css).
+PORTAL_FIRST_LOAD_BUDGET_KB=80
+PORTAL_CSS_BUDGET_KB=32
 
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 
@@ -101,13 +80,19 @@ report "regnmed-api binary" "$(size_mb target/release/regnmed-api)" "$API_BIN_BU
 report "regnmed cli binary" "$(size_mb target/release/regnmed)" "$CLI_BIN_BUDGET_MB" MB
 report "regnmed-agent binary" "$(size_mb target/release/regnmed-agent)" "$AGENT_BIN_BUDGET_MB" MB
 
-dist_kb() { # dir -> KB rounded up, summed over all files
-  local bytes
-  bytes=$(find "$1" -type f -exec stat -f%z {} + 2>/dev/null | awk '{s+=$1} END {print s}')
-  [ -n "$bytes" ] || bytes=$(find "$1" -type f -exec stat -c%s {} + | awk '{s+=$1} END {print s}')
-  echo $(((bytes + 1023) / 1024))
-}
-report "portal dist (ui/portal/dist)" "$(dist_kb ui/portal/dist)" "$PORTAL_DIST_BUDGET_KB" KB
+DIST=ui/portal/dist
+first_load=$(grep -oE '(src|href)="/assets/[^"]+"' "$DIST/index.html" | sed -E 's|.*"/||; s|"$||' || true)
+[ -n "$first_load" ] || { echo "FAIL  $DIST/index.html names no /assets/ files"; exit 1; }
+gz_total=0
+gz_css=0
+for f in $first_load; do
+  [ -f "$DIST/$f" ] || { echo "FAIL  $DIST/index.html names $f, which is not in the dist"; exit 1; }
+  b=$(gzip -9c "$DIST/$f" | wc -c)
+  gz_total=$((gz_total + b))
+  case $f in *.css) gz_css=$((gz_css + b)) ;; esac
+done
+report "portal first load, gzip -9 ($(echo $first_load))" $(((gz_total + 1023) / 1024)) "$PORTAL_FIRST_LOAD_BUDGET_KB" KB
+report "portal CSS, gzip -9" $(((gz_css + 1023) / 1024)) "$PORTAL_CSS_BUDGET_KB" KB
 
 echo "==> measuring regnmed-api peak RSS under load"
 ./target/release/regnmed migrate >/dev/null

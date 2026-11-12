@@ -121,6 +121,10 @@ jobs:
         with:
           key: frugality-release
       - name: Frugality gate
+        # An explicit `shell: bash` runs `bash -eo pipefail`; the default
+        # shell is `bash -e` without pipefail, so the step took tee's status
+        # and could never fail (run 43253844495 printed FAIL and went green).
+        shell: bash
         run: scripts/frugality.sh | tee -a "$GITHUB_STEP_SUMMARY"
 
   portal:
