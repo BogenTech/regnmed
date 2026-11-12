@@ -238,6 +238,33 @@ pub async fn update_company_settings(
 
 /// Party kontaktinfo (address for the PDF, e-mail for utsendelse,
 /// kontonummer for remittering — validated MOD11 before storage).
+/// The checks update_party_contact applies, callable BEFORE a party is
+/// created so a bad e-mail or account number cannot leave a half-made
+/// customer behind. Returns the normalized account number.
+pub fn validate_party_contact(
+    email: Option<&str>,
+    bank_account: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(email) = email {
+        let email = email.trim();
+        ensure!(
+            email.is_empty() || email.contains('@'),
+            "ugyldig e-postadresse"
+        );
+    }
+    match bank_account.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(account) => {
+            let normalized = regnmed_core::pain001::normalize_account_number(account);
+            ensure!(
+                regnmed_core::pain001::is_valid_account_number(&normalized),
+                "ugyldig kontonummer (11 siffer, MOD11)"
+            );
+            Ok(Some(normalized))
+        }
+        None => Ok(None),
+    }
+}
+
 pub async fn update_party_contact(
     pool: &PgPool,
     company_id: Uuid,
@@ -246,27 +273,10 @@ pub async fn update_party_contact(
     email: Option<&str>,
     bank_account: Option<&str>,
 ) -> Result<()> {
-    if let Some(email) = email {
-        let email = email.trim();
-        ensure!(
-            email.is_empty() || email.contains('@'),
-            "ugyldig e-postadresse"
-        );
-    }
+    let normalized_account = validate_party_contact(email, bank_account)?;
     fn clear(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|s| !s.is_empty())
     }
-    let normalized_account = match clear(bank_account) {
-        Some(account) => {
-            let normalized = regnmed_core::pain001::normalize_account_number(account);
-            ensure!(
-                regnmed_core::pain001::is_valid_account_number(&normalized),
-                "ugyldig kontonummer (11 siffer, MOD11)"
-            );
-            Some(normalized)
-        }
-        None => None,
-    };
     let updated = sqlx::query(
         "update party set
              address = case when $3 then $4 else address end,

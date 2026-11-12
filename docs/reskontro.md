@@ -40,8 +40,9 @@ pairings impossible.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /companies/{id}/parties?kind=kunde` | spesifikasjon: parties with saldo |
-| `POST /companies/{id}/parties` | create party (auto party_no) |
+| `GET /companies/{id}/parties?kind=kunde` | spesifikasjon: parter med saldo. Med `limit` (≤ 200) også `overdue_ore` — det som står igjen på partens forfalte fakturaer, etter fakturalistens egen status; uten `limit` er feltet `null`, fordi utregningen går over alle fakturaene og listene som bare trenger navn ikke skal betale for den. `q` treffer eksakt partsnummer eller orgnr, eller del av navn eller e-post; `sort` = `number` (standard, numerisk), `name`, `balance` eller `overdue`, og `desc=true` snur rekkefølgen. Svaret har `total`. Uten `limit`: alle parter, som før |
+| `GET /companies/{id}/parties/{pid}` | én part med saldo og forfalt beløp |
+| `POST /companies/{id}/parties` | opprett part (partsnummer tildeles). Valgfritt `address`, `email` og `bank_account` i samme kall (krever `KONTAKT_SKRIV`, som `PUT …/contact`). De kontrolleres FØR parten opprettes, så et ugyldig kontonummer etterlater aldri en halvferdig part |
 | `GET /companies/{id}/parties/{pid}/items?open=true` | items with matched/remaining |
 | `POST /companies/{id}/reskontro/matches` + `DELETE …/{match_id}` | åpne poster matching |
 | `PUT /companies/{id}/accounts/{nr}/reskontro` | flag/clear a reskontro account |

@@ -665,6 +665,8 @@ pub struct InvoiceFilter<'a> {
     /// when invoices are issued between two requests. `total` and
     /// `counts` ignore it.
     pub before: Option<i64>,
+    /// One customer's invoices (party number).
+    pub party_no: Option<&'a str>,
 }
 
 #[derive(Debug, Default)]
@@ -680,7 +682,7 @@ pub struct InvoicePage {
 /// Every invoice with its reskontro remainder and derived status. The
 /// status is SQL so the filter, the counts and the page come from one
 /// definition.
-const INVOICE_STATUS_CTE: &str = "
+pub(crate) const INVOICE_STATUS_CTE: &str = "
     with base as (
         select i.id, i.invoice_no, p.party_no, p.name as party_name, i.invoice_date,
                i.due_date, i.kid, (i.credits_invoice_id is not null) as is_credit_note,
@@ -700,6 +702,7 @@ const INVOICE_STATUS_CTE: &str = "
         -- second), so the join never multiplies rows.
         left join invoice c on c.credits_invoice_id = i.id
         where i.company_id = $1
+          and ($3::text is null or p.party_no = $3)
           and ($2::text is null
                or i.invoice_no::text = $2
                or i.kid = $2
@@ -750,12 +753,13 @@ pub async fn list_invoices(
              from inv
              where {status_sql}
          ) page
-         where ($5::bigint is null or invoice_no < $5)
+         where ($6::bigint is null or invoice_no < $6)
          order by {order}
-         limit $3 offset $4"
+         limit $4 offset $5"
     ))
     .bind(company_id)
     .bind(search)
+    .bind(filter.party_no)
     .bind(filter.limit)
     .bind(filter.offset.max(0))
     .bind(filter.before)
@@ -780,6 +784,7 @@ pub async fn list_invoices(
             ))
             .bind(company_id)
             .bind(search)
+            .bind(filter.party_no)
             .fetch_one(pool)
             .await?;
             let names: Vec<String> = r
@@ -856,9 +861,10 @@ pub async fn get_invoice(
          join party p on p.id = i.party_id
          left join invoice o on o.id = i.credits_invoice_id
          left join invoice c on c.credits_invoice_id = i.id
-         where inv.id = $3"
+         where inv.id = $4"
     ))
     .bind(company_id)
+    .bind(None::<&str>)
     .bind(None::<&str>)
     .bind(invoice_id)
     .fetch_optional(pool)

@@ -70,7 +70,7 @@
 </script>
 
 {#if extra === "ny"}
-  <NewInvoice {companyId} />
+  <NewInvoice {companyId} {query} />
 {:else if isInvoiceId(extra)}
   {#key extra}
     <InvoiceDetail {companyId} invoiceId={extra} />

@@ -442,6 +442,10 @@ pub fn router(state: AppState) -> Router {
             get(subledger::list_parties).post(subledger::create_party),
         )
         .route(
+            "/companies/{company_id}/parties/{party_id}",
+            get(subledger::get_party),
+        )
+        .route(
             "/companies/{company_id}/parties/{party_id}/items",
             get(subledger::party_items),
         )

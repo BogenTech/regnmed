@@ -235,6 +235,94 @@ async fn invoice_to_payment_to_credit_note_loop() {
         "another id is no invoice of ours"
     );
 
+    // The customer register (the portal's Kunder): the overdue amount uses
+    // the invoice list's status, search and sort run in SQL, and one
+    // customer can be read on its own.
+    let get = |path: String| {
+        let state = &state;
+        let token = &token;
+        async move { request(state, "GET", &path, token, None, false).await }
+    };
+    let (_, customers) = get(format!(
+        "/companies/{company}/parties?kind=kunde&q=co&sort=overdue&desc=true&limit=10"
+    ))
+    .await;
+    assert_eq!(customers["total"], 1, "body: {customers}");
+    let customer = &customers["parties"][0];
+    assert_eq!(customer["name"], "Kunde & Co AS");
+    assert_eq!(customer["overdue_ore"], 12_500_00);
+    assert_eq!(customer["saldo_ore"], 12_500_00);
+    let customer_id = customer["party_id"].as_str().unwrap().to_string();
+    let (status, one) = get(format!("/companies/{company}/parties/{customer_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(one["party_no"], party_no.as_str());
+    assert_eq!(one["overdue_ore"], 12_500_00);
+    // A page sorted by something else gets the overdue amount for its own
+    // rows; an unpaged listing (the pickers) does not pay for it.
+    let (_, by_name) = get(format!(
+        "/companies/{company}/parties?kind=kunde&sort=name&limit=10"
+    ))
+    .await;
+    assert_eq!(by_name["parties"][0]["overdue_ore"], 12_500_00);
+    let (_, unpaged) = get(format!("/companies/{company}/parties?kind=kunde")).await;
+    assert!(
+        unpaged["parties"][0]["overdue_ore"].is_null(),
+        "body: {unpaged}"
+    );
+    let (_, theirs) = get(format!(
+        "/companies/{company}/invoices?party_no={party_no}&limit=10"
+    ))
+    .await;
+    assert_eq!(theirs["total"], 1);
+    let (_, nobodys) = get(format!(
+        "/companies/{company}/invoices?party_no=99999&limit=10"
+    ))
+    .await;
+    assert_eq!(nobodys["total"], 0);
+    let (status, _) = get(format!("/companies/{company}/parties?sort=bogus&limit=10")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Ny kunde with contact info in one request; a bad account number is
+    // refused BEFORE the customer exists, so no half-made customer remains.
+    let create = |body: serde_json::Value| {
+        let state = &state;
+        let token = &token;
+        async move {
+            request(
+                state,
+                "POST",
+                &format!("/companies/{company}/parties"),
+                token,
+                Some(body.to_string()),
+                true,
+            )
+            .await
+        }
+    };
+    let (status, _) = create(serde_json::json!({
+        "kind": "kunde", "name": "Halvferdig AS", "bank_account": "1234.56.78901"
+    }))
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, none) = get(format!(
+        "/companies/{company}/parties?q=halvferdig&limit=10"
+    ))
+    .await;
+    assert_eq!(none["total"], 0, "the refused customer was never created");
+    let (status, made) = create(serde_json::json!({
+        "kind": "kunde", "name": "Ny Kunde AS", "email": "post@nykunde.invalid",
+        "address": "Gata 1, 0150 Oslo"
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {made}");
+    let (_, made) = get(format!(
+        "/companies/{company}/parties/{}",
+        made["party_id"].as_str().unwrap()
+    ))
+    .await;
+    assert_eq!(made["email"], "post@nykunde.invalid");
+    assert_eq!(made["address"], "Gata 1, 0150 Oslo");
+
     // An OCR payment on the invoice's KID identifies the invoice.
     let transmission = format!("{:07}", rand_7());
     let file = ocr_file(&transmission, &kid, "00000000001250000");
