@@ -2,6 +2,7 @@
 //!
 //! - GET/POST /companies/{id}/employees             employee register
 //! - PUT  /companies/{id}/employees/{eid}/employment  arbeidsforhold for the a-melding
+//! - PUT  /companies/{id}/employees/{eid}/end         the employment's last day (sluttdato)
 //! - GET/POST /companies/{id}/payroll               payroll runs
 //! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
 //! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
@@ -214,6 +215,30 @@ pub async fn update_employment(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "updated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct EndEmploymentRequest {
+    /// The last day of the employment; null clears a mistaken one. The
+    /// key is REQUIRED (`deserialize_with` turns off serde's missing-
+    /// Option default), so a misspelt key cannot clear an end date.
+    #[serde(rename = "ansatt_til", deserialize_with = "Option::deserialize")]
+    end: Option<chrono::NaiveDate>,
+}
+
+/// Ends (or corrects the end of) an employment -- what stops the
+/// a-melding reporting it every month (F108).
+pub async fn end_employment(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<EndEmploymentRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
+    regnmed_db::payroll::end_employment(&state.pool, company_id, employee_id, request.end)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "updated": true })))
 }
 

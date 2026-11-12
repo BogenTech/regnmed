@@ -972,6 +972,31 @@ mod tests {
     }
 
     #[test]
+    fn an_employment_without_pay_is_reported_with_the_arbeidsforhold_alone() {
+        // F108: reported every month, paid or not. No inntekt, no trekk,
+        // and the avgift is still that of the paid recipients.
+        let mut m = melding();
+        m.recipients.push(Recipient {
+            name: "Per Permisjon".into(),
+            nin: "03048810003".into(),
+            employment: Employment {
+                id: "5d2e4f6a-8b0c-4d1e-9f2a-3b4c5d6e7f80".into(),
+                ..employment()
+            },
+            income: Vec::new(),
+            withholding_ore: 0,
+        });
+        let xml = render(&m).unwrap();
+        validate(&xml, "employment-without-pay");
+        let per = &xml[xml.find("<norskIdentifikator>03048810003").unwrap()..];
+        let per = &per[..per.find("</inntektsmottaker>").unwrap()];
+        assert!(per.contains("<arbeidsforhold>"), "{per}");
+        assert!(!per.contains("<inntekt>"), "{per}");
+        assert!(!per.contains("<forskuddstrekk>"), "{per}");
+        assert!(xml.contains("<sumArbeidsgiveravgift>7473</sumArbeidsgiveravgift>"));
+    }
+
+    #[test]
     fn a_booked_contribution_that_is_not_basis_times_rate_is_refused() {
         let mut m = melding();
         m.employer_contribution_ore = 747_400;

@@ -448,12 +448,36 @@ Renderen nekter også, med eget navn:
   hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
   er ikke modellert.
 
-Og ett hull som ikke er et felt, men et oppslag:
+Og ett hull som ikke er et felt:
 
-2. **Arbeidsforhold uten lønn.** Et aktivt arbeidsforhold skal
-    rapporteres hver måned til sluttdato er meldt (F108), også en måned
-    uten utbetaling. En lønnskjøring har bare linjer for dem som fikk
-    lønn.
+2. **En måned uten lønnskjøring.** Meldingen lages av en lagret
+   kjøring, så en måned der INGEN får lønn har ingen melding å lage —
+   men arbeidsforholdene skal likevel rapporteres (F108). Den måneden
+   må leveres på annet vis.
+
+### Arbeidsforhold uten lønn i måneden (F108)
+
+Et arbeidsforhold rapporteres hver måned til og med måneden sluttdatoen
+er meldt i, også en måned uten utbetaling (F108: «Alle arbeidsforhold må
+rapporteres hver måned til og med kalendermåneden inntektsmottaker
+slutter»). Alle som er ansatt i meldingens kalendermåned uten å ha en
+linje i kjøringen, tas derfor med som inntektsmottaker med
+**arbeidsforholdet alene** — uten inntekt og uten trekk, noe XSD-en
+tillater. De påvirker verken grunnlaget eller avgiften. Arbeidsforholdet
+må være komplett som for alle andre, ellers er det en hindring.
+
+Måneden er **utbetalingsdatoens**, ikke lønnsmånedens, samme regel som
+kalendermåneden: marslønn utbetalt 2. april er aprils melding, så den
+som begynte 1. april er med og den som sluttet 31. mars er ikke.
+
+**Sluttdatoen** settes med `PUT /companies/{id}/employees/{eid}/end`
+(`LONN_SKRIV`, `{"ansatt_til": "2026-04-30"}`; `null` fjerner en
+feilført dato, og nøkkelen er påkrevd så en feilstavet nøkkel ikke kan
+fjerne den) — i portalen «Sluttdato …» i ansattlisten. Uten den ville en
+som har sluttet, blitt rapportert som ansatt hver måned. Sluttdatoen kan
+ikke ligge før startdatoen. Lønn etter sluttdatoen — feriepenger året
+etter — kjøres og rapporteres som før, med sluttdatoen på
+arbeidsforholdet.
 
 ### Fra lagret kjøring
 
@@ -471,9 +495,8 @@ Hindringene `amelding_for_run` finner:
 - lønnslinjer uten lagret lønnsform (`pay_kind` NULL — kjøringer fra før
   0073, eller et oppgitt beløp for en ansatt med begge lønnsformer);
 - ansatte på ulike virksomheter i samme kjøring;
-- ansatte som var ansatt i kjøringens måned, men ikke har noen linje i
-  den (punkt 2 over) — en melding uten dem er feil hos NAV, så den
-  nektes i stedet for å sendes ufullstendig;
+- ansatte uten lønn i kjøringen hvis arbeidsforhold mangler felt — de
+  er med i meldingen likevel (F108, se over), så feltene må finnes;
 - manglende aga-sats i satsregisteret på utbetalingsdatoen.
 
 Fødselsnummeret leses ÉTT sted, her, som i RF-1086. Derfor krever
@@ -619,8 +642,9 @@ Rekkefølgen er omtrent den de bør tas i.
 1. **A-meldingen.** Månedlig, frist den 5. Renderen finnes og er
    validert mot XSD-en (se «A-meldingen» under), og arbeidsforholdets
    felt finnes nå (0073), og den lages fra en lagret kjøring med trekk
-   og avgift i hele kroner, men den nekter arbeidsforhold uten
-   lønn i måneden, og innsending venter på
+   og avgift i hele kroner og med arbeidsforholdene uten lønn i
+   måneden (F108); en måned helt uten lønnskjøring har ingen melding
+   ennå, og innsending venter på
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
@@ -782,7 +806,13 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   tellingen, at en kjøring utbetalt i et år uten hentet frikort nekter,
   et 12-månederskort med feriepenger, at lønnsslippen bærer metoden
   fra kjøringen, og at to lønninger med øre gir avgift regnet én gang på
-  summen (10 481 kr, ikke 10 480 per ansatt) som a-meldingen godtar.
+  summen (10 481 kr, ikke 10 480 per ansatt) som a-meldingen godtar;
+  at ansatte uten lønn er med i meldingen med arbeidsforholdet alene, i
+  UTBETALINGSmånedens kalender (marslønn utbetalt i april tar med den
+  som begynte i april, ikke den som sluttet i mars), uten å endre
+  avgiften; og at sluttdatoen nektes før startdatoen, kan fjernes og
+  ikke når et annet selskaps ansatt. Sett feile med lønnsmåneden i
+  stedet for utbetalingsmåneden og med de ulønnede utelatt.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir
@@ -815,7 +845,8 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.
 - `regnmed-core::amelding` — en månedsmelding validert mot den
   offisielle XSD-en med xmllint (sett feile på et feilstavet element),
-  også en 2025-melding med én trekksum og en erstatningsmelding; at
+  også en 2025-melding med én trekksum, en erstatningsmelding og en
+  mottaker med arbeidsforholdet alene (F108); at
   trekket er negativt per mottaker og positivt per utbetalingsdato, at
   avgiftsgrunnlaget er summen av inntektene; at hvert av de seks
   manglende arbeidsforholdsfeltene og virksomheten nektes med navn; at

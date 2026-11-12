@@ -2,6 +2,7 @@
   import { post, send } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import Arbeidsforhold, { tomt, fraAnsatt, tilPayload } from "./Arbeidsforhold.svelte";
 
@@ -132,6 +133,30 @@
     }
   }
 
+  // Sluttdatoen stopper a-meldingen i å rapportere arbeidsforholdet hver
+  // måned (F108). Tomt felt fjerner en feilført dato.
+  async function sluttdato(a) {
+    const svar = await sporsmal("Siste dag i arbeidsforholdet for " + a.navn, {
+      type: "date",
+      standard: a.ansatt_til ?? "",
+      valgfri: true,
+      ok: "Lagre",
+      melding:
+        "A-meldingen rapporterer arbeidsforholdet hver måned til og med måneden det slutter. " +
+        "La feltet stå tomt for å fjerne en sluttdato som er feil.",
+    });
+    if (svar === null) return;
+    try {
+      await send("PUT", "/companies/" + companyId + "/employees/" + a.id + "/end", {
+        ansatt_til: svar || null,
+      });
+      toast(svar ? "Sluttdato lagret" : "Sluttdatoen er fjernet", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
   async function kobleFra(a) {
     try {
       await send("DELETE", "/companies/" + companyId + "/employees/" + a.id + "/link");
@@ -181,7 +206,12 @@
           {#each ansatte as a (a.id)}
             {@const inv = invitasjonFor(a)}
             <tr class={a.ansatt_til && a.ansatt_til < today() ? "opacity-50" : ""}>
-              <td>{a.navn}</td>
+              <td>
+                {a.navn}
+                {#if a.ansatt_til}
+                  <div class="text-xs opacity-70 whitespace-nowrap">sluttdato {a.ansatt_til}</div>
+                {/if}
+              </td>
               <td class="text-xs opacity-70">{a.stilling || ""}</td>
               <!-- Ferieloven krever ikke fnr her; datoen er nok for å kjenne igjen. -->
               <td class="text-xs opacity-70">{a.fodselsdato || ""}</td>
@@ -232,6 +262,9 @@
                   onclick={() => (redigering = { ansatt: a, verdi: fraAnsatt(a) })}
                 >
                   Arbeidsforhold …
+                </button>
+                <button class="btn btn-ghost btn-xs whitespace-nowrap" onclick={() => sluttdato(a)}>
+                  Sluttdato …
                 </button>
               </td>
             </tr>
