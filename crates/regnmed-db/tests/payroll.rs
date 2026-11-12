@@ -855,8 +855,10 @@ async fn the_accrual_is_reversed_when_the_holiday_pay_is_paid_out() {
         "avsetningen føres tilbake i sin helhet"
     );
     assert_eq!(voucher_sum(&pool, utbetaling.voucher_id).await, 0);
-    // The avgift on what was paid out now sits in the ordinary aga line.
-    assert_eq!(utbetaling.sum.employer_contribution_ore, 71_910);
+    // The avgift on what was paid out now sits in the ordinary aga line,
+    // as a claim in whole kroner: 5 100 kr × 14,1 % = 719,10 -> 719. The
+    // accrual is a periodisering and keeps its øre.
+    assert_eq!(utbetaling.sum.employer_contribution_ore, 71_900);
 
     // And afterwards both accounts stand at zero: no liability left, no
     // accrual left.
@@ -1194,6 +1196,45 @@ async fn a_stored_run_with_complete_employments_renders() {
     assert!(xml.contains("<beskrivelse>fastloenn</beskrivelse>"));
     assert!(xml.contains("<sumArbeidsgiveravgift>5640</sumArbeidsgiveravgift>"));
     assert!(xml.contains(&format!("<meldingsId>{}</meldingsId>", run.id)));
+}
+
+/// Salaries in øre give an aga with øre, and the run still reports: the
+/// avgift is computed ONCE on the summed basis and rounded down to whole
+/// kroner, so it is what the a-melding reports and F185 recomputes.
+#[tokio::test]
+async fn a_run_with_ore_in_the_avgift_books_whole_kroner_and_renders() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 4_100_101).await;
+    let b = employee(&pool, company, "03048810003", "Ola Kroner", 3_333_333).await;
+    for id in [a, b] {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 25),
+        "I",
+        &[run_entry(a, None), run_entry(b, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    // 74 334,34 kr × 14,1 % = 10 481,14 -> 10 481. Rounded per employee
+    // (5 781 + 4 699) it would be 10 480, and F185 would refuse it.
+    assert_eq!(run.sum.employer_contribution_ore, 1_048_100);
+    assert_eq!(account_balance(&pool, company, "2770").await, -1_048_100);
+    let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+    let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+    assert!(xml.contains("<sumArbeidsgiveravgift>10481</sumArbeidsgiveravgift>"));
 }
 
 /// Everything that blocks delivery is listed at once, in words — not the

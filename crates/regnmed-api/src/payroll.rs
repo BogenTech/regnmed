@@ -7,7 +7,7 @@
 //! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
 //! - GET/POST /companies/{id}/payroll/{rid}/amelding/submissions   send + record
 //! - POST /companies/{id}/payroll/{rid}/amelding/submissions/{sid}/feedback
-//! - GET      /companies/{id}/payroll/preview       computation without posting
+//! - GET  /companies/{id}/payroll/hours/{eid}       a month's logged hours + lock state
 //!
 //! Reading requires access; registering employees and running payroll
 //! requires bokforing or admin. The fødselsnummer never leaves this
