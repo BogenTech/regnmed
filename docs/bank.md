@@ -58,7 +58,10 @@ on day one with zero agreements.
   references yet).
 - **Forslag, aldri gjetting** (`regnmed-core::bank::suggest_entries`):
   for hver bankpost motoren lot ligge, inntil tre åpne poster med
-  NØYAKTIG samme beløp (fortegn inkludert), nærmeste dato først. Et
+  NØYAKTIG samme beløp (fortegn inkludert), nærmeste dato først — og
+  hver post foreslås for bare ÉN bankpost (den nærmeste), som i
+  auto-matchingen, så tre like gebyrer og ett bilag ikke gir tre like
+  knapper. Et
   annet beløp foreslås aldri — og en manuell kobling av ulike beløp
   avvises i databasen-laget (`manual_match`) med beløpene navngitt, så
   en feilkobling ikke kan skje med ett klikk.
@@ -66,7 +69,9 @@ on day one with zero agreements.
   renter) bokføres og kobles i ÉN transaksjon
   (`post_from_bank_line`): bankkontoen mot valgt konto på
   bokføringsdatoen, uten mva, med kontoutskriftens referanse og tekst
-  på banklinjen som dokumentasjon. Samme attesteringsport som manuelt
+  på banklinjen som dokumentasjon (referanse, bokføringsdato, beløp og
+  tekst står på bilagslinjen; kontoutskriftsradene er innsettings-bare
+  og oppbevares). Samme attesteringsport som manuelt
   bilag (`refuse_if_attestation_required`, docs/attestering.md) — med
   aktiv policy over grensen må det gå via innboksen. Krever både
   `BANK_AVSTEM` og `BILAG_BOKFOR`. Har utgiften mva eller kvittering,

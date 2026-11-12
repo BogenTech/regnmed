@@ -511,6 +511,17 @@ async fn a_bank_line_is_posted_from_the_statement_and_amounts_must_agree() {
         false,
     )
     .await;
+    // A typed % is a percent sign, not "match everything".
+    let (_, wild) = request(
+        &state,
+        "GET",
+        &format!("{base}/entries?account=1920&q=%25"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    assert!(wild["entries"].as_array().unwrap().is_empty(), "{wild}");
     let sale_entry = found["entries"][0]["entry_id"]
         .as_str()
         .unwrap()

@@ -184,8 +184,10 @@ pub async fn post_line(
     Path((company_id, bank_transaction_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<PostLineRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::BankReconcile).await?;
-    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
+    let access = require(&state, person.person_id, company_id, Right::BankReconcile).await?;
+    if !access.has(Right::VoucherPost) {
+        return Err(ApiError::Forbidden(Right::VoucherPost.slug()));
+    }
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let posted = regnmed_db::post_from_bank_line(
         &state.pool,

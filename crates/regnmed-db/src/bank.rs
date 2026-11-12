@@ -203,7 +203,7 @@ pub async fn manual_match(
     .bind(matched_by)
     .execute(pool)
     .await
-    .context("already matched — unmatch first")?;
+    .context("en av postene er allerede koblet — fjern den koblingen først")?;
     Ok(())
 }
 
@@ -390,106 +390,200 @@ pub async fn reconciliation_status(
 ) -> Result<ReconciliationStatus> {
     let account_id = account_id_of(pool, company_id, account_number).await?;
 
-    let ledger_balance_ore: i64 = sqlx::query_scalar(
-        "select coalesce(sum(amount_ore), 0)::bigint from entry where account_id = $1",
-    )
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?;
-
-    let latest = sqlx::query(
-        "select closing_ore, to_date from bank_statement
-         where company_id = $1 and account_id = $2
-         order by to_date desc nulls last limit 1",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await?;
-    let statement_to_date: Option<NaiveDate> = latest.as_ref().and_then(|r| r.get("to_date"));
-    let ledger_at_statement_ore: Option<i64> = match statement_to_date {
-        Some(to) => Some(
-            sqlx::query_scalar(
-                "select coalesce(sum(e.amount_ore), 0)::bigint
-                 from entry e join voucher v on v.id = e.voucher_id
-                 where e.account_id = $1 and v.voucher_date <= $2",
-            )
-            .bind(account_id)
-            .bind(to)
-            .fetch_one(pool)
-            .await?,
-        ),
-        None => None,
+    // Round one: everything that only needs the account, side by side.
+    let balance = async {
+        let v: i64 = sqlx::query_scalar(
+            "select coalesce(sum(amount_ore), 0)::bigint from entry where account_id = $1",
+        )
+        .bind(account_id)
+        .fetch_one(pool)
+        .await?;
+        anyhow::Ok(v)
     };
-
-    let matched_count: i64 = sqlx::query_scalar(
-        "select count(*) from bank_match m
-         join bank_transaction t on t.id = m.bank_transaction_id
-         join bank_statement s on s.id = t.statement_id
-         where s.company_id = $1 and s.account_id = $2",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?;
-
-    let unmatched_bank = unmatched_bank_rows(pool, company_id, Some(account_id)).await?;
-
-    // The period the statements cover, from their declared dates or, for
-    // a CSV without them, from the transactions themselves.
-    let (period_from, period_to): (Option<NaiveDate>, Option<NaiveDate>) = sqlx::query_as(
-        "select least(min(s.from_date), min(t.booking_date)), greatest(max(s.to_date), max(t.booking_date))
-         from bank_statement s left join bank_transaction t on t.statement_id = s.id
-         where s.company_id = $1 and s.account_id = $2",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?;
-
-    let unmatched_entries: Vec<UnmatchedEntryRow> = match (period_from, period_to) {
-        (Some(from), Some(to)) => sqlx::query(
-            "select e.id, v.voucher_date, v.fiscal_year, v.voucher_number,
-                    e.amount_ore, coalesce(e.description, v.description) as description
-             from entry e
-             join voucher v on v.id = e.voucher_id
-             where v.company_id = $1 and e.account_id = $2
-               and v.voucher_date between $3::date - 31 and $4::date + 31
-               and not exists (select 1 from bank_match m where m.entry_id = e.id)
-             order by v.voucher_date, v.voucher_number",
+    let latest = async {
+        let v = sqlx::query(
+            "select closing_ore, to_date from bank_statement
+             where company_id = $1 and account_id = $2
+             order by to_date desc nulls last limit 1",
         )
         .bind(company_id)
         .bind(account_id)
-        .bind(from)
-        .bind(to)
-        .fetch_all(pool)
-        .await?
-        .iter()
-        .map(entry_row)
-        .collect(),
-        _ => Vec::new(),
+        .fetch_optional(pool)
+        .await?;
+        anyhow::Ok(v)
     };
+    let matched = async {
+        let v: i64 = sqlx::query_scalar(
+            "select count(*) from bank_match m
+             join bank_transaction t on t.id = m.bank_transaction_id
+             join bank_statement s on s.id = t.statement_id
+             where s.company_id = $1 and s.account_id = $2",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .fetch_one(pool)
+        .await?;
+        anyhow::Ok(v)
+    };
+    // The period the statements cover, from their declared dates or, for
+    // a CSV without them, from the transactions themselves.
+    let period = async {
+        let v: (Option<NaiveDate>, Option<NaiveDate>) = sqlx::query_as(
+            "select least(min(s.from_date), min(t.booking_date)), greatest(max(s.to_date), max(t.booking_date))
+             from bank_statement s left join bank_transaction t on t.statement_id = s.id
+             where s.company_id = $1 and s.account_id = $2",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .fetch_one(pool)
+        .await?;
+        anyhow::Ok(v)
+    };
+    let statements = async {
+        let rows = sqlx::query(
+            "select s.id, s.statement_ref, s.from_date, s.to_date, s.closing_ore, s.imported_by,
+                    s.created_at, (select count(*) from bank_transaction t where t.statement_id = s.id) as n
+             from bank_statement s
+             where s.company_id = $1 and s.account_id = $2
+             order by s.to_date desc nulls last, s.created_at desc",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+        anyhow::Ok(
+            rows.iter()
+                .map(|r| StatementRow {
+                    id: r.get("id"),
+                    statement_ref: r.get("statement_ref"),
+                    from_date: r.get("from_date"),
+                    to_date: r.get("to_date"),
+                    closing_ore: r.get("closing_ore"),
+                    transactions: r.get("n"),
+                    imported_by: r.get("imported_by"),
+                    imported_at: r.get("created_at"),
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let recent = async {
+        let rows = sqlx::query(
+            "select t.id, t.booking_date, t.amount_ore, t.description, m.method,
+                    v.fiscal_year, v.voucher_number
+             from bank_match m
+             join bank_transaction t on t.id = m.bank_transaction_id
+             join bank_statement s on s.id = t.statement_id
+             join entry e on e.id = m.entry_id
+             join voucher v on v.id = e.voucher_id
+             where s.company_id = $1 and s.account_id = $2
+             order by t.booking_date desc, t.id
+             limit 50",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+        anyhow::Ok(
+            rows.iter()
+                .map(|r| MatchedRow {
+                    bank_transaction_id: r.get("id"),
+                    booking_date: r.get("booking_date"),
+                    amount_ore: r.get("amount_ore"),
+                    description: r.get("description"),
+                    voucher_label: format!(
+                        "{}-{}",
+                        r.get::<i32, _>("fiscal_year"),
+                        r.get::<i64, _>("voucher_number")
+                    ),
+                    method: r.get("method"),
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let (
+        ledger_balance_ore,
+        latest,
+        matched_count,
+        unmatched_bank,
+        (period_from, period_to),
+        statements,
+        recent_matches,
+    ) = tokio::try_join!(
+        balance,
+        latest,
+        matched,
+        unmatched_bank_rows(pool, company_id, Some(account_id)),
+        period,
+        statements,
+        recent
+    )?;
+    let statement_to_date: Option<NaiveDate> = latest.as_ref().and_then(|r| r.get("to_date"));
 
+    // Round two: what depends on round one, again side by side.
+    let ledger_at = async {
+        match statement_to_date {
+            Some(to) => {
+                let v: i64 = sqlx::query_scalar(
+                    "select coalesce(sum(e.amount_ore), 0)::bigint
+                     from entry e join voucher v on v.id = e.voucher_id
+                     where e.account_id = $1 and v.voucher_date <= $2",
+                )
+                .bind(account_id)
+                .bind(to)
+                .fetch_one(pool)
+                .await?;
+                anyhow::Ok(Some(v))
+            }
+            None => anyhow::Ok(None),
+        }
+    };
+    let in_period = async {
+        match (period_from, period_to) {
+            (Some(from), Some(to)) => {
+                let rows = sqlx::query(
+                    "select e.id, v.voucher_date, v.fiscal_year, v.voucher_number,
+                            e.amount_ore, coalesce(e.description, v.description) as description
+                     from entry e
+                     join voucher v on v.id = e.voucher_id
+                     where v.company_id = $1 and e.account_id = $2
+                       and v.voucher_date between $3::date - 31 and $4::date + 31
+                       and not exists (select 1 from bank_match m where m.entry_id = e.id)
+                     order by v.voucher_date, v.voucher_number",
+                )
+                .bind(company_id)
+                .bind(account_id)
+                .bind(from)
+                .bind(to)
+                .fetch_all(pool)
+                .await?;
+                anyhow::Ok(rows.iter().map(entry_row).collect::<Vec<_>>())
+            }
+            _ => anyhow::Ok(Vec::new()),
+        }
+    };
     // Suggestions look at EVERY open entry with the right amount — a
     // posting dated far from the bank date is still the right one if it
     // is the only one — but only those amounts are fetched.
     let amounts: Vec<i64> = unmatched_bank.iter().map(|t| t.amount_ore).collect();
-    let candidates: Vec<UnmatchedEntryRow> = sqlx::query(
-        "select e.id, v.voucher_date, v.fiscal_year, v.voucher_number,
-                e.amount_ore, coalesce(e.description, v.description) as description
-         from entry e
-         join voucher v on v.id = e.voucher_id
-         where v.company_id = $1 and e.account_id = $2 and e.amount_ore = any($3)
-           and not exists (select 1 from bank_match m where m.entry_id = e.id)",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .bind(&amounts)
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(entry_row)
-    .collect();
+    let with_amounts = async {
+        let rows = sqlx::query(
+            "select e.id, v.voucher_date, v.fiscal_year, v.voucher_number,
+                    e.amount_ore, coalesce(e.description, v.description) as description
+             from entry e
+             join voucher v on v.id = e.voucher_id
+             where v.company_id = $1 and e.account_id = $2 and e.amount_ore = any($3)
+               and not exists (select 1 from bank_match m where m.entry_id = e.id)",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .bind(&amounts)
+        .fetch_all(pool)
+        .await?;
+        anyhow::Ok(rows.iter().map(entry_row).collect::<Vec<_>>())
+    };
+    let (ledger_at_statement_ore, unmatched_entries, candidates) =
+        tokio::try_join!(ledger_at, in_period, with_amounts)?;
+
     let open: Vec<OpenEntry> = candidates
         .iter()
         .map(|c| OpenEntry {
@@ -498,15 +592,18 @@ pub async fn reconciliation_status(
             amount_ore: c.amount_ore,
         })
         .collect();
-    let suggestions = unmatched_bank
+    let txs: Vec<BankTx> = unmatched_bank
         .iter()
-        .map(|t| {
-            let tx = BankTx {
-                id: t.id,
-                booking_date: t.booking_date,
-                amount_ore: t.amount_ore,
-            };
-            suggest_entries(&tx, &open, 3)
+        .map(|t| BankTx {
+            id: t.id,
+            booking_date: t.booking_date,
+            amount_ore: t.amount_ore,
+        })
+        .collect();
+    let suggestions = suggest_entries(&txs, &open, 3)
+        .into_iter()
+        .map(|picked| {
+            picked
                 .into_iter()
                 .filter_map(|o| {
                     candidates
@@ -517,61 +614,6 @@ pub async fn reconciliation_status(
                 .collect()
         })
         .collect();
-
-    let statements = sqlx::query(
-        "select s.id, s.statement_ref, s.from_date, s.to_date, s.closing_ore, s.imported_by,
-                s.created_at, (select count(*) from bank_transaction t where t.statement_id = s.id) as n
-         from bank_statement s
-         where s.company_id = $1 and s.account_id = $2
-         order by s.to_date desc nulls last, s.created_at desc",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(|r| StatementRow {
-        id: r.get("id"),
-        statement_ref: r.get("statement_ref"),
-        from_date: r.get("from_date"),
-        to_date: r.get("to_date"),
-        closing_ore: r.get("closing_ore"),
-        transactions: r.get("n"),
-        imported_by: r.get("imported_by"),
-        imported_at: r.get("created_at"),
-    })
-    .collect();
-
-    let recent_matches = sqlx::query(
-        "select t.id, t.booking_date, t.amount_ore, t.description, m.method,
-                v.fiscal_year, v.voucher_number
-         from bank_match m
-         join bank_transaction t on t.id = m.bank_transaction_id
-         join bank_statement s on s.id = t.statement_id
-         join entry e on e.id = m.entry_id
-         join voucher v on v.id = e.voucher_id
-         where s.company_id = $1 and s.account_id = $2
-         order by t.booking_date desc, t.id
-         limit 50",
-    )
-    .bind(company_id)
-    .bind(account_id)
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(|r| MatchedRow {
-        bank_transaction_id: r.get("id"),
-        booking_date: r.get("booking_date"),
-        amount_ore: r.get("amount_ore"),
-        description: r.get("description"),
-        voucher_label: format!(
-            "{}-{}",
-            r.get::<i32, _>("fiscal_year"),
-            r.get::<i64, _>("voucher_number")
-        ),
-        method: r.get("method"),
-    })
-    .collect();
 
     Ok(ReconciliationStatus {
         account_number: account_number.to_string(),
@@ -610,7 +652,7 @@ pub async fn search_open_entries(
            and not exists (select 1 from bank_match m where m.entry_id = e.id)
            and ($3 = ''
                 or (v.fiscal_year || '-' || v.voucher_number) = $3
-                or coalesce(e.description, v.description) ilike '%' || $3 || '%'
+                or coalesce(e.description, v.description) ilike '%' || $5 || '%' escape '\\'
                 or ($4::bigint is not null and abs(e.amount_ore) = abs($4)))
          order by v.voucher_date desc, v.voucher_number desc
          limit 20",
@@ -619,6 +661,12 @@ pub async fn search_open_entries(
     .bind(account_id)
     .bind(q)
     .bind(as_ore)
+    // Typed text is text: % and _ must not act as wildcards.
+    .bind(
+        q.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_"),
+    )
     .fetch_all(pool)
     .await?;
     Ok(rows.iter().map(entry_row).collect())
@@ -694,9 +742,14 @@ pub async fn post_from_bank_line(
             entry(
                 &bank_account,
                 amount,
+                // The statement row is the documentation (bank_statement
+                // and bank_transaction are insert-only and kept), so the
+                // voucher names it: statement, booking date, amount, text.
                 Some(format!(
-                    "Kontoutskrift {}: {bank_text}",
-                    line.get::<String, _>("statement_ref")
+                    "Kontoutskrift {}, bokført {} {}: {bank_text}",
+                    line.get::<String, _>("statement_ref"),
+                    line.get::<NaiveDate, _>("booking_date").format("%d.%m.%Y"),
+                    Ore(amount)
                 )),
             ),
             entry(counter_account, -amount, None),

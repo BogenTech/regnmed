@@ -34,6 +34,8 @@
   let canReconcile = $derived(harRett(companyId, "BANK_AVSTEM"));
   let canPost = $derived(canReconcile && harRett(companyId, "BILAG_BOKFOR"));
 
+  // The account is picked once per company; a rights update must not
+  // move the user off the account they chose.
   $effect(() => {
     api(base + "/bank/accounts")
       .then((r) => {
@@ -46,11 +48,12 @@
         account = pick?.number || "";
       })
       .catch((e) => (error = e.message));
-    if (canPost) {
-      api(base + "/accounts")
-        .then((a) => (chart = { kontoer: a.kontoer || [], standard: a.standard || [] }))
-        .catch(() => {});
-    }
+  });
+  $effect(() => {
+    if (!canPost) return;
+    api(base + "/accounts")
+      .then((a) => (chart = { kontoer: a.kontoer || [], standard: a.standard || [] }))
+      .catch(() => {});
   });
 
   function load() {

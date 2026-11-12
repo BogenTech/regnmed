@@ -46,8 +46,17 @@
   function toggle(id) {
     picked = picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
   }
-  const pickDue = () =>
-    (picked = selectable.filter((p) => p.due_date && p.due_date <= todayIso).map((p) => p.entry_id));
+  function pickDue() {
+    picked = selectable.filter((p) => p.due_date && p.due_date <= todayIso).map((p) => p.entry_id);
+    if (picked.length) return;
+    const undated = selectable.filter((p) => !p.due_date).length;
+    toast(
+      undated
+        ? "Ingen poster med forfall i dag eller før. " + undated + " har ikke registrert forfall — velg dem selv, eller før forfall under Leverandører."
+        : "Ingen poster har forfall i dag eller før.",
+      false,
+    );
+  }
   const pickAll = () => (picked = selectable.map((p) => p.entry_id));
 
   async function createRun() {
