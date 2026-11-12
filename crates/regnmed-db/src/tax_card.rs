@@ -71,6 +71,89 @@ pub async fn employees_in_year(
         .collect())
 }
 
+/// Written BEFORE the call to Skatteetaten, so the terms' §7.1 register
+/// shows a request even when the call fails or its answer is lost. `id`
+/// is also the idempotensid and the id of the order it may become.
+pub async fn record_request(
+    pool: &PgPool,
+    id: Uuid,
+    company_id: Uuid,
+    income_year: i32,
+    employee_count: usize,
+    requested_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into tax_card_request
+             (id, company_id, income_year, employee_count, requested_by)
+         values ($1,$2,$3,$4,$5)",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(income_year)
+    .bind(employee_count as i32)
+    .bind(requested_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Skatteetaten refused the request or rejected its answer.
+pub async fn record_failure(
+    pool: &PgPool,
+    request_id: Uuid,
+    detail: &str,
+    created_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into tax_card_request_failure (id, request_id, detail, created_by)
+         values ($1,$2,$3,$4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(request_id)
+    .bind(detail)
+    .bind(created_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Warnings for a payroll run: employees whose newest skattekort for the
+/// year was NOT applied, so the run used whatever withholding they had.
+/// The card's own note says what to do.
+pub async fn unapplied_warnings(
+    pool: &PgPool,
+    company_id: Uuid,
+    year: i32,
+    employees: &[(Uuid, String)],
+) -> Result<Vec<String>> {
+    let rows = sqlx::query(
+        "select distinct on (employee_id) employee_id, applied, note
+           from tax_card where company_id = $1 and income_year = $2
+          order by employee_id, created_at desc",
+    )
+    .bind(company_id)
+    .bind(year)
+    .fetch_all(pool)
+    .await?;
+    Ok(employees
+        .iter()
+        .filter_map(|(id, name)| {
+            let r = rows
+                .iter()
+                .find(|r| r.get::<Uuid, _>("employee_id") == *id)?;
+            if r.get::<Option<String>, _>("applied").is_some() {
+                return None;
+            }
+            let note: Option<String> = r.get("note");
+            Some(format!(
+                "{name}: skattekortet for {year} er ikke satt på den ansatte, så kjøringen \
+                 brukte trekket som var registrert. {}",
+                note.unwrap_or_default()
+            ))
+        })
+        .collect())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn record_order(
     pool: &PgPool,

@@ -8,12 +8,11 @@
 
   let { companyId, onDone } = $props();
 
+  // Bare inneværende år: kortet settes på den ansatte og gjelder hver
+  // kjøring, så neste års kort hentes i januar (serveren nekter ellers).
   const iAar = new Date().getFullYear();
-  // Kortene for neste år kommer i desember.
-  const aar = new Date().getMonth() === 11 ? [iAar, iAar + 1] : [iAar];
 
   let data = $state(null);
-  let valgtAar = $state(iAar);
   let arbeider = $state(false);
 
   const RESULTAT = {
@@ -38,24 +37,27 @@
   async function bestill() {
     arbeider = true;
     try {
-      const b = await post("/companies/" + companyId + "/tax-cards?year=" + valgtAar, {});
+      const b = await post("/companies/" + companyId + "/tax-cards?year=" + iAar, {});
       toast(
         b.besvart ? "Skattekortene er hentet" : "Bestilt — svaret er ikke klart ennå",
         true,
       );
-      await hent();
       onDone();
     } catch (error) {
       toast(error.message, false);
     } finally {
       arbeider = false;
+      // Også etter en feil: en bestilling som ble lagret skal synes, så
+      // ingen bestiller på nytt fordi den forrige ikke vistes.
+      await hent();
     }
   }
 
   async function hentSvar(id) {
     arbeider = true;
     try {
-      await post("/companies/" + companyId + "/tax-cards/" + id + "/answer", {});
+      const b = await post("/companies/" + companyId + "/tax-cards/" + id + "/answer", {});
+      if (!b.besvart) toast("Svaret fra Skatteetaten er ikke klart ennå — prøv igjen om litt", false);
       await hent();
       onDone();
     } catch (error) {
@@ -83,12 +85,9 @@
   {:else}
     {#if data.henting_mulig}
       <div class="flex flex-wrap items-center gap-2 mb-3">
-        <select class="select select-sm" bind:value={valgtAar} disabled={arbeider}>
-          {#each aar as a}<option value={a}>{a}</option>{/each}
-        </select>
         <button class="btn btn-sm btn-primary" onclick={bestill} disabled={arbeider}>
           {#if arbeider}<span class="loading loading-spinner loading-xs"></span>{/if}
-          Hent skattekort fra Skatteetaten
+          Hent skattekort for {iAar} fra Skatteetaten
         </button>
       </div>
     {:else}

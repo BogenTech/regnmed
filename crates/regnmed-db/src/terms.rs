@@ -101,14 +101,20 @@ pub struct AuthorityCall {
 
 /// The register terms §7.1 promises: every call to Altinn or the
 /// authorities on the company's behalf, what it was, when, who asked, and
-/// what came back. NOT a second log -- a read over the submission records
-/// themselves (migrations 0074-0076, 0078), which are written BEFORE each call
-/// and are insert-only, so the register cannot miss or rewrite a call.
+/// what came back. NOT a second log -- a read over the insert-only records
+/// the calls already leave (docs/vilkar-teknisk.md lists which): filings
+/// and skattekort requests are written BEFORE the call, so the register
+/// cannot miss one; an Altinn event subscription is written only once
+/// Altinn has created it.
+///
+/// It says THAT a call failed, never why: the failure text is
+/// Skatteetaten's answer, which can carry payroll or shareholder details,
+/// and the register is readable with SELSKAP_LES alone. The text stays
+/// behind each form's own right.
 pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<AuthorityCall>> {
     const EVENTS: &str = "coalesce((select jsonb_agg(jsonb_build_object(
             'hendelse', e.kind, 'tidspunkt', e.created_at, 'av', e.created_by,
-            'forsendelse_id', e.forsendelse_id,
-            'feil', case when e.kind = 'failed' then e.detail end)
+            'forsendelse_id', e.forsendelse_id)
             order by e.created_at) from {table} e where e.submission_id = s.id), '[]'::jsonb)";
     let sql = format!(
         "select 'a-melding' as form, s.id, s.period as reference, s.created_by, s.created_at,
@@ -123,12 +129,24 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
                 '[]'::jsonb
            from altinn_event_subscription s where s.company_id = $1
          union all
-         select 'skattekort', s.id, s.income_year::text, s.requested_by, s.created_at,
-                coalesce((select jsonb_build_array(jsonb_build_object(
-                    'hendelse', 'answer', 'tidspunkt', min(c.created_at), 'av', null,
-                    'forsendelse_id', s.reference, 'feil', null))
-                    from tax_card c where c.order_id = s.id having count(*) > 0), '[]'::jsonb)
-           from tax_card_order s where s.company_id = $1
+         select 'skattekort', r.id, r.income_year::text, r.requested_by, r.created_at,
+                coalesce((select jsonb_agg(x.ev order by x.at) from (
+                    select f.created_at as at, jsonb_build_object(
+                        'hendelse', 'failed', 'tidspunkt', f.created_at, 'av', f.created_by,
+                        'forsendelse_id', null) as ev
+                      from tax_card_request_failure f where f.request_id = r.id
+                    union all
+                    select o.created_at, jsonb_build_object(
+                        'hendelse', 'receipt', 'tidspunkt', o.created_at, 'av', o.requested_by,
+                        'forsendelse_id', o.reference)
+                      from tax_card_order o where o.id = r.id
+                    union all
+                    select min(c.created_at), jsonb_build_object(
+                        'hendelse', 'answer', 'tidspunkt', min(c.created_at), 'av', null,
+                        'forsendelse_id', null)
+                      from tax_card c where c.order_id = r.id having count(*) > 0
+                ) x), '[]'::jsonb)
+           from tax_card_request r where r.company_id = $1
          order by created_at desc",
         EVENTS.replace("{table}", "amelding_submission_event"),
         EVENTS.replace("{table}", "shareholder_return_submission_event"),

@@ -1464,3 +1464,105 @@ async fn concurrent_sends_create_one_submission() {
         1
     );
 }
+
+/// A skattekort that was fetched but NOT applied must not leave the run
+/// silent: the run says which employee, and the card's own reason.
+#[tokio::test]
+async fn an_unapplied_skattekort_is_named_in_the_run() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let new = |nin: &str, name: &str| NewEmployee {
+        nin: nin.into(),
+        name: name.into(),
+        stilling: None,
+        employed_from: date(2025, 1, 1),
+        monthly_salary_ore: Some(5_000_000),
+        hourly_wage_ore: None,
+        withholding_type: "prosent".into(),
+        withholding_percent_bp: Some(3500),
+        withholding_table: None,
+        holiday_pay_bp: 1020,
+        bank_account: None,
+        note: None,
+        details: Default::default(),
+    };
+    let kept = payroll::create_employee(&pool, company, &new("19910298057", "Uten Kort"), "Test")
+        .await
+        .unwrap();
+    let applied = payroll::create_employee(&pool, company, &new("15929998666", "Med Kort"), "Test")
+        .await
+        .unwrap();
+
+    let order = Uuid::new_v4();
+    regnmed_db::tax_card::record_request(&pool, order, company, 2026, 2, "Test")
+        .await
+        .unwrap();
+    regnmed_db::tax_card::record_order(
+        &pool,
+        order,
+        company,
+        2026,
+        &format!("BR{}", order.as_u128() % 1_000_000_000),
+        "d-1",
+        2,
+        "Test",
+    )
+    .await
+    .unwrap();
+    let card = |nin: &str, result: &str, decision| regnmed_db::tax_card::ReceivedCard {
+        nin: nin.into(),
+        result: result.into(),
+        card_id: None,
+        issued: None,
+        raw: serde_json::json!({}),
+        decision,
+    };
+    regnmed_db::tax_card::record_answer(
+        &pool,
+        company,
+        order,
+        &[
+            card(
+                "19910298057",
+                "ikkeSkattekort",
+                Err("Uten skattekort skal arbeidsgiver trekke 50 %".into()),
+            ),
+            card(
+                "15929998666",
+                "skattekortopplysningerOK",
+                Ok(regnmed_core::payroll::Withholding::Percent(3800)),
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let entry = |id| PayrollEntry {
+        employee_id: id,
+        gross_ore: None,
+        holiday_pay_ore: 0,
+        from_timesheet: false,
+    };
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        5,
+        date(2026, 5, 25),
+        "I",
+        &[entry(kept), entry(applied)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let named: Vec<_> = run
+        .warnings
+        .iter()
+        .filter(|w| w.contains("skattekortet"))
+        .collect();
+    assert_eq!(named.len(), 1, "{:?}", run.warnings);
+    assert!(
+        named[0].contains("Uten Kort") && named[0].contains("50 %"),
+        "{named:?}"
+    );
+}

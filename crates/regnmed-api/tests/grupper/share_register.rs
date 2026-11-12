@@ -778,13 +778,28 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     assert_eq!(kinds(&register[0]), ["receipt", "outcome"]);
     assert_eq!(register[0]["hendelser"][0]["forsendelse_id"], "f-1");
     assert_eq!(kinds(&register[1]), ["failed", "failed"]);
-    assert!(
-        register[1]["hendelser"][0]["feil"]
-            .to_string()
-            .contains("GLD_023")
-    );
-    assert!(
-        register[0]["hendelser"][1]["feil"].is_null(),
-        "answers are not reproduced"
-    );
+
+    // THAT it failed, never why: Skatteetaten's text stays behind the
+    // form's own right, and the register is readable with SELSKAP_LES --
+    // which the `les` role has and payroll/share-register readers need
+    // not. A `les` member sees the register, and no error text in it.
+    let sub = format!("les|{}", Uuid::new_v4());
+    let reader = regnmed_db::ensure_person(&state.pool, &sub, Some("Leser"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, reader, "les")
+        .await
+        .unwrap();
+    let (status, seen) = call(
+        &state,
+        &idp.token(&sub, "Leser"),
+        "GET",
+        &format!("{base}/authority-calls"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{seen}");
+    assert_eq!(seen.as_array().unwrap().len(), 2);
+    assert!(!seen.to_string().contains("GLD_023"), "{seen}");
+    assert!(!seen.to_string().contains("\"feil\""), "{seen}");
 }

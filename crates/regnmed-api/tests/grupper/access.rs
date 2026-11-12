@@ -94,6 +94,7 @@ const LESING: &[&str] = &[
     "/companies/{c}/period-lock",
     "/companies/{c}/reports/saldobalanse?from=2026-01-01&to=2026-12-31",
     "/companies/{c}/settings",
+    "/companies/{c}/authority-calls",
 ];
 
 /// Endpoints that change something. `les` must get 403 — not 404, since
@@ -130,6 +131,12 @@ const SKRIVING: &[(&str, &str, &str)] = &[
         "POST",
         "/companies/{c}/timesheet",
         r#"{"dato":"2026-01-15","minutter":60,"beskrivelse":"Arbeid"}"#,
+    ),
+    ("POST", "/companies/{c}/tax-cards?year=2026", ""),
+    (
+        "POST",
+        "/companies/{c}/tax-cards/00000000-0000-0000-0000-000000000000/answer",
+        "",
     ),
 ];
 
@@ -907,6 +914,13 @@ async fn an_admin_crosses_no_company_boundary() {
             "admin i et annet selskap skulle fått 404 på {method} {uri}"
         );
     }
+    // Payroll reads are not in LESING (the `les` role is denied payroll).
+    let uri = format!("/companies/{nabo}/tax-cards");
+    assert_eq!(
+        status(&state, "GET", &uri, &admin, "").await,
+        StatusCode::NOT_FOUND,
+        "admin i et annet selskap skulle fått 404 på {uri}"
+    );
 
     // And /me does not mention the neighbouring company — the access list
     // is the companies the person can actually act for, no more.
