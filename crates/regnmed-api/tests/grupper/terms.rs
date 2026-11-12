@@ -148,6 +148,10 @@ async fn only_an_admin_accepts_and_only_the_text_they_saw() {
         .filter(|v| v["gjeldende"] == true)
         .collect();
     assert_eq!(current.len(), 1, "{versions}");
+    assert_eq!(
+        versions[0]["gjeldende"], true,
+        "the version in force is listed first"
+    );
     assert_eq!(current[0]["versjon"], version.as_str());
     let response = router(state.clone())
         .oneshot(

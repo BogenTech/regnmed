@@ -52,6 +52,9 @@ fn order_json(o: &regnmed_db::tax_card::OrderView) -> serde_json::Value {
         "bestilt_av": o.requested_by,
         "bestilt_tidspunkt": o.created_at,
         "besvart": !o.cards.is_empty(),
+        // Skatteetaten refused the request or rejected its answer; the
+        // text is behind LONN_LES like everything in this view.
+        "feil": o.failure,
         "skattekort": o.cards.iter().map(|c| json!({
             "ansatt_id": c.employee_id,
             "navn": c.name,
@@ -164,8 +167,14 @@ pub async fn order(
     for _ in 0..5 {
         tokio::time::sleep(Duration::from_secs(2)).await;
         match fetch_answer(&state, &rail, company_id, order_id, &order.reference, by).await {
-            Ok(true) => break,
-            Ok(false) => {}
+            Ok(Poll::Answered) => break,
+            Ok(Poll::NotReady) => {}
+            // A rejection is an answer, not a hiccup: say so now.
+            Ok(Poll::Rejected(status)) => {
+                return Err(ApiError::BadRequest(format!(
+                    "Skatteetaten avviste bestillingen: {status}"
+                )));
+            }
             Err(e) => {
                 let why = match &e {
                     ApiError::BadRequest(m) => m.as_str(),
@@ -186,10 +195,21 @@ pub async fn answer(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
     let rail = rail(&state)?;
-    if let Some((reference, _)) =
+    crate::terms::require_accepted(&state, company_id).await?;
+    if let Some((reference, year)) =
         regnmed_db::tax_card::unanswered_order(&state.pool, company_id, order_id).await?
     {
-        fetch_answer(
+        // The answer is applied to the employees, so the year rule of
+        // ordering holds here too: last year's late answer must not
+        // replace this year's cards.
+        let this_year = chrono::Utc::now().year();
+        if year != this_year {
+            return Err(ApiError::BadRequest(format!(
+                "bestillingen gjelder {year}, og bare kort for inneværende år ({this_year}) \
+                 settes på de ansatte — bestill kortene for {this_year} på nytt"
+            )));
+        }
+        if let Poll::Rejected(status) = fetch_answer(
             &state,
             &rail,
             company_id,
@@ -197,12 +217,25 @@ pub async fn answer(
             &reference,
             person.display(),
         )
-        .await?;
+        .await?
+        {
+            return Err(ApiError::BadRequest(format!(
+                "Skatteetaten avviste bestillingen: {status}"
+            )));
+        }
     }
     order_response(&state, company_id, order_id).await
 }
 
-/// Fetches and stores the answer; false while it is not ready.
+enum Poll {
+    NotReady,
+    Answered,
+    /// Skatteetaten answered with a status other than FORESPOERSEL_OK;
+    /// recorded as the request's failure.
+    Rejected(String),
+}
+
+/// Fetches and stores the answer.
 async fn fetch_answer(
     state: &AppState,
     rail: &crate::TaxCardRail,
@@ -210,7 +243,7 @@ async fn fetch_answer(
     order_id: Uuid,
     reference: &str,
     by: &str,
-) -> Result<bool, ApiError> {
+) -> Result<Poll, ApiError> {
     let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
         .await?
         .orgnumber;
@@ -220,16 +253,14 @@ async fn fetch_answer(
         .await
         .map_err(|e| ApiError::BadRequest(format!("henting av skattekortsvaret feilet: {e:#}")))?
     else {
-        return Ok(false);
+        return Ok(Poll::NotReady);
     };
     let cards = match regnmed_gov::tax_card::parse_answer(&answer) {
         Ok(cards) => cards,
         Err(status) => {
             regnmed_db::tax_card::record_failure(&state.pool, order_id, &answer.to_string(), by)
                 .await?;
-            return Err(ApiError::BadRequest(format!(
-                "Skatteetaten avviste bestillingen: {status}"
-            )));
+            return Ok(Poll::Rejected(status));
         }
     };
     let received: Vec<_> = cards
@@ -250,7 +281,7 @@ async fn fetch_answer(
         })
         .collect();
     regnmed_db::tax_card::record_answer(&state.pool, company_id, order_id, &received).await?;
-    Ok(true)
+    Ok(Poll::Answered)
 }
 
 async fn order_response(

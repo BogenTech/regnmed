@@ -204,7 +204,10 @@ sekunder og har ellers en «Hent svaret»-knapp.
 lønnskjøring leser det; et kort for neste år ville blitt brukt på årets
 lønn (i desember ville desemberlønnen gått på neste års kort). Neste års
 kort hentes derfor i januar, før årets første kjøring, og serveren nekter
-et annet år.
+et annet år — også når svaret på en eldre bestilling hentes senere.
+Avviser Skatteetaten en bestilling eller svaret på den, står grunnen i
+listen over bestillinger (bak `LONN_LES`), og et avvist svar er endelig:
+det hentes ikke på nytt.
 
 **Alt er innsettings-bart, og forespørselen skrives FØR kallet**
 (`tax_card_request`, migration 0079): en bestilling Skatteetaten

@@ -39,7 +39,11 @@ pub struct CardView {
 pub struct OrderView {
     pub id: Uuid,
     pub income_year: i32,
-    pub reference: String,
+    /// None when Skatteetaten never accepted the request.
+    pub reference: Option<String>,
+    /// Skatteetaten's refusal or rejection, verbatim (newest). Behind the
+    /// payroll rights like the rest of this view.
+    pub failure: Option<String>,
     pub employee_count: i32,
     pub requested_by: String,
     pub created_at: DateTime<Utc>,
@@ -183,8 +187,8 @@ pub async fn record_order(
     Ok(())
 }
 
-/// The order's reference and income year, if it belongs to the company
-/// and its answer has not been stored yet.
+/// The order's reference and income year, if it belongs to the company,
+/// its answer has not been stored and it was not rejected.
 pub async fn unanswered_order(
     pool: &PgPool,
     company_id: Uuid,
@@ -193,7 +197,11 @@ pub async fn unanswered_order(
     let row = sqlx::query(
         "select o.reference, o.income_year from tax_card_order o
           where o.id = $1 and o.company_id = $2
-            and not exists (select 1 from tax_card c where c.order_id = o.id)",
+            and not exists (select 1 from tax_card c where c.order_id = o.id)
+            -- A rejected answer is final: asking again would only call
+            -- Skatteetaten again and log the same rejection.
+            and not exists (select 1 from tax_card_request_failure f
+                             where f.request_id = o.id)",
     )
     .bind(order_id)
     .bind(company_id)
@@ -289,8 +297,12 @@ pub async fn record_answer(
 /// Every order, newest first, with what came back for each employee.
 pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderView>> {
     let orders = sqlx::query(
-        "select id, income_year, reference, employee_count, requested_by, created_at
-           from tax_card_order where company_id = $1 order by created_at desc",
+        "select r.id, r.income_year, o.reference, r.employee_count, r.requested_by,
+                r.created_at,
+                (select f.detail from tax_card_request_failure f where f.request_id = r.id
+                  order by f.created_at desc limit 1) as failure
+           from tax_card_request r left join tax_card_order o on o.id = r.id
+          where r.company_id = $1 order by r.created_at desc",
     )
     .bind(company_id)
     .fetch_all(pool)
@@ -312,6 +324,7 @@ pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderVie
                 id,
                 income_year: o.get("income_year"),
                 reference: o.get("reference"),
+                failure: o.get("failure"),
                 employee_count: o.get("employee_count"),
                 requested_by: o.get("requested_by"),
                 created_at: o.get("created_at"),

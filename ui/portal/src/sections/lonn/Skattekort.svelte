@@ -97,10 +97,14 @@
     {/if}
     {#if siste}
       <p class="text-xs opacity-60 mb-1">
-        {siste.inntektsaar} · {siste.referanse} · bestilt av {siste.bestilt_av}
+        {siste.inntektsaar} · {siste.referanse ?? "ikke mottatt"} · bestilt av {siste.bestilt_av}
         {new Date(siste.bestilt_tidspunkt).toLocaleString("nb-NO")}
       </p>
-      {#if !siste.besvart}
+      {#if siste.feil}
+        <div role="alert" class="alert alert-error alert-soft text-xs">
+          <span>Skatteetaten avviste bestillingen: {siste.feil}</span>
+        </div>
+      {:else if !siste.besvart}
         <button class="btn btn-xs btn-outline" onclick={() => hentSvar(siste.id)} disabled={arbeider}>
           Hent svaret
         </button>
