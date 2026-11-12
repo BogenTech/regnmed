@@ -1,9 +1,9 @@
 <script>
-  // Nytt krav: utlegg med kvittering, eller kjøring. Kvitteringen først —
-  // slik man faktisk gjør det (bilde, så detaljer) — og beløpet for en
-  // kjøring vises før innsending, med den trekkpliktige delen sagt rett
-  // ut. Knappen er opptatt til svaret kommer, så ett trykk er ett krav;
-  // serveren nekter også samme kvittering to ganger.
+  // New claim: an expense with a receipt, or a trip. The receipt first —
+  // how people actually do it (photo, then details) — and a trip's amount
+  // is shown before submitting, with the taxable part said plainly. The
+  // button stays busy until the answer arrives, so one press is one
+  // claim; the server also refuses the same receipt twice.
   import { api, post } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -34,13 +34,18 @@
   });
   let kmValue = $derived(parseKm(km));
 
-  // The km-sats is dated: a trip in March is paid March's rate.
+  // The km rate is dated: a trip in March is paid March's rate. Only the
+  // answer for the date still in the field is kept — a slower reply for
+  // a date the user already left must not win.
+  let rateFor = "";
   $effect(() => {
     if (kind !== "kjoring" || !date) return;
+    const asked = date;
+    rateFor = asked;
     rate = null;
-    api(base + "/kjoring?dato=" + date)
-      .then((r) => (rate = r))
-      .catch((e) => (rate = { error: e.message }));
+    api(base + "/kjoring?dato=" + asked)
+      .then((r) => rateFor === asked && (rate = r))
+      .catch((e) => rateFor === asked && (rate = { error: e.message }));
   });
   let estimate = $derived(
     kmValue && rate?.sats_ore_per_km ? mileage(kmValue, rate.sats_ore_per_km, rate.trekkfri_ore_per_km) : null,

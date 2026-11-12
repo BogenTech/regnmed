@@ -132,6 +132,43 @@ async fn expenses_flow() {
         .unwrap();
     let message = String::from_utf8_lossy(&bytes);
     assert!(message.contains("allerede sendt inn"), "{message}");
+    // A double tap: the second submission of the same receipt waits on
+    // the per-company-and-hash advisory lock, then sees the first claim.
+    // Held from outside here, so the wait is observed, not hoped for.
+    let parking = b"kvittering: parkering 99,00 kr".to_vec();
+    let upload = |name: &str| {
+        router(state.clone()).oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{base}/utlegg?filename={name}&dato=2026-07-02&belop_ore=9900&beskrivelse=Parkering"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "text/plain")
+                .body(Body::from(parking.clone()))
+                .unwrap(),
+        )
+    };
+    assert_eq!(upload("p1.txt").await.unwrap().status(), StatusCode::OK);
+    let mut held = state.pool.begin().await.unwrap();
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
+        .bind(company)
+        .bind(regnmed_core::hash::sha256(&parking).to_vec())
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let second = tokio::spawn(upload("p2.txt"));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !second.is_finished(),
+        "the second submission must wait for the lock"
+    );
+    held.rollback().await.unwrap();
+    assert_eq!(
+        second.await.unwrap().unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
     // A missing amount is a sentence, not a deserializer error.
     let (status, body) = request(
         &state,
@@ -347,19 +384,37 @@ async fn expenses_flow() {
         .iter()
         .map(|e| e["status"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(statuses.len(), 3);
+    assert_eq!(statuses.len(), 4);
     assert!(statuses.contains(&"utbetalt".into()));
     assert!(statuses.contains(&"godkjent".into()));
     assert!(statuses.contains(&"avvist".into()));
-    assert_eq!(listed["total"], 3);
+    assert_eq!(listed["total"], 4);
     assert_eq!(listed["counts"]["utbetalt"], 1);
     assert_eq!(listed["counts"]["godkjent"], 1);
     assert_eq!(listed["counts"]["avvist"], 1);
-    assert_eq!(listed["counts"]["innsendt"], 0);
+    assert_eq!(listed["counts"]["innsendt"], 1, "the parking claim");
     // The tabs: «åpne» is what still owes money, the rest are done.
+    let (_, open) = request(
+        &state,
+        "GET",
+        &format!("{base}?status=apne&limit=1&offset=5"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        open["total"], 2,
+        "a page past the end still knows the total"
+    );
+    assert!(open["expenses"].as_array().unwrap().is_empty());
     let (_, open) = request(&state, "GET", &format!("{base}?status=apne"), &token, None).await;
-    assert_eq!(open["total"], 1);
-    assert_eq!(open["expenses"][0]["expense_id"], run_id.as_str());
+    let open_ids: Vec<&str> = open["expenses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["expense_id"].as_str().unwrap())
+        .collect();
+    assert!(open_ids.contains(&run_id.as_str()), "{open}");
     let (status, _) = request(&state, "GET", &format!("{base}?status=tull"), &token, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     // One claim, with both vouchers it produced.

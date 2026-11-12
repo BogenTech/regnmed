@@ -1,7 +1,6 @@
 //! Utlegg and kjøregodtgjørelse (docs/utlegg.md, #42):
 //!
-//! - GET  /companies/{id}/expenses?status=&limit=&offset=
-//!                                                    list + tab counts
+//! - GET  /companies/{id}/expenses?status=&limit=&offset=  list + tab counts
 //! - GET  /companies/{id}/expenses/{eid}              one claim
 //! - POST /companies/{id}/expenses/utlegg?filename=   raw receipt body
 //! - POST /companies/{id}/expenses/kjoring            km claim

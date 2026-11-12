@@ -1,8 +1,9 @@
 <script>
-  // Utlegg og kjøregodtgjørelse (#42): kravene først — det er dem folk
-  // kommer for («når får jeg pengene?», «hva venter på meg?»). Hvert krav,
-  // og skjemaet for et nytt, har sin egen adresse (#/c/{id}/utlegg/{…}).
-  // Statusen går bare én vei: innsendt → godkjent/avvist → utbetalt.
+  // Expenses and mileage (#42): the claims first — that is what people
+  // come for ("when do I get paid?", "what is waiting for me?"). Each
+  // claim, and the form for a new one, has its own address
+  // (#/c/{id}/utlegg/{…}). Status only moves one way:
+  // innsendt → godkjent/avvist → utbetalt.
   import { harRett } from "../../lib/me.svelte.js";
   import ExpenseList from "./ExpenseList.svelte";
   import NewExpense from "./NewExpense.svelte";

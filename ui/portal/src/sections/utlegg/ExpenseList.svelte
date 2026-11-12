@@ -1,6 +1,6 @@
 <script>
-  // Én fane av kravene, sidevis fra serveren (50 om gangen). Tellerne i
-  // fanene kommer i samme svar, så fanene og listen kan aldri spriker.
+  // One tab of claims, paged by the server (50 at a time). The tab
+  // counters come in the same response, so tabs and list never disagree.
   import { api } from "../../lib/api.js";
   import { kr, formatDate } from "../../lib/format.js";
   import { STATUS } from "./expenseMath.js";

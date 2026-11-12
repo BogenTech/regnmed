@@ -1,8 +1,8 @@
-// Forhåndsvisning av et dokument (bilag, kvittering) ut fra bytenes EGEN
-// signatur (%PDF-, PNG/JPEG/GIF/WebP), aldri typen opplasteren oppga:
-// blob-URL-en får typen vi har sjekket, så et dokument kan ikke kjøre
-// noe i siden. Alt annet gir { kind: "none" } og lastes ned i stedet.
-// Kalleren eier URL-en og må kalle URL.revokeObjectURL når den er ferdig.
+// Preview of a document (voucher, receipt) from the bytes' OWN signature
+// (%PDF-, PNG/JPEG/GIF/WebP), never the type the uploader declared: the
+// blob URL gets the type we checked, so a document cannot run anything
+// in the page. Anything else is { kind: "none" } and is downloaded
+// instead. The caller owns the URL and must revoke it when done.
 export function sniffType(head) {
   const starts = (...b) => b.every((x, i) => head[i] === x);
   if (starts(0x25, 0x50, 0x44, 0x46, 0x2d)) return "application/pdf";

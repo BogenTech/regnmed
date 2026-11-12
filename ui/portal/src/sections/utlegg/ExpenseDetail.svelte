@@ -1,8 +1,8 @@
 <script>
-  // Ett krav: kvitteringen ved siden av beslutningen (stablet på telefon).
-  // Den som har sendt inn ser hvor kravet står; den som godkjenner ser
-  // kvitteringen og hva som bokføres før det skjer. Etter godkjenning
-  // eller avvisning går siden rett til neste krav som venter.
+  // One claim: the receipt beside the decision (stacked on a phone). The
+  // submitter sees where the claim stands; the approver sees the receipt
+  // and what will be posted before it happens. After approval or
+  // rejection the page goes straight to the next waiting claim.
   import { api, post } from "../../lib/api.js";
   import { kr, formatDate, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -28,6 +28,7 @@
   let account = $state("");
   let vatCode = $state("");
   let busy = $state(false);
+  let policyActive = $state(false);
 
   let canApprove = $derived(harRett(companyId, "UTLEGG_GODKJENN"));
   let canPay = $derived(harRett(companyId, "UTLEGG_UTBETAL"));
@@ -48,12 +49,18 @@
       api("/companies/" + companyId + "/accounts")
         .then((a) => (accounts = { kontoer: a.kontoer || [], standard: a.standard || [] }))
         .catch(() => {});
+      api("/companies/" + companyId + "/attestering/policy")
+        .then((p) => (policyActive = !!p.policy?.aktiv))
+        .catch(() => {});
     }
   });
 
-  // Only an utlegg has a receipt; the preview trusts the bytes, not the name.
+  // Only an utlegg has a receipt; the preview trusts the bytes, not the
+  // name. Keyed on the kind alone, so reloading the claim after a payout
+  // does not download the receipt again.
+  let hasReceipt = $derived(e?.kind === "utlegg");
   $effect(() => {
-    if (e?.kind !== "utlegg") return;
+    if (!hasReceipt) return;
     let url = null;
     api(receiptUrl)
       .then((r) => r.blob())
@@ -84,11 +91,15 @@
   });
   let representation = $derived(!!vatCode && REPRESENTATION_ACCOUNTS.includes(account.trim()));
 
+  // With attestering on, nobody approves their own claim (four eyes), so
+  // the form is not offered and "next" skips them.
+  let ownBlocked = $derived(policyActive && !!e?.own);
+
   async function goNext() {
     let next = null;
     try {
-      const r = await api(base + "?status=innsendt&limit=2");
-      next = r.expenses.find((x) => x.expense_id !== expenseId) || null;
+      const r = await api(base + "?status=innsendt&limit=50");
+      next = r.expenses.find((x) => x.expense_id !== expenseId && !(policyActive && x.own)) || null;
     } catch {}
     location.hash = next ? list + "/" + next.expense_id : list;
   }
@@ -236,7 +247,9 @@
         </section>
       {/if}
 
-      {#if e.status === "innsendt" && canApprove}
+      {#if e.status === "innsendt" && canApprove && ownBlocked}
+        <p class="opacity-70">Attestering er slått på, så en annen må godkjenne ditt eget krav.</p>
+      {:else if e.status === "innsendt" && canApprove}
         <form class="card border border-base-300 bg-base-100" aria-labelledby="godkjenn-tittel" onsubmit={approve}>
           <div class="card-body grid gap-4">
             <h2 id="godkjenn-tittel" class="card-title">Godkjenn og bokfør</h2>

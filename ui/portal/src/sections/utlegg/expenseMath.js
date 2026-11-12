@@ -1,7 +1,7 @@
-// Utlegg i ord og tall. Statusene sies slik den som venter på pengene
-// leser dem, og kjøregodtgjørelsen regnes som regnmed-core::expenses
-// gjør det (km × sats, den trekkfrie delen kan ikke overstige beløpet)
-// — så skjemaet viser det samme beløpet serveren vil lagre.
+// Expense claims in words and numbers. Statuses are said the way the
+// person waiting for the money reads them, and mileage is computed as
+// regnmed-core::expenses does (km × rate, the tax-free part never above
+// the amount) — so the form shows the amount the server will store.
 
 export const STATUS = {
   innsendt: { text: "Venter på godkjenning", badge: "badge-warning" },
@@ -16,13 +16,13 @@ export function mileage(km, rateOrePerKm, taxFreeOrePerKm) {
   return { amount, taxFree, taxable: amount - taxFree };
 }
 
-// Hele kilometer, ingenting annet: «12,5» og «12 km» er ikke tall vi
-// gjetter på.
+// Whole kilometres only: "12,5" and "12 km" are not numbers we guess at.
 export function parseKm(text) {
   const t = String(text ?? "").trim();
   return /^\d{1,5}$/.test(t) && Number(t) > 0 ? Number(t) : null;
 }
 
-// Representasjon gir aldri fradrag for inngående mva (mval. § 8-3 første
-// ledd bokstav d). Varsel, ikke sperre: avgjørelsen er regnskapsførerens.
+// Business entertainment never gives input VAT deduction (mval. § 8-3
+// first paragraph letter d). A warning, not a block: the decision is the
+// accountant's.
 export const REPRESENTATION_ACCOUNTS = ["7350", "7370"];

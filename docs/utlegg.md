@@ -24,7 +24,8 @@ aldri fra hodet.
   å sende inn på nytt med bedre forklaring er den normale veien
   tilbake. En rådgivende lås per selskap og hash
   (`pg_advisory_xact_lock`) gjør at to samtidige innsendinger av
-  samme kvittering tar tur, så et dobbeltklikk ikke slipper gjennom.
+  samme kvittering tar tur, så et dobbeltklikk ikke slipper gjennom
+  (testet ved å holde låsen utenfra og se at andre innsending venter).
 
 ## Utlegg
 
@@ -109,8 +110,10 @@ sin side (`…/utlegg/{id}`) med kvitteringen forhåndsvist ved siden av
 beslutningen (samme bytesjekk som innboksen, `lib/preview.js`),
 kontovelger, mva-valg med varsel for representasjon (mval. § 8-3),
 linjene som vil bokføres, og bekreftelse med dato og bankkonto før
-utbetaling. Knappene vises bare for den som har retten; etter
-godkjenning eller avvisning går siden til neste krav som venter.
+utbetaling. Knappene vises bare for den som har retten, og med
+attestering på tilbys ikke godkjenning av eget krav; etter godkjenning
+eller avvisning går siden til neste krav som venter (ikke ens egne når
+attestering er på).
 
 Bevisst utenfor v1 (issuen): diett/per-diem-satser og app-basert
 kvitteringsfoto (PWA, #48).

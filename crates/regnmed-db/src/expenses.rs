@@ -42,6 +42,9 @@ pub async fn create_expense(
     ensure!(!content.is_empty(), "kvitteringen er tom");
     ensure!(!description.trim().is_empty(), "skriv hva utlegget gjaldt");
     let digest = sha256(content).to_vec();
+    // Outside the transaction: with an object store this is a network
+    // PUT, and content addressing makes a refused duplicate harmless.
+    let in_row = crate::blob::blobs().store(content).await?;
     let mut tx = pool.begin().await?;
     // The same receipt twice is a double-click or a resubmission, never
     // two expenses — refused while the first claim stands. A REJECTED
@@ -68,7 +71,6 @@ pub async fn create_expense(
             date.format("%d.%m.%Y")
         );
     }
-    let in_row = crate::blob::blobs().store(content).await?;
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore,
@@ -213,14 +215,13 @@ pub async fn list_expenses(
         Some(s @ ("innsendt" | "godkjent" | "utbetalt" | "avvist")) => Some(vec![s]),
         Some(other) => bail!("ukjent status «{other}»"),
     };
-    let rows = sqlx::query(
+    let rows_query = sqlx::query(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
                 e.kind, e.dato, e.beskrivelse, e.belop_ore, e.km, e.sats_ore_per_km,
                 e.trekkfri_ore, e.trekkpliktig_ore, e.receipt_filename, e.status,
                 e.avvist_note, e.decided_by, e.decided_at, e.utbetalt_at, e.created_at,
                 v.fiscal_year, v.voucher_number,
-                pv.fiscal_year as paid_year, pv.voucher_number as paid_number,
-                count(*) over () as total
+                pv.fiscal_year as paid_year, pv.voucher_number as paid_number
          from expense e
          join person p on p.id = e.person_id
          left join voucher v on v.id = e.voucher_id
@@ -234,12 +235,21 @@ pub async fn list_expenses(
     .bind(company_id)
     .bind(viewer)
     .bind(only_own)
-    .bind(statuses)
+    .bind(statuses.clone())
     .bind(filter.expense_id)
     .bind(filter.limit.clamp(1, 500))
     .bind(filter.offset.max(0))
-    .fetch_all(pool)
-    .await?;
+    .fetch_all(pool);
+    let counts_query = sqlx::query(
+        "select status, count(*) as n from expense
+         where company_id = $1 and ($3 = false or person_id = $2)
+         group by status",
+    )
+    .bind(company_id)
+    .bind(viewer)
+    .bind(only_own)
+    .fetch_all(pool);
+    let (rows, count_rows) = tokio::try_join!(rows_query, counts_query)?;
     let voucher = |r: &sqlx::postgres::PgRow, year: &str, no: &str| match (
         r.get::<Option<i32>, _>(year),
         r.get::<Option<i64>, _>(no),
@@ -247,8 +257,7 @@ pub async fn list_expenses(
         (Some(year), Some(no)) => Some(format!("{year}-{no}")),
         _ => None,
     };
-    let total = rows.first().map(|r| r.get::<i64, _>("total")).unwrap_or(0);
-    let rows = rows
+    let rows: Vec<ExpenseRow> = rows
         .iter()
         .map(|r| ExpenseRow {
             id: r.get("id"),
@@ -275,17 +284,7 @@ pub async fn list_expenses(
         .collect();
 
     let mut counts = ExpenseCounts::default();
-    for r in sqlx::query(
-        "select status, count(*) as n from expense
-         where company_id = $1 and ($3 = false or person_id = $2)
-         group by status",
-    )
-    .bind(company_id)
-    .bind(viewer)
-    .bind(only_own)
-    .fetch_all(pool)
-    .await?
-    {
+    for r in &count_rows {
         let n: i64 = r.get("n");
         match r.get::<String, _>("status").as_str() {
             "innsendt" => counts.innsendt = n,
@@ -295,6 +294,25 @@ pub async fn list_expenses(
             _ => {}
         }
     }
+    // The total comes from the counts, not from the page: a page past
+    // the end still knows how many rows there are to page back to.
+    let total = if filter.expense_id.is_some() {
+        rows.len() as i64
+    } else {
+        let all = ["innsendt", "godkjent", "utbetalt", "avvist"];
+        let n = |st: &str| match st {
+            "innsendt" => counts.innsendt,
+            "godkjent" => counts.godkjent,
+            "utbetalt" => counts.utbetalt,
+            _ => counts.avvist,
+        };
+        statuses
+            .as_deref()
+            .unwrap_or(&all[..])
+            .iter()
+            .map(|st| n(st))
+            .sum()
+    };
     Ok(ExpensePage {
         rows,
         total,
