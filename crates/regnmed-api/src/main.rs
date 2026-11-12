@@ -121,6 +121,22 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
+    // The skattekort rail: same client, its own scope, and Skatteetatens
+    // TEST environment unless SKATTEKORT_URL says otherwise.
+    let tax_card = match std::env::var("MASKINPORTEN_CLIENT_ID") {
+        Ok(_) => {
+            let mut config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+            config.scopes = regnmed_gov::tax_card::SCOPES.into();
+            let client = regnmed_gov::tax_card::TaxCardClient::from_env();
+            println!("skattekort fetching is on ({})", client.base_url);
+            Some(std::sync::Arc::new(regnmed_api::TaxCardRail {
+                tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
+                client,
+            }))
+        }
+        Err(_) => None,
+    };
+
     // The aksjonærregisteroppgave rail: same client, its own scope, and
     // Skatteetatens TEST environment unless AKSJONAERREGISTER_URL says otherwise.
     let shareholder_return = match std::env::var("MASKINPORTEN_CLIENT_ID") {
@@ -152,6 +168,7 @@ async fn main() -> Result<()> {
         regnid,
         amelding,
         shareholder_return,
+        tax_card,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

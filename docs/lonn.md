@@ -151,7 +151,10 @@ ansattes restskatt. En kjøring med `trekk_type = 'tabell'` stopper:
 > tabelltrekk (tabell 7100) er ikke støttet: trekktabellene er
 > Skatteetatens datafiler, og regnmed tilnærmer dem ikke
 
-Skattekortet kan i praksis alltid leses som prosenttrekk inntil videre.
+Et skattekort med trekktabell som hentes fra Skatteetaten (under),
+lagres som tabell — slik kortet sier — og kjøringen nekter fortsatt.
+Det er riktig rekkefølge: tallet blir aldri feil i stillhet, og
+tabelltrekket er neste bit som må bygges.
 
 ### Sone Ia
 
@@ -162,6 +165,53 @@ av ting regnmed ikke ser. Å regne 10,6 % flatt ville underrapportert
 avgift til Skatteetaten, så sone Ia avvises — **før** satsoppslaget, slik
 at feilmeldingen ikke sier «legg inn satsen», som er stikk motsatt av
 riktig råd.
+
+## Skattekort fra Skatteetaten (migration 0078)
+
+Trekket på den ansatte kommer fra skattekortet, og skattekortet hentes
+nå fra Skatteetatens API «Skattekort til arbeidsgiver» i stedet for å
+tastes inn (`skatteetaten:skattekorttilarbeidsgiver`, systembruker for
+selskapet, samme skinne som a-meldingen — docs/gov.md). En bestilling
+(`bestillSkattekort`, `HENT_ALLE_OPPGITTE`) gjelder alle med
+fødselsnummer som er ansatt en eller annen gang i inntektsåret; svaret
+hentes med referansen (`BR…`). I testmiljøet var svaret klart ved første
+forespørsel, tre sekunder etter bestillingen, så portalen venter noen
+sekunder og har ellers en «Hent svaret»-knapp.
+
+**Begge er innsettings-bare** (`tax_card_order`, `tax_card`): hver
+ansatts oppføring i svaret lagres ordrett, med skattekort-id og
+utstedelsesdato. Det er beviset for hvorfor trekket var det det var.
+
+**Bare det lønnskjøringen regner riktig settes på den ansatte**, i
+samme transaksjon som kortet lagres. Det er
+`loennFraHovedarbeidsgiver` som styrer — regnmed betaler ordinær lønn
+som hovedarbeidsgiver; pensjon, NAV og biarbeidsgiver ligger i kortet
+men brukes ikke.
+
+| Kortet sier | regnmed |
+| --- | --- |
+| Trekkprosent over 10,5 måneder | **settes** (prosenten leses som desimaltekst, aldri som flyttall) |
+| Trekktabell over 10,5 måneder | **settes** som tabell — kjøringen nekter tabelltrekk (over) |
+| Frikort uten beløpsgrense, eller «ikke trekkplikt» | **settes** til ingen trekk |
+| Frikort med beløpsgrense | beholdes — 50 % over grensen regnes ikke ut ennå |
+| Trekk over 11 eller 12 måneder (bl.a. kildeskatt) | beholdes — `calculate` trekker halvt i desember og ikke i feriepenger, som bare stemmer for 10,5 |
+| Ikke skattekort | beholdes — uten kort skal arbeidsgiver trekke 50 %, og det står i merknaden |
+
+Det som beholdes, får en **merknad** med grunnen, i portalen og i
+API-et; den ansatte står med trekket den hadde. Ingen kort settes i
+stillhet feil.
+
+Feltverdiene er slik testmiljøet faktisk sendte dem 2026-11-12, lagret i
+`docs/lonn/skattekort-svar-test-2026.json` og brukt av testene:
+camelCase (`loennFraHovedarbeidsgiver`), mens dokumentasjonens eget
+eksempel skriver dem med store bokstaver. Bestillingen er et kall til
+Skatteetaten på selskapets vegne, så **kundevilkårene må være godtatt**
+først, og den står i registeret over kall til myndighetene
+(`/authority-calls`, docs/kundevilkar.md).
+
+Ikke bygget ennå: endringsbestillinger (`HENT_KUN_ENDRING`) og varsel
+ved endring — i dag hentes kortet på nytt med knappen — og bestillinger
+over 1000 ansatte, som API-et ikke tar i ett kall.
 
 ## Personvern
 
@@ -180,6 +230,9 @@ listingen.
 | GET/POST | `/companies/{id}/payroll` |
 | GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
 | GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
+| GET | `/companies/{id}/tax-cards` (bestillinger og svar) |
+| POST | `/companies/{id}/tax-cards?year=` (bestill og hent skattekort) |
+| POST | `/companies/{id}/tax-cards/{order}/answer` (hent et svar som ikke var klart) |
 
 Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 `admin`.
@@ -468,9 +521,10 @@ Rekkefølgen er omtrent den de bør tas i.
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
-2. **Skattekort fra Skatteetatens API.** I dag registreres trekket
-   manuelt. Samme Maskinporten-avhengighet.
-3. **Tabelltrekk** (se over).
+2. **Tabelltrekk** (se over). Skattekortene hentes nå (over), og de
+   fleste vanlige kort har trekktabell — dette er derfor det neste.
+3. **Frikort med beløpsgrense og kort over 11/12 måneder** (kildeskatt),
+   som skattekorthentingen i dag beholder med merknad.
 4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
@@ -579,8 +633,10 @@ månedslønn og trekkprosent er ikke allmenn lesning.
 
 ## Portal
 
-Lønn-seksjonen har to kort: **Ansatte** (register + nyregistrering) og
-**Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
+Lønn-seksjonen har tre kort: **Ansatte** (register + nyregistrering),
+**Skattekort** (hent fra Skatteetaten for et inntektsår; tabell over
+hver ansatt med Skatteetatens svar, hva som ble satt og merknaden for det
+som ikke ble satt) og **Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
 der brutto kan overstyres og feriepenger legges inn per person).
 Ansatte-kortet har en **Portalbruker**-kolonne (koblet / invitert /
 ikke koblet) med invitasjons- og koblingsflyten fra 0050; skjemaet for
@@ -600,6 +656,17 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
 
+- Skattekortene: `regnmed-gov::tax_card` leser det EKTE svaret fra
+  testmiljøet og fester beslutningen for hver korttype (prosent, tabell,
+  frikort med og uten grense, kildeskatt, uten kort), og at prosenten
+  aldri går gjennom et flyttall. Mot ekte Postgres
+  (`tests/grupper/tax_card.rs`, en lokal Skatteetaten som svarer 204
+  først): at bestillingen nektes uten vilkårsaksept og uten å sende noe,
+  at den gjelder årets ansatte og ikke en som sluttet året før, at bare
+  prosent- og tabellkortene settes på den ansatte mens de andre beholder
+  trekket med merknad, at et nytt svarkall ikke henter noe på nytt, og
+  at kortet ikke kan endres. Testen er sett feile med 10,5-månedsvakten
+  fjernet.
 - `regnmed-core::payroll` — prosenttrekk, trekkfrie feriepenger, halv skatt
   i desember, frikort, avrunding halvt vekk fra null, og at tabelltrekk
   og sone Ia nektes med begrunnelse.

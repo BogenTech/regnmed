@@ -18,12 +18,14 @@
     "a-melding": "A-melding",
     aksjonaerregisteroppgave: "Aksjonærregisteroppgave",
     "altinn-hendelser": "Varsling fra Altinn",
+    skattekort: "Skattekort",
   };
   const HENDELSE = {
     receipt: "kvittering",
     failed: "feilet",
     feedback: "svar",
     outcome: "svar",
+    answer: "svar",
   };
 
   async function hent() {

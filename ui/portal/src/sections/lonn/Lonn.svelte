@@ -11,6 +11,7 @@
   import { toast } from "../../lib/toast.svelte.js";
   import Ansatte from "./Ansatte.svelte";
   import Lonnskjoring from "./Lonnskjoring.svelte";
+  import Skattekort from "./Skattekort.svelte";
 
   let { companyId } = $props();
 
@@ -53,5 +54,6 @@
     medlemmer={data.medlemmer}
     onDone={reload}
   />
+  <Skattekort {companyId} onDone={reload} />
   <Lonnskjoring {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} onDone={reload} />
 {/if}

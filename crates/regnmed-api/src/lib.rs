@@ -46,6 +46,7 @@ pub mod settings;
 pub mod share_register;
 pub mod subledger;
 pub mod subscription;
+pub mod tax_card;
 pub mod terms;
 pub mod timesheet;
 pub mod year_end;
@@ -99,6 +100,14 @@ pub struct AppState {
     /// the same Maskinporten client with the RF-1086 scope. None when
     /// MASKINPORTEN_* is unset.
     pub shareholder_return: Option<Arc<ShareholderReturnRail>>,
+    /// Skattekort til arbeidsgiver (docs/lonn.md). None when
+    /// MASKINPORTEN_* is unset.
+    pub tax_card: Option<Arc<TaxCardRail>>,
+}
+
+pub struct TaxCardRail {
+    pub tokens: regnmed_gov::maskinporten::TokenProvider,
+    pub client: regnmed_gov::tax_card::TaxCardClient,
 }
 
 pub struct ShareholderReturnRail {
@@ -607,6 +616,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/dividends",
             get(share_register::list_dividends).post(share_register::create_dividend),
+        )
+        .route(
+            "/companies/{company_id}/tax-cards",
+            get(tax_card::list).post(tax_card::order),
+        )
+        .route(
+            "/companies/{company_id}/tax-cards/{order_id}/answer",
+            axum::routing::post(tax_card::answer),
         )
         .route("/companies/{company_id}/terms", get(terms::status))
         .route(

@@ -10,6 +10,8 @@
 //!   systembruker token and the feedback via Dialogporten.
 //! - [`altinn_events`]: Altinn Events subscriptions, so Skatteetatens
 //!   feedback arrives as an event instead of being asked for.
+//! - [`tax_card`]: skattekort til arbeidsgiver -- ordering the cards and
+//!   reading what each one means for the employee's withholding.
 //! - [`tsa`]: RFC 3161 timestamping — the external witness for anchor
 //!   roots (docs/anchoring.md).
 //!
@@ -25,5 +27,6 @@ pub mod norgesbank;
 pub mod regnid;
 pub mod shareholder_return;
 pub mod stripe;
+pub mod tax_card;
 pub mod tsa;
 pub mod vat_return;

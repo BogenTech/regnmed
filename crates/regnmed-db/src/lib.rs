@@ -57,6 +57,7 @@ pub mod statements;
 pub mod subledger;
 pub mod subscription;
 pub mod subscription_follow_up;
+pub mod tax_card;
 pub mod tenancy;
 pub mod terms;
 pub mod timesheet;
