@@ -12,7 +12,7 @@
 </script>
 
 {#if extra === "ny"}
-  <NewParty {companyId} kind="leverandor" />
+  <NewParty {companyId} kind="leverandor" {query} />
 {:else if isId(extra)}
   {#key companyId + extra}
     <SupplierDetail {companyId} partyId={extra} />

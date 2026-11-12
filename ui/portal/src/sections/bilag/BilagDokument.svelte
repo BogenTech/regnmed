@@ -9,7 +9,7 @@
   // vi har sjekket, aldri den opplasteren oppga, så et dokument kan ikke
   // kjøre noe i siden. Alt annet lastes ned (docs/bilagsinnboks.md).
   import { api, post } from "../../lib/api.js";
-  import { formatDate } from "../../lib/format.js";
+  import { kr, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { sporsmal } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
@@ -25,6 +25,7 @@
   let error = $state(null);
   let ctx = $state(null); // { dims, kontoer, standard, suppliers, policy }
   let forslag = $state(undefined); // undefined = loading, null = none
+  let warnings = $state([]); // what the suggestion could not do, and why
   let preview = $state(null); // { kind: "pdf" | "image", url } | { kind: "none" }
 
   $effect(() => {
@@ -45,7 +46,10 @@
       ctx = { dims: d.dimensions, kontoer: a.kontoer, standard: a.standard, suppliers: s.parties, policy: p.policy };
     });
     api(c + "/inbox/" + documentId + "/forslag")
-      .then((r) => (forslag = r.kilde === "ingen" ? null : r))
+      .then((r) => {
+        warnings = r.warnings || [];
+        forslag = r.kilde === "ingen" ? null : r;
+      })
       .catch(() => (forslag = null));
   });
 
@@ -76,14 +80,31 @@
     return () => url && URL.revokeObjectURL(url);
   });
 
-  let next = $derived(waiting.find((d) => d.document_id !== documentId) || null);
+  function refreshSuppliers() {
+    if (!ctx) return;
+    api(base + "/parties?kind=leverandor")
+      .then((s) => (ctx = { ...ctx, suppliers: s.parties }))
+      .catch(() => {});
+  }
   let policyActive = $derived(!!ctx?.policy?.aktiv);
   let canBook = $derived(harRett(companyId, "BILAG_BOKFOR"));
   let canAttest = $derived(harRett(companyId, "ATTESTERING_UTFOR"));
 
-  function goNext() {
+  // The waiting list is re-read: a colleague may have booked the one we
+  // would have gone to.
+  async function goNext() {
+    let next = null;
+    try {
+      const r = await api(base + "/inbox?status=ny");
+      next = r.documents.find((d) => d.document_id !== documentId) || null;
+    } catch {}
     location.hash = next ? "#/c/" + companyId + "/bilag/" + next.document_id : "#/c/" + companyId + "/bilag";
   }
+
+  const limitText = (p) =>
+    p?.belopsgrense_ore != null
+      ? "Bilag på " + kr(p.belopsgrense_ore) + " kr eller mer krever attestering av en annen person før bokføring."
+      : "Alle bilag krever attestering av en annen person før bokføring.";
 
   async function reject() {
     const note = await sporsmal("Hvorfor avvises dokumentet?", { type: "textarea", ok: "Avvis", farlig: true });
@@ -114,6 +135,8 @@
 
   const SOURCE = { ehf: "lest fra EHF-fakturaen", "pdf-tekst": "tolket fra PDF-teksten", tekst: "tolket fra teksten" };
 </script>
+
+<svelte:window onfocus={refreshSuppliers} />
 
 <nav class="flex flex-wrap items-center gap-3 mb-3">
   <a class="link link-hover text-sm" href={"#/c/" + companyId + "/bilag"}>← Innboksen</a>
@@ -178,7 +201,7 @@
                 ? "Attestert" + (doc.attestert_av ? " av " + doc.attestert_av : "") + "."
                 : doc.attestering === "avvist"
                   ? "Avvist i attestering."
-                  : "Krever attestering av en annen person før bokføring (over beløpsgrensen)."}
+                  : limitText(ctx?.policy)}
             </span>
             {#if canAttest && doc.attestering !== "godkjent"}
               <div class="flex gap-2">
@@ -194,10 +217,19 @@
             <span class="loading loading-dots loading-sm"></span> Leser dokumentet …
           </div>
         {:else}
+          {#if !forslag && warnings.length}
+            <div class="alert alert-soft text-sm" role="status">
+              <div>
+                <strong>Ingen forslag.</strong>
+                {#each warnings as w (w)}<span class="block">{w}</span>{/each}
+              </div>
+            </div>
+          {/if}
           {#if forslag}
             <div class="alert alert-info alert-soft text-sm">
               <div>
                 <strong>Forslag</strong> {SOURCE[forslag.kilde] || ""} — kontroller før du bokfører.
+                {#each warnings as w (w)}<span class="block mt-1">{w}</span>{/each}
                 {#if forslag.begrunnelser?.length}
                   <details class="mt-1">
                     <summary class="cursor-pointer">Hvorfor</summary>

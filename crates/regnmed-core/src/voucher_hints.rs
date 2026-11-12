@@ -47,6 +47,10 @@ pub struct Hints {
     /// Gross amount to pay.
     pub amount_ore: Option<Finding<i64>>,
     pub vat_ore: Option<Finding<i64>>,
+    /// More than one plausible VAT line with different amounts: likely a
+    /// VAT line per rate. `vat_ore` holds one of them, so the reader must
+    /// be told the invoice needs splitting by rate.
+    pub several_vat_lines: bool,
 }
 
 fn digits_only(s: &str) -> String {
@@ -290,11 +294,14 @@ pub fn read(text: &str) -> Hints {
             .as_ref()
             .is_none_or(|total| vat * 5 <= total.value + 5)
     };
-    hints.vat_ore = vat_candidates
+    let mut fitting: Vec<i64> = vat_candidates
         .into_iter()
-        .rev()
-        .find(|&vat| plausible(vat))
-        .map(|vat| Finding::new(vat, "etter «mva»"));
+        .filter(|&v| plausible(v))
+        .collect();
+    hints.vat_ore = fitting.last().map(|&vat| Finding::new(vat, "etter «mva»"));
+    fitting.sort_unstable();
+    fitting.dedup();
+    hints.several_vat_lines = fitting.len() > 1;
     hints
 }
 
@@ -368,6 +375,14 @@ KID: 1234567897
     /// A line-item table with a «Mva» column header above the first item:
     /// the header falls through to the item's amount, which is no VAT.
     /// The summary's VAT line, later and within a fifth, wins.
+    #[test]
+    fn several_vat_lines_are_flagged() {
+        let text = "Mva 15 % 120,00\nMva 25 % 50,00\nÅ betale 1 090,00\n";
+        let f = read(text);
+        assert!(f.several_vat_lines);
+        assert!(!read(INVOICE).several_vat_lines);
+    }
+
     #[test]
     fn a_vat_column_header_does_not_shadow_the_summary() {
         let text = "Beskrivelse   Antall   Pris   Mva   Beløp\n                    Konsulentbistand  1  1 000,00  25 %  1 000,00\n                    Netto 1 000,00\nMva 25 % 250,00\nÅ betale 1 250,00\n";

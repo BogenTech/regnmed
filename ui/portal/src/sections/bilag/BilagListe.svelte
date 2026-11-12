@@ -123,10 +123,12 @@
           {/each}
         </tbody>
       </table>
-      {#if rows.length < total}
+      {#if rows.length < total && limit < 500}
         <button class="btn btn-sm mt-3 w-fit" onclick={() => (limit = Math.min(limit + PAGE, 500))}>
           Vis flere ({rows.length} av {total})
         </button>
+      {:else if rows.length < total}
+        <p class="text-sm opacity-70 mt-3">Viser {rows.length} av {total}. Søk for å finne resten.</p>
       {/if}
     {/if}
   </div>

@@ -207,7 +207,11 @@
             {/each}
           </select>
           <span class="label whitespace-normal">
-            Mangler den? <a class="link" href={"#/c/" + companyId + "/leverandorer/ny"} target="_blank" rel="noopener">Legg til leverandør</a>
+            Mangler den? <a
+              class="link"
+              href={"#/c/" + companyId + "/leverandorer/ny" + (f?.orgnr ? "?orgnr=" + f.orgnr : "")}
+              target="_blank"
+              rel="noopener">Legg til leverandør</a> — listen oppdateres når du kommer tilbake
           </span>
         </label>
       {/if}
