@@ -182,7 +182,12 @@ jobs:
         run: |
           for bin in regnmed-api regnmed regnmed-agent; do
             path="target/x86_64-unknown-linux-musl/release/$bin"
-            n=$(objdump -d --no-show-raw-insn "$path" | grep -cE '\bandnq?\b' || true)
+            # objdump to a file first: piped into `grep -c ... || true`, a
+            # failed objdump (missing binary, wrong path) counted 0 and passed.
+            # bash -e fails the step on objdump; grep exits 1 for zero
+            # matches, which is fine, and 2 for an error, which is not.
+            objdump -d --no-show-raw-insn "$path" >"$RUNNER_TEMP/$bin.asm"
+            n=$(grep -cE '\bandnq?\b' "$RUNNER_TEMP/$bin.asm") || [ $? -eq 1 ]
             echo "$bin: $n andn (BMI1)"
             if [ "$n" -gt 8 ]; then
               echo "::error::$bin has $n BMI1 instructions — past the x86-64"
