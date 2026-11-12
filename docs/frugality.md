@@ -15,7 +15,7 @@ is a CI gate — **a service that grows fat fails the build** (issue
 | `regnmed` CLI release binary | 12 MB | 10 MB |
 | `regnmed-agent` release binary | 8 MB | 8 MB |
 | `regnmed-api` peak RSS under load | **64 MB** | 13 MB |
-| Portal first load, gzip -9 | 80 KB | 63 KB |
+| Portal first load, gzip -9 | 80 KB | 62 KB |
 | — of which CSS, gzip -9 | 32 KB | 24 KB |
 
 The RSS measurement is real, not synthetic: the release binary runs
