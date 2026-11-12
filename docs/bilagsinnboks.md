@@ -29,6 +29,11 @@ stays `ny`, no voucher, no attachment. The integration test proves
 both directions, and that the attachment carries the exact uploaded
 bytes (same SHA-256).
 
+Forfallsdato og KID fra leverandørens faktura følger med i samme
+transaksjon (`due_date`, `kid`) og lagres ved leverandørposten — se
+[betaling.md](betaling.md). Portalens bokføringsskjema fyller dem fra
+forslaget når det har funnet en leverandør.
+
 With attestering active ([attestering.md](attestering.md), #47) the
 same transaction first demands a governing `godkjent` decision on the
 document — and refuses when the bokfører is the person who attested

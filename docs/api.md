@@ -239,6 +239,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/reports/revisjon` | GET |
 | `/companies/{company_id}/reports/saft` | GET |
 | `/companies/{company_id}/reports/saldobalanse` | GET |
+| `/companies/{company_id}/reskontro/entries/{entry_id}/terms` | POST |
 | `/companies/{company_id}/reskontro/matches` | POST |
 | `/companies/{company_id}/reskontro/matches/{match_id}` | DELETE |
 | `/companies/{company_id}/settings` | GET |

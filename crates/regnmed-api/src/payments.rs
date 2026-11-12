@@ -42,6 +42,8 @@ pub async fn payable(
             "bank_account": i.bank_account,
             "belop_ore": i.amount_ore,
             "i_kjoring": i.in_run,
+            "due_date": i.due_date.map(|d| d.to_string()),
+            "kid": i.kid,
         })).collect::<Vec<_>>(),
     })))
 }

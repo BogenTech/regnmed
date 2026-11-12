@@ -1,9 +1,9 @@
 <script>
   // Kunder: registeret er forsiden, hver kunde og «ny kunde» har sin egen
   // adresse (#/c/{id}/kunder/{…}), så tilbakeknappen og lenker virker.
-  import CustomerList from "./CustomerList.svelte";
+  import PartyList from "../parties/PartyList.svelte";
+  import NewParty from "../parties/NewParty.svelte";
   import CustomerDetail from "./CustomerDetail.svelte";
-  import NewCustomer from "./NewCustomer.svelte";
 
   let { companyId, extra, query } = $props();
 
@@ -11,7 +11,7 @@
 </script>
 
 {#if extra === "ny"}
-  <NewCustomer {companyId} />
+  <NewParty {companyId} kind="kunde" />
 {:else if isId(extra)}
   {#key companyId + extra}
     <CustomerDetail {companyId} partyId={extra} />
@@ -20,6 +20,6 @@
   <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>
 {:else}
   {#key companyId + "?" + query}
-    <CustomerList {companyId} {query} />
+    <PartyList {companyId} kind="kunde" {query} />
   {/key}
 {/if}

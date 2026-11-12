@@ -8,6 +8,7 @@
   import { today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import DimSelect from "../../components/DimSelect.svelte";
+  import { isValidKid } from "../../lib/kid.js";
 
   let { companyId, documentId, dims, forslag = null, onDone } = $props();
 
@@ -18,6 +19,14 @@
   let date = $state(untrack(() => forslag?.date || today()));
   let description = $state(untrack(() => forslag?.description || ""));
   let lines = $state(untrack(() => forslag?.lines || [tomLinje(), tomLinje()]));
+  let dueDate = $state(untrack(() => forslag?.due_date || ""));
+  let kid = $state(untrack(() => forslag?.kid || ""));
+  // Due date and KID belong to a supplier invoice: asked for once a line
+  // carries a party, sent only then (the server refuses them otherwise).
+  let hasParty = $derived(lines.some((l) => l.party_no));
+  // A misread KID would make the server refuse the whole booking; say so
+  // at the field instead (an empty field books without KID).
+  let kidError = $derived(hasParty && kid.trim() && !isValidKid(kid.trim()));
 
   async function bokfor() {
     const payload = lines
@@ -39,6 +48,8 @@
         date,
         description: description || "Bokført fra innboks",
         lines: payload,
+        due_date: hasParty && dueDate ? dueDate : null,
+        kid: hasParty && kid.trim() ? kid.trim() : null,
       });
       toast("Bokført som bilag " + posted.voucher, true);
       onDone();
@@ -98,6 +109,29 @@
       {/each}
     </div>
     <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
-    <button class="btn btn-sm btn-primary" onclick={bokfor}>Bokfør</button>
+    {#if hasParty}
+      <div class="flex flex-wrap gap-2 mb-2">
+        <label class="fieldset">
+          <span class="fieldset-legend">Forfall</span>
+          <input type="date" class="input input-sm" bind:value={dueDate} />
+        </label>
+        <label class="fieldset">
+          <span class="fieldset-legend">KID</span>
+          <input
+            class="input input-sm w-48 {kidError ? 'input-error' : ''}"
+            inputmode="numeric"
+            bind:value={kid}
+            aria-invalid={kidError}
+            aria-describedby="kid-help"
+          />
+          {#if kidError}
+            <span id="kid-help" class="label text-error whitespace-normal">
+              Kontrollsifferet stemmer ikke. Rett KID-en, eller tøm feltet for å bokføre uten.
+            </span>
+          {/if}
+        </label>
+      </div>
+    {/if}
+    <button class="btn btn-sm btn-primary" onclick={bokfor} disabled={kidError}>Bokfør</button>
   </div>
 </div>

@@ -171,6 +171,27 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
         "still undecided"
     );
 
+    // Due date and KID belong on a SUPPLIER posting; a bilag without one
+    // is refused whole -- nothing posted, the document still undecided.
+    let no_supplier = json!({
+        "journal_code": "GL", "date": "2026-07-01", "description": "Husleie",
+        "lines": [
+            {"account": "6300", "amount_ore": 12_500_00},
+            {"account": "1920", "amount_ore": -12_500_00},
+        ],
+        "due_date": "2026-07-15",
+    });
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/inbox/{document_id}/bokfor"),
+        &forer_token,
+        Some("application/json"),
+        Some(no_supplier.to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
     // Regnskapsføreren bokfører: bilag + vedlegg + status i én transaksjon.
     let good = json!({
         "journal_code": "GL", "date": "2026-07-01", "description": "Husleie juli",
