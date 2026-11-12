@@ -81,12 +81,13 @@ report "regnmed cli binary" "$(size_mb target/release/regnmed)" "$CLI_BIN_BUDGET
 report "regnmed-agent binary" "$(size_mb target/release/regnmed-agent)" "$AGENT_BIN_BUDGET_MB" MB
 
 DIST=ui/portal/dist
-first_load=$(grep -oE '(src|href)="/assets/[^"]+"' "$DIST/index.html" | sed -E 's|.*"/||; s|"$||')
+first_load=$(grep -oE '(src|href)="/assets/[^"]+"' "$DIST/index.html" | sed -E 's|.*"/||; s|"$||' || true)
 [ -n "$first_load" ] || { echo "FAIL  $DIST/index.html names no /assets/ files"; exit 1; }
 gz_total=0
 gz_css=0
 for f in $first_load; do
-  b=$(gzip -9c "$DIST/$f" | wc -c) # a missing file aborts the script (set -e + pipefail)
+  [ -f "$DIST/$f" ] || { echo "FAIL  $DIST/index.html names $f, which is not in the dist"; exit 1; }
+  b=$(gzip -9c "$DIST/$f" | wc -c)
   gz_total=$((gz_total + b))
   case $f in *.css) gz_css=$((gz_css + b)) ;; esac
 done
