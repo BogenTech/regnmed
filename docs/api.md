@@ -134,8 +134,9 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/engagements` | GET |
 | `/companies/{company_id}/engagements/{engagement_id}/end` | POST |
 | `/companies/{company_id}/expenses` | GET |
-| `/companies/{company_id}/expenses/kjoring` | POST |
+| `/companies/{company_id}/expenses/kjoring` | GET, POST |
 | `/companies/{company_id}/expenses/utlegg` | POST |
+| `/companies/{company_id}/expenses/{expense_id}` | GET |
 | `/companies/{company_id}/expenses/{expense_id}/approve` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/pay` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/receipt` | GET |

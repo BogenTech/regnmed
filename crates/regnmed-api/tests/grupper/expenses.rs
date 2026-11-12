@@ -111,6 +111,79 @@ async fn expenses_flow() {
     let made: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let expense_id = made["expense_id"].as_str().unwrap().to_string();
 
+    // The same receipt again is a double submission, not a second claim.
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{base}/utlegg?filename=taxi-igjen.txt&dato=2026-07-01&belop_ore=62500&beskrivelse=Taxi"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "text/plain")
+                .body(Body::from(receipt.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let message = String::from_utf8_lossy(&bytes);
+    assert!(message.contains("allerede sendt inn"), "{message}");
+    // A double tap: the second submission of the same receipt waits on
+    // the per-company-and-hash advisory lock, then sees the first claim.
+    // Held from outside here, so the wait is observed, not hoped for.
+    let parking = b"kvittering: parkering 99,00 kr".to_vec();
+    let upload = |name: &str| {
+        router(state.clone()).oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{base}/utlegg?filename={name}&dato=2026-07-02&belop_ore=9900&beskrivelse=Parkering"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "text/plain")
+                .body(Body::from(parking.clone()))
+                .unwrap(),
+        )
+    };
+    assert_eq!(upload("p1.txt").await.unwrap().status(), StatusCode::OK);
+    let mut held = state.pool.begin().await.unwrap();
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
+        .bind(company)
+        .bind(regnmed_core::hash::sha256(&parking).to_vec())
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let second = tokio::spawn(upload("p2.txt"));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !second.is_finished(),
+        "the second submission must wait for the lock"
+    );
+    held.rollback().await.unwrap();
+    assert_eq!(
+        second.await.unwrap().unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // A missing amount is a sentence, not a deserializer error.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/kjoring"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-07-01", "beskrivelse": "Tur" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body.to_string().contains("oppgi antall kilometer"),
+        "{body}"
+    );
+
     // Receipt round-trips integrity-checked; content is DB-immutable.
     let response = router(state.clone())
         .oneshot(
@@ -172,6 +245,19 @@ async fn expenses_flow() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "decisions are one-way");
+
+    // The form asks for the satser first, so it can show the amount.
+    let (status, rate) = request(
+        &state,
+        "GET",
+        &format!("{base}/kjoring?dato=2026-03-10"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rate}");
+    assert_eq!(rate["sats_ore_per_km"], 530);
+    assert_eq!(rate["trekkfri_ore_per_km"], 350);
 
     // Kjøregodtgjørelse: 120 km on 2026-03-10 → 5,30/3,50 kr satser.
     let (status, made) = request(
@@ -298,10 +384,48 @@ async fn expenses_flow() {
         .iter()
         .map(|e| e["status"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(statuses.len(), 3);
+    assert_eq!(statuses.len(), 4);
     assert!(statuses.contains(&"utbetalt".into()));
     assert!(statuses.contains(&"godkjent".into()));
     assert!(statuses.contains(&"avvist".into()));
+    assert_eq!(listed["total"], 4);
+    assert_eq!(listed["counts"]["utbetalt"], 1);
+    assert_eq!(listed["counts"]["godkjent"], 1);
+    assert_eq!(listed["counts"]["avvist"], 1);
+    assert_eq!(listed["counts"]["innsendt"], 1, "the parking claim");
+    // The tabs: «åpne» is what still owes money, the rest are done.
+    let (_, open) = request(
+        &state,
+        "GET",
+        &format!("{base}?status=apne&limit=1&offset=5"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        open["total"], 2,
+        "a page past the end still knows the total"
+    );
+    assert!(open["expenses"].as_array().unwrap().is_empty());
+    let (_, open) = request(&state, "GET", &format!("{base}?status=apne"), &token, None).await;
+    let open_ids: Vec<&str> = open["expenses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["expense_id"].as_str().unwrap())
+        .collect();
+    assert!(open_ids.contains(&run_id.as_str()), "{open}");
+    let (status, _) = request(&state, "GET", &format!("{base}?status=tull"), &token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // One claim, with both vouchers it produced.
+    let (status, one) = request(&state, "GET", &format!("{base}/{expense_id}"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{one}");
+    assert_eq!(one["status"], "utbetalt");
+    assert!(
+        one["voucher"].is_string() && one["utbetalt_voucher"].is_string(),
+        "{one}"
+    );
+    assert_ne!(one["voucher"], one["utbetalt_voucher"]);
     let report = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();
