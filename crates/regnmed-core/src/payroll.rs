@@ -44,9 +44,6 @@ pub enum Zone {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PayrollError {
-    /// A table whose withholding is spread over 12 months: no half
-    /// December and trekk on feriepenger, which `calculate` does not do.
-    TwelveMonthTable(i32),
     /// Unknown table number, or a year whose tables are not in regnmed.
     Table(crate::withholding_table::TableError),
     /// Sone Ia's reduced rate is bounded by a yearly fribeløp.
@@ -58,12 +55,6 @@ pub enum PayrollError {
 impl std::fmt::Display for PayrollError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TwelveMonthTable(table) => write!(
-                f,
-                "tabell {table} fordeler trekket over 12 måneder, og regnmed trekker halvt i \
-                 desember og ikke i feriepenger, som bare stemmer for 10,5 måneder — registrer \
-                 trekket som prosent for hånd (se docs/lonn.md)"
-            ),
             Self::Table(e) => write!(f, "{e}"),
             Self::ZoneIaRequiresExemptionCalculation => write!(
                 f,
@@ -119,11 +110,21 @@ impl Zone {
 /// How the skattekort says to withhold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Withholding {
-    /// Percentage in basis points (35 % = 3500).
+    /// Percentage in basis points (35 % = 3500), spread over 10,5 months:
+    /// half in December, nothing on feriepenger.
     Percent(i64),
-    /// Table number, computed by `withholding_table`.
+    /// Percentage spread over 12 months (kildeskatt, among others): the
+    /// same rate every month, ALSO on feriepenger and in December
+    /// (skattebetalingsloven § 5-7 annet ledd; Skatteetaten: «Dette gjeld
+    /// også i feriepengane og i lønna før jul»).
+    PercentTwelveMonths(i64),
+    /// Table number, computed by `withholding_table`; the table itself
+    /// says whether it is a 10,5- or a 12-month table.
     Table(i32),
-    /// Frikort or otherwise exempt.
+    /// Frikort with a beløpsgrense for this employer: no trekk until the
+    /// year's trekkpliktig pay reaches the limit, then 50 % of the excess.
+    TaxFreeCard { limit_ore: i64 },
+    /// Frikort without a limit, or otherwise exempt.
     None,
 }
 
@@ -136,9 +137,13 @@ pub struct PayrollBasis {
     /// **trekkfrie** — see [`beregn`].
     pub holiday_pay_ore: i64,
     pub withholding: Withholding,
+    /// Trekkpliktig pay this employer already paid the employee earlier
+    /// in the income year (ordinary pay + feriepenger). Only a frikort
+    /// reads it.
+    pub paid_earlier_this_year_ore: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayrollCalculation {
     pub gross_ore: i64,
     pub holiday_pay_ore: i64,
@@ -148,6 +153,9 @@ pub struct PayrollCalculation {
     pub net_ore: i64,
     /// True when December's half withholding was applied.
     pub half_withholding: bool,
+    /// How the trekk was computed, for the payslip («35,00 %»,
+    /// «tabell 8000», «frikort»). Norwegian: the employee reads it.
+    pub method: String,
 }
 
 /// Forskuddstrekk for one month.
@@ -168,58 +176,75 @@ pub fn calculate(
     year: i32,
     month: u32,
 ) -> Result<PayrollCalculation, PayrollError> {
-    // Feriepenger never carry trekk; only ordinary pay does.
-    let trekkgrunnlag = basis.gross_ore;
-    let half_withholding = month == 12;
-    let full_ore = match basis.withholding {
-        Withholding::None => 0,
-        Withholding::Percent(bp) => {
-            let bp = if half_withholding { bp / 2 } else { bp };
-            return Ok(result(basis, bp_of(trekkgrunnlag, bp), half_withholding));
+    use crate::withholding_table::{Period, Table, TableError, withholding_kr};
+    // A card spread over 10,5 months is what makes feriepenger trekkfrie
+    // and December half; a 12-month card and a frikort count every krone.
+    let twelve_months = match basis.withholding {
+        Withholding::PercentTwelveMonths(_) | Withholding::TaxFreeCard { .. } => true,
+        Withholding::Table(number) => {
+            Table::lookup(number)
+                .ok_or(PayrollError::Table(TableError::UnknownTable(number)))?
+                .twelve_months
+        }
+        Withholding::Percent(_) | Withholding::None => false,
+    };
+    let trekkgrunnlag = if twelve_months {
+        basis.gross_ore + basis.holiday_pay_ore
+    } else {
+        basis.gross_ore
+    };
+    let half_withholding = month == 12 && !twelve_months;
+    let (withholding, method) = match basis.withholding {
+        Withholding::None => (0, "ingen trekk".to_string()),
+        Withholding::Percent(bp) | Withholding::PercentTwelveMonths(bp) => {
+            let rate = if half_withholding { bp / 2 } else { bp };
+            let months = if twelve_months { " (12 måneder)" } else { "" };
+            (
+                bp_of(trekkgrunnlag, rate),
+                format!("{},{:02} %{months}", bp / 100, bp % 100),
+            )
         }
         Withholding::Table(number) => {
-            let table = crate::withholding_table::Table::lookup(number).ok_or(
-                PayrollError::Table(crate::withholding_table::TableError::UnknownTable(number)),
-            )?;
-            if table.twelve_months {
-                return Err(PayrollError::TwelveMonthTable(number));
-            }
             // The tables are in whole kroner; øre below a krone never
             // reach the next 100-krone step anyway.
-            crate::withholding_table::withholding_kr(
-                year,
-                number,
-                crate::withholding_table::Period::Month,
-                trekkgrunnlag.max(0) / 100,
-            )
-            .map_err(PayrollError::Table)?
-                * 100
+            let full = withholding_kr(year, number, Period::Month, trekkgrunnlag.max(0) / 100)
+                .map_err(PayrollError::Table)?
+                * 100;
+            // Half the table's trekk in December -- exact in øre, since
+            // the table gives whole kroner.
+            let w = if half_withholding { full / 2 } else { full };
+            (w, format!("tabell {number:04}"))
+        }
+        Withholding::TaxFreeCard { limit_ore } => {
+            let left = (limit_ore - basis.paid_earlier_this_year_ore).max(0);
+            let over = (trekkgrunnlag - left).max(0);
+            if over == 0 {
+                (0, "frikort".to_string())
+            } else {
+                let kr = |ore: i64| format!("{},{:02} kr", ore / 100, ore % 100);
+                (
+                    bp_of(over, FRIKORT_EXCESS_BP),
+                    format!("frikort, 50 % av {} over beløpsgrensen", kr(over)),
+                )
+            }
         }
     };
-    // Half the table's trekk in December -- exact in øre, since the table
-    // gives whole kroner.
-    let withholding = if half_withholding {
-        full_ore / 2
-    } else {
-        full_ore
-    };
-    Ok(result(basis, withholding, half_withholding))
-}
-
-fn result(
-    basis: &PayrollBasis,
-    withholding_ore: i64,
-    half_withholding: bool,
-) -> PayrollCalculation {
-    PayrollCalculation {
+    Ok(PayrollCalculation {
         gross_ore: basis.gross_ore,
         holiday_pay_ore: basis.holiday_pay_ore,
-        withholding_basis_ore: basis.gross_ore,
-        withholding_ore,
-        net_ore: basis.gross_ore + basis.holiday_pay_ore - withholding_ore,
+        withholding_basis_ore: trekkgrunnlag,
+        withholding_ore: withholding,
+        net_ore: basis.gross_ore + basis.holiday_pay_ore - withholding,
         half_withholding,
-    }
+        method,
+    })
 }
+
+/// Trekk on pay above a frikort's beløpsgrense (Skatteetaten: «trekke 50
+/// prosent skatt av lønna» over grensen). Not halved in December and
+/// taken on feriepenger too: where the sources are silent regnmed takes
+/// the side that cannot leave the employee with restskatt.
+const FRIKORT_EXCESS_BP: i64 = 5000;
 
 /// Arbeidsgiveravgift on a basis, at the zone's rate for the date.
 ///
@@ -328,6 +353,7 @@ mod tests {
             gross_ore: gross,
             holiday_pay_ore: 0,
             withholding,
+            paid_earlier_this_year_ore: 0,
         }
     }
 
@@ -348,6 +374,7 @@ mod tests {
             gross_ore: 1_000_000,
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::Percent(3500),
+            paid_earlier_this_year_ore: 0,
         };
         let b = calculate(&g, 2026, 6).unwrap();
         assert_eq!(b.withholding_basis_ore, 1_000_000, "ordinary pay only");
@@ -396,13 +423,87 @@ mod tests {
 
     /// What the table routine cannot stand behind is refused, not guessed.
     #[test]
-    fn twelve_month_tables_unknown_tables_and_years_are_refused() {
-        let error = calculate(&basis(5_000_000, Withholding::Table(7350)), 2026, 3).unwrap_err();
-        assert_eq!(error, PayrollError::TwelveMonthTable(7350));
-        assert!(error.to_string().contains("12 måneder"), "{error}");
+    fn unknown_tables_and_years_are_refused() {
         assert!(calculate(&basis(5_000_000, Withholding::Table(7100)), 2026, 3).is_err());
         let error = calculate(&basis(5_000_000, Withholding::Table(8000)), 2027, 3).unwrap_err();
         assert!(error.to_string().contains("2027"), "{error}");
+    }
+
+    /// A 12-month card (kildeskatt): the same rate every month, also on
+    /// feriepenger and in December.
+    #[test]
+    fn twelve_month_percent_withholds_on_holiday_pay_and_in_full_in_december() {
+        let june = PayrollBasis {
+            gross_ore: 1_000_000,
+            holiday_pay_ore: 4_000_000,
+            withholding: Withholding::PercentTwelveMonths(2220),
+            paid_earlier_this_year_ore: 0,
+        };
+        let b = calculate(&june, 2026, 6).unwrap();
+        assert_eq!(b.withholding_basis_ore, 5_000_000, "feriepenger included");
+        assert_eq!(b.withholding_ore, 1_110_000);
+        assert_eq!(b.method, "22,20 % (12 måneder)");
+        let dec = calculate(
+            &basis(5_000_000, Withholding::PercentTwelveMonths(2220)),
+            2026,
+            12,
+        )
+        .unwrap();
+        assert_eq!(dec.withholding_ore, 1_110_000, "not halved");
+        assert!(!dec.half_withholding);
+    }
+
+    /// A 12-month table is computed like any other, without the December
+    /// half and on feriepenger.
+    #[test]
+    fn twelve_month_tables_are_computed_in_full() {
+        let kr = crate::withholding_table::withholding_kr(
+            2026,
+            7350,
+            crate::withholding_table::Period::Month,
+            50_000,
+        )
+        .unwrap();
+        let dec = calculate(&basis(5_000_000, Withholding::Table(7350)), 2026, 12).unwrap();
+        assert_eq!(dec.withholding_ore, kr * 100);
+        assert_eq!(dec.method, "tabell 7350");
+    }
+
+    /// Frikort: nothing until the limit, then 50 % of what exceeds it --
+    /// counting what was paid earlier in the year, feriepenger included.
+    #[test]
+    fn frikort_withholds_half_of_what_exceeds_the_limit() {
+        let frikort = |earlier: i64, gross: i64, holiday: i64| PayrollBasis {
+            gross_ore: gross,
+            holiday_pay_ore: holiday,
+            withholding: Withholding::TaxFreeCard {
+                limit_ore: 10_000_000,
+            },
+            paid_earlier_this_year_ore: earlier,
+        };
+        let under = calculate(&frikort(5_000_000, 2_000_000, 0), 2026, 5).unwrap();
+        assert_eq!(under.withholding_ore, 0);
+        assert_eq!(under.method, "frikort");
+        // 9 000 kr left of the limit; 20 000 + 5 000 feriepenger paid.
+        let crossing = calculate(&frikort(9_100_000, 2_000_000, 500_000), 2026, 6).unwrap();
+        assert_eq!(crossing.withholding_ore, (2_500_000 - 900_000) / 2);
+        assert!(
+            crossing.method.contains("over beløpsgrensen"),
+            "{}",
+            crossing.method
+        );
+        // Past the limit: half of everything, December included.
+        let over = calculate(&frikort(12_000_000, 2_000_000, 0), 2026, 12).unwrap();
+        assert_eq!(over.withholding_ore, 1_000_000);
+        // A limit of 0 for this employer: 50 % from the first krone.
+        let zero = PayrollBasis {
+            withholding: Withholding::TaxFreeCard { limit_ore: 0 },
+            ..frikort(0, 2_000_000, 0)
+        };
+        assert_eq!(
+            calculate(&zero, 2026, 3).unwrap().withholding_ore,
+            1_000_000
+        );
     }
 
     #[test]

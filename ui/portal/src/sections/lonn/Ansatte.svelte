@@ -188,11 +188,13 @@
               <td class="text-right">{a.manedslonn_ore == null ? "" : kr(a.manedslonn_ore)}</td>
               <td class="text-right">
                 {#if a.trekk_type === "prosent"}
-                  {(a.trekk_prosent_bp / 100).toFixed(1)} %
+                  {(a.trekk_prosent_bp / 100).toFixed(1)} %{a.trekk_12_maneder ? " (12 mnd)" : ""}
                 {:else if a.trekk_type === "tabell"}
                   tabell {a.trekk_tabell}
+                {:else if a.trekk_type === "frikort"}
+                  frikort, grense {kr(a.frikort_grense_ore)}
                 {:else}
-                  frikort
+                  ingen trekk
                 {/if}
               </td>
               <td class="text-right">{(a.feriepenger_bp / 100).toFixed(1)} %</td>

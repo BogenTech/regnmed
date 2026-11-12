@@ -66,6 +66,10 @@ pub struct PayslipInput {
     /// to wonder.
     pub withholding_basis_ore: i64,
     pub withholding_ore: i64,
+    /// How the run computed the trekk («35,00 %», «tabell 8000»,
+    /// «frikort»), stored with the line since migration 0080. None for
+    /// older lines, which fall back to `withholding_percent_bp`.
+    pub withholding_method: Option<String>,
     /// The skattekort percentage in basis points, when withholding is by
     /// percentage. None for frikort.
     pub withholding_percent_bp: Option<i64>,
@@ -180,7 +184,12 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     // The withholding with its own explanation — the employee should
     // be able to see WHY it came out the way it did.
     let mut trekktekst = String::from("Forskuddstrekk");
-    if let Some(bp) = input.withholding_percent_bp {
+    if let Some(method) = &input.withholding_method {
+        trekktekst.push_str(&format!(
+            " ({method}, grunnlag {})",
+            kr(input.withholding_basis_ore)
+        ));
+    } else if let Some(bp) = input.withholding_percent_bp {
         trekktekst.push_str(&format!(
             " ({} av {})",
             percent(bp),
@@ -290,6 +299,7 @@ mod tests {
             gross_ore: 5_000_000,
             withholding_basis_ore: 5_000_000,
             withholding_ore: 1_750_000,
+            withholding_method: None,
             withholding_percent_bp: Some(3500),
             half_withholding: false,
             net_ore: 3_250_000,

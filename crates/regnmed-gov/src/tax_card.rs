@@ -241,30 +241,48 @@ pub fn decide(card: &TaxCard) -> Decision {
     if let Some(frikort) = trekk.get("frikort") {
         return match frikort.get("frikortbeloep") {
             None => Decision::Apply(Withholding::None),
-            Some(limit) => Decision::Keep(format!(
-                "Frikort med beløpsgrense ({limit} kr): over grensen skal det trekkes 50 %, og \
-                 det regner ikke regnmed ut ennå — registrer trekket for hånd."
-            )),
+            // Whole kroner allotted to this employer; 0 means 50 % from
+            // the first krone.
+            Some(limit) => match limit.as_i64().filter(|l| *l >= 0) {
+                Some(kr) => Decision::Apply(Withholding::TaxFreeCard {
+                    limit_ore: kr * 100,
+                }),
+                None => Decision::Keep(format!("Uleselig frikortbeløp: {limit}")),
+            },
         };
     }
     if let Some(table) = trekk.get("trekktabell") {
-        if let Err(keep) = ten_and_a_half_months(table) {
-            return keep;
-        }
-        return match table["tabellnummer"]
+        let Some(number) = table["tabellnummer"]
             .as_str()
             .and_then(|n| n.parse().ok())
             .or_else(|| table["tabellnummer"].as_i64().map(|n| n as i32))
-        {
-            Some(number) => Decision::Apply(Withholding::Table(number)),
-            None => Decision::Keep("Skattekortet har en trekktabell uten tabellnummer.".into()),
+        else {
+            return Decision::Keep("Skattekortet har en trekktabell uten tabellnummer.".into());
+        };
+        let Some(known) = regnmed_core::withholding_table::Table::lookup(number) else {
+            return Decision::Keep(format!(
+                "Tabell {number} finnes ikke i Skatteetatens trekktabeller."
+            ));
+        };
+        // The table number itself says 10,5 or 12 months; a card that
+        // says otherwise is not one regnmed can stand behind.
+        return match months(table) {
+            Ok(twelve) if twelve == known.twelve_months => {
+                Decision::Apply(Withholding::Table(number))
+            }
+            Ok(_) => Decision::Keep(format!(
+                "Skattekortet oppgir et annet antall måneder enn tabell {number} er laget for."
+            )),
+            Err(keep) => keep,
         };
     }
     if let Some(percent) = trekk.get("trekkprosent") {
-        if let Err(keep) = ten_and_a_half_months(percent) {
-            return keep;
-        }
+        let twelve = match months(percent) {
+            Ok(twelve) => twelve,
+            Err(keep) => return keep,
+        };
         return match basis_points(&percent["prosentsats"]) {
+            Some(bp) if twelve => Decision::Apply(Withholding::PercentTwelveMonths(bp)),
             Some(bp) => Decision::Apply(Withholding::Percent(bp)),
             None => Decision::Keep(format!("Uleselig trekkprosent: {}", percent["prosentsats"])),
         };
@@ -272,14 +290,16 @@ pub fn decide(card: &TaxCard) -> Decision {
     Decision::Keep("Skattekortet har en trekkform regnmed ikke kjenner.".into())
 }
 
-fn ten_and_a_half_months(trekk: &Value) -> Result<(), Decision> {
+/// Whether the trekk is spread over 12 months (true) or 10,5 (false).
+/// Any other spread is kept: regnmed knows the rules for these two only.
+fn months(trekk: &Value) -> Result<bool, Decision> {
     match trekk["antallMaanederForTrekk"].to_string().as_str() {
         // Absent: Skatteetaten leaves it out for the ordinary case.
-        "null" | "10.5" => Ok(()),
+        "null" | "10.5" => Ok(false),
+        "12" | "12.0" => Ok(true),
         months => Err(Decision::Keep(format!(
-            "Skattekortet fordeler trekket over {months} måneder (f.eks. kildeskatt). regnmed \
-             trekker halvt i desember og ikke i feriepenger, som bare stemmer for 10,5 måneder \
-             — registrer trekket for hånd."
+            "Skattekortet fordeler trekket over {months} måneder, og regnmed kjenner bare \
+             reglene for 10,5 og 12 — registrer trekket for hånd."
         ))),
     }
 }
@@ -330,7 +350,7 @@ mod tests {
             decision("26854497889"),
             Decision::Apply(Withholding::Percent(2250))
         );
-        // Tabell lønn: stored as the card says; payroll refuses it loudly.
+        // Tabell lønn, a 10,5-month table.
         assert_eq!(
             decision("20857597940"),
             Decision::Apply(Withholding::Table(9040))
@@ -339,10 +359,16 @@ mod tests {
         assert!(
             matches!(decision("11824498484"), Decision::Keep(r) if r.contains("hovedarbeidsgiver"))
         );
-        // Frikort med beløpsgrense.
-        assert!(matches!(decision("01810199403"), Decision::Keep(r) if r.contains("beløpsgrense")));
+        // Frikort med beløpsgrense: this employer was allotted 0 kr.
+        assert_eq!(
+            decision("01810199403"),
+            Decision::Apply(Withholding::TaxFreeCard { limit_ore: 0 })
+        );
         // Kildeskatt over 12 måneder.
-        assert!(matches!(decision("05850298728"), Decision::Keep(r) if r.contains("12 måneder")));
+        assert_eq!(
+            decision("05850298728"),
+            Decision::Apply(Withholding::PercentTwelveMonths(2220))
+        );
         // No card: the 50 % rule is named, never applied.
         assert!(matches!(decision("19910298057"), Decision::Keep(r) if r.contains("50 %")));
     }
@@ -359,6 +385,42 @@ mod tests {
             ]}}),
         };
         assert_eq!(decide(&card), Decision::Apply(Withholding::None));
+    }
+
+    /// A table card must agree with its own table on 10,5 vs 12 months,
+    /// and a spread regnmed has no rules for is kept.
+    #[test]
+    fn months_must_match_the_table_and_be_known() {
+        let card = |trekk: Value| TaxCard {
+            nin: "1".into(),
+            result: "skattekortopplysningerOK".into(),
+            card_id: None,
+            issued: None,
+            raw: serde_json::json!({"skattekort": {"forskuddstrekk": [trekk]}}),
+        };
+        let table = |n: &str, months: f64| {
+            card(serde_json::json!({"trekkode": MAIN_EMPLOYER, "trekktabell":
+                {"tabellnummer": n, "prosentsats": 40, "antallMaanederForTrekk": months}}))
+        };
+        assert_eq!(
+            decide(&table("7350", 12.0)),
+            Decision::Apply(Withholding::Table(7350))
+        );
+        assert!(matches!(decide(&table("8000", 12.0)), Decision::Keep(_)));
+        assert!(matches!(decide(&table("7350", 10.5)), Decision::Keep(_)));
+        let eleven = card(
+            serde_json::json!({"trekkode": MAIN_EMPLOYER, "trekkprosent":
+            {"prosentsats": 30, "antallMaanederForTrekk": 11}}),
+        );
+        assert!(matches!(decide(&eleven), Decision::Keep(r) if r.contains("11")));
+        let limit = card(serde_json::json!({"trekkode": MAIN_EMPLOYER,
+            "frikort": {"frikortbeloep": 60000}}));
+        assert_eq!(
+            decide(&limit),
+            Decision::Apply(Withholding::TaxFreeCard {
+                limit_ore: 6_000_000
+            })
+        );
     }
 
     #[test]

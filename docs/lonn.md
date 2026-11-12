@@ -162,11 +162,13 @@ under en krone flytter aldri trekket over neste 100-kronerstrinn), og
 10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie som
 før.
 
+**Tabellene over 12 måneder** (7350, 7500, 7700, 6350, 6500, 6700,
+0100, 0101, 7150, 7160) regnes også: rutinen kjenner dem selv, og
+kjøringen trekker da fullt i desember og også i feriepengene (se «12
+måneder og frikort» under).
+
 Det kjøringen fortsatt **nekter**, med begrunnelse:
 
-- **Tabeller over 12 måneder** (7350, 7500, 7700, 6350, 6500, 6700,
-  0100, 0101, 7150, 7160): de trekker fullt i desember og i
-  feriepengene, og `calculate` gjør ikke det.
 - **Et år uten konstanter.** Satsene i trekkrutinen endres hvert år
   (trinnskatt, personfradrag, trygdeavgift); et år som ikke er lagt inn
   stopper kjøringen i stedet for å bruke fjorårets. Nytt år = ny
@@ -226,10 +228,11 @@ men brukes ikke.
 | Kortet sier | regnmed |
 | --- | --- |
 | Trekkprosent over 10,5 måneder | **settes** (prosenten leses som desimaltekst, aldri som flyttall) |
-| Trekktabell over 10,5 måneder | **settes** som tabell, og kjøringen regner tabelltrekket (over) |
+| Trekkprosent over 12 måneder (bl.a. kildeskatt) | **settes**, merket 12 måneder (under) |
+| Trekktabell | **settes** når tabellnummeret og kortet er enige om 10,5 eller 12 måneder; ellers beholdes |
 | Frikort uten beløpsgrense, eller «ikke trekkplikt» | **settes** til ingen trekk |
-| Frikort med beløpsgrense | beholdes — 50 % over grensen regnes ikke ut ennå |
-| Trekk over 11 eller 12 måneder (bl.a. kildeskatt) | beholdes — `calculate` trekker halvt i desember og ikke i feriepenger, som bare stemmer for 10,5 |
+| Frikort med beløpsgrense | **settes** med grensen arbeidsgiveren er tildelt (under) |
+| Trekk over 11 måneder, eller et annet antall | beholdes — regnmed kjenner reglene for 10,5 og 12 |
 | Ikke skattekort | beholdes — uten kort skal arbeidsgiver trekke 50 %, og det står i merknaden |
 
 Det som beholdes, får en **merknad** med grunnen, i portalen og i
@@ -250,6 +253,36 @@ først, og den står i registeret over kall til myndighetene
 Ikke bygget ennå: endringsbestillinger (`HENT_KUN_ENDRING`) og varsel
 ved endring — i dag hentes kortet på nytt med knappen — og bestillinger
 over 1000 ansatte, som API-et ikke tar i ett kall.
+
+## 12 måneder og frikort (migration 0080)
+
+**Kort over 12 måneder** — bl.a. kildeskatt på lønn — trekker samme
+sats hver måned, **også i feriepengene og i lønna før jul**
+(skattebetalingsloven § 5-7 annet ledd; Skatteetaten: «Dette gjeld også
+i feriepengane og i lønna før jul»). Trekkfritaket i ferietiden og det
+halve trekket i desember gjelder bare kort over 10,5 måneder. For
+prosentkort lagres det på den ansatte (`withholding_twelve_months`);
+for tabeller ligger det i tabellnummeret.
+
+**Frikort med beløpsgrense**: ingen trekk så lenge årets trekkpliktige
+utbetalinger fra denne arbeidsgiveren er under grensen arbeidsgiveren er
+tildelt, deretter **50 %** av det som overstiger den (Skatteetaten:
+«trekke 50 prosent skatt av lønna» over grensen). Det som er utbetalt
+tidligere i året, telles fra de lagrede lønnslinjene etter
+utbetalingsdato. En grense på 0 kr — frikortet er fordelt til en annen
+arbeidsgiver — gir 50 % fra første krone.
+
+To punkter kildene ikke avgjør, og der regnmed velger siden som ikke kan
+gi den ansatte restskatt: **feriepenger telles med** i grensen
+(«all trekkpliktig lønn og godtgjersle»), og trekket over grensen
+**halveres ikke i desember**. For mye trekk kommer tilbake i
+skatteoppgjøret; for lite blir restskatt.
+
+**Lønnsslippen sier hvordan trekket ble regnet** («35,00 %», «tabell
+8000», «frikort, 50 % av … over beløpsgrensen»), lagret med lønnslinjen
+(`withholding_method`) så slippen viser det som ble gjort da, ikke det
+den ansattes kort sier i dag. Linjer fra før 0080 bruker det gamle
+oppslaget.
 
 ## Personvern
 
@@ -559,9 +592,7 @@ Rekkefølgen er omtrent den de bør tas i.
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
    a-melding på annet vis.** Dette er den viktigste mangelen.
-2. **Frikort med beløpsgrense og kort over 11/12 måneder** (kildeskatt),
-   som skattekorthentingen i dag beholder med merknad.
-3. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+2. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
 ## Timelønn fra timeføringen
@@ -709,9 +740,13 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   kontroller (trygdeavgiftsgrensene 125 188 / 143 175, aldri mer enn
   grunnlaget), og at ukjente tabeller og år nektes.
 - `regnmed-core::payroll` — prosenttrekk, tabelltrekk (og halvt i
-  desember), trekkfrie feriepenger, halv skatt i desember, frikort,
-  avrunding halvt vekk fra null, og at 12-månederstabeller og sone Ia
-  nektes med begrunnelse.
+  desember), trekkfrie feriepenger, halv skatt i desember, kort over 12
+  måneder (trekk i feriepenger, fullt i desember), frikort med grense
+  (under, over og på vei over, grense 0), avrunding halvt vekk fra null,
+  og at ukjente tabeller, år og sone Ia nektes med begrunnelse.
+- Mot ekte Postgres: frikort over to kjøringer (januar under grensen,
+  februar 50 % av det som overstiger), et 12-månederskort med feriepenger,
+  og at lønnsslippen bærer metoden fra kjøringen.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir

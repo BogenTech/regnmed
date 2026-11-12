@@ -310,13 +310,12 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
     assert_eq!(card("Prosent")["skattekort_id"], 326999);
     assert_eq!(card("Tabell")["satt"], "tabell");
     assert_eq!(card("Tabell")["trekk_tabell"], 9040);
-    assert!(card("Kildeskatt")["satt"].is_null());
-    assert!(
-        card("Kildeskatt")["merknad"]
-            .as_str()
-            .unwrap()
-            .contains("12 måneder")
-    );
+    // Kildeskatt over 12 months: set, and marked as 12 months so payroll
+    // withholds on feriepenger and in full in December.
+    assert_eq!(card("Kildeskatt")["satt"], "prosent");
+    assert_eq!(card("Kildeskatt")["trekk_prosent_bp"], 2220);
+    assert_eq!(card("Kildeskatt")["trekk_12_maneder"], true);
+    assert_eq!(card("Prosent")["trekk_12_maneder"], false);
     assert!(
         card("Uten kort")["merknad"]
             .as_str()
@@ -349,8 +348,15 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
     assert_eq!(trekk(ids["20857597940"]).await.2, Some(9040));
     assert_eq!(
         trekk(ids["05850298728"]).await,
-        ("prosent".into(), Some(3500), None)
+        ("prosent".into(), Some(2220), None)
     );
+    let twelve: bool =
+        sqlx::query_scalar("select withholding_twelve_months from employee where id = $1")
+            .bind(ids["05850298728"])
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert!(twelve);
     assert_eq!(
         trekk(ids["19910298057"]).await,
         ("prosent".into(), Some(3500), None)

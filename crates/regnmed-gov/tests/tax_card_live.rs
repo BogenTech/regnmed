@@ -71,6 +71,9 @@ async fn cards_from_the_test_environment() {
         decision("20857597940"),
         Decision::Apply(regnmed_core::payroll::Withholding::Table(_))
     ));
-    assert!(matches!(decision("05850298728"), Decision::Keep(_)));
+    assert!(matches!(
+        decision("05850298728"),
+        Decision::Apply(regnmed_core::payroll::Withholding::PercentTwelveMonths(_))
+    ));
     assert!(matches!(decision("19910298057"), Decision::Keep(_)));
 }

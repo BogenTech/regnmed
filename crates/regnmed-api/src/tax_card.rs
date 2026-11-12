@@ -64,6 +64,8 @@ fn order_json(o: &regnmed_db::tax_card::OrderView) -> serde_json::Value {
             "satt": c.applied,
             "trekk_prosent_bp": c.applied_percent_bp,
             "trekk_tabell": c.applied_table,
+            "trekk_12_maneder": c.applied_twelve_months,
+            "frikort_grense_ore": c.applied_tax_free_card_limit_ore,
             "merknad": c.note,
         })).collect::<Vec<_>>(),
     })
