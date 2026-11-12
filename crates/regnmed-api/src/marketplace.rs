@@ -10,7 +10,7 @@
 //! from user input — the marketplace's trust starts here.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -27,9 +27,17 @@ fn validate_orgnumber(orgnumber: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+#[derive(Deserialize)]
+pub struct PreviewQuery {
+    /// `false` skips the Finanstilsynet lookups: a customer lookup (Ny
+    /// kunde) needs only Enhetsregisteret and should not wait on them.
+    authorisations: Option<bool>,
+}
+
 pub async fn registry_preview(
     _person: AuthPerson,
     Path(orgnumber): Path<String>,
+    Query(query): Query<PreviewQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     validate_orgnumber(&orgnumber)?;
     let unit = regnmed_gov::brreg::BrregClient::from_env()
@@ -38,15 +46,16 @@ pub async fn registry_preview(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .ok_or(ApiError::NotFound)?;
 
-    let finanstilsynet = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env();
-    let statements = finanstilsynet
-        .has_authorisation(&orgnumber, "regnskap")
-        .await
-        .unwrap_or(false);
-    let audit = finanstilsynet
-        .has_authorisation(&orgnumber, "revisjon")
-        .await
-        .unwrap_or(false);
+    let authorisation = if query.authorisations.unwrap_or(true) {
+        let finanstilsynet = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env();
+        let (statements, audit) = tokio::join!(
+            finanstilsynet.has_authorisation(&orgnumber, "regnskap"),
+            finanstilsynet.has_authorisation(&orgnumber, "revisjon"),
+        );
+        json!({ "regnskap": statements.unwrap_or(false), "revisjon": audit.unwrap_or(false) })
+    } else {
+        serde_json::Value::Null
+    };
 
     Ok(Json(json!({
         "orgnr": unit.organization_number,
@@ -59,7 +68,7 @@ pub async fn registry_preview(
         "konkurs": unit.konkurs,
         "under_avvikling": unit.under_avvikling || unit.under_tvangsavvikling,
         "slettet": unit.deleted_date.is_some(),
-        "autorisasjon": { "regnskap": statements, "revisjon": audit },
+        "autorisasjon": authorisation,
     })))
 }
 

@@ -40,9 +40,9 @@ pairings impossible.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /companies/{id}/parties?kind=kunde` | spesifikasjon: parties with saldo and `overdue_ore` (what remains on the party's overdue invoices, the invoice list's own status). `q` matches an exact party number or orgnr or part of the name or e-mail; `sort` = `number` (default, numeric), `name`, `balance` or `overdue`, `desc=true` reverses; `limit` (≤ 200) and `offset` page, and the response carries `total`. Without `limit`: every party, as before |
-| `GET /companies/{id}/parties/{pid}` | one party with saldo and overdue amount |
-| `POST /companies/{id}/parties` | create party (auto party_no). Optional `address`, `email`, `bank_account` in the same request (requires `KONTAKT_SKRIV`, like `PUT …/contact`); they are validated BEFORE the party is created, so a bad account number never leaves a half-made party |
+| `GET /companies/{id}/parties?kind=kunde` | spesifikasjon: parter med saldo. Med `limit` (≤ 200) også `overdue_ore` — det som står igjen på partens forfalte fakturaer, etter fakturalistens egen status; uten `limit` er feltet `null`, fordi utregningen går over alle fakturaene og listene som bare trenger navn ikke skal betale for den. `q` treffer eksakt partsnummer eller orgnr, eller del av navn eller e-post; `sort` = `number` (standard, numerisk), `name`, `balance` eller `overdue`, og `desc=true` snur rekkefølgen. Svaret har `total`. Uten `limit`: alle parter, som før |
+| `GET /companies/{id}/parties/{pid}` | én part med saldo og forfalt beløp |
+| `POST /companies/{id}/parties` | opprett part (partsnummer tildeles). Valgfritt `address`, `email` og `bank_account` i samme kall (krever `KONTAKT_SKRIV`, som `PUT …/contact`). De kontrolleres FØR parten opprettes, så et ugyldig kontonummer etterlater aldri en halvferdig part |
 | `GET /companies/{id}/parties/{pid}/items?open=true` | items with matched/remaining |
 | `POST /companies/{id}/reskontro/matches` + `DELETE …/{match_id}` | åpne poster matching |
 | `PUT /companies/{id}/accounts/{nr}/reskontro` | flag/clear a reskontro account |

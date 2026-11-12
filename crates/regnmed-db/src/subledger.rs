@@ -82,8 +82,9 @@ pub struct PartyRow {
     pub balance_ore: i64,
     /// What remains on the party's overdue invoices (status `overdue`,
     /// the same definition the invoice list uses). Always 0 for a
-    /// leverandør: invoices here are the company's own sales.
-    pub overdue_ore: i64,
+    /// leverandør: invoices here are the company's own sales. None when
+    /// the listing did not ask for it (an unpaged listing).
+    pub overdue_ore: Option<i64>,
 }
 
 /// Which parties a listing asks for. Default = every party of every
@@ -116,7 +117,8 @@ pub async fn list_parties(
     company_id: Uuid,
     filter: &PartyFilter<'_>,
 ) -> Result<PartyPage> {
-    let order = match filter.sort.unwrap_or("number") {
+    let sort = filter.sort.unwrap_or("number");
+    let order = match sort {
         // Party numbers are digits stored as text: 9 sorts before 10.
         "number" => "length(party_no), party_no",
         "name" => "lower(name), length(party_no), party_no",
@@ -132,64 +134,120 @@ pub async fn list_parties(
         .collect::<Vec<_>>()
         .join(", ");
     let search = filter.search.map(str::trim).filter(|s| !s.is_empty());
-    let rows = sqlx::query(&format!(
-        "{cte},
-         overdue as (
-             select party_no, sum(remaining_ore)::bigint as overdue_ore
-             from inv where status = 'overdue' group by party_no
-         ),
+
+    // The overdue amount needs every invoice's reskontro status, which is
+    // the expensive part. Sorting by it computes it for every party;
+    // otherwise only for the page being returned, and not at all for an
+    // unpaged listing (the pickers that just need names).
+    let by_overdue = sort == "overdue";
+    let (cte, overdue_col, overdue_join, first) = if by_overdue {
+        (
+            format!(
+                "{},
+                 overdue as (
+                     select party_no, sum(remaining_ore)::bigint as overdue_ore
+                     from inv where status = 'overdue' group by party_no
+                 ),",
+                crate::invoice::INVOICE_STATUS_CTE
+            ),
+            "case when p.kind = 'kunde' then coalesce(o.overdue_ore, 0) else 0 end",
+            "left join overdue o on o.party_no = p.party_no",
+            4,
+        )
+    } else {
+        ("with".to_string(), "null::bigint", "", 2)
+    };
+    let n = |i: usize| format!("${}", first + i);
+    let sql = format!(
+        "{cte}
          parties as (
              select p.id, p.party_no, p.kind, p.name, p.orgnr, p.address, p.email,
                     p.bank_account,
                     coalesce((select sum(e.amount_ore) from entry e where e.party_id = p.id),
                              0)::bigint as saldo_ore,
-                    case when p.kind = 'kunde' then coalesce(o.overdue_ore, 0) else 0 end
-                        as overdue_ore
+                    {overdue_col} as overdue_ore
              from party p
-             left join overdue o on o.party_no = p.party_no
+             {overdue_join}
              where p.company_id = $1
-               and ($4::text is null or p.kind = $4)
-               and ($5::uuid is null or p.id = $5)
-               and ($6::text is null
-                    or p.party_no = $6
-                    or replace(coalesce(p.orgnr, ''), ' ', '') = replace($6, ' ', '')
-                    or position(lower($6) in lower(p.name)) > 0
-                    or position(lower($6) in lower(coalesce(p.email, ''))) > 0)
+               and ({kind}::text is null or p.kind = {kind})
+               and ({id}::uuid is null or p.id = {id})
+               and ({q}::text is null
+                    or p.party_no = {q}
+                    or replace(coalesce(p.orgnr, ''), ' ', '') = replace({q}, ' ', '')
+                    or position(lower({q}) in lower(p.name)) > 0
+                    or position(lower({q}) in lower(coalesce(p.email, ''))) > 0)
          )
          select *, count(*) over () as total from parties
          order by {order}
-         limit $7 offset $8",
-        cte = crate::invoice::INVOICE_STATUS_CTE,
-    ))
-    .bind(company_id)
-    .bind(None::<&str>) // the invoice CTE's own search
-    .bind(None::<&str>) // ... and its customer filter
-    .bind(filter.kind)
-    .bind(filter.id)
-    .bind(search)
-    .bind(filter.limit)
-    .bind(filter.offset.max(0))
-    .fetch_all(pool)
-    .await?;
+         limit {limit} offset {offset}",
+        kind = n(0),
+        id = n(1),
+        q = n(2),
+        limit = n(3),
+        offset = n(4),
+    );
+    let mut query = sqlx::query(&sql).bind(company_id);
+    if by_overdue {
+        // The invoice CTE's own search and customer filter.
+        query = query.bind(None::<&str>).bind(None::<&str>);
+    }
+    let rows = query
+        .bind(filter.kind)
+        .bind(filter.id)
+        .bind(search)
+        .bind(filter.limit)
+        .bind(filter.offset.max(0))
+        .fetch_all(pool)
+        .await?;
     let total = rows.first().map(|r| r.get("total")).unwrap_or(0);
-    Ok(PartyPage {
-        total,
-        rows: rows
+    let mut rows: Vec<PartyRow> = rows
+        .iter()
+        .map(|r| PartyRow {
+            id: r.get("id"),
+            party_no: r.get("party_no"),
+            kind: r.get("kind"),
+            name: r.get("name"),
+            orgnumber: r.get("orgnr"),
+            address: r.get("address"),
+            email: r.get("email"),
+            bank_account: r.get("bank_account"),
+            balance_ore: r.get("saldo_ore"),
+            overdue_ore: r.get("overdue_ore"),
+        })
+        .collect();
+
+    let page_wants_overdue = filter.limit.is_some() || filter.id.is_some();
+    if !by_overdue && page_wants_overdue && !rows.is_empty() {
+        let customers: Vec<String> = rows
             .iter()
-            .map(|r| PartyRow {
-                id: r.get("id"),
-                party_no: r.get("party_no"),
-                kind: r.get("kind"),
-                name: r.get("name"),
-                orgnumber: r.get("orgnr"),
-                address: r.get("address"),
-                email: r.get("email"),
-                bank_account: r.get("bank_account"),
-                balance_ore: r.get("saldo_ore"),
-                overdue_ore: r.get("overdue_ore"),
-            })
-            .collect(),
-    })
+            .filter(|r| r.kind == "kunde")
+            .map(|r| r.party_no.clone())
+            .collect();
+        let overdue: std::collections::HashMap<String, i64> = sqlx::query(&format!(
+            "{}
+             select party_no, sum(remaining_ore)::bigint as overdue_ore
+             from inv where status = 'overdue' and party_no = any($4)
+             group by party_no",
+            crate::invoice::INVOICE_STATUS_CTE
+        ))
+        .bind(company_id)
+        .bind(None::<&str>)
+        .bind(None::<&str>)
+        .bind(&customers)
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .map(|r| (r.get("party_no"), r.get("overdue_ore")))
+        .collect();
+        for row in &mut rows {
+            row.overdue_ore = Some(if row.kind == "kunde" {
+                overdue.get(&row.party_no).copied().unwrap_or(0)
+            } else {
+                0
+            });
+        }
+    }
+    Ok(PartyPage { total, rows })
 }
 
 #[derive(Debug)]

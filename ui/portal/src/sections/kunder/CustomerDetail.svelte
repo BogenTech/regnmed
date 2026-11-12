@@ -34,6 +34,11 @@
   <div class="alert alert-error" role="alert"><span>{error}</span></div>
 {:else if !party}
   <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
+{:else if party.kind !== "kunde"}
+  <div class="alert alert-info">
+    <span>{party.name} er en leverandør, ikke en kunde.</span>
+    <a class="btn btn-sm" href={"#/c/" + companyId + "/leverandorer/" + party.party_id}>Åpne under Leverandører</a>
+  </div>
 {:else}
   <div class="flex flex-wrap items-start gap-3 mb-4">
     <div class="mr-auto">
@@ -81,7 +86,7 @@
         <div class="card-body">
           <h2 id="kontakt-tittel" class="card-title">Kontaktinfo</h2>
           {#if canEditContact}
-            <PartyContact {companyId} {party} onSaved={load} />
+            {#key party.party_id}<PartyContact {companyId} {party} onSaved={load} />{/key}
           {:else}
             <dl class="grid gap-2 text-sm">
               <dt class="opacity-70">Adresse</dt><dd>{party.address || "–"}</dd>

@@ -257,6 +257,18 @@ async fn invoice_to_payment_to_credit_note_loop() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(one["party_no"], party_no.as_str());
     assert_eq!(one["overdue_ore"], 12_500_00);
+    // A page sorted by something else gets the overdue amount for its own
+    // rows; an unpaged listing (the pickers) does not pay for it.
+    let (_, by_name) = get(format!(
+        "/companies/{company}/parties?kind=kunde&sort=name&limit=10"
+    ))
+    .await;
+    assert_eq!(by_name["parties"][0]["overdue_ore"], 12_500_00);
+    let (_, unpaged) = get(format!("/companies/{company}/parties?kind=kunde")).await;
+    assert!(
+        unpaged["parties"][0]["overdue_ore"].is_null(),
+        "body: {unpaged}"
+    );
     let (_, theirs) = get(format!(
         "/companies/{company}/invoices?party_no={party_no}&limit=10"
     ))

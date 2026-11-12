@@ -268,11 +268,11 @@ oppsummering først, fordi en utstedt faktura aldri kan endres.
   (another company's id is 404), and the list's filters are pinned:
   `status=credit` holds the kreditnota and the invoice it credits, newest
   first, `q` matches number or name, paging keeps the true `total`, and
-  an unknown status is a 400. The customer register is pinned in the same test:
-  a customer's `overdue_ore` equals its overdue invoice, search and sort
-  run in SQL, `GET …/parties/{pid}` and `?party_no=` on the invoice list
-  answer for one customer, and a new customer with a bad account number
-  is refused before it exists (docs/reskontro.md).
+  an unknown status is a 400. Kunderegisteret er festet i samme test: en
+  kundes `overdue_ore` er lik den forfalte fakturaen, søk og sortering
+  skjer i SQL, `GET …/parties/{pid}` og `?party_no=` på fakturalisten
+  svarer for én kunde, og en ny kunde med ugyldig kontonummer avvises før
+  den finnes (docs/reskontro.md).
 - `ui/portal/src/sections/faktura/invoiceMath.test.js` — the form's
   running sum rounds exactly like `regnmed-core` (line amounts, VAT,
   minutes to hours).

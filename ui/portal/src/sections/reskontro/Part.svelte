@@ -163,6 +163,8 @@
 
 {#if party && contact}
   <Card title="Kontaktinfo">
-    <div class="max-w-md"><PartyContact {companyId} {party} /></div>
+    <div class="max-w-md">
+      {#key party.party_id}<PartyContact {companyId} {party} />{/key}
+    </div>
   </Card>
 {/if}

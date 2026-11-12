@@ -33,7 +33,7 @@
     lastLooked = nr;
     lookup = { status: "loading" };
     existing = null;
-    api("/registry/enheter/" + nr)
+    api("/registry/enheter/" + nr + "?authorisations=false")
       .then((unit) => {
         if (digits !== nr) return;
         lookup = { status: "found", unit };
@@ -41,8 +41,12 @@
         if (!address.trim()) address = unit.adresse || "";
       })
       .catch((e) => digits === nr && (lookup = { status: "error", message: e.message }));
-    api("/companies/" + companyId + "/parties?kind=kunde&limit=1&q=" + nr)
-      .then((r) => digits === nr && (existing = r.parties[0] || null))
+    // The search also matches names; only the same orgnr is a duplicate.
+    api("/companies/" + companyId + "/parties?kind=kunde&limit=10&q=" + nr)
+      .then((r) => {
+        if (digits !== nr) return;
+        existing = r.parties.find((p) => (p.orgnr || "").replace(/\s/g, "") === nr) || null;
+      })
       .catch(() => {});
   });
 
@@ -113,11 +117,11 @@
       </span>
     </label>
 
-    {#if lookup?.status === "found" && (lookup.unit.konkurs || lookup.unit.under_avvikling)}
+    {#if lookup?.status === "found" && (lookup.unit.konkurs || lookup.unit.under_avvikling || lookup.unit.slettet)}
       <div class="alert alert-warning sm:col-span-2" role="alert">
         <span>
-          {lookup.unit.navn} er {lookup.unit.konkurs ? "konkurs" : "under avvikling"} ifølge
-          Enhetsregisteret. Tenk deg om før du fakturerer.
+          {lookup.unit.navn} er {lookup.unit.slettet ? "slettet" : lookup.unit.konkurs ? "konkurs" : "under avvikling"}
+          ifølge Enhetsregisteret. Tenk deg om før du fakturerer.
         </span>
       </div>
     {/if}

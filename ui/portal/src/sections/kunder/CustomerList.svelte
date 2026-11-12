@@ -22,8 +22,9 @@
   let searchInput;
 
   let seq = 0;
-  function path(offset) {
-    const p = new URLSearchParams({ kind: "kunde", limit: PAGE, offset, sort, desc });
+  let limit = $state(PAGE);
+  function path() {
+    const p = new URLSearchParams({ kind: "kunde", limit, sort, desc });
     if (search.trim()) p.set("q", search.trim());
     return "/companies/" + companyId + "/parties?" + p;
   }
@@ -32,7 +33,7 @@
     const mine = ++seq;
     error = null;
     try {
-      const page = await api(path(0));
+      const page = await api(path());
       if (mine !== seq) return;
       rows = page.parties;
       total = page.total;
@@ -41,15 +42,13 @@
     }
   }
 
+  // One longer page rather than an offset: sorted by amount, a payment
+  // between two pages would move a customer across the boundary and it
+  // would be shown twice or not at all.
   async function more() {
-    const mine = seq;
+    limit = Math.min(limit + PAGE, 200);
     loadingMore = true;
-    try {
-      const page = await api(path(rows.length));
-      if (mine === seq) rows = [...rows, ...page.parties];
-    } catch (e) {
-      if (mine === seq) error = e.message;
-    }
+    await load();
     loadingMore = false;
   }
 
@@ -58,6 +57,7 @@
     sort;
     desc;
     const q = search;
+    limit = PAGE;
     clearTimeout(timer);
     timer = setTimeout(load, q ? 250 : 0);
     return () => clearTimeout(timer);
@@ -164,7 +164,11 @@
           {/each}
         </tbody>
       </table>
-      {#if rows.length < total}
+      {#if rows.length < total && limit >= 200}
+        <p class="text-sm opacity-70 mt-3 text-center">
+          Viser {rows.length} av {total}. Søk for å finne resten.
+        </p>
+      {:else if rows.length < total}
         <div class="flex justify-center mt-3">
           <button class="btn btn-sm" onclick={more} disabled={loadingMore}>
             {#if loadingMore}<span class="loading loading-spinner loading-xs"></span>{/if}

@@ -190,7 +190,7 @@
     </div>
   </div>
 
-  {#if status === "overdue" && aging}
+  {#if status === "overdue" && aging && !embedded}
     <p class="text-sm mt-3">
       Forfalt 1–14 dager: <b class="tabular-nums">{krWhole(aging.buckets["1-14"] || 0)}</b> ·
       15–30 dager: <b class="tabular-nums">{krWhole(aging.buckets["15-30"] || 0)}</b> ·
