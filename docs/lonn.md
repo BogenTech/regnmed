@@ -291,6 +291,19 @@ tar forskuddstrekk i hele kroner, og en kjøring kan ikke gjøres om, så
 et trekk med øre ville gitt en måned som aldri kunne leveres. Ned, så
 ingen trekkes mer enn kortet sier.
 
+**Arbeidsgiveravgiften regnes ÉN gang per kjøring, på det samlede
+grunnlaget, og avrundes ned til hele kroner** — «Ved beregning av
+skatte- og avgiftskrav avrundes beløpet ned til nærmeste hele krone»
+(skattebetalingsforskriften § 10-4-4). Skatteetatens egen
+a-meldingsveiledning gjør det samme: 12 250 kr × 14,1 % = 1 727,25
+oppgis som 1 727. Én gang og ikke per ansatt, fordi kravet er
+grunnlaget × satsen (F185): avrundet per ansatt kunne summen bomme med
+opptil en krone per ansatt, og meldingen ville blitt avvist. Det som
+lagres per lønnslinje (`payroll_line.aga_ore`) er den ansattes andel,
+avrundet for seg; den leses ikke, og den er ikke kravet —
+`payroll_run.aga_ore` er. Avsetningen på feriepenger (5405/2780) er en
+periodisering, ikke et krav, og beholder øre.
+
 To punkter kildene ikke avgjør, og der regnmed velger siden som ikke kan
 gi den ansatte restskatt: **feriepenger telles med** i grensen
 («all trekkpliktig lønn og godtgjersle»), og trekket over grensen
@@ -364,7 +377,7 @@ en melding som aldri sendes.
 | `inntekt` `fastloenn` / `timeloenn` / `feriepenger` | `payroll_line.brutto_ore`, `feriepenger_ore` — kombinasjon 111: `kontantytelse`, utløser aga, inngår i trekkgrunnlaget |
 | `forskuddstrekk` (`ordinaert`, negativt, F278-2) | `payroll_line.forskuddstrekk_ore` |
 | `sumForskuddstrekkPerLoennsutbetalingsdato` (fra 2026-01, F523) | `payroll_run.utbetalt_dato` + sum trekk |
-| `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale). Må være NØYAKTIG grunnlaget × satsen (F185); ellers nektes meldingen med begge tallene |
+| `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale). Må være NØYAKTIG grunnlaget × satsen avrundet ned til hele kroner (F185, skattebetalingsforskriften § 10-4-4); ellers nektes meldingen med begge tallene |
 | `loennOgGodtgjoerelse`: beregningskode, sone, grunnlag, sats | `generelleNaeringer`; `payroll_run.sone` (I→`1`, Ia→`1a`, …); summen av inntektene (F184); satsen fra satsregisteret på utbetalingsdatoen |
 
 `generelleNaeringer` er ikke en ny antakelse: lønnskjøringen bruker
@@ -417,20 +430,19 @@ NULL.
 
 ### Hva modellen fortsatt IKKE har — og renderen nekter for
 
-1. **Hele kroner.** Forskuddstrekk og summene å betale er heltall i
-   skjemaet, mens lønnskjøringen regner trekk og aga i øre. Renderen
-   runder IKKE — da ville meldingen sprike fra det som er bokført på
-   2600/2770. Avrundingsregelen hører hjemme i
-   `payroll::calculate`/`employer_contribution` med kilde, og må
-   verifiseres før den skrives. Inntil da nektes nesten enhver ekte
-   kjøring på dette punktet alene.
+1. **Kjøringer fra før hele kroner.** Skjemaet vil ha trekk og avgift i
+   hele kroner. Lønnskjøringen avrunder nå begge ned (se over), men en
+   kjøring bokført før det kan bære øre, og kjøringer gjøres ikke om.
+   Renderen runder IKKE — da ville meldingen sprike fra det som er
+   bokført på 2600/2770 — så slike kjøringer nektes, og meldingen for
+   den måneden må leveres på annet vis.
 
 Renderen nekter også, med eget navn:
 
-- **Avgift som ikke er grunnlag × sats** (F185). Lønnskjøringen runder
-  aga per ansatt; Skatteetaten regner på summen. Spriker de, sier
-  feilmeldingen begge tallene i stedet for at meldingen sendes med en
-  avgift den selv motsier.
+- **Avgift som ikke er grunnlag × sats** (F185), avrundet ned til hele
+  kroner. Spriker bokført avgift fra det, sier feilmeldingen begge
+  tallene i stedet for at meldingen sendes med en avgift den selv
+  motsier. Det er dette en kjøring fra før avrundingen møter.
 - **Negative beløp** — trekk og inntekt har faste fortegn (F277,
   F278-2). En korreksjon er et reverserende bilag og en ny kjøring i
   hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
@@ -606,8 +618,8 @@ Rekkefølgen er omtrent den de bør tas i.
 
 1. **A-meldingen.** Månedlig, frist den 5. Renderen finnes og er
    validert mot XSD-en (se «A-meldingen» under), og arbeidsforholdets
-   felt finnes nå (0073), og den lages fra en lagret kjøring, men den
-   nekter øre der skjemaet vil ha hele kroner og arbeidsforhold uten
+   felt finnes nå (0073), og den lages fra en lagret kjøring med trekk
+   og avgift i hele kroner, men den nekter arbeidsforhold uten
    lønn i måneden, og innsending venter på
    Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
    internt regnskap, ikke rapportering — **selskapet må fortsatt levere
@@ -762,13 +774,15 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 - `regnmed-core::payroll` — prosenttrekk, tabelltrekk (og halvt i
   desember), trekkfrie feriepenger, halv skatt i desember, kort over 12
   måneder (trekk i feriepenger, fullt i desember), frikort med grense
-  (under, over og på vei over), trekk avrundet ned til hele kroner,
-  og at ukjente tabeller, år og sone Ia nektes med begrunnelse.
+  (under, over og på vei over), trekk og arbeidsgiveravgift avrundet
+  ned til hele kroner (Skatteetatens 1 727,25 → 1 727, og ned også ved
+  ,99), og at ukjente tabeller, år og sone Ia nektes med begrunnelse.
 - Mot ekte Postgres: frikort over to kjøringer (januar under grensen,
   februar 50 % av det som overstiger) med fjorårets lønn utenfor
   tellingen, at en kjøring utbetalt i et år uten hentet frikort nekter,
-  et 12-månederskort med feriepenger, og at lønnsslippen bærer metoden
-  fra kjøringen.
+  et 12-månederskort med feriepenger, at lønnsslippen bærer metoden
+  fra kjøringen, og at to lønninger med øre gir avgift regnet én gang på
+  summen (10 481 kr, ikke 10 480 per ansatt) som a-meldingen godtar.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir
@@ -805,7 +819,8 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   trekket er negativt per mottaker og positivt per utbetalingsdato, at
   avgiftsgrunnlaget er summen av inntektene; at hvert av de seks
   manglende arbeidsforholdsfeltene og virksomheten nektes med navn; at
-  øre der skjemaet vil ha kroner nektes framfor å rundes; og at koder
+  øre der skjemaet vil ha kroner nektes framfor å rundes (en kjøring med
+  avgift i øre fra før avrundingen nektes som F185); og at koder
   utenfor kodelisten, ugyldig fødselsnummer og orgnr nektes. Etter
   review: at kalendermåneden følger utbetalingsdatoen (også over
   årsskiftet, der trekkformatet skifter), at avgift som ikke er grunnlag

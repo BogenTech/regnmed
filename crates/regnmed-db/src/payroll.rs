@@ -539,6 +539,7 @@ pub async fn run_payroll(
     let history = feriepengehistorikk(pool, company_id).await?;
 
     let mut sum = PayrollTotals::default();
+    let mut contribution_basis_ore = 0i64;
     let mut lines = Vec::new();
     let mut frikort_warnings = Vec::new();
 
@@ -647,9 +648,9 @@ pub async fn run_payroll(
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
         let avsetning = payroll::holiday_pay_accrual(gross, employee.holiday_pay_bp as i64);
-        // The avgift falls on what is actually paid out.
-        let aga = payroll::employer_contribution(gross + post.holiday_pay_ore, zone, aga_bp)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        // The avgift falls on what is actually paid out, and is computed
+        // once on the run's whole basis below.
+        contribution_basis_ore += gross + post.holiday_pay_ore;
 
         sum.gross_ore += calculation.gross_ore;
         sum.holiday_pay_paid_ore += calculation.holiday_pay_ore;
@@ -667,7 +668,6 @@ pub async fn run_payroll(
             payroll::employer_contribution_accrual_target(owed_after, aga_bp) - hist.avsatt_aga_ore;
 
         sum.holiday_pay_accrual_ore += avsetning;
-        sum.employer_contribution_ore += aga;
         sum.employer_contribution_holiday_pay_ore += employer_contribution_holiday_pay;
 
         lines.push(Lonnslinje {
@@ -679,6 +679,13 @@ pub async fn run_payroll(
             pay_kind,
         });
     }
+
+    // One zone and one rate per run, so the claim is one product, rounded
+    // down to whole kroner (skattebetalingsforskriften § 10-4-4) — the
+    // number the a-melding reports and F185 checks.
+    sum.employer_contribution_ore =
+        payroll::employer_contribution(contribution_basis_ore, zone, aga_bp)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Each line is omitted when it is zero. A month with only holiday
     // taken — feriepenger paid out, no ordinary pay — has neither a pay
@@ -926,6 +933,9 @@ pub async fn run_payroll(
         .bind(b.withholding_ore)
         .bind(b.net_ore)
         .bind(l.holiday_pay_accrual_ore)
+        // The employee's share, rounded down on its own: read by nothing
+        // today, and NOT the claim -- the run's aga_ore is, computed once on
+        // the summed basis, so these may sum to a few kroner less.
         .bind(
             payroll::employer_contribution(b.gross_ore + b.holiday_pay_ore, zone, aga_bp)
                 .unwrap_or(0),

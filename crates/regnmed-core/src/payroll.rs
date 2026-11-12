@@ -251,10 +251,15 @@ pub fn calculate(
 /// the side that cannot leave the employee with restskatt.
 const FRIKORT_EXCESS_BP: i64 = 5000;
 
-/// Arbeidsgiveravgift on a basis, at the zone's rate for the date.
+/// Arbeidsgiveravgift on a basis, at the zone's rate for the date, in
+/// whole kroner.
 ///
-/// `sats_bp` comes from the satsregister — this function never knows a
-/// rate itself. Sone Ia is refused; see [`LonnError`].
+/// `rate_bp` comes from the satsregister — this function never knows a
+/// rate itself. Sone Ia is refused; see [`PayrollError`].
+///
+/// Call it ONCE on the run's summed basis, not per employee: the claim
+/// is grunnlag × sats over the whole basis (F185 in the a-melding), and
+/// per-employee rounding would drift from it by up to a krone each.
 pub fn employer_contribution(
     basis_ore: i64,
     zone: Zone,
@@ -263,7 +268,19 @@ pub fn employer_contribution(
     if zone == Zone::Ia {
         return Err(PayrollError::ZoneIaRequiresExemptionCalculation);
     }
-    Ok(bp_of(basis_ore, rate_bp))
+    Ok(contribution_whole_kroner(basis_ore, rate_bp))
+}
+
+/// Basis × rate rounded DOWN to whole kroner, in øre: «Ved beregning av
+/// skatte- og avgiftskrav avrundes beløpet ned til nærmeste hele krone»
+/// (skattebetalingsforskriften § 10-4-4). Skatteetaten's own a-melding
+/// guidance does the same: 12 250 kr × 14,1 % = 1 727,25 is reported as
+/// 1 727. The a-melding wants whole kroner, so this is also what makes a
+/// run reportable at all.
+pub(crate) fn contribution_whole_kroner(basis_ore: i64, rate_bp: i64) -> i64 {
+    // Integer division truncates toward zero: down for any real basis,
+    // and a (never reported) negative one is not rounded up into a claim.
+    (basis_ore as i128 * rate_bp as i128 / 1_000_000 * 100) as i64
 }
 
 /// Pay for logged hours: minutes at an hourly rate, in øre.
@@ -547,6 +564,20 @@ mod tests {
         );
         // Sone V is a zero rate — an answer, not a missing rate.
         assert_eq!(employer_contribution(5_000_000, Zone::V, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn employer_contribution_is_rounded_down_to_whole_kroner() {
+        // Skatteetaten's own example: 12 250 kr × 14,1 % = 1 727,25 -> 1 727.
+        assert_eq!(
+            employer_contribution(1_225_000, Zone::I, 1410).unwrap(),
+            172_700
+        );
+        // Down even at ,99: 7 092,19 kr × 14,1 % = 999,9988 -> 999.
+        assert_eq!(
+            employer_contribution(709_219, Zone::I, 1410).unwrap(),
+            99_900
+        );
     }
 
     #[test]

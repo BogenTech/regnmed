@@ -539,7 +539,8 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
         .flat_map(|r| &r.income)
         .map(|i| i.amount_ore)
         .sum();
-    let computed_ore = crate::payroll::bp_of(basis_ore, m.employer_contribution_rate_bp);
+    let computed_ore =
+        crate::payroll::contribution_whole_kroner(basis_ore, m.employer_contribution_rate_bp);
     if computed_ore != m.employer_contribution_ore {
         return Err(AmeldingError::ContributionMismatch {
             booked_ore: m.employer_contribution_ore,
@@ -914,17 +915,20 @@ mod tests {
                 ore: 1_500_050
             })
         );
-        // Basis 53 000,50 kr × 14,1 % = 7 473,07 kr: consistent, but øre.
+        // Basis 53 000,50 kr × 14,1 % = 7 473,07 kr: a run booked before
+        // aga was rounded to whole kroner. The claim is 7 473 kr.
         let mut m = melding();
         m.recipients[0].income[0].amount_ore = 5_000_050;
         m.employer_contribution_ore = 747_307;
-        assert!(matches!(
+        assert_eq!(
             render(&m),
-            Err(AmeldingError::NotWholeKroner {
-                field: "arbeidsgiveravgift",
-                ..
+            Err(AmeldingError::ContributionMismatch {
+                booked_ore: 747_307,
+                computed_ore: 747_300
             })
-        ));
+        );
+        m.employer_contribution_ore = 747_300;
+        validate(&render(&m).unwrap(), "aga-rounded-down");
     }
 
     #[test]
