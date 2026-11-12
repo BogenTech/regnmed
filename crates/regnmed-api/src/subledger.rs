@@ -106,6 +106,32 @@ pub struct CreatePartyRequest {
     bank_account: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct TermsRequest {
+    due_date: Option<chrono::NaiveDate>,
+    kid: Option<String>,
+}
+
+/// Sets or corrects due date and KID on a supplier posting (docs/betaling.md).
+/// Insert-only: the newest applies, the earlier ones remain.
+pub async fn record_terms(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, entry_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<TermsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::SubledgerWrite).await?;
+    let terms = regnmed_db::PayableTermsDraft {
+        due_date: request.due_date,
+        kid: request.kid,
+    };
+    let by = person.name.as_deref().unwrap_or(&person.sub);
+    regnmed_db::record_payable_terms(&state.pool, company_id, entry_id, &terms, by)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub async fn create_party(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -166,9 +192,12 @@ pub async fn party_items(
     Ok(Json(json!({
         "items": items.iter().map(|i| json!({
             "entry_id": i.entry_id,
+            "voucher_id": i.voucher_id,
             "voucher": i.voucher_label,
             "date": i.date.to_string(),
             "description": i.description,
+            "due_date": i.due_date.map(|d| d.to_string()),
+            "kid": i.kid,
             "amount_ore": i.amount_ore,
             "matched_ore": i.matched_ore,
             "remaining_ore": i.remaining_ore,

@@ -34,6 +34,159 @@ pub struct PayableItem {
     pub amount_ore: i64,
     /// Already part of an utkast/godkjent run.
     pub in_run: bool,
+    /// From the supplier's document (payable_terms, newest row).
+    pub due_date: Option<NaiveDate>,
+    pub kid: Option<String>,
+}
+
+/// Due date and KID read off a supplier's document.
+#[derive(Debug, Clone, Default)]
+pub struct PayableTermsDraft {
+    pub due_date: Option<NaiveDate>,
+    pub kid: Option<String>,
+}
+
+impl PayableTermsDraft {
+    pub fn is_empty(&self) -> bool {
+        self.due_date.is_none() && self.kid.as_deref().is_none_or(|k| k.trim().is_empty())
+    }
+
+    fn validated_kid(&self) -> Result<Option<String>> {
+        match self.kid.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+            Some(kid) => {
+                ensure!(regnmed_core::kid::is_valid(kid), "ugyldig KID {kid}");
+                Ok(Some(kid.to_string()))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+/// Per supplier: what remains on open posts whose due date has passed,
+/// as a positive amount owed. A SELECT over $1 = company id, usable as a
+/// CTE body. Posts without a recorded due date are never overdue -- the
+/// system does not guess a payment term.
+pub(crate) const SUPPLIER_OVERDUE_SQL: &str = "
+    select party_no, sum(-remaining_ore)::bigint as overdue_ore
+    from (
+        select p.party_no, terms.due_date,
+               e.amount_ore
+               - coalesce((select sum(m.amount_ore) from reskontro_match m
+                           where m.entry_a = e.id), 0)::bigint
+               + coalesce((select sum(m.amount_ore) from reskontro_match m
+                           where m.entry_b = e.id), 0)::bigint as remaining_ore
+        from entry e
+        join party p on p.id = e.party_id
+        left join lateral (
+            select t.due_date from payable_terms t
+            where t.entry_id = e.id
+            order by t.recorded_at desc, t.id desc limit 1
+        ) terms on true
+        where p.company_id = $1 and p.kind = 'leverandor'
+    ) posts
+    where remaining_ore < 0 and due_date < current_date
+    group by party_no";
+
+/// Records due date and KID on every supplier entry of a voucher, inside
+/// the caller's transaction -- the inbox posting, so a supplier invoice
+/// and its terms exist together or not at all. Refuses a voucher with no
+/// supplier line: terms on anything else would be stored and never read.
+pub async fn record_payable_terms_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    voucher_id: Uuid,
+    terms: &PayableTermsDraft,
+    recorded_by: &str,
+) -> Result<()> {
+    if terms.is_empty() {
+        return Ok(());
+    }
+    let kid = terms.validated_kid()?;
+    let entries: Vec<Uuid> = sqlx::query_scalar(
+        "select e.id from entry e join party p on p.id = e.party_id
+         where e.voucher_id = $1 and p.company_id = $2 and p.kind = 'leverandor'",
+    )
+    .bind(voucher_id)
+    .bind(company_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    ensure!(
+        !entries.is_empty(),
+        "forfallsdato og KID gjelder en leverandørpost, men bilaget har ingen linje med leverandør"
+    );
+    for entry_id in entries {
+        insert_terms(
+            &mut **tx,
+            company_id,
+            entry_id,
+            terms.due_date,
+            kid.as_deref(),
+            recorded_by,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Sets or corrects due date and KID on one existing supplier entry (a
+/// posting booked before terms were kept, or a typing error). A new row;
+/// the newest applies and the earlier ones remain as history.
+pub async fn record_payable_terms(
+    pool: &PgPool,
+    company_id: Uuid,
+    entry_id: Uuid,
+    terms: &PayableTermsDraft,
+    recorded_by: &str,
+) -> Result<()> {
+    ensure!(!terms.is_empty(), "oppgi forfallsdato eller KID");
+    let kid = terms.validated_kid()?;
+    let supplier: Option<bool> = sqlx::query_scalar(
+        "select p.kind = 'leverandor' from entry e
+         join voucher v on v.id = e.voucher_id
+         join party p on p.id = e.party_id
+         where e.id = $1 and v.company_id = $2",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    ensure!(supplier.is_some(), "ingen slik post med part i selskapet");
+    ensure!(
+        supplier == Some(true),
+        "forfallsdato og KID føres bare på leverandørposter"
+    );
+    insert_terms(
+        pool,
+        company_id,
+        entry_id,
+        terms.due_date,
+        kid.as_deref(),
+        recorded_by,
+    )
+    .await
+}
+
+async fn insert_terms<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    company_id: Uuid,
+    entry_id: Uuid,
+    due_date: Option<NaiveDate>,
+    kid: Option<&str>,
+    recorded_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into payable_terms (id, company_id, entry_id, due_date, kid, recorded_by)
+         values ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(company_id)
+    .bind(entry_id)
+    .bind(due_date)
+    .bind(kid)
+    .bind(recorded_by)
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 /// Open leverandør-poster: credit remainders on leverandør-reskontro
@@ -51,12 +204,19 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
                 exists (select 1 from payment_run_item i
                         join payment_run r on r.id = i.run_id
                         where i.entry_id = e.id
-                          and r.status in ('utkast', 'godkjent')) as i_kjoring
+                          and r.status in ('utkast', 'godkjent')) as i_kjoring,
+                terms.due_date, terms.kid
          from entry e
          join voucher v on v.id = e.voucher_id
          join party p on p.id = e.party_id
+         left join lateral (
+             select t.due_date, t.kid from payable_terms t
+             where t.entry_id = e.id
+             order by t.recorded_at desc, t.id desc limit 1
+         ) terms on true
          where v.company_id = $1 and p.kind = 'leverandor'
-         order by v.voucher_date, v.voucher_number",
+         -- What falls due first comes first; undated posts after, oldest first.
+         order by terms.due_date nulls last, v.voucher_date, v.voucher_number",
     )
     .bind(company_id)
     .fetch_all(pool)
@@ -78,6 +238,8 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
             bank_account: r.get("bank_account"),
             amount_ore: -r.get::<i64, _>("remaining_ore"),
             in_run: r.get("i_kjoring"),
+            due_date: r.get("due_date"),
+            kid: r.get("kid"),
         })
         .collect())
 }
@@ -162,7 +324,10 @@ pub async fn create_run(
                     open.party_no
                 )
             })?;
-        if let Some(kid) = &item.kid {
+        // The KID the supplier asked for, unless the caller gave one: a
+        // payment without it is one the supplier has to match by hand.
+        let kid = item.kid.clone().or_else(|| open.kid.clone());
+        if let Some(kid) = &kid {
             ensure!(
                 regnmed_core::kid::is_valid(kid),
                 "linje {}: ugyldig KID {kid}",
@@ -180,12 +345,12 @@ pub async fn create_run(
         .bind(amount)
         .bind(&open.party_name)
         .bind(&account)
-        .bind(&item.kid)
+        .bind(&kid)
         .bind(
             item.message
                 .clone()
                 .or_else(|| open.description.clone())
-                .filter(|_| item.kid.is_none()),
+                .filter(|_| kid.is_none()),
         )
         .execute(&mut *tx)
         .await?;

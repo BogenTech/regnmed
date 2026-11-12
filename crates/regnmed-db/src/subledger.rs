@@ -80,10 +80,10 @@ pub struct PartyRow {
     pub bank_account: Option<String>,
     /// SUM(amount_ore) over the party's entries — the reskontro saldo.
     pub balance_ore: i64,
-    /// What remains on the party's overdue invoices (status `overdue`,
-    /// the same definition the invoice list uses). Always 0 for a
-    /// leverandør: invoices here are the company's own sales. None when
-    /// the listing did not ask for it (an unpaged listing).
+    /// Overdue and unpaid: for a kunde, what remains on its overdue
+    /// invoices (the invoice list's own status); for a leverandør, what
+    /// remains on posts past their recorded due date (payable_terms). None
+    /// when the listing did not ask for it (an unpaged listing).
     pub overdue_ore: Option<i64>,
 }
 
@@ -147,11 +147,15 @@ pub async fn list_parties(
                  overdue as (
                      select party_no, sum(remaining_ore)::bigint as overdue_ore
                      from inv where status = 'overdue' group by party_no
-                 ),",
-                crate::invoice::INVOICE_STATUS_CTE
+                 ),
+                 supplier_overdue as ({}),",
+                crate::invoice::INVOICE_STATUS_CTE,
+                crate::payments::SUPPLIER_OVERDUE_SQL,
             ),
-            "case when p.kind = 'kunde' then coalesce(o.overdue_ore, 0) else 0 end",
-            "left join overdue o on o.party_no = p.party_no",
+            "case when p.kind = 'kunde' then coalesce(o.overdue_ore, 0)
+                  else coalesce(so.overdue_ore, 0) end",
+            "left join overdue o on o.party_no = p.party_no and p.kind = 'kunde'
+             left join supplier_overdue so on so.party_no = p.party_no and p.kind = 'leverandor'",
             4,
         )
     } else {
@@ -223,28 +227,48 @@ pub async fn list_parties(
             .filter(|r| r.kind == "kunde")
             .map(|r| r.party_no.clone())
             .collect();
-        let overdue: std::collections::HashMap<String, i64> = sqlx::query(&format!(
-            "{}
-             select party_no, sum(remaining_ore)::bigint as overdue_ore
-             from inv where status = 'overdue' and party_no = any($4)
-             group by party_no",
-            crate::invoice::INVOICE_STATUS_CTE
-        ))
-        .bind(company_id)
-        .bind(None::<&str>)
-        .bind(None::<&str>)
-        .bind(&customers)
-        .fetch_all(pool)
-        .await?
-        .iter()
-        .map(|r| (r.get("party_no"), r.get("overdue_ore")))
-        .collect();
-        for row in &mut rows {
-            row.overdue_ore = Some(if row.kind == "kunde" {
-                overdue.get(&row.party_no).copied().unwrap_or(0)
+        let overdue: std::collections::HashMap<String, i64> = if customers.is_empty() {
+            Default::default()
+        } else {
+            sqlx::query(&format!(
+                "{}
+                 select party_no, sum(remaining_ore)::bigint as overdue_ore
+                 from inv where status = 'overdue' and party_no = any($4)
+                 group by party_no",
+                crate::invoice::INVOICE_STATUS_CTE
+            ))
+            .bind(company_id)
+            .bind(None::<&str>)
+            .bind(None::<&str>)
+            .bind(&customers)
+            .fetch_all(pool)
+            .await?
+            .iter()
+            .map(|r| (r.get("party_no"), r.get("overdue_ore")))
+            .collect()
+        };
+        let suppliers: std::collections::HashMap<String, i64> =
+            if rows.iter().any(|r| r.kind == "leverandor") {
+                sqlx::query(&format!(
+                    "with so as ({}) select party_no, overdue_ore from so",
+                    crate::payments::SUPPLIER_OVERDUE_SQL
+                ))
+                .bind(company_id)
+                .fetch_all(pool)
+                .await?
+                .iter()
+                .map(|r| (r.get("party_no"), r.get("overdue_ore")))
+                .collect()
             } else {
-                0
-            });
+                Default::default()
+            };
+        for row in &mut rows {
+            let map = if row.kind == "kunde" {
+                &overdue
+            } else {
+                &suppliers
+            };
+            row.overdue_ore = Some(map.get(&row.party_no).copied().unwrap_or(0));
         }
     }
     Ok(PartyPage { total, rows })
@@ -253,6 +277,7 @@ pub async fn list_parties(
 #[derive(Debug)]
 pub struct PartyItem {
     pub entry_id: Uuid,
+    pub voucher_id: Uuid,
     pub voucher_label: String,
     pub date: NaiveDate,
     pub description: Option<String>,
@@ -261,6 +286,9 @@ pub struct PartyItem {
     pub matched_ore: i64,
     /// `amount - matched`; the item is open while this is non-zero.
     pub remaining_ore: i64,
+    /// From the supplier's document (payable_terms, newest row).
+    pub due_date: Option<NaiveDate>,
+    pub kid: Option<String>,
 }
 
 /// All items for one party, oldest first, with their open remainder.
@@ -271,7 +299,8 @@ pub async fn party_items(
     open_only: bool,
 ) -> Result<Vec<PartyItem>> {
     let rows = sqlx::query(
-        "select e.id, v.fiscal_year, v.voucher_number, v.voucher_date,
+        "select e.id, v.id as voucher_id, v.fiscal_year, v.voucher_number, v.voucher_date,
+                terms.due_date, terms.kid,
                 coalesce(e.description, v.description) as description, e.amount_ore,
                 coalesce((select sum(m.amount_ore) from reskontro_match m
                           where m.entry_a = e.id), 0)::bigint
@@ -279,6 +308,11 @@ pub async fn party_items(
                           where m.entry_b = e.id), 0)::bigint as matched_ore
          from entry e
          join voucher v on v.id = e.voucher_id
+         left join lateral (
+             select t.due_date, t.kid from payable_terms t
+             where t.entry_id = e.id
+             order by t.recorded_at desc, t.id desc limit 1
+         ) terms on true
          where v.company_id = $1 and e.party_id = $2
          order by v.voucher_date, v.voucher_number, e.line_no",
     )
@@ -294,6 +328,9 @@ pub async fn party_items(
             let matched_ore: i64 = r.get("matched_ore");
             PartyItem {
                 entry_id: r.get("id"),
+                voucher_id: r.get("voucher_id"),
+                due_date: r.get("due_date"),
+                kid: r.get("kid"),
                 voucher_label: format!(
                     "{}-{}",
                     r.get::<i32, _>("fiscal_year"),

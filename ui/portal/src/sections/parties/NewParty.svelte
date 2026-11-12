@@ -1,13 +1,30 @@
 <script>
-  // Ny kunde: starter med organisasjonsnummeret, og Enhetsregisteret
-  // fyller inn navn og adresse (samme oppslag som registreringen bruker).
-  // E-post og kontonummer tas i samme skjema, så kunden kan faktureres
-  // og få fakturaen på e-post med en gang. Privatpersoner har ikke
+  // Ny kunde eller leverandør: starter med organisasjonsnummeret, og
+  // Enhetsregisteret fyller inn navn og adresse. E-post og kontonummer
+  // tas i samme skjema — for en kunde så fakturaen kan sendes med en
+  // gang, for en leverandør så den kan betales. Privatpersoner har ikke
   // orgnr; da skrives navnet.
+  import { untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
 
-  let { companyId } = $props();
+  let { companyId, kind = "kunde" } = $props();
+
+  const T = {
+    kunde: {
+      section: "kunder", title: "Ny kunde", all: "← Alle kunder", one: "kunde", submit: "Legg til kunde",
+      already: "er allerede kunde", open: "Åpne kunden", emailHelp: "Fakturaer sendes hit",
+      accountLabel: "Kontonummer (valgfritt)", accountHelp: "Bare hvis dere skal betale penger tilbake",
+      warn: "Tenk deg om før du fakturerer.",
+    },
+    leverandor: {
+      section: "leverandorer", title: "Ny leverandør", all: "← Alle leverandører", one: "leverandør",
+      submit: "Legg til leverandør", already: "er allerede leverandør", open: "Åpne leverandøren",
+      emailHelp: "For kontakt om fakturaer", accountLabel: "Kontonummer",
+      accountHelp: "Dit dere betaler. Trengs for å betale fra betalingslisten.",
+      warn: "Sjekk at det er riktig selskap før dere betaler.",
+    },
+  }[untrack(() => kind)];
 
   let orgnr = $state("");
   let name = $state("");
@@ -42,7 +59,7 @@
       })
       .catch((e) => digits === nr && (lookup = { status: "error", message: e.message }));
     // The search also matches names; only the same orgnr is a duplicate.
-    api("/companies/" + companyId + "/parties?kind=kunde&limit=10&q=" + nr)
+    api("/companies/" + companyId + "/parties?kind=" + kind + "&limit=10&q=" + nr)
       .then((r) => {
         if (digits !== nr) return;
         existing = r.parties.find((p) => (p.orgnr || "").replace(/\s/g, "") === nr) || null;
@@ -68,15 +85,15 @@
     busy = true;
     try {
       const created = await post("/companies/" + companyId + "/parties", {
-        kind: "kunde",
+        kind,
         name: name.trim(),
         orgnr: digits || null,
         address: address.trim() || null,
         email: email.trim() || null,
         bank_account: bankAccount.trim() || null,
       });
-      toast(name.trim() + " er lagt til som kunde " + created.party_no, true);
-      location.hash = "#/c/" + companyId + "/kunder/" + created.party_id;
+      toast(name.trim() + " er lagt til som " + T.one + " " + created.party_no, true);
+      location.hash = "#/c/" + companyId + "/" + T.section + "/" + created.party_id;
     } catch (e) {
       toast(e.message, false);
     }
@@ -85,9 +102,9 @@
 </script>
 
 <nav class="mb-3">
-  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/kunder"}>← Alle kunder</a>
+  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/" + T.section}>{T.all}</a>
 </nav>
-<h1 class="text-2xl font-bold mb-4">Ny kunde</h1>
+<h1 class="text-2xl font-bold mb-4">{T.title}</h1>
 
 <form class="card border border-base-300 bg-base-100 max-w-2xl" novalidate onsubmit={create}>
   <div class="card-body grid gap-4 sm:grid-cols-2">
@@ -121,14 +138,14 @@
       <div class="alert alert-warning sm:col-span-2" role="alert">
         <span>
           {lookup.unit.navn} er {lookup.unit.slettet ? "slettet" : lookup.unit.konkurs ? "konkurs" : "under avvikling"}
-          ifølge Enhetsregisteret. Tenk deg om før du fakturerer.
+          ifølge Enhetsregisteret. {T.warn}
         </span>
       </div>
     {/if}
     {#if existing}
       <div class="alert alert-info sm:col-span-2">
-        <span>{existing.name} er allerede kunde nr. {existing.party_no}.</span>
-        <a class="btn btn-sm" href={"#/c/" + companyId + "/kunder/" + existing.party_id}>Åpne kunden</a>
+        <span>{existing.name} {T.already} nr. {existing.party_no}.</span>
+        <a class="btn btn-sm" href={"#/c/" + companyId + "/" + T.section + "/" + existing.party_id}>{T.open}</a>
       </div>
     {/if}
 
@@ -161,21 +178,21 @@
         aria-describedby="nc-email-help"
       />
       <span id="nc-email-help" class="label whitespace-normal {err('email') ? 'text-error' : ''}">
-        {err("email") || "Fakturaer sendes hit"}
+        {err("email") || T.emailHelp}
       </span>
     </label>
     <label class="fieldset">
-      <span class="fieldset-legend">Kontonummer (valgfritt)</span>
+      <span class="fieldset-legend">{T.accountLabel}</span>
       <input class="input w-full" inputmode="numeric" bind:value={bankAccount} />
-      <span class="label whitespace-normal">Bare hvis dere skal betale penger tilbake</span>
+      <span class="label whitespace-normal">{T.accountHelp}</span>
     </label>
 
     <div class="flex flex-wrap gap-2 sm:col-span-2">
       <button class="btn btn-primary" disabled={busy}>
         {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-        Legg til kunde
+        {T.submit}
       </button>
-      <a class="btn btn-ghost" href={"#/c/" + companyId + "/kunder"}>Avbryt</a>
+      <a class="btn btn-ghost" href={"#/c/" + companyId + "/" + T.section}>Avbryt</a>
     </div>
   </div>
 </form>

@@ -230,6 +230,67 @@ async fn betalingsliste_pain001_and_settlement() {
         .unwrap();
     assert!(without_account_entry["bank_account"].is_null());
 
+    // Due date and KID live beside the posting (payable_terms). A due date
+    // on the 800 kr post puts it first in the payable list and makes the
+    // wholesaler overdue by exactly that post; a bad KID and a post that is
+    // not ours are refused.
+    let terms = |entry: String, body: serde_json::Value| {
+        let state = &state;
+        let token = &token;
+        async move {
+            request(
+                state,
+                "POST",
+                &format!("/companies/{company}/reskontro/entries/{entry}/terms"),
+                token,
+                Some(body.to_string()),
+            )
+            .await
+        }
+    };
+    let (status, body) = terms(
+        entry_of(800_00),
+        serde_json::json!({ "due_date": "2026-07-20" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, _) = terms(entry_of(800_00), serde_json::json!({ "kid": "12345678" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "MOD10/MOD11 is checked");
+    let (status, _) = terms(
+        Uuid::new_v4().to_string(),
+        serde_json::json!({ "kid": "000000026" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, payable) = request(&state, "GET", &format!("{base}/payable"), &token, None).await;
+    assert_eq!(
+        payable["items"][0]["belop_ore"], 800_00,
+        "due first: {payable}"
+    );
+    assert_eq!(payable["items"][0]["due_date"], "2026-07-20");
+    let (_, suppliers) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/parties?kind=leverandor&sort=overdue&desc=true&limit=10"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(suppliers["parties"][0]["party_no"], wholesaler_no.as_str());
+    assert_eq!(
+        suppliers["parties"][0]["overdue_ore"], 800_00,
+        "only the dated post is overdue"
+    );
+    let (_, wholesaler) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/parties/{wholesaler_id}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(wholesaler["overdue_ore"], 800_00);
+
     // A post whose supplier lacks a konto is refused loudly.
     let (status, _) = request(
         &state,
@@ -374,9 +435,67 @@ async fn betalingsliste_pain001_and_settlement() {
         "utbetalt kan ikke annulleres"
     );
 
-    // The chain verifies over the lot: 3 inngående + utbetalingen.
+    // A post with a stored KID is paid WITH it when the list does not
+    // name one: the newest terms row applies.
+    regnmed_db::post_voucher(
+        &state.pool,
+        company,
+        &leverandorfaktura(date(8, 3), 300_00, &wholesaler_no),
+        "test",
+    )
+    .await
+    .unwrap();
+    let (_, payable) = request(&state, "GET", &format!("{base}/payable"), &token, None).await;
+    let new_post = payable["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["belop_ore"] == 300_00)
+        .unwrap()["entry_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _) = terms(new_post.clone(), serde_json::json!({ "kid": "000000018" })).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = terms(new_post.clone(), serde_json::json!({ "kid": "000000026" })).await;
+    assert_eq!(status, StatusCode::OK, "a correction is a new row");
+    let (_, made) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs"),
+        &token,
+        Some(serde_json::json!({ "items": [{ "entry_id": new_post }] }).to_string()),
+    )
+    .await;
+    let second_run = made["run_id"].as_str().unwrap().to_string();
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs/{second_run}/approve"),
+        &token,
+        Some("{}".to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, xml) = body_text(&state, &format!("{base}/runs/{second_run}/file"), &token).await;
+    assert!(
+        xml.contains("<Ref>000000026</Ref>"),
+        "the newest KID: {xml}"
+    );
+    let rows: i64 = sqlx::query_scalar("select count(*) from payable_terms where entry_id = $1")
+        .bind(Uuid::parse_str(&new_post).unwrap())
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 2, "the corrected KID stays on record");
+    let tamper = sqlx::query("update payable_terms set kid = '000000018'")
+        .execute(&state.pool)
+        .await;
+    assert!(tamper.is_err(), "terms are insert-only in the database");
+
+    // The chain verifies over the lot: 4 inngående + utbetalingen.
     let report = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();
-    assert_eq!(report.vouchers_checked, 4);
+    assert_eq!(report.vouchers_checked, 5);
 }

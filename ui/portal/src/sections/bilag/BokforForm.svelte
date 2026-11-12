@@ -18,6 +18,11 @@
   let date = $state(untrack(() => forslag?.date || today()));
   let description = $state(untrack(() => forslag?.description || ""));
   let lines = $state(untrack(() => forslag?.lines || [tomLinje(), tomLinje()]));
+  let dueDate = $state(untrack(() => forslag?.due_date || ""));
+  let kid = $state(untrack(() => forslag?.kid || ""));
+  // Due date and KID belong to a supplier invoice: asked for once a line
+  // carries a party, sent only then (the server refuses them otherwise).
+  let hasParty = $derived(lines.some((l) => l.party_no));
 
   async function bokfor() {
     const payload = lines
@@ -39,6 +44,8 @@
         date,
         description: description || "Bokført fra innboks",
         lines: payload,
+        due_date: hasParty && dueDate ? dueDate : null,
+        kid: hasParty && kid.trim() ? kid.trim() : null,
       });
       toast("Bokført som bilag " + posted.voucher, true);
       onDone();
@@ -98,6 +105,18 @@
       {/each}
     </div>
     <button class="btn btn-xs btn-ghost" onclick={() => lines.push(tomLinje())}>+ linje</button>
+    {#if hasParty}
+      <div class="flex flex-wrap gap-2 mb-2">
+        <label class="fieldset">
+          <span class="fieldset-legend">Forfall</span>
+          <input type="date" class="input input-sm" bind:value={dueDate} />
+        </label>
+        <label class="fieldset">
+          <span class="fieldset-legend">KID</span>
+          <input class="input input-sm w-48" inputmode="numeric" bind:value={kid} />
+        </label>
+      </div>
+    {/if}
     <button class="btn btn-sm btn-primary" onclick={bokfor}>Bokfør</button>
   </div>
 </div>

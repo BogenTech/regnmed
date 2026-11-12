@@ -131,6 +131,10 @@ pub struct BokforRequest {
     date: chrono::NaiveDate,
     description: String,
     lines: Vec<BokforLine>,
+    /// The supplier invoice's due date and KID, kept beside the supplier
+    /// posting in the same transaction (docs/betaling.md).
+    due_date: Option<chrono::NaiveDate>,
+    kid: Option<String>,
 }
 
 pub async fn bokfor(
@@ -166,6 +170,10 @@ pub async fn bokfor(
         company_id,
         document_id,
         &draft,
+        &regnmed_db::PayableTermsDraft {
+            due_date: request.due_date,
+            kid: request.kid,
+        },
         decided_by,
         person.person_id,
     )

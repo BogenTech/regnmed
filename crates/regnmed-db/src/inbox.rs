@@ -166,6 +166,7 @@ pub async fn bokfor_inbox_document(
     company_id: Uuid,
     document_id: Uuid,
     draft: &VoucherDraft,
+    terms: &crate::payments::PayableTermsDraft,
     decided_by: &str,
     decided_by_person: Uuid,
 ) -> Result<PostedVoucher> {
@@ -239,6 +240,8 @@ pub async fn bokfor_inbox_document(
     }
 
     let posted = post_voucher_in(&mut tx, company_id, draft, decided_by).await?;
+    crate::payments::record_payable_terms_in(&mut tx, company_id, posted.id, terms, decided_by)
+        .await?;
 
     // The attachment names the same bytes: in the row when the document
     // holds them, otherwise the same object in the store (content-addressed,

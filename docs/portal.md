@@ -303,7 +303,10 @@ sider på serveren, utestående og forfalt per kunde; ny kunde fra
 organisasjonsnummeret m/ navn og adresse fra Enhetsregisteret og varsel
 ved konkurs/avvikling; kundeside m/ kundens fakturaer, «Ny faktura» med
 kunden valgt, merket kontaktinfo og reskontroposter under) · Leverandører
-(register, partsside m/ kontaktinfo, åpne poster og manuell matching) · Reskontro (alle parter på tvers, CSV-import) · Mva
+(samme register og «ny» fra orgnr som Kunder, med leverandørens ord og
+fortegn; leverandørside m/ skyldig og forfalt, åpne poster med forfall og
+KID som kan føres og rettes, «Legg i betalingsliste» for valgte poster,
+kontonummer og reskontroposter under — docs/betaling.md) · Reskontro (alle parter på tvers, CSV-import) · Mva
 (spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
 resultat, balanse, budsjett/avvik, konto-, reskontro- og
 bokføringsspesifikasjon, revisjon) · Bank (kontoutskrift, avstemming,

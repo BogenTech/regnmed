@@ -53,6 +53,10 @@ export function forslagTilSkjema(f) {
       (f.selger_navn || f.leverandor_navn || "Bilag") +
       (f.fakturanr ? " faktura " + f.fakturanr : ""),
     lines,
+    // Kept beside the supplier posting so the payment list can pay on
+    // time and with the KID (docs/betaling.md).
+    due_date: f.forfall || "",
+    kid: f.kid || "",
     kildeTekst: KILDE_TEKST[f.kilde] || f.kilde,
     hvorfor: (f.begrunnelser || [])
       .map((b) => b.felt + ": " + b.hvorfor)

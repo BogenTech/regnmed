@@ -450,6 +450,10 @@ pub fn router(state: AppState) -> Router {
             get(subledger::party_items),
         )
         .route(
+            "/companies/{company_id}/reskontro/entries/{entry_id}/terms",
+            axum::routing::post(subledger::record_terms),
+        )
+        .route(
             "/companies/{company_id}/reskontro/matches",
             axum::routing::post(subledger::create_match),
         )

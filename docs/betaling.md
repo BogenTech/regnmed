@@ -41,6 +41,36 @@ som KID MOD11; punktum og mellomrom normaliseres bort). En post hvis
 leverandør mangler gyldig kontonummer avvises høyt ved
 listeopprettelse — og flagges i portalens betalbare liste.
 
+## Forfall og KID på leverandørposter
+
+En leverandørfaktura bokføres fra innboksen som et ordinært bilag. Dens
+forfallsdato og KID ble lest (EHF, bilagstolkning) og så glemt, så
+betalingslisten betalte uten KID — leverandøren måtte avstemme for
+hånd — og ingenting kunne si hva som forfaller når.
+
+De ligger nå i `payable_terms` (migrasjon 0082) ved siden av
+leverandørposten: **opplysninger lest av leverandørens dokument, ikke
+regnskapsinnhold**. Hasjkjeden og `entry`-radene røres ikke.
+
+- **Ved bokføring:** `POST …/inbox/{doc}/bokfor` tar `due_date` og `kid`
+  og skriver dem i SAMME transaksjon som bilaget, på hver
+  leverandørlinje i bilaget. Et bilag uten leverandørlinje avvises
+  med opplysningene — de ville blitt lagret og aldri lest — og
+  ingenting bokføres.
+- **Rette eller føre senere:** `POST …/reskontro/entries/{entry}/terms`
+  (`RESKONTRO_SKRIV`) for en post bokført før dette fantes, eller en
+  skrivefeil. KID kontrolleres (MOD10/MOD11) før noe lagres.
+- **Innsetting, aldri endring:** en retting er en NY rad; den nyeste
+  gjelder, og de tidligere står igjen som sporet av hvem som sa hva,
+  når. Databasen nekter UPDATE, DELETE og TRUNCATE på tabellen uansett
+  rolle (trigger), og appens rolle har bare SELECT og INSERT.
+- **Betalingslisten** bruker postens KID når listen ikke oppgir en
+  selv. De betalbare postene sorteres med det som forfaller først.
+- **Forfalt** for en leverandør (`overdue_ore` i partslisten) er det
+  som står igjen på poster med passert forfallsdato. En post uten
+  forfallsdato regnes aldri som forfalt: systemet gjetter ikke en
+  betalingsbetingelse.
+
 ## pain.001-filen
 
 `regnmed-core::pain001`: hand-rolled deterministisk XML
@@ -59,7 +89,10 @@ Utland/IBAN + BIC, filutvekslingsavtaler og direkte bankinnsending
 ## Endpoints
 
 - `GET  /companies/{id}/payments/payable` — åpne leverandørposter m/
-  kontonummerstatus og «i kjøring»-flagg
+  kontonummerstatus, «i kjøring»-flagg, `due_date` og `kid`, det som
+  forfaller først øverst
+- `POST /companies/{id}/reskontro/entries/{entry}/terms` — før eller
+  rett forfall og KID på en leverandørpost (ny rad, nyeste gjelder)
 - `GET/POST /companies/{id}/payments/runs`
 - `POST /companies/{id}/payments/runs/{rid}/approve` → fil + hash
 - `GET  /companies/{id}/payments/runs/{rid}/file` (hash-sjekket)
@@ -68,8 +101,10 @@ Utland/IBAN + BIC, filutvekslingsavtaler og direkte bankinnsending
 
 Lesing er åpen for alle tilgangsnivåer; alt annet krever bokforing.
 Portal: Bank-seksjonen har Betalingsliste-kortet (betalbare poster,
-lag liste, godkjenn, last ned pain.001, registrer utbetalt);
-leverandørens kontonummer settes på partssiden under Reskontro.
+lag liste, godkjenn, last ned pain.001, registrer utbetalt).
+Leverandørsiden under Leverandører viser skyldig og forfalt, de åpne
+postene med forfall og KID, og legger valgte poster i en betalingsliste
+som så godkjennes av en annen under Bank; kontonummeret settes der.
 
 ## Where it is tested
 
@@ -81,4 +116,11 @@ leverandørens kontonummer settes på partssiden under Reskontro.
   kreditordata, fil KUN etter separat godkjenning (KID som SCOR,
   normalisert kontonummer, CtrlSum), DB-immutabilitet for kjøring og
   rader, oppgjør som lukker reskontroen eksakt i én transaksjon,
-  annullering avvist etter utbetaling, kjedeverifikasjon.
+  annullering avvist etter utbetaling, kjedeverifikasjon. Forfall og
+  KID: en forfallsdato setter posten først i listen og gjør leverandøren
+  forfalt med akkurat den posten, ugyldig KID og fremmed post avvises,
+  en post med lagret KID betales MED den (nyeste rad gjelder, rettingen
+  står igjen), og tabellen nekter UPDATE i databasen.
+- `crates/regnmed-api/tests/grupper/innboks.rs` — forfall og KID på et
+  bilag uten leverandørlinje avvises, og dokumentet står fortsatt som
+  ubehandlet.
