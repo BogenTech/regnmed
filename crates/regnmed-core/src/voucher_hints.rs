@@ -47,6 +47,10 @@ pub struct Hints {
     /// Gross amount to pay.
     pub amount_ore: Option<Finding<i64>>,
     pub vat_ore: Option<Finding<i64>>,
+    /// More than one plausible VAT line with different amounts: likely a
+    /// VAT line per rate. `vat_ore` holds one of them, so the reader must
+    /// be told the invoice needs splitting by rate.
+    pub several_vat_lines: bool,
 }
 
 fn digits_only(s: &str) -> String {
@@ -150,6 +154,9 @@ fn normalized(line: &str) -> String {
 pub fn read(text: &str) -> Hints {
     let mut hints = Hints::default();
     let lines: Vec<&str> = text.lines().collect();
+    // Every line that looks like VAT, in reading order; the choice is
+    // made at the end, against the total (see below).
+    let mut vat_candidates: Vec<i64> = Vec::new();
 
     for (i, line) in lines.iter().enumerate() {
         let lower = normalized(line);
@@ -259,16 +266,42 @@ pub fn read(text: &str) -> Hints {
                 break;
             }
         }
-        if hints.vat_ore.is_none()
-            && (lower.contains("mva") || lower.contains("merverdiavgift"))
-            && !lower.contains("orgnr")
+        // «Org.nr 974 760 673 MVA» is the Foretaksregister marking, not
+        // a tax line: any spelling of «org» or a valid orgnr among the
+        // numbers rules the line out.
+        let carries_orgnumber = tokens.iter().any(|t| {
+            let d = digits_only(t);
+            d.len() == 9 && crate::orgnumber::is_valid(&d)
+        });
+        if (lower.contains("mva") || lower.contains("merverdiavgift"))
+            && !lower.contains("org")
+            && !carries_orgnumber
             && !lower.contains("inkl")
             && let Some(amount) = tokens.iter().filter_map(|t| parse_amount(t)).next_back()
             && amount > 0
         {
-            hints.vat_ore = Some(Finding::new(amount, "etter «mva»"));
+            vat_candidates.push(amount);
         }
     }
+    // VAT is at most a fifth of a gross amount (25 % on the net is 20 % of
+    // the gross), so a candidate above that was read off the wrong line --
+    // typically a line-item table whose header has a «Mva» column. The
+    // summary comes after the items, so the LAST plausible candidate wins.
+    // Without a total there is nothing to check against: the last one.
+    let plausible = |vat: i64| {
+        hints
+            .amount_ore
+            .as_ref()
+            .is_none_or(|total| vat * 5 <= total.value + 5)
+    };
+    let mut fitting: Vec<i64> = vat_candidates
+        .into_iter()
+        .filter(|&v| plausible(v))
+        .collect();
+    hints.vat_ore = fitting.last().map(|&vat| Finding::new(vat, "etter «mva»"));
+    fitting.sort_unstable();
+    fitting.dedup();
+    hints.several_vat_lines = fitting.len() > 1;
     hints
 }
 
@@ -324,6 +357,37 @@ KID: 1234567897
         assert_eq!(f.vat_ore.as_ref().unwrap().value, 562_50);
         assert_eq!(f.account_number.as_ref().unwrap().value, "86011117947");
         assert_eq!(f.kid.as_ref().unwrap().value, "1234567897");
+    }
+
+    /// regnmed's own invoice PDF writes «Org.nr 790 292 642 MVA»: the
+    /// orgnr, spaced and dotted, was once read as 790 292 642 kr of VAT.
+    #[test]
+    fn the_foretaksregister_marking_is_not_a_vat_amount() {
+        let text = "Purredemo AS\nOrg.nr 790 292 642 MVA\nFaktura 2\nSats 25 %  Mva 250,00\nÅ betale 1 250,00\n";
+        let f = read(text);
+        assert_eq!(f.amount_ore.as_ref().unwrap().value, 1_250_00);
+        assert_eq!(f.vat_ore.as_ref().unwrap().value, 250_00);
+        // A VAT figure larger than a fifth of the total is dropped.
+        let f = read("Mva 2 000,00\nÅ betale 1 250,00\n");
+        assert!(f.vat_ore.is_none());
+    }
+
+    /// A line-item table with a «Mva» column header above the first item:
+    /// the header falls through to the item's amount, which is no VAT.
+    /// The summary's VAT line, later and within a fifth, wins.
+    #[test]
+    fn several_vat_lines_are_flagged() {
+        let text = "Mva 15 % 120,00\nMva 25 % 50,00\nÅ betale 1 090,00\n";
+        let f = read(text);
+        assert!(f.several_vat_lines);
+        assert!(!read(INVOICE).several_vat_lines);
+    }
+
+    #[test]
+    fn a_vat_column_header_does_not_shadow_the_summary() {
+        let text = "Beskrivelse   Antall   Pris   Mva   Beløp\n                    Konsulentbistand  1  1 000,00  25 %  1 000,00\n                    Netto 1 000,00\nMva 25 % 250,00\nÅ betale 1 250,00\n";
+        let f = read(text);
+        assert_eq!(f.vat_ore.as_ref().unwrap().value, 250_00);
     }
 
     #[test]

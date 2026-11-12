@@ -62,7 +62,10 @@ pub async fn upload(
 
 #[derive(Deserialize)]
 pub struct ListQuery {
+    /// `ny`, `bokfort`, `avvist`, or `behandlet` (everything decided).
     status: Option<String>,
+    /// At most this many, newest first (1..=200). Absent = all.
+    limit: Option<i64>,
 }
 
 pub async fn list(
@@ -72,7 +75,9 @@ pub async fn list(
     Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherRead).await?;
-    let rows = regnmed_db::list_inbox(&state.pool, company_id, query.status.as_deref()).await?;
+    let limit = query.limit.map(|n| n.clamp(1, 200));
+    let rows =
+        regnmed_db::list_inbox(&state.pool, company_id, query.status.as_deref(), limit).await?;
     Ok(Json(json!({
         "documents": rows.iter().map(|d| json!({
             "document_id": d.id,

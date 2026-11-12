@@ -241,6 +241,32 @@ async fn inbox_document_becomes_a_voucher_with_attachment_atomically() {
     .await;
     let doc = &listing["documents"][0];
     assert_eq!(doc["status"], "bokfort");
+    // The portal's tabs: what waits, and the decided history in pages.
+    let (_, decided) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/inbox?status=behandlet&limit=5"),
+        &forer_token,
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        decided["documents"].as_array().unwrap().len(),
+        1,
+        "{decided}"
+    );
+    assert_eq!(decided["documents"][0]["status"], "bokfort");
+    let (_, waiting) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/inbox?status=ny"),
+        &forer_token,
+        None,
+        None,
+    )
+    .await;
+    assert!(waiting["documents"].as_array().unwrap().is_empty());
     assert_eq!(doc["voucher_id"].as_str().unwrap(), voucher_id);
     let (status, _) = request(
         &state,

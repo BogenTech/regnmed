@@ -8,7 +8,9 @@
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
 
-  let { companyId, kind = "kunde" } = $props();
+  // `?orgnr=` prefills the lookup (from a document whose supplier the
+  // system read but does not know yet).
+  let { companyId, kind = "kunde", query = "" } = $props();
 
   const T = {
     kunde: {
@@ -26,7 +28,7 @@
     },
   }[untrack(() => kind)];
 
-  let orgnr = $state("");
+  let orgnr = $state(untrack(() => new URLSearchParams(query).get("orgnr") || ""));
   let name = $state("");
   let address = $state("");
   let email = $state("");

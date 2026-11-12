@@ -45,16 +45,36 @@ by calling the API directly.
 | Endpoint | Access |
 | --- | --- |
 | `POST /companies/{id}/inbox?filename=` (bytes) | admin/bokforing |
-| `GET /companies/{id}/inbox[?status=ny]` | any (revisor reads) |
+| `GET /companies/{id}/inbox[?status=ny\|behandlet&limit=]` | any (revisor reads) |
 | `GET /companies/{id}/inbox/{doc}/content` | any, hash-checked |
 | `POST /companies/{id}/inbox/{doc}/bokfor` (voucher draft) | admin/bokforing |
 | `POST /companies/{id}/inbox/{doc}/avvis` (`{note}`) | admin/bokforing |
 | `POST /companies/{id}/inbox/{doc}/attester` (`{godkjent, note?}`) | admin/bokforing |
 | `GET /companies/{id}/inbox/{doc}/attestering` | any (revisor reads) |
 
-Portal: the Bilag section opens with Til attestering (the queue and the
-policy form), then the inbox — upload, pending list with Bokfør
-(inline voucher form) and Avvis, and the recent decisions under it.
+I portalen er innboksen Bilag-seksjonens forside: kamera, flere filer
+om gangen eller dra-og-slipp, e-post-inn-adressen med kopieringsknapp,
+og listen over det som venter (med attesteringsstatus når regelen er
+på). Hvert dokument åpnes på sin egen side (`#/c/{id}/bilag/{doc}`) med
+dokumentet vist ved siden av bokføringen (PDF og bilder; se
+docs/auth.md om hvordan), forslaget fylt inn med en gang, attestering
+og avvisning på samme sted, og etter bokføring rett videre til neste
+dokument som venter.
+
+Bokføringsskjemaet spør i den ENKLE formen om det man ser på
+dokumentet — hvordan det ble betalt (faktura som skal betales / betalt
+fra bank / kontant), leverandør, beløp inkl. mva, mva-sats og hva det
+var (kontovelgeren) — og viser linjene det vil bokføre: kostnad netto,
+inngående mva på 2710 og brutto mot 2400 med leverandøren som part
+(eller mot 1920/1900). Mva-delingen speiler `regnmed-core::vat::
+split_gross` (`bookingMath.js`, testet). «Avansert» gir linjene
+direkte, med leverandørvalg per linje og om debet og kredit går opp.
+Server er fortsatt den som validerer og bokfører; skjemaet sier fra
+FØR innsending om en konto ikke finnes i kontoplanen eller
+standardkatalogen, og legger en standardkonto inn i kontoplanen første
+gang den brukes. Behandlede dokumenter, bokførte bilag (søkbare, i
+sider, med vedlegg) og innstillingene (attesteringsregelen og
+e-post-inn) er egne faner.
 
 ## Deliberately not yet
 

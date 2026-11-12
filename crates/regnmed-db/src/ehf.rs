@@ -384,6 +384,13 @@ pub async fn inbox_suggestion(
                     suggestion.gross_ore = Some(f.value);
                     note("brutto", &f.reason);
                 }
+                if t.several_vat_lines {
+                    suggestion.warnings.push(
+                        "dokumentet har mva på flere satser — kontroller beløpet og del linjene \
+                         per sats under «Avansert»"
+                            .into(),
+                    );
+                }
                 if let Some(f) = &t.vat_ore {
                     suggestion.vat_ore = Some(f.value);
                     note("mva", &f.reason);

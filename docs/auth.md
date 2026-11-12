@@ -734,6 +734,16 @@ konsollfeil i stedet for et innbrudd. `style-src` tillater inline stil,
 fordi nøkkeltallsøylene er ren CSS (#36) og injisert stil er et
 vesentlig mindre problem enn injisert skript.
 
+`frame-src 'self' blob:` finnes for én ting: Bilag viser et innboks-PDF
+ved siden av bokføringsskjemaet, fra en blob-URL portalen lager selv.
+Bytene hentes som før (som nedlasting, med serverens egen
+innholdstype), og portalen ser på **bytene selv** — `%PDF-`, eller
+PNG/JPEG/GIF/WebP-signaturen — og gir blob-en den typen den har sjekket,
+aldri den opplasteren oppga. Et dokument som ikke er et av disse vises
+ikke, det lastes ned. Ingen annen kilde kan rammes inn (ikke andre
+opphav, ikke `data:`); `object-src 'none'` står. Testen
+`the_csp_pins_the_portals_own_inline_script` fester begge.
+
 ## 10. I portalen
 
 **«Inviter folkene dine»** (#79): så lenge selskapet har nøyaktig ett

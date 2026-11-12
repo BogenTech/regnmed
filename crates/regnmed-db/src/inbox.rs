@@ -89,10 +89,15 @@ pub async fn upload_inbox_document(
     Ok(id)
 }
 
+/// Inbox documents, newest first. `status` is a stored status (`ny`,
+/// `bokfort`, `avvist`) or `behandlet` for everything decided; `limit`
+/// caps the answer (None = all) so the decided history, which only grows,
+/// is never downloaded whole.
 pub async fn list_inbox(
     pool: &PgPool,
     company_id: Uuid,
     status: Option<&str>,
+    limit: Option<i64>,
 ) -> Result<Vec<InboxRow>> {
     let rows = sqlx::query(
         "select d.id, d.filename, d.content_type, d.byte_size, d.sha256, d.uploaded_by,
@@ -105,11 +110,16 @@ pub async fn list_inbox(
                and a.target_kind = 'inbox_document' and a.target_id = d.id
              order by a.created_at desc, a.id desc limit 1
          ) att on true
-         where d.company_id = $1 and ($2::text is null or d.status = $2)
-         order by d.created_at desc",
+         where d.company_id = $1
+           and ($2::text is null
+                or d.status = $2
+                or ($2 = 'behandlet' and d.status <> 'ny'))
+         order by d.created_at desc
+         limit $3",
     )
     .bind(company_id)
     .bind(status)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows
