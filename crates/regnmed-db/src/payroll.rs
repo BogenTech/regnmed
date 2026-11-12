@@ -540,6 +540,7 @@ pub async fn run_payroll(
 
     let mut sum = PayrollTotals::default();
     let mut lines = Vec::new();
+    let mut frikort_warnings = Vec::new();
 
     for post in poster {
         let employee = employees
@@ -592,23 +593,49 @@ pub async fn run_payroll(
                 })?
         };
         ensure!(gross >= 0, "brutto kan ikke være negativ");
+        ensure!(
+            post.holiday_pay_ore >= 0,
+            "feriepenger kan ikke være negative"
+        );
+
+        // Only a frikort counts what was paid before; skip the query for
+        // everyone else.
+        // shortcut: two runs for the same company at the same moment
+        // would each miss the other's pay; runs are a person's deliberate
+        // monthly act, not concurrent jobs.
+        let paid_earlier_this_year_ore = match employee.withholding() {
+            Withholding::TaxFreeCard { .. } => {
+                let year = paid_date.year();
+                // The count starts at zero each year: last year's limit
+                // in January would hand out the whole limit again.
+                ensure!(
+                    crate::tax_card::has_tax_free_card(pool, company_id, employee.id, year).await?,
+                    "{} har frikort, men ikke et hentet frikort for {year} — hent årets \
+                     skattekort før lønnen utbetales",
+                    employee.name
+                );
+                let paid = paid_this_year(pool, company_id, employee.id, year).await?;
+                let month_start = paid_date.with_day(1).context("ugyldig dato")?;
+                if paid == 0 && employee.employed_from < month_start && paid_date.month() > 1 {
+                    frikort_warnings.push(format!(
+                        "{}: frikortet telles fra lønnen regnmed har utbetalt i {year}, og det \
+                         er ingen før denne kjøringen. Er det utbetalt lønn i {year} i et annet \
+                         system, er den ikke trukket fra beløpsgrensen — trekket må da \
+                         rettes for hånd.",
+                        employee.name
+                    ));
+                }
+                paid
+            }
+            _ => 0,
+        };
 
         let calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
                 withholding: employee.withholding(),
-                // Only a frikort counts what was paid before; skip the
-                // query for everyone else.
-                // shortcut: two runs for the same company at the same
-                // moment would each miss the other's pay; runs are a
-                // person's deliberate monthly act, not concurrent jobs.
-                paid_earlier_this_year_ore: match employee.withholding() {
-                    Withholding::TaxFreeCard { .. } => {
-                        paid_this_year(pool, company_id, employee.id, paid_date.year()).await?
-                    }
-                    _ => 0,
-                },
+                paid_earlier_this_year_ore,
             },
             // Pay is taxed in the year it is paid, so December's pay paid
             // in January takes January's tables -- like the aga rate.
@@ -923,6 +950,7 @@ pub async fn run_payroll(
             crate::tax_card::unapplied_warnings(pool, company_id, paid_date.year(), &employees)
                 .await?,
         )
+        .chain(frikort_warnings)
         .collect();
     Ok(PayrollRun {
         id: run_id,
@@ -1114,7 +1142,6 @@ pub async fn payslip(
         });
     }
 
-    let withholding_type: String = row.get("trekk_type");
     Ok(PayslipInput {
         employer_name: row.get("selskap"),
         employer_orgnumber: row.get("orgnr"),
@@ -1135,9 +1162,6 @@ pub async fn payslip(
         withholding_basis_ore: row.get("trekkgrunnlag_ore"),
         withholding_ore: row.get("forskuddstrekk_ore"),
         withholding_method: row.get("withholding_method"),
-        withholding_percent_bp: (withholding_type == "prosent")
-            .then(|| row.get::<Option<i32>, _>("trekk_prosent_bp").map(i64::from))
-            .flatten(),
         half_withholding: row.get("halv_trekk"),
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),

@@ -241,9 +241,18 @@ pub fn decide(card: &TaxCard) -> Decision {
     if let Some(frikort) = trekk.get("frikort") {
         return match frikort.get("frikortbeloep") {
             None => Decision::Apply(Withholding::None),
-            // Whole kroner allotted to this employer; 0 means 50 % from
-            // the first krone.
-            Some(limit) => match limit.as_i64().filter(|l| *l >= 0) {
+            // 0 is not read as "50 % from the first krone": Skatteetaten's
+            // own test answer has 0 on hovedarbeidsgiver, biarbeidsgiver
+            // and NAV alike, so it cannot mean "allotted elsewhere" there,
+            // and guessing wrong takes half of every payslip. Kept until
+            // its meaning is confirmed.
+            Some(limit) if limit.as_i64() == Some(0) => Decision::Keep(
+                "Frikortet har beløpsgrense 0 kr hos denne arbeidsgiveren — registrer \
+                 trekket for hånd etter skattekortet."
+                    .into(),
+            ),
+            // Whole kroner allotted to this employer.
+            Some(limit) => match limit.as_i64().filter(|l| *l > 0) {
                 Some(kr) => Decision::Apply(Withholding::TaxFreeCard {
                     limit_ore: kr * 100,
                 }),
@@ -359,11 +368,8 @@ mod tests {
         assert!(
             matches!(decision("11824498484"), Decision::Keep(r) if r.contains("hovedarbeidsgiver"))
         );
-        // Frikort med beløpsgrense: this employer was allotted 0 kr.
-        assert_eq!(
-            decision("01810199403"),
-            Decision::Apply(Withholding::TaxFreeCard { limit_ore: 0 })
-        );
+        // Frikort med beløpsgrense 0 kr: kept until 0 is understood.
+        assert!(matches!(decision("01810199403"), Decision::Keep(r) if r.contains("0 kr")));
         // Kildeskatt over 12 måneder.
         assert_eq!(
             decision("05850298728"),

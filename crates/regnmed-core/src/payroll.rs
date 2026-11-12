@@ -170,7 +170,11 @@ pub struct PayrollCalculation {
 ///   employer may instead take it in the second half of November —
 ///   regnmed does December, the common choice, and says so).
 ///
-/// Rounding is half away from zero, on the month's whole trekkgrunnlag.
+/// The trekk is rounded DOWN to whole kroner: the a-melding reports
+/// forskuddstrekk in whole kroner (`amelding::whole_kroner` refuses
+/// øre), and a run is insert-only, so a trekk in øre would leave a month
+/// that can never be delivered. Down, so the employee is never withheld
+/// more than the card says; the øre are settled by the skatteoppgjør.
 pub fn calculate(
     basis: &PayrollBasis,
     year: i32,
@@ -229,6 +233,7 @@ pub fn calculate(
             }
         }
     };
+    let withholding = withholding - withholding.rem_euclid(100);
     Ok(PayrollCalculation {
         gross_ore: basis.gross_ore,
         holiday_pay_ore: basis.holiday_pay_ore,
@@ -467,6 +472,33 @@ mod tests {
         let dec = calculate(&basis(5_000_000, Withholding::Table(7350)), 2026, 12).unwrap();
         assert_eq!(dec.withholding_ore, kr * 100);
         assert_eq!(dec.method, "tabell 7350");
+        // Feriepenger are in the trekkgrunnlag of a 12-month table:
+        // 40 000 lønn + 10 000 feriepenger looks up the same 50 000.
+        let mut holiday = basis(4_000_000, Withholding::Table(7350));
+        holiday.holiday_pay_ore = 1_000_000;
+        let holiday = calculate(&holiday, 2026, 6).unwrap();
+        assert_eq!(holiday.withholding_basis_ore, 5_000_000);
+        assert_eq!(holiday.withholding_ore, kr * 100);
+    }
+
+    /// The a-melding takes forskuddstrekk in whole kroner, so the trekk
+    /// is rounded down to one -- for every method.
+    #[test]
+    fn the_trekk_is_whole_kroner_rounded_down() {
+        // 35 % of 41 001 kr = 14 350,35 kr.
+        let percent = calculate(&basis(4_100_100, Withholding::Percent(3500)), 2026, 3).unwrap();
+        assert_eq!(percent.withholding_ore, 1_435_000);
+        assert_eq!(percent.net_ore, 4_100_100 - 1_435_000);
+        // 1 kr over a frikort's limit: 50 % is 0,50 kr, which is nothing.
+        let frikort = PayrollBasis {
+            gross_ore: 3_000_100,
+            holiday_pay_ore: 0,
+            withholding: Withholding::TaxFreeCard {
+                limit_ore: 3_000_000,
+            },
+            paid_earlier_this_year_ore: 0,
+        };
+        assert_eq!(calculate(&frikort, 2026, 3).unwrap().withholding_ore, 0);
     }
 
     /// Frikort: nothing until the limit, then 50 % of what exceeds it --

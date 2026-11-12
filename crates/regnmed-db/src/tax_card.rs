@@ -123,6 +123,27 @@ pub async fn record_failure(
     Ok(())
 }
 
+/// Whether a fetched frikort for `year` was set on the employee. A
+/// frikort can only come from a fetched card, so this is the check that
+/// the employee's frikort is this year's and not last year's.
+pub async fn has_tax_free_card(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    year: i32,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "select exists (select 1 from tax_card
+                         where company_id = $1 and employee_id = $2
+                           and income_year = $3 and applied = 'frikort')",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .bind(year)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Warnings for a payroll run: employees whose newest skattekort for the
 /// year was NOT applied, so the run used whatever withholding they had.
 /// The card's own note says what to do.
