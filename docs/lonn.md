@@ -333,6 +333,10 @@ listingen.
 | GET | `/companies/{id}/employees/{eid}/link/history` |
 | GET/POST | `/companies/{id}/payroll` |
 | GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
+| GET | `/companies/{id}/payroll/{run}/amelding` (`?format=xml`) |
+| GET/POST | `/companies/{id}/payroll/{run}/amelding/submissions` |
+| GET | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding` (måned uten kjøring) |
+| GET/POST | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding/submissions` |
 | GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
 | GET | `/companies/{id}/tax-cards` (bestillinger og svar) |
 | POST | `/companies/{id}/tax-cards?year=` (bestill og hent skattekort) |
@@ -347,9 +351,12 @@ Lesing krever tilgang; registrering og kjøring krever `bokforing` eller
 a-melding, håndrullet og deterministisk som RF-1086, og validert mot
 Skatteetatens offisielle XSD v2.3 (vendored i docs/amelding/, med kilde,
 versjon og hash i docs/amelding/README.md) i enhetstestene og i CI.
-**Den sender ingenting** — innsending venter på Altinn-systembrukeren
-(#180). Fra en lagret kjøring lages meldingen av
-`regnmed-db::payroll::amelding_for_run`, se «Fra lagret kjøring» under.
+Innsendingen er bygget (se «Innsendingssporet» under) og prøvd mot
+Skatteetatens testmiljø; i produksjon venter den på
+Altinn-systembrukeren (#180, docs/gov.md). Fra en lagret kjøring lages
+meldingen av `regnmed-db::payroll::amelding_for_run`, se «Fra lagret
+kjøring» under; for en måned UTEN kjøring av `amelding_for_month`, se
+«Måned uten lønnskjøring».
 
 ### XSD-en er det minste, ikke det hele
 
@@ -448,13 +455,6 @@ Renderen nekter også, med eget navn:
   hovedboken; hvordan den skal se ut i a-meldingen (erstatningsmelding)
   er ikke modellert.
 
-Og ett hull som ikke er et felt:
-
-2. **En måned uten lønnskjøring.** Meldingen lages av en lagret
-   kjøring, så en måned der INGEN får lønn har ingen melding å lage —
-   men arbeidsforholdene skal likevel rapporteres (F108). Den måneden
-   må leveres på annet vis.
-
 ### Arbeidsforhold uten lønn i måneden (F108)
 
 Et arbeidsforhold rapporteres hver måned til og med måneden sluttdatoen
@@ -489,6 +489,52 @@ av en annen levert melding), nå med sluttdatoen. Kilden er den lagrede
 meldingen selv (`amelding_submission.body`, nøyaktig det som ble sendt),
 ikke en gjetning. En forrige måned som ble levert utenfor regnmed, ser
 regnmed ikke.
+
+### Måned uten lønnskjøring
+
+En måned der INGEN får lønn, har ingen kjøring å lage meldingen av —
+men arbeidsforholdene skal rapporteres likevel (F108; Skatteetaten:
+a-melding skal sendes når arbeidsgiveren har aktive arbeidsforhold, selv
+om det ikke er utbetalt lønn den måneden). `amelding_for_month` lager
+den: hvert arbeidsforhold som er ansatt i måneden (og en sluttdato ført
+for sent, som over), med **arbeidsforholdet alene**. Meldingen har ingen
+lønnsutbetalingsdato, så `sumForskuddstrekkPerLoennsutbetalingsdato`
+utelates; den har intet avgiftsgrunnlag, så `arbeidsgiveravgift` på
+virksomheten utelates og `sumArbeidsgiveravgift` er 0. Alt er valgfritt
+i XSD-en, og meldingen valideres mot den i enhetstesten.
+
+Uten noen å rapportere (ingen ansatt i måneden) er det en hindring:
+uten ansatte og uten utbetalinger skal det ikke leveres a-melding.
+
+**En måned som har en kjøring, er kjøringens.** Kjøringens melding tar
+allerede med arbeidsforholdene uten lønn, så en NY månedsmelding nektes
+da. Får måneden en kjøring ETTER at månedsmeldingen er levert,
+**erstatter** kjøringens første melding den (`erstatterMeldingsId`):
+sendt ved siden av ville den rapportert de samme arbeidsforholdene to
+ganger, siden meldinger for samme måned legges sammen hos Skatteetaten.
+
+**En månedsmelding som feilet, blir ikke stående.** Et tidsavbrudd kan
+komme ETTER at Skatteetaten tok imot meldingen, så et lagret, ikke
+levert forsøk har ukjent skjebne. Det kan derfor fortsatt sendes på nytt
+— samme kropp, samme nøkkel, telles ikke dobbelt — også etter at måneden
+har fått en kjøring, og kjøringens første melding **nektes** så lenge et
+slikt forsøk står: den kan ikke erstatte en melding uten kvittering, og
+sendt ved siden av kunne den telt arbeidsforholdene to ganger. Når
+forsøket er levert, erstatter kjøringens melding det som over.
+Innsendingssporet er det samme som for en kjøring — lagret før det
+sendes, samme kropp og nøkkel ved nytt forsøk, erstatning bare på
+uttrykkelig forespørsel — men en månedsinnsending har ingen
+`run_id` (migration 0081) og kjennes på selskap og måned; låsen er
+selskapsraden i stedet for kjøringsraden.
+
+`GET /companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding` (`LONN_KJOR`)
+gir forhåndsvisningen og `?format=xml` filen, med `…/submissions` og
+`…/submissions/{sid}/feedback` som for en kjøring. I portalen: «A-melding
+for en måned uten lønnskjøring» under kjøringene.
+
+**Det regnmed ikke gjør**: å huske måneden for deg. Ingen jobb lager
+eller sender månedsmeldingen av seg selv; lønnsansvarlig må åpne den,
+som en kjøring.
 
 ### Fra lagret kjøring
 
@@ -654,11 +700,12 @@ Rekkefølgen er omtrent den de bør tas i.
    validert mot XSD-en (se «A-meldingen» under), og arbeidsforholdets
    felt finnes nå (0073), og den lages fra en lagret kjøring med trekk
    og avgift i hele kroner og med arbeidsforholdene uten lønn i
-   måneden (F108); en måned helt uten lønnskjøring har ingen melding
-   ennå, og innsending venter på
-   Altinn-systembrukeren (#180, docs/gov.md). Inntil videre er dette
-   internt regnskap, ikke rapportering — **selskapet må fortsatt levere
-   a-melding på annet vis.** Dette er den viktigste mangelen.
+   måneden (F108), også for en måned helt uten lønnskjøring.
+   Innsendingen er bygget og prøvd i testmiljøet, men venter i
+   produksjon på Altinn-systembrukeren (#180, docs/gov.md). Inntil
+   den er på plass er dette internt regnskap, ikke rapportering —
+   **selskapet må fortsatt levere a-melding på annet vis.** Dette er
+   den viktigste mangelen.
 2. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
@@ -827,7 +874,18 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   sluttdatoen og en april-melding uten den ansatte, mens den som sluttet
   før februar holdes ute. Sett feile med lønnsmåneden i stedet for
   utbetalingsmåneden, med de ulønnede utelatt og med regelen for sen
-  sluttdato fjernet.
+  sluttdato fjernet. For en måned uten kjøring: at meldingen bærer
+  hvert arbeidsforhold alene og validerer mot XSD-en uten
+  utbetalingsdato og avgiftsblokk, at en tom måned er en hindring, at
+  den lagres, prøves på nytt uendret og leveres én gang, at den nektes
+  når måneden har en kjøring, og at kjøringens første melding da
+  erstatter den (men ikke i en måned uten levert månedsmelding); og at
+  en månedsmelding som feilet, fortsatt kan sendes på nytt etter at
+  måneden fikk en kjøring, mens kjøringen nektes til den er levert — sett
+  feile med erstatningen, kjøringsvakten, ventevakten og den gamle
+  nektingen av nye forsøk. Gjennom API-et:
+  forhåndsvisning, ugyldig måned, nektet måned med kjøring, innsending,
+  liste og tilbakemelding mot en etterlignet Skatteetaten.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir

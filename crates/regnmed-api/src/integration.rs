@@ -226,7 +226,8 @@ pub async fn create_agent(
         None => {
             let Some(cfg) = state.regnid.as_ref() else {
                 return Err(ApiError::BadRequest(
-                    "denne installasjonen kan ikke opprette agentidentiteter selv —                      oppgi en client_id fra påloggingstjenesten (docs/agent.md §8.6)"
+                    "denne installasjonen kan ikke opprette agentidentiteter selv — \
+                     oppgi en client_id fra påloggingstjenesten (docs/agent.md §8.6)"
                         .into(),
                 ));
             };
@@ -234,7 +235,8 @@ pub async fn create_agent(
             // creating anything we would then have to throw away.
             if state.sealing_key.is_none() {
                 return Err(ApiError::BadRequest(
-                    "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
+                    "vertsagenter er ikke satt opp på denne installasjonen \
+                     (AGENT_SEALING_KEY mangler)"
                         .into(),
                 ));
             }
@@ -325,7 +327,8 @@ pub async fn create_agent(
         (Some(model), Some(api_key)) => {
             let Some(key) = state.sealing_key.as_ref() else {
                 return Err(ApiError::BadRequest(
-                    "vertsagenter er ikke satt opp på denne installasjonen                      (AGENT_SEALING_KEY mangler)"
+                    "vertsagenter er ikke satt opp på denne installasjonen \
+                     (AGENT_SEALING_KEY mangler)"
                         .into(),
                 ));
             };

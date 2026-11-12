@@ -356,6 +356,96 @@ async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
     );
 }
 
+/// A month WITHOUT a payroll run (F108): previewed, sent and answered
+/// through `/payroll/months/{yyyy-mm}/amelding`, with the arbeidsforhold
+/// alone. A month that has a run is the run's to report.
+#[tokio::test]
+async fn a_month_without_a_run_is_sent_with_the_arbeidsforhold_alone() {
+    let Some(Fixture {
+        state,
+        skatteetaten,
+        submissions,
+        admin,
+        auditor,
+        ..
+    }) = setup(None).await
+    else {
+        return;
+    };
+    let (admin, auditor) = (&admin, &auditor);
+    let company = submissions.split('/').nth(2).unwrap();
+    let april = format!("/companies/{company}/payroll/months/2026-04/amelding");
+
+    let (code, preview) = call(&state, "GET", &april, admin, "").await;
+    assert_eq!(code, StatusCode::OK, "{preview}");
+    assert_eq!(preview["leverbar"], true, "{preview}");
+    assert_eq!(preview["kalendermaaned"], "2026-04");
+    assert_eq!(preview["inntektsmottakere"], 1);
+    assert_eq!(preview["arbeidsgiveravgift_ore"], 0);
+
+    for (month, expected) in [("2026-13", "ugyldig måned"), ("2026-3", "ugyldig måned")] {
+        let uri = format!("/companies/{company}/payroll/months/{month}/amelding");
+        let (code, body) = call(&state, "GET", &uri, admin, "").await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{month}");
+        assert!(body["error"].as_str().unwrap().contains(expected), "{body}");
+    }
+    // March has a run: its melding reports the month.
+    let march = format!("/companies/{company}/payroll/months/2026-03/amelding");
+    let (code, body) = call(&state, "GET", &march, admin, "").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("rapporterer allerede 03/2026 — send a-meldingen fra den"),
+        "{body}"
+    );
+
+    let (code, _) = call(
+        &state,
+        "POST",
+        &format!("{april}/submissions"),
+        auditor,
+        "{}",
+    )
+    .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, sent) = call(&state, "POST", &format!("{april}/submissions"), admin, "{}").await;
+    assert_eq!(code, StatusCode::OK, "{sent}");
+    assert_eq!(
+        (&sent["status"], &sent["periode"]),
+        (&"levert".into(), &"2026-04".into())
+    );
+    {
+        let s = skatteetaten.lock().unwrap();
+        let leveranse = &s.calls[0].1["leveranse"];
+        assert_eq!(leveranse["kalendermaaned"], "2026-04");
+        let body = leveranse.to_string();
+        assert!(body.contains("arbeidsforholdId"), "{body}");
+        assert!(!body.contains("loennsutbetalingsdato"), "{body}");
+        assert!(!body.contains("\"inntekt\""), "{body}");
+    }
+    let (_, listed) = call(&state, "GET", &format!("{april}/submissions"), auditor, "").await;
+    assert_eq!(listed["innsendinger"].as_array().unwrap().len(), 1);
+    // The run's submissions are not the month's.
+    let (_, runs) = call(&state, "GET", &submissions, auditor, "").await;
+    assert_eq!(runs["innsendinger"], serde_json::json!([]));
+
+    let (code, fed) = call(
+        &state,
+        "POST",
+        &format!(
+            "{april}/submissions/{}/feedback",
+            sent["id"].as_str().unwrap()
+        ),
+        admin,
+        "",
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{fed}");
+    assert_eq!(fed["tilbakemelding"]["mottakstatus"], "mottatt");
+}
+
 /// The feedback arrives as an Altinn event: the first delivery subscribes
 /// the company once, and an event naming the dialog makes regnmed fetch
 /// and store the feedback through its OWN authenticated client. The event

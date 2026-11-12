@@ -32,7 +32,8 @@ fn melding() -> Melding {
         source_system: "regnmed".into(),
         orgnumber: COMPANY.into(),
         business_orgnumber: Some("314752538".into()),
-        payment_date: d(2026, 10, 25),
+        month: d(2026, 10, 1),
+        payment_date: Some(d(2026, 10, 25)),
         zone: Zone::I,
         employer_contribution_rate_bp: 1410,
         // 40 000 × 14,1 %
