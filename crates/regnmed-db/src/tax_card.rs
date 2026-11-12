@@ -39,7 +39,11 @@ pub struct CardView {
 pub struct OrderView {
     pub id: Uuid,
     pub income_year: i32,
-    pub reference: String,
+    /// None when Skatteetaten never accepted the request.
+    pub reference: Option<String>,
+    /// Skatteetaten's refusal or rejection, verbatim (newest). Behind the
+    /// payroll rights like the rest of this view.
+    pub failure: Option<String>,
     pub employee_count: i32,
     pub requested_by: String,
     pub created_at: DateTime<Utc>,
@@ -68,6 +72,89 @@ pub async fn employees_in_year(
     Ok(rows
         .into_iter()
         .map(|r| (r.get("id"), r.get("fodselsnummer")))
+        .collect())
+}
+
+/// Written BEFORE the call to Skatteetaten, so the terms' §7.1 register
+/// shows a request even when the call fails or its answer is lost. `id`
+/// is also the idempotensid and the id of the order it may become.
+pub async fn record_request(
+    pool: &PgPool,
+    id: Uuid,
+    company_id: Uuid,
+    income_year: i32,
+    employee_count: usize,
+    requested_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into tax_card_request
+             (id, company_id, income_year, employee_count, requested_by)
+         values ($1,$2,$3,$4,$5)",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(income_year)
+    .bind(employee_count as i32)
+    .bind(requested_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Skatteetaten refused the request or rejected its answer.
+pub async fn record_failure(
+    pool: &PgPool,
+    request_id: Uuid,
+    detail: &str,
+    created_by: &str,
+) -> Result<()> {
+    sqlx::query(
+        "insert into tax_card_request_failure (id, request_id, detail, created_by)
+         values ($1,$2,$3,$4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(request_id)
+    .bind(detail)
+    .bind(created_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Warnings for a payroll run: employees whose newest skattekort for the
+/// year was NOT applied, so the run used whatever withholding they had.
+/// The card's own note says what to do.
+pub async fn unapplied_warnings(
+    pool: &PgPool,
+    company_id: Uuid,
+    year: i32,
+    employees: &[(Uuid, String)],
+) -> Result<Vec<String>> {
+    let rows = sqlx::query(
+        "select distinct on (employee_id) employee_id, applied, note
+           from tax_card where company_id = $1 and income_year = $2
+          order by employee_id, created_at desc",
+    )
+    .bind(company_id)
+    .bind(year)
+    .fetch_all(pool)
+    .await?;
+    Ok(employees
+        .iter()
+        .filter_map(|(id, name)| {
+            let r = rows
+                .iter()
+                .find(|r| r.get::<Uuid, _>("employee_id") == *id)?;
+            if r.get::<Option<String>, _>("applied").is_some() {
+                return None;
+            }
+            let note: Option<String> = r.get("note");
+            Some(format!(
+                "{name}: skattekortet for {year} er ikke satt på den ansatte, så kjøringen \
+                 brukte trekket som var registrert. {}",
+                note.unwrap_or_default()
+            ))
+        })
         .collect())
 }
 
@@ -100,8 +187,8 @@ pub async fn record_order(
     Ok(())
 }
 
-/// The order's reference and income year, if it belongs to the company
-/// and its answer has not been stored yet.
+/// The order's reference and income year, if it belongs to the company,
+/// its answer has not been stored and it was not rejected.
 pub async fn unanswered_order(
     pool: &PgPool,
     company_id: Uuid,
@@ -110,7 +197,11 @@ pub async fn unanswered_order(
     let row = sqlx::query(
         "select o.reference, o.income_year from tax_card_order o
           where o.id = $1 and o.company_id = $2
-            and not exists (select 1 from tax_card c where c.order_id = o.id)",
+            and not exists (select 1 from tax_card c where c.order_id = o.id)
+            -- A rejected answer is final: asking again would only call
+            -- Skatteetaten again and log the same rejection.
+            and not exists (select 1 from tax_card_request_failure f
+                             where f.request_id = o.id)",
     )
     .bind(order_id)
     .bind(company_id)
@@ -206,8 +297,12 @@ pub async fn record_answer(
 /// Every order, newest first, with what came back for each employee.
 pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderView>> {
     let orders = sqlx::query(
-        "select id, income_year, reference, employee_count, requested_by, created_at
-           from tax_card_order where company_id = $1 order by created_at desc",
+        "select r.id, r.income_year, o.reference, r.employee_count, r.requested_by,
+                r.created_at,
+                (select f.detail from tax_card_request_failure f where f.request_id = r.id
+                  order by f.created_at desc limit 1) as failure
+           from tax_card_request r left join tax_card_order o on o.id = r.id
+          where r.company_id = $1 order by r.created_at desc",
     )
     .bind(company_id)
     .fetch_all(pool)
@@ -229,6 +324,7 @@ pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderVie
                 id,
                 income_year: o.get("income_year"),
                 reference: o.get("reference"),
+                failure: o.get("failure"),
                 employee_count: o.get("employee_count"),
                 requested_by: o.get("requested_by"),
                 created_at: o.get("created_at"),

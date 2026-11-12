@@ -54,7 +54,9 @@ fn versions() -> Vec<(&'static str, &'static str, &'static str)> {
             Some((date, sha, f.contents_utf8()?))
         })
         .collect();
-    v.sort_by(|a, b| b.0.cmp(a.0).then(b.1.cmp(a.1)));
+    // The version in force first, then newest date first. Same-day
+    // versions are otherwise unordered: the file name has no time.
+    v.sort_by_key(|&(date, sha, _)| (sha != VERSION.as_str(), std::cmp::Reverse(date), sha));
     v
 }
 
@@ -214,6 +216,24 @@ mod tests {
     #[test]
     fn the_current_text_is_archived() {
         let all = versions();
+        // Every version that was ever in force. A customer may have
+        // accepted any of them, so the list only grows, like migrations.
+        const KNOWN: &[&str] = &[
+            "f2d730ceb33dde33c066d7cc74bfb9d0c725e3958aea3e0711fab11da3a885cd",
+            "f376538b16f2bed77e6efabfd80cd7fd247797893c07644a32ea153dcd4329f9",
+            "bec6783875729d4f63883b3595bdbf184c0982c92f01958485badc29e0e456b7",
+        ];
+        for known in KNOWN {
+            assert!(
+                all.iter().any(|(_, sha, _)| sha == known),
+                "archived terms version {known} is gone — a company may have accepted it"
+            );
+        }
+        assert!(
+            KNOWN.contains(&VERSION.as_str()),
+            "add the new version {} to KNOWN",
+            *VERSION
+        );
         assert!(
             all.iter()
                 .any(|(_, sha, text)| *sha == VERSION.as_str() && *text == TEXT),

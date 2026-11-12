@@ -26,6 +26,10 @@ struct Skatteetaten {
     answer_calls: usize,
     /// Real references are unique; the database holds them unique too.
     reference: String,
+    /// Refuse the next order the way Skatteetaten does (FOR_001).
+    refuse_next: bool,
+    /// Answer with a status other than FORESPOERSEL_OK.
+    reject_answers: bool,
 }
 
 type Mock = Arc<Mutex<Skatteetaten>>;
@@ -45,8 +49,21 @@ async fn mock_skatteetaten() -> (String, Mock) {
             post(
                 |State(m): State<Mock>, Json(body): Json<Value>| async move {
                     let mut m = m.lock().unwrap();
+                    if std::mem::take(&mut m.refuse_next) {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"feilkode": "FOR_001", "feilmelding": "validerer ikke"})),
+                        );
+                    }
                     m.orders.push(body);
-                    Json(json!({"bestillingsreferanse": m.reference, "dialogreferanse": "d-1"}))
+                    if m.orders.len() > 1 {
+                        m.reference = format!("BR{}", Uuid::new_v4().as_u128() % 1_000_000_000);
+                    }
+                    (
+                        StatusCode::OK,
+                        Json(json!({"bestillingsreferanse": m.reference,
+                                    "dialogreferanse": "d-1"})),
+                    )
                 },
             ),
         )
@@ -60,6 +77,12 @@ async fn mock_skatteetaten() -> (String, Mock) {
                     // Not ready on the first poll.
                     if m.answer_calls == 1 {
                         return (StatusCode::NO_CONTENT, String::new());
+                    }
+                    if m.reject_answers {
+                        return (
+                            StatusCode::OK,
+                            json!({"status": "UGYLDIG_INNTEKTSAAR"}).to_string(),
+                        );
                     }
                     (
                         StatusCode::OK,
@@ -140,7 +163,10 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
         .unwrap();
     let token = idp.token(&sub, "Lønnsansvarlig");
     let base = format!("/companies/{company}");
-    let order = format!("{base}/tax-cards?year=2026");
+    // The current year only: next year's card would replace the
+    // withholding this year's runs use.
+    let year = chrono::Datelike::year(&chrono::Utc::now());
+    let order = format!("{base}/tax-cards?year={year}");
 
     // Four of Skatteetaten's test persons, all on 35 % to begin with; one
     // left the year before and gets no card.
@@ -214,6 +240,30 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/tax-cards?year={}", year + 1),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("inneværende år"),
+        "{body}"
+    );
+
+    // Refused by Skatteetaten: still in the §7.1 register, because the
+    // request is written before the call.
+    skatteetaten.lock().unwrap().refuse_next = true;
+    let (status, body) = call(&state, &token, "POST", &order).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("FOR_001"),
+        "{body}"
+    );
+    assert!(skatteetaten.lock().unwrap().orders.is_empty());
+
     let (status, body) = call(&state, &token, "POST", &order).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["besvart"], true, "answered on the second poll: {body}");
@@ -221,7 +271,7 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
 
     // What was ordered: this year's employees, the company, a contact.
     let sent = skatteetaten.lock().unwrap().orders[0].clone();
-    assert_eq!(sent["inntektsaar"], 2026);
+    assert_eq!(sent["inntektsaar"], year);
     assert_eq!(sent["bestillingstype"], "HENT_ALLE_OPPGITTE");
     let employer = &sent["forespoerselOmSkattekortTilArbeidsgiver"]["arbeidsgiver"][0];
     assert_eq!(
@@ -321,15 +371,42 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
 
     let (_, listed) = call(&state, &token, "GET", &format!("{base}/tax-cards")).await;
     assert_eq!(listed["henting_mulig"], true);
-    assert_eq!(listed["bestillinger"].as_array().unwrap().len(), 1);
+    // The refused request is listed too, with Skatteetaten's reason --
+    // behind LONN_LES, unlike the register.
+    let orders = listed["bestillinger"].as_array().unwrap();
+    assert_eq!(orders.len(), 2, "{listed}");
+    assert!(orders[1]["referanse"].is_null());
+    assert!(
+        orders[1]["feil"].as_str().unwrap().contains("FOR_001"),
+        "{listed}"
+    );
+    assert!(orders[0]["feil"].is_null());
 
-    // In the terms §7.1 register, with its answer.
+    // In the terms §7.1 register: the accepted order with its receipt and
+    // answer, and the refused one -- that it failed, not Skatteetaten's text.
     let (_, register) = call(&state, &token, "GET", &format!("{base}/authority-calls")).await;
-    let entry = &register.as_array().unwrap()[0];
-    assert_eq!(entry["skjema"], "skattekort");
-    assert_eq!(entry["gjelder"], "2026");
+    let register = register.as_array().unwrap().clone();
+    assert_eq!(register.len(), 2, "{register:?}");
+    assert!(register.iter().all(|e| e["skjema"] == "skattekort"
+        && e["gjelder"].as_str().and_then(|g| g.parse().ok()) == Some(year)));
+    let kinds = |e: &Value| -> Vec<String> {
+        e["hendelser"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["hendelse"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let entry = &register[0];
+    assert_eq!(kinds(entry), ["receipt", "answer"]);
     let reference = skatteetaten.lock().unwrap().reference.clone();
     assert_eq!(entry["hendelser"][0]["forsendelse_id"], reference.as_str());
+    assert_eq!(kinds(&register[1]), ["failed"]);
+    assert!(
+        !Value::Array(register.clone())
+            .to_string()
+            .contains("FOR_001")
+    );
     assert_eq!(body["referanse"], reference.as_str());
 
     // The card is evidence: the database refuses to change it.
@@ -338,4 +415,73 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
         .execute(&state.pool)
         .await;
     assert!(changed.is_err());
+
+    // A rejected answer is said at once, never shown as "not ready", and
+    // is final: asking for it again does not call Skatteetaten again.
+    skatteetaten.lock().unwrap().reject_answers = true;
+    let (status, body) = call(&state, &token, "POST", &order).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("UGYLDIG_INNTEKTSAAR"),
+        "{body}"
+    );
+    let (_, listed) = call(&state, &token, "GET", &format!("{base}/tax-cards")).await;
+    let rejected = listed["bestillinger"][0].clone();
+    assert!(
+        rejected["feil"]
+            .as_str()
+            .unwrap()
+            .contains("UGYLDIG_INNTEKTSAAR")
+    );
+    let calls = skatteetaten.lock().unwrap().answer_calls;
+    let (status, _) = call(
+        &state,
+        &token,
+        "POST",
+        &format!(
+            "{base}/tax-cards/{}/answer",
+            rejected["id"].as_str().unwrap()
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(skatteetaten.lock().unwrap().answer_calls, calls);
+
+    // Last year's unanswered order cannot be answered into this year's
+    // employees -- the year rule holds for the answer too.
+    let old = Uuid::new_v4();
+    regnmed_db::tax_card::record_request(&state.pool, old, company, year - 1, 4, "Test")
+        .await
+        .unwrap();
+    regnmed_db::tax_card::record_order(
+        &state.pool,
+        old,
+        company,
+        year - 1,
+        &format!("BR{}", old.as_u128() % 1_000_000_000),
+        "d-1",
+        4,
+        "Test",
+    )
+    .await
+    .unwrap();
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/tax-cards/{old}/answer"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("bare kort for inneværende år"),
+        "{body}"
+    );
+    assert_eq!(skatteetaten.lock().unwrap().answer_calls, calls);
 }

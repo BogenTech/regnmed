@@ -259,7 +259,7 @@ levering og står på innsendingen for alltid.
 ### Ikke bygget ennå
 
 - **Kundevilkårene i kraft** (#185). Innsendingen nekter til selskapet har
-  godtatt dem (docs/kundevilkar.md, «Aksept»), men teksten er fortsatt et
+  godtatt dem (docs/vilkar-teknisk.md, «Aksept»), men teksten er fortsatt et
   utkast som venter på advokat.
 - **Korrigering** av en levert oppgave.
 - **Svaret automatisk** (Altinn Events, slik a-meldingen har det) — i dag

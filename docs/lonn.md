@@ -200,9 +200,22 @@ hentes med referansen (`BR…`). I testmiljøet var svaret klart ved første
 forespørsel, tre sekunder etter bestillingen, så portalen venter noen
 sekunder og har ellers en «Hent svaret»-knapp.
 
-**Begge er innsettings-bare** (`tax_card_order`, `tax_card`): hver
-ansatts oppføring i svaret lagres ordrett, med skattekort-id og
-utstedelsesdato. Det er beviset for hvorfor trekket var det det var.
+**Bare for inneværende år.** Den ansatte har ett trekk, og hver
+lønnskjøring leser det; et kort for neste år ville blitt brukt på årets
+lønn (i desember ville desemberlønnen gått på neste års kort). Neste års
+kort hentes derfor i januar, før årets første kjøring, og serveren nekter
+et annet år — også når svaret på en eldre bestilling hentes senere.
+Avviser Skatteetaten en bestilling eller svaret på den, står grunnen i
+listen over bestillinger (bak `LONN_LES`), og et avvist svar er endelig:
+det hentes ikke på nytt.
+
+**Alt er innsettings-bart, og forespørselen skrives FØR kallet**
+(`tax_card_request`, migration 0079): en bestilling Skatteetaten
+avviser — eller som forsvinner underveis — står likevel i registeret over
+kall til myndighetene, med feilen i `tax_card_request_failure`. Godtar
+Skatteetaten den, blir den en `tax_card_order` med samme id, og hver
+ansatts oppføring i svaret lagres ordrett i `tax_card`, med skattekort-id
+og utstedelsesdato. Det er beviset for hvorfor trekket var det det var.
 
 **Bare det lønnskjøringen regner riktig settes på den ansatte**, i
 samme transaksjon som kortet lagres. Det er
@@ -220,8 +233,11 @@ men brukes ikke.
 | Ikke skattekort | beholdes — uten kort skal arbeidsgiver trekke 50 %, og det står i merknaden |
 
 Det som beholdes, får en **merknad** med grunnen, i portalen og i
-API-et; den ansatte står med trekket den hadde. Ingen kort settes i
-stillhet feil.
+API-et; den ansatte står med trekket den hadde. **Lønnskjøringen sier
+fra** om hver ansatt hvis nyeste kort for året ikke ble satt, med
+merknaden — ellers ville kjøringen trukket det gamle trekket uten et ord.
+Ingen kort settes i stillhet feil, og ingen kjøring går stille forbi et
+kort som ikke ble satt.
 
 Feltverdiene er slik testmiljøet faktisk sendte dem 2026-11-12, lagret i
 `docs/lonn/skattekort-svar-test-2026.json` og brukt av testene:
@@ -229,7 +245,7 @@ camelCase (`loennFraHovedarbeidsgiver`), mens dokumentasjonens eget
 eksempel skriver dem med store bokstaver. Bestillingen er et kall til
 Skatteetaten på selskapets vegne, så **kundevilkårene må være godtatt**
 først, og den står i registeret over kall til myndighetene
-(`/authority-calls`, docs/kundevilkar.md).
+(`/authority-calls`, docs/vilkar-teknisk.md).
 
 Ikke bygget ennå: endringsbestillinger (`HENT_KUN_ENDRING`) og varsel
 ved endring — i dag hentes kortet på nytt med knappen — og bestillinger
@@ -441,7 +457,7 @@ ikke en ny. Begge deler er nå modellert i innsendingssporet under.
 ### Innsendingssporet (migration 0074)
 
 **Først kundevilkårene.** Innsendingen nekter til en administrator har
-godtatt kundevilkårene for selskapet (docs/kundevilkar.md, «Aksept»):
+godtatt kundevilkårene for selskapet (docs/vilkar-teknisk.md, «Aksept»):
 Digdirs og Skatteetatens vilkår tillater ingen innsending på kundens vegne
 uten en avtale med kunden.
 

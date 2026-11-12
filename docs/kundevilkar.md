@@ -11,37 +11,9 @@
 > advokaten står i §17. Sporingstabellen i §16 viser hvilket krav hvert
 > punkt dekker.
 
-## Aksept (hvordan regnmed håndhever §1.4)
-
-Teksten i denne fila **er** vilkårene: binæren serverer den uendret på
-`/vilkar` (ren tekst) og `/terms` (JSON), og versjonen er SHA-256 av
-teksten. En administrator (`SELSKAP_ADMIN`, som aldri kan gis til en
-integrasjon) godtar den under Administrasjon → Firmaopplysninger; aksepten
-lagres innsettings-bart i `terms_acceptance` (migrasjon 0077) med
-selskap, person, navn, tidspunkt og hashen. Hver innsending til
-myndighetene (a-melding, aksjonærregisteroppgave) nekter til gjeldende
-versjon er godtatt.
-
-**Endres denne fila, endres versjonen**, og hvert selskap må godta på
-nytt før neste innsending. Det gjelder også skrivefeil — det er prisen
-for at «godtatt» alltid betyr én bestemt tekst.
-
-**Hver versjon som har gjeldt, arkiveres** i `docs/kundevilkar/` som
-`<dato>-<sha256>.md` (datoen den trer i kraft), og serveres på
-`/vilkar/<sha256>`; `/terms/versions` lister dem. En kunde som godtok en
-eldre tekst kan dermed alltid lese nettopp den, og selskapets egen
-aksepthistorikk står i `GET /companies/{id}/terms`. Testen
-`the_current_text_is_archived` feiler hvis denne fila endres uten at den
-nye teksten arkiveres, og hvis en arkivert tekst redigeres i etterkant.
-
-**Registeret i §7.1** er innsendingssporene selv (migrasjon 0074–0076),
-som skrives FØR hvert kall og ikke kan endres eller slettes — ikke en
-egen logg ved siden av. `GET /companies/{id}/authority-calls` viser dem
-samlet: skjema, hva det gjaldt, hvem som ba om det, når, og hva som kom
-tilbake (kvittering, feil eller myndighetens svar).
-
-**Tilgangsgjennomgangen i §4.2** er kundens plikt; regnmed håndhever
-tilgangene (§4.1) men gjennomfører ikke gjennomgangen for kunden.
+Hvordan regnmed håndhever vilkårene teknisk — aksept, versjoner,
+registeret i §7.1 — står i `docs/vilkar-teknisk.md`. Den fila er
+dokumentasjon, ikke en del av vilkårene.
 
 ## 1. Parter og omfang
 

@@ -55,7 +55,12 @@ impl TaxCardClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            http: reqwest::Client::new(),
+            // A hung Skatteetaten must not hold the request until the
+            // ingress gives up -- the user would retry and order twice.
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("a TLS backend"),
         }
     }
 

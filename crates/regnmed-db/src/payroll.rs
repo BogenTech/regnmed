@@ -886,6 +886,18 @@ pub async fn run_payroll(
     }
     tx.commit().await?;
 
+    let employees: Vec<(Uuid, String)> = lines
+        .iter()
+        .map(|l| (l.employee_id, l.name.clone()))
+        .collect();
+    let warnings = feriepengeavvik(pool, company_id)
+        .await?
+        .into_iter()
+        .chain(
+            crate::tax_card::unapplied_warnings(pool, company_id, paid_date.year(), &employees)
+                .await?,
+        )
+        .collect();
     Ok(PayrollRun {
         id: run_id,
         year,
@@ -894,15 +906,9 @@ pub async fn run_payroll(
         zone: zone_slug.to_string(),
         sum,
         voucher_id: posted.id,
-        employees: lines
-            .iter()
-            .map(|l| (l.employee_id, l.name.clone()))
-            .collect(),
+        employees,
         lines,
-        warnings: feriepengeavvik(pool, company_id)
-            .await?
-            .into_iter()
-            .collect(),
+        warnings,
     })
 }
 
