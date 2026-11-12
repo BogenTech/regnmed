@@ -1302,6 +1302,96 @@ async fn employments_without_pay_are_reported_until_they_end() {
     assert!(xml.contains("<sumArbeidsgiveravgift>5640</sumArbeidsgiveravgift>"));
 }
 
+/// An end date entered LATE: Siv left in January, February's delivered
+/// melding still reported her without a sluttdato, and only then was the
+/// end date set. March must report her again WITH it (F108), and April no
+/// longer. Ola, whose end was known before February, stays out.
+#[tokio::test]
+async fn an_end_date_entered_late_is_reported_the_next_month() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let kari = employee(&pool, company, "26829398612", "Kari Betalt", 4_000_000).await;
+    let siv = employee(&pool, company, "15076500565", "Siv Sluttet", 3_000_000).await;
+    let ola = employee(&pool, company, "03048810003", "Ola Tidlig", 3_000_000).await;
+    for id in [kari, siv, ola] {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    payroll::end_employment(&pool, company, ola, Some(date(2026, 1, 31)))
+        .await
+        .unwrap();
+    let run_in = |month: u32| {
+        let pool = pool.clone();
+        async move {
+            payroll::run_payroll(
+                &pool,
+                company,
+                2026,
+                month,
+                date(2026, month, 25),
+                "I",
+                &[run_entry(kari, None)],
+                "Test",
+            )
+            .await
+            .unwrap()
+            .id
+        }
+    };
+    let deliver = |run: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let s = sub::prepare_submission(&pool, company, run, false, "Test")
+                .await
+                .unwrap();
+            sub::record_receipt(&pool, s.id, "d", "f", "Test")
+                .await
+                .unwrap();
+        }
+    };
+    let names = |run: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let draft = payroll::amelding_for_run(&pool, company, run, chrono::Utc::now())
+                .await
+                .unwrap();
+            assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+            draft
+                .melding
+                .recipients
+                .iter()
+                .map(|r| (r.name.clone(), r.employment.end_date))
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let february = run_in(2).await;
+    assert_eq!(
+        names(february).await,
+        [("Kari Betalt".into(), None), ("Siv Sluttet".into(), None)]
+    );
+    deliver(february).await;
+    // Only now does anyone record that Siv left in January.
+    payroll::end_employment(&pool, company, siv, Some(date(2026, 1, 31)))
+        .await
+        .unwrap();
+
+    let march = run_in(3).await;
+    assert_eq!(
+        names(march).await,
+        [
+            ("Kari Betalt".into(), None),
+            ("Siv Sluttet".into(), Some(date(2026, 1, 31)))
+        ]
+    );
+    deliver(march).await;
+
+    let april = run_in(4).await;
+    assert_eq!(names(april).await, [("Kari Betalt".into(), None)]);
+}
+
 /// The end date is what stops F108 reporting; it cannot precede the
 /// start, and a mistaken one can be cleared.
 #[tokio::test]

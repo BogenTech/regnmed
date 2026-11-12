@@ -331,6 +331,57 @@ async fn status(pool: &PgPool, submission_id: Uuid) -> Result<SubmissionStatus> 
     })
 }
 
+/// The arbeidsforhold Skatteetaten holds OPEN after `period`: reported
+/// without a sluttdato in a melding delivered for that month (and not
+/// replaced by another delivered one). F108 requires each of them again
+/// the next month -- with its sluttdato if it has since ended, which is
+/// how an end date entered late still reaches Skatteetaten.
+pub async fn open_after(
+    pool: &PgPool,
+    company_id: Uuid,
+    period: &str,
+) -> Result<std::collections::HashSet<String>> {
+    let bodies: Vec<String> = sqlx::query_scalar(
+        "select s.body from amelding_submission s
+          where s.company_id = $1 and s.period = $2
+            and exists (select 1 from amelding_submission_event e
+                         where e.submission_id = s.id and e.kind = 'receipt')
+            and not exists (select 1 from amelding_submission r
+                             join amelding_submission_event e
+                               on e.submission_id = r.id and e.kind = 'receipt'
+                            where r.replaces_melding_id = s.melding_id)",
+    )
+    .bind(company_id)
+    .bind(period)
+    .fetch_all(pool)
+    .await?;
+    let mut open = std::collections::HashSet::new();
+    for body in &bodies {
+        let json: serde_json::Value =
+            serde_json::from_str(body).context("a stored a-melding body is not JSON")?;
+        collect_open(&json, &mut open);
+    }
+    Ok(open)
+}
+
+/// Every object carrying an arbeidsforholdId and no sluttdato, wherever
+/// it sits: the body is our own rendering, but walking it whole keeps
+/// this independent of how deep the arbeidsforhold are nested.
+fn collect_open(v: &serde_json::Value, open: &mut std::collections::HashSet<String>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            if let Some(id) = o.get("arbeidsforholdId").and_then(|i| i.as_str())
+                && !o.contains_key("sluttdato")
+            {
+                open.insert(id.to_string());
+            }
+            o.values().for_each(|c| collect_open(c, open));
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|c| collect_open(c, open)),
+        _ => {}
+    }
+}
+
 /// Delivered submissions still waiting for feedback whose receipt names
 /// this Dialogporten dialog — what an incoming event points at. The
 /// event itself is untrusted; this is the only thing taken from it.

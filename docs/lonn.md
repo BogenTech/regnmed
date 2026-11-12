@@ -479,6 +479,17 @@ ikke ligge før startdatoen. Lønn etter sluttdatoen — feriepenger året
 etter — kjøres og rapporteres som før, med sluttdatoen på
 arbeidsforholdet.
 
+**En sluttdato som føres for sent** fanges også. Sluttet en ansatt i
+januar, men februars melding rapporterte arbeidsforholdet uten
+sluttdato fordi ingen hadde ført den, holder Skatteetaten det åpent —
+og F108 krever det da igjen i mars. Meldingen tar derfor med enhver
+ansatt som har sluttet før måneden, men som sto **uten sluttdato** i en
+melding **levert** for forrige måned (med kvittering, og ikke erstattet
+av en annen levert melding), nå med sluttdatoen. Kilden er den lagrede
+meldingen selv (`amelding_submission.body`, nøyaktig det som ble sendt),
+ikke en gjetning. En forrige måned som ble levert utenfor regnmed, ser
+regnmed ikke.
+
 ### Fra lagret kjøring
 
 `GET /companies/{id}/payroll/{rid}/amelding` (`LONN_KJOR`) bygger
@@ -811,8 +822,12 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   UTBETALINGSmånedens kalender (marslønn utbetalt i april tar med den
   som begynte i april, ikke den som sluttet i mars), uten å endre
   avgiften; og at sluttdatoen nektes før startdatoen, kan fjernes og
-  ikke når et annet selskaps ansatt. Sett feile med lønnsmåneden i
-  stedet for utbetalingsmåneden og med de ulønnede utelatt.
+  ikke når et annet selskaps ansatt; og at en sluttdato ført etter at
+  februars melding var levert uten den, gir mars-melding MED
+  sluttdatoen og en april-melding uten den ansatte, mens den som sluttet
+  før februar holdes ute. Sett feile med lønnsmåneden i stedet for
+  utbetalingsmåneden, med de ulønnede utelatt og med regelen for sen
+  sluttdato fjernet.
 - Aga-avsetningen: at målet er satsen av gjelden, at livsløpet
   (avsetning → utbetaling) summerer til nøyaktig null, at en satsendring
   korrigeres i sin helhet ved neste kjøring, og at negativ gjeld gir

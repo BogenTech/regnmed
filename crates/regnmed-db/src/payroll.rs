@@ -1639,11 +1639,23 @@ pub async fn amelding_for_run(
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
+    // An end date entered late: the employee left before this month, but
+    // last month's delivered melding still had them open, so this one must
+    // report them -- with the sluttdato -- or Skatteetaten flags last month.
+    let last_month = month_start
+        .checked_sub_months(chrono::Months::new(1))
+        .context("ugyldig måned")?
+        .format("%Y-%m")
+        .to_string();
+    let open_last_month =
+        crate::amelding_submission::open_after(pool, company_id, &last_month).await?;
     for e in &employees {
         let paid = lines
             .iter()
             .any(|l| l.get::<Uuid, _>("employee_id") == e.id);
-        if paid || !e.employed_in(month_end, month_start) {
+        let ended_late = e.employed_to.is_some_and(|t| t < month_start)
+            && open_last_month.contains(&e.id.to_string());
+        if paid || !(e.employed_in(month_end, month_start) || ended_late) {
             continue;
         }
         let missing = e.amelding_missing();
