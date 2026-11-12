@@ -405,9 +405,18 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/bank/statements",
             axum::routing::post(bank::import_statement),
         )
+        .route("/companies/{company_id}/bank/accounts", get(bank::accounts))
         .route(
             "/companies/{company_id}/bank/reconciliation",
             get(bank::reconciliation),
+        )
+        .route(
+            "/companies/{company_id}/bank/entries",
+            get(bank::search_entries),
+        )
+        .route(
+            "/companies/{company_id}/bank/transactions/{bank_transaction_id}/post",
+            axum::routing::post(bank::post_line),
         )
         .route(
             "/companies/{company_id}/bank/matches",

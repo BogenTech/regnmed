@@ -100,8 +100,16 @@ Utland/IBAN + BIC, filutvekslingsavtaler og direkte bankinnsending
 - `POST /companies/{id}/payments/runs/{rid}/cancel` — utkast only
 
 Lesing er åpen for alle tilgangsnivåer; alt annet krever bokforing.
-Portal: Bank-seksjonen har Betalingsliste-kortet (betalbare poster,
-lag liste, godkjenn, last ned pain.001, registrer utbetalt).
+Portal: Bank → Betalinger (`#/c/{id}/bank/betalinger`). Lister i
+arbeid står øverst med neste steg i klartekst (venter på godkjenning,
+godkjent og klar for nettbanken), og hvert enveis steg bekreftes med
+beløp og konsekvens: godkjenn (filen lages og kan ikke endres), last
+ned betalingsfilen, registrer betalt (dato og bankkonto; postene
+lukkes), annuller. «Å betale» viser postene med forfall og KID,
+velges enkeltvis, «Velg forfalte» eller «Velg alle», med løpende sum
+og betalingsdato før listen lages. Poster uten kontonummer kan ikke
+velges og peker til Leverandører. Knappene følger rettighetene
+(`BETALING_OPPRETT`/`GODKJENN`/`OPPGJOR`).
 Leverandørsiden under Leverandører viser skyldig og forfalt, de åpne
 postene med forfall og KID, og legger valgte poster i en betalingsliste
 som så godkjennes av en annen under Bank; kontonummeret settes der.

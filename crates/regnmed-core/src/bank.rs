@@ -82,6 +82,30 @@ pub fn propose_matches(
     proposals
 }
 
+/// Candidates for a bank transaction the engine left alone: the open
+/// entries with EXACTLY its amount (sign included), nearest date first,
+/// at most `limit`. A suggestion, never a match — ambiguity stays the
+/// accountant's call, and a different amount is never offered.
+pub fn suggest_entries<'a>(
+    tx: &BankTx,
+    entries: &'a [OpenEntry],
+    limit: usize,
+) -> Vec<&'a OpenEntry> {
+    let mut candidates: Vec<&OpenEntry> = entries
+        .iter()
+        .filter(|e| e.amount_ore == tx.amount_ore)
+        .collect();
+    candidates.sort_by_key(|e| {
+        (
+            (e.date - tx.booking_date).num_days().abs(),
+            e.date,
+            e.entry_id,
+        )
+    });
+    candidates.truncate(limit);
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +170,23 @@ mod tests {
     fn amounts_must_match_exactly_including_sign() {
         let entries = [entry(10, 20, -500_00)];
         assert!(propose_matches(&[tx(1, 20, 500_00)], &entries, 5).is_empty());
+    }
+
+    #[test]
+    fn suggestions_are_equal_amounts_nearest_first() {
+        let bank = tx(1, 10, -150_00);
+        let entries = vec![
+            entry(10, 2, -150_00),
+            entry(11, 12, -150_00),
+            entry(12, 10, 150_00),  // wrong sign
+            entry(13, 10, -151_00), // wrong amount
+            entry(14, 30, -150_00),
+        ];
+        let got: Vec<u128> = suggest_entries(&bank, &entries, 2)
+            .iter()
+            .map(|e| e.entry_id.as_u128())
+            .collect();
+        assert_eq!(got, vec![11, 10]);
+        assert!(suggest_entries(&tx(2, 10, 99), &entries, 3).is_empty());
     }
 }

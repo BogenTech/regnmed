@@ -56,13 +56,47 @@ on day one with zero agreements.
   two equally close candidates fall to manual review. KID/reference
   matching arrives with reskontro (entries don't carry payment
   references yet).
+- **Forslag, aldri gjetting** (`regnmed-core::bank::suggest_entries`):
+  for hver bankpost motoren lot ligge, inntil tre åpne poster med
+  NØYAKTIG samme beløp (fortegn inkludert), nærmeste dato først. Et
+  annet beløp foreslås aldri — og en manuell kobling av ulike beløp
+  avvises i databasen-laget (`manual_match`) med beløpene navngitt, så
+  en feilkobling ikke kan skje med ett klikk.
+- **Bokfør fra banklinjen**: en bankpost uten bilag bak seg (gebyr,
+  renter) bokføres og kobles i ÉN transaksjon
+  (`post_from_bank_line`): bankkontoen mot valgt konto på
+  bokføringsdatoen, uten mva, med kontoutskriftens referanse og tekst
+  på banklinjen som dokumentasjon. Samme attesteringsport som manuelt
+  bilag (`refuse_if_attestation_required`, docs/attestering.md) — med
+  aktiv policy over grensen må det gå via innboksen. Krever både
+  `BANK_AVSTEM` og `BILAG_BOKFOR`. Har utgiften mva eller kvittering,
+  hører den hjemme i innboksen.
+- **Differansen regnes på kontoutskriftens dato**: hovedboken summeres
+  til og med siste kontoutskrifts sluttdato
+  (`ledger_at_statement_ore`) og sammenlignes med bankens utgående
+  saldo. Dagens saldo ville tatt med alt bokført etterpå. CSV har ingen
+  saldo, og differansen vises da som ukjent, aldri som null.
+- **Åpne poster i hovedboken** vises bare innenfor perioden
+  kontoutskriftene dekker (en måned på hver side): historikk fra før
+  første kontoutskrift er ikke avstemmingsarbeid, og ville ellers blitt
+  hele den importerte hovedboken.
 - **Web API** (engagement-guarded; revisor 'les' may read, importing and
   matching require bokforing/admin):
   - `POST /companies/{id}/bank/statements?account=1920` — camt.053 XML
     body; imports and auto-matches, returns counts.
+  - `GET /companies/{id}/bank/accounts` — selskapets bankkontoer
+    (aktive 19xx) med saldo, siste kontoutskrift og antall uavstemte.
   - `GET /companies/{id}/bank/reconciliation?account=1920` — ledger
-    balance vs latest statement closing balance, matched count, and both
-    unmatched lists.
+    balance (today and on the statement's end date) vs latest statement
+    closing balance, matched count, unmatched bank lines WITH their
+    `suggestions`, open ledger entries within the statements' period,
+    the statements, and the 50 newest matches (`recent_matches`).
+  - `GET /companies/{id}/bank/entries?account=1920&q=` — søk i åpne
+    poster på kontoen: bilagsnummer («2026-14»), tekst, eller beløp
+    slik det skrives («1 290,00»; `regnmed-core::money::parse_kroner`,
+    samme regler som bank-CSV-en). Maks 20.
+  - `POST /companies/{id}/bank/transactions/{tid}/post` `{konto, tekst}`
+    — bokfør banklinjen og koble den.
   - `POST /companies/{id}/bank/matches` + `DELETE
     /companies/{id}/bank/matches/{bank_transaction_id}` — manual
     match/unmatch; cross-company and cross-account pairings are rejected
@@ -103,3 +137,22 @@ innbetaling" line on the bank statement.
   over HTTP: revisor 403 on import, import + auto-match, duplicate
   import rejected, revisor reads reconciliation, manual match to full
   reconciliation, unmatch, stranger 404.
+  `a_bank_line_is_posted_from_the_statement_and_amounts_must_agree`:
+  bankkontolisten, ingen forslag med annet beløp, kontoutskriftslisten,
+  hovedboken på kontoutskriftens dato, søk på beløp som skrevet,
+  kobling av ulike beløp avvist, forslaget er posten med likt beløp,
+  revisor 403 på bokføring, attesteringsporten, bokført og koblet i ett
+  steg (og ikke to ganger), avstemt på øret, kjedeverifikasjon.
+
+## Portal
+
+**Bank** (`#/c/{id}/bank/…`) har fanene Avstemming (forsiden),
+Betalinger og Valutakurser. Avstemming: bankkontovelger når selskapet
+har flere, «Last opp kontoutskrift» (eller dra filen inn), statuslinje
+med banken og hovedboken på samme dato og differansen, og hver
+uavstemte bankpost med det som kan lukke den — ett klikk på forslaget
+med likt beløp, «Bokfør» (konto foreslått: 7700 for penger ut, 8050 for
+penger inn — standardkontoplanens, brukerens valg), eller «Finn
+bilag» (søk; poster med annet beløp kan ikke kobles). Under: åpne
+poster i hovedboken uten bankpost, de koblede med «Fjern kobling»
+(bekreftes), og kontoutskriftene. Knappene følger rettighetene.

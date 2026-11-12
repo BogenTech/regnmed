@@ -412,3 +412,207 @@ async fn csv_export_imports_through_the_same_engine() {
         "{error}"
     );
 }
+
+/// The bank line with no posting behind it (the 150 kr fee): suggestions
+/// never offer a different amount, a manual match of unequal amounts is
+/// refused, and the fee is posted and matched from the line itself in one
+/// step — subject to the same attestering gate as a manual voucher.
+#[tokio::test]
+async fn a_bank_line_is_posted_from_the_statement_and_amounts_must_agree() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let accountant_sub = format!("test|{}", Uuid::new_v4());
+    let auditor_sub = format!("test|{}", Uuid::new_v4());
+    let company = seed(&state, &accountant_sub, &auditor_sub).await;
+    regnmed_db::ensure_account(&state.pool, company, "7770", "Bank- og kortgebyrer")
+        .await
+        .unwrap();
+    let accountant = idp.token(&accountant_sub, "Kari Bokfører");
+    let auditor = idp.token(&auditor_sub, "Revy Sorsen");
+    let camt = CAMT.replace("{REF}", &Uuid::new_v4().to_string());
+    let base = format!("/companies/{company}/bank");
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("{base}/statements?account=1920"),
+        &accountant,
+        Some(camt),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, accounts) = request(
+        &state,
+        "GET",
+        &format!("{base}/accounts"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    let bank = accounts["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["number"] == "1920")
+        .unwrap()
+        .clone();
+    assert_eq!(bank["unmatched_bank"], 1);
+    assert_eq!(bank["last_statement_to"], "2026-01-31");
+
+    let (_, recon) = request(
+        &state,
+        "GET",
+        &format!("{base}/reconciliation?account=1920"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    let fee = recon["unmatched_bank"][0].clone();
+    assert_eq!(fee["amount_ore"], -150_00);
+    assert!(
+        fee["suggestions"].as_array().unwrap().is_empty(),
+        "no -150 entry exists: {fee}"
+    );
+    assert_eq!(recon["statements"].as_array().unwrap().len(), 1);
+    assert_eq!(recon["statements"][0]["closing_ore"], 12_350_00);
+    assert_eq!(
+        recon["ledger_at_statement_ore"], 12_500_00,
+        "the sale, not yet the fee"
+    );
+    let fee_id = fee["bank_transaction_id"].as_str().unwrap().to_string();
+
+    // Undo the auto-match of the sale, find its entry by searching for
+    // the amount as typed, and try to pair it with the FEE: refused.
+    let inflow_id = recon["recent_matches"][0]["bank_transaction_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _) = request(
+        &state,
+        "DELETE",
+        &format!("{base}/matches/{inflow_id}"),
+        &accountant,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, found) = request(
+        &state,
+        "GET",
+        &format!("{base}/entries?account=1920&q=12%20500"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    let sale_entry = found["entries"][0]["entry_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pair = |bank: &str| {
+        serde_json::json!({ "bank_transaction_id": bank, "entry_id": sale_entry }).to_string()
+    };
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/matches"),
+        &accountant,
+        Some(pair(&fee_id)),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.to_string().contains("ulike"), "{body}");
+    // The equal amount is fine, and is what the suggestion offers.
+    let (_, recon) = request(
+        &state,
+        "GET",
+        &format!("{base}/reconciliation?account=1920"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    let inflow = recon["unmatched_bank"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["amount_ore"] == 12_500_00)
+        .unwrap()
+        .clone();
+    assert_eq!(inflow["suggestions"][0]["entry_id"], sale_entry.as_str());
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("{base}/matches"),
+        &accountant,
+        Some(pair(&inflow_id)),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let post = format!("{base}/transactions/{fee_id}/post");
+    let body = serde_json::json!({ "konto": "7770", "tekst": "Bankgebyr januar" }).to_string();
+    let (status, _) = request(&state, "POST", &post, &auditor, Some(body.clone()), true).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a revisor reads, never posts"
+    );
+
+    // With attestering on (no limit), a voucher without a document is refused here too.
+    regnmed_db::set_policy(&state.pool, company, true, None, None, None, "test")
+        .await
+        .unwrap();
+    let (status, refused) =
+        request(&state, "POST", &post, &accountant, Some(body.clone()), true).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(refused.to_string().contains("attester"), "{refused}");
+    regnmed_db::set_policy(&state.pool, company, false, None, None, None, "test")
+        .await
+        .unwrap();
+
+    let (status, posted) =
+        request(&state, "POST", &post, &accountant, Some(body.clone()), true).await;
+    assert_eq!(status, StatusCode::OK, "{posted}");
+    let (status, _) = request(&state, "POST", &post, &accountant, Some(body), true).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a matched line is not posted twice"
+    );
+
+    let (_, recon) = request(
+        &state,
+        "GET",
+        &format!("{base}/reconciliation?account=1920"),
+        &auditor,
+        None,
+        false,
+    )
+    .await;
+    assert!(recon["unmatched_bank"].as_array().unwrap().is_empty());
+    assert_eq!(recon["ledger_at_statement_ore"], 12_350_00);
+    assert_eq!(
+        recon["statement_closing_ore"], 12_350_00,
+        "reconciled to the øre"
+    );
+    let matched = recon["recent_matches"].as_array().unwrap();
+    assert!(
+        matched
+            .iter()
+            .any(|m| m["voucher"] == posted["voucher"] && m["method"] == "manual"),
+        "{recon}"
+    );
+    let report = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(report.vouchers_checked, 2, "the sale and the fee");
+}

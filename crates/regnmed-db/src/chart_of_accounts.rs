@@ -260,14 +260,16 @@ pub async fn list_vouchers_paged(
 /// over the beløpsgrense, a manual posting would BYPASS the intern
 /// check (#47) — attestation targets inbox documents. Fail closed and
 /// point at the innboks instead of quietly opening a side door.
-pub async fn post_manual_voucher(
-    pool: &PgPool,
+/// A voucher posted WITHOUT a document (manual, or from a bank line)
+/// cannot side-step attestering (#47): with an active policy, anything
+/// at or above the limit must come through the innboks, where someone
+/// else attests it.
+pub(crate) async fn refuse_if_attestation_required(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     company_id: Uuid,
     draft: &VoucherDraft,
-    created_by: &str,
-) -> Result<PostedVoucher> {
-    let mut tx = pool.begin().await?;
-    if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
+) -> Result<()> {
+    if let Some(policy) = crate::approval::current_policy(&mut **tx, company_id).await?
         && policy.active
     {
         let debetsum: i64 = draft.entries.iter().map(|e| e.amount.0.max(0)).sum();
@@ -281,6 +283,17 @@ pub async fn post_manual_voucher(
             );
         }
     }
+    Ok(())
+}
+
+pub async fn post_manual_voucher(
+    pool: &PgPool,
+    company_id: Uuid,
+    draft: &VoucherDraft,
+    created_by: &str,
+) -> Result<PostedVoucher> {
+    let mut tx = pool.begin().await?;
+    refuse_if_attestation_required(&mut tx, company_id, draft).await?;
     let posted = post_voucher_in(&mut tx, company_id, draft, created_by)
         .await
         .context("bokføringen feilet")?;
