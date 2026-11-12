@@ -159,14 +159,23 @@ pub async fn latest_anchor_snapshots(pool: &PgPool, limit: i64) -> Result<Vec<Sn
 /// The snapshots covering one company, each with the anchored head and
 /// the inclusion proof connecting it to the published root — everything
 /// a revisor needs to verify independently.
-pub async fn company_anchors(pool: &PgPool, company_id: Uuid) -> Result<Vec<CompanyAnchor>> {
+/// Newest first. `limit` caps how many snapshots are returned (`None` =
+/// all): each one rebuilds its proof from every leaf in that snapshot, so
+/// the full history costs a nightly snapshot's worth of work per night.
+pub async fn company_anchors(
+    pool: &PgPool,
+    company_id: Uuid,
+    limit: Option<i64>,
+) -> Result<Vec<CompanyAnchor>> {
     let rows = sqlx::query(
         "select s.id, s.created_at, s.root_hash, l.last_seq, l.last_hash
          from anchor_leaf l join anchor_snapshot s on s.id = l.snapshot_id
          where l.company_id = $1
-         order by s.created_at desc, s.id desc",
+         order by s.created_at desc, s.id desc
+         limit $2",
     )
     .bind(company_id)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     let mut anchors = Vec::with_capacity(rows.len());

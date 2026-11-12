@@ -18,28 +18,48 @@
 
   async function load(id) {
     const c = "/companies/" + id;
-    // Every fetch but the first two degrades to null: a viewer without
-    // a right still gets an overview, just with fewer lines in it.
-    const [open, vouchers, recent, overdue, tall, inbox, recon, anchors] = await Promise.all([
+    // The page draws as soon as these three are in; nothing slower may
+    // hold it.
+    const [open, recent, overdue] = await Promise.all([
       api(c + "/invoices?open=true"),
-      api(c + "/vouchers"),
-      api(c + "/vouchers?limit=8&lines=true").catch(() => null),
+      api(c + "/vouchers?limit=8&lines=true"),
       api(c + "/invoices/overdue").catch(() => null),
-      api(c + "/reports/nokkeltall").catch(() => null),
-      api(c + "/inbox").catch(() => null),
-      api(c + "/bank/reconciliation?account=1920").catch(() => null),
-      api(c + "/anchors").catch(() => ({ anchors: [] })),
     ]);
     data = {
       open: open.invoices,
-      vouchers: vouchers.vouchers,
-      recent: recent?.vouchers ?? vouchers.vouchers.slice(0, 8),
+      recent: recent.vouchers,
       overdue: overdue?.invoices ?? [],
-      tall,
-      inbox: inbox ? inbox.documents.filter((d) => d.status === "ny") : [],
-      unmatched: recon?.unmatched_bank ?? [],
-      anchor: anchors.anchors[0],
+      importApen: recent.total === 0 ? true : null,
+      harHistorikk: recent.total > 0,
+      tall: null,
+      inbox: [],
+      unmatched: [],
+      anchor: null,
+      venter: 0,
     };
+    const mine = data;
+
+    // The rest fills in as it arrives, each on its own; a refusal (no
+    // right) or failure just leaves its line out.
+    const fyll = (path, set) => {
+      mine.venter++;
+      api(c + path)
+        .then((r) => data === mine && set(r))
+        .catch(() => {})
+        .finally(() => mine.venter--);
+    };
+    fyll("/reports/nokkeltall", (r) => (mine.tall = r));
+    fyll("/inbox", (r) => (mine.inbox = r.documents.filter((d) => d.status === "ny")));
+    fyll("/bank/reconciliation?account=1920", (r) => (mine.unmatched = r.unmatched_bank));
+    fyll("/anchors?limit=1", (r) => (mine.anchor = r.anchors[0]));
+
+    // Import stays open while the ledger holds nothing but imported
+    // history. Only a ledger whose newest vouchers are all IMP needs the
+    // full list to tell.
+    if (recent.total > 0 && recent.vouchers.every((v) => v.journal === "IMP")) {
+      if (recent.total <= recent.vouchers.length) mine.importApen = true;
+      else fyll("/vouchers", (r) => (mine.importApen = r.vouchers.every((v) => v.journal === "IMP")));
+    }
   }
 
   function reload() {
@@ -121,8 +141,8 @@
        history: systems like Conta export one SAF-T file per fiscal year,
        so the years arrive one upload at a time. The server enforces the
        rule; this condition only mirrors it. -->
-  {#if data.vouchers.length === 0 || data.vouchers.every((v) => v.journal === "IMP")}
-    <ImportKort {companyId} onDone={reload} harHistorikk={data.vouchers.length > 0} />
+  {#if data.importApen}
+    <ImportKort {companyId} onDone={reload} harHistorikk={data.harHistorikk} />
   {/if}
 
   <Card title="Til oppfølging">
@@ -140,8 +160,11 @@
           </li>
         {/each}
       </ul>
-    {:else}
+    {:else if !data.venter}
       <p class="text-sm opacity-70">Ingenting venter på deg nå.</p>
+    {/if}
+    {#if data.venter}
+      <span class="loading loading-dots loading-sm opacity-60" aria-label="Henter mer"></span>
     {/if}
   </Card>
 

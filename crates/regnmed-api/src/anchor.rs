@@ -16,7 +16,7 @@
 //!   never mutates anything.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -53,13 +53,21 @@ pub async fn list_anchors(
     })))
 }
 
+#[derive(serde::Deserialize)]
+pub struct AnchorsQuery {
+    /// Newest N snapshots only; the overview asks for one.
+    limit: Option<i64>,
+}
+
 pub async fn company_anchors(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<AnchorsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::AnchorRead).await?;
-    let anchors = regnmed_db::company_anchors(&state.pool, company_id).await?;
+    let limit = query.limit.map(|n| n.max(1));
+    let anchors = regnmed_db::company_anchors(&state.pool, company_id, limit).await?;
     Ok(Json(json!({
         "anchors": anchors.iter().map(|a| json!({
             "snapshot_id": a.snapshot_id,

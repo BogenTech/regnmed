@@ -7,7 +7,7 @@
 
   let latest = $state(null);
   $effect(() => {
-    api("/companies/" + companyId + "/anchors")
+    api("/companies/" + companyId + "/anchors?limit=1")
       .then((r) => (latest = r.anchors[0]))
       .catch(() => (latest = null));
   });
