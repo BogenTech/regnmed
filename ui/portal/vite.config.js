@@ -32,6 +32,8 @@ export default defineConfig({
       "/anchors": api,
       "/platform": api,
       "/directory": api,
+      "/terms": api,
+      "/vilkar": api,
     },
   },
 });

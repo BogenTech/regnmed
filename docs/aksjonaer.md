@@ -258,8 +258,9 @@ levering og står på innsendingen for alltid.
 
 ### Ikke bygget ennå
 
-- **Kundevilkår før produksjon** (#185, Digdirs vilkår §1.2;
-  utkastet står i docs/kundevilkar.md).
+- **Kundevilkårene i kraft** (#185). Innsendingen nekter til selskapet har
+  godtatt dem (docs/kundevilkar.md, «Aksept»), men teksten er fortsatt et
+  utkast som venter på advokat.
 - **Korrigering** av en levert oppgave.
 - **Svaret automatisk** (Altinn Events, slik a-meldingen har det) — i dag
   hentes det med knappen.

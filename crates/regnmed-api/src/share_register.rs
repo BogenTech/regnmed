@@ -554,6 +554,7 @@ pub async fn submit_tax_return(
                 .into(),
         ));
     };
+    crate::terms::require_accepted(&state, company_id).await?;
     let by = person.display();
     let s = regnmed_db::shareholder_return_submission::prepare_submission(
         &state.pool,

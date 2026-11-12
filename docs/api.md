@@ -65,6 +65,8 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/platform-access` | GET |
 | `/firms/{firm_id}/platform-access` | GET |
 | `/me` | GET |
+| `/terms` | GET (åpen) |
+| `/vilkar` | GET (åpen, ren tekst) |
 
 ### Plattform (docs/auth.md §8)
 
@@ -208,6 +210,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/quotes/{quote_id}/pdf` | GET |
 | `/companies/{company_id}/quotes/{quote_id}/status` | POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave` | GET |
+| `/companies/{company_id}/terms` | GET |
+| `/companies/{company_id}/terms/accept` | POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions` | GET POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome` | POST |
 | `/companies/{company_id}/reports/avvik` | GET |

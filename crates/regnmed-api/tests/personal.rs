@@ -16,5 +16,7 @@ mod assets;
 mod expenses;
 #[path = "grupper/share_register.rs"]
 mod share_register;
+#[path = "grupper/terms.rs"]
+mod terms;
 #[path = "grupper/timesheet.rs"]
 mod timesheet;

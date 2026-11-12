@@ -665,6 +665,24 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
         ),
     }));
 
+    // Not before the company has accepted the terms — and nothing is sent.
+    let (status, body) = call(&state, &token, "POST", &submissions, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("kundevilkårene"),
+        "{body}"
+    );
+    assert!(calls.lock().unwrap().is_empty());
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/terms/accept"),
+        Some(json!({ "versjon": *regnmed_api::terms::VERSION })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
     // Bekreft fails twice. The second attempt resends the SAME keys.
     let (status, body) = call(&state, &token, "POST", &submissions, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

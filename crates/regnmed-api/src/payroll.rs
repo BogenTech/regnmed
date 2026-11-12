@@ -371,6 +371,7 @@ pub async fn submit_amelding(
             "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
         ));
     };
+    crate::terms::require_accepted(&state, company_id).await?;
     let replace = request.map(|Json(r)| r.replace).unwrap_or_default();
     let by = person.display();
     let s = regnmed_db::amelding_submission::prepare_submission(

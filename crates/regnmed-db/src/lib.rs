@@ -58,6 +58,7 @@ pub mod subledger;
 pub mod subscription;
 pub mod subscription_follow_up;
 pub mod tenancy;
+pub mod terms;
 pub mod timesheet;
 pub mod vat;
 pub mod year_end;

@@ -46,6 +46,7 @@ pub mod settings;
 pub mod share_register;
 pub mod subledger;
 pub mod subscription;
+pub mod terms;
 pub mod timesheet;
 pub mod year_end;
 
@@ -146,6 +147,8 @@ pub fn router(state: AppState) -> Router {
         // /ny var portalens adresse mens migreringen pågikk (#76).
         .route("/ny", get(portal::ny_redirect))
         .route("/portal-config", get(portal::portal_config))
+        .route("/terms", get(terms::current))
+        .route("/vilkar", get(terms::page))
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/auth/refresh", axum::routing::post(portal::token_refresh))
         .route("/auth/logout", axum::routing::post(portal::auth_logout))
@@ -602,6 +605,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/dividends",
             get(share_register::list_dividends).post(share_register::create_dividend),
+        )
+        .route("/companies/{company_id}/terms", get(terms::status))
+        .route(
+            "/companies/{company_id}/terms/accept",
+            axum::routing::post(terms::accept),
         )
         .route(
             "/companies/{company_id}/reports/aksjonaeroppgave",
