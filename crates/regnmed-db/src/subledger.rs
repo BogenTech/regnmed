@@ -249,11 +249,18 @@ pub async fn list_parties(
         };
         let suppliers: std::collections::HashMap<String, i64> =
             if rows.iter().any(|r| r.kind == "leverandor") {
+                let numbers: Vec<String> = rows
+                    .iter()
+                    .filter(|r| r.kind == "leverandor")
+                    .map(|r| r.party_no.clone())
+                    .collect();
                 sqlx::query(&format!(
-                    "with so as ({}) select party_no, overdue_ore from so",
+                    "with so as ({}) select party_no, overdue_ore from so
+                     where party_no = any($2)",
                     crate::payments::SUPPLIER_OVERDUE_SQL
                 ))
                 .bind(company_id)
+                .bind(&numbers)
                 .fetch_all(pool)
                 .await?
                 .iter()
@@ -289,6 +296,8 @@ pub struct PartyItem {
     /// From the supplier's document (payable_terms, newest row).
     pub due_date: Option<NaiveDate>,
     pub kid: Option<String>,
+    /// Part of a payment list that is not yet paid (utkast/godkjent).
+    pub in_run: bool,
 }
 
 /// All items for one party, oldest first, with their open remainder.
@@ -301,6 +310,10 @@ pub async fn party_items(
     let rows = sqlx::query(
         "select e.id, v.id as voucher_id, v.fiscal_year, v.voucher_number, v.voucher_date,
                 terms.due_date, terms.kid,
+                exists (select 1 from payment_run_item i
+                        join payment_run r on r.id = i.run_id
+                        where i.entry_id = e.id
+                          and r.status in ('utkast', 'godkjent')) as in_run,
                 coalesce(e.description, v.description) as description, e.amount_ore,
                 coalesce((select sum(m.amount_ore) from reskontro_match m
                           where m.entry_a = e.id), 0)::bigint
@@ -331,6 +344,7 @@ pub async fn party_items(
                 voucher_id: r.get("voucher_id"),
                 due_date: r.get("due_date"),
                 kid: r.get("kid"),
+                in_run: r.get("in_run"),
                 voucher_label: format!(
                     "{}-{}",
                     r.get::<i32, _>("fiscal_year"),

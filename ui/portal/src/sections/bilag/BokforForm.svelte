@@ -8,6 +8,7 @@
   import { today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import DimSelect from "../../components/DimSelect.svelte";
+  import { isValidKid } from "../../lib/kid.js";
 
   let { companyId, documentId, dims, forslag = null, onDone } = $props();
 
@@ -23,6 +24,9 @@
   // Due date and KID belong to a supplier invoice: asked for once a line
   // carries a party, sent only then (the server refuses them otherwise).
   let hasParty = $derived(lines.some((l) => l.party_no));
+  // A misread KID would make the server refuse the whole booking; say so
+  // at the field instead (an empty field books without KID).
+  let kidError = $derived(hasParty && kid.trim() && !isValidKid(kid.trim()));
 
   async function bokfor() {
     const payload = lines
@@ -113,10 +117,21 @@
         </label>
         <label class="fieldset">
           <span class="fieldset-legend">KID</span>
-          <input class="input input-sm w-48" inputmode="numeric" bind:value={kid} />
+          <input
+            class="input input-sm w-48 {kidError ? 'input-error' : ''}"
+            inputmode="numeric"
+            bind:value={kid}
+            aria-invalid={kidError}
+            aria-describedby="kid-help"
+          />
+          {#if kidError}
+            <span id="kid-help" class="label text-error whitespace-normal">
+              Kontrollsifferet stemmer ikke. Rett KID-en, eller tøm feltet for å bokføre uten.
+            </span>
+          {/if}
         </label>
       </div>
     {/if}
-    <button class="btn btn-sm btn-primary" onclick={bokfor}>Bokfør</button>
+    <button class="btn btn-sm btn-primary" onclick={bokfor} disabled={kidError}>Bokfør</button>
   </div>
 </div>

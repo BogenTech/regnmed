@@ -198,6 +198,7 @@ pub async fn party_items(
             "description": i.description,
             "due_date": i.due_date.map(|d| d.to_string()),
             "kid": i.kid,
+            "in_run": i.in_run,
             "amount_ore": i.amount_ore,
             "matched_ore": i.matched_ore,
             "remaining_ore": i.remaining_ore,

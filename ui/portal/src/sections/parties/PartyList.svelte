@@ -155,7 +155,10 @@
             <SortHeader label={T.col} key="name" {sort} {desc} {onsort} />
             <SortHeader label="Nr" key="number" {sort} {desc} {onsort} class="hidden md:table-cell" />
             <th scope="col" class="hidden md:table-cell">{kind === "kunde" ? "E-post" : "Kontonummer"}</th>
-            <SortHeader label={T.owed} key="balance" {sort} {desc} onsort={(k) => onsort(k, kind === "leverandor")} class="text-right" />
+            <!-- A supplier's balance is credit: the ledger sorts it the other
+                 way round from the positive amount shown, so the arrow and
+                 aria-sort follow what the user sees. -->
+            <SortHeader label={T.owed} key="balance" {sort} desc={kind === "leverandor" ? !desc : desc} onsort={(k) => onsort(k, kind === "leverandor")} class="text-right" />
             <SortHeader label="Forfalt" key="overdue" {sort} {desc} {onsort} class="text-right hidden sm:table-cell" />
           </tr>
         </thead>

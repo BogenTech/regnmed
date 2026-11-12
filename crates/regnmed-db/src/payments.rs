@@ -305,6 +305,13 @@ pub async fn create_run(
             .iter()
             .find(|p| p.entry_id == item.entry_id)
             .with_context(|| format!("linje {}: ingen åpen leverandørpost", i + 1))?;
+        // A post in an utkast or godkjent list is already on its way to
+        // the bank; a second list would pay it twice.
+        ensure!(
+            !open.in_run,
+            "linje {}: posten ligger allerede i en betalingsliste som ikke er utbetalt",
+            i + 1
+        );
         let amount = item.amount_ore.unwrap_or(open.amount_ore);
         ensure!(
             amount > 0 && amount <= open.amount_ore,
@@ -326,7 +333,12 @@ pub async fn create_run(
             })?;
         // The KID the supplier asked for, unless the caller gave one: a
         // payment without it is one the supplier has to match by hand.
-        let kid = item.kid.clone().or_else(|| open.kid.clone());
+        // ... but a caller who wrote a message chose an unstructured
+        // reference, and that choice stands.
+        let kid = item
+            .kid
+            .clone()
+            .or_else(|| open.kid.clone().filter(|_| item.message.is_none()));
         if let Some(kid) = &kid {
             ensure!(
                 regnmed_core::kid::is_valid(kid),

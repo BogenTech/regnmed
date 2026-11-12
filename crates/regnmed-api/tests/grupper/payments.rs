@@ -327,6 +327,19 @@ async fn betalingsliste_pain001_and_settlement() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {made}");
     let run_id = made["run_id"].as_str().unwrap().to_string();
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs"),
+        &token,
+        Some(serde_json::json!({ "items": [{ "entry_id": entry_of(12_500_00) }] }).to_string()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a post on its way to the bank cannot be listed twice: {body}"
+    );
     let (_, payable) = request(&state, "GET", &format!("{base}/payable"), &token, None).await;
     assert!(
         payable["items"]

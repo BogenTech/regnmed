@@ -16,7 +16,6 @@
 
   let party = $state(null);
   let items = $state(null);
-  let inRun = $state(new Set());
   let error = $state(null);
   let picked = $state([]);
   let busy = $state(false);
@@ -31,14 +30,11 @@
       // What we owe: open credit posts.
       .then((r) => (items = r.items.filter((i) => i.remaining_ore < 0)))
       .catch((e) => (error = e.message));
-    api(base + "/payments/payable")
-      .then((r) => (inRun = new Set(r.items.filter((i) => i.i_kjoring).map((i) => i.entry_id))))
-      .catch(() => (inRun = new Set()));
   }
   $effect(load);
 
   const today = todayIso();
-  let payable = $derived((items || []).filter((i) => !inRun.has(i.entry_id)));
+  let payable = $derived((items || []).filter((i) => !i.in_run));
   let pickedSum = $derived(
     (items || []).filter((i) => picked.includes(i.entry_id)).reduce((s, i) => s - i.remaining_ore, 0),
   );
@@ -181,7 +177,7 @@
               <tr>
                 {#if canPay && party.bank_account}
                   <td class="px-1 sm:px-4">
-                    {#if inRun.has(i.entry_id)}
+                    {#if i.in_run}
                       <span class="badge badge-ghost badge-xs whitespace-nowrap" title="Ligger i en betalingsliste">i liste</span>
                     {:else}
                       <input
