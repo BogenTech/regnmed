@@ -1,10 +1,16 @@
 <script>
   import { api } from "../../lib/api.js";
+  import { formatDate } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, anchors } = $props();
+  let { companyId } = $props();
 
-  let latest = $derived(anchors[0]);
+  let latest = $state(null);
+  $effect(() => {
+    api("/companies/" + companyId + "/anchors")
+      .then((r) => (latest = r.anchors[0]))
+      .catch(() => (latest = null));
+  });
   let verifying = $state(false);
   let result = $state(null); // {ok, vouchers_checked, ...} | {error}
 
@@ -23,7 +29,7 @@
 <Card title="Forankring">
   {#if latest}
     <p class="text-sm opacity-70 mb-2">
-      Sist forankret {latest.created_at.slice(0, 16).replace("T", " ")}
+      Sist forankret {formatDate(latest.created_at)} {latest.created_at.slice(11, 16)}
       (bilag t.o.m. sekvens {latest.last_seq}{latest.witnesses.length
         ? ", bevitnet eksternt"
         : ""}).

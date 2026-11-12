@@ -45,8 +45,21 @@
     }
   }
 
+  // A one-person company may never invite anyone, so the card can be
+  // put away. Per viewer and company; browser storage is enough for a hint.
+  const skjultNokkel = () => "regnmed-skjul-inviter-" + companyId;
+  function skjul() {
+    try {
+      localStorage.setItem(skjultNokkel(), "1");
+    } catch {}
+    synlig = false;
+  }
+
   $effect(() => {
     synlig = false;
+    try {
+      if (localStorage.getItem(skjultNokkel())) return;
+    } catch {}
     load(companyId);
   });
 
@@ -79,6 +92,7 @@
     <p class="text-sm opacity-70 mb-3">
       Selskapet har bare deg. Inviter med e-postadressen personen logger inn med — tilgangen blir
       til ved neste innlogging, og e-posten inneholder ingen hemmelig lenke.
+      <button class="link" onclick={skjul}>Skjul dette</button>
     </p>
     <div class="flex flex-wrap gap-2 mb-3">
       {#each PROFILER as p (p.navn)}

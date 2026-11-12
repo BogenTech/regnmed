@@ -36,3 +36,16 @@ export function parseAntall(text) {
   if (!isFinite(value)) throw new Error("ugyldig antall: " + text);
   return Math.round(value * 1000);
 }
+
+// Whole kroner for summaries (13 750,40 → 13 750). Exact øre stay in
+// tables and documents; a dashboard reads faster without them.
+export function krWhole(ore) {
+  return kr(Math.sign(ore) * Math.round(Math.abs(ore) / 100) * 100).slice(0, -3);
+}
+
+// ISO date (2026-06-20, or a timestamp) → 20.06.2026, the form Norwegian
+// users read. Anything that is not an ISO date passes through unchanged.
+export function formatDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? m[3] + "." + m[2] + "." + m[1] : iso;
+}

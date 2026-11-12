@@ -1,11 +1,19 @@
 <script>
-  import { post } from "../../lib/api.js";
-  import { today } from "../../lib/format.js";
+  import { api, post } from "../../lib/api.js";
+  import { today, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, rates, onDone } = $props();
+  let { companyId } = $props();
+
+  let rates = $state([]);
+  function onDone() {
+    api("/companies/" + companyId + "/currency/rates")
+      .then((r) => (rates = r.rates))
+      .catch(() => (rates = []));
+  }
+  $effect(onDone);
 
   let valuta = $state("");
   let dato = $state(today());
@@ -65,7 +73,7 @@
           <tr>
             <td class="font-mono">{r.valuta}</td>
             <td class="text-right font-mono">{r.kurs}</td>
-            <td>{r.dato}</td>
+            <td>{formatDate(r.dato)}</td>
             <td class="text-xs opacity-70">{r.kilde}</td>
           </tr>
         {/each}

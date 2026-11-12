@@ -286,8 +286,11 @@ innenfor `PORTAL_DIST_BUDGET_KB` i `scripts/frugality.sh`.
 Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert
 i `App.svelte` og navngitt i `lib/meny.js`:
 
-Oversikt (stats, nøkkeltall, forankring, migrering av tomt selskap,
-inviter-kort) · Faktura (ny faktura, liste m/ PDF/EHF/send,
+Oversikt (snarveier, «Til oppfølging» — forfalte fakturaer, neste
+mva-frist etter terminordningen, innboks, uavstemt bank — tre nøkkeltall,
+resultat per måned, siste bilag, migrering av tomt selskap, inviter-kort
+som kan skjules; valutakurser bor i Bank, forankringen under Rapporter →
+Revisjon) · Faktura (ny faktura, liste m/ PDF/EHF/send,
 kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
 (register, varelager, telling) · Prosjekter (register m/ kundekobling og
 navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
