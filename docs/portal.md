@@ -290,8 +290,10 @@ Oversikt (snarveier, «Til oppfølging» — forfalte fakturaer, neste
 mva-frist etter terminordningen, innboks, uavstemt bank — tre nøkkeltall,
 resultat per måned, siste bilag, migrering av tomt selskap, inviter-kort
 som kan skjules; valutakurser bor i Bank, forankringen under Rapporter →
-Revisjon) · Faktura (ny faktura, liste m/ PDF/EHF/send,
-kreditnota, forfalte + purring, tilbud→ordre, repeterende) · Produkter
+Revisjon) · Faktura (fakturaliste m/ status, søk og filter;
+fakturaside m/ linjer, send/PDF/EHF/purring/kreditnota/gjenta; ny faktura
+m/ flere linjer og løpende sum; faner for tilbud→ordre, repeterende og
+ufakturerte timer — docs/faktura.md) · Produkter
 (register, varelager, telling) · Prosjekter (register m/ kundekobling og
 navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
 autolagring per celle, kopier forrige uke, fakturagrunnlag m/

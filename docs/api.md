@@ -183,6 +183,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/invoice-templates/{template_id}/runs` | GET |
 | `/companies/{company_id}/invoices` | GET POST |
 | `/companies/{company_id}/invoices/overdue` | GET |
+| `/companies/{company_id}/invoices/{invoice_id}` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/credit-note` | POST |
 | `/companies/{company_id}/invoices/{invoice_id}/ehf` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/pdf` | GET |

@@ -9,12 +9,15 @@
   import { download } from "../../lib/download.js";
   import { sendDocument } from "../../lib/utsendelse.js";
 
-  let { companyId, invoiceId, suggestedSteg, onDone } = $props();
+  let { companyId, invoiceId, suggestedSteg = null, onDone } = $props();
+
+  // Without a suggestion, the next step after the last one sent.
+  const NEXT_STEP = { paminnelse: "purring", purring: "inkassovarsel", inkassovarsel: "inkassovarsel" };
 
   let base = $derived("/companies/" + companyId + "/invoices/" + invoiceId + "/reminders");
 
   let history = $state(null);
-  let steg = $state(untrack(() => suggestedSteg));
+  let steg = $state(untrack(() => suggestedSteg || "paminnelse"));
   let frist = $state(new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10));
   let gebyr = $state(false);
   let rente = $state(false);
@@ -23,7 +26,11 @@
 
   $effect(() => {
     api(base)
-      .then((svar) => (history = svar.reminders))
+      .then((svar) => {
+        history = svar.reminders;
+        const last = history.at(-1)?.steg;
+        if (!untrack(() => suggestedSteg) && last) steg = NEXT_STEP[last] || steg;
+      })
       .catch(() => (history = []));
   });
 

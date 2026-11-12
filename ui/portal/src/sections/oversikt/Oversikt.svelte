@@ -101,6 +101,7 @@
     if (data.overdue.length) {
       lines.push({
         section: "faktura",
+        to: "faktura?status=overdue",
         text: plural(data.overdue.length, "forfalt faktura", "forfalte fakturaer"),
         detail: krWhole(overdueSum) + " kr ubetalt",
         urgent: true,
@@ -157,7 +158,7 @@
       <ul class="-mx-2">
         {#each todo as l (l.section)}
           <li>
-            <a class="flex items-center gap-3 rounded-box px-2 py-2 hover:bg-base-200" href={href(l.section)}>
+            <a class="flex items-center gap-3 rounded-box px-2 py-2 hover:bg-base-200" href={href(l.to || l.section)}>
               <span class={l.urgent ? "text-error" : "opacity-60"}><Ikon navn={l.section} /></span>
               <span class="flex-1 min-w-0">
                 <span class="font-medium {l.urgent ? 'text-error' : ''}">{l.text}</span>
@@ -181,7 +182,7 @@
     <!-- Stack on narrow screens instead of scrolling sideways. -->
     <div class="stats stats-vertical md:stats-horizontal border border-base-300 bg-base-100 w-full mb-6">
       {#if data.open}
-        <a class="stat hover:bg-base-200" href={href("faktura")}>
+        <a class="stat hover:bg-base-200" href={href("faktura?status=open")}>
           <div class="stat-title">Utestående fra kunder</div>
           <div class="stat-value text-2xl">{krWhole(openSum)}</div>
           <div class="stat-desc">

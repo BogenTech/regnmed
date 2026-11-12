@@ -470,6 +470,10 @@ pub fn router(state: AppState) -> Router {
             get(invoice::list_invoices).post(invoice::create_invoice),
         )
         .route(
+            "/companies/{company_id}/invoices/{invoice_id}",
+            get(invoice::get_invoice),
+        )
+        .route(
             "/companies/{company_id}/invoices/{invoice_id}/credit-note",
             axum::routing::post(invoice::credit_note),
         )

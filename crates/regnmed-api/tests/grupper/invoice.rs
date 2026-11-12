@@ -203,6 +203,38 @@ async fn invoice_to_payment_to_credit_note_loop() {
     assert_eq!(list["invoices"][0]["remaining_ore"], 12_500_00);
     assert_eq!(list["invoices"][0]["kid"], kid);
 
+    // The portal's invoice page: header, derived status and the stored
+    // lines. Due 2026-02-15, so it is overdue by now.
+    let (status, detail) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{invoice_id}"),
+        &token,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {detail}");
+    assert_eq!(detail["status"], "overdue");
+    assert_eq!(detail["net_ore"], 10_000_00);
+    assert_eq!(detail["vat_ore"], 2_500_00);
+    assert_eq!(detail["lines"][0]["description"], "Konsulentbistand");
+    assert_eq!(detail["lines"][0]["quantity_milli"], 2500);
+    let (status, _) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{}", Uuid::new_v4()),
+        &token,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "another id is no invoice of ours"
+    );
+
     // An OCR payment on the invoice's KID identifies the invoice.
     let transmission = format!("{:07}", rand_7());
     let file = ocr_file(&transmission, &kid, "00000000001250000");
@@ -260,6 +292,45 @@ async fn invoice_to_payment_to_credit_note_loop() {
         open["invoices"].as_array().unwrap().is_empty(),
         "invoice and kreditnota settle each other: {open}"
     );
+
+    // The list's filters: status and counts are derived in SQL, newest
+    // first once a limit is given, and search matches number or name.
+    let list = |query: &'static str| {
+        let state = &state;
+        let token = &token;
+        async move {
+            request(
+                state,
+                "GET",
+                &format!("/companies/{company}/invoices?{query}"),
+                token,
+                None,
+                false,
+            )
+            .await
+        }
+    };
+    let (_, credit_view) = list("status=credit&limit=50").await;
+    assert_eq!(credit_view["total"], 2);
+    assert_eq!(
+        credit_view["invoices"][0]["status"], "credit_note",
+        "newest first"
+    );
+    assert_eq!(credit_view["invoices"][1]["status"], "credited");
+    assert_eq!(credit_view["counts"]["credited"], 1);
+    assert_eq!(credit_view["counts"]["credit_note"], 1);
+    let (_, open_view) = list("status=open&limit=50").await;
+    assert_eq!(open_view["total"], 0, "nothing open after the kreditnota");
+    let (_, by_number) = list("q=1&limit=50").await;
+    assert_eq!(by_number["total"], 1);
+    assert_eq!(by_number["invoices"][0]["invoice_no"], 1);
+    let (_, by_name) = list("q=kunde%20%26&limit=50").await;
+    assert_eq!(by_name["total"], 2, "case-insensitive part of the name");
+    let (_, paged) = list("limit=1&offset=1").await;
+    assert_eq!(paged["total"], 2);
+    assert_eq!(paged["invoices"][0]["invoice_no"], 1);
+    let (status, _) = list("status=bogus").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // Double-crediting is rejected; the chain still verifies (2 vouchers).
     let (status, _) = request(
