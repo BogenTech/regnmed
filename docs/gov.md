@@ -151,7 +151,7 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | --- | --- | --- |
 | `skatteetaten:mvameldingvalidering` | mva-melding, validering (#8) | koden finnes |
 | `skatteetaten:innrapporteringamelding` | a-melding **og** avstemmingsrapporten (#46) | koden mangler |
-| `skatteetaten:skattekorttilarbeidsgiver` | skattekort → forskuddstrekk (#46) | koden mangler |
+| `skatteetaten:skattekorttilarbeidsgiver` | skattekort → forskuddstrekk (#46) | koden finnes (`regnmed-gov::tax_card`, docs/lonn.md); prøvd mot testmiljøet 2026-11-12 |
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
 | `skatteetaten:mvaregisteravgiftssubjekt` | er selskapet mva-registrert? | i dag et manuelt flagg i firmaopplysningene (docs/faktura.md) — dette er den autoritative kilden |
 | `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning |

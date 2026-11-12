@@ -215,6 +215,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/terms` | GET |
 | `/companies/{company_id}/terms/accept` | POST |
 | `/companies/{company_id}/authority-calls` | GET |
+| `/companies/{company_id}/tax-cards` | GET POST |
+| `/companies/{company_id}/tax-cards/{order_id}/answer` | POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions` | GET POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome` | POST |
 | `/companies/{company_id}/reports/avvik` | GET |

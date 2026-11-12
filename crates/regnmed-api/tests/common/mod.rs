@@ -101,6 +101,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         regnid: None,
         amelding: None,
         shareholder_return: None,
+        tax_card: None,
     })
 }
 

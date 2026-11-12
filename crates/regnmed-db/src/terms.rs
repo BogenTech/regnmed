@@ -86,7 +86,7 @@ pub async fn acceptances(pool: &PgPool, company_id: Uuid) -> Result<Vec<Acceptan
 /// One call regnmed made to an authority on the company's behalf.
 #[derive(Debug, Clone)]
 pub struct AuthorityCall {
-    /// `a-melding`, `aksjonaerregisteroppgave` or `altinn-hendelser`.
+    /// `a-melding`, `aksjonaerregisteroppgave`, `altinn-hendelser` or `skattekort`.
     pub form: String,
     pub id: Uuid,
     /// Period, income year or resource -- what the call was about.
@@ -102,7 +102,7 @@ pub struct AuthorityCall {
 /// The register terms §7.1 promises: every call to Altinn or the
 /// authorities on the company's behalf, what it was, when, who asked, and
 /// what came back. NOT a second log -- a read over the submission records
-/// themselves (migrations 0074-0076), which are written BEFORE each call
+/// themselves (migrations 0074-0076, 0078), which are written BEFORE each call
 /// and are insert-only, so the register cannot miss or rewrite a call.
 pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<AuthorityCall>> {
     const EVENTS: &str = "coalesce((select jsonb_agg(jsonb_build_object(
@@ -122,6 +122,13 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
          select 'altinn-hendelser', s.id, s.resource_filter, s.created_by, s.created_at,
                 '[]'::jsonb
            from altinn_event_subscription s where s.company_id = $1
+         union all
+         select 'skattekort', s.id, s.income_year::text, s.requested_by, s.created_at,
+                coalesce((select jsonb_build_array(jsonb_build_object(
+                    'hendelse', 'answer', 'tidspunkt', min(c.created_at), 'av', null,
+                    'forsendelse_id', s.reference, 'feil', null))
+                    from tax_card c where c.order_id = s.id having count(*) > 0), '[]'::jsonb)
+           from tax_card_order s where s.company_id = $1
          order by created_at desc",
         EVENTS.replace("{table}", "amelding_submission_event"),
         EVENTS.replace("{table}", "shareholder_return_submission_event"),
