@@ -138,7 +138,7 @@ impl std::fmt::Display for AmeldingError {
                  satsen er {computed_ore} øre — Skatteetaten krever at de er like (F185), \
                  og regnmed sender ikke en melding som spriker fra hovedboken"
             ),
-            Self::NoRecipients => write!(f, "lønnskjøringen har ingen inntektsmottakere"),
+            Self::NoRecipients => write!(f, "a-meldingen har ingen inntektsmottakere"),
         }
     }
 }
@@ -237,10 +237,13 @@ pub struct Melding {
     /// The virksomhet: the underenhet in Enhetsregisteret the employees
     /// work at (F290). Not the legal entity's own number.
     pub business_orgnumber: Option<String>,
-    /// The lønnsutbetalingsdato. The melding's kalendermåned is the
-    /// month of THIS date, not the payroll month: the a-melding reports
-    /// what was paid when it was paid.
-    pub payment_date: NaiveDate,
+    /// The kalendermåned reported (the day is ignored). For a payroll
+    /// run it is the month of the payment date, not the payroll month:
+    /// the a-melding reports what was paid when it was paid.
+    pub month: NaiveDate,
+    /// The lønnsutbetalingsdato -- `None` for a month without a payroll
+    /// run, whose melding carries the arbeidsforhold alone (F108).
+    pub payment_date: Option<NaiveDate>,
     pub zone: Zone,
     pub employer_contribution_rate_bp: i64,
     /// Arbeidsgiveravgift on the run's paid amounts (2770, not the
@@ -474,9 +477,9 @@ pub fn render_json(m: &Melding) -> Result<String, AmeldingError> {
     Ok(out)
 }
 
-/// The kalendermåned the melding reports: the month of the payment date.
+/// The kalendermåned the melding reports.
 pub fn period(m: &Melding) -> String {
-    m.payment_date.format("%Y-%m").to_string()
+    m.month.format("%Y-%m").to_string()
 }
 
 fn build(m: &Melding) -> Result<Node, AmeldingError> {
@@ -507,12 +510,12 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
             value: m.source_system.clone(),
         });
     }
-    let (year, month) = (m.payment_date.year(), m.payment_date.month());
+    let (year, month) = (m.month.year(), m.month.month());
     // The XSD's own bounds on kalendermaaned.
     if !(2014..=2099).contains(&year) {
         return Err(AmeldingError::InvalidValue {
             field: "kalendermaaned",
-            value: m.payment_date.to_string(),
+            value: m.month.to_string(),
         });
     }
 
@@ -560,9 +563,10 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
         "sumArbeidsgiveravgift",
         whole_kroner("arbeidsgiveravgift", m.employer_contribution_ore)?,
     );
-    if year >= 2026 {
+    // No payment, no payment date to sum per.
+    if let Some(date) = m.payment_date.filter(|_| year >= 2026) {
         x.open("sumForskuddstrekkPerLoennsutbetalingsdato");
-        x.leaf("loennsutbetalingsdato", &m.payment_date.to_string());
+        x.leaf("loennsutbetalingsdato", &date.to_string());
         x.int("beloep", withholding_kr);
         x.close("sumForskuddstrekkPerLoennsutbetalingsdato");
     }
@@ -574,17 +578,20 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
         recipient(&mut x, r)?;
     }
     // F184: every inntekt here triggers avgift, so the basis is their sum.
-    x.open("arbeidsgiveravgift");
-    x.open("loennOgGodtgjoerelse");
-    x.leaf("beregningskodeForArbeidsgiveravgift", "generelleNaeringer");
-    x.leaf("sone", zone_code(m.zone));
-    x.leaf("avgiftsgrunnlagBeloep", &decimal(basis_ore));
-    x.leaf(
-        "prosentsatsForAvgiftsberegning",
-        &rate(m.employer_contribution_rate_bp),
-    );
-    x.close("loennOgGodtgjoerelse");
-    x.close("arbeidsgiveravgift");
+    // A melding without any inntekt has no grunnlag to report.
+    if basis_ore != 0 {
+        x.open("arbeidsgiveravgift");
+        x.open("loennOgGodtgjoerelse");
+        x.leaf("beregningskodeForArbeidsgiveravgift", "generelleNaeringer");
+        x.leaf("sone", zone_code(m.zone));
+        x.leaf("avgiftsgrunnlagBeloep", &decimal(basis_ore));
+        x.leaf(
+            "prosentsatsForAvgiftsberegning",
+            &rate(m.employer_contribution_rate_bp),
+        );
+        x.close("loennOgGodtgjoerelse");
+        x.close("arbeidsgiveravgift");
+    }
     x.close("virksomhet");
     x.close("oppgave");
     Ok(x.finish())
@@ -701,7 +708,8 @@ mod tests {
             source_system: "regnmed".into(),
             orgnumber: "935115086".into(),
             business_orgnumber: Some("974760673".into()),
-            payment_date: d(2026, 3, 25),
+            month: d(2026, 3, 1),
+            payment_date: Some(d(2026, 3, 25)),
             zone: Zone::I,
             employer_contribution_rate_bp: 1410,
             // 14,1 % of 50 000 + 3 000 = 7 473 kr.
@@ -762,7 +770,8 @@ mod tests {
     #[test]
     fn before_2026_the_withholding_is_one_sum_and_still_validates() {
         let mut m = melding();
-        m.payment_date = d(2025, 3, 25);
+        m.month = d(2025, 3, 1);
+        m.payment_date = Some(d(2025, 3, 25));
         m.recipients[0].employment.end_date = Some(d(2025, 3, 31));
         m.replaces_message_id = Some("earlier-id".into());
         let xml = render(&m).unwrap();
@@ -954,11 +963,13 @@ mod tests {
     fn the_calendar_month_is_the_month_the_pay_was_paid() {
         // A March run paid on 2 April belongs in April's melding.
         let mut m = melding();
-        m.payment_date = d(2026, 4, 2);
+        m.month = d(2026, 4, 1);
+        m.payment_date = Some(d(2026, 4, 2));
         let xml = render(&m).unwrap();
         assert!(xml.contains("<kalendermaaned>2026-04</kalendermaaned>"));
         // Paid on 31 December 2025: the old single sum, not the per-date one.
-        m.payment_date = d(2025, 12, 31);
+        m.month = d(2025, 12, 1);
+        m.payment_date = Some(d(2025, 12, 31));
         let xml = render(&m).unwrap();
         assert!(xml.contains("<kalendermaaned>2025-12</kalendermaaned>"));
         assert!(xml.contains("<sumForskuddstrekk>"));
@@ -994,6 +1005,35 @@ mod tests {
         assert!(!per.contains("<inntekt>"), "{per}");
         assert!(!per.contains("<forskuddstrekk>"), "{per}");
         assert!(xml.contains("<sumArbeidsgiveravgift>7473</sumArbeidsgiveravgift>"));
+    }
+
+    #[test]
+    fn a_month_without_a_payroll_run_reports_the_arbeidsforhold_alone() {
+        // F108 in a month nobody was paid: no payment date to sum trekk
+        // per, and no avgiftsgrunnlag to report -- only the arbeidsforhold
+        // and a sumArbeidsgiveravgift of 0.
+        let mut m = melding();
+        m.month = d(2026, 5, 1);
+        m.payment_date = None;
+        m.employer_contribution_ore = 0;
+        for r in &mut m.recipients {
+            r.income.clear();
+            r.withholding_ore = 0;
+        }
+        let xml = render(&m).unwrap();
+        validate(&xml, "month-without-run");
+        assert!(xml.contains("<kalendermaaned>2026-05</kalendermaaned>"));
+        assert!(xml.contains("<sumArbeidsgiveravgift>0</sumArbeidsgiveravgift>"));
+        assert!(xml.contains("<arbeidsforhold>"));
+        for absent in [
+            "loennsutbetalingsdato",
+            "<arbeidsgiveravgift>",
+            "<inntekt>",
+            "<forskuddstrekk>",
+        ] {
+            assert!(!xml.contains(absent), "{absent} in {xml}");
+        }
+        assert_eq!(period(&m), "2026-05");
     }
 
     #[test]
@@ -1036,7 +1076,8 @@ mod tests {
         m.source_system = String::new();
         assert!(invalid(m));
         let mut m = melding();
-        m.payment_date = d(2013, 12, 20);
+        m.month = d(2013, 12, 1);
+        m.payment_date = Some(d(2013, 12, 20));
         assert!(invalid(m));
     }
 

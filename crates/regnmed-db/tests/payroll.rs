@@ -1343,7 +1343,7 @@ async fn an_end_date_entered_late_is_reported_the_next_month() {
     let deliver = |run: Uuid| {
         let pool = pool.clone();
         async move {
-            let s = sub::prepare_submission(&pool, company, run, false, "Test")
+            let s = sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test")
                 .await
                 .unwrap();
             sub::record_receipt(&pool, s.id, "d", "f", "Test")
@@ -1390,6 +1390,186 @@ async fn an_end_date_entered_late_is_reported_the_next_month() {
 
     let april = run_in(4).await;
     assert_eq!(names(april).await, [("Kari Betalt".into(), None)]);
+}
+
+/// F108 in a month nobody was paid: the melding carries every employment
+/// alone, is stored and retried like a run's, and once the month gets a
+/// run, the run's melding REPLACES it -- sent alongside, the employments
+/// would be reported twice.
+#[tokio::test]
+async fn a_month_without_a_run_reports_every_employment_until_a_run_replaces_it() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let kari = employee(&pool, company, "26829398612", "Kari Betalt", 4_000_000).await;
+    let per = employee(&pool, company, "03048810003", "Per Permisjon", 3_000_000).await;
+    for id in [kari, per] {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    let may = sub::Source::Month(date(2026, 5, 1));
+
+    let draft = payroll::amelding_for_month(&pool, company, date(2026, 5, 17), chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+    assert_eq!(draft.melding.recipients.len(), 2);
+    assert!(
+        draft
+            .melding
+            .recipients
+            .iter()
+            .all(|r| r.income.is_empty() && r.withholding_ore == 0)
+    );
+    let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+    assert!(xml.contains("<kalendermaaned>2026-05</kalendermaaned>"));
+    assert!(xml.contains("<sumArbeidsgiveravgift>0</sumArbeidsgiveravgift>"));
+    assert!(!xml.contains("loennsutbetalingsdato"));
+
+    // Before anyone was employed there is nothing to report.
+    let empty = payroll::amelding_for_month(&pool, company, date(2024, 12, 1), chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(
+        empty
+            .hindrances
+            .iter()
+            .any(|h| h.contains("ingen arbeidsforhold å rapportere")),
+        "{:?}",
+        empty.hindrances
+    );
+
+    // Stored, retried unchanged, delivered once.
+    let first = sub::prepare_submission(&pool, company, may, false, "Test")
+        .await
+        .unwrap();
+    assert_eq!((first.run_id, first.period.as_str()), (None, "2026-05"));
+    let retry = sub::prepare_submission(&pool, company, may, false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(retry.id, first.id);
+    sub::record_receipt(&pool, first.id, "d", "f", "Test")
+        .await
+        .unwrap();
+    let err = sub::prepare_submission(&pool, company, may, false, "Test")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("allerede levert"), "{err}");
+
+    // May gets a run after all: the month is now the run's to report.
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        5,
+        date(2026, 5, 25),
+        "I",
+        &[run_entry(kari, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let err = sub::prepare_submission(&pool, company, may, true, "Test")
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("rapporterer allerede 05/2026"),
+        "{err}"
+    );
+    let from_run = sub::prepare_submission(&pool, company, sub::Source::Run(run.id), false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(from_run.period, "2026-05");
+    assert_eq!(
+        from_run.replaces_melding_id.as_deref(),
+        Some(first.melding_id.as_str())
+    );
+    // Per, unpaid, is still in the run's melding: nothing is lost by the
+    // replacement.
+    assert!(from_run.body.contains("03048810003"));
+    assert_eq!(
+        sub::list_submissions(&pool, company, may)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // A run in a month WITHOUT a delivered month melding replaces nothing.
+    let june = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        6,
+        date(2026, 6, 25),
+        "I",
+        &[run_entry(kari, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let june = sub::prepare_submission(&pool, company, sub::Source::Run(june.id), false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(june.replaces_melding_id, None);
+}
+
+/// A month melding whose send failed (Skatteetaten may hold it or not) is
+/// not stranded when the month then gets a run: it can still be retried
+/// under its own key, and the run's melding waits for it and then
+/// replaces it -- never goes out beside it.
+#[tokio::test]
+async fn an_undelivered_month_melding_is_settled_before_the_run_is_sent() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let kari = employee(&pool, company, "26829398612", "Kari Betalt", 4_000_000).await;
+    payroll::update_employment_details(&pool, company, kari, &complete_details("974760673"))
+        .await
+        .unwrap();
+    let may = sub::Source::Month(date(2026, 5, 1));
+    let stored = sub::prepare_submission(&pool, company, may, false, "Test")
+        .await
+        .unwrap();
+    sub::record_failure(&pool, stored.id, "timeout", "Test")
+        .await
+        .unwrap();
+
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        5,
+        date(2026, 5, 25),
+        "I",
+        &[run_entry(kari, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let err = sub::prepare_submission(&pool, company, sub::Source::Run(run.id), false, "Test")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("send den ferdig først"), "{err}");
+
+    let retry = sub::prepare_submission(&pool, company, may, false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(
+        (retry.id, retry.idempotency_key),
+        (stored.id, stored.idempotency_key)
+    );
+    sub::record_receipt(&pool, retry.id, "d", "f", "Test")
+        .await
+        .unwrap();
+    let from_run = sub::prepare_submission(&pool, company, sub::Source::Run(run.id), false, "Test")
+        .await
+        .unwrap();
+    assert_eq!(
+        from_run.replaces_melding_id.as_deref(),
+        Some(stored.melding_id.as_str())
+    );
 }
 
 /// The end date is what stops F108 reporting; it cannot precede the
@@ -1566,7 +1746,7 @@ async fn a_submission_is_retried_unchanged_and_replaced_only_on_request() {
     let Some(pool) = pool().await else { return };
     let (company, run) = submittable_run(&pool).await;
 
-    let first = sub::prepare_submission(&pool, company, run, false, "Test")
+    let first = sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test")
         .await
         .unwrap();
     assert_eq!(first.period, "2026-03");
@@ -1585,7 +1765,7 @@ async fn a_submission_is_retried_unchanged_and_replaced_only_on_request() {
     sub::record_failure(&pool, first.id, "connection reset", "Test")
         .await
         .unwrap();
-    let retry = sub::prepare_submission(&pool, company, run, false, "Test")
+    let retry = sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test")
         .await
         .unwrap();
     assert_eq!(retry.id, first.id);
@@ -1603,12 +1783,12 @@ async fn a_submission_is_retried_unchanged_and_replaced_only_on_request() {
     sub::record_receipt(&pool, first.id, "d-1", "t-1", "Test")
         .await
         .unwrap();
-    let err = sub::prepare_submission(&pool, company, run, false, "Test")
+    let err = sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test")
         .await
         .unwrap_err()
         .to_string();
     assert!(err.contains("allerede levert"), "{err}");
-    let replacement = sub::prepare_submission(&pool, company, run, true, "Test")
+    let replacement = sub::prepare_submission(&pool, company, sub::Source::Run(run), true, "Test")
         .await
         .unwrap();
     assert_ne!(replacement.id, first.id);
@@ -1636,7 +1816,9 @@ async fn a_submission_is_retried_unchanged_and_replaced_only_on_request() {
             .await
             .unwrap();
     }
-    let list = sub::list_submissions(&pool, company, run).await.unwrap();
+    let list = sub::list_submissions(&pool, company, sub::Source::Run(run))
+        .await
+        .unwrap();
     assert_eq!(list.len(), 2);
     assert_eq!(list[0].0.id, replacement.id, "newest first");
     assert_eq!(list[1].1.slug(), "tilbakemelding");
@@ -1647,7 +1829,7 @@ async fn the_submission_record_is_append_only_and_needs_a_buildable_run() {
     use regnmed_db::amelding_submission as sub;
     let Some(pool) = pool().await else { return };
     let (first_company, run) = submittable_run(&pool).await;
-    let s = sub::prepare_submission(&pool, first_company, run, false, "Test")
+    let s = sub::prepare_submission(&pool, first_company, sub::Source::Run(run), false, "Test")
         .await
         .unwrap();
     for sql in [
@@ -1682,13 +1864,13 @@ async fn the_submission_record_is_append_only_and_needs_a_buildable_run() {
     )
     .await
     .unwrap();
-    let err = sub::prepare_submission(&pool, company2, run2.id, false, "Test")
+    let err = sub::prepare_submission(&pool, company2, sub::Source::Run(run2.id), false, "Test")
         .await
         .unwrap_err()
         .to_string();
     assert!(err.contains("arbeidsforholdet mangler"), "{err}");
     assert!(
-        sub::list_submissions(&pool, company2, run2.id)
+        sub::list_submissions(&pool, company2, sub::Source::Run(run2.id))
             .await
             .unwrap()
             .is_empty()
@@ -1702,12 +1884,12 @@ async fn concurrent_sends_create_one_submission() {
     let Some(pool) = pool().await else { return };
     let (company, run) = submittable_run(&pool).await;
     let (a, b) = tokio::join!(
-        sub::prepare_submission(&pool, company, run, false, "Test"),
-        sub::prepare_submission(&pool, company, run, false, "Test"),
+        sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test"),
+        sub::prepare_submission(&pool, company, sub::Source::Run(run), false, "Test"),
     );
     assert_eq!(a.unwrap().id, b.unwrap().id);
     assert_eq!(
-        sub::list_submissions(&pool, company, run)
+        sub::list_submissions(&pool, company, sub::Source::Run(run))
             .await
             .unwrap()
             .len(),

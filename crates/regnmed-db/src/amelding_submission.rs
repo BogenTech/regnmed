@@ -6,21 +6,53 @@
 //! - a retry of a submission that never got a receipt resends the SAME
 //!   body with the SAME idempotency key (Skatteetaten then answers with the
 //!   first receipt instead of counting it twice), and
-//! - once a submission has a receipt, the run can only be sent again as an
+//! - once a submission has a receipt, its run (or month) can only be sent again as an
 //!   explicit replacement (`erstatterMeldingsId`), never as a second
 //!   melding.
 //!
 //! Status is computed from the insert-only event log, never stored.
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+
+/// What an a-melding is built from.
+#[derive(Debug, Clone, Copy)]
+pub enum Source {
+    /// A stored payroll run.
+    Run(Uuid),
+    /// A month without a payroll run (any day in it): the arbeidsforhold
+    /// alone, F108.
+    Month(NaiveDate),
+}
+
+impl Source {
+    fn run_id(self) -> Option<Uuid> {
+        match self {
+            Self::Run(id) => Some(id),
+            Self::Month(_) => None,
+        }
+    }
+
+    fn period(self) -> Option<String> {
+        match self {
+            Self::Run(_) => None,
+            Self::Month(m) => Some(m.format("%Y-%m").to_string()),
+        }
+    }
+}
+
+/// The submissions for one source: a run's own, or a month's run-less ones.
+const FOR_SOURCE: &str = "s.company_id = $1
+     and (($2::uuid is not null and s.run_id = $2)
+          or ($2::uuid is null and s.run_id is null and s.period = $3))";
 
 #[derive(Debug, Clone)]
 pub struct Submission {
     pub id: Uuid,
-    pub run_id: Uuid,
+    /// `None` for a month without a payroll run.
+    pub run_id: Option<Uuid>,
     pub melding_id: String,
     pub idempotency_key: Uuid,
     pub period: String,
@@ -77,69 +109,139 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Submission {
 const COLUMNS: &str = "id, run_id, melding_id, idempotency_key, period, replaces_melding_id, \
                        body, created_by, created_at";
 
-/// The submission to send for a run now: the undelivered one if there is
-/// one (a retry — same body, same key), otherwise a new one rendered from
-/// the run as it stands. A run that already has a delivered submission
-/// gets a new one only with `replace`, and then as a replacement of the
-/// latest delivered melding.
+/// The submission to send for a source now: the undelivered one if there
+/// is one (a retry — same body, same key), otherwise a new one rendered
+/// from the run (or the month) as it stands. A source that already has a
+/// delivered submission gets a new one only with `replace`, and then as a
+/// replacement of the latest delivered melding.
 ///
-/// Refuses, with every hindrance named, a run the a-melding cannot be
-/// built from (`payroll::amelding_for_run`).
+/// A run's FIRST melding replaces a delivered run-less melding for the
+/// same month: the run reports every arbeidsforhold the month melding
+/// did (F108), so sending it alongside would report them twice.
+///
+/// Refuses, with every hindrance named, a source the a-melding cannot be
+/// built from (`payroll::amelding_for_run` / `amelding_for_month`).
 pub async fn prepare_submission(
     pool: &PgPool,
     company_id: Uuid,
-    run_id: Uuid,
+    source: Source,
     replace: bool,
     created_by: &str,
 ) -> Result<Submission> {
     let mut tx = pool.begin().await?;
-    // Two clicks at once must not create two meldinger: the run row is the
-    // lock every submission for it goes through.
-    sqlx::query("select 1 from payroll_run where id = $1 and company_id = $2 for update")
-        .bind(run_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .context("ukjent lønnskjøring")?;
+    // Two clicks at once must not create two meldinger: the run row (the
+    // company row for a month without one) is the lock every submission
+    // for it goes through.
+    match source {
+        Source::Run(run_id) => {
+            sqlx::query("select 1 from payroll_run where id = $1 and company_id = $2 for update")
+                .bind(run_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .context("ukjent lønnskjøring")?;
+        }
+        Source::Month(_) => {
+            sqlx::query("select 1 from company where id = $1 for no key update")
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .context("ukjent selskap")?;
+        }
+    }
 
     let latest = sqlx::query(&format!(
         "select {COLUMNS},
                 exists (select 1 from amelding_submission_event e
                         where e.submission_id = s.id and e.kind = 'receipt') as delivered
          from amelding_submission s
-         where s.company_id = $1 and s.run_id = $2
+         where {FOR_SOURCE}
          order by s.created_at desc limit 1"
     ))
     .bind(company_id)
-    .bind(run_id)
+    .bind(source.run_id())
+    .bind(source.period())
     .fetch_optional(&mut *tx)
     .await?;
 
     let replaces = match &latest {
         Some(row) if !row.get::<bool, _>("delivered") => {
-            // Never delivered: send exactly this again.
+            // Never delivered: send exactly this again -- a month melding
+            // too, even once the month has a run: Skatteetaten may already
+            // hold it, and only a retry under the same key settles that
+            // without counting it twice. The run waits for it (below).
             let retry = from_row(row);
             tx.commit().await?;
             return Ok(retry);
         }
         Some(row) if !replace => bail!(
-            "a-meldingen for denne kjøringen er allerede levert (meldingsId {}). En ny melding \
-             for samme måned LEGGES TIL den forrige hos Skatteetaten — send den som en \
-             erstatning hvis den skal rettes",
+            "a-meldingen er allerede levert (meldingsId {}). En ny melding for samme måned \
+             LEGGES TIL den forrige hos Skatteetaten — send den som en erstatning hvis den skal \
+             rettes",
             row.get::<String, _>("melding_id")
         ),
         Some(row) => Some(row.get::<String, _>("melding_id")),
-        None if replace => bail!("det finnes ingen levert a-melding for kjøringen å erstatte"),
+        None if replace => bail!("det finnes ingen levert a-melding å erstatte"),
         None => None,
     };
 
-    let mut draft = crate::payroll::amelding_for_run(pool, company_id, run_id, Utc::now()).await?;
+    let mut draft = match source {
+        Source::Run(run_id) => {
+            crate::payroll::amelding_for_run(pool, company_id, run_id, Utc::now()).await?
+        }
+        // Refuses a month that has a run: the run's melding reports it.
+        Source::Month(month) => {
+            crate::payroll::amelding_for_month(pool, company_id, month, Utc::now()).await?
+        }
+    };
     if !draft.hindrances.is_empty() {
         bail!(
             "a-meldingen kan ikke lages ennå: {}",
             draft.hindrances.join("; ")
         );
     }
+    let period = regnmed_core::amelding::period(&draft.melding);
+    let replaces = match (source, replaces) {
+        (Source::Run(_), None) => {
+            // A month melding whose fate is unknown (stored, no receipt)
+            // cannot be replaced, and sending alongside it may count every
+            // arbeidsforhold twice: it must be settled first.
+            let unsettled: bool = sqlx::query_scalar(
+                "select exists (select 1 from amelding_submission s
+                                 where s.company_id = $1 and s.period = $2 and s.run_id is null
+                                   and not exists (select 1 from amelding_submission_event e
+                                                    where e.submission_id = s.id
+                                                      and e.kind = 'receipt'))",
+            )
+            .bind(company_id)
+            .bind(&period)
+            .fetch_one(&mut *tx)
+            .await?;
+            if unsettled {
+                bail!(
+                    "a-meldingen for {period} uten lønnskjøring er lagret, men ikke levert — send \
+                     den ferdig først (den sendes uendret og telles ikke dobbelt), så erstatter \
+                     kjøringens melding den"
+                );
+            }
+            sqlx::query_scalar(
+                "select s.melding_id from amelding_submission s
+                  where s.company_id = $1 and s.period = $2 and s.run_id is null
+                    and exists (select 1 from amelding_submission_event e
+                                 where e.submission_id = s.id and e.kind = 'receipt')
+                    and not exists (select 1 from amelding_submission r
+                                     join amelding_submission_event e
+                                       on e.submission_id = r.id and e.kind = 'receipt'
+                                    where r.replaces_melding_id = s.melding_id)
+                  order by s.created_at desc limit 1",
+            )
+            .bind(company_id)
+            .bind(&period)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        (_, replaces) => replaces,
+    };
     let melding_id = Uuid::new_v4();
     draft.melding.message_id = melding_id.to_string();
     draft.melding.replaces_message_id = replaces.clone();
@@ -155,10 +257,10 @@ pub async fn prepare_submission(
     ))
     .bind(Uuid::new_v4())
     .bind(company_id)
-    .bind(run_id)
+    .bind(source.run_id())
     .bind(melding_id.to_string())
     .bind(Uuid::new_v4())
-    .bind(regnmed_core::amelding::period(&draft.melding))
+    .bind(&period)
     .bind(&replaces)
     .bind(&body)
     .bind(created_by)
@@ -255,18 +357,19 @@ pub async fn record_feedback(
     Ok(())
 }
 
-/// The run's submissions, newest first, each with its computed status.
+/// The source's submissions, newest first, each with its computed status.
 pub async fn list_submissions(
     pool: &PgPool,
     company_id: Uuid,
-    run_id: Uuid,
+    source: Source,
 ) -> Result<Vec<(Submission, SubmissionStatus)>> {
     let rows = sqlx::query(&format!(
-        "select {COLUMNS} from amelding_submission
-         where company_id = $1 and run_id = $2 order by created_at desc"
+        "select {COLUMNS} from amelding_submission s
+         where {FOR_SOURCE} order by created_at desc"
     ))
     .bind(company_id)
-    .bind(run_id)
+    .bind(source.run_id())
+    .bind(source.period())
     .fetch_all(pool)
     .await?;
     let mut out = Vec::new();

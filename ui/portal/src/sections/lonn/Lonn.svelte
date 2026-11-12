@@ -1,7 +1,6 @@
 <script>
-  // Lønn (#46): ansattregister + lønnskjøring. Kjøringen er
-  // regnskapsføring, ikke rapportering — a-meldingen leveres ikke
-  // herfra (docs/lonn.md).
+  // Lønn (#46): ansattregister + lønnskjøring. A-meldingen sendes
+  // herfra bare der innsending er satt opp (docs/lonn.md).
   //
   // Invitasjoner og medlemslisten er valgfrie kilder for
   // koblingskortet (ansatt ↔ portalbruker): de krever MEDLEM_ADMIN, og

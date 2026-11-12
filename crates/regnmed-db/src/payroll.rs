@@ -64,7 +64,8 @@ fn validate_details(d: &EmploymentDetails, company_orgnumber: &str) -> Result<()
         // into the employee form.
         ensure!(
             n != company_orgnumber,
-            "virksomheten skal være underenheten i Enhetsregisteret der den ansatte jobber,              ikke selskapets eget organisasjonsnummer (a-meldingen, F290)"
+            "virksomheten skal være underenheten i Enhetsregisteret der den ansatte jobber, \
+             ikke selskapets eget organisasjonsnummer (a-meldingen, F290)"
         );
     }
     if let Some(code) = &d.occupation_code {
@@ -608,6 +609,7 @@ pub async fn run_payroll(
             ensure!(
                 basis.locked,
                 "timelisten for {month:02}/{year} er ikke låst — lås måneden før timelønn \
+ \
                  utbetales, ellers kan timene endres etter at lønnen er bokført ({})",
                 employee.name
             );
@@ -646,6 +648,7 @@ pub async fn run_payroll(
                 ensure!(
                     crate::tax_card::has_tax_free_card(pool, company_id, employee.id, year).await?,
                     "{} har frikort, men ikke et hentet frikort for {year} — hent årets \
+ \
                      skattekort før lønnen utbetales",
                     employee.name
                 );
@@ -905,6 +908,7 @@ pub async fn run_payroll(
     ensure!(
         missing.is_empty(),
         "Lønnskjøringen bokfører på konto {}, som selskapet ikke har som aktiv konto. \
+ \
          Legg {} til under Hovedbok → Kontoplan og kjør lønnen på nytt.",
         missing.join(", "),
         if missing.len() == 1 { "den" } else { "dem" }
@@ -1286,6 +1290,7 @@ pub async fn hour_basis(
 
     let minutes: Option<i64> = sqlx::query_scalar(
         "select sum(minutter)::bigint from time_entry
+ \
          where company_id = $1 and person_id = $2 and dato between $3 and $4",
     )
     .bind(company_id)
@@ -1518,6 +1523,7 @@ pub async fn amelding_for_run(
 
     let run = sqlx::query(
         "select utbetalt_dato, sone, aga_ore from payroll_run
+ \
          where id = $1 and company_id = $2",
     )
     .bind(run_id)
@@ -1536,22 +1542,17 @@ pub async fn amelding_for_run(
             .unwrap_or_else(|| {
                 hindrances.push(format!(
                     "arbeidsgiveravgiftssatsen for sone {zone_slug} på {paid_date} finnes ikke i \
-                 satsregisteret"
+ \
+                     satsregisteret"
                 ));
                 0
             });
 
     let employees = list_ansatte(pool, company_id).await?;
-    let nins: std::collections::HashMap<Uuid, String> =
-        sqlx::query("select id, fodselsnummer from employee where company_id = $1")
-            .bind(company_id)
-            .fetch_all(pool)
-            .await?
-            .iter()
-            .map(|r| (r.get("id"), r.get("fodselsnummer")))
-            .collect();
+    let nins = employee_nins(pool, company_id).await?;
     let lines = sqlx::query(
         "select employee_id, brutto_ore, feriepenger_ore, forskuddstrekk_ore, pay_kind
+ \
          from payroll_line where run_id = $1",
     )
     .bind(run_id)
@@ -1592,6 +1593,7 @@ pub async fn amelding_for_run(
                 // that could not tell): never guessed now.
                 None => hindrances.push(format!(
                     "{}: det ble ikke lagret om lønnen i denne kjøringen var fastlønn eller \
+ \
                      timelønn, og regnmed gjetter det ikke i ettertid",
                     employee.name
                 )),
@@ -1613,71 +1615,23 @@ pub async fn amelding_for_run(
         });
     }
 
-    // shortcut: one virksomhet per melding, as the renderer takes it;
-    // group per virksomhet (and split the avgift) when a customer has
-    // employees on two underenheter.
-    if business_units.len() > 1 {
-        hindrances.push(format!(
-            "de ansatte i kjøringen står på ulike virksomheter ({}) — regnmed lager foreløpig \
-             bare a-melding for én virksomhet om gangen",
-            business_units
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-
-    // F108: an active arbeidsforhold is reported every month until the
-    // month its end date is reported, paid or not -- so everyone employed
-    // in the melding's kalendermåned who has no line in the run goes in
-    // with the arbeidsforhold alone (the XSD allows an inntektsmottaker
-    // without inntekt). The month is the PAYMENT date's, not the payroll
-    // month's: a March run paid on 2 April is April's melding.
     let month_start = paid_date.with_day(1).context("ugyldig dato")?;
-    let month_end = month_start
-        .checked_add_months(chrono::Months::new(1))
-        .and_then(|d| d.pred_opt())
-        .context("ugyldig måned")?;
-    // An end date entered late: the employee left before this month, but
-    // last month's delivered melding still had them open, so this one must
-    // report them -- with the sluttdato -- or Skatteetaten flags last month.
-    let last_month = month_start
-        .checked_sub_months(chrono::Months::new(1))
-        .context("ugyldig måned")?
-        .format("%Y-%m")
-        .to_string();
-    let open_last_month =
-        crate::amelding_submission::open_after(pool, company_id, &last_month).await?;
-    for e in &employees {
-        let paid = lines
-            .iter()
-            .any(|l| l.get::<Uuid, _>("employee_id") == e.id);
-        let ended_late = e.employed_to.is_some_and(|t| t < month_start)
-            && open_last_month.contains(&e.id.to_string());
-        if paid || !(e.employed_in(month_end, month_start) || ended_late) {
-            continue;
-        }
-        let missing = e.amelding_missing();
-        if !missing.is_empty() {
-            hindrances.push(format!(
-                "{}: arbeidsforholdet mangler {} (ansatt i {:02}/{}, uten lønn i kjøringen, men \
-                 arbeidsforholdet skal rapporteres hver måned — F108)",
-                e.name,
-                missing.join(", "),
-                month_start.month(),
-                month_start.year()
-            ));
-        }
-        business_units.extend(e.details.business_unit_orgnumber.clone());
-        recipients.push(Recipient {
-            name: e.name.clone(),
-            nin: nins.get(&e.id).cloned().unwrap_or_default(),
-            employment: e.employment(),
-            income: Vec::new(),
-            withholding_ore: 0,
-        });
-    }
+    let paid: std::collections::HashSet<Uuid> =
+        lines.iter().map(|l| l.get("employee_id")).collect();
+    add_unpaid_employments(
+        pool,
+        company_id,
+        &employees,
+        &nins,
+        &paid,
+        month_start,
+        "uten lønn i kjøringen",
+        &mut recipients,
+        &mut business_units,
+        &mut hindrances,
+    )
+    .await?;
+    one_business_unit(&business_units, &mut hindrances);
 
     Ok(AmeldingDraft {
         melding: Melding {
@@ -1687,7 +1641,8 @@ pub async fn amelding_for_run(
             source_system: "regnmed".into(),
             orgnumber: company_orgnumber(pool, company_id).await?,
             business_orgnumber: business_units.into_iter().next(),
-            payment_date: paid_date,
+            month: month_start,
+            payment_date: Some(paid_date),
             zone,
             employer_contribution_rate_bp: rate_bp,
             employer_contribution_ore: run.get("aga_ore"),
@@ -1695,6 +1650,190 @@ pub async fn amelding_for_run(
         },
         hindrances,
     })
+}
+
+/// The a-melding for a month WITHOUT a payroll run (docs/lonn.md, F108):
+/// every arbeidsforhold employed in the month, with no inntekt, no trekk
+/// and no avgift. A month that has a run is reported from the run, which
+/// already carries the unpaid employments, so it is refused here.
+pub async fn amelding_for_month(
+    pool: &PgPool,
+    company_id: Uuid,
+    month: NaiveDate,
+    delivered_at: chrono::DateTime<chrono::Utc>,
+) -> Result<AmeldingDraft> {
+    use regnmed_core::amelding::Melding;
+
+    let month_start = month.with_day(1).context("ugyldig dato")?;
+    let month_end = month_start
+        .checked_add_months(chrono::Months::new(1))
+        .and_then(|d| d.pred_opt())
+        .context("ugyldig måned")?;
+    let run: Option<NaiveDate> = sqlx::query_scalar(
+        "select utbetalt_dato from payroll_run
+         where company_id = $1 and utbetalt_dato between $2 and $3
+         order by utbetalt_dato limit 1",
+    )
+    .bind(company_id)
+    .bind(month_start)
+    .bind(month_end)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(paid) = run {
+        bail!(
+            "lønnskjøringen utbetalt {paid} rapporterer allerede {:02}/{} — send a-meldingen fra \
+             den, den tar med arbeidsforholdene uten lønn",
+            month_start.month(),
+            month_start.year()
+        );
+    }
+
+    let employees = list_ansatte(pool, company_id).await?;
+    let nins = employee_nins(pool, company_id).await?;
+    let mut recipients = Vec::new();
+    let mut business_units = std::collections::BTreeSet::new();
+    let mut hindrances = Vec::new();
+    add_unpaid_employments(
+        pool,
+        company_id,
+        &employees,
+        &nins,
+        &std::collections::HashSet::new(),
+        month_start,
+        "uten lønnskjøring i måneden",
+        &mut recipients,
+        &mut business_units,
+        &mut hindrances,
+    )
+    .await?;
+    if recipients.is_empty() {
+        hindrances.push(format!(
+            "ingen arbeidsforhold å rapportere for {:02}/{} — uten ansatte og uten utbetalinger \
+ \
+             skal det ikke leveres a-melding",
+            month_start.month(),
+            month_start.year()
+        ));
+    }
+    one_business_unit(&business_units, &mut hindrances);
+
+    Ok(AmeldingDraft {
+        melding: Melding {
+            // Replaced by the submission's own id before anything is sent.
+            message_id: Uuid::new_v4().to_string(),
+            replaces_message_id: None,
+            delivered_at,
+            source_system: "regnmed".into(),
+            orgnumber: company_orgnumber(pool, company_id).await?,
+            business_orgnumber: business_units.into_iter().next(),
+            month: month_start,
+            payment_date: None,
+            // Not rendered: a melding without inntekt has no
+            // avgiftsgrunnlag, so neither sone nor sats is reported.
+            zone: Zone::I,
+            employer_contribution_rate_bp: 0,
+            employer_contribution_ore: 0,
+            recipients,
+        },
+        hindrances,
+    })
+}
+
+async fn employee_nins(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, String>> {
+    Ok(
+        sqlx::query("select id, fodselsnummer from employee where company_id = $1")
+            .bind(company_id)
+            .fetch_all(pool)
+            .await?
+            .iter()
+            .map(|r| (r.get("id"), r.get("fodselsnummer")))
+            .collect(),
+    )
+}
+
+// shortcut: one virksomhet per melding, as the renderer takes it; group
+// per virksomhet (and split the avgift) when a customer has employees on
+// two underenheter.
+fn one_business_unit(
+    business_units: &std::collections::BTreeSet<String>,
+    hindrances: &mut Vec<String>,
+) {
+    if business_units.len() > 1 {
+        hindrances.push(format!(
+            "de ansatte står på ulike virksomheter ({}) — regnmed lager foreløpig bare \
+ \
+             a-melding for én virksomhet om gangen",
+            business_units
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+}
+
+/// F108: an active arbeidsforhold is reported every month until the month
+/// its end date is reported, paid or not -- so everyone employed in the
+/// kalendermåned who is not in `paid` goes in with the arbeidsforhold
+/// alone (the XSD allows an inntektsmottaker without inntekt). So does an
+/// end date entered late: the employee left before this month, but last
+/// month's delivered melding still had them open, so this one must report
+/// them -- with the sluttdato -- or Skatteetaten flags last month.
+#[allow(clippy::too_many_arguments)]
+async fn add_unpaid_employments(
+    pool: &PgPool,
+    company_id: Uuid,
+    employees: &[Employee],
+    nins: &std::collections::HashMap<Uuid, String>,
+    paid: &std::collections::HashSet<Uuid>,
+    month_start: NaiveDate,
+    why_unpaid: &str,
+    recipients: &mut Vec<regnmed_core::amelding::Recipient>,
+    business_units: &mut std::collections::BTreeSet<String>,
+    hindrances: &mut Vec<String>,
+) -> Result<()> {
+    let month_end = month_start
+        .checked_add_months(chrono::Months::new(1))
+        .and_then(|d| d.pred_opt())
+        .context("ugyldig måned")?;
+    let last_month = month_start
+        .checked_sub_months(chrono::Months::new(1))
+        .context("ugyldig måned")?
+        .format("%Y-%m")
+        .to_string();
+    let open_last_month =
+        crate::amelding_submission::open_after(pool, company_id, &last_month).await?;
+    for e in employees {
+        let ended_late = e.employed_to.is_some_and(|t| t < month_start)
+            && open_last_month.contains(&e.id.to_string());
+        if paid.contains(&e.id) || !(e.employed_in(month_end, month_start) || ended_late) {
+            continue;
+        }
+        let missing = e.amelding_missing();
+        if !missing.is_empty() {
+            hindrances.push(format!(
+                "{}: arbeidsforholdet mangler {} (ansatt i {:02}/{}, {why_unpaid}, men \
+ \
+                 arbeidsforholdet skal rapporteres hver måned — F108)",
+                e.name,
+                missing.join(", "),
+                month_start.month(),
+                month_start.year()
+            ));
+        }
+        business_units.extend(e.details.business_unit_orgnumber.clone());
+        recipients.push(regnmed_core::amelding::Recipient {
+            name: e.name.clone(),
+            nin: nins.get(&e.id).cloned().unwrap_or_default(),
+            employment: e.employment(),
+            income: Vec::new(),
+            withholding_ore: 0,
+        });
+    }
+    Ok(())
 }
 
 /// Trekkpliktig pay (ordinary + feriepenger) this employer has already

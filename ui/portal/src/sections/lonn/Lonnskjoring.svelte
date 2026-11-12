@@ -42,20 +42,28 @@
     maned = ledig >= 0 ? ledig + 1 : 1;
   });
 
-  // A-meldingen for én lagret kjøring: alt som hindrer levering listes
-  // samlet, og filen kan lastes ned først når listen er tom.
-  let amelding = $state(null); // { kjoring, svar, innsendinger, mulig }
+  // A-meldingen for én lagret kjøring — eller for en måned UTEN kjøring,
+  // der arbeidsforholdene likevel skal rapporteres (F108). Alt som hindrer
+  // levering listes samlet, og filen kan lastes ned først når listen er tom.
+  let amelding = $state(null); // { kilde, svar, innsendinger, mulig }
   let sender = $state(false);
+  let tomManed = $state(new Date().toISOString().slice(0, 7));
 
-  const ameldingSti = (k) => "/companies/" + companyId + "/payroll/" + k.id + "/amelding";
+  const fraKjoring = (k) => ({
+    sti: "/companies/" + companyId + "/payroll/" + k.id + "/amelding",
+    tittel: MANEDER[k.maned - 1] + " " + k.ar,
+    merknad: "(utbetalingsmåneden)",
+  });
+  const fraManed = (m) => ({
+    sti: "/companies/" + companyId + "/payroll/months/" + m + "/amelding",
+    tittel: m + " uten lønnskjøring",
+    merknad: "(bare arbeidsforholdene)",
+  });
 
-  async function sjekkAmelding(k) {
+  async function sjekkAmelding(kilde) {
     try {
-      const [svar, liste] = await Promise.all([
-        api(ameldingSti(k)),
-        api(ameldingSti(k) + "/submissions"),
-      ]);
-      amelding = { kjoring: k, svar, innsendinger: liste.innsendinger, mulig: liste.innsending_mulig };
+      const [svar, liste] = await Promise.all([api(kilde.sti), api(kilde.sti + "/submissions")]);
+      amelding = { kilde, svar, innsendinger: liste.innsendinger, mulig: liste.innsending_mulig };
     } catch (error) {
       toast(error.message, false);
     }
@@ -65,11 +73,11 @@
   // uendret neste gang. Er den levert, kan kjøringen bare sendes på nytt
   // som erstatning — to meldinger for samme måned legges sammen hos
   // Skatteetaten (docs/lonn.md).
-  async function sendAmelding(k, erstatt) {
+  async function sendAmelding(kilde, erstatt) {
     if (
       erstatt &&
       !(await bekreft(
-        "Sende a-meldingen på nytt som en erstatning? Den forrige meldingen for kjøringen erstattes hos Skatteetaten.",
+        "Sende a-meldingen på nytt som en erstatning? Den forrige meldingen erstattes hos Skatteetaten.",
         { tittel: "Erstatt a-melding", ok: "Send erstatning" },
       ))
     ) {
@@ -77,23 +85,23 @@
     }
     sender = true;
     try {
-      await post(ameldingSti(k) + "/submissions", { erstatt });
+      await post(kilde.sti + "/submissions", { erstatt });
       toast("A-meldingen er levert — hent tilbakemeldingen om litt", true);
     } catch (error) {
       toast(error.message, false);
     } finally {
       sender = false;
-      await sjekkAmelding(k);
+      await sjekkAmelding(kilde);
     }
   }
 
-  async function hentTilbakemelding(k, innsending) {
+  async function hentTilbakemelding(kilde, innsending) {
     try {
-      const svar = await post(ameldingSti(k) + "/submissions/" + innsending.id + "/feedback", {});
+      const svar = await post(kilde.sti + "/submissions/" + innsending.id + "/feedback", {});
       if (svar.status !== "tilbakemelding") {
         toast("Skatteetaten har ikke svart ennå — prøv igjen om litt", false);
       }
-      await sjekkAmelding(k);
+      await sjekkAmelding(kilde);
     } catch (error) {
       toast(error.message, false);
     }
@@ -221,95 +229,111 @@
                 {/each}
               </td>
               <td>
-                <button class="btn btn-xs btn-ghost" onclick={() => sjekkAmelding(k)}>Sjekk</button>
+                <button class="btn btn-xs btn-ghost" onclick={() => sjekkAmelding(fraKjoring(k))}>
+                  Sjekk
+                </button>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
-    {#if amelding}
-      {@const k = amelding.kjoring}
-      {@const svar = amelding.svar}
-      <div class="card border border-base-300 card-sm mb-4 max-w-2xl">
-        <div class="card-body">
-          <h4 class="font-semibold text-sm">
-            A-melding for {MANEDER[k.maned - 1]} {k.ar}
-            <span class="opacity-70 font-normal">
-              — rapporteres for {svar.kalendermaaned} (utbetalingsmåneden)
-            </span>
-          </h4>
-          {#if svar.leverbar}
-            <p class="text-sm">
-              Klar: {svar.inntektsmottakere} inntektsmottaker{svar.inntektsmottakere === 1
-                ? ""
-                : "e"}, arbeidsgiveravgift {kr(svar.arbeidsgiveravgift_ore)}.
-            </p>
-            {@const levert = amelding.innsendinger.some((i) => i.status !== "ikke_levert")}
-            <div class="flex flex-wrap gap-2">
-              {#if amelding.mulig}
-                <button
-                  class="btn btn-sm btn-primary"
-                  disabled={sender}
-                  onclick={() => sendAmelding(k, levert)}
-                >
-                  {levert ? "Send som erstatning" : "Send til Skatteetaten"}
-                </button>
-              {/if}
+  {/if}
+  <!-- Arbeidsforholdene rapporteres hver måned, også uten lønn (F108). -->
+  {#if ansatte.length}
+    <div class="flex flex-wrap items-center gap-2 mb-4 text-sm">
+      <span class="opacity-70">A-melding for en måned uten lønnskjøring:</span>
+      <input type="month" class="input input-sm w-40" bind:value={tomManed} />
+      <button
+        class="btn btn-xs btn-ghost"
+        disabled={!tomManed}
+        onclick={() => sjekkAmelding(fraManed(tomManed))}
+      >
+        Sjekk
+      </button>
+    </div>
+  {/if}
+  {#if amelding}
+    {@const kilde = amelding.kilde}
+    {@const svar = amelding.svar}
+    <div class="card border border-base-300 card-sm mb-4 max-w-2xl">
+      <div class="card-body">
+        <h4 class="font-semibold text-sm">
+          A-melding for {kilde.tittel}
+          <span class="opacity-70 font-normal">
+            — rapporteres for {svar.kalendermaaned} {kilde.merknad}
+          </span>
+        </h4>
+        {#if svar.leverbar}
+          <p class="text-sm">
+            Klar: {svar.inntektsmottakere} inntektsmottaker{svar.inntektsmottakere === 1
+              ? ""
+              : "e"}, arbeidsgiveravgift {kr(svar.arbeidsgiveravgift_ore)}.
+          </p>
+          {@const levert = amelding.innsendinger.some((i) => i.status !== "ikke_levert")}
+          <div class="flex flex-wrap gap-2">
+            {#if amelding.mulig}
               <button
-                class="btn btn-sm"
-                onclick={() =>
-                  download(ameldingSti(k) + "?format=xml", "a-melding-" + svar.kalendermaaned + ".xml")}
+                class="btn btn-sm btn-primary"
+                disabled={sender}
+                onclick={() => sendAmelding(kilde, levert)}
               >
-                Last ned XML
+                {levert ? "Send som erstatning" : "Send til Skatteetaten"}
               </button>
-              <button class="btn btn-ghost btn-sm" onclick={() => (amelding = null)}>Lukk</button>
-            </div>
-            {#if !amelding.mulig}
-              <p class="text-xs opacity-70">
-                Innsending er ikke satt opp på denne serveren — lever filen selv.
-              </p>
             {/if}
-          {:else}
-            <p class="text-sm mb-1">Kan ikke lages ennå — dette må rettes først:</p>
-            <ul class="list-disc ml-5 text-sm text-warning mb-2">
-              {#each svar.hindringer as h, i (i)}
-                <li>{h}</li>
-              {/each}
-            </ul>
-            <button class="btn btn-ghost btn-sm w-fit" onclick={() => (amelding = null)}>
-              Lukk
+            <button
+              class="btn btn-sm"
+              onclick={() =>
+                download(kilde.sti + "?format=xml", "a-melding-" + svar.kalendermaaned + ".xml")}
+            >
+              Last ned XML
             </button>
+            <button class="btn btn-ghost btn-sm" onclick={() => (amelding = null)}>Lukk</button>
+          </div>
+          {#if !amelding.mulig}
+            <p class="text-xs opacity-70">
+              Innsending er ikke satt opp på denne serveren — lever filen selv.
+            </p>
           {/if}
-          {#if amelding.innsendinger.length}
-            <h5 class="font-semibold text-xs mt-2">Innsendinger</h5>
-            <ul class="text-sm">
-              {#each amelding.innsendinger as i (i.id)}
-                <li class="flex flex-wrap items-center gap-2">
-                  <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
-                  <span>{STATUS[i.status]}</span>
-                  {#if i.erstatter_melding_id}<span class="badge badge-sm">erstatning</span>{/if}
-                  {#if i.tilbakemelding}
-                    <span class={i.tilbakemelding.avvik?.length ? "text-warning" : ""}>
-                      — {i.tilbakemelding.mottakstatus ?? "ukjent"}, {i.tilbakemelding.avvik?.length ??
-                        0} avvik
-                    </span>
-                  {/if}
-                  {#if i.siste_feil}
-                    <span class="text-warning text-xs" title={i.siste_feil}>siste forsøk feilet</span>
-                  {/if}
-                  {#if i.status === "levert"}
-                    <button class="btn btn-ghost btn-xs" onclick={() => hentTilbakemelding(k, i)}>
-                      Hent tilbakemelding
-                    </button>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
+        {:else}
+          <p class="text-sm mb-1">Kan ikke lages ennå — dette må rettes først:</p>
+          <ul class="list-disc ml-5 text-sm text-warning mb-2">
+            {#each svar.hindringer as h, i (i)}
+              <li>{h}</li>
+            {/each}
+          </ul>
+          <button class="btn btn-ghost btn-sm w-fit" onclick={() => (amelding = null)}>
+            Lukk
+          </button>
+        {/if}
+        {#if amelding.innsendinger.length}
+          <h5 class="font-semibold text-xs mt-2">Innsendinger</h5>
+          <ul class="text-sm">
+            {#each amelding.innsendinger as i (i.id)}
+              <li class="flex flex-wrap items-center gap-2">
+                <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
+                <span>{STATUS[i.status]}</span>
+                {#if i.erstatter_melding_id}<span class="badge badge-sm">erstatning</span>{/if}
+                {#if i.tilbakemelding}
+                  <span class={i.tilbakemelding.avvik?.length ? "text-warning" : ""}>
+                    — {i.tilbakemelding.mottakstatus ?? "ukjent"}, {i.tilbakemelding.avvik?.length ??
+                      0} avvik
+                  </span>
+                {/if}
+                {#if i.siste_feil}
+                  <span class="text-warning text-xs" title={i.siste_feil}>siste forsøk feilet</span>
+                {/if}
+                {#if i.status === "levert"}
+                  <button class="btn btn-ghost btn-xs" onclick={() => hentTilbakemelding(kilde, i)}>
+                    Hent tilbakemelding
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
-    {/if}
+    </div>
   {/if}
 
   {#if aktive.length}

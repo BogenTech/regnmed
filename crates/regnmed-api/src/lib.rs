@@ -590,6 +590,18 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/payroll/{run_id}/amelding/submissions/{submission_id}/feedback",
             axum::routing::post(payroll::amelding_feedback),
         )
+        .route(
+            "/companies/{company_id}/payroll/months/{period}/amelding",
+            get(payroll::amelding_month),
+        )
+        .route(
+            "/companies/{company_id}/payroll/months/{period}/amelding/submissions",
+            get(payroll::list_month_amelding_submissions).post(payroll::submit_month_amelding),
+        )
+        .route(
+            "/companies/{company_id}/payroll/months/{period}/amelding/submissions/{submission_id}/feedback",
+            axum::routing::post(payroll::month_amelding_feedback),
+        )
         // Altinn Events' webhook (docs/lonn.md): public by necessity, and
         // therefore trusts nothing it is told.
         .route("/webhooks/altinn", axum::routing::post(payroll::altinn_event))

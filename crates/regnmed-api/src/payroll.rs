@@ -8,6 +8,8 @@
 //! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
 //! - GET/POST /companies/{id}/payroll/{rid}/amelding/submissions   send + record
 //! - POST /companies/{id}/payroll/{rid}/amelding/submissions/{sid}/feedback
+//! - GET  /companies/{id}/payroll/months/{yyyy-mm}/amelding   ditto for a month
+//!   without a payroll run (F108), with the same submissions/feedback routes
 //! - GET  /companies/{id}/payroll/hours/{eid}       a month's logged hours + lock state
 //!
 //! Reading requires access; registering employees and running payroll
@@ -26,6 +28,7 @@ use crate::AppState;
 use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 use crate::herding::{Vis, file_response};
+use regnmed_db::amelding_submission::Source;
 
 fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
     json!({
@@ -252,8 +255,7 @@ pub struct AmeldingQuery {
 ///
 /// The JSON form lists EVERYTHING that blocks delivery, so the
 /// payroll person can fix it in one pass; `format=xml` returns the
-/// melding only when that list is empty. Submission is not here: it
-/// needs the Altinn systembruker (#180, docs/gov.md).
+/// melding only when that list is empty. Sending is `…/submissions`.
 ///
 /// `LONN_KJOR`, not `LONN_LES`: the file carries every employee's
 /// fødselsnummer, which the rest of the payroll API never shows — the
@@ -265,12 +267,47 @@ pub async fn amelding(
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<AmeldingQuery>,
 ) -> Result<Response, ApiError> {
-    use axum::response::IntoResponse;
     require(&state, person.person_id, company_id, Right::PayrollRun).await?;
     let draft =
         regnmed_db::payroll::amelding_for_run(&state.pool, company_id, run_id, chrono::Utc::now())
             .await
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    amelding_response(draft, q)
+}
+
+/// The a-melding for a month WITHOUT a payroll run (docs/lonn.md, F108):
+/// the arbeidsforhold alone. `period` is `YYYY-MM`. Same rights and same
+/// shape as the run's.
+pub async fn amelding_month(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, period)): Path<(Uuid, String)>,
+    Query(q): Query<AmeldingQuery>,
+) -> Result<Response, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    let draft = regnmed_db::payroll::amelding_for_month(
+        &state.pool,
+        company_id,
+        parse_month(&period)?,
+        chrono::Utc::now(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    amelding_response(draft, q)
+}
+
+fn parse_month(period: &str) -> Result<chrono::NaiveDate, ApiError> {
+    chrono::NaiveDate::parse_from_str(&format!("{period}-01"), "%Y-%m-%d")
+        .ok()
+        .filter(|_| period.len() == 7)
+        .ok_or_else(|| ApiError::BadRequest(format!("ugyldig måned «{period}» — bruk ÅÅÅÅ-MM")))
+}
+
+fn amelding_response(
+    draft: regnmed_db::payroll::AmeldingDraft,
+    q: AmeldingQuery,
+) -> Result<Response, ApiError> {
+    use axum::response::IntoResponse;
     let mut hindringer = draft.hindrances;
     // The renderer's own verdict only once ours is clean — otherwise it
     // repeats the first item of the list in other words.
@@ -286,11 +323,7 @@ pub async fn amelding(
         let Some(xml) = xml else {
             return Err(ApiError::BadRequest(hindringer.join("\n")));
         };
-        let filename = format!(
-            "a-melding-{}-{:02}.xml",
-            m.payment_date.format("%Y"),
-            m.payment_date.format("%m")
-        );
+        let filename = format!("a-melding-{}.xml", regnmed_core::amelding::period(m));
         return Ok(file_response(
             Vis::Attachment,
             &filename,
@@ -301,8 +334,9 @@ pub async fn amelding(
     Ok(Json(json!({
         "leverbar": hindringer.is_empty(),
         "hindringer": hindringer,
-        // The month of the PAYMENT date, which is what the melding reports.
-        "kalendermaaned": m.payment_date.format("%Y-%m").to_string(),
+        // For a run: the month of the PAYMENT date, which is what the
+        // melding reports.
+        "kalendermaaned": regnmed_core::amelding::period(m),
         "inntektsmottakere": m.recipients.len(),
         "arbeidsgiveravgift_ore": m.employer_contribution_ore,
     }))
@@ -365,9 +399,27 @@ pub async fn list_amelding_submissions(
     person: AuthPerson,
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
+    list_submissions(&state, &person, company_id, Source::Run(run_id)).await
+}
+
+pub async fn list_month_amelding_submissions(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, period)): Path<(Uuid, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let source = Source::Month(parse_month(&period)?);
+    list_submissions(&state, &person, company_id, source).await
+}
+
+async fn list_submissions(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    source: Source,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(state, person.person_id, company_id, Right::PayrollRead).await?;
     let list =
-        regnmed_db::amelding_submission::list_submissions(&state.pool, company_id, run_id).await?;
+        regnmed_db::amelding_submission::list_submissions(&state.pool, company_id, source).await?;
     Ok(Json(json!({
         "innsendinger": list.iter().map(|(s, st)| submission_json(s, st)).collect::<Vec<_>>(),
         "innsending_mulig": state.amelding.is_some(),
@@ -392,19 +444,41 @@ pub async fn submit_amelding(
     Path((company_id, run_id)): Path<(Uuid, Uuid)>,
     request: Option<Json<SubmitRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    submit(&state, &person, company_id, Source::Run(run_id), request).await
+}
+
+/// The same for a month without a payroll run (F108). Once the month gets
+/// a run, the run's first melding replaces this one.
+pub async fn submit_month_amelding(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, period)): Path<(Uuid, String)>,
+    request: Option<Json<SubmitRequest>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let source = Source::Month(parse_month(&period)?);
+    submit(&state, &person, company_id, source, request).await
+}
+
+async fn submit(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    source: Source,
+    request: Option<Json<SubmitRequest>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(state, person.person_id, company_id, Right::PayrollRun).await?;
     let Some(rail) = state.amelding.clone() else {
         return Err(ApiError::BadRequest(
             "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
         ));
     };
-    crate::terms::require_accepted(&state, company_id).await?;
+    crate::terms::require_accepted(state, company_id).await?;
     let replace = request.map(|Json(r)| r.replace).unwrap_or_default();
     let by = person.display();
     let s = regnmed_db::amelding_submission::prepare_submission(
         &state.pool,
         company_id,
-        run_id,
+        source,
         replace,
         by,
     )
@@ -433,7 +507,7 @@ pub async fn submit_amelding(
                 by,
             )
             .await?;
-            ensure_event_subscription(&state, &rail, company_id, &orgnumber, by).await;
+            ensure_event_subscription(state, &rail, company_id, &orgnumber, by).await;
         }
         Err(e) => {
             regnmed_db::amelding_submission::record_failure(&state.pool, s.id, &e.to_string(), by)
@@ -588,8 +662,25 @@ pub async fn amelding_feedback(
     person: AuthPerson,
     Path((company_id, _run_id, submission_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    feedback(&state, &person, company_id, submission_id).await
+}
+
+pub async fn month_amelding_feedback(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, _period, submission_id)): Path<(Uuid, String, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    feedback(&state, &person, company_id, submission_id).await
+}
+
+async fn feedback(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    submission_id: Uuid,
+) -> Result<Json<serde_json::Value>, ApiError> {
     use regnmed_db::amelding_submission::SubmissionStatus as S;
-    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    require(state, person.person_id, company_id, Right::PayrollRun).await?;
     let (s, status) =
         regnmed_db::amelding_submission::submission(&state.pool, company_id, submission_id)
             .await
@@ -600,7 +691,7 @@ pub async fn amelding_feedback(
                 "innsending av a-melding er ikke satt opp på denne serveren (Maskinporten)".into(),
             ));
         };
-        fetch_feedback(&state, &rail, company_id, &s, &status, person.display())
+        fetch_feedback(state, &rail, company_id, &s, &status, person.display())
             .await
             .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente tilbakemeldingen: {e}")))?;
     }
