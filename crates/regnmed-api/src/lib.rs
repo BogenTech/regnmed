@@ -548,7 +548,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/expenses/kjoring",
-            axum::routing::post(expenses::create_expense_run),
+            get(expenses::mileage_rate).post(expenses::create_expense_run),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}",
+            get(expenses::get),
         )
         .route(
             "/companies/{company_id}/expenses/{expense_id}/receipt",

@@ -5,15 +5,14 @@
   // dokument som venter.
   //
   // Forhåndsvisningen viser BARE PDF og bilder, og bare når bytene selv
-  // sier det (%PDF-, PNG/JPEG/GIF/WebP-signatur): blob-URL-en får typen
-  // vi har sjekket, aldri den opplasteren oppga, så et dokument kan ikke
-  // kjøre noe i siden. Alt annet lastes ned (docs/bilagsinnboks.md).
+  // sier det (lib/preview.js); alt annet lastes ned (docs/bilagsinnboks.md).
   import { api, post } from "../../lib/api.js";
   import { kr, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { sporsmal } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
   import { harRett } from "../../lib/me.svelte.js";
+  import { previewOf } from "../../lib/preview.js";
   import BookingForm from "./BookingForm.svelte";
 
   let { companyId, documentId } = $props();
@@ -58,23 +57,10 @@
     let url = null;
     api(base + "/inbox/" + documentId + "/content")
       .then((r) => r.blob())
-      .then(async (blob) => {
-        const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
-        const starts = (...b) => b.every((x, i) => head[i] === x);
-        const type = starts(0x25, 0x50, 0x44, 0x46, 0x2d)
-          ? "application/pdf"
-          : starts(0x89, 0x50, 0x4e, 0x47)
-            ? "image/png"
-            : starts(0xff, 0xd8, 0xff)
-              ? "image/jpeg"
-              : starts(0x47, 0x49, 0x46, 0x38)
-                ? "image/gif"
-                : starts(0x52, 0x49, 0x46, 0x46) && head[8] === 0x57 && head[9] === 0x45
-                  ? "image/webp"
-                  : null;
-        if (!type) return (preview = { kind: "none" });
-        url = URL.createObjectURL(new Blob([blob], { type }));
-        preview = { kind: type === "application/pdf" ? "pdf" : "image", url };
+      .then(previewOf)
+      .then((p) => {
+        url = p.url || null;
+        preview = p;
       })
       .catch(() => (preview = { kind: "none" }));
     return () => url && URL.revokeObjectURL(url);

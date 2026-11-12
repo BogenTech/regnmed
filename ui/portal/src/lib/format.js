@@ -17,8 +17,10 @@ export function parseKr(text) {
   return Math.round(value * 100);
 }
 
-export function today() {
-  return new Date().toISOString().slice(0, 10);
+// Today's date where the user is. toISOString() alone is UTC, which in
+// Norway is still yesterday until 01:00/02:00.
+export function today(now = new Date()) {
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 export function antallStr(milli) {
