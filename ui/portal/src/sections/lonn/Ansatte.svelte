@@ -190,10 +190,7 @@
                 {#if a.trekk_type === "prosent"}
                   {(a.trekk_prosent_bp / 100).toFixed(1)} %
                 {:else if a.trekk_type === "tabell"}
-                  <!-- Tabelltrekk regnes IKKE ut av oss: trekktabellene er
-                       Skatteetatens datafiler, og en tilnærming blir den
-                       ansattes restskatt. Derfor merket, ikke beregnet. -->
-                  <span class="badge badge-warning badge-sm">tabell {a.trekk_tabell} ⚠</span>
+                  tabell {a.trekk_tabell}
                 {:else}
                   frikort
                 {/if}

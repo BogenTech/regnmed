@@ -1043,6 +1043,15 @@ docs/README.md). Every milestone updates the relevant document **in the
 same change**, like tests. Vendored authority artifacts (XSDs, code
 lists) live under docs/ next to the document that explains them.
 
+### Review policy (agreed 2026-11-12)
+
+**Every change that goes into `main` is reviewed before it merges** —
+`/code-review` or `/ponytail-review` over the branch's diff, run before
+the PR is merged (and before "merge when green" is acted on). Each
+finding is fixed in the same PR or named in the PR description as
+deliberately deferred, with the reason. A green CI is not a review: CI
+proves the tests pass, not that the tests ask the right questions.
+
 ### Testing policy (agreed 2026-07-22)
 
 Every important change ships with tests in the same commit — not tests
@@ -1732,6 +1741,12 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    bilagsvalideringen — linjene utelates nå når de er null).
    **IKKE bygget, i prioritert rekkefølge: a-meldingen (selskapet må
    fortsatt levere den selv), skattekort-API, tabelltrekk.**
+   **Siden bygget (2026-11): a-meldingen, skattekort-API-et (#199) og
+   tabelltrekk** — en port av Skatteetatens egen trekkrutine
+   (`regnmed-core::withholding_table`, flyttall MED VILJE for å treffe
+   rutinen bit for bit), sjekket mot alle 1 063 799 radene i Skatteetatens
+   publiserte 2026-fil; nytt år = nye konstanter + nytt utvalg i
+   docs/lonn/ (regelverksrevisjonen). 12-månederstabeller nektes fortsatt.
 50. 📌 Skattemelding og næringsspesifikasjon (#11) — KARTLAGT, IKKE
    BYGGET (docs/skattemelding.md). To funn endrer saken. (a) Innsending
    går ikke på maskinporten-skinnen: Skatteetaten sier selv

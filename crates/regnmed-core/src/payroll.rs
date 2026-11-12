@@ -8,10 +8,10 @@
 //! **What this module does NOT do**, and why that is a choice rather than
 //! an oversight:
 //!
-//! - **Tabelltrekk.** The withholding tables are Skatteetaten's data
-//!   files, and without them there is no defensible way to compute
-//!   tabelltrekk. We refuse loudly instead of approximating — withholding
-//!   too little is the employee's restskatt.
+//! - **12-month withholding tables.** Tabelltrekk itself is Skatteetaten's
+//!   own routine (`withholding_table`, verified against the published file
+//!   row for row); the tables spread over 12 months are refused, because
+//!   they withhold in December and on feriepenger and `calculate` does not.
 //! - **Sone Ia.** The reduced rate applies only until the fribeløp is
 //!   used up, and that fribeløp is de minimis aid which can also be
 //!   consumed by things regnmed cannot see. Computing 10,6 % without the
@@ -44,8 +44,11 @@ pub enum Zone {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PayrollError {
-    /// Tabelltrekk needs Skatteetatens published tables.
-    TableWithholdingUnsupported(i32),
+    /// A table whose withholding is spread over 12 months: no half
+    /// December and trekk on feriepenger, which `calculate` does not do.
+    TwelveMonthTable(i32),
+    /// Unknown table number, or a year whose tables are not in regnmed.
+    Table(crate::withholding_table::TableError),
     /// Sone Ia's reduced rate is bounded by a yearly fribeløp.
     ZoneIaRequiresExemptionCalculation,
     /// The satsregister has no verified rate covering this date.
@@ -55,13 +58,13 @@ pub enum PayrollError {
 impl std::fmt::Display for PayrollError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TableWithholdingUnsupported(table) => write!(
+            Self::TwelveMonthTable(table) => write!(
                 f,
-                "tabelltrekk (tabell {table}) er ikke støttet: trekktabellene er \
-                 Skatteetatens datafiler, og regnmed tilnærmer dem ikke — bruk \
-                 prosenttrekk fra skattekortet inntil tabellene er vendored \
-                 (se docs/lonn.md)"
+                "tabell {table} fordeler trekket over 12 måneder, og regnmed trekker halvt i \
+                 desember og ikke i feriepenger, som bare stemmer for 10,5 måneder — registrer \
+                 trekket som prosent for hånd (se docs/lonn.md)"
             ),
+            Self::Table(e) => write!(f, "{e}"),
             Self::ZoneIaRequiresExemptionCalculation => write!(
                 f,
                 "sone Ia er ikke støttet: den reduserte satsen gjelder bare til \
@@ -118,7 +121,7 @@ impl Zone {
 pub enum Withholding {
     /// Percentage in basis points (35 % = 3500).
     Percent(i64),
-    /// Table number — refused, see [`LonnError::TabelltrekkIkkeStottet`].
+    /// Table number, computed by `withholding_table`.
     Table(i32),
     /// Frikort or otherwise exempt.
     None,
@@ -160,33 +163,62 @@ pub struct PayrollCalculation {
 ///   regnmed does December, the common choice, and says so).
 ///
 /// Rounding is half away from zero, on the month's whole trekkgrunnlag.
-pub fn calculate(basis: &PayrollBasis, month: u32) -> Result<PayrollCalculation, PayrollError> {
-    let rate_bp = match basis.withholding {
-        Withholding::Table(number) => {
-            return Err(PayrollError::TableWithholdingUnsupported(number));
-        }
-        Withholding::None => 0,
-        Withholding::Percent(bp) => bp,
-    };
-
+pub fn calculate(
+    basis: &PayrollBasis,
+    year: i32,
+    month: u32,
+) -> Result<PayrollCalculation, PayrollError> {
     // Feriepenger never carry trekk; only ordinary pay does.
     let trekkgrunnlag = basis.gross_ore;
     let half_withholding = month == 12;
-    let effektiv_bp = if half_withholding {
-        rate_bp / 2
-    } else {
-        rate_bp
+    let full_ore = match basis.withholding {
+        Withholding::None => 0,
+        Withholding::Percent(bp) => {
+            let bp = if half_withholding { bp / 2 } else { bp };
+            return Ok(result(basis, bp_of(trekkgrunnlag, bp), half_withholding));
+        }
+        Withholding::Table(number) => {
+            let table = crate::withholding_table::Table::lookup(number).ok_or(
+                PayrollError::Table(crate::withholding_table::TableError::UnknownTable(number)),
+            )?;
+            if table.twelve_months {
+                return Err(PayrollError::TwelveMonthTable(number));
+            }
+            // The tables are in whole kroner; øre below a krone never
+            // reach the next 100-krone step anyway.
+            crate::withholding_table::withholding_kr(
+                year,
+                number,
+                crate::withholding_table::Period::Month,
+                trekkgrunnlag.max(0) / 100,
+            )
+            .map_err(PayrollError::Table)?
+                * 100
+        }
     };
-    let forskuddstrekk = bp_of(trekkgrunnlag, effektiv_bp);
+    // Half the table's trekk in December -- exact in øre, since the table
+    // gives whole kroner.
+    let withholding = if half_withholding {
+        full_ore / 2
+    } else {
+        full_ore
+    };
+    Ok(result(basis, withholding, half_withholding))
+}
 
-    Ok(PayrollCalculation {
+fn result(
+    basis: &PayrollBasis,
+    withholding_ore: i64,
+    half_withholding: bool,
+) -> PayrollCalculation {
+    PayrollCalculation {
         gross_ore: basis.gross_ore,
         holiday_pay_ore: basis.holiday_pay_ore,
-        withholding_basis_ore: trekkgrunnlag,
-        withholding_ore: forskuddstrekk,
-        net_ore: basis.gross_ore + basis.holiday_pay_ore - forskuddstrekk,
+        withholding_basis_ore: basis.gross_ore,
+        withholding_ore,
+        net_ore: basis.gross_ore + basis.holiday_pay_ore - withholding_ore,
         half_withholding,
-    })
+    }
 }
 
 /// Arbeidsgiveravgift on a basis, at the zone's rate for the date.
@@ -302,7 +334,7 @@ mod tests {
     #[test]
     fn percentage_withholding_is_plain_percent_of_gross() {
         // 50 000 kr brutto, 35 % trekk.
-        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 3).unwrap();
+        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 2026, 3).unwrap();
         assert_eq!(b.withholding_ore, 1_750_000);
         assert_eq!(b.net_ore, 3_250_000);
         assert!(!b.half_withholding);
@@ -317,7 +349,7 @@ mod tests {
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::Percent(3500),
         };
-        let b = calculate(&g, 6).unwrap();
+        let b = calculate(&g, 2026, 6).unwrap();
         assert_eq!(b.withholding_basis_ore, 1_000_000, "ordinary pay only");
         assert_eq!(b.withholding_ore, 350_000);
         assert_eq!(b.net_ore, 1_000_000 + 4_000_000 - 350_000);
@@ -327,28 +359,50 @@ mod tests {
     /// over 10,5 months precisely so that this works out.
     #[test]
     fn december_withholds_half() {
-        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 12).unwrap();
+        let b = calculate(&basis(5_000_000, Withholding::Percent(3500)), 2026, 12).unwrap();
         assert!(b.half_withholding);
         assert_eq!(b.withholding_ore, 875_000);
         // November is an entirely ordinary month.
-        let nov = calculate(&basis(5_000_000, Withholding::Percent(3500)), 11).unwrap();
+        let nov = calculate(&basis(5_000_000, Withholding::Percent(3500)), 2026, 11).unwrap();
         assert_eq!(nov.withholding_ore, 1_750_000);
     }
 
     #[test]
     fn frikort_withholds_nothing() {
-        let b = calculate(&basis(1_000_000, Withholding::None), 5).unwrap();
+        let b = calculate(&basis(1_000_000, Withholding::None), 2026, 5).unwrap();
         assert_eq!(b.withholding_ore, 0);
         assert_eq!(b.net_ore, 1_000_000);
     }
 
-    /// The honest refusal: without Skatteetaten's tables we do not
-    /// compute tabelltrekk, we say so.
+    /// Tabelltrekk is Skatteetaten's own routine (`withholding_table`),
+    /// in kroner, halved in December like prosenttrekk.
     #[test]
-    fn tabelltrekk_is_refused_loudly() {
-        let error = calculate(&basis(5_000_000, Withholding::Table(7100)), 3).unwrap_err();
-        assert_eq!(error, PayrollError::TableWithholdingUnsupported(7100));
-        assert!(error.to_string().contains("tilnærmer dem ikke"), "{error}");
+    fn tabelltrekk_follows_skatteetatens_table() {
+        // Tabell 8000, 50 000 kr i måneden: the published 2026 table.
+        let kr = crate::withholding_table::withholding_kr(
+            2026,
+            8000,
+            crate::withholding_table::Period::Month,
+            50_000,
+        )
+        .unwrap();
+        let b = calculate(&basis(5_000_000, Withholding::Table(8000)), 2026, 3).unwrap();
+        assert_eq!(b.withholding_ore, kr * 100);
+        assert_eq!(b.net_ore, 5_000_000 - kr * 100);
+        let dec = calculate(&basis(5_000_000, Withholding::Table(8000)), 2026, 12).unwrap();
+        assert_eq!(dec.withholding_ore, kr * 100 / 2);
+        assert!(dec.half_withholding);
+    }
+
+    /// What the table routine cannot stand behind is refused, not guessed.
+    #[test]
+    fn twelve_month_tables_unknown_tables_and_years_are_refused() {
+        let error = calculate(&basis(5_000_000, Withholding::Table(7350)), 2026, 3).unwrap_err();
+        assert_eq!(error, PayrollError::TwelveMonthTable(7350));
+        assert!(error.to_string().contains("12 måneder"), "{error}");
+        assert!(calculate(&basis(5_000_000, Withholding::Table(7100)), 2026, 3).is_err());
+        let error = calculate(&basis(5_000_000, Withholding::Table(8000)), 2027, 3).unwrap_err();
+        assert!(error.to_string().contains("2027"), "{error}");
     }
 
     #[test]
