@@ -1,8 +1,9 @@
 <script>
   // Fakturalisten er Faktura-seksjonens forside: status, søk og
   // filtrering skjer på serveren (GET /invoices?status=&q=&limit=), så
-  // siden er like rask med 20 000 fakturaer som med 2. Filteret står i
-  // adressen (#/c/{id}/faktura?status=overdue) og kan deles.
+  // nettleseren får 50 rader uansett hvor mange fakturaer selskapet har.
+  // Filteret står i adressen (#/c/{id}/faktura?status=overdue) og kan
+  // deles.
   import { untrack } from "svelte";
   import { api } from "../../lib/api.js";
   import { kr, krWhole, formatDate } from "../../lib/format.js";
@@ -35,11 +36,16 @@
   let loadingMore = $state(false);
   let error = $state(null);
   let unbilledOre = $state(0);
+  // Under Forfalt: the aging buckets and each invoice's last dunning step
+  // (from /invoices/overdue), which decide the next reminder.
+  let aging = $state(null);
+  const STEP_LABEL = { paminnelse: "påminnelse", purring: "purring", inkassovarsel: "inkassovarsel" };
   let searchInput;
 
   let seq = 0;
-  function path(offset) {
-    const p = new URLSearchParams({ limit: PAGE, offset });
+  function path(before) {
+    const p = new URLSearchParams({ limit: PAGE });
+    if (before) p.set("before", before);
     if (status) p.set("status", status);
     if (search.trim()) p.set("q", search.trim());
     return "/companies/" + companyId + "/invoices?" + p;
@@ -49,7 +55,7 @@
     const mine = ++seq;
     error = null;
     try {
-      const page = await api(path(0));
+      const page = await api(path(null));
       if (mine !== seq) return; // a newer filter or keystroke won
       rows = page.invoices;
       total = page.total;
@@ -60,12 +66,13 @@
   }
 
   async function more() {
+    const mine = seq; // a filter change meanwhile makes this page stale
     loadingMore = true;
     try {
-      const page = await api(path(rows.length));
-      rows = [...rows, ...page.invoices];
+      const page = await api(path(rows.at(-1).invoice_no));
+      if (mine === seq) rows = [...rows, ...page.invoices];
     } catch (e) {
-      error = e.message;
+      if (mine === seq) error = e.message;
     }
     loadingMore = false;
   }
@@ -97,6 +104,19 @@
         unbilledOre = r.groups.reduce((s, g) => s + Math.round((g.minutter * g.timesats_ore) / 60), 0);
       })
       .catch(() => (unbilledOre = 0));
+  });
+
+  $effect(() => {
+    aging = null;
+    if (status !== "overdue") return;
+    api("/companies/" + companyId + "/invoices/overdue")
+      .then((r) => {
+        aging = {
+          buckets: r.buckets,
+          last: Object.fromEntries(r.invoices.map((i) => [i.invoice_id, i])),
+        };
+      })
+      .catch(() => (aging = null));
   });
 
   // "/" jumps to search and "n" starts a new invoice, unless the user is
@@ -159,6 +179,14 @@
     </div>
   </div>
 
+  {#if status === "overdue" && aging}
+    <p class="text-sm mt-3">
+      Forfalt 1–14 dager: <b class="tabular-nums">{krWhole(aging.buckets["1-14"] || 0)}</b> ·
+      15–30 dager: <b class="tabular-nums">{krWhole(aging.buckets["15-30"] || 0)}</b> ·
+      over 30 dager: <b class="tabular-nums text-error">{krWhole(aging.buckets["30+"] || 0)}</b> kr
+    </p>
+  {/if}
+
   {#if error}
     <div class="alert alert-error mt-3" role="alert"><span>{error}</span></div>
   {:else if rows === null}
@@ -196,6 +224,12 @@
                 {i.is_credit_note ? "Kreditnota" : "Faktura"} {i.invoice_no}
                 <span class="block text-sm font-normal opacity-70">{i.party_name}</span>
               </a>
+              {#if aging?.last[i.invoice_id]?.last_steg}
+                <span class="block text-xs opacity-70">
+                  Sist: {STEP_LABEL[aging.last[i.invoice_id].last_steg]}
+                  {formatDate(aging.last[i.invoice_id].last_sent)}
+                </span>
+              {/if}
               <span class="block mt-1 sm:hidden"><InvoiceStatus status={i.status} dueDate={i.due_date} /></span>
             </td>
             <td class="hidden md:table-cell whitespace-nowrap">{formatDate(i.invoice_date)}</td>

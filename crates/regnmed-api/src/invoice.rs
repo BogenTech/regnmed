@@ -169,6 +169,9 @@ pub struct ListQuery {
     limit: Option<i64>,
     #[serde(default)]
     offset: i64,
+    /// Only invoices numbered below this (keyset paging; see
+    /// regnmed_db::InvoiceFilter::before).
+    before: Option<i64>,
 }
 
 fn invoice_row_json(i: &regnmed_db::InvoiceRow) -> serde_json::Value {
@@ -199,6 +202,7 @@ pub async fn list_invoices(
         search: query.q.as_deref(),
         limit: query.limit.map(|n| n.clamp(1, 200)),
         offset: query.offset,
+        before: query.before,
     };
     let page = regnmed_db::list_invoices(&state.pool, company_id, &filter)
         .await

@@ -39,7 +39,6 @@
   });
 
   let title = $derived(inv ? (inv.is_credit_note ? "Kreditnota " : "Faktura ") + inv.invoice_no : "");
-  let unpaid = $derived(inv && (inv.status === "open" || inv.status === "overdue"));
   let neverSent = $derived(sends !== null && sends.length === 0);
 
   // The single next step, named in words and offered as the primary
@@ -159,7 +158,7 @@
         {#if !inv.is_credit_note}
           <button class="btn btn-ghost" onclick={repeat}>Gjenta</button>
         {/if}
-        {#if unpaid && next.action !== "reminder"}
+        {#if inv.status === "overdue" && next.action !== "reminder"}
           <button class="btn btn-ghost" onclick={() => (showReminder = !showReminder)} aria-expanded={showReminder}>
             Purring
           </button>

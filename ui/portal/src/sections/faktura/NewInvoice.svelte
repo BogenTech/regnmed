@@ -172,7 +172,10 @@
       byCode[h.code] = (byCode[h.code] || 0) + h.vat;
     }
     const vat = Object.values(byCode).reduce((a, b) => a + b, 0);
-    return { net, vat, gross: net + vat, byCode };
+    // A code this page has no rate for is computed by the server on issue;
+    // the page says so instead of showing it as 0 %.
+    const unknown = lines.some((l, i) => !parsed[i].blank && !VAT_CODES[l.vat]);
+    return { net, vat, gross: net + vat, byCode, unknown };
   });
 
   // ---- Issue ----
@@ -203,7 +206,7 @@
     const ok = await bekreft(
       "Faktura til " + party.name + ", " + count + (count === 1 ? " linje" : " linjer") + ", " +
         kr(totals.gross) + (currency ? " " + currency : " kr") +
-        " inkl. mva, forfall om " + dueDays + " dager. En utstedt faktura kan ikke endres; feil rettes med kreditnota.",
+        (totals.unknown ? " pluss mva som regnes ved utstedelse" : " inkl. mva") + ", forfall om " + dueDays + " dager. En utstedt faktura kan ikke endres; feil rettes med kreditnota.",
       { tittel: "Utstede fakturaen?", ok: "Utsted faktura" },
     );
     if (!ok) return;
@@ -238,7 +241,16 @@
     busy = false;
   }
 
-  const vatLabel = (code) => VAT_CODES[code]?.label ?? code;
+  const vatLabel = (code) => VAT_CODES[code]?.label ?? "kode " + code;
+
+  // Header fields: Enter must not submit an invoice that cannot be
+  // undone. Lines handle Enter themselves; Ctrl/Cmd+Enter issues anywhere.
+  function formKey(e) {
+    if (e.key !== "Enter" || e.defaultPrevented || e.isComposing) return;
+    if (e.target.tagName === "BUTTON" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) issue();
+  }
 </script>
 
 <nav class="mb-3">
@@ -256,6 +268,7 @@
 {:else}
   <form
     novalidate
+    onkeydown={formKey}
     onsubmit={(e) => {
       e.preventDefault();
       issue();
@@ -425,6 +438,9 @@
             <label>
               <span class="text-xs opacity-70 sm:sr-only">Mva</span>
               <select class="select w-full" bind:value={line.vat}>
+                {#if !VAT_CODES[line.vat]}
+                  <option value={line.vat}>Kode {line.vat} (fra produktet)</option>
+                {/if}
                 {#each Object.entries(VAT_CODES) as [code, v] (code)}
                   <option value={code}>{v.label}</option>
                 {/each}
@@ -491,12 +507,18 @@
         <dl class="grid grid-cols-[auto_auto] gap-x-6 gap-y-1 text-sm sm:order-2" aria-live="polite">
           <dt class="opacity-70">Netto</dt>
           <dd class="text-right tabular-nums">{kr(totals.net)}</dd>
-          {#each Object.entries(totals.byCode).filter(([, v]) => v) as [code, v] (code)}
+          {#each Object.entries(totals.byCode).filter(([c, v]) => v && VAT_CODES[c]) as [code, v] (code)}
             <dt class="opacity-70">Mva {vatLabel(code)}</dt>
             <dd class="text-right tabular-nums">{kr(v)}</dd>
           {/each}
+          {#if totals.unknown}
+            <dt class="opacity-70">Mva for øvrige koder</dt>
+            <dd class="text-right">regnes ved utstedelse</dd>
+          {/if}
           <dt class="font-semibold text-base">Å betale{currency ? " (" + currency + ")" : ""}</dt>
-          <dd class="text-right tabular-nums font-bold text-base">{kr(totals.gross)}</dd>
+          <dd class="text-right tabular-nums font-bold text-base">
+            {kr(totals.gross)}{totals.unknown ? " + mva" : ""}
+          </dd>
         </dl>
         <div class="flex flex-col gap-2 sm:order-1">
           {#if submitted && formErrors.length}

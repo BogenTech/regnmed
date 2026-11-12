@@ -4,7 +4,6 @@
   // knappen, bokmerker og delte lenker virker. Hver fane henter bare
   // det den selv viser.
   import { api } from "../../lib/api.js";
-  import { toast } from "../../lib/toast.svelte.js";
   import InvoiceList from "./InvoiceList.svelte";
   import InvoiceDetail from "./InvoiceDetail.svelte";
   import NewInvoice from "./NewInvoice.svelte";
@@ -62,7 +61,7 @@
     const company = companyId;
     loadTab(companyId, which)
       .then((d) => tab === which && (loaded = { tab: which, company, ...d }))
-      .catch((e) => toast(e.message, false));
+      .catch((e) => tab === which && (loaded = { tab: which, company, error: e.message }));
   }
   $effect(() => {
     if (tab) reload();
@@ -92,11 +91,15 @@
   </nav>
 
   {#if tab === ""}
-    {#key companyId}
+    <!-- A link to another filter (Oversikt's "forfalte fakturaer") arrives
+         as a new query while the list may already be open. -->
+    {#key companyId + "?" + query}
       <InvoiceList {companyId} {query} />
     {/key}
   {:else if !data}
     <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
+  {:else if data.error}
+    <div class="alert alert-warning" role="alert"><span>{data.error}</span></div>
   {:else if tab === "tilbud"}
     <Salgsdok {companyId} {...data} onDone={reload} />
   {:else if tab === "repeterende"}

@@ -660,6 +660,11 @@ pub struct InvoiceFilter<'a> {
     /// Newest first and at most this many. None = all, oldest first.
     pub limit: Option<i64>,
     pub offset: i64,
+    /// Keyset paging for a newest-first list: only invoices numbered
+    /// below this. Unlike `offset`, a page cannot repeat or skip rows
+    /// when invoices are issued between two requests. `total` and
+    /// `counts` ignore it.
+    pub before: Option<i64>,
 }
 
 #[derive(Debug, Default)]
@@ -685,20 +690,27 @@ const INVOICE_STATUS_CTE: &str = "
                            where m.entry_a = e.id), 0)::bigint
                + coalesce((select sum(m.amount_ore) from reskontro_match m
                            where m.entry_b = e.id), 0)::bigint as remaining_ore,
-               exists (select 1 from invoice c where c.credits_invoice_id = i.id) as credited
+               (c.id is not null) as credited
         from invoice i
         join party p on p.id = i.party_id
         join entry e on e.id = i.receivable_entry_id
+        -- A join, not EXISTS: credits_invoice_id has no index, and a
+        -- per-row subquery would scan the invoices once per invoice. An
+        -- invoice is credited at most once (credit_invoice refuses a
+        -- second), so the join never multiplies rows.
+        left join invoice c on c.credits_invoice_id = i.id
         where i.company_id = $1
           and ($2::text is null
                or i.invoice_no::text = $2
                or i.kid = $2
-               or p.name ilike '%' || $2 || '%')
+               -- position(), not ILIKE: % and _ in a name are text here.
+               or position(lower($2) in lower(p.name)) > 0)
     ), inv as (
         select base.*,
                case when is_credit_note then 'credit_note'
                     when credited then 'credited'
-                    when remaining_ore = 0 then 'paid'
+                    -- Overpaid counts as paid: nothing is owed.
+                    when remaining_ore <= 0 then 'paid'
                     when due_date < current_date then 'overdue'
                     else 'open' end as status
         from base
@@ -727,10 +739,18 @@ pub async fn list_invoices(
     } else {
         "invoice_no"
     };
+    // One pass: the CTE is referenced twice, so Postgres materializes it
+    // once, and the per-status counts ride along on every row.
     let rows = sqlx::query(&format!(
-        "{INVOICE_STATUS_CTE}
-         select *, count(*) over () as total from inv
-         where {status_sql}
+        "{INVOICE_STATUS_CTE}, counted as (select status, count(*) as n from inv group by status)
+         select * from (
+             select inv.*, count(*) over () as total,
+                    (select array_agg(status) from counted) as count_status,
+                    (select array_agg(n) from counted) as count_n
+             from inv
+             where {status_sql}
+         ) page
+         where ($5::bigint is null or invoice_no < $5)
          order by {order}
          limit $3 offset $4"
     ))
@@ -738,31 +758,36 @@ pub async fn list_invoices(
     .bind(search)
     .bind(filter.limit)
     .bind(filter.offset.max(0))
+    .bind(filter.before)
     .fetch_all(pool)
     .await?;
-    let counts = sqlx::query(&format!(
-        "{INVOICE_STATUS_CTE} select status, count(*) as n from inv group by status"
-    ))
-    .bind(company_id)
-    .bind(search)
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(|r| (r.get::<String, _>("status"), r.get::<i64, _>("n")))
-    .collect();
-    let total = match rows.first() {
-        Some(r) => r.get("total"),
-        // An offset past the end still has a true total.
-        None if filter.offset > 0 => {
-            sqlx::query_scalar(&format!(
-                "{INVOICE_STATUS_CTE} select count(*) from inv where {status_sql}"
+    let (total, counts) = match rows.first() {
+        Some(r) => {
+            let names: Vec<String> = r
+                .get::<Option<Vec<String>>, _>("count_status")
+                .unwrap_or_default();
+            let ns: Vec<i64> = r.get::<Option<Vec<i64>>, _>("count_n").unwrap_or_default();
+            (r.get("total"), names.into_iter().zip(ns).collect())
+        }
+        // An empty page (no match, or an offset past the end) still owes
+        // the caller true totals and counts.
+        None => {
+            let r = sqlx::query(&format!(
+                "{INVOICE_STATUS_CTE}
+                 select (select count(*) from inv where {status_sql}) as total,
+                        array_agg(status) as count_status, array_agg(n) as count_n
+                 from (select status, count(*) as n from inv group by status) x"
             ))
             .bind(company_id)
             .bind(search)
             .fetch_one(pool)
-            .await?
+            .await?;
+            let names: Vec<String> = r
+                .get::<Option<Vec<String>>, _>("count_status")
+                .unwrap_or_default();
+            let ns: Vec<i64> = r.get::<Option<Vec<i64>>, _>("count_n").unwrap_or_default();
+            (r.get("total"), names.into_iter().zip(ns).collect())
         }
-        None => 0,
     };
     Ok(InvoicePage {
         rows: rows

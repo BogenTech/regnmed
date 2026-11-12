@@ -329,6 +329,20 @@ async fn invoice_to_payment_to_credit_note_loop() {
     let (_, paged) = list("limit=1&offset=1").await;
     assert_eq!(paged["total"], 2);
     assert_eq!(paged["invoices"][0]["invoice_no"], 1);
+    let (_, keyset) = list("limit=50&before=2").await;
+    assert_eq!(keyset["invoices"].as_array().unwrap().len(), 1);
+    assert_eq!(keyset["invoices"][0]["invoice_no"], 1);
+    assert_eq!(keyset["total"], 2, "total ignores the page position");
+    let (_, nothing) = list("status=open&limit=50").await;
+    assert_eq!(
+        nothing["counts"]["credited"], 1,
+        "an empty page still counts"
+    );
+    let (_, wildcard) = list("q=%25&limit=50").await;
+    assert_eq!(
+        wildcard["total"], 0,
+        "% in a search is text, not a wildcard"
+    );
     let (status, _) = list("status=bogus").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
