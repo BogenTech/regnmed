@@ -164,7 +164,7 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("skadet"), "{body}");
 
-    let documents = regnmed_db::list_inbox(&state.pool, company, None)
+    let documents = regnmed_db::list_inbox(&state.pool, company, None, None)
         .await
         .unwrap();
     assert_eq!(documents.len(), 1, "ett bilde, ett bilag");

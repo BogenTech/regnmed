@@ -64,6 +64,16 @@ ta feil av og derfor er testet:
 - **En linje med tall holder seg til sin egen linje.** Bare en linje
   UTEN tall ser på neste (etikett over verdi er en vanlig layout).
   Uten den regelen ville totalen under «MVA» blitt lest som mva.
+- **Mva er aldri mer enn en femtedel av totalen** (25 % av netto er 20 %
+  av brutto). Alle linjer som ser ut som mva samles, og den SISTE som
+  holder seg innenfor velges — oppsummeringen kommer etter varelinjene,
+  så en kolonneoverskrift «Mva» over første varelinje (som «faller
+  gjennom» til linjens beløp) taper. Finnes ingen slik linje, foreslås
+  ingen mva; det er bedre enn et galt tall.
+- **«Org.nr … MVA» er Foretaksregister-merkingen, ikke en mva-linje.**
+  En linje med «org» i seg, eller med et gyldig orgnr blant tallene,
+  leses aldri som mva. Funnet på regnmeds egen faktura-PDF, der
+  «Org.nr 790 292 642 MVA» ble lest som 790 292 642 kr i mva.
 
 Hvert funn bærer sin begrunnelse («etter «å betale»», «ni siffer med
 gyldig kontrollsiffer nær «orgnr»»), og begrunnelsen vises i UI-et.

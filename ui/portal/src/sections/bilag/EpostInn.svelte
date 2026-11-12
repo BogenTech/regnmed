@@ -146,6 +146,7 @@
   <div class="flex gap-2 items-center flex-wrap mt-2">
     <input
       class="input input-sm w-56"
+      aria-label="Godkjent avsender: e-postadresse eller domene"
       placeholder="post@leverandor.no eller @leverandor.no"
       bind:value={nyAvsender}
     />

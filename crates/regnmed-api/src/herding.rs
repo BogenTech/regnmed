@@ -209,6 +209,11 @@ fn csp(index_html: &str) -> String {
         "style-src 'self' 'unsafe-inline'".to_string(),
         "connect-src 'self'".to_string(),
         "object-src 'none'".to_string(),
+        // The inbox shows a PDF beside its booking form from a blob URL
+        // the portal makes itself, typed application/pdf and only after
+        // the bytes start with %PDF- (BilagDokument.svelte). Nothing
+        // else may frame: not other origins, not data: URLs.
+        "frame-src 'self' blob:".to_string(),
         "base-uri 'self'".to_string(),
         "frame-ancestors 'none'".to_string(),
         "form-action 'self'".to_string(),
@@ -356,6 +361,10 @@ mod tests {
         );
         assert!(policy.contains("object-src 'none'"), "{policy}");
         assert!(policy.contains("frame-ancestors 'none'"), "{policy}");
+        // Frames only from ourselves and our own blob URLs (the inbox's
+        // PDF preview) -- never another origin or a data: URL.
+        assert!(policy.contains("frame-src 'self' blob:;"), "{policy}");
+        assert!(!policy.contains("frame-src *"), "{policy}");
     }
 
     /// The hash must be of the script the browser actually runs, so the

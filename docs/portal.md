@@ -311,7 +311,10 @@ kontonummer og reskontroposter under — docs/betaling.md) · Reskontro (alle pa
 resultat, balanse, budsjett/avvik, konto-, reskontro- og
 bokføringsspesifikasjon, revisjon) · Bank (kontoutskrift, avstemming,
 betalingsliste) · Bilag
-(attestering, innboks, e-post-inn, vedlegg) ·
+(innboksen som forside m/ flere filer og dra-og-slipp; dokumentside m/
+PDF/bilde ved siden av en enkel bokføring som viser linjene, avansert
+linjeredigering, attestering og «neste dokument»; faner for
+behandlede, bokførte bilag og innstillinger — docs/bilagsinnboks.md) ·
 **Administrasjon** (konsollen, se under) — pluss byråvisningen på
 `#/byra/{id}`.
 
