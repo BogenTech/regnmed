@@ -26,6 +26,23 @@ versjon er godtatt.
 nytt før neste innsending. Det gjelder også skrivefeil — det er prisen
 for at «godtatt» alltid betyr én bestemt tekst.
 
+**Hver versjon som har gjeldt, arkiveres** i `docs/kundevilkar/` som
+`<dato>-<sha256>.md` (datoen den trer i kraft), og serveres på
+`/vilkar/<sha256>`; `/terms/versions` lister dem. En kunde som godtok en
+eldre tekst kan dermed alltid lese nettopp den, og selskapets egen
+aksepthistorikk står i `GET /companies/{id}/terms`. Testen
+`the_current_text_is_archived` feiler hvis denne fila endres uten at den
+nye teksten arkiveres, og hvis en arkivert tekst redigeres i etterkant.
+
+**Registeret i §7.1** er innsendingssporene selv (migrasjon 0074–0076),
+som skrives FØR hvert kall og ikke kan endres eller slettes — ikke en
+egen logg ved siden av. `GET /companies/{id}/authority-calls` viser dem
+samlet: skjema, hva det gjaldt, hvem som ba om det, når, og hva som kom
+tilbake (kvittering, feil eller myndighetens svar).
+
+**Tilgangsgjennomgangen i §4.2** er kundens plikt; regnmed håndhever
+tilgangene (§4.1) men gjennomfører ikke gjennomgangen for kunden.
+
 ## 1. Parter og omfang
 
 1.1 Disse vilkårene gjelder mellom **BogenTech AS** (org.nr. 935 115 086),
