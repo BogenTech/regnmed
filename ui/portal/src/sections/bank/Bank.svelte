@@ -4,6 +4,7 @@
   import Betalingsliste from "./Betalingsliste.svelte";
   import Kontoutskrift from "./Kontoutskrift.svelte";
   import Avstemming from "./Avstemming.svelte";
+  import Valutakurser from "./Valutakurser.svelte";
 
   let { companyId } = $props();
 
@@ -43,4 +44,6 @@
   <Kontoutskrift {companyId} account={ACCOUNT} onDone={reload} />
 
   <Avstemming {companyId} recon={data.recon} onDone={reload} />
+
+  <Valutakurser {companyId} />
 {/if}

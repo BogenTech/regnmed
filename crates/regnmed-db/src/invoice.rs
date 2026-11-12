@@ -641,34 +641,264 @@ pub struct InvoiceRow {
     pub gross_ore: i64,
     pub remaining_ore: i64,
     pub is_credit_note: bool,
+    /// Derived, never stored: `credit_note`, `credited` (a kreditnota
+    /// exists for it), `paid` (nothing remains), `overdue` (remains and
+    /// past due) or `open`.
+    pub status: String,
+}
+
+/// Which invoices a listing asks for. `None` everywhere = every invoice,
+/// oldest first -- what the API returned before filtering existed.
+#[derive(Debug, Default)]
+pub struct InvoiceFilter<'a> {
+    /// `open` (open or overdue), `overdue`, `paid`, or `credit`
+    /// (kreditnotaer and the invoices they credit).
+    pub status: Option<&'a str>,
+    /// Matches an exact invoice number or KID, or part of the customer's
+    /// name (case-insensitive).
+    pub search: Option<&'a str>,
+    /// Newest first and at most this many. None = all, oldest first.
+    pub limit: Option<i64>,
+    pub offset: i64,
+    /// Keyset paging for a newest-first list: only invoices numbered
+    /// below this. Unlike `offset`, a page cannot repeat or skip rows
+    /// when invoices are issued between two requests. `total` and
+    /// `counts` ignore it.
+    pub before: Option<i64>,
+}
+
+#[derive(Debug, Default)]
+pub struct InvoicePage {
+    pub rows: Vec<InvoiceRow>,
+    /// Matching the filter, before limit/offset.
+    pub total: i64,
+    /// Per derived status, over the search but regardless of the status
+    /// filter -- what the filter chips show.
+    pub counts: std::collections::BTreeMap<String, i64>,
+}
+
+/// Every invoice with its reskontro remainder and derived status. The
+/// status is SQL so the filter, the counts and the page come from one
+/// definition.
+const INVOICE_STATUS_CTE: &str = "
+    with base as (
+        select i.id, i.invoice_no, p.party_no, p.name as party_name, i.invoice_date,
+               i.due_date, i.kid, (i.credits_invoice_id is not null) as is_credit_note,
+               e.amount_ore as gross_ore,
+               e.amount_ore
+               - coalesce((select sum(m.amount_ore) from reskontro_match m
+                           where m.entry_a = e.id), 0)::bigint
+               + coalesce((select sum(m.amount_ore) from reskontro_match m
+                           where m.entry_b = e.id), 0)::bigint as remaining_ore,
+               (c.id is not null) as credited
+        from invoice i
+        join party p on p.id = i.party_id
+        join entry e on e.id = i.receivable_entry_id
+        -- A join, not EXISTS: credits_invoice_id has no index, and a
+        -- per-row subquery would scan the invoices once per invoice. An
+        -- invoice is credited at most once (credit_invoice refuses a
+        -- second), so the join never multiplies rows.
+        left join invoice c on c.credits_invoice_id = i.id
+        where i.company_id = $1
+          and ($2::text is null
+               or i.invoice_no::text = $2
+               or i.kid = $2
+               -- position(), not ILIKE: % and _ in a name are text here.
+               or position(lower($2) in lower(p.name)) > 0)
+    ), inv as (
+        select base.*,
+               case when is_credit_note then 'credit_note'
+                    when credited then 'credited'
+                    -- Overpaid counts as paid: nothing is owed.
+                    when remaining_ore <= 0 then 'paid'
+                    when due_date < current_date then 'overdue'
+                    else 'open' end as status
+        from base
+    )";
+
+fn status_matches(filter: Option<&str>) -> Result<&'static str> {
+    Ok(match filter {
+        None => "true",
+        Some("open") => "status in ('open', 'overdue')",
+        Some("overdue") => "status = 'overdue'",
+        Some("paid") => "status = 'paid'",
+        Some("credit") => "status in ('credit_note', 'credited')",
+        Some(other) => bail!("ukjent fakturastatus «{other}» (open, overdue, paid, credit)"),
+    })
 }
 
 pub async fn list_invoices(
     pool: &PgPool,
     company_id: Uuid,
-    open_only: bool,
-) -> Result<Vec<InvoiceRow>> {
-    let rows = sqlx::query(
-        "select i.id, i.invoice_no, p.party_no, p.name as party_name, i.invoice_date,
-                i.due_date, i.kid, (i.credits_invoice_id is not null) as is_credit_note,
-                e.amount_ore as gross_ore,
-                e.amount_ore
-                - coalesce((select sum(m.amount_ore) from reskontro_match m
-                            where m.entry_a = e.id), 0)::bigint
-                + coalesce((select sum(m.amount_ore) from reskontro_match m
-                            where m.entry_b = e.id), 0)::bigint as remaining_ore
-         from invoice i
-         join party p on p.id = i.party_id
-         join entry e on e.id = i.receivable_entry_id
-         where i.company_id = $1
-         order by i.invoice_no",
-    )
+    filter: &InvoiceFilter<'_>,
+) -> Result<InvoicePage> {
+    let search = filter.search.map(str::trim).filter(|s| !s.is_empty());
+    let status_sql = status_matches(filter.status)?;
+    let order = if filter.limit.is_some() {
+        "invoice_no desc"
+    } else {
+        "invoice_no"
+    };
+    // One pass: the CTE is referenced twice, so Postgres materializes it
+    // once, and the per-status counts ride along on every row.
+    let rows = sqlx::query(&format!(
+        "{INVOICE_STATUS_CTE}, counted as (select status, count(*) as n from inv group by status)
+         select * from (
+             select inv.*, count(*) over () as total,
+                    (select array_agg(status) from counted) as count_status,
+                    (select array_agg(n) from counted) as count_n
+             from inv
+             where {status_sql}
+         ) page
+         where ($5::bigint is null or invoice_no < $5)
+         order by {order}
+         limit $3 offset $4"
+    ))
     .bind(company_id)
+    .bind(search)
+    .bind(filter.limit)
+    .bind(filter.offset.max(0))
+    .bind(filter.before)
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .iter()
-        .map(|r| InvoiceRow {
+    let (total, counts) = match rows.first() {
+        Some(r) => {
+            let names: Vec<String> = r
+                .get::<Option<Vec<String>>, _>("count_status")
+                .unwrap_or_default();
+            let ns: Vec<i64> = r.get::<Option<Vec<i64>>, _>("count_n").unwrap_or_default();
+            (r.get("total"), names.into_iter().zip(ns).collect())
+        }
+        // An empty page (no match, or an offset past the end) still owes
+        // the caller true totals and counts.
+        None => {
+            let r = sqlx::query(&format!(
+                "{INVOICE_STATUS_CTE}
+                 select (select count(*) from inv where {status_sql}) as total,
+                        array_agg(status) as count_status, array_agg(n) as count_n
+                 from (select status, count(*) as n from inv group by status) x"
+            ))
+            .bind(company_id)
+            .bind(search)
+            .fetch_one(pool)
+            .await?;
+            let names: Vec<String> = r
+                .get::<Option<Vec<String>>, _>("count_status")
+                .unwrap_or_default();
+            let ns: Vec<i64> = r.get::<Option<Vec<i64>>, _>("count_n").unwrap_or_default();
+            (r.get("total"), names.into_iter().zip(ns).collect())
+        }
+    };
+    Ok(InvoicePage {
+        rows: rows
+            .iter()
+            .map(|r| InvoiceRow {
+                invoice_id: r.get("id"),
+                invoice_no: r.get("invoice_no"),
+                party_no: r.get("party_no"),
+                party_name: r.get("party_name"),
+                invoice_date: r.get("invoice_date"),
+                due_date: r.get("due_date"),
+                kid: r.get("kid"),
+                gross_ore: r.get("gross_ore"),
+                remaining_ore: r.get("remaining_ore"),
+                is_credit_note: r.get("is_credit_note"),
+                status: r.get("status"),
+            })
+            .collect(),
+        total,
+        counts,
+    })
+}
+
+#[derive(Debug)]
+pub struct InvoiceLineRow {
+    pub line_no: i32,
+    pub description: String,
+    pub quantity_milli: i64,
+    pub unit_price_ore: i64,
+    pub net_ore: i64,
+    pub vat_code: Option<String>,
+    pub vat_ore: i64,
+    pub department: Option<String>,
+    pub project: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct InvoiceDetail {
+    pub row: InvoiceRow,
+    pub delivery_date: Option<NaiveDate>,
+    pub delivery_place: Option<String>,
+    pub currency: Option<String>,
+    pub party_email: Option<String>,
+    /// The invoice a kreditnota credits, or the kreditnota that credits
+    /// this invoice: (id, number).
+    pub credits: Option<(Uuid, i64)>,
+    pub credited_by: Option<(Uuid, i64)>,
+    pub created_by: String,
+    pub lines: Vec<InvoiceLineRow>,
+}
+
+/// One invoice with its lines, for the portal's invoice page. None when
+/// the id is not this company's invoice.
+pub async fn get_invoice(
+    pool: &PgPool,
+    company_id: Uuid,
+    invoice_id: Uuid,
+) -> Result<Option<InvoiceDetail>> {
+    let Some(r) = sqlx::query(&format!(
+        "{INVOICE_STATUS_CTE}
+         select inv.*, i.delivery_date, i.delivery_place, i.valuta, i.created_by, p.email,
+                o.id as credits_id, o.invoice_no as credits_no,
+                c.id as credited_by_id, c.invoice_no as credited_by_no
+         from inv
+         join invoice i on i.id = inv.id
+         join party p on p.id = i.party_id
+         left join invoice o on o.id = i.credits_invoice_id
+         left join invoice c on c.credits_invoice_id = i.id
+         where inv.id = $3"
+    ))
+    .bind(company_id)
+    .bind(None::<&str>)
+    .bind(invoice_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let lines = sqlx::query(
+        "select line_no, description, quantity_milli, unit_price_ore, net_ore, vat_code,
+                vat_ore, avdeling, prosjekt
+         from invoice_line where invoice_id = $1 order by line_no",
+    )
+    .bind(invoice_id)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|l| InvoiceLineRow {
+        line_no: l.get("line_no"),
+        description: l.get("description"),
+        quantity_milli: l.get("quantity_milli"),
+        unit_price_ore: l.get("unit_price_ore"),
+        net_ore: l.get("net_ore"),
+        vat_code: l.get("vat_code"),
+        vat_ore: l.get("vat_ore"),
+        department: l.get("avdeling"),
+        project: l.get("prosjekt"),
+    })
+    .collect();
+    let pair = |id: &str, no: &str| -> Option<(Uuid, i64)> {
+        Some((r.get::<Option<Uuid>, _>(id)?, r.get::<Option<i64>, _>(no)?))
+    };
+    Ok(Some(InvoiceDetail {
+        credits: pair("credits_id", "credits_no"),
+        credited_by: pair("credited_by_id", "credited_by_no"),
+        delivery_date: r.get("delivery_date"),
+        delivery_place: r.get("delivery_place"),
+        currency: r.get("valuta"),
+        party_email: r.get("email"),
+        created_by: r.get("created_by"),
+        row: InvoiceRow {
             invoice_id: r.get("id"),
             invoice_no: r.get("invoice_no"),
             party_no: r.get("party_no"),
@@ -679,9 +909,10 @@ pub async fn list_invoices(
             gross_ore: r.get("gross_ore"),
             remaining_ore: r.get("remaining_ore"),
             is_credit_note: r.get("is_credit_note"),
-        })
-        .filter(|row| !open_only || row.remaining_ore != 0)
-        .collect())
+            status: r.get("status"),
+        },
+        lines,
+    }))
 }
 
 /// Kontantfaktura (#89, bokføringsforskriften §5-3): a salgsdokument for

@@ -68,7 +68,8 @@ and the externally published roots still convict them.
   returns, per snapshot: the anchored head and the **Merkle inclusion
   proof** connecting it to the published root. A revisor can verify the
   proof offline with `regnmed_core::anchor::verify_inclusion` — no
-  trust in the API required beyond the public root.
+  trust in the API required beyond the public root. `?limit=N` returns
+  only the newest N snapshots; the portal's overview asks for one.
 - `GET /companies/{id}/anchors/verify` runs the full independent check:
   chain from genesis, attachment content hashes, and every anchored
   head against the live chain (the voucher at the anchored seq must

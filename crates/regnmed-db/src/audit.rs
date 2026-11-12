@@ -415,7 +415,7 @@ pub async fn build_audit_report(
         },
     });
 
-    let anchors = crate::company_anchors(pool, company_id)
+    let anchors = crate::company_anchors(pool, company_id, None)
         .await?
         .into_iter()
         .map(|a| AnchorInfo {

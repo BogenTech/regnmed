@@ -218,6 +218,28 @@ async fn anchors_publish_roots_and_proofs_and_detect_rewrites() {
         "both the head mismatch and the bogus root are reported: {problems}"
     );
 
+    // `?limit=1` returns only the newest snapshot -- the portal overview
+    // asks for that one, since the full list rebuilds a proof per night.
+    let (_, all) = get(
+        &state,
+        &format!("/companies/{company}/anchors"),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(all["anchors"].as_array().unwrap().len(), 2);
+    let (status, newest) = get(
+        &state,
+        &format!("/companies/{company}/anchors?limit=1"),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(newest["anchors"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        newest["anchors"][0]["snapshot_id"],
+        fake_snapshot.to_string()
+    );
+
     // The anchor evidence itself is append-only, enforced by the database.
     let denied = sqlx::query("update anchor_snapshot set leaf_count = 99 where id = $1")
         .bind(snapshot.id)

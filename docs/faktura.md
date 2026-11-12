@@ -234,11 +234,27 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /companies/{id}/invoices` | issue (party_no, dates, lines; defaults: journal GL, receivable 1500, VAT 2700, account 3000, quantity 1). Optional `timer_entry_ids`: selected unbilled hours appended as hour lines per (prosjekt, sats) and marked fakturert in the SAME transaction — one invoice carries products and hours (docs/timer.md; requires `TIMER_FAKTURER`, NOK only) |
-| `GET /companies/{id}/invoices?open=true` | list with reskontro remaining per invoice |
+| `GET /companies/{id}/invoices?status=&q=&limit=&offset=` | list with reskontro remaining and a DERIVED `status` per invoice (`open`, `overdue`, `paid`, `credited`, `credit_note` — computed in SQL from the reskontro and the due date, never stored). `status` filters (`open` = open or overdue, `credit` = kreditnotaer and what they credit), `q` matches an exact invoice number or KID or part of the customer's name, `limit` (≤ 200) pages newest first. The response carries `total` and per-status `counts` for the filter. Without `limit`: every invoice, oldest first, as before. `open=true` keeps its old meaning (anything with a remainder, kreditnotaer included) |
+| `GET /companies/{id}/invoices/{iid}` | one invoice: header, status, the stored lines (`net_ore`/`vat_ore` as issued), the kreditnota link either way, the customer's e-mail |
 | `POST /companies/{id}/invoices/{iid}/credit-note` | full kreditnota |
 | `GET /companies/{id}/invoices/{iid}/pdf` | the stored salgsdokument (hash-checked) |
 | `GET/PUT /companies/{id}/settings` | firmaopplysninger for the PDF (PUT admin-only) |
 | `PUT /companies/{id}/parties/{pid}/contact` | party address/e-mail |
+
+## I portalen
+
+Faktura-seksjonen er bygget rundt fakturalisten (#/c/{id}/faktura): status
+per faktura, søk og filter i adressen, hver rad åpner fakturaen
+(#/c/{id}/faktura/{iid}) der alle handlingene bor og det naturlige neste
+steget er primærknappen — send en usendt faktura, purre en forfalt.
+**Ny faktura** (#/c/{id}/faktura/ny) tar så mange linjer som trengs og
+viser summen mens man skriver. Summen speiler `regnmed-core`s
+avrunding (`invoiceMath.js`, testet mot de samme tilfellene), men med
+dagens satser — serveren regner på nytt med satsen på fakturadatoen når
+fakturaen utstedes, og det er dens tall som står på fakturaen. Forfall
+følger fakturadato + 14 dager til brukeren endrer det; det finnes ennå
+ingen lagret betalingsfrist per selskap eller kunde. Utstedelse viser en
+oppsummering først, fordi en utstedt faktura aldri kan endres.
 
 ## Where it is tested
 
@@ -248,6 +264,14 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
   loop over HTTP: issue (12 500 kr, valid KID), failed attempt burns no
   number, chain verifies, OCR payment resolves the invoice by KID,
   kreditnota auto-settles, double-credit rejected.
+  The invoice page answers with status `overdue` and the stored lines
+  (another company's id is 404), and the list's filters are pinned:
+  `status=credit` holds the kreditnota and the invoice it credits, newest
+  first, `q` matches number or name, paging keeps the true `total`, and
+  an unknown status is a 400.
+- `ui/portal/src/sections/faktura/invoiceMath.test.js` — the form's
+  running sum rounds exactly like `regnmed-core` (line amounts, VAT,
+  minutes to hours).
 - `regnmed-core/src/pdf.rs` + `fakturapdf.rs` — valid xref structure,
   WinAnsi encoding incl. CP1252 typografi, escaping, width-based right
   alignment, determinism, lovpålagt innhold, kreditnota variant,

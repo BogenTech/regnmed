@@ -11,6 +11,7 @@ export async function sendDocument(path) {
   try {
     const sent = await attempt(null);
     toast("Sendt til " + sent.to, true);
+    return sent;
   } catch (error) {
     if (String(error.message).includes("e-postadresse")) {
       const email = await sporsmal("Kundens e-postadresse:", { type: "email", ok: "Send" });
@@ -18,6 +19,7 @@ export async function sendDocument(path) {
       try {
         const retried = await attempt(email);
         toast("Sendt til " + retried.to, true);
+        return retried;
       } catch (retryError) {
         toast(retryError.message, false);
       }

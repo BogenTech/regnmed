@@ -156,8 +156,38 @@ pub async fn create_invoice(
 
 #[derive(Deserialize)]
 pub struct ListQuery {
+    /// Legacy: every invoice with something remaining, credit notes
+    /// included. Oversikt sums it; `status=open` is the portal's filter.
     #[serde(default)]
     open: bool,
+    /// `open`, `overdue`, `paid` or `credit`.
+    status: Option<String>,
+    /// Invoice number, KID, or part of the customer's name.
+    q: Option<String>,
+    /// Newest first, at most this many (1..=200). Absent = all, oldest
+    /// first, as before.
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: i64,
+    /// Only invoices numbered below this (keyset paging; see
+    /// regnmed_db::InvoiceFilter::before).
+    before: Option<i64>,
+}
+
+fn invoice_row_json(i: &regnmed_db::InvoiceRow) -> serde_json::Value {
+    json!({
+        "invoice_id": i.invoice_id,
+        "invoice_no": i.invoice_no,
+        "party_no": i.party_no,
+        "party_name": i.party_name,
+        "invoice_date": i.invoice_date.to_string(),
+        "due_date": i.due_date.to_string(),
+        "kid": i.kid,
+        "gross_ore": i.gross_ore,
+        "remaining_ore": i.remaining_ore,
+        "is_credit_note": i.is_credit_note,
+        "status": i.status,
+    })
 }
 
 pub async fn list_invoices(
@@ -167,21 +197,66 @@ pub async fn list_invoices(
     Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InvoiceRead).await?;
-    let invoices = regnmed_db::list_invoices(&state.pool, company_id, query.open).await?;
+    let filter = regnmed_db::InvoiceFilter {
+        status: query.status.as_deref(),
+        search: query.q.as_deref(),
+        limit: query.limit.map(|n| n.clamp(1, 200)),
+        offset: query.offset,
+        before: query.before,
+    };
+    let page = regnmed_db::list_invoices(&state.pool, company_id, &filter)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let rows = page
+        .rows
+        .iter()
+        .filter(|i| !query.open || i.remaining_ore != 0);
     Ok(Json(json!({
-        "invoices": invoices.iter().map(|i| json!({
-            "invoice_id": i.invoice_id,
-            "invoice_no": i.invoice_no,
-            "party_no": i.party_no,
-            "party_name": i.party_name,
-            "invoice_date": i.invoice_date.to_string(),
-            "due_date": i.due_date.to_string(),
-            "kid": i.kid,
-            "gross_ore": i.gross_ore,
-            "remaining_ore": i.remaining_ore,
-            "is_credit_note": i.is_credit_note,
-        })).collect::<Vec<_>>(),
+        "invoices": rows.map(invoice_row_json).collect::<Vec<_>>(),
+        "total": page.total,
+        "counts": page.counts,
     })))
+}
+
+/// One invoice with its lines -- the portal's invoice page.
+pub async fn get_invoice(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::InvoiceRead).await?;
+    let d = regnmed_db::get_invoice(&state.pool, company_id, invoice_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let pair =
+        |p: Option<(Uuid, i64)>| p.map(|(id, no)| json!({ "invoice_id": id, "invoice_no": no }));
+    let mut out = invoice_row_json(&d.row);
+    out["delivery_date"] = json!(d.delivery_date.map(|x| x.to_string()));
+    out["delivery_place"] = json!(d.delivery_place);
+    out["valuta"] = json!(d.currency);
+    out["party_email"] = json!(d.party_email);
+    out["credits"] = json!(pair(d.credits));
+    out["credited_by"] = json!(pair(d.credited_by));
+    out["created_by"] = json!(d.created_by);
+    out["net_ore"] = json!(d.lines.iter().map(|l| l.net_ore).sum::<i64>());
+    out["vat_ore"] = json!(d.lines.iter().map(|l| l.vat_ore).sum::<i64>());
+    out["lines"] = json!(
+        d.lines
+            .iter()
+            .map(|l| json!({
+                "line_no": l.line_no,
+                "description": l.description,
+                "quantity_milli": l.quantity_milli,
+                "unit_price_ore": l.unit_price_ore,
+                "net_ore": l.net_ore,
+                "vat_code": l.vat_code,
+                "vat_ore": l.vat_ore,
+                "avdeling": l.department,
+                "prosjekt": l.project,
+            }))
+            .collect::<Vec<_>>()
+    );
+    Ok(Json(out))
 }
 
 pub async fn credit_note(

@@ -12,6 +12,7 @@
   import Prosjekt from "./Prosjekt.svelte";
   import Bokforingsspesifikasjon from "./Bokforingsspesifikasjon.svelte";
   import Revisjon from "./Revisjon.svelte";
+  import Forankring from "./Forankring.svelte";
   import Balansedokumentasjon from "./Balansedokumentasjon.svelte";
 
   let { companyId, extra } = $props();
@@ -98,3 +99,7 @@
     <Revisjon {companyId} />
   {/if}
 </Card>
+
+{#if rapport === "revisjon"}
+  <Forankring {companyId} />
+{/if}

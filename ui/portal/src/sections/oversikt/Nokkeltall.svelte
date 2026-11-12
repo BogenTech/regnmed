@@ -1,6 +1,7 @@
 <script>
-  // Nøkkeltall (#36): rene SUM-tall fra serveren, CSS-søyler uten
-  // diagrambibliotek — frugality.
+  // Resultat per måned (#36): rene SUM-tall fra serveren, CSS-søyler
+  // uten diagrambibliotek — frugality. Underskudd tegnes NEDOVER fra
+  // nullinjen, aldri som en rød søyle oppover: retningen er tallet.
   import { kr } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
 
@@ -9,48 +10,40 @@
   const MND_NAVN = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
 
   let maxAbs = $derived(Math.max(...tall.maaneder.map(Math.abs), 1));
-  let diff = $derived(tall.resultat_hittil_ore - tall.resultat_fjor_ore);
+  let hasLoss = $derived(tall.maaneder.some((v) => v < 0));
+  const barHeight = (v) => Math.max(2, Math.round((Math.abs(v) / maxAbs) * 44));
+  // Thousands of kroner, so twelve labels fit side by side. A month too
+  // small to round to a thousand still says it is not zero.
+  const thousands = (v) => {
+    const k = Math.round(v / 100000);
+    return k ? String(k).replace("-", "−") : (v < 0 ? "−" : "") + "<1";
+  };
 </script>
 
-<Card title={"Nøkkeltall " + tall.year}>
-  <div class="stats stats-vertical lg:stats-horizontal bg-base-200 w-full mb-3">
-    <div class="stat">
-      <div class="stat-title">Resultat hittil i år</div>
-      <div class="stat-value text-xl">{kr(tall.resultat_hittil_ore)}</div>
-      <div class="stat-desc">
-        {diff >= 0 ? "+" : "−"}{kr(Math.abs(diff))} mot i fjor ({kr(tall.resultat_fjor_ore)})
-      </div>
-    </div>
-    <div class="stat">
-      <div class="stat-title">Disponibelt om alt gjøres opp</div>
-      <div class="stat-value text-xl {tall.likviditet.disponibelt_ore < 0 ? 'text-error' : ''}">
-        {kr(tall.likviditet.disponibelt_ore)}
-      </div>
-      <div class="stat-desc">
-        bank {kr(tall.likviditet.bank_ore)} + kunder {kr(tall.likviditet.kundefordringer_ore)} −
-        leverandører {kr(tall.likviditet.leverandorgjeld_ore)} − mva {kr(tall.likviditet.mva_netto_ore)}
-      </div>
-    </div>
-    <div class="stat">
-      <div class="stat-title">Kommende frister</div>
-      <div class="stat-value text-base">
-        {tall.frister.length
-          ? tall.frister.map((f) => f.label + " — " + f.frist).join(" · ")
-          : "ingen kommende frister"}
-      </div>
-      <div class="stat-desc">mva-melding etter selskapets terminordning</div>
-    </div>
-  </div>
-  <div class="flex gap-2 items-end">
+<Card title={"Resultat per måned " + tall.year}>
+  <div class="flex gap-1 sm:gap-2">
     {#each tall.maaneder as v, i}
-      <div class="flex flex-col items-center justify-end gap-1" style="height:64px">
-        <div
-          style={"height:" + (Math.round((Math.abs(v) / maxAbs) * 48) || 1) + "px"}
-          class="w-4 rounded-t {v >= 0 ? 'bg-primary' : 'bg-error'}"
-          title={MND_NAVN[i] + ": " + kr(v)}
-        ></div>
-        <span class="text-[10px] opacity-60">{MND_NAVN[i]}</span>
+      <div class="flex-1 min-w-0 flex flex-col items-center" title={MND_NAVN[i] + ": " + kr(v)}>
+        <div class="h-12 w-full flex items-end justify-center">
+          {#if v > 0}
+            <div class="w-full max-w-6 rounded-t bg-primary" style:height={barHeight(v) + "px"}></div>
+          {/if}
+        </div>
+        <div class="h-px w-full bg-base-300"></div>
+        {#if hasLoss}
+          <div class="h-12 w-full flex items-start justify-center">
+            {#if v < 0}
+              <div class="w-full max-w-6 rounded-b bg-error" style:height={barHeight(v) + "px"}></div>
+            {/if}
+          </div>
+        {/if}
+        <span class="text-[10px] opacity-60 mt-1">{MND_NAVN[i]}</span>
+        <span class="hidden sm:inline text-[10px] tabular-nums whitespace-nowrap {v < 0 ? 'text-error' : ''}">
+          {v ? thousands(v) : ""}
+        </span>
       </div>
     {/each}
   </div>
+  <!-- Twelve value labels collide on a phone; the shape still reads. -->
+  <p class="hidden sm:block text-xs opacity-60">Tall i tusen kroner.</p>
 </Card>
