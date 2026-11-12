@@ -1237,6 +1237,201 @@ async fn a_run_with_ore_in_the_avgift_books_whole_kroner_and_renders() {
     assert!(xml.contains("<sumArbeidsgiveravgift>10481</sumArbeidsgiveravgift>"));
 }
 
+/// F108: everyone employed in the melding's kalendermåned is reported,
+/// paid or not, until the month the employment ends. The month is the
+/// PAYMENT date's -- a March run paid in April is April's melding.
+#[tokio::test]
+async fn employments_without_pay_are_reported_until_they_end() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let paid = employee(&pool, company, "26829398612", "Kari Betalt", 4_000_000).await;
+    let leave = employee(&pool, company, "03048810003", "Per Permisjon", 3_000_000).await;
+    let left = employee(&pool, company, "15076500565", "Siv Sluttet", 3_000_000).await;
+    let starting = employee(&pool, company, "07045020090", "Nils Ny", 3_000_000).await;
+    for id in [paid, leave, left, starting] {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    // Siv left in March, Nils starts in April.
+    payroll::end_employment(&pool, company, left, Some(date(2026, 3, 31)))
+        .await
+        .unwrap();
+    sqlx::query("update employee set ansatt_fra = $2 where id = $1")
+        .bind(starting)
+        .bind(date(2026, 4, 1))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The March run, paid on 2 April: April's melding.
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 4, 2),
+        "I",
+        &[run_entry(paid, None)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+    let names: Vec<&str> = draft
+        .melding
+        .recipients
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    // The paid first, then the unpaid in the register's (name) order.
+    assert_eq!(
+        names,
+        ["Kari Betalt", "Nils Ny", "Per Permisjon"],
+        "{names:?}"
+    );
+    let unpaid = &draft.melding.recipients[2];
+    assert!(unpaid.income.is_empty() && unpaid.withholding_ore == 0);
+    let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+    assert!(xml.contains("<norskIdentifikator>03048810003</norskIdentifikator>"));
+    assert!(!xml.contains("15076500565"), "Siv sluttet i mars");
+    // The unpaid add nothing to the avgift: 40 000 kr × 14,1 %.
+    assert!(xml.contains("<sumArbeidsgiveravgift>5640</sumArbeidsgiveravgift>"));
+}
+
+/// An end date entered LATE: Siv left in January, February's delivered
+/// melding still reported her without a sluttdato, and only then was the
+/// end date set. March must report her again WITH it (F108), and April no
+/// longer. Ola, whose end was known before February, stays out.
+#[tokio::test]
+async fn an_end_date_entered_late_is_reported_the_next_month() {
+    use regnmed_db::amelding_submission as sub;
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let kari = employee(&pool, company, "26829398612", "Kari Betalt", 4_000_000).await;
+    let siv = employee(&pool, company, "15076500565", "Siv Sluttet", 3_000_000).await;
+    let ola = employee(&pool, company, "03048810003", "Ola Tidlig", 3_000_000).await;
+    for id in [kari, siv, ola] {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    payroll::end_employment(&pool, company, ola, Some(date(2026, 1, 31)))
+        .await
+        .unwrap();
+    let run_in = |month: u32| {
+        let pool = pool.clone();
+        async move {
+            payroll::run_payroll(
+                &pool,
+                company,
+                2026,
+                month,
+                date(2026, month, 25),
+                "I",
+                &[run_entry(kari, None)],
+                "Test",
+            )
+            .await
+            .unwrap()
+            .id
+        }
+    };
+    let deliver = |run: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let s = sub::prepare_submission(&pool, company, run, false, "Test")
+                .await
+                .unwrap();
+            sub::record_receipt(&pool, s.id, "d", "f", "Test")
+                .await
+                .unwrap();
+        }
+    };
+    let names = |run: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let draft = payroll::amelding_for_run(&pool, company, run, chrono::Utc::now())
+                .await
+                .unwrap();
+            assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+            draft
+                .melding
+                .recipients
+                .iter()
+                .map(|r| (r.name.clone(), r.employment.end_date))
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let february = run_in(2).await;
+    assert_eq!(
+        names(february).await,
+        [("Kari Betalt".into(), None), ("Siv Sluttet".into(), None)]
+    );
+    deliver(february).await;
+    // Only now does anyone record that Siv left in January.
+    payroll::end_employment(&pool, company, siv, Some(date(2026, 1, 31)))
+        .await
+        .unwrap();
+
+    let march = run_in(3).await;
+    assert_eq!(
+        names(march).await,
+        [
+            ("Kari Betalt".into(), None),
+            ("Siv Sluttet".into(), Some(date(2026, 1, 31)))
+        ]
+    );
+    deliver(march).await;
+
+    let april = run_in(4).await;
+    assert_eq!(names(april).await, [("Kari Betalt".into(), None)]);
+}
+
+/// The end date is what stops F108 reporting; it cannot precede the
+/// start, and a mistaken one can be cleared.
+#[tokio::test]
+async fn an_employment_end_date_is_checked_and_can_be_cleared() {
+    let Some(pool) = pool().await else { return };
+    let other = company(&pool).await;
+    let company = company(&pool).await;
+    let id = employee(&pool, company, "26829398612", "Kari Utvikler", 4_000_000).await;
+    let err = payroll::end_employment(&pool, company, id, Some(date(2024, 12, 31)))
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("før arbeidsforholdet startet"),
+        "{err}"
+    );
+    let end = |pool: PgPool| async move {
+        payroll::list_ansatte(&pool, company)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == id)
+            .unwrap()
+            .employed_to
+    };
+    payroll::end_employment(&pool, company, id, Some(date(2026, 5, 31)))
+        .await
+        .unwrap();
+    assert_eq!(end(pool.clone()).await, Some(date(2026, 5, 31)));
+    payroll::end_employment(&pool, company, id, None)
+        .await
+        .unwrap();
+    assert_eq!(end(pool.clone()).await, None);
+    // Another company's employee is unknown.
+    assert!(
+        payroll::end_employment(&pool, other, id, None)
+            .await
+            .is_err()
+    );
+}
+
 /// Everything that blocks delivery is listed at once, in words — not the
 /// first thing the renderer trips over.
 #[tokio::test]
@@ -1305,7 +1500,13 @@ async fn every_hindrance_is_listed_before_anything_is_rendered() {
         all.contains("Eva Begge: det ble ikke lagret om lønnen"),
         "{all}"
     );
-    assert!(all.contains("Per Ulønnet var ansatt i 03/2026"), "{all}");
+    // Not paid, so in the melding with the arbeidsforhold alone -- which
+    // has to be complete like anyone else's.
+    assert!(
+        all.contains("Per Ulønnet: arbeidsforholdet mangler virksomhet"),
+        "{all}"
+    );
+    assert!(all.contains("F108"), "{all}");
     assert!(!all.contains("Kari"), "{all}");
 }
 

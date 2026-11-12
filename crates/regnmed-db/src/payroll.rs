@@ -301,6 +301,40 @@ pub async fn update_employment_details(
     Ok(())
 }
 
+/// Sets (or corrects, or clears) the day the employment ends. The
+/// a-melding reports an arbeidsforhold every month until the month its
+/// sluttdato is reported (F108), so without this an employee who left
+/// would be reported as employed forever. Pay after the end date --
+/// feriepenger paid the year after, say -- still runs and is reported
+/// with the sluttdato.
+pub async fn end_employment(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    end: Option<NaiveDate>,
+) -> Result<()> {
+    let from: Option<NaiveDate> =
+        sqlx::query_scalar("select ansatt_fra from employee where id = $1 and company_id = $2")
+            .bind(employee_id)
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await?;
+    let from = from.context("ukjent ansatt")?;
+    if let Some(end) = end {
+        ensure!(
+            end >= from,
+            "sluttdatoen ({end}) kan ikke være før arbeidsforholdet startet ({from})"
+        );
+    }
+    sqlx::query("update employee set ansatt_til = $3 where id = $1 and company_id = $2")
+        .bind(employee_id)
+        .bind(company_id)
+        .bind(end)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employee>> {
     let rows = sqlx::query(
         "select e.id, e.fodselsnummer, e.navn, e.stilling, e.ansatt_fra, e.ansatt_til,
@@ -1483,7 +1517,7 @@ pub async fn amelding_for_run(
     use regnmed_core::amelding::{Income, IncomeKind, Melding, Recipient};
 
     let run = sqlx::query(
-        "select ar, maned, utbetalt_dato, sone, aga_ore from payroll_run
+        "select utbetalt_dato, sone, aga_ore from payroll_run
          where id = $1 and company_id = $2",
     )
     .bind(run_id)
@@ -1491,7 +1525,6 @@ pub async fn amelding_for_run(
     .fetch_optional(pool)
     .await?
     .context("ukjent lønnskjøring")?;
-    let (year, month): (i32, i32) = (run.get("ar"), run.get("maned"));
     let paid_date: NaiveDate = run.get("utbetalt_dato");
     let zone_slug: String = run.get("sone");
     let zone = Zone::from_slug(&zone_slug)
@@ -1595,26 +1628,55 @@ pub async fn amelding_for_run(
         ));
     }
 
-    // F108: an active arbeidsforhold is reported every month until its
-    // end date, paid or not. A run only has lines for those who were
-    // paid, and a melding without the others is wrong at NAV.
-    let month_start = NaiveDate::from_ymd_opt(year, month as u32, 1).context("ugyldig måned")?;
+    // F108: an active arbeidsforhold is reported every month until the
+    // month its end date is reported, paid or not -- so everyone employed
+    // in the melding's kalendermåned who has no line in the run goes in
+    // with the arbeidsforhold alone (the XSD allows an inntektsmottaker
+    // without inntekt). The month is the PAYMENT date's, not the payroll
+    // month's: a March run paid on 2 April is April's melding.
+    let month_start = paid_date.with_day(1).context("ugyldig dato")?;
     let month_end = month_start
         .checked_add_months(chrono::Months::new(1))
         .and_then(|d| d.pred_opt())
         .context("ugyldig måned")?;
+    // An end date entered late: the employee left before this month, but
+    // last month's delivered melding still had them open, so this one must
+    // report them -- with the sluttdato -- or Skatteetaten flags last month.
+    let last_month = month_start
+        .checked_sub_months(chrono::Months::new(1))
+        .context("ugyldig måned")?
+        .format("%Y-%m")
+        .to_string();
+    let open_last_month =
+        crate::amelding_submission::open_after(pool, company_id, &last_month).await?;
     for e in &employees {
         let paid = lines
             .iter()
             .any(|l| l.get::<Uuid, _>("employee_id") == e.id);
-        if !paid && e.employed_in(month_end, month_start) {
+        let ended_late = e.employed_to.is_some_and(|t| t < month_start)
+            && open_last_month.contains(&e.id.to_string());
+        if paid || !(e.employed_in(month_end, month_start) || ended_late) {
+            continue;
+        }
+        let missing = e.amelding_missing();
+        if !missing.is_empty() {
             hindrances.push(format!(
-                "{} var ansatt i {month:02}/{year}, men har ingen linje i kjøringen — \
-                 a-meldingen skal rapportere arbeidsforholdet hver måned også uten lønn (F108), \
-                 og det er ikke bygget ennå",
-                e.name
+                "{}: arbeidsforholdet mangler {} (ansatt i {:02}/{}, uten lønn i kjøringen, men \
+                 arbeidsforholdet skal rapporteres hver måned — F108)",
+                e.name,
+                missing.join(", "),
+                month_start.month(),
+                month_start.year()
             ));
         }
+        business_units.extend(e.details.business_unit_orgnumber.clone());
+        recipients.push(Recipient {
+            name: e.name.clone(),
+            nin: nins.get(&e.id).cloned().unwrap_or_default(),
+            employment: e.employment(),
+            income: Vec::new(),
+            withholding_ore: 0,
+        });
     }
 
     Ok(AmeldingDraft {
