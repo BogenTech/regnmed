@@ -298,9 +298,12 @@ ufakturerte timer — docs/faktura.md) · Produkter
 navneendring, avdelinger — docs/dimensjoner.md) · Timer (ukegrid m/
 autolagring per celle, kopier forrige uke, fakturagrunnlag m/
 personutvalg — docs/timer.md) · Lønn · Utlegg · Anlegg ·
-Aksjonærer · Kunder og Leverandører (hver sin speilvendte seksjon:
-register m/ søk og sortering, partsside m/ kontaktinfo, åpne poster og
-manuell matching) · Reskontro (alle parter på tvers, CSV-import) · Mva
+Aksjonærer · Kunder (register m/ søk, sortering og
+sider på serveren, utestående og forfalt per kunde; ny kunde fra
+organisasjonsnummeret m/ navn og adresse fra Enhetsregisteret og varsel
+ved konkurs/avvikling; kundeside m/ kundens fakturaer, «Ny faktura» med
+kunden valgt, merket kontaktinfo og reskontroposter under) · Leverandører
+(register, partsside m/ kontaktinfo, åpne poster og manuell matching) · Reskontro (alle parter på tvers, CSV-import) · Mva
 (spesifikasjon, eksport, terminordning) · Rapporter (saldobalanse,
 resultat, balanse, budsjett/avvik, konto-, reskontro- og
 bokføringsspesifikasjon, revisjon) · Bank (kontoutskrift, avstemming,

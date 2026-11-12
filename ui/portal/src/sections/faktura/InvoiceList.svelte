@@ -9,7 +9,11 @@
   import { kr, krWhole, formatDate } from "../../lib/format.js";
   import InvoiceStatus from "./InvoiceStatus.svelte";
 
-  let { companyId, query = "" } = $props();
+  // `party` (a party number) embeds the list on a customer's page: one
+  // customer's invoices, no page heading, no address or shortcuts.
+  let { companyId, query = "", party = null } = $props();
+  const embedded = untrack(() => !!party);
+  const newHref = untrack(() => "#/c/" + companyId + "/faktura/ny" + (party ? "?kunde=" + party : ""));
 
   const PAGE = 50;
   const FILTERS = [
@@ -48,6 +52,7 @@
     if (before) p.set("before", before);
     if (status) p.set("status", status);
     if (search.trim()) p.set("q", search.trim());
+    if (party) p.set("party_no", party);
     return "/companies/" + companyId + "/invoices?" + p;
   }
 
@@ -80,6 +85,7 @@
   // Filter and search live in the address without adding history
   // entries per keystroke; the browser's back button leaves the list.
   $effect(() => {
+    if (embedded) return;
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     if (search.trim()) p.set("q", search.trim());
@@ -99,6 +105,7 @@
   });
 
   $effect(() => {
+    if (embedded) return;
     api("/companies/" + companyId + "/timesheet/unbilled")
       .then((r) => {
         unbilledOre = r.groups.reduce((s, g) => s + Math.round((g.minutter * g.timesats_ore) / 60), 0);
@@ -122,6 +129,7 @@
   // "/" jumps to search and "n" starts a new invoice, unless the user is
   // typing somewhere.
   function onKey(e) {
+    if (embedded) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest("input, textarea, select, [contenteditable]")) return;
     if (e.key === "/") {
@@ -135,12 +143,14 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="flex flex-wrap items-center gap-3 mb-4">
-  <h1 class="text-2xl font-bold mr-auto">Fakturaer</h1>
-  <a class="btn btn-primary" href={"#/c/" + companyId + "/faktura/ny"} aria-keyshortcuts="n">
-    Ny faktura <kbd class="kbd kbd-sm hidden sm:inline-flex">N</kbd>
-  </a>
-</div>
+{#if !embedded}
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-2xl font-bold mr-auto">Fakturaer</h1>
+    <a class="btn btn-primary" href={newHref} aria-keyshortcuts="n">
+      Ny faktura <kbd class="kbd kbd-sm hidden sm:inline-flex">N</kbd>
+    </a>
+  </div>
+{/if}
 
 {#if unbilledOre > 0}
   <div class="alert alert-info alert-soft mb-4">
@@ -151,18 +161,19 @@
 
 <div class="card border border-base-300 bg-base-100 mb-6">
 <div class="card-body overflow-x-auto">
+  {#if embedded}<h2 class="card-title">Fakturaer</h2>{/if}
   <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
-    <label class="input sm:w-72">
+    <label class="input w-full sm:w-72">
       <span class="sr-only">Søk i fakturaer</span>
       <svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
       <input
         type="search"
-        placeholder="Nummer, KID eller kunde"
+        placeholder={embedded ? "Nummer eller KID" : "Nummer, KID eller kunde"}
         bind:value={search}
         bind:this={searchInput}
-        aria-keyshortcuts="/"
+        aria-keyshortcuts={embedded ? undefined : "/"}
       />
-      <kbd class="kbd kbd-sm hidden sm:inline-flex">/</kbd>
+      {#if !embedded}<kbd class="kbd kbd-sm hidden sm:inline-flex">/</kbd>{/if}
     </label>
     <div class="flex flex-wrap gap-1" role="group" aria-label="Vis fakturaer">
       {#each FILTERS as [key, label, count] (key)}
@@ -195,7 +206,7 @@
     <div class="py-8 text-center">
       <p class="opacity-70 mb-3">{search.trim() ? "Ingen fakturaer passer søket." : EMPTY[status]}</p>
       {#if !search.trim() && status === ""}
-        <a class="btn btn-primary btn-sm" href={"#/c/" + companyId + "/faktura/ny"}>Lag den første fakturaen</a>
+        <a class="btn btn-primary btn-sm" href={newHref}>Lag den første fakturaen</a>
       {/if}
     </div>
   {:else}
@@ -204,7 +215,7 @@
       <thead>
         <tr>
           <th scope="col">Faktura</th>
-          <th scope="col" class="hidden md:table-cell">Dato</th>
+          <th scope="col" class={embedded ? "hidden" : "hidden md:table-cell"}>Dato</th>
           <th scope="col" class="hidden md:table-cell">Forfall</th>
           <th scope="col" class="text-right">Beløp</th>
           <th scope="col" class="text-right hidden sm:table-cell">Utestående</th>
@@ -222,7 +233,7 @@
                 href={"#/c/" + companyId + "/faktura/" + i.invoice_id}
               >
                 {i.is_credit_note ? "Kreditnota" : "Faktura"} {i.invoice_no}
-                <span class="block text-sm font-normal opacity-70">{i.party_name}</span>
+                {#if !embedded}<span class="block text-sm font-normal opacity-70">{i.party_name}</span>{/if}
               </a>
               {#if aging?.last[i.invoice_id]?.last_steg}
                 <span class="block text-xs opacity-70">
@@ -232,7 +243,7 @@
               {/if}
               <span class="block mt-1 sm:hidden"><InvoiceStatus status={i.status} dueDate={i.due_date} /></span>
             </td>
-            <td class="hidden md:table-cell whitespace-nowrap">{formatDate(i.invoice_date)}</td>
+            <td class="{embedded ? 'hidden' : 'hidden md:table-cell'} whitespace-nowrap">{formatDate(i.invoice_date)}</td>
             <td class="hidden md:table-cell whitespace-nowrap">
               {i.is_credit_note ? "–" : formatDate(i.due_date)}
             </td>

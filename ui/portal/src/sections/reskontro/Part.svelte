@@ -6,14 +6,16 @@
   // leverandørens faktura er kredit og utbetalingen debet. Derfor er
   // etikettene styrt av `kind` — en «Faktura»-merkelapp over
   // utbetalingen ville fått brukeren til å matche feil vei.
-  import { untrack } from "svelte";
-  import { api, post, send } from "../../lib/api.js";
-  import { kr } from "../../lib/format.js";
+  import { api, post } from "../../lib/api.js";
+  import { kr, parseKr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { harRett } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
+  import PartyContact from "../../components/PartyContact.svelte";
 
-  let { companyId, party, partyId, tilbake = "reskontro" } = $props();
+  // `embedded` (the customer page): the postings without their own page
+  // heading and back link, under a plain title.
+  let { companyId, party, partyId, tilbake = "reskontro", contact = true, embedded = false } = $props();
 
   // Parts-typen kommer fra listen; mangler den (direkte lenke), er
   // kunde det trygge valget — samme etiketter som før.
@@ -23,9 +25,6 @@
 
   let items = $state(null);
   let kunApne = $state(false);
-  let address = $state(untrack(() => party?.address || ""));
-  let email = $state(untrack(() => party?.email || ""));
-  let bankAccount = $state(untrack(() => party?.bank_account || ""));
 
   let kanMatche = $derived(harRett(companyId, "RESKONTRO_SKRIV"));
 
@@ -61,7 +60,12 @@
 
   async function match(event) {
     event.preventDefault();
-    const ore = belop.trim() ? Math.round(Number(belop.replace(",", ".")) * 100) : foreslatt;
+    let ore = foreslatt;
+    try {
+      if (belop.trim()) ore = parseKr(belop); // "1 250,00" as well as "1250"
+    } catch {
+      ore = NaN;
+    }
     if (!(ore > 0)) {
       toast("Beløpet må være positivt", false);
       return;
@@ -82,22 +86,12 @@
     }
   }
 
-  async function save() {
-    try {
-      await send("PUT", "/companies/" + companyId + "/parties/" + partyId + "/contact", {
-        address,
-        email,
-        bank_account: bankAccount,
-      });
-      toast("Kontaktinfo lagret", true);
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
 </script>
 
-<Card title={party?.name || ""}>
-  <a href={"#/c/" + companyId + "/" + tilbake} class="btn btn-ghost btn-xs w-fit">← tilbake</a>
+<Card title={embedded ? "Poster i reskontroen" : party?.name || ""}>
+  {#if !embedded}
+    <a href={"#/c/" + companyId + "/" + tilbake} class="btn btn-ghost btn-xs w-fit">← tilbake</a>
+  {/if}
   <label class="label cursor-pointer w-fit gap-2">
     <input type="checkbox" class="checkbox checkbox-sm" bind:checked={kunApne} />
     <span class="label-text">Bare åpne poster</span>
@@ -167,25 +161,8 @@
   </Card>
 {/if}
 
-{#if party}
+{#if party && contact}
   <Card title="Kontaktinfo">
-    <div class="grid gap-2 max-w-md">
-      <input
-        class="input input-sm"
-        placeholder="Adresse (på fakturaen)"
-        bind:value={address}
-      />
-      <input
-        class="input input-sm"
-        placeholder="E-post (for utsendelse)"
-        bind:value={email}
-      />
-      <input
-        class="input input-sm"
-        placeholder="Kontonummer (for remittering)"
-        bind:value={bankAccount}
-      />
-      <button class="btn btn-sm" onclick={save}>Lagre</button>
-    </div>
+    <div class="max-w-md"><PartyContact {companyId} {party} /></div>
   </Card>
 {/if}

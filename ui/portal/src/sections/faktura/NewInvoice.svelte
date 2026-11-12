@@ -3,7 +3,7 @@
   // summen regnet mens man skriver. En utstedt faktura kan aldri endres
   // (feil rettes med kreditnota), så utstedelsen viser en oppsummering
   // først og lander på fakturaen med «Send til kunde» som neste steg.
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { kr, parseKr, today, minutterTilTimer } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -11,7 +11,10 @@
   import DimSelect from "../../components/DimSelect.svelte";
   import { VAT_CODES, lineNetOre, vatOfBase, milliHours } from "./invoiceMath.js";
 
-  let { companyId } = $props();
+  // `?kunde=<party number>` (from a customer's page) preselects that
+  // customer; otherwise nothing is preselected on purpose.
+  let { companyId, query = "" } = $props();
+  const presetParty = untrack(() => new URLSearchParams(query).get("kunde"));
 
   const PAYMENT_DAYS = 14;
 
@@ -24,7 +27,11 @@
   $effect(() => {
     const c = "/companies/" + companyId;
     api(c + "/parties?kind=kunde")
-      .then((r) => (parties = r.parties))
+      .then((r) => {
+        parties = r.parties;
+        const preset = r.parties.find((p) => p.party_no === presetParty);
+        if (preset && !customer) customer = partyLabel(preset);
+      })
       .catch((e) => toast(e.message, false));
     api(c + "/products").then((r) => (products = r.products.filter((p) => p.aktiv))).catch(() => {});
     api(c + "/dimensions").then((r) => (dims = r.dimensions)).catch(() => {});
@@ -263,7 +270,7 @@
 {:else if parties.length === 0}
   <div class="alert alert-info">
     <span>Du trenger en kunde før du kan fakturere.</span>
-    <a class="btn btn-sm" href={"#/c/" + companyId + "/kunder"}>Opprett kunde</a>
+    <a class="btn btn-sm" href={"#/c/" + companyId + "/kunder/ny"}>Opprett kunde</a>
   </div>
 {:else}
   <form
@@ -293,13 +300,13 @@
               <option value={partyLabel(p)}></option>
             {/each}
           </datalist>
-          <span id="customer-help" class="label {fieldError('customer') ? 'text-error' : ''}">
+          <span id="customer-help" class="label whitespace-normal {fieldError('customer') ? 'text-error' : ''}">
             {#if fieldError("customer")}
               {fieldError("customer")}
             {:else if party}
               {party.email ? "Sendes til " + party.email : "Kunden har ingen e-postadresse ennå"}
             {:else}
-              <a class="link" href={"#/c/" + companyId + "/kunder"}>Ny kunde?</a>
+              <a class="link" href={"#/c/" + companyId + "/kunder/ny"}>Ny kunde?</a>
             {/if}
           </span>
         </label>
@@ -322,7 +329,7 @@
             aria-describedby="due-help"
             aria-invalid={!!fieldError("due")}
           />
-          <span id="due-help" class="label {fieldError('due') ? 'text-error' : ''}">
+          <span id="due-help" class="label whitespace-normal {fieldError('due') ? 'text-error' : ''}">
             {fieldError("due") || dueDays + " dagers betalingsfrist"}
           </span>
         </label>

@@ -200,6 +200,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/orders/{order_id}/invoice` | POST |
 | `/companies/{company_id}/orders/{order_id}/pdf` | GET |
 | `/companies/{company_id}/parties` | GET POST |
+| `/companies/{company_id}/parties/{party_id}` | GET |
 | `/companies/{company_id}/parties/{party_id}/contact` | PUT |
 | `/companies/{company_id}/parties/{party_id}/items` | GET |
 | `/companies/{company_id}/payments/payable` | GET |

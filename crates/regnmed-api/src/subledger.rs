@@ -23,6 +23,31 @@ use crate::auth::{ApiError, AuthPerson};
 #[derive(Deserialize)]
 pub struct KindQuery {
     kind: Option<String>,
+    /// Exact party number or orgnr, or part of the name or e-mail.
+    q: Option<String>,
+    /// `number` (default), `name`, `balance` or `overdue`.
+    sort: Option<String>,
+    #[serde(default)]
+    desc: bool,
+    /// At most this many (1..=200). Absent = all, as before.
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: i64,
+}
+
+fn party_json(p: &regnmed_db::PartyRow) -> serde_json::Value {
+    json!({
+        "party_id": p.id,
+        "party_no": p.party_no,
+        "kind": p.kind,
+        "name": p.name,
+        "orgnr": p.orgnumber,
+        "address": p.address,
+        "email": p.email,
+        "bank_account": p.bank_account,
+        "saldo_ore": p.balance_ore,
+        "overdue_ore": p.overdue_ore,
+    })
 }
 
 pub async fn list_parties(
@@ -32,20 +57,39 @@ pub async fn list_parties(
     Query(query): Query<KindQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::SubledgerRead).await?;
-    let parties = regnmed_db::list_parties(&state.pool, company_id, query.kind.as_deref()).await?;
+    let filter = regnmed_db::PartyFilter {
+        kind: query.kind.as_deref(),
+        id: None,
+        search: query.q.as_deref(),
+        sort: query.sort.as_deref(),
+        descending: query.desc,
+        limit: query.limit.map(|n| n.clamp(1, 200)),
+        offset: query.offset,
+    };
+    let page = regnmed_db::list_parties(&state.pool, company_id, &filter)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "parties": parties.iter().map(|p| json!({
-            "party_id": p.id,
-            "party_no": p.party_no,
-            "kind": p.kind,
-            "name": p.name,
-            "orgnr": p.orgnumber,
-            "address": p.address,
-            "email": p.email,
-            "bank_account": p.bank_account,
-            "saldo_ore": p.balance_ore,
-        })).collect::<Vec<_>>(),
+        "parties": page.rows.iter().map(party_json).collect::<Vec<_>>(),
+        "total": page.total,
     })))
+}
+
+/// One party with saldo and overdue amount -- the portal's customer page,
+/// without loading the whole register.
+pub async fn get_party(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, party_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::SubledgerRead).await?;
+    let filter = regnmed_db::PartyFilter {
+        id: Some(party_id),
+        ..Default::default()
+    };
+    let page = regnmed_db::list_parties(&state.pool, company_id, &filter).await?;
+    let party = page.rows.first().ok_or(ApiError::NotFound)?;
+    Ok(Json(party_json(party)))
 }
 
 #[derive(Deserialize)]
@@ -55,6 +99,11 @@ pub struct CreatePartyRequest {
     #[serde(rename = "orgnr")]
     orgnumber: Option<String>,
     party_no: Option<String>,
+    /// Contact info in the same request, so a new customer can be
+    /// invoiced and e-mailed at once (the portal's Ny kunde form).
+    address: Option<String>,
+    email: Option<String>,
+    bank_account: Option<String>,
 }
 
 pub async fn create_party(
@@ -64,6 +113,17 @@ pub async fn create_party(
     Json(request): Json<CreatePartyRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::SubledgerWrite).await?;
+    let contact =
+        request.address.is_some() || request.email.is_some() || request.bank_account.is_some();
+    if contact {
+        // Contact info has its own right; the same rule as PUT .../contact.
+        require(&state, person.person_id, company_id, Right::ContactWrite).await?;
+        regnmed_db::validate_party_contact(
+            request.email.as_deref(),
+            request.bank_account.as_deref(),
+        )
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    }
     let (party_id, party_no) = regnmed_db::create_party(
         &state.pool,
         company_id,
@@ -74,6 +134,18 @@ pub async fn create_party(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if contact {
+        regnmed_db::update_party_contact(
+            &state.pool,
+            company_id,
+            party_id,
+            request.address.as_deref(),
+            request.email.as_deref(),
+            request.bank_account.as_deref(),
+        )
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    }
     Ok(Json(json!({ "party_id": party_id, "party_no": party_no })))
 }
 
