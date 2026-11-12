@@ -12,6 +12,19 @@
 
   let status = $state(null);
   let vilkar = $state(null); // { versjon, tekst } når åpnet
+  let register = $state(null); // §7.1: kall til myndighetene, hentet ved behov
+
+  const SKJEMA = {
+    "a-melding": "A-melding",
+    aksjonaerregisteroppgave: "Aksjonærregisteroppgave",
+    "altinn-hendelser": "Varsling fra Altinn",
+  };
+  const HENDELSE = {
+    receipt: "kvittering",
+    failed: "feilet",
+    feedback: "svar",
+    outcome: "svar",
+  };
 
   async function hent() {
     try {
@@ -29,6 +42,14 @@
   async function les() {
     try {
       vilkar = await api("/terms");
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function visRegister() {
+    try {
+      register = await api("/companies/" + companyId + "/authority-calls");
     } catch (error) {
       toast(error.message, false);
     }
@@ -81,5 +102,44 @@
     {:else}
       <button class="btn btn-sm btn-outline" onclick={les}>Les kundevilkårene</button>
     {/if}
+    {#if status.historikk.some((h) => h.versjon !== status.versjon)}
+      <p class="text-xs opacity-60 mt-3 mb-1">Tidligere godtatte versjoner</p>
+      <ul class="text-xs">
+        {#each status.historikk.filter((h) => h.versjon !== status.versjon) as h}
+          <li>
+            <a class="link" href={"/vilkar/" + h.versjon} target="_blank">{h.versjon.slice(0, 12)}</a>
+            — {h.godtatt_av}, {new Date(h.godtatt_tidspunkt).toLocaleDateString("nb-NO")}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <div class="mt-3">
+      {#if !register}
+        <button class="btn btn-xs btn-ghost" onclick={visRegister}>
+          Vis innsendinger til myndighetene
+        </button>
+      {:else if register.length === 0}
+        <p class="text-xs opacity-60">Ingen innsendinger til myndighetene ennå.</p>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table table-xs">
+            <thead>
+              <tr><th>Skjema</th><th>Gjelder</th><th>Bestilt</th><th>Av</th><th>Utfall</th></tr>
+            </thead>
+            <tbody>
+              {#each register as r}
+                <tr>
+                  <td>{SKJEMA[r.skjema] ?? r.skjema}</td>
+                  <td>{r.gjelder}</td>
+                  <td>{new Date(r.bestilt_tidspunkt).toLocaleString("nb-NO")}</td>
+                  <td>{r.bestilt_av}</td>
+                  <td>{r.hendelser.map((h) => HENDELSE[h.hendelse] ?? h.hendelse).join(", ") || "–"}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </div>
   {/if}
 </Card>

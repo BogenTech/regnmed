@@ -745,4 +745,46 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
         "{body}"
     );
     assert_eq!(calls.lock().unwrap().len(), 10, "nothing more was sent");
+
+    // Terms §7.1: the register shows every filing, who asked, and what
+    // came back -- read from the submission records, not a second log.
+    let (status, body) = call(
+        &state,
+        &token,
+        "GET",
+        &format!("{base}/authority-calls"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let register = body.as_array().unwrap();
+    assert_eq!(register.len(), 2, "{body}");
+    assert!(
+        register
+            .iter()
+            .all(|c| c["skjema"] == "aksjonaerregisteroppgave"
+                && c["gjelder"] == "2026"
+                && !c["bestilt_av"].as_str().unwrap().is_empty())
+    );
+    let kinds = |c: &serde_json::Value| -> Vec<String> {
+        c["hendelser"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["hendelse"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(register[0]["id"], delivered.as_str());
+    assert_eq!(kinds(&register[0]), ["receipt", "outcome"]);
+    assert_eq!(register[0]["hendelser"][0]["forsendelse_id"], "f-1");
+    assert_eq!(kinds(&register[1]), ["failed", "failed"]);
+    assert!(
+        register[1]["hendelser"][0]["feil"]
+            .to_string()
+            .contains("GLD_023")
+    );
+    assert!(
+        register[0]["hendelser"][1]["feil"].is_null(),
+        "answers are not reproduced"
+    );
 }

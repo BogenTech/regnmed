@@ -62,3 +62,80 @@ pub async fn accept(
         .await?
         .expect("just inserted or already there"))
 }
+
+/// Every version the company has accepted, newest first: which text bound
+/// the company at a given time.
+pub async fn acceptances(pool: &PgPool, company_id: Uuid) -> Result<Vec<Acceptance>> {
+    let rows = sqlx::query(
+        "select terms_sha256, accepted_by, accepted_at from terms_acceptance
+         where company_id = $1 order by accepted_at desc",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| Acceptance {
+            terms_sha256: r.get("terms_sha256"),
+            accepted_by: r.get("accepted_by"),
+            accepted_at: r.get("accepted_at"),
+        })
+        .collect())
+}
+
+/// One call regnmed made to an authority on the company's behalf.
+#[derive(Debug, Clone)]
+pub struct AuthorityCall {
+    /// `a-melding`, `aksjonaerregisteroppgave` or `altinn-hendelser`.
+    pub form: String,
+    pub id: Uuid,
+    /// Period, income year or resource -- what the call was about.
+    pub reference: String,
+    pub requested_by: String,
+    pub requested_at: DateTime<Utc>,
+    /// What came back, oldest first: receipt, failure or the authority's
+    /// answer, each with when and who recorded it. Answers are summarized,
+    /// not reproduced: their full text stays behind the form's own rights.
+    pub events: serde_json::Value,
+}
+
+/// The register terms §7.1 promises: every call to Altinn or the
+/// authorities on the company's behalf, what it was, when, who asked, and
+/// what came back. NOT a second log -- a read over the submission records
+/// themselves (migrations 0074-0076), which are written BEFORE each call
+/// and are insert-only, so the register cannot miss or rewrite a call.
+pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<AuthorityCall>> {
+    const EVENTS: &str = "coalesce((select jsonb_agg(jsonb_build_object(
+            'hendelse', e.kind, 'tidspunkt', e.created_at, 'av', e.created_by,
+            'forsendelse_id', e.forsendelse_id,
+            'feil', case when e.kind = 'failed' then e.detail end)
+            order by e.created_at) from {table} e where e.submission_id = s.id), '[]'::jsonb)";
+    let sql = format!(
+        "select 'a-melding' as form, s.id, s.period as reference, s.created_by, s.created_at,
+                {} as events
+           from amelding_submission s where s.company_id = $1
+         union all
+         select 'aksjonaerregisteroppgave', s.id, s.income_year::text, s.created_by,
+                s.created_at, {}
+           from shareholder_return_submission s where s.company_id = $1
+         union all
+         select 'altinn-hendelser', s.id, s.resource_filter, s.created_by, s.created_at,
+                '[]'::jsonb
+           from altinn_event_subscription s where s.company_id = $1
+         order by created_at desc",
+        EVENTS.replace("{table}", "amelding_submission_event"),
+        EVENTS.replace("{table}", "shareholder_return_submission_event"),
+    );
+    let rows = sqlx::query(&sql).bind(company_id).fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AuthorityCall {
+            form: r.get("form"),
+            id: r.get("id"),
+            reference: r.get("reference"),
+            requested_by: r.get("created_by"),
+            requested_at: r.get("created_at"),
+            events: r.get("events"),
+        })
+        .collect())
+}

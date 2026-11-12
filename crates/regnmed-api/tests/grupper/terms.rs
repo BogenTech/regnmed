@@ -133,6 +133,45 @@ async fn only_an_admin_accepts_and_only_the_text_they_saw() {
     .await;
     assert_eq!(again["godtatt_tidspunkt"], first);
 
+    // The company's own history names the exact text it accepted.
+    let (_, status_now) = call(&state, Some(bookkeeper), "GET", &base, None).await;
+    assert_eq!(status_now["historikk"].as_array().unwrap().len(), 1);
+    assert_eq!(status_now["historikk"][0]["versjon"], version.as_str());
+
+    // Every version stays readable at its own address after it is replaced.
+    let (status, versions) = call(&state, None, "GET", "/terms/versions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let current: Vec<_> = versions
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["gjeldende"] == true)
+        .collect();
+    assert_eq!(current.len(), 1, "{versions}");
+    assert_eq!(current[0]["versjon"], version.as_str());
+    let response = router(state.clone())
+        .oneshot(
+            Request::get(format!("/vilkar/{version}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let text = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    assert_eq!(text, terms["tekst"].as_str().unwrap().as_bytes());
+    let (status, _) = call(
+        &state,
+        None,
+        "GET",
+        &format!("/vilkar/{}", "0".repeat(64)),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
     // The acceptance is evidence: the database refuses to change it.
     let changed =
         sqlx::query("update terms_acceptance set accepted_by = 'x' where company_id = $1")

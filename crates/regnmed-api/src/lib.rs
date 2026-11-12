@@ -149,6 +149,8 @@ pub fn router(state: AppState) -> Router {
         .route("/portal-config", get(portal::portal_config))
         .route("/terms", get(terms::current))
         .route("/vilkar", get(terms::page))
+        .route("/vilkar/{version}", get(terms::version_page))
+        .route("/terms/versions", get(terms::list_versions))
         .route("/auth/token", axum::routing::post(portal::token_exchange))
         .route("/auth/refresh", axum::routing::post(portal::token_refresh))
         .route("/auth/logout", axum::routing::post(portal::auth_logout))
@@ -607,6 +609,10 @@ pub fn router(state: AppState) -> Router {
             get(share_register::list_dividends).post(share_register::create_dividend),
         )
         .route("/companies/{company_id}/terms", get(terms::status))
+        .route(
+            "/companies/{company_id}/authority-calls",
+            get(terms::authority_calls),
+        )
         .route(
             "/companies/{company_id}/terms/accept",
             axum::routing::post(terms::accept),
