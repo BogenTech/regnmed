@@ -32,6 +32,8 @@ pub struct CardView {
     pub applied: Option<String>,
     pub applied_percent_bp: Option<i32>,
     pub applied_table: Option<i32>,
+    pub applied_twelve_months: bool,
+    pub applied_tax_free_card_limit_ore: Option<i64>,
     pub note: Option<String>,
 }
 
@@ -119,6 +121,27 @@ pub async fn record_failure(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Whether a fetched frikort for `year` was set on the employee. A
+/// frikort can only come from a fetched card, so this is the check that
+/// the employee's frikort is this year's and not last year's.
+pub async fn has_tax_free_card(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    year: i32,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "select exists (select 1 from tax_card
+                         where company_id = $1 and employee_id = $2
+                           and income_year = $3 and applied = 'frikort')",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .bind(year)
+    .fetch_one(pool)
+    .await?)
 }
 
 /// Warnings for a payroll run: employees whose newest skattekort for the
@@ -248,15 +271,25 @@ pub async fn record_answer(
             // Skatteetaten answers only for the numbers we sent.
             continue;
         };
-        let (applied, bp, table, note) = match &card.decision {
-            Ok(Withholding::Percent(bp)) => (Some("prosent"), Some(*bp as i32), None, None),
-            Ok(Withholding::Table(n)) => (Some("tabell"), None, Some(*n), None),
-            Ok(Withholding::None) => (Some("ingen"), None, None, None),
-            Err(reason) => (None, None, None, Some(reason.as_str())),
+        // (stored kind, percent, table, 12 months, frikort limit, note)
+        let (applied, bp, table, twelve, limit, note) = match &card.decision {
+            Ok(Withholding::Percent(bp)) => {
+                (Some("prosent"), Some(*bp as i32), None, false, None, None)
+            }
+            Ok(Withholding::PercentTwelveMonths(bp)) => {
+                (Some("prosent"), Some(*bp as i32), None, true, None, None)
+            }
+            Ok(Withholding::Table(n)) => (Some("tabell"), None, Some(*n), false, None, None),
+            Ok(Withholding::TaxFreeCard { limit_ore }) => {
+                (Some("frikort"), None, None, false, Some(*limit_ore), None)
+            }
+            Ok(Withholding::None) => (Some("ingen"), None, None, false, None, None),
+            Err(reason) => (None, None, None, false, None, Some(reason.as_str())),
         };
         if let Some(kind) = applied {
             let updated = sqlx::query(
-                "update employee set trekk_type = $3, trekk_prosent_bp = $4, trekk_tabell = $5
+                "update employee set trekk_type = $3, trekk_prosent_bp = $4, trekk_tabell = $5,
+                        withholding_twelve_months = $6, tax_free_card_limit_ore = $7
                   where id = $1 and company_id = $2",
             )
             .bind(employee_id)
@@ -264,6 +297,8 @@ pub async fn record_answer(
             .bind(kind)
             .bind(bp)
             .bind(table)
+            .bind(twelve)
+            .bind(limit)
             .execute(&mut *tx)
             .await?;
             ensure!(updated.rows_affected() == 1, "ukjent ansatt");
@@ -271,8 +306,9 @@ pub async fn record_answer(
         sqlx::query(
             "insert into tax_card
                  (id, order_id, company_id, employee_id, income_year, result, card_id,
-                  issued_date, card, applied, applied_percent_bp, applied_table, note)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+                  issued_date, card, applied, applied_percent_bp, applied_table, note,
+                  applied_twelve_months, applied_tax_free_card_limit_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
         )
         .bind(Uuid::new_v4())
         .bind(order_id)
@@ -287,6 +323,8 @@ pub async fn record_answer(
         .bind(bp)
         .bind(table)
         .bind(note)
+        .bind(twelve)
+        .bind(limit)
         .execute(&mut *tx)
         .await?;
     }
@@ -309,7 +347,8 @@ pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderVie
     .await?;
     let cards = sqlx::query(
         "select c.order_id, c.employee_id, e.navn, c.result, c.card_id, c.issued_date,
-                c.applied, c.applied_percent_bp, c.applied_table, c.note
+                c.applied, c.applied_percent_bp, c.applied_table, c.note,
+                c.applied_twelve_months, c.applied_tax_free_card_limit_ore
            from tax_card c join employee e on e.id = c.employee_id
           where c.company_id = $1 order by e.navn",
     )
@@ -340,6 +379,8 @@ pub async fn list_orders(pool: &PgPool, company_id: Uuid) -> Result<Vec<OrderVie
                         applied: c.get("applied"),
                         applied_percent_bp: c.get("applied_percent_bp"),
                         applied_table: c.get("applied_table"),
+                        applied_twelve_months: c.get("applied_twelve_months"),
+                        applied_tax_free_card_limit_ore: c.get("applied_tax_free_card_limit_ore"),
                         note: c.get("note"),
                     })
                     .collect(),

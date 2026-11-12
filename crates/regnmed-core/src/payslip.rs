@@ -66,9 +66,11 @@ pub struct PayslipInput {
     /// to wonder.
     pub withholding_basis_ore: i64,
     pub withholding_ore: i64,
-    /// The skattekort percentage in basis points, when withholding is by
-    /// percentage. None for frikort.
-    pub withholding_percent_bp: Option<i64>,
+    /// How the run computed the trekk («35,00 %», «tabell 8000»,
+    /// «frikort»), stored with the line since migration 0080. None for
+    /// older lines: the slip then names no method, since the employee's
+    /// card today may not be the one the line was run with.
+    pub withholding_method: Option<String>,
     /// December's half withholding was applied.
     pub half_withholding: bool,
     pub net_ore: i64,
@@ -180,14 +182,12 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
     // The withholding with its own explanation — the employee should
     // be able to see WHY it came out the way it did.
     let mut trekktekst = String::from("Forskuddstrekk");
-    if let Some(bp) = input.withholding_percent_bp {
-        trekktekst.push_str(&format!(
-            " ({} av {})",
-            percent(bp),
+    match &input.withholding_method {
+        Some(method) => trekktekst.push_str(&format!(
+            " ({method}, grunnlag {})",
             kr(input.withholding_basis_ore)
-        ));
-    } else {
-        trekktekst.push_str(" (frikort)");
+        )),
+        None => trekktekst.push_str(&format!(" (grunnlag {})", kr(input.withholding_basis_ore))),
     }
     pdf.text(MARGIN, ly, 10.0, Font::Regular, &trekktekst);
     pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(-input.withholding_ore));
@@ -290,7 +290,7 @@ mod tests {
             gross_ore: 5_000_000,
             withholding_basis_ore: 5_000_000,
             withholding_ore: 1_750_000,
-            withholding_percent_bp: Some(3500),
+            withholding_method: Some("35,00 %".into()),
             half_withholding: false,
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
@@ -322,7 +322,7 @@ mod tests {
     fn the_slip_explains_the_withholding() {
         let text = String::from_utf8_lossy(&render_payslip(&input())).to_string();
         assert!(text.contains("Forskuddstrekk"), "{text}");
-        assert!(text.contains("35 %"), "trekksatsen skal stå");
+        assert!(text.contains("35,00 %"), "trekksatsen skal stå");
 
         let mut june = input();
         june.month = 6;
@@ -358,13 +358,19 @@ mod tests {
     }
 
     #[test]
-    fn frikort_says_frikort() {
-        let mut fri = input();
-        fri.withholding_percent_bp = None;
-        fri.withholding_ore = 0;
-        fri.net_ore = 5_000_000;
-        let text = String::from_utf8_lossy(&render_payslip(&fri)).to_string();
-        assert!(text.contains("frikort"), "{text}");
+    fn the_slip_names_the_stored_method_and_no_guess_without_one() {
+        let text = String::from_utf8_lossy(&render_payslip(&input())).to_string();
+        assert!(text.contains("35,00 %, grunnlag"), "{text}");
+        // A line from before migration 0080: no method rather than the
+        // employee's card of today, which may not be the one it ran with.
+        let mut old = input();
+        old.withholding_method = None;
+        let text = String::from_utf8_lossy(&render_payslip(&old)).to_string();
+        assert!(text.contains(r"Forskuddstrekk \(grunnlag"), "{text}");
+        assert!(
+            !text.contains("frikort") && !text.contains("35,00 %"),
+            "{text}"
+        );
     }
 
     #[test]

@@ -1746,7 +1746,8 @@ is a GitHub issue under milestones M1–M6. Summary of agreed order:
    (`regnmed-core::withholding_table`, flyttall MED VILJE for å treffe
    rutinen bit for bit), sjekket mot alle 1 063 799 radene i Skatteetatens
    publiserte 2026-fil; nytt år = nye konstanter + nytt utvalg i
-   docs/lonn/ (regelverksrevisjonen). 12-månederstabeller nektes fortsatt.
+   docs/lonn/ (regelverksrevisjonen). Kort over 12 måneder og frikort med
+   beløpsgrense regnes også (migration 0080).
 50. 📌 Skattemelding og næringsspesifikasjon (#11) — KARTLAGT, IKKE
    BYGGET (docs/skattemelding.md). To funn endrer saken. (a) Innsending
    går ikke på maskinporten-skinnen: Skatteetaten sier selv

@@ -4,6 +4,7 @@
   // riktig. Resten står med begrunnelsen — trekket må da føres for hånd.
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { kr } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
 
   let { companyId, onDone } = $props();
@@ -68,8 +69,11 @@
   }
 
   function trekk(k) {
-    if (k.satt === "prosent") return (k.trekk_prosent_bp / 100).toFixed(2).replace(".", ",") + " %";
+    const tolv = k.trekk_12_maneder ? " (12 mnd)" : "";
+    if (k.satt === "prosent")
+      return (k.trekk_prosent_bp / 100).toFixed(2).replace(".", ",") + " %" + tolv;
     if (k.satt === "tabell") return "tabell " + k.trekk_tabell;
+    if (k.satt === "frikort") return "frikort, grense " + kr(k.frikort_grense_ore);
     if (k.satt === "ingen") return "ingen trekk";
     return "–";
   }

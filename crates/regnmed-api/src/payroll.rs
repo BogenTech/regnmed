@@ -40,6 +40,8 @@ fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "trekk_type": a.withholding_type,
         "trekk_prosent_bp": a.withholding_percent_bp,
         "trekk_tabell": a.withholding_table,
+        "trekk_12_maneder": a.withholding_twelve_months,
+        "frikort_grense_ore": a.tax_free_card_limit_ore,
         "feriepenger_bp": a.holiday_pay_bp,
         "bank_account": a.bank_account,
         "note": a.note,

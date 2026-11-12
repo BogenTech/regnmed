@@ -340,9 +340,9 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
 }
 
 /// Tabelltrekk follows Skatteetaten's own routine and lands in the run
-/// and the bilag; a 12-month table is refused rather than guessed.
+/// and the bilag, for 10,5- and 12-month tables alike.
 #[tokio::test]
-async fn tabelltrekk_follows_the_table_and_twelve_month_tables_stop_the_run() {
+async fn tabelltrekk_follows_the_table_for_10_5_and_12_month_tables() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
     let employee = |nin: &'static str, table: i32| NewEmployee {
@@ -398,7 +398,8 @@ async fn tabelltrekk_follows_the_table_and_twelve_month_tables_stop_the_run() {
         "{expected_kr}"
     );
 
-    let error = payroll::run_payroll(
+    // A 12-month table is computed too -- the table routine handles both.
+    let april = payroll::run_payroll(
         &pool,
         company,
         2026,
@@ -409,8 +410,15 @@ async fn tabelltrekk_follows_the_table_and_twelve_month_tables_stop_the_run() {
         "Test",
     )
     .await
-    .unwrap_err();
-    assert!(error.to_string().contains("12 måneder"), "{error}");
+    .unwrap();
+    let expected_twelve = regnmed_core::withholding_table::withholding_kr(
+        2026,
+        7350,
+        regnmed_core::withholding_table::Period::Month,
+        50_000,
+    )
+    .unwrap();
+    assert_eq!(april.sum.withholding_ore, expected_twelve * 100);
 
     // December's pay paid in January is taxed in January's year, whose
     // tables are not in regnmed yet: refused, never last year's.
@@ -592,7 +600,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     assert_eq!(slip.withholding_basis_ore, 5_000_000);
     assert_eq!(slip.withholding_ore, 1_750_000);
     assert_eq!(slip.net_ore, 7_250_000);
-    assert_eq!(slip.withholding_percent_bp, Some(3500));
+    assert_eq!(slip.withholding_method.as_deref(), Some("35,00 %"));
     // Year to date through June: two months of pay + June's feriepenger.
     assert_eq!(slip.year_to_date_gross_ore, 5_000_000 + 9_000_000);
     assert_eq!(slip.year_to_date_withholding_ore, 3_500_000);
@@ -1565,4 +1573,184 @@ async fn an_unapplied_skattekort_is_named_in_the_run() {
         named[0].contains("Uten Kort") && named[0].contains("50 %"),
         "{named:?}"
     );
+}
+
+/// Frikort counts what earlier runs paid; a 12-month card withholds on
+/// feriepenger. And the payslip says how each trekk was computed.
+#[tokio::test]
+async fn frikort_counts_the_year_and_twelve_month_cards_withhold_on_holiday_pay() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let new = |nin: &str, name: &str| NewEmployee {
+        nin: nin.into(),
+        name: name.into(),
+        stilling: None,
+        employed_from: date(2025, 1, 1),
+        monthly_salary_ore: Some(2_000_000),
+        hourly_wage_ore: None,
+        withholding_type: "prosent".into(),
+        withholding_percent_bp: Some(3500),
+        withholding_table: None,
+        holiday_pay_bp: 1020,
+        bank_account: None,
+        note: None,
+        details: Default::default(),
+    };
+    let frikort = payroll::create_employee(&pool, company, &new("01810199403", "Fri Kort"), "Test")
+        .await
+        .unwrap();
+    let twelve =
+        payroll::create_employee(&pool, company, &new("05850298728", "Kilde Skatt"), "Test")
+            .await
+            .unwrap();
+    let migrated =
+        payroll::create_employee(&pool, company, &new("20857597940", "Fra Annet"), "Test")
+            .await
+            .unwrap();
+    let entry = |id, holiday| PayrollEntry {
+        employee_id: id,
+        gross_ore: None,
+        holiday_pay_ore: holiday,
+        from_timesheet: false,
+    };
+    // December 2025 at 35 %: last year's pay, which this year's frikort
+    // must not count.
+    payroll::run_payroll(
+        &pool,
+        company,
+        2025,
+        12,
+        date(2025, 12, 20),
+        "I",
+        &[entry(frikort, 0), entry(twelve, 0)],
+        "Test",
+    )
+    .await
+    .unwrap();
+
+    // The 2026 cards, fetched: 30 000 kr frikort for two, and a
+    // 22,20 % card over 12 months.
+    use regnmed_core::payroll::Withholding;
+    let order = Uuid::new_v4();
+    regnmed_db::tax_card::record_request(&pool, order, company, 2026, 3, "Test")
+        .await
+        .unwrap();
+    regnmed_db::tax_card::record_order(
+        &pool,
+        order,
+        company,
+        2026,
+        &format!("BR{}", order.as_u128() % 1_000_000_000),
+        "d-1",
+        3,
+        "Test",
+    )
+    .await
+    .unwrap();
+    let card = |nin: &str, w| regnmed_db::tax_card::ReceivedCard {
+        nin: nin.into(),
+        result: "skattekortopplysningerOK".into(),
+        card_id: None,
+        issued: None,
+        raw: serde_json::json!({}),
+        decision: Ok(w),
+    };
+    let frikort_card = || Withholding::TaxFreeCard {
+        limit_ore: 3_000_000,
+    };
+    regnmed_db::tax_card::record_answer(
+        &pool,
+        company,
+        order,
+        &[
+            card("01810199403", frikort_card()),
+            card("20857597940", frikort_card()),
+            card("05850298728", Withholding::PercentTwelveMonths(2220)),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let january = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        1,
+        date(2026, 1, 25),
+        "I",
+        &[entry(frikort, 0), entry(twelve, 0)],
+        "Test",
+    )
+    .await
+    .unwrap();
+    let slip = payroll::payslip(&pool, company, january.id, frikort)
+        .await
+        .unwrap();
+    assert_eq!(slip.withholding_ore, 0, "20 000 of 30 000 used");
+    assert_eq!(slip.withholding_method.as_deref(), Some("frikort"));
+
+    let february = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        2,
+        date(2026, 2, 25),
+        "I",
+        &[
+            entry(frikort, 0),
+            entry(twelve, 1_000_000),
+            entry(migrated, 0),
+        ],
+        "Test",
+    )
+    .await
+    .unwrap();
+    // Employed since 2025, yet no 2026 pay in regnmed before February:
+    // pay from another system is not counted, and the run says so.
+    assert!(
+        february
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("Fra Annet:") && w.contains("annet system")),
+        "{:?}",
+        february.warnings
+    );
+    assert!(!february.warnings.iter().any(|w| w.starts_with("Fri Kort:")));
+    // 10 000 kr left of the limit, 20 000 paid: 50 % of 10 000.
+    let slip = payroll::payslip(&pool, company, february.id, frikort)
+        .await
+        .unwrap();
+    assert_eq!(slip.withholding_ore, 500_000);
+    assert!(
+        slip.withholding_method
+            .unwrap()
+            .contains("over beløpsgrensen")
+    );
+    // 22,20 % of 20 000 lønn + 10 000 feriepenger.
+    let slip = payroll::payslip(&pool, company, february.id, twelve)
+        .await
+        .unwrap();
+    assert_eq!(slip.withholding_ore, 666_000);
+    assert_eq!(slip.withholding_basis_ore, 3_000_000);
+    assert_eq!(
+        slip.withholding_method.as_deref(),
+        Some("22,20 % (12 måneder)")
+    );
+
+    // December's pay paid in January 2027: the 2026 frikort does not
+    // carry over, since the count starts again at zero.
+    let refused = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        12,
+        date(2027, 1, 5),
+        "I",
+        &[entry(frikort, 0)],
+        "Test",
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(refused.contains("frikort for 2027"), "{refused}");
 }

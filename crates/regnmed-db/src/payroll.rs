@@ -143,6 +143,11 @@ pub struct Employee {
     pub withholding_type: String,
     pub withholding_percent_bp: Option<i32>,
     pub withholding_table: Option<i32>,
+    /// A percentage card spread over 12 months (migration 0080).
+    pub withholding_twelve_months: bool,
+    /// The frikort's beløpsgrense for this employer, for trekk_type
+    /// 'frikort' (migration 0080).
+    pub tax_free_card_limit_ore: Option<i64>,
     pub holiday_pay_bp: i32,
     pub bank_account: Option<String>,
     pub note: Option<String>,
@@ -187,8 +192,14 @@ impl Employee {
 
     fn withholding(&self) -> Withholding {
         match self.withholding_type.as_str() {
+            "prosent" if self.withholding_twelve_months => {
+                Withholding::PercentTwelveMonths(self.withholding_percent_bp.unwrap_or(0) as i64)
+            }
             "prosent" => Withholding::Percent(self.withholding_percent_bp.unwrap_or(0) as i64),
             "tabell" => Withholding::Table(self.withholding_table.unwrap_or(0)),
+            "frikort" => Withholding::TaxFreeCard {
+                limit_ore: self.tax_free_card_limit_ore.unwrap_or(0),
+            },
             _ => Withholding::None,
         }
     }
@@ -295,6 +306,7 @@ pub async fn list_ansatte(pool: &PgPool, company_id: Uuid) -> Result<Vec<Employe
         "select e.id, e.fodselsnummer, e.navn, e.stilling, e.ansatt_fra, e.ansatt_til,
                 e.manedslonn_ore, e.timelonn_ore, e.trekk_type, e.trekk_prosent_bp,
                 e.trekk_tabell, e.feriepenger_bp, e.bank_account, e.note,
+                e.withholding_twelve_months, e.tax_free_card_limit_ore,
                 e.business_unit_orgnumber, e.occupation_code, e.position_percent_bp,
                 e.full_time_hours_per_week_hundredths, e.working_hours_scheme,
                 e.employment_form, e.last_salary_change,
@@ -327,6 +339,8 @@ fn employee_from_row(r: &sqlx::postgres::PgRow) -> Employee {
         withholding_type: r.get("trekk_type"),
         withholding_percent_bp: r.get("trekk_prosent_bp"),
         withholding_table: r.get("trekk_tabell"),
+        withholding_twelve_months: r.get("withholding_twelve_months"),
+        tax_free_card_limit_ore: r.get("tax_free_card_limit_ore"),
         holiday_pay_bp: r.get("feriepenger_bp"),
         bank_account: r.get("bank_account"),
         note: r.get("note"),
@@ -526,6 +540,7 @@ pub async fn run_payroll(
 
     let mut sum = PayrollTotals::default();
     let mut lines = Vec::new();
+    let mut frikort_warnings = Vec::new();
 
     for post in poster {
         let employee = employees
@@ -578,12 +593,49 @@ pub async fn run_payroll(
                 })?
         };
         ensure!(gross >= 0, "brutto kan ikke være negativ");
+        ensure!(
+            post.holiday_pay_ore >= 0,
+            "feriepenger kan ikke være negative"
+        );
+
+        // Only a frikort counts what was paid before; skip the query for
+        // everyone else.
+        // shortcut: two runs for the same company at the same moment
+        // would each miss the other's pay; runs are a person's deliberate
+        // monthly act, not concurrent jobs.
+        let paid_earlier_this_year_ore = match employee.withholding() {
+            Withholding::TaxFreeCard { .. } => {
+                let year = paid_date.year();
+                // The count starts at zero each year: last year's limit
+                // in January would hand out the whole limit again.
+                ensure!(
+                    crate::tax_card::has_tax_free_card(pool, company_id, employee.id, year).await?,
+                    "{} har frikort, men ikke et hentet frikort for {year} — hent årets \
+                     skattekort før lønnen utbetales",
+                    employee.name
+                );
+                let paid = paid_this_year(pool, company_id, employee.id, year).await?;
+                let month_start = paid_date.with_day(1).context("ugyldig dato")?;
+                if paid == 0 && employee.employed_from < month_start && paid_date.month() > 1 {
+                    frikort_warnings.push(format!(
+                        "{}: frikortet telles fra lønnen regnmed har utbetalt i {year}, og det \
+                         er ingen før denne kjøringen. Er det utbetalt lønn i {year} i et annet \
+                         system, er den ikke trukket fra beløpsgrensen — trekket må da \
+                         rettes for hånd.",
+                        employee.name
+                    ));
+                }
+                paid
+            }
+            _ => 0,
+        };
 
         let calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
                 withholding: employee.withholding(),
+                paid_earlier_this_year_ore,
             },
             // Pay is taxed in the year it is paid, so December's pay paid
             // in January takes January's tables -- like the aga rate.
@@ -862,8 +914,8 @@ pub async fn run_payroll(
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
-                  pay_kind)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+                  pay_kind, withholding_method)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         )
         .bind(Uuid::new_v4())
         .bind(run_id)
@@ -881,6 +933,7 @@ pub async fn run_payroll(
         .bind(l.employer_contribution_holiday_pay_ore)
         .bind(b.half_withholding)
         .bind(l.pay_kind)
+        .bind(&b.method)
         .execute(&mut *tx)
         .await?;
     }
@@ -897,6 +950,7 @@ pub async fn run_payroll(
             crate::tax_card::unapplied_warnings(pool, company_id, paid_date.year(), &employees)
                 .await?,
         )
+        .chain(frikort_warnings)
         .collect();
     Ok(PayrollRun {
         id: run_id,
@@ -1039,7 +1093,7 @@ pub async fn payslip(
         "select r.ar, r.maned, r.utbetalt_dato,
                 l.brutto_ore, l.feriepenger_ore, l.trekkgrunnlag_ore,
                 l.forskuddstrekk_ore, l.netto_ore, l.feriepengeavsetning_ore,
-                l.halv_trekk,
+                l.halv_trekk, l.withholding_method,
                 e.navn, e.stilling, e.fodselsnummer, e.trekk_type,
                 e.trekk_prosent_bp, e.feriepenger_bp,
                 c.name as selskap, c.orgnr, c.address
@@ -1088,7 +1142,6 @@ pub async fn payslip(
         });
     }
 
-    let withholding_type: String = row.get("trekk_type");
     Ok(PayslipInput {
         employer_name: row.get("selskap"),
         employer_orgnumber: row.get("orgnr"),
@@ -1108,9 +1161,7 @@ pub async fn payslip(
         gross_ore: gross + holiday_pay,
         withholding_basis_ore: row.get("trekkgrunnlag_ore"),
         withholding_ore: row.get("forskuddstrekk_ore"),
-        withholding_percent_bp: (withholding_type == "prosent")
-            .then(|| row.get::<Option<i32>, _>("trekk_prosent_bp").map(i64::from))
-            .flatten(),
+        withholding_method: row.get("withholding_method"),
         half_withholding: row.get("halv_trekk"),
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
@@ -1572,4 +1623,26 @@ pub async fn amelding_for_run(
         },
         hindrances,
     })
+}
+
+/// Trekkpliktig pay (ordinary + feriepenger) this employer has already
+/// paid the employee in `year`, by payment date -- what a frikort's
+/// beløpsgrense is counted against.
+async fn paid_this_year(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    year: i32,
+) -> Result<i64> {
+    Ok(sqlx::query_scalar(
+        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint
+           from payroll_line l join payroll_run r on r.id = l.run_id
+          where r.company_id = $1 and l.employee_id = $2
+            and extract(year from r.utbetalt_dato) = $3",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .bind(year)
+    .fetch_one(pool)
+    .await?)
 }
