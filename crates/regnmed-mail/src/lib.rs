@@ -18,6 +18,7 @@ use anyhow::{Context as _, Result};
 // async-nats dependency.
 pub use async_nats::jetstream;
 
+pub mod follow_up;
 pub mod jobqueue;
 pub mod taskqueue;
 use base64::Engine as _;

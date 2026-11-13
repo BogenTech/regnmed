@@ -761,8 +761,11 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
             .any(|o| o.invoice_id == f.invoice_id),
         "betalt: ute av oppfølgingen"
     );
-    let unsent = mine(opf::unsent_invoices(&state.pool, drift).await.unwrap());
-    assert_eq!(unsent.invoice_id, f.invoice_id);
+    let unsent = opf::unsent_invoices(&state.pool, drift).await.unwrap();
+    let unsent = unsent
+        .iter()
+        .find(|u| u.invoice_id == f.invoice_id)
+        .expect("betalt og aldri sendt: skal sendes");
     assert_eq!(unsent.remaining_ore, 0);
     let mail = regnmed_db::invoice_email_payload(&state.pool, drift, f.invoice_id, Some("x@y.no"))
         .await

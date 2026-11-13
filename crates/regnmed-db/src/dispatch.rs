@@ -44,6 +44,8 @@ struct MailFacts {
     gross_ore: i64,
     remaining_ore: i64,
     is_credit_note: bool,
+    /// A credit note exists for this invoice.
+    credited: bool,
 }
 
 async fn mail_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result<MailFacts> {
@@ -51,6 +53,7 @@ async fn mail_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result
         "select c.name as company_name, c.email as company_email,
                 p.email as party_email, i.invoice_no, i.due_date, i.kid,
                 (i.credits_invoice_id is not null) as is_credit_note,
+                exists(select 1 from invoice k where k.credits_invoice_id = i.id) as credited,
                 e.amount_ore as gross_ore, o.remaining_ore::bigint as remaining_ore
          from invoice i
          join company c on c.id = i.company_id
@@ -74,6 +77,7 @@ async fn mail_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result
         gross_ore: row.get("gross_ore"),
         remaining_ore: row.get("remaining_ore"),
         is_credit_note: row.get("is_credit_note"),
+        credited: row.get("credited"),
     })
 }
 
@@ -123,11 +127,19 @@ pub async fn invoice_email_payload(
         Ore(facts.gross_ore)
     );
     if !facts.is_credit_note {
-        if facts.remaining_ore <= 0 {
-            // A paid invoice still goes out (#223); asking for payment
-            // would be a false instruction.
+        // A settled invoice still goes out (#223); asking for payment
+        // would be a false instruction. A credit note also brings the
+        // remainder to zero, so "settled" is not the same as "paid".
+        if facts.remaining_ore <= 0 && facts.credited {
+            text.push_str(
+                "\nFakturaen er kreditert, se kreditnotaen. Du trenger ikke å gjøre noe.\n",
+            );
+        } else if facts.remaining_ore <= 0 {
             text.push_str("\nFakturaen er betalt. Du trenger ikke å gjøre noe.\n");
         } else {
+            if facts.remaining_ore < facts.gross_ore {
+                text.push_str(&format!("Gjenstår: {} kr\n", Ore(facts.remaining_ore)));
+            }
             text.push_str(&format!(
                 "Forfall: {}\nKID:     {}\n",
                 facts.due_date, facts.kid

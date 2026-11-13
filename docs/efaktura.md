@@ -445,7 +445,8 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
 - **BT-10 = vårt kundenummer** (§3.4) — rettes i fase 1, men gjelder
   også EHF-en som lastes ned i dag.
 - ~~**Kortbetalte abonnementsfakturaer sendes ikke**~~ — rettet i #223:
-  de sendes nå, med «Fakturaen er betalt» i e-posten.
+  oppgjorte abonnementsfakturaer og kreditnotaene deres sendes nå, og
+  e-posten sier om fakturaen er betalt eller kreditert.
 - **EHF-en rendres fra kundens nåværende kontaktdata** (§3.5) — «byte-
   identisk for alltid» i docs/ehf.md stemmer bare så lenge kunden ikke
   endrer adresse.
