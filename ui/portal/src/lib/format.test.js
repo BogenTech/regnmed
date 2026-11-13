@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { krWhole, formatDate, today } from "./format.js";
+import { krWhole, formatDate, today, kr, parseKr } from "./format.js";
 
 test("krWhole rounds half away from zero and keeps the sign", () => {
   assert.equal(krWhole(1375040), "13 750");
@@ -31,4 +31,8 @@ test("amounts are read the way they are typed, spaces and all", async () => {
   assert.equal(oreOrNull("−45,50"), -4_550);
   assert.equal(oreOrNull(""), null);
   assert.equal(oreOrNull("tolv"), null);
+});
+
+test("parseKr reads back what kr writes, negatives included", () => {
+  for (const ore of [0, 5, 125000, -5000, -123456789]) assert.equal(parseKr(kr(ore)), ore);
 });

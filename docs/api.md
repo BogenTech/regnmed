@@ -190,6 +190,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/invoices/{invoice_id}` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/credit-note` | POST |
 | `/companies/{company_id}/invoices/{invoice_id}/ehf` | GET |
+| `/companies/{company_id}/invoices/{invoice_id}/payments` | POST |
 | `/companies/{company_id}/invoices/{invoice_id}/pdf` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/reminders` | GET POST |
 | `/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}` | GET |
@@ -218,7 +219,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/products` | GET POST |
 | `/companies/{company_id}/products/{nummer}` | PUT |
 | `/companies/{company_id}/quotes` | GET POST |
-| `/companies/{company_id}/quotes/{quote_id}` | PUT |
+| `/companies/{company_id}/quotes/{quote_id}` | GET PUT |
 | `/companies/{company_id}/quotes/{quote_id}/order` | POST |
 | `/companies/{company_id}/quotes/{quote_id}/pdf` | GET |
 | `/companies/{company_id}/quotes/{quote_id}/status` | POST |

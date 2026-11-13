@@ -842,6 +842,22 @@ pub struct InvoiceDetail {
     pub credited_by: Option<(Uuid, i64)>,
     pub created_by: String,
     pub lines: Vec<InvoiceLineRow>,
+    /// The voucher the invoice was posted on, and its `year-number`.
+    pub voucher_id: Uuid,
+    pub voucher_label: String,
+    /// What has settled the receivable: payments and credit notes, each
+    /// with the voucher it was posted on (bokføringsloven §4 nr. 7).
+    pub settlements: Vec<InvoiceSettlement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InvoiceSettlement {
+    pub voucher_id: Uuid,
+    pub voucher_label: String,
+    pub date: NaiveDate,
+    pub description: String,
+    pub amount_ore: i64,
+    pub matched_by: String,
 }
 
 /// One invoice with its lines, for the portal's invoice page. None when
@@ -855,9 +871,11 @@ pub async fn get_invoice(
         "{INVOICE_STATUS_CTE}
          select inv.*, i.delivery_date, i.delivery_place, i.valuta, i.created_by, p.email,
                 o.id as credits_id, o.invoice_no as credits_no,
-                c.id as credited_by_id, c.invoice_no as credited_by_no
+                c.id as credited_by_id, c.invoice_no as credited_by_no,
+                i.voucher_id, iv.fiscal_year as voucher_year, iv.voucher_number
          from inv
          join invoice i on i.id = inv.id
+         join voucher iv on iv.id = i.voucher_id
          join party p on p.id = i.party_id
          left join invoice o on o.id = i.credits_invoice_id
          left join invoice c on c.credits_invoice_id = i.id
@@ -893,10 +911,48 @@ pub async fn get_invoice(
         project: l.get("prosjekt"),
     })
     .collect();
+    // The other side of every match on the receivable: for an invoice the
+    // payments and credit notes, for a credit note the invoice it offsets.
+    let settlements = sqlx::query(
+        "select v.id as voucher_id, v.fiscal_year, v.voucher_number, v.voucher_date,
+                coalesce(e.description, v.description) as description,
+                m.amount_ore, m.matched_by
+         from invoice i
+         join reskontro_match m on i.receivable_entry_id in (m.entry_a, m.entry_b)
+         join entry e on e.id = case when m.entry_a = i.receivable_entry_id
+                                     then m.entry_b else m.entry_a end
+         join voucher v on v.id = e.voucher_id
+         where i.id = $1
+         order by v.voucher_date, m.created_at, m.id",
+    )
+    .bind(invoice_id)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|m| InvoiceSettlement {
+        voucher_id: m.get("voucher_id"),
+        voucher_label: format!(
+            "{}-{}",
+            m.get::<i32, _>("fiscal_year"),
+            m.get::<i64, _>("voucher_number")
+        ),
+        date: m.get("voucher_date"),
+        description: m.get("description"),
+        amount_ore: m.get("amount_ore"),
+        matched_by: m.get("matched_by"),
+    })
+    .collect();
     let pair = |id: &str, no: &str| -> Option<(Uuid, i64)> {
         Some((r.get::<Option<Uuid>, _>(id)?, r.get::<Option<i64>, _>(no)?))
     };
     Ok(Some(InvoiceDetail {
+        voucher_id: r.get("voucher_id"),
+        voucher_label: format!(
+            "{}-{}",
+            r.get::<i32, _>("voucher_year"),
+            r.get::<i64, _>("voucher_number")
+        ),
+        settlements,
         credits: pair("credits_id", "credits_no"),
         credited_by: pair("credited_by_id", "credited_by_no"),
         delivery_date: r.get("delivery_date"),
@@ -919,6 +975,156 @@ pub async fn get_invoice(
         },
         lines,
     }))
+}
+
+/// A payment the user records by hand on an issued invoice: cash, Vipps,
+/// or a bank payment they would rather not match line by line in Bank.
+///
+/// Posted exactly like the card rail and the kontantfaktura settle a
+/// receivable: one voucher — the money account against the receivable
+/// WITH the customer as party — and the reskontro match, in one
+/// transaction under the party's lock, so the invoice can never be paid
+/// twice by two people at once. Part payments are allowed; paying more
+/// than is open is not (an overpayment is a credit balance the user must
+/// decide about, not something to post silently).
+pub async fn register_invoice_payment(
+    pool: &PgPool,
+    company_id: Uuid,
+    invoice_id: Uuid,
+    payment_date: NaiveDate,
+    amount_ore: i64,
+    account: &str,
+    created_by: &str,
+) -> Result<crate::ledger::PostedVoucher> {
+    ensure!(amount_ore > 0, "beløpet må være større enn null");
+    // Only where money can actually land: kontanter, bank, clearing.
+    ensure!(
+        account.len() == 4
+            && account.starts_with("19")
+            && account.bytes().all(|b| b.is_ascii_digit()),
+        "innbetalingen må føres på en bank- eller kassekonto (19xx), ikke {account}"
+    );
+    let today: NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(pool)
+        .await?;
+    ensure!(
+        payment_date <= today,
+        "innbetalingsdatoen kan ikke være fram i tid"
+    );
+    if account == "1920" {
+        crate::ensure_account(pool, company_id, "1920", "Bankinnskudd").await?;
+    }
+
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query(
+        "select i.invoice_no, i.receivable_entry_id, i.valuta, i.credits_invoice_id,
+                p.id as party_id, p.party_no, a.number as receivable_account
+         from invoice i
+         join party p on p.id = i.party_id
+         join entry e on e.id = i.receivable_entry_id
+         join account a on a.id = e.account_id
+         where i.id = $1 and i.company_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .context("fakturaen finnes ikke")?;
+    let invoice_no: i64 = row.get("invoice_no");
+    ensure!(
+        row.get::<Option<Uuid>, _>("credits_invoice_id").is_none(),
+        "en kreditnota betales ikke inn — den er allerede ført mot fakturaen den krediterer"
+    );
+    if let Some(currency) = row.get::<Option<String>, _>("valuta") {
+        bail!(
+            "faktura {invoice_no} er i {currency}; registrer innbetalingen fra Bank, \
+             der kursdifferansen bokføres"
+        );
+    }
+    let receivable_entry: Uuid = row.get("receivable_entry_id");
+    let party_id: Uuid = row.get("party_id");
+    let account_exists: bool = sqlx::query_scalar(
+        "select exists (select 1 from account where company_id = $1 and number = $2 and active)",
+    )
+    .bind(company_id)
+    .bind(account)
+    .fetch_one(&mut *tx)
+    .await?;
+    ensure!(
+        account_exists,
+        "konto {account} finnes ikke eller er deaktivert i kontoplanen"
+    );
+
+    // Same lock as every other match on this party (subledger::match_items).
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+        .bind(party_id)
+        .execute(&mut *tx)
+        .await?;
+    let open = crate::party_items(&mut *tx, company_id, party_id, false)
+        .await?
+        .into_iter()
+        .find(|i| i.entry_id == receivable_entry)
+        .map_or(0, |i| i.remaining_ore);
+    ensure!(open > 0, "faktura {invoice_no} har ikke noe utestående");
+    ensure!(
+        amount_ore <= open,
+        "faktura {invoice_no} har bare {} kr utestående, så {} kr kan ikke registreres",
+        regnmed_core::Ore(open),
+        regnmed_core::Ore(amount_ore)
+    );
+
+    let party_no: String = row.get("party_no");
+    let receivable_account: String = row.get("receivable_account");
+    let draft = regnmed_core::voucher::VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: payment_date,
+        description: format!("Innbetaling faktura {invoice_no}"),
+        reverses: None,
+        entries: vec![
+            regnmed_core::voucher::EntryDraft {
+                account_number: account.to_string(),
+                amount: regnmed_core::Ore(amount_ore),
+                vat_code: None,
+                description: None,
+                party_no: None,
+                department: None,
+                project: None,
+                currency: None,
+            },
+            regnmed_core::voucher::EntryDraft {
+                account_number: receivable_account,
+                amount: regnmed_core::Ore(-amount_ore),
+                vat_code: None,
+                description: None,
+                party_no: Some(party_no),
+                department: None,
+                project: None,
+                currency: None,
+            },
+        ],
+    };
+    // A hand-recorded settlement is a manual voucher: the company's
+    // attestation policy governs it like any other (#47).
+    crate::chart_of_accounts::refuse_if_attestation_required(&mut tx, company_id, &draft).await?;
+    let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
+    let payment_entry: Uuid =
+        sqlx::query_scalar("select id from entry where voucher_id = $1 and party_id is not null")
+            .bind(posted.id)
+            .fetch_one(&mut *tx)
+            .await?;
+    sqlx::query(
+        "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+         values ($1,$2,$3,$4,$5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(receivable_entry)
+    .bind(payment_entry)
+    .bind(amount_ore)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(posted)
 }
 
 /// Kontantfaktura (#89, bokføringsforskriften §5-3): a salgsdokument for

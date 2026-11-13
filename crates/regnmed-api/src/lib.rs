@@ -523,6 +523,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(dispatch::send_reminder),
         )
         .route(
+            "/companies/{company_id}/invoices/{invoice_id}/payments",
+            axum::routing::post(invoice::register_payment),
+        )
+        .route(
             "/companies/{company_id}/invoices/{invoice_id}/utsendelser",
             get(dispatch::list_dispatches),
         )
@@ -844,7 +848,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}",
-            axum::routing::put(sales_document::update_quote),
+            get(sales_document::document_lines).put(sales_document::update_quote),
         )
         .route(
             "/companies/{company_id}/quotes/{quote_id}/status",

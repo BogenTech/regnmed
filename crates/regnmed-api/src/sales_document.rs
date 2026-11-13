@@ -120,6 +120,31 @@ pub async fn list_orders(
     list_kind(&state, &person, company_id, "ordre").await
 }
 
+/// A tilbud's or ordre's lines, for editing a tilbud and for showing
+/// either before it is turned into the next document.
+pub async fn document_lines(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, document_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::QuoteRead).await?;
+    let lines = regnmed_db::document_lines(&state.pool, company_id, document_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(json!({
+        "lines": lines.iter().map(|l| json!({
+            "produkt": l.product,
+            "description": l.description,
+            "account": l.account_number,
+            "quantity_milli": l.quantity_milli,
+            "unit_price_ore": l.unit_price_ore,
+            "vat_code": l.vat_code,
+            "avdeling": l.department,
+            "prosjekt": l.project,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
 #[derive(Deserialize)]
 pub struct UpdateQuoteRequest {
     doc_date: Option<chrono::NaiveDate>,

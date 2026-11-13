@@ -131,6 +131,31 @@ async fn quote_order_invoice_chain() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
+    // The editor reads the lines back as they now stand; another
+    // company's id is a 404, like every other read.
+    let (status, read) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/quotes/{quote_id}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(read["lines"][0]["unit_price_ore"], 45_000_00);
+    assert_eq!(read["lines"][0]["quantity_milli"], 1000);
+    assert_eq!(read["lines"][0]["description"], "Prosjektering");
+    let (status, _) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/quotes/{}", Uuid::new_v4()),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
     // Tilbud PDF renders with the current state.
     let (status, pdf) = send(
         &state,

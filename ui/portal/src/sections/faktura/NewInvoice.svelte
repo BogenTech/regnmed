@@ -5,7 +5,7 @@
   // først og lander på fakturaen med «Send til kunde» som neste steg.
   import { tick, untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
-  import { kr, parseKr, today, minutterTilTimer } from "../../lib/format.js";
+  import { kr, parseKr, today, minutterTilTimer, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
   import DimSelect from "../../components/DimSelect.svelte";
@@ -241,11 +241,36 @@
         timer_entry_ids: hourLines.length ? hourLines.flatMap((h) => h.entryIds) : null,
       });
       toast("Faktura " + issued.invoice_no + " er utstedt", true);
+      done = true;
       location.hash = "#/c/" + companyId + "/faktura/" + issued.invoice_id;
     } catch (e) {
       toast(e.message, false);
     }
     busy = false;
+  }
+
+  // Something typed that issuing has not saved. Leaving asks first; a
+  // reload or a closed tab gets the browser's own warning.
+  let done = false;
+  let dirty = $derived(
+    (customer.trim() !== "" && party?.party_no !== presetParty) ||
+      lines.some((l) => !isBlank(l)) ||
+      pickedHours.length > 0,
+  );
+  function beforeUnload(e) {
+    if (dirty && !done) e.preventDefault();
+  }
+  async function leave(e) {
+    if (!dirty || done) return;
+    e.preventDefault();
+    const href = e.currentTarget.getAttribute("href");
+    const ok = await bekreft("Det du har skrevet på fakturaen, blir ikke lagret.", {
+      tittel: "Forkaste fakturaen?",
+      ok: "Forkast",
+      avbryt: "Fortsett å skrive",
+      farlig: true,
+    });
+    if (ok) location.hash = href;
   }
 
   const vatLabel = (code) => VAT_CODES[code]?.label ?? "kode " + code;
@@ -260,8 +285,10 @@
   }
 </script>
 
+<svelte:window onbeforeunload={beforeUnload} />
+
 <nav class="mb-3">
-  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/faktura"}>← Alle fakturaer</a>
+  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/faktura"} onclick={leave}>← Alle fakturaer</a>
 </nav>
 <h1 class="text-2xl font-bold mb-4">Ny faktura</h1>
 
@@ -336,7 +363,7 @@
 
         <details class="sm:col-span-2">
           <summary class="cursor-pointer text-sm">
-            Levering: {deliveryDate === invoiceDate ? "samme dag som fakturadato" : deliveryDate}{deliveryPlace.trim() ? ", " + deliveryPlace.trim() : ""}{currency ? " · valuta " + currency : ""}
+            Levering: {deliveryDate === invoiceDate ? "samme dag som fakturadato" : formatDate(deliveryDate)}{deliveryPlace.trim() ? ", " + deliveryPlace.trim() : ""}{currency ? " · valuta " + currency : ""}
           </summary>
           <div class="grid gap-4 sm:grid-cols-3 mt-3">
             <label class="fieldset">
@@ -467,8 +494,8 @@
             </button>
             {#if dims.length}
               <div class="flex gap-2 sm:col-span-full">
-                <DimSelect {dims} kind="avdeling" bind:value={line.avdeling} />
-                <DimSelect {dims} kind="prosjekt" bind:value={line.prosjekt} />
+                <DimSelect {dims} kind="avdeling" label={"Avdeling, linje " + (i + 1)} bind:value={line.avdeling} />
+                <DimSelect {dims} kind="prosjekt" label={"Prosjekt, linje " + (i + 1)} bind:value={line.prosjekt} />
               </div>
             {/if}
           </fieldset>
@@ -540,7 +567,7 @@
               {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
               Utsted faktura
             </button>
-            <a class="btn btn-ghost" href={"#/c/" + companyId + "/faktura"}>Avbryt</a>
+            <a class="btn btn-ghost" href={"#/c/" + companyId + "/faktura"} onclick={leave}>Avbryt</a>
           </div>
         </div>
       </div>

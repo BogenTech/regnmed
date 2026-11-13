@@ -11,7 +11,8 @@ export function kr(ore) {
 }
 
 export function parseKr(text) {
-  const cleaned = String(text).replace(/[\s ]/g, "").replace(",", ".");
+  // kr() writes a real minus sign (U+2212), so what it shows must read back.
+  const cleaned = String(text).replace(/[\s ]/g, "").replace("\u2212", "-").replace(",", ".");
   const value = Number(cleaned);
   if (!isFinite(value)) throw new Error("ugyldig beløp: " + text);
   return Math.round(value * 100);

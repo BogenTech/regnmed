@@ -235,7 +235,9 @@ Purring, forsinkelsesrente og inkassovarsel: shipped — docs/purring.md.
 | --- | --- |
 | `POST /companies/{id}/invoices` | issue (party_no, dates, lines; defaults: journal GL, receivable 1500, VAT 2700, account 3000, quantity 1). Optional `timer_entry_ids`: selected unbilled hours appended as hour lines per (prosjekt, sats) and marked fakturert in the SAME transaction — one invoice carries products and hours (docs/timer.md; requires `TIMER_FAKTURER`, NOK only) |
 | `GET /companies/{id}/invoices?status=&q=&limit=&offset=` | list with reskontro remaining and a DERIVED `status` per invoice (`open`, `overdue`, `paid`, `credited`, `credit_note` — computed in SQL from the reskontro and the due date, never stored). `status` filters (`open` = open or overdue, `credit` = kreditnotaer and what they credit), `q` matches an exact invoice number or KID or part of the customer's name, `limit` (≤ 200) pages newest first. The response carries `total` and per-status `counts` for the filter. Without `limit`: every invoice, oldest first, as before. `open=true` keeps its old meaning (anything with a remainder, kreditnotaer included) |
-| `GET /companies/{id}/invoices/{iid}` | one invoice: header, status, the stored lines (`net_ore`/`vat_ore` as issued), the kreditnota link either way, the customer's e-mail |
+| `GET /companies/{id}/invoices/{iid}` | one invoice: header, status, the stored lines (`net_ore`/`vat_ore` as issued), the kreditnota link either way, the customer's e-mail, the voucher it was posted on (`voucher_id`, `voucher`) and `settlements` — every payment and kreditnota matched against the receivable, each with its voucher |
+| `POST /companies/{id}/invoices/{iid}/payments` | record a payment by hand (`dato`, `belop_ore`, `konto` 19xx, default 1920): one voucher money-account / receivable WITH the party, matched against the invoice in the same transaction under the party's reskontro lock. Requires `FAKTURA_SKRIV` and `BILAG_BOKFOR`; refuses more than is open, a date in the future, a non-19xx account, a kreditnota and a currency invoice (settled from Bank, where the agio is posted); the attestation policy governs it like any manual voucher |
+| `GET /companies/{id}/quotes/{qid}` | a tilbud's or ordre's lines as stored (product by number), for editing |
 | `POST /companies/{id}/invoices/{iid}/credit-note` | full kreditnota |
 | `GET /companies/{id}/invoices/{iid}/pdf` | the stored salgsdokument (hash-checked) |
 | `GET/PUT /companies/{id}/settings` | firmaopplysninger for the PDF (PUT admin-only) |
@@ -256,6 +258,30 @@ følger fakturadato + 14 dager til brukeren endrer det; det finnes ennå
 ingen lagret betalingsfrist per selskap eller kunde. Utstedelse viser en
 oppsummering først, fordi en utstedt faktura aldri kan endres.
 
+**Ingenting i Faktura utsteder en faktura uten at brukeren har sett
+kunden og beløpet og bekreftet.** Det gjelder alle veiene inn: ny
+faktura, ufakturerte timer (kunden er aldri forhåndsvalgt «første i
+listen» — bare foreslått når timene selv sier hvem de tilhører),
+ordre → faktura og «Lag forfalte nå» på repeterende fakturaer. Etter
+utstedelse lander brukeren på fakturaen, der «Send til kunde» er neste
+steg. Et avslått tilbud kan ikke tas opp igjen, og spør derfor også.
+
+**Registrer innbetaling** står på fakturaen for penger som ikke kommer
+gjennom bankavstemmingen — kontant, Vipps, en enkeltinnbetaling. Den
+bokfører bilaget og avstemmer det mot fakturaen i én transaksjon
+(API-raden over), og fakturasiden viser deretter **Innbetalinger og
+kreditering**: hver post som har gjort opp fakturaen, med bilaget den er
+bokført på, og bilaget fakturaen selv er bokført på — sporbarheten
+fakturaen → betaling → bilag og tilbake er ett klikk hver vei
+(bokføringsloven §4 nr. 7).
+
+Purringen registreres bare slik den ble forhåndsvist: endres et valg
+etter forhåndsvisningen, forkastes den, og «Registrer» må vente på en ny.
+Etter registrering tilbys «Send til kunde» med en gang.
+
+Tilbud har så mange linjer som trengs og kan endres så lenge de er
+utkast eller sendt (`GET`/`PUT …/quotes/{qid}`).
+
 ## Where it is tested
 
 - `regnmed-core/src/invoice.rs` — line/VAT computation, rounding, KID
@@ -264,6 +290,13 @@ oppsummering først, fordi en utstedt faktura aldri kan endres.
   loop over HTTP: issue (12 500 kr, valid KID), failed attempt burns no
   number, chain verifies, OCR payment resolves the invoice by KID,
   kreditnota auto-settles, double-credit rejected.
+  `a_payment_recorded_by_hand_settles_the_invoice`: a part payment in
+  cash leaves the rest open and shows on the invoice with its voucher;
+  overpaying, a non-19xx account, a future date and zero are refused
+  with an actionable message; six simultaneous attempts at the rest
+  settle it exactly once (the guarantee is the party lock — the harness
+  does not reliably make the attempts overlap, so the test pins the
+  outcome); the chain verifies.
   The invoice page answers with status `overdue` and the stored lines
   (another company's id is 404), and the list's filters are pinned:
   `status=credit` holds the kreditnota and the invoice it credits, newest
@@ -286,7 +319,8 @@ oppsummering først, fordi en utstedt faktura aldri kan endres.
   document, purring `?format=pdf`, settings PUT rejected for
   non-admins.
 - `regnmed-api/tests/grupper/salgsdokument.rs` (real Postgres, also CI) — the
-  whole chain over HTTP: tilbud edited while utkast, PDF without
+  whole chain over HTTP: tilbud edited while utkast and read back for
+  the editor (another id is 404), PDF without
   KID/betalingsinfo, one-way trapp, ordre copied losslessly (one per
   tilbud), fakturering through the ordinary path (chain + stored PDF
   verify, links carried), avslått path keeps the number series
