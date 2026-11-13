@@ -567,7 +567,10 @@ pub async fn post_stripe_payment(
     }
 
     let draft = crate::invoice::InvoiceDraft {
-        cash_payment_method: None,
+        // Paid by card before it exists: the document is a kontantfaktura
+        // (§5-3) with no KID or forfall -- an ordinary faktura would tell
+        // the customer to pay again (#223).
+        cash_payment_method: Some("Kort".into()),
         party_no,
         invoice_date: today,
         due_date: today,

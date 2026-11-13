@@ -1936,6 +1936,7 @@ dependencies = [
  "regnmed-db",
  "serde",
  "serde_json",
+ "sqlx",
  "uuid",
 ]
 

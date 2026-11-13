@@ -431,10 +431,9 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
 
 - Kjøperens orgnr påkrevd ved salg til virksomhet (§ 5-1-2).
 - Salgsdokumentet skal alltid sendes (§ 5-2-1 fjerde ledd): «usendte
-  fakturaer» som egen visning og som revisjonskontroll. **Funn:**
-  `abonnement-oppfolging` sender i dag ikke en faktura kortet betalte ved
-  utstedelse (docs/abonnement.md §5.3: «ingenting utestående og sendes
-  ikke som krav»). Fra 2028 må den sendes likevel — som kvittert faktura.
+  fakturaer» som egen visning og som revisjonskontroll. `abonnement-oppfolging`
+  sender også betalte abonnementsfakturaer (rettet i #223,
+  docs/abonnement.md §5.3).
 
 ### Fase 5 — før 1.1.2030
 
@@ -445,8 +444,9 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
 
 - **BT-10 = vårt kundenummer** (§3.4) — rettes i fase 1, men gjelder
   også EHF-en som lastes ned i dag.
-- **Kortbetalte abonnementsfakturaer sendes ikke** (§4 fase 4) — lovlig i
-  dag, ikke fra 1.1.2028.
+- ~~**Kortbetalte abonnementsfakturaer sendes ikke**~~ — rettet i #223:
+  oppgjorte abonnementsfakturaer og kreditnotaene deres sendes nå, og
+  e-posten sier om fakturaen er betalt eller kreditert.
 - ~~**EHF-en rendres fra kundens nåværende kontaktdata**~~ — rettet i
   #222: EHF-en rendres og lagres ved utstedelse (docs/ehf.md).
 

@@ -48,23 +48,20 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
     let rows = sqlx::query(
         "select r.company_id, c.name as company_navn, c.email as epost,
                 i.id as invoice_id, i.invoice_no, i.due_date,
-                e.amount_ore
-                - coalesce((select sum(m.amount_ore) from reskontro_match m
-                            where m.entry_a = e.id), 0)::bigint
-                + coalesce((select sum(m.amount_ore) from reskontro_match m
-                            where m.entry_b = e.id), 0)::bigint as remaining_ore,
+                o.remaining_ore::bigint as remaining_ore,
                 exists(select 1 from utsendelse u where u.invoice_id = i.id) as sendt,
                 rem.steg as last_steg, rem.sent_date as last_sent
          from abonnement_faktura_run r
          join invoice i on i.id = r.invoice_id
          join company c on c.id = r.company_id
-         join entry e on e.id = i.receivable_entry_id
+         join subledger_entry_open o on o.entry_id = i.receivable_entry_id
          left join lateral (
              select steg, sent_date from invoice_reminder
              where invoice_id = i.id
              order by created_at desc limit 1
          ) rem on true
          where i.company_id = $1 and i.credits_invoice_id is null
+           and o.remaining_ore > 0
          order by i.due_date, i.invoice_no",
     )
     .bind(drift)
@@ -72,7 +69,6 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
     .await?;
     Ok(rows
         .iter()
-        .filter(|r| r.get::<i64, _>("remaining_ore") > 0)
         .map(|r| SubscriptionInvoice {
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),
@@ -84,6 +80,65 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
             sent: r.get("sendt"),
             last_steg: r.get("last_steg"),
             last_sent: r.get("last_sent"),
+        })
+        .collect())
+}
+
+/// Settled abonnement documents issued before this date are not sent
+/// retroactively (#223). The duty to send every sales document to a
+/// bokføringspliktig buyer starts 1.1.2028 (bokføringsforskriften § 5-2-1
+/// fourth paragraph), so nothing older is owed; sending months of
+/// already-settled invoices on the first run would only confuse customers.
+/// Open invoices are sent regardless of date, as they always were.
+const SEND_SETTLED_FROM: &str = "2026-11-13";
+
+/// A subscription invoice or credit note that never went out.
+#[derive(Debug)]
+pub struct UnsentInvoice {
+    pub company_id: Uuid,
+    pub company_name: String,
+    pub email: Option<String>,
+    pub invoice_id: Uuid,
+    pub invoice_no: i64,
+    pub is_credit_note: bool,
+    pub remaining_ore: i64,
+}
+
+/// Abonnement documents without a dispatch row, SETTLED ONES INCLUDED
+/// (#223): a sales document must reach a bokføringspliktig buyer whether
+/// or not anything is owed (bokføringsforskriften § 5-2-1 fourth
+/// paragraph), so an invoice a card paid at issue goes out, and so does a
+/// credit note on a subscription invoice -- otherwise the buyer would get
+/// a credited invoice with nothing explaining it.
+pub async fn unsent_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentInvoice>> {
+    let rows = sqlx::query(
+        "select r.company_id, c.name as company_name, c.email,
+                i.id as invoice_id, i.invoice_no,
+                (i.credits_invoice_id is not null) as is_credit_note,
+                o.remaining_ore::bigint as remaining_ore
+         from invoice i
+         join abonnement_faktura_run r on r.invoice_id = coalesce(i.credits_invoice_id, i.id)
+         join company c on c.id = r.company_id
+         join subledger_entry_open o on o.entry_id = i.receivable_entry_id
+         where i.company_id = $1
+           and not exists (select 1 from utsendelse u where u.invoice_id = i.id)
+           and (o.remaining_ore > 0 or i.invoice_date >= $2::date)
+         order by i.invoice_date, i.invoice_no",
+    )
+    .bind(drift)
+    .bind(SEND_SETTLED_FROM)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| UnsentInvoice {
+            company_id: r.get("company_id"),
+            company_name: r.get("company_name"),
+            email: r.get("email"),
+            invoice_id: r.get("invoice_id"),
+            invoice_no: r.get("invoice_no"),
+            is_credit_note: r.get("is_credit_note"),
+            remaining_ore: r.get("remaining_ore"),
         })
         .collect())
 }
