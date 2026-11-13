@@ -21,6 +21,28 @@ use crate::ledger::post_voucher_in;
 use crate::rates::load_rates;
 use crate::vat::load_vat_rates;
 
+/// SQL, for an expense row aliased `x`: the claimant is someone the
+/// payroll run can still pay — linked to an employee whose employment
+/// has not ended. One copy, so the pay guard, the approval warning and
+/// the portal can never disagree about how a kjøring is paid.
+fn paid_with_pay(x: &str) -> String {
+    format!(
+        "exists (select 1 from employee emp
+                 where emp.company_id = {x}.company_id and emp.person_id = {x}.person_id
+                   and (emp.ansatt_til is null or emp.ansatt_til >= current_date))"
+    )
+}
+
+/// SQL, for an expense row aliased `x`: the claim is on a payment list
+/// on its way to the bank.
+pub(crate) fn in_open_run(x: &str) -> String {
+    format!(
+        "exists (select 1 from payment_run_item i
+                 join payment_run r on r.id = i.run_id
+                 where i.expense_id = {x}.id and r.status in ('utkast', 'godkjent'))"
+    )
+}
+
 /// Registers an utlegg with its receipt. The receipt is immutable from
 /// this moment (SHA-256 stored, trigger + grants) and follows the
 /// claim onto the voucher at approval — oppbevaringsplikten covers the
@@ -726,6 +748,13 @@ pub struct ExpenseRow {
     pub paid_voucher: Option<String>,
     pub utbetalt_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// How an approved claim gets paid: `lonn` (kjøring to an employee —
+    /// the next payroll run), `betalingsliste` (on a list on its way to
+    /// the bank) or None (by hand, or a list not made yet).
+    pub paid_by: Option<&'static str>,
+    /// The invoice that rebilled it, and how.
+    pub rebilled_invoice_id: Option<Uuid>,
+    pub rebilled_as: Option<String>,
 }
 
 /// Which claims a list shows. `status` is a TAB, not a stored value:
@@ -778,7 +807,7 @@ pub async fn list_expenses(
         Some(s @ ("utkast" | "innsendt" | "godkjent" | "utbetalt" | "avvist")) => Some(vec![s]),
         Some(other) => bail!("ukjent status «{other}»"),
     };
-    let rows_query = sqlx::query(
+    let sql = format!(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
                 case when e.registered_by_person <> e.person_id
                      then coalesce(rp.name, rp.oidc_sub) end as registered_by,
@@ -791,8 +820,11 @@ pub async fn list_expenses(
                 e.trekkfri_ore, e.trekkpliktig_ore, e.receipt_filename, e.status,
                 e.avvist_note, e.decided_by, e.decided_at, e.utbetalt_at, e.created_at,
                 v.fiscal_year, v.voucher_number,
-                pv.fiscal_year as paid_year, pv.voucher_number as paid_number
+                pv.fiscal_year as paid_year, pv.voucher_number as paid_number,
+                e.kind = 'kjoring' and {by_payroll} as by_payroll, {in_run} as in_run,
+                ei.invoice_id as rebilled_invoice_id, ei.treatment as rebilled_as
          from expense e
+         left join expense_invoice ei on ei.expense_id = e.id
          join person p on p.id = e.person_id
          left join person rp on rp.id = e.registered_by_person
          left join voucher v on v.id = e.voucher_id
@@ -807,16 +839,19 @@ pub async fn list_expenses(
                     else e.status not in ('utkast', 'forkastet') end
          order by e.created_at desc
          limit $6 offset $7",
-    )
-    .bind(company_id)
-    .bind(viewer)
-    .bind(only_own)
-    .bind(statuses.clone())
-    .bind(filter.expense_id)
-    .bind(filter.limit.clamp(1, 500))
-    .bind(filter.offset.max(0))
-    .bind(filter.trip_expense_id)
-    .fetch_all(pool);
+        by_payroll = paid_with_pay("e"),
+        in_run = in_open_run("e"),
+    );
+    let rows_query = sqlx::query(&sql)
+        .bind(company_id)
+        .bind(viewer)
+        .bind(only_own)
+        .bind(statuses.clone())
+        .bind(filter.expense_id)
+        .bind(filter.limit.clamp(1, 500))
+        .bind(filter.offset.max(0))
+        .bind(filter.trip_expense_id)
+        .fetch_all(pool);
     let counts_query = sqlx::query(
         "select status, count(*) as n from expense
          where company_id = $1 and ($3 = false or person_id = $2 or registered_by_person = $2)
@@ -871,6 +906,15 @@ pub async fn list_expenses(
             paid_voucher: voucher(r, "paid_year", "paid_number"),
             utbetalt_at: r.get("utbetalt_at"),
             created_at: r.get("created_at"),
+            paid_by: if r.get("by_payroll") {
+                Some("lonn")
+            } else if r.get("in_run") {
+                Some("betalingsliste")
+            } else {
+                None
+            },
+            rebilled_invoice_id: r.get("rebilled_invoice_id"),
+            rebilled_as: r.get("rebilled_as"),
         })
         .collect();
 
@@ -980,14 +1024,16 @@ pub async fn approve_expense(
     decided_by_person: Uuid,
 ) -> Result<ApprovedExpense> {
     let mut tx = pool.begin().await?;
-    let expense = sqlx::query(
+    let expense = sqlx::query(&format!(
         "select kind, dato, beskrivelse, belop_ore, km, sats_ore_per_km, trekkpliktig_ore,
                 receipt_filename, receipt_content_type, receipt_content, receipt_sha256,
                 status, person_id, registered_by_person, department, project,
                 route_from, route_to, round_trip, passengers,
-                coalesce((select p.name from person p where p.id = expense.person_id), '') as navn
+                coalesce((select p.name from person p where p.id = expense.person_id), '') as navn,
+                {employee} as employee
          from expense where id = $1 and company_id = $2 for update",
-    )
+        employee = paid_with_pay("expense"),
+    ))
     .bind(expense_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -1111,14 +1157,14 @@ pub async fn approve_expense(
                 project,
                 currency: None,
             });
-            let taxable: i64 = expense
-                .get::<Option<i64>, _>("trekkpliktig_ore")
-                .unwrap_or(0);
-            if taxable > 0 {
+            // An employee is paid with the next payroll run, which takes
+            // trekk on the taxable part and reports both parts. Anyone
+            // else has no arbeidsforhold regnmed can report on.
+            if !expense.get::<bool, _>("employee") {
                 warning = Some(format!(
-                    "trekkpliktig del {},{:02} kr skal lønnsinnberettes — regnmed tar den ikke med i a-meldingen ennå, så den må meldes særskilt",
-                    taxable / 100,
-                    taxable % 100
+                    "{name} er ikke ansatt under Lønn nå, så ingen lønnskjøring kan utbetale \
+                     godtgjørelsen og melde den i a-meldingen — den må meldes særskilt. Er \
+                     {name} ansatt, registrer og koble personen, så tar neste lønnskjøring kravet."
                 ));
             }
         }
@@ -1232,11 +1278,13 @@ pub async fn pay_expense(
     paid_by: &str,
 ) -> Result<PaidExpense> {
     let mut tx = pool.begin().await?;
-    let expense = sqlx::query(
-        "select status, belop_ore, motkonto, beskrivelse,
-                coalesce((select p.name from person p where p.id = expense.person_id), '') as navn
+    let expense = sqlx::query(&format!(
+        "select status, kind, belop_ore, motkonto, beskrivelse,
+                coalesce((select p.name from person p where p.id = expense.person_id), '') as navn,
+                {employee} as employee
          from expense where id = $1 and company_id = $2 for update",
-    )
+        employee = paid_with_pay("expense"),
+    ))
     .bind(expense_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -1246,6 +1294,26 @@ pub async fn pay_expense(
     ensure!(
         status == "godkjent",
         "bare godkjente krav kan utbetales (kravet er {status})"
+    );
+    // A statement of its own, AFTER the row lock: one that started
+    // before a concurrent list was committed would not see its item.
+    let in_run: bool = sqlx::query_scalar(&format!(
+        "select {} from expense x where x.id = $1",
+        in_open_run("x")
+    ))
+    .bind(expense_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    ensure!(
+        !in_run,
+        "kravet ligger i en betalingsliste — det betales når listen registreres betalt"
+    );
+    // The taxable part needs trekk, and both parts belong in the
+    // a-melding: the payroll run does all three.
+    ensure!(
+        expense.get::<String, _>("kind") != "kjoring" || !expense.get::<bool, _>("employee"),
+        "kjøregodtgjørelse til en ansatt utbetales med neste lønnskjøring, som også trekker \
+         skatt av den trekkpliktige delen og melder den i a-meldingen"
     );
     let amount: i64 = expense.get("belop_ore");
     let contra_account: String = expense
@@ -1343,4 +1411,244 @@ pub async fn own_addresses(
     .bind(text)
     .fetch_all(pool)
     .await?)
+}
+
+/// How a billable claim goes onto the customer's invoice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebillAs {
+    /// Part of what the company sells: the cost the claim booked, with
+    /// output VAT like the hours it travels with.
+    Resale,
+    /// Bought in the customer's name and for their account, passed on
+    /// without markup and outside the VAT base (mval. § 4-1 second
+    /// paragraph letter a). Only a claim approved WITHOUT input VAT onto
+    /// a balance account qualifies: the invoice line clears that account.
+    Disbursement,
+}
+
+impl RebillAs {
+    fn stored(self) -> &'static str {
+        match self {
+            Self::Resale => "videresalg",
+            Self::Disbursement => "utlegg",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Rebill {
+    pub expense_id: Uuid,
+    pub treatment: RebillAs,
+}
+
+/// The invoice lines for the chosen claims, and the latest claim date
+/// (the delivery date must not precede what it bills). Every claim must
+/// be approved, billable and not rebilled before — anything else fails
+/// the whole call rather than billing less than what was chosen.
+pub(crate) async fn rebill_lines(
+    pool: &PgPool,
+    company_id: Uuid,
+    picks: &[Rebill],
+    invoice_date: NaiveDate,
+) -> Result<(Vec<crate::invoice::InvoiceLineDraft>, Option<NaiveDate>)> {
+    // A company outside the VAT register resells without VAT: charging it
+    // would be collecting a tax it has no right to. A derived code is 7,
+    // as for every other line such a company issues (`settings`).
+    let registered = crate::settings::registrering_on(pool, company_id, invoice_date)
+        .await?
+        .vat_registered;
+    let resale_vat = if registered { "3" } else { "7" };
+    let ids: Vec<Uuid> = picks.iter().map(|p| p.expense_id).collect();
+    ensure!(
+        ids.len() == ids.iter().collect::<std::collections::HashSet<_>>().len(),
+        "samme utleggskrav er valgt to ganger"
+    );
+    // The approval's first line is the cost (approve_expense writes it
+    // first): net of any input VAT deducted, on the account it chose.
+    let rows = sqlx::query(
+        "select x.id, x.kind, x.dato, x.beskrivelse, x.belop_ore, x.status, x.billable,
+                x.project, x.department, a.number as account, e.amount_ore as cost_ore,
+                e.vat_code as cost_vat,
+                exists (select 1 from expense_invoice r where r.expense_id = x.id) as rebilled
+         from expense x
+         join entry e on e.voucher_id = x.voucher_id and e.line_no = 1
+         join account a on a.id = e.account_id
+         where x.company_id = $1 and x.id = any($2)",
+    )
+    .bind(company_id)
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let mut lines = Vec::new();
+    let mut last = None;
+    for pick in picks {
+        let r = rows
+            .iter()
+            .find(|r| r.get::<Uuid, _>("id") == pick.expense_id)
+            .with_context(|| {
+                format!(
+                    "utleggskrav {} er ikke godkjent eller finnes ikke",
+                    pick.expense_id
+                )
+            })?;
+        let what: String = r.get("beskrivelse");
+        let status: String = r.get("status");
+        ensure!(
+            status == "godkjent" || status == "utbetalt",
+            "«{what}» er {status} — bare godkjente krav kan viderefaktureres"
+        );
+        ensure!(
+            r.get::<bool, _>("billable"),
+            "«{what}» er ikke merket for viderefakturering"
+        );
+        ensure!(
+            !r.get::<bool, _>("rebilled"),
+            "«{what}» er allerede viderefakturert"
+        );
+        let date: NaiveDate = r.get("dato");
+        let kind: String = r.get("kind");
+        // The customer reads the line: a Norwegian date, not ISO.
+        let shown = date.format("%d.%m.%Y");
+        let line = match pick.treatment {
+            RebillAs::Resale => crate::invoice::InvoiceLineDraft {
+                description: if kind == "kjoring" {
+                    format!("Kjøring {shown}: {what}")
+                } else {
+                    format!("{what} ({shown})")
+                },
+                account_number: "3000".into(),
+                quantity_milli: 1000,
+                unit_price_ore: r.get("cost_ore"),
+                vat_code: Some(resale_vat.into()),
+                department: r.get("department"),
+                project: r.get("project"),
+                product_id: None,
+            },
+            RebillAs::Disbursement => {
+                let account: String = r.get("account");
+                ensure!(
+                    kind == "utlegg",
+                    "kjøregodtgjørelse er en kostnad for selskapet og kan bare viderefaktureres \
+                     som videresalg"
+                );
+                ensure!(
+                    r.get::<Option<String>, _>("cost_vat").is_none()
+                        && r.get::<i64, _>("cost_ore") == r.get::<i64, _>("belop_ore"),
+                    "«{what}» ble godkjent med fradrag for inngående mva, og et utlegg for kunden \
+                     har ingen mva hos oss — fakturer det som videresalg"
+                );
+                ensure!(
+                    account.starts_with('1'),
+                    "«{what}» ble godkjent som kostnad på konto {account}. Et utlegg kjøpt i \
+                     kundens navn føres på en fordringskonto (f.eks. 1579) — fakturer det som \
+                     videresalg, eller godkjenn slike krav på en balansekonto"
+                );
+                crate::invoice::InvoiceLineDraft {
+                    description: format!("Utlegg: {what} ({shown})"),
+                    account_number: account,
+                    quantity_milli: 1000,
+                    unit_price_ore: r.get("belop_ore"),
+                    vat_code: None,
+                    department: None,
+                    project: None,
+                    product_id: None,
+                }
+            }
+        };
+        lines.push(line);
+        last = last.max(Some(date));
+    }
+    Ok((lines, last))
+}
+
+/// Records which invoice took each claim, inside the invoice's own
+/// transaction. The primary key makes a second rebilling impossible even
+/// if two invoices race for the same claim.
+pub(crate) async fn mark_rebilled(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    picks: &[Rebill],
+    invoice_id: Uuid,
+    created_by: &str,
+) -> Result<()> {
+    for pick in picks {
+        sqlx::query(
+            "insert into expense_invoice (expense_id, invoice_id, treatment, created_by)
+             values ($1, $2, $3, $4)",
+        )
+        .bind(pick.expense_id)
+        .bind(invoice_id)
+        .bind(pick.treatment.stored())
+        .bind(created_by)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(d) if d.code().as_deref() == Some("23505") => {
+                anyhow::anyhow!("et av utleggskravene ble viderefakturert samtidig — prøv igjen")
+            }
+            _ => e.into(),
+        })?;
+    }
+    Ok(())
+}
+
+/// A claim waiting to be rebilled.
+#[derive(Debug)]
+pub struct BillableExpense {
+    pub expense_id: Uuid,
+    pub kind: String,
+    pub date: NaiveDate,
+    pub description: String,
+    pub claimant: String,
+    pub amount_ore: i64,
+    /// What a resale line bills: the cost the approval booked, net of any
+    /// input VAT deducted.
+    pub cost_ore: i64,
+    pub project: Option<String>,
+    /// The project's customer (docs/dimensjoner.md) — a suggestion for
+    /// whom to invoice, never a rule.
+    pub party_no: Option<String>,
+    pub party_name: Option<String>,
+    /// Approved without input VAT onto a balance account: may go on as a
+    /// disbursement.
+    pub can_disburse: bool,
+}
+
+/// Approved billable claims not yet rebilled, oldest first.
+pub async fn billable_expenses(pool: &PgPool, company_id: Uuid) -> Result<Vec<BillableExpense>> {
+    let rows = sqlx::query(
+        "select x.id, x.kind, x.dato, x.beskrivelse, x.belop_ore, x.project,
+                coalesce(p.name, '') as claimant, e.amount_ore as cost_ore,
+                e.vat_code is null and e.amount_ore = x.belop_ore and a.number like '1%'
+                    and x.kind = 'utlegg' as can_disburse,
+                party.party_no, party.name as party_name
+         from expense x
+         join entry e on e.voucher_id = x.voucher_id and e.line_no = 1
+         join account a on a.id = e.account_id
+         left join person p on p.id = x.person_id
+         left join dimension d on d.company_id = x.company_id and d.kind = 'prosjekt'
+                              and d.code = x.project
+         left join party on party.id = d.party_id
+         where x.company_id = $1 and x.billable and x.status in ('godkjent', 'utbetalt')
+           and not exists (select 1 from expense_invoice r where r.expense_id = x.id)
+         order by x.dato, x.id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| BillableExpense {
+            expense_id: r.get("id"),
+            kind: r.get("kind"),
+            date: r.get("dato"),
+            description: r.get("beskrivelse"),
+            claimant: r.get("claimant"),
+            amount_ore: r.get("belop_ore"),
+            cost_ore: r.get("cost_ore"),
+            project: r.get("project"),
+            party_no: r.get("party_no"),
+            party_name: r.get("party_name"),
+            can_disburse: r.get("can_disburse"),
+        })
+        .collect())
 }

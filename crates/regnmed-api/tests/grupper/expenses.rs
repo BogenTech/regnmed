@@ -5,7 +5,9 @@
 //! the trekkpliktige del surfaced as a warning, and utbetaling posting
 //! mellomregning mot bank. Requires DATABASE_URL (skips otherwise).
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -291,7 +293,8 @@ async fn expenses_flow() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // Approval carries the honest trekkpliktig warning.
+    // The claimant is no employee, so nothing will report the allowance:
+    // approval says so, out loud.
     let (status, approved) = request(
         &state,
         "POST",
@@ -305,7 +308,7 @@ async fn expenses_flow() {
         approved["warning"]
             .as_str()
             .unwrap()
-            .contains("trekkpliktig del 216,00 kr"),
+            .contains("ikke ansatt under Lønn"),
         "warning: {approved}"
     );
     assert_eq!(balance(&state, company, "7100").await, 636_00);
@@ -1322,4 +1325,287 @@ async fn a_receipt_photo_prefills_the_draft() {
         body["warnings"].to_string().contains("tekstgjenkjenningen"),
         "{body}"
     );
+}
+
+/// Billable claims are rebilled on the project customer's invoice
+/// (docs/utlegg.md «Viderefakturering»): resold at the cost they booked
+/// plus output VAT, or passed on as a disbursement outside the VAT base —
+/// which only a claim approved without input VAT onto a balance account
+/// may be. Each claim goes on one invoice, once.
+#[tokio::test]
+async fn billable_claims_are_rebilled_once() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Prosjekt Leder"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Rådgiver AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("1579", "Utlegg for kunder"),
+        ("2700", "Utgående mva"),
+        ("2710", "Inngående mva"),
+        ("2910", "Gjeld til ansatte"),
+        ("3000", "Salgsinntekt"),
+        ("7100", "Bilgodtgjørelse"),
+        ("7140", "Reisekostnad"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let (_, customer) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunden AS", None, None)
+            .await
+            .unwrap();
+    give_parties_address(&state.pool, company).await;
+    regnmed_db::create_dimension(
+        &state.pool,
+        company,
+        "prosjekt",
+        "P1",
+        "Kundeprosjekt",
+        Some(&customer),
+    )
+    .await
+    .unwrap();
+
+    let date = |d| chrono::NaiveDate::from_ymd_opt(2026, 8, d).unwrap();
+    // One claim per treatment, each approved as its treatment needs.
+    let claim =
+        |kind: &'static str, day: u32, what: &'static str, amount: Option<i64>, km: Option<i64>| {
+            let state = &state;
+            async move {
+                let draft = regnmed_db::ExpenseDraft {
+                    date: Some(date(day)),
+                    description: what.into(),
+                    amount_ore: amount,
+                    km,
+                    route_from: km.map(|_| "Oslo".into()),
+                    route_to: km.map(|_| "Drammen".into()),
+                    project: Some("P1".into()),
+                    billable: true,
+                    ..Default::default()
+                };
+                let receipt = format!("kvittering {}", Uuid::new_v4());
+                let id = regnmed_db::create_draft(
+                    &state.pool,
+                    company,
+                    person,
+                    person,
+                    kind,
+                    None,
+                    &draft,
+                    (kind == "utlegg").then(|| regnmed_db::Receipt {
+                        filename: "k.txt",
+                        content_type: "text/plain",
+                        content: receipt.as_bytes(),
+                    }),
+                    "Prosjekt Leder",
+                )
+                .await
+                .unwrap();
+                regnmed_db::submit_expense(&state.pool, company, id)
+                    .await
+                    .unwrap();
+                id
+            }
+        };
+    let hotel = claim("utlegg", 3, "Hotell", Some(1_250_00), None).await;
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        hotel,
+        "7140",
+        Some("1"),
+        "2710",
+        "2910",
+        "PL",
+        person,
+    )
+    .await
+    .unwrap();
+    let ticket = claim("utlegg", 4, "Billett i kundens navn", Some(500_00), None).await;
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        ticket,
+        "1579",
+        None,
+        "2710",
+        "2910",
+        "PL",
+        person,
+    )
+    .await
+    .unwrap();
+    let trip = claim("kjoring", 5, "Til kunden", None, Some(120)).await;
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        trip,
+        "7100",
+        None,
+        "2710",
+        "2910",
+        "PL",
+        person,
+    )
+    .await
+    .unwrap();
+
+    let token = idp.token(&sub, "Prosjekt Leder");
+    let (status, billable) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/expenses/billable"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {billable}");
+    let listed = billable["expenses"].as_array().unwrap();
+    assert_eq!(listed.len(), 3);
+    let of = |id: Uuid| {
+        listed
+            .iter()
+            .find(|e| e["expense_id"] == id.to_string())
+            .unwrap()
+    };
+    assert_eq!(
+        of(hotel)["cost_ore"],
+        1_000_00,
+        "net of the input VAT deducted"
+    );
+    assert_eq!(
+        of(hotel)["party_no"],
+        customer.as_str(),
+        "the project's customer"
+    );
+    assert_eq!(of(hotel)["can_disburse"], false);
+    assert_eq!(of(ticket)["can_disburse"], true);
+    assert_eq!(of(trip)["can_disburse"], false);
+
+    let invoice = |expenses: serde_json::Value| {
+        let state = &state;
+        let token = &token;
+        let customer = customer.clone();
+        async move {
+            request(
+                state,
+                "POST",
+                &format!("/companies/{company}/invoices"),
+                token,
+                Some(
+                    serde_json::json!({
+                        "party_no": customer, "invoice_date": "2026-08-10",
+                        "due_date": "2026-08-24", "lines": [], "expenses": expenses,
+                    })
+                    .to_string(),
+                ),
+            )
+            .await
+        }
+    };
+    // Input VAT was deducted on the hotel: it cannot also pass outside VAT.
+    let (status, refused) =
+        invoice(serde_json::json!([{ "expense_id": hotel, "treatment": "disbursement" }])).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(refused.to_string().contains("videresalg"), "{refused}");
+
+    let (status, issued) = invoice(serde_json::json!([
+        { "expense_id": hotel, "treatment": "resale" },
+        { "expense_id": ticket, "treatment": "disbursement" },
+        { "expense_id": trip, "treatment": "resale" },
+    ]))
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {issued}");
+    // 1 000 + 636 kr resold with 25 % VAT, 500 kr passed on without.
+    assert_eq!(issued["net_ore"], 1_000_00 + 636_00 + 500_00);
+    assert_eq!(issued["vat_ore"], 250_00 + 159_00);
+    assert_eq!(
+        balance(&state, company, "1579").await,
+        0,
+        "the disbursement is cleared"
+    );
+
+    // Once: nothing is left to rebill, and a second invoice is refused.
+    let (_, billable) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/expenses/billable"),
+        &token,
+        None,
+    )
+    .await;
+    assert!(billable["expenses"].as_array().unwrap().is_empty());
+    let (status, refused) =
+        invoice(serde_json::json!([{ "expense_id": trip, "treatment": "resale" }])).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.to_string().contains("allerede viderefakturert"),
+        "{refused}"
+    );
+
+    // Out of the VAT register: resold without VAT (code 7), never 25 %.
+    regnmed_db::record_registrering(
+        &state.pool,
+        company,
+        date(20),
+        regnmed_db::Registrering {
+            vat_registered: false,
+            business_registered: true,
+        },
+        "manuell",
+        Some("test"),
+        "test",
+    )
+    .await
+    .unwrap();
+    let late = claim("kjoring", 21, "Ny tur", None, Some(10)).await;
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        late,
+        "7100",
+        None,
+        "2710",
+        "2910",
+        "PL",
+        person,
+    )
+    .await
+    .unwrap();
+    let (status, issued) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invoices"),
+        &token,
+        Some(
+            serde_json::json!({
+                "party_no": customer, "invoice_date": "2026-08-25", "due_date": "2026-09-08",
+                "lines": [], "expenses": [{ "expense_id": late, "treatment": "resale" }],
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {issued}");
+    assert_eq!(issued["net_ore"], 53_00);
+    assert_eq!(issued["vat_ore"], 0);
 }

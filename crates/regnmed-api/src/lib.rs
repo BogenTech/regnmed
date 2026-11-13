@@ -579,6 +579,10 @@ pub fn router(state: AppState) -> Router {
             get(expenses::claimants),
         )
         .route(
+            "/companies/{company_id}/expenses/billable",
+            get(expenses::billable),
+        )
+        .route(
             "/companies/{company_id}/expenses/addresses",
             get(expenses::addresses),
         )

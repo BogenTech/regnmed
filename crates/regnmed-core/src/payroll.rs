@@ -141,6 +141,11 @@ pub struct PayrollBasis {
     /// in the income year (ordinary pay + feriepenger). Only a frikort
     /// reads it.
     pub paid_earlier_this_year_ore: i64,
+    /// Kjøregodtgjørelse paid with this run: the part above the trekkfri
+    /// rate is pay (trekkpliktig, triggers aga, earns no feriepenger),
+    /// the rest is a reimbursement the employee simply gets.
+    pub taxable_allowance_ore: i64,
+    pub tax_free_allowance_ore: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +155,9 @@ pub struct PayrollCalculation {
     /// Base the withholding was actually computed on.
     pub withholding_basis_ore: i64,
     pub withholding_ore: i64,
+    /// Kjøregodtgjørelse paid with the run, trekkfri and trekkpliktig.
+    pub allowance_ore: i64,
+    pub taxable_allowance_ore: i64,
     pub net_ore: i64,
     /// True when December's half withholding was applied.
     pub half_withholding: bool,
@@ -192,11 +200,14 @@ pub fn calculate(
         }
         Withholding::Percent(_) | Withholding::None => false,
     };
-    let trekkgrunnlag = if twelve_months {
-        basis.gross_ore + basis.holiday_pay_ore
-    } else {
-        basis.gross_ore
-    };
+    // The taxable allowance is trekkpliktig whatever the card: it is
+    // not feriepenger, which are what the 10,5 months leave out.
+    let trekkgrunnlag = basis.taxable_allowance_ore
+        + if twelve_months {
+            basis.gross_ore + basis.holiday_pay_ore
+        } else {
+            basis.gross_ore
+        };
     let half_withholding = month == 12 && !twelve_months;
     let (withholding, method) = match basis.withholding {
         Withholding::None => (0, "ingen trekk".to_string()),
@@ -239,7 +250,13 @@ pub fn calculate(
         holiday_pay_ore: basis.holiday_pay_ore,
         withholding_basis_ore: trekkgrunnlag,
         withholding_ore: withholding,
-        net_ore: basis.gross_ore + basis.holiday_pay_ore - withholding,
+        allowance_ore: basis.taxable_allowance_ore + basis.tax_free_allowance_ore,
+        taxable_allowance_ore: basis.taxable_allowance_ore,
+        net_ore: basis.gross_ore
+            + basis.holiday_pay_ore
+            + basis.taxable_allowance_ore
+            + basis.tax_free_allowance_ore
+            - withholding,
         half_withholding,
         method,
     })
@@ -339,6 +356,10 @@ pub struct PayrollTotals {
     pub gross_ore: i64,
     pub holiday_pay_paid_ore: i64,
     pub withholding_ore: i64,
+    /// Kjøregodtgjørelse paid with the run. Not a cost here: it was
+    /// expensed when the claim was approved, and the run only settles
+    /// the debt to the employee.
+    pub allowance_ore: i64,
     pub net_ore: i64,
     pub holiday_pay_accrual_ore: i64,
     /// aga on this month's pay.
@@ -376,6 +397,8 @@ mod tests {
             holiday_pay_ore: 0,
             withholding,
             paid_earlier_this_year_ore: 0,
+            taxable_allowance_ore: 0,
+            tax_free_allowance_ore: 0,
         }
     }
 
@@ -397,6 +420,8 @@ mod tests {
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::Percent(3500),
             paid_earlier_this_year_ore: 0,
+            taxable_allowance_ore: 0,
+            tax_free_allowance_ore: 0,
         };
         let b = calculate(&g, 2026, 6).unwrap();
         assert_eq!(b.withholding_basis_ore, 1_000_000, "ordinary pay only");
@@ -460,6 +485,8 @@ mod tests {
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::PercentTwelveMonths(2220),
             paid_earlier_this_year_ore: 0,
+            taxable_allowance_ore: 0,
+            tax_free_allowance_ore: 0,
         };
         let b = calculate(&june, 2026, 6).unwrap();
         assert_eq!(b.withholding_basis_ore, 5_000_000, "feriepenger included");
@@ -498,6 +525,34 @@ mod tests {
         assert_eq!(holiday.withholding_ore, kr * 100);
     }
 
+    /// Kjøregodtgjørelse paid with pay: the part above the trekkfri rate
+    /// is taxed like pay — on a 10,5-month card too, and in full even in
+    /// December — while the trekkfri part only reaches the net.
+    #[test]
+    fn the_taxable_allowance_is_withheld_and_the_rest_only_paid() {
+        let mut b = basis(4_000_000, Withholding::Percent(3000));
+        b.taxable_allowance_ore = 21_600;
+        b.tax_free_allowance_ore = 42_000;
+        let c = calculate(&b, 2026, 3).unwrap();
+        assert_eq!(c.withholding_basis_ore, 4_021_600);
+        // 30 % of 40 216 kr = 12 064,80 kr, rounded down to whole kroner.
+        assert_eq!(c.withholding_ore, 1_206_400);
+        assert_eq!(c.allowance_ore, 63_600);
+        assert_eq!(c.taxable_allowance_ore, 21_600);
+        assert_eq!(c.net_ore, 4_000_000 + 63_600 - 1_206_400);
+
+        // A month with only the allowance still withholds on its taxable part.
+        let mut only = basis(0, Withholding::Percent(3000));
+        only.taxable_allowance_ore = 21_600;
+        only.tax_free_allowance_ore = 42_000;
+        let only = calculate(&only, 2026, 3).unwrap();
+        assert_eq!(
+            only.withholding_ore, 6_400,
+            "30 % of 216 kr = 64,80 kr → 64 kr"
+        );
+        assert_eq!(only.net_ore, 63_600 - 6_400);
+    }
+
     /// The a-melding takes forskuddstrekk in whole kroner, so the trekk
     /// is rounded down to one -- for every method.
     #[test]
@@ -514,6 +569,8 @@ mod tests {
                 limit_ore: 3_000_000,
             },
             paid_earlier_this_year_ore: 0,
+            taxable_allowance_ore: 0,
+            tax_free_allowance_ore: 0,
         };
         assert_eq!(calculate(&frikort, 2026, 3).unwrap().withholding_ore, 0);
     }
@@ -529,6 +586,8 @@ mod tests {
                 limit_ore: 10_000_000,
             },
             paid_earlier_this_year_ore: earlier,
+            taxable_allowance_ore: 0,
+            tax_free_allowance_ore: 0,
         };
         let under = calculate(&frikort(5_000_000, 2_000_000, 0), 2026, 5).unwrap();
         assert_eq!(under.withholding_ore, 0);
@@ -646,6 +705,7 @@ mod tests {
             gross_ore: 5_000_000,
             holiday_pay_paid_ore: 1_000_000,
             withholding_ore: 1_750_000,
+            allowance_ore: 0,
             net_ore: 4_250_000,
             holiday_pay_accrual_ore: 510_000,
             employer_contribution_ore: 705_000,

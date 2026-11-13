@@ -382,10 +382,11 @@ en melding som aldri sendes.
 | `arbeidsforhold/typeArbeidsforhold` | alltid `ordinaertArbeidsforhold` |
 | `arbeidsforhold/startdato`, `sluttdato` | `employee.ansatt_fra`, `ansatt_til` |
 | `inntekt` `fastloenn` / `timeloenn` / `feriepenger` | `payroll_line.brutto_ore`, `feriepenger_ore` — kombinasjon 111: `kontantytelse`, utløser aga, inngår i trekkgrunnlaget |
+| `inntekt` kjøregodtgjørelse (`utgiftsgodtgjoerelse`, `antall` = km) | `payroll_expense` — trekkfri del (711), del over trekkfri sats (153, utløser aga og trekk), passasjertillegg og andre kjøretøy (714). Se docs/utlegg.md «Utbetaling» |
 | `forskuddstrekk` (`ordinaert`, negativt, F278-2) | `payroll_line.forskuddstrekk_ore` |
 | `sumForskuddstrekkPerLoennsutbetalingsdato` (fra 2026-01, F523) | `payroll_run.utbetalt_dato` + sum trekk |
 | `sumArbeidsgiveravgift` | `payroll_run.aga_ore` (ikke avsetningen på feriepenger — den er periodisering, ikke avgift å betale). Må være NØYAKTIG grunnlaget × satsen avrundet ned til hele kroner (F185, skattebetalingsforskriften § 10-4-4); ellers nektes meldingen med begge tallene |
-| `loennOgGodtgjoerelse`: beregningskode, sone, grunnlag, sats | `generelleNaeringer`; `payroll_run.sone` (I→`1`, Ia→`1a`, …); summen av inntektene (F184); satsen fra satsregisteret på utbetalingsdatoen |
+| `loennOgGodtgjoerelse`: beregningskode, sone, grunnlag, sats | `generelleNaeringer`; `payroll_run.sone` (I→`1`, Ia→`1a`, …); summen av inntektene som utløser aga (F184) — ikke den trekkfrie kjøregodtgjørelsen; satsen fra satsregisteret på utbetalingsdatoen |
 
 `generelleNaeringer` er ikke en ny antakelse: lønnskjøringen bruker
 allerede den ordinære satsen per sone, og det ER den beregningskoden

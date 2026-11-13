@@ -1,6 +1,7 @@
 //! Payment list and remittering (docs/betaling.md, #33):
 //!
-//! - GET  /companies/{id}/payments/payable       åpne leverandørposter
+//! - GET  /companies/{id}/payments/payable       åpne leverandørposter og
+//!   godkjente utleggskrav
 //! - GET  /companies/{id}/payments/runs          kjøringer m/ status
 //! - POST /companies/{id}/payments/runs          lag liste (utkast)
 //! - POST /companies/{id}/payments/runs/{rid}/approve   → pain.001
@@ -34,6 +35,7 @@ pub async fn payable(
     Ok(Json(json!({
         "items": items.iter().map(|i| json!({
             "entry_id": i.entry_id,
+            "expense_id": i.expense_id,
             "voucher": i.voucher_label,
             "date": i.date.to_string(),
             "description": i.description,
@@ -48,9 +50,11 @@ pub async fn payable(
     })))
 }
 
+/// `entry_id` (a supplier post) or `expense_id` (a receipt claim).
 #[derive(Deserialize)]
 pub struct RunItemRequest {
-    entry_id: Uuid,
+    entry_id: Option<Uuid>,
+    expense_id: Option<Uuid>,
     #[serde(rename = "belop_ore")]
     amount_ore: Option<i64>,
     kid: Option<String>,
@@ -87,6 +91,7 @@ pub async fn create_run(
         .into_iter()
         .map(|i| regnmed_db::PaymentItemDraft {
             entry_id: i.entry_id,
+            expense_id: i.expense_id,
             amount_ore: i.amount_ore,
             kid: i.kid.filter(|k| !k.trim().is_empty()),
             message: i.message.filter(|m| !m.trim().is_empty()),

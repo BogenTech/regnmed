@@ -1,5 +1,6 @@
 <script>
-  // Payments: what we owe suppliers, picked into a payment list, approved
+  // Payments: what we owe suppliers and employees' approved receipt claims,
+  // picked into a payment list, approved
   // (by someone else when attestering is on — four eyes on money out),
   // sent to the bank as a pain.001 file, and recorded as paid. Each step
   // is one-way, so each asks first and says what happens.
@@ -36,9 +37,11 @@
   $effect(load);
 
   const todayIso = today();
+  // A supplier post or an employee's claim; never both.
+  const keyOf = (p) => p.entry_id || p.expense_id;
   let selectable = $derived((payable || []).filter((p) => !p.i_kjoring && p.bank_account));
   let pickedSum = $derived(
-    (payable || []).filter((p) => picked.includes(p.entry_id)).reduce((s, p) => s + p.belop_ore, 0),
+    (payable || []).filter((p) => picked.includes(keyOf(p))).reduce((s, p) => s + p.belop_ore, 0),
   );
   let activeRuns = $derived((runs || []).filter((r) => r.status === "utkast" || r.status === "godkjent"));
   let pastRuns = $derived((runs || []).filter((r) => r.status === "utbetalt" || r.status === "annullert"));
@@ -47,9 +50,10 @@
     picked = picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
   }
   function pickDue() {
-    picked = selectable.filter((p) => p.due_date && p.due_date <= todayIso).map((p) => p.entry_id);
+    picked = selectable.filter((p) => p.due_date && p.due_date <= todayIso).map(keyOf);
     if (picked.length) return;
-    const undated = selectable.filter((p) => !p.due_date).length;
+    // Claims have no due date of their own; only supplier posts can get one.
+    const undated = selectable.filter((p) => p.entry_id && !p.due_date).length;
     toast(
       undated
         ? "Ingen poster med forfall i dag eller før. " + undated + " har ikke registrert forfall — velg dem selv, eller før forfall under Leverandører."
@@ -57,14 +61,17 @@
       false,
     );
   }
-  const pickAll = () => (picked = selectable.map((p) => p.entry_id));
+  const pickAll = () => (picked = selectable.map(keyOf));
 
   async function createRun() {
     if (!picked.length || busy) return;
     busy = true;
     try {
       await post(base + "/runs", {
-        items: picked.map((entry_id) => ({ entry_id })),
+        items: picked.map((key) => {
+          const p = payable.find((x) => keyOf(x) === key);
+          return p.expense_id ? { expense_id: key } : { entry_id: key };
+        }),
         execution_date: executionDate || null,
       });
       toast("Betalingslisten er laget. Den må godkjennes før filen kan lastes ned.", true);
@@ -177,7 +184,10 @@
     <div class="card-body overflow-x-auto">
       <h2 id="betal-tittel" class="card-title">Å betale</h2>
       {#if payable.length === 0}
-        <p class="opacity-70">Ingen åpne leverandørposter. Leverandørfakturaer kommer hit når de er bokført fra Bilag.</p>
+        <p class="opacity-70">
+          Ingen åpne leverandørposter eller godkjente utlegg. Leverandørfakturaer kommer hit når de er bokført fra Bilag,
+          utlegg når de er godkjent.
+        </p>
       {:else}
         {#if canCreate && selectable.length}
           <div class="flex flex-wrap items-end gap-2">
@@ -194,18 +204,18 @@
           </div>
         {/if}
         <table class="table table-sm sm:table-md mt-2">
-          <caption class="sr-only">Åpne leverandørposter som kan betales, med forfall og KID.</caption>
+          <caption class="sr-only">Åpne leverandørposter og godkjente utlegg som kan betales, med forfall og KID.</caption>
           <thead>
             <tr>
               {#if canCreate}<th scope="col" class="w-px px-1 sm:px-4"><span class="sr-only">Velg</span></th>{/if}
-              <th scope="col">Leverandør</th>
+              <th scope="col">Mottaker</th>
               <th scope="col" class="hidden sm:table-cell">Forfall</th>
               <th scope="col" class="hidden md:table-cell">KID</th>
               <th scope="col" class="text-right">Beløp</th>
             </tr>
           </thead>
           <tbody>
-            {#each payable as p (p.entry_id)}
+            {#each payable as p (keyOf(p))}
               {@const late = p.due_date && p.due_date < todayIso}
               <tr>
                 {#if canCreate}
@@ -219,8 +229,8 @@
                         type="checkbox"
                         class="checkbox checkbox-sm"
                         aria-label={"Velg " + p.party_name + ", bilag " + p.voucher}
-                        checked={picked.includes(p.entry_id)}
-                        onchange={() => toggle(p.entry_id)}
+                        checked={picked.includes(keyOf(p))}
+                        onchange={() => toggle(keyOf(p))}
                       />
                     {/if}
                   </td>
@@ -231,7 +241,9 @@
                   <span class="block text-sm sm:hidden {late ? 'text-error' : ''}">
                     {p.due_date ? "Forfall " + formatDate(p.due_date) : "Uten forfall"}{p.kid ? ", KID " + p.kid : ""}
                   </span>
-                  {#if !p.bank_account}
+                  {#if !p.bank_account && p.expense_id}
+                    <a class="link text-sm" href={"#/c/" + companyId + "/lonn"}>Legg inn kontonummeret på den ansatte under Lønn</a>
+                  {:else if !p.bank_account}
                     <a class="link text-sm" href={"#/c/" + companyId + "/leverandorer"}>Legg inn kontonummer under Leverandører</a>
                   {/if}
                 </td>
