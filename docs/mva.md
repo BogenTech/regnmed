@@ -202,21 +202,38 @@ ops/admin. Authenticated, engagement-guarded endpoints (see
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /companies/{id}/reports/mva?year=&termin=` | spesifikasjon as JSON (øre integers; the UI formats). Each line carries `virkning_ore` — its effect on what is payable, payable-positive, by the SAME rule as the melding (`regnmed-core::vat::payable_effect_ore`: utgående positive, fradrag negative, omvendt med fradrag null, kostnadsmarkører og kode 0 ikke med) — and `retning`. `utgaende_ore`/`inngaende_ore`/`netto_ore` are summed from those effects, so the screen and the return cannot disagree about what is owed (before, «Å betale» left out omvendt avgiftsplikt uten fradragsrett, which the melding includes) |
-| `GET /companies/{id}/reports/mva/postings?year=&termin=&kode=` | the postings behind one code in the term (voucher, date, account, text, party, grunnlag), at most 500 with `total` — what the accountant checks before filing |
+| `GET /companies/{id}/reports/mva?year=&termin=` | spesifikasjonen som JSON (heltall i øre; portalen formaterer). Hver linje har `virkning_ore` — linjens virkning på det som skal betales, positiv når den øker beløpet, etter SAMME regel som meldingen (`regnmed-core::vat::payable_effect_ore`: utgående positiv, fradrag negativ, omvendt avgiftsplikt med fradrag null, kostnadsmarkører og kode 0 ikke med) — og `retning`. `utgaende_ore`/`inngaende_ore`/`netto_ore` summeres per retning (`vat_totals`), ikke per fortegn: en termin der kreditnotaer veier tyngre enn salget gir NEGATIV utgående mva, ikke et fradrag. Skjermen og meldingen kan dermed ikke være uenige om hva som skyldes (før lot «Å betale» omvendt avgiftsplikt uten fradragsrett ligge ute, mens meldingen tok den med) |
+| `GET /companies/{id}/reports/mva/postings?year=&termin=&kode=` | posteringene bak én kode i terminen (bilag, dato, konto, tekst, part, grunnlag), inntil 500 med `total` — det regnskapsføreren kontrollerer før meldingen sendes |
+| `GET /companies/{id}/mva/terminordning?year=` | ordningen som gjelder for året (den som gjaldt 1. januar, som rapporten og meldingen bruker), med årets terminer og frister; uten `year` dette året |
 | `GET /companies/{id}/reports/mva-melding?year=&termin=` | `mvaMeldingDto` XML download |
 | `GET /companies/{id}/reports/saft?year=` (or `from=&to=`) | SAF-T XML download; header contact defaults to the authenticated person's name |
 
-Portal (`#/c/{id}/mva?year=&termin=&kode=`): the registration status
-(«Mva-registrert fra …», or a clear «Ikke mva-registrert» with what it
-means) and the terminordning first; year steppers and the terms named
-by their months; the page opens on the latest term that has ENDED (the
-one being filed). The deadline is said in words («Frist 10. desember
-2026, om 27 dager»). Each code opens its postings, linked to the
-vouchers; amounts are shown as the return reads them. The melding is
-downloaded with a sentence on what to do with it until direct sending
-is available; SAF-T moved to Rapporter. The terminordning form is shown
-only to whoever holds `MVA_ORDNING_ADMIN`.
+Portalen (`#/c/{id}/mva?year=&termin=&kode=`): registreringsstatusen
+(«Mva-registrert fra …», eller et tydelig «Ikke mva-registrert» med
+hva det betyr) og terminordningen først; årsvelger og terminer navngitt
+etter månedene; siden åpner på den siste terminen som er AVSLUTTET (den
+som skal leveres). Antall terminer hentes per år, så et år med en annen
+ordning viser sine egne terminer. Fristen sies i ord («Frist 10.
+desember 2026, om 27 dager»). Hver kode åpner posteringene bak seg, med
+lenke til bilagene, og beløpene vises slik meldingen leser dem.
+Meldingen lastes ned med en setning om hva den brukes til fram til
+direkte innsending er på plass; SAF-T er flyttet til Rapporter.
+Terminordningsskjemaet vises bare for den som har `MVA_ORDNING_ADMIN`.
+
+### Omvendt avgiftsplikt i spesifikasjonen (rettet 2026-11-13)
+
+Grunnlaget for omvendt avgiftsplikt og innførsel er et KJØP, bokført
+som debet, men avgiften som beregnes av det er UTGÅENDE avgift (mval.
+§ 11-1) — en gjeld, kredit. Spesifikasjonen leste debetgrunnlaget som
+det sto, så meldingen ble et TILGODEHAVENDE: en tjeneste fra utlandet
+på 100 000 kr med kode 87 ga `fastsattMerverdiavgift` −25 000 i stedet
+for +25 000. `vat_specification` oppgir nå disse linjene i utgående
+konvensjon (grunnlag og avgift begge kredit), og alt nedstrøms — meldingen,
+virkningen, nøkkeltallenes mva-netto — leser dem som enhver annen
+utgående linje. Kjernens test hadde laget linjen for hånd med et
+fortegn hovedboken aldri gir, og fanget det derfor ikke; testen i
+`regnmed-db/tests/mva.rs` bygger nå meldingen fra hovedboken: kode 86
+koster null, kode 87 koster 25 000.
 
 ## Where it is tested
 

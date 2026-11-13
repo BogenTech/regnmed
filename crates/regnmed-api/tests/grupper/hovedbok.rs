@@ -951,6 +951,58 @@ async fn vat_codes_need_a_registration_on_every_posting_path() {
     assert_eq!(line["retning"], "inngaende");
     assert_eq!(line["virkning_ore"], -250_00);
     assert_eq!(spec["netto_ore"], -250_00, "til gode");
+
+    // Reverse charge without deduction right is OWED (+250), and a credit
+    // note on sales is negative OUTPUT, not a deduction: the totals follow
+    // the return.
+    regnmed_db::ensure_account(&state.pool, company, "6800", "Kontorkostnad")
+        .await
+        .unwrap();
+    for body in [
+        json!({ "journal_code": "GL", "date": "2026-04-05", "description": "Tjeneste fra utlandet",
+                "lines": [{ "account": "6800", "amount_ore": 1_000_00, "vat_code": "87" },
+                          { "account": "1920", "amount_ore": -1_000_00 }] }),
+        json!({ "journal_code": "GL", "date": "2026-04-06", "description": "Kreditnota",
+                "lines": [{ "account": "3000", "amount_ore": 400_00, "vat_code": "3" },
+                          { "account": "2700", "amount_ore": 100_00 },
+                          { "account": "1920", "amount_ore": -500_00 }] }),
+    ] {
+        let (status, posted) = call(
+            &state,
+            "POST",
+            &format!("{base}/vouchers"),
+            &token,
+            Some(body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{posted}");
+    }
+    let (_, spec) = call(
+        &state,
+        "GET",
+        &format!("{base}/reports/mva?year=2026&termin=2"),
+        &token,
+        None,
+    )
+    .await;
+    let effect = |code: &str| {
+        spec["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["code"] == code)
+            .unwrap()["virkning_ore"]
+            .clone()
+    };
+    assert_eq!(
+        effect("87"),
+        250_00,
+        "omvendt avgiftsplikt uten fradrag skyldes"
+    );
+    assert_eq!(effect("3"), -100_00);
+    assert_eq!(spec["utgaende_ore"], 150_00, "−100 på salget + 250 omvendt");
+    assert_eq!(spec["inngaende_ore"], 250_00);
+    assert_eq!(spec["netto_ore"], -100_00);
     let (status, behind) = call(
         &state,
         "GET",

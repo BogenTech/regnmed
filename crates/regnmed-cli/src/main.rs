@@ -1130,6 +1130,26 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
         Some(id) => id,
         None => regnmed_db::create_company(pool, orgnumber, "Demo AS").await?,
     };
+    // The demo posts with VAT codes, which need a VAT registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    if !regnmed_db::registrering_on(pool, company, chrono::Local::now().date_naive())
+        .await?
+        .vat_registered
+    {
+        regnmed_db::record_registrering(
+            pool,
+            company,
+            chrono::NaiveDate::from_ymd_opt(2000, 1, 1).expect("valid date"),
+            regnmed_db::Registrering {
+                vat_registered: true,
+                business_registered: true,
+            },
+            "manuell",
+            Some("demo"),
+            "demo",
+        )
+        .await?;
+    }
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok").await?;
     regnmed_db::ensure_account(pool, company, "1920", "Bankinnskudd").await?;
     regnmed_db::ensure_account(pool, company, "3000", "Salgsinntekt, avgiftspliktig").await?;

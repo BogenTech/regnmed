@@ -275,6 +275,25 @@ pub fn payable_effect_ore(code: &str, tax_ore: i64) -> i64 {
     }
 }
 
+/// Output VAT and deductions for a set of spesifikasjon lines, both as
+/// they reduce or raise what is payable: output is the effect of the
+/// output-side codes (a term where credit notes outweigh sales gives a
+/// NEGATIVE output, not a deduction), input the deductions as a positive
+/// amount. `output - input` is what is owed, the melding's
+/// `fastsattMerverdiavgift` in øre.
+pub fn vat_totals(lines: &[SpecLine]) -> (i64, i64) {
+    let mut output = 0;
+    let mut input = 0;
+    for l in lines {
+        let effect = payable_effect_ore(&l.code, l.tax_ore);
+        match direction(&l.code) {
+            Direction::Input => input -= effect,
+            _ => output += effect,
+        }
+    }
+    (output, input)
+}
+
 /// The avgiftsposteringer a reverse-charge / import basis line must
 /// carry, so the hovedbok holds the tax the mva-melding reports
 /// (bokføringsforskriften §3-1 nr. 8; the melding XSD calls
@@ -554,5 +573,23 @@ mod tests {
         // Cost markers and code 0 are not reported at all.
         assert_eq!(payable_effect_ore("21", -250_00), 0);
         assert_eq!(payable_effect_ore("0", -1), 0);
+    }
+
+    #[test]
+    fn totals_split_by_direction_not_by_sign() {
+        let line = |code: &str, tax_ore: i64| SpecLine {
+            code: code.into(),
+            description: String::new(),
+            rate_bp: 2500,
+            basis_ore: tax_ore * 4,
+            tax_ore,
+        };
+        // Credit notes outweigh sales (code 3 net debit), a deduction, and
+        // reverse charge without deduction right (credit, as specified).
+        let (output, input) =
+            vat_totals(&[line("3", 125_00), line("1", 250_00), line("87", -250_00)]);
+        assert_eq!(output, 125_00, "−125 on sales + 250 reverse charge");
+        assert_eq!(input, 250_00);
+        assert_eq!(output - input, -125_00);
     }
 }

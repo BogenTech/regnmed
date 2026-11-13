@@ -44,13 +44,42 @@
       .catch((e) => (error = e.message));
   });
 
-  // The number of terms for the year shown: the report says which scheme
-  // governed that year; before it arrives, the current scheme's.
-  let count = $derived(report?.antall_perioder ?? scheme?.antall_perioder ?? 6);
+  // The number of terms in the year shown: the scheme in force on its
+  // 1 January (a company can move between schemes). Fetched per year, and
+  // the term is clamped to it BEFORE the report is asked for, so stepping
+  // into a year with fewer terms never asks for one that does not exist.
+  let count = $state(null);
+  let countYear = $state(null);
+  $effect(() => {
+    if (year === null) return;
+    const y = year;
+    api(base + "/mva/terminordning?year=" + y)
+      .then((s) => {
+        if (y !== year) return;
+        if (termin > s.antall_perioder) termin = s.antall_perioder;
+        count = s.antall_perioder;
+        countYear = y;
+      })
+      .catch((e) => (error = e.message));
+  });
+
+  // An address changed from outside (a link, the address bar) moves the
+  // page; the page's own replaceState does not reach `query`.
+  $effect(() => {
+    const q = new URLSearchParams(query);
+    untrack(() => {
+      if (year === null) return;
+      const y = Number(q.get("year"));
+      const t = Number(q.get("termin"));
+      if (y && y !== year) year = y;
+      if (t && t !== termin) termin = t;
+      if (q.has("kode") && q.get("kode") !== open) open = q.get("kode");
+    });
+  });
 
   let seq = 0;
   $effect(() => {
-    if (year === null) return;
+    if (year === null || countYear !== year) return;
     const mine = ++seq;
     report = undefined;
     reportError = null;
@@ -75,7 +104,6 @@
 
   function step(delta) {
     year += delta;
-    if (termin > count) termin = count;
     open = null;
   }
   function pick(t) {
@@ -117,7 +145,7 @@
 
 {#if error}
   <div class="alert alert-error" role="alert"><span>{error}</span></div>
-{:else if !scheme || year === null}
+{:else if !scheme || year === null || count === null}
   <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 {:else}
   <p class="opacity-80 mb-4">

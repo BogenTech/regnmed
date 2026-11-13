@@ -66,8 +66,23 @@ pub async fn vat_specification(
                 .with_context(|| {
                     format!("no VAT rate on record for code {code} in this period (pre-2016?)")
                 })?;
-            let basis_ore: i64 = row.get("grunnlag_ore");
+            let mut basis_ore: i64 = row.get("grunnlag_ore");
             ensure!(!code.is_empty(), "empty vat code in ledger");
+            // A reverse-charge / import basis is a PURCHASE, posted as a
+            // debit, but the tax computed on it is OUTPUT tax (mval.
+            // § 11-1): a liability, a credit. The specification states
+            // these lines in the output convention (basis and tax both
+            // credit) so everything downstream — the return, the payable
+            // effect — reads them like any other output line. Without
+            // this the return turned 25 % reverse charge into a REFUND:
+            // fastsatt −25 000 for a 100 000 kr service that owed +25 000.
+            if matches!(
+                regnmed_core::vat::direction(&code),
+                regnmed_core::vat::Direction::ReverseChargeDeductible
+                    | regnmed_core::vat::Direction::ReverseChargeNonDeductible
+            ) {
+                basis_ore = -basis_ore;
+            }
             Ok(SpecLine {
                 code,
                 description: row.get("description"),
