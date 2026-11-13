@@ -306,21 +306,51 @@ fn wants_csv(query: &PeriodQuery) -> bool {
 /// Semicolon-separated, decimal comma, UTF-8 with BOM: what a Norwegian
 /// spreadsheet opens without an import dialog.
 fn csv_response(filename: &str, header: &[&str], rows: Vec<Vec<String>>) -> Response {
-    fn field(raw: &str) -> String {
-        if raw.contains([';', '"', '\n', '\r']) {
-            format!("\"{}\"", raw.replace('"', "\"\""))
-        } else {
-            raw.to_string()
-        }
-    }
     let mut out = String::from("\u{feff}");
     for line in
         std::iter::once(header.iter().map(|h| h.to_string()).collect::<Vec<_>>()).chain(rows)
     {
-        out.push_str(&line.iter().map(|f| field(f)).collect::<Vec<_>>().join(";"));
+        out.push_str(
+            &line
+                .iter()
+                .map(|f| csv_field(f))
+                .collect::<Vec<_>>()
+                .join(";"),
+        );
         out.push_str("\r\n");
     }
     file_response(Vis::Attachment, filename, "text/csv", out)
+}
+
+/// One CSV cell. A text a spreadsheet would read as a formula (a
+/// supplier's line text can say anything) is written as text with a
+/// leading apostrophe; our own negative amounts start with '-' too and
+/// stay numbers.
+fn csv_field(raw: &str) -> String {
+    let formula =
+        raw.starts_with(['=', '+', '@', '\t', '\r']) || (raw.starts_with('-') && !is_ore_text(raw));
+    let raw = if formula {
+        format!("'{raw}")
+    } else {
+        raw.to_string()
+    };
+    if raw.contains([';', '"', '\n', '\r']) {
+        format!("\"{}\"", raw.replace('"', "\"\""))
+    } else {
+        raw
+    }
+}
+
+/// `-1234,56`, as [`ore`] writes a negative amount.
+fn is_ore_text(raw: &str) -> bool {
+    let digits = raw.trim_start_matches('-');
+    let Some((kroner, ore)) = digits.split_once(',') else {
+        return false;
+    };
+    !kroner.is_empty()
+        && kroner.bytes().all(|b| b.is_ascii_digit())
+        && ore.len() == 2
+        && ore.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn ore(amount: i64) -> String {
@@ -924,4 +954,21 @@ pub async fn key_figures(
         },
         "frister": frister,
     })))
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::{csv_field, ore};
+
+    #[test]
+    fn formulas_become_text_and_amounts_stay_numbers() {
+        assert_eq!(csv_field("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(csv_field("+47 22 00 00 00"), "'+47 22 00 00 00");
+        assert_eq!(csv_field("@SUM(A1)"), "'@SUM(A1)");
+        assert_eq!(csv_field("-cmd"), "'-cmd");
+        assert_eq!(csv_field(&ore(-1_000_000)), "-10000,00");
+        assert_eq!(csv_field(&ore(250)), "2,50");
+        assert_eq!(csv_field("Salg; vare"), "\"Salg; vare\"");
+        assert_eq!(csv_field("Faktura 1"), "Faktura 1");
+    }
 }

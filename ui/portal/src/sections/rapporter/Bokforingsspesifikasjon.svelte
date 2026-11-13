@@ -17,7 +17,8 @@
   let error = $state(null);
   let seq = 0;
 
-  let side = $derived(Number(params.side) || 1);
+  // An edited address can say anything; a page is a whole number from 1.
+  let side = $derived(Math.max(1, Math.floor(Number(params.side)) || 1));
 
   function load() {
     const mine = ++seq;

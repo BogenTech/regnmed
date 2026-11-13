@@ -31,8 +31,8 @@
 {:else}
   {#if data.differanse_ore}
     <div role="alert" class="alert alert-error mb-3">
-      Balansen går ikke opp: eiendeler og egenkapital og gjeld skiller {kr(data.differanse_ore)} kr.
-      Kjør verifikasjonsrapporten under Revisjon.
+      Balansen går ikke opp — differansen er {kr(data.differanse_ore)} kr. Kjør
+      verifikasjonsrapporten under Revisjon for å finne årsaken.
     </div>
   {/if}
   <table class="table table-sm">

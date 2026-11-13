@@ -56,10 +56,12 @@
     params = {};
   }
 
-  // A new year starts the long lists from their first page again.
+  // A new year starts the long lists from their first page again, and
+  // an explicit period end belongs to the year it was picked in.
   function setYear(y) {
     year = y;
     delete params.side;
+    delete params.periode;
   }
 
   // Arrow keys move between the tabs, Home/End to the ends — one Tab
@@ -136,7 +138,8 @@
     {:else if rapport === "balanse"}
       <Balanse {companyId} {to} />
     {:else if rapport === "budsjett"}
-      <Budsjett {companyId} {year} />
+      <!-- A chosen budget version belongs to one year. -->
+      {#key year}<Budsjett {companyId} {year} />{/key}
     {:else if rapport === "prosjekt"}
       <Prosjekt {companyId} {year} />
     {:else if rapport === "kontospesifikasjon"}

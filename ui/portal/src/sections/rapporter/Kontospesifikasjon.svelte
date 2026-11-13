@@ -28,17 +28,29 @@
       .catch(() => {});
   });
 
+  // An address changed from outside moves the field with it.
+  $effect(() => {
+    const k = params.konto || "";
+    untrack(() => {
+      if (k !== filter.trim()) filter = k;
+    });
+  });
+
   // The filter applies once it names one of the company's accounts (or is
   // emptied) — not on every keystroke of a half-typed number.
   $effect(() => {
     const v = filter.trim();
     if (v && !kontoer.some((k) => k.number === v)) return;
-    if ((params.konto || "") === v) return;
-    params.konto = v || undefined;
-    delete params.side;
+    // Driven by the field only: a change of address must not be undone here.
+    untrack(() => {
+      if ((params.konto || "") === v) return;
+      params.konto = v || undefined;
+      delete params.side;
+    });
   });
 
-  let side = $derived(Number(params.side) || 1);
+  // An edited address can say anything; a page is a whole number from 1.
+  let side = $derived(Math.max(1, Math.floor(Number(params.side)) || 1));
 
   function load() {
     const mine = ++seq;
