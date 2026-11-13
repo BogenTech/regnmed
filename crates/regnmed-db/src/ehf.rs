@@ -316,9 +316,10 @@ pub struct Bokforingsforslag {
     /// "ehf" | "pdf-tekst" | "tekst" | "ocr" | "ingen"
     pub source: &'static str,
     pub seller_name: Option<String>,
-    /// Why `seller_name` is believed, when it was read rather than taken
-    /// from a structured document.
-    pub seller_reason: Option<String>,
+    /// The document's top line and why -- on a till receipt, the shop.
+    /// Kept apart from `seller_name`, which is exact (EHF): a top line on
+    /// an invoice is as often «FAKTURA» or «Side 1 av 2».
+    pub top_line: Option<(String, String)>,
     pub orgnumber: Option<String>,
     pub invoice_number: Option<String>,
     pub date: Option<chrono::NaiveDate>,
@@ -352,7 +353,7 @@ pub async fn document_suggestion(
     let mut suggestion = Bokforingsforslag {
         source: "ingen",
         seller_name: None,
-        seller_reason: None,
+        top_line: None,
         orgnumber: None,
         invoice_number: None,
         date: None,
@@ -371,10 +372,8 @@ pub async fn document_suggestion(
     };
 
     // 1. EHF — the structured case, where nothing is guessed.
-    let text = String::from_utf8(content.to_vec()).ok();
-    if let Some(xml) = text
-        .as_deref()
-        .filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
+    let text = std::str::from_utf8(content).ok();
+    if let Some(xml) = text.filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
         && let Ok(m) = regnmed_core::ehf_import::parse(xml)
     {
         suggestion.source = "ehf";
@@ -405,6 +404,7 @@ pub async fn document_suggestion(
             Some(read)
         } else {
             text.filter(|t| t.len() > 20)
+                .map(str::to_string)
                 .inspect(|_| suggestion.source = "tekst")
         };
         match text {
@@ -425,10 +425,7 @@ pub async fn document_suggestion(
                     suggestion.orgnumber = Some(f.value.clone());
                     note("orgnr", &f.reason);
                 }
-                if let Some(f) = &t.seller {
-                    suggestion.seller_name = Some(f.value.clone());
-                    suggestion.seller_reason = Some(f.reason.clone());
-                }
+                suggestion.top_line = t.seller.clone().map(|f| (f.value, f.reason));
                 if let Some(f) = &t.invoice_number {
                     suggestion.invoice_number = Some(f.value.clone());
                     note("fakturanr", &f.reason);

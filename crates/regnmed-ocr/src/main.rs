@@ -20,7 +20,7 @@ use tokio::sync::Semaphore;
 
 struct App {
     reader: Reader,
-    one_at_a_time: Semaphore,
+    one_at_a_time: Arc<Semaphore>,
 }
 
 #[tokio::main]
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let reader = Reader::load(std::path::Path::new(&dir))?;
     let app = Arc::new(App {
         reader,
-        one_at_a_time: Semaphore::new(1),
+        one_at_a_time: Arc::new(Semaphore::new(1)),
     });
     let router = Router::new()
         .route("/read", post(read))
@@ -50,11 +50,23 @@ async fn read(
     State(app): State<Arc<App>>,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let _turn = app.one_at_a_time.acquire().await.expect("never closed");
-    let worker = app.clone();
-    let text = tokio::task::spawn_blocking(move || worker.reader.read(&body))
+    // The permit moves INTO the blocking task: a caller that gives up
+    // (the API times out at 30 s) drops this future, but the read goes on,
+    // and the next one must wait for it -- two reads at once is twice the
+    // memory.
+    let turn = app
+        .one_at_a_time
+        .clone()
+        .acquire_owned()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
+        .expect("never closed");
+    let worker = app.clone();
+    let text = tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        worker.reader.read(&body)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
     Ok(Json(serde_json::json!({ "text": text })))
 }

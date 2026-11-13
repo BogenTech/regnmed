@@ -113,10 +113,16 @@ impl Reader {
 /// Decodes, turns the picture the way the camera said it was held (a
 /// phone stores sideways pixels and an EXIF note), and scales it down.
 fn decode(bytes: &[u8]) -> Result<DynamicImage> {
-    let mut decoder = ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()?
-        .into_decoder()
-        .context("not a JPEG or PNG image")?;
+    // A small PNG can declare a gigapixel canvas. The decoder's own default
+    // (512 MiB) equals the pod's whole limit, so it would be OOM-killed
+    // before refusing; a 12 MP photo needs 36 MB.
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8000);
+    limits.max_image_height = Some(8000);
+    limits.max_alloc = Some(200 * 1024 * 1024);
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    reader.limits(limits);
+    let mut decoder = reader.into_decoder().context("not a JPEG or PNG image")?;
     let orientation = decoder.orientation()?;
     let mut image = DynamicImage::from_decoder(decoder)?;
     image.apply_orientation(orientation);
@@ -179,5 +185,17 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("915 933 149"), "{text}");
+    }
+
+    #[test]
+    fn a_huge_canvas_is_refused_before_it_is_allocated() {
+        // A valid 1x1 PNG with its header rewritten to 20000x20000.
+        let mut png = Vec::new();
+        image::RgbImage::new(1, 1)
+            .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        png[16..20].copy_from_slice(&20000u32.to_be_bytes());
+        png[20..24].copy_from_slice(&20000u32.to_be_bytes());
+        assert!(decode(&png).is_err());
     }
 }

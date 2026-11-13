@@ -166,7 +166,15 @@ jobs:
           cargo build --release --locked \
             --target ${{ matrix.target }} \
             -p regnmed-api -p regnmed-cli -p regnmed-agent -p regnmed-ocr
-          scripts/fetch-ocr-models.sh
+
+      # The OCR models come from a third party's bucket (scripts/
+      # fetch-ocr-models.sh). Cached by their pinned checksums, so a
+      # bucket that goes away stops new model versions, not our builds.
+      - uses: actions/cache@v4
+        with:
+          path: target/ocr-models
+          key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.sh') }}
+      - run: scripts/fetch-ocr-models.sh
 
       # The flags above, CHECKED rather than trusted. They were added
       # 2026-10-19 after the Ubuntu 26 runner auto-vectorised ring past
