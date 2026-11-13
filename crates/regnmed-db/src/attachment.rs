@@ -56,7 +56,32 @@ pub async fn add_attachment_in(
     content: &[u8],
     uploaded_by: &str,
 ) -> Result<AttachmentMeta> {
-    ensure!(!content.is_empty(), "attachment is empty");
+    let mut metas = add_attachments_in(
+        tx,
+        company_id,
+        voucher_id,
+        &[(filename, content_type, content)],
+        uploaded_by,
+    )
+    .await?;
+    Ok(metas.remove(0))
+}
+
+/// Several documents on one voucher in one transaction. The object-store
+/// writes run concurrently: they happen while the caller's transaction
+/// (for an invoice, the gap-free number counter) is held, so issuing a
+/// PDF and an EHF costs one round trip, not two.
+pub async fn add_attachments_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    voucher_id: Uuid,
+    documents: &[(&str, &str, &[u8])],
+    uploaded_by: &str,
+) -> Result<Vec<AttachmentMeta>> {
+    ensure!(
+        documents.iter().all(|(_, _, content)| !content.is_empty()),
+        "attachment is empty"
+    );
     let belongs: bool = sqlx::query_scalar(
         "select exists (select 1 from voucher where id = $1 and company_id = $2)",
     )
@@ -65,35 +90,43 @@ pub async fn add_attachment_in(
     .fetch_one(&mut **tx)
     .await?;
     ensure!(belongs, "no such voucher in this company");
-
-    let digest = sha256(content);
-    let in_row = blobs().store(content).await?;
-    let id = Uuid::now_v7();
-    sqlx::query(
-        "insert into attachment (id, company_id, voucher_id, filename, content_type,
-                                 byte_size, sha256, content, uploaded_by)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+    let in_rows = futures_util::future::try_join_all(
+        documents
+            .iter()
+            .map(|(_, _, content)| blobs().store(content)),
     )
-    .bind(id)
-    .bind(company_id)
-    .bind(voucher_id)
-    .bind(filename)
-    .bind(content_type)
-    .bind(content.len() as i64)
-    .bind(digest.as_slice())
-    .bind(in_row)
-    .bind(uploaded_by)
-    .execute(&mut **tx)
     .await?;
-    Ok(AttachmentMeta {
-        id,
-        voucher_id,
-        filename: filename.to_string(),
-        content_type: content_type.to_string(),
-        byte_size: content.len() as i64,
-        sha256_hex: hex(&digest),
-        uploaded_by: uploaded_by.to_string(),
-    })
+    let mut metas = Vec::with_capacity(documents.len());
+    for (&(filename, content_type, content), in_row) in documents.iter().zip(in_rows) {
+        let digest = sha256(content);
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "insert into attachment (id, company_id, voucher_id, filename, content_type,
+                                     byte_size, sha256, content, uploaded_by)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(id)
+        .bind(company_id)
+        .bind(voucher_id)
+        .bind(filename)
+        .bind(content_type)
+        .bind(content.len() as i64)
+        .bind(digest.as_slice())
+        .bind(in_row)
+        .bind(uploaded_by)
+        .execute(&mut **tx)
+        .await?;
+        metas.push(AttachmentMeta {
+            id,
+            voucher_id,
+            filename: filename.to_string(),
+            content_type: content_type.to_string(),
+            byte_size: content.len() as i64,
+            sha256_hex: hex(&digest),
+            uploaded_by: uploaded_by.to_string(),
+        });
+    }
+    Ok(metas)
 }
 
 pub async fn list_attachments(

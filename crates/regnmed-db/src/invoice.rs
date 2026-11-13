@@ -9,7 +9,7 @@ use regnmed_core::vat::rate_on;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::attachment::add_attachment_in;
+use crate::attachment::add_attachments_in;
 use crate::ledger::post_voucher_in;
 use crate::vat::load_vat_rates;
 
@@ -399,16 +399,40 @@ pub async fn create_invoice_in(
     } else {
         "faktura"
     };
-    add_attachment_in(
-        tx,
-        company_id,
-        posted.id,
-        &format!("{document}-{invoice_no}.pdf"),
-        "application/pdf",
-        &pdf,
-        created_by,
-    )
-    .await?;
+    let pdf_name = format!("{document}-{invoice_no}.pdf");
+    let xml_name = format!("{document}-{invoice_no}.xml");
+
+    // The EHF is stored in the same transaction (#222): rendered later it
+    // would read whatever contact data the parties have by then, and an
+    // e-invoice must be kept in its original format (bokføringsloven § 13
+    // second paragraph). Without the buyer's orgnr there is no Peppol
+    // address and so no EHF.
+    let xml = match party.get::<Option<String>, _>("orgnr") {
+        Some(_) => Some(
+            crate::ehf::render_invoice_ehf(
+                pool,
+                tx,
+                company_id,
+                invoice_id,
+                Some(crate::ehf::IssueFacts {
+                    registrering: reg,
+                    line_rates_bp: lines
+                        .iter()
+                        .map(|l| l.vat_code.as_ref().map(|_| l.rate_bp))
+                        .collect(),
+                    paid_at_issue: draft.cash_payment_method.is_some(),
+                }),
+            )
+            .await?,
+        ),
+        None => None,
+    };
+    let mut documents: Vec<(&str, &str, &[u8])> =
+        vec![(&pdf_name, "application/pdf", pdf.as_slice())];
+    if let Some(xml) = &xml {
+        documents.push((&xml_name, "application/xml", xml.as_bytes()));
+    }
+    add_attachments_in(tx, company_id, posted.id, &documents, created_by).await?;
 
     Ok(IssuedInvoice {
         invoice_id,

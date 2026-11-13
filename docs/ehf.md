@@ -16,19 +16,48 @@ Egen AP-sertifisering er bevisst utenfor (ROADMAP: frugal). Når
 transporttieren kommer, er det **sendingen** som logges — samme mønster
 som e-postutsendelsen (docs/faktura.md): loggraden er meldingen.
 
-## Ut: rendret fra fakturaens egne rader
+## Ut: rendret og lagret ved utstedelse
 
-`GET /companies/{id}/invoices/{iid}/ehf` bygger dokumentet fra den
-utstedte fakturaens låste rader og rendrer det med
-`regnmed-core::ehf` — hand-rolled og deterministisk, som SAF-T,
-mva-meldingen og pain.001. Samme faktura gir byte-identisk XML for
-alltid.
+EHF-en rendres med `regnmed-core::ehf` — hand-rolled og deterministisk,
+som SAF-T, mva-meldingen og pain.001 — **i samme transaksjon som
+fakturaen utstedes**, og lagres som vedlegg på fakturabilaget ved
+siden av PDF-en (#222). `GET /companies/{id}/invoices/{iid}/ehf`
+leverer det lagrede dokumentet, hash-sjekket ved lesing som alle
+vedlegg (docs/blob-store.md).
 
-Merk hva som **ikke** skjer: EHF-en lagres ikke som vedlegg slik
-faktura-PDF-en gjør. PDF-en *er* salgsdokumentet
-(bokføringsforskriften §5-1, oppbevaringsplikt fra utstedelsen);
-EHF-en er en transportkonvolutt utledet av de samme uforanderlige
-tallene. Å lagre begge ville vært to sannheter om samme faktura.
+Hvorfor lagret, og ikke rendret ved hvert oppslag: dokumentet bærer
+selgerens og kjøperens adresse, e-post og kontonummer, og de er
+redigerbare stamdata, ikke hashet. Rendret på nytt etter at kunden
+flyttet, var EHF-en ikke lenger dokumentet som ble utstedt — og fra
+1.1.2027 skal en elektronisk faktura oppbevares i sitt opprinnelige
+format (bokføringsloven § 13 annet ledd, LOV-2026-06-19-39). PDF-en og
+EHF-en er to representasjoner av samme utstedelse, rendret av de samme
+radene i samme øyeblikk; den tidligere avgjørelsen om å *ikke* lagre
+EHF-en («to sannheter») holdt bare så lenge EHF-en aldri ble sendt
+(docs/efaktura.md §3.5).
+
+- **Uten kjøperens orgnr lagres ingen EHF** — i Peppol er orgnr
+  adressen, og endepunktet sier fra som før.
+- **En kontantfaktura** utstedt etter #222 (betalt ved utstedelse, også
+  Stripe-betalte abonnementsfakturaer) får ingen `cac:PaymentMeans`: KID
+  og kontonummer for penger som alt er mottatt er en feil instruks. En
+  kontantfaktura fra før #222 rendres ved oppslag, og ingenting lagret sier
+  at den var kontant — dens EHF bærer fortsatt betalingsinformasjon.
+- **Bare dokumentet utstedelsen selv skrev, er fakturaens EHF.** Oppslaget
+  krever at vedlegget har samme tidsstempel som fakturaen (begge settes av
+  utstedelsestransaksjonen), så en XML en bruker senere legger ved samme
+  bilag aldri kan stå i fakturaens sted. Det samme gjelder PDF-en.
+- PDF og EHF skrives til objektlagringen **samtidig**, mens
+  utstedelsestransaksjonen (og fakturanummertelleren) holdes — én
+  rundtur, ikke to. Renderingen inne i transaksjonen gjør ingen nye
+  oppslag: mva-satsene per linje og registreringsstatusen er de
+  utstedelsen alt har slått opp.
+- **Fakturaer utstedt før #222** har ingen lagret EHF og rendres fortsatt
+  fra radene ved oppslag. De får ingen etterlagret EHF: et dokument
+  rendret i dag av dagens stamdata ville vært nettopp feilen over.
+- En rettelse i rendreren (f.eks. kjøperreferansen, #221) gjelder
+  fakturaer utstedt etter rettelsen; et utstedt dokument endres ikke,
+  som PDF-en.
 
 Detaljer verdt å vite:
 
@@ -118,6 +147,9 @@ bokføringsskjemaet.
   som ikke er EHF, beløpsformater.
 - `regnmed-api/tests/grupper/ehf.rs` (ekte Postgres, også CI): faktura fra
   databasen rendret og **XSD-validert**, adressen delt riktig, KID med,
-  kreditnota som peker tilbake; mottatt EHF i innboksen gir forslag med
+  EHF-en lagret ved utstedelse og **uendret etter at kunden flytter**
+  (#222), kreditnotaens EHF lagret, ingen EHF og ingen feil ved
+  utstedelse til kjøper uten orgnr, en bruker-XML på bilaget som **ikke**
+  serveres som EHF, kreditnota som peker tilbake; mottatt EHF i innboksen gir forslag med
   leverandøren matchet på orgnr, originalen står urørt, og et dokument
   som ikke er EHF sier fra.

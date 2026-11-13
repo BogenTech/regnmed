@@ -447,9 +447,8 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
 - ~~**Kortbetalte abonnementsfakturaer sendes ikke**~~ — rettet i #223:
   oppgjorte abonnementsfakturaer og kreditnotaene deres sendes nå, og
   e-posten sier om fakturaen er betalt eller kreditert.
-- **EHF-en rendres fra kundens nåværende kontaktdata** (§3.5) — «byte-
-  identisk for alltid» i docs/ehf.md stemmer bare så lenge kunden ikke
-  endrer adresse.
+- ~~**EHF-en rendres fra kundens nåværende kontaktdata**~~ — rettet i
+  #222: EHF-en rendres og lagres ved utstedelse (docs/ehf.md).
 
 ## 6. Avgjørelser operatøren må ta
 

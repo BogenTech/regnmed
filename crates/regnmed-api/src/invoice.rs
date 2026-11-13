@@ -356,12 +356,10 @@ pub async fn invoice_pdf(
     ))
 }
 
-/// EHF (PEPPOL BIS Billing 3.0) for an issued invoice — rendered from
-/// the invoice's own locked rows on request. Unlike the PDF this is not
-/// stored: the PDF *is* the salgsdokument (oppbevaringsplikt), while the
-/// EHF is a transport envelope derived from the same immutable numbers.
-/// What an access point actually transmits is what gets logged, when
-/// that tier arrives (docs/ehf.md).
+/// EHF (PEPPOL BIS Billing 3.0) for an issued invoice: the document
+/// stored with the PDF at issue, hash-checked on read (#222). Invoices
+/// issued before that are rendered from their rows on request
+/// (docs/ehf.md).
 pub async fn invoice_ehf(
     State(state): State<AppState>,
     person: AuthPerson,
