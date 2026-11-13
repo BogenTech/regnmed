@@ -266,9 +266,25 @@ pub(crate) async fn read_document(
     let photo = content.starts_with(&[0xFF, 0xD8, 0xFF]) || content.starts_with(b"\x89PNG");
     let mut failed = None;
     let mut image_text = None;
-    if photo && let Some(reader) = regnmed_gov::textreader::TextReader::from_env() {
+    // The same bytes always read the same, and every opening of a draft
+    // asks again: cache by content hash. A receipt's text is a few
+    // hundred bytes. shortcut: per process and cleared wholesale at 1000
+    // entries; a shared cache is for when there are several replicas.
+    type Cache = std::sync::Mutex<std::collections::HashMap<Vec<u8>, String>>;
+    static TEXTS: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
+    let digest = <sha2::Sha256 as sha2::Digest>::digest(content).to_vec();
+    if photo && let Some(hit) = TEXTS.lock().unwrap().get(&digest) {
+        image_text = Some(hit.clone());
+    } else if photo && let Some(reader) = regnmed_gov::textreader::TextReader::from_env() {
         match reader.read(content.to_vec()).await {
-            Ok(text) => image_text = Some(text),
+            Ok(text) => {
+                let mut texts = TEXTS.lock().unwrap();
+                if texts.len() >= 1000 {
+                    texts.clear();
+                }
+                texts.insert(digest, text.clone());
+                image_text = Some(text);
+            }
             Err(e) => {
                 eprintln!("text reader: {e:#}");
                 failed = Some("tekstgjenkjenningen svarte ikke akkurat nå — prøv igjen senere");

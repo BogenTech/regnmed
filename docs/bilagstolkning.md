@@ -65,7 +65,16 @@ målt mot linjens FØRSTE bit (en voksende union sluker neste linje på en
 tettrykt kvittering — testet).
 
 Bildet roteres etter kameraets EXIF-merking og skaleres ned til 2400 px
-på lengste kant før lesing.
+på lengste kant før lesing. Et bilde som oppgir mer enn 8000 px på en
+led, eller ville krevd over 200 MB, avvises FØR det pakkes ut — en liten
+PNG kan ellers love et lerret som tar hele podens minne. Den ene lesingen
+om gangen holdes også når API-et har gitt opp å vente (etter 30 s), så
+to lesinger aldri går samtidig. API-et husker teksten per innholdshash,
+så et utkast som åpnes igjen ikke leses på nytt.
+
+Modellene hentes i CI med `actions/cache` nøklet på sjekksummene, og
+testjobben kjører motoren på `tests/receipt.jpg` — forsvinner bøtta,
+stopper nye modellversjoner, ikke byggene.
 
 ## Tekstlaget ut av PDF-en
 
@@ -122,7 +131,13 @@ svakere regler som bare fyller et tomt felt:
 - den første datoen i dokumentet, når ingen dato har etikett
   (begrunnelse: «første dato i dokumentet»);
 - den øverste linjen som ser ut som et navn — på en kasselapp er det
-  butikken.
+  butikken. Brukes bare for utlegg; i innboksen er øverste linje like
+  ofte «FAKTURA».
+
+«Totalt» godtas bare når ingenting annet enn beløpet (og «kr») følger:
+«Total rabatt» og «Totalt spart» står før den ekte totalen på mange
+kvitteringer. En dato under en «forfall»-etikett er aldri dokumentets
+dato.
 
 Hvert funn bærer sin begrunnelse («etter «å betale»», «ni siffer med
 gyldig kontrollsiffer nær «orgnr»»), og begrunnelsen vises i UI-et.

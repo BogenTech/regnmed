@@ -366,7 +366,7 @@ pub async fn suggestion(
             "navnet i Enhetsregisteret for orgnr på kvitteringen".to_string(),
         ))
     } else {
-        f.seller_name.clone().zip(f.seller_reason.clone())
+        f.top_line.clone()
     };
     if let Some((_, why)) = &description {
         reasons.push(json!({ "field": "description", "why": why }));

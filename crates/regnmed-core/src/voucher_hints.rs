@@ -248,7 +248,12 @@ pub fn read(text: &str) -> Hints {
             hints.date = Some(Finding::new(*date, "etter «fakturadato»"));
         }
 
-        if first_date.is_none() && !lower.contains("forfall") && !lower.contains("betalingsfrist") {
+        // A due date is never the document's date -- also when it sits on
+        // the line under its label.
+        let is_due = |l: &str| l.contains("forfall") || l.contains("betalingsfrist");
+        let label_above =
+            i > 0 && is_due(&normalized(lines[i - 1])) && date_candidates(lines[i - 1]).is_empty();
+        if first_date.is_none() && !is_due(&lower) && !label_above {
             first_date = date_candidates(line).first().copied();
         }
         if hints.seller.is_none()
@@ -288,7 +293,7 @@ pub fn read(text: &str) -> Hints {
             && !lower.contains("mva")
             && let Some((_, vist)) = RECEIPT_TOTALS
                 .iter()
-                .find(|(key, _)| lower.trim_start().starts_with(key))
+                .find(|(key, _)| is_receipt_total(&lower, key))
             // With decimals only: «Totalt antall varer 5» is not 5 kroner.
             && let Some(amount) = own_numbers
                 .iter()
@@ -353,6 +358,22 @@ const RECEIPT_TOTALS: &[(&str, &str)] = &[
     ("bankkort", "«bankkort»"),
     ("betalt", "«betalt»"),
 ];
+
+/// The line opens with `key`, and for the total words nothing else but the
+/// amount follows: «Total rabatt 20,00» and «Totalt spart 35,00» come
+/// before the real «TOTALT» on many receipts. «Bankkort»/«Betalt» may be
+/// followed by the card's name.
+fn is_receipt_total(lower: &str, key: &str) -> bool {
+    let Some(rest) = lower.trim_start().strip_prefix(key) else {
+        return false;
+    };
+    if matches!(key, "bankkort" | "betalt") {
+        return true;
+    }
+    rest.split(|c: char| !c.is_alphabetic())
+        .filter(|w| !w.is_empty())
+        .all(|w| matches!(w, "kr" | "nok" | "t"))
+}
 
 /// The keyword we matched, for the provenance string.
 fn keyword(lower: &str) -> &'static str {
@@ -554,6 +575,15 @@ Takk for handelen!";
         assert_eq!(h.date.unwrap().reason, "etter «fakturadato»");
         // A count is not an amount.
         assert!(read("Totalt antall varer 5").amount_ore.is_none());
+        // A discount line before the total is not the total.
+        let h = read("Total rabatt -20,00\nTotalt spart 35,00\nTOTALT kr 412,00");
+        assert_eq!(h.amount_ore.unwrap().value, 41200);
+        // A due date under its label is not the document's date.
+        let h = read("Forfallsdato:\n15.03.2026\nDato 01.03.2026");
+        assert_eq!(
+            h.date.unwrap().value,
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
+        );
     }
 
     #[test]
