@@ -78,7 +78,7 @@ som ser avstemt ut og ikke er det.
 | `POST /companies/{id}/kassaoppgjor` | `BILAG_BOKFOR` |
 | `POST /companies/{id}/kassaoppgjor/rapport?filename=` (Z-rapport i kroppen, oppgjøret i `X-Dagsoppgjor`) | `BILAG_BOKFOR` |
 
-Portalen: Hovedbok → **Kasseoppgjør** (`#/c/{id}/hovedbok/kasse`), med
+Portalen: Hovedbok → **Kassaoppgjør** (`#/c/{id}/hovedbok/kasse`), med
 merkede felt, mva-sats som valg, og salg mot betalingsmidler vist mens
 du skriver; en Z-rapport som ikke går opp sendes ikke. Beløp leses med
 `oreOrNull`, så «12 500,00» er 12 500 kr (før: 12 kr, se

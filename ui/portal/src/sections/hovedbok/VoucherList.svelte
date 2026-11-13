@@ -30,15 +30,21 @@
     timer = setTimeout(() => (active = v), 300);
     return () => clearTimeout(timer);
   });
-  $effect(() => {
-    void active;
-    void year;
-    void withoutDoc;
-    page = 1;
-  });
-
+  // A new filter starts on page 1. Done inside the fetch effect, not in
+  // an effect of its own, so a filter change on page 3 asks once, for
+  // page 1 — not first for page 3 of the new filter and then again.
+  let lastFilter = "";
   let seq = 0;
   $effect(() => {
+    const filter = year + "|" + active + "|" + withoutDoc;
+    if (filter !== lastFilter) {
+      const first = lastFilter === "";
+      lastFilter = filter;
+      if (!first && page !== 1) {
+        page = 1;
+        return;
+      }
+    }
     const mine = ++seq;
     const p = new URLSearchParams({
       lines: "true",

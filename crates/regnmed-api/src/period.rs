@@ -284,11 +284,14 @@ pub async fn reverse_voucher(
             .map_err(anyhow::Error::from)?,
     };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
-    let posted = regnmed_db::reverse_voucher(&state.pool, company_id, voucher_id, date, created_by)
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let reversal =
+        regnmed_db::reverse_voucher(&state.pool, company_id, voucher_id, date, created_by)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let posted = &reversal.posted;
     Ok(Json(json!({
         "voucher_id": posted.id,
         "voucher": format!("{}-{}", posted.fiscal_year, posted.voucher_number),
+        "bank_unmatched": reversal.bank_unmatched,
     })))
 }

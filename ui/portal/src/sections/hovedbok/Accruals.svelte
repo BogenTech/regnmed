@@ -5,7 +5,7 @@
   // the VAT was settled on the source voucher and is never spread
   // (mval. § 15-9).
   import { api, post } from "../../lib/api.js";
-  import { kr, oreOrNull } from "../../lib/format.js";
+  import { kr, oreOrNull, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
   import { harRett } from "../../lib/me.svelte.js";
@@ -14,7 +14,7 @@
   let { companyId } = $props();
 
   const base = $derived("/companies/" + companyId + "/periodiseringer");
-  const thisMonth = () => new Date().toISOString().slice(0, 7);
+  const thisMonth = () => today().slice(0, 7);
 
   let plans = $state(null);
   let chart = $state({ kontoer: [], standard: [] });

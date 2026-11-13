@@ -93,7 +93,7 @@
 
 <form class="card border border-base-300 bg-base-100 max-w-4xl" novalidate onsubmit={submit}>
   <div class="card-body gap-4">
-    <h2 class="card-title">Kasseoppgjør</h2>
+    <h2 class="card-title">Kassaoppgjør</h2>
     <p class="text-sm opacity-70">
       Dagsoppgjøret fra kassasystemet som ett bilag, med salget splittet per mva-sats (bokføringsforskriften § 5-3 og § 5-4).
       Z-nummeret knytter bilaget til kassasystemets egen nummererte rapport. <strong>regnmed er ikke et kassasystem</strong>; dette

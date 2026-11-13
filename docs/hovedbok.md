@@ -42,7 +42,7 @@ frie veien, med de samme vaktene.
   internkontrollen. Fail-closed, testfestet.
 - Portalen: Hovedbok-seksjonen har fanene **Bilag** (`…/hovedbok`),
   **Nytt bilag** (`…/ny`), **Kontoplan** (`…/kontoplan`),
-  **Periodisering** og **Kasseoppgjør**. *Bilag* er selve boken: alle
+  **Periodisering** og **Kassaoppgjør**. *Bilag* er selve boken: alle
   bilag med linjene sine (debet og kredit), nyeste øverst, årsvelger,
   fritekstfilter og «bare uten vedlegg», ALT SERVERSIDE via
   `GET /companies/{id}/vouchers?from&to&sok&limit&offset&lines=true`
@@ -91,6 +91,12 @@ tilgode, slik det skal). Deretter føres det riktige bilaget.
   her ville latt fakturaen stå «utstedt» uten noe bak seg.
 - Datoen må ligge i en åpen periode; en låst periode avvises av
   posteringen selv.
+- En valutapost lukkes også i valuta (`valuta_cent` på avstemmingen),
+  ellers ville valutaresten stått åpen. Bare en uberørt valutapost kan
+  lukkes slik; en delvis avstemt løses opp under Reskontro først.
+- Var originalen koblet til en banklinje, fjernes koblingen i samme
+  transaksjon (`bank_unmatched` i svaret): banklinjen har ikke lenger
+  en postering bak seg og avstemmes på nytt mot det riktige bilaget.
 - Ingen attesteringsport: en tilbakeføring tilfører ikke noe nytt, den
   opphever en postering som allerede passerte den porten som gjaldt.
 - `GET /companies/{id}/vouchers/{vid}` gir bilaget med linjer (valuta
@@ -100,8 +106,9 @@ tilgode, slik det skal). Deretter føres det riktige bilaget.
 Testet i `tests/grupper/hovedbok.rs`
 (`a_voucher_is_corrected_by_a_linked_reversal`): speilvendte linjer
 med part, lenket begge veier, kundens post lukket, ikke to ganger,
-ikke en tilbakeføring av en tilbakeføring, importert historikk nektet
-med beskjed, kjeden verifisert.
+ikke en tilbakeføring av en tilbakeføring, importert historikk og et
+utleggsbilag nektet med beskjed, en bankkobling løst og banklinjen
+uavstemt igjen, kjeden verifisert.
 
 ## Lesemodellen
 

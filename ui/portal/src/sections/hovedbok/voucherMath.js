@@ -5,13 +5,17 @@
 // or 2700 for output VAT, with the code on the net line — the same shape
 // the Bilag form posts. The server validates and posts; nothing here
 // decides anything it cannot check.
-import { splitGross } from "../bilag/bookingMath.js";
+import { INPUT_VAT, splitGross } from "../bilag/bookingMath.js";
 import { oreOrNull } from "../../lib/format.js";
 
+// Input VAT comes from the Bilag form's own table, so a rate is changed
+// in one place; output VAT (sales) is only posted by hand here.
 export const VAT = {
-  1: { bp: 2500, account: "2710", label: "Inngående 25 % (1)" },
-  11: { bp: 1500, account: "2710", label: "Inngående 15 % (11)" },
-  13: { bp: 1200, account: "2710", label: "Inngående 12 % (13)" },
+  ...Object.fromEntries(
+    Object.entries(INPUT_VAT)
+      .filter(([code]) => code)
+      .map(([code, v]) => [code, { bp: v.bp, account: "2710", label: "Inngående " + v.label + " (" + code + ")" }]),
+  ),
   3: { bp: 2500, account: "2700", label: "Utgående 25 % (3)" },
   31: { bp: 1500, account: "2700", label: "Utgående 15 % (31)" },
   33: { bp: 1200, account: "2700", label: "Utgående 12 % (33)" },

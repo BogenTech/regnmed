@@ -38,7 +38,8 @@
       .catch(() => {});
   });
 
-  const known = (nr) => chart.kontoer.some((k) => k.number === nr && k.active);
+  const own = (nr) => chart.kontoer.find((k) => k.number === nr);
+  const known = (nr) => own(nr)?.active === true;
   const inCatalog = (nr) => chart.standard.some((s) => s.number === nr);
   const nameOf = (nr) => [...chart.kontoer, ...chart.standard].find((k) => k.number === nr)?.name;
 
@@ -54,7 +55,8 @@
       const ore = lineOre(l);
       if (!nr && ore === null) return null;
       if (!nr) return "Velg konto";
-      if (!known(nr) && !inCatalog(nr)) return "Konto " + nr + " finnes ikke. Legg den til under Kontoplan.";
+      if (own(nr) && !own(nr).active) return "Konto " + nr + " er deaktivert. Aktiver den under Kontoplan først.";
+      if (!own(nr) && !inCatalog(nr)) return "Konto " + nr + " finnes ikke. Legg den til under Kontoplan.";
       if (ore === null) return "Skriv et beløp i debet eller kredit";
       if (Number.isNaN(ore)) return "Ett positivt beløp, i debet eller kredit";
       return null;
@@ -84,7 +86,7 @@
     try {
       // A standard account joins the company's chart the first time it is used.
       for (const nr of new Set(posting.map((l) => l.account))) {
-        if (!known(nr) && inCatalog(nr)) await post(base + "/accounts", { number: nr });
+        if (!own(nr) && inCatalog(nr)) await post(base + "/accounts", { number: nr });
       }
       const r = await post(base + "/vouchers", {
         journal_code: "GL",

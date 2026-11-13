@@ -669,8 +669,107 @@ async fn a_voucher_is_corrected_by_a_linked_reversal() {
         "{refused}"
     );
 
+    // An expense's voucher belongs to Utlegg: refused, and told so.
+    for (number, name) in [("7100", "Bilgodtgjørelse"), ("2910", "Gjeld til ansatte")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let (expense, _, _) = regnmed_db::create_expense_run(
+        &state.pool,
+        company,
+        person,
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 10).unwrap(),
+        "Kundebesøk",
+        10,
+        "test",
+    )
+    .await
+    .unwrap();
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        expense,
+        "7100",
+        None,
+        "2710",
+        "2910",
+        "test",
+        person,
+    )
+    .await
+    .unwrap();
+    let expense_voucher: Uuid = sqlx::query_scalar("select voucher_id from expense where id = $1")
+        .bind(expense)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let (status, refused) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers/{expense_voucher}/reverse"),
+        &token,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(refused.to_string().contains("Utlegg"), "{refused}");
+
+    // A voucher matched to a bank line: reversing it releases the bank
+    // line, which is then reconciled again against the right voucher.
+    let (_, paid) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(json!({
+            "journal_code": "GL", "date": "2026-03-20", "description": "Innbetaling feil konto",
+            "lines": [
+                { "account": "1920", "amount_ore": 777_00 },
+                { "account": "3000", "amount_ore": -777_00 },
+            ],
+        })),
+    )
+    .await;
+    let statement =
+        regnmed_core::bankcsv::parse("Dato;Forklaring;Beløp\n20.03.2026;Innbetaling;777,00\n")
+            .unwrap();
+    let summary = regnmed_db::import_statement(&state.pool, company, "1920", &statement, "test")
+        .await
+        .unwrap();
+    assert_eq!(summary.auto_matched, 1);
+    let (status, undone) = call(
+        &state,
+        "POST",
+        &format!(
+            "{base}/vouchers/{}/reverse",
+            paid["voucher_id"].as_str().unwrap()
+        ),
+        &token,
+        Some(json!({ "dato": "2026-03-21" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{undone}");
+    assert_eq!(undone["bank_unmatched"], 1);
+    let (_, recon) = call(
+        &state,
+        "GET",
+        &format!("{base}/bank/reconciliation?account=1920"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        recon["unmatched_bank"].as_array().unwrap().len(),
+        1,
+        "{recon}"
+    );
+
     let report = regnmed_db::verify_chain(&state.pool, company)
         .await
         .unwrap();
-    assert_eq!(report.vouchers_checked, 3, "original, reversal, import");
+    assert_eq!(
+        report.vouchers_checked, 6,
+        "original, reversal, import, expense, payment, its reversal"
+    );
 }

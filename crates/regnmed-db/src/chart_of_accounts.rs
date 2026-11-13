@@ -457,7 +457,7 @@ pub async fn reverse_voucher(
     voucher_id: Uuid,
     date: chrono::NaiveDate,
     created_by: &str,
-) -> Result<PostedVoucher> {
+) -> Result<Reversal> {
     let mut tx = pool.begin().await?;
     // One reversal per voucher, even when two people press at once.
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 1))")
@@ -565,23 +565,59 @@ pub async fn reverse_voucher(
         if remaining == 0 {
             continue;
         }
+        // A currency line closes in its currency too, or its valuta
+        // remainder would stay open. Only an untouched line can be closed
+        // whole that way; a partly settled one is undone first.
+        let currency_cent: Option<i64> = original.get("valutabelop_cent");
+        let valuta_cent = match currency_cent {
+            None => None,
+            Some(cent) => {
+                ensure!(
+                    remaining == original.get::<i64, _>("amount_ore"),
+                    "bilag {label} har en valutapost som er delvis avstemt — løs opp avstemmingen under Reskontro først"
+                );
+                Some(cent.abs())
+            }
+        };
         let (entry_a, entry_b) = if remaining > 0 {
             (original_id, *mirror_id)
         } else {
             (*mirror_id, original_id)
         };
         sqlx::query(
-            "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
-             values ($1, $2, $3, $4, $5)",
+            "insert into reskontro_match (id, entry_a, entry_b, amount_ore, valuta_cent, matched_by)
+             values ($1, $2, $3, $4, $5, $6)",
         )
         .bind(Uuid::now_v7())
         .bind(entry_a)
         .bind(entry_b)
         .bind(remaining.abs())
+        .bind(valuta_cent)
         .bind(created_by)
         .execute(&mut *tx)
         .await?;
     }
+
+    // A bank line matched to the original no longer has a posting behind
+    // it once the original is undone: the match goes, and the bank line is
+    // reconciled again against the right voucher (docs/bank.md).
+    let bank_unmatched = sqlx::query(
+        "delete from bank_match where entry_id in (select id from entry where voucher_id = $1)",
+    )
+    .bind(voucher_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     tx.commit().await?;
-    Ok(posted)
+    Ok(Reversal {
+        posted,
+        bank_unmatched,
+    })
+}
+
+/// What a reversal did: the new voucher, and how many bank lines lost
+/// their match to the original (to be reconciled again under Bank).
+pub struct Reversal {
+    pub posted: PostedVoucher,
+    pub bank_unmatched: u64,
 }

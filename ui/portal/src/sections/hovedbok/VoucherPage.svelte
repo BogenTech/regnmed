@@ -51,7 +51,11 @@
     busy = true;
     try {
       const r = await post(base + "/vouchers/" + voucherId + "/reverse", { dato: answer.dato });
-      toast("Tilbakeført som bilag " + r.voucher + ". Før det riktige bilaget under Nytt bilag.", true);
+      toast(
+        "Tilbakeført som bilag " + r.voucher + ". Før det riktige bilaget under Nytt bilag." +
+          (r.bank_unmatched ? " Banklinjen er løst fra bilaget og må avstemmes på nytt under Bank." : ""),
+        true,
+      );
       location.hash = "#/c/" + companyId + "/hovedbok/" + r.voucher_id;
     } catch (e) {
       toast(e.message, false);

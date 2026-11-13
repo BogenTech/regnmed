@@ -20,7 +20,7 @@
     ["ny", "Nytt bilag"],
     ["kontoplan", "Kontoplan"],
     ["periodisering", "Periodisering"],
-    ["kasse", "Kasseoppgjør"],
+    ["kasse", "Kassaoppgjør"],
   ];
   const isId = (s) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(s || "");
   const isAccount = (s) => /^\d{4}$/.test(s || "");
