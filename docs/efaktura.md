@@ -71,18 +71,22 @@ Unntaket faller bort fra det tidspunktet terskelen overskrides, og
 gjelder ikke regnskapspliktige, mva-registrerte (skatteforvaltningsloven
 § 8-3) med flere.
 
-Konsekvens for regnmed: når regnmed støtter EHF-utsendelse, gjelder
-utstedelsesplikten også for disse kundene — unntaket «hvis systemet
-støtter det» slår ikke inn hos oss. **Det trengs ikke noe flagg før
-2030**, og da bare for mottaksplikten. (Skill-notatet foreslo et flagg;
-for utsendelse ville det vært et flagg ingen ting leser.)
+Konsekvens for regnmed: når regnmed støtter EHF-utsendelse **for
+kunden**, gjelder utstedelsesplikten også for disse kundene — unntaket
+«hvis systemet støtter det» slår ikke inn. Det forutsetter at EHF er
+inkludert for alle; blir EHF et betalt tillegg eller får et tak
+(beslutning 2 i §6), støtter systemet det *ikke* for en kunde uten
+tillegget, og da gjelder unntaket for kunder under terskelen. Med EHF
+inkludert trengs **ikke noe flagg før 2030**, og da bare for
+mottaksplikten. (Skill-notatet foreslo et flagg; for utsendelse ville
+det vært et flagg ingen ting leser — så lenge beslutning 2 er «inkludert».)
 
 ### 1.4 Det som kommer etter
 
 | Dato | Regel | Konsekvens i regnmed |
 | --- | --- | --- |
 | 1.1.2027 | § 13 annet ledd (ny): «Elektronisk faktura, jf. § 3 nr. 3, skal likevel oppbevares i sitt opprinnelige format» | mottatt EHF i innboksen lagres allerede uendret (docs/bilagsinnboks.md) ✅; den **sendte** XML-en lagres — se §3.5 |
-| 1.1.2027 | § 7-7 tredje ledd: unntaket fra 3,5 års elektronisk tilgjengelighet for omsetning under 5 mill. faller | ingen kodeendring (vi har aldri brukt unntaket) |
+| 1.1.2027 | § 7-7 tredje ledd (ny): ved avvikling skal bokførte opplysninger være elektronisk tilgjengelige i minst seks måneder etter opphøret | en kunde som avvikler, må kunne beholde tilgang eller få full eksport (SAF-T + bilag) — gjelder utover denne saken |
 | 1.1.2028 | § 5-1-2: kjøperens **orgnr skal alltid** stå på salgsdokumentet ved salg til bokføringspliktig | utstedelse uten orgnr til en virksomhet må nektes eller advares |
 | 1.1.2028 | § 5-2-1 fjerde ledd: salgsdokumentet **skal sendes** til bokføringspliktige kjøpere | «usendt faktura» blir et avvik; se §5 om abonnementsfakturaene |
 | 1.1.2030 | § 10 annet ledd annet punktum: **motta** e-faktura; § 7 fjerde ledd: bokføring i elektronisk regnskapssystem | hvert selskap registreres som mottaker i ELMA og innkommende EHF går til bilagsinnboksen |
@@ -103,6 +107,10 @@ for utsendelse ville det vært et flagg ingen ting leser.)
   sier «elektronisk faktura» uten å skille mellom sendt og mottatt.
   Forslaget lagrer den uansett (§3.5) — det er billig og kan ikke være
   feil.
+- **Unntaket i § 7-7 for omsetning under 5 mill.** skal ifølge
+  sekundærkilder falle bort fra 1.1.2027; endringsforskriftens § 7-7
+  tredje ledd handler derimot om avvikling, og jeg har ikke sett teksten
+  som fjerner unntaket.
 - **Kreditnota til en mottaker som er registrert for faktura, men ikke
   for kreditnota** i SMP: ingen kilde sier noe uttrykkelig. Forslaget
   sender da PDF og logger hvorfor.
@@ -183,10 +191,23 @@ Faktura utstedt (uendret: nummer, bilag, PDF lagret i én tx)
   │      { "kanal": "peppol" | "epost", "grunn": "...", "mottaker": "0192:…" }
   │
   └─ POST …/invoices/{iid}/send        ← SAMME endepunkt som i dag
-         kanal = peppol  → EHF rendres, lagres, sendes via leverandøren
+         kanal = peppol  → oppslag, EHF rendres og lagres, utsendelsesrad
+                           skrives i ÉN tx, jobb legges i køen → 202
+                           arbeideren sender til leverandøren
          kanal = epost   → som i dag: PDF på e-post via regnid-railen
          begge           → én rad i `utsendelse`
 ```
+
+**Leverandørkallet går ikke i forespørselen.** Forespørselen gjør det
+som er raskt og må avgjøres før svaret — oppslaget (kanalvalget),
+rendringen, lagringen av XML-en og utsendelsesraden — i én transaksjon,
+og legger så en jobb i den eksisterende JetStream-arbeidskøen
+(docs/jobs.md) med utsendelses-id-en. `regnmed work` gjør HTTP-kallet
+til leverandøren med samme id som idempotensnøkkel og prøver på nytt ved
+nettverksfeil. Da er rekkefølgen entydig (raden finnes før noe er
+sendt, akkurat som e-postraden finnes før meldingen er levert), en treg
+leverandør holder ikke en forespørsel åpen, og «ble den sendt?» besvares
+av hendelsene i §3.3, ikke av om forespørselen rakk å svare.
 
 Sending forblir **uttrykkelig menneskelig handling** (docs/faktura.md),
 og `Right::InvoiceSend` vokter fortsatt. Ingen ny rettighet: kanalen er
@@ -212,14 +233,42 @@ en konsekvens av mottakeren, ikke et valg som krever egen tillatelse.
 ### 3.3 Én utsendelseslogg
 
 `utsendelse` (migrasjon 0020) er innsettings-bar, og id-en er
-meldingens id. Ny migrasjon:
+meldingens id. Foreslått migrasjon (0020 endres ikke, den er applyert;
+nye kolonner og tabeller får engelske navn):
 
-- `channel text not null default 'epost' check (channel in ('epost','peppol'))`;
-- `peppol_receiver text` (`0192:…`), og `to_email` gjøres nullbar med en
-  sjekk som krever riktig adressefelt per kanal — 0020 endres ikke, den
-  er applyert;
-- `document_sha256 text` — hashen av XML-en som faktisk ble sendt
-  (§3.5).
+```sql
+alter table utsendelse
+    add column channel text not null default 'epost'
+        check (channel in ('epost', 'peppol')),
+    add column peppol_receiver text,          -- '0192:<orgnr>'
+    add column attachment_id uuid references attachment (id),
+    alter column to_email drop not null;
+-- riktig adressefelt per kanal; den gamle sjekken (to_email <> '') står
+alter table utsendelse add check (
+    (channel = 'epost'  and to_email is not null and peppol_receiver is null) or
+    (channel = 'peppol' and peppol_receiver is not null and attachment_id is not null));
+
+create table dispatch_event (
+    id             uuid primary key,
+    dispatch_id    uuid not null references utsendelse (id),
+    provider_event text not null unique,   -- webhookens dedup-nøkkel
+    kind           text not null,
+    detail         text not null default '',
+    received_at    timestamptz not null default now()
+);  -- innsettings-bar, samme triggere som utsendelse
+```
+
+XML-en refereres gjennom vedleggsraden (§3.5), som alt bærer SHA-256 og
+hash-sjekkes ved lesing — utsendelsesraden lagrer ingen egen kopi av
+hashen.
+
+**Leserne av `to_email` må følge med i samme endring.**
+`regnmed_db::DispatchRow` dekoder kolonnen som `String`, og
+`list_dispatches` (og dermed `GET …/invoices/{iid}/utsendelser`, feltet
+`to` i svaret) ville feile på første Peppol-rad. Feltet blir
+`Option<String>`, svaret får `kanal` og `to` blir mottakeradressen for
+kanalen (e-post eller Peppol-id), og portalens utsendelsesliste viser
+begge. Integrasjonstesten må ha en Peppol-rad i lista.
 
 Leverandørens **idempotensnøkkel = utsendelses-id-en**, slik
 `Nats-Msg-Id` er det for e-post og faktura-id-en er det mot Stripe.
@@ -227,9 +276,8 @@ Logg-raden og innsendingen er samme hendelse; en omsending etter tapt
 svar blir en no-op hos leverandøren.
 
 **Status er beregnet, aldri lagret** — samme lære som abonnement og
-agentoppgaver. Ny innsettings-bar `utsendelse_event`
-(`utsendelse_id`, `kind`, `detail`, `received_at`), skrevet av
-webhooken:
+agentoppgaver. Den innsettings-bare hendelsestabellen over
+(dispatch_event) skrives av webhooken:
 
 | `kind` | Kilde | Betyr |
 | --- | --- | --- |
@@ -239,8 +287,8 @@ webhooken:
 | `mlr` | Peppol MLR | kjøperens system avviste/godtok meldingen |
 | `svar` | Peppol Invoice Response (IMR) | kjøperen har akseptert, bestridt, betalt … |
 
-Webhooken dedupliserer på leverandørens hendelses-id (unik indeks, som
-`kortbetaling.payment_intent`). `GET …/invoices/{iid}/utsendelser`
+Webhooken dedupliserer på leverandørens hendelses-id (unik kolonne,
+som `payment_intent_id` på kortbetaling, migrasjon 0043). `GET …/invoices/{iid}/utsendelser`
 viser siste hendelse per rad. En `avvist` er **ikke** en feil som
 svelges: den vises i fakturalisten og purre-/oppfølgingsvisningen, med
 regel-id og leverandørens tekst, oversatt der vi kjenner regelen.
@@ -285,7 +333,7 @@ sendte i dag.
 
 Derfor: **XML-en som sendes, lagres** — som bilagsvedlegg på
 fakturabilaget i objektlagringen (docs/blob-store.md, innholdsadressert,
-hash sjekket ved lesing), med hashen i `utsendelse.document_sha256`. En
+hash sjekket ved lesing), og utsendelsesraden peker på vedlegget. En
 omsending sender de **lagrede** bytene, ikke en ny rendring. Det oppfyller
 § 13 annet ledd hvis den gjelder selgerens kopi (§1.5), og det gjør
 «hva sendte vi?» til et oppslag i stedet for en rekonstruksjon.
@@ -336,9 +384,10 @@ leverandøravtalen, ikke koden.
 1. `regnmed-gov`-klient: opprett avsender, slå opp mottaker per
    dokumenttype, send dokument (idempotent), verifiser webhook.
 2. `GET …/invoices/{iid}/delivery` + kanalvalg i `POST …/send`;
-   oppslag som feiler stopper sendingen.
-3. Migrasjon: `utsendelse.channel/peppol_receiver/document_sha256`,
-   `utsendelse_event`; webhook-endepunkt.
+   oppslag som feiler stopper sendingen; leverandørkallet i
+   arbeidskøen (§3.1).
+3. Migrasjonen i §3.3 (kanal, Peppol-mottaker, vedleggsreferanse,
+   hendelsestabell), leserne av `to_email` oppdatert; webhook-endepunkt.
 4. Sendt XML lagret som vedlegg; omsending sender lagrede byte.
 5. «Deres referanse» på faktura (BT-10) og standard på kunden.
 6. Schematron i CI (§3.4 lag 2), og de dataavhengige reglene sjekket før
@@ -349,7 +398,12 @@ leverandøravtalen, ikke koden.
 8. **Driftsselskapets egne abonnementsfakturaer** (`abonnement-oppfolging`
    steg 1) går gjennom samme kanalvalg — BogenTech AS er selv
    bokføringspliktig selger til bokføringspliktige kjøpere, og plikten
-   gjelder oss fra samme dag.
+   gjelder oss fra samme dag. Jobben er uten menneske, så «oppslaget svarer
+   ikke» (§3.2) trenger en egen regel: fakturaen står usendt, jobben
+   rapporterer den slik den i dag rapporterer et selskap uten
+   e-postadresse, og neste kjøring prøver igjen. **Purretrappen starter
+   ikke** for en faktura uten utsendelsesrad — ellers regnes påminnelse og
+   gebyr fra et forfall på en faktura kunden aldri fikk.
 9. Integrasjonstest mot leverandørens testmiljø (skipper uten nøkkel,
    som nats-testene), med payload **fanget fra ekte leveranser** —
    Stripe-lærdommen (CLAUDE.md punkt 56): payloader skrevet ut fra hva
