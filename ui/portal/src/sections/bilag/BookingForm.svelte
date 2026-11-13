@@ -30,7 +30,7 @@
   const f = untrack(() => forslag);
   let date = $state(f?.dato || today());
   let description = $state(
-    f ? (f.selger_navn || f.leverandor_navn || "Bilag") + (f.fakturanr ? " faktura " + f.fakturanr : "") : "",
+    f ? (f.leverandor_navn || f.selger_navn || "Bilag") + (f.fakturanr ? " faktura " + f.fakturanr : "") : "",
   );
   let supplierNo = $state(f?.leverandor_no || "");
   let payment = $state(f && (f.leverandor_no || f.forfall || f.kid) ? "faktura" : "bank");

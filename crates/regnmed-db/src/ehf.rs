@@ -306,15 +306,19 @@ pub async fn inbox_ehf_suggestion(
     })
 }
 
-/// The general suggestion for ANY inbox document (docs/bilagstolkning.md,
-/// #34). EHF is the exact case; a PDF with a text layer is the
-/// heuristic one; a scan without text yields nothing at all — and says
-/// so, rather than inventing numbers.
+/// The general suggestion for ANY document (docs/bilagstolkning.md,
+/// #34): an inbox document or an expense receipt. EHF is the exact case;
+/// a PDF with a text layer is the heuristic one, and so is a photo when
+/// the text-recognition sidecar has read it; anything else yields
+/// nothing at all — and says so, rather than inventing numbers.
 #[derive(Debug)]
 pub struct Bokforingsforslag {
-    /// "ehf" | "pdf-tekst" | "tekst" | "ingen"
+    /// "ehf" | "pdf-tekst" | "tekst" | "ocr" | "ingen"
     pub source: &'static str,
     pub seller_name: Option<String>,
+    /// Why `seller_name` is believed, when it was read rather than taken
+    /// from a structured document.
+    pub seller_reason: Option<String>,
     pub orgnumber: Option<String>,
     pub invoice_number: Option<String>,
     pub date: Option<chrono::NaiveDate>,
@@ -336,17 +340,19 @@ pub struct Bokforingsforslag {
     pub warnings: Vec<String>,
 }
 
-pub async fn inbox_suggestion(
+/// `image_text` is what the text-recognition sidecar read from a photo,
+/// when the caller had one to ask; the database layer never calls out.
+pub async fn document_suggestion(
     pool: &PgPool,
     company_id: Uuid,
-    document_id: Uuid,
+    content_type: &str,
+    content: &[u8],
+    image_text: Option<String>,
 ) -> Result<Bokforingsforslag> {
-    let (_, content_type, content) =
-        crate::inbox::get_inbox_document(pool, company_id, document_id).await?;
-
     let mut suggestion = Bokforingsforslag {
         source: "ingen",
         seller_name: None,
+        seller_reason: None,
         orgnumber: None,
         invoice_number: None,
         date: None,
@@ -365,7 +371,7 @@ pub async fn inbox_suggestion(
     };
 
     // 1. EHF — the structured case, where nothing is guessed.
-    let text = String::from_utf8(content.clone()).ok();
+    let text = String::from_utf8(content.to_vec()).ok();
     if let Some(xml) = text
         .as_deref()
         .filter(|t| t.contains("<Invoice") || t.contains("<CreditNote"))
@@ -393,18 +399,19 @@ pub async fn inbox_suggestion(
     } else {
         // 2. A PDF text layer, or a plain-text document.
         let text = if content_type.contains("pdf") || content.starts_with(b"%PDF") {
-            regnmed_core::pdftext::extract(&content).inspect(|_| suggestion.source = "pdf-tekst")
+            regnmed_core::pdftext::extract(content).inspect(|_| suggestion.source = "pdf-tekst")
+        } else if let Some(read) = image_text.filter(|t| !t.trim().is_empty()) {
+            suggestion.source = "ocr";
+            Some(read)
         } else {
             text.filter(|t| t.len() > 20)
                 .inspect(|_| suggestion.source = "tekst")
         };
         match text {
             None => {
-                suggestion.warnings.push(
-                    "fant ingen lesbar tekst i dokumentet — et skannet bilde må bokføres manuelt \
-                     (OCR er ikke en del av kjernen)"
-                        .into(),
-                );
+                suggestion
+                    .warnings
+                    .push("fant ingen lesbar tekst i dokumentet — fyll inn feltene selv".into());
                 return Ok(suggestion);
             }
             Some(text) => {
@@ -417,6 +424,10 @@ pub async fn inbox_suggestion(
                 if let Some(f) = &t.orgnumber {
                     suggestion.orgnumber = Some(f.value.clone());
                     note("orgnr", &f.reason);
+                }
+                if let Some(f) = &t.seller {
+                    suggestion.seller_name = Some(f.value.clone());
+                    suggestion.seller_reason = Some(f.reason.clone());
                 }
                 if let Some(f) = &t.invoice_number {
                     suggestion.invoice_number = Some(f.value.clone());

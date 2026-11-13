@@ -611,6 +611,10 @@ pub fn router(state: AppState) -> Router {
             get(expenses::receipt).put(expenses::replace_receipt),
         )
         .route(
+            "/companies/{company_id}/expenses/{expense_id}/suggestion",
+            get(expenses::suggestion),
+        )
+        .route(
             "/companies/{company_id}/expenses/{expense_id}/approve",
             axum::routing::post(expenses::approve),
         )
