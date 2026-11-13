@@ -42,6 +42,19 @@ const CADENCES: &[(&str, i64)] = &[
     ("purregebyr_maks", 400),
     ("km_godtgjorelse", 400),
     ("km_godtgjorelse_trekkfri", 400),
+    // Skatteetaten sets the trekkfri side every year; the state side
+    // follows the særavtale period. Both are paid by trip date, so a
+    // missing year must be flagged rather than paid on last year's row.
+    ("km_godtgjorelse_motorsykkel", 400),
+    ("km_godtgjorelse_motorsykkel_trekkfri", 400),
+    ("km_godtgjorelse_moped", 400),
+    ("km_godtgjorelse_moped_trekkfri", 400),
+    ("km_godtgjorelse_snoscooter", 400),
+    ("km_godtgjorelse_snoscooter_trekkfri", 400),
+    ("km_godtgjorelse_bat", 400),
+    ("km_godtgjorelse_bat_trekkfri", 400),
+    ("km_passasjertillegg", 400),
+    ("km_passasjertillegg_trekkfri", 400),
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -132,6 +145,16 @@ mod tests {
             ("purregebyr_maks", 2026),
             ("km_godtgjorelse", 2026),
             ("km_godtgjorelse_trekkfri", 2026),
+            ("km_godtgjorelse_motorsykkel", 2026),
+            ("km_godtgjorelse_motorsykkel_trekkfri", 2026),
+            ("km_godtgjorelse_moped", 2026),
+            ("km_godtgjorelse_moped_trekkfri", 2026),
+            ("km_godtgjorelse_snoscooter", 2026),
+            ("km_godtgjorelse_snoscooter_trekkfri", 2026),
+            ("km_godtgjorelse_bat", 2026),
+            ("km_godtgjorelse_bat_trekkfri", 2026),
+            ("km_passasjertillegg", 2026),
+            ("km_passasjertillegg_trekkfri", 2026),
         ] {
             rates.push(period(domain, y, 1, 1, 1));
         }

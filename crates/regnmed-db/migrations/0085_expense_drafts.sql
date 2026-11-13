@@ -79,6 +79,13 @@ begin
         raise exception 'expense identity is immutable';
     end if;
     if old.status = 'utkast' then
+        -- A draft has no decision trail, and gets none on the way in.
+        if new.decided_by is not null or new.decided_at is not null
+           or new.avvist_note is not null or new.voucher_id is not null
+           or new.motkonto is not null or new.utbetalt_voucher_id is not null
+           or new.utbetalt_at is not null then
+            raise exception 'expense % is a draft and has no decision', old.id;
+        end if;
         if new.status in ('utkast', 'innsendt', 'forkastet') then
             return new;
         end if;

@@ -83,10 +83,7 @@ impl RouteClient {
             base_url: std::env::var("ORS_API_URL")
                 .unwrap_or_else(|_| "https://api.openrouteservice.org".into()),
             key,
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(8))
-                .build()
-                .expect("static client config"),
+            http: crate::http(),
         })
     }
 
@@ -98,6 +95,7 @@ impl RouteClient {
                 self.base_url.trim_end_matches('/')
             ))
             .header("authorization", &self.key)
+            .timeout(std::time::Duration::from_secs(8))
             .json(&serde_json::json!({
                 "coordinates": [[from.lon, from.lat], [to.lon, to.lat]],
                 "geometry_simplify": true,

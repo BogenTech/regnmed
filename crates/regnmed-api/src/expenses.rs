@@ -196,6 +196,7 @@ fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
         "created_at": e.created_at,
         "registered_by": e.registered_by,
         "editable": e.editable,
+        "entered_by_me": e.entered_by_me,
         "department": e.department,
         "project": e.project,
         "billable": e.billable,
@@ -282,16 +283,17 @@ pub async fn receipt(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
     let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    if !role.has(Right::ExpenseReadAll) {
-        // The receipt is a picture of something private. Without
-        // UTLEGG_LES_ALLE you get only your own — and a claim belonging
-        // to someone else must answer as though it does not exist.
-        let owner = regnmed_db::expense_owner(&state.pool, company_id, expense_id)
+    // The receipt is a picture of something private. Without
+    // UTLEGG_LES_ALLE you get only your own, and a DRAFT is nobody's but
+    // its claimant's and whoever entered it — for everyone else it does
+    // not exist, the same rule as the claim itself.
+    let (claimant, entered_by, status) =
+        regnmed_db::expense_people(&state.pool, company_id, expense_id)
             .await
             .map_err(|_| ApiError::NotFound)?;
-        if owner != person.person_id {
-            return Err(ApiError::NotFound);
-        }
+    let mine = claimant == person.person_id || entered_by == Some(person.person_id);
+    if !mine && (status == "utkast" || !role.has(Right::ExpenseReadAll)) {
+        return Err(ApiError::NotFound);
     }
     let (filename, content_type, content) =
         regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
@@ -509,7 +511,7 @@ async fn may_write(
     expense_id: Uuid,
 ) -> Result<(), ApiError> {
     require(state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
-    let (claimant, entered_by) = regnmed_db::expense_people(&state.pool, company_id, expense_id)
+    let (claimant, entered_by, _) = regnmed_db::expense_people(&state.pool, company_id, expense_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
     if person.person_id != claimant && entered_by != Some(person.person_id) {
@@ -570,10 +572,24 @@ pub async fn create_draft(
     Path(company_id): Path<Uuid>,
     Json(request): Json<DraftRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let claimant = claimant(&state, &person, company_id, request.person_id).await?;
-    if let Some(trip) = request.trip_expense_id {
-        may_write(&state, &person, company_id, trip).await?;
-    }
+    // A cost of a trip belongs to the trip's claimant — also when whoever
+    // entered the trip on their behalf adds the toll.
+    let claimant = match (request.trip_expense_id, request.person_id) {
+        (Some(trip), None) => {
+            may_write(&state, &person, company_id, trip).await?;
+            regnmed_db::expense_people(&state.pool, company_id, trip)
+                .await
+                .map_err(|_| ApiError::NotFound)?
+                .0
+        }
+        (trip, asked) => {
+            let claimant = claimant(&state, &person, company_id, asked).await?;
+            if let Some(trip) = trip {
+                may_write(&state, &person, company_id, trip).await?;
+            }
+            claimant
+        }
+    };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_draft(
         &state.pool,
@@ -697,11 +713,21 @@ pub async fn addresses(
     Path(company_id): Path<Uuid>,
     Query(query): Query<AddressQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+    let role = require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
     let text = query.q.trim();
+    let mut out: Vec<serde_json::Value> =
+        regnmed_db::own_addresses(&state.pool, company_id, person.person_id, text)
+            .await?
+            .into_iter()
+            .map(|address| json!({ "name": null, "address": address }))
+            .collect();
+    // Too short to ask anyone else: your own recent addresses only.
     if text.chars().count() < 3 {
-        return Ok(Json(json!({ "addresses": [] })));
+        return Ok(Json(json!({ "addresses": out })));
     }
+    // The customer and supplier register is RESKONTRO_LES territory; an
+    // employee filing a trip gets Enhetsregisteret and Kartverket only.
+    let may_see_parties = role.has(Right::SubledgerRead);
     fn or_nothing<T>(source: &str, result: anyhow::Result<Vec<T>>) -> Vec<T> {
         result.unwrap_or_else(|e| {
             eprintln!("address suggestions from {source} failed: {e:#}");
@@ -710,12 +736,18 @@ pub async fn addresses(
     }
     let brreg = regnmed_gov::brreg::BrregClient::from_env();
     let kartverket = regnmed_gov::addresses::AddressClient::from_env();
+    let parties = async {
+        if may_see_parties {
+            regnmed_db::party_addresses(&state.pool, company_id, text).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
     let (parties, companies, places) = tokio::join!(
-        regnmed_db::party_addresses(&state.pool, company_id, text),
+        parties,
         brreg.search_by_name(text, 3),
         kartverket.search(text),
     );
-    let mut out: Vec<serde_json::Value> = Vec::new();
     for (name, address) in or_nothing("parties", parties) {
         out.push(json!({ "name": name, "address": address }));
     }
@@ -755,6 +787,20 @@ pub async fn route(
     let Some(router) = regnmed_gov::routing::RouteClient::from_env() else {
         return Ok(Json(json!({ "available": false })));
     };
+    // Every view of a trip asks again, and the routing quota is per day:
+    // the same pair of addresses is answered from memory for a day.
+    // shortcut: per replica and cleared wholesale at 1000 entries; move
+    // to the shared cache if trips ever run into the quota.
+    type Cache = std::sync::Mutex<
+        std::collections::HashMap<(String, String), (std::time::Instant, serde_json::Value)>,
+    >;
+    static ROUTES: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
+    let key = (query.from.trim().to_string(), query.to.trim().to_string());
+    if let Some((at, hit)) = ROUTES.lock().unwrap().get(&key)
+        && at.elapsed() < std::time::Duration::from_secs(24 * 3600)
+    {
+        return Ok(Json(hit.clone()));
+    }
     let places = regnmed_gov::addresses::AddressClient::from_env();
     let (from, to) = tokio::join!(places.locate(&query.from), places.locate(&query.to));
     let unreachable = |e: anyhow::Error| {
@@ -770,12 +816,18 @@ pub async fn route(
         .map_err(unreachable)?
         .ok_or_else(|| not_found(&query.to))?;
     let route = router.drive(from, to).await.map_err(unreachable)?;
-    Ok(Json(json!({
+    let answer = json!({
         "available": true,
         "km": (route.metres / 1000.0).round() as i64,
         "metres": route.metres,
         "line": route.line,
         "from": [from.lat, from.lon],
         "to": [to.lat, to.lon],
-    })))
+    });
+    let mut cache = ROUTES.lock().unwrap();
+    if cache.len() >= 1000 {
+        cache.clear();
+    }
+    cache.insert(key, (std::time::Instant::now(), answer.clone()));
+    Ok(Json(answer))
 }

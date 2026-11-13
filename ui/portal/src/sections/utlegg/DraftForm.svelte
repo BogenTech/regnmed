@@ -41,7 +41,6 @@
 
   let dims = $state([]);
   let people = $state([]);
-  let known = $state([]); // addresses used before
   let rate = $state(null);
   let costs = $state([]);
   let busy = $state(false);
@@ -64,15 +63,6 @@
     api("/companies/" + companyId + "/dimensions").then((r) => (dims = r.dimensions)).catch(() => {});
     if (!expense && canFileForOthers) {
       api(base + "/claimants").then((r) => (people = r.people)).catch(() => {});
-    }
-    if (isTrip) {
-      api(base + "?limit=100")
-        .then((r) => {
-          const seen = new Set();
-          for (const x of r.expenses) for (const a of [x.route_from, x.route_to]) if (a) seen.add(a);
-          known = [...seen];
-        })
-        .catch(() => {});
     }
   });
 
@@ -171,15 +161,23 @@
     };
   }
 
-  // Saves; returns the claim's id (a new trip gets one here).
+  // Saves; returns the claim's id. A new trip gets one here, ONCE: a
+  // submit or a cost that fails after it must not make the next try
+  // create a second trip.
+  let createdId = null;
   async function save() {
-    if (expense) {
-      await send("PUT", base + "/" + expense.expense_id, body());
-      return expense.expense_id;
+    const id = expense?.expense_id || createdId;
+    if (id) {
+      await send("PUT", base + "/" + id, body());
+      return id;
     }
     const made = await post(base, { ...body(), kind, ...(claimant ? { person_id: claimant } : {}) });
-    return made.expense_id;
+    createdId = made.expense_id;
+    return createdId;
   }
+  // A trip that now exists belongs at its own address, whatever went
+  // wrong after it was created.
+  const settle = () => !expense && createdId && (location.hash = list + "/" + createdId);
 
   async function act(what) {
     if (busy) return;
@@ -199,10 +197,11 @@
       } else {
         toast("Utkastet er lagret", true);
       }
-      if (!expense) location.hash = list + "/" + id;
+      if (!expense) settle();
       else onchanged?.();
     } catch (err) {
       toast(err.message, false);
+      settle();
     }
     busy = false;
   }
@@ -259,10 +258,11 @@
       costAmount = "";
       costFile = null;
       event.target.reset();
-      if (!expense) location.hash = list + "/" + id;
+      if (!expense) settle();
       else loadCosts();
     } catch (err) {
       toast(err.message, false);
+      settle();
     }
   }
 
@@ -347,12 +347,12 @@
         <div class="grid gap-3 sm:grid-cols-2">
           <div class="fieldset">
             <label class="fieldset-legend" for="utkast-from">Fra</label>
-            <AddressInput id="utkast-from" bind:value={from} {known} lookup={base + "/addresses"} placeholder="Adresse eller firmanavn" invalid={err("from")} />
+            <AddressInput id="utkast-from" bind:value={from} lookup={base + "/addresses"} placeholder="Adresse eller firmanavn" invalid={err("from")} />
             {#if err("from")}<span class="label text-error">Oppgi hvor du kjørte fra</span>{/if}
           </div>
           <div class="fieldset">
             <label class="fieldset-legend" for="utkast-to">Til</label>
-            <AddressInput id="utkast-to" bind:value={to} {known} lookup={base + "/addresses"} placeholder="Adresse eller firmanavn" invalid={err("to")} />
+            <AddressInput id="utkast-to" bind:value={to} lookup={base + "/addresses"} placeholder="Adresse eller firmanavn" invalid={err("to")} />
             {#if err("to")}<span class="label text-error">Oppgi hvor du kjørte til</span>{/if}
           </div>
         </div>

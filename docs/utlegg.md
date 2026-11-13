@@ -40,7 +40,10 @@ innholdet fast. Et utkast slettes aldri; det **forkastes**, enveis.
 
 - Utkast er bare synlige for den pengene gjelder og den som registrerte
   dem — for alle andre finnes de ikke (404), heller ikke for den som
-  godkjenner.
+  godkjenner, og heller ikke kvitteringen deres.
+- Et utkast har ingen beslutningsspor: triggeren nekter
+  `decided_by`, `voucher_id` og de andre beslutningsfeltene på et
+  utkast, også skrevet rett i databasen.
 - Samme kvittering i to krav avvises også når det første er et utkast;
   et avvist eller forkastet krav frigjør den.
 - Innsending sier hva som mangler («velg dato», «legg ved
@@ -104,8 +107,10 @@ felter, ikke fritekst: **fra** og **til**,
 **passasjerer** med navn. Alt står på bilagslinjen ved godkjenning.
 
 Adressefeltene foreslår mens man skriver, og tar både adresse og
-firmanavn: egne adresser fra tidligere turer først, så selskapets egne
-kunder og leverandører (navn → adressen som står på parten), så ethvert
+firmanavn: egne adresser fra tidligere turer først (også i et tomt
+felt), så selskapets egne kunder og leverandører (navn → adressen som
+står på parten — bare for den som har `RESKONTRO_LES`; en ansatt som
+fører en tur får ikke kunderegisteret gjennom adressefeltet), så ethvert
 foretak i Enhetsregisteret ved navn (forretningsadressen — reisen trenger
 ikke gå til noen man handler med), så Kartverkets åpne adresseregister
 (`ws.geonorge.no/adresser`, ingen nøkkel). De tre siste spørres
@@ -132,7 +137,9 @@ bilder og ingenting annet).
 Nøkkelen er `ORS_API_KEY` (valgfri hemmelighet `ors-credentials` i
 test og prod, docs/secrets.md). Uten den svarer endepunktet
 `available: false`, og skjemaet ber om kilometer som før. Avstanden
-lagres ikke på kravet: den regnes ut på nytt ved visning.
+lagres ikke på kravet: den regnes ut på nytt ved visning, og samme par
+adresser besvares fra minnet i et døgn (per replika), så kvoten hos
+OpenRouteService ikke brukes opp av den som blar i krav.
 
 | Kjøretøy | Satsdomene | 2026, øre/km (stat / trekkfri) |
 | --- | --- | --- |

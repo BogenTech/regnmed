@@ -195,7 +195,7 @@ impl BrregClient {
         Self {
             base_url: std::env::var("BRREG_API_URL")
                 .unwrap_or_else(|_| "https://data.brreg.no/enhetsregisteret/api".into()),
-            http: reqwest::Client::new(),
+            http: crate::http(),
         }
     }
 

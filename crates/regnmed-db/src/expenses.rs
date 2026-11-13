@@ -578,14 +578,16 @@ pub async fn discard_expense(pool: &PgPool, company_id: Uuid, expense_id: Uuid) 
     Ok(())
 }
 
-/// Who may write a draft: the claimant and whoever entered it.
+/// The claimant, whoever entered it, and the status — who may write a
+/// draft, and who may see one at all.
 pub async fn expense_people(
     pool: &PgPool,
     company_id: Uuid,
     expense_id: Uuid,
-) -> Result<(Uuid, Option<Uuid>)> {
+) -> Result<(Uuid, Option<Uuid>, String)> {
     sqlx::query_as(
-        "select person_id, registered_by_person from expense where id = $1 and company_id = $2",
+        "select person_id, registered_by_person, status from expense
+         where id = $1 and company_id = $2",
     )
     .bind(expense_id)
     .bind(company_id)
@@ -693,6 +695,8 @@ pub struct ExpenseRow {
     pub registered_by: Option<String>,
     /// The viewer may edit it while it is a draft.
     pub editable: bool,
+    /// The viewer entered it (on someone's behalf or their own).
+    pub entered_by_me: bool,
     pub kind: String,
     pub date: Option<NaiveDate>,
     pub description: String,
@@ -780,6 +784,7 @@ pub async fn list_expenses(
                      then coalesce(rp.name, rp.oidc_sub) end as registered_by,
                 coalesce(e.status = 'utkast' and $2 in (e.person_id, e.registered_by_person),
                          false) as editable,
+                coalesce(e.registered_by_person = $2, false) as entered_by_me,
                 e.department, e.project, e.billable, e.route_from, e.route_to, e.round_trip,
                 e.vehicle, e.passengers, e.passenger_rate_ore_per_km, e.trip_expense_id,
                 e.kind, e.dato, e.beskrivelse, e.belop_ore, e.km, e.sats_ore_per_km,
@@ -838,6 +843,7 @@ pub async fn list_expenses(
             own: r.get("own"),
             registered_by: r.get("registered_by"),
             editable: r.get("editable"),
+            entered_by_me: r.get("entered_by_me"),
             department: r.get("department"),
             project: r.get("project"),
             billable: r.get("billable"),
@@ -1303,11 +1309,38 @@ pub async fn party_addresses(
     Ok(sqlx::query_as(
         "select distinct on (name) name, address from party
          where company_id = $1 and coalesce(address, '') <> ''
-           and name ilike '%' || $2 || '%'
+           and strpos(lower(name), lower($2)) > 0
          order by name limit 3",
     )
     .bind(company_id)
-    .bind(text.replace(['%', '_'], ""))
+    .bind(text)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Addresses the viewer has driven from or to before, newest first —
+/// the first suggestions in the trip form, and the only ones for a
+/// field that is still (nearly) empty.
+pub async fn own_addresses(
+    pool: &PgPool,
+    company_id: Uuid,
+    person_id: Uuid,
+    text: &str,
+) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "select address from (
+             select a.address, max(e.created_at) as used
+             from expense e,
+                  lateral (values (e.route_from), (e.route_to)) as a(address)
+             where e.company_id = $1 and e.person_id = $2 and e.kind = 'kjoring'
+               and e.status <> 'forkastet' and coalesce(a.address, '') <> ''
+               and strpos(lower(a.address), lower($3)) > 0
+             group by a.address
+         ) recent order by used desc limit 5",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .bind(text)
     .fetch_all(pool)
     .await?)
 }

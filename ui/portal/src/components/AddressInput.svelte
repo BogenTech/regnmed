@@ -1,8 +1,8 @@
 <script>
-  // An address field with suggestions as you type: your own earlier
-  // addresses first (`known`), then what `lookup` (a path taking ?q=)
-  // answers — the company's customers and suppliers by name, any company
-  // in Enhetsregisteret by name, and Kartverket's addresses. Picking a
+  // An address field with suggestions as you type, all from `lookup` (a
+  // path taking ?q=): your own earlier addresses first, then the
+  // company's customers and suppliers by name (with RESKONTRO_LES), any
+  // company in Enhetsregisteret by name, and Kartverket's addresses. Picking a
   // company fills "Name, street, postcode town". The ARIA combobox pattern, not a native
   // <datalist>: a datalist is drawn by the host (detached from the field in
   // some), filters out fuzzy hits, and cannot be themed.
@@ -11,36 +11,32 @@
   // Free text is always allowed — a suggestion is a convenience.
   import { api } from "../lib/api.js";
 
-  let { id, value = $bindable(""), known = [], lookup, placeholder = "", invalid = false } = $props();
+  let { id, value = $bindable(""), lookup, placeholder = "", invalid = false } = $props();
 
   let options = $state([]);
   let open = $state(false);
   let active = $state(-1);
   let timer;
+  let input = $state(null);
   const listId = id + "-forslag";
 
   function update() {
     clearTimeout(timer);
-    const t = value.trim();
-    const mine = known
-      .filter((a) => a.toLowerCase().includes(t.toLowerCase()) && a !== value)
-      .slice(0, 5)
-      .map((address) => ({ name: null, address }));
-    options = mine;
-    open = options.length > 0;
     active = -1;
-    if (t.length < 3) return;
+    const t = value.trim();
     timer = setTimeout(() => {
       api(lookup + "?q=" + encodeURIComponent(t))
         .then((r) => {
           // A late answer for text the user has already changed is dropped.
           if (value.trim() !== t) return;
           const seen = new Set();
-          options = [...mine, ...r.addresses].filter((o) => !seen.has(text(o)) && seen.add(text(o)));
-          open = options.length > 0;
+          options = r.addresses.filter((o) => text(o) !== value && !seen.has(text(o)) && seen.add(text(o)));
+          // An answer that lands after the user tabbed away must not
+          // reopen the list over the next field.
+          open = options.length > 0 && document.activeElement === input;
         })
         .catch(() => {});
-    }, 250);
+    }, t ? 250 : 0);
   }
 
   const text = (o) => (o.name ? o.name + ", " + o.address : o.address);
@@ -70,6 +66,7 @@
 
 <div class="relative">
   <input
+    bind:this={input}
     {id}
     class="input w-full"
     role="combobox"
@@ -83,8 +80,8 @@
     bind:value
     oninput={update}
     onkeydown={keydown}
-    onfocus={() => !value && known.length && ((options = known.slice(0, 5).map((address) => ({ name: null, address }))), (open = true))}
-    onblur={() => (open = false)}
+    onfocus={() => !value && update()}
+    onblur={() => (clearTimeout(timer), (open = false))}
   />
   {#if open}
     <ul

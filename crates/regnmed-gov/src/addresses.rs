@@ -60,11 +60,7 @@ impl AddressClient {
         Self {
             base_url: std::env::var("ADDRESS_API_URL")
                 .unwrap_or_else(|_| "https://ws.geonorge.no/adresser/v1".into()),
-            http: reqwest::Client::builder()
-                // Suggestions that arrive after the user typed on are noise.
-                .timeout(std::time::Duration::from_secs(3))
-                .build()
-                .expect("static client config"),
+            http: crate::http(),
         }
     }
 
@@ -73,6 +69,8 @@ impl AddressClient {
             .http
             .get(format!("{}/sok", self.base_url.trim_end_matches('/')))
             .query(query)
+            // Suggestions that arrive after the user typed on are noise.
+            .timeout(std::time::Duration::from_secs(3))
             .send()
             .await
             .context("Kartverket unreachable")?;

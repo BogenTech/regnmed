@@ -566,6 +566,19 @@ async fn expense_drafts_flow() {
     assert_eq!(status, StatusCode::NOT_FOUND, "someone else's draft");
     let (status, _) = request(
         &state,
+        "GET",
+        &format!("{base}/{draft}/receipt"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "nor its receipt, even with UTLEGG_LES_ALLE"
+    );
+    let (status, _) = request(
+        &state,
         "PUT",
         &format!("{base}/{draft}"),
         &admin_token,
@@ -889,6 +902,35 @@ async fn expense_drafts_flow() {
         got["registered_by"], "Admin Utkast",
         "the claimant sees who entered it"
     );
+    // Whoever entered the trip may add its tolls; the cost is the
+    // claimant's like the trip.
+    let (status, made) = request(
+        &state,
+        "POST",
+        &base,
+        &admin_token,
+        Some(
+            serde_json::json!({ "trip_expense_id": filed, "beskrivelse": "Bompenger", "belop_ore": 3_000 })
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let toll: Uuid = made["expense_id"].as_str().unwrap().parse().unwrap();
+    let toll_owner: Uuid = sqlx::query_scalar("select person_id from expense where id = $1")
+        .bind(toll)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(toll_owner, employee);
+    // A draft has no decision trail, not even written directly.
+    assert!(
+        sqlx::query("update expense set decided_by = 'x' where id = $1")
+            .bind(toll)
+            .execute(&state.pool)
+            .await
+            .is_err()
+    );
     let (status, _) = request(
         &state,
         "POST",
@@ -987,6 +1029,10 @@ async fn start_map_services() -> String {
             ),
         )
         .route(
+            "/enheter",
+            get(|| async { Json(serde_json::json!({ "page": { "totalElements": 0 } })) }),
+        )
+        .route(
             "/v2/directions/driving-car/geojson",
             post(
                 |headers: HeaderMap, Json(body): Json<serde_json::Value>| async move {
@@ -1066,4 +1112,75 @@ async fn a_trip_route_is_found_from_two_addresses() {
             .contains("fant ikke adressen «Ingensteds 1»"),
         "{body}"
     );
+
+    // Suggestions: the customer register is RESKONTRO_LES territory, so
+    // an employee filing a trip does not get it — an admin does.
+    unsafe {
+        std::env::set_var("BRREG_API_URL", &services);
+    }
+    regnmed_db::create_party(
+        &state.pool,
+        company,
+        "leverandor",
+        "Nordvik Grossist AS",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("update party set address = 'Industriveien 4, 3036 DRAMMEN' where company_id = $1")
+        .bind(company)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let names = |body: &serde_json::Value| -> Vec<String> {
+        body["addresses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|a| a["name"].as_str().map(String::from))
+            .collect()
+    };
+    let suggest = format!("/companies/{company}/expenses/addresses?q=nordvik");
+    let (_, body) = request(&state, "GET", &suggest, &token, None).await;
+    assert!(names(&body).is_empty(), "{body}");
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Admin"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    let (_, body) = request(
+        &state,
+        "GET",
+        &suggest,
+        &idp.token(&admin_sub, "Admin"),
+        None,
+    )
+    .await;
+    assert_eq!(names(&body), vec!["Nordvik Grossist AS"]);
+
+    // Your own earlier addresses come first, even for an empty field.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/expenses"),
+        &token,
+        Some(
+            serde_json::json!({ "kind": "kjoring", "route_from": "Storgata 1, 0155 OSLO" })
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/expenses/addresses?q="),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(body["addresses"][0]["address"], "Storgata 1, 0155 OSLO");
 }

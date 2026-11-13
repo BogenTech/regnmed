@@ -121,13 +121,14 @@
 
   // With attestering on, nobody approves their own claim (four eyes), so
   // the form is not offered and "next" skips them.
-  let ownBlocked = $derived(policyActive && !!e?.own);
+  // Whoever entered a claim on someone's behalf is as much its author.
+  let ownBlocked = $derived(policyActive && (!!e?.own || !!e?.entered_by_me));
 
   async function goNext() {
     let next = null;
     try {
       const r = await api(base + "?status=innsendt&limit=50");
-      next = r.expenses.find((x) => x.expense_id !== expenseId && !(policyActive && x.own)) || null;
+      next = r.expenses.find((x) => x.expense_id !== expenseId && !(policyActive && (x.own || x.entered_by_me))) || null;
     } catch {}
     location.hash = next ? list + "/" + next.expense_id : list;
   }
