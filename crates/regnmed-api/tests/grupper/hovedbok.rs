@@ -773,3 +773,246 @@ async fn a_voucher_is_corrected_by_a_linked_reversal() {
         "original, reversal, import, expense, payment, its reversal"
     );
 }
+
+/// VAT codes need a registration on the voucher's date, on EVERY path
+/// into the ledger (mval. § 15-11, § 8-1) — checked in post_voucher_in,
+/// not per form. Imported history and reversals are exempt. The
+/// spesifikasjon then opens each code onto its postings, and its totals
+/// follow the same rule as the return.
+#[tokio::test]
+async fn vat_codes_need_a_registration_on_every_posting_path() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Vera Vat"), None)
+        .await
+        .unwrap();
+    // No registration recorded: not VAT-registered.
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Uregistrert AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "bokforing")
+        .await
+        .unwrap();
+    for (code, name) in [("GL", "Hovedbok"), ("IMP", "Import")] {
+        regnmed_db::ensure_journal(&state.pool, company, code, name)
+            .await
+            .unwrap();
+    }
+    for (number, name) in [
+        ("6300", "Leie"),
+        ("2710", "Inngående mva"),
+        ("1920", "Bank"),
+        ("3000", "Salg"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let token = idp.token(&sub, "Vera Vat");
+    let base = format!("/companies/{company}");
+    let rent = |code: &str| {
+        json!({
+            "journal_code": "GL", "date": "2026-03-10", "description": "Husleie",
+            "lines": [
+                { "account": "6300", "amount_ore": 1_000_00, "vat_code": code },
+                { "account": "2710", "amount_ore": 250_00 },
+                { "account": "1920", "amount_ore": -1_250_00 },
+            ],
+        })
+    };
+
+    // A deduction without a registration: refused, in words.
+    let (status, refused) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(rent("1")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.to_string().contains("ikke mva-registrert"),
+        "{refused}"
+    );
+    // Codes outside the VAT system are what an unregistered company uses.
+    let (status, ok) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(rent("7")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{ok}");
+    // Imported history carries its codes as the source file had them.
+    let imported = regnmed_core::voucher::VoucherDraft {
+        journal_code: "IMP".into(),
+        voucher_date: chrono::NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        description: "Importert salg".into(),
+        reverses: None,
+        entries: [
+            ("1920", 125_00i64, None),
+            ("3000", -100_00, Some("3")),
+            ("2700", -25_00, None),
+        ]
+        .iter()
+        .map(|(a, ore, code)| regnmed_core::voucher::EntryDraft {
+            account_number: a.to_string(),
+            amount: regnmed_core::Ore(*ore),
+            vat_code: code.map(str::to_string),
+            description: None,
+            party_no: None,
+            department: None,
+            project: None,
+            currency: None,
+        })
+        .collect(),
+    };
+    regnmed_db::post_voucher(&state.pool, company, &imported, "test")
+        .await
+        .unwrap();
+
+    // Registered from 1 March: the same voucher posts.
+    let registered = |on: bool, from: (i32, u32, u32)| {
+        regnmed_db::record_registrering(
+            &state.pool,
+            company,
+            chrono::NaiveDate::from_ymd_opt(from.0, from.1, from.2).unwrap(),
+            regnmed_db::Registrering {
+                vat_registered: on,
+                business_registered: true,
+            },
+            "manuell",
+            Some("test"),
+            "test",
+        )
+    };
+    registered(true, (2026, 3, 1)).await.unwrap();
+    let (status, posted) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(rent("1")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{posted}");
+
+    // Deregistered later: new codes refused, but the old voucher can
+    // still be reversed — the reversal undoes a posting checked when made.
+    registered(false, (2026, 6, 1)).await.unwrap();
+    let mut july = rent("1");
+    july["date"] = json!("2026-07-01");
+    let (status, _) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(july),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, reversed) = call(
+        &state,
+        "POST",
+        &format!(
+            "{base}/vouchers/{}/reverse",
+            posted["voucher_id"].as_str().unwrap()
+        ),
+        &token,
+        Some(json!({ "dato": "2026-07-01" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reversed}");
+
+    // The 2nd term (Mar–Apr): code 1 opens onto the voucher behind it, and
+    // the deduction counts negative, as in the return.
+    let (status, spec) = call(
+        &state,
+        "GET",
+        &format!("{base}/reports/mva?year=2026&termin=2"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{spec}");
+    let line = spec["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["code"] == "1")
+        .unwrap()
+        .clone();
+    assert_eq!(line["retning"], "inngaende");
+    assert_eq!(line["virkning_ore"], -250_00);
+    assert_eq!(spec["netto_ore"], -250_00, "til gode");
+
+    // Reverse charge without deduction right is OWED (+250), and a credit
+    // note on sales is negative OUTPUT, not a deduction: the totals follow
+    // the return.
+    regnmed_db::ensure_account(&state.pool, company, "6800", "Kontorkostnad")
+        .await
+        .unwrap();
+    for body in [
+        json!({ "journal_code": "GL", "date": "2026-04-05", "description": "Tjeneste fra utlandet",
+                "lines": [{ "account": "6800", "amount_ore": 1_000_00, "vat_code": "87" },
+                          { "account": "1920", "amount_ore": -1_000_00 }] }),
+        json!({ "journal_code": "GL", "date": "2026-04-06", "description": "Kreditnota",
+                "lines": [{ "account": "3000", "amount_ore": 400_00, "vat_code": "3" },
+                          { "account": "2700", "amount_ore": 100_00 },
+                          { "account": "1920", "amount_ore": -500_00 }] }),
+    ] {
+        let (status, posted) = call(
+            &state,
+            "POST",
+            &format!("{base}/vouchers"),
+            &token,
+            Some(body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{posted}");
+    }
+    let (_, spec) = call(
+        &state,
+        "GET",
+        &format!("{base}/reports/mva?year=2026&termin=2"),
+        &token,
+        None,
+    )
+    .await;
+    let effect = |code: &str| {
+        spec["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["code"] == code)
+            .unwrap()["virkning_ore"]
+            .clone()
+    };
+    assert_eq!(
+        effect("87"),
+        250_00,
+        "omvendt avgiftsplikt uten fradrag skyldes"
+    );
+    assert_eq!(effect("3"), -100_00);
+    assert_eq!(spec["utgaende_ore"], 150_00, "−100 på salget + 250 omvendt");
+    assert_eq!(spec["inngaende_ore"], 250_00);
+    assert_eq!(spec["netto_ore"], -100_00);
+    let (status, behind) = call(
+        &state,
+        "GET",
+        &format!("{base}/reports/mva/postings?year=2026&termin=2&kode=1"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{behind}");
+    assert_eq!(behind["total"], 1);
+    assert_eq!(behind["postings"][0]["voucher_id"], posted["voucher_id"]);
+    assert_eq!(behind["postings"][0]["grunnlag_ore"], 1_000_00);
+}

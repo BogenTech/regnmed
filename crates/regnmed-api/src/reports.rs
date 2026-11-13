@@ -39,7 +39,7 @@ async fn scheme_period(
     let scheme = regnmed_db::period_scheme_on(&state.pool, company_id, jan1).await?;
     let period = scheme.new_period(year, period).ok_or_else(|| {
         ApiError::BadRequest(format!(
-            "termin must be 1-{} under ordningen {}",
+            "terminen må være 1–{} under ordningen {}",
             scheme.period_count(),
             scheme.as_str()
         ))
@@ -71,16 +71,13 @@ pub async fn vat_report(
     )
     .await?;
 
-    let output: i64 = lines
+    // Payable-positive per line, by the same rule as the mva-melding:
+    // what is owed on the screen is what the return will say.
+    let effects: Vec<i64> = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Output)
-        .map(|l| -l.tax_ore)
-        .sum();
-    let input: i64 = lines
-        .iter()
-        .filter(|l| direction(&l.code) == Direction::Input)
-        .map(|l| l.tax_ore)
-        .sum();
+        .map(|l| regnmed_core::vat::payable_effect_ore(&l.code, l.tax_ore))
+        .collect();
+    let (output, input) = regnmed_core::vat::vat_totals(&lines);
 
     Ok(Json(json!({
         "year": period.year,
@@ -91,16 +88,70 @@ pub async fn vat_report(
         "frist": scheme.deadline(period).to_string(),
         "start": scheme.start(period).to_string(),
         "end": scheme.end(period).to_string(),
-        "lines": lines.iter().map(|l| json!({
+        "lines": lines.iter().zip(&effects).map(|(l, effect)| json!({
             "code": l.code,
             "description": l.description,
             "rate_bp": l.rate_bp,
             "grunnlag_ore": l.basis_ore,
             "avgift_ore": l.tax_ore,
+            "virkning_ore": effect,
+            "retning": match direction(&l.code) {
+                Direction::Output => "utgaende",
+                Direction::Input => "inngaende",
+                Direction::ReverseChargeDeductible => "omvendt_med_fradrag",
+                Direction::ReverseChargeNonDeductible => "omvendt_uten_fradrag",
+                Direction::CostMarker => "kostnadsmarkor",
+                Direction::None => "annen",
+            },
         })).collect::<Vec<_>>(),
         "utgaende_ore": output,
         "inngaende_ore": input,
         "netto_ore": output - input,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct VatPostingsQuery {
+    year: i32,
+    #[serde(rename = "termin")]
+    period: u8,
+    #[serde(rename = "kode")]
+    code: String,
+}
+
+/// The postings behind one line of the spesifikasjon — what the
+/// accountant opens before filing.
+pub async fn vat_postings(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<VatPostingsQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
+    let (scheme, period) = scheme_period(&state, company_id, query.year, query.period).await?;
+    let (postings, total) = regnmed_db::vat_postings(
+        &state.pool,
+        company_id,
+        scheme.start(period),
+        scheme.end(period),
+        &query.code,
+        500,
+    )
+    .await?;
+    Ok(Json(json!({
+        "kode": query.code,
+        "total": total,
+        "postings": postings.iter().map(|p| json!({
+            "voucher_id": p.voucher_id,
+            "voucher": p.voucher_label,
+            "date": p.date.to_string(),
+            "account": p.account,
+            "account_name": p.account_name,
+            "description": p.description,
+            "party_no": p.party_no,
+            "grunnlag_ore": p.basis_ore,
+            "rate_bp": p.rate_bp,
+        })).collect::<Vec<_>>(),
     })))
 }
 
@@ -576,18 +627,38 @@ pub async fn audit(
 /// The company's mva-terminordning (docs/mva.md, #51): current
 /// ordning, this year's perioder with frister, and the registered
 /// history. To-måneder is the default and needs no row.
+#[derive(Deserialize, Default)]
+pub struct SchemeQuery {
+    /// The scheme that governs this year (the one in force on 1 January,
+    /// as the report and the melding use); this year when left out.
+    year: Option<i32>,
+}
+
 pub async fn period_scheme(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<SchemeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     let today: NaiveDate = sqlx::query_scalar("select current_date")
         .fetch_one(&state.pool)
         .await
         .map_err(anyhow::Error::from)?;
-    let scheme = regnmed_db::period_scheme_on(&state.pool, company_id, today).await?;
-    let year = chrono::Datelike::year(&today);
+    let (scheme, year) = match query.year {
+        Some(year) => {
+            let jan1 = NaiveDate::from_ymd_opt(year, 1, 1)
+                .ok_or_else(|| ApiError::BadRequest("ugyldig år".into()))?;
+            (
+                regnmed_db::period_scheme_on(&state.pool, company_id, jan1).await?,
+                year,
+            )
+        }
+        None => (
+            regnmed_db::period_scheme_on(&state.pool, company_id, today).await?,
+            chrono::Datelike::year(&today),
+        ),
+    };
     let perioder: Vec<serde_json::Value> = (1..=scheme.period_count())
         .filter_map(|n| scheme.new_period(year, n))
         .map(|t| {
@@ -687,16 +758,8 @@ pub async fn key_figures(
         scheme.end(naa).min(today),
     )
     .await?;
-    let output: i64 = spes
-        .iter()
-        .filter(|l| regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Output)
-        .map(|l| -l.tax_ore)
-        .sum();
-    let input: i64 = spes
-        .iter()
-        .filter(|l| regnmed_core::vat::direction(&l.code) == regnmed_core::vat::Direction::Input)
-        .map(|l| l.tax_ore)
-        .sum();
+    // The same rule as the Mva page and the melding.
+    let (output, input) = regnmed_core::vat::vat_totals(&spes);
     let vat_net = output - input;
 
     let this_year = chrono::Datelike::year(&today);

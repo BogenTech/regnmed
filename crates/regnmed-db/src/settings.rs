@@ -24,8 +24,8 @@ pub struct Registrering {
 /// we hold no evidence for. Every company gets a row from migration
 /// 0056, so this is the case of a company created outside the normal
 /// paths (tests, fixtures).
-pub async fn registrering_on(
-    pool: &PgPool,
+pub async fn registrering_on<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
     company_id: Uuid,
     date: NaiveDate,
 ) -> Result<Registrering> {
@@ -36,7 +36,7 @@ pub async fn registrering_on(
     )
     .bind(company_id)
     .bind(date)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(row.map_or(Registrering::default(), |r| Registrering {
         vat_registered: r.get("mva_registrert"),

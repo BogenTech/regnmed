@@ -334,6 +334,10 @@ pub fn router(state: AppState) -> Router {
             get(reports::period_scheme).post(reports::set_period_scheme),
         )
         .route(
+            "/companies/{company_id}/reports/mva/postings",
+            get(reports::vat_postings),
+        )
+        .route(
             "/companies/{company_id}/reports/mva-melding",
             get(reports::vat_return),
         )

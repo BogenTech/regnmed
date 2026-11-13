@@ -66,8 +66,23 @@ pub async fn vat_specification(
                 .with_context(|| {
                     format!("no VAT rate on record for code {code} in this period (pre-2016?)")
                 })?;
-            let basis_ore: i64 = row.get("grunnlag_ore");
+            let mut basis_ore: i64 = row.get("grunnlag_ore");
             ensure!(!code.is_empty(), "empty vat code in ledger");
+            // A reverse-charge / import basis is a PURCHASE, posted as a
+            // debit, but the tax computed on it is OUTPUT tax (mval.
+            // § 11-1): a liability, a credit. The specification states
+            // these lines in the output convention (basis and tax both
+            // credit) so everything downstream — the return, the payable
+            // effect — reads them like any other output line. Without
+            // this the return turned 25 % reverse charge into a REFUND:
+            // fastsatt −25 000 for a 100 000 kr service that owed +25 000.
+            if matches!(
+                regnmed_core::vat::direction(&code),
+                regnmed_core::vat::Direction::ReverseChargeDeductible
+                    | regnmed_core::vat::Direction::ReverseChargeNonDeductible
+            ) {
+                basis_ore = -basis_ore;
+            }
             Ok(SpecLine {
                 code,
                 description: row.get("description"),
@@ -77,6 +92,93 @@ pub async fn vat_specification(
             })
         })
         .collect()
+}
+
+/// One posting behind a line of the mva-spesifikasjon: the voucher it
+/// sits on, and its basis at the rate valid on the voucher's date — what
+/// the accountant checks before the return is filed.
+#[derive(Debug)]
+pub struct VatPosting {
+    pub voucher_id: Uuid,
+    pub voucher_label: String,
+    pub date: NaiveDate,
+    pub account: String,
+    pub account_name: String,
+    pub description: String,
+    pub party_no: Option<String>,
+    pub basis_ore: i64,
+    pub rate_bp: Option<i64>,
+}
+
+/// The postings with `code` in the period, oldest first, at most
+/// `limit`, with the total count. Same filter as `vat_specification`,
+/// so the rows add up to the line they open.
+pub async fn vat_postings(
+    pool: &PgPool,
+    company_id: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+    code: &str,
+    limit: i64,
+) -> Result<(Vec<VatPosting>, i64)> {
+    let rows = sqlx::query(
+        "select v.id as voucher_id, v.fiscal_year, v.voucher_number, j.code as journal,
+                v.voucher_date, a.number, a.name as account_name,
+                coalesce(e.description, v.description) as description, p.party_no,
+                e.amount_ore, r.rate_bp, count(*) over () as total
+         from entry e
+         join voucher v on v.id = e.voucher_id
+         join journal j on j.id = v.journal_id
+         join account a on a.id = e.account_id
+         join vat_code vc on vc.code = e.vat_code
+         left join party p on p.id = e.party_id
+         left join lateral (
+             select rate_bp from vat_rate
+             where rate_class = vc.rate_class and valid_from <= v.voucher_date
+             order by valid_from desc limit 1
+         ) r on true
+         where v.company_id = $1
+           and v.voucher_date between $2 and $3
+           and e.vat_code = $4
+         order by v.voucher_date, v.chain_seq, e.line_no
+         limit $5",
+    )
+    .bind(company_id)
+    .bind(start)
+    .bind(end)
+    .bind(code)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let total = rows.first().map(|r| r.get::<i64, _>("total")).unwrap_or(0);
+    Ok((
+        rows.iter()
+            .map(|r| {
+                let journal: String = r.get("journal");
+                let label = format!(
+                    "{}-{}",
+                    r.get::<i32, _>("fiscal_year"),
+                    r.get::<i64, _>("voucher_number")
+                );
+                VatPosting {
+                    voucher_id: r.get("voucher_id"),
+                    voucher_label: if journal == "GL" {
+                        label
+                    } else {
+                        format!("{journal} {label}")
+                    },
+                    date: r.get("voucher_date"),
+                    account: r.get("number"),
+                    account_name: r.get("account_name"),
+                    description: r.get("description"),
+                    party_no: r.get("party_no"),
+                    basis_ore: r.get("amount_ore"),
+                    rate_bp: r.get::<Option<i32>, _>("rate_bp").map(i64::from),
+                }
+            })
+            .collect(),
+        total,
+    ))
 }
 
 /// The company's terminordning valid on `dato` (docs/mva.md, #51):

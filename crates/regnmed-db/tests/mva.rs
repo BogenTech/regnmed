@@ -58,6 +58,22 @@ async fn specification_reports_basis_and_tax_per_period() {
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Mva Test AS")
         .await
         .unwrap();
+    // A VAT-registered seller: VAT codes need a registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    regnmed_db::record_registrering(
+        &pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            vat_registered: true,
+            business_registered: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
@@ -200,6 +216,22 @@ async fn reverse_charge_posts_the_computed_tax_into_the_ledger() {
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Innførsel AS")
         .await
         .unwrap();
+    // A VAT-registered seller: VAT codes need a registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    regnmed_db::record_registrering(
+        &pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            vat_registered: true,
+            business_registered: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
@@ -285,6 +317,37 @@ async fn reverse_charge_posts_the_computed_tax_into_the_ledger() {
         balance("6800").await,
         225_000_00,
         "ikke-fradragsberettiget avgift er en del av kostnaden"
+    );
+
+    // And the RETURN: from the ledger, not from a hand-made line. The
+    // specification states both codes in the output convention, so the
+    // melding asks 25 000 for code 87 and nothing for 86 — before, it
+    // read the debit basis as it stood and gave a 25 000 kr refund.
+    let spec = regnmed_db::vat_specification(&pool, company, date(2026, 3, 1), date(2026, 3, 31))
+        .await
+        .unwrap();
+    for code in ["86", "87"] {
+        let line = spec.iter().find(|l| l.code == code).unwrap();
+        assert_eq!(
+            line.basis_ore, -100_000_00,
+            "{code}: grunnlag i utgående konvensjon"
+        );
+        assert_eq!(
+            line.tax_ore, -25_000_00,
+            "{code}: beregnet avgift er kredit"
+        );
+    }
+    let melding = regnmed_core::vat_return::build(
+        "999888777",
+        regnmed_core::vat::Period::new(2026, 2).unwrap(),
+        regnmed_core::vat::PeriodScheme::ToManeder,
+        "r",
+        "0",
+        &spec,
+    );
+    assert_eq!(
+        melding.assessed_kr, 25_000,
+        "bare koden uten fradragsrett koster avgift"
     );
 
     // The chain still verifies: the added entries are hashed with the

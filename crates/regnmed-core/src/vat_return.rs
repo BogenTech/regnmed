@@ -294,9 +294,10 @@ mod tests {
                 code: code.into(),
                 description: "Tjenester kjøpt fra utlandet".into(),
                 rate_bp: 2500,
-                // A purchase basis posts as a debit; the computed tax is
-                // an output tax, i.e. a credit in the ledger.
-                basis_ore: 100_000_00,
+                // As `vat_specification` states a reverse-charge line: in
+                // the OUTPUT convention, basis and tax both credit (the
+                // purchase is a debit in the ledger; the spec flips it).
+                basis_ore: -100_000_00,
                 tax_ore: -25_000_00,
             }]
         };
@@ -312,6 +313,7 @@ mod tests {
         };
 
         let med = message("86");
+        assert_eq!(med.lines[0].basis_kr, Some(100_000), "grunnlaget positivt");
         assert_eq!(med.lines[0].vat_kr, 25_000, "beregnet utgående avgift");
         assert_eq!(med.lines[0].deduction_kr, -25_000, "og fradraget for den");
         assert_eq!(

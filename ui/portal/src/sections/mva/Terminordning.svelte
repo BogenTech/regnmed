@@ -1,73 +1,77 @@
 <script>
-  // Terminordningen er datert og innsettings-bar historikk (#51): en ny
-  // rad registrerer vedtaket Skatteetaten har fattet, med virkning fra
-  // en dato. Ingenting utledes — spesifikasjon, melding og frister
-  // følger den registrerte ordningen.
-  import { untrack } from "svelte";
+  // The terminordning is dated, insert-only history (#51): a new row
+  // records the decision Skatteetaten has made, in force from a date.
+  // Nothing is derived — the specification, the return and the deadlines
+  // follow the registered scheme, and the system never judges eligibility.
   import { post } from "../../lib/api.js";
+  import { formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import Card from "../../components/Card.svelte";
+  import { bekreft } from "../../lib/dialog.svelte.js";
 
-  let { companyId, ordningInfo, year, onDone } = $props();
+  let { companyId, scheme, canEdit = false, onDone = () => {} } = $props();
 
-  const ORDNING_NAVN = {
-    "to-maneder": "to-månedersterminer",
-    arlig: "årstermin",
-    primaernaering: "årstermin (primærnæring)",
-  };
+  const NAME = { "to-maneder": "To-månedersterminer", arlig: "Årstermin", primaernaering: "Årstermin (primærnæring)" };
 
-  let ordning = $state("to-maneder");
-  // Startverdi, ikke binding: feltet skal kunne redigeres fritt. Velges
-  // et annet år lastes seksjonen på nytt og kortet bygges opp igjen.
-  let fra = $state(untrack(() => year) + "-01-01");
+  let kind = $state("to-maneder");
+  let from = $state(new Date().getFullYear() + 1 + "-01-01");
   let note = $state("");
+  let busy = $state(false);
 
-  async function registrer() {
+  async function save(event) {
+    event.preventDefault();
+    if (busy) return;
+    const ok = await bekreft(
+      NAME[kind] + " fra " + formatDate(from) + ". Spesifikasjon, melding og frister følger ordningen fra den datoen. Raden kan ikke endres, bare erstattes av en ny.",
+      { tittel: "Registrer terminordning?", ok: "Registrer" },
+    );
+    if (!ok) return;
+    busy = true;
     try {
-      await post("/companies/" + companyId + "/mva/terminordning", {
-        ordning,
-        valid_from: fra,
-        note: note.trim() || null,
-      });
-      toast("Terminordning registrert", true);
-      ordning = "to-maneder";
-      fra = year + "-01-01";
+      await post("/companies/" + companyId + "/mva/terminordning", { ordning: kind, valid_from: from, note: note.trim() || null });
+      toast("Terminordningen er registrert", true);
       note = "";
       onDone();
-    } catch (error) {
-      toast(error.message, false);
+    } catch (e) {
+      toast(e.message, false);
     }
+    busy = false;
   }
 </script>
 
-<Card title="Terminordning">
-  <p class="text-sm opacity-70 mb-2">
-    Gjeldende ordning: <b>{ORDNING_NAVN[ordningInfo.ordning] || ordningInfo.ordning}</b>. Ordningen
-    Skatteetaten har innvilget registreres med virkning fra en dato — spesifikasjon, melding og
-    frister følger den. Systemet vurderer aldri berettigelse.
+<div class="grid gap-3 mt-3 max-w-2xl">
+  <p class="text-sm opacity-80">
+    Ordningen Skatteetaten har innvilget, med virkning fra en dato. Uten registrert ordning gjelder to-månedersterminer.
+    Systemet vurderer aldri om selskapet har rett til en ordning.
   </p>
-  <div class="flex flex-wrap gap-2 items-end mb-2">
-    <select class="select select-sm" bind:value={ordning}>
-      <option value="to-maneder">to-månedersterminer</option>
-      <option value="arlig">årstermin</option>
-      <option value="primaernaering">årstermin (primærnæring)</option>
-    </select>
-    <input type="date" class="input input-sm" bind:value={fra} />
-    <input class="input input-sm" placeholder="Vedtaksreferanse" bind:value={note} />
-    <button class="btn btn-sm" onclick={registrer}>Registrer</button>
-  </div>
-  {#if ordningInfo.history.length}
-    <table class="table table-xs max-w-md">
-      <thead><tr><th>Fra</th><th>Ordning</th><th>Notat</th></tr></thead>
-      <tbody>
-        {#each ordningInfo.history as h}
-          <tr>
-            <td>{h.valid_from}</td>
-            <td>{ORDNING_NAVN[h.ordning] || h.ordning}</td>
-            <td class="text-xs opacity-70">{h.note || ""}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  {#if scheme.history.length}
+    <ul class="grid gap-1 text-sm">
+      {#each scheme.history as h, i (i)}
+        <li>
+          Fra {formatDate(h.valid_from)}: {NAME[h.ordning] || h.ordning}{h.note ? " (" + h.note + ")" : ""}
+          <span class="opacity-70">, registrert av {h.created_by}</span>
+        </li>
+      {/each}
+    </ul>
   {/if}
-</Card>
+  {#if canEdit}
+    <form class="grid gap-3 sm:grid-cols-[1fr_11rem] items-end border border-base-300 rounded-box p-4" onsubmit={save}>
+      <div class="fieldset py-0">
+        <label class="fieldset-legend pt-0" for="to-ordning">Ny ordning</label>
+        <select id="to-ordning" class="select w-full" bind:value={kind}>
+          {#each Object.entries(NAME) as [key, label] (key)}
+            <option value={key}>{label}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="fieldset py-0">
+        <label class="fieldset-legend pt-0" for="to-fra">Gjelder fra</label>
+        <input id="to-fra" type="date" class="input w-full" bind:value={from} />
+      </div>
+      <div class="fieldset py-0 sm:col-span-2">
+        <label class="fieldset-legend pt-0" for="to-note">Vedtaksreferanse</label>
+        <input id="to-note" class="input w-full" placeholder="F.eks. Skatteetatens brev av 12.01.2026" bind:value={note} />
+      </div>
+      <button class="btn w-fit" type="submit" disabled={busy}>Registrer</button>
+    </form>
+  {/if}
+</div>
