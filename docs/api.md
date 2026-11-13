@@ -207,6 +207,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/parties/{party_id}` | GET |
 | `/companies/{company_id}/parties/{party_id}/contact` | PUT |
 | `/companies/{company_id}/parties/{party_id}/items` | GET |
+| `/companies/{company_id}/parties/{party_id}/matches` | GET |
 | `/companies/{company_id}/payments/payable` | GET |
 | `/companies/{company_id}/payments/runs` | GET POST |
 | `/companies/{company_id}/payments/runs/{run_id}/approve` | POST |
@@ -246,6 +247,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/reskontro/entries/{entry_id}/terms` | POST |
 | `/companies/{company_id}/reskontro/matches` | POST |
 | `/companies/{company_id}/reskontro/matches/{match_id}` | DELETE |
+| `/companies/{company_id}/reskontro/overview` | GET |
 | `/companies/{company_id}/settings` | GET |
 | `/companies/{company_id}/settings/registrering` | POST |
 | `/companies/{company_id}/share-events` | GET POST |

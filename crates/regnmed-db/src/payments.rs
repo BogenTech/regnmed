@@ -166,7 +166,7 @@ pub async fn record_payable_terms(
     .await
 }
 
-async fn insert_terms<'e>(
+pub(crate) async fn insert_terms<'e>(
     executor: impl sqlx::PgExecutor<'e>,
     company_id: Uuid,
     entry_id: Uuid,

@@ -401,6 +401,47 @@ pub async fn import_open_items(
     };
     draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
+
+    // A supplier's due date and KID are what the payment list pays by
+    // (docs/betaling.md): kept as payable terms on each imported item, not
+    // only in the text, so «Velg forfalte» and the overdue figures see
+    // them. The party lines are posted in file order, one per row.
+    if kind == PartyKind::Supplier {
+        let lines: Vec<Uuid> = sqlx::query_scalar(
+            "select id from entry where voucher_id = $1 and party_id is not null order by line_no",
+        )
+        .bind(posted.id)
+        .fetch_all(&mut *tx)
+        .await?;
+        ensure!(
+            lines.len() == rader.len(),
+            "importen ga ikke én linje per post"
+        );
+        for (entry_id, rad) in lines.into_iter().zip(rader) {
+            let kid = match rad.kid.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+                Some(k) if regnmed_core::kid::is_valid(k) => Some(k),
+                Some(k) => {
+                    warnings.push(format!(
+                        "KID {k} på {} er ugyldig og ble ikke lagret (står i teksten)",
+                        rad.document.as_deref().unwrap_or("en post")
+                    ));
+                    None
+                }
+                None => None,
+            };
+            if rad.due_date.is_some() || kid.is_some() {
+                crate::payments::insert_terms(
+                    &mut *tx,
+                    company_id,
+                    entry_id,
+                    rad.due_date,
+                    kid,
+                    created_by,
+                )
+                .await?;
+            }
+        }
+    }
     tx.commit().await?;
 
     if opprettede_parter > 0 {

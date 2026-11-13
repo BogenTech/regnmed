@@ -14,7 +14,7 @@
   <NewParty {companyId} kind="kunde" />
 {:else if isId(extra)}
   {#key companyId + extra}
-    <CustomerDetail {companyId} partyId={extra} />
+    <CustomerDetail {companyId} partyId={extra} {query} />
   {/key}
 {:else if extra}
   <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>

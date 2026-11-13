@@ -36,6 +36,22 @@ always computed (`amount − matched`), never stored. Over-matching a
 remainder is rejected; matches are per party and account, cross-company
 pairings impossible.
 
+Matches on one party take turns (`pg_advisory_xact_lock` on the party
+inside `match_items`): the remainders are read and the match written
+under the same lock, so two simultaneous matches cannot both consume
+the same open amount. The remainder formula lives in the view
+`subledger_entry_open` (migration 0083); new queries read it instead of
+writing the formula out again, and the older ones move to it as they
+are touched.
+
+A match is undone with `DELETE …/reskontro/matches/{id}` — the vouchers
+stand untouched, only the pairing goes. The one exception is a
+**currency settlement** (`match_valuta`): its agio voucher was posted in
+the same transaction as the match rows, so removing a row would leave
+the agio standing against nothing. That refusal is in
+`unmatch_items`, and such matches are corrected with a reversal of the
+agio voucher.
+
 ## Web API (engagement-guarded; mutations require bokforing)
 
 | Endpoint | Purpose |
@@ -45,7 +61,9 @@ pairings impossible.
 | `POST /companies/{id}/reskontro/entries/{entry}/terms` | forfall og KID på en leverandørpost (docs/betaling.md) |
 | `POST /companies/{id}/parties` | opprett part (partsnummer tildeles). Valgfritt `address`, `email` og `bank_account` i samme kall (krever `KONTAKT_SKRIV`, som `PUT …/contact`). De kontrolleres FØR parten opprettes, så et ugyldig kontonummer etterlater aldri en halvferdig part |
 | `GET /companies/{id}/parties/{pid}/items?open=true` | items with matched/remaining |
-| `POST /companies/{id}/reskontro/matches` + `DELETE …/{match_id}` | åpne poster matching |
+| `POST /companies/{id}/reskontro/matches` + `DELETE …/{match_id}` | åpne poster matching (valutaoppgjør kan ikke løses opp) |
+| `GET /companies/{id}/parties/{pid}/matches` | partens avstemminger, nyeste først, med begge bilag, hvem og når, og `currency_settlement` |
+| `GET /companies/{id}/reskontro/overview` | per reskontrokonto hovedbok mot sum parter (samme tall som revisjonsrapportens kontroll 4, `subledger_accounts`), og partene med åpne poster på BEGGE sider (`to_match`, inntil 100, alfabetisk, med `to_match_total`) |
 | `PUT /companies/{id}/accounts/{nr}/reskontro` | flag/clear a reskontro account |
 
 The statutory kunde-/leverandørspesifikasjon (per party, per period,
@@ -55,14 +73,27 @@ bokføringsforskriften §3-1 reports:
 `GET …/reports/leverandorspesifikasjon` ([rapporter.md](rapporter.md)).
 `…/parties/{pid}/items` stays the åpne poster working view.
 
-In the portal, **Kunder** and **Leverandører** are mirrored sections
-over the same endpoints (register w/ search and sorting, party page w/
-contact info, åpne poster and manual matching); **Reskontro** keeps the
-cross-kind list and the CSV import. The match form labels its two sides
-from the party kind: the matcher always takes the positive remainder as
-`entry_a`, but that is the customer's *invoice* and the supplier's
-*payment* — a fixed "Faktura" label would point the user the wrong way
-on the supplier side.
+In the portal every party has ONE page, under **Kunder** or
+**Leverandører** (register w/ search and sorting, party page w/ contact
+info). Its «Reskontro: poster og avstemming» panel
+(`sections/parties/SubledgerItems.svelte`) shows the open items, the
+**suggested matches** (`parties/matching.js`: an exact amount first,
+then what is left of a payment against the oldest open invoices — the
+server checks every match, this only proposes), a manual pick of one
+item on each side with the amount and what stays open, and the history
+with «Løs opp». The two sides are named from the party kind: the
+matcher always takes the positive remainder as `entry_a`, but that is
+the customer's *invoice* and the supplier's *payment* — a fixed
+"Faktura" label would point the user the wrong way on the supplier
+side.
+
+**Reskontro** is the workbench across both kinds: *Oversikt* (does each
+reskontro account agree with the hovedbok, and which parties have
+something to match — each links to the party page with the panel
+open, `?avstem`), *Parter* (the same register for both kinds), *Import*
+(CSV from another system, docs/migration.md) and *Reskontrokontoer*
+(flag or clear an account, with what that means). Old links to
+`#/c/{id}/reskontro/{party}` land on the party's own page.
 
 ## SAF-T
 
@@ -94,4 +125,14 @@ nullstiller det). Revisjonsrapportens **kontroll 4** avstemmer derfor
   flow over HTTP: flag account, create customer, party-requirement
   enforcement both ways, invoice + partial payment, mixed-version chain
   verification, spesifikasjon saldo, åpne poster matching with
-  over-match rejection, SAF-T with customers.
+  over-match rejection (in Norwegian), SAF-T with customers. The
+  overview lists the party with items on both sides and ties 1500 to
+  the hovedbok; the match history names the match; undoing it reopens
+  both sides.
+- `regnmed-api/tests/grupper/migrering.rs` — imported supplier items
+  keep due date and a valid KID as payable terms (seen in
+  `payments/payable`), a bad KID is named and not stored, and the
+  preview returns the rows as read.
+- `ui/portal/src/sections/parties/matching.test.js` — suggestions:
+  exact amounts whatever the order, oldest first for the rest, nothing
+  suggested twice.

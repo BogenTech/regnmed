@@ -10,9 +10,18 @@
   import { download } from "../../lib/download.js";
   import { harRett } from "../../lib/me.svelte.js";
   import PartyContact from "../../components/PartyContact.svelte";
-  import Part from "../reskontro/Part.svelte";
+  import SubledgerItems from "../parties/SubledgerItems.svelte";
 
-  let { companyId, partyId } = $props();
+  let { companyId, partyId, query = "" } = $props();
+  // ?avstem (from Reskontro → Oversikt) opens the reskontro straight away.
+  const startOpen = new URLSearchParams(query).has("avstem");
+  // Arriving to match: bring the reskontro into view once the party is shown.
+  let scrolled = false;
+  $effect(() => {
+    if (!startOpen || !party || scrolled) return;
+    scrolled = true;
+    queueMicrotask(() => document.getElementById("reskontro")?.scrollIntoView());
+  });
 
   let party = $state(null);
   let items = $state(null);
@@ -243,8 +252,8 @@
     </div>
   </section>
 
-  <details>
-    <summary class="cursor-pointer font-medium mb-3">Alle poster i reskontroen</summary>
-    <Part {companyId} {party} partyId={party.party_id} contact={false} embedded />
+  <details id="reskontro" class="mt-2 scroll-mt-4" open={startOpen}>
+    <summary class="cursor-pointer font-medium mb-3">Reskontro: poster og avstemming</summary>
+    {#key party.party_id}<SubledgerItems {companyId} {party} onChanged={load} />{/key}
   </details>
 {/if}

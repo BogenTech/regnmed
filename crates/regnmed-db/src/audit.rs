@@ -19,7 +19,7 @@
 //!    regelverksrevisjon (docs/regelverk.md).
 
 use anyhow::Result;
-use regnmed_core::audit::{AnchorInfo, AuditInput, Check, SubledgerAccount};
+use regnmed_core::audit::{AnchorInfo, AuditInput, Check};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -109,52 +109,7 @@ pub async fn build_audit_report(
     // account that carries party postings — an amount in a party's
     // spesifikasjon that no reskontro account holds is exactly the kind
     // of divergence a check limited to flagged accounts cannot see.
-    let subledger = sqlx::query(
-        "select a.number, a.reskontro_kind,
-                coalesce(sum(e.amount_ore), 0)::bigint as hovedbok_ore,
-                coalesce(sum(e.amount_ore) filter (where e.party_id is not null), 0)::bigint
-                    as reskontro_ore,
-                count(e.id) filter (where e.party_id is null)::bigint as uten_part_antall,
-                count(e.id) filter (where e.party_id is not null)::bigint as med_part_antall,
-                count(e.id) filter (where p.kind is not null
-                                      and p.kind is distinct from a.reskontro_kind)::bigint
-                    as feil_kind_antall,
-                coalesce(sum(e.amount_ore) filter (where p.kind is not null
-                                      and p.kind is distinct from a.reskontro_kind), 0)::bigint
-                    as feil_kind_ore,
-                coalesce(array_agg(distinct p.kind) filter (where p.kind is not null),
-                         array[]::text[]) as part_kinds
-         from account a
-         left join entry e on e.account_id = a.id
-         left join party p on p.id = e.party_id
-         where a.company_id = $1
-           and (a.reskontro_kind is not null
-                or exists (select 1 from entry x
-                           where x.account_id = a.id and x.party_id is not null))
-         group by a.number, a.reskontro_kind
-         order by a.number",
-    )
-    .bind(company_id)
-    .fetch_all(pool)
-    .await?;
-    let accounts: Vec<SubledgerAccount> = subledger
-        .iter()
-        .map(|r| {
-            let mut part_kinds: Vec<String> = r.get("part_kinds");
-            part_kinds.sort(); // array_agg has no order; the report is deterministic
-            SubledgerAccount {
-                account: r.get("number"),
-                flagg: r.get("reskontro_kind"),
-                general_ledger_ore: r.get("hovedbok_ore"),
-                subledger_ore: r.get("reskontro_ore"),
-                without_party_count: r.get("uten_part_antall"),
-                with_party_count: r.get("med_part_antall"),
-                wrong_kind_count: r.get("feil_kind_antall"),
-                feil_kind_ore: r.get("feil_kind_ore"),
-                part_kinds,
-            }
-        })
-        .collect();
+    let accounts = crate::subledger::subledger_accounts(pool, company_id).await?;
     checks.push(regnmed_core::audit::subledger_check(&accounts));
 
     // 5. Balansekontroll.

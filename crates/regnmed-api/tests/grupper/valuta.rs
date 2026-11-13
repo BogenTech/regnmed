@@ -298,6 +298,40 @@ async fn valuta_invoice_agio_and_regulation() {
     .unwrap();
     assert_eq!(open_items, 0, "every reskontro item fully closed");
 
+    // Both rows of the settlement are named as such, and neither can be
+    // undone on its own: the agio voucher would be left behind.
+    let party_id: Uuid = sqlx::query_scalar("select party_id from entry where id = $1")
+        .bind(payment_entry)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let (_, history) = request(
+        &state,
+        "GET",
+        &format!("{base}/parties/{party_id}/matches"),
+        &token,
+        None,
+    )
+    .await;
+    let rows = history["matches"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "settlement + agio transfer: {history}");
+    for m in rows {
+        assert_eq!(m["currency_settlement"], true, "{m}");
+        let (status, body) = request(
+            &state,
+            "DELETE",
+            &format!(
+                "{base}/reskontro/matches/{}",
+                m["match_id"].as_str().unwrap()
+            ),
+            &token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.to_string().contains("valutaoppgjør"), "{body}");
+    }
+
     // Open 200 EUR invoice + year-end kurs 12,00 → urealisert +100 kr,
     // posted with its reversal the day after in one transaction.
     let (status, _) = request(

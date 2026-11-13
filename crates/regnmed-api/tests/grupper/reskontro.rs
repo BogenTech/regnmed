@@ -239,6 +239,29 @@ async fn full_reskontro_flow_with_hash_v2() {
         .find(|i| i["amount_ore"] == -10_000_00)
         .unwrap();
 
+    // Before matching, the workbench lists the party (open on both
+    // sides) and ties the reskontro to the hovedbok on 1500.
+    let (status, overview) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reskontro/overview"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(overview["to_match_total"], 1);
+    assert_eq!(overview["to_match"][0]["party_id"], party_id.as_str());
+    let k1500 = overview["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["account"] == "1500")
+        .unwrap()
+        .clone();
+    assert_eq!(k1500["ledger_ore"], k1500["subledger_ore"], "{k1500}");
+    assert_eq!(k1500["reskontro_kind"], "kunde");
+
     let (status, matched) = request(
         &state,
         "POST",
@@ -253,8 +276,90 @@ async fn full_reskontro_flow_with_hash_v2() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {matched}");
 
-    // Over-matching the remainder is rejected.
+    // The history names the match, and undoing it reopens both sides.
+    let (_, history) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/parties/{party_id}/matches"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(history["matches"].as_array().unwrap().len(), 1, "{history}");
+    assert_eq!(history["matches"][0]["amount_ore"], 10_000_00);
+    assert_eq!(history["matches"][0]["currency_settlement"], false);
+    let match_id = history["matches"][0]["match_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (status, _) = request(
+        &state,
+        "DELETE",
+        &format!("/companies/{company}/reskontro/matches/{match_id}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, overview) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/reskontro/overview"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(overview["to_match_total"], 1, "open on both sides again");
+    let (status, matched) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/reskontro/matches"),
+        &token,
+        Some(serde_json::json!({
+            "entry_a": invoice["entry_id"],
+            "entry_b": payment["entry_id"],
+            "amount_ore": 10_000_00,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {matched}");
+
+    // Matches on one party take turns: with the party's lock held from
+    // outside, a match waits instead of reading a remainder another
+    // match is about to consume.
+    let party_uuid = Uuid::parse_str(&party_id).unwrap();
+    let mut held = state.pool.begin().await.unwrap();
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+        .bind(party_uuid)
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let waiting = {
+        let state = state.clone();
+        let uri = format!("/companies/{company}/reskontro/matches");
+        let token = token.clone();
+        let body = serde_json::json!({
+            "entry_a": invoice["entry_id"],
+            "entry_b": payment["entry_id"],
+            "amount_ore": 5_000_00,
+        });
+        tokio::spawn(async move { request(&state, "POST", &uri, &token, Some(body)).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !waiting.is_finished(),
+        "the match must wait for the party lock"
+    );
+    held.rollback().await.unwrap();
+    let (status, _) = waiting.await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "only 2 500 kr was left to match"
+    );
+
+    // Over-matching the remainder is rejected, in words a user reads.
+    let (status, refused) = request(
         &state,
         "POST",
         &format!("/companies/{company}/reskontro/matches"),
@@ -267,6 +372,7 @@ async fn full_reskontro_flow_with_hash_v2() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(refused.to_string().contains("åpent"), "{refused}");
 
     // Only the invoice rest (2 500 kr) is still open.
     let (_, open) = request(

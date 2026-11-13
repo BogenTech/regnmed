@@ -111,6 +111,17 @@ pub async fn import_open_items(
             "kan_importeres": plan.account_balance_ore == 0,
             "nye_parter": plan.nye_parter,
             "warnings": plan.warnings,
+            // What will be posted, row by row, so the user checks the
+            // file was read right before anything is booked.
+            "rader": rader.iter().take(200).map(|r| json!({
+                "part": r.party,
+                "navn": r.party_name,
+                "dokument": r.document,
+                "dato": r.date.map(|d| d.to_string()),
+                "forfall": r.due_date.map(|d| d.to_string()),
+                "kid": r.kid,
+                "belop_ore": r.amount_ore,
+            })).collect::<Vec<_>>(),
         })));
     }
 
