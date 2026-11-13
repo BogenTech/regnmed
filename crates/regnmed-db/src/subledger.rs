@@ -79,6 +79,9 @@ pub struct PartyRow {
     pub address: Option<String>,
     pub email: Option<String>,
     pub bank_account: Option<String>,
+    /// The customer's standing reference ("Deres referanse"), used on an
+    /// invoice that does not name its own (#221).
+    pub buyer_reference: Option<String>,
     /// SUM(amount_ore) over the party's entries — the reskontro saldo.
     pub balance_ore: i64,
     /// Overdue and unpaid: for a kunde, what remains on its overdue
@@ -167,7 +170,7 @@ pub async fn list_parties(
         "{cte}
          parties as (
              select p.id, p.party_no, p.kind, p.name, p.orgnr, p.address, p.email,
-                    p.bank_account,
+                    p.bank_account, p.buyer_reference,
                     coalesce((select sum(e.amount_ore) from entry e where e.party_id = p.id),
                              0)::bigint as saldo_ore,
                     {overdue_col} as overdue_ore
@@ -216,6 +219,7 @@ pub async fn list_parties(
             address: r.get("address"),
             email: r.get("email"),
             bank_account: r.get("bank_account"),
+            buyer_reference: r.get("buyer_reference"),
             balance_ore: r.get("saldo_ore"),
             overdue_ore: r.get("overdue_ore"),
         })

@@ -58,6 +58,9 @@ pub struct CreateInvoiceRequest {
     #[serde(rename = "oppgjorskonto")]
     settlement_account: Option<String>,
     lines: Vec<DocLineRequest>,
+    /// The buyer's own reference ("Deres referanse", EN 16931 BT-10).
+    /// Omitted = the customer's standing reference, if any (#221).
+    buyer_reference: Option<String>,
     /// Selected unbilled hours (docs/timer.md): appended as hour lines
     /// per (prosjekt, sats) group and marked fakturert in the SAME
     /// transaction as the invoice — one invoice can carry products and
@@ -100,6 +103,7 @@ pub async fn create_invoice(
         // "paid" document by passing a flag.
         cash_payment_method: None,
         party_no: request.party_no,
+        buyer_reference: request.buyer_reference,
         invoice_date: request.invoice_date,
         due_date: request.due_date,
         delivery_date: request.delivery_date.unwrap_or(request.invoice_date),
@@ -237,6 +241,7 @@ pub async fn get_invoice(
     let mut out = invoice_row_json(&d.row);
     out["delivery_date"] = json!(d.delivery_date.map(|x| x.to_string()));
     out["delivery_place"] = json!(d.delivery_place);
+    out["buyer_reference"] = json!(d.buyer_reference);
     out["valuta"] = json!(d.currency);
     out["party_email"] = json!(d.party_email);
     out["credits"] = json!(pair(d.credits));

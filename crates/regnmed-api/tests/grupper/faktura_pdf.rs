@@ -362,6 +362,7 @@ async fn the_registration_notes_come_from_the_register_not_from_the_document() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            buyer_reference: None,
             cash_payment_method: None,
             party_no,
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -483,6 +484,7 @@ async fn a_document_predating_the_registration_carries_no_note() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            buyer_reference: None,
             cash_payment_method: None,
             party_no,
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
@@ -593,6 +595,7 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
 
     let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
     let utsted = |n: i64| regnmed_db::InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: party_no.clone(),
         invoice_date: date,

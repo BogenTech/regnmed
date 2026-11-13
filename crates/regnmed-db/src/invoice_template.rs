@@ -24,6 +24,9 @@ pub use crate::invoice::InvoiceLineDraft as TemplateLineDraft;
 #[derive(Debug)]
 pub struct TemplateDraft {
     pub party_no: String,
+    /// "Deres referanse" for every invoice the template generates (#221);
+    /// None = the customer's standing reference at generation.
+    pub buyer_reference: Option<String>,
     pub interval: String,
     pub next_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
@@ -64,8 +67,9 @@ pub async fn create_template(
     let template_id = Uuid::now_v7();
     sqlx::query(
         "insert into invoice_template (id, company_id, party_id, intervall, neste_dato,
-                                       slutt_dato, forfall_dager, merk_utsendelse, created_by)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                                       slutt_dato, forfall_dager, merk_utsendelse, created_by,
+                                       buyer_reference)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(template_id)
     .bind(company_id)
@@ -76,6 +80,9 @@ pub async fn create_template(
     .bind(draft.due_days)
     .bind(draft.mark_dispatch)
     .bind(created_by)
+    .bind(crate::settings::normalize_buyer_reference(
+        draft.buyer_reference.as_deref(),
+    )?)
     .execute(&mut *tx)
     .await?;
     insert_lines(&mut tx, template_id, &draft.lines).await?;
@@ -125,8 +132,8 @@ pub async fn create_template_from_invoice(
     mark_dispatch: bool,
     created_by: &str,
 ) -> Result<Uuid> {
-    let party_no: String = sqlx::query_scalar(
-        "select p.party_no from invoice i join party p on p.id = i.party_id
+    let (party_no, buyer_reference): (String, Option<String>) = sqlx::query_as(
+        "select p.party_no, i.buyer_reference from invoice i join party p on p.id = i.party_id
          where i.id = $1 and i.company_id = $2 and i.credits_invoice_id is null",
     )
     .bind(invoice_id)
@@ -159,6 +166,7 @@ pub async fn create_template_from_invoice(
         company_id,
         &TemplateDraft {
             party_no,
+            buyer_reference,
             interval: interval.to_string(),
             next_date,
             end_date: None,
@@ -185,10 +193,13 @@ pub async fn update_template(
     mark_dispatch: Option<bool>,
     active: Option<bool>,
     lines: Option<&[TemplateLineDraft]>,
+    // Some("") clears it.
+    buyer_reference: Option<&str>,
 ) -> Result<()> {
     if let Some(interval) = interval {
         check_interval(interval)?;
     }
+    let reference = crate::settings::normalize_buyer_reference(buyer_reference)?;
     let mut tx = pool.begin().await?;
     let updated = sqlx::query(
         "update invoice_template set
@@ -198,6 +209,7 @@ pub async fn update_template(
              forfall_dager = coalesce($7, forfall_dager),
              merk_utsendelse = coalesce($8, merk_utsendelse),
              active = coalesce($9, active),
+             buyer_reference = case when $10 then $11 else buyer_reference end,
              updated_at = now()
          where id = $1 and company_id = $2",
     )
@@ -210,6 +222,8 @@ pub async fn update_template(
     .bind(due_days)
     .bind(mark_dispatch)
     .bind(active)
+    .bind(buyer_reference.is_some())
+    .bind(reference)
     .execute(&mut *tx)
     .await?;
     ensure!(updated.rows_affected() == 1, "no such template");
@@ -236,6 +250,7 @@ pub struct TemplateRow {
     pub due_days: i32,
     pub mark_dispatch: bool,
     pub active: bool,
+    pub buyer_reference: Option<String>,
     pub sum_netto_ore: i64,
     pub runs: i64,
 }
@@ -243,7 +258,7 @@ pub struct TemplateRow {
 pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<TemplateRow>> {
     let rows = sqlx::query(
         "select t.id, p.party_no, p.name as party_name, t.intervall, t.neste_dato,
-                t.slutt_dato, t.forfall_dager, t.merk_utsendelse, t.active,
+                t.slutt_dato, t.forfall_dager, t.merk_utsendelse, t.active, t.buyer_reference,
                 coalesce((select sum((l.quantity_milli * l.unit_price_ore) / 1000)
                           from invoice_template_line l where l.template_id = t.id), 0)::bigint
                     as sum_netto_ore,
@@ -269,6 +284,7 @@ pub async fn list_templates(pool: &PgPool, company_id: Uuid) -> Result<Vec<Templ
             due_days: r.get("forfall_dager"),
             mark_dispatch: r.get("merk_utsendelse"),
             active: r.get("active"),
+            buyer_reference: r.get("buyer_reference"),
             sum_netto_ore: r.get("sum_netto_ore"),
             runs: r.get("runs"),
         })
@@ -346,7 +362,7 @@ pub async fn generate_one(
     let mut tx = pool.begin().await?;
     let Some(template) = sqlx::query(
         "select t.intervall, t.neste_dato, t.slutt_dato, t.forfall_dager, t.merk_utsendelse,
-                t.active, p.party_no
+                t.active, t.buyer_reference, p.party_no
          from invoice_template t
          join party p on p.id = t.party_id
          where t.id = $1 and t.company_id = $2
@@ -381,6 +397,7 @@ pub async fn generate_one(
     ensure!(!line_rows.is_empty(), "template has no lines");
 
     let draft = InvoiceDraft {
+        buyer_reference: template.get("buyer_reference"),
         cash_payment_method: None,
         party_no: template.get("party_no"),
         invoice_date: next_date,

@@ -303,6 +303,10 @@
       <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt class="opacity-70">Kunde</dt>
         <dd>{inv.party_name} <span class="opacity-60">({inv.party_no})</span></dd>
+        {#if inv.buyer_reference}
+          <dt class="opacity-70">Deres ref.</dt>
+          <dd>{inv.buyer_reference}</dd>
+        {/if}
         <dt class="opacity-70">Fakturadato</dt>
         <dd>{formatDate(inv.invoice_date)}</dd>
         {#if !inv.is_credit_note}

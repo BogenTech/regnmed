@@ -11,6 +11,7 @@
   let address = $state(untrack(() => party.address || ""));
   let email = $state(untrack(() => party.email || ""));
   let bankAccount = $state(untrack(() => party.bank_account || ""));
+  let buyerReference = $state(untrack(() => party.buyer_reference || ""));
   let busy = $state(false);
 
   // What each field is FOR depends on the party: the address and e-mail
@@ -37,6 +38,8 @@
         address,
         email,
         bank_account: bankAccount,
+        // Only a customer has a standing reference on our invoices.
+        ...(supplier ? {} : { buyer_reference: buyerReference }),
       });
       toast("Kontaktinfo er lagret", true);
       onSaved();
@@ -58,6 +61,15 @@
     <input class="input w-full" type="email" autocomplete="email" bind:value={email} />
     <span class="label whitespace-normal">{help.email}</span>
   </label>
+  {#if !supplier}
+    <label class="fieldset">
+      <span class="fieldset-legend">Deres referanse</span>
+      <input class="input w-full" maxlength="70" bind:value={buyerReference} />
+      <span class="label whitespace-normal">
+        Kundens faste referanse på fakturaene, f.eks. bestillingsnummer eller kontaktperson. Offentlige kunder krever den.
+      </span>
+    </label>
+  {/if}
   <label class="fieldset">
     <span class="fieldset-legend">Kontonummer</span>
     <input class="input w-full" inputmode="numeric" bind:value={bankAccount} />

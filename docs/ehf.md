@@ -85,6 +85,10 @@ Detaljer verdt å vite:
   enn en gal fordeling.
 - Mangler mottakeren organisasjonsnummer, sier endepunktet fra i stedet
   for å sende en tom id — i Peppol *er* orgnr adressen.
+- `cbc:BuyerReference` (BT-10) er **kjøperens egen referanse** («Deres
+  referanse», #221) fra fakturaen, ellers kundens faste referanse. Uten
+  noen av dem går vårt kundenummer i feltet, fordi PEPPOL-EN16931-R003
+  krever én (docs/faktura.md).
 
 ### Ærlig begrensning
 

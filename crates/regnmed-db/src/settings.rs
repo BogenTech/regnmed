@@ -273,7 +273,52 @@ pub async fn update_party_contact(
     email: Option<&str>,
     bank_account: Option<&str>,
 ) -> Result<()> {
+    update_party_contact_with_reference(
+        pool,
+        company_id,
+        party_id,
+        address,
+        email,
+        bank_account,
+        None,
+    )
+    .await
+}
+
+/// The longest "Deres referanse" we accept (#221). EN 16931 sets no
+/// limit, but the reference is printed on one line of the stored PDF and
+/// is what a buyer's system matches on; this is room for an order number
+/// or a department and a name, not a paragraph.
+pub const BUYER_REFERENCE_MAX_CHARS: usize = 70;
+
+/// Trims a buyer reference; empty means none. Refuses one that is too
+/// long rather than cutting it, since a cut reference routes nowhere.
+pub fn normalize_buyer_reference(reference: Option<&str>) -> Result<Option<String>> {
+    let Some(reference) = reference.map(str::trim).filter(|r| !r.is_empty()) else {
+        return Ok(None);
+    };
+    ensure!(
+        reference.chars().count() <= BUYER_REFERENCE_MAX_CHARS,
+        "«Deres referanse» kan ha høyst {BUYER_REFERENCE_MAX_CHARS} tegn"
+    );
+    Ok(Some(reference.to_string()))
+}
+
+/// As [`update_party_contact`], plus the customer's standing reference
+/// ("Deres referanse", #221; `Some("")` clears it). ONE statement, so a
+/// refused reference leaves the address, e-mail and account untouched
+/// too -- the account number is what the payment run pays to.
+pub async fn update_party_contact_with_reference(
+    pool: &PgPool,
+    company_id: Uuid,
+    party_id: Uuid,
+    address: Option<&str>,
+    email: Option<&str>,
+    bank_account: Option<&str>,
+    buyer_reference: Option<&str>,
+) -> Result<()> {
     let normalized_account = validate_party_contact(email, bank_account)?;
+    let reference = normalize_buyer_reference(buyer_reference)?;
     fn clear(v: Option<&str>) -> Option<&str> {
         v.map(str::trim).filter(|s| !s.is_empty())
     }
@@ -281,8 +326,9 @@ pub async fn update_party_contact(
         "update party set
              address = case when $3 then $4 else address end,
              email = case when $5 then $6 else email end,
-             bank_account = case when $7 then $8 else bank_account end
-         where id = $1 and company_id = $2",
+             bank_account = case when $7 then $8 else bank_account end,
+             buyer_reference = case when $9 then $10 else buyer_reference end
+         where id = $1 and company_id = $2 and (not $9 or kind = 'kunde')",
     )
     .bind(party_id)
     .bind(company_id)
@@ -292,9 +338,18 @@ pub async fn update_party_contact(
     .bind(clear(email))
     .bind(bank_account.is_some())
     .bind(normalized_account)
+    .bind(buyer_reference.is_some())
+    .bind(reference)
     .execute(pool)
     .await?;
-    ensure!(updated.rows_affected() == 1, "no such party");
+    ensure!(
+        updated.rows_affected() == 1,
+        if buyer_reference.is_some() {
+            "no such customer (only a customer has a «Deres referanse»)"
+        } else {
+            "no such party"
+        }
+    );
     Ok(())
 }
 

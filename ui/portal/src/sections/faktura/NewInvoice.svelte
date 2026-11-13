@@ -66,6 +66,10 @@
   let deliverySet = $state("");
   let deliveryDate = $derived(deliveryTouched ? deliverySet : invoiceDate);
   let deliveryPlace = $state("");
+  // The buyer's own reference (BT-10). Empty = the customer's standing
+  // one, which the server applies; shown as the placeholder so it is
+  // visible before issuing.
+  let buyerReference = $state("");
   let currency = $state("");
   let dueDays = $derived(
     Math.round((Date.parse(dueDate + "T12:00") - Date.parse(invoiceDate + "T12:00")) / 864e5),
@@ -225,6 +229,7 @@
         due_date: dueDate,
         leveringsdato: deliveryDate,
         leveringssted: deliveryPlace.trim() || null,
+        buyer_reference: buyerReference.trim() || null,
         valuta: currency || null,
         lines: lines
           .map((l, i) => [l, parsed[i]])
@@ -255,6 +260,7 @@
   let dirty = $derived(
     (customer.trim() !== "" && party?.party_no !== presetParty) ||
       lines.some((l) => !isBlank(l)) ||
+      buyerReference.trim() !== "" ||
       pickedHours.length > 0,
   );
   function beforeUnload(e) {
@@ -358,6 +364,22 @@
           />
           <span id="due-help" class="label whitespace-normal {fieldError('due') ? 'text-error' : ''}">
             {fieldError("due") || dueDays + " dagers betalingsfrist"}
+          </span>
+        </label>
+
+        <label class="fieldset sm:col-span-2">
+          <span class="fieldset-legend">Deres referanse (valgfritt)</span>
+          <input
+            class="input w-full"
+            maxlength="70"
+            placeholder={party?.buyer_reference || "F.eks. bestillingsnummer eller kontaktperson"}
+            bind:value={buyerReference}
+            aria-describedby="buyer-reference-help"
+          />
+          <span id="buyer-reference-help" class="label whitespace-normal">
+            {party?.buyer_reference && !buyerReference.trim()
+              ? "Tomt felt bruker kundens faste referanse"
+              : "Kundens egen referanse. Offentlige og større kunder krever den på e-faktura."}
           </span>
         </label>
 

@@ -141,6 +141,8 @@ pub struct PartyContactRequest {
     email: Option<String>,
     /// Kontonummer for remittering (11 siffer, MOD11-validert).
     bank_account: Option<String>,
+    /// The customer's standing "Deres referanse" (#221); empty clears it.
+    buyer_reference: Option<String>,
 }
 
 pub async fn update_party_contact(
@@ -150,13 +152,14 @@ pub async fn update_party_contact(
     Json(request): Json<PartyContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ContactWrite).await?;
-    regnmed_db::update_party_contact(
+    regnmed_db::update_party_contact_with_reference(
         &state.pool,
         company_id,
         party_id,
         request.address.as_deref(),
         request.email.as_deref(),
         request.bank_account.as_deref(),
+        request.buyer_reference.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

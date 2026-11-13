@@ -134,6 +134,36 @@ the invoice date would invent a legal fact on an immutable document.
 That history stays visibly incomplete; the requirement is enforced at
 issue time instead. In EHF the field is `cac:Delivery/cbc:ActualDeliveryDate`
 (BT-72) — omitted entirely rather than guessed when absent.
+### Deres referanse (EN 16931 BT-10, #221)
+
+The buyer's own reference — an order number, a department, a contact
+person — is what public and larger private buyers route an incoming
+invoice on. It is stored **on the invoice at issue**
+(`invoice.buyer_reference`, migration 0084, insert-only like the rest of
+the row), printed on the PDF as «Deres ref.» and carried in the EHF as
+`cbc:BuyerReference`.
+
+| Path | Reference |
+| --- | --- |
+| `POST …/invoices` | `buyer_reference` in the request |
+| Repeterende faktura | the template's own (`buyer_reference` on create/update; "Gjenta denne" copies the invoice's) — one per contract |
+| Tilbud → ordre → faktura | the tilbud's own, copied to the ordre and on to the invoice |
+| Any of the above without one | the customer's **standing** reference (`party.buyer_reference`, set with `PUT …/parties/{pid}/contact`) |
+| Kreditnota | **exactly** the original's — none if the original had none; it never picks up a standing reference the invoice did not carry |
+
+At most **70 characters**, refused rather than cut (a cut reference
+routes nowhere), checked in the code and by the database. The
+reference is printed on one line of the stored PDF. Setting the
+standing reference is the same single statement as the rest of the
+contact update, so a refused reference (on a supplier, or too long)
+leaves the address, e-mail and account number untouched as well.
+
+PEPPOL-EN16931-R003 requires a buyer reference or an order reference
+in every EHF. An invoice with neither falls back to **our customer
+number** in BT-10: the document stays valid, but a buyer that routes on
+its own reference (the public sector does) cannot use it. Invoices
+issued before #221 carry no reference and keep that content.
+
 - **Kontaktinfo** (migration 0019, editable master data, never hashed):
   company address/kontonummer/selskapsform via
   `GET/PUT /companies/{id}/settings` (PUT is admin-only); party

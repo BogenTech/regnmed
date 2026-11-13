@@ -314,14 +314,14 @@ UBL, ikke at PEPPOL BIS-reglene holder. Tre lag:
 3. **Ved innsending** — leverandøren validerer; en avvisning blir en
    `avvist`-hendelse med regelen navngitt (§3.3).
 
-**Funn: kjøperreferansen.** BIS 3.0 krever kjøperreferanse (BT-10) eller
-ordrereferanse (BT-13) (regel PEPPOL-EN16931-R003). I dag fyller
-`regnmed-db::ehf` BT-10 med **vårt eget kundenummer** (`party_no`). Det
-består valideringen, men er feil innhold: offentlige og mange større
-kjøpere ruter fakturaen internt på «Deres referanse», og en faktura med
-vårt kundenummer der havner i en feilkø hos dem. Fase 1 trenger et felt
-«Deres referanse / bestillingsnummer» på fakturaen (og standardverdi på
-kunden), satt ved utstedelse.
+**Funn: kjøperreferansen — rettet i #221.** BIS 3.0 krever
+kjøperreferanse (BT-10) eller ordrereferanse (BT-13) (regel
+PEPPOL-EN16931-R003). BT-10 bar **vårt eget kundenummer**; nå bærer den
+«Deres referanse» fra fakturaen, eller kundens faste referanse
+(docs/faktura.md). En faktura uten noen av dem faller fortsatt tilbake
+til kundenummeret. Det består valideringen, men en offentlig kjøper kan
+ikke rute den — fase 1 bør derfor **advare før utstedelse** når kjøperen
+mottar EHF og ingen referanse er satt.
 
 ### 3.5 Lagring av det som ble sendt
 
@@ -442,8 +442,8 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
 
 ## 5. Funn underveis som ikke venter på denne saken
 
-- **BT-10 = vårt kundenummer** (§3.4) — rettes i fase 1, men gjelder
-  også EHF-en som lastes ned i dag.
+- ~~**BT-10 = vårt kundenummer**~~ — rettet i #221: «Deres referanse» på
+  fakturaen og fast referanse på kunden.
 - ~~**Kortbetalte abonnementsfakturaer sendes ikke**~~ — rettet i #223:
   oppgjorte abonnementsfakturaer og kreditnotaene deres sendes nå, og
   e-posten sier om fakturaen er betalt eller kreditert.

@@ -51,6 +51,13 @@
           hjelp: "Tomt betyr at den fortsetter til du stopper den.",
         },
         { navn: "forfall", etikett: "Betalingsfrist (dager)", standard: String(t.forfall_dager ?? 14) },
+        {
+          navn: "ref",
+          etikett: "Deres referanse (valgfritt)",
+          standard: t.buyer_reference || "",
+          valgfri: true,
+          hjelp: "Kundens referanse for denne avtalen, f.eks. bestillingsnummer. Tomt betyr kundens faste referanse.",
+        },
       ],
       { ok: "Lagre" },
     );
@@ -63,6 +70,7 @@
         neste_dato: answer.neste,
         slutt_dato: answer.slutt || null,
         forfall_dager: days,
+        buyer_reference: answer.ref.trim(),
       });
       toast("Lagret", true);
       onDone();
