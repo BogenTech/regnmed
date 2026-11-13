@@ -116,6 +116,15 @@ spec:
             # would hairpin out through the proxy and back.
             - name: REGNID_BASE_URL
               value: http://regnid:8081
+            # Driving distance + route map for trips (docs/utlegg.md).
+            # Optional: without the secret the trip form asks for the km,
+            # as before, and nothing else changes.
+            - name: ORS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ors-credentials
+                  key: api-key
+                  optional: true
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:

@@ -133,14 +133,20 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/engagement-requests` | POST |
 | `/companies/{company_id}/engagements` | GET |
 | `/companies/{company_id}/engagements/{engagement_id}/end` | POST |
-| `/companies/{company_id}/expenses` | GET |
+| `/companies/{company_id}/expenses` | GET, POST |
+| `/companies/{company_id}/expenses/addresses` | GET |
+| `/companies/{company_id}/expenses/claimants` | GET |
 | `/companies/{company_id}/expenses/kjoring` | GET, POST |
+| `/companies/{company_id}/expenses/receipts` | POST |
+| `/companies/{company_id}/expenses/route` | GET |
 | `/companies/{company_id}/expenses/utlegg` | POST |
-| `/companies/{company_id}/expenses/{expense_id}` | GET |
+| `/companies/{company_id}/expenses/{expense_id}` | GET, PUT |
 | `/companies/{company_id}/expenses/{expense_id}/approve` | POST |
+| `/companies/{company_id}/expenses/{expense_id}/discard` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/pay` | POST |
-| `/companies/{company_id}/expenses/{expense_id}/receipt` | GET |
+| `/companies/{company_id}/expenses/{expense_id}/receipt` | GET, PUT |
 | `/companies/{company_id}/expenses/{expense_id}/reject` | POST |
+| `/companies/{company_id}/expenses/{expense_id}/submit` | POST |
 | `/companies/{company_id}/employees` | GET POST |
 | `/companies/{company_id}/employees/{employee_id}/employment` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/end` | PUT |

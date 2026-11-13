@@ -27,6 +27,39 @@ aldri fra hodet.
   samme kvittering tar tur, så et dobbeltklikk ikke slipper gjennom
   (testet ved å holde låsen utenfra og se at andre innsending venter).
 
+## Utkast: lagre nå, gjør ferdig senere
+
+Et krav begynner som **utkast** (migration 0085). Et bilde av en
+kvittering tatt på vei ut av taxien lagres med én gang — gjerne mange
+på en gang — og detaljene fylles ut senere, på samme eller en annen
+enhet. Et utkast er ennå ikke dokumentasjon: alle felt kan endres, og
+kvitteringen kan byttes (rotert eller beskåret i nettleseren — lerret,
+JPEG, maks 2400 px på lengste kant). Innboks-disiplinen begynner der den
+alltid har begynt: ved **innsending**, og fra da av holder triggeren
+innholdet fast. Et utkast slettes aldri; det **forkastes**, enveis.
+
+- Utkast er bare synlige for den pengene gjelder og den som registrerte
+  dem — for alle andre finnes de ikke (404), heller ikke for den som
+  godkjenner.
+- Samme kvittering i to krav avvises også når det første er et utkast;
+  et avvist eller forkastet krav frigjør den.
+- Innsending sier hva som mangler («velg dato», «legg ved
+  kvitteringen», «oppgi hvor du kjørte fra og til») — portalen viser det
+  ved feltet, serveren håndhever det, og databasens check-constraints
+  nekter et innsendt krav uten dato, beløp og beskrivelse.
+
+**På vegne av andre.** Den som håndterer utlegg (`UTLEGG_GODKJENN`) kan
+registrere et krav for et aktivt medlem av selskapet
+(`registered_by_person` lagres ved siden av `person_id`). Den ansatte ser
+kravet og hvem som registrerte det. Med attestering slått på kan
+verken den pengene gjelder eller den som registrerte kravet godkjenne
+det — begge er forfattere av det.
+
+**Dimensjoner.** Avdeling og prosjekt (koder — de er permanente) og
+«viderefaktureres» lagres på kravet og føres på kostnadslinjene ved
+godkjenning, ikke på mva-linjen eller gjelden til den ansatte.
+Viderefakturering krever prosjekt; selve faktureringen er neste steg.
+
 ## Utlegg
 
 Innsending: rå kvittering + dato/beløp/formål. Godkjenning i ÉN
@@ -63,6 +96,71 @@ skjult, aldri halvhåndtert.
 Godkjenning posterer hele beløpet (debet 7100 bilgodtgjørelse som
 standard) mot mellomregning; bilagslinjen bærer km og sats.
 
+### Turen: strekning, kjøretøy, passasjerer
+
+Det som gjør godtgjørelsen trekkfri er dokumentasjonen, så den er
+felter, ikke fritekst: **fra** og **til**,
+**tur/retur** (kilometer oppgis én vei og dobles), **kjøretøy** og
+**passasjerer** med navn. Alt står på bilagslinjen ved godkjenning.
+
+Adressefeltene foreslår mens man skriver, og tar både adresse og
+firmanavn: egne adresser fra tidligere turer først, så selskapets egne
+kunder og leverandører (navn → adressen som står på parten), så ethvert
+foretak i Enhetsregisteret ved navn (forretningsadressen — reisen trenger
+ikke gå til noen man handler med), så Kartverkets åpne adresseregister
+(`ws.geonorge.no/adresser`, ingen nøkkel). De tre siste spørres
+samtidig via `GET …/expenses/addresses?q=` — portalen spør regnmed,
+regnmed spør Enhetsregisteret og Kartverket (3 s tidsavbrudd hver).
+Et valgt foretak fylles inn som «Navn, gate, postnummer sted», så
+navnet står i dokumentasjonen. CSP-en forblir
+`connect-src 'self'`, og brukerens IP-adresse når aldri tredjeparten.
+Forslagene er en bekvemmelighet: feiler oppslaget, er svaret en tom
+liste og feltet tar fri tekst som før. 
+**Kjørerute og avstand.** Når både fra og til er fylt ut, foreslås
+avstanden: Kartverket finner punktene (et «Firma, gate, postnummer
+sted» prøves på nytt uten firmanavnet), OpenRouteService finner
+kjøreruten (`regnmed-gov::routing`, `GET …/expenses/route?from=&to=`).
+Avstanden fylles i kilometerfeltet bare når det er tomt eller fortsatt
+har forrige forslag — aldri over et tall brukeren har skrevet, for
+kilometeren er kravet til den som kjørte, og en omvei kan ha en god
+grunn. Avviker de, står begge tallene på skjermen. Den som godkjenner
+ser beregnet rute ved siden av krevde kilometer, og ruten på kart
+(Leaflet, lastet bare når kartet åpnes; Kartverkets åpne
+topografiske kart — CSP-en slipper `cache.kartverket.no` inn som
+bilder og ingenting annet).
+
+Nøkkelen er `ORS_API_KEY` (valgfri hemmelighet `ors-credentials` i
+test og prod, docs/secrets.md). Uten den svarer endepunktet
+`available: false`, og skjemaet ber om kilometer som før. Avstanden
+lagres ikke på kravet: den regnes ut på nytt ved visning.
+
+| Kjøretøy | Satsdomene | 2026, øre/km (stat / trekkfri) |
+| --- | --- | --- |
+| Bil, også utslippsfri | `km_godtgjorelse` | 530 / 350 |
+| Motorsykkel over 125 ccm | `km_godtgjorelse_motorsykkel` | 295 / 295 |
+| Moped, motorsykkel til og med 125 ccm | `km_godtgjorelse_moped` | 200 / 200 |
+| Snøscooter og ATV | `km_godtgjorelse_snoscooter` | 1000 / 1000 |
+| Båt med motor | `km_godtgjorelse_bat` | 750 / 750 |
+| Passasjertillegg, per passasjer | `km_passasjertillegg` | 100 / 100 |
+
+Kilder: særavtale reise i Norge 2026–2027 §§ 2–3 og Skatteetatens
+satser for bilgodtgjørelse 2026 (hentet 2026-11-13; hver rad bærer sin
+kilde i satsregisteret). En bil betales likt uansett drivstoff; at den
+er utslippsfri lagres fordi bompengene ikke er like. Beløp =
+km × (sats + passasjerer × tillegg), trekkfri del tilsvarende — ren
+beregning i `regnmed-core::expenses::trip_allowance`. Tillegg for
+tilhenger og skogs-/anleggsvei er ikke bygget.
+
+### Bompenger, rushtidsavgift, ferje og parkering
+
+Dekkes etter **faktisk kostnad**, ikke per km, og er derfor egne
+utleggskrav knyttet til turen (`trip_expense_id`) — hvert med sin
+kvittering eller AutoPASS-oversikt, sin mva-vurdering og sin konto ved
+godkjenning. Kvitteringen kan komme senere: når turen sendes inn, går
+de ferdige kostnadene med i samme transaksjon, og resten blir liggende
+som utkast med beskjed om hva som mangler. Forkastes turen, forkastes
+utkastene på den.
+
 ## Utbetaling
 
 `POST …/expenses/{id}/pay`: debet mellomregningskontoen fra
@@ -78,6 +176,20 @@ kunne gjøre alt. Slår selskapet på attestering (docs/attestering.md,
 håndheves i `approve_expense`, ikke i portalen.
 
 ## Endpoints
+
+Utkast:
+
+- `POST /companies/{id}/expenses/receipts?filename=&person_id=` — rå kvittering → utkast
+- `POST /companies/{id}/expenses` — utkast som JSON (`kind`, `person_id`, `trip_expense_id` og feltene)
+- `PUT  /companies/{id}/expenses/{eid}` — skriv om et utkast
+- `PUT  /companies/{id}/expenses/{eid}/receipt?filename=` — bytt kvitteringen på et utkast
+- `POST /companies/{id}/expenses/{eid}/submit` — send inn (innholdet låses)
+- `POST /companies/{id}/expenses/{eid}/discard` — forkast
+- `GET  /companies/{id}/expenses/claimants` — hvem det kan registreres for
+- `GET  /companies/{id}/expenses?status=utkast` / `?trip={eid}` — egne utkast / kostnadene på en tur
+- `GET  /companies/{id}/expenses/kjoring?dato=&vehicle=` — satsene, også passasjertillegget
+
+Direkte innsending (som før, for integrasjoner):
 
 - `GET  /companies/{id}/expenses?status=&limit=&offset=` — kravene
   nyeste først, med `own`-flagg, `total` og `counts` per status.
@@ -115,10 +227,31 @@ attestering på tilbys ikke godkjenning av eget krav; etter godkjenning
 eller avvisning går siden til neste krav som venter (ikke ens egne når
 attestering er på).
 
-Bevisst utenfor v1 (issuen): diett/per-diem-satser og app-basert
-kvitteringsfoto (PWA, #48).
+Bevisst utenfor så langt: diett/per-diem-satser, reise som samling av
+krav, tolkning av kvitteringen (OCR/KI), mva fordelt på flere satser
+per kvittering, a-melding for godtgjørelsene og betalingslisten.
 
 ## Where it is tested
+
+- `crates/regnmed-api/tests/grupper/expenses.rs::expense_drafts_flow` —
+  utkast uten dato/beløp, usynlig og uskrivbart for andre (404),
+  innsending som navngir det som mangler, ukjent prosjekt avvist,
+  kvitteringsbytte og duplikatvakt mot utkast, innholdet låst fra
+  innsending (API og direkte SQL), prosjektet på kostnadslinjen og ikke
+  på gjelden, tur med tur/retur + utslippsfri bil + passasjer
+  (63 000 øre, 18 000 trekkpliktig) og strekningen på bilagslinjen,
+  bompenger med og uten kvittering ved innsending, registrering på
+  vegne (403 for ansatt, 400 for ikke-medlem) og fire øyne mot den som
+  registrerte (vakten sett feile), forkasting enveis og med utkastene
+  på turen.
+- `crates/regnmed-api/tests/grupper/expenses.rs::a_trip_route_is_found_from_two_addresses`
+  — uten nøkkel `available: false`; med lokale stand-ins for Kartverket
+  og OpenRouteService: firmanavnet droppes til gaten treffer (vakten
+  sett feile), [lon, lat] snus til [lat, lon], ukjent adresse navngis.
+  Formen på et ekte OpenRouteService-svar er ennå ikke sjekket mot en
+  levende nøkkel.
+- `regnmed-core/src/expenses.rs` — passasjertillegg på begge sider,
+  kjøretøy → satsdomener.
 
 - `regnmed-core/src/expenses.rs` — split trekkfri/trekkpliktig,
   historisk sats-invertering, null-tilfeller.

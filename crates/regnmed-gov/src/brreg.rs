@@ -199,6 +199,25 @@ impl BrregClient {
         }
     }
 
+    /// Entities whose name matches, best first — the trip form's "type a
+    /// company, get its address". Enhetsregisteret leaves `_embedded` out
+    /// when nothing matches.
+    pub async fn search_by_name(&self, name: &str, size: u8) -> Result<Vec<BrregEntity>> {
+        let response = self
+            .http
+            .get(format!("{}/enheter", self.base_url.trim_end_matches('/')))
+            .query(&[("navn", name), ("size", &size.to_string())])
+            .header("accept", "application/json")
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+            .await
+            .context("Enhetsregisteret unreachable")?;
+        if !response.status().is_success() {
+            bail!("Enhetsregisteret returned {}", response.status());
+        }
+        parse_search(&response.text().await?)
+    }
+
     /// Looks up an entity; `Ok(None)` when the orgnr is unknown to the
     /// register.
     pub async fn entity(&self, orgnumber: &str) -> Result<Option<BrregEntity>> {
@@ -228,9 +247,49 @@ impl BrregClient {
     }
 }
 
+fn parse_search(body: &str) -> Result<Vec<BrregEntity>> {
+    #[derive(Deserialize)]
+    struct Page {
+        #[serde(default, rename = "_embedded")]
+        embedded: Option<Embedded>,
+    }
+    #[derive(Deserialize)]
+    struct Embedded {
+        #[serde(rename = "enheter")]
+        entities: Vec<BrregEntity>,
+    }
+    let page: Page = serde_json::from_str(body).context("parsing Enhetsregisteret search")?;
+    Ok(page.embedded.map(|e| e.entities).unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_search_reads_hits_and_no_hits() {
+        let hits = parse_search(
+            r#"{"_embedded":{"enheter":[{"organisasjonsnummer":"999999999","navn":"NORDVIK",
+                "forretningsadresse":{"adresse":["Sandarveien 9"],"postnummer":"3215","poststed":"SANDEFJORD"}}]},
+                "page":{"totalElements":1}}"#,
+        )
+        .unwrap();
+        assert_eq!(hits[0].name, "NORDVIK");
+        assert_eq!(
+            hits[0]
+                .forretningsadresse
+                .as_ref()
+                .unwrap()
+                .one_line()
+                .unwrap(),
+            "Sandarveien 9, 3215 SANDEFJORD"
+        );
+        assert!(
+            parse_search(r#"{"page":{"totalElements":0}}"#)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn parses_the_registry_shape() {

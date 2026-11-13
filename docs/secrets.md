@@ -13,6 +13,7 @@ like configuration mostly is configuration:
 | Maskinporten test key + client id | `~/.config/regnmed/` (see below) | **Yes.** |
 | `regnmed-agent` client secret (maskinaktør i prod) | `~/.config/regnmed/` (see below) | **Yes.** |
 | Production database credentials | Created in the cluster, out-of-band | **Yes.** `deploy/prod` is built so no credential appears in any rendered manifest (docs/deploy.md). |
+| `ORS_API_KEY` (OpenRouteService, trip distance + route map) | Secret `ors-credentials` / `api-key` in the cluster, out-of-band; locally in `.env` if wanted | **Yes**, but optional: without it the trip form asks for the km (docs/utlegg.md). |
 
 A new machine gets a working dev environment with
 `cp .env.example .env` and `docker compose up -d`. Nothing needs to be
