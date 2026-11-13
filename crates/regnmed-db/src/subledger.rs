@@ -316,12 +316,10 @@ pub async fn party_items<'e>(
                         where i.entry_id = e.id
                           and r.status in ('utkast', 'godkjent')) as in_run,
                 coalesce(e.description, v.description) as description, e.amount_ore,
-                coalesce((select sum(m.amount_ore) from reskontro_match m
-                          where m.entry_a = e.id), 0)::bigint
-              + coalesce((select sum(-m.amount_ore) from reskontro_match m
-                          where m.entry_b = e.id), 0)::bigint as matched_ore
+                (o.amount_ore - o.remaining_ore)::bigint as matched_ore
          from entry e
          join voucher v on v.id = e.voucher_id
+         join subledger_entry_open o on o.entry_id = e.id
          left join lateral (
              select t.due_date, t.kid from payable_terms t
              where t.entry_id = e.id
@@ -445,12 +443,16 @@ pub async fn unmatch_items(pool: &PgPool, company_id: Uuid, match_id: Uuid) -> R
     // transaction as the match rows; undoing one row would leave that
     // voucher standing against nothing. It is corrected with a reversal.
     let currency: Option<bool> = sqlx::query_scalar(
-        "select m.valuta_cent is not null
-                or ea.description is not distinct from 'Kursdifferanse ved oppgjør'
-                or eb.description is not distinct from 'Kursdifferanse ved oppgjør'
+        // The settlement row carries valuta_cent; the row closing the agio
+        // transfer was written in the SAME transaction (equal created_at,
+        // which is the transaction's now()) and shares an entry with it.
+        "select m.valuta_cent is not null or exists (
+                    select 1 from reskontro_match x
+                    where x.valuta_cent is not null and x.created_at = m.created_at
+                      and (x.entry_a in (m.entry_a, m.entry_b) or x.entry_b in (m.entry_a, m.entry_b))
+                )
          from reskontro_match m
          join entry ea on ea.id = m.entry_a
-         join entry eb on eb.id = m.entry_b
          join voucher v on v.id = ea.voucher_id
          where m.id = $1 and v.company_id = $2",
     )
@@ -517,6 +519,24 @@ pub async fn match_valuta(
     matched_by: &str,
 ) -> Result<i64> {
     ensure!(valuta_cent > 0, "valutabeløpet må være positivt");
+    // Same per-party lock as match_items: the remainders read below and
+    // the rows written at the end must not interleave with another match.
+    let mut tx = pool.begin().await?;
+    let party_id: Option<Uuid> = sqlx::query_scalar(
+        "select e.party_id from entry e join voucher v on v.id = e.voucher_id
+         where e.id = $1 and v.company_id = $2",
+    )
+    .bind(entry_a)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+    if let Some(party_id) = party_id {
+        sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind(party_id)
+            .execute(&mut *tx)
+            .await?;
+    }
     let pair = sqlx::query(
         "select a.amount_ore as amount_a, a.valuta as valuta_a,
                 a.valutabelop_cent as belop_a,
@@ -589,7 +609,6 @@ pub async fn match_valuta(
     let agio = nok_b - nok_a; // > 0: settlement brought more NOK → gevinst
     let felles = nok_a.min(nok_b);
 
-    let mut tx = pool.begin().await?;
     if felles > 0 {
         sqlx::query(
             "insert into reskontro_match (id, entry_a, entry_b, amount_ore, valuta_cent, matched_by)
@@ -939,16 +958,19 @@ pub async fn party_matches(
         "select m.id, m.entry_a, m.entry_b, m.amount_ore, m.matched_by, m.created_at,
                 va.fiscal_year as ya, va.voucher_number as na, va.voucher_date as da,
                 vb.fiscal_year as yb, vb.voucher_number as nb, vb.voucher_date as db,
-                (m.valuta_cent is not null
-                 or ea.description is not distinct from 'Kursdifferanse ved oppgjør'
-                 or eb.description is not distinct from 'Kursdifferanse ved oppgjør') as currency
+                (m.valuta_cent is not null or exists (
+                    select 1 from reskontro_match v
+                    where v.valuta_cent is not null and v.created_at = m.created_at
+                      and (v.entry_a in (m.entry_a, m.entry_b) or v.entry_b in (m.entry_a, m.entry_b))
+                 )) as currency
          from reskontro_match m
          join entry ea on ea.id = m.entry_a
          join voucher va on va.id = ea.voucher_id
          join entry eb on eb.id = m.entry_b
          join voucher vb on vb.id = eb.voucher_id
          where va.company_id = $1 and ea.party_id = $2
-         order by m.created_at desc, m.id desc",
+         order by m.created_at desc, m.id desc
+         limit 200",
     )
     .bind(company_id)
     .bind(party_id)

@@ -324,6 +324,40 @@ async fn full_reskontro_flow_with_hash_v2() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {matched}");
 
+    // Matches on one party take turns: with the party's lock held from
+    // outside, a match waits instead of reading a remainder another
+    // match is about to consume.
+    let party_uuid = Uuid::parse_str(&party_id).unwrap();
+    let mut held = state.pool.begin().await.unwrap();
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+        .bind(party_uuid)
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let waiting = {
+        let state = state.clone();
+        let uri = format!("/companies/{company}/reskontro/matches");
+        let token = token.clone();
+        let body = serde_json::json!({
+            "entry_a": invoice["entry_id"],
+            "entry_b": payment["entry_id"],
+            "amount_ore": 5_000_00,
+        });
+        tokio::spawn(async move { request(&state, "POST", &uri, &token, Some(body)).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !waiting.is_finished(),
+        "the match must wait for the party lock"
+    );
+    held.rollback().await.unwrap();
+    let (status, _) = waiting.await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "only 2 500 kr was left to match"
+    );
+
     // Over-matching the remainder is rejected, in words a user reads.
     let (status, refused) = request(
         &state,

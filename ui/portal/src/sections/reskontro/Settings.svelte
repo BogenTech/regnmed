@@ -32,18 +32,23 @@
 
   const LABEL = { "": "Ikke reskontro", kunde: "Kunder", leverandor: "Leverandører" };
 
-  async function change(a, kind) {
+  async function change(a, select) {
+    const kind = select.value;
     const was = a.reskontro_kind || "";
+    // The select is one-way bound: put it back by hand when nothing changed.
+    const putBack = () => (select.value = was);
     if (kind === was) return;
-    const text = kind
-      ? "Fra nå må hver postering på " + a.number + " ha en " + (kind === "kunde" ? "kunde" : "leverandør") + "." +
-        (a.saldo_ore ? " Kontoen har saldo " + kr(a.saldo_ore) + " kr uten part; den viser seg som avvik til den er erstattet av åpne poster (Import)." : "")
-      : "Postering med part på " + a.number + " blir avvist fra nå. Poster som allerede har part, står som de er.";
+    const one = (k) => (k === "kunde" ? "kunde" : "leverandør");
+    const text = !kind
+      ? "Postering med part på " + a.number + " blir avvist fra nå. Poster som allerede har part, står som de er."
+      : "Fra nå må hver postering på " + a.number + " ha en " + one(kind) + "." +
+        (was
+          ? " Postene som allerede står på en " + one(was) + ", vises som avvik under Oversikt."
+          : a.saldo_ore
+            ? " Saldo som står uten part (" + kr(a.saldo_ore) + " kr i dag), vises som avvik under Oversikt til den er erstattet av åpne poster (Import)."
+            : "");
     const ok = await bekreft(text, { tittel: a.number + " " + a.name + ": " + LABEL[kind] + "?", ok: "Lagre" });
-    if (!ok) {
-      accounts = [...accounts]; // put the select back
-      return;
-    }
+    if (!ok) return putBack();
     busy = a.number;
     try {
       await send("PUT", "/companies/" + companyId + "/accounts/" + a.number + "/reskontro", { kind: kind || null });
@@ -51,7 +56,7 @@
       load();
     } catch (e) {
       toast(e.message, false);
-      accounts = [...accounts];
+      putBack();
     }
     busy = null;
   }
@@ -85,7 +90,7 @@
                 class="select select-sm w-44"
                 value={a.reskontro_kind || ""}
                 disabled={busy === a.number}
-                onchange={(e) => change(a, e.target.value)}
+                onchange={(e) => change(a, e.currentTarget)}
               >
                 {#each Object.entries(LABEL) as [key, label] (key)}
                   <option value={key}>{label}</option>

@@ -30,19 +30,22 @@
   let busy = $state(false);
   let canMatch = $derived(harRett(companyId, "RESKONTRO_SKRIV"));
 
-  function load() {
-    const id = party.party_id;
-    api(base + "/parties/" + id + "/items" + (openOnly ? "?open=true" : ""))
+  function loadItems() {
+    api(base + "/parties/" + party.party_id + "/items" + (openOnly ? "?open=true" : ""))
       .then((r) => (items = r.items))
       .catch((e) => toast(e.message, false));
-    api(base + "/parties/" + id + "/matches")
+  }
+  function loadMatches() {
+    api(base + "/parties/" + party.party_id + "/matches")
       .then((r) => (matches = r.matches))
       .catch(() => (matches = []));
   }
-  $effect(() => {
-    openOnly;
-    load();
-  });
+  const load = () => {
+    loadItems();
+    loadMatches();
+  };
+  $effect(loadItems);
+  $effect(loadMatches);
 
   let open = $derived((items || []).filter((i) => i.remaining_ore !== 0));
   let suggestions = $derived(suggestPairs(open));
@@ -273,5 +276,8 @@
         </li>
       {/each}
     </ul>
+    {#if matches.length >= 200}
+      <p class="text-sm opacity-70 mt-1">Viser de 200 nyeste.</p>
+    {/if}
   </details>
 {/if}
