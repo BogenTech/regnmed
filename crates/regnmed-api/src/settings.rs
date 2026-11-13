@@ -152,20 +152,16 @@ pub async fn update_party_contact(
     Json(request): Json<PartyContactRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::ContactWrite).await?;
-    regnmed_db::update_party_contact(
+    regnmed_db::update_party_contact_with_reference(
         &state.pool,
         company_id,
         party_id,
         request.address.as_deref(),
         request.email.as_deref(),
         request.bank_account.as_deref(),
+        request.buyer_reference.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    if let Some(reference) = &request.buyer_reference {
-        regnmed_db::set_party_buyer_reference(&state.pool, company_id, party_id, reference)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    }
     Ok(Json(json!({ "updated": true })))
 }

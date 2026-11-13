@@ -185,13 +185,14 @@ pub async fn create_invoice_in(
     .with_context(|| format!("no party {}", draft.party_no))?;
     let party_id: Uuid = party.get("id");
     // The invoice's own reference, else the customer's standing one (#221).
-    let buyer_reference: Option<String> = draft
-        .buyer_reference
-        .as_deref()
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
-        .map(str::to_string)
-        .or_else(|| party.get("buyer_reference"));
+    // A credit note takes exactly the original's (the caller passes it):
+    // falling back would give it a reference the invoice never carried.
+    let buyer_reference =
+        match crate::settings::normalize_buyer_reference(draft.buyer_reference.as_deref())? {
+            Some(own) => Some(own),
+            None if credits_invoice_id.is_none() => party.get("buyer_reference"),
+            None => None,
+        };
     ensure!(
         party.get::<String, _>("kind") == "kunde",
         "party {} is not a kunde",

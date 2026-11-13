@@ -71,6 +71,7 @@ async fn insert_lines(
 
 /// Creates a tilbud (status utkast) or a direct ordre (status
 /// bekreftet) with its own gap-free number.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_sales_document(
     pool: &PgPool,
     company_id: Uuid,
@@ -78,8 +79,11 @@ pub async fn create_sales_document(
     party_no: &str,
     doc_date: NaiveDate,
     lines: &[SalesLineDraft],
+    // "Deres referanse" (#221): carried to the ordre and the invoice.
+    buyer_reference: Option<&str>,
     created_by: &str,
 ) -> Result<(Uuid, i64)> {
+    let buyer_reference = crate::settings::normalize_buyer_reference(buyer_reference)?;
     ensure!(
         matches!(kind, "tilbud" | "ordre"),
         "kind must be tilbud or ordre"
@@ -110,8 +114,8 @@ pub async fn create_sales_document(
     };
     sqlx::query(
         "insert into salgsdokument (id, company_id, kind, doc_no, party_id, doc_date,
-                                    status, created_by)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)",
+                                    status, created_by, buyer_reference)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id)
     .bind(company_id)
@@ -121,6 +125,7 @@ pub async fn create_sales_document(
     .bind(doc_date)
     .bind(status)
     .bind(created_by)
+    .bind(&buyer_reference)
     .execute(&mut *tx)
     .await?;
     insert_lines(&mut tx, id, lines).await?;
@@ -136,7 +141,10 @@ pub async fn update_quote(
     quote_id: Uuid,
     doc_date: Option<NaiveDate>,
     lines: Option<&[SalesLineDraft]>,
+    // Some("") clears it.
+    buyer_reference: Option<&str>,
 ) -> Result<()> {
+    let reference = crate::settings::normalize_buyer_reference(buyer_reference)?;
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
         "select status, doc_date from salgsdokument
@@ -165,12 +173,16 @@ pub async fn update_quote(
         crate::settings::require_vat_registered(pool, company_id, date).await?;
     }
     sqlx::query(
-        "update salgsdokument set doc_date = coalesce($3, doc_date), updated_at = now()
+        "update salgsdokument set doc_date = coalesce($3, doc_date),
+             buyer_reference = case when $4 then $5 else buyer_reference end,
+             updated_at = now()
          where id = $1 and company_id = $2",
     )
     .bind(quote_id)
     .bind(company_id)
     .bind(doc_date)
+    .bind(buyer_reference.is_some())
+    .bind(reference)
     .execute(&mut *tx)
     .await?;
     if let Some(lines) = lines {
@@ -237,7 +249,7 @@ pub async fn quote_to_order(
 ) -> Result<(Uuid, i64)> {
     let mut tx = pool.begin().await?;
     let quote = sqlx::query(
-        "select status, party_id from salgsdokument
+        "select status, party_id, buyer_reference from salgsdokument
          where id = $1 and company_id = $2 and kind = 'tilbud' for update",
     )
     .bind(quote_id)
@@ -254,8 +266,8 @@ pub async fn quote_to_order(
     let order_id = Uuid::now_v7();
     sqlx::query(
         "insert into salgsdokument (id, company_id, kind, doc_no, party_id, doc_date,
-                                    status, tilbud_id, created_by)
-         values ($1, $2, 'ordre', $3, $4, $5, 'bekreftet', $6, $7)",
+                                    status, tilbud_id, created_by, buyer_reference)
+         values ($1, $2, 'ordre', $3, $4, $5, 'bekreftet', $6, $7, $8)",
     )
     .bind(order_id)
     .bind(company_id)
@@ -264,6 +276,7 @@ pub async fn quote_to_order(
     .bind(doc_date)
     .bind(quote_id)
     .bind(created_by)
+    .bind(quote.get::<Option<String>, _>("buyer_reference"))
     .execute(&mut *tx)
     .await
     .context("dette tilbudet har allerede en ordre?")?;
@@ -298,7 +311,7 @@ pub async fn order_to_invoice(
 ) -> Result<IssuedInvoice> {
     let mut tx = pool.begin().await?;
     let order = sqlx::query(
-        "select s.status, p.party_no from salgsdokument s
+        "select s.status, s.buyer_reference, p.party_no from salgsdokument s
          join party p on p.id = s.party_id
          where s.id = $1 and s.company_id = $2 and s.kind = 'ordre' for update of s",
     )
@@ -314,7 +327,7 @@ pub async fn order_to_invoice(
 
     let lines = load_lines(pool, order_id).await?;
     let draft = InvoiceDraft {
-        buyer_reference: None,
+        buyer_reference: order.get("buyer_reference"),
         cash_payment_method: None,
         party_no: order.get("party_no"),
         invoice_date,
@@ -448,6 +461,7 @@ pub struct SalesDocumentRow {
     pub net_ore: i64,
     pub quote_no: Option<i64>,
     pub invoice_no: Option<i64>,
+    pub buyer_reference: Option<String>,
 }
 
 pub async fn list_sales_documents(
@@ -457,7 +471,7 @@ pub async fn list_sales_documents(
 ) -> Result<Vec<SalesDocumentRow>> {
     let rows = sqlx::query(
         "select s.id, s.kind, s.doc_no, p.party_no, p.name as party_name, s.doc_date,
-                s.status, t.doc_no as tilbud_no, i.invoice_no,
+                s.status, t.doc_no as tilbud_no, i.invoice_no, s.buyer_reference,
                 coalesce((select sum((l.quantity_milli * l.unit_price_ore) / 1000)
                           from salgsdokument_line l where l.dokument_id = s.id), 0)::bigint
                     as netto_ore
@@ -485,6 +499,7 @@ pub async fn list_sales_documents(
             net_ore: r.get("netto_ore"),
             quote_no: r.get("tilbud_no"),
             invoice_no: r.get("invoice_no"),
+            buyer_reference: r.get("buyer_reference"),
         })
         .collect())
 }
@@ -499,7 +514,7 @@ pub async fn salgsdokument_pdf(
 ) -> Result<(String, Vec<u8>)> {
     let doc = sqlx::query(
         "select s.kind, s.doc_no, s.doc_date, p.party_no, p.name as party_name,
-                p.orgnr as party_orgnr, p.address as party_address,
+                p.orgnr as party_orgnr, p.address as party_address, s.buyer_reference,
                 c.name as company_name, c.orgnr, c.address, c.orgform
          from salgsdokument s
          join party p on p.id = s.party_id
@@ -577,7 +592,7 @@ pub async fn salgsdokument_pdf(
         seller_account_number: None,
         buyer_name: doc.get("party_name"),
         buyer_number: doc.get("party_no"),
-        buyer_reference: None,
+        buyer_reference: doc.get("buyer_reference"),
         buyer_orgnumber: doc.get("party_orgnr"),
         buyer_address: doc.get("party_address"),
         invoice_number: doc.get("doc_no"),

@@ -350,9 +350,17 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
     give_parties_address(&state.pool, company).await;
     // #221: the customer's standing reference applies when the invoice
     // names none.
-    regnmed_db::set_party_buyer_reference(&state.pool, company, plain_id, " Avd. 12 ")
-        .await
-        .unwrap();
+    regnmed_db::update_party_contact_with_reference(
+        &state.pool,
+        company,
+        plain_id,
+        None,
+        None,
+        None,
+        Some(" Avd. 12 "),
+    )
+    .await
+    .unwrap();
     let plain = regnmed_db::create_invoice(
         &state.pool,
         company,

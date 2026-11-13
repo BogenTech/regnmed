@@ -43,6 +43,9 @@ pub struct CreateTemplateRequest {
     mark_dispatch: bool,
     #[serde(default)]
     lines: Vec<DocLineRequest>,
+    /// "Deres referanse" on every generated invoice (#221); omitted = the
+    /// customer's standing reference. "Gjenta denne" copies the invoice's.
+    buyer_reference: Option<String>,
 }
 
 pub async fn create(
@@ -82,6 +85,7 @@ pub async fn create(
                 company_id,
                 &regnmed_db::TemplateDraft {
                     party_no,
+                    buyer_reference: request.buyer_reference,
                     interval: request.interval,
                     next_date: request.next_date,
                     end_date: request.end_date,
@@ -122,6 +126,7 @@ pub async fn list(
             "forfall_dager": t.due_days,
             "merk_utsendelse": t.mark_dispatch,
             "active": t.active,
+            "buyer_reference": t.buyer_reference,
             "sum_netto_ore": t.sum_netto_ore,
             "runs": t.runs,
         })).collect::<Vec<_>>(),
@@ -144,6 +149,8 @@ pub struct UpdateTemplateRequest {
     mark_dispatch: Option<bool>,
     active: Option<bool>,
     lines: Option<Vec<DocLineRequest>>,
+    /// "" clears it.
+    buyer_reference: Option<String>,
 }
 
 /// serde helper: distinguishes an absent field from an explicit null.
@@ -187,6 +194,7 @@ pub async fn update(
         request.mark_dispatch,
         request.active,
         lines.as_deref(),
+        request.buyer_reference.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

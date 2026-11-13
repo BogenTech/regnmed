@@ -64,7 +64,7 @@
   {#if !supplier}
     <label class="fieldset">
       <span class="fieldset-legend">Deres referanse</span>
-      <input class="input w-full" bind:value={buyerReference} />
+      <input class="input w-full" maxlength="70" bind:value={buyerReference} />
       <span class="label whitespace-normal">
         Kundens faste referanse på fakturaene, f.eks. bestillingsnummer eller kontaktperson. Offentlige kunder krever den.
       </span>

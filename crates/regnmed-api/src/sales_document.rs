@@ -30,6 +30,8 @@ pub struct CreateRequest {
     party_no: String,
     doc_date: Option<chrono::NaiveDate>,
     lines: Vec<DocLineRequest>,
+    /// "Deres referanse" (#221), carried to the ordre and the invoice.
+    buyer_reference: Option<String>,
 }
 
 async fn create_kind(
@@ -56,6 +58,7 @@ async fn create_kind(
         &request.party_no,
         doc_date,
         &lines,
+        request.buyer_reference.as_deref(),
         created_by,
     )
     .await
@@ -100,6 +103,7 @@ async fn list_kind(
             "netto_ore": d.net_ore,
             "tilbud_no": d.quote_no,
             "invoice_no": d.invoice_no,
+            "buyer_reference": d.buyer_reference,
         })).collect::<Vec<_>>(),
     })))
 }
@@ -149,6 +153,8 @@ pub async fn document_lines(
 pub struct UpdateQuoteRequest {
     doc_date: Option<chrono::NaiveDate>,
     lines: Option<Vec<DocLineRequest>>,
+    /// "" clears it.
+    buyer_reference: Option<String>,
 }
 
 pub async fn update_quote(
@@ -168,6 +174,7 @@ pub async fn update_quote(
         quote_id,
         request.doc_date,
         lines.as_deref(),
+        request.buyer_reference.as_deref(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;

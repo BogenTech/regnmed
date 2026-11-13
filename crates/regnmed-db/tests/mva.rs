@@ -467,6 +467,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
             project: None,
             product_id: None,
         }],
+        None,
         "test",
     )
     .await;

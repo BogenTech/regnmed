@@ -15,6 +15,8 @@
   const editing = untrack(() => !!quote);
   let party = $state(untrack(() => quote?.party_no || ""));
   let docDate = $state(untrack(() => quote?.doc_date || today()));
+  // Carried to the ordre and the invoice (#221).
+  let buyerReference = $state(untrack(() => quote?.buyer_reference || ""));
 
   let nextKey = 1;
   const blank = () => ({ key: nextKey++, product: "", description: "", quantity: "1", price: "", vat: "3", account: null });
@@ -83,6 +85,7 @@
     if (!real.length) return toast("Legg til minst én linje", false);
     const body = {
       doc_date: docDate,
+      buyer_reference: buyerReference.trim(),
       lines: real.map(([l, p]) => ({
         produkt: l.product || null,
         description: l.description.trim() || null,
@@ -135,6 +138,11 @@
     <label class="flex flex-col gap-1 text-sm">
       Dato
       <input type="date" class="input input-sm" bind:value={docDate} />
+    </label>
+    <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+      Deres referanse (valgfritt)
+      <input class="input input-sm" maxlength="70" bind:value={buyerReference} />
+      <span class="text-xs opacity-70">Følger med til ordren og fakturaen. Tomt betyr kundens faste referanse.</span>
     </label>
   </div>
 

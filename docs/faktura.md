@@ -146,8 +146,17 @@ the row), printed on the PDF as «Deres ref.» and carried in the EHF as
 | Path | Reference |
 | --- | --- |
 | `POST …/invoices` | `buyer_reference` in the request |
-| Every path, when none is given | the customer's **standing** reference (`party.buyer_reference`, set with `PUT …/parties/{pid}/contact`) |
-| Kreditnota | the original invoice's reference — the buyer matches the credit to the invoice on it |
+| Repeterende faktura | the template's own (`buyer_reference` on create/update; "Gjenta denne" copies the invoice's) — one per contract |
+| Tilbud → ordre → faktura | the tilbud's own, copied to the ordre and on to the invoice |
+| Any of the above without one | the customer's **standing** reference (`party.buyer_reference`, set with `PUT …/parties/{pid}/contact`) |
+| Kreditnota | **exactly** the original's — none if the original had none; it never picks up a standing reference the invoice did not carry |
+
+At most **70 characters**, refused rather than cut (a cut reference
+routes nowhere), checked in the code and by the database. The
+reference is printed on one line of the stored PDF. Setting the
+standing reference is the same single statement as the rest of the
+contact update, so a refused reference (on a supplier, or too long)
+leaves the address, e-mail and account number untouched as well.
 
 PEPPOL-EN16931-R003 requires a buyer reference or an order reference
 in every EHF. An invoice with neither falls back to **our customer

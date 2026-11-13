@@ -371,6 +371,7 @@
           <span class="fieldset-legend">Deres referanse (valgfritt)</span>
           <input
             class="input w-full"
+            maxlength="70"
             placeholder={party?.buyer_reference || "F.eks. bestillingsnummer eller kontaktperson"}
             bind:value={buyerReference}
             aria-describedby="buyer-reference-help"
