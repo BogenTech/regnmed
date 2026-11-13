@@ -1,49 +1,44 @@
 <script>
-  import { api } from "../../lib/api.js";
-  import { toast } from "../../lib/toast.svelte.js";
-  import Betalingsliste from "./Betalingsliste.svelte";
-  import Kontoutskrift from "./Kontoutskrift.svelte";
-  import Avstemming from "./Avstemming.svelte";
-  import Valutakurser from "./Valutakurser.svelte";
+  // Bank: reconciliation is the front page — what the bank shows that
+  // the books do not, and the other way round. Payments (the payment
+  // list and its pain.001 file) and exchange rates have their own tabs
+  // and addresses (#/c/{id}/bank/{tab}).
+  import Reconcile from "./Reconcile.svelte";
+  import Payments from "./Payments.svelte";
+  import Rates from "./Rates.svelte";
 
-  let { companyId } = $props();
+  let { companyId, extra } = $props();
 
-  // Bankkontoen avstemmingen gjelder — én konto, som i dagens portal.
-  const ACCOUNT = "1920";
-
-  let data = $state(null);
-
-  async function load(id) {
-    const [recon, payable, runs] = await Promise.all([
-      // Ingen importerte kontoutskrifter er en normal tilstand, ikke en
-      // feil: da vises avstemmingskortet tomt i stedet for å forsvinne.
-      api("/companies/" + id + "/bank/reconciliation?account=" + ACCOUNT).catch(() => null),
-      api("/companies/" + id + "/payments/payable").catch(() => ({ items: [] })),
-      api("/companies/" + id + "/payments/runs").catch(() => ({ runs: [] })),
-    ]);
-    data = { recon, payable: payable.items, runs: runs.runs };
-  }
-
-  function reload() {
-    load(companyId).catch((error) => toast(error.message, false));
-  }
-
-  $effect(() => {
-    data = null;
-    load(companyId).catch((error) => toast(error.message, false));
-  });
+  const TABS = [
+    ["", "Avstemming"],
+    ["betalinger", "Betalinger"],
+    ["valuta", "Valutakurser"],
+  ];
+  let tab = $derived(TABS.some(([k]) => k === (extra || "")) ? extra || "" : null);
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner loading-lg"></span>
+<h1 class="text-2xl font-bold mb-4">Bank</h1>
+{#if tab === null}
+  <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>
 {:else}
-  {#if data.payable.length || data.runs.length}
-    <Betalingsliste {companyId} payable={data.payable} runs={data.runs} onDone={reload} />
-  {/if}
-
-  <Kontoutskrift {companyId} account={ACCOUNT} onDone={reload} />
-
-  <Avstemming {companyId} recon={data.recon} onDone={reload} />
-
-  <Valutakurser {companyId} />
+  <nav class="tabs tabs-box mb-4 w-fit max-w-full" aria-label="Bank">
+    {#each TABS as [key, label] (key)}
+      <a
+        class="tab whitespace-nowrap {tab === key ? 'tab-active' : ''}"
+        href={"#/c/" + companyId + "/bank" + (key ? "/" + key : "")}
+        aria-current={tab === key ? "page" : undefined}
+      >
+        {label}
+      </a>
+    {/each}
+  </nav>
+  {#key companyId + tab}
+    {#if tab === ""}
+      <Reconcile {companyId} />
+    {:else if tab === "betalinger"}
+      <Payments {companyId} />
+    {:else}
+      <Rates {companyId} />
+    {/if}
+  {/key}
 {/if}

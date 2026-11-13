@@ -28,6 +28,17 @@ impl fmt::Display for Ore {
     }
 }
 
+/// Kroner as people type them ("1 290,00", "-45", "12.5") → øre; None
+/// when the text is not an amount (a voucher number, a word). The same
+/// rules as the bank CSV import, so a figure copied from the statement
+/// reads the same way.
+pub fn parse_kroner(raw: &str) -> Option<i64> {
+    if raw.trim().is_empty() {
+        return None;
+    }
+    crate::csvutil::parse_amount(raw).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,5 +54,15 @@ mod tests {
     fn checked_add_detects_overflow() {
         assert_eq!(Ore(1).checked_add(Ore(2)), Some(Ore(3)));
         assert_eq!(Ore(i64::MAX).checked_add(Ore(1)), None);
+    }
+
+    #[test]
+    fn kroner_as_typed() {
+        assert_eq!(parse_kroner("1 290,00"), Some(129_000));
+        assert_eq!(parse_kroner("-45"), Some(-4_500));
+        assert_eq!(parse_kroner("12.5"), Some(1_250));
+        assert_eq!(parse_kroner("2026-14"), None);
+        assert_eq!(parse_kroner("husleie"), None);
+        assert_eq!(parse_kroner("  "), None);
     }
 }

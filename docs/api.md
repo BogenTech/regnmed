@@ -113,10 +113,13 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/assets/{asset_id}/runs` | GET |
 | `/companies/{company_id}/attachments/{attachment_id}` | GET |
 | `/companies/{company_id}/dividends` | GET POST |
+| `/companies/{company_id}/bank/accounts` | GET |
+| `/companies/{company_id}/bank/entries` | GET |
 | `/companies/{company_id}/bank/matches` | POST |
 | `/companies/{company_id}/bank/matches/{bank_transaction_id}` | DELETE |
 | `/companies/{company_id}/bank/reconciliation` | GET |
 | `/companies/{company_id}/bank/statements` | POST |
+| `/companies/{company_id}/bank/transactions/{bank_transaction_id}/post` | POST |
 | `/companies/{company_id}/budgets` | GET POST |
 | `/companies/{company_id}/budgets/{budget_id}` | GET |
 | `/companies/{company_id}/budgets/{budget_id}/fastsett` | POST |

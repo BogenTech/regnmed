@@ -82,6 +82,49 @@ pub fn propose_matches(
     proposals
 }
 
+/// Candidates for the bank transactions the engine left alone: per
+/// transaction, the open entries with EXACTLY its amount (sign
+/// included), nearest date first, at most `limit`. A suggestion, never a
+/// match — ambiguity stays the accountant's call, and a different amount
+/// is never offered. Like `propose_matches`, an entry is used once: three
+/// identical 49 kr fees and one 49 kr posting give ONE suggestion, to the
+/// nearest fee, not the same button on all three lines. The result is in
+/// the order of `transactions`.
+pub fn suggest_entries<'a>(
+    transactions: &[BankTx],
+    entries: &'a [OpenEntry],
+    limit: usize,
+) -> Vec<Vec<&'a OpenEntry>> {
+    // Every (transaction, entry) pair with equal amounts, closest first,
+    // handed out greedily so each entry lands on its nearest line.
+    let mut pairs: Vec<(i64, usize, usize)> = Vec::new();
+    for (t, tx) in transactions.iter().enumerate() {
+        for (e, entry) in entries.iter().enumerate() {
+            if entry.amount_ore == tx.amount_ore {
+                pairs.push(((entry.date - tx.booking_date).num_days().abs(), t, e));
+            }
+        }
+    }
+    pairs.sort_by_key(|&(distance, t, e)| {
+        (
+            distance,
+            transactions[t].booking_date,
+            transactions[t].id,
+            entries[e].date,
+            entries[e].entry_id,
+        )
+    });
+    let mut used = vec![false; entries.len()];
+    let mut out: Vec<Vec<&OpenEntry>> = vec![Vec::new(); transactions.len()];
+    for (_, t, e) in pairs {
+        if !used[e] && out[t].len() < limit {
+            used[e] = true;
+            out[t].push(&entries[e]);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +189,33 @@ mod tests {
     fn amounts_must_match_exactly_including_sign() {
         let entries = [entry(10, 20, -500_00)];
         assert!(propose_matches(&[tx(1, 20, 500_00)], &entries, 5).is_empty());
+    }
+
+    #[test]
+    fn suggestions_are_equal_amounts_nearest_first() {
+        let bank = tx(1, 10, -150_00);
+        let entries = vec![
+            entry(10, 2, -150_00),
+            entry(11, 12, -150_00),
+            entry(12, 10, 150_00),  // wrong sign
+            entry(13, 10, -151_00), // wrong amount
+            entry(14, 30, -150_00),
+        ];
+        let got: Vec<u128> = suggest_entries(std::slice::from_ref(&bank), &entries, 2)[0]
+            .iter()
+            .map(|e| e.entry_id.as_u128())
+            .collect();
+        assert_eq!(got, vec![11, 10]);
+        assert!(suggest_entries(&[tx(2, 10, 99)], &entries, 3)[0].is_empty());
+    }
+
+    #[test]
+    fn an_entry_is_suggested_for_one_line_only() {
+        // Three identical fees, one posting dated nearest the second.
+        let fees = [tx(1, 1, -49_00), tx(2, 11, -49_00), tx(3, 21, -49_00)];
+        let entries = vec![entry(10, 12, -49_00)];
+        let got = suggest_entries(&fees, &entries, 3);
+        assert!(got[0].is_empty() && got[2].is_empty(), "{got:?}");
+        assert_eq!(got[1][0].entry_id.as_u128(), 10);
     }
 }

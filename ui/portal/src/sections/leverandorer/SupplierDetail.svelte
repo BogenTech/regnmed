@@ -156,7 +156,7 @@
             <button class="btn btn-ghost btn-sm" onclick={pickDue}>Velg forfalte</button>
             <span class="text-sm opacity-70">
               Betalingslisten godkjennes av en annen under
-              <a class="link" href={"#/c/" + companyId + "/bank"}>Bank</a>.
+              <a class="link" href={"#/c/" + companyId + "/bank/betalinger"}>Bank</a>.
             </span>
           </div>
         {/if}
