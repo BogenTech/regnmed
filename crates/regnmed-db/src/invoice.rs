@@ -410,6 +410,32 @@ pub async fn create_invoice_in(
     )
     .await?;
 
+    // The EHF is stored in the same transaction (#222): rendered later it
+    // would read whatever contact data the parties have by then, and an
+    // e-invoice must be kept in its original format (bokføringsloven § 13
+    // second paragraph). Without the buyer's orgnr there is no Peppol
+    // address and so no EHF.
+    if party.get::<Option<String>, _>("orgnr").is_some() {
+        let xml = crate::ehf::render_invoice_ehf(
+            pool,
+            tx,
+            company_id,
+            invoice_id,
+            draft.cash_payment_method.is_some(),
+        )
+        .await?;
+        add_attachment_in(
+            tx,
+            company_id,
+            posted.id,
+            &format!("{document}-{invoice_no}.xml"),
+            "application/xml",
+            xml.as_bytes(),
+            created_by,
+        )
+        .await?;
+    }
+
     Ok(IssuedInvoice {
         invoice_id,
         invoice_no,

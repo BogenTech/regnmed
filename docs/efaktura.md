@@ -447,9 +447,8 @@ hendelse, mottak er av, ingen eget SMP-oppslag.
   også EHF-en som lastes ned i dag.
 - **Kortbetalte abonnementsfakturaer sendes ikke** (§4 fase 4) — lovlig i
   dag, ikke fra 1.1.2028.
-- **EHF-en rendres fra kundens nåværende kontaktdata** (§3.5) — «byte-
-  identisk for alltid» i docs/ehf.md stemmer bare så lenge kunden ikke
-  endrer adresse.
+- ~~**EHF-en rendres fra kundens nåværende kontaktdata**~~ — rettet i
+  #222: EHF-en rendres og lagres ved utstedelse (docs/ehf.md).
 
 ## 6. Avgjørelser operatøren må ta
 

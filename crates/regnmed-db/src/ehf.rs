@@ -1,12 +1,13 @@
 //! EHF outbound and inbound (docs/ehf.md, #14).
 //!
-//! **Outbound:** the document is built from the issued faktura's own,
-//! locked rows and rendered on request. It is deliberately not stored as
-//! an attachment the way the PDF is: the PDF IS the sales document
-//! (bokføringsforskriften §5-1, retention from the moment of issue),
-//! whereas the EHF is a transport envelope derived from the same
-//! immutable numbers. When an access point actually sends it, it is the
-//! sending that must be logged — the utsendelse pattern from #32.
+//! **Outbound:** the document is rendered INSIDE the issuing transaction
+//! and stored as an attachment on the invoice voucher, next to the PDF
+//! (#222). Rendering it on request read the seller's and buyer's CURRENT
+//! contact data (editable, not hashed), so a download after an address
+//! change was not the document issued -- and from 1.1.2027 an e-invoice
+//! must be kept in its original format (bokføringsloven § 13 second
+//! paragraph). Invoices issued before this have no stored EHF and are
+//! still rendered on request.
 //!
 //! **Inbound:** a received EHF is stored as-is in the bilagsinnboks
 //! (immutable from arrival, hash-checked — #21), and the posting
@@ -17,7 +18,7 @@
 use anyhow::{Context, Result};
 use regnmed_core::ehf::{DocumentType, EhfDocument, EhfLinje, EhfPart};
 use regnmed_core::ehf_import::{ReceivedInvoice, parse};
-use sqlx::{PgPool, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 /// Splits "Storgata 1, 0155 Oslo" into street / postnr / poststed.
@@ -46,8 +47,40 @@ pub(crate) fn split_address(
     (Some(gate.trim().to_string()), postal_code, postal_city)
 }
 
-/// Builds the EHF document for an issued invoice from its stored rows.
+/// The EHF for an issued invoice: the document stored at issue
+/// (hash-checked on read), or -- for invoices issued before #222 -- one
+/// rendered now from the invoice's rows.
 pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result<String> {
+    let stored: Option<Uuid> = sqlx::query_scalar(
+        "select a.id from attachment a
+         join invoice i on i.voucher_id = a.voucher_id
+         where i.id = $1 and i.company_id = $2 and a.content_type = 'application/xml'
+         order by a.created_at limit 1",
+    )
+    .bind(invoice_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(attachment_id) = stored {
+        let (_, xml) = crate::get_attachment(pool, company_id, attachment_id).await?;
+        return String::from_utf8(xml).context("stored EHF is not UTF-8");
+    }
+    let mut conn = pool.acquire().await?;
+    render_invoice_ehf(pool, &mut conn, company_id, invoice_id, false).await
+}
+
+/// Renders the EHF from the invoice's rows, read on `conn` so the issuing
+/// transaction can render the invoice it has not committed yet. Reference
+/// data (vat rates, registration status) comes from `pool`.
+/// `paid_at_issue` (a kontantfaktura) leaves out the payment means: a KID
+/// for money already received is a false instruction.
+pub(crate) async fn render_invoice_ehf(
+    pool: &PgPool,
+    conn: &mut PgConnection,
+    company_id: Uuid,
+    invoice_id: Uuid,
+    paid_at_issue: bool,
+) -> Result<String> {
     let head = sqlx::query(
         "select i.invoice_no, i.invoice_date, i.due_date, i.kid, i.valuta,
                 i.credits_invoice_id, i.delivery_date, i.delivery_place,
@@ -64,7 +97,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
     )
     .bind(invoice_id)
     .bind(company_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await?
     .context("no such invoice")?;
 
@@ -74,7 +107,7 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
          from invoice_line l where l.invoice_id = $1 order by l.line_no",
     )
     .bind(invoice_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     // The rate that applied on the invoice date — the same dated lookup
@@ -163,11 +196,14 @@ pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> R
             vat_registered: false,
             email: head.get("kjoper_epost"),
         },
-        account_number: head.get("bank_account"),
+        account_number: if paid_at_issue {
+            None
+        } else {
+            head.get("bank_account")
+        },
         // cbc:PaymentID tells the payer how to mark the payment, so it
         // follows the bank agreement exactly as the printed KID does (#104).
-        kid: head
-            .get::<bool, _>("kid_avtale")
+        kid: (head.get::<bool, _>("kid_avtale") && !paid_at_issue)
             .then(|| head.get::<Option<String>, _>("kid"))
             .flatten(),
         linjer,

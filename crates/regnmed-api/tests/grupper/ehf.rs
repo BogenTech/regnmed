@@ -254,6 +254,40 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
     );
     assert!(xml.contains("<cbc:Percent>25.00</cbc:Percent>"));
 
+    // #222: the EHF is the document issued, not a re-render of today's
+    // master data. It is stored on the voucher with the PDF, and moving
+    // the customer does not change what the download returns.
+    let stored: i64 = sqlx::query_scalar(
+        "select count(*) from attachment a join invoice i on i.voucher_id = a.voucher_id
+         where i.id = $1 and a.content_type = 'application/xml'",
+    )
+    .bind(issued.invoice_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, 1, "EHF-en lagres ved utstedelse");
+    regnmed_db::update_party_contact(
+        &state.pool,
+        company,
+        customer_id,
+        Some("Nyveien 9, 0150 Oslo"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let (status, again) = get_text(
+        &state,
+        &format!("{base}/invoices/{}/ehf", issued.invoice_id),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        again, xml,
+        "samme faktura gir samme EHF etter adresseendring"
+    );
+
     // The kreditnota points back at the faktura.
     let credit = regnmed_db::credit_invoice(&state.pool, company, issued.invoice_id, "Eva EHF")
         .await

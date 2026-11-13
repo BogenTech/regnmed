@@ -73,7 +73,9 @@ async fn a_cash_invoice_settles_its_own_receivable_through_the_subledger() {
         &pool,
         company,
         Some("Storgata 1, 0155 Oslo"),
-        None,
+        // A bank account, so the EHF below WOULD carry payment means if
+        // the kontantfaktura did not leave them out.
+        Some("60750595270"),
         Some("AS"),
         None,
         None,
@@ -94,10 +96,16 @@ async fn a_cash_invoice_settles_its_own_receivable_through_the_subledger() {
     )
     .await
     .unwrap();
-    let (party_id, party_no) =
-        regnmed_db::create_party(&pool, company, "kunde", "Kontantkunde", None, None)
-            .await
-            .unwrap();
+    let (party_id, party_no) = regnmed_db::create_party(
+        &pool,
+        company,
+        "kunde",
+        "Kontantkunde",
+        Some(&unique_orgnumber()),
+        None,
+    )
+    .await
+    .unwrap();
     regnmed_db::update_party_contact(
         &pool,
         company,
@@ -199,6 +207,16 @@ async fn a_cash_invoice_settles_its_own_receivable_through_the_subledger() {
     let text = String::from_utf8_lossy(&bytes).to_string();
     assert!(text.contains("KONTANTFAKTURA"), "dokumenttypen");
     assert!(!text.contains("KID"), "ingen KID på et betalt salg");
+
+    // Its EHF, stored at issue (#222), carries no payment means either.
+    let xml = regnmed_db::invoice_ehf(&pool, company, issued.invoice_id)
+        .await
+        .unwrap();
+    assert!(xml.contains("<cbc:InvoiceTypeCode>"), "{xml}");
+    assert!(
+        !xml.contains("PaymentMeans"),
+        "ingen betalingsinstruks: {xml}"
+    );
 }
 
 /// Kassaoppgjør (#89, §5-3/§5-4): the day's Z-report as one voucher with
