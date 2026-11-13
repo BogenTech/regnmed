@@ -24,7 +24,22 @@ egen vei. Et uregistrert selskap kunne altså utstede en faktura med
 
 Vakten er `settings::require_vat_registered`, slått opp på **dokumentets
 dato** — aldri dagens, ellers endrer et gammelt bilag seg når noen
-laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen:
+laster det ned på nytt. Den ligger i bokføringsveien, ikke i portalen.
+
+**Siden 2026-11-13 sitter den også i `post_voucher_in`**, den ene veien
+alle bilag går inn i hovedboken: et bilag med en kode som krever
+registrering avvises når selskapet ikke var registrert på
+bilagsdatoen. Før det spurte bare faktura-, tilbuds- og utleggsveien
+(tabellen under), mens innboksen (Bilag-skjemaet foreslår kode 1),
+manuelle bilag og kassaoppgjøret bokførte koden uten innsigelse — og
+beløpene havnet i spesifikasjonen og meldingen. To unntak:
+importert historikk (journal `IMP`; registreringen ligger før regnmed,
+og kildefilen er beviset) og en tilbakeføring (den opphever en
+postering som ble kontrollert da den ble gjort, også om selskapet
+siden er avregistrert). Testet i `tests/grupper/hovedbok.rs`
+(`vat_codes_need_a_registration_on_every_posting_path`). Veiene som
+spør selv, gjør det fortsatt — de gir en tidligere og mer presis
+beskjed:
 
 | Vei | Hva som skjer uten registrering |
 | --- | --- |
@@ -187,9 +202,21 @@ ops/admin. Authenticated, engagement-guarded endpoints (see
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /companies/{id}/reports/mva?year=&termin=` | spesifikasjon as JSON (øre integers; the UI formats) |
+| `GET /companies/{id}/reports/mva?year=&termin=` | spesifikasjon as JSON (øre integers; the UI formats). Each line carries `virkning_ore` — its effect on what is payable, payable-positive, by the SAME rule as the melding (`regnmed-core::vat::payable_effect_ore`: utgående positive, fradrag negative, omvendt med fradrag null, kostnadsmarkører og kode 0 ikke med) — and `retning`. `utgaende_ore`/`inngaende_ore`/`netto_ore` are summed from those effects, so the screen and the return cannot disagree about what is owed (before, «Å betale» left out omvendt avgiftsplikt uten fradragsrett, which the melding includes) |
+| `GET /companies/{id}/reports/mva/postings?year=&termin=&kode=` | the postings behind one code in the term (voucher, date, account, text, party, grunnlag), at most 500 with `total` — what the accountant checks before filing |
 | `GET /companies/{id}/reports/mva-melding?year=&termin=` | `mvaMeldingDto` XML download |
 | `GET /companies/{id}/reports/saft?year=` (or `from=&to=`) | SAF-T XML download; header contact defaults to the authenticated person's name |
+
+Portal (`#/c/{id}/mva?year=&termin=&kode=`): the registration status
+(«Mva-registrert fra …», or a clear «Ikke mva-registrert» with what it
+means) and the terminordning first; year steppers and the terms named
+by their months; the page opens on the latest term that has ENDED (the
+one being filed). The deadline is said in words («Frist 10. desember
+2026, om 27 dager»). Each code opens its postings, linked to the
+vouchers; amounts are shown as the return reads them. The melding is
+downloaded with a sentence on what to do with it until direct sending
+is available; SAF-T moved to Rapporter. The terminordning form is shown
+only to whoever holds `MVA_ORDNING_ADMIN`.
 
 ## Where it is tested
 

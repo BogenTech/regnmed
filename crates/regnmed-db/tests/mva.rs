@@ -58,6 +58,22 @@ async fn specification_reports_basis_and_tax_per_period() {
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Mva Test AS")
         .await
         .unwrap();
+    // A VAT-registered seller: VAT codes need a registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    regnmed_db::record_registrering(
+        &pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            vat_registered: true,
+            business_registered: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();
@@ -200,6 +216,22 @@ async fn reverse_charge_posts_the_computed_tax_into_the_ledger() {
     let company = regnmed_db::create_company(&pool, &unique_orgnumber(), "Innførsel AS")
         .await
         .unwrap();
+    // A VAT-registered seller: VAT codes need a registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    regnmed_db::record_registrering(
+        &pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            vat_registered: true,
+            business_registered: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_journal(&pool, company, "GL", "Hovedbok")
         .await
         .unwrap();

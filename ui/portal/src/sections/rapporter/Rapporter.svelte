@@ -14,6 +14,7 @@
   import Revisjon from "./Revisjon.svelte";
   import Forankring from "./Forankring.svelte";
   import Balansedokumentasjon from "./Balansedokumentasjon.svelte";
+  import Saft from "./Saft.svelte";
 
   let { companyId, extra } = $props();
 
@@ -28,6 +29,7 @@
     ["bokforingsspesifikasjon", "Bokføringsspesifikasjon"],
     ["balansedokumentasjon", "Balansedokumentasjon"],
     ["revisjon", "Revisjon"],
+    ["saft", "SAF-T"],
   ];
 
   // Fanevalg og år er lokal tilstand. `extra` (#/c/{id}/rapporter/{fane})
@@ -50,6 +52,7 @@
       bokforingsspesifikasjon: "Bokføringsspesifikasjon " + year,
       balansedokumentasjon: "Balansedokumentasjon (bokføringsloven §11)",
       revisjon: "Verifikasjonsrapport",
+      saft: "SAF-T " + year,
     }[rapport],
   );
 </script>
@@ -97,6 +100,8 @@
     <Balansedokumentasjon {companyId} {to} />
   {:else if rapport === "revisjon"}
     <Revisjon {companyId} />
+  {:else if rapport === "saft"}
+    <Saft {companyId} {year} />
   {/if}
 </Card>
 

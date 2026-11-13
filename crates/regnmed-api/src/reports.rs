@@ -71,16 +71,14 @@ pub async fn vat_report(
     )
     .await?;
 
-    let output: i64 = lines
+    // Payable-positive per line, by the same rule as the mva-melding:
+    // what is owed on the screen is what the return will say.
+    let effects: Vec<i64> = lines
         .iter()
-        .filter(|l| direction(&l.code) == Direction::Output)
-        .map(|l| -l.tax_ore)
-        .sum();
-    let input: i64 = lines
-        .iter()
-        .filter(|l| direction(&l.code) == Direction::Input)
-        .map(|l| l.tax_ore)
-        .sum();
+        .map(|l| regnmed_core::vat::payable_effect_ore(&l.code, l.tax_ore))
+        .collect();
+    let output: i64 = effects.iter().filter(|e| **e > 0).sum();
+    let input: i64 = -effects.iter().filter(|e| **e < 0).sum::<i64>();
 
     Ok(Json(json!({
         "year": period.year,
@@ -91,16 +89,70 @@ pub async fn vat_report(
         "frist": scheme.deadline(period).to_string(),
         "start": scheme.start(period).to_string(),
         "end": scheme.end(period).to_string(),
-        "lines": lines.iter().map(|l| json!({
+        "lines": lines.iter().zip(&effects).map(|(l, effect)| json!({
             "code": l.code,
             "description": l.description,
             "rate_bp": l.rate_bp,
             "grunnlag_ore": l.basis_ore,
             "avgift_ore": l.tax_ore,
+            "virkning_ore": effect,
+            "retning": match direction(&l.code) {
+                Direction::Output => "utgaende",
+                Direction::Input => "inngaende",
+                Direction::ReverseChargeDeductible => "omvendt_med_fradrag",
+                Direction::ReverseChargeNonDeductible => "omvendt_uten_fradrag",
+                Direction::CostMarker => "kostnadsmarkor",
+                Direction::None => "annen",
+            },
         })).collect::<Vec<_>>(),
         "utgaende_ore": output,
         "inngaende_ore": input,
         "netto_ore": output - input,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct VatPostingsQuery {
+    year: i32,
+    #[serde(rename = "termin")]
+    period: u8,
+    #[serde(rename = "kode")]
+    code: String,
+}
+
+/// The postings behind one line of the spesifikasjon — what the
+/// accountant opens before filing.
+pub async fn vat_postings(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<VatPostingsQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ReportRead).await?;
+    let (scheme, period) = scheme_period(&state, company_id, query.year, query.period).await?;
+    let (postings, total) = regnmed_db::vat_postings(
+        &state.pool,
+        company_id,
+        scheme.start(period),
+        scheme.end(period),
+        &query.code,
+        500,
+    )
+    .await?;
+    Ok(Json(json!({
+        "kode": query.code,
+        "total": total,
+        "postings": postings.iter().map(|p| json!({
+            "voucher_id": p.voucher_id,
+            "voucher": p.voucher_label,
+            "date": p.date.to_string(),
+            "account": p.account,
+            "account_name": p.account_name,
+            "description": p.description,
+            "party_no": p.party_no,
+            "grunnlag_ore": p.basis_ore,
+            "rate_bp": p.rate_bp,
+        })).collect::<Vec<_>>(),
     })))
 }
 

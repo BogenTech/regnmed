@@ -255,6 +255,26 @@ pub fn direction(code: &str) -> Direction {
     }
 }
 
+/// A spesifikasjon line's effect on the amount payable, in øre and
+/// payable-positive — the same rule the mva-melding's
+/// `fastsattMerverdiavgift` follows (`vat_return::build`): output tax
+/// counts, a deduction counts negative, a reverse charge WITH deduction
+/// right nets to zero, and cost markers and code 0 are not reported.
+/// The screen and the return therefore cannot disagree about what is
+/// owed.
+pub fn payable_effect_ore(code: &str, tax_ore: i64) -> i64 {
+    if code == "0" {
+        return 0;
+    }
+    match direction(code) {
+        Direction::CostMarker | Direction::ReverseChargeDeductible => 0,
+        Direction::Output
+        | Direction::Input
+        | Direction::ReverseChargeNonDeductible
+        | Direction::None => -tax_ore,
+    }
+}
+
 /// The avgiftsposteringer a reverse-charge / import basis line must
 /// carry, so the hovedbok holds the tax the mva-melding reports
 /// (bokføringsforskriften §3-1 nr. 8; the melding XSD calls
@@ -520,5 +540,19 @@ mod tests {
         assert_eq!(PeriodScheme::parse("arlig"), Some(PeriodScheme::Yearly));
         assert_eq!(PeriodScheme::parse("kvartal"), None);
         assert_eq!(PeriodScheme::PrimaryIndustry.as_str(), "primaernaering");
+    }
+
+    #[test]
+    fn the_payable_effect_follows_the_return() {
+        // Output tax is a credit in the ledger: payable positive.
+        assert_eq!(payable_effect_ore("3", -2_500_00), 2_500_00);
+        // A deduction (debit) reduces what is payable.
+        assert_eq!(payable_effect_ore("1", 500_00), -500_00);
+        // Reverse charge without deduction right is owed in full; with it, nothing.
+        assert_eq!(payable_effect_ore("82", -250_00), 250_00);
+        assert_eq!(payable_effect_ore("81", -250_00), 0);
+        // Cost markers and code 0 are not reported at all.
+        assert_eq!(payable_effect_ore("21", -250_00), 0);
+        assert_eq!(payable_effect_ore("0", -1), 0);
     }
 }

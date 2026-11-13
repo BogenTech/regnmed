@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use regnmed_core::Ore;
 use regnmed_core::hash::{
@@ -222,6 +222,34 @@ pub async fn post_voucher_in(
     created_by: &str,
 ) -> Result<PostedVoucher> {
     draft.validate()?;
+
+    // VAT codes need a VAT registration on the voucher's date (mval.
+    // § 15-11: only a registered seller charges output VAT; § 8-1: only a
+    // registered buyer deducts input VAT). Checked HERE, in the one
+    // posting path, so the inbox, manual vouchers and the cash
+    // settlement cannot side-step it the way they did while only the
+    // invoice, quote and expense paths asked (#99). Two exceptions:
+    // imported history (IMP — its registration predates regnmed, and the
+    // source file is its evidence) and a reversal (it undoes a posting
+    // that was checked when it was made, possibly before deregistering).
+    if draft.journal_code != "IMP"
+        && draft.reverses.is_none()
+        && let Some(code) = draft
+            .entries
+            .iter()
+            .filter_map(|e| e.vat_code.as_deref())
+            .find(|c| crate::settings::requires_vat_registration(c))
+    {
+        let reg =
+            crate::settings::registrering_on(&mut **tx, company_id, draft.voucher_date).await?;
+        ensure!(
+            reg.vat_registered,
+            "selskapet var ikke mva-registrert {} og kan ikke bruke mva-kode {code} — \
+             fjern mva-koden, eller oppdater registreringsstatusen under \
+             firmaopplysninger hvis selskapet faktisk er registrert",
+            draft.voucher_date
+        );
+    }
 
     // Omvendt avgiftsplikt / innførsel: the buyer's own computed tax has
     // to reach the hovedbok (#82, bokføringsforskriften §3-1 nr. 8) —

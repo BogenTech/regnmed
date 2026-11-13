@@ -33,6 +33,22 @@ async fn seeded_company(pool: &PgPool) -> Uuid {
     let company = regnmed_db::create_company(pool, &unique_orgnumber(), "Testselskap AS")
         .await
         .unwrap();
+    // A VAT-registered seller: VAT codes need a registration on the
+    // voucher's date (post_voucher_in, docs/mva.md).
+    regnmed_db::record_registrering(
+        pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+        regnmed_db::Registrering {
+            vat_registered: true,
+            business_registered: true,
+        },
+        "manuell",
+        Some("testfixtur"),
+        "test",
+    )
+    .await
+    .unwrap();
     regnmed_db::ensure_journal(pool, company, "GL", "Hovedbok")
         .await
         .unwrap();

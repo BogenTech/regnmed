@@ -237,6 +237,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/reports/kundespesifikasjon` | GET |
 | `/companies/{company_id}/reports/leverandorspesifikasjon` | GET |
 | `/companies/{company_id}/reports/mva` | GET |
+| `/companies/{company_id}/reports/mva/postings` | GET |
 | `/companies/{company_id}/reports/mva-melding` | GET |
 | `/companies/{company_id}/reports/nokkeltall` | GET |
 | `/companies/{company_id}/reports/prosjekt` | GET |
