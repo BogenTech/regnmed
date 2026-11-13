@@ -1184,3 +1184,142 @@ async fn a_trip_route_is_found_from_two_addresses() {
     .await;
     assert_eq!(body["addresses"][0]["address"], "Storgata 1, 0155 OSLO");
 }
+
+/// The text-recognition sidecar and Enhetsregisteret, as stand-ins: the
+/// sidecar "reads" what regnmed-ocr returned for its own test receipt,
+/// and fails for a body that asks it to.
+async fn start_reader() -> String {
+    use axum::Json;
+    use axum::body::Bytes;
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    let app = axum::Router::new()
+        .route(
+            "/read",
+            post(|body: Bytes| async move {
+                if body.ends_with(b"fail") {
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+                Ok(Json(serde_json::json!({ "text": "REMA 1000 GRONLAND
+Rema Gr?nland AS
+Ora.nr: 915 933 149 MVA
+Kvittering 12.11.2026 14:32
+Kaffe filtermalt  89.90
+TOTALT  157,70
+Bankkort  157,70
+Sum MVA  19.49" })))
+            }),
+        )
+        .route(
+            "/enheter/915933149",
+            get(|| async {
+                Json(serde_json::json!({
+                    "organisasjonsnummer": "915933149", "navn": "REMA GRØNLAND AS",
+                }))
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+#[tokio::test]
+async fn a_receipt_photo_prefills_the_draft() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kvittering AS")
+        .await
+        .unwrap();
+    let mut tokens = Vec::new();
+    for name in ["Ansatt", "Kollega"] {
+        let sub = format!("test|{}", Uuid::new_v4());
+        let person = regnmed_db::ensure_person(&state.pool, &sub, Some(name), None)
+            .await
+            .unwrap();
+        regnmed_db::ensure_company_member(&state.pool, company, person, "ansatt")
+            .await
+            .unwrap();
+        tokens.push(idp.token(&sub, name));
+    }
+    let (me, colleague) = (&tokens[0], &tokens[1]);
+    let photo = |tail: &str| [&[0xFF, 0xD8, 0xFF, 0xE0][..], tail.as_bytes()].concat();
+    let (status, body) = upload(
+        &state,
+        &format!("/companies/{company}/expenses/receipts?filename=kvittering.jpg"),
+        "POST",
+        me,
+        &photo("rema"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let uri = format!(
+        "/companies/{company}/expenses/{}/suggestion",
+        body["expense_id"].as_str().unwrap()
+    );
+
+    // Process-wide env: nextest gives every test its own process.
+    unsafe {
+        std::env::remove_var("OCR_URL");
+    }
+    let (status, body) = request(&state, "GET", &uri, me, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["source"], "ingen", "no sidecar, no reading: {body}");
+    assert!(body["amount_ore"].is_null());
+
+    let reader = start_reader().await;
+    unsafe {
+        std::env::set_var("OCR_URL", &reader);
+        std::env::set_var("BRREG_API_URL", &reader);
+    }
+    let (status, body) = request(&state, "GET", &uri, me, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["source"], "ocr");
+    assert_eq!(body["date"], "2026-11-12");
+    assert_eq!(body["amount_ore"], 15770);
+    // The registry's spelling, not the OCR's ASCII top line.
+    assert_eq!(body["description"], "REMA GRØNLAND AS");
+    let why = |field: &str| {
+        body["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["field"] == field)
+            .map(|r| r["why"].as_str().unwrap().to_string())
+    };
+    assert_eq!(why("amount_ore").as_deref(), Some("etter «totalt»"));
+    assert!(why("description").unwrap().contains("Enhetsregisteret"));
+
+    // A draft is its claimant's: a colleague learns nothing, not even
+    // that it exists.
+    let (status, _) = request(&state, "GET", &uri, colleague, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A sidecar that fails is a warning, never a broken form.
+    let (_, made) = upload(
+        &state,
+        &format!("/companies/{company}/expenses/receipts?filename=b.jpg"),
+        "POST",
+        me,
+        &photo("fail"),
+    )
+    .await;
+    let (status, body) = request(
+        &state,
+        "GET",
+        &format!(
+            "/companies/{company}/expenses/{}/suggestion",
+            made["expense_id"].as_str().unwrap()
+        ),
+        me,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["warnings"].to_string().contains("tekstgjenkjenningen"),
+        "{body}"
+    );
+}

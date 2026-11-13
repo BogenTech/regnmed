@@ -1,0 +1,20 @@
+[package]
+name = "regnmed-ocr"
+description = "Optional text-recognition sidecar: receipt photo in, text rows out (docs/bilagstolkning.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Deliberately its own process: the models want ~250 MB while they work,
+# which neither the API's 64 MB nor the job worker's 256 MB can spare, and
+# a company that never photographs a receipt should not pay for them.
+# No database, no secrets -- bytes in, text out.
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+ocrs = "0.14"
+rten = { version = "0.28", features = ["onnx_format"] }
+serde_json.workspace = true
+tokio.workspace = true

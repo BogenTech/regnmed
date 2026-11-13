@@ -78,6 +78,31 @@ transaksjon:
 3. Den enveise statusovergangen, med mellomregningskontoen lagret så
    utbetalingen debiterer samme konto.
 
+### Kvitteringen leses
+
+Når et utkast har en kvittering, leser serveren den og fyller ut feltene
+som fortsatt er tomme: dato, beløp og hvem som ble betalt
+(`GET …/expenses/{eid}/suggestion`). En PDF leses fra tekstlaget, et
+foto av tekstleseren (docs/bilagstolkning.md). Hvem som ble betalt
+hentes i denne rekkefølgen: leverandøren med samme orgnr i reskontroen,
+navnet i Enhetsregisteret for orgnr, ellers kvitteringens øverste linje.
+
+Reglene:
+
+- **Et forslag er ikke et faktum.** Ingenting lagres før brukeren
+  lagrer utkastet; hvert utfylt felt sier hvorfor («Lest fra
+  kvitteringen: etter «totalt»»).
+- **Det brukeren skrev, overskrives aldri.** Et felt fylles bare når
+  det er tomt, eller fortsatt holder forrige forslag — så en ny lesing
+  etter rotering kan rette seg selv.
+- **Leses på nytt hver gang, lagres aldri.** En bedre leser forbedrer
+  også gamle utkast.
+- Samme tilgang som kvitteringen: et utkast er bare innsenderens og
+  den som registrerte det; for alle andre finnes det ikke (404).
+- Mva leses, men vises ikke for innsenderen: kravet bærer én mva-kode,
+  og den velges av den som godkjenner. Mva fordelt på flere satser per
+  kvittering er ennå ikke bygget.
+
 ## Kjøregodtgjørelse
 
 km × statens sats på **kjøredatoen**, fra satsregisteret
@@ -195,6 +220,7 @@ Utkast:
 - `GET  /companies/{id}/expenses/claimants` — hvem det kan registreres for
 - `GET  /companies/{id}/expenses?status=utkast` / `?trip={eid}` — egne utkast / kostnadene på en tur
 - `GET  /companies/{id}/expenses/kjoring?dato=&vehicle=` — satsene, også passasjertillegget
+- `GET  /companies/{id}/expenses/{eid}/suggestion` — det kvitteringen sier: dato, beløp, hvem, med begrunnelser
 
 Direkte innsending (som før, for integrasjoner):
 
@@ -235,7 +261,7 @@ eller avvisning går siden til neste krav som venter (ikke ens egne når
 attestering er på).
 
 Bevisst utenfor så langt: diett/per-diem-satser, reise som samling av
-krav, tolkning av kvitteringen (OCR/KI), mva fordelt på flere satser
+krav, KI-lesing av kvitteringen (agent-fasen), mva fordelt på flere satser
 per kvittering, a-melding for godtgjørelsene og betalingslisten.
 
 ## Where it is tested
@@ -257,6 +283,11 @@ per kvittering, a-melding for godtgjørelsene og betalingslisten.
   sett feile), [lon, lat] snus til [lat, lon], ukjent adresse navngis.
   Formen på et ekte OpenRouteService-svar er ennå ikke sjekket mot en
   levende nøkkel.
+- `crates/regnmed-api/tests/grupper/expenses.rs::a_receipt_photo_prefills_the_draft`
+  — uten tekstleser `source: "ingen"`; med en lokal stand-in for
+  tekstleseren og Enhetsregisteret: dato, beløp etter «totalt» og
+  registerets navn framfor OCR-ens; en kollega får 404; en tekstleser
+  som feiler gir en advarsel, ikke en feil.
 - `regnmed-core/src/expenses.rs` — passasjertillegg på begge sider,
   kjøretøy → satsdomener.
 

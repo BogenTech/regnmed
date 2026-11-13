@@ -35,6 +35,11 @@ CLI_BIN_BUDGET_MB=12
 # approaching the API's size, something has been pulled in that belongs
 # behind the API rather than beside it.
 AGENT_BIN_BUDGET_MB=8
+# The text-recognition sidecar (docs/bilagstolkning.md): the OCR engine
+# and an image decoder, no database. Measured 7,4 MB on 2026-11-13. Its
+# 12 MB of model weights are data loaded at start, not linked in -- a
+# binary near this budget has started embedding them.
+OCR_BIN_BUDGET_MB=10
 API_RSS_BUDGET_MB=64 # keep equal to the container limit in deploy/local/regnmed-api.yaml
 # The compiled Svelte portal (#76): what a browser must download, gzipped,
 # before the first page can draw -- every /assets/ file index.html names
@@ -58,7 +63,7 @@ PORTAL_CSS_BUDGET_KB=32
 : "${DATABASE_URL:?DATABASE_URL must point at a Postgres (scripts/dev-db.sh)}"
 
 echo "==> building release binaries"
-cargo build --release -p regnmed-api -p regnmed-cli -p regnmed-agent
+cargo build --release -p regnmed-api -p regnmed-cli -p regnmed-agent -p regnmed-ocr
 
 fail=0
 report() { # name value budget unit
@@ -79,6 +84,7 @@ size_mb() { # path -> MB rounded up
 report "regnmed-api binary" "$(size_mb target/release/regnmed-api)" "$API_BIN_BUDGET_MB" MB
 report "regnmed cli binary" "$(size_mb target/release/regnmed)" "$CLI_BIN_BUDGET_MB" MB
 report "regnmed-agent binary" "$(size_mb target/release/regnmed-agent)" "$AGENT_BIN_BUDGET_MB" MB
+report "regnmed-ocr binary" "$(size_mb target/release/regnmed-ocr)" "$OCR_BIN_BUDGET_MB" MB
 
 DIST=ui/portal/dist
 first_load=$(grep -oE '(src|href)="/assets/[^"]+"' "$DIST/index.html" | sed -E 's|.*"/||; s|"$||' || true)

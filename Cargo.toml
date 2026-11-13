@@ -9,6 +9,7 @@ members = [
     "crates/regnmed-gov",
     "crates/regnmed-mcp",
     "crates/regnmed-agent",
+    "crates/regnmed-ocr",
 ]
 
 [workspace.package]

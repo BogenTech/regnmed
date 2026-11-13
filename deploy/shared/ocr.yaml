@@ -1,0 +1,70 @@
+# The text-recognition sidecar (docs/bilagstolkning.md): receipt photo in,
+# text out. Cluster-internal only -- no ingress, no database, no secrets.
+# The API reaches it through OCR_URL (the test/prod regnmed-api patches);
+# when it is down, a photo just gets no suggestions.
+#
+# Its own Deployment because of memory: the models want ~250-310 MB while
+# they read (measured on macOS 2026-11-13, 800-2400 px photos), which
+# neither the API's 64 Mi nor the job worker's 256 Mi has. The server
+# reads ONE picture at a time and RTEN_NUM_THREADS caps the CPU it takes
+# from the node; a second request waits.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-ocr
+  namespace: regnmed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regnmed-ocr
+  template:
+    metadata:
+      labels:
+        app: regnmed-ocr
+    spec:
+      containers:
+        - name: ocr
+          image: regnmed:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/app/regnmed-ocr"]
+          env:
+            - name: OCR_MODELS_DIR
+              value: /app/ocr-models
+            - name: BIND_ADDR
+              value: 0.0.0.0:8080
+            - name: RTEN_NUM_THREADS
+              value: "2"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: regnmed-ocr
+  namespace: regnmed
+spec:
+  selector:
+    app: regnmed-ocr
+  ports:
+    - port: 8080
+      targetPort: 8080
