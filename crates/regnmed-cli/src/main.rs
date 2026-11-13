@@ -567,13 +567,23 @@ async fn main() -> Result<()> {
             }
 
             // 2) Mail: first the invoices that never went out (a fresh
-            // månedskjøring, or an earlier failed send), then reminders
-            // without an utsendelse row. The utsendelse id doubles as
-            // Nats-Msg-Id, so a retried send cannot double-deliver.
+            // månedskjøring, an earlier failed send, or one a card paid at
+            // issue -- a paid invoice must reach the buyer too, #223), then
+            // reminders without an utsendelse row. The utsendelse id
+            // doubles as Nats-Msg-Id, so a retried send cannot
+            // double-deliver.
+            let unsent = opf::unsent_invoices(&pool, drift).await?;
             if let Some(js) = &mailq {
-                for f in open.iter().filter(|f| !f.sent) {
+                for f in &unsent {
                     let Some(email) = &f.email else {
-                        // Already counted above.
+                        // An open one was already counted above.
+                        if f.remaining_ore <= 0 {
+                            println!(
+                                "{}: faktura {} (betalt) — selskapet mangler e-postadresse, sendes ikke",
+                                f.company_name, f.invoice_no
+                            );
+                            error += 1;
+                        }
                         continue;
                     };
                     let sent = async {
@@ -631,7 +641,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-            } else if open.iter().any(|f| !f.sent) {
+            } else if !unsent.is_empty() {
                 println!("usendte fakturaer venter på NATS_URL");
                 error += 1;
             }

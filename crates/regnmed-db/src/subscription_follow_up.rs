@@ -45,6 +45,22 @@ pub struct SubscriptionInvoice {
 /// Open (unpaid) abonnement invoices, newest reminder step included.
 /// Kreditnotaer and paid invoices are not follow-up material.
 pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<SubscriptionInvoice>> {
+    let mut all = subscription_invoices(pool, drift).await?;
+    all.retain(|f| f.remaining_ore > 0);
+    Ok(all)
+}
+
+/// Abonnement invoices that never went out, PAID ONES INCLUDED (#223).
+/// A sales document must reach a bokføringspliktig buyer whether or not
+/// anything is owed (bokføringsforskriften § 5-2-1 fourth paragraph,
+/// from 1.1.2028), so a card that paid at issue does not excuse the send.
+pub async fn unsent_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<SubscriptionInvoice>> {
+    let mut all = subscription_invoices(pool, drift).await?;
+    all.retain(|f| !f.sent);
+    Ok(all)
+}
+
+async fn subscription_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<SubscriptionInvoice>> {
     let rows = sqlx::query(
         "select r.company_id, c.name as company_navn, c.email as epost,
                 i.id as invoice_id, i.invoice_no, i.due_date,
@@ -72,7 +88,6 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
     .await?;
     Ok(rows
         .iter()
-        .filter(|r| r.get::<i64, _>("remaining_ore") > 0)
         .map(|r| SubscriptionInvoice {
             company_id: r.get("company_id"),
             company_name: r.get("company_navn"),

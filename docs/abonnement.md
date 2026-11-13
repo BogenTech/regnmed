@@ -237,8 +237,17 @@ CronJobben `regnmed abonnement-oppfolging` lukker livssyklusen:
 1. **Send**: abonnementsfakturaer uten utsendelsesrad e-postes til
    kundeselskapets egen adresse (Firmaopplysninger) med PDF-en vedlagt.
    Utsendelses-id-en er Nats-Msg-Id, så en omsending kan aldri
-   dobbeltlevere — og en faktura kortet betalte ved utstedelse har
-   ingenting utestående og sendes ikke som krav.
+   dobbeltlevere. **Også en betalt faktura sendes** (#223): kjøperen er
+   bokføringspliktig, og fra 1.1.2028 skal salgsdokumentet alltid sendes
+   til en bokføringspliktig kjøper (bokføringsforskriften § 5-2-1 fjerde
+   ledd) — en faktura kortet betalte ved utstedelse er intet unntak.
+   E-posten sier da «Fakturaen er betalt» i stedet for forfall og KID
+   (det gjelder alle fakturaer som sendes ferdig betalt, også fra
+   portalen); purretrappen gjelder fortsatt bare åpne fakturaer. Første
+   kjøring etter endringen sender alle betalte abonnementsfakturaer som
+   aldri gikk ut, én gang hver — bevisst: de er salgsdokumenter kunden
+   skal ha, og et for sent sendt dokument er bedre enn et som aldri
+   kommer. Et selskap uten e-postadresse rapporteres som før.
 2. **Purr**: kadensen er en REN REGEL (`regnmed-core::purring::
    neste_skritt`): gratis påminnelse 3 dager etter forfall, purring med
    gebyr (standardkompensasjon — kundene er næringsdrivende) 14 dager

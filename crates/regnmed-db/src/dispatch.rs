@@ -42,6 +42,7 @@ struct MailFacts {
     due_date: NaiveDate,
     kid: String,
     gross_ore: i64,
+    remaining_ore: i64,
     is_credit_note: bool,
 }
 
@@ -50,11 +51,12 @@ async fn mail_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result
         "select c.name as company_name, c.email as company_email,
                 p.email as party_email, i.invoice_no, i.due_date, i.kid,
                 (i.credits_invoice_id is not null) as is_credit_note,
-                e.amount_ore as gross_ore
+                e.amount_ore as gross_ore, o.remaining_ore::bigint as remaining_ore
          from invoice i
          join company c on c.id = i.company_id
          join party p on p.id = i.party_id
          join entry e on e.id = i.receivable_entry_id
+         join subledger_entry_open o on o.entry_id = e.id
          where i.id = $1 and i.company_id = $2",
     )
     .bind(invoice_id)
@@ -70,6 +72,7 @@ async fn mail_facts(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result
         due_date: row.get("due_date"),
         kid: row.get("kid"),
         gross_ore: row.get("gross_ore"),
+        remaining_ore: row.get("remaining_ore"),
         is_credit_note: row.get("is_credit_note"),
     })
 }
@@ -120,10 +123,16 @@ pub async fn invoice_email_payload(
         Ore(facts.gross_ore)
     );
     if !facts.is_credit_note {
-        text.push_str(&format!(
-            "Forfall: {}\nKID:     {}\n",
-            facts.due_date, facts.kid
-        ));
+        if facts.remaining_ore <= 0 {
+            // A paid invoice still goes out (#223); asking for payment
+            // would be a false instruction.
+            text.push_str("\nFakturaen er betalt. Du trenger ikke å gjøre noe.\n");
+        } else {
+            text.push_str(&format!(
+                "Forfall: {}\nKID:     {}\n",
+                facts.due_date, facts.kid
+            ));
+        }
     }
     text.push_str(&format!("\nMed vennlig hilsen\n{}\n", facts.company_name));
 
