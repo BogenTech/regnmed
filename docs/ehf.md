@@ -38,9 +38,20 @@ EHF-en («to sannheter») holdt bare så lenge EHF-en aldri ble sendt
 
 - **Uten kjøperens orgnr lagres ingen EHF** — i Peppol er orgnr
   adressen, og endepunktet sier fra som før.
-- **En kontantfaktura** (betalt ved utstedelse, også Stripe-betalte
-  abonnementsfakturaer) får ingen `cac:PaymentMeans`: KID og kontonummer
-  for penger som alt er mottatt er en feil instruks.
+- **En kontantfaktura** utstedt etter #222 (betalt ved utstedelse, også
+  Stripe-betalte abonnementsfakturaer) får ingen `cac:PaymentMeans`: KID
+  og kontonummer for penger som alt er mottatt er en feil instruks. En
+  kontantfaktura fra før #222 rendres ved oppslag, og ingenting lagret sier
+  at den var kontant — dens EHF bærer fortsatt betalingsinformasjon.
+- **Bare dokumentet utstedelsen selv skrev, er fakturaens EHF.** Oppslaget
+  krever at vedlegget har samme tidsstempel som fakturaen (begge settes av
+  utstedelsestransaksjonen), så en XML en bruker senere legger ved samme
+  bilag aldri kan stå i fakturaens sted. Det samme gjelder PDF-en.
+- PDF og EHF skrives til objektlagringen **samtidig**, mens
+  utstedelsestransaksjonen (og fakturanummertelleren) holdes — én
+  rundtur, ikke to. Renderingen inne i transaksjonen gjør ingen nye
+  oppslag: mva-satsene per linje og registreringsstatusen er de
+  utstedelsen alt har slått opp.
 - **Fakturaer utstedt før #222** har ingen lagret EHF og rendres fortsatt
   fra radene ved oppslag. De får ingen etterlagret EHF: et dokument
   rendret i dag av dagens stamdata ville vært nettopp feilen over.
@@ -137,6 +148,8 @@ bokføringsskjemaet.
 - `regnmed-api/tests/grupper/ehf.rs` (ekte Postgres, også CI): faktura fra
   databasen rendret og **XSD-validert**, adressen delt riktig, KID med,
   EHF-en lagret ved utstedelse og **uendret etter at kunden flytter**
-  (#222), kreditnota som peker tilbake; mottatt EHF i innboksen gir forslag med
+  (#222), kreditnotaens EHF lagret, ingen EHF og ingen feil ved
+  utstedelse til kjøper uten orgnr, en bruker-XML på bilaget som **ikke**
+  serveres som EHF, kreditnota som peker tilbake; mottatt EHF i innboksen gir forslag med
   leverandøren matchet på orgnr, originalen står urørt, og et dokument
   som ikke er EHF sier fra.

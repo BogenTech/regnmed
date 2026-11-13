@@ -51,35 +51,40 @@ pub(crate) fn split_address(
 /// (hash-checked on read), or -- for invoices issued before #222 -- one
 /// rendered now from the invoice's rows.
 pub async fn invoice_ehf(pool: &PgPool, company_id: Uuid, invoice_id: Uuid) -> Result<String> {
-    let stored: Option<Uuid> = sqlx::query_scalar(
-        "select a.id from attachment a
-         join invoice i on i.voucher_id = a.voucher_id
-         where i.id = $1 and i.company_id = $2 and a.content_type = 'application/xml'
-         order by a.created_at limit 1",
-    )
-    .bind(invoice_id)
-    .bind(company_id)
-    .fetch_optional(pool)
-    .await?;
+    let stored =
+        crate::settings::issued_attachment_id(pool, company_id, invoice_id, "application/xml")
+            .await?;
     if let Some(attachment_id) = stored {
         let (_, xml) = crate::get_attachment(pool, company_id, attachment_id).await?;
         return String::from_utf8(xml).context("stored EHF is not UTF-8");
     }
     let mut conn = pool.acquire().await?;
-    render_invoice_ehf(pool, &mut conn, company_id, invoice_id, false).await
+    render_invoice_ehf(pool, &mut conn, company_id, invoice_id, None).await
+}
+
+/// What the issuing transaction already knows, so rendering inside it
+/// needs no second connection and repeats no lookup.
+pub(crate) struct IssueFacts {
+    pub registrering: crate::settings::Registrering,
+    /// Per line, in line order: the rate on the invoice date (None = no
+    /// vat code), exactly as the posting resolved it.
+    pub line_rates_bp: Vec<Option<i64>>,
+    /// A kontantfaktura: the payment means are left out, since a KID for
+    /// money already received is a false instruction.
+    pub paid_at_issue: bool,
 }
 
 /// Renders the EHF from the invoice's rows, read on `conn` so the issuing
-/// transaction can render the invoice it has not committed yet. Reference
-/// data (vat rates, registration status) comes from `pool`.
-/// `paid_at_issue` (a kontantfaktura) leaves out the payment means: a KID
-/// for money already received is a false instruction.
+/// transaction can render the invoice it has not committed yet. With
+/// `issue` (at issue time) nothing else is read; without it (an invoice
+/// issued before #222, rendered on request) the rates and registration
+/// status are looked up on `pool`, and nothing marks a cash invoice.
 pub(crate) async fn render_invoice_ehf(
     pool: &PgPool,
     conn: &mut PgConnection,
     company_id: Uuid,
     invoice_id: Uuid,
-    paid_at_issue: bool,
+    issue: Option<IssueFacts>,
 ) -> Result<String> {
     let head = sqlx::query(
         "select i.invoice_no, i.invoice_date, i.due_date, i.kid, i.valuta,
@@ -113,12 +118,19 @@ pub(crate) async fn render_invoice_ehf(
     // The rate that applied on the invoice date — the same dated lookup
     // the posting used, so the document cannot drift from the ledger.
     let invoice_date: chrono::NaiveDate = head.get("invoice_date");
-    let rates = crate::vat::load_vat_rates(pool).await?;
+    let rates = match &issue {
+        Some(_) => Vec::new(),
+        None => crate::vat::load_vat_rates(pool).await?,
+    };
     let mut linjer = Vec::with_capacity(lines.len());
-    for line in &lines {
+    for (i, line) in lines.iter().enumerate() {
         let vat_code: Option<String> = line.get("vat_code");
-        let vat_rate_bp = match &vat_code {
-            Some(code) => {
+        let vat_rate_bp = match (&issue, &vat_code) {
+            (Some(issue), _) => *issue
+                .line_rates_bp
+                .get(i)
+                .context("line count differs from the issued lines")?,
+            (None, Some(code)) => {
                 let rate_class: Option<String> =
                     sqlx::query_scalar("select rate_class from vat_code where code = $1")
                         .bind(code)
@@ -127,7 +139,7 @@ pub(crate) async fn render_invoice_ehf(
                 rate_class
                     .and_then(|class| regnmed_core::vat::rate_on(&rates, &class, invoice_date))
             }
-            None => None,
+            (None, None) => None,
         };
         linjer.push(EhfLinje {
             description: line.get("description"),
@@ -147,7 +159,11 @@ pub(crate) async fn render_invoice_ehf(
     let (buyer_street, buyer_postal_code, buyer_postal_city) =
         split_address(head.get("kjoper_adresse"));
     let credits_number: Option<i64> = head.get("krediterer_nr");
-    let reg = crate::settings::registrering_on(pool, company_id, invoice_date).await?;
+    let reg = match &issue {
+        Some(issue) => issue.registrering,
+        None => crate::settings::registrering_on(pool, company_id, invoice_date).await?,
+    };
+    let paid_at_issue = issue.as_ref().is_some_and(|i| i.paid_at_issue);
 
     let doc = EhfDocument {
         document_type: if head.get::<Option<Uuid>, _>("credits_invoice_id").is_some() {

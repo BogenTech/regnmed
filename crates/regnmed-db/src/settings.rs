@@ -304,14 +304,29 @@ pub async fn invoice_pdf_attachment_id(
     company_id: Uuid,
     invoice_id: Uuid,
 ) -> Result<Option<Uuid>> {
+    issued_attachment_id(pool, company_id, invoice_id, "application/pdf").await
+}
+
+/// A document of `content_type` written by the issuing transaction itself.
+/// `created_at` is the transaction's timestamp on both rows, so a file a
+/// user later attaches to the same voucher can never stand in for the
+/// invoice's own PDF or EHF.
+pub async fn issued_attachment_id(
+    pool: &PgPool,
+    company_id: Uuid,
+    invoice_id: Uuid,
+    content_type: &str,
+) -> Result<Option<Uuid>> {
     Ok(sqlx::query_scalar(
         "select a.id from attachment a
          join invoice i on i.voucher_id = a.voucher_id
-         where i.id = $1 and i.company_id = $2 and a.content_type = 'application/pdf'
+         where i.id = $1 and i.company_id = $2 and a.content_type = $3
+           and a.created_at = i.created_at
          order by a.created_at limit 1",
     )
     .bind(invoice_id)
     .bind(company_id)
+    .bind(content_type)
     .fetch_optional(pool)
     .await?)
 }

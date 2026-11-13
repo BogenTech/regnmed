@@ -312,6 +312,112 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         credit_xml.contains("<cbc:ActualDeliveryDate>2026-06-27</cbc:ActualDeliveryDate>"),
         "kreditnotaen skal peke på den opprinnelige leveringen: {credit_xml}"
     );
+    let stored_xml = |invoice_id: Uuid| {
+        let pool = state.pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "select count(*) from attachment a join invoice i on i.voucher_id = a.voucher_id
+                 where i.id = $1 and a.content_type = 'application/xml'",
+            )
+            .bind(invoice_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(
+        stored_xml(credit.invoice_id).await,
+        1,
+        "kreditnotaens EHF lagres også"
+    );
+
+    // A buyer without an orgnr has no Peppol address: the invoice still
+    // issues, no EHF is stored, and the endpoint says why.
+    let (plain_id, plain_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Uten Orgnr", None, None)
+            .await
+            .unwrap();
+    give_parties_address(&state.pool, company).await;
+    let plain = regnmed_db::create_invoice(
+        &state.pool,
+        company,
+        &regnmed_db::InvoiceDraft {
+            cash_payment_method: None,
+            party_no: plain_no,
+            invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 2).unwrap(),
+            due_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 16).unwrap(),
+            delivery_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 2).unwrap(),
+            delivery_place: None,
+            journal_code: "GL".into(),
+            receivable_account: "1500".into(),
+            vat_account: "2700".into(),
+            currency: None,
+            exchange_rate_micro: None,
+            lines: vec![regnmed_db::InvoiceLineDraft {
+                description: "Rådgivning".into(),
+                account_number: "3000".into(),
+                quantity_milli: 1_000,
+                unit_price_ore: 100_00,
+                vat_code: Some("3".into()),
+                department: None,
+                project: None,
+                product_id: None,
+            }],
+        },
+        "Eva EHF",
+        None,
+    )
+    .await
+    .expect("uten orgnr utstedes fakturaen likevel");
+    assert_eq!(
+        stored_xml(plain.invoice_id).await,
+        0,
+        "ingen EHF uten orgnr"
+    );
+    let (status, _) = get_text(
+        &state,
+        &format!("{base}/invoices/{}/ehf", plain.invoice_id),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Review finding on #222: an XML a user attaches to the voucher is
+    // not the invoice's EHF. With no EHF stored at issue (as for invoices
+    // from before #222), the endpoint renders -- it never serves the
+    // user's file.
+    sqlx::query("update party set orgnr = '974760673' where id = $1")
+        .bind(plain_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let voucher_id: Uuid = sqlx::query_scalar("select voucher_id from invoice where id = $1")
+        .bind(plain.invoice_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    regnmed_db::add_attachment(
+        &state.pool,
+        company,
+        voucher_id,
+        "bestilling.xml",
+        "application/xml",
+        b"<Order>not an invoice</Order>",
+        "Eva EHF",
+    )
+    .await
+    .unwrap();
+    let (status, rendered) = get_text(
+        &state,
+        &format!("{base}/invoices/{}/ehf", plain.invoice_id),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rendered}");
+    assert!(
+        rendered.contains("<cbc:EndpointID schemeID=\"0192\">974760673</cbc:EndpointID>"),
+        "rendret fra fakturaen, ikke brukerens vedlegg: {rendered}"
+    );
 
     // ---- Inn: en mottatt EHF i innboksen ----
     let (_, supplier_no) = regnmed_db::create_party(
