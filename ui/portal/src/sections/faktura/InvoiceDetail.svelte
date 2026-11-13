@@ -3,7 +3,8 @@
   // neste steget som primærknapp (send, purre). Alle handlinger på en
   // faktura bor her i stedet for som fem knapper per rad i listen.
   import { api, post } from "../../lib/api.js";
-  import { kr, today, formatDate, antallStr } from "../../lib/format.js";
+  import { kr, parseKr, today, formatDate, antallStr } from "../../lib/format.js";
+  import { harRett } from "../../lib/me.svelte.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
@@ -38,6 +39,15 @@
     load();
   });
 
+  // Recording a payment posts a voucher, so it needs both rights; a
+  // currency invoice is settled from Bank, where the agio is booked.
+  let canRecordPayment = $derived(
+    harRett(companyId, "FAKTURA_SKRIV") && harRett(companyId, "BILAG_BOKFOR"),
+  );
+  let payable = $derived(
+    !!inv && !inv.is_credit_note && !inv.valuta && inv.remaining_ore > 0 && canRecordPayment,
+  );
+
   let title = $derived(inv ? (inv.is_credit_note ? "Kreditnota " : "Faktura ") + inv.invoice_no : "");
   let neverSent = $derived(sends !== null && sends.length === 0);
 
@@ -53,11 +63,67 @@
     if (inv.status === "open" && neverSent)
       return { text: "Fakturaen er ikke sendt ennå. Send den til kunden.", action: "send" };
     if (inv.status === "open")
-      return { text: "Venter på betaling, forfall " + formatDate(inv.due_date) + ".", action: null };
+      return {
+        text:
+          "Venter på betaling, forfall " + formatDate(inv.due_date) + "." +
+          (payable ? " Kom pengene inn utenom bankavstemmingen (kontant, Vipps), registrer dem her." : ""),
+        action: payable ? "payment" : null,
+      };
     if (inv.status === "paid") return { text: "Fakturaen er betalt.", action: null };
     if (inv.status === "credited") return { text: "Fakturaen er kreditert.", action: null };
     return { text: "Kreditnotaen er ført mot fakturaen den krediterer.", action: null };
   });
+
+  async function recordPayment() {
+    const accounts = await api("/companies/" + companyId + "/accounts")
+      .then((a) => (a.kontoer || []).filter((k) => k.active && /^19\d\d$/.test(k.number)))
+      .catch(() => []);
+    const choices = accounts.length
+      ? accounts.map((k) => [k.number, k.number + " " + k.name])
+      : [["1920", "1920 Bankinnskudd"]];
+    const answer = await skjema(
+      "Registrer innbetaling på faktura " + inv.invoice_no,
+      [
+        { navn: "dato", etikett: "Betalt dato", type: "date", standard: today() },
+        {
+          navn: "belop",
+          etikett: "Beløp (kr)",
+          standard: kr(inv.remaining_ore),
+          hjelp: "Utestående er " + kr(inv.remaining_ore) + " kr. Et mindre beløp er en delbetaling.",
+        },
+        {
+          navn: "konto",
+          etikett: "Pengene kom inn på",
+          type: "select",
+          standard: choices.some(([n]) => n === "1920") ? "1920" : choices[0][0],
+          valg: choices,
+        },
+      ],
+      {
+        ok: "Registrer innbetaling",
+        melding: "Innbetalingen bokføres og avstemmes mot fakturaen. Den kan ikke slettes, bare tilbakeføres i Hovedbok.",
+      },
+    );
+    if (!answer) return;
+    let amount;
+    try {
+      amount = parseKr(answer.belop);
+    } catch {
+      toast("Skriv beløpet i kroner, f.eks. 1250 eller 99,50", false);
+      return;
+    }
+    try {
+      const posted = await post(base + "/payments", {
+        dato: answer.dato,
+        belop_ore: amount,
+        konto: answer.konto,
+      });
+      toast("Innbetalingen er registrert (bilag " + posted.voucher + ")", true);
+      load();
+    } catch (e) {
+      toast(e.message, false);
+    }
+  }
 
   async function send() {
     if (await sendDocument(base + "/send")) load();
@@ -143,6 +209,11 @@
           <button class="btn btn-primary" onclick={() => (showReminder = !showReminder)} aria-expanded={showReminder}>
             Purring
           </button>
+        {:else if next.action === "payment"}
+          <button class="btn btn-primary" onclick={recordPayment}>Registrer innbetaling</button>
+        {/if}
+        {#if payable && next.action !== "payment"}
+          <button class="btn" onclick={recordPayment}>Registrer innbetaling</button>
         {/if}
         <button class="btn" onclick={pdf}>Last ned PDF</button>
         {#if next.action !== "send"}
@@ -242,6 +313,10 @@
           <dt class="opacity-70">Levert</dt>
           <dd>{formatDate(inv.delivery_date)}{inv.delivery_place ? ", " + inv.delivery_place : ""}</dd>
         {/if}
+        <dt class="opacity-70">Bokført</dt>
+        <dd>
+          <a class="link" href={"#/c/" + companyId + "/hovedbok/" + inv.voucher_id}>Bilag {inv.voucher}</a>
+        </dd>
         <dt class="opacity-70">KID</dt>
         <dd class="font-mono">{inv.kid}</dd>
         <dt class="opacity-70">Utestående</dt>
@@ -279,4 +354,32 @@
       </dl>
     </Card>
   </div>
+
+  {#if inv.settlements.length}
+    <Card title={inv.is_credit_note ? "Ført mot" : "Innbetalinger og kreditering"}>
+      <table class="table">
+        <caption class="sr-only">Det som har gjort opp fakturaen, med bilaget hver post er bokført på.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Dato</th>
+            <th scope="col">Bilag</th>
+            <th scope="col" class="hidden sm:table-cell">Tekst</th>
+            <th scope="col" class="text-right">Beløp</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each inv.settlements as m, i (i)}
+            <tr>
+              <td class="whitespace-nowrap">{formatDate(m.date)}</td>
+              <td class="whitespace-nowrap">
+                <a class="link" href={"#/c/" + companyId + "/hovedbok/" + m.voucher_id}>{m.voucher}</a>
+              </td>
+              <td class="hidden sm:table-cell">{m.description}</td>
+              <td class="text-right tabular-nums whitespace-nowrap">{kr(m.amount_ore)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </Card>
+  {/if}
 {/if}

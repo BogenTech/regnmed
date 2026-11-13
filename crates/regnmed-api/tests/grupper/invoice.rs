@@ -451,6 +451,166 @@ async fn invoice_to_payment_to_credit_note_loop() {
     assert_eq!(report.vouchers_checked, 2);
 }
 
+/// A payment recorded by hand on the invoice page: posted and matched in
+/// one transaction, part payments allowed, never more than is open — and
+/// two people recording the same payment at once settle it only once.
+#[tokio::test]
+async fn a_payment_recorded_by_hand_settles_the_invoice() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Bokfører"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Innbetaling AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("1900", "Kontanter"),
+        ("1920", "Bankinnskudd"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let (_, party_no) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunde & Co AS", None, None)
+            .await
+            .unwrap();
+    give_parties_address(&state.pool, company).await;
+    let token = idp.token(&sub, "Kari Bokfører");
+
+    let (status, issued) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/invoices"),
+        &token,
+        Some(
+            serde_json::json!({
+                "party_no": party_no,
+                "invoice_date": "2026-02-01",
+                "due_date": "2026-02-15",
+                "lines": [{
+                    "description": "Konsulentbistand",
+                    "quantity_milli": 1000,
+                    "unit_price_ore": 10_000_00,
+                    "vat_code": "3",
+                }],
+            })
+            .to_string(),
+        ),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{issued}");
+    let invoice_id = issued["invoice_id"].as_str().unwrap().to_string();
+    let pay = {
+        let (state, token) = (state.clone(), token.clone());
+        let uri = format!("/companies/{company}/invoices/{invoice_id}/payments");
+        move |body: serde_json::Value| {
+            let (state, token, uri) = (state.clone(), token.clone(), uri.clone());
+            async move { request(&state, "POST", &uri, &token, Some(body.to_string()), true).await }
+        }
+    };
+
+    // A part payment in cash.
+    let (status, paid) = pay(serde_json::json!({
+        "dato": "2026-03-01", "belop_ore": 5_000_00, "konto": "1900"
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{paid}");
+    let (_, detail) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{invoice_id}"),
+        &token,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(detail["remaining_ore"], 7_500_00);
+    assert_eq!(detail["status"], "overdue");
+    assert!(detail["voucher_id"].is_string());
+    let settlements = detail["settlements"].as_array().unwrap();
+    assert_eq!(settlements.len(), 1);
+    assert_eq!(settlements[0]["amount_ore"], 5_000_00);
+    assert_eq!(settlements[0]["voucher_id"], paid["voucher_id"]);
+    assert_eq!(settlements[0]["date"], "2026-03-01");
+
+    // Refusals, each with a message the user can act on.
+    for (body, needle) in [
+        (
+            serde_json::json!({"dato": "2026-03-02", "belop_ore": 10_000_00}),
+            "7500,00",
+        ),
+        (
+            serde_json::json!({"dato": "2026-03-02", "belop_ore": 100, "konto": "3000"}),
+            "19xx",
+        ),
+        (
+            serde_json::json!({"dato": "2999-01-01", "belop_ore": 100}),
+            "fram i tid",
+        ),
+        (
+            serde_json::json!({"dato": "2026-03-02", "belop_ore": 0}),
+            "større enn null",
+        ),
+    ] {
+        let (status, error) = pay(body.clone()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(error.to_string().contains(needle), "{body}: {error}");
+    }
+
+    // Several people record the rest at once: exactly one wins, the
+    // others are told nothing is open. (The guarantee is the party lock
+    // in register_invoice_payment; this harness does not reliably make
+    // the attempts overlap, so the test pins the outcome, not the race.)
+    let rest = serde_json::json!({"dato": "2026-03-05", "belop_ore": 7_500_00});
+    let attempts = futures_util::future::join_all((0..6).map(|_| {
+        let pay = pay.clone();
+        let rest = rest.clone();
+        tokio::spawn(async move { pay(rest).await.0 })
+    }))
+    .await;
+    let ok = attempts
+        .iter()
+        .filter(|s| *s.as_ref().unwrap() == StatusCode::OK)
+        .count();
+    assert_eq!(ok, 1, "{attempts:?}");
+    let (_, detail) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/invoices/{invoice_id}"),
+        &token,
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(detail["status"], "paid");
+    assert_eq!(detail["remaining_ore"], 0);
+    assert_eq!(detail["settlements"].as_array().unwrap().len(), 2);
+
+    let report = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(report.vouchers_checked, 3);
+}
+
 fn rand_7() -> u32 {
     u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap()) % 10_000_000
 }

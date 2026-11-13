@@ -378,6 +378,63 @@ async fn load_lines(pool: &PgPool, document_id: Uuid) -> Result<Vec<SalesLineDra
         .collect())
 }
 
+/// One line of a tilbud or ordre as the editor needs it back: the product
+/// by its NUMBER (what the portal and the request speak), not its id.
+#[derive(Debug)]
+pub struct DocumentLine {
+    pub product: Option<String>,
+    pub description: String,
+    pub account_number: String,
+    pub quantity_milli: i64,
+    pub unit_price_ore: i64,
+    pub vat_code: Option<String>,
+    pub department: Option<String>,
+    pub project: Option<String>,
+}
+
+/// The lines of a company's tilbud or ordre, in order. None when the
+/// document is not this company's.
+pub async fn document_lines(
+    pool: &PgPool,
+    company_id: Uuid,
+    document_id: Uuid,
+) -> Result<Option<Vec<DocumentLine>>> {
+    let exists: bool = sqlx::query_scalar(
+        "select exists (select 1 from salgsdokument where id = $1 and company_id = $2)",
+    )
+    .bind(document_id)
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?;
+    if !exists {
+        return Ok(None);
+    }
+    let rows = sqlx::query(
+        "select p.nummer, l.description, l.account_number, l.quantity_milli, l.unit_price_ore,
+                l.vat_code, l.avdeling, l.prosjekt
+         from salgsdokument_line l
+         left join product p on p.id = l.product_id
+         where l.dokument_id = $1 order by l.line_no",
+    )
+    .bind(document_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(Some(
+        rows.iter()
+            .map(|r| DocumentLine {
+                product: r.get("nummer"),
+                description: r.get("description"),
+                account_number: r.get("account_number"),
+                quantity_milli: r.get("quantity_milli"),
+                unit_price_ore: r.get("unit_price_ore"),
+                vat_code: r.get("vat_code"),
+                department: r.get("avdeling"),
+                project: r.get("prosjekt"),
+            })
+            .collect(),
+    ))
+}
+
 #[derive(Debug)]
 pub struct SalesDocumentRow {
     pub id: Uuid,

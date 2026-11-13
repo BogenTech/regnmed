@@ -19,6 +19,7 @@
     ["repeterende", "Repeterende"],
     ["timer", "Timer"],
   ];
+  const HEADINGS = { tilbud: "Tilbud og ordre", repeterende: "Repeterende fakturaer", timer: "Ufakturerte timer" };
   const isInvoiceId = (s) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(s || "");
 
   let tab = $derived(TABS.some(([k]) => k === (extra || "")) ? extra || "" : null);
@@ -90,6 +91,10 @@
     {/each}
   </nav>
 
+  {#if tab}
+    <h1 class="text-2xl font-bold mb-4">{HEADINGS[tab]}</h1>
+  {/if}
+
   {#if tab === ""}
     <!-- A link to another filter (Oversikt's "forfalte fakturaer") arrives
          as a new query while the list may already be open. -->
@@ -97,9 +102,12 @@
       <InvoiceList {companyId} {query} />
     {/key}
   {:else if !data}
-    <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
+    <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg" role="status" aria-label="Henter"></span></div>
   {:else if data.error}
-    <div class="alert alert-warning" role="alert"><span>{data.error}</span></div>
+    <div class="alert alert-error" role="alert">
+      <span>{data.error}</span>
+      <button class="btn btn-sm" onclick={reload}>Prøv igjen</button>
+    </div>
   {:else if tab === "tilbud"}
     <Salgsdok {companyId} {...data} onDone={reload} />
   {:else if tab === "repeterende"}

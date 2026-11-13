@@ -3,6 +3,7 @@
 //! - POST /companies/{id}/invoices                    issue an invoice
 //! - GET  /companies/{id}/invoices?open=true          list with remaining
 //! - POST /companies/{id}/invoices/{invoice_id}/credit-note
+//! - POST /companies/{id}/invoices/{invoice_id}/payments  record a payment
 //!
 //! Reading is open to every access level; issuing and crediting require
 //! bokforing or admin.
@@ -241,6 +242,21 @@ pub async fn get_invoice(
     out["credits"] = json!(pair(d.credits));
     out["credited_by"] = json!(pair(d.credited_by));
     out["created_by"] = json!(d.created_by);
+    out["voucher_id"] = json!(d.voucher_id);
+    out["voucher"] = json!(d.voucher_label);
+    out["settlements"] = json!(
+        d.settlements
+            .iter()
+            .map(|m| json!({
+                "voucher_id": m.voucher_id,
+                "voucher": m.voucher_label,
+                "date": m.date.to_string(),
+                "description": m.description,
+                "amount_ore": m.amount_ore,
+                "matched_by": m.matched_by,
+            }))
+            .collect::<Vec<_>>()
+    );
     out["net_ore"] = json!(d.lines.iter().map(|l| l.net_ore).sum::<i64>());
     out["vat_ore"] = json!(d.lines.iter().map(|l| l.vat_ore).sum::<i64>());
     out["lines"] = json!(
@@ -260,6 +276,48 @@ pub async fn get_invoice(
             .collect::<Vec<_>>()
     );
     Ok(Json(out))
+}
+
+#[derive(Deserialize)]
+pub struct PaymentRequest {
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
+    #[serde(rename = "belop_ore")]
+    amount_ore: i64,
+    /// The money account (19xx); 1920 bank when absent.
+    #[serde(rename = "konto")]
+    account: Option<String>,
+}
+
+/// Records a payment on the invoice: posts it and matches it against the
+/// receivable in one transaction. Issuing rights plus the right to post
+/// vouchers, since it is both.
+pub async fn register_payment(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<PaymentRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let access = require(&state, person.person_id, company_id, Right::InvoiceWrite).await?;
+    if !access.has(Right::VoucherPost) {
+        return Err(ApiError::Forbidden(Right::VoucherPost.slug()));
+    }
+    let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    let posted = regnmed_db::register_invoice_payment(
+        &state.pool,
+        company_id,
+        invoice_id,
+        request.date,
+        request.amount_ore,
+        request.account.as_deref().unwrap_or("1920"),
+        created_by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({
+        "voucher_id": posted.id,
+        "voucher": format!("{}-{}", posted.fiscal_year, posted.voucher_number),
+    })))
 }
 
 pub async fn credit_note(
