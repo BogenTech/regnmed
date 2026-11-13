@@ -6,6 +6,7 @@
   import { api } from "../../lib/api.js";
   import { kr, minutterTilTimer } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import LoadError from "../../components/LoadError.svelte";
   import SeksjonRader from "./SeksjonRader.svelte";
 
   let { companyId, year } = $props();
@@ -13,15 +14,20 @@
   let data = $state(null);
   let detalj = $state(null);
   let valgt = $state("");
+  let error = $state(null);
+  let seq = 0;
 
-  $effect(() => {
+  function load() {
+    const mine = ++seq;
     data = null;
     detalj = null;
     valgt = "";
+    error = null;
     api("/companies/" + companyId + "/reports/prosjekt?year=" + year)
-      .then((svar) => (data = svar))
-      .catch((error) => toast(error.message, false));
-  });
+      .then((r) => mine === seq && (data = r))
+      .catch((e) => mine === seq && (error = e.message));
+  }
+  $effect(load);
 
   async function velg(code) {
     if (valgt === code) {
@@ -47,8 +53,10 @@
   }
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner"></span>
+{#if error}
+  <LoadError {error} retry={load} />
+{:else if !data}
+  <span class="loading loading-spinner loading-sm" role="status" aria-label="Henter prosjektene"></span>
 {:else if !data.prosjekter.length}
   <p class="opacity-70">
     Ingen prosjekter registrert — opprett dem i
@@ -70,21 +78,26 @@
     </thead>
     <tbody>
       {#each data.prosjekter as p (p.prosjekt)}
-        <tr
-          class={"cursor-pointer hover:bg-base-200 " + (p.active ? "" : "opacity-50")}
-          onclick={() => velg(p.prosjekt)}
-        >
-          <td>{p.prosjekt} {p.name}{p.active ? "" : " (avsluttet)"}</td>
+        <tr class={p.active ? "" : "opacity-60"}>
+          <td>
+            <button
+              class="link link-hover text-left"
+              aria-expanded={valgt === p.prosjekt}
+              onclick={() => velg(p.prosjekt)}
+            >
+              {p.prosjekt} {p.name}{p.active ? "" : " (avsluttet)"}
+            </button>
+          </td>
           <td class="opacity-70">{p.kunde_navn || ""}</td>
-          <td class="text-right">{kr(p.inntekter_ore)}</td>
-          <td class="text-right">{kr(p.kostnader_ore)}</td>
-          <td class={"text-right " + (p.resultat_ore < 0 ? "text-error" : "")}>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(p.inntekter_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(p.kostnader_ore)}</td>
+          <td class={"text-right tabular-nums whitespace-nowrap " + (p.resultat_ore < 0 ? "text-error" : "")}>
             {kr(p.resultat_ore)}
           </td>
-          <td class="text-right">
+          <td class="text-right tabular-nums whitespace-nowrap">
             {minutterTilTimer(p.timer.fakturerte_minutter)} / {minutterTilTimer(p.timer.minutter)} t
           </td>
-          <td class="text-right">{kr(p.timer.ufakturert_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(p.timer.ufakturert_ore)}</td>
         </tr>
         {#if valgt === p.prosjekt && detalj}
           <tr>
@@ -99,7 +112,7 @@
                   <tr class="font-semibold">
                     <td></td>
                     <td>Dekningsbidrag</td>
-                    <td class="text-right">{kr(detalj.resultat_ore)}</td>
+                    <td class="text-right tabular-nums whitespace-nowrap">{kr(detalj.resultat_ore)}</td>
                   </tr>
                 </tbody>
               </table>

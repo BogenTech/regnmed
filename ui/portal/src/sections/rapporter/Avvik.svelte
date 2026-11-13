@@ -10,13 +10,14 @@
 <p class="text-sm mb-2">
   {#if av.budsjett}
     Sammenlignet mot <strong>{av.budsjett.navn} v{av.budsjett.versjon}</strong>
-    ({av.budsjett.status}).
+    ({av.budsjett.status === "fastsatt" ? "fastsatt" : "utkast"}).
   {:else}
     Ingen budsjett for {year} — alt budsjettert leses som null.
   {/if}
 </p>
 
 <table class="table table-sm">
+  <caption class="sr-only">Avvik mot budsjett hittil i {year}, beløp i kroner. Negativt avvik er dårligere enn budsjett.</caption>
   <thead>
     <tr>
       <th>Konto</th><th>Navn</th>
@@ -31,31 +32,31 @@
           <tr>
             <td>{l.account}</td>
             <td>{l.name}</td>
-            <td class="text-right">{kr(l.budsjett_hittil_ore)}</td>
-            <td class="text-right">{kr(l.faktisk_hittil_ore)}</td>
-            <td class="text-right {l.avvik_hittil_ore < 0 ? 'text-error' : ''}">
+            <td class="text-right tabular-nums whitespace-nowrap">{kr(l.budsjett_hittil_ore)}</td>
+            <td class="text-right tabular-nums whitespace-nowrap">{kr(l.faktisk_hittil_ore)}</td>
+            <td class="text-right tabular-nums whitespace-nowrap {l.avvik_hittil_ore < 0 ? 'text-error' : ''}">
               {kr(l.avvik_hittil_ore)}
             </td>
-            <td class="text-right opacity-60">{kr(l.budsjett_ar_ore)}</td>
+            <td class="text-right tabular-nums whitespace-nowrap opacity-60">{kr(l.budsjett_ar_ore)}</td>
           </tr>
         {/each}
         <tr class="font-semibold">
           <td></td>
           <td>Sum {s.heading.toLowerCase()}</td>
-          <td class="text-right">{kr(s.budsjett_hittil_ore)}</td>
-          <td class="text-right">{kr(s.faktisk_hittil_ore)}</td>
-          <td class="text-right">{kr(s.avvik_hittil_ore)}</td>
-          <td class="text-right opacity-60">{kr(s.budsjett_ar_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(s.budsjett_hittil_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(s.faktisk_hittil_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">{kr(s.avvik_hittil_ore)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap opacity-60">{kr(s.budsjett_ar_ore)}</td>
         </tr>
       {/if}
     {/each}
     <tr class="font-bold">
       <td></td>
       <td>Resultat</td>
-      <td class="text-right">{kr(av.resultat_budsjett_hittil_ore)}</td>
-      <td class="text-right">{kr(av.resultat_faktisk_hittil_ore)}</td>
-      <td class="text-right">{kr(av.resultat_avvik_hittil_ore)}</td>
-      <td class="text-right opacity-60">{kr(av.resultat_budsjett_ar_ore)}</td>
+      <td class="text-right tabular-nums whitespace-nowrap">{kr(av.resultat_budsjett_hittil_ore)}</td>
+      <td class="text-right tabular-nums whitespace-nowrap">{kr(av.resultat_faktisk_hittil_ore)}</td>
+      <td class="text-right tabular-nums whitespace-nowrap">{kr(av.resultat_avvik_hittil_ore)}</td>
+      <td class="text-right tabular-nums whitespace-nowrap opacity-60">{kr(av.resultat_budsjett_ar_ore)}</td>
     </tr>
   </tbody>
 </table>

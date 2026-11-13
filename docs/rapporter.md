@@ -25,6 +25,38 @@ All endpoints follow the standard guard: any access level may read
 (reports never mutate; revisor read access is the point), no access →
 404. The portal's **Rapporter** section renders all of them per year.
 
+### Sider og CSV (bokførings- og kontospesifikasjon)
+
+De to lange spesifikasjonene tar `limit=` og `offset=` og svarer med
+`total` ved siden av siden. Uten `limit` kommer hele perioden, som før
+(MCP-verktøyene og kontosiden i Hovedbok bruker det). Siden er et
+utsnitt av hele perioden: spørringen og den løpende saldoen regnes over
+alt, så saldoen på side to er den samme som i hele listen. Kostnaden som
+sidene fjerner, er tegningen i nettleseren, ikke lesingen.
+
+`format=csv` laster ned **hele perioden uansett side** — filen er
+spesifikasjonen forskriften krever (bokføringsforskriften §3-1), ikke
+et vindu inn i den. Formatet er semikolonseparert, desimalkomma og
+UTF-8 med BOM, slik et norsk regneark åpner det uten importdialog.
+Bokføringsspesifikasjonen gir én rad per bilagslinje.
+
+Hver linje i kontospesifikasjonen, bokføringsspesifikasjonen og
+kunde-/leverandørspesifikasjonen bærer `voucher_id`, og portalen lenker
+bilagshenvisningen til bilagssiden i Hovedbok — sporbarheten fra
+spesifikasjon til bilag (bokføringsloven §4 nr. 7) er ett klikk.
+Saldobalansens kontoer lenker til kontosiden.
+
+### Portalen
+
+Fane, år og fanens egen tilstand (kontofilter, side, kunde/leverandør,
+dimensjonsfilter, periodeslutt) står i adressen —
+`#/c/{id}/rapporter/kontospesifikasjon?year=2026&konto=1920&side=2` —
+så tilbake-knappen fra et bilag, en omlasting eller en delt lenke lander
+der brukeren var. Fanene følger WAI-ARIA-mønsteret (piltaster,
+Home/End, ett tabulatorstopp); på smale skjermer er de en vanlig
+nedtrekksliste. En feilet henting vises i rapportfeltet med «Prøv
+igjen», aldri som en spinner som aldri stopper.
+
 ## Sign conventions
 
 The ledger stores debit positive, credit negative
@@ -63,7 +95,10 @@ same saldo queries.
   debet/kredit; kontospesifikasjon running saldo and bilagshenvisning;
   bokføringsspesifikasjon in posting order with every voucher balancing;
   resultat/balanse reconcile to the øre; 404 for outsiders, 400 for an
-  inverted period.
+  inverted period; a page of either specification is the same slice of
+  the whole period (running saldo included), and CSV ignores paging.
+- `ui/portal/src/sections/rapporter/reportAddress.test.js` — the
+  report address (tab, year, the tab's own state) round-trips.
 
 ## Nøkkeltall og likviditet (#36)
 

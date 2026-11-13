@@ -14,6 +14,9 @@
   let rader = $state(null);
   let nyKonto = $state("");
   let nyBelop = $state("");
+  // Cells are only saved by «Lagre linjer»; say so while there is
+  // something unsaved, so nobody leaves believing it is stored.
+  let endret = $state(false);
 
   $effect(() => {
     rader = null;
@@ -40,6 +43,7 @@
       const perManed = nyBelop.trim();
       const visning = perManed ? kr(parseKr(perManed)) : "";
       rader.push({ konto, name: "", celler: new Array(12).fill(visning) });
+      endret = true;
       nyKonto = "";
       nyBelop = "";
     } catch (error) {
@@ -49,6 +53,7 @@
 
   function fjern(i) {
     rader.splice(i, 1);
+    endret = true;
   }
 
   async function lagre() {
@@ -74,6 +79,7 @@
         lines,
       });
       toast(lines.length + " budsjettlinjer lagret", true);
+      endret = false;
       onDone();
     } catch (error) {
       toast(error.message, false);
@@ -90,7 +96,8 @@
   <span class="loading loading-spinner loading-sm"></span>
 {:else}
   <div class="overflow-x-auto">
-    <table class="table table-xs">
+    <table class="table table-xs" oninput={() => (endret = true)}>
+      <caption class="sr-only">Budsjett per konto og måned, i kroner.</caption>
       <thead>
         <tr>
           <th>Konto</th>
@@ -108,13 +115,15 @@
             {#each rad.celler as _, m}
               <td>
                 <input
-                  class="input input-xs w-20 text-right"
+                  class="input input-xs w-20 text-right tabular-nums"
+                  inputmode="decimal"
+                  aria-label={"Konto " + rad.konto + ", " + MANEDER[m]}
                   bind:value={rad.celler[m]}
                 />
               </td>
             {/each}
             <td>
-              <button class="btn btn-xs btn-ghost" onclick={() => fjern(i)}>×</button>
+              <button class="btn btn-xs btn-ghost" aria-label={"Fjern konto " + rad.konto} onclick={() => fjern(i)}>×</button>
             </td>
           </tr>
         {/each}
@@ -122,10 +131,17 @@
     </table>
   </div>
 
-  <div class="flex gap-2 items-center flex-wrap mt-3">
-    <input class="input input-sm w-24" placeholder="Konto" bind:value={nyKonto} />
-    <input class="input input-sm w-32" placeholder="Per måned" bind:value={nyBelop} />
-    <button class="btn btn-sm btn-ghost" onclick={leggTil}>+ konto</button>
+  <div class="flex gap-2 items-end flex-wrap mt-3">
+    <label class="flex flex-col gap-1 text-sm">
+      Konto
+      <input class="input input-sm w-24" inputmode="numeric" bind:value={nyKonto} />
+    </label>
+    <label class="flex flex-col gap-1 text-sm">
+      Beløp per måned
+      <input class="input input-sm w-32" inputmode="decimal" bind:value={nyBelop} />
+    </label>
+    <button class="btn btn-sm btn-ghost" onclick={leggTil}>Legg til konto</button>
     <button class="btn btn-sm btn-primary" onclick={lagre}>Lagre linjer</button>
+    {#if endret}<span class="text-sm text-warning" role="status">Ulagrede endringer</span>{/if}
   </div>
 {/if}

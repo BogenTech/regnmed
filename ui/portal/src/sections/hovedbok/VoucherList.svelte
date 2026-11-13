@@ -8,7 +8,7 @@
   import { kr, formatDate } from "../../lib/format.js";
   import { harRett } from "../../lib/me.svelte.js";
   import Paginering from "../../components/Paginering.svelte";
-  import YearPicker from "./YearPicker.svelte";
+  import YearPicker from "../../components/YearPicker.svelte";
 
   let { companyId, query = "" } = $props();
 

@@ -276,6 +276,85 @@ pub struct PeriodQuery {
     department: Option<String>,
     #[serde(rename = "prosjekt")]
     project: Option<String>,
+    /// Paging for the two long specifications. Without `limit` the whole
+    /// period comes back, as it always has (MCP tools and the account page
+    /// rely on that).
+    limit: Option<usize>,
+    offset: Option<usize>,
+    /// `csv` downloads the whole period, never a page: the file is the
+    /// specification the forskrift asks for, not a view of it.
+    format: Option<String>,
+}
+
+/// One page of `items` per the query, plus the total so the client can
+/// page. The query runs over the whole period either way: the running
+/// saldo needs every row before the page, and the cost is in rendering,
+/// not in the read.
+fn page<'a, T>(items: &'a [T], query: &PeriodQuery) -> &'a [T] {
+    let start = query.offset.unwrap_or(0).min(items.len());
+    let end = match query.limit {
+        Some(limit) => start.saturating_add(limit).min(items.len()),
+        None => items.len(),
+    };
+    &items[start..end]
+}
+
+fn wants_csv(query: &PeriodQuery) -> bool {
+    query.format.as_deref() == Some("csv")
+}
+
+/// Semicolon-separated, decimal comma, UTF-8 with BOM: what a Norwegian
+/// spreadsheet opens without an import dialog.
+fn csv_response(filename: &str, header: &[&str], rows: Vec<Vec<String>>) -> Response {
+    let mut out = String::from("\u{feff}");
+    for line in
+        std::iter::once(header.iter().map(|h| h.to_string()).collect::<Vec<_>>()).chain(rows)
+    {
+        out.push_str(
+            &line
+                .iter()
+                .map(|f| csv_field(f))
+                .collect::<Vec<_>>()
+                .join(";"),
+        );
+        out.push_str("\r\n");
+    }
+    file_response(Vis::Attachment, filename, "text/csv", out)
+}
+
+/// One CSV cell. A text a spreadsheet would read as a formula (a
+/// supplier's line text can say anything) is written as text with a
+/// leading apostrophe; our own negative amounts start with '-' too and
+/// stay numbers.
+fn csv_field(raw: &str) -> String {
+    let formula =
+        raw.starts_with(['=', '+', '@', '\t', '\r']) || (raw.starts_with('-') && !is_ore_text(raw));
+    let raw = if formula {
+        format!("'{raw}")
+    } else {
+        raw.to_string()
+    };
+    if raw.contains([';', '"', '\n', '\r']) {
+        format!("\"{}\"", raw.replace('"', "\"\""))
+    } else {
+        raw
+    }
+}
+
+/// `-1234,56`, as [`ore`] writes a negative amount.
+fn is_ore_text(raw: &str) -> bool {
+    let digits = raw.trim_start_matches('-');
+    let Some((kroner, ore)) = digits.split_once(',') else {
+        return false;
+    };
+    !kroner.is_empty()
+        && kroner.bytes().all(|b| b.is_ascii_digit())
+        && ore.len() == 2
+        && ore.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn ore(amount: i64) -> String {
+    regnmed_core::money::Ore(amount).to_string()
 }
 
 fn check_period(from: NaiveDate, to: NaiveDate) -> Result<(), ApiError> {
@@ -311,7 +390,7 @@ pub async fn account_specification(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let posts = regnmed_db::account_specification(
@@ -322,8 +401,44 @@ pub async fn account_specification(
         query.to,
     )
     .await?;
+    if wants_csv(&query) {
+        let rows = posts
+            .iter()
+            .map(|p| {
+                vec![
+                    p.number.clone(),
+                    p.account_name.clone(),
+                    format!("{}-{}-{}", p.journal_code, p.fiscal_year, p.voucher_number),
+                    p.voucher_date.to_string(),
+                    p.description.clone(),
+                    ore(p.amount_ore),
+                    ore(p.balance_ore),
+                    p.party_no.clone().unwrap_or_default(),
+                    p.department.clone().unwrap_or_default(),
+                    p.project.clone().unwrap_or_default(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &format!("kontospesifikasjon_{}_{}.csv", query.from, query.to),
+            &[
+                "Konto",
+                "Kontonavn",
+                "Bilag",
+                "Dato",
+                "Tekst",
+                "Beløp",
+                "Saldo",
+                "Part",
+                "Avdeling",
+                "Prosjekt",
+            ],
+            rows,
+        ));
+    }
     Ok(Json(json!({
-        "posts": posts.iter().map(|p| json!({
+        "total": posts.len(),
+        "posts": page(&posts, &query).iter().map(|p| json!({
             "voucher_id": p.voucher_id,
             "account": p.number,
             "account_name": p.account_name,
@@ -336,7 +451,8 @@ pub async fn account_specification(
             "avdeling": p.department,
             "prosjekt": p.project,
         })).collect::<Vec<_>>(),
-    })))
+    }))
+    .into_response())
 }
 
 pub async fn customer_specification(
@@ -379,6 +495,7 @@ async fn subledger_specification(
             "inngaende_ore": p.opening_ore,
             "utgaende_ore": p.closing_ore,
             "posts": p.posts.iter().map(|l| json!({
+                "voucher_id": l.voucher_id,
                 "bilag": format!("{}-{}-{}", l.journal_code, l.fiscal_year, l.voucher_number),
                 "date": l.voucher_date.to_string(),
                 "account": l.account_number,
@@ -395,13 +512,53 @@ pub async fn posting_specification(
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
     Query(query): Query<PeriodQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
     check_period(query.from, query.to)?;
     let vouchers =
         regnmed_db::posting_specification(&state.pool, company_id, query.from, query.to).await?;
+    if wants_csv(&query) {
+        let rows = vouchers
+            .iter()
+            .flat_map(|v| {
+                let bilag = format!("{}-{}-{}", v.journal_code, v.fiscal_year, v.voucher_number);
+                v.lines.iter().map(move |l| {
+                    vec![
+                        bilag.clone(),
+                        v.voucher_date.to_string(),
+                        v.description.clone(),
+                        l.line_no.to_string(),
+                        l.account_number.clone(),
+                        l.account_name.clone(),
+                        ore(l.amount_ore),
+                        l.vat_code.clone().unwrap_or_default(),
+                        l.description.clone().unwrap_or_default(),
+                        l.party_no.clone().unwrap_or_default(),
+                    ]
+                })
+            })
+            .collect();
+        return Ok(csv_response(
+            &format!("bokforingsspesifikasjon_{}_{}.csv", query.from, query.to),
+            &[
+                "Bilag",
+                "Dato",
+                "Bilagstekst",
+                "Linje",
+                "Konto",
+                "Kontonavn",
+                "Beløp",
+                "Mva-kode",
+                "Linjetekst",
+                "Part",
+            ],
+            rows,
+        ));
+    }
     Ok(Json(json!({
-        "vouchers": vouchers.iter().map(|v| json!({
+        "total": vouchers.len(),
+        "vouchers": page(&vouchers, &query).iter().map(|v| json!({
+            "voucher_id": v.voucher_id,
             "bilag": format!("{}-{}-{}", v.journal_code, v.fiscal_year, v.voucher_number),
             "date": v.voucher_date.to_string(),
             "description": v.description,
@@ -415,7 +572,8 @@ pub async fn posting_specification(
                 "party_no": l.party_no,
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
-    })))
+    }))
+    .into_response())
 }
 
 fn seksjon_json(s: &regnmed_core::statements::Section) -> serde_json::Value {
@@ -796,4 +954,21 @@ pub async fn key_figures(
         },
         "frister": frister,
     })))
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::{csv_field, ore};
+
+    #[test]
+    fn formulas_become_text_and_amounts_stay_numbers() {
+        assert_eq!(csv_field("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(csv_field("+47 22 00 00 00"), "'+47 22 00 00 00");
+        assert_eq!(csv_field("@SUM(A1)"), "'@SUM(A1)");
+        assert_eq!(csv_field("-cmd"), "'-cmd");
+        assert_eq!(csv_field(&ore(-1_000_000)), "-10000,00");
+        assert_eq!(csv_field(&ore(250)), "2,50");
+        assert_eq!(csv_field("Salg; vare"), "\"Salg; vare\"");
+        assert_eq!(csv_field("Faktura 1"), "Faktura 1");
+    }
 }

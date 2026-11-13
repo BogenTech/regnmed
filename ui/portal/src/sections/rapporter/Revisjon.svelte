@@ -3,28 +3,36 @@
   // AVVIK VISES SOM LINJER — en feilet kontroll skal aldri skjules
   // bak en feilmelding eller utelates fra rapporten.
   import { runJob } from "../../lib/jobs.js";
-  import { toast } from "../../lib/toast.svelte.js";
   import { saveText } from "../../lib/download.js";
+  import { formatDate } from "../../lib/format.js";
+  import LoadError from "../../components/LoadError.svelte";
 
   let { companyId } = $props();
 
   let data = $state(null);
+  let error = $state(null);
   let status = $state("queued");
+  let seq = 0;
 
   // Every control re-walks the whole ledger, so the report is a
   // background job (docs/jobs.md) instead of a request held open.
-  $effect(() => {
+  function run() {
+    const mine = ++seq;
     data = null;
-    const id = companyId;
-    runJob(id, "audit-report", {}, (s) => (status = s))
-      .then((result) => {
-        if (id === companyId) data = result;
-      })
-      .catch((error) => toast(error.message, false));
-  });
+    error = null;
+    status = "queued";
+    runJob(companyId, "audit-report", {}, (s) => mine === seq && (status = s))
+      .then((result) => mine === seq && (data = result))
+      .catch((e) => mine === seq && (error = e.message));
+  }
+  $effect(run);
+
+  const when = (iso) => formatDate(iso) + " " + iso.slice(11, 16);
 </script>
 
-{#if !data}
+{#if error}
+  <LoadError {error} retry={run} />
+{:else if !data}
   <div class="flex items-center gap-2 text-sm" role="status">
     <span class="loading loading-spinner loading-sm"></span>
     {status === "running" ? "Kjører kontrollene over hele hovedboken …" : "Starter kontrollene …"}
@@ -39,7 +47,10 @@
     <tbody>
       {#each data.kontroller as k}
         <tr>
-          <td>{k.ok ? "✓" : "✗"}</td>
+          <td>
+            <span aria-hidden="true" class={k.ok ? "text-success" : "text-error"}>{k.ok ? "✓" : "✗"}</span>
+            <span class="sr-only">{k.ok ? "OK" : "Avvik"}</span>
+          </td>
           <td class="font-semibold">{k.navn}</td>
           <!-- En kontroll kan finne flere avvik; hvert står på sin egen
                linje i detaljteksten og skal vises slik. -->
@@ -55,7 +66,7 @@
       <tbody>
         {#each data.ankere as a}
           <tr>
-            <td>{a.tidspunkt.slice(0, 16).replace("T", " ")}</td>
+            <td class="whitespace-nowrap">{when(a.tidspunkt)}</td>
             <td>sekvens {a.siste_sekvens}</td>
             <td class="font-mono text-xs break-all">
               {a.root}

@@ -10,11 +10,11 @@
   <tr>
     <td>{l.number}</td>
     <td>{l.name}</td>
-    <td class="text-right">{kr(l.saldo_ore)}</td>
+    <td class="text-right tabular-nums whitespace-nowrap">{kr(l.saldo_ore)}</td>
   </tr>
 {/each}
 <tr class="font-semibold">
   <td></td>
   <td>Sum {seksjon.heading.toLowerCase()}</td>
-  <td class="text-right">{kr(seksjon.sum_ore)}</td>
+  <td class="text-right tabular-nums whitespace-nowrap">{kr(seksjon.sum_ore)}</td>
 </tr>
