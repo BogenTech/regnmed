@@ -19,6 +19,7 @@
     inkluderAvsluttede = false,
     alleLabel = null,
     tomHint = null,
+    label = null,
     value = $bindable(""),
   } = $props();
 
@@ -28,7 +29,7 @@
 </script>
 
 {#if valgbare.length}
-  <select class={cls} title={kind} bind:value>
+  <select class={cls} title={label || kind} aria-label={label} bind:value>
     <option value="">{alleLabel || "(" + kind + ")"}</option>
     {#each valgbare as d (d.code)}
       <option value={d.code}>{d.code} {d.name}{d.active ? "" : " (avsluttet)"}</option>

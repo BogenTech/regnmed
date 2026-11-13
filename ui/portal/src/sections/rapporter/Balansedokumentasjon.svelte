@@ -5,29 +5,29 @@
   // AVVIK i revisjonsrapporten, så listen er arbeidslisten for å lukke
   // det.
   import { api, post } from "../../lib/api.js";
-  import { kr } from "../../lib/format.js";
+  import { kr, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { download } from "../../lib/download.js";
+  import LoadError from "../../components/LoadError.svelte";
 
-  let { companyId, to } = $props();
+  let { companyId, to, params } = $props();
 
-  let periode = $state(to);
+  // The period end rides in the address; the year's last day otherwise.
+  let periode = $derived(params.periode || to);
   let data = $state(null);
+  let error = $state(null);
   let skjema = $state(null); // { konto, forklaring, fil }
+  let seq = 0;
 
-  async function last() {
+  function last() {
+    const mine = ++seq;
     data = null;
-    try {
-      data = await api(
-        "/companies/" + companyId + "/balansedokumentasjon?periode=" + periode,
-      );
-    } catch (error) {
-      toast(error.message, false);
-    }
+    error = null;
+    return api("/companies/" + companyId + "/balansedokumentasjon?periode=" + periode)
+      .then((r) => mine === seq && (data = r))
+      .catch((e) => mine === seq && (error = e.message));
   }
-
   $effect(() => {
-    void companyId;
-    void periode;
     last();
   });
 
@@ -71,13 +71,20 @@
 
 <label class="flex items-center gap-2 text-sm mb-3">
   Periodeslutt
-  <input type="date" class="input input-sm" bind:value={periode} />
+  <input
+    type="date"
+    class="input input-sm w-auto"
+    value={periode}
+    onchange={(e) => (params.periode = e.currentTarget.value && e.currentTarget.value !== to ? e.currentTarget.value : undefined)}
+  />
 </label>
 
-{#if !data}
-  <span class="loading loading-spinner loading-sm"></span>
+{#if error}
+  <LoadError {error} retry={last} />
+{:else if !data}
+  <span class="loading loading-spinner loading-sm" role="status" aria-label="Henter balansekontoene"></span>
 {:else if !data.kontoer.length}
-  <p class="opacity-70 text-sm">Ingen balansekontoer med saldo per {periode}.</p>
+  <p class="opacity-70 text-sm">Ingen balansekontoer med saldo per {formatDate(periode)}.</p>
 {:else}
   <div class="overflow-x-auto">
     <table class="table table-sm">
@@ -93,7 +100,7 @@
         {#each data.kontoer as k (k.konto)}
           <tr>
             <td class="whitespace-nowrap">{k.konto} {k.kontonavn}</td>
-            <td class="text-right">{kr(k.saldo_ore)}</td>
+            <td class="text-right tabular-nums whitespace-nowrap">{kr(k.saldo_ore)}</td>
             <td>
               {#if !k.avstemt}
                 <span class="badge badge-error badge-sm">mangler</span>
@@ -101,15 +108,21 @@
                 <div class="text-sm">
                   {k.avstemt.forklaring}
                   <span class="opacity-60">
-                    — {k.avstemt.avstemt_av}, {k.avstemt.avstemt_dato}
+                    — {k.avstemt.avstemt_av}, {formatDate(k.avstemt.avstemt_dato)}
                   </span>
                   {#if k.avstemt.har_vedlegg}
-                    <a
+                    <!-- The API needs the bearer token, so a plain href would
+                         answer 401: fetch it through the client instead. -->
+                    <button
                       class="link ml-1"
-                      href={"/companies/" + companyId + "/balansedokumentasjon/" + k.avstemt.id + "/vedlegg"}
+                      onclick={() =>
+                        download(
+                          "/companies/" + companyId + "/balansedokumentasjon/" + k.avstemt.id + "/vedlegg",
+                          k.avstemt.vedlegg_navn,
+                        )}
                     >
                       {k.avstemt.vedlegg_navn}
-                    </a>
+                    </button>
                   {/if}
                 </div>
                 {#if k.avvik_ore}
@@ -124,6 +137,7 @@
             <td class="text-right">
               <button
                 class="btn btn-xs"
+                aria-label={(k.avstemt ? "Avstem på nytt " : "Avstem ") + k.konto + " " + k.kontonavn}
                 onclick={() => (skjema = { konto: k.konto, forklaring: "", fil: null })}
               >
                 {k.avstemt ? "Avstem på nytt" : "Avstem"}
@@ -137,21 +151,36 @@
 {/if}
 
 {#if skjema}
-  <div class="mt-3 border border-base-200 rounded-box p-3">
-    <p class="font-semibold mb-2">Avstem konto {skjema.konto} per {periode}</p>
-    <input
-      class="input input-sm w-full mb-2"
-      placeholder="Hva består saldoen av? (kontoutskrift, tellelister, lånesaldo …)"
-      bind:value={skjema.forklaring}
-    />
-    <input
-      type="file"
-      class="file-input file-input-sm w-full mb-2"
-      onchange={(e) => (skjema.fil = e.currentTarget.files[0] || null)}
-    />
+  <form
+    class="mt-3 border border-base-200 rounded-box p-3"
+    onsubmit={(e) => {
+      e.preventDefault();
+      avstem();
+    }}
+  >
+    <p class="font-semibold mb-2">Avstem konto {skjema.konto} per {formatDate(periode)}</p>
+    <label class="flex flex-col gap-1 text-sm mb-2">
+      Hva består saldoen av?
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="input input-sm w-full"
+        placeholder="Kontoutskrift, tellelister, lånesaldo …"
+        required
+        autofocus
+        bind:value={skjema.forklaring}
+      />
+    </label>
+    <label class="flex flex-col gap-1 text-sm mb-2">
+      Dokumentasjon (valgfritt vedlegg)
+      <input
+        type="file"
+        class="file-input file-input-sm w-full"
+        onchange={(e) => (skjema.fil = e.currentTarget.files[0] || null)}
+      />
+    </label>
     <div class="flex gap-2">
-      <button class="btn btn-sm btn-primary" onclick={avstem}>Registrer</button>
-      <button class="btn btn-sm btn-ghost" onclick={() => (skjema = null)}>Avbryt</button>
+      <button type="submit" class="btn btn-sm btn-primary">Registrer avstemmingen</button>
+      <button type="button" class="btn btn-sm btn-ghost" onclick={() => (skjema = null)}>Avbryt</button>
     </div>
-  </div>
+  </form>
 {/if}

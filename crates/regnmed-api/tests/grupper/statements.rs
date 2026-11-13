@@ -69,6 +69,34 @@ async fn get(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, serde_js
     )
 }
 
+async fn get_text(state: &AppState, uri: &str, bearer: &str) -> (StatusCode, String, String) {
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .header("authorization", format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap().to_string())
+        .unwrap_or_default();
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    (
+        status,
+        content_type,
+        String::from_utf8(bytes.to_vec()).unwrap(),
+    )
+}
+
 fn account<'a>(report: &'a serde_json::Value, number: &str) -> &'a serde_json::Value {
     report["accounts"]
         .as_array()
@@ -203,6 +231,59 @@ async fn statutory_reports_reconcile_to_the_ore() {
             .sum();
         assert_eq!(sum, 0, "voucher {} balances", voucher["bilag"]);
     }
+
+    // Paging (the portal's view): a page is a slice of the whole period,
+    // so the running saldo on page two is the one the full list has, and
+    // the total says how many there are.
+    let (_, page) = get(
+        &state,
+        &format!(
+            "{base}/kontospesifikasjon?from=2026-01-01&to=2026-12-31&account=1920&limit=1&offset=1"
+        ),
+        &token,
+    )
+    .await;
+    assert_eq!(page["total"], 3);
+    assert_eq!(page["posts"].as_array().unwrap().len(), 1);
+    assert_eq!(page["posts"][0]["saldo_ore"], 102_000_00);
+    let (_, page) = get(
+        &state,
+        &format!("{base}/bokforingsspesifikasjon?from=2026-01-01&to=2026-12-31&limit=2&offset=2"),
+        &token,
+    )
+    .await;
+    assert_eq!(page["total"], 3);
+    assert_eq!(page["vouchers"].as_array().unwrap().len(), 1);
+    assert_eq!(page["vouchers"][0]["bilag"], vouchers[2]["bilag"]);
+    assert!(page["vouchers"][0]["voucher_id"].is_string());
+
+    // CSV is the whole period whatever the paging says: the file is the
+    // specification, not a view of it.
+    let (status, content_type, csv) = get_text(
+        &state,
+        &format!("{base}/kontospesifikasjon?from=2026-01-01&to=2026-12-31&account=1920&limit=1&format=csv"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "text/csv");
+    let lines: Vec<&str> = csv.trim_start_matches('\u{feff}').lines().collect();
+    assert_eq!(lines.len(), 4, "{csv}");
+    assert!(lines[0].starts_with("Konto;Kontonavn;Bilag;Dato;"));
+    assert!(lines[1].starts_with("1920;"), "{}", lines[1]);
+    assert!(lines[3].contains(";101850,00;"), "{}", lines[3]);
+    let (_, _, csv) = get_text(
+        &state,
+        &format!("{base}/bokforingsspesifikasjon?from=2026-01-01&to=2026-12-31&format=csv"),
+        &token,
+    )
+    .await;
+    let rows = csv.lines().count() - 1;
+    let lines_in_vouchers: usize = vouchers
+        .iter()
+        .map(|v| v["lines"].as_array().unwrap().len())
+        .sum();
+    assert_eq!(rows, lines_in_vouchers);
 
     // Income statement 2026: revenue positive, annual result 1 850,00.
     let (_, r) = get(

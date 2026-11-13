@@ -6,7 +6,7 @@
   import { api } from "../../lib/api.js";
   import { kr, formatDate } from "../../lib/format.js";
   import Paginering from "../../components/Paginering.svelte";
-  import YearPicker from "./YearPicker.svelte";
+  import YearPicker from "../../components/YearPicker.svelte";
 
   let { companyId, account, query = "" } = $props();
 

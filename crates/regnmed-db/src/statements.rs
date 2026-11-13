@@ -264,6 +264,7 @@ pub async fn account_specification(
 /// forskrift requires and the running saldo per party.
 #[derive(Debug)]
 pub struct SubledgerItem {
+    pub voucher_id: Uuid,
     pub account_number: String,
     pub journal_code: String,
     pub fiscal_year: i32,
@@ -333,7 +334,7 @@ pub async fn subledger_specification(
         })
         .collect();
     let rows = sqlx::query(
-        "select p.party_no, a.number as account_number, j.code as journal_code,
+        "select v.id as voucher_id, p.party_no, a.number as account_number, j.code as journal_code,
                 v.fiscal_year, v.voucher_number, v.voucher_date,
                 coalesce(e.description, v.description) as description,
                 e.amount_ore
@@ -375,6 +376,7 @@ pub async fn subledger_specification(
             .map_or(block.opening_ore, |p| p.balance_ore)
             + amount;
         block.posts.push(SubledgerItem {
+            voucher_id: r.get("voucher_id"),
             account_number: r.get("account_number"),
             journal_code: r.get("journal_code"),
             fiscal_year: r.get("fiscal_year"),
@@ -401,6 +403,7 @@ pub struct BookkeepingLine {
 
 #[derive(Debug)]
 pub struct BookkeepingVoucher {
+    pub voucher_id: Uuid,
     pub journal_code: String,
     pub fiscal_year: i32,
     pub voucher_number: i64,
@@ -418,8 +421,8 @@ pub async fn posting_specification(
     to: NaiveDate,
 ) -> Result<Vec<BookkeepingVoucher>> {
     let rows = sqlx::query(
-        "select j.code as journal_code, v.fiscal_year, v.voucher_number, v.voucher_date,
-                v.description as voucher_description, v.chain_seq,
+        "select v.id as voucher_id, j.code as journal_code, v.fiscal_year, v.voucher_number,
+                v.voucher_date, v.description as voucher_description, v.chain_seq,
                 e.line_no, a.number as account_number, a.name as account_name,
                 e.amount_ore, e.vat_code, e.description as line_description, p.party_no
          from voucher v
@@ -442,6 +445,7 @@ pub async fn posting_specification(
         if last_seq != Some(seq) {
             last_seq = Some(seq);
             vouchers.push(BookkeepingVoucher {
+                voucher_id: row.get("voucher_id"),
                 journal_code: row.get("journal_code"),
                 fiscal_year: row.get("fiscal_year"),
                 voucher_number: row.get("voucher_number"),

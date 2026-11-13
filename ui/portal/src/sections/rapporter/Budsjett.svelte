@@ -6,6 +6,8 @@
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { kr } from "../../lib/format.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
+  import LoadError from "../../components/LoadError.svelte";
   import BudsjettRutenett from "./BudsjettRutenett.svelte";
   import Avvik from "./Avvik.svelte";
 
@@ -13,29 +15,36 @@
 
   let valgtBudsjett = $state("");
   let data = $state(null);
+  let error = $state(null);
+  let seq = 0;
 
   let navn = $state("");
   let fraFjor = $state(false);
   let prosent = $state("0");
 
-  async function load(id, ar, valgt) {
-    const [budsjetter, av] = await Promise.all([
-      api("/companies/" + id + "/budgets?year=" + ar),
+  // `fresh` keeps the page on screen while a save reloads it.
+  function load(fresh = true) {
+    const mine = ++seq;
+    if (fresh) data = null;
+    error = null;
+    Promise.all([
+      api("/companies/" + companyId + "/budgets?year=" + year),
       api(
-        "/companies/" + id + "/reports/avvik?year=" + ar + (valgt ? "&budget_id=" + valgt : ""),
+        "/companies/" + companyId + "/reports/avvik?year=" + year +
+          (valgtBudsjett ? "&budget_id=" + valgtBudsjett : ""),
       ),
-    ]);
-    data = { budsjetter: budsjetter.budgets, av };
+    ])
+      .then(([budsjetter, av]) => mine === seq && (data = { budsjetter: budsjetter.budgets, av }))
+      .catch((e) => mine === seq && (error = e.message));
   }
 
-  function reload() {
-    load(companyId, year, valgtBudsjett).catch((error) => toast(error.message, false));
-  }
+  const reload = () => load(false);
 
   $effect(() => {
-    data = null;
-    load(companyId, year, valgtBudsjett).catch((error) => toast(error.message, false));
+    load();
   });
+
+  const STATUS = { utkast: "Utkast", fastsatt: "Fastsatt" };
 
   // Uten et uttrykkelig valg måles det mot den versjonen avviksrapporten
   // selv oppgir — den nyeste fastsatte, ellers det nyeste utkastet.
@@ -67,6 +76,11 @@
   }
 
   async function fastsett(b) {
+    const ok = await bekreft(
+      "Et fastsatt budsjett kan ikke endres. Vil du revidere det senere, lager du en ny versjon.",
+      { tittel: "Fastsett " + b.navn + " v" + b.versjon + "?", ok: "Fastsett" },
+    );
+    if (!ok) return;
     try {
       await post("/companies/" + companyId + "/budgets/" + b.budget_id + "/fastsett", {});
       toast("Budsjettet er fastsatt", true);
@@ -77,6 +91,12 @@
   }
 
   async function forkast(b) {
+    const ok = await bekreft("Utkastet og alle linjene i det slettes. Dette kan ikke angres.", {
+      tittel: "Forkast " + b.navn + " v" + b.versjon + "?",
+      ok: "Forkast",
+      farlig: true,
+    });
+    if (!ok) return;
     try {
       await api("/companies/" + companyId + "/budgets/" + b.budget_id, { method: "DELETE" });
       toast("Utkastet er forkastet", true);
@@ -88,8 +108,10 @@
   }
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner loading-sm"></span>
+{#if error}
+  <LoadError {error} retry={() => load()} />
+{:else if !data}
+  <span class="loading loading-spinner loading-sm" role="status" aria-label="Henter budsjettene"></span>
 {:else}
   <p class="text-sm opacity-70 mb-2">
     Et budsjett er et arbeidsdokument mens det er utkast. Fastsettelse fryser versjonen — en
@@ -107,22 +129,31 @@
       </thead>
       <tbody>
         {#each data.budsjetter as b (b.budget_id)}
-          <tr class={aktivt && b.budget_id === aktivt.budget_id ? "bg-base-200" : ""}>
+          <tr
+            class={aktivt && b.budget_id === aktivt.budget_id ? "bg-base-200" : ""}
+            aria-current={aktivt && b.budget_id === aktivt.budget_id ? "true" : undefined}
+          >
             <td>v{b.versjon}</td>
             <td>{b.navn}</td>
             <td>
               <span class="badge badge-sm {b.status === 'fastsatt' ? 'badge-success' : 'badge-warning'}">
-                {b.status}
+                {STATUS[b.status] || b.status}
               </span>
             </td>
-            <td class="text-right">{kr(b.sum_ore)}</td>
+            <td class="text-right tabular-nums whitespace-nowrap">{kr(b.sum_ore)}</td>
             <td class="text-xs opacity-70">
               {b.created_by}{b.fastsatt_by ? " → " + b.fastsatt_by : ""}
             </td>
-            <td>
-              <button class="btn btn-xs btn-ghost" onclick={() => (valgtBudsjett = b.budget_id)}>
-                Velg
-              </button>
+            <td class="whitespace-nowrap">
+              {#if !aktivt || b.budget_id !== aktivt.budget_id}
+                <button
+                  class="btn btn-xs btn-ghost"
+                  aria-label={"Vis " + b.navn + " v" + b.versjon}
+                  onclick={() => (valgtBudsjett = b.budget_id)}
+                >
+                  Vis
+                </button>
+              {/if}
               {#if b.status === "utkast"}
                 <button class="btn btn-xs btn-outline" onclick={() => fastsett(b)}>Fastsett</button>
                 <button class="btn btn-xs btn-ghost" onclick={() => forkast(b)}>Forkast</button>
@@ -136,15 +167,29 @@
     <p class="text-sm opacity-70 mb-3">Ingen budsjetter for {year} ennå.</p>
   {/if}
 
-  <div class="flex gap-2 items-center flex-wrap">
-    <input class="input input-sm w-48" placeholder="Navn (valgfritt)" bind:value={navn} />
-    <label class="label cursor-pointer gap-2">
-      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={fraFjor} />
-      <span>Fra {year - 1}</span>
+  <form
+    class="flex gap-2 items-end flex-wrap"
+    onsubmit={(e) => {
+      e.preventDefault();
+      nyttBudsjett();
+    }}
+  >
+    <label class="flex flex-col gap-1 text-sm">
+      Navn (valgfritt)
+      <input class="input input-sm w-48" bind:value={navn} />
     </label>
-    <input class="input input-sm w-24" placeholder="± %" bind:value={prosent} />
-    <button class="btn btn-sm" onclick={nyttBudsjett}>Nytt budsjett {year}</button>
-  </div>
+    <label class="label cursor-pointer gap-2 text-sm">
+      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={fraFjor} />
+      <span>Start fra regnskapet for {year - 1}</span>
+    </label>
+    {#if fraFjor}
+      <label class="flex flex-col gap-1 text-sm">
+        Juster med %
+        <input class="input input-sm w-24" inputmode="decimal" placeholder="f.eks. 3,5" bind:value={prosent} />
+      </label>
+    {/if}
+    <button type="submit" class="btn btn-sm">Nytt budsjett {year}</button>
+  </form>
 
   {#if aktivt && aktivt.status === "utkast"}
     <BudsjettRutenett {companyId} budsjett={aktivt} onDone={reload} />
