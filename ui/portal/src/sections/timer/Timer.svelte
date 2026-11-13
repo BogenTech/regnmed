@@ -93,16 +93,53 @@
 
   let laster = $derived(!feil && (!data || data.from !== uke.from));
   const lenke = (mandag) => "#/c/" + companyId + "/timer?uke=" + mandag;
+
+  // Week change from the keyboard. `fokus` tells the next week's grid
+  // where the cursor was heading; MinUke consumes it once on arrival.
+  let fokus = $state(null);
+  function goWeek(delta, f = null) {
+    const target = addDays(uke.from, 7 * delta);
+    fokus = f ? { ...f, uke: target } : null;
+    location.hash = lenke(target);
+  }
+
+  // Page Up/Down change week from anywhere on the page — except while
+  // typing in a field (the grid's cells handle the keys themselves) or
+  // while a dialog is open.
+  function sideTast(event) {
+    if (event.key !== "PageDown" && event.key !== "PageUp") return;
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+    const t = event.target;
+    if (t.closest?.("input, select, textarea, dialog[open]")) return;
+    event.preventDefault();
+    goWeek(event.key === "PageDown" ? 1 : -1);
+  }
 </script>
+
+<svelte:window onkeydown={sideTast} />
 
 <div class="flex flex-wrap items-center gap-2 mb-3">
   <h2 class="text-lg font-semibold mr-auto">{weekTitle(uke.from)}</h2>
   <nav class="join" aria-label="Velg uke">
-    <a class="btn btn-sm join-item" href={lenke(uke.forrige)}>‹ Forrige uke</a>
+    <a
+      class="btn btn-sm join-item"
+      href={lenke(uke.forrige)}
+      aria-keyshortcuts="PageUp"
+      title="Forrige uke (Page Up)"
+      onclick={() => (fokus = null)}>‹ Forrige uke</a
+    >
     {#if uke.from !== denneUken}
-      <a class="btn btn-sm join-item" href={lenke(denneUken)}>Denne uken</a>
+      <a class="btn btn-sm join-item" href={lenke(denneUken)} onclick={() => (fokus = null)}
+        >Denne uken</a
+      >
     {/if}
-    <a class="btn btn-sm join-item" href={lenke(uke.neste)}>Neste uke ›</a>
+    <a
+      class="btn btn-sm join-item"
+      href={lenke(uke.neste)}
+      aria-keyshortcuts="PageDown"
+      title="Neste uke (Page Down)"
+      onclick={() => (fokus = null)}>Neste uke ›</a
+    >
   </nav>
 </div>
 
@@ -121,6 +158,9 @@
         to={addDays(data.from, 6)}
         dims={data.dims}
         onDone={reload}
+        onWeek={goWeek}
+        startFokus={fokus && fokus.uke === data.from ? fokus : null}
+        onFokusBrukt={() => (fokus = null)}
       />
     {/key}
 

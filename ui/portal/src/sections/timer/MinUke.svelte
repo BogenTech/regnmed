@@ -5,7 +5,7 @@
   // Enter og piltaster flytter mellom cellene som i et regneark. Serveren
   // avgjør hvem som ser hva (TIMER_LES_ALLE) — «Hele laget» under viser
   // bare det svaret faktisk inneholdt.
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { api, post, send } from "../../lib/api.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
   import { formatDate, kr, minutterTilTimer, parseKr, today } from "../../lib/format.js";
@@ -14,9 +14,20 @@
   import Card from "../../components/Card.svelte";
   import DimRegisterLenke from "../../components/DimRegisterLenke.svelte";
   import DimSelect from "../../components/DimSelect.svelte";
-  import { addDays, dayName, parseHours } from "./week.js";
+  import { addDays, dayName, dayOrder, parseHours } from "./week.js";
 
-  let { companyId, uke, forrigeUke, from, to, dims, onDone } = $props();
+  let {
+    companyId,
+    uke,
+    forrigeUke,
+    from,
+    to,
+    dims,
+    onDone,
+    onWeek,
+    startFokus = null,
+    onFokusBrukt = () => {},
+  } = $props();
 
   // Satsen kommer fra prosjektregisteret (docs/timer.md) — bare den som
   // holder TIMER_SATS_SKRIV ser og setter satser her; alle andre får
@@ -181,37 +192,89 @@
     });
   }
 
-  // Piltaster og Enter flytter mellom cellene — regnearkfølelsen.
+  // Piltaster og Enter flytter mellom cellene — regnearkfølelsen. Låste
+  // og fakturerte celler hoppes over, og en piltast forbi søndag (eller
+  // før mandag) går videre inn i neste (forrige) uke, i samme rad.
+  // PageDown/PageUp bytter uke og blir stående på samme rad og dag.
+  function celle(rad, dag) {
+    const el = document.querySelector('input[data-rad="' + rad + '"][data-dag="' + dag + '"]');
+    return el && !el.disabled && el.offsetParent ? el : null;
+  }
+
+  function flytt(el) {
+    el.focus();
+    el.select();
+  }
+
+  function byttUke(input, delta, dag, retning) {
+    const prosjekt = rader[Number(input.dataset.rad)];
+    input.blur(); // saves the cell before its week leaves the screen
+    onWeek(delta, { prosjekt, dag, retning });
+  }
+
   function tastNav(event) {
     const input = event.target;
     if (!input.dataset || input.dataset.rad === undefined) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const rad = Number(input.dataset.rad);
     const dag = Number(input.dataset.dag);
-    let nesteRad = rad;
-    let nesteDag = dag;
-    if (event.key === "ArrowRight") nesteDag += 1;
-    else if (event.key === "ArrowLeft") nesteDag -= 1;
-    else if (event.key === "ArrowDown" || event.key === "Enter") nesteRad += 1;
-    else if (event.key === "ArrowUp") nesteRad -= 1;
-    else if (event.key === "Escape") {
-      const dato = dag < 0 ? mobilVisning.dato : dager[dag].dato;
+    const mobil = dag < 0;
+    const key = event.key;
+
+    if (key === "Escape") {
+      const dato = mobil ? mobilVisning.dato : dager[dag].dato;
       const entries = iCelle(rader[rad], dato);
       input.value = entries.length ? minutterTilTimer(sumMin(entries)) : "";
       return;
-    } else return;
-    const målet = document.querySelector(
-      'input[data-rad="' + nesteRad + '"][data-dag="' + nesteDag + '"]',
-    );
-    if (målet) {
+    }
+    if (key === "PageDown" || key === "PageUp") {
       event.preventDefault();
-      målet.focus();
-      målet.select();
-    } else if (event.key === "Enter") {
+      byttUke(input, key === "PageDown" ? 1 : -1, mobil ? 0 : dag, 0);
+      return;
+    }
+    if (!mobil && (key === "ArrowRight" || key === "ArrowLeft")) {
+      event.preventDefault();
+      const retning = key === "ArrowRight" ? 1 : -1;
+      for (let d = dag + retning; d >= 0 && d <= 6; d += retning) {
+        const el = celle(rad, d);
+        if (el) return flytt(el);
+      }
+      // Back into a week that is locked all through: nothing there to
+      // type in, so the cursor stays put rather than landing nowhere.
+      if (retning < 0 && laast(addDays(from, -1))) return;
+      byttUke(input, retning, retning > 0 ? 0 : 6, retning);
+      return;
+    }
+    if (key === "ArrowDown" || key === "ArrowUp" || key === "Enter") {
+      const retning = key === "ArrowUp" ? -1 : 1;
+      for (let r = rad + retning; r >= 0 && r < rader.length; r += retning) {
+        const el = celle(r, dag);
+        if (el) {
+          event.preventDefault();
+          return flytt(el);
+        }
+      }
       // Siste rad: Enter har ingen celle å gå til, men skal fortsatt
       // bekrefte cellen — lagringen ligger på blur.
-      input.blur();
+      if (key === "Enter") input.blur();
     }
   }
+
+  // Arriving from the week next door by keyboard: put the cursor where
+  // the keys were heading, in the same project row (added if this week
+  // has no hours on it yet).
+  onMount(async () => {
+    const f = untrack(() => startFokus);
+    if (!f) return;
+    onFokusBrukt();
+    if (!rader.includes(f.prosjekt)) ekstraRader = [...ekstraRader, f.prosjekt];
+    await tick();
+    const rad = rader.indexOf(f.prosjekt);
+    for (const d of dayOrder(f.dag, f.retning)) {
+      const el = celle(rad, d);
+      if (el) return flytt(el);
+    }
+  });
 
   // A new row gets focus in its first open cell, so adding a project and
   // typing its hours never needs the mouse.
@@ -505,8 +568,9 @@
         </tfoot>
       </table>
       <p class="text-xs opacity-50 mt-1">
-        Skriv 7,5 eller 7:30. Tab, Enter og piltastene flytter mellom cellene. Beskrivelse og sats
-        står under tabellen for cellen du står i.
+        Skriv 7,5 eller 7:30. Tab, Enter og piltastene flytter mellom cellene, og en piltast forbi
+        søndag eller mandag går videre til neste eller forrige uke. Page Down og Page Up bytter uke.
+        Beskrivelse og sats står under tabellen for cellen du står i.
       </p>
     </div>
 

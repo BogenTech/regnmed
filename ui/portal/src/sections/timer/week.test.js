@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addDays, mondayOf, isoWeek, weekTitle, dayName, parseHours } from "./week.js";
+import { addDays, mondayOf, isoWeek, weekTitle, dayName, parseHours, dayOrder } from "./week.js";
 
 test("Monday of a week, across month and year", () => {
   assert.equal(mondayOf("2026-11-13"), "2026-11-09");
@@ -38,4 +38,10 @@ test("hours parse from comma, point and clock forms", () => {
   assert.throws(() => parseHours("-1"));
   assert.throws(() => parseHours("25"));
   assert.throws(() => parseHours("7:75"));
+});
+
+test("arriving in a week, the cursor tries days in the direction it was going", () => {
+  assert.deepEqual(dayOrder(0, 1), [0, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(dayOrder(6, -1), [6, 5, 4, 3, 2, 1, 0]);
+  assert.deepEqual(dayOrder(2, 0), [2, 3, 1, 4, 0, 5, 6]);
 });

@@ -64,3 +64,18 @@ export function parseHours(text) {
   if (minutes > 1440) throw new Error("et døgn har 24 timer: " + text);
   return minutes;
 }
+
+// The days to try, in order, when the cursor lands in a week at `start`
+// moving in `dir`: onwards in that direction (+1/-1), or nearest first
+// when the week was changed in place (0, Page Up/Down).
+export function dayOrder(start, dir) {
+  const order = [];
+  if (dir) {
+    for (let d = start; d >= 0 && d <= 6; d += dir) order.push(d);
+    return order;
+  }
+  for (let i = 0; i <= 6; i++) {
+    for (const d of i ? [start + i, start - i] : [start]) if (d >= 0 && d <= 6) order.push(d);
+  }
+  return order;
+}

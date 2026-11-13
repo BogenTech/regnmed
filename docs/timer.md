@@ -91,7 +91,12 @@ address (`?uke=`), and «today» is the LOCAL date, so the page opens on
 the right week also between midnight and 01:00. Cells save themselves
 on blur through the ordinary entry endpoints (flexible input: 7,5 /
 7.5 / 7:30, at most 24 t), Enter and arrow keys move like a
-spreadsheet, rows pre-populate from last week's projects and «Kopier
+spreadsheet and skip locked and billed cells. An arrow key past Sunday
+(or before Monday) carries on into the next (previous) week, in the
+same project row — added to that week if it has no hours there yet —
+and saves the cell it leaves first; it stops at a week that is locked
+all through. Page Down / Page Up change week, from a cell (keeping row
+and day) or from anywhere on the page. Rows pre-populate from last week's projects and «Kopier
 forrige uke» fills an empty week; locked days render disabled, billed
 cells show their faktura. Every cell carries a spoken name (project,
 day, and what the styling says: locked, several lines, has a
