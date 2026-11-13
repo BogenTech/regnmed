@@ -750,6 +750,30 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
     .await
     .unwrap();
 
+    // Paid, and never mailed: no longer follow-up material, but still
+    // owed a send (#223, bokføringsforskriften § 5-2-1 fourth paragraph)
+    // -- and the mail must not ask for a payment that has been made.
+    assert!(
+        !opf::open_invoices(&state.pool, drift)
+            .await
+            .unwrap()
+            .iter()
+            .any(|o| o.invoice_id == f.invoice_id),
+        "betalt: ute av oppfølgingen"
+    );
+    let unsent = opf::unsent_invoices(&state.pool, drift).await.unwrap();
+    let unsent = unsent
+        .iter()
+        .find(|u| u.invoice_id == f.invoice_id)
+        .expect("betalt og aldri sendt: skal sendes");
+    assert_eq!(unsent.remaining_ore, 0);
+    let mail = regnmed_db::invoice_email_payload(&state.pool, drift, f.invoice_id, Some("x@y.no"))
+        .await
+        .unwrap();
+    assert!(mail.text.contains("Fakturaen er betalt"), "{}", mail.text);
+    assert!(!mail.text.contains("KID:"), "{}", mail.text);
+    assert!(mail.attachment.is_some(), "salgsdokumentet følger med");
+
     // Paid → restored, once; the trail remembers.
     assert!(
         opf::restore_if_paid(

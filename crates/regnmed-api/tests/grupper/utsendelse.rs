@@ -427,3 +427,126 @@ async fn the_invitation_mail_goes_out_and_carries_no_token() {
         "body: {invited}"
     );
 }
+
+/// The follow-up's mail step (#223): settled subscription documents go out
+/// too. A credited invoice and its credit note both reach the customer,
+/// the invoice mail says it was CREDITED (a credit note brings the
+/// remainder to zero exactly like a payment does), and a second run sends
+/// nothing.
+#[tokio::test]
+async fn the_follow_up_sends_a_credited_invoice_and_its_credit_note() {
+    use chrono::Datelike as _;
+
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let Some(nats) = start_nats().await else {
+        return;
+    };
+    let js = mailq::connect(&nats.url, None, None).await.unwrap();
+
+    let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Drift AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, drift).await;
+    let customer = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kunde AS")
+        .await
+        .unwrap();
+    regnmed_db::update_company_settings(
+        &state.pool,
+        customer,
+        Some("Kundeveien 1, 0150 Oslo"),
+        None,
+        None,
+        Some("kunde@example.test"),
+        None,
+    )
+    .await
+    .unwrap();
+    let today = chrono::Utc::now().date_naive();
+    regnmed_db::subscription::open_coverage(
+        &state.pool,
+        customer,
+        "standard",
+        chrono::NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap(),
+        None,
+        "test: dekning",
+        "test",
+    )
+    .await
+    .unwrap();
+    let outcome =
+        regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(customer))
+            .await
+            .unwrap();
+    assert!(
+        outcome
+            .iter()
+            .any(|u| u.company_id == customer && u.gross_ore.is_some()),
+        "abonnementsfakturaen utstedt: {outcome:?}"
+    );
+    let invoice_id: Uuid =
+        sqlx::query_scalar("select invoice_id from abonnement_faktura_run where company_id = $1")
+            .bind(customer)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    let credit = regnmed_db::credit_invoice(&state.pool, drift, invoice_id, "test")
+        .await
+        .unwrap();
+
+    let outcomes = regnmed_mail::follow_up::send_unsent_invoices(&state.pool, &js, drift)
+        .await
+        .unwrap();
+    assert_eq!(outcomes.len(), 2, "{outcomes:?}");
+    for (_, sent) in &outcomes {
+        assert_eq!(sent.as_deref().unwrap(), "kunde@example.test");
+    }
+    assert!(
+        outcomes
+            .iter()
+            .any(|(f, _)| f.is_credit_note && f.invoice_id == credit.invoice_id),
+        "kreditnotaen sendes også"
+    );
+    assert!(
+        regnmed_mail::follow_up::send_unsent_invoices(&state.pool, &js, drift)
+            .await
+            .unwrap()
+            .is_empty(),
+        "andre kjøring sender ingenting"
+    );
+
+    let stream = js.get_stream(mailq::STREAM).await.unwrap();
+    let consumer: async_nats::jetstream::consumer::PullConsumer = stream
+        .get_or_create_consumer(
+            "follow-up-reader",
+            async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some("follow-up-reader".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut messages = consumer.messages().await.unwrap();
+    let mut invoice_mail = None;
+    for _ in 0..2 {
+        let message = tokio::time::timeout(Duration::from_secs(5), messages.next())
+            .await
+            .expect("a mail on the stream")
+            .unwrap()
+            .unwrap();
+        message.ack().await.unwrap();
+        let mail: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+        if mail["subject"].as_str().unwrap().starts_with("Faktura") {
+            invoice_mail = Some(mail);
+        }
+    }
+    let text = invoice_mail.expect("fakturaen på strømmen")["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(text.contains("kreditert"), "{text}");
+    assert!(!text.contains("betalt"), "kreditert er ikke betalt: {text}");
+    assert!(!text.contains("KID:"), "{text}");
+}

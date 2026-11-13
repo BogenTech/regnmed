@@ -240,33 +240,6 @@ async fn resolve_company(
     }
 }
 
-/// Publishes one mail on the shared rail and logs it in the utsendelse
-/// trail — the log id doubles as Nats-Msg-Id, so a retried send is
-/// deduplicated by the stream (#75).
-async fn send_email(
-    pool: &sqlx::PgPool,
-    js: &regnmed_mail::jetstream::Context,
-    drift: Uuid,
-    payload: regnmed_db::EmailPayload,
-) -> Result<()> {
-    let id = Uuid::now_v7();
-    let mail = regnmed_mail::OutboundMail::from_payload(id, &payload);
-    regnmed_mail::publish(js, &mail).await?;
-    regnmed_db::log_dispatch(
-        pool,
-        id,
-        drift,
-        payload.invoice_id,
-        payload.reminder_id,
-        payload.invitation_id,
-        &payload.to,
-        &payload.subject,
-        regnmed_db::subscription_follow_up::PERFORMED_BY,
-    )
-    .await?;
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
@@ -567,34 +540,31 @@ async fn main() -> Result<()> {
             }
 
             // 2) Mail: first the invoices that never went out (a fresh
-            // månedskjøring, or an earlier failed send), then reminders
-            // without an utsendelse row. The utsendelse id doubles as
-            // Nats-Msg-Id, so a retried send cannot double-deliver.
+            // månedskjøring, an earlier failed send, or one a card paid at
+            // issue -- a paid invoice must reach the buyer too, #223), then
+            // reminders without an utsendelse row. The utsendelse id
+            // doubles as Nats-Msg-Id, so a retried send cannot
+            // double-deliver.
             if let Some(js) = &mailq {
-                for f in open.iter().filter(|f| !f.sent) {
-                    let Some(email) = &f.email else {
-                        // Already counted above.
-                        continue;
+                for (f, sent) in
+                    regnmed_mail::follow_up::send_unsent_invoices(&pool, js, drift).await?
+                {
+                    let kind = if f.is_credit_note {
+                        "credit note"
+                    } else {
+                        "invoice"
                     };
-                    let sent = async {
-                        let payload = regnmed_db::invoice_email_payload(
-                            &pool,
-                            drift,
-                            f.invoice_id,
-                            Some(email),
-                        )
-                        .await?;
-                        send_email(&pool, js, drift, payload).await
-                    }
-                    .await;
                     match sent {
-                        Ok(()) => println!(
-                            "{}: faktura {} sendt til {email}",
+                        Ok(email) => println!(
+                            "{}: {kind} {} sent to {email}",
                             f.company_name, f.invoice_no
                         ),
+                        // An open invoice without an address was already
+                        // reported by the reminder step above.
+                        Err(_) if f.email.is_none() && f.remaining_ore > 0 => {}
                         Err(e) => {
                             println!(
-                                "{}: faktura {} — utsendelse FEILET: {e:#}",
+                                "{}: {kind} {} not sent: {e:#}",
                                 f.company_name, f.invoice_no
                             );
                             error += 1;
@@ -614,7 +584,14 @@ async fn main() -> Result<()> {
                             Some(email),
                         )
                         .await?;
-                        send_email(&pool, js, drift, payload).await
+                        regnmed_mail::follow_up::send_logged(
+                            &pool,
+                            js,
+                            drift,
+                            payload,
+                            opf::PERFORMED_BY,
+                        )
+                        .await
                     }
                     .await;
                     match sent {
@@ -631,7 +608,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-            } else if open.iter().any(|f| !f.sent) {
+            } else if !opf::unsent_invoices(&pool, drift).await?.is_empty() {
                 println!("usendte fakturaer venter på NATS_URL");
                 error += 1;
             }
