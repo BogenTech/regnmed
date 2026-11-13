@@ -567,6 +567,7 @@ pub async fn post_stripe_payment(
     }
 
     let draft = crate::invoice::InvoiceDraft {
+        buyer_reference: None,
         // Paid by card before it exists: the document is a kontantfaktura
         // (§5-3) with no KID or forfall -- an ordinary faktura would tell
         // the customer to pay again (#223).
@@ -1096,6 +1097,7 @@ async fn invoice_one(
 
     let mut tx = pool.begin().await?;
     let draft = crate::invoice::InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no,
         invoice_date: today,

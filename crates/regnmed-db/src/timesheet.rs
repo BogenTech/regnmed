@@ -607,6 +607,7 @@ pub async fn create_invoice_with_hours(
     let mut lines = draft.lines.clone();
     lines.extend(groups.iter().map(|g| hour_line(g, vat_code)));
     let full = InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: draft.party_no.clone(),
         invoice_date: draft.invoice_date,
@@ -667,6 +668,7 @@ pub async fn bill_hours(
 
     let lines = groups.iter().map(|g| hour_line(g, vat_code)).collect();
     let draft = InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: party_no.to_string(),
         invoice_date,

@@ -298,6 +298,28 @@ pub async fn update_party_contact(
     Ok(())
 }
 
+/// The customer's standing reference ("Deres referanse", #221): used on
+/// every invoice that does not name its own. Empty clears it.
+pub async fn set_party_buyer_reference(
+    pool: &PgPool,
+    company_id: Uuid,
+    party_id: Uuid,
+    reference: &str,
+) -> Result<()> {
+    let reference = Some(reference.trim()).filter(|r| !r.is_empty());
+    let updated = sqlx::query(
+        "update party set buyer_reference = $3
+         where id = $1 and company_id = $2 and kind = 'kunde'",
+    )
+    .bind(party_id)
+    .bind(company_id)
+    .bind(reference)
+    .execute(pool)
+    .await?;
+    ensure!(updated.rows_affected() == 1, "no such customer");
+    Ok(())
+}
+
 /// The invoice's stored PDF (the attachment written at issue time).
 pub async fn invoice_pdf_attachment_id(
     pool: &PgPool,

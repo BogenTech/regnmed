@@ -85,6 +85,9 @@ pub struct InvoicePdfInput {
 
     pub buyer_name: String,
     pub buyer_number: String,
+    /// The buyer's own reference ("Deres ref."), printed under the
+    /// customer number when given (#221).
+    pub buyer_reference: Option<String>,
     pub buyer_orgnumber: Option<String>,
     pub buyer_address: Option<String>,
 
@@ -265,6 +268,15 @@ pub fn render_invoice_pdf(input: &InvoicePdfInput) -> Vec<u8> {
         Font::Regular,
         &format!("Kundenr {}", input.buyer_number),
     );
+    if let Some(reference) = &input.buyer_reference {
+        pdf.text(
+            MARGIN,
+            ky + 12.0,
+            9.0,
+            Font::Regular,
+            &format!("Deres ref. {reference}"),
+        );
+    }
 
     // Line table. Columns: description | quantity | price | VAT | amount.
     let col_quantity = 330.0;
@@ -446,6 +458,7 @@ mod tests {
             seller_account_number: Some("1234.56.78903".into()),
             buyer_name: "Kunde & Co AS".into(),
             buyer_number: "10000".into(),
+            buyer_reference: None,
             buyer_orgnumber: Some("911111111".into()),
             buyer_address: None,
             invoice_number: 7,
@@ -476,6 +489,14 @@ mod tests {
             currency: None,
             motverdi_nok_ore: None,
         }
+    }
+
+    #[test]
+    fn the_buyers_reference_is_printed_only_when_given() {
+        assert!(find(&render_invoice_pdf(&input()), b"Deres ref.").is_none());
+        let mut i = input();
+        i.buyer_reference = Some("PO-4711".into());
+        assert!(find(&render_invoice_pdf(&i), b"Deres ref. PO-4711").is_some());
     }
 
     #[test]

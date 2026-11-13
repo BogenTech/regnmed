@@ -134,6 +134,27 @@ the invoice date would invent a legal fact on an immutable document.
 That history stays visibly incomplete; the requirement is enforced at
 issue time instead. In EHF the field is `cac:Delivery/cbc:ActualDeliveryDate`
 (BT-72) — omitted entirely rather than guessed when absent.
+### Deres referanse (EN 16931 BT-10, #221)
+
+The buyer's own reference — an order number, a department, a contact
+person — is what public and larger private buyers route an incoming
+invoice on. It is stored **on the invoice at issue**
+(`invoice.buyer_reference`, migration 0084, insert-only like the rest of
+the row), printed on the PDF as «Deres ref.» and carried in the EHF as
+`cbc:BuyerReference`.
+
+| Path | Reference |
+| --- | --- |
+| `POST …/invoices` | `buyer_reference` in the request |
+| Every path, when none is given | the customer's **standing** reference (`party.buyer_reference`, set with `PUT …/parties/{pid}/contact`) |
+| Kreditnota | the original invoice's reference — the buyer matches the credit to the invoice on it |
+
+PEPPOL-EN16931-R003 requires a buyer reference or an order reference
+in every EHF. An invoice with neither falls back to **our customer
+number** in BT-10: the document stays valid, but a buyer that routes on
+its own reference (the public sector does) cannot use it. Invoices
+issued before #221 carry no reference and keep that content.
+
 - **Kontaktinfo** (migration 0019, editable master data, never hashed):
   company address/kontonummer/selskapsform via
   `GET/PUT /companies/{id}/settings` (PUT is admin-only); party

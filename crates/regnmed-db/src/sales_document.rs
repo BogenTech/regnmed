@@ -314,6 +314,7 @@ pub async fn order_to_invoice(
 
     let lines = load_lines(pool, order_id).await?;
     let draft = InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: order.get("party_no"),
         invoice_date,
@@ -576,6 +577,7 @@ pub async fn salgsdokument_pdf(
         seller_account_number: None,
         buyer_name: doc.get("party_name"),
         buyer_number: doc.get("party_no"),
+        buyer_reference: None,
         buyer_orgnumber: doc.get("party_orgnr"),
         buyer_address: doc.get("party_address"),
         invoice_number: doc.get("doc_no"),

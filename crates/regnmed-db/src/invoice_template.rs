@@ -381,6 +381,7 @@ pub async fn generate_one(
     ensure!(!line_rows.is_empty(), "template has no lines");
 
     let draft = InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: template.get("party_no"),
         invoice_date: next_date,

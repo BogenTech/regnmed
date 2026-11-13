@@ -126,6 +126,7 @@ async fn seed_browser_demo() {
             &state.pool,
             company,
             &regnmed_db::InvoiceDraft {
+                buyer_reference: None,
                 cash_payment_method: None,
                 party_no: party_no.clone(),
                 invoice_date,

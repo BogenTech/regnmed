@@ -88,7 +88,7 @@ pub(crate) async fn render_invoice_ehf(
 ) -> Result<String> {
     let head = sqlx::query(
         "select i.invoice_no, i.invoice_date, i.due_date, i.kid, i.valuta,
-                i.credits_invoice_id, i.delivery_date, i.delivery_place,
+                i.credits_invoice_id, i.delivery_date, i.delivery_place, i.buyer_reference,
                 (select k.invoice_no from invoice k where k.id = i.credits_invoice_id)
                     as krediterer_nr,
                 c.name as selger_navn, c.orgnr as selger_orgnr, c.address as selger_adresse,
@@ -178,9 +178,15 @@ pub(crate) async fn render_invoice_ehf(
         currency: head
             .get::<Option<String>, _>("valuta")
             .unwrap_or_else(|| "NOK".into()),
-        // BT-10 is the buyer's own reference; we send the customer
-        // number we know them by until an order reference exists.
-        buyer_reference: head.get::<Option<String>, _>("party_no"),
+        // BT-10 is the buyer's own reference (#221). PEPPOL-EN16931-R003
+        // requires it (or an order reference, which we do not have), so
+        // an invoice without one falls back to the customer number we
+        // know them by: valid, but a buyer that routes on its reference
+        // (the public sector does) cannot use it. Invoices issued before
+        // #221 have no reference and keep the old content.
+        buyer_reference: head
+            .get::<Option<String>, _>("buyer_reference")
+            .or_else(|| head.get::<Option<String>, _>("party_no")),
         // BT-72. Null only on invoices issued before #81 — the element
         // is then omitted rather than filled with a guess.
         delivery_date: head.get("delivery_date"),

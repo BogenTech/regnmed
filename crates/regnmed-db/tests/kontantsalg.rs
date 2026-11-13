@@ -122,6 +122,7 @@ async fn a_cash_invoice_settles_its_own_receivable_through_the_subledger() {
         &pool,
         company,
         &regnmed_db::InvoiceDraft {
+            buyer_reference: None,
             cash_payment_method: None, // create_kontantfaktura sets it
             party_no: party_no.clone(),
             invoice_date: date,

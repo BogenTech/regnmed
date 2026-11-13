@@ -169,6 +169,7 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            buyer_reference: Some("PO-4711".into()),
             cash_payment_method: None,
             party_no: customer_no.clone(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
@@ -242,6 +243,11 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         xml.contains(&format!("<cbc:PaymentID>{}</cbc:PaymentID>", issued.kid)),
         "KID-en følger med som betalingsreferanse"
     );
+    // #221: BT-10 is the buyer's own reference, not our customer number.
+    assert!(
+        xml.contains("<cbc:BuyerReference>PO-4711</cbc:BuyerReference>"),
+        "kjøperens referanse i BT-10: {xml}"
+    );
     // §5-1-1 nr. 4 / BT-72: the delivery date reaches the wire, and it
     // is the one that was recorded — not the invoice date.
     assert!(
@@ -305,6 +311,10 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         credit_xml.contains(&format!("<cbc:ID>{}</cbc:ID>", issued.invoice_no)),
         "kreditnotaen navngir fakturaen den krediterer"
     );
+    assert!(
+        credit_xml.contains("<cbc:BuyerReference>PO-4711</cbc:BuyerReference>"),
+        "kreditnotaen bærer samme referanse som fakturaen: {credit_xml}"
+    );
     // The kreditnota repeats the ORIGINAL leveringstidspunkt: it
     // credits that delivery, and dating it "today" would assert a
     // delivery that never happened.
@@ -338,10 +348,16 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
             .await
             .unwrap();
     give_parties_address(&state.pool, company).await;
+    // #221: the customer's standing reference applies when the invoice
+    // names none.
+    regnmed_db::set_party_buyer_reference(&state.pool, company, plain_id, " Avd. 12 ")
+        .await
+        .unwrap();
     let plain = regnmed_db::create_invoice(
         &state.pool,
         company,
         &regnmed_db::InvoiceDraft {
+            buyer_reference: None,
             cash_payment_method: None,
             party_no: plain_no,
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 7, 2).unwrap(),
@@ -373,6 +389,17 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
         stored_xml(plain.invoice_id).await,
         0,
         "ingen EHF uten orgnr"
+    );
+    let (status, detail) = get_json(
+        &state,
+        &format!("{base}/invoices/{}", plain.invoice_id),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(
+        detail["buyer_reference"], "Avd. 12",
+        "kundens faste referanse"
     );
     let (status, _) = get_text(
         &state,
@@ -417,6 +444,10 @@ async fn invoice_out_as_ehf_and_received_ehf_into_the_innboks() {
     assert!(
         rendered.contains("<cbc:EndpointID schemeID=\"0192\">974760673</cbc:EndpointID>"),
         "rendret fra fakturaen, ikke brukerens vedlegg: {rendered}"
+    );
+    assert!(
+        rendered.contains("<cbc:BuyerReference>Avd. 12</cbc:BuyerReference>"),
+        "referansen lagret på fakturaen: {rendered}"
     );
 
     // ---- Inn: en mottatt EHF i innboksen ----

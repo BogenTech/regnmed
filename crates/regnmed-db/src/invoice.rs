@@ -36,6 +36,10 @@ pub struct InvoiceDraft {
     /// belongs on the draft, not only on the posting.
     pub cash_payment_method: Option<String>,
     pub party_no: String,
+    /// The buyer's own reference ("Deres referanse", EN 16931 BT-10),
+    /// printed on the PDF and carried in the EHF. None = the customer's
+    /// standing reference, if it has one (#221).
+    pub buyer_reference: Option<String>,
     pub invoice_date: NaiveDate,
     pub due_date: NaiveDate,
     /// Leveringstidspunkt (bokføringsforskriften §5-1-1 nr. 4). NOT an
@@ -171,7 +175,7 @@ pub async fn create_invoice_in(
         "an invoice needs at least one line"
     );
     let party = sqlx::query(
-        "select id, kind, name, orgnr, address from party
+        "select id, kind, name, orgnr, address, buyer_reference from party
          where company_id = $1 and party_no = $2",
     )
     .bind(company_id)
@@ -180,6 +184,14 @@ pub async fn create_invoice_in(
     .await?
     .with_context(|| format!("no party {}", draft.party_no))?;
     let party_id: Uuid = party.get("id");
+    // The invoice's own reference, else the customer's standing one (#221).
+    let buyer_reference: Option<String> = draft
+        .buyer_reference
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+        .or_else(|| party.get("buyer_reference"));
     ensure!(
         party.get::<String, _>("kind") == "kunde",
         "party {} is not a kunde",
@@ -284,8 +296,8 @@ pub async fn create_invoice_in(
     sqlx::query(
         "insert into invoice (id, company_id, party_id, invoice_no, invoice_date, due_date,
                               kid, credits_invoice_id, voucher_id, receivable_entry_id, created_by,
-                              valuta, delivery_date, delivery_place)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+                              valuta, delivery_date, delivery_place, buyer_reference)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
     )
     .bind(invoice_id)
     .bind(company_id)
@@ -301,6 +313,7 @@ pub async fn create_invoice_in(
     .bind(&draft.currency)
     .bind(draft.delivery_date)
     .bind(&draft.delivery_place)
+    .bind(&buyer_reference)
     .execute(&mut **tx)
     .await?;
 
@@ -369,6 +382,7 @@ pub async fn create_invoice_in(
         seller_account_number: company.get("bank_account"),
         buyer_name: party.get("name"),
         buyer_number: draft.party_no.clone(),
+        buyer_reference: buyer_reference.clone(),
         buyer_orgnumber: party.get("orgnr"),
         buyer_address: party.get("address"),
         invoice_number: invoice_no,
@@ -543,7 +557,7 @@ pub async fn credit_invoice(
 ) -> Result<IssuedInvoice> {
     let original = sqlx::query(
         "select i.id, i.invoice_no, i.receivable_entry_id, p.party_no, i.valuta,
-                i.invoice_date, i.delivery_date, i.delivery_place,
+                i.invoice_date, i.delivery_date, i.delivery_place, i.buyer_reference,
                 (select e.kurs_micro from entry e where e.id = i.receivable_entry_id)
                     as kurs_micro,
                 (select exists (select 1 from invoice c where c.credits_invoice_id = i.id))
@@ -586,6 +600,9 @@ pub async fn credit_invoice(
     let draft = InvoiceDraft {
         cash_payment_method: None,
         party_no: original.get("party_no"),
+        // The buyer matches a credit note to the invoice on the same
+        // reference it routed the invoice on.
+        buyer_reference: original.get("buyer_reference"),
         invoice_date: today,
         due_date: today,
         // The kreditnota credits a delivery that already happened, so
@@ -858,6 +875,7 @@ pub struct InvoiceDetail {
     pub row: InvoiceRow,
     pub delivery_date: Option<NaiveDate>,
     pub delivery_place: Option<String>,
+    pub buyer_reference: Option<String>,
     pub currency: Option<String>,
     pub party_email: Option<String>,
     /// The invoice a kreditnota credits, or the kreditnota that credits
@@ -893,7 +911,8 @@ pub async fn get_invoice(
 ) -> Result<Option<InvoiceDetail>> {
     let Some(r) = sqlx::query(&format!(
         "{INVOICE_STATUS_CTE}
-         select inv.*, i.delivery_date, i.delivery_place, i.valuta, i.created_by, p.email,
+         select inv.*, i.delivery_date, i.delivery_place, i.buyer_reference, i.valuta,
+                i.created_by, p.email,
                 o.id as credits_id, o.invoice_no as credits_no,
                 c.id as credited_by_id, c.invoice_no as credited_by_no,
                 i.voucher_id, iv.fiscal_year as voucher_year, iv.voucher_number
@@ -981,6 +1000,7 @@ pub async fn get_invoice(
         credited_by: pair("credited_by_id", "credited_by_no"),
         delivery_date: r.get("delivery_date"),
         delivery_place: r.get("delivery_place"),
+        buyer_reference: r.get("buyer_reference"),
         currency: r.get("valuta"),
         party_email: r.get("email"),
         created_by: r.get("created_by"),

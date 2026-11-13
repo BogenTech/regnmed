@@ -47,6 +47,7 @@ fn party_json(p: &regnmed_db::PartyRow) -> serde_json::Value {
         "address": p.address,
         "email": p.email,
         "bank_account": p.bank_account,
+        "buyer_reference": p.buyer_reference,
         "saldo_ore": p.balance_ore,
         "overdue_ore": p.overdue_ore,
     })

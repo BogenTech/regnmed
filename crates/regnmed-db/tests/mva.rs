@@ -417,6 +417,7 @@ async fn an_unregistered_company_cannot_charge_output_vat() {
 
     let today = date(2026, 10, 28);
     let draft = regnmed_db::InvoiceDraft {
+        buyer_reference: None,
         cash_payment_method: None,
         party_no: party_no.clone(),
         invoice_date: today,

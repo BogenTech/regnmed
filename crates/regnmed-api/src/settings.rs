@@ -141,6 +141,8 @@ pub struct PartyContactRequest {
     email: Option<String>,
     /// Kontonummer for remittering (11 siffer, MOD11-validert).
     bank_account: Option<String>,
+    /// The customer's standing "Deres referanse" (#221); empty clears it.
+    buyer_reference: Option<String>,
 }
 
 pub async fn update_party_contact(
@@ -160,5 +162,10 @@ pub async fn update_party_contact(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if let Some(reference) = &request.buyer_reference {
+        regnmed_db::set_party_buyer_reference(&state.pool, company_id, party_id, reference)
+            .await
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    }
     Ok(Json(json!({ "updated": true })))
 }
