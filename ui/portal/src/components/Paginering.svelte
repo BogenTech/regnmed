@@ -14,9 +14,9 @@
 
 {#if sider > 1}
   <div class="join">
-    <button class="btn btn-xs join-item" disabled={side <= 1} onclick={() => (side -= 1)}>«</button>
+    <button class="btn btn-xs join-item" aria-label="Forrige side" disabled={side <= 1} onclick={() => (side -= 1)}>«</button>
     <span class="btn btn-xs join-item pointer-events-none">Side {side} av {sider}</span>
-    <button class="btn btn-xs join-item" disabled={side >= sider} onclick={() => (side += 1)}>
+    <button class="btn btn-xs join-item" aria-label="Neste side" disabled={side >= sider} onclick={() => (side += 1)}>
       »
     </button>
   </div>

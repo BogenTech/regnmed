@@ -261,7 +261,9 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/timesheet/unbilled` | GET |
 | `/companies/{company_id}/timesheet/{entry_id}` | PUT |
 | `/companies/{company_id}/vouchers` | GET POST |
+| `/companies/{company_id}/vouchers/{voucher_id}` | GET |
 | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | GET POST |
+| `/companies/{company_id}/vouchers/{voucher_id}/reverse` | POST |
 | `/directory/firms` | GET |
 | `/firms` | POST |
 | `/firms/mine` | GET |

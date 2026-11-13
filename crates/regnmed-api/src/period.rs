@@ -216,3 +216,82 @@ pub async fn download_attachment(
         content,
     ))
 }
+
+/// One voucher with its lines, attachments count, reversal links and —
+/// when another flow owns it — where it is corrected instead.
+pub async fn get_voucher(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, voucher_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::VoucherRead).await?;
+    let d = regnmed_db::voucher_detail(&state.pool, company_id, voucher_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let v = &d.voucher;
+    let link = |p: &Option<(Uuid, String)>| {
+        p.as_ref()
+            .map(|(id, label)| json!({ "voucher_id": id, "voucher": label }))
+    };
+    Ok(Json(json!({
+        "voucher_id": v.voucher_id,
+        "voucher": format!("{}-{}", v.fiscal_year, v.voucher_number),
+        "journal": v.journal_code,
+        "date": v.voucher_date.to_string(),
+        "description": v.description,
+        "created_by": d.created_by,
+        "created_at": d.created_at,
+        "reverses": link(&d.reverses),
+        "reversed_by": link(&d.reversed_by),
+        "owner": d.owner,
+        "attachments": d.attachments,
+        "lines": v.lines.iter().zip(&d.currency).map(|(l, c)| json!({
+            "account": l.account,
+            "account_name": l.account_name,
+            "amount_ore": l.amount_ore,
+            "vat_code": l.vat_code,
+            "description": l.description,
+            "party_no": l.party_no,
+            "avdeling": l.department,
+            "prosjekt": l.project,
+            "valuta": c.as_ref().map(|(code, _)| code),
+            "valutabelop_cent": c.as_ref().map(|(_, cent)| cent),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct ReverseRequest {
+    /// The reversal's date; today when left out. It must lie in an open
+    /// period — a locked one is refused by the posting itself.
+    #[serde(rename = "dato")]
+    date: Option<chrono::NaiveDate>,
+}
+
+pub async fn reverse_voucher(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, voucher_id)): Path<(Uuid, Uuid)>,
+    body: Option<Json<ReverseRequest>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
+    let request = body.map(|Json(r)| r).unwrap_or_default();
+    let date = match request.date {
+        Some(d) => d,
+        None => sqlx::query_scalar("select current_date")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(anyhow::Error::from)?,
+    };
+    let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    let reversal =
+        regnmed_db::reverse_voucher(&state.pool, company_id, voucher_id, date, created_by)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let posted = &reversal.posted;
+    Ok(Json(json!({
+        "voucher_id": posted.id,
+        "voucher": format!("{}-{}", posted.fiscal_year, posted.voucher_number),
+        "bank_unmatched": reversal.bank_unmatched,
+    })))
+}

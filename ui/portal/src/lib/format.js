@@ -19,6 +19,21 @@ export function parseKr(text) {
 
 // Today's date where the user is. toISOString() alone is UTC, which in
 // Norway is still yesterday until 01:00/02:00.
+// An amount as a person types it ("12 500,00", "1250", "−45,5") in øre,
+// or null when the field is empty or is not a number. Every money field
+// goes through here: parseFloat("12 500") is 12, and a form that read
+// amounts that way booked 12 kr for a 12 500 kr Z-report.
+export function oreOrNull(text) {
+  const t = String(text ?? "").trim().replace(/\u2212/g, "-");
+  if (!t) return null;
+  try {
+    const v = parseKr(t);
+    return Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 export function today(now = new Date()) {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
