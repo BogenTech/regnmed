@@ -5,6 +5,8 @@
 //! - GET    /companies/{id}/parties/{party_id}/items?open=true
 //! - POST   /companies/{id}/reskontro/matches        {entry_a, entry_b, amount_ore}
 //! - DELETE /companies/{id}/reskontro/matches/{match_id}
+//! - GET    /companies/{id}/reskontro/overview       tie-out + parties to match
+//! - GET    /companies/{id}/parties/{party_id}/matches  match history
 //! - PUT    /companies/{id}/accounts/{number}/reskontro {kind}  (flag account)
 //!
 //! Reading is open to every access level; mutations require bokforing or
@@ -297,4 +299,77 @@ pub async fn set_account_subledger(
     Ok(Json(
         json!({ "account": account_number, "reskontro_kind": request.kind }),
     ))
+}
+
+/// The workbench's front page: per reskontro account the hovedbok against
+/// the parties' sum (the revisjonsrapport's check 4, same numbers), and
+/// the parties that have open items on both sides to match.
+pub async fn overview(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::SubledgerRead).await?;
+    let (accounts, (parties, total), names) = tokio::try_join!(
+        regnmed_db::subledger_accounts(&state.pool, company_id),
+        regnmed_db::parties_to_match(&state.pool, company_id, 100),
+        async {
+            let rows: Vec<(String, String)> =
+                sqlx::query_as("select number, name from account where company_id = $1")
+                    .bind(company_id)
+                    .fetch_all(&state.pool)
+                    .await?;
+            anyhow::Ok(rows)
+        },
+    )?;
+    let name_of = |n: &str| {
+        names
+            .iter()
+            .find(|(no, _)| no == n)
+            .map(|(_, name)| name.clone())
+    };
+    Ok(Json(json!({
+        "accounts": accounts.iter().map(|a| json!({
+            "account": a.account,
+            "name": name_of(&a.account),
+            "reskontro_kind": a.flagg,
+            "ledger_ore": a.general_ledger_ore,
+            "subledger_ore": a.subledger_ore,
+            "without_party_count": a.without_party_count,
+            "wrong_kind_count": a.wrong_kind_count,
+        })).collect::<Vec<_>>(),
+        "to_match": parties.iter().map(|p| json!({
+            "party_id": p.party_id,
+            "party_no": p.party_no,
+            "name": p.name,
+            "kind": p.kind,
+            "open_positive_ore": p.open_positive_ore,
+            "open_negative_ore": p.open_negative_ore,
+        })).collect::<Vec<_>>(),
+        "to_match_total": total,
+    })))
+}
+
+pub async fn party_matches(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, party_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::SubledgerRead).await?;
+    let rows = regnmed_db::party_matches(&state.pool, company_id, party_id).await?;
+    Ok(Json(json!({
+        "matches": rows.iter().map(|m| json!({
+            "match_id": m.id,
+            "entry_a": m.entry_a,
+            "entry_b": m.entry_b,
+            "voucher_a": m.voucher_a,
+            "date_a": m.date_a.to_string(),
+            "voucher_b": m.voucher_b,
+            "date_b": m.date_b.to_string(),
+            "amount_ore": m.amount_ore,
+            "matched_by": m.matched_by,
+            "created_at": m.created_at,
+            "currency_settlement": m.currency_settlement,
+        })).collect::<Vec<_>>(),
+    })))
 }

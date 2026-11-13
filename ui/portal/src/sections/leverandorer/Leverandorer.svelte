@@ -15,7 +15,7 @@
   <NewParty {companyId} kind="leverandor" {query} />
 {:else if isId(extra)}
   {#key companyId + extra}
-    <SupplierDetail {companyId} partyId={extra} />
+    <SupplierDetail {companyId} partyId={extra} {query} />
   {/key}
 {:else if extra}
   <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>

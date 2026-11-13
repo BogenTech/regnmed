@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
+use regnmed_core::money::Ore;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -301,8 +302,8 @@ pub struct PartyItem {
 }
 
 /// All items for one party, oldest first, with their open remainder.
-pub async fn party_items(
-    pool: &PgPool,
+pub async fn party_items<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
     company_id: Uuid,
     party_id: Uuid,
     open_only: bool,
@@ -331,7 +332,7 @@ pub async fn party_items(
     )
     .bind(company_id)
     .bind(party_id)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     let items: Vec<PartyItem> = rows
@@ -374,51 +375,54 @@ pub async fn match_items(
     amount_ore: i64,
     matched_by: &str,
 ) -> Result<Uuid> {
-    ensure!(amount_ore > 0, "amount must be positive");
-    let valid: bool = sqlx::query_scalar(
-        "select exists (
-             select 1
-             from entry a
-             join voucher va on va.id = a.voucher_id and va.company_id = $1
-             join entry b on b.id = $3
-             join voucher vb on vb.id = b.voucher_id and vb.company_id = $1
-             where a.id = $2
-               and a.party_id is not null and a.party_id = b.party_id
-               and a.account_id = b.account_id
-         )",
+    ensure!(amount_ore > 0, "beløpet må være positivt");
+    let mut tx = pool.begin().await?;
+    let party_id: Option<Uuid> = sqlx::query_scalar(
+        "select a.party_id
+         from entry a
+         join voucher va on va.id = a.voucher_id and va.company_id = $1
+         join entry b on b.id = $3
+         join voucher vb on vb.id = b.voucher_id and vb.company_id = $1
+         where a.id = $2
+           and a.party_id is not null and a.party_id = b.party_id
+           and a.account_id = b.account_id",
     )
     .bind(company_id)
     .bind(entry_a)
     .bind(entry_b)
-    .fetch_one(pool)
+    .fetch_optional(&mut *tx)
     .await?;
-    ensure!(
-        valid,
-        "entries must belong to the same company, party and reskontro account"
-    );
-
-    let party_id: Uuid = sqlx::query_scalar("select party_id from entry where id = $1")
-        .bind(entry_a)
-        .fetch_one(pool)
+    let party_id =
+        party_id.context("postene må tilhøre samme part og samme reskontrokonto i selskapet")?;
+    // Matches on one party take turns: the remainders are read and the
+    // match written under the same lock, so two simultaneous matches
+    // cannot both consume the same open amount.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+        .bind(party_id)
+        .execute(&mut *tx)
         .await?;
-    let items = party_items(pool, company_id, party_id, false).await?;
+
+    let items = party_items(&mut *tx, company_id, party_id, false).await?;
     let remaining = |id: Uuid| {
         items
             .iter()
             .find(|i| i.entry_id == id)
             .map(|i| i.remaining_ore)
     };
-    let remaining_a = remaining(entry_a).context("entry_a not found")?;
-    let remaining_b = remaining(entry_b).context("entry_b not found")?;
-    if remaining_a < amount_ore {
-        bail!("entry_a has only {remaining_a} øre open, cannot match {amount_ore}");
-    }
-    if -remaining_b < amount_ore {
-        bail!(
-            "entry_b has only {} øre open, cannot match {amount_ore}",
-            -remaining_b
-        );
-    }
+    let remaining_a = remaining(entry_a).context("posten finnes ikke")?;
+    let remaining_b = remaining(entry_b).context("posten finnes ikke")?;
+    ensure!(
+        remaining_a >= amount_ore,
+        "den ene posten har bare {} kr åpent, så {} kr kan ikke avstemmes mot den",
+        Ore(remaining_a.max(0)),
+        Ore(amount_ore)
+    );
+    ensure!(
+        -remaining_b >= amount_ore,
+        "den andre posten har bare {} kr åpent, så {} kr kan ikke avstemmes mot den",
+        Ore((-remaining_b).max(0)),
+        Ore(amount_ore)
+    );
 
     let id = Uuid::now_v7();
     sqlx::query(
@@ -430,12 +434,35 @@ pub async fn match_items(
     .bind(entry_b)
     .bind(amount_ore)
     .bind(matched_by)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(id)
 }
 
 pub async fn unmatch_items(pool: &PgPool, company_id: Uuid, match_id: Uuid) -> Result<()> {
+    // A currency settlement posted its agio voucher in the same
+    // transaction as the match rows; undoing one row would leave that
+    // voucher standing against nothing. It is corrected with a reversal.
+    let currency: Option<bool> = sqlx::query_scalar(
+        "select m.valuta_cent is not null
+                or ea.description is not distinct from 'Kursdifferanse ved oppgjør'
+                or eb.description is not distinct from 'Kursdifferanse ved oppgjør'
+         from reskontro_match m
+         join entry ea on ea.id = m.entry_a
+         join entry eb on eb.id = m.entry_b
+         join voucher v on v.id = ea.voucher_id
+         where m.id = $1 and v.company_id = $2",
+    )
+    .bind(match_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    ensure!(currency.is_some(), "avstemmingen finnes ikke");
+    ensure!(
+        currency == Some(false),
+        "et valutaoppgjør med kursdifferanse kan ikke løses opp her — reverser kursdifferansebilaget"
+    );
     let removed = sqlx::query(
         "delete from reskontro_match m
          using entry e, voucher v
@@ -445,7 +472,7 @@ pub async fn unmatch_items(pool: &PgPool, company_id: Uuid, match_id: Uuid) -> R
     .bind(match_id)
     .execute(pool)
     .await?;
-    ensure!(removed.rows_affected() == 1, "no such match");
+    ensure!(removed.rows_affected() == 1, "avstemmingen finnes ikke");
     Ok(())
 }
 
@@ -772,4 +799,176 @@ pub async fn kursregulering(
         (posted.fiscal_year, posted.voucher_number),
         (reversed.fiscal_year, reversed.voucher_number),
     )))
+}
+
+/// Per account, the hovedbok saldo against the sum of the parties' own
+/// postings: every flagged account PLUS every unflagged account that
+/// carries party postings (an amount no reskontro account holds is
+/// exactly the divergence a check limited to flagged accounts cannot
+/// see). The revisjonsrapport's check 4 and the reskontro overview read
+/// the same numbers.
+pub async fn subledger_accounts(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<Vec<regnmed_core::audit::SubledgerAccount>> {
+    let rows = sqlx::query(
+        "select a.number, a.reskontro_kind,
+                coalesce(sum(e.amount_ore), 0)::bigint as hovedbok_ore,
+                coalesce(sum(e.amount_ore) filter (where e.party_id is not null), 0)::bigint
+                    as reskontro_ore,
+                count(e.id) filter (where e.party_id is null)::bigint as uten_part_antall,
+                count(e.id) filter (where e.party_id is not null)::bigint as med_part_antall,
+                count(e.id) filter (where p.kind is not null
+                                      and p.kind is distinct from a.reskontro_kind)::bigint
+                    as feil_kind_antall,
+                coalesce(sum(e.amount_ore) filter (where p.kind is not null
+                                      and p.kind is distinct from a.reskontro_kind), 0)::bigint
+                    as feil_kind_ore,
+                coalesce(array_agg(distinct p.kind) filter (where p.kind is not null),
+                         array[]::text[]) as part_kinds
+         from account a
+         left join entry e on e.account_id = a.id
+         left join party p on p.id = e.party_id
+         where a.company_id = $1
+           and (a.reskontro_kind is not null
+                or exists (select 1 from entry x
+                           where x.account_id = a.id and x.party_id is not null))
+         group by a.number, a.reskontro_kind
+         order by a.number",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let mut part_kinds: Vec<String> = r.get("part_kinds");
+            part_kinds.sort(); // array_agg has no order; the report is deterministic
+            regnmed_core::audit::SubledgerAccount {
+                account: r.get("number"),
+                flagg: r.get("reskontro_kind"),
+                general_ledger_ore: r.get("hovedbok_ore"),
+                subledger_ore: r.get("reskontro_ore"),
+                without_party_count: r.get("uten_part_antall"),
+                with_party_count: r.get("med_part_antall"),
+                wrong_kind_count: r.get("feil_kind_antall"),
+                feil_kind_ore: r.get("feil_kind_ore"),
+                part_kinds,
+            }
+        })
+        .collect())
+}
+
+/// A party with open items on BOTH sides of its reskontro — an invoice
+/// and a payment that can be matched against each other.
+#[derive(Debug)]
+pub struct PartyToMatch {
+    pub party_id: Uuid,
+    pub party_no: String,
+    pub name: String,
+    pub kind: String,
+    /// Open on the invoice side (customer: positive; supplier: the
+    /// payments, positive too) and the settlement side (negative).
+    pub open_positive_ore: i64,
+    pub open_negative_ore: i64,
+}
+
+pub async fn parties_to_match(
+    pool: &PgPool,
+    company_id: Uuid,
+    limit: i64,
+) -> Result<(Vec<PartyToMatch>, i64)> {
+    let rows = sqlx::query(
+        "select p.id, p.party_no, p.name, p.kind,
+                sum(o.remaining_ore) filter (where o.remaining_ore > 0)::bigint as pos,
+                sum(o.remaining_ore) filter (where o.remaining_ore < 0)::bigint as neg,
+                count(*) over () as total
+         from subledger_entry_open o
+         join party p on p.id = o.party_id
+         where p.company_id = $1 and o.remaining_ore <> 0
+         group by p.id, p.party_no, p.name, p.kind
+         having bool_or(o.remaining_ore > 0) and bool_or(o.remaining_ore < 0)
+         order by p.name, p.party_no
+         limit $2",
+    )
+    .bind(company_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let total = rows.first().map(|r| r.get::<i64, _>("total")).unwrap_or(0);
+    Ok((
+        rows.iter()
+            .map(|r| PartyToMatch {
+                party_id: r.get("id"),
+                party_no: r.get("party_no"),
+                name: r.get("name"),
+                kind: r.get("kind"),
+                open_positive_ore: r.get("pos"),
+                open_negative_ore: r.get("neg"),
+            })
+            .collect(),
+        total,
+    ))
+}
+
+/// One reskontro match on a party, both sides named — the history the
+/// party page shows, and where a wrong match is undone.
+#[derive(Debug)]
+pub struct MatchRow {
+    pub id: Uuid,
+    pub entry_a: Uuid,
+    pub entry_b: Uuid,
+    pub voucher_a: String,
+    pub date_a: NaiveDate,
+    pub voucher_b: String,
+    pub date_b: NaiveDate,
+    pub amount_ore: i64,
+    pub matched_by: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The match closes a currency-difference transfer posted by
+    /// `match_valuta`: undoing it alone would leave that voucher behind.
+    pub currency_settlement: bool,
+}
+
+pub async fn party_matches(
+    pool: &PgPool,
+    company_id: Uuid,
+    party_id: Uuid,
+) -> Result<Vec<MatchRow>> {
+    let rows = sqlx::query(
+        "select m.id, m.entry_a, m.entry_b, m.amount_ore, m.matched_by, m.created_at,
+                va.fiscal_year as ya, va.voucher_number as na, va.voucher_date as da,
+                vb.fiscal_year as yb, vb.voucher_number as nb, vb.voucher_date as db,
+                (m.valuta_cent is not null
+                 or ea.description is not distinct from 'Kursdifferanse ved oppgjør'
+                 or eb.description is not distinct from 'Kursdifferanse ved oppgjør') as currency
+         from reskontro_match m
+         join entry ea on ea.id = m.entry_a
+         join voucher va on va.id = ea.voucher_id
+         join entry eb on eb.id = m.entry_b
+         join voucher vb on vb.id = eb.voucher_id
+         where va.company_id = $1 and ea.party_id = $2
+         order by m.created_at desc, m.id desc",
+    )
+    .bind(company_id)
+    .bind(party_id)
+    .fetch_all(pool)
+    .await?;
+    let label = |y: i32, n: i64| format!("{y}-{n}");
+    Ok(rows
+        .iter()
+        .map(|r| MatchRow {
+            id: r.get("id"),
+            entry_a: r.get("entry_a"),
+            entry_b: r.get("entry_b"),
+            voucher_a: label(r.get("ya"), r.get("na")),
+            date_a: r.get("da"),
+            voucher_b: label(r.get("yb"), r.get("nb")),
+            date_b: r.get("db"),
+            amount_ore: r.get("amount_ore"),
+            matched_by: r.get("matched_by"),
+            created_at: r.get("created_at"),
+            currency_settlement: r.get("currency"),
+        })
+        .collect())
 }

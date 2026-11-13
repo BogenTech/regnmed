@@ -163,6 +163,13 @@ async fn contacts_and_open_items_from_an_old_system() {
     assert_eq!(status, StatusCode::OK, "{preview}");
     assert_eq!(preview["antall"], 3);
     assert_eq!(preview["sum_ore"], 15_500_00, "12 500 + 2 000 + 1 000");
+    // The rows come back as read, so the user checks the file before posting.
+    assert_eq!(preview["rader"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        preview["rader"][1]["belop_ore"], 2_000_00,
+        "the remainder, not the invoice amount"
+    );
+    assert_eq!(preview["rader"][2]["navn"], "Nykommer AS");
     assert_eq!(preview["konto_saldo_ore"], 0);
     assert_eq!(preview["kan_importeres"], true);
     assert_eq!(
@@ -242,8 +249,9 @@ async fn contacts_and_open_items_from_an_old_system() {
     assert!(error.contains("ERSTATTER"), "{error}");
 
     // ---- Supplier items land on the credit side ----
-    let suppliers = "Leverandørnr;Navn;Bilagsnr;Dato;Saldo\n\
-                        20001;Grossisten AS;I-77;2026-02-01;4 500,00\n";
+    let suppliers = "Leverandørnr;Navn;Bilagsnr;Dato;Forfall;KID;Saldo\n\
+                        20001;Grossisten AS;I-77;2026-02-01;2026-03-03;1234567897;4 500,00\n\
+                        20001;Grossisten AS;I-78;2026-02-05;;1234567890;500,00\n";
     let (status, body) = post_csv(
         &state,
         &format!("{base}/import/contacts?kind=leverandor"),
@@ -262,8 +270,24 @@ async fn contacts_and_open_items_from_an_old_system() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         balance(&state, company, "2400").await,
-        -4_500_00,
+        -5_000_00,
         "leverandørgjeld er kredit"
+    );
+    // Due date and a valid KID are kept as payable terms, so the payment
+    // list pays by them; a bad KID is named and left in the text only.
+    assert!(
+        body["warnings"].to_string().contains("1234567890"),
+        "{body}"
+    );
+    let (_, payable) = get_json(&state, &format!("{base}/payments/payable"), &token).await;
+    let items = payable["items"].as_array().unwrap();
+    let first = items.iter().find(|i| i["belop_ore"] == 4_500_00).unwrap();
+    assert_eq!(first["due_date"], "2026-03-03", "{payable}");
+    assert_eq!(first["kid"], "1234567897");
+    let second = items.iter().find(|i| i["belop_ore"] == 500_00).unwrap();
+    assert!(
+        second["due_date"].is_null() && second["kid"].is_null(),
+        "{second}"
     );
 
     // ---- A file we do not understand fails loudly with the columns ----

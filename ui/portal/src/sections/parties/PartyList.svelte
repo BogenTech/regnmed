@@ -9,7 +9,10 @@
   import { kr } from "../../lib/format.js";
   import SortHeader from "../../components/SortHeader.svelte";
 
-  let { companyId, kind = "kunde", query = "" } = $props();
+  // Reskontro → Parter shows the same list under its own address and
+  // heading: `listSection` is where search/sort are written back to, and
+  // `heading` drops the page title and "new" button it does not need.
+  let { companyId, kind = "kunde", query = "", listSection = null, heading = true } = $props();
 
   const T = {
     kunde: {
@@ -85,7 +88,8 @@
     if (search.trim()) p.set("q", search.trim());
     if (sort !== "name") p.set("sort", sort);
     if (desc) p.set("desc", "true");
-    const hash = "#/c/" + companyId + "/" + T.section + (p.size ? "?" + p : "");
+    if (listSection) p.set("kind", kind);
+    const hash = "#/c/" + companyId + "/" + (listSection || T.section) + (p.size ? "?" + p : "");
     if (location.hash !== hash) history.replaceState(null, "", hash);
   });
 
@@ -114,12 +118,14 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="flex flex-wrap items-center gap-3 mb-4">
-  <h1 class="text-2xl font-bold mr-auto">{T.title}</h1>
-  <a class="btn btn-primary" href={"#/c/" + companyId + "/" + T.section + "/ny"} aria-keyshortcuts="n">
-    {T.newLabel} <kbd class="kbd kbd-sm hidden sm:inline-flex">N</kbd>
-  </a>
-</div>
+{#if heading}
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-2xl font-bold mr-auto">{T.title}</h1>
+    <a class="btn btn-primary" href={"#/c/" + companyId + "/" + T.section + "/ny"} aria-keyshortcuts="n">
+      {T.newLabel} <kbd class="kbd kbd-sm hidden sm:inline-flex">N</kbd>
+    </a>
+  </div>
+{/if}
 
 <div class="card border border-base-300 bg-base-100 mb-6">
   <div class="card-body overflow-x-auto">

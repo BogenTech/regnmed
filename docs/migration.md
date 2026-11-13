@@ -170,8 +170,16 @@ er de samme radene — ikke fordi noe ble avstemt i etterkant. Importen
 setter også reskontro-flagget på kontoen tilbake; åpningsbalansen
 utsetter det med vilje, og dette er stedet det kommer igjen.
 
-Portal: Reskontro → «Importer fra et annet system» (forhåndsvisning,
-så bokfør).
+Leverandørposter beholder **forfall og KID** som betalingsvilkår
+(`payable_terms`, docs/betaling.md) på hver importert post, ikke bare i
+teksten — så betalingslisten («Velg forfalte») og forfalt-tallene ser
+dem. En ugyldig KID lagres ikke; den står i teksten og navngis i en
+advarsel.
+
+Portal: Reskontro → Import. Velg kunder eller leverandører, last opp
+kontaktlisten og/eller de åpne postene; åpne poster vises rad for rad
+(`rader` i forhåndsvisningen, inntil 200) før noe bokføres, og
+bokføringen bekreftes med antall og sum.
 
 ## Where it is tested
 
