@@ -172,6 +172,7 @@ pub async fn project_balance_lines(
 /// (journal + bilagsnummer) the forskrift requires.
 #[derive(Debug)]
 pub struct AccountPost {
+    pub voucher_id: uuid::Uuid,
     pub number: String,
     pub account_name: String,
     pub journal_code: String,
@@ -199,7 +200,7 @@ pub async fn account_specification(
     to: NaiveDate,
 ) -> Result<Vec<AccountPost>> {
     let rows = sqlx::query(
-        "select a.number, a.name as account_name, j.code as journal_code,
+        "select v.id as voucher_id, a.number, a.name as account_name, j.code as journal_code,
                 v.fiscal_year, v.voucher_number, v.voucher_date,
                 coalesce(e.description, v.description) as description,
                 e.amount_ore, p.party_no,
@@ -238,6 +239,7 @@ pub async fn account_specification(
     Ok(rows
         .iter()
         .map(|r| AccountPost {
+            voucher_id: r.get("voucher_id"),
             number: r.get("number"),
             account_name: r.get("account_name"),
             journal_code: r.get("journal_code"),

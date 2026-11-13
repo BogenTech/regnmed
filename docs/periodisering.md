@@ -99,8 +99,10 @@ selv. `kjor` finnes av samme grunn som `assets/depreciate` gjør — å
 vente på en CronJob for å se om planen var riktig er en dårlig måte å
 jobbe på.
 
-Portalen: **Periodisering**-kortet i Hovedbok-seksjonen (opprett, kjør
-nå, stopp, med ført/gjenstående per plan).
+Portalen: Hovedbok → **Periodisering** (`#/c/{id}/hovedbok/periodisering`):
+opprett med merkede felt, kontovelger, fra/til-måned og beløp per måned
+vist før lagring; per plan ført av totalt, «Bokfør forfalte måneder» og
+stopp (bekreftes). Beløp leses med `oreOrNull`, så «12 000» er 12 000 kr.
 
 ## 6. Hvor det er testet
 

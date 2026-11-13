@@ -300,3 +300,288 @@ pub async fn post_manual_voucher(
     tx.commit().await?;
     Ok(posted)
 }
+
+/// What owns a voucher whose correction must go through its own flow
+/// rather than a plain reversal — and where that flow is. A reversal of
+/// an invoice voucher would leave the invoice "issued" with nothing
+/// behind it; a reversed payroll month would disagree with the payroll
+/// run; and so on. `None` = an ordinary voucher, reversible here.
+async fn owned_by<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    voucher_id: Uuid,
+) -> Result<Option<String>> {
+    let owner: Option<String> = sqlx::query_scalar(
+        "select case
+           when exists (select 1 from invoice where voucher_id = $1)
+             then 'en faktura — rett den med en kreditnota under Faktura'
+           when exists (select 1 from invoice_reminder where voucher_id = $1)
+             then 'en purring — rettes fra fakturaen under Faktura'
+           when exists (select 1 from expense where voucher_id = $1 or utbetalt_voucher_id = $1)
+             then 'et utlegg — rettes under Utlegg'
+           when exists (select 1 from payment_run where settled_voucher_id = $1)
+             then 'en betalingsliste — rettes under Bank'
+           when exists (select 1 from asset where anskaffelse_voucher_id = $1 or avhending_voucher_id = $1)
+                or exists (select 1 from asset_depreciation where voucher_id = $1)
+             then 'et anlegg — rettes under Anlegg'
+           when exists (select 1 from payroll_run where voucher_id = $1)
+             then 'en lønnskjøring — rettes under Lønn'
+           when exists (select 1 from share_event where voucher_id = $1)
+                or exists (select 1 from dividend where voucher_id = $1)
+             then 'aksjeeierboken — rettes under Aksjonærer'
+           when exists (select 1 from periodisering_run where voucher_id = $1)
+             then 'en periodisering — stopp planen under Periodisering'
+           when exists (select 1 from arsavslutning where voucher_id = $1)
+             then 'årsavslutningen'
+           when exists (select 1 from voucher v join journal j on j.id = v.journal_id
+                        where v.id = $1 and j.code = 'IMP')
+             then 'importert historikk (SAF-T) — den rettes ved å importere på nytt, ikke her'
+         end",
+    )
+    .bind(voucher_id)
+    .fetch_one(executor)
+    .await?;
+    Ok(owner)
+}
+
+/// One voucher as the hovedbok's voucher page shows it: the header, its
+/// lines (with currency), how many attachments it has, the reversal it
+/// is or that undid it, and — when another part of the system owns it —
+/// where it is corrected instead.
+pub struct VoucherDetail {
+    pub voucher: VoucherWithLines,
+    pub created_by: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub reverses: Option<(Uuid, String)>,
+    pub reversed_by: Option<(Uuid, String)>,
+    pub owner: Option<String>,
+    pub attachments: i64,
+    pub currency: Vec<Option<(String, i64)>>,
+}
+
+pub async fn voucher_detail(
+    pool: &PgPool,
+    company_id: Uuid,
+    voucher_id: Uuid,
+) -> Result<Option<VoucherDetail>> {
+    let Some(h) = sqlx::query(
+        "select v.id, j.code as journal_code, v.fiscal_year, v.voucher_number, v.voucher_date,
+                v.description, v.created_by, v.created_at,
+                o.id as rev_id, o.fiscal_year as rev_year, o.voucher_number as rev_no,
+                r.id as by_id, r.fiscal_year as by_year, r.voucher_number as by_no,
+                (select count(*) from attachment a where a.voucher_id = v.id) as attachments
+         from voucher v
+         join journal j on j.id = v.journal_id
+         left join voucher o on o.id = v.reverses_voucher_id
+         left join voucher r on r.reverses_voucher_id = v.id
+         where v.id = $1 and v.company_id = $2",
+    )
+    .bind(voucher_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let rows = sqlx::query(
+        "select a.number, a.name, e.amount_ore, e.vat_code, e.description, p.party_no,
+                da.code as avdeling, dp.code as prosjekt, e.valuta, e.valutabelop_cent
+         from entry e
+         join account a on a.id = e.account_id
+         left join party p on p.id = e.party_id
+         left join dimension da on da.id = e.avdeling_id
+         left join dimension dp on dp.id = e.prosjekt_id
+         where e.voucher_id = $1
+         order by e.line_no",
+    )
+    .bind(voucher_id)
+    .fetch_all(pool)
+    .await?;
+    let label = |y: Option<i32>, n: Option<i64>| match (y, n) {
+        (Some(y), Some(n)) => Some(format!("{y}-{n}")),
+        _ => None,
+    };
+    let pair = |id: Option<Uuid>, l: Option<String>| id.zip(l);
+    Ok(Some(VoucherDetail {
+        voucher: VoucherWithLines {
+            voucher_id,
+            journal_code: h.get("journal_code"),
+            fiscal_year: h.get("fiscal_year"),
+            voucher_number: h.get("voucher_number"),
+            voucher_date: h.get("voucher_date"),
+            description: h.get("description"),
+            lines: rows
+                .iter()
+                .map(|r| VoucherLine {
+                    account: r.get("number"),
+                    account_name: r.get("name"),
+                    amount_ore: r.get("amount_ore"),
+                    vat_code: r.get("vat_code"),
+                    description: r.get("description"),
+                    party_no: r.get("party_no"),
+                    department: r.get("avdeling"),
+                    project: r.get("prosjekt"),
+                })
+                .collect(),
+        },
+        created_by: h.get("created_by"),
+        created_at: h.get("created_at"),
+        reverses: pair(h.get("rev_id"), label(h.get("rev_year"), h.get("rev_no"))),
+        reversed_by: pair(h.get("by_id"), label(h.get("by_year"), h.get("by_no"))),
+        owner: owned_by(pool, voucher_id).await?,
+        attachments: h.get("attachments"),
+        currency: rows
+            .iter()
+            .map(|r| {
+                r.get::<Option<String>, _>("valuta")
+                    .zip(r.get::<Option<i64>, _>("valutabelop_cent"))
+            })
+            .collect(),
+    }))
+}
+
+/// Reverses an ordinary voucher (bokføringsloven § 9: a correction is a
+/// new, documented posting, never an edit): every line mirrored — party,
+/// dimensions and currency included — on `date`, linked to the original
+/// through `reverses_voucher_id`, which the hash covers. In the SAME
+/// transaction each reskontro line is matched against its mirror for
+/// what was still open, so the reversed invoice or payment does not
+/// linger as an open item. Refused for a voucher that is itself a
+/// reversal or already reversed, and for one owned by another flow
+/// (invoice, payroll, …) — those are corrected where they live.
+///
+/// No attestering gate: a reversal adds no new economic content, it
+/// undoes a posting that already passed whatever gate applied to it.
+pub async fn reverse_voucher(
+    pool: &PgPool,
+    company_id: Uuid,
+    voucher_id: Uuid,
+    date: chrono::NaiveDate,
+    created_by: &str,
+) -> Result<PostedVoucher> {
+    let mut tx = pool.begin().await?;
+    // One reversal per voucher, even when two people press at once.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 1))")
+        .bind(voucher_id)
+        .execute(&mut *tx)
+        .await?;
+    let head = sqlx::query(
+        "select v.fiscal_year, v.voucher_number, v.description, v.reverses_voucher_id,
+                exists (select 1 from voucher r where r.reverses_voucher_id = v.id) as reversed
+         from voucher v where v.id = $1 and v.company_id = $2",
+    )
+    .bind(voucher_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .context("bilaget finnes ikke")?;
+    let label = format!(
+        "{}-{}",
+        head.get::<i32, _>("fiscal_year"),
+        head.get::<i64, _>("voucher_number")
+    );
+    ensure!(
+        head.get::<Option<Uuid>, _>("reverses_voucher_id").is_none(),
+        "bilag {label} er selv en tilbakeføring — før det riktige bilaget på nytt i stedet"
+    );
+    ensure!(
+        !head.get::<bool, _>("reversed"),
+        "bilag {label} er allerede tilbakeført"
+    );
+    if let Some(owner) = owned_by(&mut *tx, voucher_id).await? {
+        bail!("bilag {label} hører til {owner}");
+    }
+
+    let lines = sqlx::query(
+        "select e.id, a.number, e.amount_ore, e.vat_code, e.description, p.party_no, e.party_id,
+                da.code as avdeling, dp.code as prosjekt, e.valuta, e.valutabelop_cent, e.kurs_micro
+         from entry e
+         join account a on a.id = e.account_id
+         left join party p on p.id = e.party_id
+         left join dimension da on da.id = e.avdeling_id
+         left join dimension dp on dp.id = e.prosjekt_id
+         where e.voucher_id = $1
+         order by e.line_no",
+    )
+    .bind(voucher_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let draft = VoucherDraft {
+        journal_code: "GL".into(),
+        voucher_date: date,
+        description: format!(
+            "Tilbakeføring av bilag {label}: {}",
+            head.get::<String, _>("description")
+        ),
+        reverses: Some(voucher_id),
+        entries: lines
+            .iter()
+            .map(|r| regnmed_core::voucher::EntryDraft {
+                account_number: r.get("number"),
+                amount: regnmed_core::Ore(-r.get::<i64, _>("amount_ore")),
+                vat_code: r.get("vat_code"),
+                description: r.get("description"),
+                party_no: r.get("party_no"),
+                department: r.get("avdeling"),
+                project: r.get("prosjekt"),
+                currency: r.get::<Option<String>, _>("valuta").map(|code| {
+                    regnmed_core::currency::Currency {
+                        code,
+                        amount_cent: -r.get::<Option<i64>, _>("valutabelop_cent").unwrap_or(0),
+                        rate_micro: r.get::<Option<i64>, _>("kurs_micro").unwrap_or(0),
+                    }
+                }),
+            })
+            .collect(),
+    };
+    let posted = post_voucher_in(&mut tx, company_id, &draft, created_by)
+        .await
+        .context("tilbakeføringen feilet")?;
+
+    // Close each original reskontro line against its mirror, for what
+    // was still open on it (an invoice already paid stays matched to the
+    // payment; the mirror is then the customer's credit, open as it
+    // should be).
+    let mirrors: Vec<(i32, Uuid)> = sqlx::query_as(
+        "select line_no, id from entry where voucher_id = $1 and party_id is not null order by line_no",
+    )
+    .bind(posted.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (i, original) in lines.iter().enumerate() {
+        if original.get::<Option<Uuid>, _>("party_id").is_none() {
+            continue;
+        }
+        let original_id: Uuid = original.get("id");
+        let line_no = (i + 1) as i32;
+        let Some((_, mirror_id)) = mirrors.iter().find(|(n, _)| *n == line_no) else {
+            continue;
+        };
+        let remaining: i64 = sqlx::query_scalar(
+            "select remaining_ore::bigint from subledger_entry_open where entry_id = $1",
+        )
+        .bind(original_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if remaining == 0 {
+            continue;
+        }
+        let (entry_a, entry_b) = if remaining > 0 {
+            (original_id, *mirror_id)
+        } else {
+            (*mirror_id, original_id)
+        };
+        sqlx::query(
+            "insert into reskontro_match (id, entry_a, entry_b, amount_ore, matched_by)
+             values ($1, $2, $3, $4, $5)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(entry_a)
+        .bind(entry_b)
+        .bind(remaining.abs())
+        .bind(created_by)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(posted)
+}

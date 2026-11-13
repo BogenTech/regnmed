@@ -40,27 +40,68 @@ frie veien, med de samme vaktene.
   bokføring med beskjed om å bruke innboksen — attestering er knyttet
   til innboksdokumenter (#47), og en manuell sidedør ville opphevet
   internkontrollen. Fail-closed, testfestet.
-- Portalen: Hovedbok-seksjonen har to dyplenkbare faner
-  (Rapporter-mønsteret). **Posteringer** (`…/hovedbok`) er selve
-  boken: Nytt bilag-skjemaet (kontovelger med søk i egne kontoer +
-  katalogen, dimensjoner, differanse-sperre på Bokfør-knappen) og
-  alle bilag med linjene sine, nyeste øverst, årsvelger,
-  fritekstfilter og paginering — ALT SERVERSIDE via
+- Portalen: Hovedbok-seksjonen har fanene **Bilag** (`…/hovedbok`),
+  **Nytt bilag** (`…/ny`), **Kontoplan** (`…/kontoplan`),
+  **Periodisering** og **Kasseoppgjør**. *Bilag* er selve boken: alle
+  bilag med linjene sine (debet og kredit), nyeste øverst, årsvelger,
+  fritekstfilter og «bare uten vedlegg», ALT SERVERSIDE via
   `GET /companies/{id}/vouchers?from&to&sok&limit&offset&lines=true`
-  (utvidelse av det eksisterende endepunktet; uten parametre svarer
-  det som før, og den lovpålagte bokføringsspesifikasjonen er urørt —
-  en rapport er komplett per definisjon, dette er skjermen man blar
-  i). Filteret (`sok`) leser hele bilaget: nummer, dato, tekst og
-  linjenes kontonummer/-navn; filterfeltet i portalen er debouncet.
-  **Kontoplan** (`…/hovedbok/kontoplan`) er indeksen, ikke
-  hovedinnholdet (brukerkorreks 2026-08-06) og BEVISST ingen egen
-  menyseksjon — den hører til boken sin, men har egen adresse: søk,
-  vis-deaktiverte-filter, paginering, legg til fra katalog,
-  egendefinert konto, navn/deaktiver. Drill-down per konto
-  (`…/hovedbok/<nr>`, `/reports/kontospesifikasjon?account=` —
-  filteret fantes på serveren fra #4, seksjonen tok det i bruk). Et
-  bilag MED dokument hører fortsatt hjemme i innboksen; skjemaet sier
-  det.
+  (den lovpålagte bokføringsspesifikasjonen er urørt — en rapport er
+  komplett per definisjon, dette er skjermen man blar i). Søk og år
+  står i adressen. Hvert bilag har sin side (`…/hovedbok/{id}`):
+  linjene, vedleggene (last ned, legg ved et manglende dokument) og
+  tilbakeføringen. *Nytt bilag* har debet- og kreditkolonner, og en
+  mva-kode på en linje gjør beløpet til BRUTTO: mvaen skilles ut på
+  2710 (inngående) eller 2700 (utgående) med koden på nettolinjen,
+  samme form som Bilag-skjemaet og samme avrunding som kjernen
+  (`voucherMath.js`, testet). Linjene som bokføres vises før
+  bokføring, en ukjent konto sies på linjen, og knappen er opptatt til
+  svaret kommer — et bokført bilag slettes aldri, så ett trykk er ett
+  bilag. Med aktiv attestering sier skjemaet på forhånd at bilag over
+  grensen må gå via innboksen. *Kontoplan* er indeksen: søk (også i
+  standardkontoplanen), deaktiverte, legg til fra katalog, egendefinert
+  konto, navn/deaktiver. Per konto (`…/hovedbok/<nr>?ar=`):
+  posteringene for året fra inngående saldo med løpende saldo, hver
+  lenket til bilaget (`voucher_id` i kontospesifikasjonen). Et bilag
+  MED dokument hører fortsatt hjemme i innboksen; skjemaet sier det.
+- **Alle beløpsfelt leses med `oreOrNull`** (`lib/format.js`):
+  «12 500,00» er tolv og et halvt tusen. Kasse- og
+  periodiseringsskjemaene brukte `parseFloat`, som stopper ved første
+  mellomrom — en Z-rapport på «12 500,00» ble 12 kr på begge sider,
+  gikk derfor «opp», og ville blitt bokført.
+
+## Retting: tilbakeføring
+
+Et bokført bilag endres aldri (bokføringsloven § 9). Det rettes med en
+**tilbakeføring**: `POST /companies/{id}/vouchers/{vid}/reverse`
+`{dato?}` (`BILAG_BOKFOR`) bokfører et nytt bilag der HVER linje er
+speilvendt — part, dimensjoner og valuta med — knyttet til originalen
+gjennom `reverses_voucher_id`, som hashen dekker. I SAMME transaksjon
+avstemmes hver reskontrolinje mot speilbildet for det som sto åpent, så
+en tilbakeført faktura eller betaling ikke blir liggende som åpen post
+(var originalen allerede betalt, står speilbildet åpent som kundens
+tilgode, slik det skal). Deretter føres det riktige bilaget.
+
+- Nektes for et bilag som allerede er tilbakeført, og for en
+  tilbakeføring (før det riktige bilaget på nytt i stedet).
+- Nektes for et bilag en annen flyt eier, med beskjed om hvor det
+  rettes: faktura (kreditnota), purring, utlegg, betalingsliste,
+  anlegg og avskrivning, lønn, aksjeeierbok, periodisering,
+  årsavslutning og importert historikk (`owned_by`). En tilbakeføring
+  her ville latt fakturaen stå «utstedt» uten noe bak seg.
+- Datoen må ligge i en åpen periode; en låst periode avvises av
+  posteringen selv.
+- Ingen attesteringsport: en tilbakeføring tilfører ikke noe nytt, den
+  opphever en postering som allerede passerte den porten som gjaldt.
+- `GET /companies/{id}/vouchers/{vid}` gir bilaget med linjer (valuta
+  med), antall vedlegg, `reverses`/`reversed_by` og `owner`.
+- En tilbakeførings dokumentasjon er bilaget den tilbakefører.
+
+Testet i `tests/grupper/hovedbok.rs`
+(`a_voucher_is_corrected_by_a_linked_reversal`): speilvendte linjer
+med part, lenket begge veier, kundens post lukket, ikke to ganger,
+ikke en tilbakeføring av en tilbakeføring, importert historikk nektet
+med beskjed, kjeden verifisert.
 
 ## Lesemodellen
 

@@ -22,3 +22,13 @@ test("today is the local date, not UTC's", () => {
   const lateNight = new Date(2026, 10, 13, 0, 30);
   assert.equal(today(lateNight), "2026-11-13");
 });
+
+test("amounts are read the way they are typed, spaces and all", async () => {
+  const { oreOrNull } = await import("./format.js");
+  assert.equal(oreOrNull("12 500,00"), 1_250_000);
+  assert.equal(oreOrNull("12 500"), 1_250_000);
+  assert.equal(oreOrNull("1250.5"), 125_050);
+  assert.equal(oreOrNull("−45,50"), -4_550);
+  assert.equal(oreOrNull(""), null);
+  assert.equal(oreOrNull("tolv"), null);
+});

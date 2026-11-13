@@ -273,6 +273,7 @@ pub async fn account_specification(
     .await?;
     Ok(Json(json!({
         "posts": posts.iter().map(|p| json!({
+            "voucher_id": p.voucher_id,
             "account": p.number,
             "account_name": p.account_name,
             "bilag": format!("{}-{}-{}", p.journal_code, p.fiscal_year, p.voucher_number),

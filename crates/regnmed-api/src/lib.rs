@@ -1007,6 +1007,14 @@ pub fn router(state: AppState) -> Router {
             get(period::list_vouchers).post(chart_of_accounts::post_manual_voucher),
         )
         .route(
+            "/companies/{company_id}/vouchers/{voucher_id}",
+            get(period::get_voucher),
+        )
+        .route(
+            "/companies/{company_id}/vouchers/{voucher_id}/reverse",
+            axum::routing::post(period::reverse_voucher),
+        )
+        .route(
             "/companies/{company_id}/vouchers/{voucher_id}/attachments",
             get(period::list_voucher_attachments).post(period::upload_attachment),
         )

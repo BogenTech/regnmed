@@ -464,3 +464,213 @@ async fn voucher_listing_pages_and_filters_server_side() {
     assert_eq!(alle["vouchers"].as_array().unwrap().len(), 25);
     assert!(alle["vouchers"][0].get("lines").is_none());
 }
+
+/// A correction is a reversal (bokføringsloven § 9): every line mirrored,
+/// linked to the original, a reskontro line closed against its mirror in
+/// the same transaction — and only once, never of a reversal, and never
+/// of a voucher another flow owns.
+#[tokio::test]
+async fn a_voucher_is_corrected_by_a_linked_reversal() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Rita Retting"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Retting AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "bokforing")
+        .await
+        .unwrap();
+    for (code, name) in [("GL", "Hovedbok"), ("IMP", "Import")] {
+        regnmed_db::ensure_journal(&state.pool, company, code, name)
+            .await
+            .unwrap();
+    }
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salg"),
+        ("1920", "Bank"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Rita Retting");
+    let base = format!("/companies/{company}");
+    let (status, customer) = call(
+        &state,
+        "POST",
+        &format!("{base}/parties"),
+        &token,
+        Some(json!({ "kind": "kunde", "name": "Feilført Kunde AS" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{customer}");
+    let party_no = customer["party_no"].as_str().unwrap().to_string();
+    let party_id = customer["party_id"].as_str().unwrap().to_string();
+
+    let (status, posted) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers"),
+        &token,
+        Some(json!({
+            "journal_code": "GL", "date": "2026-03-10", "description": "Salg feil kunde",
+            "lines": [
+                { "account": "1500", "amount_ore": 1_250_00, "party_no": party_no },
+                { "account": "3000", "amount_ore": -1_250_00 },
+            ],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{posted}");
+    let original = posted["voucher_id"].as_str().unwrap().to_string();
+
+    let (status, reversal) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers/{original}/reverse"),
+        &token,
+        Some(json!({ "dato": "2026-03-12" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reversal}");
+    let reversal_id = reversal["voucher_id"].as_str().unwrap().to_string();
+
+    // Linked both ways, every line mirrored.
+    let (_, one) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers/{original}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        one["reversed_by"]["voucher_id"],
+        reversal_id.as_str(),
+        "{one}"
+    );
+    assert!(one["owner"].is_null());
+    let (_, two) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers/{reversal_id}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(two["reverses"]["voucher_id"], original.as_str(), "{two}");
+    assert_eq!(two["date"], "2026-03-12");
+    let amounts: Vec<i64> = two["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["amount_ore"].as_i64().unwrap())
+        .collect();
+    assert_eq!(amounts, vec![-1_250_00, 1_250_00]);
+    assert_eq!(two["lines"][0]["party_no"], party_no.as_str());
+
+    // The customer has nothing open: the mirror closed the original.
+    let (_, items) = call(
+        &state,
+        "GET",
+        &format!("{base}/parties/{party_id}/items?open=true"),
+        &token,
+        None,
+    )
+    .await;
+    assert!(items["items"].as_array().unwrap().is_empty(), "{items}");
+
+    // Once only, and never a reversal of a reversal.
+    let (status, again) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers/{original}/reverse"),
+        &token,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        again.to_string().contains("allerede tilbakeført"),
+        "{again}"
+    );
+    let (status, back) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers/{reversal_id}/reverse"),
+        &token,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(back.to_string().contains("selv en tilbakeføring"), "{back}");
+
+    // A voucher another flow owns is corrected there, not here.
+    let imported = regnmed_db::post_voucher(
+        &state.pool,
+        company,
+        &regnmed_core::voucher::VoucherDraft {
+            journal_code: "IMP".into(),
+            voucher_date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            description: "Importert".into(),
+            reverses: None,
+            entries: ["1920", "3000"]
+                .iter()
+                .zip([100_00i64, -100_00])
+                .map(|(a, ore)| regnmed_core::voucher::EntryDraft {
+                    account_number: a.to_string(),
+                    amount: regnmed_core::Ore(ore),
+                    vat_code: None,
+                    description: None,
+                    party_no: None,
+                    department: None,
+                    project: None,
+                    currency: None,
+                })
+                .collect(),
+        },
+        "test",
+    )
+    .await
+    .unwrap();
+    let (_, owned) = call(
+        &state,
+        "GET",
+        &format!("{base}/vouchers/{}", imported.id),
+        &token,
+        None,
+    )
+    .await;
+    assert!(
+        owned["owner"].as_str().unwrap().contains("importert"),
+        "{owned}"
+    );
+    let (status, refused) = call(
+        &state,
+        "POST",
+        &format!("{base}/vouchers/{}/reverse", imported.id),
+        &token,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.to_string().contains("importert historikk"),
+        "{refused}"
+    );
+
+    let report = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(report.vouchers_checked, 3, "original, reversal, import");
+}
