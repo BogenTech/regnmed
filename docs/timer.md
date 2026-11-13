@@ -84,15 +84,39 @@ approval AHEAD of billing, the månedslås is the tool: lock the month,
 then bill (billing locked hours is the one allowed change).
 
 Portal: the Timer section opens with **ukegridet** — rows are
-prosjekter, columns are the days, a cell is that day's hours. Cells
-save themselves on blur through the ordinary entry endpoints (flexible
-input: 7,5 / 7.5 / 7:30), Enter and arrow keys move like a
-spreadsheet, rows pre-populate from last week's projects and «Kopier
+prosjekter, columns are the days, a cell is that day's hours. The
+heading names the week («Uke 46 · 9.–15. november 2026») with
+«Forrige uke» / «Denne uken» / «Neste uke»; the week lives in the
+address (`?uke=`), and «today» is the LOCAL date, so the page opens on
+the right week also between midnight and 01:00. Cells save themselves
+on blur through the ordinary entry endpoints (flexible input: 7,5 /
+7.5 / 7:30, at most 24 t), Enter and arrow keys move like a
+spreadsheet and skip locked and billed cells. An arrow key past Sunday
+(or before Monday) carries on into the next (previous) week, in the
+same project row — added to that week if it has no hours there yet —
+and saves the cell it leaves first; it stops at a week that is locked
+all through. Page Down / Page Up change week, from a cell (keeping row
+and day) or from anywhere on the page. Rows pre-populate from last week's projects and «Kopier
 forrige uke» fills an empty week; locked days render disabled, billed
-cells show their faktura. Beskrivelse/sats per line live in the detail
-panel under the grid (focused cell — the sats field renders only with
-`TIMER_SATS_SKRIV`, everyone else sees the register's rate as text);
-on small screens the grid collapses to a one-day view with day chips.
+cells show their faktura. Every cell carries a spoken name (project,
+day, and what the styling says: locked, several lines, has a
+description). Beskrivelse/fakturerbar/sats per line live in the panel
+under the grid for the selected cell, and each field saves when you
+leave it, like the cells — there is no «Lagre» to forget. The sats
+field renders only with `TIMER_SATS_SKRIV`; everyone else sees the
+register's rate as text. Clearing a cell that holds a description, or
+deleting a line, asks first. On small screens the grid collapses to a
+one-day view with day buttons that show each day's hours.
+
+Two ordering rules keep the grid honest. Only the NEWEST load may
+replace what is on screen — an older answer landing late would put one
+week's hours under another week's heading — and while a new week
+loads, the old one stays visible, dimmed. Saves are queued per cell: a
+second edit of the same cell waits for the first save and the reload
+after it, so it updates the line the first one created instead of
+creating a second. After a save only the week and its summary are
+re-read; last week and the project register cannot change from a cell
+edit.
 Below: per-prosjekt totals, with billing itself under Faktura (see
 above). Project-shaped cards link to the Prosjekter section, and with
 an empty registry the project picker says so rather than disappearing

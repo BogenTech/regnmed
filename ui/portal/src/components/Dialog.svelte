@@ -6,6 +6,15 @@
 
   let el = $state(null);
   let verdier = $state({});
+  // Where the keyboard was before the question: put it back afterwards,
+  // so answering a dialog never sends a keyboard user to the page top.
+  let forrigeFokus = null;
+  function tilbakeFokus() {
+    const f = forrigeFokus;
+    forrigeFokus = null;
+    // After the caller has acted on the answer: it may remove the element.
+    setTimeout(() => f?.isConnected && f.focus(), 0);
+  }
 
   $effect(() => {
     const d = dialog.aktiv;
@@ -15,7 +24,10 @@
       v[f.navn] = f.type === "checkbox" ? (f.standard ?? false) : (f.standard ?? "");
     }
     verdier = v;
-    if (!el.open) el.showModal();
+    if (!el.open) {
+      forrigeFokus = document.activeElement;
+      el.showModal();
+    }
   });
 
   // The single resolution point: an explicit answer nulls `aktiv` before
@@ -26,6 +38,7 @@
     if (!d) return;
     dialog.aktiv = null;
     el?.close();
+    tilbakeFokus();
     d.resolve(resultat);
   }
 
@@ -33,6 +46,7 @@
     const d = dialog.aktiv;
     if (!d) return;
     dialog.aktiv = null;
+    tilbakeFokus();
     d.resolve(d.type === "bekreft" ? false : null);
   }
 
