@@ -149,9 +149,10 @@ impl std::error::Error for AmeldingError {}
 /// flags its combination in Skatteetaten's inntektskombinasjoner (R1 2026)
 /// fixes. Pay is combination 111: kontantytelse, triggers
 /// arbeidsgiveravgift, part of the trekkgrunnlag. Kjøregodtgjørelse is
-/// utgiftsgodtgjoerelse with the kilometres as `antall`: 711 for the part
-/// within the trekkfri rate, 153 for the excess (trekkpliktig, with
-/// avgift), 714 for the passenger supplement and other vehicles.
+/// utgiftsgodtgjoerelse with the kilometres as `antall` (the sheet's old
+/// LTO codes: 711 for the part within the trekkfri rate, 153 for the
+/// excess — trekkpliktig, with avgift — 714 for the passenger supplement
+/// and other vehicles). Diett: see [`crate::travel::Report`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncomeKind {
     FixedSalary,
@@ -172,6 +173,13 @@ pub enum IncomeKind {
     MileageOtherVehicle {
         km: i64,
     },
+    /// Diett and nattillegg on a business trip (docs/utlegg.md «Reise og
+    /// diett»); `days` is the number of døgn, the `antall` the trekkfri
+    /// descriptions require. The trekkpliktig ones carry none.
+    Travel {
+        report: crate::travel::Report,
+        days: i64,
+    },
 }
 
 impl IncomeKind {
@@ -183,6 +191,20 @@ impl IncomeKind {
             Self::MileageCar { .. } => "kilometergodtgjoerelseBil",
             Self::MileagePassenger { .. } => "kilometergodtgjoerelsePassasjertillegg",
             Self::MileageOtherVehicle { .. } => "kilometergodtgjoerelseAndreFremkomstmidler",
+            Self::Travel { report, .. } => {
+                use crate::travel::Report;
+                match report {
+                    Report::KostHotel => "reiseKostMedOvernattingPaaHotell",
+                    Report::KostPension => {
+                        "reiseKostMedOvernattingPaaHybelUtenKokEllerPensjonatEllerBrakke"
+                    }
+                    Report::KostPrivate => "reiseKostMedOvernattingPaaHybelMedKokEllerPrivat",
+                    Report::KostDayTrip => "reiseKostUtenOvernatting",
+                    Report::Night => "reiseNattillegg",
+                    Report::KostTaxable => "reiseKost",
+                    Report::OtherTaxable => "reiseAnnet",
+                }
+            }
         }
     }
 
@@ -200,14 +222,18 @@ impl IncomeKind {
             Self::FixedSalary | Self::HourlyWage | Self::HolidayPay => true,
             Self::MileageCar { taxable, .. } => taxable,
             Self::MileagePassenger { .. } | Self::MileageOtherVehicle { .. } => false,
+            Self::Travel { report, .. } => report.is_taxable(),
         }
     }
 
-    fn km(self) -> Option<i64> {
+    /// `antall`: kilometres or døgn, required for the trekkfri allowances
+    /// and forbidden for the trekkpliktig travel ones.
+    fn count(self) -> Option<i64> {
         match self {
             Self::MileageCar { km, .. }
             | Self::MileagePassenger { km }
             | Self::MileageOtherVehicle { km } => Some(km),
+            Self::Travel { report, days } => (!report.is_taxable()).then_some(days),
             _ => None,
         }
     }
@@ -720,8 +746,8 @@ fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
         x.leaf("beloep", &decimal(i.amount_ore));
         x.open("loennsinntekt");
         x.leaf("beskrivelse", i.kind.code());
-        if let Some(km) = i.kind.km() {
-            x.leaf("antall", &decimal(km * 100));
+        if let Some(count) = i.kind.count() {
+            x.leaf("antall", &decimal(count * 100));
         }
         x.close("loennsinntekt");
         x.close("inntekt");
@@ -912,6 +938,45 @@ mod tests {
             render(&m),
             Err(AmeldingError::ContributionMismatch { .. })
         ));
+    }
+
+    /// Diett: the trekkfri parts by lodging with the døgn as `antall`,
+    /// the excess as `reiseKost` with no `antall` — and only it joins the
+    /// avgiftsgrunnlag.
+    #[test]
+    fn travel_is_reported_by_lodging_with_its_dogn() {
+        use crate::travel::Report;
+        let mut m = melding();
+        let travel = |report, days, amount_ore| Income {
+            kind: IncomeKind::Travel { report, days },
+            amount_ore,
+        };
+        m.recipients[0].income.extend([
+            travel(Report::KostHotel, 2, 138_600),
+            travel(Report::KostDayTrip, 1, 20_000),
+            travel(Report::Night, 1, 45_200),
+            travel(Report::KostTaxable, 0, 63_800),
+        ]);
+        // 53 000 + 638 kr = 53 638 kr × 14,1 % = 7 562,958 → 7 562 whole kroner.
+        m.employer_contribution_ore = 756_200;
+        let xml = render(&m).unwrap();
+        assert!(xml.contains("<avgiftsgrunnlagBeloep>53638.00</avgiftsgrunnlagBeloep>"));
+        assert!(xml.contains("<beskrivelse>reiseKostMedOvernattingPaaHotell</beskrivelse>"));
+        assert!(xml.contains("<antall>2.00</antall>"));
+        assert!(xml.contains("<beskrivelse>reiseNattillegg</beskrivelse>"));
+        let taxable = xml
+            .split("<beskrivelse>reiseKost</beskrivelse>")
+            .nth(1)
+            .unwrap();
+        assert!(
+            !taxable
+                .split("</loennsinntekt>")
+                .next()
+                .unwrap()
+                .contains("antall"),
+            "reiseKost must carry no antall"
+        );
+        validate(&xml, "travel");
     }
 
     #[test]

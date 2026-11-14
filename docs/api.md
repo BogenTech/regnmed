@@ -139,6 +139,9 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/expenses/claimants` | GET |
 | `/companies/{company_id}/expenses/kjoring` | GET, POST |
 | `/companies/{company_id}/expenses/receipts` | POST |
+| `/companies/{company_id}/expenses/reise` | GET |
+| `/companies/{company_id}/expenses/reise/days` | GET |
+| `/companies/{company_id}/expenses/reise/preview` | POST |
 | `/companies/{company_id}/expenses/route` | GET |
 | `/companies/{company_id}/expenses/utlegg` | POST |
 | `/companies/{company_id}/expenses/{expense_id}` | GET, PUT |
