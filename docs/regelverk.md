@@ -43,7 +43,10 @@ date; docs/purring.md); anleggsregisteret (#40, shipped —
 saldogruppesatser per år + aktiveringsgrensen ved registrering;
 docs/anlegg.md); kjøregodtgjørelse (#42, shipped — statens sats og
 trekkfri sats på kjøredatoen, lagret på kravet ved innsending;
-docs/utlegg.md); flervaluta (#44, shipped — daterte kurser fra
+docs/utlegg.md); diett (shipped — satsforskriftens trekkfrie satser og
+statens særavtalesatser på avreisedagen, `diett_*`/`nattillegg*`, og
+statens landssatser i `travel_rate_abroad`, vendored i docs/reise/;
+docs/utlegg.md «Reise og diett»); flervaluta (#44, shipped — daterte kurser fra
 Norges Bank, kursen på bilagsdatoen hash-dekket på linjen;
 docs/valuta.md). Planned rules follow the same doctrine (their
 issues say so): feriepenge- og aga-satser (#46).

@@ -61,6 +61,7 @@ pub mod tax_card;
 pub mod tenancy;
 pub mod terms;
 pub mod timesheet;
+pub mod travel;
 pub mod vat;
 pub mod year_end;
 

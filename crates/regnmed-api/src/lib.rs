@@ -607,6 +607,18 @@ pub fn router(state: AppState) -> Router {
             get(expenses::mileage_rate).post(expenses::create_expense_run),
         )
         .route(
+            "/companies/{company_id}/expenses/reise",
+            get(expenses::travel_rates),
+        )
+        .route(
+            "/companies/{company_id}/expenses/reise/days",
+            get(expenses::travel_days),
+        )
+        .route(
+            "/companies/{company_id}/expenses/reise/preview",
+            axum::routing::post(expenses::travel_preview),
+        )
+        .route(
             "/companies/{company_id}/expenses/{expense_id}",
             get(expenses::get).put(expenses::update_draft),
         )

@@ -50,6 +50,7 @@ pub mod share_register;
 pub mod shareholder_return;
 pub mod statements;
 pub mod subscription;
+pub mod travel;
 pub mod vat;
 pub mod vat_return;
 pub mod voucher;

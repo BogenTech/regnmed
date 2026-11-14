@@ -517,6 +517,93 @@ async fn rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
         .collect())
 }
 
+/// An approved travel claim (diett) a run pays, with its a-melding lines
+/// worked out from the døgn stored at submission.
+#[derive(Debug, Clone)]
+struct TravelPaid {
+    employee_id: Uuid,
+    expense_id: Uuid,
+    contra_account: String,
+    amount_ore: i64,
+    tax_free_ore: i64,
+    taxable_ore: i64,
+    reports: Vec<(regnmed_core::travel::Report, i64, i64)>,
+}
+
+/// The employee's approved, unpaid travel claims whose trip STARTED on or
+/// before the payment date.
+async fn travel_claims(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    person_id: Option<Uuid>,
+    paid_date: NaiveDate,
+) -> Result<Vec<TravelPaid>> {
+    let Some(person_id) = person_id else {
+        return Ok(Vec::new());
+    };
+    let rows = sqlx::query(
+        "select id, motkonto, belop_ore, trekkfri_ore, trekkpliktig_ore, travel_lines
+         from expense
+         where company_id = $1 and person_id = $2 and kind = 'reise' and status = 'godkjent'
+           and dato <= $3
+         order by dato, id",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .bind(paid_date)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|r| {
+            let id: Uuid = r.get("id");
+            let lines: Vec<crate::travel::TravelLine> = serde_json::from_value(
+                r.get::<Option<serde_json::Value>, _>("travel_lines")
+                    .context("godkjent reise uten døgnlinjer")?,
+            )?;
+            let core: Vec<_> = lines.iter().map(crate::travel::TravelLine::core).collect();
+            // One row per description: the døgn add up, like the amounts.
+            let mut summed = std::collections::BTreeMap::new();
+            for (report, amount, days) in regnmed_core::travel::report_lines(&core) {
+                let e: &mut (i64, i64) = summed.entry(report).or_default();
+                e.0 += amount;
+                e.1 += days;
+            }
+            let reports: Vec<_> = summed
+                .into_iter()
+                .map(|(report, (amount, days))| (report, amount, days))
+                .collect();
+            let amount: i64 = r.get("belop_ore");
+            let tax_free: i64 = r.get::<Option<i64>, _>("trekkfri_ore").unwrap_or(0);
+            let taxable: i64 = r.get::<Option<i64>, _>("trekkpliktig_ore").unwrap_or(0);
+            // The reported lines must add up to what was approved — a claim
+            // whose parts disagree is not paid at all.
+            let reported: i64 = reports.iter().map(|(_, a, _)| a).sum();
+            let reported_taxable: i64 = reports
+                .iter()
+                .filter(|(rep, ..)| rep.is_taxable())
+                .map(|(_, a, _)| a)
+                .sum();
+            ensure!(
+                tax_free + taxable == amount && reported == amount && reported_taxable == taxable,
+                "diettkravet {id} går ikke opp: døgnlinjene, trekkfri og trekkpliktig del er ikke \
+                 beløpet"
+            );
+            Ok(TravelPaid {
+                employee_id,
+                expense_id: id,
+                contra_account: r
+                    .get::<Option<String>, _>("motkonto")
+                    .context("godkjent krav uten mellomregningskonto")?,
+                amount_ore: amount,
+                tax_free_ore: tax_free,
+                taxable_ore: taxable,
+                reports,
+            })
+        })
+        .collect()
+}
+
 /// An approved kjøring claim a run pays, split the way the a-melding
 /// reports it.
 #[derive(Debug, Clone)]
@@ -670,6 +757,7 @@ pub async fn run_payroll(
     let mut lines = Vec::new();
     let mut frikort_warnings = Vec::new();
     let mut mileage = Vec::new();
+    let mut travel = Vec::new();
 
     for post in poster {
         let employee = employees
@@ -772,12 +860,18 @@ pub async fn run_payroll(
             &alle_satser,
         )
         .await?;
-        let taxable_allowance: i64 = claims.iter().map(|c| c.taxable_ore).sum();
+        // Diett likewise: the excess over the trekkfri rate is pay.
+        let trips =
+            travel_claims(pool, company_id, employee.id, employee.person_id, paid_date).await?;
+        let taxable_allowance: i64 = claims.iter().map(|c| c.taxable_ore).sum::<i64>()
+            + trips.iter().map(|t| t.taxable_ore).sum::<i64>();
         let tax_free_allowance: i64 = claims
             .iter()
             .map(|c| c.vehicle_tax_free_ore + c.passenger_tax_free_ore)
-            .sum();
+            .sum::<i64>()
+            + trips.iter().map(|t| t.tax_free_ore).sum::<i64>();
         mileage.extend(claims);
+        travel.extend(trips);
 
         let calculation = payroll::calculate(
             &PayrollBasis {
@@ -884,17 +978,23 @@ pub async fn run_payroll(
     // settles the debt to the employee on the account the approval
     // credited.
     let mut owed_by_account = std::collections::BTreeMap::<&str, i64>::new();
-    for m in &mileage {
-        *owed_by_account
-            .entry(m.contra_account.as_str())
-            .or_default() += m.amount_ore;
+    for (account, amount) in mileage
+        .iter()
+        .map(|m| (m.contra_account.as_str(), m.amount_ore))
+        .chain(
+            travel
+                .iter()
+                .map(|t| (t.contra_account.as_str(), t.amount_ore)),
+        )
+    {
+        *owed_by_account.entry(account).or_default() += amount;
     }
     for (account, amount) in owed_by_account {
         entries.push(EntryDraft {
             account_number: account.to_string(),
             amount: Ore(amount),
             vat_code: None,
-            description: Some("Kjøregodtgjørelse utbetalt med lønn".into()),
+            description: Some("Kjøregodtgjørelse og diett utbetalt med lønn".into()),
             party_no: None,
             department: None,
             project: None,
@@ -1164,6 +1264,37 @@ pub async fn run_payroll(
             "et kjøregodtgjørelseskrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
         );
     }
+    for t in &travel {
+        for (report, amount, days) in &t.reports {
+            sqlx::query(
+                "insert into payroll_travel (id, run_id, employee_id, expense_id, report,
+                                             amount_ore, days)
+                 values ($1, $2, $3, $4, $5, $6, $7)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(run_id)
+            .bind(t.employee_id)
+            .bind(t.expense_id)
+            .bind(report.slug())
+            .bind(amount)
+            .bind(days)
+            .execute(&mut *tx)
+            .await?;
+        }
+        let paid = sqlx::query(
+            "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
+                                utbetalt_at = now()
+             where id = $1 and status = 'godkjent'",
+        )
+        .bind(t.expense_id)
+        .bind(posted.id)
+        .execute(&mut *tx)
+        .await?;
+        ensure!(
+            paid.rows_affected() == 1,
+            "et diettkrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
+        );
+    }
     tx.commit().await?;
 
     let employees: Vec<(Uuid, String)> = lines
@@ -1372,7 +1503,7 @@ pub async fn payslip(
     let taxable_allowance: i64 = row.get("taxable_allowance_ore");
     if taxable_allowance != 0 {
         lines.push(PayslipLine {
-            text: "Kjøregodtgjørelse over trekkfri sats".into(),
+            text: "Kjøregodtgjørelse og diett over trekkfri sats".into(),
             amount_ore: taxable_allowance,
         });
     }
@@ -1795,6 +1926,7 @@ pub async fn amelding_for_run(
             });
         }
         income.extend(mileage_income(pool, run_id, employee, &mut hindrances).await?);
+        income.extend(travel_income(pool, run_id, employee.id).await?);
         recipients.push(Recipient {
             name: employee.name.clone(),
             nin: nins.get(&employee_id).cloned().unwrap_or_default(),
@@ -1913,6 +2045,40 @@ async fn mileage_income(
     .filter(|((amount, _), _)| *amount > 0)
     .map(|((amount_ore, _), kind)| Income { kind, amount_ore })
     .collect())
+}
+
+/// The diett a run paid one employee, as a-melding inntekter: per
+/// description, the amount and the døgn.
+async fn travel_income(
+    pool: &PgPool,
+    run_id: Uuid,
+    employee_id: Uuid,
+) -> Result<Vec<regnmed_core::amelding::Income>> {
+    use regnmed_core::amelding::{Income, IncomeKind};
+    use regnmed_core::travel::Report;
+    let rows = sqlx::query(
+        "select report, sum(amount_ore)::bigint as amount, sum(days)::bigint as days
+         from payroll_travel where run_id = $1 and employee_id = $2
+         group by report order by report",
+    )
+    .bind(run_id)
+    .bind(employee_id)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|r| {
+            let slug: String = r.get("report");
+            let report =
+                Report::from_slug(&slug).with_context(|| format!("unknown report {slug}"))?;
+            Ok(Income {
+                kind: IncomeKind::Travel {
+                    report,
+                    days: r.get("days"),
+                },
+                amount_ore: r.get("amount"),
+            })
+        })
+        .collect()
 }
 
 /// The a-melding for a month WITHOUT a payroll run (docs/lonn.md, F108):

@@ -55,6 +55,18 @@ const CADENCES: &[(&str, i64)] = &[
     ("km_godtgjorelse_bat_trekkfri", 400),
     ("km_passasjertillegg", 400),
     ("km_passasjertillegg_trekkfri", 400),
+    // Diett: satsforskriften every year, the særavtale rates negotiated
+    // every year (særavtale reise innenlands § 15).
+    ("diett_hotell_trekkfri", 400),
+    ("diett_pensjonat_trekkfri", 400),
+    ("diett_privat_trekkfri", 400),
+    ("diett_dag_6_12_trekkfri", 400),
+    ("diett_dag_over_12_trekkfri", 400),
+    ("nattillegg_trekkfri", 400),
+    ("diett_dag_6_12", 400),
+    ("diett_dag_over_12", 400),
+    ("diett_overnatting", 400),
+    ("nattillegg", 400),
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -139,24 +151,9 @@ mod tests {
     #[test]
     fn fresh_domains_are_not_flagged() {
         let mut rates = interest();
-        for (domain, y) in [
-            ("standardkompensasjon", 2026),
-            ("inkassosats", 2026),
-            ("purregebyr_maks", 2026),
-            ("km_godtgjorelse", 2026),
-            ("km_godtgjorelse_trekkfri", 2026),
-            ("km_godtgjorelse_motorsykkel", 2026),
-            ("km_godtgjorelse_motorsykkel_trekkfri", 2026),
-            ("km_godtgjorelse_moped", 2026),
-            ("km_godtgjorelse_moped_trekkfri", 2026),
-            ("km_godtgjorelse_snoscooter", 2026),
-            ("km_godtgjorelse_snoscooter_trekkfri", 2026),
-            ("km_godtgjorelse_bat", 2026),
-            ("km_godtgjorelse_bat_trekkfri", 2026),
-            ("km_passasjertillegg", 2026),
-            ("km_passasjertillegg_trekkfri", 2026),
-        ] {
-            rates.push(period(domain, y, 1, 1, 1));
+        // Every monitored domain set on 1 January: fresh in July.
+        for (domain, _) in CADENCES {
+            rates.push(period(domain, 2026, 1, 1, 1));
         }
         assert_eq!(stale_domains(&rates, date(2026, 7, 23)), vec![]);
     }

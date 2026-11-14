@@ -183,7 +183,7 @@
             <th>Sone</th>
             <th class="text-right">Brutto</th>
             <th class="text-right">Trekk</th>
-            <th class="text-right">Kjøregodtgjørelse</th>
+            <th class="text-right">Kjøring og diett</th>
             <th class="text-right">Netto</th>
             <th class="text-right">Feriepenger avsatt</th>
             <th class="text-right">Aga</th>
@@ -413,8 +413,8 @@
       </table>
     </div>
     <p class="text-sm opacity-70 mb-2">
-      Godkjent kjøregodtgjørelse til de ansatte som er med, datert til og med utbetalingsdatoen, utbetales med
-      kjøringen: det trekkes skatt av delen over den trekkfrie satsen, og begge delene meldes i a-meldingen.
+      Godkjent kjøregodtgjørelse og diett til de ansatte som er med, datert til og med utbetalingsdatoen, utbetales
+      med kjøringen: det trekkes skatt av delen over den trekkfrie satsen, og begge delene meldes i a-meldingen.
     </p>
     <button class="btn btn-sm" onclick={kjor}>Kjør lønn og bokfør</button>
   {:else}

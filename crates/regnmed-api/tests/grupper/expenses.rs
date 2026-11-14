@@ -1609,3 +1609,324 @@ async fn billable_claims_are_rebilled_once() {
     assert_eq!(issued["net_ore"], 53_00);
     assert_eq!(issued["vat_ore"], 0);
 }
+
+/// A business trip is one reiseregning (docs/utlegg.md «Reise og diett»):
+/// times to the minute, a døgn table, the company's choice of rates, its
+/// costs and drives hanging under it and going in with it — and the
+/// state's country rate abroad converted at Norges Bank's rate on the
+/// døgn's date, stored on the claim as evidence.
+#[tokio::test]
+async fn a_trip_is_one_reiseregning() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Reise AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("7150", "Diettkostnad"),
+        ("7100", "Bilgodtgjørelse"),
+        ("2910", "Gjeld til ansatte"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &sub, Some("Reise Admin"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Reise Admin");
+    let base = format!("/companies/{company}/expenses");
+
+    // The form's rates: trekkfri by default, the state's table abroad.
+    let (status, rates) = request(
+        &state,
+        "GET",
+        &format!("{base}/reise?dato=2026-03-02"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rates}");
+    assert_eq!(rates["scheme"], "trekkfri");
+    assert_eq!(rates["trekkfri"]["hotell"], 69_300);
+    assert_eq!(rates["statens"]["overnatting"], 101_200);
+    let berlin = rates["abroad"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["key"] == "Tyskland|Berlin")
+        .expect("Berlin in the state's table");
+    assert_eq!(berlin["amount_minor"], 8_700);
+    assert_eq!(berlin["currency"], "EUR");
+
+    // Two full døgn and 6 hours: three døgn to fill in; 5 h 59 min: two.
+    let (_, days) = request(
+        &state,
+        "GET",
+        &format!("{base}/reise/days?departure_at=2026-03-02T08:00:00&return_at=2026-03-04T14:00:00&overnight=true"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(days["days"], 3);
+    let (status, short) = request(
+        &state,
+        "GET",
+        &format!(
+            "{base}/reise/days?departure_at=2026-03-02T08:00:00&return_at=2026-03-02T13:00:00"
+        ),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        short["error"].as_str().unwrap().contains("6 timer"),
+        "{short}"
+    );
+
+    // The trip as a draft; nothing is computed until submission.
+    let trip_body = |days: serde_json::Value| {
+        serde_json::json!({
+            "kind": "reise",
+            "beskrivelse": "Messe",
+            "destination": "Berlin",
+            "departure_at": "2026-03-02T06:00:00",
+            "return_at": "2026-03-04T14:00:00",
+            "overnight": true,
+            "over_15_km": true,
+            "travel_days": days,
+        })
+        .to_string()
+    };
+    let berlin_days = serde_json::json!([
+        { "place": "Tyskland|Berlin", "lodging": "hotell", "dinner": true },
+        { "place": "Tyskland|Berlin", "lodging": "hotell" },
+        { "place": "Tyskland|Berlin" },
+    ]);
+    let (status, made) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(trip_body(berlin_days.clone())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let trip = made["expense_id"].as_str().unwrap().to_string();
+
+    // A hotel bill without its receipt yet, and the drive to the airport.
+    let (status, hotel) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(serde_json::json!({ "trip_expense_id": trip, "dato": "2026-03-04", "beskrivelse": "Hotell", "belop_ore": 250_000 }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{hotel}");
+    let (status, drive) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(
+            serde_json::json!({
+                "kind": "kjoring", "trip_expense_id": trip, "dato": "2026-03-02",
+                "beskrivelse": "Til flyplassen", "route_from": "Kontoret", "route_to": "Gardermoen",
+                "km": 50, "vehicle": "bil",
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{drive}");
+    // A reiseregning is written after the trip, not before.
+    let (_, future) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(
+            serde_json::json!({
+                "kind": "reise", "beskrivelse": "Neste år", "destination": "Oslo",
+                "departure_at": "2099-03-02T08:00:00", "return_at": "2099-03-02T20:00:00",
+                "over_15_km": true, "travel_days": [{ "place": "NO" }],
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    let (status, refused) = request(
+        &state,
+        "POST",
+        &format!("{base}/{}/submit", future["expense_id"].as_str().unwrap()),
+        &token,
+        Some("{}".into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused["error"].as_str().unwrap().contains("ikke over"),
+        "{refused}"
+    );
+    // A trip hangs under nothing.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(serde_json::json!({ "kind": "reise", "trip_expense_id": trip }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Paying the trekkfri rates, Berlin is paid like home: 693 − 347 for
+    // the dinner, 693, and 693 for the part døgn. All trekkfri.
+    let (status, preview) = request(
+        &state,
+        "POST",
+        &format!("{base}/reise/preview"),
+        &token,
+        Some(trip_body(berlin_days.clone())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["belop_ore"], 34_600 + 69_300 + 69_300);
+    assert_eq!(preview["trekkpliktig_ore"], 0);
+
+    // On the state's rates abroad the euro rate of the day is needed.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/settings"),
+        &token,
+        Some(r#"{"reise_satser":"statens"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for day in ["2026-03-02", "2026-03-03", "2026-03-04"] {
+        sqlx::query(
+            "insert into valutakurs (valuta, dato, kurs_micro, kilde) values ('EUR', $1, 11750000, 'test')
+             on conflict do nothing",
+        )
+        .bind(chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").unwrap())
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    }
+    let rate = |day: &str| {
+        let pool = state.pool.clone();
+        let day = chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").unwrap();
+        async move {
+            regnmed_db::require_exchange_rate(&pool, "EUR", day)
+                .await
+                .unwrap()
+                .1
+        }
+    };
+    let nok = |micro| regnmed_core::currency::nok_ore(8_700, micro);
+    let (d1, d2, d3) = (
+        nok(rate("2026-03-02").await),
+        nok(rate("2026-03-03").await),
+        nok(rate("2026-03-04").await),
+    );
+    // Dinner: 50 % of the day's rate, rounded to whole kroner.
+    let first = d1 - (d1 * 50 / 100 + 50) / 100 * 100;
+    // 8 hours into the last døgn: half the country's rate.
+    let last = (d3 + 1) / 2;
+
+    let (status, submitted) = request(
+        &state,
+        "POST",
+        &format!("{base}/{trip}/submit"),
+        &token,
+        Some("{}".into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{submitted}");
+    assert_eq!(submitted["belop_ore"], first + d2 + last);
+    assert_eq!(
+        submitted["trekkpliktig_ore"],
+        first + d2 + last - (34_600 + 69_300 + last.min(69_300))
+    );
+    // The drive went in with the trip; the hotel waits for its receipt.
+    assert_eq!(submitted["costs_submitted"], 1);
+    assert!(
+        submitted["costs_waiting"][0]
+            .as_str()
+            .unwrap()
+            .contains("kvittering"),
+        "{submitted}"
+    );
+
+    let (_, got) = request(&state, "GET", &format!("{base}/{trip}"), &token, None).await;
+    assert_eq!(got["status"], "innsendt");
+    assert_eq!(got["rate_scheme"], "statens");
+    assert_eq!(got["dato"], "2026-03-02");
+    let lines = got["travel_lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0]["currency"], "EUR");
+    assert_eq!(lines[0]["foreign_amount_minor"], 8_700);
+    assert!(lines[0]["exchange_rate_micro"].as_i64().unwrap() > 0);
+    assert_eq!(lines[2]["kind"], "rest");
+    let (_, drive_now) = request(
+        &state,
+        "GET",
+        &format!("{base}/{}", drive["expense_id"].as_str().unwrap()),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(drive_now["status"], "innsendt");
+    assert_eq!(drive_now["belop_ore"], 50 * 530);
+
+    // The døgn are evidence from submission, in the database too.
+    let tampered = sqlx::query("update expense set travel_lines = '[]' where id = $1")
+        .bind(Uuid::parse_str(&trip).unwrap())
+        .execute(&state.pool)
+        .await;
+    assert!(tampered.is_err());
+
+    // Approval posts the whole amount with the reiseregning's essentials.
+    let (status, approved) = request(
+        &state,
+        "POST",
+        &format!("{base}/{trip}/approve"),
+        &token,
+        Some(r#"{"konto":"7150"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(balance(&state, company, "7150").await, first + d2 + last);
+    let posted: String = sqlx::query_scalar(
+        "select e.description from entry e join account a on a.id = e.account_id
+         where a.company_id = $1 and a.number = '7150'",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert!(
+        posted.contains("Berlin, 02.03.2026 06:00 til 04.03.2026 14:00, 3 døgn"),
+        "{posted}"
+    );
+    // Not an employee under Lønn: said aloud, not hidden.
+    assert!(
+        approved["warning"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("a-meldingen"),
+        "{approved}"
+    );
+}

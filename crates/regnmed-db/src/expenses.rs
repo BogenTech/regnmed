@@ -158,6 +158,24 @@ pub struct ExpenseDraft {
     pub department: Option<String>,
     pub project: Option<String>,
     pub billable: bool,
+    /// A trip (`reise`): the reiseregning's times, destination and døgn.
+    pub departure_at: Option<chrono::NaiveDateTime>,
+    pub return_at: Option<chrono::NaiveDateTime>,
+    pub destination: Option<String>,
+    pub overnight: bool,
+    pub over_15_km: bool,
+    pub travel_days: Vec<crate::travel::TravelDayDraft>,
+}
+
+impl ExpenseDraft {
+    fn is_travel(&self) -> bool {
+        self.departure_at.is_some()
+            || self.return_at.is_some()
+            || given(&self.destination).is_some()
+            || self.overnight
+            || self.over_15_km
+            || !self.travel_days.is_empty()
+    }
 }
 
 pub struct Receipt<'a> {
@@ -190,6 +208,17 @@ async fn check_draft(pool: &PgPool, company_id: Uuid, d: &ExpenseDraft) -> Resul
         d.passengers.iter().all(|p| !p.trim().is_empty()),
         "skriv navnet på hver passasjer"
     );
+    for day in &d.travel_days {
+        if let Some(l) = given(&day.lodging) {
+            ensure!(
+                regnmed_core::travel::Lodging::from_slug(l).is_some(),
+                "ukjent overnatting «{l}»"
+            );
+        }
+    }
+    if let (Some(from), Some(to)) = (d.departure_at, d.return_at) {
+        ensure!(to > from, "hjemkomst må være etter avreise");
+    }
     for (kind, code) in [
         ("avdeling", given(&d.department)),
         ("prosjekt", given(&d.project)),
@@ -229,14 +258,21 @@ pub async fn create_draft(
     receipt: Option<Receipt<'_>>,
     created_by: &str,
 ) -> Result<Uuid> {
-    ensure!(matches!(kind, "utlegg" | "kjoring"), "ukjent type «{kind}»");
     ensure!(
-        kind == "utlegg" || receipt.is_none(),
-        "en kjøring har ingen kvittering — bompenger og parkering legges til som egne utlegg"
+        matches!(kind, "utlegg" | "kjoring" | "reise"),
+        "ukjent type «{kind}»"
     );
     ensure!(
-        kind == "utlegg" || trip_expense_id.is_none(),
-        "bare utlegg kan knyttes til en kjøring"
+        kind == "utlegg" || receipt.is_none(),
+        "bare et utlegg har kvittering — bompenger, hotell og billetter legges til som egne utlegg"
+    );
+    ensure!(
+        kind == "reise" || !draft.is_travel(),
+        "avreise, hjemkomst og døgn hører til en reise"
+    );
+    ensure!(
+        kind != "reise" || trip_expense_id.is_none(),
+        "en reise kan ikke knyttes til noe annet"
     );
     let mut draft = draft.clone();
     if let Some(trip) = trip_expense_id {
@@ -248,14 +284,19 @@ pub async fn create_draft(
         .bind(company_id)
         .fetch_optional(pool)
         .await?
-        .context("fant ikke kjøringen")?;
+        .context("fant ikke turen kravet skal knyttes til")?;
+        // Costs hang under a drive or a trip; a drive under a trip.
+        let parent: String = trip_row.get("kind");
         ensure!(
-            trip_row.get::<String, _>("kind") == "kjoring",
-            "bare utlegg kan knyttes til en kjøring"
+            match kind {
+                "utlegg" => parent == "kjoring" || parent == "reise",
+                _ => parent == "reise",
+            },
+            "et utlegg kan knyttes til en kjøring eller reise, en kjøring bare til en reise"
         );
         ensure!(
             trip_row.get::<Uuid, _>("person_id") == person_id,
-            "utlegget må gjelde samme person som kjøringen"
+            "kravet må gjelde samme person som turen det hører til"
         );
         if given(&draft.department).is_none() && given(&draft.project).is_none() {
             draft.department = trip_row.get("department");
@@ -284,9 +325,10 @@ pub async fn create_draft(
                               dato, beskrivelse, belop_ore, km, route_from, route_to,
                               round_trip, vehicle, passengers, department, project, billable,
                               trip_expense_id, receipt_filename, receipt_content_type,
-                              receipt_content, receipt_sha256, created_by)
+                              receipt_content, receipt_sha256, created_by, departure_at,
+                              return_at, destination, overnight, over_15_km, travel_days)
          values ($1, $2, $3, $4, $5, 'utkast', $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                 $15, $16, $17, $18, $19, $20, $21, $22, $23)",
+                 $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)",
     )
     .bind(id)
     .bind(company_id)
@@ -311,6 +353,12 @@ pub async fn create_draft(
     .bind(stored.as_ref().and_then(|(_, in_row)| *in_row))
     .bind(stored.as_ref().map(|(digest, _)| digest.clone()))
     .bind(created_by)
+    .bind(draft.departure_at)
+    .bind(draft.return_at)
+    .bind(given(&draft.destination))
+    .bind(draft.overnight)
+    .bind(draft.over_15_km)
+    .bind(serde_json::to_value(&draft.travel_days)?)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -356,10 +404,16 @@ pub async fn update_draft(
         kind == "kjoring" || (draft.km.is_none() && given(&draft.vehicle).is_none()),
         "kilometer og kjøretøy hører til en kjøring"
     );
+    ensure!(
+        kind == "reise" || !draft.is_travel(),
+        "avreise, hjemkomst og døgn hører til en reise"
+    );
     sqlx::query(
         "update expense set dato = $3, beskrivelse = $4, belop_ore = $5, km = $6,
                 route_from = $7, route_to = $8, round_trip = $9, vehicle = $10,
-                passengers = $11, department = $12, project = $13, billable = $14
+                passengers = $11, department = $12, project = $13, billable = $14,
+                departure_at = $15, return_at = $16, destination = $17, overnight = $18,
+                over_15_km = $19, travel_days = $20
          where id = $1 and company_id = $2",
     )
     .bind(expense_id)
@@ -380,6 +434,12 @@ pub async fn update_draft(
     .bind(given(&draft.department))
     .bind(given(&draft.project))
     .bind(draft.billable)
+    .bind(draft.departure_at)
+    .bind(draft.return_at)
+    .bind(given(&draft.destination))
+    .bind(draft.overnight)
+    .bind(draft.over_15_km)
+    .bind(serde_json::to_value(&draft.travel_days)?)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -423,10 +483,10 @@ pub async fn replace_draft_receipt(
 pub struct SubmittedExpense {
     pub amount_ore: i64,
     pub taxable_ore: i64,
-    /// Costs tied to the trip that went in with it.
+    /// Costs (and, on a trip, drives) tied to it that went in with it.
     pub costs_submitted: i64,
-    /// Costs tied to the trip still waiting (no receipt yet, say), with
-    /// what each lacks.
+    /// Costs tied to it still waiting (no receipt yet, say), with what
+    /// each lacks.
     pub costs_waiting: Vec<String>,
 }
 
@@ -446,11 +506,43 @@ struct DraftRow {
     passengers: Vec<String>,
     project: Option<String>,
     billable: bool,
+    departure_at: Option<chrono::NaiveDateTime>,
+    return_at: Option<chrono::NaiveDateTime>,
+    destination: Option<String>,
+    overnight: bool,
+    over_15_km: bool,
+    travel_days: serde_json::Value,
 }
+
+const DRAFT_SELECT: &str = "select id, kind, dato, beskrivelse, belop_ore, receipt_sha256, km,
+                                   route_from, route_to, vehicle, passengers, project, billable,
+                                   departure_at, return_at, destination, overnight, over_15_km,
+                                   travel_days
+                            from expense";
 
 /// What a draft still lacks, said the way the claimant reads it — the
 /// first missing thing, or None when it can go in.
 fn missing(d: &DraftRow) -> Option<&'static str> {
+    if d.kind == "reise" {
+        if d.departure_at.is_none() || d.return_at.is_none() {
+            return Some("oppgi avreise og hjemkomst, med klokkeslett");
+        }
+        if given(&d.destination).is_none() {
+            return Some("oppgi hvor du reiste");
+        }
+        if d.beskrivelse.trim().is_empty() {
+            return Some("skriv formålet med reisen");
+        }
+        if !d.over_15_km {
+            return Some(
+                "bekreft at reisen gikk minst 15 km fra der du starter — ellers gir den ingen diett",
+            );
+        }
+        if d.billable && given(&d.project).is_none() {
+            return Some("velg prosjekt — det er prosjektet som viderefaktureres");
+        }
+        return None;
+    }
     if d.dato.is_none() {
         return Some("velg dato");
     }
@@ -481,11 +573,156 @@ fn missing(d: &DraftRow) -> Option<&'static str> {
     None
 }
 
-/// Submits a draft: from here the content is evidence. A kjøring's
-/// rates are resolved from the register on the trip's date NOW and
-/// stored (outside coverage: refused, never guessed), and the costs tied
-/// to it that are complete go in with it in the same transaction —
-/// the rest stay drafts, and the answer says why.
+/// Submits ONE complete draft row: its rates are resolved and stored now
+/// (outside the register's coverage: refused, never guessed). Returns
+/// (amount, taxable).
+async fn submit_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    pool: &PgPool,
+    company_id: Uuid,
+    d: &DraftRow,
+) -> Result<(i64, i64)> {
+    match d.kind.as_str() {
+        "kjoring" => {
+            let date = d.dato.expect("checked by missing()");
+            let vehicle = d.vehicle.as_deref().unwrap_or("bil");
+            let (rate_domain, tax_free_domain) =
+                regnmed_core::expenses::vehicle_rate_domains(vehicle)
+                    .with_context(|| format!("ukjent kjøretøy «{vehicle}»"))?;
+            let rates = load_rates(pool).await?;
+            let lookup = |domain: &str| {
+                value_on(&rates, domain, date)
+                    .with_context(|| format!("ingen sats «{domain}» for {date} i satsregisteret"))
+            };
+            let vehicle_rates = (lookup(rate_domain)?, lookup(tax_free_domain)?);
+            let passengers = d.passengers.len() as i64;
+            let passenger_rates = if passengers > 0 {
+                let (state, tax_free) = regnmed_core::expenses::PASSENGER_RATE_DOMAINS;
+                (lookup(state)?, lookup(tax_free)?)
+            } else {
+                (0, 0)
+            };
+            let km = d.km.expect("checked by missing()");
+            let allowance = regnmed_core::expenses::trip_allowance(
+                km,
+                vehicle_rates,
+                passenger_rates,
+                passengers,
+            );
+            sqlx::query(
+                "update expense set status = 'innsendt', vehicle = $2, belop_ore = $3,
+                        sats_ore_per_km = $4, trekkfri_ore = $5, trekkpliktig_ore = $6,
+                        passenger_rate_ore_per_km = $7
+                 where id = $1",
+            )
+            .bind(d.id)
+            .bind(vehicle)
+            .bind(allowance.amount_ore)
+            .bind(vehicle_rates.0)
+            .bind(allowance.tax_free_ore)
+            .bind(allowance.taxable_ore)
+            .bind((passengers > 0).then_some(passenger_rates.0))
+            .execute(&mut **tx)
+            .await?;
+            Ok((allowance.amount_ore, allowance.taxable_ore))
+        }
+        "reise" => {
+            let departure = d.departure_at.expect("checked by missing()");
+            let return_at = d.return_at.expect("checked by missing()");
+            // A reiseregning is written after the trip: one sent in ahead
+            // would be paid by payroll for days not yet travelled. The
+            // times are Norwegian wall clock and the server runs on UTC,
+            // so two hours of slack keep a trip that just ended in.
+            ensure!(
+                return_at <= chrono::Utc::now().naive_utc() + chrono::Duration::hours(2),
+                "reisen er ikke over ennå — send inn reiseregningen når du er hjemme"
+            );
+            let days: Vec<crate::travel::TravelDayDraft> =
+                serde_json::from_value(d.travel_days.clone()).context("travel_days")?;
+            // The scheme is the company's on the day the claim goes in,
+            // and stays with the claim.
+            let scheme = crate::travel::travel_scheme(pool, company_id).await?;
+            let (allowance, lines) =
+                crate::travel::compute(pool, departure, return_at, d.overnight, &days, scheme)
+                    .await?;
+            ensure!(
+                allowance.amount_ore > 0,
+                "reisen gir ingen diett — alle måltidene ble dekket av andre"
+            );
+            sqlx::query(
+                "update expense set status = 'innsendt', dato = $2, belop_ore = $3,
+                        trekkfri_ore = $4, trekkpliktig_ore = $5, rate_scheme = $6,
+                        travel_lines = $7
+                 where id = $1",
+            )
+            .bind(d.id)
+            .bind(departure.date())
+            .bind(allowance.amount_ore)
+            .bind(allowance.tax_free_ore)
+            .bind(allowance.taxable_ore)
+            .bind(scheme.slug())
+            .bind(serde_json::to_value(&lines)?)
+            .execute(&mut **tx)
+            .await?;
+            Ok((allowance.amount_ore, allowance.taxable_ore))
+        }
+        _ => {
+            sqlx::query("update expense set status = 'innsendt' where id = $1")
+                .bind(d.id)
+                .execute(&mut **tx)
+                .await?;
+            Ok((d.belop_ore.unwrap_or(0), 0))
+        }
+    }
+}
+
+/// Submits the complete drafts hanging under `parent`, and returns the
+/// ids of the drives among them (whose own costs go in next). An
+/// incomplete one stays a draft, and the answer says what it lacks.
+async fn submit_children(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    pool: &PgPool,
+    company_id: Uuid,
+    parent: Uuid,
+    submitted: &mut SubmittedExpense,
+) -> Result<Vec<Uuid>> {
+    let children: Vec<DraftRow> = sqlx::query_as(&format!(
+        "{DRAFT_SELECT} where trip_expense_id = $1 and status = 'utkast'
+         order by created_at for update"
+    ))
+    .bind(parent)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut drives = Vec::new();
+    for child in &children {
+        match missing(child) {
+            Some(what) => {
+                let name = if !child.beskrivelse.is_empty() {
+                    child.beskrivelse.as_str()
+                } else if child.kind == "kjoring" {
+                    "kjøring"
+                } else {
+                    "utlegg"
+                };
+                submitted.costs_waiting.push(format!("{name}: {what}"));
+            }
+            None => {
+                submit_row(tx, pool, company_id, child).await?;
+                submitted.costs_submitted += 1;
+                if child.kind == "kjoring" {
+                    drives.push(child.id);
+                }
+            }
+        }
+    }
+    Ok(drives)
+}
+
+/// Submits a draft: from here the content is evidence. A kjøring's and a
+/// trip's rates are resolved from the register NOW and stored, and what
+/// hangs under it that is complete goes in with it in the same
+/// transaction — a trip's costs and drives, and those drives' tolls. The
+/// rest stay drafts, and the answer says why.
 pub async fn submit_expense(
     pool: &PgPool,
     company_id: Uuid,
@@ -493,104 +730,42 @@ pub async fn submit_expense(
 ) -> Result<SubmittedExpense> {
     let mut tx = pool.begin().await?;
     lock_draft(&mut tx, company_id, expense_id).await?;
-    let select = "select id, kind, dato, beskrivelse, belop_ore, receipt_sha256, km, route_from,
-                         route_to, vehicle, passengers, project, billable
-                  from expense";
-    let d: DraftRow = sqlx::query_as(&format!("{select} where id = $1"))
+    let d: DraftRow = sqlx::query_as(&format!("{DRAFT_SELECT} where id = $1"))
         .bind(expense_id)
         .fetch_one(&mut *tx)
         .await?;
     if let Some(what) = missing(&d) {
         bail!("kravet kan ikke sendes inn ennå: {what}");
     }
+    let (amount, taxable) = submit_row(&mut tx, pool, company_id, &d).await?;
     let mut submitted = SubmittedExpense {
-        amount_ore: d.belop_ore.unwrap_or(0),
-        taxable_ore: 0,
+        amount_ore: amount,
+        taxable_ore: taxable,
         costs_submitted: 0,
         costs_waiting: Vec::new(),
     };
-    if d.kind == "kjoring" {
-        let date = d.dato.expect("checked by missing()");
-        let vehicle = d.vehicle.as_deref().unwrap_or("bil");
-        let (rate_domain, tax_free_domain) = regnmed_core::expenses::vehicle_rate_domains(vehicle)
-            .with_context(|| format!("ukjent kjøretøy «{vehicle}»"))?;
-        let rates = load_rates(pool).await?;
-        let lookup = |domain: &str| {
-            value_on(&rates, domain, date)
-                .with_context(|| format!("ingen sats «{domain}» for {date} i satsregisteret"))
-        };
-        let vehicle_rates = (lookup(rate_domain)?, lookup(tax_free_domain)?);
-        let passengers = d.passengers.len() as i64;
-        let passenger_rates = if passengers > 0 {
-            let (state, tax_free) = regnmed_core::expenses::PASSENGER_RATE_DOMAINS;
-            (lookup(state)?, lookup(tax_free)?)
-        } else {
-            (0, 0)
-        };
-        let km = d.km.expect("checked by missing()");
-        let allowance =
-            regnmed_core::expenses::trip_allowance(km, vehicle_rates, passenger_rates, passengers);
-        sqlx::query(
-            "update expense set status = 'innsendt', vehicle = $2, belop_ore = $3,
-                    sats_ore_per_km = $4, trekkfri_ore = $5, trekkpliktig_ore = $6,
-                    passenger_rate_ore_per_km = $7
-             where id = $1",
-        )
-        .bind(expense_id)
-        .bind(vehicle)
-        .bind(allowance.amount_ore)
-        .bind(vehicle_rates.0)
-        .bind(allowance.tax_free_ore)
-        .bind(allowance.taxable_ore)
-        .bind((passengers > 0).then_some(passenger_rates.0))
-        .execute(&mut *tx)
-        .await?;
-        submitted.amount_ore = allowance.amount_ore;
-        submitted.taxable_ore = allowance.taxable_ore;
-
-        let costs: Vec<DraftRow> = sqlx::query_as(&format!(
-            "{select} where trip_expense_id = $1 and status = 'utkast' order by created_at for update"
-        ))
-        .bind(expense_id)
-        .fetch_all(&mut *tx)
-        .await?;
-        for cost in &costs {
-            match missing(cost) {
-                Some(what) => submitted.costs_waiting.push(format!(
-                    "{}: {what}",
-                    if cost.beskrivelse.is_empty() {
-                        "utlegg"
-                    } else {
-                        &cost.beskrivelse
-                    }
-                )),
-                None => {
-                    sqlx::query("update expense set status = 'innsendt' where id = $1")
-                        .bind(cost.id)
-                        .execute(&mut *tx)
-                        .await?;
-                    submitted.costs_submitted += 1;
-                }
-            }
+    if d.kind != "utlegg" {
+        let drives = submit_children(&mut tx, pool, company_id, d.id, &mut submitted).await?;
+        for drive in drives {
+            submit_children(&mut tx, pool, company_id, drive, &mut submitted).await?;
         }
-    } else {
-        sqlx::query("update expense set status = 'innsendt' where id = $1")
-            .bind(expense_id)
-            .execute(&mut *tx)
-            .await?;
     }
     tx.commit().await?;
     Ok(submitted)
 }
 
 /// Discards a draft, one way — never deleted. A trip takes the drafts
-/// tied to it along; submitted costs stand on their own.
+/// tied to it along — on a journey also the drafts under its draft drives;
+/// submitted claims stand on their own, with what hangs under them.
 pub async fn discard_expense(pool: &PgPool, company_id: Uuid, expense_id: Uuid) -> Result<()> {
     let mut tx = pool.begin().await?;
     lock_draft(&mut tx, company_id, expense_id).await?;
     sqlx::query(
         "update expense set status = 'forkastet'
-         where company_id = $1 and status = 'utkast' and (id = $2 or trip_expense_id = $2)",
+         where company_id = $1 and status = 'utkast'
+           and (id = $2 or trip_expense_id = $2
+                or trip_expense_id in (select id from expense
+                                       where trip_expense_id = $2 and status = 'utkast'))",
     )
     .bind(company_id)
     .bind(expense_id)
@@ -755,6 +930,15 @@ pub struct ExpenseRow {
     /// The invoice that rebilled it, and how.
     pub rebilled_invoice_id: Option<Uuid>,
     pub rebilled_as: Option<String>,
+    pub departure_at: Option<chrono::NaiveDateTime>,
+    pub return_at: Option<chrono::NaiveDateTime>,
+    pub destination: Option<String>,
+    pub overnight: bool,
+    pub over_15_km: bool,
+    pub travel_days: serde_json::Value,
+    pub rate_scheme: Option<String>,
+    /// The computed døgn, stored at submission.
+    pub travel_lines: Option<serde_json::Value>,
 }
 
 /// Which claims a list shows. `status` is a TAB, not a stored value:
@@ -821,7 +1005,9 @@ pub async fn list_expenses(
                 e.avvist_note, e.decided_by, e.decided_at, e.utbetalt_at, e.created_at,
                 v.fiscal_year, v.voucher_number,
                 pv.fiscal_year as paid_year, pv.voucher_number as paid_number,
-                e.kind = 'kjoring' and {by_payroll} as by_payroll, {in_run} as in_run,
+                e.kind <> 'utlegg' and {by_payroll} as by_payroll, {in_run} as in_run,
+                e.departure_at, e.return_at, e.destination, e.overnight, e.over_15_km,
+                e.travel_days, e.rate_scheme, e.travel_lines,
                 ei.invoice_id as rebilled_invoice_id, ei.treatment as rebilled_as
          from expense e
          left join expense_invoice ei on ei.expense_id = e.id
@@ -915,6 +1101,14 @@ pub async fn list_expenses(
             },
             rebilled_invoice_id: r.get("rebilled_invoice_id"),
             rebilled_as: r.get("rebilled_as"),
+            departure_at: r.get("departure_at"),
+            return_at: r.get("return_at"),
+            destination: r.get("destination"),
+            overnight: r.get("overnight"),
+            over_15_km: r.get("over_15_km"),
+            travel_days: r.get("travel_days"),
+            rate_scheme: r.get("rate_scheme"),
+            travel_lines: r.get("travel_lines"),
         })
         .collect();
 
@@ -1028,7 +1222,8 @@ pub async fn approve_expense(
         "select kind, dato, beskrivelse, belop_ore, km, sats_ore_per_km, trekkpliktig_ore,
                 receipt_filename, receipt_content_type, receipt_content, receipt_sha256,
                 status, person_id, registered_by_person, department, project,
-                route_from, route_to, round_trip, passengers,
+                route_from, route_to, round_trip, passengers, departure_at, return_at,
+                destination, travel_lines,
                 coalesce((select p.name from person p where p.id = expense.person_id), '') as navn,
                 {employee} as employee
          from expense where id = $1 and company_id = $2 for update",
@@ -1115,6 +1310,43 @@ pub async fn approve_expense(
                 });
             }
         }
+        "reise" => {
+            ensure!(vat_code.is_none(), "diett har ingen mva");
+            // The reiseregning's essentials on the posting: where, when,
+            // how many døgn — the documentation that keeps it trekkfri.
+            let departure: chrono::NaiveDateTime = expense.get("departure_at");
+            let return_at: chrono::NaiveDateTime = expense.get("return_at");
+            let destination: String = expense
+                .get::<Option<String>, _>("destination")
+                .unwrap_or_default();
+            let lines: Vec<crate::travel::TravelLine> = serde_json::from_value(
+                expense
+                    .get::<Option<serde_json::Value>, _>("travel_lines")
+                    .context("innsendt reise uten døgnlinjer")?,
+            )?;
+            entries.push(EntryDraft {
+                account_number: account.to_string(),
+                amount: Ore(amount),
+                vat_code: None,
+                description: Some(format!(
+                    "{description} — {destination}, {} til {}, {} døgn",
+                    departure.format("%d.%m.%Y %H:%M"),
+                    return_at.format("%d.%m.%Y %H:%M"),
+                    lines.len()
+                )),
+                party_no: None,
+                department,
+                project,
+                currency: None,
+            });
+            if !expense.get::<bool, _>("employee") {
+                warning = Some(format!(
+                    "{name} er ikke ansatt under Lønn nå, så ingen lønnskjøring kan utbetale \
+                     diettgodtgjørelsen og melde den i a-meldingen — den må meldes særskilt. Er \
+                     {name} ansatt, registrer og koble personen, så tar neste lønnskjøring kravet."
+                ));
+            }
+        }
         _ => {
             ensure!(vat_code.is_none(), "kjøregodtgjørelse har ingen mva");
             let km: i64 = expense.get::<Option<i64>, _>("km").unwrap_or(0);
@@ -1180,10 +1412,10 @@ pub async fn approve_expense(
         currency: None,
     });
 
-    let label = if kind == "utlegg" {
-        "Utlegg"
-    } else {
-        "Kjøregodtgjørelse"
+    let label = match kind.as_str() {
+        "utlegg" => "Utlegg",
+        "reise" => "Diett",
+        _ => "Kjøregodtgjørelse",
     };
     let draft = VoucherDraft {
         journal_code: "GL".into(),
@@ -1311,9 +1543,9 @@ pub async fn pay_expense(
     // The taxable part needs trekk, and both parts belong in the
     // a-melding: the payroll run does all three.
     ensure!(
-        expense.get::<String, _>("kind") != "kjoring" || !expense.get::<bool, _>("employee"),
-        "kjøregodtgjørelse til en ansatt utbetales med neste lønnskjøring, som også trekker \
-         skatt av den trekkpliktige delen og melder den i a-meldingen"
+        expense.get::<String, _>("kind") == "utlegg" || !expense.get::<bool, _>("employee"),
+        "kjøregodtgjørelse og diett til en ansatt utbetales med neste lønnskjøring, som også \
+         trekker skatt av den trekkpliktige delen og melder den i a-meldingen"
     );
     let amount: i64 = expense.get("belop_ore");
     let contra_account: String = expense
@@ -1511,10 +1743,10 @@ pub(crate) async fn rebill_lines(
         let shown = date.format("%d.%m.%Y");
         let line = match pick.treatment {
             RebillAs::Resale => crate::invoice::InvoiceLineDraft {
-                description: if kind == "kjoring" {
-                    format!("Kjøring {shown}: {what}")
-                } else {
-                    format!("{what} ({shown})")
+                description: match kind.as_str() {
+                    "kjoring" => format!("Kjøring {shown}: {what}"),
+                    "reise" => format!("Diett, reise {shown}: {what}"),
+                    _ => format!("{what} ({shown})"),
                 },
                 account_number: "3000".into(),
                 quantity_milli: 1000,
@@ -1528,8 +1760,8 @@ pub(crate) async fn rebill_lines(
                 let account: String = r.get("account");
                 ensure!(
                     kind == "utlegg",
-                    "kjøregodtgjørelse er en kostnad for selskapet og kan bare viderefaktureres \
-                     som videresalg"
+                    "kjøregodtgjørelse og diett er kostnader for selskapet og kan bare \
+                     viderefaktureres som videresalg"
                 );
                 ensure!(
                     r.get::<Option<String>, _>("cost_vat").is_none()

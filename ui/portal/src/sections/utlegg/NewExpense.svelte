@@ -101,4 +101,15 @@
       <a class="btn w-fit" href={list + "/kjoring"}>Registrer kjøring</a>
     </div>
   </section>
+
+  <section class="card border border-base-300 bg-base-100" aria-labelledby="reise-tittel">
+    <div class="card-body grid gap-3">
+      <h2 id="reise-tittel" class="card-title">Reise med diett</h2>
+      <p class="text-sm opacity-70">
+        Reiseregning i Norge eller utlandet: diett og nattillegg døgn for døgn, med hotell, billetter og kjøring på
+        samme reise.
+      </p>
+      <a class="btn w-fit" href={list + "/reise"}>Registrer reise</a>
+    </div>
+  </section>
 </div>

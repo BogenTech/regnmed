@@ -188,11 +188,131 @@ de ferdige kostnadene med i samme transaksjon, og resten blir liggende
 som utkast med beskjed om hva som mangler. Forkastes turen, forkastes
 utkastene på den.
 
+## Reise og diett
+
+En tjenestereise er én **reiseregning** (`kind = 'reise'`, migrasjon
+0087): avreise og hjemkomst med klokkeslett, reisemål, formål, og døgn
+for døgn hvor den reisende var, hvor hen sov og hvilke måltider andre
+betalte. Det er opplysningene skattebetalingsforskriften § 5-6-12 (3)
+krever for at godtgjørelsen skal være trekkfri. Hotell, billetter og
+taxi er vanlige utlegg med kvittering, og kjøring er vanlige
+kjøringer — begge kan henge under reisen (`trip_expense_id`), og det
+som er ferdig sendes inn sammen med den, i samme transaksjon (også en
+kjørings egne bompenger). Det som mangler kvittering blir liggende som
+utkast, og svaret sier hva som mangler. Forkastes reisen, forkastes
+utkastene under den.
+
+**Døgnene.** Et døgn er 24 timer regnet fra avreise (særavtalene § 2).
+Med overnatting er en rest på 6 timer eller mer etter siste hele døgn
+et eget, påbegynt døgn; under 6 timer gir ingenting. Holder det
+påbegynte døgnet også en natt (ut kl. 18, hjemme kl. 10 to dager
+senere), oppgis overnattingen, og det regnes som et døgn med
+overnatting. En reise uten overnatting er én dagreise, 6 timer eller
+mer og høyst et døgn. En kort reise med overnatting (ut kl. 19, hjemme
+kl. 7) er ett døgn med overnatting; staten betaler da 6–12-timerssatsen,
+siden 1 012 kr gjelder «over 12 timer med overnatting».
+Reiseregningen skrives etter reisen: en hjemkomst fram i tid nektes
+ved innsending, ellers ville lønnen betalt diett for dager som ikke er
+reist. Reiser
+over 28 døgn på samme sted følger egne regler og nektes høyt — de er
+ikke bygget. Regelen står ett sted, `regnmed-core::travel::day_count`,
+og portalen spør den (`…/reise/days`) i stedet for å telle selv.
+
+**To sett satser møtes på hvert døgn:**
+
+- **Trekkfritt** (satsforskriften 2026, FOR-2025-11-07-2216 §§ 2–3) er
+  det som kan betales uten skattetrekk og arbeidsgiveravgift — og det er
+  det **samme i Norge og i utlandet**:
+
+  | | 2026 | Satsdomene |
+  | --- | --- | --- |
+  | Overnatting på hotell, per døgn | 693 kr | `diett_hotell_trekkfri` |
+  | Pensjonat, brakke, hybel uten kjøkken | 400 kr | `diett_pensjonat_trekkfri` |
+  | Privat, hybel med kjøkken | 107 kr | `diett_privat_trekkfri` |
+  | Dagreise 6–12 timer | 200 kr | `diett_dag_6_12_trekkfri` |
+  | Dagreise over 12 timer | 400 kr | `diett_dag_over_12_trekkfri` |
+  | Ulegitimert nattillegg, bare innenlands | 452 kr | `nattillegg_trekkfri` |
+
+  Det påbegynte døgnet følger satsen for siste overnattingssted (§ 2).
+- **Det selskapet betaler** velges per selskap (Administrasjon →
+  Firmaopplysninger, `reise_satser`): enten de samme skattefrie satsene
+  (standard — da er ingenting trekkpliktig), eller **statens satser**:
+
+  | Statens særavtale, 2026 | Norge | Utlandet |
+  | --- | --- | --- |
+  | Døgn med overnatting | 1 012 kr (`diett_overnatting`) | landets sats |
+  | Dagreise eller påbegynt døgn, 6 til 12 timer | 397 kr (`diett_dag_6_12`) | halv landssats (under 12 t) |
+  | Over 12 timer uten overnatting | 736 kr (`diett_dag_over_12`) | full landssats (fra 12 t) |
+  | Nattillegg, privat overnatting | 452 kr (`nattillegg`) | finnes ikke |
+
+  Særavtale reise innenlands §§ 9–10 og utenfor Norge § 8. At det
+  påbegynte døgnet betales etter timebåndene (397/736 i Norge, halv
+  eller full landssats ute) er vår lesning av «etter bokstav b eller
+  c» — avtalen sier ikke mer.
+
+  Overskuddet over den skattefrie satsen er **trekkpliktig lønn** med
+  arbeidsgiveravgift. Et nattillegg over det trekkfrie beløpet er
+  trekkpliktig i sin helhet, ikke bare overskuddet (Skatteetaten,
+  «Trekkfritt ulegitimert nattillegg»). Valget lagres på kravet ved
+  innsending, så en endring rører aldri et innsendt krav.
+
+**Måltider andre betalte** trekker fra 20 % (frokost), 30 % (lunsj) og
+50 % (middag) av satsen, hver rundet til hele kroner — begge sett.
+Statens frokosttrekk gjelder ikke når nattillegget betales
+(innenlands § 9 nr. 4); det trekkfrie gjør det.
+
+**Utlandet.** Statens landssatser står i en tabell per land, og for
+noen land per by (`travel_rate_abroad`, 171 rader fra særavtalens
+vedlegg 2026, vendored i [docs/reise/](reise/README.md) — med
+departementets «som for»-land og regionenes «øvrige»). Satsen er i
+landets valuta og regnes om med Norges Banks kurs på døgnets dato
+(«kursen … da reisen fant sted», § 15); en kurs eldre enn en uke nektes
+med beskjed om å hente kurser. Valuta Norges Bank ikke noterer (BYN,
+MMK, …) kan ikke brukes ennå. Velg landet der du var lengst i døgnet,
+også når det er Norge (§ 8 nr. 5).
+
+**Beregningen** er ren kode i `regnmed-core::travel::allowance`.
+Satsene er de som gjelder på **avreisedagen** — en reise over nyttår
+regnes med det gamle årets satser. Ved innsending lagres hvert døgn
+(`travel_lines`): tidsrom, sted, overnatting, måltider, betalt,
+herav trekkfritt, og for utlandet tabellens beløp, valuta, kurs og
+kursdato. Raden er bevis, og triggeren holder den fast. Skjemaet viser
+serverens tall (`POST …/reise/preview` kjører samme kode), aldri sine
+egne.
+
+**Bokføring og utbetaling.** Godkjenning posterer hele beløpet (7150
+diettkostnad som standard) mot mellomregning; bilagslinjen bærer
+reisemål, tidsrom og antall døgn. Dietten utbetales med lønnen, som
+kjøregodtgjørelsen (se «Utbetaling»): den trekkpliktige delen går i
+trekkgrunnlaget og avgiftsgrunnlaget, den trekkfrie bare til netto.
+
+I a-meldingen (`IncomeKind::Travel`, sjekket mot Skatteetatens
+inntektskombinasjoner R1 2026), alle som `utgiftsgodtgjoerelse`:
+
+| Del | Beskrivelse | `antall` | Aga | Trekk |
+| --- | --- | --- | --- | --- |
+| trekkfri kost, hotell | `reiseKostMedOvernattingPaaHotell` | døgn | nei | nei |
+| trekkfri kost, pensjonat/brakke/hybel uten kjøkken | `reiseKostMedOvernattingPaaHybelUtenKokEllerPensjonatEllerBrakke` | døgn | nei | nei |
+| trekkfri kost, privat/hybel med kjøkken | `reiseKostMedOvernattingPaaHybelMedKokEllerPrivat` | døgn | nei | nei |
+| trekkfri kost, dagreise | `reiseKostUtenOvernatting` | dager | nei | nei |
+| trekkfritt nattillegg | `reiseNattillegg` | døgn | nei | nei |
+| kost over trekkfri sats | `reiseKost` | ingen | ja | ja |
+| nattillegg over trekkfritt beløp, helt | `reiseAnnet` | ingen | ja | ja |
+
+Det påbegynte døgnet meldes under overnattingsstedet det følger.
+`payroll_travel` (migrasjon 0087) er øyeblikksbildet per krav og
+beskrivelse, så meldingen kan bygges fra kjøringen for alltid.
+
+Ikke bygget: statens kompensasjonstillegg (§ 12, særskilt for
+statsansatte), reduksjonen fra døgn 29, langtransportsjåfører, kost
+etter regning («særlige grunner»), og reiser som skifter sats ved
+nyttår.
+
 ## Utbetaling
 
 Tre veier ut, valgt av hva kravet er — aldri av hva som er lettest:
 
-**Kjøregodtgjørelse til en ansatt utbetales med lønnen.** Delen over
+**Kjøregodtgjørelse og diett til en ansatt utbetales med lønnen.** Delen over
 den trekkfrie satsen er trekkpliktig og utløser arbeidsgiveravgift, og
 bare en lønnskjøring kan trekke skatt. Begge delene skal i a-meldingen
 for måneden de utbetales (Skatteetatens veiledning, «Trekkfri
@@ -212,9 +332,11 @@ ubetalte kjøringer datert til og med utbetalingsdatoen:
 
 I a-meldingen (`regnmed-core::amelding::IncomeKind`, kodene sjekket mot
 Skatteetatens inntektskombinasjoner R1 2026), alle som
-`utgiftsgodtgjoerelse` med kilometerne som `antall`:
+`utgiftsgodtgjoerelse` med kilometerne som `antall`. Tallene er
+regnearkets «gml.kode» — den gamle lønnsoppgavekoden, ikke et
+kombinasjonsnummer, som arket ikke har:
 
-| Del | Beskrivelse | Kombinasjon | Aga | Trekk |
+| Del | Beskrivelse | Gammel kode | Aga | Trekk |
 | --- | --- | --- | --- | --- |
 | trekkfri, bil | `kilometergodtgjoerelseBil` | 711 | nei | nei |
 | over trekkfri sats, bil | `kilometergodtgjoerelseBil` | 153 | ja | ja |
@@ -305,6 +427,9 @@ Utkast:
 - `GET  /companies/{id}/expenses?status=utkast` / `?trip={eid}` — egne utkast / kostnadene på en tur
 - `GET  /companies/{id}/expenses/kjoring?dato=&vehicle=` — satsene, også passasjertillegget
 - `GET  /companies/{id}/expenses/{eid}/suggestion` — det kvitteringen sier: dato, beløp, hvem, med begrunnelser
+- `GET  /companies/{id}/expenses/reise?dato=` — selskapets satsvalg, begge settene satser og statens landstabell
+- `GET  /companies/{id}/expenses/reise/days?departure_at=&return_at=&overnight=` — antall døgn
+- `POST /companies/{id}/expenses/reise/preview` — dietten reisen ville fått, med døgnlinjene
 
 Direkte innsending (som før, for integrasjoner):
 
@@ -344,8 +469,7 @@ attestering på tilbys ikke godkjenning av eget krav; etter godkjenning
 eller avvisning går siden til neste krav som venter (ikke ens egne når
 attestering er på).
 
-Bevisst utenfor så langt: diett/per-diem-satser, reise som samling av
-krav, KI-lesing av kvitteringen (agent-fasen), mva fordelt på flere satser
+Bevisst utenfor så langt: KI-lesing av kvitteringen (agent-fasen), mva fordelt på flere satser
 per kvittering, utlegg (kvitteringer) utbetalt med lønnen, og
 originalbilaget sendt med fakturaen ved viderefakturering som utlegg.
 
@@ -398,6 +522,29 @@ originalbilaget sendt med fakturaen ved viderefakturering som utlegg.
   feile), og uten mva (kode 7) etter at selskapet er ute av
   mva-registeret (sett feile).
 
+- `regnmed-core/src/travel.rs` — døgntelling (6-timersgrensen, 28
+  døgn), satsforskriftens egne tall (554 kr for hotell med frokost),
+  statens overskudd, en natt i det påbegynte døgnet, kort reise med
+  overnatting, nattillegg uten frokosttrekk, nattillegg over
+  trekkfritt beløp trekkpliktig i sin helhet, timebånd, halv landssats
+  ute, alle tre måltider gir null.
+- `regnmed-core/src/amelding.rs::travel_is_reported_by_lodging_with_its_dogn`
+  — beskrivelsene, `antall` på de trekkfrie og ikke på `reiseKost`,
+  XSD-validert, bare overskuddet i avgiftsgrunnlaget.
+- `crates/regnmed-db/tests/payroll.rs::diett_is_paid_with_pay_and_reported_by_lodging`
+  — statens satser: hotellnatt med frokost + påbegynt døgn og en
+  dagreise gjennom ekte utkast/innsending/godkjenning; trekk og aga på
+  overskuddet, 2910 i null, a-meldingens linjer med døgn, manuell
+  utbetaling nektet, betalt bare én gang.
+- `crates/regnmed-api/tests/grupper/expenses.rs::a_trip_is_one_reiseregning`
+  — satsene og landstabellen, døgntelling, en reise fram i tid nektet,
+  Berlin etter skattefrie
+  satser (som hjemme) og etter statens (EUR omregnet per døgn), kjøring
+  og hotell under reisen (kjøringen inn, hotellet venter på
+  kvittering), døgnlinjene lagret og låst i databasen, posteringen med
+  reisemål og tidsrom.
+- `ui/portal/src/sections/utlegg/expenseMath.test.js` — hvilke døgn som
+  har en natt, også over sommertidsskiftet.
 - `regnmed-core/src/expenses.rs` — split trekkfri/trekkpliktig,
   historisk sats-invertering, null-tilfeller.
 - `crates/regnmed-api/tests/grupper/expenses.rs` — end to end: kvittering

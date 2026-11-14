@@ -8,6 +8,7 @@
   import ExpenseList from "./ExpenseList.svelte";
   import NewExpense from "./NewExpense.svelte";
   import DraftForm from "./DraftForm.svelte";
+  import TravelForm from "./TravelForm.svelte";
   import ExpenseDetail from "./ExpenseDetail.svelte";
 
   let { companyId, extra } = $props();
@@ -34,6 +35,10 @@
   <nav class="mb-3"><a class="link link-hover text-sm" href={"#/c/" + companyId + "/utlegg"}>← Alle utlegg</a></nav>
   <h1 class="text-2xl font-bold mb-4">Ny kjøring</h1>
   {#key companyId}<DraftForm {companyId} kind="kjoring" />{/key}
+{:else if extra === "reise"}
+  <nav class="mb-3"><a class="link link-hover text-sm" href={"#/c/" + companyId + "/utlegg"}>← Alle utlegg</a></nav>
+  <h1 class="text-2xl font-bold mb-4">Ny reise</h1>
+  {#key companyId}<TravelForm {companyId} />{/key}
 {:else if tab === null}
   <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>
 {:else}
@@ -42,6 +47,7 @@
     {#if canSubmit}
       <a class="btn btn-primary" href={"#/c/" + companyId + "/utlegg/ny"}>Nytt utlegg</a>
       <a class="btn" href={"#/c/" + companyId + "/utlegg/kjoring"}>Ny kjøring</a>
+      <a class="btn" href={"#/c/" + companyId + "/utlegg/reise"}>Ny reise</a>
     {/if}
   </div>
   {#key companyId + tab}

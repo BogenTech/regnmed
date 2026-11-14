@@ -12,8 +12,9 @@
   import { previewOf } from "../../lib/preview.js";
   import KontoVelger from "../../components/KontoVelger.svelte";
   import { INPUT_VAT, splitGross } from "../bilag/bookingMath.js";
-  import { STATUS, REPRESENTATION_ACCOUNTS, vehicleName } from "./expenseMath.js";
+  import { STATUS, REPRESENTATION_ACCOUNTS, vehicleName, lodgingName, DAY_KIND } from "./expenseMath.js";
   import DraftForm from "./DraftForm.svelte";
+  import TravelForm from "./TravelForm.svelte";
   import RouteMap from "../../components/RouteMap.svelte";
   import { tick } from "svelte";
 
@@ -26,6 +27,11 @@
   }
 
   let { companyId, expenseId } = $props();
+
+  const KIND_TITLE = { utlegg: "Utlegg", kjoring: "Kjøring", reise: "Reise" };
+  const when = (iso) =>
+    new Date(iso + "Z").toLocaleString("nb-NO", { timeZone: "UTC", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const meals = (l) => [l.breakfast && "frokost", l.lunch && "lunsj", l.dinner && "middag"].filter(Boolean).join(", ");
 
   const VAT_CHOICES = [["", "Ingen fradrag"], ...["1", "11", "13"].map((c) => [c, c + " — " + INPUT_VAT[c].label])];
 
@@ -49,7 +55,7 @@
     return api(base + "/" + expenseId)
       .then((r) => {
         e = r;
-        if (!account) account = r.kind === "kjoring" ? "7100" : "7790";
+        if (!account) account = { kjoring: "7100", reise: "7150" }[r.kind] || "7790";
       })
       .catch((err) => (error = err.message));
   }
@@ -78,9 +84,9 @@
   let costs = $state([]);
   let route = $state(null);
   $effect(() => {
-    if (e?.kind === "kjoring" && !isDraft) {
+    if ((e?.kind === "kjoring" || e?.kind === "reise") && !isDraft) {
       api(base + "?trip=" + expenseId).then((r) => (costs = r.expenses)).catch(() => {});
-      if (e.route_from && e.route_to) {
+      if (e.kind === "kjoring" && e.route_from && e.route_to) {
         api(base + "/route?from=" + encodeURIComponent(e.route_from) + "&to=" + encodeURIComponent(e.route_to))
           .then((r) => (route = r.available ? r : null))
           .catch(() => {});
@@ -212,20 +218,24 @@
   <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 {:else if isDraft}
   <div class="mb-4">
-    <h1 class="text-2xl font-bold break-words">{e.kind === "kjoring" ? "Kjøring" : e.trip_expense_id ? "Kostnad på kjøring" : "Utlegg"} — utkast</h1>
+    <h1 class="text-2xl font-bold break-words">{KIND_TITLE[e.kind] || "Utlegg"}{e.trip_expense_id ? " på turen" : ""} — utkast</h1>
     <p class="opacity-70">
       Lagret, men ikke sendt inn{e.own ? "" : " — for " + e.person}.
-      {#if e.trip_expense_id}<a class="link" href={list + "/" + e.trip_expense_id}>Til kjøringen</a>{/if}
+      {#if e.trip_expense_id}<a class="link" href={list + "/" + e.trip_expense_id}>Til turen det hører til</a>{/if}
     </p>
   </div>
-  <DraftForm {companyId} expense={e} onchanged={reloadAndFocus} />
+  {#if e.kind === "reise"}
+    <TravelForm {companyId} expense={e} onchanged={reloadAndFocus} />
+  {:else}
+    <DraftForm {companyId} expense={e} onchanged={reloadAndFocus} />
+  {/if}
 {:else}
   {@const s = STATUS[e.status]}
   <div class="flex flex-wrap items-start gap-3 mb-4">
     <div class="mr-auto min-w-0">
       <h1 id="utlegg-tittel" tabindex="-1" class="text-2xl font-bold break-words focus:outline-none">{e.beskrivelse}</h1>
       <p class="opacity-70">
-        {e.kind === "kjoring" ? "Kjøring" : "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
+        {KIND_TITLE[e.kind] || "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
         {#if e.project || e.department}
           · {[e.department && "avdeling " + e.department, e.project && "prosjekt " + e.project].filter(Boolean).join(", ")}{e.billable && !e.rebilled_invoice_id ? ", viderefaktureres" : ""}
         {/if}
@@ -234,7 +244,7 @@
             {e.rebilled_as === "utlegg" ? "Viderefakturert som utlegg" : "Viderefakturert"}
           </a>
         {/if}
-        {#if e.trip_expense_id}· <a class="link" href={list + "/" + e.trip_expense_id}>Til kjøringen</a>{/if}
+        {#if e.trip_expense_id}· <a class="link" href={list + "/" + e.trip_expense_id}>Til turen det hører til</a>{/if}
       </p>
     </div>
     <p class="text-2xl font-bold tabular-nums whitespace-nowrap">{kr(e.belop_ore)} kr</p>
@@ -325,6 +335,71 @@
                     Lønnskjøringen som utbetaler kravet trekker skatt av dem og melder begge delene i a-meldingen.
                   {:else}
                     {e.person} er ikke registrert som ansatt under Lønn, så godtgjørelsen må meldes i a-meldingen særskilt.
+                  {/if}
+                </span>
+              </div>
+            {/if}
+          </div>
+        </section>
+      {/if}
+
+      {#if e.kind === "reise"}
+        <section class="card border border-base-300 bg-base-100" aria-labelledby="reise-tittel">
+          <div class="card-body grid gap-3">
+            <h2 id="reise-tittel" class="card-title">Reiseregning</h2>
+            <p>
+              {e.destination}: {when(e.departure_at)} til {when(e.return_at)}.
+              {e.rate_scheme === "statens" ? "Statens satser" : "Skattefrie satser"}, satsene på avreisedagen.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <caption class="sr-only">Diett døgn for døgn</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Døgn</th><th scope="col">Hvor</th><th scope="col">Overnatting</th>
+                    <th scope="col">Betalt av andre</th><th scope="col" class="text-right">Diett</th>
+                    <th scope="col" class="text-right">Herav trekkfritt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each e.travel_lines || [] as l, i (i)}
+                    <tr>
+                      <td>{i + 1}. {DAY_KIND[l.kind]}<span class="block text-xs opacity-70">{when(l.start)} – {when(l.end)}</span></td>
+                      <td>
+                        {l.place === "NO" ? "Norge" : l.place.replace("|", ", ")}
+                        {#if l.currency && l.exchange_rate_micro}
+                          <span class="block text-xs opacity-70">{kr(l.foreign_amount_minor)} {l.currency} à {(l.exchange_rate_micro / 1e6).toLocaleString("nb-NO", { maximumFractionDigits: 4 })} ({formatDate(l.exchange_rate_date)})</span>
+                        {/if}
+                      </td>
+                      <td>{l.lodging ? lodgingName(l.lodging) : "–"}{l.night_paid_ore ? ", nattillegg " + kr(l.night_paid_ore) + " kr" : ""}</td>
+                      <td>{meals(l) || "–"}</td>
+                      <td class="text-right tabular-nums">{kr(l.kost_paid_ore + l.night_paid_ore)}</td>
+                      <td class="text-right tabular-nums">{kr(l.kost_tax_free_ore + l.night_tax_free_ore)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            {#if costs.length}
+              <h3 class="font-semibold">Hotell, billetter og kjøring på reisen</h3>
+              <ul class="grid gap-1">
+                {#each costs as c (c.expense_id)}
+                  <li class="flex flex-wrap gap-2">
+                    <a class="link mr-auto" href={list + "/" + c.expense_id}>{c.kind === "kjoring" ? "Kjøring: " : ""}{c.beskrivelse || "Utlegg"}</a>
+                    <span class="badge badge-sm badge-soft {STATUS[c.status]?.badge}">{STATUS[c.status]?.text || c.status}</span>
+                    <span class="tabular-nums">{c.belop_ore ? kr(c.belop_ore) + " kr" : ""}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            {#if e.trekkpliktig_ore > 0}
+              <div class="alert alert-warning alert-soft text-sm">
+                <span>
+                  {kr(e.trekkfri_ore)} kr er trekkfritt. De resterende {kr(e.trekkpliktig_ore)} kr er over den skattefrie satsen og trekkpliktige.
+                  {#if e.paid_by === "lonn"}
+                    Lønnskjøringen som utbetaler kravet trekker skatt av dem og melder begge delene i a-meldingen.
+                  {:else}
+                    {e.person} er ikke registrert som ansatt under Lønn, så dietten må meldes i a-meldingen særskilt.
                   {/if}
                 </span>
               </div>

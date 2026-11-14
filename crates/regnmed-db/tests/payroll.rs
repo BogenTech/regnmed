@@ -2353,3 +2353,169 @@ async fn mileage_is_paid_with_pay_and_reported_by_part() {
         .unwrap();
     assert_eq!(status(after).await, "utbetalt");
 }
+
+/// A travel claim through the real path: draft, submit (rates resolved
+/// and the døgn stored), approve onto 2910.
+async fn approved_trip(
+    pool: &PgPool,
+    company: Uuid,
+    person: Uuid,
+    departure: chrono::NaiveDateTime,
+    return_at: chrono::NaiveDateTime,
+    overnight: bool,
+    days: Vec<regnmed_db::travel::TravelDayDraft>,
+) -> Uuid {
+    let id = regnmed_db::create_draft(
+        pool,
+        company,
+        person,
+        person,
+        "reise",
+        None,
+        &regnmed_db::ExpenseDraft {
+            description: "Kundebesøk".into(),
+            departure_at: Some(departure),
+            return_at: Some(return_at),
+            destination: Some("Bergen".into()),
+            overnight,
+            over_15_km: true,
+            travel_days: days,
+            ..Default::default()
+        },
+        None,
+        "Test",
+    )
+    .await
+    .unwrap();
+    regnmed_db::submit_expense(pool, company, id).await.unwrap();
+    regnmed_db::approve_expense(
+        pool, company, id, "7150", None, "2710", "2910", "Test", person,
+    )
+    .await
+    .unwrap();
+    id
+}
+
+/// Diett is paid with pay like mileage (docs/utlegg.md «Reise og diett»):
+/// on the state's rates the excess over the trekkfri rate gets trekk and
+/// avgift, and the a-melding reports the trekkfri part by lodging with its
+/// døgn and the excess as `reiseKost`.
+#[tokio::test]
+async fn diett_is_paid_with_pay_and_reported_by_lodging() {
+    use regnmed_core::amelding::IncomeKind;
+    use regnmed_core::travel::Report;
+    use regnmed_db::travel::TravelDayDraft;
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    for (number, name) in [("7150", "Diettkostnad"), ("2910", "Gjeld til ansatte")] {
+        regnmed_db::ensure_account(&pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::travel::set_travel_scheme(&pool, company, "statens")
+        .await
+        .unwrap();
+    let a = employee(&pool, company, "26829398612", "Reidun Reisende", 4_000_000).await;
+    let person = regnmed_db::ensure_person(
+        &pool,
+        &format!("test|{}", Uuid::new_v4()),
+        Some("Reidun Reisende"),
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("update employee set person_id = $2 where id = $1")
+        .bind(a)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let at = |d: u32, h: u32| date(2026, 3, d).and_hms_opt(h, 0, 0).unwrap();
+
+    // A hotel night with breakfast, home 7 hours into the next døgn:
+    // the state pays 1 012 − 202 = 810 kr and 397 kr for the part døgn;
+    // trekkfri is 693 − 139 = 554 kr and (693 capped at what is paid) 397.
+    let night = approved_trip(
+        &pool,
+        company,
+        person,
+        at(9, 8),
+        at(10, 15),
+        true,
+        vec![
+            TravelDayDraft {
+                place: "NO".into(),
+                lodging: Some("hotell".into()),
+                breakfast: true,
+                ..Default::default()
+            },
+            TravelDayDraft {
+                place: "NO".into(),
+                ..Default::default()
+            },
+        ],
+    )
+    .await;
+    // A day trip of 13 hours: 736 kr paid, 400 kr trekkfri.
+    approved_trip(
+        &pool,
+        company,
+        person,
+        at(12, 7),
+        at(12, 20),
+        false,
+        vec![TravelDayDraft {
+            place: "NO".into(),
+            ..Default::default()
+        }],
+    )
+    .await;
+
+    // Not by hand: the excess needs trekk.
+    let refused = regnmed_db::pay_expense(&pool, company, night, date(2026, 3, 15), "1920", "Test")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("lønnskjøring"), "{refused}");
+
+    let r = run(&pool, company, a, 3, "I", None, 0).await;
+    assert_eq!(voucher_sum(&pool, r.voucher_id).await, 0);
+    assert_eq!(r.sum.allowance_ore, 120_700 + 73_600);
+    assert_eq!(account_amount(&pool, r.voucher_id, "2910").await, 194_300);
+    // 35 % of 40 000 + 256 + 336 kr = 14 207,20 kr → 14 207 kr.
+    assert_eq!(r.lines[0].calculation.withholding_basis_ore, 4_059_200);
+    assert_eq!(r.sum.withholding_ore, 1_420_700);
+    assert_eq!(
+        r.sum.employer_contribution_ore,
+        regnmed_core::payroll::employer_contribution(
+            4_059_200,
+            regnmed_core::payroll::Zone::I,
+            1410
+        )
+        .unwrap(),
+        "avgift on pay and the excess, not on the trekkfri diett"
+    );
+
+    let draft = payroll::amelding_for_run(&pool, company, r.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    let income: Vec<(IncomeKind, i64)> = draft.melding.recipients[0]
+        .income
+        .iter()
+        .map(|i| (i.kind, i.amount_ore))
+        .collect();
+    let travel = |report, days| IncomeKind::Travel { report, days };
+    assert_eq!(
+        income,
+        vec![
+            (IncomeKind::FixedSalary, 4_000_000),
+            (travel(Report::KostDayTrip, 1), 40_000),
+            (travel(Report::KostHotel, 2), 55_400 + 39_700),
+            (travel(Report::KostTaxable, 0), 25_600 + 33_600),
+        ]
+    );
+
+    // Paid once: April finds nothing left.
+    let april = run(&pool, company, a, 4, "I", None, 0).await;
+    assert_eq!(april.sum.allowance_ore, 0);
+}

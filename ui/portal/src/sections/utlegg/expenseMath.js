@@ -44,3 +44,31 @@ export const vehicleName = (key) => VEHICLES.find(([k]) => k === key)?.[1] || ke
 
 // Costs of a trip, reimbursed at their actual amount with a receipt.
 export const COST_KINDS = ["Bompenger", "Rushtidsavgift", "Ferje", "Parkering", "Annet"];
+
+// Where a traveller slept: it decides the trekkfri kost rate
+// (satsforskriften § 2). Same slugs as regnmed-core::travel::Lodging.
+export const LODGING = [
+  ["hotell", "Hotell"],
+  ["pensjonat", "Pensjonat, brakke eller hybel uten kjøkken"],
+  ["privat", "Privat, eller hybel med kjøkken"],
+];
+export const lodgingName = (key) => LODGING.find(([k]) => k === key)?.[1] || key;
+
+export const DAY_KIND = { overnatting: "Med overnatting", rest: "Påbegynt døgn", dagreise: "Dagreise" };
+
+// A <input type="datetime-local"> gives "2026-03-02T08:00"; the server
+// reads seconds too.
+export const withSeconds = (v) => (v && v.length === 16 ? v + ":00" : v || null);
+
+// Which døgn of a trip have a night in them — the core's rule
+// (regnmed-core::travel::allowance): every full døgn, and the only one of
+// a short trip with an overnight stay, must say where the traveller slept
+// (true); the part døgn at the end MAY hold a night ("optional"); a day
+// trip has none (false). Read as UTC so a daylight-saving change does not
+// move a døgn.
+export function nights(departure, ret, overnight, count) {
+  if (!overnight || !departure || !ret) return Array(count).fill(false);
+  const minutes = (new Date(withSeconds(ret) + "Z") - new Date(withSeconds(departure) + "Z")) / 60000;
+  const full = Math.floor(minutes / 1440);
+  return Array.from({ length: count }, (_, i) => (i < full || full === 0 ? true : "optional"));
+}
