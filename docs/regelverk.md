@@ -33,7 +33,7 @@ data with validity periods — never code branches on a year**:
 | Terminer (2-mnd) | pure logic | `regnmed-core::mva::Termin` |
 | Næringsspesifikasjon grouping | vendored CSV **per inntektsår**, selected by the exported year, loud failure outside coverage | `regnmed-core::saft` ARGANGER + docs/saft/ |
 | Aksjonærregisteroppgaven RF-1086 | vendored XSD (hoved + under); **transaksjonstypekodene er IKKE publisert** og gjettes ikke | docs/aksjonaer/, `regnmed-core::aksjebok::Transaksjonstype::kode` |
-| SAF-T Financial schema | vendored XSD (v1.30) | docs/saft/ |
+| SAF-T Financial schema | vendored XSD per version (v1.30, v1.40), picked by the selection's start date: 1.40 from 1.1.2027 | `regnmed-core::saft::schema_version` + docs/saft/ |
 | Mva-melding schema | vendored XSD | docs/mva-melding/ |
 | Kontonavn NS 4102 | same vendored CSV | (as grouping) |
 
