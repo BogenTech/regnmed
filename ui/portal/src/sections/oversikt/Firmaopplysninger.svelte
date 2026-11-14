@@ -23,6 +23,9 @@
   // KID hører til bankavtalen, ikke til fakturanummeret (#104): uten
   // avtale trykkes ingen KID, for betaleren kan ikke bruke den.
   let kidAvtale = $state(untrack(() => !!settings.kid_avtale));
+  // Whose diett rates travel claims are paid with (docs/utlegg.md
+  // «Reise og diett»); a submitted claim keeps the choice it went in with.
+  let reiseSatser = $state(untrack(() => settings.reise_satser || "trekkfri"));
 
   let mva = $state(untrack(() => !!settings.mva_registrert));
   let freg = $state(untrack(() => !!settings.foretaksregistrert));
@@ -42,6 +45,7 @@
         orgform,
         email,
         kid_avtale: kidAvtale,
+        reise_satser: reiseSatser,
       });
       toast("Firmaopplysninger lagret", true);
       onDone();
@@ -96,6 +100,13 @@
         Vi har KID-/OCR-avtale med banken
         <span class="opacity-60">— uten avtale trykkes ingen KID på faktura og purring</span>
       </span>
+    </label>
+    <label class="fieldset">
+      <span class="fieldset-legend">Diett på reiser betales etter</span>
+      <select class="select select-sm w-full" bind:value={reiseSatser}>
+        <option value="trekkfri">Skattefrie satser — ingen skattetrekk</option>
+        <option value="statens">Statens satser — det over skattefri sats er trekkpliktig lønn</option>
+      </select>
     </label>
     <button class="btn btn-sm" onclick={save}>Lagre</button>
   </div>

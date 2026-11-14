@@ -173,7 +173,7 @@ pub struct ListQuery {
 }
 
 fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
-    json!({
+    let mut v = json!({
         "expense_id": e.id,
         "person": e.person_name,
         "own": e.own,
@@ -210,7 +210,143 @@ fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
         "paid_by": e.paid_by,
         "rebilled_invoice_id": e.rebilled_invoice_id,
         "rebilled_as": e.rebilled_as,
-    })
+    });
+    // A trip's reiseregning; separate only because one json! this long
+    // overflows the macro's recursion limit.
+    v.as_object_mut().expect("an object").extend(
+        json!({
+            "departure_at": e.departure_at,
+            "return_at": e.return_at,
+            "destination": e.destination,
+            "overnight": e.overnight,
+            "over_15_km": e.over_15_km,
+            "travel_days": e.travel_days,
+            "rate_scheme": e.rate_scheme,
+            "travel_lines": e.travel_lines,
+        })
+        .as_object()
+        .expect("an object")
+        .clone(),
+    );
+    v
+}
+
+#[derive(Deserialize)]
+pub struct TravelRateQuery {
+    #[serde(rename = "dato")]
+    date: chrono::NaiveDate,
+}
+
+/// What a trip starting on `dato` is paid with: the company's choice of
+/// rates, the domestic rates on both sides, and the state's table abroad
+/// (the form's country picker).
+pub async fn travel_rates(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<TravelRateQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+    let register = regnmed_db::load_rates(&state.pool).await?;
+    let missing = |d: String| {
+        ApiError::BadRequest(format!(
+            "ingen sats «{d}» for {} i satsregisteret",
+            query.date
+        ))
+    };
+    let tax_free =
+        regnmed_core::travel::TaxFreeRates::on(&register, query.date).map_err(missing)?;
+    let st = regnmed_core::travel::StateRates::on(&register, query.date).map_err(missing)?;
+    let scheme = regnmed_db::travel::travel_scheme(&state.pool, company_id).await?;
+    let abroad = regnmed_db::travel::abroad_rates(&state.pool, query.date).await?;
+    Ok(Json(json!({
+        "scheme": scheme.slug(),
+        "trekkfri": {
+            "hotell": tax_free.hotel,
+            "pensjonat": tax_free.pension,
+            "privat": tax_free.private,
+            "dag_6_12": tax_free.day_6_12,
+            "dag_over_12": tax_free.day_over_12,
+            "nattillegg": tax_free.night,
+        },
+        "statens": {
+            "overnatting": st.overnight,
+            "dag_6_12": st.day_6_12,
+            "dag_over_12": st.day_over_12,
+            "nattillegg": st.night,
+        },
+        "abroad": abroad.iter().map(|r| json!({
+            "key": r.key(),
+            "region": r.region,
+            "country": r.country,
+            "area": r.area,
+            "amount_minor": r.amount_minor,
+            "currency": r.currency,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct TravelPreviewRequest {
+    departure_at: chrono::NaiveDateTime,
+    return_at: chrono::NaiveDateTime,
+    #[serde(default)]
+    overnight: bool,
+    #[serde(default)]
+    travel_days: Vec<regnmed_db::travel::TravelDayDraft>,
+}
+
+/// The allowance a trip WOULD get, computed by the same code a
+/// submission runs — the form shows the server's numbers, never its own.
+/// A trip that gives nothing as entered answers 400 with the reason.
+pub async fn travel_preview(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<TravelPreviewRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+    let scheme = regnmed_db::travel::travel_scheme(&state.pool, company_id).await?;
+    let (allowance, lines) = regnmed_db::travel::compute(
+        &state.pool,
+        request.departure_at,
+        request.return_at,
+        request.overnight,
+        &request.travel_days,
+        scheme,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({
+        "scheme": scheme.slug(),
+        "belop_ore": allowance.amount_ore,
+        "trekkfri_ore": allowance.tax_free_ore,
+        "trekkpliktig_ore": allowance.taxable_ore,
+        "lines": lines,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct DayCountQuery {
+    departure_at: chrono::NaiveDateTime,
+    return_at: chrono::NaiveDateTime,
+    #[serde(default)]
+    overnight: bool,
+}
+
+/// How many døgn the form must ask about — the core's own count, so the
+/// portal never cuts the trip differently from the submission.
+pub async fn travel_days(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<DayCountQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+    let count =
+        regnmed_core::travel::day_count(query.departure_at, query.return_at, query.overnight)
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "days": count })))
 }
 
 /// A viewer sees their own claims; with UTLEGG_LES_ALLE, the company's.
@@ -518,11 +654,12 @@ pub async fn pay(
 /// client reads from GET is what it writes back.
 #[derive(Deserialize, Default)]
 pub struct DraftRequest {
-    /// Create only: `utlegg` or `kjoring`.
+    /// Create only: `utlegg`, `kjoring` or `reise`.
     kind: Option<String>,
     /// Create only: file for someone else (UTLEGG_GODKJENN).
     person_id: Option<Uuid>,
-    /// Create only: a toll, ferry or parking cost of this trip.
+    /// Create only: the drive or trip this hangs under — a toll, a hotel
+    /// bill, a drive on a journey.
     trip_expense_id: Option<Uuid>,
     #[serde(rename = "dato")]
     date: Option<chrono::NaiveDate>,
@@ -542,6 +679,15 @@ pub struct DraftRequest {
     project: Option<String>,
     #[serde(default)]
     billable: bool,
+    departure_at: Option<chrono::NaiveDateTime>,
+    return_at: Option<chrono::NaiveDateTime>,
+    destination: Option<String>,
+    #[serde(default)]
+    overnight: bool,
+    #[serde(default)]
+    over_15_km: bool,
+    #[serde(default)]
+    travel_days: Vec<regnmed_db::travel::TravelDayDraft>,
 }
 
 impl DraftRequest {
@@ -559,6 +705,12 @@ impl DraftRequest {
             department: self.department.clone(),
             project: self.project.clone(),
             billable: self.billable,
+            departure_at: self.departure_at,
+            return_at: self.return_at,
+            destination: self.destination.clone(),
+            overnight: self.overnight,
+            over_15_km: self.over_15_km,
+            travel_days: self.travel_days.clone(),
         }
     }
 }

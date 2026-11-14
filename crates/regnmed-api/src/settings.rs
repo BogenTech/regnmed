@@ -40,6 +40,11 @@ pub async fn get_settings(
         // KID is a bank agreement, not a property of the invoice number
         // (#104): off means the document carries no KID at all.
         "kid_avtale": s.kid_agreement,
+        // Whose diett rates the company pays (docs/utlegg.md «Reise og
+        // diett»): `trekkfri` or `statens`.
+        "reise_satser": regnmed_db::travel::travel_scheme(&state.pool, company_id)
+            .await?
+            .slug(),
         // Registreringsstatus (§5-1-2, #81): lagret og datert, aldri
         // utledet av dokumentet som rendres.
         "mva_registrert": reg.vat_registered,
@@ -63,6 +68,8 @@ pub struct UpdateSettingsRequest {
     email: Option<String>,
     #[serde(rename = "kid_avtale")]
     kid_agreement: Option<bool>,
+    #[serde(rename = "reise_satser")]
+    travel_rate_scheme: Option<String>,
 }
 
 pub async fn update_settings(
@@ -83,6 +90,11 @@ pub async fn update_settings(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if let Some(scheme) = &request.travel_rate_scheme {
+        regnmed_db::travel::set_travel_scheme(&state.pool, company_id, scheme)
+            .await
+            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    }
     Ok(Json(json!({ "updated": true })))
 }
 
