@@ -281,6 +281,47 @@ begge `THEME_GROUPS`, og bygg (`scripts/build-portal.sh` +
 Kostnaden er ren CSS: dist vokste ~32 KB (~21 KB gzipet) og ligger godt
 innenfor `PORTAL_DIST_BUDGET_KB` i `scripts/frugality.sh`.
 
+## Skallet: meny, meldinger, dialoger og ulagret arbeid (2026-11-14)
+
+Det som omgir hver side, og som derfor må virke likt overalt:
+
+- **Meny.** Seksjonene står i en `<nav aria-label="Seksjoner">`. På
+  telefon er de en liste bak en knapp som viser hvor du er («Lønn ·
+  Meny») — tidligere var de en vannrett stripe på 18 punkter der den
+  aktive kunne ligge 1 400 px utenfor skjermen. Listen lukker seg når
+  du har valgt.
+- **Hopp til innhold.** Første tabulatorstopp er en knapp (ikke en
+  `#`-lenke — hashen tilhører ruteren) som setter fokus i innholdet; uten
+  den var det 20 tabulatorstopp før siden begynte.
+- **Ny side.** Ved bytte av seksjon eller underside rulles det til toppen,
+  og ved bytte av seksjon flyttes fokus til innholdet (`main`,
+  `tabindex=-1`), så tastatur og skjermleser lander der siden er. En
+  seksjon som bare endrer sin egen `?spørring` (en uke, et filter) flytter
+  ingenting — ellers ville piltastene i timearket miste cellen.
+- **Fanetittel.** Hver side heter «Seksjon · Selskap · regnmed» i fanen
+  og i historikken.
+- **Ukjent selskap.** En adresse til et selskap personen ikke har tilgang
+  til, sier «Fant ikke selskapet» med lenke til Mine selskaper, i stedet
+  for en halvtom oversikt.
+- **Meldinger.** Toast-feltet står alltid i siden med `aria-live`, så
+  skjermlesere hører meldingene; feil er `role="alert"`. En bekreftelse
+  forsvinner etter fem sekunder, en **feil blir stående til den lukkes** —
+  feilmeldingene våre sier hva man skal gjøre, og fem sekunder holder ikke
+  til å lese dem. Høyst fire vises samtidig.
+- **Dialoger.** Felles dialog (`lib/dialog.svelte.js`) navngir seg selv
+  etter tittelen (`aria-labelledby`), og hvert felt har en ekte `<label>`
+  (et spørsmål uten egen etikett får dialogtittelen som navn). Før var
+  ingen felt i noen dialog navngitt for skjermlesere.
+- **Oppstart.** Svarer ikke serveren (`/portal-config`), sier portalen
+  det med «Prøv igjen» i stedet for å snurre for alltid.
+- **Ulagret arbeid** (`lib/ulagret.js`). Et skjema som holder noe ulagret,
+  registrerer en vakt (`vaktUlagret({ ulagret: () => …, tittel, melding })`
+  i `onMount`). Da spør portalen før man forlater siden — via en lenke
+  hvor som helst (fanget før adressen endres), via Tilbake (adressen
+  settes tilbake og spørsmålet stilles etterpå) og ved omlasting eller
+  lukket fane (nettleserens egen advarsel). Ny faktura er første bruker;
+  før dekket den bare sine egne to lenker, ikke menyen.
+
 ## Sections (all backed by the existing engagement-guarded API)
 
 Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert

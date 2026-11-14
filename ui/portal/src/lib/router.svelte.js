@@ -5,6 +5,8 @@
 // gjør en bestemt termin delbar. Den leses HER, ett sted, så ingen
 // seksjon trenger sin egen hashchange-lytter.
 
+import { harUlagret, kanForlate, slippVakter as vakterSlipp } from "./ulagret.js";
+
 function parse() {
   const hash = location.hash.replace(/^#\/?/, "");
   const [sti, query = ""] = hash.split("?");
@@ -29,7 +31,17 @@ function parse() {
 
 export const route = $state(parse());
 
-window.addEventListener("hashchange", () => {
+// Back/Forward (and any address change no link click caught) cannot be
+// stopped before it happens, so with unsaved input the address is put
+// back first and the question asked after.
+window.addEventListener("hashchange", async (e) => {
+  if (harUlagret()) {
+    history.replaceState(history.state, "", e.oldURL);
+    if (!(await kanForlate())) return;
+    vakterSlipp();
+    location.href = e.newURL;
+    return;
+  }
   Object.assign(
     route,
     { firmId: null, companyId: null, section: null, extra: null, query: "" },

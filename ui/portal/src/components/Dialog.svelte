@@ -5,6 +5,9 @@
   import { dialog } from "../lib/dialog.svelte.js";
 
   let el = $state(null);
+  // Ids tie the title to the dialog and each label to its field, so a
+  // screen reader names both.
+  const uid = "dlg" + Math.random().toString(36).slice(2, 8);
   let verdier = $state({});
   // Where the keyboard was before the question: put it back afterwards,
   // so answering a dialog never sends a keyboard user to the page top.
@@ -71,11 +74,11 @@
   }
 </script>
 
-<dialog bind:this={el} class="modal" {onclose}>
+<dialog bind:this={el} class="modal" aria-labelledby={uid + "-tittel"} {onclose}>
   {#if dialog.aktiv}
     {@const d = dialog.aktiv}
     <div class="modal-box border border-base-300">
-      <h3 class="font-semibold text-lg">{d.tittel}</h3>
+      <h3 id={uid + "-tittel"} class="font-semibold text-lg">{d.tittel}</h3>
       {#if d.type === "bekreft"}
         <p class="py-3 text-sm">{d.melding}</p>
         <div class="modal-action">
@@ -105,23 +108,42 @@
                   </label>
                 {:else}
                   {#if f.etikett}
-                    <span class="label text-sm mb-1">{f.etikett}</span>
+                    <label for={uid + "-" + f.navn} class="label text-sm mb-1">{f.etikett}</label>
                   {/if}
                   {#if f.type === "select"}
-                    <select class="select w-full" bind:value={verdier[f.navn]}>
+                    <select
+                      id={uid + "-" + f.navn}
+                      aria-label={f.etikett ? undefined : d.tittel}
+                      class="select w-full"
+                      aria-describedby={f.hjelp ? uid + "-" + f.navn + "-hjelp" : undefined}
+                      bind:value={verdier[f.navn]}
+                    >
                       {#each f.valg as [verdi, navn] (verdi)}
                         <option value={verdi}>{navn}</option>
                       {/each}
                     </select>
                   {:else if f.type === "textarea"}
-                    <textarea class="textarea w-full" rows="3" bind:value={verdier[f.navn]}
+                    <textarea
+                      id={uid + "-" + f.navn}
+                      aria-label={f.etikett ? undefined : d.tittel}
+                      class="textarea w-full"
+                      rows="3"
+                      aria-describedby={f.hjelp ? uid + "-" + f.navn + "-hjelp" : undefined}
+                      bind:value={verdier[f.navn]}
                     ></textarea>
                   {:else}
-                    <input type={f.type ?? "text"} class="input w-full" bind:value={verdier[f.navn]} />
+                    <input
+                      id={uid + "-" + f.navn}
+                      aria-label={f.etikett ? undefined : d.tittel}
+                      type={f.type ?? "text"}
+                      class="input w-full"
+                      aria-describedby={f.hjelp ? uid + "-" + f.navn + "-hjelp" : undefined}
+                      bind:value={verdier[f.navn]}
+                    />
                   {/if}
                 {/if}
                 {#if f.hjelp}
-                  <p class="text-xs opacity-60 mt-1">{f.hjelp}</p>
+                  <p id={uid + "-" + f.navn + "-hjelp"} class="text-xs opacity-60 mt-1">{f.hjelp}</p>
                 {/if}
               </div>
             {/each}
