@@ -1,8 +1,8 @@
 <script>
   import { session, tokens, refresh, handleCallback } from "./lib/auth.svelte.js";
   import { route } from "./lib/router.svelte.js";
-  import { me, loadMe } from "./lib/me.svelte.js";
-  import { FLYTTET_TIL_ADMIN } from "./lib/meny.js";
+  import { me, loadMe, company } from "./lib/me.svelte.js";
+  import { FLYTTET_TIL_ADMIN, seksjonNavn } from "./lib/meny.js";
   import { toast } from "./lib/toast.svelte.js";
   import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
@@ -45,7 +45,17 @@
   let boot = $state({ done: false, error: null });
 
   async function start() {
-    session.config = await (await fetch("/portal-config")).json();
+    // The server unreachable (a deploy in progress, the network gone)
+    // says so with a retry — never a spinner that spins for ever.
+    try {
+      const svar = await fetch("/portal-config");
+      if (!svar.ok) throw new Error("status " + svar.status);
+      session.config = await svar.json();
+    } catch {
+      boot.error = "Får ikke kontakt med regnmed akkurat nå. Prøv igjen om litt.";
+      boot.done = true;
+      return;
+    }
     // Ikonstilen er en plattforminnstilling (låst globalt av
     // systemadmin) og følger med portal-config.
     if (session.config.ikonstil) setIkonstil(session.config.ikonstil);
@@ -70,6 +80,23 @@
   // nettet kommer tilbake.
   window.addEventListener("online", koSend);
   koSend();
+
+  // Every tab and history entry names its page.
+  $effect(() => {
+    const deler = !session.authed
+      ? []
+      : route.view === "company"
+        ? [
+            seksjonNavn(FLYTTET_TIL_ADMIN[route.section] ? "admin" : route.section),
+            me.loaded ? company(route.companyId)?.name : null,
+          ]
+        : route.view === "byra"
+          ? ["Byrå"]
+          : route.view === "plattform"
+            ? ["Plattform"]
+            : ["Mine selskaper"];
+    document.title = [...deler.filter(Boolean), "regnmed"].join(" · ");
+  });
 
   $effect(() => {
     if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform]);
@@ -110,8 +137,11 @@
   </div>
 {:else if boot.error}
   <div class="p-8">
-    <div class="alert alert-error"><span>{boot.error}</span></div>
-    <a class="btn mt-4" href="/">Til forsiden</a>
+    <div role="alert" class="alert alert-error"><span>{boot.error}</span></div>
+    <div class="flex gap-2 mt-4">
+      <button class="btn btn-primary" onclick={() => location.reload()}>Prøv igjen</button>
+      <a class="btn" href="/">Til forsiden</a>
+    </div>
   </div>
 {:else if !session.authed}
   <Login />

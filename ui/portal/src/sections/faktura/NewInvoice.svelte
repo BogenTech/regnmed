@@ -3,11 +3,12 @@
   // summen regnet mens man skriver. En utstedt faktura kan aldri endres
   // (feil rettes med kreditnota), så utstedelsen viser en oppsummering
   // først og lander på fakturaen med «Send til kunde» som neste steg.
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { kr, parseKr, today, minutterTilTimer, formatDate } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
+  import { vaktUlagret } from "../../lib/ulagret.js";
   import DimSelect from "../../components/DimSelect.svelte";
   import { VAT_CODES, lineNetOre, vatOfBase, milliHours } from "./invoiceMath.js";
 
@@ -295,21 +296,17 @@
       pickedHours.length > 0 ||
       Object.keys(pickedClaims).length > 0,
   );
-  function beforeUnload(e) {
-    if (dirty && !done) e.preventDefault();
-  }
-  async function leave(e) {
-    if (!dirty || done) return;
-    e.preventDefault();
-    const href = e.currentTarget.getAttribute("href");
-    const ok = await bekreft("Det du har skrevet på fakturaen, blir ikke lagret.", {
+  // The shared guard (lib/ulagret.js) asks before any way out: a link,
+  // the menu, Back, or a reload.
+  onMount(() =>
+    vaktUlagret({
+      ulagret: () => dirty && !done,
       tittel: "Forkaste fakturaen?",
+      melding: "Det du har skrevet på fakturaen, blir ikke lagret.",
       ok: "Forkast",
       avbryt: "Fortsett å skrive",
-      farlig: true,
-    });
-    if (ok) location.hash = href;
-  }
+    }),
+  );
 
   const vatLabel = (code) => VAT_CODES[code]?.label ?? "kode " + code;
 
@@ -323,10 +320,8 @@
   }
 </script>
 
-<svelte:window onbeforeunload={beforeUnload} />
-
 <nav class="mb-3">
-  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/faktura"} onclick={leave}>← Alle fakturaer</a>
+  <a class="link link-hover text-sm" href={"#/c/" + companyId + "/faktura"}>← Alle fakturaer</a>
 </nav>
 <h1 class="text-2xl font-bold mb-4">Ny faktura</h1>
 
@@ -666,7 +661,7 @@
               {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
               Utsted faktura
             </button>
-            <a class="btn btn-ghost" href={"#/c/" + companyId + "/faktura"} onclick={leave}>Avbryt</a>
+            <a class="btn btn-ghost" href={"#/c/" + companyId + "/faktura"}>Avbryt</a>
           </div>
         </div>
       </div>
