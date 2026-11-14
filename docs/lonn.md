@@ -331,7 +331,7 @@ listingen.
 | GET/POST | `/companies/{id}/employees` |
 | POST/DELETE | `/companies/{id}/employees/{eid}/link` (koble/koble fra portalbruker) |
 | GET | `/companies/{id}/employees/{eid}/link/history` |
-| GET/POST | `/companies/{id}/payroll` |
+| GET/POST | `/companies/{id}/payroll` (`?preview=true`: beregn uten å bokføre) |
 | GET | `/companies/{id}/payroll/{run}/slip/{employee}` (PDF) |
 | GET | `/companies/{id}/payroll/{run}/amelding` (`?format=xml`) |
 | GET/POST | `/companies/{id}/payroll/{run}/amelding/submissions` |
@@ -816,22 +816,50 @@ månedslønn og trekkprosent er ikke allmenn lesning.
 
 ## Portal
 
-Lønn-seksjonen har tre kort: **Ansatte** (register + nyregistrering),
-**Skattekort** (hent fra Skatteetaten for et inntektsår; tabell over
-hver ansatt med Skatteetatens svar, hva som ble satt og merknaden for det
-som ikke ble satt) og **Lønnskjøring** (historikk + kjøreskjema med én rad per aktiv ansatt,
-der brutto kan overstyres og feriepenger legges inn per person).
-Ansatte-kortet har en **Portalbruker**-kolonne (koblet / invitert /
+Lønn-seksjonen starter med den månedlige jobben og har fire kort i
+denne rekkefølgen: **Kjør lønn**, **Lønnskjøringer og a-melding**,
+**Ansatte** og **Skattekort**.
+
+**Kjør lønn** har år, måned, utbetalingsdato og sone, og én rad per
+aktiv ansatt der brutto kan overstyres og utbetalte feriepenger legges
+inn. Måneden er forhåndsvalgt til måneden etter siste kjøring (eller
+inneværende måned når ingen er kjørt), og året kan settes til i fjor,
+så desemberlønnen kan kjøres i januar. Allerede kjørte måneder er
+deaktivert i velgeren, så den vanligste feilen ikke kan forsøkes.
+
+**Ingenting bokføres uten forhåndsvisning.** «Se hva som bokføres»
+sender skjemaet til `POST …/payroll?preview=true`, som regner ut
+kjøringen nøyaktig som den bokføres — samme satser, samme trekk, samme
+feriepenge- og aga-avsetning, samme advarsler — men uten bilag, uten
+bilagsnummer og uten kjøringsrad (`preview_payroll` i
+`regnmed-db::payroll`; `id` og `voucher_id` er null-UUID). Den nekter
+også en måned som alt er kjørt. Forhåndsvisningen viser per ansatt
+brutto, feriepenger, trekk, kjøregodtgjørelse og netto, og i sum netto
+til utbetaling, arbeidsgiveravgift, feriepengeavsetning, aga på
+feriepenger og lønnskostnad. Bokfør-knappen («Bokfør lønn for juli
+2026») finnes bare så lenge forhåndsvisningen svarer til skjemaet; en
+endring i et felt tar den bort. Testen
+`a_preview_books_nothing_and_matches_the_run` fester at
+forhåndsvisningen ikke skriver noe og at summene er de samme som i den
+bokførte kjøringen. Etter bokføringen står resultatet og eventuelle
+advarsler på skjermen, med lenke til bilaget, og skjemaet går videre
+til neste måned.
+
+Ansatte med timesats og uten månedslønn starter med «Fra låste timer»
+krysset av; serveren nekter hvis måneden ikke er låst.
+
+**Lønnskjøringer og a-melding** viser hver kjøring med brutto,
+**utbetalte feriepenger**, trekk, kjøregodtgjørelse, netto og
+avsetningene — uten feriepengekolonnen gikk ikke tallene opp når
+feriepengene ble utbetalt. Hver kjøring har en knapp per ansatt (fullt
+navn) som laster ned lønnsslippen som `lonnsslipp-ÅÅÅÅ-MM-navn.pdf`.
+
+**Ansatte**-kortet har en **Portalbruker**-kolonne (koblet / invitert /
 ikke koblet) med invitasjons- og koblingsflyten fra 0050; skjemaet for
 ny ansatt tar e-postadresse rett i registreringen, så invitasjonen går
-ut i samme håndvending.
-Hver kjørt måned har en knapp per ansatt som laster ned lønnsslippen.
-Ansatte med timesats har en «fra timer»-avkrysning i kjøreskjemaet;
-serveren nekter hvis måneden ikke er låst.
-
-Måneder som allerede er kjørt er **deaktivert** i månedsvelgeren, så den
-vanligste feilen ikke engang kan forsøkes. Advarselen om at a-meldingen
-ikke leveres herfra står i selve kortet, ikke bare i denne filen.
+ut i samme håndvending. Å koble fra en portalbruker eller trekke
+tilbake en invitasjon spør først, siden koblingen avgjør hvem som leser
+lønnsslippen.
 
 Verifisert i nettleser: registeret viser fødselsdato og ikke
 fødselsnummer, juni (allerede kjørt) er deaktivert, og en kjøring

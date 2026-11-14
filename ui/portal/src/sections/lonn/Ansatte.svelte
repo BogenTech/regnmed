@@ -1,8 +1,8 @@
 <script>
   import { post, send } from "../../lib/api.js";
-  import { kr, parseKr, today } from "../../lib/format.js";
+  import { formatDate, kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import { sporsmal } from "../../lib/dialog.svelte.js";
+  import { bekreft, sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import Arbeidsforhold, { tomt, fraAnsatt, tilPayload } from "./Arbeidsforhold.svelte";
 
@@ -14,7 +14,7 @@
   let fra = $state(today());
   let lonn = $state("");
   let trekk = $state("");
-  let fp = $state("10.2");
+  let fp = $state("10,2");
   let epost = $state("");
   let forhold = $state(tomt());
 
@@ -25,7 +25,7 @@
     fra = today();
     lonn = "";
     trekk = "";
-    fp = "10.2";
+    fp = "10,2";
     epost = "";
     forhold = tomt();
   }
@@ -99,6 +99,8 @@
     }
   }
 
+  const prosent = (bp, desimaler) => (bp / 100).toFixed(desimaler).replace(".", ",") + " %";
+
   const invitasjonFor = (a) => (invitasjoner || []).find((i) => i.employee_id === a.id);
 
   // Bare direkte, aktive medlemmer kan velges; de som alt er koblet til
@@ -157,7 +159,14 @@
     }
   }
 
+  // Koblingen avgjør hvem som leser lønnsslippen, så den fjernes ikke
+  // på et feiltrykk.
   async function kobleFra(a) {
+    const ok = await bekreft(
+      a.person.navn + " mister tilgangen til lønnsslippene for " + a.navn + ". Handlingen logges.",
+      { tittel: "Koble fra portalbrukeren?", ok: "Koble fra", farlig: true },
+    );
+    if (!ok) return;
     try {
       await send("DELETE", "/companies/" + companyId + "/employees/" + a.id + "/link");
       toast("Koblingen er fjernet", true);
@@ -168,6 +177,11 @@
   }
 
   async function trekkTilbake(inv) {
+    const ok = await bekreft("Invitasjonen til " + inv.epost + " slutter å virke.", {
+      tittel: "Trekke tilbake invitasjonen?",
+      ok: "Trekk tilbake",
+    });
+    if (!ok) return;
     try {
       await send("DELETE", "/companies/" + companyId + "/invitations/" + inv.id);
       toast("Invitasjonen er trukket tilbake", true);
@@ -179,14 +193,17 @@
 </script>
 
 <Card title="Ansatte">
-  <p class="text-sm opacity-70 mb-2">
-    Ansattregisteret. Identiteten (fødselsnummeret) er permanent og vises ikke her — listen viser
-    <b>fødselsdato</b>, som er nok til å kjenne igjen en ansatt. Feriepengesatsen står per ansatt
-    fordi den er et faktum om arbeidsforholdet: 10,2 % etter ferieloven §10, 12,5 % fra året man
-    fyller 60, høyere på tariff. <b>Portalbruker</b>-kolonnen styrer selvbetjeningen: den koblede
-    brukeren ser sin egen lønnsslipp, og timelønn hentes fra dennes timeføring. Tryggest er å
-    invitere på e-post — da kobler den ansatte seg selv ved å logge inn.
-  </p>
+  <details class="text-sm opacity-80 mb-2">
+    <summary class="cursor-pointer">Om ansattregisteret</summary>
+    <p class="mt-2">
+      Identiteten (fødselsnummeret) er permanent og vises ikke her — listen viser
+      <b>fødselsdato</b>, som er nok til å kjenne igjen en ansatt. Feriepengesatsen står per ansatt
+      fordi den er et faktum om arbeidsforholdet: 10,2 % etter ferieloven §10, 12,5 % fra året man
+      fyller 60, høyere på tariff. <b>Portalbruker</b>-kolonnen styrer selvbetjeningen: den koblede
+      brukeren ser sin egen lønnsslipp, og timelønn hentes fra dennes timeføring. Tryggest er å
+      invitere på e-post — da kobler den ansatte seg selv ved å logge inn.
+    </p>
+  </details>
   {#if ansatte.length}
     <div class="overflow-x-auto">
       <table class="table table-sm mb-4">
@@ -209,16 +226,16 @@
               <td>
                 {a.navn}
                 {#if a.ansatt_til}
-                  <div class="text-xs opacity-70 whitespace-nowrap">sluttdato {a.ansatt_til}</div>
+                  <div class="text-xs opacity-70 whitespace-nowrap">sluttdato {formatDate(a.ansatt_til)}</div>
                 {/if}
               </td>
               <td class="text-xs opacity-70">{a.stilling || ""}</td>
               <!-- Ferieloven krever ikke fnr her; datoen er nok for å kjenne igjen. -->
-              <td class="text-xs opacity-70">{a.fodselsdato || ""}</td>
+              <td class="text-xs opacity-70 whitespace-nowrap">{formatDate(a.fodselsdato || "")}</td>
               <td class="text-right">{a.manedslonn_ore == null ? "" : kr(a.manedslonn_ore)}</td>
               <td class="text-right">
                 {#if a.trekk_type === "prosent"}
-                  {(a.trekk_prosent_bp / 100).toFixed(1)} %{a.trekk_12_maneder ? " (12 mnd)" : ""}
+                  {prosent(a.trekk_prosent_bp, 1)}{a.trekk_12_maneder ? " (12 mnd)" : ""}
                 {:else if a.trekk_type === "tabell"}
                   tabell {a.trekk_tabell}
                 {:else if a.trekk_type === "frikort"}
@@ -227,7 +244,7 @@
                   ingen trekk
                 {/if}
               </td>
-              <td class="text-right">{(a.feriepenger_bp / 100).toFixed(1)} %</td>
+              <td class="text-right">{prosent(a.feriepenger_bp, 1)}</td>
               <td class="text-xs">
                 {#if a.person}
                   <span title={a.person.epost || ""}>{a.person.navn}</span>
@@ -248,22 +265,22 @@
               </td>
               <td class="text-xs">
                 {#if a.amelding_mangler.length}
-                  <span
-                    class="text-warning"
-                    title={"Mangler: " + a.amelding_mangler.join(", ")}
-                  >
-                    mangler {a.amelding_mangler.length}
-                  </span>
+                  <span class="text-warning">mangler {a.amelding_mangler.length}</span>
                 {:else}
                   <span class="opacity-70">komplett</span>
                 {/if}
                 <button
                   class="btn btn-ghost btn-xs whitespace-nowrap"
+                  aria-label={"Arbeidsforhold for " + a.navn}
                   onclick={() => (redigering = { ansatt: a, verdi: fraAnsatt(a) })}
                 >
-                  Arbeidsforhold …
+                  {a.amelding_mangler.length ? "Fyll ut …" : "Arbeidsforhold …"}
                 </button>
-                <button class="btn btn-ghost btn-xs whitespace-nowrap" onclick={() => sluttdato(a)}>
+                <button
+                  class="btn btn-ghost btn-xs whitespace-nowrap"
+                  aria-label={"Sluttdato for " + a.navn}
+                  onclick={() => sluttdato(a)}
+                >
                   Sluttdato …
                 </button>
               </td>
@@ -300,7 +317,9 @@
           <div class="flex flex-wrap gap-2 items-end">
             <input
               class="input input-sm"
+              type="email"
               placeholder="E-postadresse"
+              aria-label={"E-postadresse til " + kobling.ansatt.navn}
               bind:value={kobling.epost}
             />
             <button
@@ -317,7 +336,11 @@
           </p>
           {#if koblbareMedlemmer && koblbareMedlemmer.length}
             <div class="flex flex-wrap gap-2 items-end">
-              <select class="select select-sm" bind:value={kobling.personId}>
+              <select
+                class="select select-sm"
+                aria-label="Eksisterende medlem"
+                bind:value={kobling.personId}
+              >
                 <option value="">— eksisterende medlem —</option>
                 {#each koblbareMedlemmer as m (m.person_id)}
                   <option value={m.person_id}>{m.navn}{m.epost ? " (" + m.epost + ")" : ""}</option>
@@ -338,36 +361,44 @@
 
   <h3 class="font-semibold mb-1">Ny ansatt</h3>
   <div class="grid gap-2 max-w-md">
-    <input class="input input-sm" placeholder="Navn" bind:value={navn} />
+    <label class="flex flex-col gap-1 text-xs">
+      Navn
+      <input class="input input-sm" autocomplete="off" bind:value={navn} />
+    </label>
     <div class="grid grid-cols-2 gap-2">
-      <input
-        class="input input-sm"
-        placeholder="Fødselsnummer (11 siffer)"
-        bind:value={fnr}
-      />
-      <input class="input input-sm" placeholder="Stilling" bind:value={stilling} />
+      <label class="flex flex-col gap-1 text-xs">
+        Fødselsnummer (11 siffer)
+        <input class="input input-sm" inputmode="numeric" autocomplete="off" bind:value={fnr} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs">
+        Stilling
+        <input class="input input-sm" bind:value={stilling} />
+      </label>
     </div>
     <div class="grid grid-cols-2 gap-2">
-      <input type="date" class="input input-sm" bind:value={fra} />
-      <input class="input input-sm" placeholder="Månedslønn (kr)" bind:value={lonn} />
+      <label class="flex flex-col gap-1 text-xs">
+        Ansatt fra
+        <input type="date" class="input input-sm" bind:value={fra} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs">
+        Månedslønn (kr)
+        <input class="input input-sm" inputmode="decimal" bind:value={lonn} />
+      </label>
     </div>
     <div class="grid grid-cols-2 gap-2">
-      <input
-        class="input input-sm"
-        placeholder="Trekkprosent (f.eks. 35)"
-        bind:value={trekk}
-      />
-      <input
-        class="input input-sm"
-        title="Feriepengesats i prosent"
-        bind:value={fp}
-      />
+      <label class="flex flex-col gap-1 text-xs">
+        Trekkprosent (tom = ingen trekk)
+        <input class="input input-sm" inputmode="decimal" placeholder="f.eks. 35" bind:value={trekk} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs">
+        Feriepengesats (%)
+        <input class="input input-sm" inputmode="decimal" bind:value={fp} />
+      </label>
     </div>
-    <input
-      class="input input-sm"
-      placeholder="E-post — inviter til portalen og koble (valgfritt)"
-      bind:value={epost}
-    />
+    <label class="flex flex-col gap-1 text-xs">
+      E-post — inviter til portalen og koble (valgfritt)
+      <input class="input input-sm" type="email" bind:value={epost} />
+    </label>
     <details class="text-sm">
       <summary class="cursor-pointer opacity-70">
         Arbeidsforhold for a-meldingen (kan fylles ut senere)

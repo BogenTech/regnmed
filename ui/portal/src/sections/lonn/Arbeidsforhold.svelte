@@ -68,46 +68,61 @@
 
 <div class="grid gap-2">
   <div class="grid grid-cols-2 gap-2">
-    <input
-      class="input input-sm"
-      placeholder="Virksomhet (underenhetens orgnr)"
-      title="Underenheten i Enhetsregisteret der den ansatte jobber — ikke selskapets eget organisasjonsnummer"
-      bind:value={value.virksomhet}
-    />
-    <input
-      class="input input-sm"
-      placeholder="Yrkeskode (7 siffer)"
-      title="Yrkeskode fra SSBs yrkeskatalog (STYRK-08), 7 siffer"
-      bind:value={value.yrkeskode}
-    />
+    <label class="flex flex-col gap-1 text-xs">
+      Virksomhet (underenhetens orgnr)
+      <input
+        class="input input-sm"
+        inputmode="numeric"
+        title="Underenheten i Enhetsregisteret der den ansatte jobber — ikke selskapets eget organisasjonsnummer"
+        bind:value={value.virksomhet}
+      />
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      Yrkeskode (7 siffer, STYRK-08)
+      <input class="input input-sm" inputmode="numeric" bind:value={value.yrkeskode} />
+    </label>
   </div>
   <div class="grid grid-cols-2 gap-2">
-    <input
-      class="input input-sm"
-      placeholder="Stillingsprosent (f.eks. 100)"
-      bind:value={value.stillingsprosent}
-    />
-    <input
-      class="input input-sm"
-      placeholder="Timer/uke i full stilling (f.eks. 37,5)"
-      bind:value={value.timer}
-    />
+    <label class="flex flex-col gap-1 text-xs">
+      Stillingsprosent
+      <input
+        class="input input-sm"
+        inputmode="decimal"
+        placeholder="f.eks. 100"
+        bind:value={value.stillingsprosent}
+      />
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      Timer per uke i full stilling
+      <input
+        class="input input-sm"
+        inputmode="decimal"
+        placeholder="f.eks. 37,5"
+        bind:value={value.timer}
+      />
+    </label>
   </div>
   <div class="grid grid-cols-2 gap-2">
-    <select class="select select-sm" bind:value={value.arbeidstidsordning}>
-      <option value="">— arbeidstidsordning —</option>
-      {#each koder?.arbeidstidsordning || [] as kode (kode)}
-        <option value={kode}>{navn(kode)}</option>
-      {/each}
-    </select>
-    <select class="select select-sm" bind:value={value.ansettelsesform}>
-      <option value="">— ansettelsesform —</option>
-      {#each koder?.ansettelsesform || [] as kode (kode)}
-        <option value={kode}>{navn(kode)}</option>
-      {/each}
-    </select>
+    <label class="flex flex-col gap-1 text-xs">
+      Arbeidstidsordning
+      <select class="select select-sm" bind:value={value.arbeidstidsordning}>
+        <option value="">Velg …</option>
+        {#each koder?.arbeidstidsordning || [] as kode (kode)}
+          <option value={kode}>{navn(kode)}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      Ansettelsesform
+      <select class="select select-sm" bind:value={value.ansettelsesform}>
+        <option value="">Velg …</option>
+        {#each koder?.ansettelsesform || [] as kode (kode)}
+          <option value={kode}>{navn(kode)}</option>
+        {/each}
+      </select>
+    </label>
   </div>
-  <label class="text-xs opacity-70 flex items-center gap-2">
+  <label class="flex flex-col gap-1 text-xs">
     Siste lønnsendring (nyansatt: startdatoen)
     <input type="date" class="input input-sm w-auto" bind:value={value.sisteLonnsendring} />
   </label>

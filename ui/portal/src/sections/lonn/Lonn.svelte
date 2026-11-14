@@ -8,13 +8,16 @@
   // serveren nekter, portalen skjuler.
   import { api } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import LoadError from "../../components/LoadError.svelte";
   import Ansatte from "./Ansatte.svelte";
+  import KjorLonn from "./KjorLonn.svelte";
   import Lonnskjoring from "./Lonnskjoring.svelte";
   import Skattekort from "./Skattekort.svelte";
 
   let { companyId } = $props();
 
   let data = $state(null);
+  let feil = $state(null);
 
   async function load(id) {
     const [employees, payroll, invitasjoner, medlemmer] = await Promise.all([
@@ -32,19 +35,30 @@
     };
   }
 
+  // A failed load says so with a retry, never a spinner that spins on.
   function reload() {
-    load(companyId).catch((error) => toast(error.message, false));
+    feil = null;
+    return load(companyId).catch((error) =>
+      data ? toast(error.message, false) : (feil = error.message),
+    );
   }
 
   $effect(() => {
+    companyId;
     data = null;
-    load(companyId).catch((error) => toast(error.message, false));
+    reload();
   });
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner loading-lg"></span>
+{#if feil}
+  <LoadError error={feil} retry={reload} />
+{:else if !data}
+  <span class="loading loading-spinner loading-lg" aria-label="Laster lønn"></span>
 {:else}
+  <!-- The monthly job first: run, then check the a-melding; the
+       register and tax cards are set up once and visited rarely. -->
+  <KjorLonn {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} onDone={reload} />
+  <Lonnskjoring {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} />
   <Ansatte
     {companyId}
     ansatte={data.ansatte}
@@ -54,5 +68,4 @@
     onDone={reload}
   />
   <Skattekort {companyId} onDone={reload} />
-  <Lonnskjoring {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} onDone={reload} />
 {/if}
