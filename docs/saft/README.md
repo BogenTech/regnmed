@@ -1,70 +1,71 @@
-# SAF-T Financial — official Skatteetaten artifacts
+# SAF-T Financial — Skatteetatens offisielle artefakter
 
-Vendored from [Skatteetaten/saf-t](https://github.com/Skatteetaten/saf-t)
-(first fetched 2026-07-22; both schemas refreshed 2026-11-14 at commit
-`b54f1cf`) so builds and CI never depend on GitHub being up:
+Kopiert inn fra [Skatteetaten/saf-t](https://github.com/Skatteetaten/saf-t)
+(første gang 2026-07-22; begge skjemaene fornyet 2026-11-14 fra commit
+`b54f1cf`), så bygg og CI aldri avhenger av at GitHub svarer:
 
-- `Norwegian_SAF-T_Financial_Schema_v_1.30.xsd` (SHA-256
-  `5362d677…df6a0650`) and `Norwegian_SAF-T_Financial_Schema_v_1.40.xsd`
-  (SHA-256 `272d5a3e…76b89d01`) — the official schemas our export is
-  validated against (unit test `validates_against_official_xsd`, both
-  versions, and every real export via `xmllint`).
-- `About_SAF-T_Financial_schema_v.1.40.txt` and
-  `Bug fix in version 1.30 and version 1.40.txt` — Skatteetaten's notes on
-  what 1.40 changed and on the 2026-10-16 correction that made
-  `SelectionCriteria` mandatory in both schemas (no version bump). Our
-  1.30 copy was from before that fix; the refresh picked it up, and the
-  export has always written `SelectionCriteria`.
-- `generated_auditfile_formatted_v_1.40.xml` — Skatteetaten's 1.40
-  example file; the importer test `imports_skatteetatens_1_40_example`
-  reads it.
-- `naeringsspesifikasjon_2025-2026.csv` — grouping category code list
-  (standard account → GroupingCategory/GroupingCode). A copy is embedded
-  in `regnmed-core` (`src/saft/`); when Skatteetaten publishes the list
-  for a new inntektsår, update both copies together.
-- `Standard_Tax_Codes.csv` — the standard VAT code list; regnmed's
-  `vat_code` table uses these codes directly, which is why the export can
-  set `StandardTaxCode` = our own code.
-- `About_SAF-T_Financial_v.1.3.txt` — Skatteetaten's release notes.
+- `Norwegian_SAF-T_Financial_Schema_v_1.30.xsd` og
+  `Norwegian_SAF-T_Financial_Schema_v_1.40.xsd` — de offisielle skjemaene
+  eksporten valideres mot (enhetstesten `validates_against_official_xsd`,
+  begge versjonene, og hver ekte eksport via `xmllint`). SHA-256:
+  - 1.30: `5362d6778872b4ed2524e09b083e634ae950a4f1d9f1b95076b4c9e4df6a0650`
+  - 1.40: `272d5a3eff9df07cdff15a4792e34a31ab4359e27dc3215951dd017b76b89d01`
+- `About_SAF-T_Financial_schema_v.1.40.txt` og
+  `Bug fix in version 1.30 and version 1.40.txt` — Skatteetatens notater om
+  hva 1.40 endret, og om rettelsen 2026-10-16 som gjorde
+  `SelectionCriteria` obligatorisk i begge skjemaene (uten nytt
+  versjonsnummer). Filnavnene er Skatteetatens egne. Vår 1.30-kopi var fra
+  før rettelsen; fornyingen tok den med, og eksporten har alltid skrevet
+  `SelectionCriteria`.
+- `generated_auditfile_formatted_v_1.40.xml` — Skatteetatens eksempelfil
+  for 1.40; importtesten `imports_skatteetatens_1_40_example` leser den.
+- `naeringsspesifikasjon_2025-2026.csv` — kodelisten for gruppering
+  (standardkonto → GroupingCategory/GroupingCode). En kopi er bygget inn i
+  `regnmed-core` (`src/saft/`); når Skatteetaten publiserer listen for et
+  nytt inntektsår, oppdateres begge kopiene sammen.
+- `Standard_Tax_Codes.csv` — standard mva-koder; regnmeds `vat_code`-tabell
+  bruker disse kodene direkte, derfor kan eksporten sette
+  `StandardTaxCode` = vår egen kode.
+- `About_SAF-T_Financial_v.1.3.txt` — Skatteetatens versjonsnotater for 1.30.
 
-Export a file with:
+Eksporter en fil med:
 
 ```sh
 regnmed saft-export --orgnr 999888777 --year 2026 --contact "Kari Nordmann"
 ```
 
-## Which version a file is written in
+## Hvilken versjon en fil skrives i
 
-`regnmed-core::saft::schema_version` picks it from the selection's start
-date: **1.40 for a period starting 1 January 2027 or later, 1.30 before
-that**. 1.40 comes into force for the first period starting on or after
-1 January 2027 and is voluntary until then; 1.30 stays valid for 2026 and
-earlier. A selection that starts in 2026 and runs into 2027 is therefore
-written as 1.30, the same way the start date already picks the
-grouping-code vintage.
+`regnmed-core::saft::schema_version` velger ut fra utvalgets startdato:
+**1.40 for en periode som starter 1. januar 2027 eller senere, ellers
+1.30**. 1.40 gjelder fra første periode som starter 1. januar 2027 eller
+senere og er frivillig før det; 1.30 er gyldig for 2026 og tidligere. Et
+utvalg som starter i 2026 og går inn i 2027 skrives derfor som 1.30 —
+startdatoen velger allerede årgangen av grupperingskodelisten på samme måte.
 
-Every 1.40 change is backward compatible, and none needs new data from us:
+Alle endringene i 1.40 er bakoverkompatible, og ingen krever data vi ikke
+har:
 
-- `Owners/AccountID` may repeat: we do not write `Owners`.
-- `CurrencyAmount` and `ExchangeRate` are wider decimals: our values fit
-  both versions.
-- `VirtualCurrencyType` and `Country` in the amount structure are
-  optional: we do not use them.
-- `DebitNOKTaxAmount`/`CreditNOKTaxAmount` are only for a `TaxInformation`
-  amount in a currency other than NOK: ours are always NOK (the VAT is
-  posted in NOK, bokføringsloven § 4-2).
+- `Owners/AccountID` kan gjentas: vi skriver ikke `Owners`.
+- `CurrencyAmount` og `ExchangeRate` har fått bredere desimaltyper: våre
+  verdier passer i begge versjonene.
+- `VirtualCurrencyType` og `Country` i beløpsstrukturen er valgfrie: vi
+  bruker dem ikke.
+- `DebitNOKTaxAmount`/`CreditNOKTaxAmount` brukes bare når et beløp i
+  `TaxInformation` er i en annen valuta enn NOK: våre er alltid i NOK
+  (merverdiavgiften bokføres i norske kroner, bokføringsforskriften § 4-2).
 
-So the same document validates against both schemas, and the version
-string is the only difference. **A 2027 export still fails today**, and
-deliberately: Skatteetaten has not published the næringsspesifikasjon
-grouping list for 2027 yet, and the export refuses a year no vendored list
-covers (docs/regelverk.md). Vendoring that list is a December
-regelverksrevisjon item.
+Det samme dokumentet validerer altså mot begge skjemaene, og
+versjonsstrengen er den eneste forskjellen. **En eksport for 2027 feiler
+fortsatt i dag**, med vilje: Skatteetaten har ennå ikke publisert
+grupperingslisten for næringsspesifikasjonen for 2027, og eksporten nekter
+et år ingen innkopiert liste dekker (docs/regelverk.md). Å kopiere inn den
+listen er et punkt i regelverksrevisjonen i desember.
 
-The importer reads both versions: it reads elements by name, and the 1.40
-additions are elements it does not read.
+Importen leser begge versjonene: den leser elementer etter navn, og
+tilleggene i 1.40 er elementer den ikke leser.
 
-The Norwegian SAF-T header requires a contact person, which is not master
-data regnmed holds — hence the mandatory `--contact`. Accounts that are
-not themselves standard accounts are mapped to the nearest standard
-account and reported on stderr for an accountant's review.
+Norsk SAF-T krever en kontaktperson i headeren, og det er ikke stamdata
+regnmed har — derfor er `--contact` obligatorisk. Kontoer som ikke selv er
+standardkontoer, grupperes under nærmeste standardkonto og listes på stderr
+så en regnskapsfører kan se over dem.
