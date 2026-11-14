@@ -722,6 +722,58 @@ pub async fn run_payroll(
     poster: &[PayrollEntry],
     created_by: &str,
 ) -> Result<PayrollRun> {
+    payroll_run(
+        pool, company_id, year, month, paid_date, zone_slug, poster, created_by, false,
+    )
+    .await
+}
+
+/// The run [`run_payroll`] WOULD book, computed the same way and with the
+/// same refusals, but with nothing written: no voucher, no voucher
+/// number, no payroll row. `id` and `voucher_id` are nil. This is what a
+/// person reads before an irreversible posting.
+pub async fn preview_payroll(
+    pool: &PgPool,
+    company_id: Uuid,
+    year: i32,
+    month: u32,
+    paid_date: NaiveDate,
+    zone_slug: &str,
+    poster: &[PayrollEntry],
+) -> Result<PayrollRun> {
+    // The real run is refused by the unique index inside its transaction;
+    // the preview has no transaction, so it asks first.
+    ensure!(
+        !kjort_maned(pool, company_id, year, month).await?,
+        "lønn for {month:02}/{year} er allerede kjørt"
+    );
+    // Nor would it pass the posting's period lock; say so now rather
+    // than after the person has read and accepted the figures.
+    if let Some(lock) = crate::period::current_period_lock(pool, company_id).await? {
+        ensure!(
+            paid_date > lock,
+            "regnskapsperioden er låst til og med {lock}, så lønn med utbetalingsdato \
+             {paid_date} kan ikke bokføres — velg en dato etter låsen"
+        );
+    }
+    payroll_run(
+        pool, company_id, year, month, paid_date, zone_slug, poster, "", true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn payroll_run(
+    pool: &PgPool,
+    company_id: Uuid,
+    year: i32,
+    month: u32,
+    paid_date: NaiveDate,
+    zone_slug: &str,
+    poster: &[PayrollEntry],
+    created_by: &str,
+    preview: bool,
+) -> Result<PayrollRun> {
     ensure!((1..=12).contains(&month), "måned må være 1-12");
     ensure!(!poster.is_empty(), "lønnskjøringen har ingen ansatte");
     let zone = Zone::from_slug(zone_slug)
@@ -1150,152 +1202,157 @@ pub async fn run_payroll(
         if missing.len() == 1 { "den" } else { "dem" }
     );
 
-    let mut tx = pool.begin().await?;
-    let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
+    let (run_id, voucher_id) = if preview {
+        (Uuid::nil(), Uuid::nil())
+    } else {
+        let mut tx = pool.begin().await?;
+        let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
 
-    let run_id = Uuid::new_v4();
-    sqlx::query(
-        "insert into payroll_run
+        let run_id = Uuid::new_v4();
+        sqlx::query(
+            "insert into payroll_run
              (id, company_id, ar, maned, utbetalt_dato, sone, brutto_ore,
               feriepenger_utbetalt_ore, forskuddstrekk_ore, netto_ore,
               feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id, created_by,
               allowance_ore)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
-    )
-    .bind(run_id)
-    .bind(company_id)
-    .bind(year)
-    .bind(month as i32)
-    .bind(paid_date)
-    .bind(zone_slug)
-    .bind(sum.gross_ore)
-    .bind(sum.holiday_pay_paid_ore)
-    .bind(sum.withholding_ore)
-    .bind(sum.net_ore)
-    .bind(sum.holiday_pay_accrual_ore)
-    .bind(sum.employer_contribution_ore)
-    .bind(sum.employer_contribution_holiday_pay_ore)
-    .bind(posted.id)
-    .bind(created_by)
-    .bind(sum.allowance_ore)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        if e.to_string()
-            .contains("payroll_run_company_id_ar_maned_key")
-        {
-            anyhow::anyhow!("lønn for {month:02}/{year} er allerede kjørt")
-        } else {
-            anyhow::anyhow!("{e}")
-        }
-    })?;
+        )
+        .bind(run_id)
+        .bind(company_id)
+        .bind(year)
+        .bind(month as i32)
+        .bind(paid_date)
+        .bind(zone_slug)
+        .bind(sum.gross_ore)
+        .bind(sum.holiday_pay_paid_ore)
+        .bind(sum.withholding_ore)
+        .bind(sum.net_ore)
+        .bind(sum.holiday_pay_accrual_ore)
+        .bind(sum.employer_contribution_ore)
+        .bind(sum.employer_contribution_holiday_pay_ore)
+        .bind(posted.id)
+        .bind(created_by)
+        .bind(sum.allowance_ore)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            if e.to_string()
+                .contains("payroll_run_company_id_ar_maned_key")
+            {
+                anyhow::anyhow!("lønn for {month:02}/{year} er allerede kjørt")
+            } else {
+                anyhow::anyhow!("{e}")
+            }
+        })?;
 
-    for l in &lines {
-        let b = &l.calculation;
-        sqlx::query(
-            "insert into payroll_line
+        for l in &lines {
+            let b = &l.calculation;
+            sqlx::query(
+                "insert into payroll_line
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
                   pay_kind, withholding_method, allowance_ore, taxable_allowance_ore)
              values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
-        )
-        .bind(Uuid::new_v4())
-        .bind(run_id)
-        .bind(l.employee_id)
-        .bind(b.gross_ore)
-        .bind(b.holiday_pay_ore)
-        .bind(b.withholding_basis_ore)
-        .bind(b.withholding_ore)
-        .bind(b.net_ore)
-        .bind(l.holiday_pay_accrual_ore)
-        // The employee's share, rounded down on its own: read by nothing
-        // today, and NOT the claim -- the run's aga_ore is, computed once on
-        // the summed basis, so these may sum to a few kroner less.
-        .bind(
-            payroll::employer_contribution(
-                b.gross_ore + b.holiday_pay_ore + b.taxable_allowance_ore,
-                zone,
-                aga_bp,
             )
-            .unwrap_or(0),
-        )
-        .bind(l.employer_contribution_holiday_pay_ore)
-        .bind(b.half_withholding)
-        .bind(l.pay_kind)
-        .bind(&b.method)
-        .bind(b.allowance_ore)
-        .bind(b.taxable_allowance_ore)
-        .execute(&mut *tx)
-        .await?;
-    }
-    for m in &mileage {
-        sqlx::query(
-            "insert into payroll_expense
-                 (id, run_id, employee_id, expense_id, car, km, passenger_km,
-                  vehicle_tax_free_ore, passenger_tax_free_ore, taxable_ore)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-        )
-        .bind(Uuid::now_v7())
-        .bind(run_id)
-        .bind(m.employee_id)
-        .bind(m.expense_id)
-        .bind(m.car)
-        .bind(m.km)
-        .bind(m.passenger_km)
-        .bind(m.vehicle_tax_free_ore)
-        .bind(m.passenger_tax_free_ore)
-        .bind(m.taxable_ore)
-        .execute(&mut *tx)
-        .await?;
-        // `status = 'godkjent'` in the WHERE: a claim paid some other way
-        // since it was read is not paid twice — the run fails instead.
-        let paid = sqlx::query(
-            "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
-                                utbetalt_at = now()
-             where id = $1 and status = 'godkjent'",
-        )
-        .bind(m.expense_id)
-        .bind(posted.id)
-        .execute(&mut *tx)
-        .await?;
-        ensure!(
-            paid.rows_affected() == 1,
-            "et kjøregodtgjørelseskrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
-        );
-    }
-    for t in &travel {
-        for (report, amount, days) in &t.reports {
-            sqlx::query(
-                "insert into payroll_travel (id, run_id, employee_id, expense_id, report,
-                                             amount_ore, days)
-                 values ($1, $2, $3, $4, $5, $6, $7)",
-            )
-            .bind(Uuid::now_v7())
+            .bind(Uuid::new_v4())
             .bind(run_id)
-            .bind(t.employee_id)
-            .bind(t.expense_id)
-            .bind(report.slug())
-            .bind(amount)
-            .bind(days)
+            .bind(l.employee_id)
+            .bind(b.gross_ore)
+            .bind(b.holiday_pay_ore)
+            .bind(b.withholding_basis_ore)
+            .bind(b.withholding_ore)
+            .bind(b.net_ore)
+            .bind(l.holiday_pay_accrual_ore)
+            // The employee's share, rounded down on its own: read by nothing
+            // today, and NOT the claim -- the run's aga_ore is, computed once on
+            // the summed basis, so these may sum to a few kroner less.
+            .bind(
+                payroll::employer_contribution(
+                    b.gross_ore + b.holiday_pay_ore + b.taxable_allowance_ore,
+                    zone,
+                    aga_bp,
+                )
+                .unwrap_or(0),
+            )
+            .bind(l.employer_contribution_holiday_pay_ore)
+            .bind(b.half_withholding)
+            .bind(l.pay_kind)
+            .bind(&b.method)
+            .bind(b.allowance_ore)
+            .bind(b.taxable_allowance_ore)
             .execute(&mut *tx)
             .await?;
         }
-        let paid = sqlx::query(
-            "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
+        for m in &mileage {
+            sqlx::query(
+                "insert into payroll_expense
+                 (id, run_id, employee_id, expense_id, car, km, passenger_km,
+                  vehicle_tax_free_ore, passenger_tax_free_ore, taxable_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(run_id)
+            .bind(m.employee_id)
+            .bind(m.expense_id)
+            .bind(m.car)
+            .bind(m.km)
+            .bind(m.passenger_km)
+            .bind(m.vehicle_tax_free_ore)
+            .bind(m.passenger_tax_free_ore)
+            .bind(m.taxable_ore)
+            .execute(&mut *tx)
+            .await?;
+            // `status = 'godkjent'` in the WHERE: a claim paid some other way
+            // since it was read is not paid twice — the run fails instead.
+            let paid = sqlx::query(
+                "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
                                 utbetalt_at = now()
              where id = $1 and status = 'godkjent'",
-        )
-        .bind(t.expense_id)
-        .bind(posted.id)
-        .execute(&mut *tx)
-        .await?;
-        ensure!(
-            paid.rows_affected() == 1,
-            "et diettkrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
-        );
-    }
-    tx.commit().await?;
+            )
+            .bind(m.expense_id)
+            .bind(posted.id)
+            .execute(&mut *tx)
+            .await?;
+            ensure!(
+                paid.rows_affected() == 1,
+                "et kjøregodtgjørelseskrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
+            );
+        }
+        for t in &travel {
+            for (report, amount, days) in &t.reports {
+                sqlx::query(
+                    "insert into payroll_travel (id, run_id, employee_id, expense_id, report,
+                                             amount_ore, days)
+                 values ($1, $2, $3, $4, $5, $6, $7)",
+                )
+                .bind(Uuid::now_v7())
+                .bind(run_id)
+                .bind(t.employee_id)
+                .bind(t.expense_id)
+                .bind(report.slug())
+                .bind(amount)
+                .bind(days)
+                .execute(&mut *tx)
+                .await?;
+            }
+            let paid = sqlx::query(
+                "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
+                                utbetalt_at = now()
+             where id = $1 and status = 'godkjent'",
+            )
+            .bind(t.expense_id)
+            .bind(posted.id)
+            .execute(&mut *tx)
+            .await?;
+            ensure!(
+                paid.rows_affected() == 1,
+                "et diettkrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
+            );
+        }
+        tx.commit().await?;
+        (run_id, posted.id)
+    };
 
     let employees: Vec<(Uuid, String)> = lines
         .iter()
@@ -1317,7 +1374,7 @@ pub async fn run_payroll(
         paid_date,
         zone: zone_slug.to_string(),
         sum,
-        voucher_id: posted.id,
+        voucher_id,
         employees,
         lines,
         warnings,

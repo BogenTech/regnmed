@@ -2519,3 +2519,77 @@ async fn diett_is_paid_with_pay_and_reported_by_lodging() {
     let april = run(&pool, company, a, 4, "I", None, 0).await;
     assert_eq!(april.sum.allowance_ore, 0);
 }
+
+/// The preview a person reads before booking must be the run that gets
+/// booked, and must itself book nothing: no voucher, no voucher number,
+/// no payroll row. Once the month has run, the preview refuses it too.
+#[tokio::test]
+async fn a_preview_books_nothing_and_matches_the_run() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    let entries = [PayrollEntry {
+        employee_id: a,
+        gross_ore: None,
+        holiday_pay_ore: 0,
+        from_timesheet: false,
+    }];
+    let count = |table: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(&format!(
+                "select count(*) from {table} where company_id = $1"
+            ))
+            .bind(company)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+
+    let preview =
+        payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 25), "I", &entries)
+            .await
+            .unwrap();
+    assert_eq!(preview.id, Uuid::nil());
+    assert_eq!(preview.voucher_id, Uuid::nil());
+    assert_eq!(count("voucher").await, 0, "a preview must not post");
+    assert_eq!(
+        count("payroll_run").await,
+        0,
+        "a preview must not record a run"
+    );
+
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        4,
+        date(2026, 4, 25),
+        "I",
+        &entries,
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        preview.sum, run.sum,
+        "the preview is the run that gets booked"
+    );
+    assert_eq!(count("voucher").await, 1);
+
+    let err = payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 25), "I", &entries)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("allerede kjørt"), "{err}");
+
+    // A payout date inside a locked period would fail at posting; the
+    // preview says so before anyone reads the figures.
+    regnmed_db::set_period_lock(&pool, company, date(2026, 5, 31), "Test", false)
+        .await
+        .unwrap();
+    let err = payroll::preview_payroll(&pool, company, 2026, 5, date(2026, 5, 25), "I", &entries)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("låst"), "{err}");
+}

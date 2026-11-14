@@ -774,10 +774,19 @@ pub struct RunPayrollRequest {
     lines: Vec<PayrollLine>,
 }
 
+#[derive(Deserialize)]
+pub struct RunQuery {
+    /// `true` computes the run and returns it without booking anything
+    /// (no voucher, no voucher number, no payroll row).
+    #[serde(default)]
+    preview: bool,
+}
+
 pub async fn run_payroll(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(q): Query<RunQuery>,
     Json(request): Json<RunPayrollRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::PayrollRun).await?;
@@ -791,17 +800,30 @@ pub async fn run_payroll(
             from_timesheet: l.from_timesheet,
         })
         .collect();
-    let run = regnmed_db::payroll::run_payroll(
-        &state.pool,
-        company_id,
-        request.year,
-        request.month,
-        request.paid_date,
-        &request.zone,
-        &poster,
-        person.display(),
-    )
-    .await
+    let run = if q.preview {
+        regnmed_db::payroll::preview_payroll(
+            &state.pool,
+            company_id,
+            request.year,
+            request.month,
+            request.paid_date,
+            &request.zone,
+            &poster,
+        )
+        .await
+    } else {
+        regnmed_db::payroll::run_payroll(
+            &state.pool,
+            company_id,
+            request.year,
+            request.month,
+            request.paid_date,
+            &request.zone,
+            &poster,
+            person.display(),
+        )
+        .await
+    }
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     Ok(Json(json!({
@@ -819,6 +841,7 @@ pub async fn run_payroll(
             "halv_trekk": l.calculation.half_withholding,
         })).collect::<Vec<_>>(),
         "advarsler": run.warnings,
+        "forhandsvisning": q.preview,
     })))
 }
 
