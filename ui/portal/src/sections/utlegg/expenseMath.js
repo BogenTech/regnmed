@@ -3,6 +3,20 @@
 // regnmed-core::expenses does (km × rate, the tax-free part never above
 // the amount) — so the form shows the amount the server will store.
 
+// How a claim's state reads: a company-card purchase is never "paid
+// out" — it was the company's money from the start.
+export function statusOf(e) {
+  if (e.company_card_id && e.status === "utbetalt") return { text: "Betalt med firmakort", badge: "badge-success" };
+  return STATUS[e.status] || { text: e.status, badge: "" };
+}
+
+export function kindLabel(e) {
+  if (e.kind === "kjoring") return "Kjøring" + (e.km ? ", " + e.km + " km" : "");
+  if (e.kind === "reise") return "Reise";
+  if (e.company_card_id) return "Firmakort";
+  return e.trip_expense_id ? "Kostnad på tur" : "Utlegg";
+}
+
 export const STATUS = {
   utkast: { text: "Utkast", badge: "badge-ghost" },
   innsendt: { text: "Venter på godkjenning", badge: "badge-warning" },

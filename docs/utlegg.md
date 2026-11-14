@@ -308,6 +308,61 @@ statsansatte), reduksjonen fra døgn 29, langtransportsjåfører, kost
 etter regning («særlige grunner»), og reiser som skifter sats ved
 nyttår.
 
+## Firmakort
+
+Et kjøp med firmakort er **firmaets penger**: kvitteringen er
+dokumentasjon, ikke et krav om refusjon. Den går gjennom samme
+utkast → innsendt → godkjent-flyt (innboks-disiplinen holder
+kvitteringen fast), men godkjenningen krediterer **kortets konto** i
+stedet for gjelden til den ansatte (2910), og kravet er oppgjort i samme
+transaksjon (`utbetalt` med godkjenningsbilaget som oppgjør) — det er
+ingenting å betale ut, og det havner verken i lønnskjøringen eller
+betalingslisten.
+
+**Kortregisteret** (`company_card`, migrasjon 0088; Bank → Firmakort,
+`BANK_AVSTEM`): navn, de **fire siste sifrene** (aldri kortnummeret),
+kortholder og kontoen kortet bokføres mot. Kontoen er permanent —
+godkjente kjøp står på den — mens navn, kortholder og «i bruk» kan
+endres; et kort slettes aldri. Ett aktivt kort per konto: et debetkort
+kan stå på bankkontoen det trekker fra (1920), et kredittkort trenger en
+egen konto (for eksempel en underkonto i 2390-serien). Et kort uten
+kortholder er **delt**, og bare den som godkjenner utlegg kan føre kjøp
+på det; ellers fører kortholderen sine egne.
+
+**Kontoutskriften** for kortet importeres under Bank → Avstemming på
+kortets konto, med samme camt.053/CSV-import som bankkontoene (kortets
+konto vises der selv om den ligger i klasse 2). Det gir to ting:
+
+- **Kortkjøp uten kvittering** (`GET …/expenses/card-lines`, Utlegg →
+  «Legg ved kvitteringer»): linjer med penger ut på et korts konto som
+  verken er avstemt mot hovedboken eller har en kvittering i arbeid.
+  Kortholderen ser sine egne, den som godkjenner utlegg alle. På en
+  bankkonto (19xx) deles kontoen med husleie, lønn og leverandører, så
+  der regnes bare linjer som nevner kortets fire siste sifre som et
+  eget tall (ikke inne i et lengre nummer) som kortkjøp; et kredittkorts
+  egen konto har ikke annet. Et kort som tas ut av bruk beholder sine
+  udokumenterte kjøp i listen, og kvitteringen kan fortsatt føres fra
+  linjen — men ikke noe nytt på kortet.
+- **Kvittering fra linjen** (`POST …/expenses/receipts?bank_transaction_id=`):
+  bildet blir et utkast med linjens dato, beløp, tekst og kort, og
+  tilhører kortholderen. En linje dokumenteres av én kvittering (unik
+  indeks; et avvist eller forkastet krav frigjør den). Ved godkjenning
+  avstemmes linjen mot kortkontoens bilagslinje **i samme transaksjon**
+  — beløpene må være like, og er linjen allerede avstemt mot noe annet,
+  nektes godkjenningen med beskjed.
+
+En kvittering ført på kortet uten linjen (kontoutskriften har ikke
+kommet ennå, eller den ble tatt med fra «Nytt utlegg») avstemmes på
+vanlig måte: ved importen, eller — kom kontoutskriften først — rett
+etter godkjenningen, med samme regel som importen (likt beløp, nærmeste
+dato innenfor fem dager, uavgjort overlates til et menneske) — for dette
+kjøpets bilagslinje alene, ingenting annet på kontoen.
+
+Ikke bygget: flere kort på samme konto (én kontoutskrift kan ikke si
+hvilket kort en linje er), kortkjøp i valuta der kvitteringens beløp
+er i utenlandsk valuta (kravet føres i kroner, med kontoutskriftens
+beløp), og påminnelse til kortholderen utenfor portalen.
+
 ## Utbetaling
 
 Tre veier ut, valgt av hva kravet er — aldri av hva som er lettest:
@@ -427,6 +482,9 @@ Utkast:
 - `GET  /companies/{id}/expenses?status=utkast` / `?trip={eid}` — egne utkast / kostnadene på en tur
 - `GET  /companies/{id}/expenses/kjoring?dato=&vehicle=` — satsene, også passasjertillegget
 - `GET  /companies/{id}/expenses/{eid}/suggestion` — det kvitteringen sier: dato, beløp, hvem, med begrunnelser
+- `GET  /companies/{id}/cards` (`?usable=true`), `POST /companies/{id}/cards`, `PUT /companies/{id}/cards/{card_id}` — kortregisteret
+- `GET  /companies/{id}/expenses/card-lines` — kortkjøp uten kvittering
+- `POST /companies/{id}/expenses/receipts?filename=&bank_transaction_id=` — kvittering til en kortlinje
 - `GET  /companies/{id}/expenses/reise?dato=` — selskapets satsvalg, begge settene satser og statens landstabell
 - `GET  /companies/{id}/expenses/reise/days?departure_at=&return_at=&overnight=` — antall døgn
 - `POST /companies/{id}/expenses/reise/preview` — dietten reisen ville fått, med døgnlinjene
@@ -522,6 +580,19 @@ originalbilaget sendt med fakturaen ved viderefakturering som utlegg.
   feile), og uten mva (kode 7) etter at selskapet er ute av
   mva-registeret (sett feile).
 
+- `crates/regnmed-api/tests/grupper/expenses.rs::company_card_purchases_are_documented_not_reimbursed`
+  — kortregisteret (fire sifre, ett kort per konto, bare `BANK_AVSTEM`),
+  kortholder ser sitt kort og sine linjer, en kollega verken kortet,
+  linjene eller retten til å føre på det; kontoutskrift importert på en
+  kredittkortkonto i klasse 2; kvittering fra linjen med linjens dato
+  og beløp, lenken beholdt når utkastet lagres, én kvittering per linje;
+  godkjenning krediterer kortkontoen, 2910 urørt, kravet oppgjort,
+  linjen avstemt i samme transaksjon (sett feile), en kvittering ført
+  uten linjen avstemmes rett etter godkjenningen (sett feile); et
+  debetkort på 1920 ser bare linjene som nevner sine fire sifre som eget
+  tall (sett feile); et kort tatt ut av bruk beholder sin udokumenterte
+  linje, som fortsatt kan få kvittering, mens nye kjøp på kortet nektes
+  (sett feile).
 - `regnmed-core/src/travel.rs` — døgntelling (6-timersgrensen, 28
   døgn), satsforskriftens egne tall (554 kr for hotell med frokost),
   statens overskudd, en natt i det påbegynte døgnet, kort reise med

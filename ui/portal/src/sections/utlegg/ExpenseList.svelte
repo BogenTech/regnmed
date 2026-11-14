@@ -3,7 +3,7 @@
   // counters come in the same response, so tabs and list never disagree.
   import { api } from "../../lib/api.js";
   import { kr, formatDate } from "../../lib/format.js";
-  import { STATUS } from "./expenseMath.js";
+  import { statusOf, kindLabel } from "./expenseMath.js";
 
   let { companyId, tab, tabs, seesAll } = $props();
 
@@ -68,14 +68,14 @@
         </thead>
         <tbody>
           {#each page.expenses as e (e.expense_id)}
-            {@const s = STATUS[e.status]}
+            {@const s = statusOf(e)}
             <tr class="relative hover:bg-base-200 focus-within:bg-base-200">
               <td class="min-w-0">
                 <a class="font-medium break-words after:absolute after:inset-0" href={"#/c/" + companyId + "/utlegg/" + e.expense_id}>
                   {e.beskrivelse || (e.kind === "kjoring" ? "Kjøring uten formål" : "Kvittering uten beskrivelse")}
                 </a>
                 <span class="block text-sm opacity-70">
-                  {e.kind === "kjoring" ? "Kjøring" + (e.km ? ", " + e.km + " km" : "") : e.trip_expense_id ? "Kostnad på kjøring" : "Utlegg"}{#if e.dato}<span class="lg:hidden">, {formatDate(e.dato)}</span>{/if}{#if seesAll}<span class="xl:hidden">, {e.person}</span>{/if}
+                  {kindLabel(e)}{#if e.dato}<span class="lg:hidden">, {formatDate(e.dato)}</span>{/if}{#if seesAll}<span class="xl:hidden">, {e.person}</span>{/if}
                 </span>
                 <span class="badge badge-sm badge-soft {s?.badge} lg:hidden mt-1">{s?.text || e.status}</span>
               </td>

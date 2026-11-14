@@ -130,12 +130,15 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/dimensions` | GET POST |
 | `/companies/{company_id}/dimensions/{kind}/{code}` | PUT |
 | `/companies/{company_id}/dimensions/prosjekt/{code}/satser` | GET POST |
+| `/companies/{company_id}/cards` | GET, POST |
+| `/companies/{company_id}/cards/{card_id}` | PUT |
 | `/companies/{company_id}/engagement-requests` | POST |
 | `/companies/{company_id}/engagements` | GET |
 | `/companies/{company_id}/engagements/{engagement_id}/end` | POST |
 | `/companies/{company_id}/expenses` | GET, POST |
 | `/companies/{company_id}/expenses/addresses` | GET |
 | `/companies/{company_id}/expenses/billable` | GET |
+| `/companies/{company_id}/expenses/card-lines` | GET |
 | `/companies/{company_id}/expenses/claimants` | GET |
 | `/companies/{company_id}/expenses/kjoring` | GET, POST |
 | `/companies/{company_id}/expenses/receipts` | POST |

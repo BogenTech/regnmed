@@ -98,6 +98,62 @@ pub async fn import_statement(
 
 /// Runs the matching engine over everything currently unmatched on the
 /// account and records the proposals as 'auto' matches.
+/// Matches ONE ledger entry against the account's unmatched bank lines,
+/// with the import's rule (equal amount, nearest date in the window, ties
+/// left to a human). For a posting made after its statement arrived — a
+/// card receipt — without touching anything else on the account.
+pub(crate) async fn match_entry(
+    pool: &PgPool,
+    company_id: Uuid,
+    account_id: Uuid,
+    entry_id: Uuid,
+    matched_by: &str,
+) -> Result<bool> {
+    let bank_txs: Vec<BankTx> = unmatched_bank_rows(pool, company_id, Some(account_id))
+        .await?
+        .into_iter()
+        .map(|r| BankTx {
+            id: r.id,
+            booking_date: r.booking_date,
+            amount_ore: r.amount_ore,
+        })
+        .collect();
+    let entry = sqlx::query(
+        "select v.voucher_date, e.amount_ore from entry e join voucher v on v.id = e.voucher_id
+         where e.id = $1 and v.company_id = $2 and e.account_id = $3
+           and not exists (select 1 from bank_match m where m.entry_id = e.id)",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(entry) = entry else {
+        return Ok(false);
+    };
+    let entries = [OpenEntry {
+        entry_id,
+        date: entry.get("voucher_date"),
+        amount_ore: entry.get("amount_ore"),
+    }];
+    let Some(proposal) = propose_matches(&bank_txs, &entries, MATCH_WINDOW_DAYS)
+        .into_iter()
+        .next()
+    else {
+        return Ok(false);
+    };
+    sqlx::query(
+        "insert into bank_match (bank_transaction_id, entry_id, method, matched_by)
+         values ($1, $2, 'auto', $3)",
+    )
+    .bind(proposal.bank_tx_id)
+    .bind(proposal.entry_id)
+    .bind(matched_by)
+    .execute(pool)
+    .await?;
+    Ok(true)
+}
+
 async fn auto_match(
     pool: &PgPool,
     company_id: Uuid,
@@ -339,7 +395,11 @@ pub async fn bank_accounts(pool: &PgPool, company_id: Uuid) -> Result<Vec<BankAc
                   where s.account_id = a.id
                     and not exists (select 1 from bank_match m where m.bank_transaction_id = t.id)) as unmatched
          from account a
-         where a.company_id = $1 and a.active and a.number like '19%'
+         where a.company_id = $1 and a.active
+           and (a.number like '19%'
+                -- A company card's account, also a credit card's in class 2:
+                -- its statement is reconciled like any bank's.
+                or exists (select 1 from company_card c where c.account_id = a.id and c.active))
          order by a.number",
     )
     .bind(company_id)

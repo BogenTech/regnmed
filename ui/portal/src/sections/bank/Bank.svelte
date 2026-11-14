@@ -6,6 +6,7 @@
   import Reconcile from "./Reconcile.svelte";
   import Payments from "./Payments.svelte";
   import Rates from "./Rates.svelte";
+  import Cards from "./Cards.svelte";
 
   let { companyId, extra } = $props();
 
@@ -13,6 +14,7 @@
     ["", "Avstemming"],
     ["betalinger", "Betalinger"],
     ["valuta", "Valutakurser"],
+    ["kort", "Firmakort"],
   ];
   let tab = $derived(TABS.some(([k]) => k === (extra || "")) ? extra || "" : null);
 </script>
@@ -37,6 +39,8 @@
       <Reconcile {companyId} />
     {:else if tab === "betalinger"}
       <Payments {companyId} />
+    {:else if tab === "kort"}
+      <Cards {companyId} />
     {:else}
       <Rates {companyId} />
     {/if}

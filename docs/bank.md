@@ -14,7 +14,9 @@ ajourhold, and unexplained differences are the classic audit finding.
 | 3. Direct filutveksling | SFTP/ISO 20022 agreements per bank or via Mastercard Payment Services (also OCR-giro, issue #16) | Later — per-customer onboarding |
 
 All tiers feed the **same** reconciliation engine; only the transport
-differs. Building file-first was deliberate: it works for every customer
+differs. A company card's statement is imported the same way, on the
+card's own ledger account — also a credit card account in class 2,
+which the account list then includes (docs/utlegg.md «Firmakort»). Building file-first was deliberate: it works for every customer
 on day one with zero agreements.
 
 ## Data model (migration 0007)

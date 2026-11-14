@@ -223,6 +223,10 @@ fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
             "travel_days": e.travel_days,
             "rate_scheme": e.rate_scheme,
             "travel_lines": e.travel_lines,
+            "company_card_id": e.company_card_id,
+            "card_label": e.card_label,
+            "card_account": e.card_account,
+            "bank_transaction_id": e.bank_transaction_id,
         })
         .as_object()
         .expect("an object")
@@ -688,6 +692,10 @@ pub struct DraftRequest {
     over_15_km: bool,
     #[serde(default)]
     travel_days: Vec<regnmed_db::travel::TravelDayDraft>,
+    company_card_id: Option<Uuid>,
+    /// The card statement line this receipt documents. Kept by an update
+    /// that still names a card, dropped by one that does not.
+    bank_transaction_id: Option<Uuid>,
 }
 
 impl DraftRequest {
@@ -711,8 +719,40 @@ impl DraftRequest {
             overnight: self.overnight,
             over_15_km: self.over_15_km,
             travel_days: self.travel_days.clone(),
+            company_card_id: self.company_card_id,
+            bank_transaction_id: self.bank_transaction_id,
         }
     }
+}
+
+/// A shared card (no holder) and someone else's statement lines are for
+/// whoever handles claims; a cardholder files for their own card.
+async fn may_use_card(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    card_id: Option<Uuid>,
+    line: Option<Uuid>,
+) -> Result<(), ApiError> {
+    let card_id = match (card_id, line) {
+        (_, Some(line)) => Some(
+            regnmed_db::company_card::card_line(&state.pool, company_id, line, None)
+                .await
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                .card_id,
+        ),
+        (card, None) => card,
+    };
+    let Some(card_id) = card_id else {
+        return Ok(());
+    };
+    let card = regnmed_db::company_card::get_card(&state.pool, company_id, card_id)
+        .await
+        .map_err(|_| ApiError::BadRequest("fant ikke kortet".into()))?;
+    if card.holder_person_id != Some(person.person_id) {
+        require(state, person.person_id, company_id, Right::ExpenseApprove).await?;
+    }
+    Ok(())
 }
 
 /// Whose claim a new draft is: the caller's own, or — for someone who
@@ -769,6 +809,9 @@ fn content_type(headers: &axum::http::HeaderMap) -> String {
 pub struct ReceiptQuery {
     filename: String,
     person_id: Option<Uuid>,
+    /// The card statement line the receipt documents: the draft takes the
+    /// line's card, date, amount and text, and belongs to the cardholder.
+    bank_transaction_id: Option<Uuid>,
 }
 
 /// One receipt → one draft: the photo is saved at once, the details
@@ -781,7 +824,22 @@ pub async fn create_receipt_draft(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let claimant = claimant(&state, &person, company_id, query.person_id).await?;
+    let mut draft = regnmed_db::ExpenseDraft::default();
+    let claimant = match query.bank_transaction_id {
+        Some(line_id) => {
+            require(&state, person.person_id, company_id, Right::ExpenseWriteOwn).await?;
+            may_use_card(&state, &person, company_id, None, Some(line_id)).await?;
+            let line = regnmed_db::company_card::card_line(&state.pool, company_id, line_id, None)
+                .await
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+            draft.date = Some(line.date);
+            draft.amount_ore = Some(line.amount_ore);
+            draft.description = line.description.clone();
+            draft.bank_transaction_id = Some(line_id);
+            line.holder_person_id.unwrap_or(person.person_id)
+        }
+        None => claimant(&state, &person, company_id, query.person_id).await?,
+    };
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_draft(
         &state.pool,
@@ -790,7 +848,7 @@ pub async fn create_receipt_draft(
         person.person_id,
         "utlegg",
         None,
-        &regnmed_db::ExpenseDraft::default(),
+        &draft,
         Some(regnmed_db::Receipt {
             filename: &query.filename,
             content_type: &content_type(&headers),
@@ -827,6 +885,14 @@ pub async fn create_draft(
             claimant
         }
     };
+    may_use_card(
+        &state,
+        &person,
+        company_id,
+        request.company_card_id,
+        request.bank_transaction_id,
+    )
+    .await?;
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_draft(
         &state.pool,
@@ -851,6 +917,7 @@ pub async fn update_draft(
     Json(request): Json<DraftRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     may_write(&state, &person, company_id, expense_id).await?;
+    may_use_card(&state, &person, company_id, request.company_card_id, None).await?;
     regnmed_db::update_draft(&state.pool, company_id, expense_id, &request.draft())
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

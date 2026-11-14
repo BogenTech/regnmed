@@ -1930,3 +1930,408 @@ async fn a_trip_is_one_reiseregning() {
         "{approved}"
     );
 }
+
+/// A company card (docs/utlegg.md «Firmakort»): the receipt documents the
+/// company's money, so approval credits the card's account — not the debt
+/// to the employee — and the claim is settled at once. The card's
+/// statement is imported like a bank's; a line without a receipt is shown
+/// to the cardholder, and a receipt filed from it reconciles it.
+#[tokio::test]
+async fn company_card_purchases_are_documented_not_reimbursed() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kort AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("7140", "Reisekostnad"),
+        ("2910", "Gjeld til ansatte"),
+        ("2391", "Kredittkort Ola"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let mut people = Vec::new();
+    for (name, role) in [
+        ("Admin Kort", "admin"),
+        ("Ola Kort", "ansatt"),
+        ("Kari Kort", "ansatt"),
+    ] {
+        let sub = format!("test|{}", Uuid::new_v4());
+        let id = regnmed_db::ensure_person(&state.pool, &sub, Some(name), None)
+            .await
+            .unwrap();
+        regnmed_db::ensure_company_member(&state.pool, company, id, role)
+            .await
+            .unwrap();
+        people.push((id, idp.token(&sub, name)));
+    }
+    let (_, admin) = people[0].clone();
+    let (ola, ola_token) = people[1].clone();
+    let (_, kari_token) = people[2].clone();
+    let base = format!("/companies/{company}/expenses");
+    let cards = format!("/companies/{company}/cards");
+
+    // The register: last four digits only, one card per account.
+    let card_body = |last4: &str| {
+        serde_json::json!({ "name": "Visa bedrift", "last4": last4, "holder_person_id": ola, "konto": "2391" })
+            .to_string()
+    };
+    let (status, bad) = request(
+        &state,
+        "POST",
+        &cards,
+        &admin,
+        Some(card_body("4111111111111111")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    let (status, made) = request(&state, "POST", &cards, &admin, Some(card_body("1234"))).await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let card = made["card_id"].as_str().unwrap().to_string();
+    let (status, twice) = request(&state, "POST", &cards, &admin, Some(card_body("5678"))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        twice["error"].as_str().unwrap().contains("egen konto"),
+        "{twice}"
+    );
+    // An employee cannot register cards; the holder sees theirs, a
+    // colleague none.
+    let (status, _) = request(&state, "POST", &cards, &ola_token, Some(card_body("9999"))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, own) = request(&state, "GET", &cards, &ola_token, None).await;
+    assert_eq!(own["cards"][0]["label"], "Visa bedrift ••1234");
+    let (_, none) = request(&state, "GET", &cards, &kari_token, None).await;
+    assert_eq!(none["cards"].as_array().unwrap().len(), 0);
+
+    // The card's statement comes in through the bank import, on its account.
+    let csv = "Dato;Forklaring;Ut fra konto;Inn på konto\n\
+               10.03.2026;TAXI OSLO;499,00;\n\
+               12.03.2026;SCANDIC BERGEN;1 250,00;\n";
+    let (status, imported) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=2391"),
+        &admin,
+        Some(csv.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{imported}");
+    // The card account shows among the accounts to reconcile, class 2 or not.
+    let (_, accounts) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/bank/accounts"),
+        &admin,
+        None,
+    )
+    .await;
+    assert!(accounts.to_string().contains("2391"), "{accounts}");
+
+    // Both purchases wait for a receipt — for Ola, not for Kari.
+    let (_, lines) = request(
+        &state,
+        "GET",
+        &format!("{base}/card-lines"),
+        &ola_token,
+        None,
+    )
+    .await;
+    let lines = lines["lines"].as_array().unwrap().clone();
+    assert_eq!(lines.len(), 2);
+    let (_, kari_lines) = request(
+        &state,
+        "GET",
+        &format!("{base}/card-lines"),
+        &kari_token,
+        None,
+    )
+    .await;
+    assert_eq!(kari_lines["lines"].as_array().unwrap().len(), 0);
+    let taxi = lines.iter().find(|l| l["belop_ore"] == 49_900).unwrap();
+    let taxi_line = taxi["bank_transaction_id"].as_str().unwrap().to_string();
+
+    // Kari cannot document Ola's purchase.
+    let (status, _) = upload(
+        &state,
+        &format!("{base}/receipts?filename=taxi.jpg&bank_transaction_id={taxi_line}"),
+        "POST",
+        &kari_token,
+        b"kari taxi",
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Ola photographs the receipt from the line: date, amount and card
+    // come from the statement.
+    let (status, drafted) = upload(
+        &state,
+        &format!("{base}/receipts?filename=taxi.jpg&bank_transaction_id={taxi_line}"),
+        "POST",
+        &ola_token,
+        format!("taxi {}", Uuid::new_v4()).as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{drafted}");
+    let taxi_claim = drafted["expense_id"].as_str().unwrap().to_string();
+    let (_, got) = request(
+        &state,
+        "GET",
+        &format!("{base}/{taxi_claim}"),
+        &ola_token,
+        None,
+    )
+    .await;
+    assert_eq!(got["belop_ore"], 49_900);
+    assert_eq!(got["dato"], "2026-03-10");
+    assert_eq!(got["card_label"], "Visa bedrift ••1234");
+    // Saving the draft with the card keeps the line it was filed from.
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/{taxi_claim}"),
+        &ola_token,
+        Some(serde_json::json!({ "dato": "2026-03-10", "beskrivelse": "Taxi til kunde", "belop_ore": 49_900, "company_card_id": card }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, got) = request(
+        &state,
+        "GET",
+        &format!("{base}/{taxi_claim}"),
+        &ola_token,
+        None,
+    )
+    .await;
+    assert_eq!(got["bank_transaction_id"], taxi_line.as_str());
+    // A line is documented once: no second claim from it.
+    let (status, _) = upload(
+        &state,
+        &format!("{base}/receipts?filename=taxi2.jpg&bank_transaction_id={taxi_line}"),
+        "POST",
+        &ola_token,
+        b"second taxi",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Kari cannot put her own receipt on Ola's card.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &base,
+        &kari_token,
+        Some(serde_json::json!({ "dato": "2026-03-11", "beskrivelse": "Lunsj", "belop_ore": 20_000, "company_card_id": card }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("{base}/{taxi_claim}/submit"),
+        &ola_token,
+        Some("{}".into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, approved) = request(
+        &state,
+        "POST",
+        &format!("{base}/{taxi_claim}/approve"),
+        &admin,
+        Some(r#"{"konto":"7140"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    // The card account carries it, nobody is owed anything, and the claim
+    // is settled with its own voucher.
+    assert_eq!(balance(&state, company, "2391").await, -49_900);
+    assert_eq!(balance(&state, company, "2910").await, 0);
+    let (_, got) = request(
+        &state,
+        "GET",
+        &format!("{base}/{taxi_claim}"),
+        &ola_token,
+        None,
+    )
+    .await;
+    assert_eq!(got["status"], "utbetalt");
+    assert_eq!(got["paid_by"], "firmakort");
+    assert_eq!(got["voucher"], got["utbetalt_voucher"]);
+    // Approval reconciled the line it was filed from, then and there:
+    // only the hotel is left unmatched on the card account.
+    let (_, recon) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/bank/reconciliation?account=2391"),
+        &admin,
+        None,
+    )
+    .await;
+    assert_eq!(
+        recon["unmatched_bank"].as_array().unwrap().len(),
+        1,
+        "{recon}"
+    );
+
+    // The hotel receipt filed on its own (not from the line) still
+    // reconciles the line when approved: equal amount, nearest date.
+    let (status, hotel) = upload(
+        &state,
+        &format!("{base}/receipts?filename=hotell.pdf"),
+        "POST",
+        &ola_token,
+        format!("hotell {}", Uuid::new_v4()).as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let hotel = hotel["expense_id"].as_str().unwrap().to_string();
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{base}/{hotel}"),
+        &ola_token,
+        Some(serde_json::json!({ "dato": "2026-03-11", "beskrivelse": "Hotell Bergen", "belop_ore": 125_000, "company_card_id": card }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    request(
+        &state,
+        "POST",
+        &format!("{base}/{hotel}/submit"),
+        &ola_token,
+        Some("{}".into()),
+    )
+    .await;
+    let (status, approved) = request(
+        &state,
+        "POST",
+        &format!("{base}/{hotel}/approve"),
+        &admin,
+        Some(r#"{"konto":"7140"}"#.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert!(approved["warning"].is_null(), "{approved}");
+    let (_, left) = request(
+        &state,
+        "GET",
+        &format!("{base}/card-lines"),
+        &ola_token,
+        None,
+    )
+    .await;
+    assert_eq!(left["lines"].as_array().unwrap().len(), 0, "{left}");
+    let (_, recon) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/bank/reconciliation?account=2391"),
+        &admin,
+        None,
+    )
+    .await;
+    assert_eq!(
+        recon["unmatched_bank"].as_array().unwrap().len(),
+        0,
+        "{recon}"
+    );
+    assert_eq!(balance(&state, company, "2391").await, -174_900);
+
+    // A debit card on the bank account shares it with everything else:
+    // only lines naming the card's last four digits are the card's.
+    regnmed_db::ensure_account(&state.pool, company, "1920", "Bank")
+        .await
+        .unwrap();
+    let (status, _) = request(
+        &state,
+        "POST",
+        &cards,
+        &admin,
+        Some(serde_json::json!({ "name": "Debet", "last4": "5678", "holder_person_id": ola, "konto": "1920" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let bank_csv = "Dato;Forklaring;Ut fra konto;Inn på konto\n\
+                    13.03.2026;Husleie mars;15 000,00;\n\
+                    13.03.2026;Faktura 256789 Leverandør AS;800,00;\n\
+                    14.03.2026;VISA 5678 KIWI MAJORSTUA;312,50;\n";
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=1920"),
+        &admin,
+        Some(bank_csv.into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, lines) = request(
+        &state,
+        "GET",
+        &format!("{base}/card-lines"),
+        &ola_token,
+        None,
+    )
+    .await;
+    let lines = lines["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0]["belop_ore"], 31_250);
+
+    // Retiring the card does not hide its last purchase: the line stays,
+    // and its receipt can still be filed from it — but nothing new goes
+    // on the card.
+    let debit = lines[0]["card_id"].as_str().unwrap().to_string();
+    let kiwi_line = lines[0]["bank_transaction_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &format!("{cards}/{debit}"),
+        &admin,
+        Some(
+            serde_json::json!({ "name": "Debet", "holder_person_id": ola, "active": false })
+                .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, lines) = request(
+        &state,
+        "GET",
+        &format!("{base}/card-lines"),
+        &ola_token,
+        None,
+    )
+    .await;
+    assert_eq!(lines["lines"].as_array().unwrap().len(), 1, "{lines}");
+    let (status, filed) = upload(
+        &state,
+        &format!("{base}/receipts?filename=kiwi.jpg&bank_transaction_id={kiwi_line}"),
+        "POST",
+        &ola_token,
+        format!("kiwi {}", Uuid::new_v4()).as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{filed}");
+    let (status, refused) = request(
+        &state,
+        "POST",
+        &base,
+        &ola_token,
+        Some(serde_json::json!({ "dato": "2026-03-20", "beskrivelse": "Ny", "belop_ore": 10_000, "company_card_id": debit }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused["error"].as_str().unwrap().contains("ikke i bruk"),
+        "{refused}"
+    );
+}
