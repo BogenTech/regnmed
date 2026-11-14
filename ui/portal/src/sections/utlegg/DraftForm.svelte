@@ -493,7 +493,7 @@
           {:else if estimate}
             <span>
               {totalKm} km × {kr(estimate.per)} kr{named ? " (med " + named + " passasjertillegg)" : ""} = <strong>{kr(estimate.total)} kr</strong>.
-              {#if estimate.taxable > 0}Av dette er {kr(estimate.taxable)} kr over den trekkfrie satsen og skal lønnsinnberettes.{/if}
+              {#if estimate.taxable > 0}Av dette er {kr(estimate.taxable)} kr over den trekkfrie satsen og trekkpliktig — det trekkes skatt av når kravet utbetales med lønnen.{/if}
             </span>
           {:else}
             <span>Satsen på kjøredatoen er {kr(rate.sats_ore_per_km)} kr per km.</span>

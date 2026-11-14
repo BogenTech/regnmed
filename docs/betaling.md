@@ -41,6 +41,29 @@ som KID MOD11; punktum og mellomrom normaliseres bort). En post hvis
 leverandør mangler gyldig kontonummer avvises høyt ved
 listeopprettelse — og flagges i portalens betalbare liste.
 
+## Utlegg til ansatte
+
+Godkjente utlegg (kvitteringer) står i samme liste som
+leverandørpostene (docs/utlegg.md «Utbetaling», migrasjon 0086). En
+rad i `payment_run_item` gjelder enten en leverandørpost (`entry_id`)
+eller et utleggskrav (`expense_id`) — check-constrainten tillater
+aldri begge eller ingen. For et krav:
+
+- kontonummeret er den ansattes i ansattregisteret (koblet via
+  portalbrukeren); uten det avvises kravet ved listeopprettelse og
+  flagges i listen med lenke til Lønn;
+- kravet betales i sin helhet — oppgjøret setter det `utbetalt`;
+- listeopprettelsen låser kravet og leser statusen på nytt i sin egen
+  transaksjon, og `pay` sjekker listene etter samme lås — så et krav
+  kan ikke både betales manuelt og havne i betalingsfilen;
+- oppgjøret debiterer mellomregningen godkjenningen krediterte (uten
+  part og uten reskontromatch) og setter kravet `utbetalt` med
+  utbetalingsbilaget i samme transaksjon. Er kravet betalt på annen
+  måte i mellomtiden, feiler oppgjøret i stedet for å betale to ganger.
+
+Kjøregodtgjørelse står ikke her: den utbetales med lønnen, som trekker
+skatt og melder den i a-meldingen.
+
 ## Forfall og KID på leverandørposter
 
 En leverandørfaktura bokføres fra innboksen som et ordinært bilag. Dens
@@ -90,7 +113,7 @@ Utland/IBAN + BIC, filutvekslingsavtaler og direkte bankinnsending
 
 - `GET  /companies/{id}/payments/payable` — åpne leverandørposter m/
   kontonummerstatus, «i kjøring»-flagg, `due_date` og `kid`, det som
-  forfaller først øverst
+  forfaller først øverst; deretter godkjente utlegg (`expense_id`)
 - `POST /companies/{id}/reskontro/entries/{entry}/terms` — før eller
   rett forfall og KID på en leverandørpost (ny rad, nyeste gjelder)
 - `GET/POST /companies/{id}/payments/runs`
@@ -129,6 +152,8 @@ som så godkjennes av en annen under Bank; kontonummeret settes der.
   forfalt med akkurat den posten, ugyldig KID og fremmed post avvises,
   en post med lagret KID betales MED den (nyeste rad gjelder, rettingen
   står igjen), og tabellen nekter UPDATE i databasen.
+- `crates/regnmed-api/tests/grupper/payments.rs::receipt_claims_are_paid_from_the_payment_list`
+  — utlegg til ansatte: se docs/utlegg.md.
 - `crates/regnmed-api/tests/grupper/innboks.rs` — forfall og KID på et
   bilag uten leverandørlinje avvises, og dokumentet står fortsatt som
   ubehandlet.

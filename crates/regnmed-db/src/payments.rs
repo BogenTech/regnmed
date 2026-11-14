@@ -21,13 +21,18 @@ use uuid::Uuid;
 
 use crate::ledger::post_voucher_in;
 
+/// Something the company owes and can pay from a list: an open
+/// leverandør post (`entry_id`) or an approved receipt claim
+/// (`expense_id`), never both.
 #[derive(Debug)]
 pub struct PayableItem {
-    pub entry_id: Uuid,
+    pub entry_id: Option<Uuid>,
+    pub expense_id: Option<Uuid>,
     pub voucher_label: String,
     pub date: NaiveDate,
     pub description: Option<String>,
-    pub party_no: String,
+    /// The supplier's number; None for a claim.
+    pub party_no: Option<String>,
     pub party_name: String,
     pub bank_account: Option<String>,
     /// What we owe on this post (positive).
@@ -190,7 +195,9 @@ pub(crate) async fn insert_terms<'e>(
 }
 
 /// Open leverandør-poster: credit remainders on leverandør-reskontro
-/// accounts — what the company owes, post for post.
+/// accounts — what the company owes, post for post — followed by the
+/// approved receipt claims owed to employees. Kjøregodtgjørelse is not
+/// here: it is paid with pay (`payroll::run_payroll`).
 pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<PayableItem>> {
     let rows = sqlx::query(
         "select e.id, v.fiscal_year, v.voucher_number, v.voucher_date,
@@ -225,7 +232,8 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
         .iter()
         .filter(|r| r.get::<i64, _>("remaining_ore") < 0)
         .map(|r| PayableItem {
-            entry_id: r.get("id"),
+            entry_id: Some(r.get("id")),
+            expense_id: None,
             voucher_label: format!(
                 "{}-{}",
                 r.get::<i32, _>("fiscal_year"),
@@ -233,7 +241,7 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
             ),
             date: r.get("voucher_date"),
             description: r.get("description"),
-            party_no: r.get("party_no"),
+            party_no: Some(r.get("party_no")),
             party_name: r.get("party_name"),
             bank_account: r.get("bank_account"),
             amount_ore: -r.get::<i64, _>("remaining_ore"),
@@ -241,12 +249,57 @@ pub async fn payable_items(pool: &PgPool, company_id: Uuid) -> Result<Vec<Payabl
             due_date: r.get("due_date"),
             kid: r.get("kid"),
         })
+        .chain(payable_claims(pool, company_id).await?)
         .collect())
 }
 
+/// Approved receipt claims, paid to the claimant's account from the
+/// employee register (the only place regnmed keeps a person's
+/// kontonummer). A claim is paid whole: its status flips to utbetalt.
+async fn payable_claims(pool: &PgPool, company_id: Uuid) -> Result<Vec<PayableItem>> {
+    let rows = sqlx::query(&format!(
+        "select x.id, x.dato, x.beskrivelse, x.belop_ore, v.fiscal_year, v.voucher_number,
+                coalesce(p.name, '') as name, emp.bank_account, {in_run} as i_kjoring
+         from expense x
+         join voucher v on v.id = x.voucher_id
+         left join person p on p.id = x.person_id
+         left join employee emp on emp.company_id = x.company_id and emp.person_id = x.person_id
+         where x.company_id = $1 and x.kind = 'utlegg' and x.status = 'godkjent'
+         order by x.dato, x.id",
+        in_run = crate::expenses::in_open_run("x"),
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| PayableItem {
+            entry_id: None,
+            expense_id: Some(r.get("id")),
+            voucher_label: format!(
+                "{}-{}",
+                r.get::<i32, _>("fiscal_year"),
+                r.get::<i64, _>("voucher_number")
+            ),
+            date: r.get("dato"),
+            description: Some(format!("Utlegg: {}", r.get::<String, _>("beskrivelse"))),
+            party_no: None,
+            party_name: r.get("name"),
+            bank_account: r.get("bank_account"),
+            amount_ore: r.get("belop_ore"),
+            in_run: r.get("i_kjoring"),
+            due_date: None,
+            kid: None,
+        })
+        .collect())
+}
+
+/// One payment: give `entry_id` (a supplier post) or `expense_id` (a
+/// receipt claim), not both.
 #[derive(Debug, Clone)]
 pub struct PaymentItemDraft {
-    pub entry_id: Uuid,
+    pub entry_id: Option<Uuid>,
+    pub expense_id: Option<Uuid>,
     /// None = the whole open remainder.
     pub amount_ore: Option<i64>,
     pub kid: Option<String>,
@@ -301,10 +354,24 @@ pub async fn create_run(
     .execute(&mut *tx)
     .await?;
     for (i, item) in items.iter().enumerate() {
+        ensure!(
+            item.entry_id.is_some() != item.expense_id.is_some(),
+            "linje {}: oppgi enten en leverandørpost eller et utleggskrav",
+            i + 1
+        );
         let open = payable
             .iter()
-            .find(|p| p.entry_id == item.entry_id)
-            .with_context(|| format!("linje {}: ingen åpen leverandørpost", i + 1))?;
+            .find(|p| {
+                (item.entry_id.is_some() && p.entry_id == item.entry_id)
+                    || (item.expense_id.is_some() && p.expense_id == item.expense_id)
+            })
+            .with_context(|| {
+                if item.entry_id.is_some() {
+                    format!("linje {}: ingen åpen leverandørpost", i + 1)
+                } else {
+                    format!("linje {}: utleggskravet er ikke godkjent og ubetalt", i + 1)
+                }
+            })?;
         // A post in an utkast or godkjent list is already on its way to
         // the bank; a second list would pay it twice.
         ensure!(
@@ -313,6 +380,13 @@ pub async fn create_run(
             i + 1
         );
         let amount = item.amount_ore.unwrap_or(open.amount_ore);
+        // A claim is paid whole: settling it flips it to utbetalt.
+        ensure!(
+            open.expense_id.is_none() || amount == open.amount_ore,
+            "linje {}: et utleggskrav betales i sin helhet ({} øre)",
+            i + 1,
+            open.amount_ore
+        );
         ensure!(
             amount > 0 && amount <= open.amount_ore,
             "linje {}: beløpet må være 1..{} øre",
@@ -324,12 +398,16 @@ pub async fn create_run(
             .as_deref()
             .map(normalize_account_number)
             .filter(|k| is_valid_account_number(k))
-            .with_context(|| {
-                format!(
-                    "linje {}: leverandør {} mangler gyldig kontonummer",
+            .with_context(|| match &open.party_no {
+                Some(no) => format!(
+                    "linje {}: leverandør {no} mangler gyldig kontonummer",
+                    i + 1
+                ),
+                None => format!(
+                    "linje {}: {} mangler gyldig kontonummer i ansattregisteret",
                     i + 1,
-                    open.party_no
-                )
+                    open.party_name
+                ),
             })?;
         // The KID the supplier asked for, unless the caller gave one: a
         // payment without it is one the supplier has to match by hand.
@@ -346,14 +424,32 @@ pub async fn create_run(
                 i + 1
             );
         }
+        // The list above was read before this transaction. A claim paid by
+        // hand since then must not reach the bank file as well: lock it
+        // (pay_expense takes the same lock) and read its status again.
+        if let Some(expense_id) = item.expense_id {
+            let status: String = sqlx::query_scalar(
+                "select status from expense where id = $1 and company_id = $2 for update",
+            )
+            .bind(expense_id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            ensure!(
+                status == "godkjent",
+                "linje {}: utleggskravet er {status} i mellomtiden",
+                i + 1
+            );
+        }
         sqlx::query(
-            "insert into payment_run_item (id, run_id, entry_id, belop_ore,
+            "insert into payment_run_item (id, run_id, entry_id, expense_id, belop_ore,
                                            kreditor_navn, kreditor_konto, kid, melding)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)",
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(Uuid::now_v7())
         .bind(run_id)
         .bind(item.entry_id)
+        .bind(item.expense_id)
         .bind(amount)
         .bind(&open.party_name)
         .bind(&account)
@@ -524,11 +620,13 @@ pub async fn settle_run(
     );
 
     let items = sqlx::query(
-        "select i.id, i.entry_id, i.belop_ore, a.number as account_number, p.party_no
+        "select i.id, i.entry_id, i.expense_id, i.belop_ore,
+                coalesce(a.number, x.motkonto) as account_number, p.party_no
          from payment_run_item i
-         join entry e on e.id = i.entry_id
-         join account a on a.id = e.account_id
-         join party p on p.id = e.party_id
+         left join entry e on e.id = i.entry_id
+         left join account a on a.id = e.account_id
+         left join party p on p.id = e.party_id
+         left join expense x on x.id = i.expense_id
          where i.run_id = $1
          order by i.created_at, i.id",
     )
@@ -545,7 +643,7 @@ pub async fn settle_run(
             amount: Ore(r.get::<i64, _>("belop_ore")),
             vat_code: None,
             description: Some("Remittering".into()),
-            party_no: Some(r.get("party_no")),
+            party_no: r.get("party_no"),
             department: None,
             project: None,
             currency: None,
@@ -571,8 +669,28 @@ pub async fn settle_run(
     draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let posted = post_voucher_in(&mut tx, company_id, &draft, settled_by).await?;
 
-    // Match each debit line against its original open post.
+    // Match each supplier line against its original open post; mark each
+    // claim paid by this voucher.
     for (line_no, item) in items.iter().enumerate() {
+        if let Some(expense_id) = item.get::<Option<Uuid>, _>("expense_id") {
+            // `status = 'godkjent'`: a claim paid by hand since the list was
+            // made is not paid twice — the settlement fails instead.
+            let paid = sqlx::query(
+                "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
+                                    utbetalt_at = now()
+                 where id = $1 and status = 'godkjent'",
+            )
+            .bind(expense_id)
+            .bind(posted.id)
+            .execute(&mut *tx)
+            .await?;
+            ensure!(
+                paid.rows_affected() == 1,
+                "utleggskravet på linje {} er allerede utbetalt",
+                line_no + 1
+            );
+            continue;
+        }
         let debit_entry: Uuid =
             sqlx::query_scalar("select id from entry where voucher_id = $1 and line_no = $2")
                 .bind(posted.id)
@@ -585,7 +703,7 @@ pub async fn settle_run(
         )
         .bind(Uuid::now_v7())
         .bind(debit_entry)
-        .bind(item.get::<Uuid, _>("entry_id"))
+        .bind(item.get::<Option<Uuid>, _>("entry_id"))
         .bind(item.get::<i64, _>("belop_ore"))
         .bind(settled_by)
         .execute(&mut *tx)

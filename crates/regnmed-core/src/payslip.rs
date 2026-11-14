@@ -73,6 +73,10 @@ pub struct PayslipInput {
     pub withholding_method: Option<String>,
     /// December's half withholding was applied.
     pub half_withholding: bool,
+    /// Kjøregodtgjørelse within the trekkfri rate: paid with the pay but
+    /// not pay, so it sits between the trekk and the total. The taxable
+    /// excess is an ordinary line in `lines`.
+    pub tax_free_allowance_ore: i64,
     pub net_ore: i64,
     /// Feriepenger earned this month — money the employee has coming,
     /// not money paid now, so it is stated apart from the total.
@@ -213,6 +217,24 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly += 12.0;
     }
 
+    if input.tax_free_allowance_ore != 0 {
+        pdf.text(
+            MARGIN,
+            ly,
+            10.0,
+            Font::Regular,
+            "Trekkfri kjøregodtgjørelse",
+        );
+        pdf.text_right(
+            RIGHT,
+            ly,
+            10.0,
+            Font::Regular,
+            &kr(input.tax_free_allowance_ore),
+        );
+        ly += 14.0;
+    }
+
     ly += 6.0;
     pdf.rule(MARGIN, RIGHT, ly, 1.2);
     ly += 18.0;
@@ -292,6 +314,7 @@ mod tests {
             withholding_ore: 1_750_000,
             withholding_method: Some("35,00 %".into()),
             half_withholding: false,
+            tax_free_allowance_ore: 0,
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
             holiday_pay_bp: 1020,

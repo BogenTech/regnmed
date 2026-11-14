@@ -517,6 +517,98 @@ async fn rates(pool: &PgPool) -> Result<Vec<RatePeriod>> {
         .collect())
 }
 
+/// An approved kjøring claim a run pays, split the way the a-melding
+/// reports it.
+#[derive(Debug, Clone)]
+struct MileagePaid {
+    employee_id: Uuid,
+    expense_id: Uuid,
+    contra_account: String,
+    amount_ore: i64,
+    car: bool,
+    km: i64,
+    passenger_km: i64,
+    vehicle_tax_free_ore: i64,
+    passenger_tax_free_ore: i64,
+    taxable_ore: i64,
+}
+
+/// The employee's approved, unpaid kjøring claims dated on or before the
+/// payment date — the run pays them. Claims are filed by people, so an
+/// employee without a linked portal user has none.
+async fn mileage_claims(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    person_id: Option<Uuid>,
+    paid_date: NaiveDate,
+    rates: &[RatePeriod],
+) -> Result<Vec<MileagePaid>> {
+    let Some(person_id) = person_id else {
+        return Ok(Vec::new());
+    };
+    let rows = sqlx::query(
+        "select id, motkonto, belop_ore, vehicle, km, passengers, trekkfri_ore, trekkpliktig_ore,
+                dato
+         from expense
+         where company_id = $1 and person_id = $2 and kind = 'kjoring' and status = 'godkjent'
+           and dato <= $3
+         order by dato, id",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .bind(paid_date)
+    .fetch_all(pool)
+    .await?;
+    let (_, passenger_tax_free_domain) = regnmed_core::expenses::PASSENGER_RATE_DOMAINS;
+    rows.iter()
+        .map(|r| {
+            let date: NaiveDate = r.get("dato");
+            let km: i64 = r.get::<Option<i64>, _>("km").unwrap_or(0);
+            let tax_free: i64 = r.get::<Option<i64>, _>("trekkfri_ore").unwrap_or(0);
+            let taxable: i64 = r.get::<Option<i64>, _>("trekkpliktig_ore").unwrap_or(0);
+            let amount: i64 = r.get("belop_ore");
+            ensure!(
+                tax_free + taxable == amount,
+                "kjøregodtgjørelsen {} går ikke opp: trekkfri + trekkpliktig er ikke beløpet",
+                r.get::<Uuid, _>("id")
+            );
+            let passenger_km = km * r.get::<Vec<String>, _>("passengers").len() as i64;
+            // The claim stores the trekkfri total; the passenger share of it
+            // is the trekkfri supplement on the trip's date, which the
+            // append-only register still answers.
+            let passenger_tax_free = if passenger_km > 0 {
+                let rate = regnmed_core::rates::value_on(rates, passenger_tax_free_domain, date)
+                    .with_context(|| {
+                        format!(
+                            "ingen sats «{passenger_tax_free_domain}» for {date} i satsregisteret"
+                        )
+                    })?;
+                (passenger_km * rate).min(tax_free)
+            } else {
+                0
+            };
+            Ok(MileagePaid {
+                employee_id,
+                expense_id: r.get("id"),
+                contra_account: r
+                    .get::<Option<String>, _>("motkonto")
+                    .context("godkjent krav uten mellomregningskonto")?,
+                amount_ore: amount,
+                car: matches!(
+                    r.get::<Option<String>, _>("vehicle").as_deref(),
+                    None | Some("bil" | "bil_utslippsfri")
+                ),
+                km,
+                passenger_km,
+                vehicle_tax_free_ore: tax_free - passenger_tax_free,
+                passenger_tax_free_ore: passenger_tax_free,
+                taxable_ore: taxable,
+            })
+        })
+        .collect()
+}
+
 /// Runs payroll for one month and posts it as one voucher, in one
 /// transaction.
 ///
@@ -577,6 +669,7 @@ pub async fn run_payroll(
     let mut contribution_basis_ore = 0i64;
     let mut lines = Vec::new();
     let mut frikort_warnings = Vec::new();
+    let mut mileage = Vec::new();
 
     for post in poster {
         let employee = employees
@@ -668,12 +761,32 @@ pub async fn run_payroll(
             _ => 0,
         };
 
+        // Kjøregodtgjørelse is paid with pay: the excess over the trekkfri
+        // rate needs trekk, which only this run can take.
+        let claims = mileage_claims(
+            pool,
+            company_id,
+            employee.id,
+            employee.person_id,
+            paid_date,
+            &alle_satser,
+        )
+        .await?;
+        let taxable_allowance: i64 = claims.iter().map(|c| c.taxable_ore).sum();
+        let tax_free_allowance: i64 = claims
+            .iter()
+            .map(|c| c.vehicle_tax_free_ore + c.passenger_tax_free_ore)
+            .sum();
+        mileage.extend(claims);
+
         let calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
                 withholding: employee.withholding(),
                 paid_earlier_this_year_ore,
+                taxable_allowance_ore: taxable_allowance,
+                tax_free_allowance_ore: tax_free_allowance,
             },
             // Pay is taxed in the year it is paid, so December's pay paid
             // in January takes January's tables -- like the aga rate.
@@ -687,11 +800,12 @@ pub async fn run_payroll(
         let avsetning = payroll::holiday_pay_accrual(gross, employee.holiday_pay_bp as i64);
         // The avgift falls on what is actually paid out, and is computed
         // once on the run's whole basis below.
-        contribution_basis_ore += gross + post.holiday_pay_ore;
+        contribution_basis_ore += gross + post.holiday_pay_ore + taxable_allowance;
 
         sum.gross_ore += calculation.gross_ore;
         sum.holiday_pay_paid_ore += calculation.holiday_pay_ore;
         sum.withholding_ore += calculation.withholding_ore;
+        sum.allowance_ore += calculation.allowance_ore;
         sum.net_ore += calculation.net_ore;
         // The accrual on unpaid feriepenger is a TARGET, not an
         // increment: after the run, the employee's accrued aga should be
@@ -759,6 +873,28 @@ pub async fn run_payroll(
             amount: Ore(-sum.net_ore),
             vat_code: None,
             description: Some("Netto til utbetaling".into()),
+            party_no: None,
+            department: None,
+            project: None,
+            currency: None,
+        });
+    }
+
+    // The allowance was expensed when the claim was approved; paying it
+    // settles the debt to the employee on the account the approval
+    // credited.
+    let mut owed_by_account = std::collections::BTreeMap::<&str, i64>::new();
+    for m in &mileage {
+        *owed_by_account
+            .entry(m.contra_account.as_str())
+            .or_default() += m.amount_ore;
+    }
+    for (account, amount) in owed_by_account {
+        entries.push(EntryDraft {
+            account_number: account.to_string(),
+            amount: Ore(amount),
+            vat_code: None,
+            description: Some("Kjøregodtgjørelse utbetalt med lønn".into()),
             party_no: None,
             department: None,
             project: None,
@@ -922,8 +1058,9 @@ pub async fn run_payroll(
         "insert into payroll_run
              (id, company_id, ar, maned, utbetalt_dato, sone, brutto_ore,
               feriepenger_utbetalt_ore, forskuddstrekk_ore, netto_ore,
-              feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+              feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id, created_by,
+              allowance_ore)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
     )
     .bind(run_id)
     .bind(company_id)
@@ -940,6 +1077,7 @@ pub async fn run_payroll(
     .bind(sum.employer_contribution_holiday_pay_ore)
     .bind(posted.id)
     .bind(created_by)
+    .bind(sum.allowance_ore)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -959,8 +1097,8 @@ pub async fn run_payroll(
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
-                  pay_kind, withholding_method)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+                  pay_kind, withholding_method, allowance_ore, taxable_allowance_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
         )
         .bind(Uuid::new_v4())
         .bind(run_id)
@@ -975,15 +1113,56 @@ pub async fn run_payroll(
         // today, and NOT the claim -- the run's aga_ore is, computed once on
         // the summed basis, so these may sum to a few kroner less.
         .bind(
-            payroll::employer_contribution(b.gross_ore + b.holiday_pay_ore, zone, aga_bp)
-                .unwrap_or(0),
+            payroll::employer_contribution(
+                b.gross_ore + b.holiday_pay_ore + b.taxable_allowance_ore,
+                zone,
+                aga_bp,
+            )
+            .unwrap_or(0),
         )
         .bind(l.employer_contribution_holiday_pay_ore)
         .bind(b.half_withholding)
         .bind(l.pay_kind)
         .bind(&b.method)
+        .bind(b.allowance_ore)
+        .bind(b.taxable_allowance_ore)
         .execute(&mut *tx)
         .await?;
+    }
+    for m in &mileage {
+        sqlx::query(
+            "insert into payroll_expense
+                 (id, run_id, employee_id, expense_id, car, km, passenger_km,
+                  vehicle_tax_free_ore, passenger_tax_free_ore, taxable_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(run_id)
+        .bind(m.employee_id)
+        .bind(m.expense_id)
+        .bind(m.car)
+        .bind(m.km)
+        .bind(m.passenger_km)
+        .bind(m.vehicle_tax_free_ore)
+        .bind(m.passenger_tax_free_ore)
+        .bind(m.taxable_ore)
+        .execute(&mut *tx)
+        .await?;
+        // `status = 'godkjent'` in the WHERE: a claim paid some other way
+        // since it was read is not paid twice — the run fails instead.
+        let paid = sqlx::query(
+            "update expense set status = 'utbetalt', utbetalt_voucher_id = $2,
+                                utbetalt_at = now()
+             where id = $1 and status = 'godkjent'",
+        )
+        .bind(m.expense_id)
+        .bind(posted.id)
+        .execute(&mut *tx)
+        .await?;
+        ensure!(
+            paid.rows_affected() == 1,
+            "et kjøregodtgjørelseskrav ble utbetalt mens lønnen ble kjørt — kjør lønnen på nytt"
+        );
     }
     tx.commit().await?;
 
@@ -1056,7 +1235,7 @@ pub async fn list_kjoringer(
     let rows = sqlx::query(
         "select id, ar, maned, utbetalt_dato, sone, brutto_ore,
                 feriepenger_utbetalt_ore, forskuddstrekk_ore, netto_ore,
-                feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id
+                feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id, allowance_ore
          from payroll_run
          where company_id = $1 and ($2::int is null or ar = $2)
          order by ar desc, maned desc",
@@ -1077,6 +1256,7 @@ pub async fn list_kjoringer(
                 gross_ore: r.get("brutto_ore"),
                 holiday_pay_paid_ore: r.get("feriepenger_utbetalt_ore"),
                 withholding_ore: r.get("forskuddstrekk_ore"),
+                allowance_ore: r.get("allowance_ore"),
                 net_ore: r.get("netto_ore"),
                 holiday_pay_accrual_ore: r.get("feriepengeavsetning_ore"),
                 employer_contribution_ore: r.get("aga_ore"),
@@ -1141,7 +1321,7 @@ pub async fn payslip(
         "select r.ar, r.maned, r.utbetalt_dato,
                 l.brutto_ore, l.feriepenger_ore, l.trekkgrunnlag_ore,
                 l.forskuddstrekk_ore, l.netto_ore, l.feriepengeavsetning_ore,
-                l.halv_trekk, l.withholding_method,
+                l.halv_trekk, l.withholding_method, l.allowance_ore, l.taxable_allowance_ore,
                 e.navn, e.stilling, e.fodselsnummer, e.trekk_type,
                 e.trekk_prosent_bp, e.feriepenger_bp,
                 c.name as selskap, c.orgnr, c.address
@@ -1164,7 +1344,7 @@ pub async fn payslip(
 
     // Year to date, through this run.
     let year_to_date = sqlx::query(
-        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint as brutto,
+        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore + l.taxable_allowance_ore), 0)::bigint as brutto,
                 coalesce(sum(l.forskuddstrekk_ore), 0)::bigint as trekk,
                 coalesce(sum(l.feriepengeavsetning_ore), 0)::bigint as feriepenger
          from payroll_line l
@@ -1189,6 +1369,13 @@ pub async fn payslip(
             amount_ore: holiday_pay,
         });
     }
+    let taxable_allowance: i64 = row.get("taxable_allowance_ore");
+    if taxable_allowance != 0 {
+        lines.push(PayslipLine {
+            text: "Kjøregodtgjørelse over trekkfri sats".into(),
+            amount_ore: taxable_allowance,
+        });
+    }
 
     Ok(PayslipInput {
         employer_name: row.get("selskap"),
@@ -1206,11 +1393,12 @@ pub async fn payslip(
         month: row.get::<i32, _>("maned") as u32,
         paid_date: row.get("utbetalt_dato"),
         lines,
-        gross_ore: gross + holiday_pay,
+        gross_ore: gross + holiday_pay + taxable_allowance,
         withholding_basis_ore: row.get("trekkgrunnlag_ore"),
         withholding_ore: row.get("forskuddstrekk_ore"),
         withholding_method: row.get("withholding_method"),
         half_withholding: row.get("halv_trekk"),
+        tax_free_allowance_ore: row.get::<i64, _>("allowance_ore") - taxable_allowance,
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
         holiday_pay_bp: row.get::<i32, _>("feriepenger_bp") as i64,
@@ -1606,6 +1794,7 @@ pub async fn amelding_for_run(
                 amount_ore: holiday_pay,
             });
         }
+        income.extend(mileage_income(pool, run_id, employee, &mut hindrances).await?);
         recipients.push(Recipient {
             name: employee.name.clone(),
             nin: nins.get(&employee_id).cloned().unwrap_or_default(),
@@ -1650,6 +1839,80 @@ pub async fn amelding_for_run(
         },
         hindrances,
     })
+}
+
+/// The kjøregodtgjørelse a run paid one employee, as a-melding inntekter:
+/// per code, the amount and the kilometres it was paid for.
+async fn mileage_income(
+    pool: &PgPool,
+    run_id: Uuid,
+    employee: &Employee,
+    hindrances: &mut Vec<String>,
+) -> Result<Vec<regnmed_core::amelding::Income>> {
+    use regnmed_core::amelding::{Income, IncomeKind};
+    let rows = sqlx::query(
+        "select car, km, passenger_km, vehicle_tax_free_ore, passenger_tax_free_ore, taxable_ore
+         from payroll_expense where run_id = $1 and employee_id = $2",
+    )
+    .bind(run_id)
+    .bind(employee.id)
+    .fetch_all(pool)
+    .await?;
+    // (amount, km) per code.
+    let (mut car, mut car_taxable, mut passenger, mut other) = ((0, 0), (0, 0), (0, 0), (0, 0));
+    for r in &rows {
+        let km: i64 = r.get("km");
+        let tax_free: i64 = r.get("vehicle_tax_free_ore");
+        let taxable: i64 = r.get("taxable_ore");
+        if r.get::<bool, _>("car") {
+            car.0 += tax_free;
+            car.1 += km;
+            if taxable > 0 {
+                car_taxable.0 += taxable;
+                car_taxable.1 += km;
+            }
+        } else {
+            other.0 += tax_free;
+            other.1 += km;
+            if taxable > 0 {
+                // Combination 153 is for a car only; the 2026 rates for the
+                // other vehicles have no excess, so this needs a rate the
+                // register does not hold today.
+                hindrances.push(format!(
+                    "{}: trekkpliktig kjøregodtgjørelse for andre fremkomstmidler enn bil har \
+                     ingen inntektskombinasjon regnmed kjenner — meld den særskilt",
+                    employee.name
+                ));
+            }
+        }
+        let passenger_tax_free: i64 = r.get("passenger_tax_free_ore");
+        if passenger_tax_free > 0 {
+            passenger.0 += passenger_tax_free;
+            passenger.1 += r.get::<i64, _>("passenger_km");
+        }
+    }
+    Ok([
+        (
+            car,
+            IncomeKind::MileageCar {
+                km: car.1,
+                taxable: false,
+            },
+        ),
+        (
+            car_taxable,
+            IncomeKind::MileageCar {
+                km: car_taxable.1,
+                taxable: true,
+            },
+        ),
+        (passenger, IncomeKind::MileagePassenger { km: passenger.1 }),
+        (other, IncomeKind::MileageOtherVehicle { km: other.1 }),
+    ]
+    .into_iter()
+    .filter(|((amount, _), _)| *amount > 0)
+    .map(|((amount_ore, _), kind)| Income { kind, amount_ore })
+    .collect())
 }
 
 /// The a-melding for a month WITHOUT a payroll run (docs/lonn.md, F108):
@@ -1846,7 +2109,7 @@ async fn paid_this_year(
     year: i32,
 ) -> Result<i64> {
     Ok(sqlx::query_scalar(
-        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore), 0)::bigint
+        "select coalesce(sum(l.brutto_ore + l.feriepenger_ore + l.taxable_allowance_ore), 0)::bigint
            from payroll_line l join payroll_run r on r.id = l.run_id
           where r.company_id = $1 and l.employee_id = $2
             and extract(year from r.utbetalt_dato) = $3",

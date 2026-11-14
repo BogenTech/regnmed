@@ -145,14 +145,33 @@ impl std::fmt::Display for AmeldingError {
 
 impl std::error::Error for AmeldingError {}
 
-/// The loennsinntekt descriptions this renderer reports. All three are
-/// combination 111 in the inntektskombinasjoner: kontantytelse, triggers
-/// arbeidsgiveravgift, part of the trekkgrunnlag.
+/// The loennsinntekt descriptions this renderer reports, each with the
+/// flags its combination in Skatteetaten's inntektskombinasjoner (R1 2026)
+/// fixes. Pay is combination 111: kontantytelse, triggers
+/// arbeidsgiveravgift, part of the trekkgrunnlag. Kjøregodtgjørelse is
+/// utgiftsgodtgjoerelse with the kilometres as `antall`: 711 for the part
+/// within the trekkfri rate, 153 for the excess (trekkpliktig, with
+/// avgift), 714 for the passenger supplement and other vehicles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncomeKind {
     FixedSalary,
     HourlyWage,
     HolidayPay,
+    /// Kilometergodtgjørelse bil; `taxable` is the part above the
+    /// trekkfri rate.
+    MileageCar {
+        km: i64,
+        taxable: bool,
+    },
+    /// Passasjertillegg; the kilometres are passenger-kilometres (each
+    /// passenger counts every km), which is what the supplement is paid on.
+    MileagePassenger {
+        km: i64,
+    },
+    /// Motorcycle, moped, snowmobile, boat.
+    MileageOtherVehicle {
+        km: i64,
+    },
 }
 
 impl IncomeKind {
@@ -161,6 +180,35 @@ impl IncomeKind {
             Self::FixedSalary => "fastloenn",
             Self::HourlyWage => "timeloenn",
             Self::HolidayPay => "feriepenger",
+            Self::MileageCar { .. } => "kilometergodtgjoerelseBil",
+            Self::MileagePassenger { .. } => "kilometergodtgjoerelsePassasjertillegg",
+            Self::MileageOtherVehicle { .. } => "kilometergodtgjoerelseAndreFremkomstmidler",
+        }
+    }
+
+    fn benefit(self) -> &'static str {
+        match self {
+            Self::FixedSalary | Self::HourlyWage | Self::HolidayPay => "kontantytelse",
+            _ => "utgiftsgodtgjoerelse",
+        }
+    }
+
+    /// Pay and the taxable mileage excess trigger avgift and are part of
+    /// the trekkgrunnlag; the trekkfri allowances are neither.
+    fn is_pay(self) -> bool {
+        match self {
+            Self::FixedSalary | Self::HourlyWage | Self::HolidayPay => true,
+            Self::MileageCar { taxable, .. } => taxable,
+            Self::MileagePassenger { .. } | Self::MileageOtherVehicle { .. } => false,
+        }
+    }
+
+    fn km(self) -> Option<i64> {
+        match self {
+            Self::MileageCar { km, .. }
+            | Self::MileagePassenger { km }
+            | Self::MileageOtherVehicle { km } => Some(km),
+            _ => None,
         }
     }
 }
@@ -540,6 +588,7 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
         .recipients
         .iter()
         .flat_map(|r| &r.income)
+        .filter(|i| i.kind.is_pay())
         .map(|i| i.amount_ore)
         .sum();
     let computed_ore =
@@ -577,7 +626,7 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
     for r in &m.recipients {
         recipient(&mut x, r)?;
     }
-    // F184: every inntekt here triggers avgift, so the basis is their sum.
+    // F184: the basis is the sum of the inntekter that trigger avgift.
     // A melding without any inntekt has no grunnlag to report.
     if basis_ore != 0 {
         x.open("arbeidsgiveravgift");
@@ -665,12 +714,15 @@ fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
     }
     for i in r.income.iter().filter(|i| i.amount_ore != 0) {
         x.open("inntekt");
-        x.leaf("fordel", "kontantytelse");
-        x.boolean("utloeserArbeidsgiveravgift", true);
-        x.boolean("inngaarIGrunnlagForTrekk", true);
+        x.leaf("fordel", i.kind.benefit());
+        x.boolean("utloeserArbeidsgiveravgift", i.kind.is_pay());
+        x.boolean("inngaarIGrunnlagForTrekk", i.kind.is_pay());
         x.leaf("beloep", &decimal(i.amount_ore));
         x.open("loennsinntekt");
         x.leaf("beskrivelse", i.kind.code());
+        if let Some(km) = i.kind.km() {
+            x.leaf("antall", &decimal(km * 100));
+        }
         x.close("loennsinntekt");
         x.close("inntekt");
     }
@@ -795,6 +847,71 @@ mod tests {
         assert!(xml.contains("<sumArbeidsgiveravgift>7473</sumArbeidsgiveravgift>"));
         assert!(xml.contains("<stillingsprosent>100.00</stillingsprosent>"));
         assert!(xml.contains("<beskrivelse>feriepenger</beskrivelse>"));
+    }
+
+    /// Kjøregodtgjørelse: the trekkfri part and the passenger supplement
+    /// are reimbursements (no avgift, no trekk), the excess over the
+    /// trekkfri rate is pay — and only it joins the avgiftsgrunnlag.
+    /// Every line carries the kilometres as `antall`.
+    #[test]
+    fn mileage_is_reported_by_part_with_its_kilometres() {
+        let mut m = melding();
+        // 120 km, 2026: 5,30 kr paid, 3,50 kr trekkfri; one passenger.
+        m.recipients[0].income.extend([
+            Income {
+                kind: IncomeKind::MileageCar {
+                    km: 120,
+                    taxable: false,
+                },
+                amount_ore: 42_000,
+            },
+            Income {
+                kind: IncomeKind::MileageCar {
+                    km: 120,
+                    taxable: true,
+                },
+                amount_ore: 21_600,
+            },
+            Income {
+                kind: IncomeKind::MileagePassenger { km: 120 },
+                amount_ore: 12_000,
+            },
+            Income {
+                kind: IncomeKind::MileageOtherVehicle { km: 40 },
+                amount_ore: 8_000,
+            },
+        ]);
+        // 53 000 + 216 kr = 53 216 kr × 14,1 % = 7 503,456 → 7 503 kr.
+        m.employer_contribution_ore = 750_300;
+        let xml = render(&m).unwrap();
+        assert!(xml.contains("<avgiftsgrunnlagBeloep>53216.00</avgiftsgrunnlagBeloep>"));
+        assert_eq!(
+            xml.matches("<fordel>utgiftsgodtgjoerelse</fordel>").count(),
+            4
+        );
+        assert_eq!(
+            xml.matches("<beskrivelse>kilometergodtgjoerelseBil</beskrivelse>")
+                .count(),
+            2
+        );
+        assert!(xml.contains("<antall>120.00</antall>"));
+        assert!(xml.contains("<antall>40.00</antall>"));
+        // Pay, holiday pay and the taxable excess trigger avgift; the
+        // three reimbursements do not.
+        assert_eq!(
+            xml.matches("<utloeserArbeidsgiveravgift>true</utloeserArbeidsgiveravgift>")
+                .count(),
+            3
+        );
+        validate(&xml, "mileage");
+
+        // Counting a reimbursement into the basis is the mistake F185
+        // exists to catch: the booked avgift no longer matches.
+        m.employer_contribution_ore = 760_400;
+        assert!(matches!(
+            render(&m),
+            Err(AmeldingError::ContributionMismatch { .. })
+        ));
     }
 
     #[test]

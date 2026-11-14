@@ -66,6 +66,24 @@ pub struct CreateInvoiceRequest {
     /// transaction as the invoice — one invoice can carry products and
     /// hours. Requires TIMER_FAKTURER in addition to FAKTURA_SKRIV.
     timer_entry_ids: Option<Vec<Uuid>>,
+    /// Billable expense claims to rebill (docs/utlegg.md
+    /// «Viderefakturering»), each as `resale` (cost + output VAT) or
+    /// `disbursement` (outside the VAT base). Requires UTLEGG_LES_ALLE in
+    /// addition to FAKTURA_SKRIV.
+    expenses: Option<Vec<RebillRequest>>,
+}
+
+#[derive(Deserialize)]
+pub struct RebillRequest {
+    expense_id: Uuid,
+    treatment: RebillTreatment,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RebillTreatment {
+    Resale,
+    Disbursement,
 }
 
 fn issued_json(issued: &regnmed_db::IssuedInvoice) -> serde_json::Value {
@@ -88,11 +106,27 @@ pub async fn create_invoice(
     Json(request): Json<CreateInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InvoiceWrite).await?;
-    let timer = request.timer_entry_ids.filter(|ids| !ids.is_empty());
-    if timer.is_some() {
+    let timer = request.timer_entry_ids.unwrap_or_default();
+    if !timer.is_empty() {
         // Hours on the invoice lock other people's entries — that is the
         // biller's action, not any invoice writer's.
         require(&state, person.person_id, company_id, Right::TimesheetBill).await?;
+    }
+    let rebill: Vec<regnmed_db::Rebill> = request
+        .expenses
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| regnmed_db::Rebill {
+            expense_id: e.expense_id,
+            treatment: match e.treatment {
+                RebillTreatment::Resale => regnmed_db::RebillAs::Resale,
+                RebillTreatment::Disbursement => regnmed_db::RebillAs::Disbursement,
+            },
+        })
+        .collect();
+    if !rebill.is_empty() {
+        // Someone else's claims: whoever bills them must be able to see them.
+        require(&state, person.person_id, company_id, Right::ExpenseReadAll).await?;
     }
 
     let cash = request.cash_payment_method.filter(|s| !s.trim().is_empty());
@@ -122,6 +156,11 @@ pub async fn create_invoice(
     // caller might skip and leave a "paid" document with an open item
     // behind it.
     if let Some(middel) = cash {
+        if !timer.is_empty() || !rebill.is_empty() {
+            return Err(ApiError::BadRequest(
+                "timer og utlegg faktureres på en vanlig faktura, ikke på kontantsalg".into(),
+            ));
+        }
         let account = settlement_account.ok_or_else(|| {
             ApiError::BadRequest(
                 "kontantsalg må si hvor pengene havnet (oppgjorskonto, f.eks. 1900 eller 1920)"
@@ -141,19 +180,19 @@ pub async fn create_invoice(
         return Ok(Json(issued_json(&issued)));
     }
 
-    let issued = match timer {
-        Some(entry_ids) => {
-            regnmed_db::create_invoice_with_hours(
-                &state.pool,
-                company_id,
-                &draft,
-                &entry_ids,
-                None,
-                created_by,
-            )
-            .await
-        }
-        None => regnmed_db::create_invoice(&state.pool, company_id, &draft, created_by, None).await,
+    let issued = if timer.is_empty() && rebill.is_empty() {
+        regnmed_db::create_invoice(&state.pool, company_id, &draft, created_by, None).await
+    } else {
+        regnmed_db::create_invoice_with_billables(
+            &state.pool,
+            company_id,
+            &draft,
+            &timer,
+            &rebill,
+            None,
+            created_by,
+        )
+        .await
     }
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(issued_json(&issued)))

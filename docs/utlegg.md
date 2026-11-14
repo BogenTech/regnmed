@@ -115,14 +115,9 @@ avvises høyt, aldri gjettet. Ren beregning i
 - trekkfri del = km × trekkfri sats (aldri over beløpet)
 - **trekkpliktig del** = differansen (2026: 1,80 kr/km)
 
-Den trekkpliktige delen skal lønnsinnberettes. A-meldingen (#46)
-finnes nå, men tar ennå IKKE med kjøregodtgjørelse fra utleggene, så
-delen **varsles tydelig** — i skjemaet før innsending (beløpet regnes
-med satsen fra `GET …/expenses/kjoring?dato=`), på kravet og i
-godkjenningssvaret — med beskjed om at den må meldes særskilt. Aldri
-skjult, aldri halvhåndtert.
 Godkjenning posterer hele beløpet (debet 7100 bilgodtgjørelse som
-standard) mot mellomregning; bilagslinjen bærer km og sats.
+standard) mot mellomregning; bilagslinjen bærer km og sats. Utbetalingen
+går med lønnen — se «Utbetaling».
 
 ### Turen: strekning, kjøretøy, passasjerer
 
@@ -195,12 +190,101 @@ utkastene på den.
 
 ## Utbetaling
 
-`POST …/expenses/{id}/pay`: debet mellomregningskontoen fra
-godkjenningen, kredit bank (1920 som standard) — én transaksjon med
-statusovergangen. Når remittering (#33) kommer, mater godkjente krav
-betalingslisten i stedet for et manuelt klikk; bankavstemmingen
-matcher utbetalingsbilaget mot kontoutskriften som ethvert annet
-bilag.
+Tre veier ut, valgt av hva kravet er — aldri av hva som er lettest:
+
+**Kjøregodtgjørelse til en ansatt utbetales med lønnen.** Delen over
+den trekkfrie satsen er trekkpliktig og utløser arbeidsgiveravgift, og
+bare en lønnskjøring kan trekke skatt. Begge delene skal i a-meldingen
+for måneden de utbetales (Skatteetatens veiledning, «Trekkfri
+bilgodtgjørelse» og «Trekkpliktig bilgodtgjørelse»). Lønnskjøringen
+(`payroll::run_payroll`) tar derfor med den ansattes godkjente,
+ubetalte kjøringer datert til og med utbetalingsdatoen:
+
+- den trekkpliktige delen går inn i trekkgrunnlaget og
+  avgiftsgrunnlaget, men gir ikke feriepenger;
+- den trekkfrie delen og passasjertillegget går bare til netto;
+- bilaget debiterer mellomregningen godkjenningen krediterte, så
+  gjelden til den ansatte går i null;
+- kravene settes `utbetalt` med lønnsbilaget, i samme transaksjon;
+- `payroll_expense` (migrasjon 0086) lagrer hvordan hvert krav ble
+  delt — et øyeblikksbilde, så a-meldingen kan bygges fra kjøringen
+  for alltid. Et krav kan bare betales av én kjøring (unik nøkkel).
+
+I a-meldingen (`regnmed-core::amelding::IncomeKind`, kodene sjekket mot
+Skatteetatens inntektskombinasjoner R1 2026), alle som
+`utgiftsgodtgjoerelse` med kilometerne som `antall`:
+
+| Del | Beskrivelse | Kombinasjon | Aga | Trekk |
+| --- | --- | --- | --- | --- |
+| trekkfri, bil | `kilometergodtgjoerelseBil` | 711 | nei | nei |
+| over trekkfri sats, bil | `kilometergodtgjoerelseBil` | 153 | ja | ja |
+| passasjertillegg | `kilometergodtgjoerelsePassasjertillegg` | 714 | nei | nei |
+| andre kjøretøy | `kilometergodtgjoerelseAndreFremkomstmidler` | 714 | nei | nei |
+
+Passasjertillegget meldes med passasjerkilometer (km × passasjerer),
+som er det tillegget betales per. Det er vår lesning — veiledningen
+sier bare «antall kilometer». Andre kjøretøy har ingen trekkpliktig
+kombinasjon; 2026-satsene gir heller ingen overskytende del, og skulle
+de gjøre det, nekter a-meldingen med beskjed om å melde det særskilt.
+
+Lønnsslippen viser den trekkpliktige delen som en lønnslinje og den
+trekkfrie mellom trekket og «Til utbetaling». En kjøring til en ansatt
+i et løpende arbeidsforhold kan ikke betales manuelt (`pay` nekter). En
+person som ikke er ansatt — eller ikke lenger er det, så ingen kjøring
+kan ta med vedkommende — har ikke noe arbeidsforhold regnmed kan melde;
+godkjenningen sier det høyt, og kravet betales da manuelt og meldes
+særskilt.
+
+**Utlegg (kvitteringer) går i betalingslisten** (docs/betaling.md)
+sammen med leverandørene, til kontonummeret i ansattregisteret — det
+eneste stedet regnmed har en persons kontonummer. Et krav betales i sin
+helhet. Mens det ligger i en liste som ikke er betalt, kan det verken
+betales manuelt eller legges i en ny liste, og når listen registreres
+betalt settes kravet `utbetalt` med utbetalingsbilaget.
+
+**Manuelt:** `POST …/expenses/{id}/pay` — debet mellomregningskontoen
+fra godkjenningen, kredit bank (1920 som standard), én transaksjon med
+statusovergangen. Bankavstemmingen matcher utbetalingsbilaget mot
+kontoutskriften som ethvert annet bilag.
+
+## Viderefakturering
+
+Et godkjent krav merket «viderefaktureres» (det krever prosjekt) tas med
+på en faktura til kunden — samme skjema som ufakturerte timer, og
+prosjektets kunde (docs/dimensjoner.md) er forslaget, aldri en regel.
+`POST …/invoices` tar `expenses: [{expense_id, treatment}]`, og kravene
+låses av fakturaen i samme transaksjon (`expense_invoice`, migrasjon
+0086; primærnøkkelen gjør en ny viderefakturering umulig). Det krever
+`UTLEGG_LES_ALLE` i tillegg til `FAKTURA_SKRIV`.
+
+- **`resale` — videresalg.** Kostnaden er selskapets, og å fakturere
+  den er et salg: linjen er kostnaden godkjenningen bokførte (etter
+  fradrag for inngående mva), på 3000 med kode 3 (25 %) som timene. Et
+  selskap som ikke er mva-registrert på fakturadatoen får kode 7 og
+  ingen mva (mval. § 15-11; samme regel som andre avledede linjer,
+  `settings`). Kjøregodtgjørelse kan bare viderefaktureres slik.
+- **`disbursement` — utlegg.** Kjøp gjort i kundens navn og for kundens
+  regning holdes utenfor beregningsgrunnlaget (mval. § 4-1 annet ledd
+  bokstav a): ingen påslag, og det føres som utlegg, ikke som kostnad.
+  regnmed tillater det derfor bare for et krav som ble godkjent UTEN
+  fradrag for inngående mva og på en balansekonto (klasse 1, f.eks.
+  1579). Fakturalinjen krediterer den kontoen uten mva-kode, så den
+  går i null. Er kravet bokført som kostnad eller med mva-fradrag,
+  nekter regnmed og ber om videresalg. Kunden skal ha originalbilaget;
+  det sendes ikke med fakturaen automatisk ennå.
+
+`GET …/expenses/billable` lister godkjente krav som venter, med kostnaden
+et videresalg fakturerer og om kravet kan gå som utlegg.
+
+Kjente begrensninger:
+
+- **EHF:** en utleggslinje har ingen mva-kode, og EHF-renderen gjør en
+  linje uten kode til kategori Z (nullsats). Riktig PEPPOL-kategori for
+  et utlegg utenfor grunnlaget er ikke avklart, så regnmed gjetter
+  ikke; PDF-en og posteringen er riktige.
+- **Kreditnota frigjør ikke kravet.** Krediteres fakturaen, står kravet
+  fortsatt som viderefakturert — som timer som er fakturert. En ny
+  faktura må da lages med vanlige linjer.
 
 Selvgodkjenning er tillatt som standard — et enkeltpersonforetak må
 kunne gjøre alt. Slår selskapet på attestering (docs/attestering.md,
@@ -262,7 +346,8 @@ attestering er på).
 
 Bevisst utenfor så langt: diett/per-diem-satser, reise som samling av
 krav, KI-lesing av kvitteringen (agent-fasen), mva fordelt på flere satser
-per kvittering, a-melding for godtgjørelsene og betalingslisten.
+per kvittering, utlegg (kvitteringer) utbetalt med lønnen, og
+originalbilaget sendt med fakturaen ved viderefakturering som utlegg.
 
 ## Where it is tested
 
@@ -290,6 +375,28 @@ per kvittering, a-melding for godtgjørelsene og betalingslisten.
   som feiler gir en advarsel, ikke en feil.
 - `regnmed-core/src/expenses.rs` — passasjertillegg på begge sider,
   kjøretøy → satsdomener.
+- `crates/regnmed-db/tests/payroll.rs::mileage_is_paid_with_pay_and_reported_by_part`
+  — to kjøringer (én med passasjer) i marslønnen: trekk av 35 % på
+  lønn + overskytende del, aga på det samme og ikke på refusjonen (sett
+  feile), 2910 i null, kravene `utbetalt`, en kjøring datert etter
+  utbetalingsdatoen venter til april, manuell utbetaling nektet, og
+  a-meldingens fire inntekter med kilometer; etter at arbeidsforholdet
+  er avsluttet betales et nytt krav manuelt.
+- `regnmed-core/src/amelding.rs::mileage_is_reported_by_part_with_its_kilometres`
+  — kodene, flaggene og `antall` validert mot XSD-en; en refusjon i
+  avgiftsgrunnlaget gir F185-avvik (sett feile).
+- `regnmed-core/src/payroll.rs::the_taxable_allowance_is_withheld_and_the_rest_only_paid`
+  — trekk på den trekkpliktige delen også uten lønn.
+- `crates/regnmed-api/tests/grupper/payments.rs::receipt_claims_are_paid_from_the_payment_list`
+  — uten ansattkonto nektet, delbeløp nektet, i liste = ikke manuelt og
+  ikke i ny liste (sett feile), pain.001 til ansattkontoen, oppgjøret
+  setter kravet utbetalt og 2910 i null.
+- `crates/regnmed-api/tests/grupper/expenses.rs::billable_claims_are_rebilled_once`
+  — videresalg av hotell netto etter mva-fradrag og kjøring, utlegg på
+  1579 uten mva (1579 i null), utlegg nektet for et krav med
+  mva-fradrag, prosjektets kunde som forslag, bare én gang (sett
+  feile), og uten mva (kode 7) etter at selskapet er ute av
+  mva-registeret (sett feile).
 
 - `regnmed-core/src/expenses.rs` — split trekkfri/trekkpliktig,
   historisk sats-invertering, null-tilfeller.

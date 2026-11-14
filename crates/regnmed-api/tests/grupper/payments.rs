@@ -512,3 +512,211 @@ async fn betalingsliste_pain001_and_settlement() {
         .unwrap();
     assert_eq!(report.vouchers_checked, 5);
 }
+
+/// Approved receipt claims are paid from the same list (docs/utlegg.md
+/// «Utbetaling»): to the account in the employee register, whole, and
+/// settling the list marks the claim paid and clears 2910. While a claim
+/// is on its way to the bank it cannot also be paid by hand.
+#[tokio::test]
+async fn receipt_claims_are_paid_from_the_payment_list() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Utlegg"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Utlegg AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [
+        ("2910", "Gjeld til ansatte"),
+        ("6800", "Kontorrekvisita"),
+        ("1920", "Bank"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    sqlx::query("update company set bank_account = '8601.11.17947' where id = $1")
+        .bind(company)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let date = |m, d| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap();
+    let claim = regnmed_db::create_expense(
+        &state.pool,
+        company,
+        person,
+        date(7, 3),
+        "Skrivere",
+        349_00,
+        "kvittering.txt",
+        "text/plain",
+        format!("kvittering {}", Uuid::new_v4()).as_bytes(),
+        "Kari Utlegg",
+    )
+    .await
+    .unwrap();
+    regnmed_db::approve_expense(
+        &state.pool,
+        company,
+        claim,
+        "6800",
+        None,
+        "2710",
+        "2910",
+        "Kari Utlegg",
+        person,
+    )
+    .await
+    .unwrap();
+    let token = idp.token(&sub, "Kari Utlegg");
+    let base = format!("/companies/{company}/payments");
+
+    // Listed, but without an employee record there is no account to pay.
+    let (status, payable) = request(&state, "GET", &format!("{base}/payable"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "body: {payable}");
+    let item = |payable: &serde_json::Value| {
+        payable["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["expense_id"] == claim.to_string())
+            .cloned()
+            .unwrap()
+    };
+    assert!(item(&payable)["bank_account"].is_null());
+    assert!(item(&payable)["entry_id"].is_null());
+    assert_eq!(item(&payable)["belop_ore"], 349_00);
+    let make = |body: serde_json::Value| {
+        let state = &state;
+        let token = &token;
+        let base = &base;
+        async move {
+            request(
+                state,
+                "POST",
+                &format!("{base}/runs"),
+                token,
+                Some(body.to_string()),
+            )
+            .await
+        }
+    };
+    let (status, refused) = make(serde_json::json!({ "items": [{ "expense_id": claim }] })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.to_string().contains("ansattregisteret"),
+        "{refused}"
+    );
+
+    // The employee register holds the account.
+    let employee = regnmed_db::payroll::create_employee(
+        &state.pool,
+        company,
+        &regnmed_db::payroll::NewEmployee {
+            nin: "26829398612".into(),
+            name: "Kari Utlegg".into(),
+            stilling: None,
+            employed_from: date(1, 1),
+            monthly_salary_ore: None,
+            hourly_wage_ore: None,
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3000),
+            withholding_table: None,
+            holiday_pay_bp: 1020,
+            bank_account: Some("86011117947".into()),
+            note: None,
+            details: Default::default(),
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    sqlx::query("update employee set person_id = $2 where id = $1")
+        .bind(employee)
+        .bind(person)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+    // Paid whole, never in part; neither key or both is refused.
+    let (status, _) =
+        make(serde_json::json!({ "items": [{ "expense_id": claim, "belop_ore": 100_00 }] })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a claim is paid whole");
+    let (status, _) = make(serde_json::json!({ "items": [{}] })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, made) = make(serde_json::json!({ "items": [{ "expense_id": claim }] })).await;
+    assert_eq!(status, StatusCode::OK, "body: {made}");
+    let run = made["run_id"].as_str().unwrap().to_string();
+
+    // On its way to the bank: not payable by hand, not in a second list.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/expenses/{claim}/pay"),
+        &token,
+        Some("{}".to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = make(serde_json::json!({ "items": [{ "expense_id": claim }] })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, approved) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs/{run}/approve"),
+        &token,
+        Some("{}".into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {approved}");
+    let (status, file) = body_text(&state, &format!("{base}/runs/{run}/file"), &token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        file.contains("86011117947"),
+        "paid to the employee's account: {file}"
+    );
+    assert!(file.contains("Kari Utlegg"));
+
+    let (status, settled) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs/{run}/settle"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-07-10", "bank_konto": "1920" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {settled}");
+    assert_eq!(
+        balance(&state, company, "2910").await,
+        0,
+        "the debt is settled"
+    );
+    assert_eq!(balance(&state, company, "1920").await, -349_00);
+    let status: String = sqlx::query_scalar("select status from expense where id = $1")
+        .bind(claim)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "utbetalt");
+    let (_, payable) = request(&state, "GET", &format!("{base}/payable"), &token, None).await;
+    assert!(
+        !payable["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["expense_id"] == claim.to_string()),
+        "a paid claim is no longer payable"
+    );
+}

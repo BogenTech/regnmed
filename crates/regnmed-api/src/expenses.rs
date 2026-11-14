@@ -207,6 +207,9 @@ fn expense_json(e: &regnmed_db::ExpenseRow) -> serde_json::Value {
         "passengers": e.passengers,
         "passenger_rate_ore_per_km": e.passenger_rate_ore_per_km,
         "trip_expense_id": e.trip_expense_id,
+        "paid_by": e.paid_by,
+        "rebilled_invoice_id": e.rebilled_invoice_id,
+        "rebilled_as": e.rebilled_as,
     })
 }
 
@@ -775,6 +778,32 @@ pub async fn claimants(
             .filter(|m| seen.insert(m.person_id))
             .map(|m| json!({ "person_id": m.person_id, "name": m.name }))
             .collect::<Vec<_>>(),
+    })))
+}
+
+/// Approved billable claims not yet rebilled — what the new-invoice form
+/// offers next to the unbilled hours (docs/utlegg.md «Viderefakturering»).
+pub async fn billable(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::ExpenseReadAll).await?;
+    let claims = regnmed_db::billable_expenses(&state.pool, company_id).await?;
+    Ok(Json(json!({
+        "expenses": claims.iter().map(|c| json!({
+            "expense_id": c.expense_id,
+            "kind": c.kind,
+            "date": c.date.to_string(),
+            "description": c.description,
+            "claimant": c.claimant,
+            "amount_ore": c.amount_ore,
+            "cost_ore": c.cost_ore,
+            "project": c.project,
+            "party_no": c.party_no,
+            "party_name": c.party_name,
+            "can_disburse": c.can_disburse,
+        })).collect::<Vec<_>>(),
     })))
 }
 
