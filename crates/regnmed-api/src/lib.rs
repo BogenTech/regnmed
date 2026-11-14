@@ -566,7 +566,34 @@ pub fn router(state: AppState) -> Router {
             "/companies/{company_id}/currency/regulate",
             axum::routing::post(currency::regulate),
         )
-        .route("/companies/{company_id}/expenses", get(expenses::list))
+        .route(
+            "/companies/{company_id}/expenses",
+            get(expenses::list).post(expenses::create_draft),
+        )
+        .route(
+            "/companies/{company_id}/expenses/receipts",
+            axum::routing::post(expenses::create_receipt_draft),
+        )
+        .route(
+            "/companies/{company_id}/expenses/claimants",
+            get(expenses::claimants),
+        )
+        .route(
+            "/companies/{company_id}/expenses/addresses",
+            get(expenses::addresses),
+        )
+        .route(
+            "/companies/{company_id}/expenses/route",
+            get(expenses::route),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/submit",
+            axum::routing::post(expenses::submit),
+        )
+        .route(
+            "/companies/{company_id}/expenses/{expense_id}/discard",
+            axum::routing::post(expenses::discard),
+        )
         .route(
             "/companies/{company_id}/expenses/utlegg",
             axum::routing::post(expenses::create_expense),
@@ -577,11 +604,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/expenses/{expense_id}",
-            get(expenses::get),
+            get(expenses::get).put(expenses::update_draft),
         )
         .route(
             "/companies/{company_id}/expenses/{expense_id}/receipt",
-            get(expenses::receipt),
+            get(expenses::receipt).put(expenses::replace_receipt),
         )
         .route(
             "/companies/{company_id}/expenses/{expense_id}/approve",

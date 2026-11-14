@@ -7,11 +7,13 @@
   import { harRett } from "../../lib/me.svelte.js";
   import ExpenseList from "./ExpenseList.svelte";
   import NewExpense from "./NewExpense.svelte";
+  import DraftForm from "./DraftForm.svelte";
   import ExpenseDetail from "./ExpenseDetail.svelte";
 
   let { companyId, extra } = $props();
 
   const TABS = [
+    ["utkast", "Utkast"],
     ["", "Åpne"],
     ["utbetalt", "Utbetalt"],
     ["avvist", "Avvist"],
@@ -28,13 +30,18 @@
   {/key}
 {:else if extra === "ny"}
   {#key companyId}<NewExpense {companyId} />{/key}
+{:else if extra === "kjoring"}
+  <nav class="mb-3"><a class="link link-hover text-sm" href={"#/c/" + companyId + "/utlegg"}>← Alle utlegg</a></nav>
+  <h1 class="text-2xl font-bold mb-4">Ny kjøring</h1>
+  {#key companyId}<DraftForm {companyId} kind="kjoring" />{/key}
 {:else if tab === null}
   <div class="alert alert-warning"><span>Ukjent side «{extra}».</span></div>
 {:else}
   <div class="flex flex-wrap items-center gap-3 mb-4">
     <h1 class="text-2xl font-bold mr-auto">{seesAll ? "Utlegg" : "Mine utlegg"}</h1>
     {#if canSubmit}
-      <a class="btn btn-primary" href={"#/c/" + companyId + "/utlegg/ny"}>Nytt utlegg eller kjøring</a>
+      <a class="btn btn-primary" href={"#/c/" + companyId + "/utlegg/ny"}>Nytt utlegg</a>
+      <a class="btn" href={"#/c/" + companyId + "/utlegg/kjoring"}>Ny kjøring</a>
     {/if}
   </div>
   {#key companyId + tab}

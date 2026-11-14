@@ -205,7 +205,10 @@ pub fn file_response(
 fn csp(index_html: &str) -> String {
     let mut directives = vec![
         "default-src 'self'".to_string(),
-        "img-src 'self' data: blob:".to_string(),
+        // Map tiles for the trip route (RouteMap.svelte) come straight
+        // from Kartverket's open tile cache. Images only: no script, no
+        // connect — the route itself is fetched through our API.
+        "img-src 'self' data: blob: https://cache.kartverket.no".to_string(),
         "style-src 'self' 'unsafe-inline'".to_string(),
         "connect-src 'self'".to_string(),
         "object-src 'none'".to_string(),

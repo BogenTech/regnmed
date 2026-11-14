@@ -24,6 +24,7 @@
     !c ? null : key === "" ? c.innsendt + c.godkjent : c[key];
 
   const EMPTY = {
+    utkast: "Ingen utkast. Kvitteringer du laster opp ligger her til du sender dem inn.",
     "": seesAll
       ? "Ingenting venter på godkjenning eller utbetaling."
       : "Du har ingen åpne krav. Utlegg du sender inn ligger her til de er utbetalt.",
@@ -71,19 +72,19 @@
             <tr class="relative hover:bg-base-200 focus-within:bg-base-200">
               <td class="min-w-0">
                 <a class="font-medium break-words after:absolute after:inset-0" href={"#/c/" + companyId + "/utlegg/" + e.expense_id}>
-                  {e.beskrivelse}
+                  {e.beskrivelse || (e.kind === "kjoring" ? "Kjøring uten formål" : "Kvittering uten beskrivelse")}
                 </a>
                 <span class="block text-sm opacity-70">
-                  {e.kind === "kjoring" ? "Kjøring, " + e.km + " km" : "Utlegg"}<span class="lg:hidden">, {formatDate(e.dato)}</span>{#if seesAll}<span class="xl:hidden">, {e.person}</span>{/if}
+                  {e.kind === "kjoring" ? "Kjøring" + (e.km ? ", " + e.km + " km" : "") : e.trip_expense_id ? "Kostnad på kjøring" : "Utlegg"}{#if e.dato}<span class="lg:hidden">, {formatDate(e.dato)}</span>{/if}{#if seesAll}<span class="xl:hidden">, {e.person}</span>{/if}
                 </span>
                 <span class="badge badge-sm badge-soft {s?.badge} lg:hidden mt-1">{s?.text || e.status}</span>
               </td>
-              <td class="hidden lg:table-cell whitespace-nowrap">{formatDate(e.dato)}</td>
+              <td class="hidden lg:table-cell whitespace-nowrap">{e.dato ? formatDate(e.dato) : "–"}</td>
               {#if seesAll}<td class="hidden xl:table-cell">{e.person}</td>{/if}
               <td class="hidden lg:table-cell">
                 <span class="badge badge-sm badge-soft {s?.badge} whitespace-nowrap">{s?.text || e.status}</span>
               </td>
-              <td class="text-right tabular-nums whitespace-nowrap">{kr(e.belop_ore)} kr</td>
+              <td class="text-right tabular-nums whitespace-nowrap">{e.belop_ore ? kr(e.belop_ore) + " kr" : "–"}</td>
             </tr>
           {/each}
         </tbody>

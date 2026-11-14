@@ -46,31 +46,7 @@ pub async fn create_expense(
     // PUT, and content addressing makes a refused duplicate harmless.
     let in_row = crate::blob::blobs().store(content).await?;
     let mut tx = pool.begin().await?;
-    // The same receipt twice is a double-click or a resubmission, never
-    // two expenses — refused while the first claim stands. A REJECTED
-    // claim does not block: resubmitting with a better description is
-    // the normal way back. The advisory lock makes two simultaneous
-    // submissions of the same bytes take turns.
-    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
-        .bind(company_id)
-        .bind(&digest)
-        .execute(&mut *tx)
-        .await?;
-    let earlier: Option<(NaiveDate, String)> = sqlx::query_as(
-        "select dato, beskrivelse from expense
-         where company_id = $1 and receipt_sha256 = $2 and status <> 'avvist'
-         limit 1",
-    )
-    .bind(company_id)
-    .bind(&digest)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if let Some((date, what)) = earlier {
-        bail!(
-            "denne kvitteringen er allerede sendt inn («{what}», {})",
-            date.format("%d.%m.%Y")
-        );
-    }
+    refuse_duplicate_receipt(&mut tx, company_id, &digest, None).await?;
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore,
@@ -95,6 +71,545 @@ pub async fn create_expense(
     Ok(id)
 }
 
+/// The same receipt twice is a double-click or a resubmission, never two
+/// expenses — refused while the first claim stands (a draft counts). A
+/// REJECTED or discarded claim does not block: resubmitting is the normal
+/// way back. The advisory lock makes two simultaneous uploads of the same
+/// bytes take turns. `except` is the claim whose receipt is being
+/// replaced.
+async fn refuse_duplicate_receipt(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    digest: &[u8],
+    except: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
+        .bind(company_id)
+        .bind(digest)
+        .execute(&mut **tx)
+        .await?;
+    let earlier: Option<(Option<NaiveDate>, String, String)> = sqlx::query_as(
+        "select dato, beskrivelse, status from expense
+         where company_id = $1 and receipt_sha256 = $2
+           and status not in ('avvist', 'forkastet')
+           and ($3::uuid is null or id <> $3)
+         limit 1",
+    )
+    .bind(company_id)
+    .bind(digest)
+    .bind(except)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((date, what, status)) = earlier {
+        let when = date
+            .map(|d| format!(", {}", d.format("%d.%m.%Y")))
+            .unwrap_or_default();
+        let what = if what.is_empty() {
+            "uten beskrivelse".into()
+        } else {
+            format!("«{what}»")
+        };
+        if status == "utkast" {
+            bail!("denne kvitteringen ligger allerede i et utkast ({what}{when})");
+        }
+        bail!("denne kvitteringen er allerede sendt inn ({what}{when})");
+    }
+    Ok(())
+}
+
+/// What a draft carries — everything optional until submission. The
+/// same struct updates a draft: every field is written as given.
+#[derive(Debug, Default, Clone)]
+pub struct ExpenseDraft {
+    pub date: Option<NaiveDate>,
+    pub description: String,
+    pub amount_ore: Option<i64>,
+    /// Total kilometres paid (a round trip counts both ways).
+    pub km: Option<i64>,
+    pub route_from: Option<String>,
+    pub route_to: Option<String>,
+    pub round_trip: bool,
+    pub vehicle: Option<String>,
+    /// Names of the colleagues on board (one supplement each).
+    pub passengers: Vec<String>,
+    /// Dimension codes.
+    pub department: Option<String>,
+    pub project: Option<String>,
+    pub billable: bool,
+}
+
+pub struct Receipt<'a> {
+    pub filename: &'a str,
+    pub content_type: &'a str,
+    pub content: &'a [u8],
+}
+
+/// Blank strings are "not given" — a form sends "" for an empty field.
+fn given(s: &Option<String>) -> Option<&str> {
+    s.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// What can be checked while a draft is still a draft: the values that
+/// ARE given must be valid. Completeness waits for submission.
+async fn check_draft(pool: &PgPool, company_id: Uuid, d: &ExpenseDraft) -> Result<()> {
+    if let Some(a) = d.amount_ore {
+        ensure!(a > 0, "beløpet må være positivt");
+    }
+    if let Some(km) = d.km {
+        ensure!(km > 0, "antall kilometer må være positivt");
+    }
+    if let Some(v) = given(&d.vehicle) {
+        ensure!(
+            regnmed_core::expenses::vehicle_rate_domains(v).is_some(),
+            "ukjent kjøretøy «{v}»"
+        );
+    }
+    ensure!(
+        d.passengers.iter().all(|p| !p.trim().is_empty()),
+        "skriv navnet på hver passasjer"
+    );
+    for (kind, code) in [
+        ("avdeling", given(&d.department)),
+        ("prosjekt", given(&d.project)),
+    ] {
+        let Some(code) = code else { continue };
+        let active: Option<bool> = sqlx::query_scalar(
+            "select active from dimension where company_id = $1 and kind = $2 and code = $3",
+        )
+        .bind(company_id)
+        .bind(kind)
+        .bind(code)
+        .fetch_optional(pool)
+        .await?;
+        match active {
+            None => bail!("ukjent {kind} «{code}»"),
+            Some(false) => bail!("{kind} «{code}» er avsluttet"),
+            Some(true) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Creates a draft: an utlegg (with or without its receipt yet) or a
+/// kjøring. `registered_by` is who entered it — the claimant themself,
+/// or someone filing on their behalf. A cost tied to a trip
+/// (`trip_expense_id`: tolls, ferry, parking) must belong to the same
+/// person and inherits the trip's dimensions when it has none of its own.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_draft(
+    pool: &PgPool,
+    company_id: Uuid,
+    person_id: Uuid,
+    registered_by: Uuid,
+    kind: &str,
+    trip_expense_id: Option<Uuid>,
+    draft: &ExpenseDraft,
+    receipt: Option<Receipt<'_>>,
+    created_by: &str,
+) -> Result<Uuid> {
+    ensure!(matches!(kind, "utlegg" | "kjoring"), "ukjent type «{kind}»");
+    ensure!(
+        kind == "utlegg" || receipt.is_none(),
+        "en kjøring har ingen kvittering — bompenger og parkering legges til som egne utlegg"
+    );
+    ensure!(
+        kind == "utlegg" || trip_expense_id.is_none(),
+        "bare utlegg kan knyttes til en kjøring"
+    );
+    let mut draft = draft.clone();
+    if let Some(trip) = trip_expense_id {
+        let trip_row = sqlx::query(
+            "select kind, person_id, department, project, billable from expense
+             where id = $1 and company_id = $2 and status <> 'forkastet'",
+        )
+        .bind(trip)
+        .bind(company_id)
+        .fetch_optional(pool)
+        .await?
+        .context("fant ikke kjøringen")?;
+        ensure!(
+            trip_row.get::<String, _>("kind") == "kjoring",
+            "bare utlegg kan knyttes til en kjøring"
+        );
+        ensure!(
+            trip_row.get::<Uuid, _>("person_id") == person_id,
+            "utlegget må gjelde samme person som kjøringen"
+        );
+        if given(&draft.department).is_none() && given(&draft.project).is_none() {
+            draft.department = trip_row.get("department");
+            draft.project = trip_row.get("project");
+            draft.billable = trip_row.get("billable");
+        }
+    }
+    check_draft(pool, company_id, &draft).await?;
+    let stored = match &receipt {
+        Some(r) => {
+            ensure!(!r.content.is_empty(), "kvitteringen er tom");
+            Some((
+                sha256(r.content).to_vec(),
+                crate::blob::blobs().store(r.content).await?,
+            ))
+        }
+        None => None,
+    };
+    let mut tx = pool.begin().await?;
+    if let Some((digest, _)) = &stored {
+        refuse_duplicate_receipt(&mut tx, company_id, digest, None).await?;
+    }
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "insert into expense (id, company_id, person_id, registered_by_person, kind, status,
+                              dato, beskrivelse, belop_ore, km, route_from, route_to,
+                              round_trip, vehicle, passengers, department, project, billable,
+                              trip_expense_id, receipt_filename, receipt_content_type,
+                              receipt_content, receipt_sha256, created_by)
+         values ($1, $2, $3, $4, $5, 'utkast', $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                 $15, $16, $17, $18, $19, $20, $21, $22, $23)",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(person_id)
+    .bind(registered_by)
+    .bind(kind)
+    .bind(draft.date)
+    .bind(draft.description.trim())
+    .bind(draft.amount_ore)
+    .bind(draft.km)
+    .bind(given(&draft.route_from))
+    .bind(given(&draft.route_to))
+    .bind(draft.round_trip)
+    .bind(given(&draft.vehicle))
+    .bind(trimmed(&draft.passengers))
+    .bind(given(&draft.department))
+    .bind(given(&draft.project))
+    .bind(draft.billable)
+    .bind(trip_expense_id)
+    .bind(receipt.as_ref().map(|r| r.filename))
+    .bind(receipt.as_ref().map(|r| r.content_type))
+    .bind(stored.as_ref().and_then(|(_, in_row)| *in_row))
+    .bind(stored.as_ref().map(|(digest, _)| digest.clone()))
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+fn trimmed(names: &[String]) -> Vec<String> {
+    names.iter().map(|n| n.trim().to_string()).collect()
+}
+
+/// Locks a draft for writing; anything past the draft is evidence.
+async fn lock_draft(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    expense_id: Uuid,
+) -> Result<String> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "select kind, status from expense where id = $1 and company_id = $2 for update",
+    )
+    .bind(expense_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (kind, status) = row.context("no such expense")?;
+    ensure!(
+        status == "utkast",
+        "kravet er {status} og kan ikke endres lenger"
+    );
+    Ok(kind)
+}
+
+/// Writes every field of a draft as given.
+pub async fn update_draft(
+    pool: &PgPool,
+    company_id: Uuid,
+    expense_id: Uuid,
+    draft: &ExpenseDraft,
+) -> Result<()> {
+    check_draft(pool, company_id, draft).await?;
+    let mut tx = pool.begin().await?;
+    let kind = lock_draft(&mut tx, company_id, expense_id).await?;
+    ensure!(
+        kind == "kjoring" || (draft.km.is_none() && given(&draft.vehicle).is_none()),
+        "kilometer og kjøretøy hører til en kjøring"
+    );
+    sqlx::query(
+        "update expense set dato = $3, beskrivelse = $4, belop_ore = $5, km = $6,
+                route_from = $7, route_to = $8, round_trip = $9, vehicle = $10,
+                passengers = $11, department = $12, project = $13, billable = $14
+         where id = $1 and company_id = $2",
+    )
+    .bind(expense_id)
+    .bind(company_id)
+    .bind(draft.date)
+    .bind(draft.description.trim())
+    .bind(if kind == "utlegg" {
+        draft.amount_ore
+    } else {
+        None
+    })
+    .bind(draft.km)
+    .bind(given(&draft.route_from))
+    .bind(given(&draft.route_to))
+    .bind(draft.round_trip)
+    .bind(given(&draft.vehicle))
+    .bind(trimmed(&draft.passengers))
+    .bind(given(&draft.department))
+    .bind(given(&draft.project))
+    .bind(draft.billable)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Replaces a draft's receipt — rotated, cropped, or the toll statement
+/// that arrived after the trip. Until submission the picture is not yet
+/// evidence; from submission it is, and the trigger holds it.
+pub async fn replace_draft_receipt(
+    pool: &PgPool,
+    company_id: Uuid,
+    expense_id: Uuid,
+    receipt: Receipt<'_>,
+) -> Result<()> {
+    ensure!(!receipt.content.is_empty(), "kvitteringen er tom");
+    let digest = sha256(receipt.content).to_vec();
+    let in_row = crate::blob::blobs().store(receipt.content).await?;
+    let mut tx = pool.begin().await?;
+    let kind = lock_draft(&mut tx, company_id, expense_id).await?;
+    ensure!(kind == "utlegg", "en kjøring har ingen kvittering");
+    refuse_duplicate_receipt(&mut tx, company_id, &digest, Some(expense_id)).await?;
+    sqlx::query(
+        "update expense set receipt_filename = $3, receipt_content_type = $4,
+                receipt_content = $5, receipt_sha256 = $6
+         where id = $1 and company_id = $2",
+    )
+    .bind(expense_id)
+    .bind(company_id)
+    .bind(receipt.filename)
+    .bind(receipt.content_type)
+    .bind(in_row)
+    .bind(digest)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct SubmittedExpense {
+    pub amount_ore: i64,
+    pub taxable_ore: i64,
+    /// Costs tied to the trip that went in with it.
+    pub costs_submitted: i64,
+    /// Costs tied to the trip still waiting (no receipt yet, say), with
+    /// what each lacks.
+    pub costs_waiting: Vec<String>,
+}
+
+/// The row a submission reads.
+#[derive(sqlx::FromRow)]
+struct DraftRow {
+    id: Uuid,
+    kind: String,
+    dato: Option<NaiveDate>,
+    beskrivelse: String,
+    belop_ore: Option<i64>,
+    receipt_sha256: Option<Vec<u8>>,
+    km: Option<i64>,
+    route_from: Option<String>,
+    route_to: Option<String>,
+    vehicle: Option<String>,
+    passengers: Vec<String>,
+    project: Option<String>,
+    billable: bool,
+}
+
+/// What a draft still lacks, said the way the claimant reads it — the
+/// first missing thing, or None when it can go in.
+fn missing(d: &DraftRow) -> Option<&'static str> {
+    if d.dato.is_none() {
+        return Some("velg dato");
+    }
+    if d.billable && given(&d.project).is_none() {
+        return Some("velg prosjekt — det er prosjektet som viderefaktureres");
+    }
+    if d.kind == "utlegg" {
+        if d.receipt_sha256.is_none() {
+            return Some("legg ved kvitteringen");
+        }
+        if d.belop_ore.is_none() {
+            return Some("oppgi beløpet");
+        }
+        if d.beskrivelse.trim().is_empty() {
+            return Some("skriv hva utlegget gjaldt");
+        }
+    } else {
+        if given(&d.route_from).is_none() || given(&d.route_to).is_none() {
+            return Some("oppgi hvor du kjørte fra og til");
+        }
+        if d.km.is_none() {
+            return Some("oppgi antall kilometer");
+        }
+        if d.beskrivelse.trim().is_empty() {
+            return Some("skriv formålet med turen");
+        }
+    }
+    None
+}
+
+/// Submits a draft: from here the content is evidence. A kjøring's
+/// rates are resolved from the register on the trip's date NOW and
+/// stored (outside coverage: refused, never guessed), and the costs tied
+/// to it that are complete go in with it in the same transaction —
+/// the rest stay drafts, and the answer says why.
+pub async fn submit_expense(
+    pool: &PgPool,
+    company_id: Uuid,
+    expense_id: Uuid,
+) -> Result<SubmittedExpense> {
+    let mut tx = pool.begin().await?;
+    lock_draft(&mut tx, company_id, expense_id).await?;
+    let select = "select id, kind, dato, beskrivelse, belop_ore, receipt_sha256, km, route_from,
+                         route_to, vehicle, passengers, project, billable
+                  from expense";
+    let d: DraftRow = sqlx::query_as(&format!("{select} where id = $1"))
+        .bind(expense_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if let Some(what) = missing(&d) {
+        bail!("kravet kan ikke sendes inn ennå: {what}");
+    }
+    let mut submitted = SubmittedExpense {
+        amount_ore: d.belop_ore.unwrap_or(0),
+        taxable_ore: 0,
+        costs_submitted: 0,
+        costs_waiting: Vec::new(),
+    };
+    if d.kind == "kjoring" {
+        let date = d.dato.expect("checked by missing()");
+        let vehicle = d.vehicle.as_deref().unwrap_or("bil");
+        let (rate_domain, tax_free_domain) = regnmed_core::expenses::vehicle_rate_domains(vehicle)
+            .with_context(|| format!("ukjent kjøretøy «{vehicle}»"))?;
+        let rates = load_rates(pool).await?;
+        let lookup = |domain: &str| {
+            value_on(&rates, domain, date)
+                .with_context(|| format!("ingen sats «{domain}» for {date} i satsregisteret"))
+        };
+        let vehicle_rates = (lookup(rate_domain)?, lookup(tax_free_domain)?);
+        let passengers = d.passengers.len() as i64;
+        let passenger_rates = if passengers > 0 {
+            let (state, tax_free) = regnmed_core::expenses::PASSENGER_RATE_DOMAINS;
+            (lookup(state)?, lookup(tax_free)?)
+        } else {
+            (0, 0)
+        };
+        let km = d.km.expect("checked by missing()");
+        let allowance =
+            regnmed_core::expenses::trip_allowance(km, vehicle_rates, passenger_rates, passengers);
+        sqlx::query(
+            "update expense set status = 'innsendt', vehicle = $2, belop_ore = $3,
+                    sats_ore_per_km = $4, trekkfri_ore = $5, trekkpliktig_ore = $6,
+                    passenger_rate_ore_per_km = $7
+             where id = $1",
+        )
+        .bind(expense_id)
+        .bind(vehicle)
+        .bind(allowance.amount_ore)
+        .bind(vehicle_rates.0)
+        .bind(allowance.tax_free_ore)
+        .bind(allowance.taxable_ore)
+        .bind((passengers > 0).then_some(passenger_rates.0))
+        .execute(&mut *tx)
+        .await?;
+        submitted.amount_ore = allowance.amount_ore;
+        submitted.taxable_ore = allowance.taxable_ore;
+
+        let costs: Vec<DraftRow> = sqlx::query_as(&format!(
+            "{select} where trip_expense_id = $1 and status = 'utkast' order by created_at for update"
+        ))
+        .bind(expense_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        for cost in &costs {
+            match missing(cost) {
+                Some(what) => submitted.costs_waiting.push(format!(
+                    "{}: {what}",
+                    if cost.beskrivelse.is_empty() {
+                        "utlegg"
+                    } else {
+                        &cost.beskrivelse
+                    }
+                )),
+                None => {
+                    sqlx::query("update expense set status = 'innsendt' where id = $1")
+                        .bind(cost.id)
+                        .execute(&mut *tx)
+                        .await?;
+                    submitted.costs_submitted += 1;
+                }
+            }
+        }
+    } else {
+        sqlx::query("update expense set status = 'innsendt' where id = $1")
+            .bind(expense_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(submitted)
+}
+
+/// Discards a draft, one way — never deleted. A trip takes the drafts
+/// tied to it along; submitted costs stand on their own.
+pub async fn discard_expense(pool: &PgPool, company_id: Uuid, expense_id: Uuid) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    lock_draft(&mut tx, company_id, expense_id).await?;
+    sqlx::query(
+        "update expense set status = 'forkastet'
+         where company_id = $1 and status = 'utkast' and (id = $2 or trip_expense_id = $2)",
+    )
+    .bind(company_id)
+    .bind(expense_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// The claimant, whoever entered it, and the status — who may write a
+/// draft, and who may see one at all.
+pub async fn expense_people(
+    pool: &PgPool,
+    company_id: Uuid,
+    expense_id: Uuid,
+) -> Result<(Uuid, Option<Uuid>, String)> {
+    sqlx::query_as(
+        "select person_id, registered_by_person, status from expense
+         where id = $1 and company_id = $2",
+    )
+    .bind(expense_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?
+    .context("no such utlegg")
+}
+
+/// Whether a claim may be filed for `person_id`: an active direct
+/// member of the company. Access through an oppdrag is the firm's
+/// people, who are not the company's to reimburse.
+pub async fn is_claimant(pool: &PgPool, company_id: Uuid, person_id: Uuid) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "select exists (select 1 from company_member
+                        where company_id = $1 and person_id = $2 and active)",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Statens km-sats and its trekkfri part on `date`, from the
 /// satsregister — what a kjøring that day is paid. Outside the
 /// register's coverage: an error, never a guess.
@@ -105,6 +620,32 @@ pub async fn mileage_rates(pool: &PgPool, date: NaiveDate) -> Result<(i64, i64)>
     let trekkfri = value_on(&rates, "km_godtgjorelse_trekkfri", date)
         .with_context(|| format!("ingen trekkfri km-sats for {date} i satsregisteret"))?;
     Ok((rate, trekkfri))
+}
+
+pub struct TripRates {
+    pub rate: i64,
+    pub tax_free: i64,
+    /// (state, trekkfri) per passenger per km; None when the register
+    /// has no supplement for the date.
+    pub passenger: Option<(i64, i64)>,
+}
+
+/// What a trip with `vehicle` on `date` is paid per km — so the form can
+/// show the amount before submitting. Same lookups as [`submit_expense`].
+pub async fn trip_rates(pool: &PgPool, date: NaiveDate, vehicle: &str) -> Result<TripRates> {
+    let (state, tax_free) = regnmed_core::expenses::vehicle_rate_domains(vehicle)
+        .with_context(|| format!("ukjent kjøretøy «{vehicle}»"))?;
+    let rates = load_rates(pool).await?;
+    let lookup = |domain: &str| {
+        value_on(&rates, domain, date)
+            .with_context(|| format!("ingen sats «{domain}» for {date} i satsregisteret"))
+    };
+    let (p_state, p_tax_free) = regnmed_core::expenses::PASSENGER_RATE_DOMAINS;
+    Ok(TripRates {
+        rate: lookup(state)?,
+        tax_free: lookup(tax_free)?,
+        passenger: value_on(&rates, p_state, date).zip(value_on(&rates, p_tax_free, date)),
+    })
 }
 
 /// Registers one kjøring. The satser valid on `dato` are resolved from
@@ -150,10 +691,26 @@ pub struct ExpenseRow {
     pub id: Uuid,
     pub person_name: String,
     pub own: bool,
+    /// Who entered it, when not the claimant themself.
+    pub registered_by: Option<String>,
+    /// The viewer may edit it while it is a draft.
+    pub editable: bool,
+    /// The viewer entered it (on someone's behalf or their own).
+    pub entered_by_me: bool,
     pub kind: String,
-    pub date: NaiveDate,
+    pub date: Option<NaiveDate>,
     pub description: String,
-    pub amount_ore: i64,
+    pub amount_ore: Option<i64>,
+    pub department: Option<String>,
+    pub project: Option<String>,
+    pub billable: bool,
+    pub route_from: Option<String>,
+    pub route_to: Option<String>,
+    pub round_trip: bool,
+    pub vehicle: Option<String>,
+    pub passengers: Vec<String>,
+    pub passenger_rate_ore_per_km: Option<i64>,
+    pub trip_expense_id: Option<Uuid>,
     pub km: Option<i64>,
     pub sats_ore_per_km: Option<i64>,
     pub trekkfri_ore: Option<i64>,
@@ -173,17 +730,23 @@ pub struct ExpenseRow {
 
 /// Which claims a list shows. `status` is a TAB, not a stored value:
 /// `apne` = innsendt + godkjent (money not yet out), or one of the
-/// stored statuses. `expense_id` picks one claim (the detail page).
+/// stored statuses. `expense_id` picks one claim (the detail page),
+/// `trip_expense_id` the costs tied to a trip. Drafts ('utkast') are
+/// only ever the viewer's own — the claimant's or the one who entered
+/// them — and never in a list without asking for them; discarded ones
+/// never show in a list at all.
 #[derive(Debug, Default, Clone)]
 pub struct ExpenseFilter {
     pub status: Option<String>,
     pub expense_id: Option<Uuid>,
+    pub trip_expense_id: Option<Uuid>,
     pub limit: i64,
     pub offset: i64,
 }
 
 #[derive(Debug, Default)]
 pub struct ExpenseCounts {
+    pub utkast: i64,
     pub innsendt: i64,
     pub godkjent: i64,
     pub utbetalt: i64,
@@ -212,11 +775,18 @@ pub async fn list_expenses(
     let statuses: Option<Vec<&str>> = match filter.status.as_deref() {
         None | Some("") => None,
         Some("apne") => Some(vec!["innsendt", "godkjent"]),
-        Some(s @ ("innsendt" | "godkjent" | "utbetalt" | "avvist")) => Some(vec![s]),
+        Some(s @ ("utkast" | "innsendt" | "godkjent" | "utbetalt" | "avvist")) => Some(vec![s]),
         Some(other) => bail!("ukjent status «{other}»"),
     };
     let rows_query = sqlx::query(
         "select e.id, coalesce(p.name, p.oidc_sub) as person_name, e.person_id = $2 as own,
+                case when e.registered_by_person <> e.person_id
+                     then coalesce(rp.name, rp.oidc_sub) end as registered_by,
+                coalesce(e.status = 'utkast' and $2 in (e.person_id, e.registered_by_person),
+                         false) as editable,
+                coalesce(e.registered_by_person = $2, false) as entered_by_me,
+                e.department, e.project, e.billable, e.route_from, e.route_to, e.round_trip,
+                e.vehicle, e.passengers, e.passenger_rate_ore_per_km, e.trip_expense_id,
                 e.kind, e.dato, e.beskrivelse, e.belop_ore, e.km, e.sats_ore_per_km,
                 e.trekkfri_ore, e.trekkpliktig_ore, e.receipt_filename, e.status,
                 e.avvist_note, e.decided_by, e.decided_at, e.utbetalt_at, e.created_at,
@@ -224,11 +794,17 @@ pub async fn list_expenses(
                 pv.fiscal_year as paid_year, pv.voucher_number as paid_number
          from expense e
          join person p on p.id = e.person_id
+         left join person rp on rp.id = e.registered_by_person
          left join voucher v on v.id = e.voucher_id
          left join voucher pv on pv.id = e.utbetalt_voucher_id
-         where e.company_id = $1 and ($3 = false or e.person_id = $2)
-           and ($4::text[] is null or e.status = any($4))
-           and ($5::uuid is null or e.id = $5)
+         where e.company_id = $1
+           and ($3 = false or e.person_id = $2 or e.registered_by_person = $2)
+           and (e.status <> 'utkast' or $2 in (e.person_id, e.registered_by_person))
+           and case when $5::uuid is not null then e.id = $5
+                    when $8::uuid is not null then e.trip_expense_id = $8
+                                                   and e.status <> 'forkastet'
+                    when $4::text[] is not null then e.status = any($4)
+                    else e.status not in ('utkast', 'forkastet') end
          order by e.created_at desc
          limit $6 offset $7",
     )
@@ -239,10 +815,12 @@ pub async fn list_expenses(
     .bind(filter.expense_id)
     .bind(filter.limit.clamp(1, 500))
     .bind(filter.offset.max(0))
+    .bind(filter.trip_expense_id)
     .fetch_all(pool);
     let counts_query = sqlx::query(
         "select status, count(*) as n from expense
-         where company_id = $1 and ($3 = false or person_id = $2)
+         where company_id = $1 and ($3 = false or person_id = $2 or registered_by_person = $2)
+           and (status <> 'utkast' or $2 in (person_id, registered_by_person))
          group by status",
     )
     .bind(company_id)
@@ -263,6 +841,19 @@ pub async fn list_expenses(
             id: r.get("id"),
             person_name: r.get("person_name"),
             own: r.get("own"),
+            registered_by: r.get("registered_by"),
+            editable: r.get("editable"),
+            entered_by_me: r.get("entered_by_me"),
+            department: r.get("department"),
+            project: r.get("project"),
+            billable: r.get("billable"),
+            route_from: r.get("route_from"),
+            route_to: r.get("route_to"),
+            round_trip: r.get("round_trip"),
+            vehicle: r.get("vehicle"),
+            passengers: r.get("passengers"),
+            passenger_rate_ore_per_km: r.get("passenger_rate_ore_per_km"),
+            trip_expense_id: r.get("trip_expense_id"),
             kind: r.get("kind"),
             date: r.get("dato"),
             description: r.get("beskrivelse"),
@@ -287,6 +878,7 @@ pub async fn list_expenses(
     for r in &count_rows {
         let n: i64 = r.get("n");
         match r.get::<String, _>("status").as_str() {
+            "utkast" => counts.utkast = n,
             "innsendt" => counts.innsendt = n,
             "godkjent" => counts.godkjent = n,
             "utbetalt" => counts.utbetalt = n,
@@ -296,11 +888,12 @@ pub async fn list_expenses(
     }
     // The total comes from the counts, not from the page: a page past
     // the end still knows how many rows there are to page back to.
-    let total = if filter.expense_id.is_some() {
+    let total = if filter.expense_id.is_some() || filter.trip_expense_id.is_some() {
         rows.len() as i64
     } else {
         let all = ["innsendt", "godkjent", "utbetalt", "avvist"];
         let n = |st: &str| match st {
+            "utkast" => counts.utkast,
             "innsendt" => counts.innsendt,
             "godkjent" => counts.godkjent,
             "utbetalt" => counts.utbetalt,
@@ -390,7 +983,8 @@ pub async fn approve_expense(
     let expense = sqlx::query(
         "select kind, dato, beskrivelse, belop_ore, km, sats_ore_per_km, trekkpliktig_ore,
                 receipt_filename, receipt_content_type, receipt_content, receipt_sha256,
-                status, person_id,
+                status, person_id, registered_by_person, department, project,
+                route_from, route_to, round_trip, passengers,
                 coalesce((select p.name from person p where p.id = expense.person_id), '') as navn
          from expense where id = $1 and company_id = $2 for update",
     )
@@ -408,15 +1002,22 @@ pub async fn approve_expense(
     if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.active
     {
-        let innsender: Uuid = expense.get("person_id");
+        // Whoever ENTERED a claim on someone's behalf is as much its
+        // author as the claimant.
+        let claimant: Uuid = expense.get("person_id");
+        let entered_by: Option<Uuid> = expense.get("registered_by_person");
         ensure!(
-            innsender != decided_by_person,
+            claimant != decided_by_person && entered_by != Some(decided_by_person),
             "utleggskrav kan ikke godkjennes av den som sendte det inn (fire øyne)"
         );
     }
     let kind: String = expense.get("kind");
     let date: NaiveDate = expense.get("dato");
     let amount: i64 = expense.get("belop_ore");
+    // The claim's dimensions go on its cost lines — not on the VAT or the
+    // debt to the claimant, which belong to no project.
+    let department: Option<String> = expense.get("department");
+    let project: Option<String> = expense.get("project");
     let description: String = expense.get("beskrivelse");
     let name: String = expense.get("navn");
 
@@ -451,8 +1052,8 @@ pub async fn approve_expense(
                 vat_code: vat_code.map(str::to_string),
                 description: Some(description.clone()),
                 party_no: None,
-                department: None,
-                project: None,
+                department: department.clone(),
+                project: project.clone(),
                 currency: None,
             });
             if vat != 0 {
@@ -474,18 +1075,40 @@ pub async fn approve_expense(
             let rate: i64 = expense
                 .get::<Option<i64>, _>("sats_ore_per_km")
                 .unwrap_or(0);
+            // The route and the passengers are the documentation that
+            // keeps the allowance trekkfri; the posting carries them.
+            let route = match (
+                expense.get::<Option<String>, _>("route_from"),
+                expense.get::<Option<String>, _>("route_to"),
+            ) {
+                (Some(from), Some(to)) => {
+                    let back = if expense.get::<bool, _>("round_trip") {
+                        " t/r"
+                    } else {
+                        ""
+                    };
+                    format!(" — {from}–{to}{back}")
+                }
+                _ => String::new(),
+            };
+            let passengers: Vec<String> = expense.get("passengers");
+            let with = if passengers.is_empty() {
+                String::new()
+            } else {
+                format!(", passasjer: {}", passengers.join(", "))
+            };
             entries.push(EntryDraft {
                 account_number: account.to_string(),
                 amount: Ore(amount),
                 vat_code: None,
                 description: Some(format!(
-                    "{description} — {km} km à {},{:02} kr",
+                    "{description}{route} — {km} km à {},{:02} kr{with}",
                     rate / 100,
                     rate % 100
                 )),
                 party_no: None,
-                department: None,
-                project: None,
+                department,
+                project,
                 currency: None,
             });
             let taxable: i64 = expense
@@ -674,4 +1297,50 @@ pub async fn pay_expense(
         voucher_number: posted.voucher_number,
         fiscal_year: posted.fiscal_year,
     })
+}
+
+/// The company's own customers and suppliers whose name matches, with
+/// the address on file — the first suggestions in the trip form.
+pub async fn party_addresses(
+    pool: &PgPool,
+    company_id: Uuid,
+    text: &str,
+) -> Result<Vec<(String, String)>> {
+    Ok(sqlx::query_as(
+        "select distinct on (name) name, address from party
+         where company_id = $1 and coalesce(address, '') <> ''
+           and strpos(lower(name), lower($2)) > 0
+         order by name limit 3",
+    )
+    .bind(company_id)
+    .bind(text)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Addresses the viewer has driven from or to before, newest first —
+/// the first suggestions in the trip form, and the only ones for a
+/// field that is still (nearly) empty.
+pub async fn own_addresses(
+    pool: &PgPool,
+    company_id: Uuid,
+    person_id: Uuid,
+    text: &str,
+) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "select address from (
+             select a.address, max(e.created_at) as used
+             from expense e,
+                  lateral (values (e.route_from), (e.route_to)) as a(address)
+             where e.company_id = $1 and e.person_id = $2 and e.kind = 'kjoring'
+               and e.status <> 'forkastet' and coalesce(a.address, '') <> ''
+               and strpos(lower(a.address), lower($3)) > 0
+             group by a.address
+         ) recent order by used desc limit 5",
+    )
+    .bind(company_id)
+    .bind(person_id)
+    .bind(text)
+    .fetch_all(pool)
+    .await?)
 }

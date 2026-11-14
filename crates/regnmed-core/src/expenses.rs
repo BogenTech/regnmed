@@ -39,9 +39,77 @@ pub fn mileage_allowance(
     }
 }
 
+/// The rate-register domains a vehicle is paid by: (the state's rate,
+/// the trekkfri rate). A car is a car whatever it runs on -- the
+/// særavtale and Skatteetaten pay electric and fossil alike; the
+/// distinction is kept on the claim because tolls differ. None = not a
+/// vehicle we know.
+pub fn vehicle_rate_domains(vehicle: &str) -> Option<(&'static str, &'static str)> {
+    Some(match vehicle {
+        "bil" | "bil_utslippsfri" => ("km_godtgjorelse", "km_godtgjorelse_trekkfri"),
+        "motorsykkel" => (
+            "km_godtgjorelse_motorsykkel",
+            "km_godtgjorelse_motorsykkel_trekkfri",
+        ),
+        "moped" => ("km_godtgjorelse_moped", "km_godtgjorelse_moped_trekkfri"),
+        "snoscooter" => (
+            "km_godtgjorelse_snoscooter",
+            "km_godtgjorelse_snoscooter_trekkfri",
+        ),
+        "bat" => ("km_godtgjorelse_bat", "km_godtgjorelse_bat_trekkfri"),
+        _ => return None,
+    })
+}
+
+/// The per-passenger supplement's domains (state, trekkfri).
+pub const PASSENGER_RATE_DOMAINS: (&str, &str) =
+    ("km_passasjertillegg", "km_passasjertillegg_trekkfri");
+
+/// A trip: km × (the vehicle's rate + one supplement per passenger),
+/// split the same way as [`mileage_allowance`]. The supplement is per
+/// passenger per km for the whole trip.
+pub fn trip_allowance(
+    km: i64,
+    (rate, tax_free_rate): (i64, i64),
+    (passenger_rate, passenger_tax_free_rate): (i64, i64),
+    passengers: i64,
+) -> MileageAllowance {
+    mileage_allowance(
+        km,
+        rate + passengers * passenger_rate,
+        tax_free_rate + passengers * passenger_tax_free_rate,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_passengers_add_two_supplements_on_both_sides() {
+        // 100 km by car with two colleagues, 2026: (5,30 + 2 × 1,00) kr
+        // paid, (3,50 + 2 × 1,00) kr of it trekkfri.
+        let k = trip_allowance(100, (530, 350), (100, 100), 2);
+        assert_eq!(k.amount_ore, 73_000);
+        assert_eq!(k.tax_free_ore, 55_000);
+        assert_eq!(k.taxable_ore, 18_000);
+    }
+
+    #[test]
+    fn every_vehicle_maps_to_a_pair_of_domains() {
+        for v in [
+            "bil",
+            "bil_utslippsfri",
+            "motorsykkel",
+            "moped",
+            "snoscooter",
+            "bat",
+        ] {
+            let (state, tax_free) = vehicle_rate_domains(v).unwrap();
+            assert_eq!(format!("{state}_trekkfri"), tax_free);
+        }
+        assert_eq!(vehicle_rate_domains("sykkel"), None);
+    }
 
     #[test]
     fn the_2026_rates_yield_a_trekkpliktig_part() {

@@ -18,6 +18,17 @@
 //! Nothing here touches the ledger: regnmed-core builds the documents,
 //! this crate moves them.
 
+/// One pooled HTTP client for the lookups the portal calls while someone
+/// types (addresses, Enhetsregisteret, routing): a fresh client per
+/// request means a fresh TLS handshake per keystroke. Timeouts are set
+/// per request.
+pub(crate) fn http() -> reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> =
+        std::sync::LazyLock::new(reqwest::Client::new);
+    CLIENT.clone()
+}
+
+pub mod addresses;
 pub mod altinn_events;
 pub mod amelding;
 pub mod brreg;
@@ -25,6 +36,7 @@ pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod norgesbank;
 pub mod regnid;
+pub mod routing;
 pub mod shareholder_return;
 pub mod stripe;
 pub mod tax_card;

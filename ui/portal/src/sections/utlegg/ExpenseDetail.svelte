@@ -12,7 +12,18 @@
   import { previewOf } from "../../lib/preview.js";
   import KontoVelger from "../../components/KontoVelger.svelte";
   import { INPUT_VAT, splitGross } from "../bilag/bookingMath.js";
-  import { STATUS, REPRESENTATION_ACCOUNTS } from "./expenseMath.js";
+  import { STATUS, REPRESENTATION_ACCOUNTS, vehicleName } from "./expenseMath.js";
+  import DraftForm from "./DraftForm.svelte";
+  import RouteMap from "../../components/RouteMap.svelte";
+  import { tick } from "svelte";
+
+  // A submitted draft turns into the read-only page: focus goes to its
+  // heading, not to the top of the document.
+  async function reloadAndFocus() {
+    await load();
+    await tick();
+    document.getElementById("utlegg-tittel")?.focus();
+  }
 
   let { companyId, expenseId } = $props();
 
@@ -58,7 +69,24 @@
   // Only an utlegg has a receipt; the preview trusts the bytes, not the
   // name. Keyed on the kind alone, so reloading the claim after a payout
   // does not download the receipt again.
-  let hasReceipt = $derived(e?.kind === "utlegg");
+  let hasReceipt = $derived(e?.kind === "utlegg" && e?.status !== "utkast" && !!e?.receipt_filename);
+  let isDraft = $derived(e?.status === "utkast" && e?.editable);
+
+  // A trip's tolls, ferries and parking, shown with it — and the route
+  // computed from its addresses, so whoever approves can set the claimed
+  // km beside it.
+  let costs = $state([]);
+  let route = $state(null);
+  $effect(() => {
+    if (e?.kind === "kjoring" && !isDraft) {
+      api(base + "?trip=" + expenseId).then((r) => (costs = r.expenses)).catch(() => {});
+      if (e.route_from && e.route_to) {
+        api(base + "/route?from=" + encodeURIComponent(e.route_from) + "&to=" + encodeURIComponent(e.route_to))
+          .then((r) => (route = r.available ? r : null))
+          .catch(() => {});
+      }
+    }
+  });
   $effect(() => {
     if (!hasReceipt) return;
     let url = null;
@@ -93,13 +121,14 @@
 
   // With attestering on, nobody approves their own claim (four eyes), so
   // the form is not offered and "next" skips them.
-  let ownBlocked = $derived(policyActive && !!e?.own);
+  // Whoever entered a claim on someone's behalf is as much its author.
+  let ownBlocked = $derived(policyActive && (!!e?.own || !!e?.entered_by_me));
 
   async function goNext() {
     let next = null;
     try {
       const r = await api(base + "?status=innsendt&limit=50");
-      next = r.expenses.find((x) => x.expense_id !== expenseId && !(policyActive && x.own)) || null;
+      next = r.expenses.find((x) => x.expense_id !== expenseId && !(policyActive && (x.own || x.entered_by_me))) || null;
     } catch {}
     location.hash = next ? list + "/" + next.expense_id : list;
   }
@@ -181,13 +210,26 @@
   </div>
 {:else if !e}
   <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
+{:else if isDraft}
+  <div class="mb-4">
+    <h1 class="text-2xl font-bold break-words">{e.kind === "kjoring" ? "Kjøring" : e.trip_expense_id ? "Kostnad på kjøring" : "Utlegg"} — utkast</h1>
+    <p class="opacity-70">
+      Lagret, men ikke sendt inn{e.own ? "" : " — for " + e.person}.
+      {#if e.trip_expense_id}<a class="link" href={list + "/" + e.trip_expense_id}>Til kjøringen</a>{/if}
+    </p>
+  </div>
+  <DraftForm {companyId} expense={e} onchanged={reloadAndFocus} />
 {:else}
   {@const s = STATUS[e.status]}
   <div class="flex flex-wrap items-start gap-3 mb-4">
     <div class="mr-auto min-w-0">
-      <h1 class="text-2xl font-bold break-words">{e.beskrivelse}</h1>
+      <h1 id="utlegg-tittel" tabindex="-1" class="text-2xl font-bold break-words focus:outline-none">{e.beskrivelse}</h1>
       <p class="opacity-70">
-        {e.kind === "kjoring" ? "Kjøring" : "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", sendt inn av " + e.person}
+        {e.kind === "kjoring" ? "Kjøring" : "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
+        {#if e.project || e.department}
+          · {[e.department && "avdeling " + e.department, e.project && "prosjekt " + e.project].filter(Boolean).join(", ")}{e.billable ? ", viderefaktureres" : ""}
+        {/if}
+        {#if e.trip_expense_id}· <a class="link" href={list + "/" + e.trip_expense_id}>Til kjøringen</a>{/if}
       </p>
     </div>
     <p class="text-2xl font-bold tabular-nums whitespace-nowrap">{kr(e.belop_ore)} kr</p>
@@ -234,7 +276,37 @@
         <section class="card border border-base-300 bg-base-100" aria-labelledby="kjoring-tittel">
           <div class="card-body">
             <h2 id="kjoring-tittel" class="card-title">Beregning</h2>
-            <p>{e.km} km × {kr(e.sats_ore_per_km)} kr (statens sats {formatDate(e.dato)}) = {kr(e.belop_ore)} kr</p>
+            {#if e.route_from}
+              <p>{e.route_from} – {e.route_to}{e.round_trip ? " (tur/retur)" : ""}, {vehicleName(e.vehicle)}</p>
+            {/if}
+            {#if route}
+              <div class="flex flex-wrap items-center gap-2">
+                <span>
+                  Beregnet kjørerute: {route.km} km én vei{e.round_trip ? ", " + route.km * 2 + " km tur/retur" : ""}.
+                  {#if e.km !== (e.round_trip ? route.km * 2 : route.km)}<strong>Krevd: {e.km} km.</strong>{/if}
+                </span>
+                <RouteMap load={() => Promise.resolve(route)} />
+              </div>
+            {/if}
+            {#if e.passengers?.length}
+              <p>Passasjerer: {e.passengers.join(", ")} — tillegg {kr(e.passenger_rate_ore_per_km)} kr per km hver</p>
+            {/if}
+            <p>
+              {e.km} km × ({kr(e.sats_ore_per_km)} kr{e.passengers?.length ? " + " + e.passengers.length + " × " + kr(e.passenger_rate_ore_per_km) + " kr" : ""})
+              (satsene {formatDate(e.dato)}) = {kr(e.belop_ore)} kr
+            </p>
+            {#if costs.length}
+              <h3 class="font-semibold mt-2">Kostnader på turen</h3>
+              <ul class="grid gap-1">
+                {#each costs as c (c.expense_id)}
+                  <li class="flex flex-wrap gap-2">
+                    <a class="link mr-auto" href={list + "/" + c.expense_id}>{c.beskrivelse || "Utlegg"}</a>
+                    <span class="badge badge-sm badge-soft {STATUS[c.status]?.badge}">{STATUS[c.status]?.text || c.status}</span>
+                    <span class="tabular-nums">{c.belop_ore ? kr(c.belop_ore) + " kr" : ""}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
             {#if e.trekkpliktig_ore > 0}
               <div class="alert alert-warning alert-soft text-sm">
                 <span>
