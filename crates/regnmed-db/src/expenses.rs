@@ -165,6 +165,55 @@ pub struct ExpenseDraft {
     pub overnight: bool,
     pub over_15_km: bool,
     pub travel_days: Vec<crate::travel::TravelDayDraft>,
+    /// Paid with this company card: the company's money, nothing to
+    /// reimburse (docs/utlegg.md «Firmakort»).
+    pub company_card_id: Option<Uuid>,
+    /// Filed from this card statement line, which approval reconciles.
+    pub bank_transaction_id: Option<Uuid>,
+}
+
+/// A card purchase must be on a card the claimant may use, and a claim
+/// filed from a statement line takes that line's card (set on `draft`).
+async fn check_card(
+    pool: &PgPool,
+    company_id: Uuid,
+    claimant: Uuid,
+    kind: &str,
+    expense_id: Option<Uuid>,
+    draft: &mut ExpenseDraft,
+) -> Result<()> {
+    if draft.company_card_id.is_none() && draft.bank_transaction_id.is_none() {
+        return Ok(());
+    }
+    ensure!(
+        kind == "utlegg",
+        "bare et utlegg med kvittering kan være betalt med firmakort"
+    );
+    if let Some(line_id) = draft.bank_transaction_id {
+        let line = crate::company_card::card_line(pool, company_id, line_id, expense_id).await?;
+        ensure!(
+            draft.company_card_id.is_none_or(|c| c == line.card_id),
+            "kortlinjen hører til et annet kort ({})",
+            line.card_label
+        );
+        draft.company_card_id = Some(line.card_id);
+    }
+    let card_id = draft.company_card_id.expect("set above");
+    let card = crate::company_card::get_card(pool, company_id, card_id).await?;
+    // A retired card's last purchases still need their receipts, from the
+    // statement lines; nothing new goes on it.
+    ensure!(
+        card.active || draft.bank_transaction_id.is_some(),
+        "kortet {} er ikke i bruk lenger",
+        card.label()
+    );
+    ensure!(
+        card.holder_person_id.is_none_or(|h| h == claimant),
+        "kortet {} tilhører {}",
+        card.label(),
+        card.holder_name.as_deref().unwrap_or("en annen")
+    );
+    Ok(())
 }
 
 impl ExpenseDraft {
@@ -305,6 +354,7 @@ pub async fn create_draft(
         }
     }
     check_draft(pool, company_id, &draft).await?;
+    check_card(pool, company_id, person_id, kind, None, &mut draft).await?;
     let stored = match &receipt {
         Some(r) => {
             ensure!(!r.content.is_empty(), "kvitteringen er tom");
@@ -326,9 +376,11 @@ pub async fn create_draft(
                               round_trip, vehicle, passengers, department, project, billable,
                               trip_expense_id, receipt_filename, receipt_content_type,
                               receipt_content, receipt_sha256, created_by, departure_at,
-                              return_at, destination, overnight, over_15_km, travel_days)
+                              return_at, destination, overnight, over_15_km, travel_days,
+                              company_card_id, bank_transaction_id)
          values ($1, $2, $3, $4, $5, 'utkast', $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                 $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)",
+                 $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29,
+                 $30, $31)",
     )
     .bind(id)
     .bind(company_id)
@@ -359,8 +411,11 @@ pub async fn create_draft(
     .bind(draft.overnight)
     .bind(draft.over_15_km)
     .bind(serde_json::to_value(&draft.travel_days)?)
+    .bind(draft.company_card_id)
+    .bind(draft.bank_transaction_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .map_err(line_taken)?;
     tx.commit().await?;
     Ok(id)
 }
@@ -398,8 +453,28 @@ pub async fn update_draft(
     draft: &ExpenseDraft,
 ) -> Result<()> {
     check_draft(pool, company_id, draft).await?;
+    let mut draft = draft.clone();
     let mut tx = pool.begin().await?;
     let kind = lock_draft(&mut tx, company_id, expense_id).await?;
+    let (claimant, line): (Uuid, Option<Uuid>) =
+        sqlx::query_as("select person_id, bank_transaction_id from expense where id = $1")
+            .bind(expense_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    // The statement line a draft was filed from stays with it while it is
+    // still paid by card; choosing «own money» lets go of it.
+    if draft.company_card_id.is_some() && draft.bank_transaction_id.is_none() {
+        draft.bank_transaction_id = line;
+    }
+    check_card(
+        pool,
+        company_id,
+        claimant,
+        &kind,
+        Some(expense_id),
+        &mut draft,
+    )
+    .await?;
     ensure!(
         kind == "kjoring" || (draft.km.is_none() && given(&draft.vehicle).is_none()),
         "kilometer og kjøretøy hører til en kjøring"
@@ -413,7 +488,8 @@ pub async fn update_draft(
                 route_from = $7, route_to = $8, round_trip = $9, vehicle = $10,
                 passengers = $11, department = $12, project = $13, billable = $14,
                 departure_at = $15, return_at = $16, destination = $17, overnight = $18,
-                over_15_km = $19, travel_days = $20
+                over_15_km = $19, travel_days = $20, company_card_id = $21,
+                bank_transaction_id = $22
          where id = $1 and company_id = $2",
     )
     .bind(expense_id)
@@ -440,10 +516,24 @@ pub async fn update_draft(
     .bind(draft.overnight)
     .bind(draft.over_15_km)
     .bind(serde_json::to_value(&draft.travel_days)?)
+    .bind(draft.company_card_id)
+    .bind(draft.bank_transaction_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .map_err(line_taken)?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Two receipts racing for one card statement line: the unique index
+/// decides, and the loser hears it in words.
+fn line_taken(e: sqlx::Error) -> anyhow::Error {
+    let constraint = e.as_database_error().and_then(|d| d.constraint());
+    if constraint == Some("expense_bank_transaction_once") {
+        anyhow::anyhow!("kortlinjen har allerede en kvittering — se Kortkjøp uten kvittering")
+    } else {
+        e.into()
+    }
 }
 
 /// Replaces a draft's receipt — rotated, cropped, or the toll statement
@@ -939,6 +1029,11 @@ pub struct ExpenseRow {
     pub rate_scheme: Option<String>,
     /// The computed døgn, stored at submission.
     pub travel_lines: Option<serde_json::Value>,
+    pub company_card_id: Option<Uuid>,
+    pub card_label: Option<String>,
+    /// The card's ledger account, which approval credits.
+    pub card_account: Option<String>,
+    pub bank_transaction_id: Option<Uuid>,
 }
 
 /// Which claims a list shows. `status` is a TAB, not a stored value:
@@ -1007,7 +1102,12 @@ pub async fn list_expenses(
                 pv.fiscal_year as paid_year, pv.voucher_number as paid_number,
                 e.kind <> 'utlegg' and {by_payroll} as by_payroll, {in_run} as in_run,
                 e.departure_at, e.return_at, e.destination, e.overnight, e.over_15_km,
-                e.travel_days, e.rate_scheme, e.travel_lines,
+                e.travel_days, e.rate_scheme, e.travel_lines, e.company_card_id,
+                e.bank_transaction_id,
+                (select cc.name || ' ••' || cc.last4 from company_card cc
+                  where cc.id = e.company_card_id) as card_label,
+                (select ca.number from company_card cc join account ca on ca.id = cc.account_id
+                  where cc.id = e.company_card_id) as card_account,
                 ei.invoice_id as rebilled_invoice_id, ei.treatment as rebilled_as
          from expense e
          left join expense_invoice ei on ei.expense_id = e.id
@@ -1092,7 +1192,9 @@ pub async fn list_expenses(
             paid_voucher: voucher(r, "paid_year", "paid_number"),
             utbetalt_at: r.get("utbetalt_at"),
             created_at: r.get("created_at"),
-            paid_by: if r.get("by_payroll") {
+            paid_by: if r.get::<Option<Uuid>, _>("company_card_id").is_some() {
+                Some("firmakort")
+            } else if r.get("by_payroll") {
                 Some("lonn")
             } else if r.get("in_run") {
                 Some("betalingsliste")
@@ -1109,6 +1211,10 @@ pub async fn list_expenses(
             travel_days: r.get("travel_days"),
             rate_scheme: r.get("rate_scheme"),
             travel_lines: r.get("travel_lines"),
+            company_card_id: r.get("company_card_id"),
+            card_label: r.get("card_label"),
+            card_account: r.get("card_account"),
+            bank_transaction_id: r.get("bank_transaction_id"),
         })
         .collect();
 
@@ -1223,7 +1329,7 @@ pub async fn approve_expense(
                 receipt_filename, receipt_content_type, receipt_content, receipt_sha256,
                 status, person_id, registered_by_person, department, project,
                 route_from, route_to, round_trip, passengers, departure_at, return_at,
-                destination, travel_lines,
+                destination, travel_lines, company_card_id, bank_transaction_id,
                 coalesce((select p.name from person p where p.id = expense.person_id), '') as navn,
                 {employee} as employee
          from expense where id = $1 and company_id = $2 for update",
@@ -1401,11 +1507,23 @@ pub async fn approve_expense(
             }
         }
     }
+    // Paid with a company card: the money left the card's account, and
+    // nobody is owed anything.
+    let card = match expense.get::<Option<Uuid>, _>("company_card_id") {
+        Some(id) => Some(crate::company_card::get_card(pool, company_id, id).await?),
+        None => None,
+    };
+    let contra_account = card
+        .as_ref()
+        .map_or(contra_account, |c| c.account_number.as_str());
     entries.push(EntryDraft {
         account_number: contra_account.to_string(),
         amount: Ore(-amount),
         vat_code: None,
-        description: Some(format!("Skyldig {name}")),
+        description: Some(match &card {
+            Some(c) => format!("Betalt med {}", c.label()),
+            None => format!("Skyldig {name}"),
+        }),
         party_no: None,
         department: None,
         project: None,
@@ -1456,7 +1574,94 @@ pub async fn approve_expense(
     .bind(contra_account)
     .execute(&mut *tx)
     .await?;
+
+    if card.is_some() {
+        // Filed from a statement line: the line is reconciled against the
+        // card entry now, in this transaction — equal amounts by
+        // construction, and never twice.
+        if let Some(line) = expense.get::<Option<Uuid>, _>("bank_transaction_id") {
+            let entry_id: Uuid = sqlx::query_scalar(
+                "select e.id from entry e join account a on a.id = e.account_id
+                 where e.voucher_id = $1 and a.number = $2 and e.amount_ore = $3",
+            )
+            .bind(posted.id)
+            .bind(contra_account)
+            .bind(-amount)
+            .fetch_one(&mut *tx)
+            .await?;
+            let line_amount: Option<i64> = sqlx::query_scalar(
+                "select t.amount_ore from bank_transaction t
+                 join bank_statement s on s.id = t.statement_id
+                 join account a on a.id = s.account_id
+                 where t.id = $1 and s.company_id = $2 and a.number = $3
+                   and not exists (select 1 from bank_match m where m.bank_transaction_id = t.id)",
+            )
+            .bind(line)
+            .bind(company_id)
+            .bind(contra_account)
+            .fetch_optional(&mut *tx)
+            .await?;
+            match line_amount {
+                None => bail!(
+                    "kortlinjen kravet ble sendt inn fra er allerede avstemt mot et annet bilag \
+                     — avvis kravet, eller send det inn på nytt uten kortlinjen"
+                ),
+                Some(a) => ensure!(
+                    a == -amount,
+                    "kortlinjen er på {} kr, kvitteringen på {} kr — beløpene må være like",
+                    regnmed_core::Ore(-a),
+                    regnmed_core::Ore(amount)
+                ),
+            }
+            sqlx::query(
+                "insert into bank_match (bank_transaction_id, entry_id, method, matched_by)
+                 values ($1, $2, 'manual', $3)",
+            )
+            .bind(line)
+            .bind(entry_id)
+            .bind(decided_by)
+            .execute(&mut *tx)
+            .await?;
+        }
+        // Nothing to pay out: the claim is settled with its own voucher.
+        sqlx::query(
+            "update expense set status = 'utbetalt', utbetalt_voucher_id = voucher_id,
+                                utbetalt_at = now()
+             where id = $1",
+        )
+        .bind(expense_id)
+        .execute(&mut *tx)
+        .await?;
+    }
     tx.commit().await?;
+    // A card receipt filed on its own: the card statement may already be
+    // in, so its line is matched now the way an import would match it
+    // (equal amount, nearest date, ties left to a human) — this receipt's
+    // entry only, nothing else on the account.
+    if card.is_some()
+        && expense
+            .get::<Option<Uuid>, _>("bank_transaction_id")
+            .is_none()
+    {
+        let (account_id, entry_id): (Uuid, Uuid) = sqlx::query_as(
+            "select a.id, e.id from entry e join account a on a.id = e.account_id
+             where e.voucher_id = $1 and a.number = $2 and e.amount_ore = $3",
+        )
+        .bind(posted.id)
+        .bind(contra_account)
+        .bind(-amount)
+        .fetch_one(pool)
+        .await?;
+        // The approval stands either way; a line left unmatched is for
+        // the bank reconciliation, and the caller hears about it.
+        if let Err(e) =
+            crate::bank::match_entry(pool, company_id, account_id, entry_id, decided_by).await
+        {
+            warning = Some(format!(
+                "Godkjent, men kortlinjen ble ikke avstemt automatisk ({e}) — avstem den under Bank"
+            ));
+        }
+    }
     Ok(ApprovedExpense {
         voucher_number: posted.voucher_number,
         fiscal_year: posted.fiscal_year,

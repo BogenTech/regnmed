@@ -12,7 +12,7 @@
   import { previewOf } from "../../lib/preview.js";
   import KontoVelger from "../../components/KontoVelger.svelte";
   import { INPUT_VAT, splitGross } from "../bilag/bookingMath.js";
-  import { STATUS, REPRESENTATION_ACCOUNTS, vehicleName, lodgingName, DAY_KIND } from "./expenseMath.js";
+  import { statusOf, REPRESENTATION_ACCOUNTS, vehicleName, lodgingName, DAY_KIND } from "./expenseMath.js";
   import DraftForm from "./DraftForm.svelte";
   import TravelForm from "./TravelForm.svelte";
   import RouteMap from "../../components/RouteMap.svelte";
@@ -120,7 +120,11 @@
     const { base: net, vat } = splitGross(e.belop_ore, rate);
     const out = [{ account: account || "?", text: accountName || "Kostnad", debit: rate ? net : e.belop_ore }];
     if (rate) out.push({ account: "2710", text: "Inngående mva", debit: vat });
-    out.push({ account: "2910", text: "Skyldig til " + e.person, credit: e.belop_ore });
+    out.push(
+      e.company_card_id
+        ? { account: e.card_account, text: "Betalt med " + e.card_label, credit: e.belop_ore }
+        : { account: "2910", text: "Skyldig til " + e.person, credit: e.belop_ore },
+    );
     return out;
   });
   let representation = $derived(!!vatCode && REPRESENTATION_ACCOUNTS.includes(account.trim()));
@@ -218,7 +222,7 @@
   <div class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 {:else if isDraft}
   <div class="mb-4">
-    <h1 class="text-2xl font-bold break-words">{KIND_TITLE[e.kind] || "Utlegg"}{e.trip_expense_id ? " på turen" : ""} — utkast</h1>
+    <h1 class="text-2xl font-bold break-words">{e.company_card_id ? "Kortkjøp" : KIND_TITLE[e.kind] || "Utlegg"}{e.trip_expense_id ? " på turen" : ""} — utkast</h1>
     <p class="opacity-70">
       Lagret, men ikke sendt inn{e.own ? "" : " — for " + e.person}.
       {#if e.trip_expense_id}<a class="link" href={list + "/" + e.trip_expense_id}>Til turen det hører til</a>{/if}
@@ -230,12 +234,12 @@
     <DraftForm {companyId} expense={e} onchanged={reloadAndFocus} />
   {/if}
 {:else}
-  {@const s = STATUS[e.status]}
+  {@const s = statusOf(e)}
   <div class="flex flex-wrap items-start gap-3 mb-4">
     <div class="mr-auto min-w-0">
       <h1 id="utlegg-tittel" tabindex="-1" class="text-2xl font-bold break-words focus:outline-none">{e.beskrivelse}</h1>
       <p class="opacity-70">
-        {KIND_TITLE[e.kind] || "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
+        {e.company_card_id ? "Firmakort, " + e.card_label + "," : KIND_TITLE[e.kind] || "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
         {#if e.project || e.department}
           · {[e.department && "avdeling " + e.department, e.project && "prosjekt " + e.project].filter(Boolean).join(", ")}{e.billable && !e.rebilled_invoice_id ? ", viderefaktureres" : ""}
         {/if}
@@ -262,6 +266,8 @@
         {:else if e.paid_by === "betalingsliste"}
           Ligger i en betalingsliste og regnes som betalt når listen registreres betalt.
         {/if}
+      {:else if e.status === "utbetalt" && e.company_card_id}
+        Kort: {e.card_label}. Bokført som bilag {e.voucher}{e.decided_by ? ", godkjent av " + e.decided_by : ""} — firmaets penger, ingenting skal utbetales.
       {:else if e.status === "utbetalt"}
         Utbetalt {formatDate(e.utbetalt_at)}, bilag {e.utbetalt_voucher}. Godkjent som bilag {e.voucher}.
       {:else if e.status === "avvist"}
@@ -321,7 +327,7 @@
                 {#each costs as c (c.expense_id)}
                   <li class="flex flex-wrap gap-2">
                     <a class="link mr-auto" href={list + "/" + c.expense_id}>{c.beskrivelse || "Utlegg"}</a>
-                    <span class="badge badge-sm badge-soft {STATUS[c.status]?.badge}">{STATUS[c.status]?.text || c.status}</span>
+                    <span class="badge badge-sm badge-soft {statusOf(c).badge}">{statusOf(c).text}</span>
                     <span class="tabular-nums">{c.belop_ore ? kr(c.belop_ore) + " kr" : ""}</span>
                   </li>
                 {/each}
@@ -386,7 +392,7 @@
                 {#each costs as c (c.expense_id)}
                   <li class="flex flex-wrap gap-2">
                     <a class="link mr-auto" href={list + "/" + c.expense_id}>{c.kind === "kjoring" ? "Kjøring: " : ""}{c.beskrivelse || "Utlegg"}</a>
-                    <span class="badge badge-sm badge-soft {STATUS[c.status]?.badge}">{STATUS[c.status]?.text || c.status}</span>
+                    <span class="badge badge-sm badge-soft {statusOf(c).badge}">{statusOf(c).text}</span>
                     <span class="tabular-nums">{c.belop_ore ? kr(c.belop_ore) + " kr" : ""}</span>
                   </li>
                 {/each}
