@@ -494,6 +494,20 @@ pub async fn approve_run(
     .context("no such payment run")?;
     let status: String = run.get("status");
     ensure!(status == "utkast", "kjøringen er {status}");
+    // An employee's money is released by a person, never by an agent —
+    // the same rule as approving, rejecting and paying the claim itself
+    // (docs/utlegg.md «Agenten»).
+    let has_claims: bool = sqlx::query_scalar(
+        "select exists (select 1 from payment_run_item where run_id = $1 and expense_id is not null)",
+    )
+    .bind(run_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    ensure!(
+        !has_claims || !crate::is_machine(pool, approved_by_person).await?,
+        "betalingslisten har utleggskrav, og et ansatts penger frigis av et menneske — \
+         en agent kan ikke godkjenne den"
+    );
 
     if let Some(policy) = crate::approval::current_policy(&mut *tx, company_id).await?
         && policy.active

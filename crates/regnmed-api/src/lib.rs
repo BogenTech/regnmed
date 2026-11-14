@@ -612,6 +612,10 @@ pub fn router(state: AppState) -> Router {
             get(expenses::travel_rates),
         )
         .route(
+            "/companies/{company_id}/inbox/{document_id}/expense",
+            axum::routing::post(expenses::from_inbox),
+        )
+        .route(
             "/companies/{company_id}/expenses/card-lines",
             get(cards::missing_receipts),
         )

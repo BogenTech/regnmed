@@ -659,7 +659,7 @@ This time it was caught BEFORE the run, by listing
 `grep -noE '\{[a-z_]+\}'` over `tool.rs` and `lib.rs` and checking
 it against the map. That listing is cheap and belongs in the recipe:
 `regnmed-mcp` is excluded from any pass whose map touches one of
-`{dokument} {felt} {mal} {oppgave} {selskap} {status} {utvidet}`.
+`{dokument} {felt} {mal} {oppgave} {selskap} {status} {utlegg} {utvidet}`.
 
 **NEW GUARD: `scripts/stale-docs.py`** -- every `code span` in `docs/`
 that looks like a Rust name and is nowhere in `crates/`. It exists

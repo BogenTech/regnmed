@@ -207,6 +207,32 @@ impl Client {
         query: &[(String, String)],
         body: Option<Body>,
     ) -> Result<(u16, String)> {
+        let response = self.send(method, path, query, body).await?;
+        let status = response.status().as_u16();
+        Ok((status, response.text().await?))
+    }
+
+    /// One call whose answer is a file (a receipt): the status, the
+    /// content type the API stored it with, and the bytes.
+    pub async fn call_bytes(&self, path: &str) -> Result<(u16, String, Vec<u8>)> {
+        let response = self.send("GET", path, &[], None).await?;
+        let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        Ok((status, content_type, response.bytes().await?.to_vec()))
+    }
+
+    async fn send(
+        &self,
+        method: &str,
+        path: &str,
+        query: &[(String, String)],
+        body: Option<Body>,
+    ) -> Result<reqwest::Response> {
         let url = format!("{}{path}", self.base);
         let mut req = match method {
             "GET" => self.http.get(&url),
@@ -229,9 +255,7 @@ impl Client {
                 .header(reqwest::header::CONTENT_TYPE, content_type)
                 .body(bytes),
         };
-        let response = req.send().await?;
-        let status = response.status().as_u16();
-        Ok((status, response.text().await?))
+        Ok(req.send().await?)
     }
 }
 

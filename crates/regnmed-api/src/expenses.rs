@@ -600,7 +600,14 @@ pub async fn reject(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RejectRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::ExpenseApprove).await?;
+    let access = require(&state, person.person_id, company_id, Right::ExpenseApprove).await?;
+    // Someone's money is decided by a person (docs/utlegg.md «Agenten»).
+    if access.is_machine() {
+        return Err(ApiError::Forbidden(
+            "et utleggskrav avgjøres av et menneske — en agent kan registrere og sende inn, \
+             men ikke avvise",
+        ));
+    }
     let decided_by = person.name.as_deref().unwrap_or(&person.sub);
     regnmed_db::reject_expense(
         &state.pool,
@@ -629,7 +636,12 @@ pub async fn pay(
     Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<PayRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::ExpensePay).await?;
+    let access = require(&state, person.person_id, company_id, Right::ExpensePay).await?;
+    if access.is_machine() {
+        return Err(ApiError::Forbidden(
+            "et utleggskrav utbetales av et menneske — en agent kan registrere og sende inn",
+        ));
+    }
     let request = body.map(|Json(r)| r).unwrap_or_default();
     let date = match request.date {
         Some(d) => d,
@@ -1160,4 +1172,35 @@ pub async fn route(
     }
     cache.insert(key, (std::time::Instant::now(), answer.clone()));
     Ok(Json(answer))
+}
+
+#[derive(Deserialize)]
+pub struct FromInboxRequest {
+    /// Who paid it and gets the money back.
+    person_id: Uuid,
+}
+
+/// A receipt in the innboks that someone paid with their own money
+/// becomes their DRAFT claim (docs/utlegg.md «Agenten»). Needs the right
+/// to decide innboks documents and to file claims for others.
+pub async fn from_inbox(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, document_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<FromInboxRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::VoucherPost).await?;
+    let claimant = claimant(&state, &person, company_id, Some(request.person_id)).await?;
+    let created_by = person.name.as_deref().unwrap_or(&person.sub);
+    let id = regnmed_db::expense_from_inbox(
+        &state.pool,
+        company_id,
+        document_id,
+        claimant,
+        person.person_id,
+        created_by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "expense_id": id })))
 }

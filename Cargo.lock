@@ -2080,6 +2080,7 @@ name = "regnmed-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "hex",
  "reqwest",
  "serde",

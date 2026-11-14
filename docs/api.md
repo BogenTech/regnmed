@@ -191,6 +191,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/inbox/{document_id}/bokfor` | POST |
 | `/companies/{company_id}/inbox/{document_id}/content` | GET |
 | `/companies/{company_id}/inbox/{document_id}/ehf` | GET |
+| `/companies/{company_id}/inbox/{document_id}/expense` | POST |
 | `/companies/{company_id}/inbox/{document_id}/forslag` | GET |
 | `/companies/{company_id}/inventory` | GET |
 | `/companies/{company_id}/inventory/count` | POST |

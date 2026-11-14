@@ -672,6 +672,31 @@ async fn receipt_claims_are_paid_from_the_payment_list() {
     let (status, _) = make(serde_json::json!({ "items": [{ "expense_id": claim }] })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // An agent never releases an employee's money, whatever its role
+    // (docs/utlegg.md «Agenten»).
+    let agent_id = format!("agent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &agent_id,
+        "Betalingsagenten",
+        None,
+        "admin",
+        "Kari Utlegg",
+    )
+    .await
+    .unwrap();
+    let (status, refused) = request(
+        &state,
+        "POST",
+        &format!("{base}/runs/{run}/approve"),
+        &idp.token(&agent_id, ""),
+        Some("{}".into()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert!(refused.to_string().contains("menneske"), "{refused}");
+
     let (status, approved) = request(
         &state,
         "POST",

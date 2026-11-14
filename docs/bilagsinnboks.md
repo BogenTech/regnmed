@@ -40,6 +40,18 @@ document — and refuses when the bokfører is the person who attested
 it. The check lives inside the transaction, so it cannot be bypassed
 by calling the API directly.
 
+## En kvittering som er et utlegg
+
+En kvittering en ansatt betalte med egne penger er ikke et bilag å
+bokføre, men et krav om refusjon. `POST
+/companies/{id}/inbox/{doc}/expense` (`{person_id}`; krever
+`BILAG_BOKFOR` og retten til å registrere utlegg for andre) gjør
+dokumentet til et UTKAST til utleggskrav for den personen, i én
+transaksjon: dokumentets bytes blir kravets kvittering, og dokumentet
+får den enveis beslutningen `utlegg` med lenke til kravet (migrasjon
+0089 — `expense_id` er satt hvis og bare hvis statusen er `utlegg`).
+Kravet går så den vanlige veien (docs/utlegg.md).
+
 ## Endpoints
 
 | Endpoint | Access |

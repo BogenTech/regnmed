@@ -45,6 +45,8 @@
               <td>
                 {#if d.status === "bokfort"}
                   <span class="badge badge-success badge-sm">bokført</span>
+                {:else if d.status === "utlegg"}
+                  <a class="badge badge-info badge-soft badge-sm" href={"#/c/" + companyId + "/utlegg/" + d.expense_id}>utleggskrav</a>
                 {:else}
                   <span class="badge badge-ghost badge-sm">avvist</span>
                   {#if d.note}<span class="block text-sm opacity-70">{d.note}</span>{/if}
