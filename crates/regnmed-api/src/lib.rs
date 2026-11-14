@@ -11,6 +11,7 @@ pub mod auth;
 pub mod balance_documentation;
 pub mod bank;
 pub mod budget;
+pub mod cards;
 pub mod cash_register;
 pub mod chart_of_accounts;
 pub mod currency;
@@ -609,6 +610,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/expenses/reise",
             get(expenses::travel_rates),
+        )
+        .route(
+            "/companies/{company_id}/expenses/card-lines",
+            get(cards::missing_receipts),
+        )
+        .route(
+            "/companies/{company_id}/cards",
+            get(cards::list).post(cards::create),
+        )
+        .route(
+            "/companies/{company_id}/cards/{card_id}",
+            axum::routing::put(cards::update),
         )
         .route(
             "/companies/{company_id}/expenses/reise/days",

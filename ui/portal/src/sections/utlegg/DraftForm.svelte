@@ -38,6 +38,10 @@
   let project = $state(e.project || "");
   let billable = $state(!!e.billable);
   let claimant = $state("");
+  // Paid with a company card: the company's money, nothing to reimburse.
+  let card = $state(e.company_card_id || "");
+  let cards = $state([]);
+  const fromLine = !!e.bank_transaction_id;
 
   let dims = $state([]);
   let people = $state([]);
@@ -60,6 +64,7 @@
   const canFileForOthers = harRett(companyId, "UTLEGG_GODKJENN");
 
   $effect(() => {
+    if (!isTrip) api("/companies/" + companyId + "/cards?usable=true").then((r) => (cards = r.cards)).catch(() => {});
     api("/companies/" + companyId + "/dimensions").then((r) => (dims = r.dimensions)).catch(() => {});
     if (!expense && canFileForOthers) {
       api(base + "/claimants").then((r) => (people = r.people)).catch(() => {});
@@ -202,6 +207,7 @@
       department: department || null,
       project: project || null,
       billable,
+      company_card_id: isTrip ? null : card || null,
     };
   }
 
@@ -362,6 +368,21 @@
             <option value="">Meg selv</option>
             {#each people as p (p.person_id)}<option value={p.person_id}>{p.name}</option>{/each}
           </select>
+        </label>
+      {/if}
+
+      {#if !isTrip && (cards.length || card)}
+        <label class="fieldset">
+          <span class="fieldset-legend">Betalt med</span>
+          <select class="select w-full" bind:value={card} disabled={fromLine}>
+            <option value="">Egne penger — jeg skal ha pengene tilbake</option>
+            {#each cards as c (c.card_id)}<option value={c.card_id}>{c.label}</option>{/each}
+            {#if card && !cards.some((c) => c.card_id === card)}<option value={card}>{e.card_label || "Firmakort"}</option>{/if}
+          </select>
+          <span class="label whitespace-normal">
+            {#if fromLine}Fra kontoutskriften for {e.card_label}: dato og beløp må stemme med kortlinjen.
+            {:else if card}Firmaets penger — kvitteringen er dokumentasjonen, ingenting utbetales.{/if}
+          </span>
         </label>
       {/if}
 
