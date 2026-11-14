@@ -16,10 +16,12 @@ every customer who runs the code.
 Treat this skill as a boundary, not a style guide. When the law and a
 convenient design disagree, the law wins and the conflict is reported.
 
-**Sibling skills.** For cash-register specifics (electronic journal, receipt
-headings, X/Z-report contents, produkterklæring) read **kassaloven**. For how
-NG Pos represents money, read **money-arithmetic**. This skill covers what
-happens to those numbers once they are accounting data.
+**Sibling skills and house rules.** How amounts are represented is each
+codebase's own rule, and that rule wins over any example here: in regnmed it
+is integer øre (`Ore(i64)`, see CLAUDE.md). For NG Pos, the **kassaloven**
+and **money-arithmetic** skills cover the cash register and its fixed-point
+scales, where they are installed; they are not part of this repository. This
+skill covers what happens to the numbers once they are accounting data.
 
 ## The one test to apply first
 
@@ -59,9 +61,14 @@ principles. Each one has a concrete engineering consequence:
 3. **Realitet** — postings reflect actual events or accounting judgements
    of *this* entity. → Strict tenant/legal-entity separation; no shared
    ledgers across organisasjonsnumre.
-4. **Nøyaktighet** — correct and exact. → Exact decimal arithmetic (Postgres
-   `NUMERIC`, never floats); every voucher balances (sum debit = sum credit)
-   in bookkeeping currency.
+4. **Nøyaktighet** — correct and exact. → Stored amounts are exact: integer
+   minor units (regnmed: øre in `i64`) or a decimal type, never binary
+   floats. Every voucher balances (sum debit = sum credit) in bookkeeping
+   currency. One exception: a port of an authority's own calculation that is
+   specified in floating point keeps it, so it matches the authority bit for
+   bit, and is tested against the authority's published output (regnmed:
+   `regnmed-core::withholding_table`, Skatteetaten's trekkrutine). Floats
+   stay inside the routine: its inputs and outputs are integers.
 5. **Ajourhold** — booked as often as the nature and size of the business
    requires. → See deadlines below; the system must make timely posting easy
    and show what is overdue.
@@ -154,7 +161,10 @@ This is where accounting software most often breaks the law.
 
 ## E-invoicing (bokføringsloven § 10 second paragraph; forskrift § 5-2-9)
 
-Staged by LOV-2026-06-19-39 and FOR-2026-09-29-1933:
+Staged by LOV-2026-06-19-39 and FOR-2026-09-29-1933. **The dates and
+formats below come from professional summaries of the forskrift, not its
+text** (marked *secondary* in `references/sources.md`): read the forskrift
+on Lovdata before building to them, and cite the paragraph you verified.
 
 | Date | Obligation |
 |---|---|
@@ -179,7 +189,8 @@ a flag, don't hardcode it away.
 | Special cases (construction project accounts, certain bank specs) | 10 years — see forskrift kap. 8 |
 
 - The small-business exemption from 3.5-year electronic availability (turnover
-  under NOK 5 million, forskrift § 7-7) **is removed from 1 January 2027**.
+  under NOK 5 million, forskrift § 7-7) **is removed from 1 January 2027**
+  (secondary source; verify against the forskrift).
 - Storage: electronic material may be stored in Norway, any EEA state, the
   UK or Switzerland (forskrift § 7-5, as amended 27 January 2025) — check the
   cloud region of the database *and* the backups (§ 7-2). Storage abroad is
@@ -284,7 +295,10 @@ Before completing work that touches accounting data, verify:
 - [ ] Bilag numbers are sequential with no unexplained gaps; drafts don't
       consume real numbers.
 - [ ] Two-way drill: report → account → posting → bilag and back.
-- [ ] Amounts are exact decimals; VAT rounding is per documented rule.
+- [ ] Stored amounts are exact (integer minor units or decimal), in the
+      codebase's own representation; floats only in a ported authority
+      routine tested against its published output. VAT rounding is per
+      documented rule.
 - [ ] Tenant/legal-entity isolation holds for every query and export.
 - [ ] No retention-period data can be hard-deleted (including via GDPR
       flows, tenant offboarding, or cleanup jobs).
