@@ -51,6 +51,10 @@ pub struct Hints {
     /// VAT line per rate. `vat_ore` holds one of them, so the reader must
     /// be told the invoice needs splitting by rate.
     pub several_vat_lines: bool,
+    /// The first line that reads like a name -- on a till receipt, the
+    /// shop. Weak by nature; a caller prefers the registry name for the
+    /// orgnr when there is one.
+    pub seller: Option<Finding<String>>,
 }
 
 fn digits_only(s: &str) -> String {
@@ -157,6 +161,10 @@ pub fn read(text: &str) -> Hints {
     // Every line that looks like VAT, in reading order; the choice is
     // made at the end, against the total (see below).
     let mut vat_candidates: Vec<i64> = Vec::new();
+    // A till receipt says «TOTALT» or «Bankkort», never «å betale»: these
+    // are weaker than the invoice keywords and only fill an empty slot.
+    let mut receipt_total: Option<Finding<i64>> = None;
+    let mut first_date: Option<NaiveDate> = None;
 
     for (i, line) in lines.iter().enumerate() {
         let lower = normalized(line);
@@ -169,7 +177,7 @@ pub fn read(text: &str) -> Hints {
         let tokens: Vec<String> = if own_numbers.is_empty() {
             number_tokens(next_line)
         } else {
-            own_numbers
+            own_numbers.clone()
         };
 
         // --- Identifiers, decided by check digit ---
@@ -240,6 +248,21 @@ pub fn read(text: &str) -> Hints {
             hints.date = Some(Finding::new(*date, "etter «fakturadato»"));
         }
 
+        // A due date is never the document's date -- also when it sits on
+        // the line under its label.
+        let is_due = |l: &str| l.contains("forfall") || l.contains("betalingsfrist");
+        let label_above =
+            i > 0 && is_due(&normalized(lines[i - 1])) && date_candidates(lines[i - 1]).is_empty();
+        if first_date.is_none() && !is_due(&lower) && !label_above {
+            first_date = date_candidates(line).first().copied();
+        }
+        if hints.seller.is_none()
+            && line.chars().filter(|c| c.is_alphabetic()).count() >= 3
+            && !["faktura", "kvittering", "salgskvittering"].contains(&lower.trim())
+        {
+            hints.seller = Some(Finding::new(line.trim().to_string(), "øverste linje"));
+        }
+
         // --- Amounts ---
         // «Å betale» is the one number on an invoice that means exactly
         // one thing, so it beats «sum» and «total».
@@ -266,6 +289,21 @@ pub fn read(text: &str) -> Hints {
                 break;
             }
         }
+        if receipt_total.is_none()
+            && !lower.contains("mva")
+            && let Some((_, vist)) = RECEIPT_TOTALS
+                .iter()
+                .find(|(key, _)| is_receipt_total(&lower, key))
+            // With decimals only: «Totalt antall varer 5» is not 5 kroner.
+            && let Some(amount) = own_numbers
+                .iter()
+                .filter(|t| t.contains([',', '.']))
+                .filter_map(|t| parse_amount(t))
+                .next_back()
+            && amount > 0
+        {
+            receipt_total = Some(Finding::new(amount, format!("etter {vist}")));
+        }
         // «Org.nr 974 760 673 MVA» is the Foretaksregister marking, not
         // a tax line: any spelling of «org» or a valid orgnr among the
         // numbers rules the line out.
@@ -282,6 +320,12 @@ pub fn read(text: &str) -> Hints {
         {
             vat_candidates.push(amount);
         }
+    }
+    if hints.amount_ore.is_none() {
+        hints.amount_ore = receipt_total;
+    }
+    if hints.date.is_none() {
+        hints.date = first_date.map(|d| Finding::new(d, "første dato i dokumentet"));
     }
     // VAT is at most a fifth of a gross amount (25 % on the net is 20 % of
     // the gross), so a candidate above that was read off the wrong line --
@@ -303,6 +347,32 @@ pub fn read(text: &str) -> Hints {
     fitting.dedup();
     hints.several_vat_lines = fitting.len() > 1;
     hints
+}
+
+/// The line-openers that carry a till receipt's total, best first.
+const RECEIPT_TOTALS: &[(&str, &str)] = &[
+    ("totalt", "«totalt»"),
+    ("total", "«total»"),
+    ("til betaling", "«til betaling»"),
+    ("sum", "«sum»"),
+    ("bankkort", "«bankkort»"),
+    ("betalt", "«betalt»"),
+];
+
+/// The line opens with `key`, and for the total words nothing else but the
+/// amount follows: «Total rabatt 20,00» and «Totalt spart 35,00» come
+/// before the real «TOTALT» on many receipts. «Bankkort»/«Betalt» may be
+/// followed by the card's name.
+fn is_receipt_total(lower: &str, key: &str) -> bool {
+    let Some(rest) = lower.trim_start().strip_prefix(key) else {
+        return false;
+    };
+    if matches!(key, "bankkort" | "betalt") {
+        return true;
+    }
+    rest.split(|c: char| !c.is_alphabetic())
+        .filter(|w| !w.is_empty())
+        .all(|w| matches!(w, "kr" | "nok" | "t"))
 }
 
 /// The keyword we matched, for the provenance string.
@@ -455,6 +525,64 @@ KID: 1234567897
             parse_amount("12,345"),
             None,
             "tre desimaler er ikke et beløp"
+        );
+    }
+
+    /// What regnmed-ocr returned for crates/regnmed-ocr/tests/receipt.jpg,
+    /// noise and all: ASCII only, a merged row, «Ora.nr».
+    const OCR_RECEIPT: &str = "\
+REMA 1000 GRONLAND
+Rema Gr?nland AS
+Ora.nr: 915 933 149 MVA
+Gr?nlandsleiret 25, 0190 Oslo
+Kvittering 12.11.2026 14:32
+Kasse 3 Bong 4471
+Melk 9Port1,751  Bred  2.40  90
+Kaffe filtermalt  89.90
+Barepose  4.50
+Pant  3.00
+TOTALT  157,70
+Bankkort  157,70
+MVA-grunnlag Sats MVA
+125.92  15%% 18.89
+2,49  25%  0.60
+3.00  0%  0.00
+Sum MVA  19.49
+Takk for handelen!";
+
+    #[test]
+    fn reads_a_till_receipt_as_the_ocr_returns_it() {
+        let h = read(OCR_RECEIPT);
+        let amount = h.amount_ore.unwrap();
+        assert_eq!(
+            (amount.value, amount.reason.as_str()),
+            (15770, "etter «totalt»")
+        );
+        let date = h.date.unwrap();
+        assert_eq!(date.value, NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
+        assert_eq!(date.reason, "første dato i dokumentet");
+        assert_eq!(h.orgnumber.unwrap().value, "915933149");
+        assert_eq!(h.seller.unwrap().value, "REMA 1000 GRONLAND");
+        assert_eq!(h.vat_ore.unwrap().value, 1949);
+        assert!(h.several_vat_lines);
+    }
+
+    #[test]
+    fn a_receipt_total_never_beats_an_invoice_keyword() {
+        let h = read("Totalt 100,00\nÅ betale 125,00\nFakturadato: 01.02.2026\n03.02.2026");
+        assert_eq!(h.amount_ore.unwrap().value, 12500);
+        // A labelled date beats the first date in the text.
+        assert_eq!(h.date.unwrap().reason, "etter «fakturadato»");
+        // A count is not an amount.
+        assert!(read("Totalt antall varer 5").amount_ore.is_none());
+        // A discount line before the total is not the total.
+        let h = read("Total rabatt -20,00\nTotalt spart 35,00\nTOTALT kr 412,00");
+        assert_eq!(h.amount_ore.unwrap().value, 41200);
+        // A due date under its label is not the document's date.
+        let h = read("Forfallsdato:\n15.03.2026\nDato 01.03.2026");
+        assert_eq!(
+            h.date.unwrap().value,
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
         );
     }
 

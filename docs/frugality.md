@@ -39,6 +39,15 @@ two such imports at once (`JOB_CONCURRENCY=2`) with room to spare. A gate
 would need a SAF-T fixture of that size in CI; until then, re-measure
 when a new job kind lands.
 
+### The text-recognition sidecar (not gated)
+
+`regnmed-ocr` (docs/bilagstolkning.md) is its own Deployment because its
+models need room nothing else has: **250-310 MB peak** while reading one
+photo (measured on macOS 2026-11-13, 800-2400 px). Limit 512 Mi, one
+picture at a time, `RTEN_NUM_THREADS=2`. Its binary is budgeted (10 MB,
+measured 7,4 MB); its 12 MB of model weights are data in the image, not
+linked in. Optional: without `OCR_URL` the API works as before.
+
 ### The portal: first load, not the total
 
 The portal (`ui/portal/dist`) is measured as **what a browser must

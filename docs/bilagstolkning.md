@@ -25,11 +25,56 @@ tallene kommer fra:
 | `ehf` | Dokumentet er EHF/UBL (docs/ehf.md) | Eksakt — feltene står i filen |
 | `pdf-tekst` | PDF med tekstlag | Heuristisk, med begrunnelse per felt |
 | `tekst` | Ren tekstfil | Samme heuristikk |
-| `ingen` | Skannet bilde uten tekstlag | Ingenting foreslås, og det sies fra |
+| `ocr` | Foto (JPEG/PNG) lest av tekstleseren, når den kjører | Samme heuristikk, over OCR-tekst |
+| `ingen` | Alt annet, eller et foto uten tekstleser | Ingenting foreslås, og det sies fra |
 
-En skannet faktura gir altså **ingen** felter — ikke gjetninger. OCR
-hører til en valgfri sidecar priset mot ressursbudsjettet
-(docs/frugality.md); API-et oppfører seg identisk uten den.
+Et dokument uten lesbar tekst gir altså **ingen** felter — ikke
+gjetninger.
+
+## Tekstleseren (OCR) — en valgfri sidecar
+
+`crates/regnmed-ocr` (levert 2026-11-13) er en egen liten tjeneste:
+`POST /read` med et bilde inn, `{"text": …}` ut. Ingen database, ingen
+hemmeligheter, ingen ingress — bare `regnmed-api` når den, gjennom
+`OCR_URL`. Uten `OCR_URL`, eller når tjenesten ikke svarer, får et foto
+ingen forslag og en advarsel; skjemaet virker som før, for hånd.
+
+**Hvorfor en egen prosess.** Modellene bruker 250–310 MB mens de leser
+(målt på macOS for bilder på 800–2400 px). Det har verken API-et
+(64 MB) eller jobbarbeideren (256 MB). Tjenesten leser ett bilde om
+gangen, og `RTEN_NUM_THREADS=2` begrenser CPU-en den tar fra noden.
+
+**Motoren er `ocrs`** — ren Rust, så binæren er statisk som resten av
+clusteret. Modellene (12 MB) er data, ikke kode: de hentes og
+sjekksummeres av `scripts/fetch-ocr-models.sh` og kopieres inn i
+imaget. En ny modell er en commit med ny sjekksum, aldri en
+overraskelse — den endrer hva hver kvittering foreslår.
+
+**Ærlig begrensning: modellen kan bare ASCII.** «Ø» blir «O», «ø» blir
+«?». Det koster lite der det betyr noe, fordi heuristikken matcher på
+normaliserte nøkkelord og på sifre. Det koster butikknavnet bokstavene
+sine — derfor slås navnet opp i Enhetsregisteret på orgnr når det
+finnes.
+
+**Leserekkefølgen er vår.** `ocrs` grupperer tekst i blokker, så en
+kvitterings «TOTALT» og «157,70» kommer ut langt fra hverandre — mens
+heuristikken finner et beløp på etiketten på samme linje. `rows()` i
+`regnmed-ocr` setter hver trykte linje sammen igjen: to biter deler
+linje når de overlapper vertikalt med minst halvparten av den laveste,
+målt mot linjens FØRSTE bit (en voksende union sluker neste linje på en
+tettrykt kvittering — testet).
+
+Bildet roteres etter kameraets EXIF-merking og skaleres ned til 2400 px
+på lengste kant før lesing. Et bilde som oppgir mer enn 8000 px på en
+led, eller ville krevd over 200 MB, avvises FØR det pakkes ut — en liten
+PNG kan ellers love et lerret som tar hele podens minne. Den ene lesingen
+om gangen holdes også når API-et har gitt opp å vente (etter 30 s), så
+to lesinger aldri går samtidig. API-et husker teksten per innholdshash,
+så et utkast som åpnes igjen ikke leses på nytt.
+
+Modellene hentes i CI med `actions/cache` nøklet på sjekksummene, og
+testjobben kjører motoren på `tests/receipt.jpg` — forsvinner bøtta,
+stopper nye modellversjoner, ikke byggene.
 
 ## Tekstlaget ut av PDF-en
 
@@ -75,6 +120,25 @@ ta feil av og derfor er testet:
   leses aldri som mva. Funnet på regnmeds egen faktura-PDF, der
   «Org.nr 790 292 642 MVA» ble lest som 790 292 642 kr i mva.
 
+**Kvitteringer er ikke fakturaer.** En kasselapp sier «TOTALT» eller
+«Bankkort», aldri «å betale», og har sjelden «fakturadato». Derfor tre
+svakere regler som bare fyller et tomt felt:
+
+- et beløp etter en linje som STARTER med «totalt», «total», «til
+  betaling», «sum», «bankkort» eller «betalt» — og bare med desimaler,
+  så «Totalt antall varer 5» ikke blir 5 kroner; aldri på en
+  «sum mva»-linje;
+- den første datoen i dokumentet, når ingen dato har etikett
+  (begrunnelse: «første dato i dokumentet»);
+- den øverste linjen som ser ut som et navn — på en kasselapp er det
+  butikken. Brukes bare for utlegg; i innboksen er øverste linje like
+  ofte «FAKTURA».
+
+«Totalt» godtas bare når ingenting annet enn beløpet (og «kr») følger:
+«Total rabatt» og «Totalt spart» står før den ekte totalen på mange
+kvitteringer. En dato under en «forfall»-etikett er aldri dokumentets
+dato.
+
 Hvert funn bærer sin begrunnelse («etter «å betale»», «ni siffer med
 gyldig kontrollsiffer nær «orgnr»»), og begrunnelsen vises i UI-et.
 Et forslag man ikke kan overprøve raskt er verre enn ingen forslag.
@@ -93,6 +157,8 @@ leverandørreskontroen»), ikke en stille opprettelse.
 
 - `GET /companies/{id}/inbox/{doc}/forslag` — kilde, felter,
   begrunnelser, kontoforslag, advarsler
+- `GET /companies/{id}/expenses/{eid}/suggestion` — det samme for en
+  utleggskvittering (docs/utlegg.md)
 - `GET /companies/{id}/inbox/{doc}/ehf` — den strukturerte lesingen av
   en EHF, for den som vil se dokumentet slik det er (docs/ehf.md)
 
@@ -103,7 +169,13 @@ leverandørreskontroen»), ikke en stille opprettelse.
   bilde-PDF og mojibake (begge gir None).
 - `regnmed-core/src/voucher_hints.rs` — en vanlig norsk faktura leses
   komplett; ugyldige kontrollsifre foreslås ikke; verdi under etikett;
-  «å betale» slår andre summer; beløpsformater.
+  «å betale» slår andre summer; beløpsformater; en kasselapp slik
+  `regnmed-ocr` faktisk leste den (støy og alt), og at en
+  kvitteringstotal aldri slår et fakturanøkkelord.
+- `regnmed-ocr/src/lib.rs` — linjesammensetningen (etikett og beløp på
+  én linje, tettrykte linjer holdes fra hverandre); den ekte motoren
+  på `tests/receipt.jpg` når `OCR_MODELS_DIR` er satt (ellers hoppes
+  den over, som DB-testene).
 - `regnmed-api/tests/grupper/bilagstolkning.rs` (ekte Postgres, også CI): en
   faktura-PDF generert av vår egen writer lastes opp som om den kom
   utenfra, og tolkningen finner igjen alle tallene + leverandøren på
@@ -114,5 +186,9 @@ leverandørreskontroen»), ikke en stille opprettelse.
 ## Bevisst utenfor
 
 Skyavhengighet i kjernepathen, og enhver automatisk bokføring.
-OCR for skannede bilder er neste steg som sidecar — samme endepunkt,
-samme svarform, bare en kilde til.
+Skannede PDF-er (bilde uten tekstlag inni en PDF) leses ikke ennå —
+tekstleseren tar bare JPEG og PNG. Æ, ø og å krever en annen
+gjenkjenningsmodell. En LLM med syn (kundens egen, docs/agent.md §8)
+som leser kvitteringen hører til agent-fasen: den må lese og fylle ut
+gjennom agentens egen identitet og verktøy, ikke gjennom en bakdør i
+API-et.
