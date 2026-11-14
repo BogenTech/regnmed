@@ -425,6 +425,22 @@ mod tests {
         );
     }
 
+    /// Skatteetaten's own 1.40 example (vendored in docs/saft/) imports:
+    /// 1.40 only adds elements the importer does not read (`Country`,
+    /// `VirtualCurrencyType`, NOK-locked tax amounts) and widens the
+    /// currency types it ignores, so the NOK amounts come through intact.
+    #[test]
+    fn imports_skatteetatens_1_40_example() {
+        let xml = include_str!("../../../docs/saft/generated_auditfile_formatted_v_1.40.xml");
+        let file = parse(xml).unwrap();
+        assert_eq!(file.transactions.len(), 3);
+        for tx in &file.transactions {
+            let sum: i64 = tx.lines.iter().map(|l| l.amount_ore).sum();
+            assert_eq!(sum, 0, "transaction {} does not balance", tx.source_id);
+        }
+        assert!(!file.accounts.is_empty());
+    }
+
     #[test]
     fn rejects_non_saft_documents() {
         assert!(matches!(parse("<foo/>"), Err(SaftImportError::NotSaft)));

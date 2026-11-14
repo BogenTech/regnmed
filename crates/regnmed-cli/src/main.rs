@@ -159,7 +159,7 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         days: u32,
     },
-    /// Export Norwegian SAF-T Financial v1.30 XML for a company
+    /// Export Norwegian SAF-T Financial XML for a company (v1.30, or v1.40 for periods from 2027)
     SaftExport {
         /// Company id (or use --orgnr)
         #[arg(long, conflicts_with = "orgnr")]
@@ -1051,6 +1051,10 @@ async fn saft_export(
     let vintage =
         regnmed_core::saft::code_list_vintage(income_year).map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("næringsspesifikasjon kodeliste-årgang: {vintage}");
+    eprintln!(
+        "SAF-T schema version: {}",
+        regnmed_core::saft::schema_version(start)
+    );
     for account in &input.accounts {
         match regnmed_core::saft::grouping_for(&account.number, income_year)
             .map_err(|e| anyhow::anyhow!("{e}"))?

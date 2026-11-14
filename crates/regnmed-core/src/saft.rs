@@ -1,7 +1,8 @@
-//! Norwegian SAF-T Financial v1.30 export.
+//! Norwegian SAF-T Financial export, v1.30 or v1.40 by period.
 //!
-//! Renders an `AuditFile` XML document per Skatteetaten's official schema
-//! (`docs/saft/Norwegian_SAF-T_Financial_Schema_v_1.30.xsd` in this repo).
+//! Renders an `AuditFile` XML document per Skatteetaten's official schemas
+//! (`docs/saft/Norwegian_SAF-T_Financial_Schema_v_1.30.xsd` and `…_1.40.xsd`
+//! in this repo); [`schema_version`] picks one from the selection.
 //! Pure and deterministic: the same input renders byte-identical XML.
 //! Loading the input from the database and writing the file live outside
 //! this crate.
@@ -271,17 +272,33 @@ pub fn grouping_for(account_number: &str, income_year: i32) -> Result<Option<Gro
     Ok(vintage_for(income_year)?.grouping_for(account_number))
 }
 
+/// The schema version a file for a selection starting on `start` is
+/// written in. 1.40 is mandatory from the first period starting
+/// 1 January 2027 and 1.30 stays valid for 2026 and earlier
+/// (docs/saft/README.md). Every 1.40 change is an addition we either do
+/// not use (`Owners`, virtual currency, `Country`) or that never applies:
+/// our `TaxInformation` amounts are always NOK, so the NOK-locked tax
+/// amounts it added are not needed — the same document validates
+/// against both schemas, which the tests check.
+pub fn schema_version(start: NaiveDate) -> &'static str {
+    if start.year() >= 2027 { "1.40" } else { "1.30" }
+}
+
 /// Renders the complete audit file as UTF-8 XML. Fails loudly when no
 /// vendored code list covers the exported inntektsår (the year of the
 /// selection start date).
 pub fn render(input: &SaftInput) -> Result<String, String> {
+    render_as(input, schema_version(input.start))
+}
+
+fn render_as(input: &SaftInput, version: &str) -> Result<String, String> {
     let vintage = vintage_for(input.start.year())?;
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     x.raw(r#"<AuditFile xmlns="urn:StandardAuditFile-Taxation-Financial:NO">"#);
     x.depth = 1;
 
-    header(&mut x, input);
+    header(&mut x, input, version);
     master_files(&mut x, input, vintage);
     entries(&mut x, input);
 
@@ -290,9 +307,9 @@ pub fn render(input: &SaftInput) -> Result<String, String> {
     Ok(x.out)
 }
 
-fn header(x: &mut Xml, input: &SaftInput) {
+fn header(x: &mut Xml, input: &SaftInput, version: &str) {
     x.open("Header");
-    x.leaf("AuditFileVersion", "1.30");
+    x.leaf("AuditFileVersion", version);
     x.leaf("AuditFileCountry", "NO");
     x.leaf("AuditFileDateCreated", &input.file_created.to_string());
     x.leaf("SoftwareCompanyName", "regnmed");
@@ -770,35 +787,62 @@ mod tests {
         assert_eq!(percent(1234), "12.34");
     }
 
-    /// Validates the rendered file against Skatteetaten's official XSD.
-    /// Skips (with a note) when xmllint is not installed.
+    /// Validates the rendered file against Skatteetaten's official XSD
+    /// for each version we write, with a foreign-currency line so the
+    /// amount structure 1.40 retyped (`CurrencyAmount`, `ExchangeRate`)
+    /// is exercised. A 2027 selection cannot render yet (no code list),
+    /// so the 1.40 file is the 2026 fixture written as 1.40 — the same
+    /// path, only the version differs. Skips (with a note) when xmllint
+    /// is not installed.
     #[test]
     fn validates_against_official_xsd() {
-        let xsd = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../docs/saft/Norwegian_SAF-T_Financial_Schema_v_1.30.xsd"
-        );
-        let dir = std::env::temp_dir().join("regnmed-saft-test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("audit.xml");
-        std::fs::write(&file, render(&fixture()).unwrap()).unwrap();
+        let mut input = fixture();
+        let line = &mut input.journals[0].transactions[0].lines[0];
+        line.currency = Some("EUR".into());
+        line.currency_amount_cent = Some(108_000);
+        line.rate_micro = Some(11_574_074);
 
-        let output = match std::process::Command::new("xmllint")
-            .args(["--noout", "--schema", xsd])
-            .arg(&file)
-            .output()
-        {
-            Ok(output) => output,
-            Err(_) => {
-                eprintln!("xmllint not installed — skipping XSD validation");
-                return;
-            }
-        };
-        assert!(
-            output.status.success(),
-            "XSD validation failed:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        for version in ["1.30", "1.40"] {
+            let xsd = format!(
+                "{}/../../docs/saft/Norwegian_SAF-T_Financial_Schema_v_{version}.xsd",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let dir = std::env::temp_dir().join("regnmed-saft-test");
+            std::fs::create_dir_all(&dir).unwrap();
+            let file = dir.join(format!("audit-{version}.xml"));
+            let xml = render_as(&input, version).unwrap();
+            assert!(xml.contains(&format!("<AuditFileVersion>{version}</AuditFileVersion>")));
+            assert!(xml.contains("<ExchangeRate>11.574074</ExchangeRate>"));
+            std::fs::write(&file, xml).unwrap();
+
+            let output = match std::process::Command::new("xmllint")
+                .args(["--noout", "--schema", &xsd])
+                .arg(&file)
+                .output()
+            {
+                Ok(output) => output,
+                Err(_) => {
+                    eprintln!("xmllint not installed — skipping XSD validation");
+                    return;
+                }
+            };
+            assert!(
+                output.status.success(),
+                "XSD {version} validation failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    /// 1.40 is mandatory from the first period starting 1 January 2027;
+    /// anything starting earlier stays 1.30.
+    #[test]
+    fn schema_version_follows_the_selection_start() {
+        let d = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(schema_version(d(2025, 1, 1)), "1.30");
+        assert_eq!(schema_version(d(2026, 12, 31)), "1.30");
+        assert_eq!(schema_version(d(2027, 1, 1)), "1.40");
+        assert_eq!(schema_version(d(2028, 3, 1)), "1.40");
     }
 
     /// The code list is selected by the inntektsår being exported —
