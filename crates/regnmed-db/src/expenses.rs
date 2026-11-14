@@ -354,6 +354,7 @@ pub async fn create_draft(
         }
     }
     check_draft(pool, company_id, &draft).await?;
+    refuse_machine_claimant(pool, person_id).await?;
     check_card(pool, company_id, person_id, kind, None, &mut draft).await?;
     let stored = match &receipt {
         Some(r) => {
@@ -1342,6 +1343,13 @@ pub async fn approve_expense(
     .context("no such expense")?;
     let status: String = expense.get("status");
     ensure!(status == "innsendt", "kravet er allerede {status}");
+    // Someone's money is decided by a person. An agent may enter and send
+    // in a claim; it never approves one (docs/utlegg.md «Agenten»).
+    ensure!(
+        !is_machine(pool, decided_by_person).await?,
+        "et utleggskrav godkjennes av et menneske — en agent kan registrere og sende inn, \
+         men ikke godkjenne"
+    );
 
     // Self-approval was allowed in v1 (#42); with attestering active
     // (docs/attestering.md, #47) the approver must be someone other than
@@ -2088,4 +2096,95 @@ pub async fn billable_expenses(pool: &PgPool, company_id: Uuid) -> Result<Vec<Bi
             can_disburse: r.get("can_disburse"),
         })
         .collect())
+}
+
+/// Turns a receipt in the bilagsinnboks into a DRAFT claim for the person
+/// who paid it (docs/utlegg.md «Agenten»): the document's bytes become the
+/// claim's receipt, and the document is decided `utlegg` with a link to the
+/// claim — one transaction, so a receipt is never both a voucher waiting
+/// to be posted and a claim. The draft is the registrant's to finish and
+/// send in, like any draft entered on someone's behalf.
+pub async fn expense_from_inbox(
+    pool: &PgPool,
+    company_id: Uuid,
+    document_id: Uuid,
+    person_id: Uuid,
+    registered_by: Uuid,
+    created_by: &str,
+) -> Result<Uuid> {
+    refuse_machine_claimant(pool, person_id).await?;
+    let mut tx = pool.begin().await?;
+    let doc = sqlx::query(
+        "select filename, content_type, content, sha256, status from inbox_document
+         where id = $1 and company_id = $2 for update",
+    )
+    .bind(document_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .context("fant ikke dokumentet i innboksen")?;
+    let status: String = doc.get("status");
+    ensure!(
+        status == "ny",
+        "dokumentet er allerede behandlet ({status})"
+    );
+    let digest: Vec<u8> = doc.get("sha256");
+    let content = crate::blob::blobs()
+        .load(doc.get("content"), &digest)
+        .await?;
+    refuse_duplicate_receipt(&mut tx, company_id, &digest, None).await?;
+    let in_row = crate::blob::blobs().store(&content).await?;
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "insert into expense (id, company_id, person_id, registered_by_person, kind, status,
+                              beskrivelse, receipt_filename, receipt_content_type,
+                              receipt_content, receipt_sha256, created_by)
+         values ($1, $2, $3, $4, 'utlegg', 'utkast', '', $5, $6, $7, $8, $9)",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(person_id)
+    .bind(registered_by)
+    .bind(doc.get::<String, _>("filename"))
+    .bind(doc.get::<String, _>("content_type"))
+    .bind(in_row)
+    .bind(&digest)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "update inbox_document set status = 'utlegg', expense_id = $3, decided_by = $4,
+                                   decided_at = now()
+         where id = $1 and company_id = $2",
+    )
+    .bind(document_id)
+    .bind(company_id)
+    .bind(id)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// A claim is money owed to whoever paid; an agent pays nothing and is
+/// owed nothing. Without this, a claim filed by an agent with no
+/// `person_id` would belong to the agent itself.
+async fn refuse_machine_claimant(pool: &PgPool, person_id: Uuid) -> Result<()> {
+    ensure!(
+        !is_machine(pool, person_id).await?,
+        "et utleggskrav tilhører personen som la ut pengene — velg hvem med person_id"
+    );
+    Ok(())
+}
+
+/// Whether a person is a machine (an integration, docs/agent.md §1).
+pub async fn is_machine(pool: &PgPool, person_id: Uuid) -> Result<bool> {
+    Ok(
+        sqlx::query_scalar("select kind = 'integrasjon' from person where id = $1")
+            .bind(person_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false),
+    )
 }

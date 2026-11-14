@@ -156,6 +156,8 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("saft_logg", json!({})),
         ("oppgaver", json!({})),
         ("oppgave", json!({"oppgave": task.to_string()})),
+        ("utlegg_mottakere", json!({})),
+        ("utlegg_liste", json!({"status": "apne"})),
     ]);
 
     for (name, args) in &argumenter {
@@ -210,6 +212,13 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "kontakter_importer",
         "apne_poster_importer",
         "oppgave_svar",
+        // In an_agent_files_a_claim_and_a_human_decides_it.
+        "utlegg_fra_innboks",
+        "utlegg_registrer",
+        "utlegg_kvittering",
+        "utlegg_forslag",
+        "utlegg_oppdater",
+        "utlegg_send_inn",
     ];
     for v in regnmed_mcp::tool::TOOLS {
         assert!(
@@ -699,4 +708,256 @@ async fn only_one_worker_can_hold_a_task() {
             .unwrap(),
         "en forlatt lås kan overtas"
     );
+}
+
+/// An agent files an employee's receipt as a claim and sends it in; a
+/// human decides it (docs/utlegg.md «Agenten»). Both rails: the MCP tool
+/// hands the receipt to the model as a picture, and the hosted worker
+/// passes that picture on to the provider. The agent's role has the
+/// rights to approve, and is still refused: someone's money is decided
+/// by a person.
+#[tokio::test]
+async fn an_agent_files_a_claim_and_a_human_decides_it() {
+    use base64::Engine;
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Agentutlegg AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    for (number, name) in [("7790", "Annen kostnad"), ("2910", "Gjeld til ansatte")] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
+        .await
+        .unwrap();
+    let ola = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("test|{}", Uuid::new_v4()),
+        Some("Ola Ansatt"),
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, ola, "ansatt")
+        .await
+        .unwrap();
+    let client_id = format!("utleggsagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Bokføringsagenten",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let agent_token = idp.token(&client_id, "");
+    let base = serve(state.clone()).await;
+    let server = Server::new(Client::new(&base, Some(company.to_string()), &agent_token));
+
+    // Ola mailed the taxi receipt in; it sits in the innboks.
+    let photo = [&[0xFF, 0xD8, 0xFF, 0xE0][..], Uuid::new_v4().as_bytes()].concat();
+    let (failed, reply) = calls(
+        &server,
+        "bilag_last_opp",
+        json!({"fil": skriv_midlertidig("taxi.jpg", &photo)}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let document = serde_json::from_str::<Value>(&reply).unwrap()["document_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (failed, reply) = calls(&server, "utlegg_mottakere", json!({})).await;
+    assert!(!failed && reply.contains("Ola Ansatt"), "{reply}");
+    // Without a person the claim would be the agent's own: refused.
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_registrer",
+        json!({"fil": skriv_midlertidig("egen.jpg", Uuid::new_v4().as_bytes())}),
+    )
+    .await;
+    assert!(failed && reply.contains("person_id"), "{reply}");
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_fra_innboks",
+        json!({"dokument": document, "person_id": ola.to_string()}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let claim = serde_json::from_str::<Value>(&reply).unwrap()["expense_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The document left the innboks for the claim, one way.
+    let (status, linked): (String, Option<Uuid>) =
+        sqlx::query_as("select status, expense_id from inbox_document where id = $1")
+            .bind(Uuid::parse_str(&document).unwrap())
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "utlegg");
+    assert_eq!(linked.unwrap().to_string(), claim);
+    let (failed, _) = calls(
+        &server,
+        "utlegg_fra_innboks",
+        json!({"dokument": document, "person_id": ola.to_string()}),
+    )
+    .await;
+    assert!(failed, "a document becomes one claim");
+
+    // The model SEES the receipt: the picture itself, byte for byte.
+    let picture = server
+        .handle(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "utlegg_kvittering", "arguments": { "utlegg": claim } },
+        }))
+        .await
+        .unwrap();
+    let content = picture["result"]["content"].as_array().unwrap();
+    assert_eq!(content[1]["type"], "image", "{picture}");
+    assert_eq!(content[1]["mimeType"], "image/jpeg");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(content[1]["data"].as_str().unwrap())
+            .unwrap(),
+        photo
+    );
+    let (failed, _) = calls(&server, "utlegg_forslag", json!({"utlegg": claim})).await;
+    assert!(!failed);
+
+    // Filled in and sent in by the agent.
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_oppdater",
+        json!({"utlegg": claim, "dato": "2026-03-10", "belop_ore": 34_900, "beskrivelse": "Taxi til kundemøte"}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let (failed, reply) = calls(&server, "utlegg_send_inn", json!({"utlegg": claim})).await;
+    assert!(!failed, "{reply}");
+    let (failed, reply) = calls(&server, "utlegg_liste", json!({"status": "apne"})).await;
+    assert!(!failed && reply.contains(&claim), "{reply}");
+
+    // A PDF is not shown as a picture; the tool says what to use instead.
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_registrer",
+        json!({"fil": skriv_midlertidig("hotell.pdf", format!("%PDF-1.4 {}", Uuid::new_v4()).as_bytes()), "person_id": ola.to_string()}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let pdf_claim = serde_json::from_str::<Value>(&reply).unwrap()["expense_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pdf = server
+        .handle(json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "utlegg_kvittering", "arguments": { "utlegg": pdf_claim } },
+        }))
+        .await
+        .unwrap();
+    assert_eq!(pdf["result"]["content"].as_array().unwrap().len(), 1);
+    assert!(
+        pdf["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("utlegg_forslag")
+    );
+
+    // The agent's role may approve claims — and is refused anyway.
+    let http = reqwest::Client::new();
+    let refused = http
+        .post(format!(
+            "{base}/companies/{company}/expenses/{claim}/approve"
+        ))
+        .bearer_auth(&agent_token)
+        .json(&json!({"konto": "7790"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 400);
+    assert!(refused.text().await.unwrap().contains("menneske"));
+    let refused = http
+        .post(format!(
+            "{base}/companies/{company}/expenses/{claim}/reject"
+        ))
+        .bearer_auth(&agent_token)
+        .json(&json!({"note": "nei"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 403);
+    // A person decides it.
+    let approved = http
+        .post(format!(
+            "{base}/companies/{company}/expenses/{claim}/approve"
+        ))
+        .bearer_auth(idp.token(&owner_sub, "Eier Eiersen"))
+        .json(&json!({"konto": "7790"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(approved.status(), 200, "{}", approved.text().await.unwrap());
+
+    // The hosted rail: the worker hands the same picture to the provider.
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(
+        mock.clone(),
+        vec![
+            json!({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{
+                "id":"call_1","type":"function","function":{
+                    "name":"utlegg_kvittering",
+                    "arguments": json!({"utlegg": claim}).to_string()
+            }}]}}]}),
+            json!({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{
+                "id":"call_2","type":"function","function":{
+                    "name":"utlegg_kvittering",
+                    "arguments": json!({"utlegg": claim}).to_string()
+            }}]}}]}),
+            json!({"choices":[{"message":{"role":"assistant","content":"FERDIG: lest"}}]}),
+        ],
+    )
+    .await;
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
+    regnmed_agent::run_loop(&model, &server, "bokforing", None, "Les kvitteringen.", &[])
+        .await
+        .unwrap();
+    let sett = mock.sett.lock().unwrap().clone();
+    let messages = sett[1]["messages"].as_array().unwrap();
+    let last = messages.last().unwrap();
+    assert_eq!(last["role"], "user", "the picture follows the tool results");
+    let url = last["content"][1]["image_url"]["url"].as_str().unwrap();
+    assert!(url.starts_with("data:image/jpeg;base64,"), "{url}");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(&url["data:image/jpeg;base64,".len()..])
+            .unwrap(),
+        photo
+    );
+    // Read twice: only the newest picture rides along, the older one is
+    // a note — every turn resends the conversation.
+    let pictures = sett[2]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["content"].is_array())
+        .count();
+    assert_eq!(pictures, 1, "{}", sett[2]);
 }

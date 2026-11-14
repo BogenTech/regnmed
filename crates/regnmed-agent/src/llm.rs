@@ -18,8 +18,9 @@ use serde_json::{Map, Value, json};
 #[derive(Debug, Clone, Serialize)]
 pub struct Message {
     pub role: &'static str,
+    /// A string, or for a message with pictures the content parts.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
+    pub content: Option<Value>,
     /// Set on an assistant message that asked for tools.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Value>,
@@ -39,10 +40,31 @@ impl Message {
     pub fn assistant(text: impl Into<String>) -> Self {
         Self::enkel("assistant", text)
     }
+    /// A user message with pictures, as the OpenAI-compatible wire takes
+    /// them: text and `image_url` parts, the picture as a data URL.
+    pub fn bruker_bilder(text: &str, images: &[regnmed_mcp::Image]) -> Self {
+        let mut parts = vec![json!({ "type": "text", "text": text })];
+        parts.extend(images.iter().map(|i| {
+            json!({
+                "type": "image_url",
+                "image_url": { "url": format!("data:{};base64,{}", i.mime, i.base64) },
+            })
+        }));
+        Message {
+            role: "user",
+            content: Some(Value::Array(parts)),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+    /// A message that carries pictures (content parts, not a string).
+    pub fn has_images(&self) -> bool {
+        matches!(self.content, Some(Value::Array(_)))
+    }
     fn enkel(role: &'static str, text: impl Into<String>) -> Self {
         Message {
             role,
-            content: Some(text.into()),
+            content: Some(Value::String(text.into())),
             tool_calls: None,
             tool_call_id: None,
         }
@@ -62,7 +84,7 @@ impl Message {
     pub fn tool_result(tool_call_id: String, text: String) -> Self {
         Message {
             role: "tool",
-            content: Some(text),
+            content: Some(Value::String(text)),
             tool_calls: None,
             tool_call_id: Some(tool_call_id),
         }

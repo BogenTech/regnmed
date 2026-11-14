@@ -22,7 +22,26 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
 
 use client::{Body, Client};
-use tool::{Body as ToolBody, Tool};
+use tool::{Body as ToolBody, Reply, Tool};
+
+/// What a tool call produced: the text (the API's answer, or its error
+/// prose), whether it failed, and for a receipt the picture itself.
+pub struct ToolOutput {
+    pub text: String,
+    pub failed: bool,
+    pub image: Option<Image>,
+}
+
+/// A picture for the model, base64 as both MCP and the providers take it.
+pub struct Image {
+    pub mime: String,
+    pub base64: String,
+}
+
+/// Larger than this is not sent as a picture: a phone's full-size photo
+/// costs the customer's model budget for nothing a 2400 px copy would not
+/// show, and providers cap the request size.
+const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 
 /// The protocol revision we implement. A client that asks for another
 /// one is answered with ours, which is what the spec prescribes — the
@@ -97,8 +116,17 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
-        let (text, failed) = self.execute_tool(tool, args).await;
-        Ok(text_response(&text, failed))
+        let out = self.execute_tool(tool, args).await;
+        let mut response = text_response(&out.text, out.failed);
+        if let Some(image) = out.image {
+            response["content"]
+                .as_array_mut()
+                .expect("content")
+                .push(json!({
+                    "type": "image", "data": image.base64, "mimeType": image.mime,
+                }));
+        }
+        Ok(response)
     }
 
     /// Runs a tool and returns its text plus whether it failed. Public
@@ -106,11 +134,80 @@ impl Server {
     /// same tools over HTTP instead of over stdio: the transport differs,
     /// the dispatch must not, or the two rails would drift apart in
     /// exactly the place where that is hardest to notice.
-    pub async fn execute_tool(&self, v: &Tool, args: Map<String, Value>) -> (String, bool) {
-        match self.execute(v, args).await {
-            Ok(text) => (text, false),
-            Err(error) => (format!("{error:#}"), true),
+    pub async fn execute_tool(&self, v: &Tool, args: Map<String, Value>) -> ToolOutput {
+        let result = if v.reply == Reply::Image {
+            self.fetch_image(v, args).await
+        } else {
+            self.execute(v, args).await.map(|text| (text, None))
+        };
+        match result {
+            Ok((text, image)) => ToolOutput {
+                text,
+                failed: false,
+                image,
+            },
+            Err(error) => ToolOutput {
+                text: format!("{error:#}"),
+                failed: true,
+                image: None,
+            },
         }
+    }
+
+    /// A file the model should see. A picture comes back as the picture;
+    /// anything else (a PDF) as a sentence saying what to use instead.
+    async fn fetch_image(
+        &self,
+        v: &Tool,
+        mut args: Map<String, Value>,
+    ) -> Result<(String, Option<Image>)> {
+        let path = fill_path(v.path, &mut args, self.client.company.as_deref())?;
+        let (status, content_type, bytes) = self
+            .client
+            .call_bytes(&path)
+            .await
+            .with_context(|| format!("kallet til GET {path} nådde ikke fram"))?;
+        if !(200..300).contains(&status) {
+            bail!(
+                "GET {path} svarte {status}: {}",
+                String::from_utf8_lossy(&bytes)
+            );
+        }
+        let mime = content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !matches!(
+            mime.as_str(),
+            "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+        ) {
+            return Ok((
+                format!(
+                    "Kvitteringen er {mime}, ikke et bilde. Bruk `utlegg_forslag` for det                      regnmed leser av den, eller spør et menneske."
+                ),
+                None,
+            ));
+        }
+        if bytes.len() > MAX_IMAGE_BYTES {
+            return Ok((
+                format!(
+                    "Bildet er for stort til å vises ({} MB). Bruk `utlegg_forslag`.",
+                    bytes.len() / (1024 * 1024)
+                ),
+                None,
+            ));
+        }
+        use base64::Engine;
+        Ok((
+            "Kvitteringen følger som bilde. Les dato, totalbeløpet med mva og hvem som ble              betalt; skriv bare det du faktisk ser."
+                .to_string(),
+            Some(Image {
+                mime,
+                base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            }),
+        ))
     }
 
     async fn execute(&self, v: &Tool, mut args: Map<String, Value>) -> Result<String> {

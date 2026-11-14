@@ -220,21 +220,48 @@ pub async fn run_loop(
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
-            let text = match tool::find(&calls.name) {
-                Some(v) => server.execute_tool(v, calls.arguments).await.0,
+            let out = match tool::find(&calls.name) {
+                Some(v) => server.execute_tool(v, calls.arguments).await,
                 // An invented tool is the model's mistake, and it is told
                 // so in the same channel as a real result.
-                None => format!("ukjent verktøy «{}»", calls.name),
+                None => regnmed_mcp::ToolOutput {
+                    text: format!("ukjent verktøy «{}»", calls.name),
+                    failed: true,
+                    image: None,
+                },
             };
-            (calls.id, text)
+            (calls.id, out)
         }))
         .buffered(CONCURRENT_TOOLS)
         .collect::<Vec<_>>()
         .await;
         // `buffered` preserves the order they were asked in, which some
         // providers check when matching results to calls.
-        for (id, text) in tool_results {
-            messages.push(Message::tool_result(id, llm::truncate(&text, 8000)));
+        // A tool message carries text only (the OpenAI-compatible wire),
+        // so a receipt the model should SEE follows the results as one
+        // user message with the pictures — after all of them, since the
+        // results must come straight after the turn that asked.
+        let mut images = Vec::new();
+        for (id, out) in tool_results {
+            messages.push(Message::tool_result(id, llm::truncate(&out.text, 8000)));
+            images.extend(out.image);
+        }
+        if !images.is_empty() {
+            // Only the newest pictures ride along: every turn resends the
+            // whole conversation, and a task that reads ten receipts would
+            // otherwise carry all ten on every call until the provider
+            // refuses the size. An older picture becomes a note saying
+            // how to see it again.
+            for m in messages.iter_mut().filter(|m| m.has_images()) {
+                *m = Message::bruker(
+                    "(Et kvitteringsbilde sto her. Kall `utlegg_kvittering` på nytt om du \
+                     trenger å se det igjen.)",
+                );
+            }
+            messages.push(Message::bruker_bilder(
+                "Kvitteringen(e) fra verktøykallet over.",
+                &images,
+            ));
         }
     }
 
