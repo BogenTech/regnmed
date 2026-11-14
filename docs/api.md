@@ -147,6 +147,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/expenses/{expense_id}/receipt` | GET, PUT |
 | `/companies/{company_id}/expenses/{expense_id}/reject` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/submit` | POST |
+| `/companies/{company_id}/expenses/{expense_id}/suggestion` | GET |
 | `/companies/{company_id}/employees` | GET POST |
 | `/companies/{company_id}/employees/{employee_id}/employment` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/end` | PUT |

@@ -165,7 +165,16 @@ jobs:
           echo "REGNMED_VERSION=$REGNMED_VERSION"
           cargo build --release --locked \
             --target ${{ matrix.target }} \
-            -p regnmed-api -p regnmed-cli -p regnmed-agent
+            -p regnmed-api -p regnmed-cli -p regnmed-agent -p regnmed-ocr
+
+      # The OCR models come from a third party's bucket (scripts/
+      # fetch-ocr-models.sh). Cached by their pinned checksums, so a
+      # bucket that goes away stops new model versions, not our builds.
+      - uses: actions/cache@v4
+        with:
+          path: target/ocr-models
+          key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.sh') }}
+      - run: scripts/fetch-ocr-models.sh
 
       # The flags above, CHECKED rather than trusted. They were added
       # 2026-10-19 after the Ubuntu 26 runner auto-vectorised ring past
@@ -180,7 +189,7 @@ jobs:
       - name: The binaries stay within the oldest node's instruction set
         if: matrix.arch == 'amd64'
         run: |
-          for bin in regnmed-api regnmed regnmed-agent; do
+          for bin in regnmed-api regnmed regnmed-agent regnmed-ocr; do
             path="target/x86_64-unknown-linux-musl/release/$bin"
             # objdump to a file first: piped into `grep -c ... || true`, a
             # failed objdump (missing binary, wrong path) counted 0 and passed.
@@ -232,6 +241,7 @@ jobs:
         run: |
           ls -l target/${{ matrix.target }}/release/regnmed-api \
                 target/${{ matrix.target }}/release/regnmed \
+                target/${{ matrix.target }}/release/regnmed-ocr \
             | awk '{printf "  %-16s %.1f MB\n", $9, $5/1048576}'
 
   publish:

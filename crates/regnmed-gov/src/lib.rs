@@ -40,5 +40,6 @@ pub mod routing;
 pub mod shareholder_return;
 pub mod stripe;
 pub mod tax_card;
+pub mod textreader;
 pub mod tsa;
 pub mod vat_return;

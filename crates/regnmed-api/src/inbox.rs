@@ -253,20 +253,69 @@ pub async fn ehf_suggestion(
     })))
 }
 
+/// The suggestion for a document, with a photo read by the
+/// text-recognition sidecar first when one is configured (`OCR_URL`).
+/// Without it, or when it fails, a photo yields no fields and the
+/// warnings say why -- the form still works, by hand.
+pub(crate) async fn read_document(
+    state: &AppState,
+    company_id: Uuid,
+    content_type: &str,
+    content: &[u8],
+) -> Result<regnmed_db::Bokforingsforslag, ApiError> {
+    let photo = content.starts_with(&[0xFF, 0xD8, 0xFF]) || content.starts_with(b"\x89PNG");
+    let mut failed = None;
+    let mut image_text = None;
+    // The same bytes always read the same, and every opening of a draft
+    // asks again: cache by content hash. A receipt's text is a few
+    // hundred bytes. shortcut: per process and cleared wholesale at 1000
+    // entries; a shared cache is for when there are several replicas.
+    type Cache = std::sync::Mutex<std::collections::HashMap<Vec<u8>, String>>;
+    static TEXTS: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
+    let digest = <sha2::Sha256 as sha2::Digest>::digest(content).to_vec();
+    if photo && let Some(hit) = TEXTS.lock().unwrap().get(&digest) {
+        image_text = Some(hit.clone());
+    } else if photo && let Some(reader) = regnmed_gov::textreader::TextReader::from_env() {
+        match reader.read(content.to_vec()).await {
+            Ok(text) => {
+                let mut texts = TEXTS.lock().unwrap();
+                if texts.len() >= 1000 {
+                    texts.clear();
+                }
+                texts.insert(digest, text.clone());
+                image_text = Some(text);
+            }
+            Err(e) => {
+                eprintln!("text reader: {e:#}");
+                failed = Some("tekstgjenkjenningen svarte ikke akkurat nå — prøv igjen senere");
+            }
+        }
+    }
+    let mut f =
+        regnmed_db::document_suggestion(&state.pool, company_id, content_type, content, image_text)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    f.warnings.extend(failed.map(String::from));
+    Ok(f)
+}
+
 /// "What should this bilag become?" for ANY document
 /// (docs/bilagstolkning.md, #34): EHF is read exactly, a PDF with a text
-/// layer is interpreted heuristically, a scanned image yields nothing —
-/// and says so. Every field carries a justification, and nothing is
-/// posted: the suggestion fills the form, the human decides.
+/// layer and a photo (through the text reader) are interpreted
+/// heuristically, anything else yields nothing — and says so. Every
+/// field carries a justification, and nothing is posted: the suggestion
+/// fills the form, the human decides.
 pub async fn suggestion(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherRead).await?;
-    let f = regnmed_db::inbox_suggestion(&state.pool, company_id, document_id)
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let (_, content_type, content) =
+        regnmed_db::get_inbox_document(&state.pool, company_id, document_id)
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    let f = read_document(&state, company_id, &content_type, &content).await?;
     Ok(Json(json!({
         "kilde": f.source,
         "selger_navn": f.seller_name,

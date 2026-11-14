@@ -18,3 +18,4 @@ resources:
   - abonnement-oppfolging.yaml
   - agent-worker.yaml
   - job-worker.yaml
+  - ocr.yaml

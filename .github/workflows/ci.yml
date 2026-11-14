@@ -91,7 +91,19 @@ jobs:
       - name: Install cargo-nextest
         run: curl -sSLf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
       - run: cargo fmt --all --check
+      # The OCR models come from a third party's bucket (scripts/
+      # fetch-ocr-models.sh). Cached by their pinned checksums, so a
+      # bucket that goes away stops new model versions, not our builds.
+      - uses: actions/cache@v4
+        with:
+          path: target/ocr-models
+          key: ocr-models-${{ hashFiles('scripts/fetch-ocr-models.sh') }}
+      - run: scripts/fetch-ocr-models.sh
+      # Runs regnmed-ocr's real-engine test, which skips without it.
       - run: cargo nextest run --workspace
+        env:
+          # Absolute: nextest runs each test binary from its crate directory.
+          OCR_MODELS_DIR: ${{ github.workspace }}/target/ocr-models
 
   frugality:
     runs-on: ubuntu-latest

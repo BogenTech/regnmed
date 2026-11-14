@@ -277,16 +277,17 @@ pub async fn get(
     Ok(Json(expense_json(expense)))
 }
 
-pub async fn receipt(
-    State(state): State<AppState>,
-    person: AuthPerson,
-    Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
-) -> Result<Response, ApiError> {
-    let role = require(&state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
-    // The receipt is a picture of something private. Without
-    // UTLEGG_LES_ALLE you get only your own, and a DRAFT is nobody's but
-    // its claimant's and whoever entered it — for everyone else it does
-    // not exist, the same rule as the claim itself.
+/// The receipt is a picture of something private. Without
+/// UTLEGG_LES_ALLE you get only your own, and a DRAFT is nobody's but its
+/// claimant's and whoever entered it — for everyone else it does not
+/// exist, the same rule as the claim itself.
+async fn readable_receipt(
+    state: &AppState,
+    person: &AuthPerson,
+    company_id: Uuid,
+    expense_id: Uuid,
+) -> Result<(String, String, Vec<u8>), ApiError> {
+    let role = require(state, person.person_id, company_id, Right::ExpenseReadOwn).await?;
     let (claimant, entered_by, status) =
         regnmed_db::expense_people(&state.pool, company_id, expense_id)
             .await
@@ -295,10 +296,18 @@ pub async fn receipt(
     if !mine && (status == "utkast" || !role.has(Right::ExpenseReadAll)) {
         return Err(ApiError::NotFound);
     }
+    regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))
+}
+
+pub async fn receipt(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
     let (filename, content_type, content) =
-        regnmed_db::expense_receipt(&state.pool, company_id, expense_id)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        readable_receipt(&state, &person, company_id, expense_id).await?;
     // A receipt photo is shown in place, but only when we are willing to
     // assert its type — file_response downgrades anything else (#64).
     Ok(file_response(
@@ -307,6 +316,79 @@ pub async fn receipt(
         &content_type,
         content,
     ))
+}
+
+/// What the receipt itself says (docs/utlegg.md «Kvitteringen leses»):
+/// date, amount and who was paid, each with the reason we believe it.
+/// Read again on every call and never stored -- a better reader improves
+/// old drafts too, and nothing here is a fact until the claimant saves it.
+pub async fn suggestion(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, expense_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (_, content_type, content) =
+        readable_receipt(&state, &person, company_id, expense_id).await?;
+    let f = crate::inbox::read_document(&state, company_id, &content_type, &content).await?;
+    let mut reasons: Vec<serde_json::Value> = f
+        .begrunnelser
+        .iter()
+        .filter_map(|(field, why)| {
+            let field = match field.as_str() {
+                "dato" => "date",
+                "brutto" => "amount_ore",
+                "mva" => "vat_ore",
+                "orgnr" => "orgnumber",
+                _ => return None,
+            };
+            Some(json!({ "field": field, "why": why }))
+        })
+        .collect();
+    // Who was paid: the company's own supplier register, then the
+    // Enhetsregisteret name for the orgnr, then the receipt's top line.
+    let registry_name = match (&f.supplier_name, &f.orgnumber) {
+        (None, Some(orgnumber)) => regnmed_gov::brreg::BrregClient::from_env()
+            .entity(orgnumber)
+            .await
+            .ok()
+            .flatten()
+            .map(|e| e.name),
+        _ => None,
+    };
+    let description = if let Some(name) = &f.supplier_name {
+        Some((
+            name.clone(),
+            "leverandøren med dette orgnr i reskontroen".to_string(),
+        ))
+    } else if let Some(name) = registry_name {
+        Some((
+            name,
+            "navnet i Enhetsregisteret for orgnr på kvitteringen".to_string(),
+        ))
+    } else {
+        f.top_line.clone()
+    };
+    if let Some((_, why)) = &description {
+        reasons.push(json!({ "field": "description", "why": why }));
+    }
+    // The inbox's warnings speak of the inbox's form: a missing supplier
+    // and VAT on several rates are the approver's concern (the claim
+    // carries one VAT code, chosen at approval), not the claimant's.
+    let warnings: Vec<String> = f
+        .warnings
+        .into_iter()
+        .filter(|w| !w.contains("leverandørreskontroen") && !w.contains("«Avansert»"))
+        .collect();
+    Ok(Json(json!({
+        "source": f.source,
+        "date": f.date.map(|d| d.to_string()),
+        "amount_ore": f.gross_ore,
+        "vat_ore": f.vat_ore,
+        "orgnumber": f.orgnumber,
+        "description": description.map(|(name, _)| name),
+        "reasons": reasons,
+        "warnings": warnings,
+    })))
 }
 
 #[derive(Deserialize, Default)]

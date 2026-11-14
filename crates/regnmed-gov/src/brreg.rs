@@ -229,6 +229,7 @@ impl BrregClient {
             .http
             .get(&url)
             .header("accept", "application/json")
+            .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
             .context("Enhetsregisteret unreachable")?;

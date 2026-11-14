@@ -5,7 +5,7 @@
   // that keeps the allowance trekkfri — and its tolls, ferries and parking
   // as costs of their own, each with its receipt. `expense` is null for a
   // trip not saved yet; the first save gives it an address.
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api, post, send } from "../../lib/api.js";
   import { kr, oreOrNull, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
@@ -83,6 +83,50 @@
       .catch(() => (preview = { kind: "none" }));
     return () => url && URL.revokeObjectURL(url);
   });
+
+  // What the receipt says, read by the server (text layer or OCR) and
+  // put into the fields that are still empty — or still hold what was
+  // read last time, so a re-read after rotating can correct itself, but
+  // a value the user typed is never overwritten. Nothing is saved until
+  // the user saves: a suggestion is not a fact.
+  let reading = $state(false);
+  let readResult = $state(null); // { filled, warnings }
+  let auto = $state({}); // field -> { value, why }
+  const suggestedWhy = (field, value) => (auto[field] && auto[field].value === value ? auto[field].why : null);
+  // Runs when the receipt arrives or changes — never as the user types,
+  // hence the untrack around everything that reads the fields.
+  $effect(() => {
+    receiptVersion;
+    if (isTrip || !receiptName) return;
+    return untrack(readReceipt);
+  });
+  function readReceipt() {
+    const id = expense.expense_id;
+    const open = (field, value) => !value.trim() || auto[field]?.value === value;
+    if (!open("date", date) && !open("amount", amount) && !open("description", description)) return;
+    let current = true;
+    reading = true;
+    api(base + "/" + id + "/suggestion")
+      .then((r) => {
+        if (!current) return;
+        const why = Object.fromEntries(r.reasons.map((x) => [x.field, x.why]));
+        const next = {};
+        const fill = (field, value, now, set) => {
+          if (value && open(field, now)) {
+            set(value);
+            next[field] = { value, why: why[field === "amount" ? "amount_ore" : field] };
+          }
+        };
+        if (r.date && r.date <= today()) fill("date", r.date, date, (v) => (date = v));
+        if (r.amount_ore > 0) fill("amount", kr(r.amount_ore), amount, (v) => (amount = v));
+        fill("description", r.description, description, (v) => (description = v));
+        auto = next;
+        readResult = { filled: Object.keys(next).length, warnings: r.warnings };
+      })
+      .catch((err) => current && (readResult = { filled: 0, warnings: [err.message] }))
+      .finally(() => current && (reading = false));
+    return () => (current = false);
+  }
 
   // A project that is billed by default makes its costs billable too.
   function projectChanged() {
@@ -321,17 +365,37 @@
         </label>
       {/if}
 
+      {#if reading}
+        <div role="status" class="flex items-center gap-2 text-sm"><span class="loading loading-spinner loading-sm"></span>Leser kvitteringen …</div>
+      {:else if readResult}
+        <div role="status" class="alert alert-info alert-soft text-sm">
+          <div>
+            <p>
+              {readResult.filled
+                ? "Fylte inn " + readResult.filled + (readResult.filled === 1 ? " felt" : " felter") + " fra kvitteringen. Sjekk dem før du sender inn."
+                : "Fant ingenting å fylle inn fra kvitteringen."}
+            </p>
+            {#each readResult.warnings as w (w)}<p class="opacity-80">{w}</p>{/each}
+          </div>
+        </div>
+      {/if}
+
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="fieldset">
           <span class="fieldset-legend">{isTrip ? "Kjøredato" : "Dato på kvitteringen"}</span>
           <input id="utkast-date" type="date" class="input w-full" max={today()} bind:value={date} aria-invalid={err("date")} />
-          {#if err("date")}<span class="label text-error">Velg dato</span>{/if}
+          {#if err("date")}<span class="label text-error">Velg dato</span>
+          {:else if suggestedWhy("date", date)}<span class="label whitespace-normal">Lest fra kvitteringen: {suggestedWhy("date", date)}</span>{/if}
         </label>
         {#if !isTrip}
           <label class="fieldset">
             <span class="fieldset-legend">Beløp (kr)</span>
             <input id="utkast-amount" class="input w-full" inputmode="decimal" autocomplete="off" bind:value={amount} aria-invalid={err("amount")} />
-            <span class="label whitespace-normal {err('amount') ? 'text-error' : ''}">{err("amount") ? "Skriv beløpet, for eksempel 249,50" : "Hele beløpet, med mva"}</span>
+            <span class="label whitespace-normal {err('amount') ? 'text-error' : ''}">{err("amount")
+                ? "Skriv beløpet, for eksempel 249,50"
+                : suggestedWhy("amount", amount)
+                  ? "Lest fra kvitteringen: " + suggestedWhy("amount", amount)
+                  : "Hele beløpet, med mva"}</span>
           </label>
         {:else}
           <label class="fieldset">
@@ -401,7 +465,8 @@
       <label class="fieldset">
         <span class="fieldset-legend">{isTrip ? "Formål" : "Hva gjaldt det?"}</span>
         <input class="input w-full" placeholder={isTrip ? "F.eks. kundemøte hos Nordvik AS" : "F.eks. taxi til kundemøte"} bind:value={description} id="utkast-description" aria-invalid={err("description")} />
-        {#if err("description")}<span class="label text-error">{isTrip ? "Skriv formålet med turen" : "Skriv hva utlegget gjaldt"}</span>{/if}
+        {#if err("description")}<span class="label text-error">{isTrip ? "Skriv formålet med turen" : "Skriv hva utlegget gjaldt"}</span>
+        {:else if suggestedWhy("description", description)}<span class="label whitespace-normal">Lest fra kvitteringen: {suggestedWhy("description", description)}. Skriv gjerne hva det gjaldt.</span>{/if}
       </label>
 
       {#if dims.some((d) => d.active)}

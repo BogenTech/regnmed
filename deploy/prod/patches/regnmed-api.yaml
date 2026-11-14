@@ -138,6 +138,10 @@ spec:
                   name: ors-credentials
                   key: api-key
                   optional: true
+            # Reads receipt photos (docs/bilagstolkning.md). If the sidecar
+            # is down, a photo just gets no suggestions and a warning.
+            - name: OCR_URL
+              value: http://regnmed-ocr:8080
             # STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are deliberately
             # ABSENT: the card rail is off in production for now, and the
             # portal says so rather than pretending. Everything else works

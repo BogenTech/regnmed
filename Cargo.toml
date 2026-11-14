@@ -9,6 +9,7 @@ members = [
     "crates/regnmed-gov",
     "crates/regnmed-mcp",
     "crates/regnmed-agent",
+    "crates/regnmed-ocr",
 ]
 
 [workspace.package]
@@ -41,6 +42,24 @@ repository = "https://github.com/bisand/regnmed"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# The OCR engine runs its real-model test in CI (crates/regnmed-ocr),
+# and an unoptimised neural network takes 25 s where an optimised one
+# takes 0,2 s. Only these crates; everything else keeps the dev profile.
+[profile.dev.package.rten]
+opt-level = 3
+[profile.dev.package.rten-gemm]
+opt-level = 3
+[profile.dev.package.rten-simd]
+opt-level = 3
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+[profile.dev.package.rten-tensor]
+opt-level = 3
+[profile.dev.package.rten-imageproc]
+opt-level = 3
+[profile.dev.package.ocrs]
+opt-level = 3
 
 [workspace.dependencies]
 async-nats = "0.42"

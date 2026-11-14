@@ -19,4 +19,10 @@ COPY target/${TARGET}/release/regnmed /app/regnmed
 # from this same image — one model turn can take minutes, and the API's
 # memory budget is measured under request load (docs/frugality.md).
 COPY target/${TARGET}/release/regnmed-agent /app/regnmed-agent
+# The optional text-recognition sidecar (docs/bilagstolkning.md) and its
+# two models, fetched and checksummed by scripts/fetch-ocr-models.sh. The
+# models are data, not code: one layer of 12 MB, the same on both
+# architectures, pulled once per node.
+COPY target/${TARGET}/release/regnmed-ocr /app/regnmed-ocr
+COPY target/ocr-models /app/ocr-models
 ENTRYPOINT ["/app/regnmed-api"]
