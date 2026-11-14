@@ -103,7 +103,9 @@ gang: `/settings/registrering` er POST-only, og registreringsstatus
 leses fra `/settings`.)
 
 Grupper: orientering, lesing av hovedboken, bilagsflyten
-(innboks → forslag → bokfør), salg, migrering, og oppgaver.
+(innboks → forslag → bokfør), salg, utlegg, migrering, og oppgaver.
+Utleggsverktøyene og hva en agent får gjøre med et utleggskrav står i
+[utlegg.md «Agenten»](utlegg.md).
 
 To konvensjoner er gjentatt i hvert skjema der de gjelder, fordi en
 liten modell ikke skal måtte utlede dem: **beløp er heltall øre**
@@ -121,6 +123,22 @@ Binære opplastinger bærer `?sha256=` regnet ut av serveren. API-et
 avviser innhold det alt har, så et nytt forsøk etter et tapt svar blir
 en no-op i stedet for et andre bilag — #102s idempotenskrav, oppfylt med
 mekanismen #48 alt hadde.
+
+### Et bilde går som bilde
+
+`utlegg_kvittering` er det ene verktøyet modellen skal SE svaret fra:
+kvitteringsbildet kommer tilbake som MCP-bildeinnhold (`type: image`,
+base64 og `mimeType`), ikke som tekst modellen måtte dekode. En PDF
+vises ikke som bilde — svaret viser til `utlegg_forslag`, som leser
+tekstlaget — og et bilde over 5 MB sendes ikke. Vertsagenten (§8.3)
+gir det samme bildet videre: en verktøymelding bærer bare tekst på den
+OpenAI-kompatible tråden, så bildene følger etter verktøysvarene som én
+brukermelding med `image_url`-deler (data-URL). Begge skinnene går
+gjennom samme `Server::execute_tool`, som nå svarer med tekst, feilflagg
+og eventuelt bilde. Hele samtalen sendes på nytt hver tur, så bare de
+nyeste bildene følger med; et eldre bilde byttes ut med en merknad om å
+kalle verktøyet igjen — ellers ville en oppgave som leser ti
+kvitteringer vokst forbi leverandørens grense.
 
 ### Feil er prosa, ikke koder
 

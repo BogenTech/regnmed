@@ -38,12 +38,23 @@ pub enum Body {
     FileBinary,
 }
 
+/// What the answer is.
+#[derive(PartialEq, Eq)]
+pub enum Reply {
+    /// The API's JSON or error text, as text.
+    Text,
+    /// A file the model should SEE (a receipt photo): sent as image
+    /// content, not as text it would have to decode.
+    Image,
+}
+
 pub struct Tool {
     pub name: &'static str,
     pub description: &'static str,
     pub method: &'static str,
     pub path: &'static str,
     pub body: Body,
+    pub reply: Reply,
     /// JSON Schema, written out rather than built: the wording is the
     /// prompt a small model reads before choosing, and a builder would
     /// hide it.
@@ -62,6 +73,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/me",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#,
     },
     Tool {
@@ -74,6 +86,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/settings",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -84,6 +97,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/accounts",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -93,6 +107,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/period-lock",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -103,6 +118,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/attestering/policy",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     // ---------- Lese hovedboken ----------
@@ -113,6 +129,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/vouchers",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "from":{"type":"string","description":"Fra dato, YYYY-MM-DD"},
             "to":{"type":"string","description":"Til dato, YYYY-MM-DD"},
@@ -127,6 +144,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/saldobalanse",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"}},"additionalProperties":false}"#,
@@ -138,6 +156,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/kontospesifikasjon",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"},
@@ -151,6 +170,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/resultat",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string","description":"YYYY-MM-DD"},
             "to":{"type":"string","description":"YYYY-MM-DD"},
@@ -163,6 +183,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/balanse",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["date"],"properties":{COMPANY,
             "date":{"type":"string","description":"YYYY-MM-DD"}},"additionalProperties":false}"#,
     },
@@ -174,6 +195,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/mva",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["year","termin"],"properties":{COMPANY,
             "year":{"type":"integer"},
             "termin":{"type":"integer","description":"Terminnummer i selskapets ordning"}},
@@ -186,6 +208,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/nokkeltall",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "year":{"type":"integer"}},"additionalProperties":false}"#,
     },
@@ -195,6 +218,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/kundespesifikasjon",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string"},"to":{"type":"string"}},"additionalProperties":false}"#,
     },
@@ -204,6 +228,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/leverandorspesifikasjon",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
             "from":{"type":"string"},"to":{"type":"string"}},"additionalProperties":false}"#,
     },
@@ -217,6 +242,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/reports/revisjon",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     // ---------- Bilag: foreslå, så bokfør ----------
@@ -227,6 +253,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/inbox",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "status":{"type":"string","enum":["ny","bokfort","avvist"],"description":"Standard: alle"}},
             "additionalProperties":false}"#,
@@ -243,6 +270,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/inbox/{dokument}/forslag",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument"],"properties":{COMPANY,
             "dokument":{"type":"string","description":"document_id fra innboks"}},
             "additionalProperties":false}"#,
@@ -254,6 +282,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/inbox",
         body: Body::FileBinary,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til filen på denne maskinen"},
             "filename":{"type":"string","description":"Navnet dokumentet skal lagres med. Standard: filnavnet."}},
@@ -269,6 +298,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/inbox/{dokument}/bokfor",
         body: Body::Json,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument","journal_code","date","description","lines"],
             "properties":{COMPANY,
             "dokument":{"type":"string","description":"document_id fra innboks"},
@@ -299,6 +329,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/vouchers",
         body: Body::Json,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["journal_code","date","description","lines"],
             "properties":{COMPANY,
             "journal_code":{"type":"string","description":"Vanligvis GL"},
@@ -324,6 +355,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/inbox/{dokument}/avvis",
         body: Body::Json,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument","note"],"properties":{COMPANY,
             "dokument":{"type":"string"},
             "note":{"type":"string","description":"Hvorfor dokumentet avvises"}},
@@ -337,6 +369,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/parties",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "kind":{"type":"string","enum":["kunde","leverandor"]}},"additionalProperties":false}"#,
     },
@@ -346,6 +379,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/invoices",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "open":{"type":"boolean"}},"additionalProperties":false}"#,
     },
@@ -356,6 +390,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/invoices/overdue",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -367,6 +402,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/invoices",
         body: Body::Json,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["party_no","invoice_date","due_date","lines"],
             "properties":{COMPANY,
             "party_no":{"type":"string","description":"Kundenummer fra «kunder»"},
@@ -393,6 +429,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/import/saft/analyze",
         body: Body::File,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"}},
             "additionalProperties":false}"#,
@@ -407,6 +444,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/import/saft",
         body: Body::File,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til SAF-T XML-filen"},
             "mapping":{"type":"object","description":"Kontoavstemming fra saft_analyser: {\"gammel konto\": \"NS 4102-konto\"}. Utelates = filens egne kontonummer brukes.",
@@ -420,6 +458,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/import/saft/log",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
     },
     Tool {
@@ -430,6 +469,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/import/contacts",
         body: Body::File,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]}},
@@ -443,6 +483,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/import/open-items",
         body: Body::File,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
             "fil":{"type":"string","description":"Full sti til CSV-filen"},
             "kind":{"type":"string","enum":["kunde","leverandor"]},
@@ -451,6 +492,115 @@ pub const TOOLS: &[Tool] = &[
             "motkonto":{"type":"string","description":"Motkonto for samlebilaget; standard 2050"},
             "dato":{"type":"string","description":"Bilagsdato, YYYY-MM-DD"}},
             "additionalProperties":false}"#,
+    },
+    // ---------- Utlegg ----------
+    Tool {
+        name: "utlegg_mottakere",
+        description: "Hvem du kan registrere utleggskrav for: `person_id` og navn. Et utlegg \
+                      tilhører alltid personen som la ut pengene — aldri deg selv.",
+        method: "GET",
+        path: "/companies/{selskap}/expenses/claimants",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_fra_innboks",
+        description: "Gjør en kvittering i bilagsinnboksen som en ansatt betalte med EGNE penger \
+                      til et utkast til utleggskrav for den personen. Dokumentet blir \
+                      kvitteringen på kravet og forsvinner fra innboksen. Bruk denne bare når \
+                      kvitteringen viser et kjøp personen skal ha refusjon for — en \
+                      leverandørfaktura skal bokføres med `bilag_bokfor`. Er du usikker på hvem \
+                      som betalte, spør med `oppgave_svar` i stedet for å gjette.",
+        method: "POST",
+        path: "/companies/{selskap}/inbox/{dokument}/expense",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["dokument","person_id"],"properties":{COMPANY,
+            "dokument":{"type":"string","description":"document_id fra innboks"},
+            "person_id":{"type":"string","description":"Hvem som betalte — fra utlegg_mottakere"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_registrer",
+        description: "Laster en kvittering fra disk opp som et utkast til utleggskrav for en \
+                      ansatt. Fyll så ut kravet med `utlegg_oppdater` og send det inn med \
+                      `utlegg_send_inn`.",
+        method: "POST",
+        path: "/companies/{selskap}/expenses/receipts",
+        body: Body::FileBinary,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["fil","person_id"],"properties":{COMPANY,
+            "fil":{"type":"string","description":"Full sti til kvitteringen på denne maskinen"},
+            "filename":{"type":"string","description":"Navnet kvitteringen skal lagres med. Standard: filnavnet."},
+            "person_id":{"type":"string","description":"Hvem som betalte — fra utlegg_mottakere"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_liste",
+        description: "Utleggskravene. `status` «utkast» gir utkastene DU har registrert og ikke \
+                      sendt inn ennå; «apne» de innsendte som venter på et menneske.",
+        method: "GET",
+        path: "/companies/{selskap}/expenses",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY,
+            "status":{"type":"string","enum":["utkast","apne","utbetalt","avvist"]}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_kvittering",
+        description: "Viser deg kvitteringen på et utleggskrav som bilde, så du kan lese dato, \
+                      totalbeløp med mva og hvem som ble betalt. Er kvitteringen en PDF, bruk \
+                      `utlegg_forslag`, som leser tekstlaget.",
+        method: "GET",
+        path: "/companies/{selskap}/expenses/{utlegg}/receipt",
+        body: Body::None,
+        reply: Reply::Image,
+        schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
+            "utlegg":{"type":"string","description":"expense_id"}},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_forslag",
+        description: "Det regnmed selv leser av kvitteringen (tekstlaget i en PDF, ellers \
+                      tekstgjenkjenning): dato, beløp og hvem som ble betalt, hvert med \
+                      begrunnelse. Et forslag er ikke et faktum — sammenlign med bildet.",
+        method: "GET",
+        path: "/companies/{selskap}/expenses/{utlegg}/suggestion",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
+            "utlegg":{"type":"string","description":"expense_id"}},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_oppdater",
+        description: "Fyller ut et utkast. ALLE feltene skrives slik du sender dem — et felt du \
+                      utelater blir tomt, så send alltid dato, beløp og beskrivelse sammen. \
+                      Beløpet er hele beløpet MED mva, i heltall øre (249,50 kr = 24950).",
+        method: "PUT",
+        path: "/companies/{selskap}/expenses/{utlegg}",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["utlegg","dato","belop_ore","beskrivelse"],"properties":{COMPANY,
+            "utlegg":{"type":"string","description":"expense_id"},
+            "dato":{"type":"string","description":"Kvitteringens dato, YYYY-MM-DD"},
+            "belop_ore":{"type":"integer","description":"Totalbeløp med mva, heltall øre"},
+            "beskrivelse":{"type":"string","description":"Hva kjøpet gjaldt, kort — f.eks. «Taxi til kundemøte»"},
+            "department":{"type":"string","description":"Avdelingskode, om kjøpet hører til en"},
+            "project":{"type":"string","description":"Prosjektkode, om kjøpet hører til et"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "utlegg_send_inn",
+        description: "Sender inn et utfylt utkast. Fra nå er kravet låst, og et MENNESKE \
+                      godkjenner eller avviser det — du kan ikke godkjenne utleggskrav, heller \
+                      ikke dem du har registrert. Svaret sier hva som mangler, om noe gjør det.",
+        method: "POST",
+        path: "/companies/{selskap}/expenses/{utlegg}/submit",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
+            "utlegg":{"type":"string","description":"expense_id"}},"additionalProperties":false}"#,
     },
     // ---------- Oppgaver ----------
     Tool {
@@ -461,6 +611,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/agent/oppgaver",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
             "apne":{"type":"boolean","description":"Standard true. false gir også de avsluttede."}},
             "additionalProperties":false}"#,
@@ -471,6 +622,7 @@ pub const TOOLS: &[Tool] = &[
         method: "GET",
         path: "/companies/{selskap}/agent/oppgaver/{oppgave}",
         body: Body::None,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["oppgave"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"}},"additionalProperties":false}"#,
     },
@@ -485,6 +637,7 @@ pub const TOOLS: &[Tool] = &[
         method: "POST",
         path: "/companies/{selskap}/agent/oppgaver/{oppgave}/svar",
         body: Body::Json,
+        reply: Reply::Text,
         schema: r#"{"type":"object","required":["oppgave","status"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"},
             "status":{"type":"string","enum":["pagar","sporsmal","utfort","avvist"]},

@@ -16,6 +16,7 @@ path = "src/main.rs"
 # and the grant in regnmed's own base decides what it may do.
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 hex.workspace = true
 reqwest.workspace = true
 serde.workspace = true

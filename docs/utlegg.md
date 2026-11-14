@@ -363,6 +363,47 @@ hvilket kort en linje er), kortkjøp i valuta der kvitteringens beløp
 er i utenlandsk valuta (kravet føres i kroner, med kontoutskriftens
 beløp), og påminnelse til kortholderen utenfor portalen.
 
+## Agenten
+
+En agent (docs/agent.md — en integrasjon med en rolle) kan registrere
+og sende inn utleggskrav for de ansatte. **Den avgjør dem aldri.**
+
+- **Fra innboksen.** Ansatte sender kvitteringer til selskapets
+  e-post-inn-adresse, og de lander i bilagsinnboksen ved siden av
+  leverandørfakturaene. Den som rydder innboksen — en bokfører eller en
+  agent — gjør en kvittering betalt med egne penger til et utkast for
+  den ansatte (`utlegg_fra_innboks`, docs/bilagsinnboks.md). Fra disk:
+  `utlegg_registrer`.
+- **Lese og fylle ut.** `utlegg_kvittering` viser modellen selve
+  bildet; `utlegg_forslag` gir regnmeds egen lesing (tekstlag eller
+  tekstgjenkjenning). Agenten fyller ut dato, beløp med mva og
+  beskrivelse (`utlegg_oppdater`) og sender inn (`utlegg_send_inn`).
+  Kravet er registrert av agenten på den ansattes vegne, og begge ser
+  det.
+- **Et menneske avgjør.** Godkjenning nektes i transaksjonen
+  (`approve_expense`) når den som godkjenner er en maskin, uansett hva
+  rollen gir; avvisning og utbetaling nektes med 403, og en
+  betalingsliste med utleggskrav kan ikke godkjennes av en agent
+  (`approve_run`). En agent med
+  `bokforing`-rollen har `UTLEGG_GODKJENN` og blir likevel stoppet —
+  regelen ligger på hvem som avgjør, ikke i rollen. Med attestering på
+  er dessuten den som registrerte kravet utelukket som godkjenner, slik
+  det alltid har vært.
+- **Kravet er et menneskes.** Et utleggskrav kan ikke tilhøre en
+  agent: uten `person_id` ville kravet blitt agentens eget, og det
+  nektes (`create_draft`, `expense_from_inbox`).
+- **Den ansattes egne utkast** forblir den ansattes: en agent ser bare
+  utkastene den selv har registrert.
+
+Rolleprompten `bokforer` har fått en fast arbeidsrekkefølge for dette
+(UTLEGG), og prompten `ansatt` sier ikke lenger at den sender inn
+utlegg: et utlegg tilhører personen som la ut pengene, og agenten er
+ikke den personen.
+
+Ikke bygget: en knapp i portalen for å gjøre et innboksdokument til et
+utleggskrav (endepunktet finnes), og at agenten foreslår mva-kode eller
+konto — det velger den som godkjenner.
+
 ## Utbetaling
 
 Tre veier ut, valgt av hva kravet er — aldri av hva som er lettest:
@@ -482,6 +523,7 @@ Utkast:
 - `GET  /companies/{id}/expenses?status=utkast` / `?trip={eid}` — egne utkast / kostnadene på en tur
 - `GET  /companies/{id}/expenses/kjoring?dato=&vehicle=` — satsene, også passasjertillegget
 - `GET  /companies/{id}/expenses/{eid}/suggestion` — det kvitteringen sier: dato, beløp, hvem, med begrunnelser
+- `POST /companies/{id}/inbox/{doc}/expense` — en kvittering i innboksen blir et utkast for `person_id`
 - `GET  /companies/{id}/cards` (`?usable=true`), `POST /companies/{id}/cards`, `PUT /companies/{id}/cards/{card_id}` — kortregisteret
 - `GET  /companies/{id}/expenses/card-lines` — kortkjøp uten kvittering
 - `POST /companies/{id}/expenses/receipts?filename=&bank_transaction_id=` — kvittering til en kortlinje
@@ -580,6 +622,18 @@ originalbilaget sendt med fakturaen ved viderefakturering som utlegg.
   feile), og uten mva (kode 7) etter at selskapet er ute av
   mva-registeret (sett feile).
 
+- `crates/regnmed-api/tests/grupper/agent.rs::an_agent_files_a_claim_and_a_human_decides_it`
+  — en `bokforing`-agent finner den ansatte, gjør en kvittering i
+  innboksen til et utkast (dokumentet får status `utlegg`, bare én
+  gang), ser kvitteringen som bilde byte for byte, fyller ut og sender
+  inn; et krav uten `person_id` nektes; en PDF vises ikke som bilde;
+  agenten nektes å godkjenne (sett feile) og å avvise, et menneske
+  godkjenner; vertsagenten gir bildet videre til leverandøren som
+  `image_url` etter verktøysvarene, og bare det nyeste bildet følger
+  med videre (sett feile).
+- `crates/regnmed-api/tests/grupper/payments.rs::receipt_claims_are_paid_from_the_payment_list`
+  — en agent kan ikke godkjenne en betalingsliste med utleggskrav (sett
+  feile).
 - `crates/regnmed-api/tests/grupper/expenses.rs::company_card_purchases_are_documented_not_reimbursed`
   — kortregisteret (fire sifre, ett kort per konto, bare `BANK_AVSTEM`),
   kortholder ser sitt kort og sine linjer, en kollega verken kortet,

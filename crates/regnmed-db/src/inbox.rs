@@ -27,6 +27,8 @@ pub struct InboxRow {
     pub created_at: DateTime<Utc>,
     pub status: String,
     pub voucher_id: Option<Uuid>,
+    /// Decided `utlegg`: the claim the receipt became.
+    pub expense_id: Option<Uuid>,
     pub decided_by: Option<String>,
     pub note: Option<String>,
     /// The governing attestation decision (newest row), if any.
@@ -101,7 +103,7 @@ pub async fn list_inbox(
 ) -> Result<Vec<InboxRow>> {
     let rows = sqlx::query(
         "select d.id, d.filename, d.content_type, d.byte_size, d.sha256, d.uploaded_by,
-                d.created_at, d.status, d.voucher_id, d.decided_by, d.note,
+                d.created_at, d.status, d.voucher_id, d.expense_id, d.decided_by, d.note,
                 att.decision as attestering, att.decided_by as attestert_av
          from inbox_document d
          left join lateral (
@@ -134,6 +136,7 @@ pub async fn list_inbox(
             created_at: r.get("created_at"),
             status: r.get("status"),
             voucher_id: r.get("voucher_id"),
+            expense_id: r.get("expense_id"),
             decided_by: r.get("decided_by"),
             note: r.get("note"),
             attestering: r.get("attestering"),

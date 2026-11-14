@@ -89,6 +89,7 @@ pub async fn list(
             "uploaded_at": d.created_at.to_rfc3339(),
             "status": d.status,
             "voucher_id": d.voucher_id,
+            "expense_id": d.expense_id,
             "decided_by": d.decided_by,
             "note": d.note,
             "attestering": d.attestering,
