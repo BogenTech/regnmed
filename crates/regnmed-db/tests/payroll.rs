@@ -2178,3 +2178,178 @@ async fn frikort_counts_the_year_and_twelve_month_cards_withhold_on_holiday_pay(
     .to_string();
     assert!(refused.contains("frikort for 2027"), "{refused}");
 }
+
+/// An approved kjøring claim, as the expense flow leaves it: 2910 owes
+/// the claimant. `passengers` adds the 2026 supplement (1,00 kr/km, all
+/// of it trekkfri).
+async fn approved_mileage(
+    pool: &PgPool,
+    company: Uuid,
+    person: Uuid,
+    day: u32,
+    km: i64,
+    passengers: &[&str],
+) -> Uuid {
+    let n = passengers.len() as i64;
+    let allowance = regnmed_core::expenses::trip_allowance(km, (530, 350), (100, 100), n);
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "insert into expense (id, company_id, person_id, kind, dato, beskrivelse, belop_ore, km,
+                              sats_ore_per_km, trekkfri_ore, trekkpliktig_ore, route_from,
+                              route_to, vehicle, passengers, passenger_rate_ore_per_km,
+                              created_by)
+         values ($1, $2, $3, 'kjoring', $4, 'Kundemøte', $5, $6, 530, $7, $8, 'Oslo',
+                 'Drammen', 'bil', $9, $10, 'Test')",
+    )
+    .bind(id)
+    .bind(company)
+    .bind(person)
+    .bind(date(2026, 3, day))
+    .bind(allowance.amount_ore)
+    .bind(km)
+    .bind(allowance.tax_free_ore)
+    .bind(allowance.taxable_ore)
+    .bind(passengers.iter().map(|p| p.to_string()).collect::<Vec<_>>())
+    .bind((n > 0).then_some(100i64))
+    .execute(pool)
+    .await
+    .unwrap();
+    regnmed_db::approve_expense(
+        pool, company, id, "7100", None, "2710", "2910", "Test", person,
+    )
+    .await
+    .unwrap();
+    id
+}
+
+/// Kjøregodtgjørelse is paid with pay (docs/utlegg.md «Utbetaling»): the
+/// run takes trekk on the excess over the trekkfri rate and avgift on it,
+/// settles 2910, marks the claims paid, and the a-melding reports each
+/// part with its kilometres — and a claim is never paid twice.
+#[tokio::test]
+async fn mileage_is_paid_with_pay_and_reported_by_part() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    for (number, name) in [("7100", "Bilgodtgjørelse"), ("2910", "Gjeld til ansatte")] {
+        regnmed_db::ensure_account(&pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    let a = employee(&pool, company, "26829398612", "Kari Kjører", 4_000_000).await;
+    let person = regnmed_db::ensure_person(
+        &pool,
+        &format!("test|{}", Uuid::new_v4()),
+        Some("Kari Kjører"),
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("update employee set person_id = $2 where id = $1")
+        .bind(a)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // 120 km alone: 636 kr, 216 kr of it above the trekkfri rate.
+    let alone = approved_mileage(&pool, company, person, 10, 120, &[]).await;
+    // 100 km with a colleague: 630 kr, 180 kr above.
+    let shared = approved_mileage(&pool, company, person, 12, 100, &["Ola"]).await;
+    // A claim dated after the payment date waits for the next run.
+    let later = approved_mileage(&pool, company, person, 28, 10, &[]).await;
+
+    // A manual payment would skip the trekk and the a-melding.
+    let refused = regnmed_db::pay_expense(&pool, company, alone, date(2026, 3, 15), "1920", "Test")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("lønnskjøring"), "{refused}");
+
+    let r = run(&pool, company, a, 3, "I", None, 0).await;
+    assert_eq!(voucher_sum(&pool, r.voucher_id).await, 0);
+    assert_eq!(r.sum.allowance_ore, 63_600 + 63_000);
+    assert_eq!(
+        account_amount(&pool, r.voucher_id, "2910").await,
+        126_600,
+        "the run settles what the approvals owed"
+    );
+    // 35 % of 40 000 + 216 + 180 kr = 14 138,60 kr → 14 138 kr.
+    let line = &r.lines[0].calculation;
+    assert_eq!(line.withholding_basis_ore, 4_039_600);
+    assert_eq!(r.sum.withholding_ore, 1_413_800);
+    assert_eq!(r.sum.net_ore, 4_000_000 + 126_600 - 1_413_800);
+    assert_eq!(
+        r.sum.employer_contribution_ore,
+        regnmed_core::payroll::employer_contribution(
+            4_039_600,
+            regnmed_core::payroll::Zone::I,
+            1410
+        )
+        .unwrap(),
+        "avgift on pay and the excess, not on the reimbursement"
+    );
+
+    let status = |id: Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("select status from expense where id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(status(alone).await, "utbetalt");
+    assert_eq!(status(shared).await, "utbetalt");
+    assert_eq!(status(later).await, "godkjent");
+
+    let draft = payroll::amelding_for_run(&pool, company, r.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    use regnmed_core::amelding::IncomeKind;
+    let income: Vec<(IncomeKind, i64)> = draft.melding.recipients[0]
+        .income
+        .iter()
+        .map(|i| (i.kind, i.amount_ore))
+        .collect();
+    assert_eq!(
+        income,
+        vec![
+            (IncomeKind::FixedSalary, 4_000_000),
+            (
+                IncomeKind::MileageCar {
+                    km: 220,
+                    taxable: false
+                },
+                42_000 + 35_000
+            ),
+            (
+                IncomeKind::MileageCar {
+                    km: 220,
+                    taxable: true
+                },
+                21_600 + 18_000
+            ),
+            (IncomeKind::MileagePassenger { km: 100 }, 10_000),
+        ]
+    );
+    assert_eq!(draft.melding.recipients[0].withholding_ore, 1_413_800);
+
+    // April pays the late claim and nothing from March again.
+    let april = run(&pool, company, a, 4, "I", None, 0).await;
+    assert_eq!(april.sum.allowance_ore, 5_300);
+    assert_eq!(status(later).await, "utbetalt");
+
+    // Once the employment has ended no run can include the employee, so a
+    // claim filed afterwards is paid by hand rather than stuck forever.
+    sqlx::query("update employee set ansatt_til = '2026-04-30' where id = $1")
+        .bind(a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let after = approved_mileage(&pool, company, person, 20, 10, &[]).await;
+    regnmed_db::pay_expense(&pool, company, after, date(2026, 5, 2), "1920", "Test")
+        .await
+        .unwrap();
+    assert_eq!(status(after).await, "utbetalt");
+}

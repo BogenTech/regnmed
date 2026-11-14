@@ -579,40 +579,50 @@ async fn merk_fakturert(
     Ok(())
 }
 
-/// The Faktura path (docs/faktura.md): ONE invoice carrying the caller's
-/// ordinary lines AND the selected unbilled hours — hour lines appended
-/// per (prosjekt, sats) group, entries marked fakturert in the same
-/// transaction as the invoice.
-pub async fn create_invoice_with_hours(
+/// Issues one invoice carrying the caller's own lines plus the chosen
+/// unbilled hours (grouped per prosjekt and sats) and billable expense
+/// claims, all locked by the invoice in ONE transaction: the hours are
+/// marked fakturert and the claims rebilled together with the issue.
+pub async fn create_invoice_with_billables(
     pool: &PgPool,
     company_id: Uuid,
     draft: &InvoiceDraft,
     entry_ids: &[Uuid],
+    rebill: &[crate::expenses::Rebill],
     vat_code: Option<&str>,
     created_by: &str,
 ) -> Result<IssuedInvoice> {
     ensure!(
         draft.currency.is_none(),
-        "timelinjer på valutafaktura støttes ikke — satsene er i NOK"
+        "timer og utlegg på valutafaktura støttes ikke — beløpene er i NOK"
     );
-    let mut rows = unbilled_rows(pool, company_id, None, None).await?;
-    behold_utvalg(&mut rows, entry_ids)?;
-    // A combined invoice carries goods lines AND hours. The caller's
-    // leveringsdato governs — it decided what this document delivers —
-    // but hours worked after that date would make it a lie, so the
-    // later of the two wins.
-    let last_hour = last_working_day(&rows);
-    let groups = groups(rows);
-
+    let (groups, last_hour) = if entry_ids.is_empty() {
+        (Vec::new(), None)
+    } else {
+        let mut rows = unbilled_rows(pool, company_id, None, None).await?;
+        behold_utvalg(&mut rows, entry_ids)?;
+        let last = last_working_day(&rows);
+        (groups(rows), last)
+    };
+    let (claim_lines, last_claim) = if rebill.is_empty() {
+        (Vec::new(), None)
+    } else {
+        crate::expenses::rebill_lines(pool, company_id, rebill, draft.invoice_date).await?
+    };
     let mut lines = draft.lines.clone();
     lines.extend(groups.iter().map(|g| hour_line(g, vat_code)));
+    lines.extend(claim_lines);
     let full = InvoiceDraft {
-        buyer_reference: None,
+        buyer_reference: draft.buyer_reference.clone(),
         cash_payment_method: None,
         party_no: draft.party_no.clone(),
         invoice_date: draft.invoice_date,
         due_date: draft.due_date,
+        // The caller's leveringsdato governs — it decided what this
+        // document delivers — but hours worked or costs incurred after it
+        // would make it a lie, so the latest of them wins.
         delivery_date: last_hour
+            .max(last_claim)
             .filter(|d| *d > draft.delivery_date)
             .unwrap_or(draft.delivery_date),
         delivery_place: draft.delivery_place.clone(),
@@ -627,7 +637,10 @@ pub async fn create_invoice_with_hours(
     let mut tx = pool.begin().await?;
     let issued = create_invoice_in(pool, &mut tx, company_id, &full, created_by, None).await?;
     let all_ids: Vec<Uuid> = groups.iter().flat_map(|g| g.entry_ids.clone()).collect();
-    merk_fakturert(&mut tx, company_id, &all_ids, issued.invoice_id).await?;
+    if !all_ids.is_empty() {
+        merk_fakturert(&mut tx, company_id, &all_ids, issued.invoice_id).await?;
+    }
+    crate::expenses::mark_rebilled(&mut tx, rebill, issued.invoice_id, created_by).await?;
     tx.commit().await?;
     Ok(issued)
 }

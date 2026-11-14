@@ -23,6 +23,7 @@
   let dims = $state([]);
   let currencies = $state([]);
   let unbilled = $state([]);
+  let claims = $state([]);
 
   $effect(() => {
     const c = "/companies/" + companyId;
@@ -39,6 +40,9 @@
       .then((r) => (currencies = [...new Set(r.rates.map((x) => x.valuta))]))
       .catch(() => {});
     api(c + "/timesheet/unbilled").then((r) => (unbilled = r.groups)).catch(() => {});
+    // Only someone who may read every claim gets them; for anyone else the
+    // section simply is not there.
+    api(c + "/expenses/billable").then((r) => (claims = r.expenses)).catch(() => {});
   });
 
   // ---- Header ----
@@ -168,6 +172,32 @@
           .filter(Boolean),
   );
 
+  // ---- Expense claims to rebill ----
+  // expense_id → "resale" (cost + 25 % VAT) or "disbursement" (outside VAT).
+  let pickedClaims = $state({});
+  // The chosen customer's projects first: those are the claims meant for them.
+  let claimsShown = $derived(
+    [...claims].sort((a, b) => (b.party_no === party?.party_no) - (a.party_no === party?.party_no)),
+  );
+  let claimLines = $derived(
+    currency
+      ? []
+      : claims
+          .filter((c) => pickedClaims[c.expense_id])
+          .map((c) => {
+            const disbursement = pickedClaims[c.expense_id] === "disbursement";
+            const net = disbursement ? c.amount_ore : c.cost_ore;
+            return {
+              id: c.expense_id,
+              treatment: pickedClaims[c.expense_id],
+              text: (disbursement ? "Utlegg: " : "") + c.description,
+              net,
+              vat: disbursement ? 0 : vatOfBase(net, VAT_CODES["3"].bp),
+              code: disbursement ? null : "3",
+            };
+          }),
+  );
+
   // ---- Totals, mirroring regnmed-core::invoice::compute ----
   let totals = $derived.by(() => {
     const byCode = {};
@@ -178,9 +208,9 @@
       net += p.net;
       byCode[l.vat] = (byCode[l.vat] || 0) + p.vat;
     });
-    for (const h of hourLines) {
+    for (const h of [...hourLines, ...claimLines]) {
       net += h.net;
-      byCode[h.code] = (byCode[h.code] || 0) + h.vat;
+      if (h.code) byCode[h.code] = (byCode[h.code] || 0) + h.vat;
     }
     const vat = Object.values(byCode).reduce((a, b) => a + b, 0);
     // A code this page has no rate for is computed by the server on issue;
@@ -197,7 +227,7 @@
     if (!party) list.push(["customer", parties?.length ? "Velg en kunde fra listen" : "Opprett en kunde først"]);
     if (dueDate < invoiceDate) list.push(["due", "Forfall kan ikke være før fakturadato"]);
     const real = parsed.filter((p) => !p.blank);
-    if (!real.length && !hourLines.length) list.push(["line-0-description", "Legg til minst én linje"]);
+    if (!real.length && !hourLines.length && !claimLines.length) list.push(["line-0-description", "Legg til minst én linje"]);
     parsed.forEach((p, i) => {
       for (const [field, msg] of Object.entries(p.errors)) list.push(["line-" + i + "-" + field, "Linje " + (i + 1) + ": " + msg]);
     });
@@ -213,7 +243,7 @@
       document.getElementById(formErrors[0][0])?.focus();
       return;
     }
-    const count = parsed.filter((p) => !p.blank).length + hourLines.length;
+    const count = parsed.filter((p) => !p.blank).length + hourLines.length + claimLines.length;
     const ok = await bekreft(
       "Faktura til " + party.name + ", " + count + (count === 1 ? " linje" : " linjer") + ", " +
         kr(totals.gross) + (currency ? " " + currency : " kr") +
@@ -244,6 +274,7 @@
             prosjekt: l.prosjekt || null,
           })),
         timer_entry_ids: hourLines.length ? hourLines.flatMap((h) => h.entryIds) : null,
+        expenses: claimLines.length ? claimLines.map((c) => ({ expense_id: c.id, treatment: c.treatment })) : null,
       });
       toast("Faktura " + issued.invoice_no + " er utstedt", true);
       done = true;
@@ -261,7 +292,8 @@
     (customer.trim() !== "" && party?.party_no !== presetParty) ||
       lines.some((l) => !isBlank(l)) ||
       buyerReference.trim() !== "" ||
-      pickedHours.length > 0,
+      pickedHours.length > 0 ||
+      Object.keys(pickedClaims).length > 0,
   );
   function beforeUnload(e) {
     if (dirty && !done) e.preventDefault();
@@ -555,6 +587,51 @@
             <span>{h.text}</span><span class="tabular-nums">{kr(h.net)}</span>
           </div>
         {/each}
+
+        {#if claims.length && !currency}
+          <fieldset class="border border-base-300 rounded-box p-3 mt-2">
+            <legend class="text-sm font-medium px-1">Ta med utlegg til viderefakturering</legend>
+            <p class="text-xs opacity-70 mb-1">
+              Videresalg fakturerer kostnaden med 25 % mva (uten mva hvis selskapet ikke er mva-registrert). Utlegg uten
+              mva gjelder bare kjøp gjort i kundens navn og godkjent på en fordringskonto uten fradrag for mva.
+            </p>
+            {#each claimsShown as c (c.expense_id)}
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer mr-auto min-w-0">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-sm"
+                    checked={!!pickedClaims[c.expense_id]}
+                    onchange={(e) =>
+                      (pickedClaims = e.currentTarget.checked
+                        ? { ...pickedClaims, [c.expense_id]: "resale" }
+                        : Object.fromEntries(Object.entries(pickedClaims).filter(([k]) => k !== c.expense_id)))}
+                  />
+                  <span class="min-w-0">
+                    {c.description}
+                    <span class="block text-xs opacity-70">
+                      {formatDate(c.date)}, {c.claimant}{c.project ? ", prosjekt " + c.project : ""}{c.party_name ? " (" + c.party_name + ")" : ""}
+                    </span>
+                  </span>
+                </label>
+                {#if pickedClaims[c.expense_id] && c.can_disburse}
+                  <select
+                    class="select select-sm w-auto"
+                    aria-label={"Hvordan " + c.description + " faktureres"}
+                    value={pickedClaims[c.expense_id]}
+                    onchange={(e) => (pickedClaims = { ...pickedClaims, [c.expense_id]: e.currentTarget.value })}
+                  >
+                    <option value="resale">Videresalg med mva</option>
+                    <option value="disbursement">Utlegg uten mva</option>
+                  </select>
+                {/if}
+                <span class="tabular-nums whitespace-nowrap">
+                  {kr(pickedClaims[c.expense_id] === "disbursement" ? c.amount_ore : c.cost_ore)}
+                </span>
+              </div>
+            {/each}
+          </fieldset>
+        {/if}
       </div>
     </div>
 

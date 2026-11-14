@@ -227,7 +227,12 @@
       <p class="opacity-70">
         {e.kind === "kjoring" ? "Kjøring" : "Utlegg"} {formatDate(e.dato)}{e.own ? "" : ", for " + e.person}{e.registered_by ? ", registrert av " + e.registered_by : ""}
         {#if e.project || e.department}
-          · {[e.department && "avdeling " + e.department, e.project && "prosjekt " + e.project].filter(Boolean).join(", ")}{e.billable ? ", viderefaktureres" : ""}
+          · {[e.department && "avdeling " + e.department, e.project && "prosjekt " + e.project].filter(Boolean).join(", ")}{e.billable && !e.rebilled_invoice_id ? ", viderefaktureres" : ""}
+        {/if}
+        {#if e.rebilled_invoice_id}
+          · <a class="link" href={"#/c/" + companyId + "/faktura/" + e.rebilled_invoice_id}>
+            {e.rebilled_as === "utlegg" ? "Viderefakturert som utlegg" : "Viderefakturert"}
+          </a>
         {/if}
         {#if e.trip_expense_id}· <a class="link" href={list + "/" + e.trip_expense_id}>Til kjøringen</a>{/if}
       </p>
@@ -242,6 +247,11 @@
         {e.own ? "Den som godkjenner utlegg ser kravet nå." : ""}
       {:else if e.status === "godkjent"}
         Godkjent{e.decided_by ? " av " + e.decided_by : ""}{e.decided_at ? " " + formatDate(e.decided_at) : ""} og bokført som bilag {e.voucher}.
+        {#if e.paid_by === "lonn"}
+          Utbetales med neste lønnskjøring, som også melder godtgjørelsen i a-meldingen.
+        {:else if e.paid_by === "betalingsliste"}
+          Ligger i en betalingsliste og regnes som betalt når listen registreres betalt.
+        {/if}
       {:else if e.status === "utbetalt"}
         Utbetalt {formatDate(e.utbetalt_at)}, bilag {e.utbetalt_voucher}. Godkjent som bilag {e.voucher}.
       {:else if e.status === "avvist"}
@@ -310,8 +320,12 @@
             {#if e.trekkpliktig_ore > 0}
               <div class="alert alert-warning alert-soft text-sm">
                 <span>
-                  {kr(e.trekkfri_ore)} kr er trekkfritt. De resterende {kr(e.trekkpliktig_ore)} kr er trekkpliktige og
-                  skal lønnsinnberettes. De kommer ikke med i a-meldingen av seg selv ennå, så de må meldes særskilt.
+                  {kr(e.trekkfri_ore)} kr er trekkfritt. De resterende {kr(e.trekkpliktig_ore)} kr er trekkpliktige.
+                  {#if e.paid_by === "lonn"}
+                    Lønnskjøringen som utbetaler kravet trekker skatt av dem og melder begge delene i a-meldingen.
+                  {:else}
+                    {e.person} er ikke registrert som ansatt under Lønn, så godtgjørelsen må meldes i a-meldingen særskilt.
+                  {/if}
                 </span>
               </div>
             {/if}
@@ -370,11 +384,14 @@
             </div>
           </div>
         </form>
-      {:else if e.status === "godkjent" && canPay}
+      {:else if e.status === "godkjent" && canPay && !e.paid_by}
         <section class="card border border-base-300 bg-base-100" aria-labelledby="utbetal-tittel">
           <div class="card-body">
             <h2 id="utbetal-tittel" class="card-title">Utbetaling</h2>
-            <p>Overfør {kr(e.belop_ore)} kr til {e.person}, og bokfør utbetalingen når pengene er sendt.</p>
+            <p>
+              Overfør {kr(e.belop_ore)} kr til {e.person}, og bokfør utbetalingen når pengene er sendt.
+              {#if e.kind === "utlegg"}Eller legg kravet i en <a class="link" href={"#/c/" + companyId + "/bank/betalinger"}>betalingsliste</a> sammen med leverandørene.{/if}
+            </p>
             <button class="btn btn-primary w-fit" disabled={busy} onclick={pay}>Bokfør utbetalingen</button>
           </div>
         </section>
