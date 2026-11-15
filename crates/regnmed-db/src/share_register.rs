@@ -323,15 +323,20 @@ pub async fn record_hendelse(
     ensure!(quantity > 0, "antall aksjer må være positivt");
 
     let mut tx = pool.begin().await?;
-    // The shareholder must belong to this company.
-    let owner: Option<Uuid> = sqlx::query_scalar(
-        "select id from shareholder where id = $1 and company_id = $2 for update",
+    // Both sides must belong to this company, and both are locked in ONE
+    // statement in id order: two opposite transfers at once (A→B, B→A)
+    // would otherwise lock in opposite order and deadlock.
+    let mut ids = vec![shareholder_id];
+    ids.extend(counterparty_id);
+    let locked: Vec<Uuid> = sqlx::query_scalar(
+        "select id from shareholder where id = any($1) and company_id = $2
+         order by id for update",
     )
-    .bind(shareholder_id)
+    .bind(&ids)
     .bind(company_id)
-    .fetch_optional(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-    owner.context("Fant ikke aksjonæren")?;
+    ensure!(locked.contains(&shareholder_id), "Fant ikke aksjonæren");
 
     // A transfer has two sides, both in this book: without the other
     // side a kjøp would mint shares and a salg destroy them, and the
@@ -369,14 +374,10 @@ pub async fn record_hendelse(
         // The other side must be in THIS book — its holdings are read by
         // shareholder id alone, so a foreign id would move another
         // company's register.
-        let found: Option<Uuid> = sqlx::query_scalar(
-            "select id from shareholder where id = $1 and company_id = $2 for update",
-        )
-        .bind(counterparty_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        found.context("Fant ikke motparten i denne aksjeeierboken")?;
+        ensure!(
+            locked.contains(&counterparty_id),
+            "Fant ikke motparten i denne aksjeeierboken"
+        );
     }
 
     // An avgang cannot take more shares than the owner holds on the date.
