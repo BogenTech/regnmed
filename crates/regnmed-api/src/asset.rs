@@ -2,7 +2,7 @@
 //!
 //! - GET/POST /companies/{id}/assets                 register
 //! - POST /companies/{id}/assets/depreciate          generate due months
-//! - POST /companies/{id}/assets/{aid}/dispose      avhending
+//! - POST /companies/{id}/assets/{aid}/dispose      avhending (?preview=true)
 //! - GET  /companies/{id}/assets/{aid}/runs         depreciation log
 //! - GET  /companies/{id}/assets/saldo?year=        skattemessig saldo
 //!
@@ -150,12 +150,23 @@ pub struct DisposeRequest {
     gain_account: Option<String>,
     #[serde(rename = "tapskonto")]
     loss_account: Option<String>,
+    /// The book value the person saw in the preview; the disposal is
+    /// refused if it changed since.
+    #[serde(default, rename = "forventet_bokfort_ore")]
+    expected_posted_ore: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct DisposeQuery {
+    #[serde(default)]
+    preview: bool,
 }
 
 pub async fn dispose(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, asset_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<DisposeQuery>,
     Json(request): Json<DisposeRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::AssetWrite).await?;
@@ -169,6 +180,8 @@ pub async fn dispose(
         request.contra_account.as_deref().unwrap_or("1920"),
         request.gain_account.as_deref().unwrap_or("3880"),
         request.loss_account.as_deref().unwrap_or("7880"),
+        query.preview,
+        request.expected_posted_ore,
         created_by,
     )
     .await
@@ -176,6 +189,11 @@ pub async fn dispose(
     Ok(Json(json!({
         "bokfort_ore": disposal.posted_ore,
         "gevinst_ore": disposal.gain_ore,
+        "linjer": disposal.lines.iter().map(|(account, amount, text)| json!({
+            "konto": account,
+            "belop_ore": amount,
+            "tekst": text,
+        })).collect::<Vec<_>>(),
         "voucher": disposal.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))
 }
@@ -195,6 +213,7 @@ pub async fn runs(
                 (Some(year), Some(no)) => Some(format!("{year}-{no}")),
                 _ => None,
             },
+            "bilagsdato": r.voucher_date.map(|d| d.to_string()),
             "detail": r.detail,
         })).collect::<Vec<_>>(),
     })))

@@ -38,8 +38,19 @@ menneskesynlig logg**.
   driftsmiddel-måned: bilaget (debet avskrivningskonto, kredit
   balansekonto, datert månedens siste dag) og loggraden committer
   sammen. En partiell unik indeks på `(asset, period)` gjør
-  dobbeltavskrivning umulig; feil (f.eks. låst periode) logges med
-  årsak og blokkerer aldri resten.
+  dobbeltavskrivning umulig; feil logges med årsak og blokkerer aldri
+  andre driftsmidler.
+- **En måned i en låst periode innhentes første åpne dag.** Månedene
+  bokføres i rekkefølge, så én låst måned stoppet tidligere hele planen
+  for driftsmidlet — for alltid, siden en låst periode ikke kan
+  bokføres i (bokføringsloven §9). Nå dateres bilaget dagen etter
+  låsedatoen, fortsatt ett bilag per måned, og bilagsteksten sier
+  «innhentet, perioden var låst». Det er rettelsen i åpen periode som
+  posteringsvaktens egen feilmelding ber om. Historikken viser
+  bokføringsdatoen når den avviker fra månedens siste dag.
+- Loggen er innsettings-bar, så en måned som feiler på hver kjøring
+  får én rad per forsøk. Historikken (`…/runs`) viser én rad per
+  måned: den bokførte, ellers det siste forsøket med årsak.
 - Avskrivning starter i anskaffelsesmåneden og stopper måneden
   driftsmidlet avhendes (avhendingsmåneden avskrives ikke).
 - Kjøres av `regnmed depreciate` (månedlig CronJob i deploy/base,
@@ -54,6 +65,31 @@ til gevinst (kredit 3880) eller tap (debet 7880) — kontoene kan
 overstyres. Registerraden lukkes enveis i samme transaksjon. Er det
 ingenting å postere (fullt avskrevet, null vederlag) settes
 avhendingen uten bilag.
+
+Avhendingen er enveis, så den går i to steg:
+
+- `?preview=true` gjør HELE avhendingen og ruller den tilbake, og
+  svaret har bokført verdi, gevinst/tap og bilagslinjene
+  (`linjer: [{konto, belop_ore, tekst}]`). En låst periode eller en
+  manglende konto vises dermed før noe er bekreftet, og telleren
+  rulles tilbake med transaksjonen, så ingen bilagsnummer brennes.
+- Bekreftelsen sender `forventet_bokfort_ore` (bokført verdi
+  personen så) og nektes hvis en avskrivning er bokført i mellomtiden.
+
+Datoen kontrolleres: ikke før anskaffelsesdatoen (også en
+DB-sjekk), og ikke i eller før en måned som allerede er avskrevet —
+avhendingsmåneden avskrives aldri, så en slik dato ville latt
+avskrivningen for måneder etter avhendingen stå i bokført verdi og
+gitt feil gevinst eller tap. Motsatt nektes også en avhending når en
+måned FØR avhendingsmåneden er forfalt, men ikke bokført: den ville
+stått som forfalt etter avhendingen og blitt bokført mot et
+driftsmiddel som alt er ute av boken.
+
+Kontoene (også balanse- og avskrivningskontoen ved registrering) må
+være aktive i kontoplanen. En konto fra standardkatalogen som
+selskapet ikke har brukt ennå, legges til med standardnavnet — det er
+den kontovelgeren tilbyr — mens en deaktivert eller ukjent konto
+nektes med nummeret i meldingen.
 
 ## Skattemessig saldoavskrivning
 
@@ -86,13 +122,26 @@ Bevisste avgrensninger (SMB-scope, dokumentert her):
 
 - `GET/POST /companies/{id}/assets` (write requires bokforing)
 - `POST /companies/{id}/assets/depreciate` — generer forfalte måneder
-- `POST /companies/{id}/assets/{aid}/dispose`
+- `POST /companies/{id}/assets/{aid}/dispose` (`?preview=true`)
 - `GET  /companies/{id}/assets/{aid}/runs` — avskrivningsloggen
 - `GET  /companies/{id}/assets/saldo?year=` — skattemessig rapport
 
-Portal: **Anlegg**-seksjon — register med beregnet bokført verdi,
-"Generer avskrivninger"-knapp, avhending, avskrivningshistorikk per
-driftsmiddel og saldotabellen med midlertidige forskjeller.
+Portal: **Anlegg**-seksjon (skrivetilgang styres av `ANLEGG_SKRIV`;
+uten den vises bare registeret og saldoen):
+
+- Registeret som stablede rader som passer en telefon: bokført verdi
+  og hvor mye som er avskrevet, eller avhendingsdato og vederlag.
+  Hver rad åpner avskrivningshistorikken eller avhendingsskjemaet på
+  stedet; Esc lukker og fokus går tilbake til knappen.
+- «Bokfør forfalte avskrivninger» viser hvor mange som ble bokført og
+  lister hver måned som ikke ble det, med årsak.
+- Avhending: dato og vederlag → «Se over» viser bokført verdi,
+  gevinst/tap og bilagslinjene → «Avhend og bokfør».
+- Nytt driftsmiddel: merkede felt, kontovelger for balanse- og
+  avskrivningskonto, beløp lest som folk skriver dem («45 000»).
+- Saldoavskrivningen har årvelger (forrige år fram til juni, siden
+  næringsspesifikasjonen leveres for året før), og et år uten
+  satsdekning sier fra i stedet for at kortet forsvinner.
 
 ## Where it is tested
 
@@ -105,3 +154,12 @@ driftsmiddel og saldotabellen med midlertidige forskjeller.
   gevinst (3880-saldo verifisert) og utrangering med tap, avskrivning
   stopper ved avhending, saldorapporten mot håndregnede tall, høy
   feil utenfor satsdekningen, kjedeverifikasjon over alle bilagene.
+- Samme fil, `locked_months_catch_up_and_disposal_previews`: januar–mars
+  i en låst periode innhentes 1. april mens april og mai får sine egne
+  datoer; en måned som feiler to ganger vises én gang; avhending datert
+  inn i en avskrevet måned nektes; forhåndsvisningen bokfører ingenting
+  og gir bilagslinjene; avhending med en forfalt, ubokført måned foran
+  nektes; utdatert bokført verdi nektes; standardkontoer
+  tas i bruk mens ukjente nektes på norsk. Sett feile uten rettelsene.
+- `ui/portal/src/sections/anlegg/anlegg.test.js` — skjemaet leser beløp
+  og levetid og navngir feilene; kjøringsresultatet lister hver feil.

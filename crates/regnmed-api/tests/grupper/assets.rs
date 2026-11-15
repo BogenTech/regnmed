@@ -327,3 +327,289 @@ async fn assets_depreciate_and_dispose() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "no 2024 rate: {body}");
 }
+
+/// A month that ended inside a locked period is caught up on the first
+/// open day instead of stopping the plan; a month that fails twice shows
+/// once in the history; a disposal can be previewed without posting, is
+/// refused on a stale book value, and cannot be dated into a month that
+/// is already depreciated.
+#[tokio::test]
+async fn locked_months_catch_up_and_disposal_previews() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Anlegg Ansvarlig"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Låsdemo AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_journal(&state.pool, company, "GL", "Hovedbok")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Anlegg Ansvarlig");
+    let base = format!("/companies/{company}/assets");
+    let vouchers = || async {
+        sqlx::query_scalar::<_, i64>("select count(*) from voucher where company_id = $1")
+            .bind(company)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap()
+    };
+
+    // Norwegian refusals instead of constraint names.
+    for (bad, says) in [
+        (
+            serde_json::json!({ "navn": " ", "anskaffelsesdato": "2026-01-15",
+                "kostpris_ore": 36_000_00, "levetid_maneder": 36, "saldogruppe": "d" }),
+            "navn",
+        ),
+        (
+            serde_json::json!({ "navn": "X", "anskaffelsesdato": "2026-01-15",
+                "kostpris_ore": 36_000_00, "levetid_maneder": 0, "saldogruppe": "d" }),
+            "Levetiden",
+        ),
+        (
+            serde_json::json!({ "navn": "X", "anskaffelsesdato": "2026-01-15",
+                "kostpris_ore": 36_000_00, "levetid_maneder": 36, "saldogruppe": "d",
+                "balansekonto": "9999" }),
+            "finnes ikke",
+        ),
+    ] {
+        let (status, body) = request(&state, "POST", &base, &token, Some(bad.to_string())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains(says), "{body}");
+    }
+
+    // 1238 and 6000 are not in this company yet: standard catalog
+    // accounts are adopted, not refused.
+    let (status, made) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(
+            serde_json::json!({
+                "navn": "Lastebil", "anskaffelsesdato": "2026-01-15",
+                "kostpris_ore": 36_000_00, "levetid_maneder": 36, "saldogruppe": "c",
+                "balansekonto": "1238",
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {made}");
+    let lastebil = made["asset_id"].as_str().unwrap().to_string();
+
+    // A second asset on an account that is later deactivated: its month
+    // fails on every run.
+    regnmed_db::ensure_account(&state.pool, company, "6010", "Avskrivning transportmidler")
+        .await
+        .unwrap();
+    let (status, made) = request(
+        &state,
+        "POST",
+        &base,
+        &token,
+        Some(
+            serde_json::json!({
+                "navn": "Henger", "anskaffelsesdato": "2026-05-02",
+                "kostpris_ore": 36_000_00, "levetid_maneder": 36, "saldogruppe": "c",
+                "balansekonto": "1238", "avskrivningskonto": "6010",
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {made}");
+    let henger = made["asset_id"].as_str().unwrap().to_string();
+    sqlx::query("update account set active = false where company_id = $1 and number = '6010'")
+        .bind(company)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+    regnmed_db::set_period_lock(
+        &state.pool,
+        company,
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap(),
+        "test",
+        false,
+    )
+    .await
+    .unwrap();
+    for _ in 0..2 {
+        let (status, _) = request(
+            &state,
+            "POST",
+            &format!("{base}/depreciate"),
+            &token,
+            Some(serde_json::json!({ "through": "2026-05-31" }).to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // January–March are caught up on 1 April, April and May on their own
+    // dates: the lock no longer stops the plan.
+    let (_, runs) = request(
+        &state,
+        "GET",
+        &format!("{base}/{lastebil}/runs"),
+        &token,
+        None,
+    )
+    .await;
+    let dates: Vec<_> = runs["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["period"].as_str().unwrap().to_string(),
+                r["bilagsdato"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        dates,
+        vec![
+            ("2026-05-01".to_string(), serde_json::json!("2026-05-31")),
+            ("2026-04-01".to_string(), serde_json::json!("2026-04-30")),
+            ("2026-03-01".to_string(), serde_json::json!("2026-04-01")),
+            ("2026-02-01".to_string(), serde_json::json!("2026-04-01")),
+            ("2026-01-01".to_string(), serde_json::json!("2026-04-01")),
+        ]
+    );
+    let (_, listed) = request(&state, "GET", &base, &token, None).await;
+    assert_eq!(asset_row(&listed, "Lastebil")["akkumulert_ore"], 5_000_00);
+
+    // The Henger's May failed twice and shows once, with the reason.
+    let (_, runs) = request(
+        &state,
+        "GET",
+        &format!("{base}/{henger}/runs"),
+        &token,
+        None,
+    )
+    .await;
+    let runs = runs["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 1, "one row per month: {runs:?}");
+    assert!(runs[0]["voucher"].is_null() && runs[0]["detail"].is_string());
+
+    // Its May is due but not posted, so a June disposal is refused: May
+    // would otherwise post after the asset left the books.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/{henger}/dispose?preview=true"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-06-15" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("ikke bokført ennå"),
+        "{body}"
+    );
+
+    // Disposal dated into May, which is depreciated: refused.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/{lastebil}/dispose?preview=true"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-05-20", "vederlag_ore": 30_000_00 }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("05.2026"),
+        "{body}"
+    );
+
+    // Preview: the figures and lines, nothing kept.
+    let before = vouchers().await;
+    let (status, preview) = request(
+        &state,
+        "POST",
+        &format!("{base}/{lastebil}/dispose?preview=true"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-06-10", "vederlag_ore": 30_000_00 }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {preview}");
+    assert_eq!(preview["bokfort_ore"], 31_000_00);
+    assert_eq!(preview["gevinst_ore"], -1_000_00);
+    assert!(preview["voucher"].is_null());
+    let lines: Vec<_> = preview["linjer"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            (
+                l["konto"].as_str().unwrap().to_string(),
+                l["belop_ore"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            ("1920".to_string(), 30_000_00),
+            ("1238".to_string(), -31_000_00),
+            ("7880".to_string(), 1_000_00),
+        ]
+    );
+    assert_eq!(vouchers().await, before, "a preview posts nothing");
+    let (_, listed) = request(&state, "GET", &base, &token, None).await;
+    assert!(asset_row(&listed, "Lastebil")["avhendet_dato"].is_null());
+
+    // A stale book value is refused; the one the preview showed posts.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/{lastebil}/dispose"),
+        &token,
+        Some(
+            serde_json::json!({ "dato": "2026-06-10", "vederlag_ore": 30_000_00,
+                "forventet_bokfort_ore": 32_000_00 })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("endret seg"),
+        "{body}"
+    );
+    let (status, done) = request(
+        &state,
+        "POST",
+        &format!("{base}/{lastebil}/dispose"),
+        &token,
+        Some(
+            serde_json::json!({ "dato": "2026-06-10", "vederlag_ore": 30_000_00,
+                "forventet_bokfort_ore": 31_000_00 })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {done}");
+    assert!(done["voucher"].is_string());
+    assert_eq!(vouchers().await, before + 1);
+
+    let report = regnmed_db::verify_chain(&state.pool, company)
+        .await
+        .unwrap();
+    assert_eq!(report.vouchers_checked, 6);
+}

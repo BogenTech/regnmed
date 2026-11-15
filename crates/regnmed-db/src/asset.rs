@@ -6,7 +6,7 @@
 //!
 //! Bokført verdi is never stored: kostpris − SUM(posted depreciation).
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use chrono::{Datelike, NaiveDate};
 use regnmed_core::Ore;
 use regnmed_core::assets::{
@@ -53,6 +53,49 @@ pub struct AssetDraft {
     pub anskaffelse_voucher_id: Option<Uuid>,
 }
 
+/// Makes sure `number` is an active account of the company. An account
+/// from the standard catalog the company has not used yet is added with
+/// its standard name — the picker offers those — while a deactivated or
+/// unknown one is refused, naming it.
+async fn adopt_account(
+    conn: &mut sqlx::PgConnection,
+    company_id: Uuid,
+    number: &str,
+) -> Result<()> {
+    let active: Option<bool> =
+        sqlx::query_scalar("select active from account where company_id = $1 and number = $2")
+            .bind(company_id)
+            .bind(number)
+            .fetch_optional(&mut *conn)
+            .await?;
+    match active {
+        Some(true) => Ok(()),
+        Some(false) => bail!("Konto {number} er deaktivert i kontoplanen"),
+        None => {
+            let standard = number.parse::<u32>().ok().and_then(|n| {
+                regnmed_core::saft::standard_accounts()
+                    .iter()
+                    .find(|(num, _)| *num == n)
+                    .map(|(_, name)| *name)
+            });
+            let Some(name) = standard else {
+                bail!("Konto {number} finnes ikke i kontoplanen")
+            };
+            sqlx::query(
+                "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
+                 on conflict (company_id, number) do nothing",
+            )
+            .bind(Uuid::now_v7())
+            .bind(company_id)
+            .bind(number)
+            .bind(name)
+            .execute(&mut *conn)
+            .await?;
+            Ok(())
+        }
+    }
+}
+
 /// Registers an asset. Returns the id and an optional warning when the
 /// driftsmiddel is under the aktiveringsgrense or under 3 års levetid —
 /// the register never refuses (frivillig aktivering is legal), it
@@ -63,42 +106,39 @@ pub async fn create_asset(
     draft: &AssetDraft,
     created_by: &str,
 ) -> Result<(Uuid, Option<String>)> {
+    ensure!(!draft.name.trim().is_empty(), "Gi driftsmidlet et navn");
     ensure!(
         is_valid_depreciation_group(&draft.depreciation_group),
-        "ukjent saldogruppe {} (a–j)",
+        "Ukjent saldogruppe «{}» (a–j)",
         draft.depreciation_group
+    );
+    ensure!(draft.cost_price_ore > 0, "Kostprisen må være større enn 0");
+    ensure!(
+        draft.lifetime_months > 0,
+        "Levetiden må være minst én måned"
     );
     ensure!(
         draft.residual_value_ore >= 0 && draft.residual_value_ore < draft.cost_price_ore,
-        "restverdi må være mellom 0 og kostpris"
+        "Restverdien må være mellom 0 og kostprisen"
     );
     // At least 1 øre per month: rules out zero-amount months, so every
     // generated period always posts a voucher (the run-log invariant).
     ensure!(
         draft.cost_price_ore - draft.residual_value_ore >= draft.lifetime_months as i64,
-        "avskrivbart beløp må være minst 1 øre per måned av levetiden"
+        "Avskrivbart beløp må være minst 1 øre per måned av levetiden"
     );
+    let mut tx = pool.begin().await?;
     for account in [&draft.balance_account, &draft.depreciation_account] {
-        let exists: Option<i32> = sqlx::query_scalar(
-            "select 1 from account where company_id = $1 and number = $2 and active",
-        )
-        .bind(company_id)
-        .bind(account)
-        .fetch_optional(pool)
-        .await?;
-        ensure!(
-            exists.is_some(),
-            "no active account {account} for this company"
-        );
+        adopt_account(&mut tx, company_id, account).await?;
     }
     if let Some(voucher_id) = draft.anskaffelse_voucher_id {
         let ok: Option<i32> =
             sqlx::query_scalar("select 1 from voucher where id = $1 and company_id = $2")
                 .bind(voucher_id)
                 .bind(company_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *tx)
                 .await?;
-        ensure!(ok.is_some(), "anskaffelsesbilaget finnes ikke");
+        ensure!(ok.is_some(), "Fant ikke anskaffelsesbilaget");
     }
 
     let rates = load_rates(pool).await?;
@@ -124,7 +164,7 @@ pub async fn create_asset(
     )
     .bind(id)
     .bind(company_id)
-    .bind(&draft.name)
+    .bind(draft.name.trim())
     .bind(draft.acquisition_date)
     .bind(draft.cost_price_ore)
     .bind(draft.residual_value_ore)
@@ -134,8 +174,9 @@ pub async fn create_asset(
     .bind(&draft.depreciation_group)
     .bind(draft.anskaffelse_voucher_id)
     .bind(created_by)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok((id, warning))
 }
 
@@ -315,12 +356,36 @@ async fn depreciate_next(
         lifetime,
         number,
     );
+    // A month that ended inside a locked period can no longer be posted
+    // on its own date (bokføringsloven §9): it is caught up on the first
+    // open day instead, still one voucher per month and saying so. Without
+    // this one locked month stopped the asset's plan for good, since the
+    // months are posted in order.
+    let lock: Option<NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
+        .bind(company_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let (voucher_date, caught_up) = match lock {
+        Some(locked) if voucher_date <= locked && locked < through => {
+            (locked.succ_opt().unwrap(), true)
+        }
+        _ => (voucher_date, false),
+    };
     let name: String = asset.get("navn");
     let result = async {
         let draft = VoucherDraft {
             journal_code: "GL".into(),
             voucher_date,
-            description: format!("Avskrivning {name} {}-{:02}", period.year(), period.month()),
+            description: format!(
+                "Avskrivning {name} {}-{:02}{}",
+                period.year(),
+                period.month(),
+                if caught_up {
+                    " (innhentet, perioden var låst)"
+                } else {
+                    ""
+                }
+            ),
             reverses: None,
             entries: vec![
                 EntryDraft {
@@ -417,6 +482,9 @@ pub async fn depreciate_all(pool: &PgPool, through: NaiveDate) -> Result<Vec<Dep
 pub struct Disposal {
     pub posted_ore: i64,
     pub gain_ore: i64,
+    /// What the voucher posts (or would post, on a preview): account,
+    /// signed amount, text.
+    pub lines: Vec<(String, i64, String)>,
     pub voucher: Option<(i32, i64)>,
 }
 
@@ -424,6 +492,11 @@ pub struct Disposal {
 /// bokført verdi leaves the balansekonto, the consideration enters motkonto,
 /// and the difference posts as gevinst (credit) or tap (debit). The
 /// asset is closed one-way; no voucher when there is nothing to post.
+///
+/// `preview` does all of it and rolls back, so a locked period or a
+/// missing account shows before anyone confirms (the counter rolls back
+/// too, so no voucher number is burnt). The confirm carries the book
+/// value the person saw, and is refused if a depreciation posted since.
 #[allow(clippy::too_many_arguments)]
 pub async fn dispose_asset(
     pool: &PgPool,
@@ -434,27 +507,68 @@ pub async fn dispose_asset(
     contra_account: &str,
     gain_account: &str,
     loss_account: &str,
+    preview: bool,
+    expected_posted_ore: Option<i64>,
     created_by: &str,
 ) -> Result<Disposal> {
-    ensure!(consideration_ore >= 0, "vederlag kan ikke være negativt");
+    ensure!(consideration_ore >= 0, "Vederlaget kan ikke være negativt");
     let mut tx = pool.begin().await?;
     let asset = sqlx::query(
-        "select navn, kostpris_ore, balansekonto, avhendet_dato,
+        "select navn, anskaffelsesdato, kostpris_ore, levetid_maneder, balansekonto, avhendet_dato,
                 coalesce((select sum(d.amount_ore) from asset_depreciation d
                           where d.asset_id = asset.id and d.voucher_id is not null), 0)::bigint
-                    as akkumulert
+                    as akkumulert,
+                (select max(d.period) from asset_depreciation d
+                  where d.asset_id = asset.id and d.voucher_id is not null) as last_period
          from asset where id = $1 and company_id = $2 for update",
     )
     .bind(asset_id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
     .await?
-    .context("no such asset")?;
+    .context("Fant ikke driftsmidlet")?;
     ensure!(
         asset.get::<Option<NaiveDate>, _>("avhendet_dato").is_none(),
-        "driftsmidlet er allerede avhendet"
+        "Driftsmidlet er allerede avhendet"
+    );
+    let acquired: NaiveDate = asset.get("anskaffelsesdato");
+    ensure!(
+        date >= acquired,
+        "Avhendingsdatoen kan ikke være før anskaffelsesdatoen ({})",
+        acquired.format("%d.%m.%Y")
+    );
+    // The disposal month is never depreciated, so a date in or before an
+    // already depreciated month would leave that month's depreciation in
+    // the book value and get the gain or loss wrong.
+    let last: Option<NaiveDate> = asset.get("last_period");
+    if let Some(last) = last {
+        ensure!(
+            month_start(date) > last,
+            "Avskrivningen er bokført til og med {}. Avhendingen må dateres etter den måneden.",
+            last.format("%m.%Y")
+        );
+    }
+    // And the other way: every month before the disposal month must be
+    // posted first. Those months stay due after the disposal, so they
+    // would post against an asset already taken out of the books and the
+    // gain or loss computed here would be wrong.
+    let next = match last {
+        Some(p) => p.checked_add_months(chrono::Months::new(1)).unwrap(),
+        None => month_start(acquired),
+    };
+    ensure!(
+        next >= month_start(date)
+            || month_number(acquired, next) > asset.get::<i32, _>("levetid_maneder"),
+        "Avskrivningen for {} er ikke bokført ennå. Bokfør forfalte avskrivninger før du avhender driftsmidlet.",
+        next.format("%m.%Y")
     );
     let posted = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
+    if let Some(expected) = expected_posted_ore {
+        ensure!(
+            expected == posted,
+            "Bokført verdi har endret seg siden du så over avhendingen. Se over den på nytt."
+        );
+    }
     let gain = consideration_ore - posted;
 
     let mut entries = Vec::new();
@@ -506,6 +620,19 @@ pub async fn dispose_asset(
         });
     }
 
+    for e in &entries {
+        adopt_account(&mut tx, company_id, &e.account_number).await?;
+    }
+    let lines = entries
+        .iter()
+        .map(|e| {
+            (
+                e.account_number.clone(),
+                e.amount.0,
+                e.description.clone().unwrap_or_default(),
+            )
+        })
+        .collect();
     let voucher = if entries.is_empty() {
         None
     } else {
@@ -533,10 +660,20 @@ pub async fn dispose_asset(
     .bind(voucher.as_ref().map(|p| p.id))
     .execute(&mut *tx)
     .await?;
+    if preview {
+        tx.rollback().await?;
+        return Ok(Disposal {
+            posted_ore: posted,
+            gain_ore: gain,
+            lines,
+            voucher: None,
+        });
+    }
     tx.commit().await?;
     Ok(Disposal {
         posted_ore: posted,
         gain_ore: gain,
+        lines,
         voucher: voucher.map(|p| (p.fiscal_year, p.voucher_number)),
     })
 }
@@ -669,6 +806,9 @@ pub struct DepreciationRun {
     pub amount_ore: i64,
     pub voucher_number: Option<i64>,
     pub fiscal_year: Option<i32>,
+    /// Differs from the month's last day when the month was caught up
+    /// after a period lock.
+    pub voucher_date: Option<NaiveDate>,
     pub detail: Option<String>,
 }
 
@@ -678,12 +818,17 @@ pub async fn list_depreciations(
     asset_id: Uuid,
 ) -> Result<Vec<DepreciationRun>> {
     let rows = sqlx::query(
-        "select d.period, d.amount_ore, v.voucher_number, v.fiscal_year, d.detail
+        // One row per month: the posted one, or else the latest failure.
+        // Every failed attempt is logged (the log is insert-only), so a
+        // month that failed twice would otherwise show twice.
+        "select distinct on (d.period)
+                d.period, d.amount_ore, v.voucher_number, v.fiscal_year,
+                v.voucher_date, d.detail
          from asset_depreciation d
          join asset a on a.id = d.asset_id
          left join voucher v on v.id = d.voucher_id
          where d.asset_id = $1 and a.company_id = $2
-         order by d.period desc, d.created_at desc
+         order by d.period desc, (d.voucher_id is null), d.created_at desc
          limit 100",
     )
     .bind(asset_id)
@@ -697,6 +842,7 @@ pub async fn list_depreciations(
             amount_ore: r.get("amount_ore"),
             voucher_number: r.get("voucher_number"),
             fiscal_year: r.get("fiscal_year"),
+            voucher_date: r.get("voucher_date"),
             detail: r.get("detail"),
         })
         .collect())

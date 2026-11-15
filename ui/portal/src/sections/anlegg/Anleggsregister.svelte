@@ -2,148 +2,154 @@
   // Registeret er bevis: driftsmidler registreres og avhendes, aldri
   // redigeres eller slettes. Bokført verdi lagres ALDRI — den er
   // kostpris − bokførte avskrivninger, utledet hver gang.
-  import { api, post } from "../../lib/api.js";
-  import { kr, parseKr, today } from "../../lib/format.js";
+  //
+  // Stacked rows that fit a phone; each row opens its depreciation
+  // history or the disposal form in place, and focus returns to the
+  // button that opened it.
+  import { tick } from "svelte";
+  import { post } from "../../lib/api.js";
+  import { formatDate, kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import { skjema } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
+  import Avhending from "./Avhending.svelte";
+  import Historikk from "./Historikk.svelte";
   import NyttDriftsmiddel from "./NyttDriftsmiddel.svelte";
+  import { gruppeNavn, kjoringTekst } from "./anlegg.js";
 
-  let { companyId, assets, onDone } = $props();
+  let { companyId, assets, kanSkrive, kontoer, onChanged } = $props();
 
-  // Avskrivningshistorikken for ett driftsmiddel, hentet på forespørsel:
-  // {navn, runs}.
-  let historikk = $state(null);
+  // { id, hva: "historikk" | "avhend" } — one panel open at a time.
+  let apen = $state(null);
+  let kjorer = $state(false);
+  let resultat = $state(null);
+
+  const erApen = (a, hva) => apen?.id === a.asset_id && apen.hva === hva;
+
+  async function lukk() {
+    const knapp = apen && apen.id + "-" + apen.hva;
+    apen = null;
+    await tick();
+    document.getElementById(knapp)?.focus();
+  }
+
+  const veksle = (a, hva) => (erApen(a, hva) ? lukk() : (apen = { id: a.asset_id, hva }));
 
   async function generer() {
+    if (kjorer) return;
+    kjorer = true;
+    resultat = null;
     try {
-      const result = await post("/companies/" + companyId + "/assets/depreciate", {});
-      toast(
-        result.generated +
-          " avskrivning(er) bokført" +
-          (result.failed ? ", " + result.failed + " feilet" : ""),
-        result.failed === 0,
-      );
-      onDone();
+      const svar = await post("/companies/" + companyId + "/assets/depreciate", {});
+      resultat = kjoringTekst(svar);
+      if (svar.generated) await onChanged();
     } catch (error) {
       toast(error.message, false);
+    } finally {
+      kjorer = false;
     }
   }
 
-  // Avhending er ENVEIS: kravet lukkes, gevinst eller tap bokføres, og
-  // driftsmidlet kan aldri gjenåpnes.
-  async function avhend(a) {
-    const svar = await skjema(
-      "Avhend " + a.navn,
-      [
-        { navn: "dato", etikett: "Avhendingsdato", type: "date", standard: today() },
-        { navn: "vederlag", etikett: "Vederlag (kr)", standard: "0", hjelp: "0 ved utrangering" },
-      ],
-      {
-        melding: "Avhending er enveis: kravet lukkes, gevinst eller tap bokføres.",
-        ok: "Avhend",
-        farlig: true,
-      },
-    );
-    if (!svar) return;
-    try {
-      const result = await post(
-        "/companies/" + companyId + "/assets/" + a.asset_id + "/dispose",
-        { dato: svar.dato, vederlag_ore: parseKr(svar.vederlag) },
-      );
-      const g = result.gevinst_ore;
-      toast(
-        "Avhendet — " +
-          (g > 0 ? "gevinst " + kr(g) : g < 0 ? "tap " + kr(-g) : "ingen gevinst/tap"),
-        true,
-      );
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
-
-  async function visHistorikk(a) {
-    try {
-      const data = await api("/companies/" + companyId + "/assets/" + a.asset_id + "/runs");
-      historikk = { navn: a.navn, runs: data.runs };
-    } catch (error) {
-      toast(error.message, false);
-    }
+  // The Avhend button is gone once the asset is disposed of, so focus
+  // lands on the row's other button.
+  async function avhendet() {
+    const id = apen?.id;
+    apen = null;
+    await onChanged();
+    await tick();
+    document.getElementById(id + "-historikk")?.focus();
   }
 </script>
 
 <Card title="Anleggsregister">
   <p class="text-sm opacity-70 mb-2">
-    Registeret er bevis: driftsmidler registreres og avhendes, aldri redigeres eller slettes.
-    Bokført verdi = kostpris − bokførte avskrivninger, alltid beregnet. Lineære avskrivninger
-    bokføres månedlig som ordinære bilag (automatisk hver måned, eller med knappen).
+    Driftsmidler registreres og avhendes, men endres eller slettes aldri. Bokført verdi er kostpris
+    minus bokførte avskrivninger. Lineære avskrivninger bokføres som egne bilag hver måned,
+    automatisk eller med knappen. En måned i en låst periode bokføres første åpne dag.
   </p>
-  <div class="mb-3">
-    <button class="btn btn-sm btn-outline" onclick={generer}>
-      Generer avskrivninger til i dag
-    </button>
-  </div>
-  {#if assets.length}
-    <table class="table table-sm mb-4">
-      <thead>
-        <tr>
-          <th>Navn</th><th>Gr.</th><th>Anskaffet</th>
-          <th class="text-right">Kostpris</th><th class="text-right">Avskrevet</th>
-          <th class="text-right">Bokført</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each assets as a (a.asset_id)}
-          <tr class={a.avhendet_dato ? "opacity-60" : ""}>
-            <td>{a.navn}</td>
-            <td>{a.saldogruppe}</td>
-            <td>{a.anskaffelsesdato}</td>
-            <td class="text-right">{kr(a.kostpris_ore)}</td>
-            <td class="text-right">{kr(a.akkumulert_ore)}</td>
-            <td class="text-right">
-              {#if a.avhendet_dato}
-                <span class="badge badge-ghost badge-sm">avhendet {a.avhendet_dato}</span>
-              {:else}
-                {kr(a.bokfort_ore)}
-              {/if}
-            </td>
-            <td>
-              <button class="btn btn-xs btn-ghost" onclick={() => visHistorikk(a)}>Historikk</button>
-              {#if !a.avhendet_dato}
-                <button class="btn btn-xs btn-outline" onclick={() => avhend(a)}>Avhend</button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  {#if kanSkrive && assets.some((a) => !a.avhendet_dato)}
+    <div class="mb-3">
+      <button class="btn btn-sm btn-outline" disabled={kjorer} onclick={generer}>
+        {#if kjorer}<span class="loading loading-spinner loading-xs"></span>{/if}
+        Bokfør forfalte avskrivninger
+      </button>
+      <div role="status" class="text-sm mt-2">
+        {#if resultat}
+          <p>{resultat.bokfort}</p>
+          {#if resultat.feil.length}
+            <div class="alert alert-warning alert-soft mt-1">
+              <div>
+                <b>Ikke bokført:</b>
+                <ul class="list-disc ml-4">
+                  {#each resultat.feil as f, i (i)}<li>{f}</li>{/each}
+                </ul>
+              </div>
+            </div>
+          {/if}
+        {/if}
+      </div>
+    </div>
   {/if}
-  <div class="mb-3">
-    {#if historikk}
-      <h3 class="font-semibold mb-1">Avskrivninger — {historikk.navn}</h3>
-      <table class="table table-xs max-w-md">
-        <thead>
-          <tr><th>Måned</th><th class="text-right">Beløp</th><th>Bilag</th></tr>
-        </thead>
-        <tbody>
-          {#each historikk.runs as r (r.period)}
-            <tr>
-              <td>{r.period.slice(0, 7)}</td>
-              <td class="text-right">{kr(r.amount_ore)}</td>
-              <td>
-                {#if r.voucher}
-                  bilag {r.voucher}
-                {:else}
-                  <span class="badge badge-error badge-sm">{r.detail || "feilet"}</span>
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-  </div>
-  <h3 class="font-semibold mb-1">Nytt driftsmiddel</h3>
-  <NyttDriftsmiddel {companyId} {onDone} />
+
+  {#if assets.length}
+    <ul class="divide-y divide-base-200">
+      {#each assets as a (a.asset_id)}
+        <li class="py-2">
+          <div class="flex flex-wrap items-start gap-x-3 gap-y-1">
+            <div class="min-w-0 flex-1 basis-56" class:opacity-60={a.avhendet_dato}>
+              <div class="font-medium truncate">{a.navn}</div>
+              <div class="text-xs opacity-70">
+                Anskaffet {formatDate(a.anskaffelsesdato)}, {a.levetid_maneder} måneder, gruppe {a.saldogruppe}
+                ({gruppeNavn(a.saldogruppe)})
+              </div>
+            </div>
+            <div class="text-right text-sm shrink-0 ml-auto" class:opacity-60={a.avhendet_dato}>
+              {#if a.avhendet_dato}
+                <div>Avhendet {formatDate(a.avhendet_dato)}</div>
+                <div class="text-xs opacity-70">vederlag {kr(a.vederlag_ore)} kr</div>
+              {:else}
+                <div class="tabular-nums">{kr(a.bokfort_ore)} kr</div>
+                <div class="text-xs opacity-70 tabular-nums">
+                  {kr(a.akkumulert_ore)} av {kr(a.kostpris_ore - a.restverdi_ore)} avskrevet
+                </div>
+              {/if}
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <button
+                id={a.asset_id + "-historikk"}
+                class="btn btn-xs btn-ghost"
+                aria-expanded={erApen(a, "historikk")}
+                aria-label={"Avskrivninger for " + a.navn}
+                onclick={() => veksle(a, "historikk")}
+              >
+                Avskrivninger
+              </button>
+              {#if kanSkrive && !a.avhendet_dato}
+                <button
+                  id={a.asset_id + "-avhend"}
+                  class="btn btn-xs btn-outline"
+                  aria-expanded={erApen(a, "avhend")}
+                  aria-label={"Avhend " + a.navn}
+                  onclick={() => veksle(a, "avhend")}
+                >
+                  Avhend
+                </button>
+              {/if}
+            </div>
+          </div>
+          {#if erApen(a, "historikk")}
+            <Historikk {companyId} asset={a} onClose={lukk} />
+          {:else if erApen(a, "avhend")}
+            <Avhending {companyId} asset={a} onClose={lukk} onDone={avhendet} />
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="text-sm opacity-70">Ingen driftsmidler registrert ennå.</p>
+  {/if}
+
+  {#if kanSkrive}
+    <h3 class="font-semibold mt-4 mb-1">Nytt driftsmiddel</h3>
+    <NyttDriftsmiddel {companyId} {kontoer} onCreated={onChanged} />
+  {/if}
 </Card>
