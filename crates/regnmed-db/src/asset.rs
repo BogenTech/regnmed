@@ -514,7 +514,7 @@ pub async fn dispose_asset(
     ensure!(consideration_ore >= 0, "Vederlaget kan ikke være negativt");
     let mut tx = pool.begin().await?;
     let asset = sqlx::query(
-        "select navn, anskaffelsesdato, kostpris_ore, balansekonto, avhendet_dato,
+        "select navn, anskaffelsesdato, kostpris_ore, levetid_maneder, balansekonto, avhendet_dato,
                 coalesce((select sum(d.amount_ore) from asset_depreciation d
                           where d.asset_id = asset.id and d.voucher_id is not null), 0)::bigint
                     as akkumulert,
@@ -540,13 +540,28 @@ pub async fn dispose_asset(
     // The disposal month is never depreciated, so a date in or before an
     // already depreciated month would leave that month's depreciation in
     // the book value and get the gain or loss wrong.
-    if let Some(last) = asset.get::<Option<NaiveDate>, _>("last_period") {
+    let last: Option<NaiveDate> = asset.get("last_period");
+    if let Some(last) = last {
         ensure!(
             month_start(date) > last,
             "Avskrivningen er bokført til og med {}. Avhendingen må dateres etter den måneden.",
             last.format("%m.%Y")
         );
     }
+    // And the other way: every month before the disposal month must be
+    // posted first. Those months stay due after the disposal, so they
+    // would post against an asset already taken out of the books and the
+    // gain or loss computed here would be wrong.
+    let next = match last {
+        Some(p) => p.checked_add_months(chrono::Months::new(1)).unwrap(),
+        None => month_start(acquired),
+    };
+    ensure!(
+        next >= month_start(date)
+            || month_number(acquired, next) > asset.get::<i32, _>("levetid_maneder"),
+        "Avskrivningen for {} er ikke bokført ennå. Bokfør forfalte avskrivninger før du avhender driftsmidlet.",
+        next.format("%m.%Y")
+    );
     let posted = asset.get::<i64, _>("kostpris_ore") - asset.get::<i64, _>("akkumulert");
     if let Some(expected) = expected_posted_ore {
         ensure!(

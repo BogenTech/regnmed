@@ -503,6 +503,25 @@ async fn locked_months_catch_up_and_disposal_previews() {
     assert_eq!(runs.len(), 1, "one row per month: {runs:?}");
     assert!(runs[0]["voucher"].is_null() && runs[0]["detail"].is_string());
 
+    // Its May is due but not posted, so a June disposal is refused: May
+    // would otherwise post after the asset left the books.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("{base}/{henger}/dispose?preview=true"),
+        &token,
+        Some(serde_json::json!({ "dato": "2026-06-15" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("ikke bokført ennå"),
+        "{body}"
+    );
+
     // Disposal dated into May, which is depreciated: refused.
     let (status, body) = request(
         &state,
