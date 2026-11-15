@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { krWhole, formatDate, today, kr, parseKr } from "./format.js";
+import { krWhole, formatDate, formatTime, today, kr, parseKr } from "./format.js";
 
 test("krWhole rounds half away from zero and keeps the sign", () => {
   assert.equal(krWhole(1375040), "13 750");
@@ -35,4 +35,18 @@ test("amounts are read the way they are typed, spaces and all", async () => {
 
 test("parseKr reads back what kr writes, negatives included", () => {
   for (const ore of [0, 5, 125000, -5000, -123456789]) assert.equal(parseKr(kr(ore)), ore);
+});
+
+test("formatTime shows a UTC timestamp in the reader's time zone", () => {
+  const tz = process.env.TZ;
+  process.env.TZ = "Europe/Oslo";
+  try {
+    assert.equal(formatTime("2026-11-14T23:30:00+00:00"), "15.11.2026 00:30");
+    assert.equal(formatTime("2026-07-01T06:05:00Z"), "01.07.2026 08:05");
+    assert.equal(formatTime(null), "");
+    assert.equal(formatTime("ikke en tid"), "ikke en tid");
+  } finally {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  }
 });

@@ -3,12 +3,17 @@
   // er gitt, og svarene er et innsettings-bart spor — derfor finnes det
   // ingen «rediger»-knapp her, og det er med vilje: en endret oppgave
   // ville gjort det umulig å se etterpå hva agenten faktisk ble bedt om.
+  import { tick } from "svelte";
   import { post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
+  import { bekreft } from "../../lib/dialog.svelte.js";
+  import { formatDate, formatTime } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
   import Samtale from "./Samtale.svelte";
 
-  let { companyId, integrasjoner, oppgaver, onDone } = $props();
+  // kanGi: INTEGRASJON_ADMIN — giving, withdrawing and replying to a task
+  // all take it (regnmed-api::agent_task); without it the card is read-only.
+  let { companyId, kanGi, integrasjoner, oppgaver, onDone } = $props();
 
   let melding = $state("");
   // Hvilken oppgave som er åpnet i samtalevisningen. Null = ingen.
@@ -38,7 +43,19 @@
     avvist: "avvist",
   };
 
-  async function gi() {
+  const LUKKEDE_VIST = 10;
+
+  // Opening a conversation shows it, under the table it belongs to.
+  async function visSamtale(o) {
+    apnet = apnet === o.oppgave_id ? null : o.oppgave_id;
+    if (!apnet) return;
+    await tick();
+    document.getElementById("samtale")?.scrollIntoView({ block: "nearest" });
+  }
+
+  async function gi(event) {
+    event.preventDefault();
+    if (!melding.trim()) return;
     try {
       await post("/companies/" + companyId + "/agent/oppgaver", {
         melding: melding.trim(),
@@ -55,6 +72,12 @@
   }
 
   async function avslutt(o) {
+    const ok = await bekreft(
+      "Agenten får beskjed om at oppgaven er trukket tilbake, og den kan ikke åpnes igjen. " +
+        "En ny bestilling blir en ny oppgave.",
+      { tittel: "Trekke tilbake oppgaven?", ok: "Trekk tilbake", farlig: true },
+    );
+    if (!ok) return;
     try {
       await post("/companies/" + companyId + "/agent/oppgaver/" + o.oppgave_id + "/svar", {
         status: "avvist",
@@ -78,35 +101,42 @@
   {#if apne.length}
     <table class="table table-sm mb-3">
       <thead>
-        <tr><th>Oppgave</th><th>Agent</th><th>Status</th><th>Siste svar</th><th></th></tr>
+        <tr>
+          <th>Oppgave</th><th class="hidden sm:table-cell">Agent</th><th>Status</th>
+          <th class="hidden md:table-cell">Siste svar</th><th><span class="sr-only">Handlinger</span></th>
+        </tr>
       </thead>
       <tbody>
         {#each apne as o (o.oppgave_id)}
           <tr>
             <td>
               {o.melding}
-              {#if o.frist}<br /><span class="text-xs opacity-60">frist {o.frist}</span>{/if}
+              {#if o.frist}<br /><span class="text-xs opacity-60">frist {formatDate(o.frist)}</span>{/if}
             </td>
-            <td>{o.agent || "enhver agent"}</td>
+            <td class="hidden sm:table-cell">{o.agent || "enhver agent"}</td>
             <td>
               <span class="badge badge-sm {MERKE[o.status] || 'badge-ghost'}">
                 {TEKST[o.status] || o.status}
               </span>
             </td>
-            <td class="text-xs opacity-70">
+            <td class="hidden md:table-cell text-xs opacity-70">
               {#if o.siste_notat}
                 {o.siste_notat}<br />
-                <span class="opacity-60">{o.siste_av} · {(o.siste_tidspunkt || "").slice(0, 16).replace("T", " ")}</span>
+                <span class="opacity-60">{o.siste_av}, {formatTime(o.siste_tidspunkt)}</span>
               {/if}
             </td>
-            <td>
+            <td class="text-right">
               <button
                 class="btn btn-xs {apnet === o.oppgave_id ? '' : 'btn-ghost'}"
-                onclick={() => (apnet = apnet === o.oppgave_id ? null : o.oppgave_id)}
+                aria-expanded={apnet === o.oppgave_id}
+                aria-controls="samtale"
+                onclick={() => visSamtale(o)}
               >
                 Samtale
               </button>
-              <button class="btn btn-xs btn-ghost" onclick={() => avslutt(o)}>Trekk tilbake</button>
+              {#if kanGi}
+                <button class="btn btn-xs btn-ghost" onclick={() => avslutt(o)}>Trekk tilbake</button>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -117,9 +147,10 @@
   {/if}
 
   {#if valgt}
-    <div class="mb-3">
+    <div class="mb-3" id="samtale">
       <Samtale
         {companyId}
+        kanSvare={kanGi}
         oppgave={valgt}
         agent={integrasjoner.find((i) => i.navn === valgt.agent) || null}
         onDone={onDone}
@@ -127,11 +158,19 @@
     </div>
   {/if}
 
-  <div class="flex gap-2 items-end flex-wrap">
-    <label class="form-control">
+  {#if !kanGi}
+    <!-- Nothing to add: reading the queue is all this person may do. -->
+  {:else if !aktive.length}
+    <p class="text-sm">
+      Selskapet har ingen aktiv agent å gi oppgaver til.
+      <a class="link" href={"#/c/" + companyId + "/admin/brukere"}>Legg til en agent under Brukere og roller</a>.
+    </p>
+  {:else}
+  <form class="flex gap-2 items-end flex-wrap" onsubmit={gi}>
+    <label class="form-control w-full sm:w-80">
       <span class="label-text text-xs">Oppgave</span>
       <input
-        class="input input-sm w-80"
+        class="input input-sm w-full"
         placeholder="Importer regnskapet fra Conta og avstem mot årsregnskapet"
         bind:value={melding}
       />
@@ -149,22 +188,25 @@
       <span class="label-text text-xs">Frist</span>
       <input class="input input-sm" type="date" bind:value={frist} />
     </label>
-    <button class="btn btn-sm" onclick={gi} disabled={!melding.trim()}>Gi oppgaven</button>
-  </div>
+    <button class="btn btn-sm" disabled={!melding.trim()}>Gi oppgaven</button>
+  </form>
+  {/if}
 
   {#if lukkede.length}
     <h3 class="font-semibold text-sm mt-3 mb-1">Avsluttede</h3>
-    {#each lukkede.slice(0, 10) as o (o.oppgave_id)}
+    {#each lukkede.slice(0, LUKKEDE_VIST) as o (o.oppgave_id)}
       <div class="text-xs opacity-70 py-0.5">
         <span class="badge badge-xs {MERKE[o.status] || 'badge-ghost'}">{TEKST[o.status] || o.status}</span>
-        <button
-          class="link"
-          onclick={() => (apnet = apnet === o.oppgave_id ? null : o.oppgave_id)}
-        >
+        <button class="link" aria-controls="samtale" onclick={() => visSamtale(o)}>
           {o.melding}
         </button>
         {#if o.siste_notat}· {o.siste_notat}{/if}
       </div>
     {/each}
+    {#if lukkede.length > LUKKEDE_VIST}
+      <p class="text-xs opacity-60 mt-1">
+        Viser de {LUKKEDE_VIST} siste av {lukkede.length} avsluttede oppgaver.
+      </p>
+    {/if}
   {/if}
 </Card>

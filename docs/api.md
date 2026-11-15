@@ -132,7 +132,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/dimensions/prosjekt/{code}/satser` | GET POST |
 | `/companies/{company_id}/cards` | GET, POST |
 | `/companies/{company_id}/cards/{card_id}` | PUT |
-| `/companies/{company_id}/engagement-requests` | POST |
+| `/companies/{company_id}/engagement-requests` | GET, POST |
+| `/companies/{company_id}/engagement-requests/{request_id}/withdraw` | POST |
 | `/companies/{company_id}/engagements` | GET |
 | `/companies/{company_id}/engagements/{engagement_id}/end` | POST |
 | `/companies/{company_id}/expenses` | GET, POST |

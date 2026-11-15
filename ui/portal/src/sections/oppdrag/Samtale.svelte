@@ -5,11 +5,13 @@
   // datamodell: tråden fantes fra #103, fordi `sporsmal` med vilje ikke
   // er terminal. Derfor finnes det heller ingen «slett melding» her —
   // sporet er innsettings-bart, og et svar kan ikke trekkes tilbake.
+  import { untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Agentansikt from "../../components/Agentansikt.svelte";
+  import { formatTime } from "../../lib/format.js";
 
-  let { companyId, oppgave, agent = null, onDone } = $props();
+  let { companyId, oppgave, agent = null, kanSvare = true, onDone } = $props();
 
   let trad = $state(null);
   let svar = $state("");
@@ -23,10 +25,17 @@
     }
   }
 
+  // A new thread only when another task is opened. The list reloads
+  // after every action and hands over a fresh object for the same task;
+  // tracking the object would wipe a reply the person is still writing.
+  const oppgaveId = $derived(oppgave.oppgave_id);
   $effect(() => {
-    trad = null;
-    svar = "";
-    last();
+    oppgaveId;
+    untrack(() => {
+      trad = null;
+      svar = "";
+      last();
+    });
   });
 
   // Et menneskes svar er `pagar` med notat: statusen sier at arbeidet
@@ -34,7 +43,7 @@
   // hentbar igjen for workeren, som hopper over `sporsmal`.
   async function send() {
     const tekst = svar.trim();
-    if (!tekst) return;
+    if (!tekst || sender) return; // Enter twice must not send twice
     sender = true;
     try {
       await post("/companies/" + companyId + "/agent/oppgaver/" + oppgave.oppgave_id + "/svar", {
@@ -51,8 +60,18 @@
     }
   }
 
-  function tid(t) {
-    return (t || "").slice(0, 16).replace("T", " ");
+  // Enter sends, Shift+Enter is a new line — the way every chat works.
+  function tast(event) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      send();
+    }
+  }
+
+  // The agent answers while the person is elsewhere; coming back to the
+  // tab shows what it said instead of the thread as it was.
+  function synlig() {
+    if (document.visibilityState === "visible" && !sender) last();
   }
 
   // Hvem som sa det avgjøres av navnet i sporet, som er det eneste
@@ -76,6 +95,8 @@
   }
 </script>
 
+<svelte:document onvisibilitychange={synlig} />
+
 <div class="border-base-200 rounded-box border p-3">
   <div class="flex items-center gap-2 mb-2">
     {#if agent}
@@ -93,7 +114,7 @@
     <div class="max-h-80 overflow-y-auto pr-1 flex flex-col gap-2">
       <div class="flex flex-col items-end">
         <span class="text-xs opacity-60">
-          {oppgave.opprettet_av} · {tid(oppgave.created_at)}
+          {oppgave.opprettet_av} · {formatTime(oppgave.opprettet)}
         </span>
         <div class="rounded-box max-w-[85%] px-3 py-2 text-sm {BOBLE.menneske}">
           {oppgave.melding}
@@ -102,7 +123,7 @@
       {#each trad.historikk as h, i (i)}
         {#if h.notat}
           <div class="flex flex-col {fraAgenten(h) ? 'items-start' : 'items-end'}">
-            <span class="text-xs opacity-60">{h.av} · {tid(h.tidspunkt)}</span>
+            <span class="text-xs opacity-60">{h.av} · {formatTime(h.tidspunkt)}</span>
             <div class="rounded-box max-w-[85%] px-3 py-2 text-sm {boble(h)}">{h.notat}</div>
           </div>
         {/if}
@@ -113,11 +134,13 @@
       <p class="text-xs opacity-60 mt-2">
         Oppgaven er avsluttet. En ny bestilling er en ny oppgave — sporet står som det er.
       </p>
-    {:else}
+    {:else if kanSvare}
       <div class="flex gap-2 items-end mt-3">
         <textarea
           class="textarea textarea-sm flex-1"
           rows="2"
+          aria-label="Svar til agenten"
+          onkeydown={tast}
           placeholder={oppgave.status === "sporsmal"
             ? "Agenten venter på svar fra deg"
             : "Skriv til agenten"}

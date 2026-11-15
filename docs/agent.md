@@ -236,7 +236,13 @@ derfor skrevet ut framfor å finne opp en ny rettighet:
 - `POST /companies/{id}/agent/oppgaver/{oid}/svar` — `{status, notat?}`
 
 I portalen: Administrasjon → Oppdrag og integrasjoner, kortet «Oppgaver
-til en agent».
+til en agent». Å gi, trekke tilbake og svare krever `INTEGRASJON_ADMIN`;
+uten den er kortet bare lesbart. Uten en aktiv agent sier kortet det og
+peker til Brukere og roller i stedet for å ta imot en oppgave ingen kan
+hente. «Trekk tilbake» spør først, siden `avvist` er endelig. Enter gir
+oppgaven og sender et svar i samtalen (Shift+Enter er ny linje), og
+samtalen hentes på nytt når fanen blir synlig igjen, så svaret agenten
+ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 
 ## 6. Tester
 

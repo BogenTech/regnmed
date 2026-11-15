@@ -163,10 +163,37 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
    as the status flip — the accountant's access exists on their next
    request, no re-login (the authorization model resolves engagements
    live).
-4. **End** (`POST /companies/{id}/engagements/{eid}/end`): company admin
+4. **Withdraw** (`POST /companies/{id}/engagement-requests/{rid}/withdraw`,
+   migrasjon 0090): selskapet kan trekke en forespørsel som byrået ennå
+   ikke har svart på. Det er samme engangsovergang som byråets
+   avgjørelse — `pending` → `withdrawn`, med hvem og når — og raden blir
+   stående. En trukket forespørsel kan verken godtas eller trekkes på
+   nytt, og selskapet kan spørre igjen etterpå. Selskapet ser sine egne
+   forespørsler på `GET /companies/{id}/engagement-requests`
+   (`OPPDRAG_LES`, ventende først, de 50 siste); før dette var en sendt
+   forespørsel usynlig for den som sendte den.
+5. **End** (`POST /companies/{id}/engagements/{eid}/end`): company admin
    sets `valid_to` = today. **`valid_to` is exclusive in access
    resolution**: ending an oppdrag revokes the firm's access
    immediately, and the history row stays forever.
+
+### I portalen
+
+Administrasjon → Oppdrag og integrasjoner. Feilmeldingene fra flyten er
+norske, siden de vises til brukeren.
+
+- **Oppdrag** viser aktive og avsluttede oppdrag og selskapets
+  forespørsler: ventende med «Trekk tilbake», og de fem siste svarene
+  (takket nei, trukket tilbake). Å avslutte et oppdrag spør først og
+  navngir byrået og følgen: byrået mister tilgangen med en gang.
+- **Finn et byrå** er et søk, ikke en tabell: katalogen kan ha hundrevis
+  av byråer, så navn eller organisasjonsnummer og type snevrer inn, og
+  høyst 20 treff vises med antallet sagt. Hver rad sier om byrået har et
+  aktivt oppdrag, er forespurt eller kan spørres.
+- Knappene vises bare for den som har `OPPDRAG_ADMIN`; katalogen hentes
+  bare for dem. Serveren nekter uansett.
+- Hver del lastes for seg, så en feil i én viser «Prøv igjen» uten å
+  stoppe de andre, og en handling laster bare den delen den endret.
 
 ## Where it is tested
 
@@ -176,7 +203,11 @@ The loop that makes it a marketplace (`docs/portal.md`: Oppdrag section
 - `regnmed-api/tests/grupper/engagement.rs` (real Postgres, also CI): the whole
   loop — directory listing, non-admin refused, request + duplicate
   rejection, firm-member-only visibility and decision, access appearing
-  via `/me` after accept and disappearing immediately after end.
+  via `/me` after accept and disappearing immediately after end; og
+  `the_company_sees_and_withdraws_its_request`: forespørselen er synlig
+  for en leser, bare admin kan trekke den, en trukket forespørsel kan
+  ikke godtas, og selskapet kan spørre igjen (sett feile med
+  `status = 'pending'`-vakten fjernet).
 - `regnmed-api/tests/grupper/marketplace.rs` (real Postgres, mocked registries
   via env URLs, also CI): preview, checksum rejection, onboarding with
   seeded reskontro-flagged kontoplan and creator-as-admin, double
