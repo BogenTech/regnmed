@@ -1,35 +1,56 @@
 <script>
-  // Bevegelseslisten for ett produkt — salgslinjene bærer fakturaen de
-  // kom fra, så beholdningen alltid kan spores tilbake til et bilag.
-  import { kr, antallStr } from "../../lib/format.js";
+  // Bevegelseslisten for ett produkt, åpnet under raden — salgslinjene
+  // bærer fakturaen de kom fra, så beholdningen alltid kan spores
+  // tilbake til et bilag.
+  import { onMount } from "svelte";
+  import { api } from "../../lib/api.js";
+  import { kr, antallStr, formatDate } from "../../lib/format.js";
+  import LoadError from "../../components/LoadError.svelte";
 
-  let { nummer, movements } = $props();
+  let { companyId, nummer } = $props();
 
-  const KIND_NAVN = { kjop: "varekjøp", salg: "salg", justering: "justering" };
+  const KIND_NAVN = { kjop: "Varekjøp", salg: "Salg", justering: "Justering" };
+
+  let movements = $state(null); // null = loading, { error } = failed
+
+  async function last() {
+    try {
+      const svar = await api(
+        "/companies/" + companyId + "/inventory/movements?produkt=" + encodeURIComponent(nummer),
+      );
+      movements = svar.movements;
+    } catch (error) {
+      movements = { error: error.message };
+    }
+  }
+  onMount(last);
 </script>
 
-<h3 class="font-semibold mb-1">Bevegelser — {nummer}</h3>
-<table class="table table-xs">
-  <thead>
-    <tr>
-      <th>Dato</th><th>Type</th><th class="text-right">Antall</th>
-      <th class="text-right">Kost/stk</th><th>Notat</th>
-    </tr>
-  </thead>
-  <tbody>
-    {#each movements as m}
-      <tr>
-        <td>{m.dato}</td>
-        <td>
-          {KIND_NAVN[m.kind] || m.kind}
-          {#if m.invoice_no}
-            <span class="opacity-60">(faktura {m.invoice_no})</span>
-          {/if}
-        </td>
-        <td class="text-right">{antallStr(m.antall_milli)}</td>
-        <td class="text-right">{m.kostpris_ore == null ? "–" : kr(m.kostpris_ore)}</td>
-        <td>{m.note || ""}</td>
-      </tr>
-    {/each}
-  </tbody>
-</table>
+<div class="mt-2 p-3 rounded-box bg-base-200 text-sm">
+  {#if !movements}
+    <span class="loading loading-spinner loading-sm" aria-label="Laster bevegelser"></span>
+  {:else if movements.error}
+    <LoadError error={movements.error} retry={() => ((movements = null), last())} />
+  {:else if !movements.length}
+    <p class="opacity-70">Ingen bevegelser ennå.</p>
+  {:else}
+    <ul class="divide-y divide-base-300">
+      {#each movements as m, i (i)}
+        <li class="py-1 flex gap-2">
+          <span class="whitespace-nowrap w-20 shrink-0">{formatDate(m.dato)}</span>
+          <span class="min-w-0 flex-1">
+            {KIND_NAVN[m.kind] || m.kind}
+            {#if m.invoice_no}<span class="opacity-60">faktura {m.invoice_no}</span>{/if}
+            {#if m.kostpris_ore != null}
+              <span class="opacity-60">à {kr(m.kostpris_ore)} kr</span>
+            {/if}
+            {#if m.note}<span class="block text-xs opacity-60">{m.note}</span>{/if}
+          </span>
+          <span class="text-right whitespace-nowrap">
+            {m.antall_milli > 0 ? "+" : ""}{antallStr(m.antall_milli)}
+          </span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</div>

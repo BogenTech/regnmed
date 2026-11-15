@@ -33,9 +33,46 @@ pub struct ProductDraft {
     pub stocked: bool,
 }
 
+/// The register's own rules, checked before the database sees the row so
+/// the person gets a sentence instead of a constraint name.
+fn check_fields(
+    name: Option<&str>,
+    sales_price_ore: Option<i64>,
+    account: Option<&str>,
+) -> Result<()> {
+    if let Some(name) = name {
+        ensure!(!name.trim().is_empty(), "Navnet må fylles ut");
+    }
+    if let Some(price) = sales_price_ore {
+        ensure!(price >= 0, "Salgsprisen kan ikke være negativ");
+    }
+    if let Some(account) = account {
+        // A product line is a sale, so its account is a revenue account.
+        ensure!(
+            account.len() == 4
+                && account.starts_with('3')
+                && account.bytes().all(|b| b.is_ascii_digit()),
+            "Inntektskontoen må være et firesifret nummer i klasse 3 (3000–3999), ikke «{account}»"
+        );
+    }
+    Ok(())
+}
+
+/// A foreign-key miss on `vat_code` is the only one a caller can cause.
+fn unknown_vat_code(e: &sqlx::Error, code: Option<&str>) -> Option<anyhow::Error> {
+    (e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23503"))
+        .then(|| anyhow::anyhow!("Ukjent mva-kode {}", code.unwrap_or("")))
+}
+
 pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraft) -> Result<Uuid> {
+    ensure!(!draft.number.trim().is_empty(), "Nummeret må fylles ut");
+    check_fields(
+        Some(&draft.name),
+        Some(draft.sales_price_ore),
+        Some(&draft.account),
+    )?;
     let id = Uuid::now_v7();
-    sqlx::query(
+    let inserted = sqlx::query(
         "insert into product (id, company_id, nummer, navn, salgspris_ore, vat_code,
                               konto, lagerfort)
          values ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -49,13 +86,16 @@ pub async fn create_product(pool: &PgPool, company_id: Uuid, draft: &ProductDraf
     .bind(&draft.account)
     .bind(draft.stocked)
     .execute(pool)
-    .await
-    .with_context(|| {
-        format!(
-            "could not create product {} (duplicate nummer?)",
-            draft.number
-        )
-    })?;
+    .await;
+    if let Err(e) = &inserted {
+        if e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23505") {
+            anyhow::bail!("Nummeret {} er allerede i bruk", draft.number);
+        }
+        if let Some(e) = unknown_vat_code(e, draft.vat_code.as_deref()) {
+            return Err(e);
+        }
+    }
+    inserted?;
     Ok(id)
 }
 
@@ -73,6 +113,7 @@ pub async fn update_product(
     active: Option<bool>,
     stocked: Option<bool>,
 ) -> Result<()> {
+    check_fields(name, sales_price_ore, account)?;
     let updated = sqlx::query(
         "update product set
              navn = coalesce($3, navn),
@@ -94,8 +135,9 @@ pub async fn update_product(
     .bind(active)
     .bind(stocked)
     .execute(pool)
-    .await?;
-    ensure!(updated.rows_affected() == 1, "no product {number}");
+    .await
+    .map_err(|e| unknown_vat_code(&e, vat_code.flatten()).unwrap_or_else(|| e.into()))?;
+    ensure!(updated.rows_affected() == 1, "Fant ikke produktet {number}");
     Ok(())
 }
 
@@ -164,10 +206,10 @@ pub async fn resolve_product_line(
             .bind(number)
             .fetch_optional(pool)
             .await?
-            .with_context(|| format!("no product {number}"))?;
+            .with_context(|| format!("Fant ikke produktet {number}"))?;
             ensure!(
                 product.get::<bool, _>("aktiv"),
-                "product {number} is deactivated"
+                "Produktet {number} er deaktivert"
             );
             Ok(InvoiceLineDraft {
                 description: spec
@@ -272,7 +314,21 @@ pub async fn register_movement(
 ) -> Result<()> {
     ensure!(
         matches!(kind, "kjop" | "justering"),
-        "kind must be kjop or justering (salg comes from invoicing)"
+        "Typen må være varekjøp eller justering (salg kommer fra fakturaene)"
+    );
+    // The same rules as migration 0024's checks, in words.
+    ensure!(quantity_milli != 0, "Antallet kan ikke være null");
+    ensure!(
+        kind != "kjop" || quantity_milli > 0,
+        "Et varekjøp må ha positivt antall — en nedjustering registreres som justering"
+    );
+    ensure!(
+        kind != "justering" || note.is_some_and(|n| !n.trim().is_empty()),
+        "En justering må ha et notat som sier hvorfor"
+    );
+    ensure!(
+        cost_price_ore.is_none_or(|c| c >= 0),
+        "Kostprisen kan ikke være negativ"
     );
     let product =
         sqlx::query("select id, lagerfort from product where company_id = $1 and nummer = $2")
@@ -280,10 +336,10 @@ pub async fn register_movement(
             .bind(number)
             .fetch_optional(pool)
             .await?
-            .with_context(|| format!("no product {number}"))?;
+            .with_context(|| format!("Fant ikke produktet {number}"))?;
     ensure!(
         product.get::<bool, _>("lagerfort"),
-        "product {number} is not lagerført"
+        "Produktet {number} er ikke lagerført"
     );
     sqlx::query(
         "insert into inventory_movement
@@ -300,8 +356,7 @@ pub async fn register_movement(
     .bind(note)
     .bind(created_by)
     .execute(pool)
-    .await
-    .map_err(|e| anyhow::anyhow!("could not register movement: {e}"))?;
+    .await?;
     Ok(())
 }
 
@@ -419,6 +474,9 @@ pub struct TellingKonti {
     pub journal_code: String,
     pub inventory_account: String,
     pub change_account: String,
+    /// The change a preview showed. When given, the count is refused if
+    /// the stock moved since, so what was confirmed is what is posted.
+    pub expected_change_ore: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -436,6 +494,8 @@ pub struct TellingResult {
     /// Booked balance on the lager account before adjustment (only
     /// computed when posting was requested).
     pub posted_ore: Option<i64>,
+    /// What the voucher moves (value − booked), when posting.
+    pub change_ore: Option<i64>,
     pub voucher: Option<(i32, i64)>,
 }
 
@@ -444,16 +504,21 @@ pub struct TellingResult {
 /// between the counted inventory VALUE and the booked lager saldo is
 /// posted as an ordinary voucher (debit lager when the value grew,
 /// credit beholdningsendring). Movements and voucher commit or roll
-/// back together.
+/// back together. `preview` runs the same computation and rolls it all
+/// back, so what the person confirms is exactly what will be posted.
 pub async fn varetelling(
     pool: &PgPool,
     company_id: Uuid,
     date: NaiveDate,
     linjer: &[TellingLinje],
     post: Option<&TellingKonti>,
+    preview: bool,
     created_by: &str,
 ) -> Result<TellingResult> {
-    ensure!(!linjer.is_empty(), "varetellingen har ingen linjer");
+    ensure!(
+        !linjer.is_empty(),
+        "Fyll inn talt antall for minst ett produkt"
+    );
     let mut tx = pool.begin().await?;
     let mut justeringer = Vec::new();
     for linje in linjer {
@@ -465,10 +530,15 @@ pub async fn varetelling(
         .bind(&linje.number)
         .fetch_optional(&mut *tx)
         .await?
-        .with_context(|| format!("no product {}", linje.number))?;
+        .with_context(|| format!("Fant ikke produktet {}", linje.number))?;
         ensure!(
             product.get::<bool, _>("lagerfort"),
-            "product {} is not lagerført",
+            "Produktet {} er ikke lagerført",
+            linje.number
+        );
+        ensure!(
+            linje.counted_milli >= 0,
+            "Talt antall for {} kan ikke være negativt",
             linje.number
         );
         let product_id: Uuid = product.get("id");
@@ -509,6 +579,7 @@ pub async fn varetelling(
     }
 
     let mut posted_ore = None;
+    let mut change_ore = None;
     let mut voucher = None;
     if let Some(accounts) = post {
         let posted: i64 = sqlx::query_scalar(
@@ -522,6 +593,16 @@ pub async fn varetelling(
         .await?;
         posted_ore = Some(posted);
         let change = value_ore - posted;
+        change_ore = Some(change);
+        if let Some(expected) = accounts.expected_change_ore {
+            ensure!(
+                expected == change,
+                "Varelageret har endret seg siden du så over tellingen. Se over den på nytt."
+            );
+        }
+        // A preview posts too, inside the transaction it rolls back: a
+        // locked period or a closed account fails NOW, not after the
+        // person has confirmed. The rollback returns the voucher number.
         if change != 0 {
             let draft = VoucherDraft {
                 journal_code: accounts.journal_code.clone(),
@@ -553,14 +634,21 @@ pub async fn varetelling(
             };
             draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
             let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
-            voucher = Some((posted.fiscal_year, posted.voucher_number));
+            if !preview {
+                voucher = Some((posted.fiscal_year, posted.voucher_number));
+            }
         }
     }
-    tx.commit().await?;
+    if preview {
+        tx.rollback().await?;
+    } else {
+        tx.commit().await?;
+    }
     Ok(TellingResult {
         justeringer,
         value_ore,
         posted_ore,
+        change_ore,
         voucher,
     })
 }
