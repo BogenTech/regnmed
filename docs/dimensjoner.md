@@ -89,6 +89,28 @@ UI finally offers it), avslutt/gjenåpne, and an Avdelinger card with
 the same rules minus the customer. Pickers remain in the innboks bokfør
 form and the faktura form; resultat filter in Rapporter.
 
+Siden 2026-11-15 er registeret en liste, ikke en tabell med ni
+kolonner: hver rad viser kode og navn, og under det kunde, fakturerbar,
+din timesats, timer i år og ufakturert beløp. Det passer på en telefon.
+«Endre» åpner ett panel under raden med navn, kunde og
+fakturerbar-standard (lagres i ÉTT kall), avslutt/åpne igjen og
+timesatsene. Enter lagrer, Esc lukker, og fokus går tilbake til
+radens knapp. Avsluttede ligger bak «Vis avsluttede (n)».
+
+To ting skal ikke skje igjen. (a) Et tomt satsfelt ble lest som 0 kr,
+og fra den datoen ble hver fakturerbar time fakturert til null — nå
+nektes tomt og ugyldig beløp før noe sendes (`lesSats`, testet). (b)
+Satsen ved opprettelse er et eget kall etter selve prosjektet; en
+ugyldig sats etterlot et halvt opprettet prosjekt, og neste forsøk
+feilet på koden som nå fantes. Satsen sjekkes derfor FØR prosjektet
+opprettes, og skjemaet tømmes så snart prosjektet finnes. Serverens
+meldinger er norske (kode i bruk gjenkjennes på SQLSTATE 23505, tomt
+navn nektes før databasen svarer), testet i
+`a_project_carries_its_customer`. Etter en endring hentes bare
+registeret på nytt — ikke kundelisten eller et års timer — og
+medlemslisten (for personsatser) hentes bare for `MEDLEM_ADMIN`, når
+satsene åpnes.
+
 Visibility follows the rettigheter: the section is readable for
 everyone with `DIMENSJON_LES` (including ansatte — they log hours
 against the projects), while every writing control renders only with
