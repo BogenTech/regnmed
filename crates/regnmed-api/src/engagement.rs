@@ -182,6 +182,40 @@ pub async fn request_engagement(
     Ok(Json(json!({ "request_id": request_id })))
 }
 
+/// The company's own requests, so it can see what it is waiting for and
+/// what the firm answered — without them a sent request was invisible.
+pub async fn company_requests(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::EngagementRead).await?;
+    let requests = regnmed_db::company_requests(&state.pool, company_id).await?;
+    Ok(Json(json!({
+        "requests": requests.iter().map(|r| json!({
+            "request_id": r.request_id,
+            "firm_id": r.firm_id,
+            "firm": r.firm_name,
+            "kind": r.kind,
+            "status": r.status,
+            "created_at": r.created_at,
+            "decided_at": r.decided_at,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+pub async fn withdraw_request(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, request_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::EngagementAdmin).await?;
+    regnmed_db::withdraw_request(&state.pool, company_id, request_id, person.person_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "withdrawn": true })))
+}
+
 pub async fn end_engagement(
     State(state): State<AppState>,
     person: AuthPerson,

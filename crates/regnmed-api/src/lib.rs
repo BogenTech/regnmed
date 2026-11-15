@@ -320,7 +320,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/companies/{company_id}/engagement-requests",
-            axum::routing::post(engagement::request_engagement),
+            get(engagement::company_requests).post(engagement::request_engagement),
+        )
+        .route(
+            "/companies/{company_id}/engagement-requests/{request_id}/withdraw",
+            axum::routing::post(engagement::withdraw_request),
         )
         .route(
             "/companies/{company_id}/engagements/{engagement_id}/end",

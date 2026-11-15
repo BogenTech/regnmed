@@ -67,3 +67,13 @@ export function formatDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
   return m ? m[3] + "." + m[2] + "." + m[1] : iso;
 }
+
+// A timestamp (RFC 3339, usually UTC from the server) → 15.11.2026 07:19
+// in the reader's own time zone. Slicing the string would show UTC.
+export function formatTime(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return iso || "";
+  const p = (n) => String(n).padStart(2, "0");
+  const dato = p(d.getDate()) + "." + p(d.getMonth() + 1) + "." + d.getFullYear();
+  return dato + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}

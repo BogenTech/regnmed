@@ -126,8 +126,8 @@ async fn directory_request_accept_work_end() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Duplicate pending request is rejected.
-    let (status, _) = request(
+    // Duplicate pending request is rejected, in words the owner can read.
+    let (status, body) = request(
         &state,
         "POST",
         &format!("/companies/{company}/engagement-requests"),
@@ -136,6 +136,13 @@ async fn directory_request_accept_work_end() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("allerede en ventende forespørsel"),
+        "body: {body}"
+    );
 
     // The accountant sees the request; an outsider does not.
     let (status, requests) = request(
@@ -225,4 +232,119 @@ async fn directory_request_accept_work_end() {
             .any(|c| c["name"] == "Oppdragsklient AS"),
         "ended engagement revokes access immediately"
     );
+}
+
+/// A request the company sent is visible to it, and it can take it back
+/// before the firm answers — after which the firm can no longer accept
+/// it, and the company may ask again.
+#[tokio::test]
+async fn the_company_sees_and_withdraws_its_request() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let reader_sub = format!("test|{}", Uuid::new_v4());
+    let accountant_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eva Eier"), None)
+        .await
+        .unwrap();
+    let reader = regnmed_db::ensure_person(&state.pool, &reader_sub, Some("Lise Leser"), None)
+        .await
+        .unwrap();
+    let accountant =
+        regnmed_db::ensure_person(&state.pool, &accountant_sub, Some("Kari Bokfører"), None)
+            .await
+            .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Angreklient AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, company).await;
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, reader, "les")
+        .await
+        .unwrap();
+    let firm_id = regnmed_db::create_verified_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Angrebyrå AS",
+        "regnskap",
+        "test-verifisering",
+        accountant,
+    )
+    .await
+    .unwrap();
+    let owner_token = idp.token(&owner_sub, "Eva Eier");
+    let reader_token = idp.token(&reader_sub, "Lise Leser");
+    let accountant_token = idp.token(&accountant_sub, "Kari Bokfører");
+    let requests_uri = format!("/companies/{company}/engagement-requests");
+
+    let (status, sent) = request(
+        &state,
+        "POST",
+        &requests_uri,
+        &owner_token,
+        Some(serde_json::json!({ "firm_id": firm_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let request_id = sent["request_id"].as_str().unwrap().to_string();
+
+    // Anyone who may read the company's engagements sees the request.
+    let (status, list) = request(&state, "GET", &requests_uri, &reader_token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["requests"][0]["request_id"], request_id.as_str());
+    assert_eq!(list["requests"][0]["status"], "pending");
+    assert_eq!(list["requests"][0]["firm"], "Angrebyrå AS");
+
+    // Withdrawing is the admin's; a reader is refused.
+    let withdraw_uri = format!("{requests_uri}/{request_id}/withdraw");
+    let (status, _) = request(&state, "POST", &withdraw_uri, &reader_token, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = request(&state, "POST", &withdraw_uri, &owner_token, None).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let (_, list) = request(&state, "GET", &requests_uri, &owner_token, None).await;
+    assert_eq!(list["requests"][0]["status"], "withdrawn");
+
+    // Once withdrawn, it can be neither withdrawn again nor accepted.
+    let (status, body) = request(&state, "POST", &withdraw_uri, &owner_token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("ikke lenger ventende")
+    );
+    let (status, _) = request(
+        &state,
+        "POST",
+        &format!("/firms/{firm_id}/requests/{request_id}/decision"),
+        &accountant_token,
+        Some(serde_json::json!({ "accept": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, engagements) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/engagements"),
+        &owner_token,
+        None,
+    )
+    .await;
+    assert_eq!(engagements["engagements"].as_array().unwrap().len(), 0);
+
+    // The company may ask again.
+    let (status, _) = request(
+        &state,
+        "POST",
+        &requests_uri,
+        &owner_token,
+        Some(serde_json::json!({ "firm_id": firm_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }

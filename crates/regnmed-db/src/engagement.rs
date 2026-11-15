@@ -108,10 +108,10 @@ pub async fn request_engagement(
     .bind(firm_id)
     .fetch_optional(pool)
     .await?
-    .context("no such firm")?;
+    .context("Fant ikke byrået")?;
     ensure!(
         firm.get::<bool, _>("verified"),
-        "firm's autorisasjon is not verified"
+        "Byråets autorisasjon er ikke verifisert hos Finanstilsynet"
     );
     let kind: String = firm.get("kind");
 
@@ -124,10 +124,13 @@ pub async fn request_engagement(
     .bind(&kind)
     .fetch_one(pool)
     .await?;
-    ensure!(!open, "an active engagement of this kind already exists");
+    ensure!(
+        !open,
+        "Selskapet har allerede et aktivt oppdrag hos dette byrået"
+    );
 
     let id = Uuid::now_v7();
-    sqlx::query(
+    let inserted = sqlx::query(
         "insert into engagement_request (id, firm_id, company_id, kind, message, requested_by)
          values ($1, $2, $3, $4, $5, $6)",
     )
@@ -138,9 +141,80 @@ pub async fn request_engagement(
     .bind(message)
     .bind(requested_by)
     .execute(pool)
-    .await
-    .context("creating request (already pending?)")?;
+    .await;
+    // The partial unique index allows one pending request per firm/company/kind.
+    if let Err(e) = &inserted
+        && e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23505")
+    {
+        anyhow::bail!("Selskapet har allerede en ventende forespørsel til dette byrået");
+    }
+    inserted?;
     Ok(id)
+}
+
+/// A request as the company that sent it sees it.
+#[derive(Debug)]
+pub struct CompanyRequestRow {
+    pub request_id: Uuid,
+    pub firm_id: Uuid,
+    pub firm_name: String,
+    pub kind: String,
+    pub status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub decided_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// The company's own requests, pending first. Bounded: the history is
+/// for seeing what is still open and what was answered lately.
+pub async fn company_requests(pool: &PgPool, company_id: Uuid) -> Result<Vec<CompanyRequestRow>> {
+    let rows = sqlx::query(
+        "select r.id, r.firm_id, f.name, r.kind, r.status, r.created_at, r.decided_at
+         from engagement_request r
+         join firm f on f.id = r.firm_id
+         where r.company_id = $1
+         order by r.status = 'pending' desc, r.created_at desc
+         limit 50",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| CompanyRequestRow {
+            request_id: r.get("id"),
+            firm_id: r.get("firm_id"),
+            firm_name: r.get("name"),
+            kind: r.get("kind"),
+            status: r.get("status"),
+            created_at: r.get("created_at"),
+            decided_at: r.get("decided_at"),
+        })
+        .collect())
+}
+
+/// The company withdraws a request the firm has not decided yet. Same
+/// one-time transition as the firm's decision, recorded with who did it.
+pub async fn withdraw_request(
+    pool: &PgPool,
+    company_id: Uuid,
+    request_id: Uuid,
+    withdrawn_by: Uuid,
+) -> Result<()> {
+    let withdrawn = sqlx::query(
+        "update engagement_request
+         set status = 'withdrawn', decided_by = $3, decided_at = now()
+         where id = $1 and company_id = $2 and status = 'pending'",
+    )
+    .bind(request_id)
+    .bind(company_id)
+    .bind(withdrawn_by)
+    .execute(pool)
+    .await?;
+    ensure!(
+        withdrawn.rows_affected() == 1,
+        "Forespørselen er ikke lenger ventende — byrået kan ha svart på den"
+    );
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -202,7 +276,7 @@ pub async fn decide_request(
     .bind(decided_by)
     .fetch_optional(&mut *tx)
     .await?
-    .context("no pending request with that id for this firm")?;
+    .context("Forespørselen er ikke lenger ventende — selskapet kan ha trukket den tilbake")?;
 
     if accept {
         sqlx::query(
@@ -285,6 +359,9 @@ pub async fn end_engagement(
     .bind(firm_scope)
     .execute(pool)
     .await?;
-    ensure!(ended.rows_affected() == 1, "no active engagement to end");
+    ensure!(
+        ended.rows_affected() == 1,
+        "Oppdraget er allerede avsluttet"
+    );
     Ok(())
 }
