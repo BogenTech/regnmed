@@ -2,8 +2,13 @@
   // Aksjeeierbok og aksjonærregisteroppgaven (#43): to ting som ofte
   // blandes, holdt fra hverandre. Boken er lovpålagt i seg selv
   // (aksjeloven §4-5); oppgaven er innrapportering (docs/aksjonaer.md).
+  //
+  // Each card loads on its own with its own retry, so one failed call
+  // never leaves the whole page spinning; after a change only what it
+  // touched is fetched again.
   import { api } from "../../lib/api.js";
-  import { toast } from "../../lib/toast.svelte.js";
+  import { harRett } from "../../lib/me.svelte.js";
+  import LoadError from "../../components/LoadError.svelte";
   import Aksjeeierbok from "./Aksjeeierbok.svelte";
   import Hendelser from "./Hendelser.svelte";
   import Utbytte from "./Utbytte.svelte";
@@ -11,68 +16,91 @@
 
   let { companyId } = $props();
 
-  // Oppgaven for et år leveres i januar året etter (frist 31. januar), så
-  // fram til juni står forrige inntektsår først.
-  const now = new Date();
-  const thisYear = now.getFullYear();
-  let year = $state(now.getMonth() < 5 ? thisYear - 1 : thisYear);
+  let kanSkrive = $derived(harRett(companyId, "AKSJEBOK_SKRIV"));
 
-  let data = $state(null);
+  // null = loading, { error } = failed, otherwise the data.
+  let bok = $state(null);
+  let hendelser = $state(null);
+  let utbytte = $state(null);
+  let typer = $state(null);
+  // Bumped after any change, so the filing preview reflects it.
+  let versjon = $state(0);
 
-  async function load(id) {
-    const [bok, hendelser, utbytte, typer, oppgave] = await Promise.all([
-      api("/companies/" + id + "/shareholders"),
-      api("/companies/" + id + "/share-events"),
-      api("/companies/" + id + "/dividends"),
-      api("/companies/" + id + "/shareholders/transaction-types"),
-      api("/companies/" + id + "/reports/aksjonaeroppgave?year=" + year).catch(() => null),
-    ]);
-    data = {
-      bok,
-      hendelser: hendelser.hendelser,
-      utbytte: utbytte.utbytte,
-      typer: typer.typer,
-      oppgave,
-    };
+  function laster(sett, sti, velg) {
+    const id = companyId;
+    return api("/companies/" + id + sti)
+      .then((svar) => id === companyId && sett(velg(svar)))
+      .catch((error) => id === companyId && sett({ error: error.message }));
   }
-
-  function reload() {
-    load(companyId).catch((error) => toast(error.message, false));
-  }
+  const lastBok = () => laster((v) => (bok = v), "/shareholders", (s) => s);
+  const lastHendelser = () => laster((v) => (hendelser = v), "/share-events", (s) => s.hendelser);
+  const lastUtbytte = () => laster((v) => (utbytte = v), "/dividends", (s) => s.utbytte);
+  const lastTyper = () =>
+    laster((v) => (typer = v), "/shareholders/transaction-types", (s) => s.typer);
 
   $effect(() => {
-    data = null;
-    load(companyId).catch((error) => toast(error.message, false));
+    companyId;
+    bok = hendelser = utbytte = typer = null;
+    lastBok();
+    lastHendelser();
+    lastUtbytte();
+    lastTyper();
   });
+
+  async function etterHendelse() {
+    await Promise.all([lastBok(), lastHendelser()]);
+    versjon++;
+  }
 </script>
 
-{#if !data}
-  <span class="loading loading-spinner loading-lg"></span>
+{#snippet venter(data, retry, hva)}
+  {#if !data}
+    <span class="loading loading-spinner" aria-label={"Laster " + hva}></span>
+  {:else}
+    <LoadError error={data.error} {retry} />
+  {/if}
+{/snippet}
+
+{#if bok && !bok.error}
+  <Aksjeeierbok
+    {companyId}
+    {bok}
+    {kanSkrive}
+    onChanged={async () => (await Promise.all([lastBok(), lastHendelser()]), versjon++)}
+  />
 {:else}
-  <Aksjeeierbok {companyId} bok={data.bok} onDone={reload} />
+  {@render venter(bok, () => ((bok = null), lastBok()), "aksjeeierboken")}
+{/if}
+
+{#if Array.isArray(hendelser) && Array.isArray(typer) && bok && !bok.error}
   <Hendelser
     {companyId}
-    hendelser={data.hendelser}
-    aksjonarer={data.bok.aksjonarer}
-    typer={data.typer}
-    onDone={reload}
+    {hendelser}
+    aksjonarer={bok.aksjonarer}
+    {typer}
+    {kanSkrive}
+    onChanged={etterHendelse}
   />
-  <Utbytte {companyId} utbytte={data.utbytte} onDone={reload} />
-  <div class="flex justify-end mb-2">
-    <select
-      class="select select-sm w-fit"
-      aria-label="Inntektsår for aksjonærregisteroppgaven"
-      bind:value={year}
-      onchange={reload}
-    >
-      {#each [thisYear, thisYear - 1, thisYear - 2] as y (y)}
-        <option value={y}>Inntektsår {y}</option>
-      {/each}
-    </select>
-  </div>
-  {#if data.oppgave}
-    <Oppgave {companyId} oppgave={data.oppgave} {year} />
-  {:else}
-    <p class="text-sm opacity-70">Ingen aksjonærregisteroppgave for {year}.</p>
-  {/if}
+{:else if hendelser?.error || typer?.error}
+  <LoadError
+    error={hendelser?.error || typer?.error}
+    retry={() => {
+      hendelser = typer = null;
+      lastHendelser();
+      lastTyper();
+    }}
+  />
 {/if}
+
+{#if Array.isArray(utbytte)}
+  <Utbytte
+    {companyId}
+    {utbytte}
+    {kanSkrive}
+    onChanged={async () => (await lastUtbytte(), versjon++)}
+  />
+{:else}
+  {@render venter(utbytte, () => ((utbytte = null), lastUtbytte()), "utbyttene")}
+{/if}
+
+<Oppgave {companyId} {kanSkrive} {versjon} />

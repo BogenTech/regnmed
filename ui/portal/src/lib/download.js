@@ -4,9 +4,10 @@
 import { api } from "./api.js";
 import { toast } from "./toast.svelte.js";
 
-/// Lagrer en streng vi allerede har (f.eks. XML fra et JSON-svar) som fil.
-export function saveText(text, filename) {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/xml" }));
+/// Lagrer innhold vi allerede har (f.eks. XML fra et JSON-svar, eller
+/// bytene i et zip-arkiv) som fil.
+export function saveText(text, filename, type = "application/xml") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;

@@ -278,6 +278,8 @@ async fn seed_browser_demo() {
         date(2026, 5, 20),
         50_000,
         Some("Ordinær generalforsamling"),
+        false,
+        None,
         "Demo Bruker",
     )
     .await

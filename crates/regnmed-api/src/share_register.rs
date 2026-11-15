@@ -4,6 +4,7 @@
 //! - PUT  /companies/{id}/shareholders/{sid}/contact  contact details
 //! - GET/POST /companies/{id}/share-events            events
 //! - GET/POST /companies/{id}/dividends               dividend decisions
+//!   (`?preview=true` returns the split and keeps nothing)
 //! - GET  /companies/{id}/shareholders/transaction-types
 //! - GET  /companies/{id}/reports/aksjonaeroppgave?year=&format=
 //!
@@ -329,12 +330,23 @@ pub struct CreateDividendRequest {
     #[serde(rename = "per_aksje_ore")]
     per_share_ore: i64,
     note: Option<String>,
+    /// `totalt_ore` from the preview; refused if the book moved since.
+    #[serde(rename = "forventet_totalt_ore")]
+    expected_total_ore: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct DividendQuery {
+    /// Compute the split and try the posting, keep nothing.
+    #[serde(default)]
+    preview: bool,
 }
 
 pub async fn create_dividend(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<DividendQuery>,
     Json(request): Json<CreateDividendRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(
@@ -350,14 +362,21 @@ pub async fn create_dividend(
         request.decided_date,
         request.per_share_ore,
         request.note.as_deref(),
+        query.preview,
+        request.expected_total_ore,
         person.display(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({
-        "dividend_id": vedtak.id,
+        "dividend_id": (!query.preview).then_some(vedtak.id),
         "totalt_ore": vedtak.total_ore,
         "voucher_id": vedtak.voucher_id,
+        "fordeling": vedtak.split.iter().map(|(name, shares, ore)| json!({
+            "navn": name,
+            "antall_aksjer": shares,
+            "belop_ore": ore,
+        })).collect::<Vec<_>>(),
     })))
 }
 

@@ -226,12 +226,154 @@ async fn share_register_dividends_and_the_return() {
         "POST",
         &format!("{base}/share-events"),
         Some(json!({
-            "shareholder_id": investor, "type": "salg", "dato": "2026-07-01", "antall": 999
+            "shareholder_id": investor, "type": "salg", "dato": "2026-07-01", "antall": 999,
+            "motpart_id": kari
         })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("kan ikke avhende"));
+
+    // A transfer always has its other side in this book: without it a
+    // kjøp mints shares and a salg destroys them. Every refusal says why.
+    let other_company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Fremmed AS")
+        .await
+        .unwrap();
+    let stranger = regnmed_db::share_register::create_shareholder(
+        &state.pool,
+        other_company,
+        &regnmed_db::share_register::NewShareholder {
+            kind: "selskap".into(),
+            name: "Fremmed eier".into(),
+            nin: None,
+            orgnumber: Some("923609016".into()),
+            foreign_id: None,
+            address: None,
+            postal_code: None,
+            postal_city: None,
+            country_code: None,
+            note: None,
+        },
+        "test",
+    )
+    .await
+    .unwrap();
+    for (event, error) in [
+        (
+            json!({ "shareholder_id": investor, "type": "kjop", "dato": "2026-07-01", "antall": 1 }),
+            "«kjøp» må ha en motpart",
+        ),
+        (
+            json!({ "shareholder_id": kari, "type": "salg", "dato": "2026-07-01", "antall": 1,
+                    "motpart_id": kari }),
+            "Motparten kan ikke være den samme aksjonæren",
+        ),
+        (
+            json!({ "shareholder_id": kari, "type": "salg", "dato": "2026-07-01", "antall": 1,
+                    "motpart_id": stranger }),
+            "Fant ikke motparten i denne aksjeeierboken",
+        ),
+        (
+            json!({ "shareholder_id": kari, "type": "stiftelse", "dato": "2026-07-01", "antall": 1,
+                    "motpart_id": investor }),
+            "har ingen motpart",
+        ),
+        (
+            json!({ "shareholder_id": kari, "type": "salg", "dato": "2026-07-01", "antall": 1,
+                    "motpart_id": investor, "motpart_type": "arv_gave_med_kontinuitet" }),
+            "registreres som «kjøp»",
+        ),
+    ] {
+        let (status, body) = call(
+            &state,
+            &token,
+            "POST",
+            &format!("{base}/share-events"),
+            Some(event.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{event}");
+        assert!(
+            body["error"].as_str().unwrap_or("").contains(error),
+            "{event}: {body}"
+        );
+    }
+    // The other company's register was not touched.
+    let book = regnmed_db::share_register::aksjeeierbok(
+        &state.pool,
+        other_company,
+        chrono::NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(book[0].share_count, 0);
+
+    // A duplicate is named as one; editing a stranger is not found.
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/shareholders"),
+        Some(json!({ "kind": "selskap", "navn": "Investor igjen", "orgnr": "923609016" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("finnes allerede"),
+        "{body}"
+    );
+    let (status, body) = call(
+        &state,
+        &token,
+        "PUT",
+        &format!("{base}/shareholders/{stranger}/contact"),
+        Some(json!({ "navn": "Kapret" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("Fant ikke aksjonæren")
+    );
+
+    // A dividend preview shows each owner's part and keeps nothing.
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/dividends?preview=true"),
+        Some(json!({ "besluttet_dato": "2026-05-20", "per_aksje_ore": 50_000i64 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["totalt_ore"], 5_000_000i64);
+    assert!(body["voucher_id"].is_null() && body["dividend_id"].is_null());
+    assert_eq!(body["fordeling"][0]["navn"], "Kari Nordmann");
+    assert_eq!(body["fordeling"][0]["antall_aksjer"], 100);
+    assert_eq!(body["fordeling"][0]["belop_ore"], 5_000_000i64);
+    let (_, listed) = call(&state, &token, "GET", &format!("{base}/dividends"), None).await;
+    assert_eq!(
+        listed["utbytte"].as_array().unwrap().len(),
+        0,
+        "the preview kept nothing"
+    );
+
+    // Confirming a total the book no longer gives is refused.
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{base}/dividends"),
+        Some(
+            json!({ "besluttet_dato": "2026-05-20", "per_aksje_ore": 50_000i64,
+                     "forventet_totalt_ore": 4_000_000i64 }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("har endret seg"));
 
     // Dividend: the resolution is posted in the same transaction.
     let (status, body) = call(
@@ -239,7 +381,10 @@ async fn share_register_dividends_and_the_return() {
         &token,
         "POST",
         &format!("{base}/dividends"),
-        Some(json!({ "besluttet_dato": "2026-05-20", "per_aksje_ore": 50_000i64 })),
+        Some(
+            json!({ "besluttet_dato": "2026-05-20", "per_aksje_ore": 50_000i64,
+                     "forventet_totalt_ore": 5_000_000i64 }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
