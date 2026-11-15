@@ -163,6 +163,55 @@ async fn a_project_carries_its_customer() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+
+    // What the portal shows a person who typed something wrong: a
+    // Norwegian sentence naming the problem, never a database message.
+    for (method, uri, body, error) in [
+        (
+            "POST",
+            base.clone(),
+            serde_json::json!({"kind": "prosjekt", "code": "P9", "name": "Igjen"}),
+            "Koden P9 er allerede i bruk",
+        ),
+        (
+            "POST",
+            base.clone(),
+            serde_json::json!({"kind": "prosjekt", "code": "P 1", "name": "Mellomrom"}),
+            "Koden kan bare inneholde",
+        ),
+        (
+            "POST",
+            base.clone(),
+            serde_json::json!({"kind": "prosjekt", "code": "P12", "name": "  "}),
+            "Navnet må fylles ut",
+        ),
+        (
+            "PUT",
+            format!("{base}/prosjekt/P9"),
+            serde_json::json!({"name": " "}),
+            "Navnet kan ikke være tomt",
+        ),
+        (
+            "PUT",
+            format!("{base}/prosjekt/FINNES-IKKE"),
+            serde_json::json!({"name": "Ny"}),
+            "Fant ikke koden FINNES-IKKE",
+        ),
+        (
+            "POST",
+            format!("{base}/prosjekt/P9/satser"),
+            serde_json::json!({"timesats_ore": -1}),
+            "Timesatsen kan ikke være negativ",
+        ),
+    ] {
+        let (status, response) =
+            request(&state, method, &uri, &token, Some(body.to_string())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {response}");
+        assert!(
+            response["error"].as_str().unwrap_or("").contains(error),
+            "expected «{error}»: {response}"
+        );
+    }
 }
 
 /// Prosjektlønnsomhet (#71): the report composes the ledger's

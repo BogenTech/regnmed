@@ -92,13 +92,11 @@ pub async fn create_dimension(
         kind == "avdeling" || kind == "prosjekt",
         "kind must be avdeling or prosjekt"
     );
-    ensure!(
-        !code.is_empty() && !name.is_empty(),
-        "code and name are required"
-    );
+    ensure!(!code.is_empty(), "Koden må fylles ut");
+    ensure!(!name.trim().is_empty(), "Navnet må fylles ut");
     ensure!(
         code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
-        "code must be alphanumeric (A-Z, 0-9, -)"
+        "Koden kan bare inneholde A–Z, 0–9 og bindestrek"
     );
     let party_id = match customer.filter(|k| !k.is_empty()) {
         Some(party_no) => {
@@ -110,7 +108,7 @@ pub async fn create_dimension(
         }
         None => None,
     };
-    sqlx::query(
+    let inserted = sqlx::query(
         "insert into dimension (id, company_id, kind, code, name, party_id)
          values ($1, $2, $3, $4, $5, $6)",
     )
@@ -121,8 +119,13 @@ pub async fn create_dimension(
     .bind(name)
     .bind(party_id)
     .execute(pool)
-    .await
-    .with_context(|| format!("{kind} {code} finnes allerede?"))?;
+    .await;
+    if let Err(e) = &inserted
+        && e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23505")
+    {
+        anyhow::bail!("Koden {code} er allerede i bruk");
+    }
+    inserted?;
     Ok(())
 }
 
@@ -141,6 +144,9 @@ pub async fn update_dimension(
     customer: Option<&str>,
     billable_default: Option<bool>,
 ) -> Result<()> {
+    if let Some(name) = name {
+        ensure!(!name.trim().is_empty(), "Navnet kan ikke være tomt");
+    }
     if billable_default == Some(true) {
         ensure!(
             kind == "prosjekt",
@@ -176,7 +182,7 @@ pub async fn update_dimension(
     .bind(billable_default)
     .execute(pool)
     .await?;
-    ensure!(updated.rows_affected() == 1, "no {kind} with code {code}");
+    ensure!(updated.rows_affected() == 1, "Fant ikke koden {code}");
     Ok(())
 }
 
@@ -235,7 +241,7 @@ pub async fn set_project_rate(
     valid_from: chrono::NaiveDate,
     created_by: &str,
 ) -> Result<()> {
-    ensure!(hourly_rate_ore >= 0, "timesats kan ikke være negativ");
+    ensure!(hourly_rate_ore >= 0, "Timesatsen kan ikke være negativ");
     let dimension_id: Uuid = sqlx::query_scalar(
         "select id from dimension where company_id = $1 and kind = 'prosjekt' and code = $2",
     )
@@ -243,7 +249,7 @@ pub async fn set_project_rate(
     .bind(code)
     .fetch_optional(pool)
     .await?
-    .with_context(|| format!("no prosjekt {code}"))?;
+    .with_context(|| format!("Fant ikke prosjektet {code}"))?;
     if let Some(pid) = person_id {
         // The person must actually be someone in this company's world —
         // any person the company can see through membership is fine; a
