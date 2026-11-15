@@ -37,6 +37,7 @@ pub async fn get_period_lock(
             "locked_through": h.locked_through.to_string(),
             "set_by": h.set_by,
             "at": h.created_at.to_rfc3339(),
+            "gjenapnet": h.reopened,
         })).collect::<Vec<_>>(),
     })))
 }

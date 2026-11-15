@@ -1,7 +1,7 @@
 //! Årsavslutning (#84): resultatdisponering og skattekostnad as an
 //! ordinary voucher. Requires DATABASE_URL (skips otherwise).
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use regnmed_core::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::PgPool;
@@ -111,11 +111,13 @@ async fn closing_a_year_moves_the_result_to_equity_without_double_counting() {
         .unwrap();
     assert_eq!(for_skatt, 60_000_00);
 
-    let closed = regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test")
-        .await
-        .unwrap();
-    assert_eq!(closed.result_before_tax_ore, 60_000_00);
-    assert_eq!(closed.allocated_ore, 46_800_00, "etter skatt");
+    let closed = regnmed_db::year_end::close_year(
+        &pool, company, 2025, 13_200_00, "test", false, false, None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(closed.closing.result_before_tax_ore, 60_000_00);
+    assert_eq!(closed.closing.allocated_ore, 46_800_00, "etter skatt");
 
     // The tax is accrued, the result is in equity.
     assert_eq!(
@@ -185,7 +187,7 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
             .is_none(),
         "ingen lås før avslutningen"
     );
-    regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test")
+    regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test", false, false, None)
         .await
         .unwrap();
     assert_eq!(
@@ -197,9 +199,10 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     );
 
     // Twice is refused — a correction is a reversing voucher.
-    let error = regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test")
-        .await
-        .expect_err("et år kan ikke disponeres to ganger");
+    let error =
+        regnmed_db::year_end::close_year(&pool, company, 2025, 0, "test", false, false, None)
+            .await
+            .expect_err("et år kan ikke disponeres to ganger");
     assert!(error.to_string().contains("allerede avsluttet"), "{error}");
 
     // A year already locked cannot be closed: its voucher is dated
@@ -209,8 +212,133 @@ async fn the_closing_locks_the_year_and_a_locked_year_refuses() {
     regnmed_db::set_period_lock(&pool, company2, d(2025, 12, 31), "test", false)
         .await
         .unwrap();
-    let error = regnmed_db::year_end::close_year(&pool, company2, 2025, 0, "test")
-        .await
-        .expect_err("låst år kan ikke avsluttes");
+    let error =
+        regnmed_db::year_end::close_year(&pool, company2, 2025, 0, "test", false, false, None)
+            .await
+            .expect_err("et låst år krever en administrator");
     assert!(error.to_string().contains("låst til og med"), "{error}");
+    assert!(error.to_string().contains("administrator"), "{error}");
+}
+
+/// The closing is done in spring, with the first months of the new year
+/// already locked for VAT. An admin closes it anyway: the lock goes back
+/// to 30.12, the voucher is posted, and the lock comes back — all three
+/// in the history, in one transaction.
+#[tokio::test]
+async fn an_admin_closes_a_year_behind_a_later_lock_and_the_lock_comes_back() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap_med_overskudd(&pool).await;
+    regnmed_db::set_period_lock(&pool, company, d(2026, 3, 31), "test", false)
+        .await
+        .unwrap();
+
+    // Preview: the lines, nothing kept.
+    let preview =
+        regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test", true, true, None)
+            .await
+            .unwrap();
+    assert_eq!(
+        preview.lines,
+        vec![
+            ("8300".to_string(), 13_200_00, "Skattekostnad".to_string()),
+            ("2500".to_string(), -13_200_00, "Betalbar skatt".to_string()),
+            (
+                "8800".to_string(),
+                46_800_00,
+                "Disponering av årets resultat".to_string()
+            ),
+            (
+                "2050".to_string(),
+                -46_800_00,
+                "Overført til annen egenkapital".to_string()
+            ),
+        ]
+    );
+    assert_eq!(preview.relocked_through, Some(d(2026, 3, 31)));
+    assert_eq!(
+        balance(&pool, company, "2050").await,
+        0,
+        "forhåndsvisningen beholder ingenting"
+    );
+    assert_eq!(
+        regnmed_db::period_lock_history(&pool, company)
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "heller ikke i låsesporet"
+    );
+
+    // A result that moved since the preview is refused.
+    let error = regnmed_db::year_end::close_year(
+        &pool,
+        company,
+        2025,
+        13_200_00,
+        "test",
+        true,
+        false,
+        Some(59_000_00),
+    )
+    .await
+    .expect_err("et endret resultat avsluttes ikke");
+    assert!(error.to_string().contains("endret seg"), "{error}");
+
+    let closed = regnmed_db::year_end::close_year(
+        &pool,
+        company,
+        2025,
+        13_200_00,
+        "Astrid",
+        true,
+        false,
+        Some(60_000_00),
+    )
+    .await
+    .unwrap();
+    assert_eq!(closed.closing.allocated_ore, 46_800_00);
+    assert_eq!(balance(&pool, company, "2050").await, -46_800_00);
+    assert_eq!(
+        regnmed_db::current_period_lock(&pool, company)
+            .await
+            .unwrap(),
+        Some(d(2026, 3, 31)),
+        "låsen står der den sto"
+    );
+    let history = regnmed_db::period_lock_history(&pool, company)
+        .await
+        .unwrap();
+    let spor: Vec<(NaiveDate, bool)> = history
+        .iter()
+        .map(|h| (h.locked_through, h.reopened))
+        .collect();
+    assert_eq!(
+        spor,
+        vec![
+            (d(2026, 3, 31), false),
+            (d(2025, 12, 30), true),
+            (d(2026, 3, 31), false),
+        ],
+        "gjenåpningen og gjenlåsingen står i sporet, nyeste først"
+    );
+    assert!(
+        history[1].set_by.contains("Astrid"),
+        "{}",
+        history[1].set_by
+    );
+    regnmed_db::verify_chain(&pool, company).await.unwrap();
+}
+
+/// A year that has not ended cannot be closed: it would lock December
+/// before December happened.
+#[tokio::test]
+async fn a_year_that_has_not_ended_refuses() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap_med_overskudd(&pool).await;
+    let this_year = chrono::Local::now().date_naive().year();
+    let error =
+        regnmed_db::year_end::close_year(&pool, company, this_year, 0, "test", true, true, None)
+            .await
+            .expect_err("et år som ikke er over kan ikke avsluttes");
+    assert!(error.to_string().contains("ikke over ennå"), "{error}");
 }

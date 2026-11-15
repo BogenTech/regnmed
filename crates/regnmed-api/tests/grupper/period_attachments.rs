@@ -191,7 +191,7 @@ async fn period_lock_and_attachments_end_to_end() {
 
     // Reopening: accountant is refused, admin succeeds — and the history
     // keeps both entries.
-    let (status, _) = request(
+    let (status, body) = request(
         &state,
         "PUT",
         &format!("/companies/{company}/period-lock"),
@@ -201,6 +201,45 @@ async fn period_lock_and_attachments_end_to_end() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "reopening needs admin");
+    let refusal = String::from_utf8_lossy(&body);
+    assert!(
+        refusal.contains("Bare en administrator") && refusal.contains("31.01.2026"),
+        "{refusal}"
+    );
+
+    // The same date again, and a date after today, are refused in words
+    // a user reads.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/period-lock"),
+        &accountant_token,
+        Some(br#"{"locked_through":"2026-01-31"}"#.to_vec()),
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("allerede låst til og med 31.01.2026"));
+    let tomorrow = chrono::Local::now().date_naive() + chrono::Days::new(1);
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/period-lock"),
+        &accountant_token,
+        Some(format!(r#"{{"locked_through":"{tomorrow}"}}"#).into_bytes()),
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a period that has not ended"
+    );
+    assert!(
+        String::from_utf8_lossy(&body).contains("ikke er over ennå"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
     let (status, _) = request(
         &state,
         "PUT",
@@ -223,6 +262,11 @@ async fn period_lock_and_attachments_end_to_end() {
     let lock = json(&lock);
     assert_eq!(lock["locked_through"], "2026-01-01");
     assert_eq!(lock["history"].as_array().unwrap().len(), 2, "audit trail");
+    assert_eq!(
+        lock["history"][0]["gjenapnet"], true,
+        "the reopening is named"
+    );
+    assert_eq!(lock["history"][1]["gjenapnet"], false);
 
     // Attachments: upload to the January voucher (its period was locked —
     // completing dokumentasjon is allowed, changing history is not).

@@ -52,6 +52,17 @@ pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, year: i32) -> 
     Ok(regnmed_core::statements::result(&lines).annual_result_ore)
 }
 
+/// What a closing posts, or would post.
+#[derive(Debug)]
+pub struct Closing {
+    pub closing: Arsavslutning,
+    /// (account, amount, text) — the voucher's lines.
+    pub lines: Vec<(String, i64, String)>,
+    /// The lock that was in place past 31.12 and was put back after the
+    /// voucher, when the closing had to reopen the year to post it.
+    pub relocked_through: Option<NaiveDate>,
+}
+
 /// Closes a year: accrues the tax, transfers the result to equity, and
 /// locks the year — one voucher, one transaction.
 ///
@@ -61,46 +72,83 @@ pub async fn result_for_the_year(pool: &PgPool, company_id: Uuid, year: i32) -> 
 /// computes the latter for anleggsmidler), so deriving it here would be
 /// inventing a tax return. Zero is a legitimate answer and must be
 /// stated, never assumed.
+///
+/// The closing is done in spring, when the first months of the new year
+/// are usually locked already for VAT. The voucher is dated 31.12, so it
+/// then has to go into a locked period: with `allow_reopen` (admin) the
+/// lock is moved back to 30.12, the voucher posted, and the lock put
+/// back — three rows in the insert-only history, one transaction, so no
+/// other posting ever sees the year open.
+///
+/// `preview` posts and rolls back, so the voucher numbering keeps no gap.
+/// `expected_result_ore` is the result the person saw in the preview; a
+/// ledger that has moved since is refused rather than closed on a number
+/// nobody looked at.
+#[allow(clippy::too_many_arguments)]
 pub async fn close_year(
     pool: &PgPool,
     company_id: Uuid,
     year: i32,
     tax_expense_ore: i64,
     created_by: &str,
-) -> Result<Arsavslutning> {
+    allow_reopen: bool,
+    preview: bool,
+    expected_result_ore: Option<i64>,
+) -> Result<Closing> {
     ensure!(
         tax_expense_ore >= 0,
-        "skattekostnaden kan ikke være negativ — en skattefordel er utsatt skatt, som ikke er bygget"
+        "Skattekostnaden kan ikke være negativ. En skattefordel er utsatt skatt, som ikke er bygget ennå."
     );
     let (_, end_of_year) = period(year)?;
+
+    let mut tx = pool.begin().await?;
+    crate::period::lock_period_changes(&mut tx, company_id).await?;
+
+    let today: NaiveDate = sqlx::query_scalar("select current_date")
+        .fetch_one(&mut *tx)
+        .await?;
+    ensure!(
+        end_of_year < today,
+        "{year} er ikke over ennå. Året kan avsluttes fra 1. januar {}.",
+        year + 1
+    );
 
     let alt_avsluttet: Option<i32> =
         sqlx::query_scalar("select ar from arsavslutning where company_id = $1 and ar = $2")
             .bind(company_id)
             .bind(year)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?;
     ensure!(
         alt_avsluttet.is_none(),
-        "{year} er allerede avsluttet — en korreksjon er et reverserende bilag, ikke en ny avslutning"
+        "{year} er allerede avsluttet. En korreksjon er et reverserende bilag, ikke en ny avslutning."
     );
 
-    // The lock would refuse our own voucher, so say so plainly instead
-    // of letting the trigger produce a confusing error two layers down.
+    // A lock on or past 31.12 would refuse our own voucher. Moving it
+    // back is a reopening, so it takes the same right as any reopening.
     let las: Option<NaiveDate> = sqlx::query_scalar("select current_period_lock($1)")
         .bind(company_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
-    if let Some(las) = las {
+    let relock = las.filter(|l| *l >= end_of_year);
+    if let Some(l) = relock {
         ensure!(
-            las < end_of_year,
-            "perioden er låst til og med {las}, så årsavslutningsbilaget for {year} \
-             (datert {end_of_year}) kan ikke posteres. Årsavslutningen låser året selv — \
-             lås derfor ikke {year} på forhånd"
+            allow_reopen,
+            "Perioden er låst til og med {}, så bilaget for {year} (datert {}) må føres i en låst \
+             periode. Bare en administrator kan avslutte året: låsen flyttes tilbake mens bilaget \
+             føres og settes på plass igjen, og begge deler logges.",
+            crate::period::display_date(l),
+            crate::period::display_date(end_of_year)
         );
     }
 
     let result_before_tax_ore = result_for_the_year(pool, company_id, year).await?;
+    if let Some(expected) = expected_result_ore {
+        ensure!(
+            expected == result_before_tax_ore,
+            "Resultatet for {year} har endret seg siden du så over avslutningen. Se over den på nytt."
+        );
+    }
     let allocated_ore = result_before_tax_ore - tax_expense_ore;
 
     let linje = |account: &str, amount: i64, text: &str| EntryDraft {
@@ -139,8 +187,18 @@ pub async fn close_year(
     }
     ensure!(
         !entries.is_empty(),
-        "{year} har verken resultat eller skattekostnad å disponere"
+        "{year} har verken resultat eller skattekostnad å disponere."
     );
+    let lines = entries
+        .iter()
+        .map(|e| {
+            (
+                e.account_number.clone(),
+                e.amount.0,
+                e.description.clone().unwrap_or_default(),
+            )
+        })
+        .collect();
 
     for (number, name) in [
         (TAX_EXPENSE_ACCOUNT, "Skattekostnad"),
@@ -151,7 +209,16 @@ pub async fn close_year(
         ),
         (RETAINED_EARNINGS_ACCOUNT, "Annen egenkapital"),
     ] {
-        crate::ensure_account(pool, company_id, number, name).await?;
+        sqlx::query(
+            "insert into account (id, company_id, number, name) values ($1, $2, $3, $4)
+             on conflict (company_id, number) do nothing",
+        )
+        .bind(Uuid::now_v7())
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
     }
 
     let draft = VoucherDraft {
@@ -162,7 +229,24 @@ pub async fn close_year(
         entries,
     };
 
-    let mut tx = pool.begin().await?;
+    let insert_lock = |through: NaiveDate, by: String| {
+        sqlx::query(
+            "insert into period_lock (id, company_id, locked_through, set_by)
+             values ($1,$2,$3,$4)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(company_id)
+        .bind(through)
+        .bind(by)
+    };
+    if relock.is_some() {
+        insert_lock(
+            end_of_year.pred_opt().expect("31.12 has a day before it"),
+            format!("årsavslutning {year}, gjenåpnet for bilaget ({created_by})"),
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
     let posted = crate::post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
     sqlx::query(
         "insert into arsavslutning
@@ -181,25 +265,32 @@ pub async fn close_year(
     .execute(&mut *tx)
     .await?;
     // The lock is part of the same act: after this, the year is both
-    // disponert and closed to new postings.
-    sqlx::query(
-        "insert into period_lock (id, company_id, locked_through, set_by) values ($1,$2,$3,$4)",
+    // disponert and closed to new postings — and a lock that reached
+    // past it is back where it was.
+    insert_lock(
+        relock.unwrap_or(end_of_year),
+        format!("årsavslutning {year} ({created_by})"),
     )
-    .bind(Uuid::now_v7())
-    .bind(company_id)
-    .bind(end_of_year)
-    .bind(format!("årsavslutning {year} ({created_by})"))
     .execute(&mut *tx)
     .await?;
-    tx.commit().await?;
 
-    Ok(Arsavslutning {
-        year,
-        voucher: (posted.fiscal_year, posted.voucher_number),
-        result_before_tax_ore,
-        tax_expense_ore,
-        allocated_ore,
-        created_by: created_by.to_string(),
+    if preview {
+        tx.rollback().await?;
+    } else {
+        tx.commit().await?;
+    }
+
+    Ok(Closing {
+        closing: Arsavslutning {
+            year,
+            voucher: (posted.fiscal_year, posted.voucher_number),
+            result_before_tax_ore,
+            tax_expense_ore,
+            allocated_ore,
+            created_by: created_by.to_string(),
+        },
+        lines,
+        relocked_through: relock,
     })
 }
 

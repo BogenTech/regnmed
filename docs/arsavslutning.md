@@ -61,8 +61,30 @@ låsen selv, i samme transaksjon som bilaget. Etterpå er året både
 disponert og stengt for nye posteringer — som er det saken ville oppnå.
 Låsen er insert-only med eget spor, så dette er en registrert handling.
 
-Et år som allerede er låst nekter derfor å avsluttes, med en melding som
-sier hvorfor i stedet for å la triggeren dukke opp to lag ned.
+### Når året alt er låst forbi 31.12
+
+Årsoppgjøret gjøres om våren, og da er de første månedene i det nye året
+som regel låst for mva. Låsen står da forbi 31.12, og bilaget må føres
+inn i en låst periode. Det er en gjenåpning, og krever derfor det samme
+som enhver gjenåpning: **administrator**. I SAMME transaksjon som
+bilaget:
+
+1. låsen flyttes tilbake til 30.12 (raden heter
+   «årsavslutning {år}, gjenåpnet for bilaget (navn)»),
+2. bilaget føres,
+3. låsen settes tilbake dit den sto.
+
+Alle tre står i det innsettings-bare sporet, og ingen annen postering
+ser året åpent: den gjenåpnede låsen finnes bare inne i transaksjonen,
+og endringer i låsen tar samme per-selskap-lås (`lock_period_changes`)
+som periodelåsingen. Triggeren fra migrasjon 0011 er urørt — bilaget går
+gjennom den på vanlig måte. Uten administratorrett nektes avslutningen
+med en melding som sier hvorfor.
+
+### Et år som ikke er over
+
+Kan ikke avsluttes: det ville låst desember før desember var ført.
+Avslutningen er mulig fra 1. januar året etter.
 
 ## 4. Skattekostnaden oppgis, den utledes ikke
 
@@ -96,12 +118,30 @@ etterpå, skal forskjellen kunne ses.
 | --- | --- |
 | `GET /companies/{id}/arsavslutning` | `RAPPORT_LES` |
 | `GET …/arsavslutning/{ar}/forslag` | `RAPPORT_LES` |
-| `POST /companies/{id}/arsavslutning` | `BILAG_BOKFOR` **og** `PERIODE_LAAS` |
+| `POST /companies/{id}/arsavslutning` | `BILAG_BOKFOR` **og** `PERIODE_LAAS` (+ admin når låsen står forbi 31.12) |
 
 Begge rettighetene kreves fordi låsen er halvparten av handlingen: den
 som ikke får låse en periode skal ikke kunne avslutte et år heller.
 
-Portalen: **Årsavslutning**-kortet under Administrasjon → Periode.
+`POST …?preview=true` fører bilaget og ruller tilbake, så nummerserien
+ikke får hull, og svarer med bilagslinjene (`linjer`) og eventuell
+gjenlåsing (`relast_til`). Bekreftelsen sender med
+`forventet_resultat_ore` — resultatet personen så — og nektes hvis
+hovedboken har endret seg siden.
+
+Portalen: **Årsavslutning**-kortet under Administrasjon → Periode. Året
+velges med pilene (fjoråret som standard), resultatet hentes for det
+året straks, og tallene på skjermen hører alltid til året knappen
+nevner. Skattekostnaden leses som folk skriver beløp («13 200,00»), og et
+tomt felt er ikke 0. «Se over avslutningen» viser bilaget; «Avslutt
+{år} og lås året» fører det. Et avsluttet år, et år som ikke er over og
+et låst år uten administratorrett sier hvorfor i stedet for å vise
+skjemaet. Skjules uten `BILAG_BOKFOR` og `PERIODE_LAAS`.
+
+Testet i `regnmed-db/tests/arsavslutning.rs`: avslutning bak en senere
+lås (forhåndsvisning uten spor, endret resultat nektet, gjenåpning og
+gjenlåsing i historikken, kjeden verifisert), låst år uten
+administratorrett, og et år som ikke er over.
 
 ## 7. Ikke bygget
 

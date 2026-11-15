@@ -6,7 +6,7 @@
 //! who may not lock a period should not close a year either.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -25,6 +25,17 @@ pub struct CloseRequest {
     /// gyldig svar som må oppgis.
     #[serde(rename = "skattekostnad_ore")]
     tax_expense_ore: i64,
+    /// The result the person saw in the preview. A ledger that has moved
+    /// since is refused, not closed on a number nobody looked at.
+    #[serde(rename = "forventet_resultat_ore")]
+    expected_result_ore: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct CloseQuery {
+    /// Post and roll back: the voucher's lines without keeping them.
+    #[serde(default)]
+    preview: bool,
 }
 
 pub async fn list(
@@ -68,24 +79,35 @@ pub async fn close(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<CloseQuery>,
     Json(request): Json<CloseRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::VoucherPost).await?;
-    require(&state, person.person_id, company_id, Right::PeriodLock).await?;
-    let a = regnmed_db::year_end::close_year(
+    // Reopening a lock that reaches past 31.12 is decided inside
+    // close_year, so the role comes along like for the period lock.
+    let role = require(&state, person.person_id, company_id, Right::PeriodLock).await?;
+    let c = regnmed_db::year_end::close_year(
         &state.pool,
         company_id,
         request.year,
         request.tax_expense_ore,
         person.name.as_deref().unwrap_or(&person.sub),
+        role.is_admin(),
+        query.preview,
+        request.expected_result_ore,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let a = &c.closing;
     Ok(Json(json!({
         "ar": a.year,
         "bilag": format!("{}-{}", a.voucher.0, a.voucher.1),
         "resultat_for_skatt_ore": a.result_before_tax_ore,
         "skattekostnad_ore": a.tax_expense_ore,
         "disponert_ore": a.allocated_ore,
+        "linjer": c.lines.iter().map(|(konto, belop, tekst)| json!({
+            "konto": konto, "belop_ore": belop, "tekst": tekst,
+        })).collect::<Vec<_>>(),
+        "relast_til": c.relocked_through.map(|d| d.to_string()),
     })))
 }
