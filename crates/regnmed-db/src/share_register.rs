@@ -66,6 +66,8 @@ pub struct DividendResolution {
     pub voucher_id: Option<Uuid>,
     pub note: Option<String>,
     pub created_by: String,
+    /// Each owner's part on the decision date: (name, shares, øre).
+    pub split: Vec<(String, i64, i64)>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +130,7 @@ pub async fn create_shareholder(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    let inserted = sqlx::query(
         "insert into shareholder
              (id, company_id, kind, fodselsnummer, orgnr, utenlandsk_id, navn,
               adresse, postnummer, poststed, landkode, note, created_by)
@@ -148,8 +150,14 @@ pub async fn create_shareholder(
     .bind(&new.note)
     .bind(created_by)
     .execute(pool)
-    .await
-    .context("aksjonæren finnes allerede i denne aksjeeierboken")?;
+    .await;
+    // Only a unique clash means "already here"; anything else is itself.
+    if let Err(e) = &inserted
+        && e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23505")
+    {
+        bail!("Aksjonæren finnes allerede i denne aksjeeierboken");
+    }
+    inserted?;
     Ok(id)
 }
 
@@ -179,7 +187,7 @@ pub async fn update_shareholder_contact(
     .bind(country_code)
     .execute(pool)
     .await?;
-    ensure!(done.rows_affected() == 1, "no such aksjonær");
+    ensure!(done.rows_affected() == 1, "Fant ikke aksjonæren");
     Ok(())
 }
 
@@ -315,15 +323,62 @@ pub async fn record_hendelse(
     ensure!(quantity > 0, "antall aksjer må være positivt");
 
     let mut tx = pool.begin().await?;
-    // The shareholder must belong to this company.
-    let owner: Option<Uuid> = sqlx::query_scalar(
-        "select id from shareholder where id = $1 and company_id = $2 for update",
+    // Both sides must belong to this company, and both are locked in ONE
+    // statement in id order: two opposite transfers at once (A→B, B→A)
+    // would otherwise lock in opposite order and deadlock.
+    let mut ids = vec![shareholder_id];
+    ids.extend(counterparty_id);
+    let locked: Vec<Uuid> = sqlx::query_scalar(
+        "select id from shareholder where id = any($1) and company_id = $2
+         order by id for update",
     )
-    .bind(shareholder_id)
+    .bind(&ids)
     .bind(company_id)
-    .fetch_optional(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-    owner.context("no such aksjonær")?;
+    ensure!(locked.contains(&shareholder_id), "Fant ikke aksjonæren");
+
+    // A transfer has two sides, both in this book: without the other
+    // side a kjøp would mint shares and a salg destroy them, and the
+    // company's total would move. Types without a counterpart (stiftelse,
+    // emisjon, ...) are the only ones that may change the total.
+    let counterparty_type_slug = match (type_.counterpart(), counterparty_id) {
+        (Some(other), Some(_)) => {
+            if let Some(given) = counterparty_type_slug {
+                ensure!(
+                    given == other.slug(),
+                    "Motparten i «{}» registreres som «{}», ikke «{given}»",
+                    type_.name(),
+                    other.name()
+                );
+            }
+            Some(other.slug())
+        }
+        (Some(_), None) => bail!(
+            "«{}» må ha en motpart: velg aksjonæren aksjene {}",
+            type_.name(),
+            if type_.is_acquisition() {
+                "kommer fra"
+            } else {
+                "går til"
+            }
+        ),
+        (None, Some(_)) => bail!("«{}» har ingen motpart", type_.name()),
+        (None, None) => None,
+    };
+    if let Some(counterparty_id) = counterparty_id {
+        ensure!(
+            counterparty_id != shareholder_id,
+            "Motparten kan ikke være den samme aksjonæren"
+        );
+        // The other side must be in THIS book — its holdings are read by
+        // shareholder id alone, so a foreign id would move another
+        // company's register.
+        ensure!(
+            locked.contains(&counterparty_id),
+            "Fant ikke motparten i denne aksjeeierboken"
+        );
+    }
 
     // An avgang cannot take more shares than the owner holds on the date.
     if !type_.is_acquisition() {
@@ -466,16 +521,22 @@ async fn hendelser_for(pool: &PgPool, shareholder_id: Uuid) -> Result<Vec<ShareE
 ///
 /// The per-shareholder split is never stored: it is the share count on the
 /// decision date times utbytte per aksje, so the parts always sum to the
-/// whole.
+/// whole. `preview` posts too, inside the transaction it rolls back, so
+/// a locked period fails before anyone confirms and nothing is kept.
+/// `expected_total_ore` is the total a preview showed: when given, the
+/// decision is refused if the book has changed since.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_dividend(
     pool: &PgPool,
     company_id: Uuid,
     decided_date: NaiveDate,
     per_share_ore: i64,
     note: Option<&str>,
+    preview: bool,
+    expected_total_ore: Option<i64>,
     created_by: &str,
 ) -> Result<DividendResolution> {
-    ensure!(per_share_ore > 0, "utbytte per aksje må være positivt");
+    ensure!(per_share_ore > 0, "Utbytte per aksje må være positivt");
     let book = aksjeeierbok(pool, company_id, decided_date).await?;
     let quantity: i64 = book.iter().map(|a| a.share_count).sum();
     ensure!(
@@ -485,6 +546,15 @@ pub async fn create_dividend(
     let total_ore = quantity
         .checked_mul(per_share_ore)
         .context("utbyttebeløpet er urimelig stort")?;
+    ensure!(
+        expected_total_ore.is_none_or(|e| e == total_ore),
+        "Aksjeeierboken har endret seg siden du så over utbyttet. Se over det på nytt."
+    );
+    let split = book
+        .iter()
+        .filter(|a| a.share_count > 0)
+        .map(|a| (a.name.clone(), a.share_count, a.share_count * per_share_ore))
+        .collect();
 
     let mut tx = pool.begin().await?;
     let draft = VoucherDraft {
@@ -533,16 +603,21 @@ pub async fn create_dividend(
     .bind(created_by)
     .execute(&mut *tx)
     .await?;
-    tx.commit().await?;
+    if preview {
+        tx.rollback().await?;
+    } else {
+        tx.commit().await?;
+    }
 
     Ok(DividendResolution {
         id,
         decided_date,
         per_share_ore,
         total_ore,
-        voucher_id: Some(posted.id),
+        voucher_id: (!preview).then_some(posted.id),
         note: note.map(str::to_string),
         created_by: created_by.to_string(),
+        split,
     })
 }
 
@@ -578,6 +653,7 @@ pub async fn list_dividends(
             voucher_id: r.get("voucher_id"),
             note: r.get("note"),
             created_by: r.get("created_by"),
+            split: Vec::new(),
         });
     }
     Ok(out)

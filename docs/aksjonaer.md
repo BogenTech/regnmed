@@ -60,6 +60,27 @@ Migration 0034 gir tre tabeller:
 `aarsbevegelse`) og transaksjonstypene. Databasen utleder retningen fra
 den samme listen, så de to kan ikke drifte fra hverandre.
 
+**En overdragelse har alltid begge sider i boken.** En type med en
+motsatt side (`kjøp`/`salg`, overføring, arv/gave med kontinuitet,
+fordeling ved skilsmisse) nektes uten `motpart_id`: et kjøp uten selger
+ville skapt aksjer av ingenting, og et salg uten kjøper ville slettet
+dem — selskapets totale antall aksjer ville flyttet seg av en
+overdragelse. Bare typene uten motpart (stiftelse, emisjoner, splitt,
+sletting …) kan endre totalen. Motparten må stå i **denne**
+aksjeeierboken og kan ikke være samme aksjonær; motpartens type utledes
+av hovedtypen og nektes hvis den sendes med en annen verdi. Kontrollen
+av at motparten tilhører selskapet tetter et hull: beholdningen leses
+per aksjonær-id alene, så en id fra et annet selskap ville ellers flyttet
+*det* selskapets aksjeeierbok. Testen er sett feile uten kontrollen.
+
+**Utbytte vises før det bokføres.** `POST …/dividends?preview=true`
+regner ut hver eiers del og totalen, og bokfører bilaget inne i
+transaksjonen den ruller tilbake — en låst periode feiler før noen
+bekrefter, og ingenting beholdes. Bekreftelsen sender totalen den viste
+som `forventet_totalt_ore`; har aksjeeierboken endret seg på
+vedtaksdatoen i mellomtiden, nektes vedtaket med beskjed om å se over
+på nytt.
+
 ## Fødselsnummer: én vei inn, én vei ut
 
 Dette er en bevisst personvernavgjørelse, ikke en tilfeldighet:
@@ -274,15 +295,29 @@ levering og står på innsendingen for alltid.
 | PUT | `/companies/{id}/shareholders/{sid}/contact` | kontaktopplysninger |
 | GET | `/companies/{id}/shareholders/transaction-types` | typer + `leverbar` |
 | GET/POST | `/companies/{id}/share-events` | hendelser |
-| GET/POST | `/companies/{id}/dividends` | utbyttevedtak |
+| GET/POST | `/companies/{id}/dividends` | utbyttevedtak (`?preview=true`: fordeling uten å bokføre) |
 | GET | `/companies/{id}/reports/aksjonaeroppgave?year=&format=` | oppgaven |
 | GET | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | innsendinger m/ status og kvittering |
 | POST | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | send oppgaven til Skatteetaten (`AKSJEBOK_SKRIV`) |
 | POST | `/companies/{id}/reports/aksjonaeroppgave/submissions/{sid}/outcome` | hent Skatteetatens svar fra Dialogporten |
 
 Lesing er åpen for alle tilgangsnivåer — revisor skal kunne lese
-aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
-`bokforing` eller `admin`.
+aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser, endre
+aksjonærer, vedta utbytte og sende oppgaven krever `AKSJEBOK_SKRIV`.
+
+**Portalen** (Aksjonærer): aksjeeierboken som en stablet liste som
+passer en telefon, med eierandel med desimalkomma og totalen for den
+valgte datoen. «Endre» åpner kontaktopplysningene under raden med alle
+felt fylt ut fra det som er lagret, så en navneendring aldri visker ut
+adressen eller landkoden. Hendelsesskjemaet grupperer typene i «Aksjer
+inn» og «Aksjer ut», krever motpart når typen har en, leser «1 000» som
+tusen, og viser én setning om hva som skrives før det skrives — en
+hendelse kan ikke endres etterpå. Utbyttet vises med fordeling og total
+før det bokføres. Oppgaven lastes for seg per inntektsår, viser feil i
+stedet for «ingen oppgave», og lastes ned som ett zip-arkiv med
+hovedskjema og alle underskjema (en nettleser stopper en serie
+nedlastinger etter den første). Skriveknappene vises bare med
+`AKSJEBOK_SKRIV`.
 
 ## Bevisst utenfor v1
 
@@ -320,4 +355,13 @@ aksjeeierboken, og §4-5 gir enhver innsynsrett. Å føre hendelser krever
   dato, at fødselsnummeret ikke er i listingen men *er* i innsendingen,
   at ingen kan avhende flere aksjer enn de eier, at utbyttet får bilag,
   at hendelser og identitet ikke kan endres eller slettes (databasen
-  selv nekter), og at oppgaven for stiftelsesåret validerer.
+  selv nekter), og at oppgaven for stiftelsesåret validerer. Også at en
+  overdragelse uten motpart, med seg selv som motpart, med en motpart
+  fra et annet selskap (hvis bok står urørt) eller med feil motpartstype
+  nektes med en norsk begrunnelse, at et duplikat sies fra om som det,
+  og at en forhåndsvisning av utbytte viser fordelingen og ikke beholder
+  noe, mens en bekreftelse med en utdatert total nektes.
+- `ui/portal/src/sections/aksjonaerer/aksjonaer.test.js` — antall aksjer
+  («1 000» er tusen), eierandel med komma, typegrupperingen og
+  bekreftelsesteksten; `ui/portal/src/lib/zip.test.js` — arkivet
+  godtas av `unzip` og gir tilbake nøyaktig de samme bytene.
