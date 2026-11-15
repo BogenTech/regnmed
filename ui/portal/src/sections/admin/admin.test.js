@@ -25,6 +25,7 @@ test("gjoremal names each missing piece and where it is fixed", () => {
   assert.match(ut[2].tekst, /e-postadressen/);
   assert.match(ut[3].tekst, /Bekreft/);
   assert.match(ut[4].tekst, /kundevilkårene/);
+  assert.equal(ut[4].vilkar, true, "kept apart from the company's own fields");
   assert.equal(ut[5].fane, "abonnement");
 });
 

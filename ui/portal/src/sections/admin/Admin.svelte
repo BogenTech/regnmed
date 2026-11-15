@@ -160,7 +160,8 @@
             "Firmaopplysninger",
             data.settings,
             () => {
-              const n = oppgaver.filter((o) => o.fane === "firma").length;
+              // The terms live on this tab too, but are not company data.
+              const n = oppgaver.filter((o) => o.fane === "firma" && !o.vilkar).length;
               return n ? n + " mangler" : "utfylt";
             },
             (s) => s.orgnr || "",

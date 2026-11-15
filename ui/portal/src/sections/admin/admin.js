@@ -26,6 +26,7 @@ export function gjoremal({ settings, terms, abo }) {
     ut.push({
       tekst: "Godta kundevilkårene, så regnmed kan sende a-melding og andre oppgaver for selskapet.",
       fane: "firma",
+      vilkar: true,
     });
   if (abo?.status === "frist")
     ut.push({ tekst: "Abonnementet er ikke betalt. Betal før selskapet sperres.", fane: "abonnement" });
