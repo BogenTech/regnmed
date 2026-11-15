@@ -2,117 +2,108 @@
   // Produktregisteret (#39): nummeret er permanent, og produkter
   // deaktiveres — de slettes aldri, fordi utstedte dokumenter har
   // kopiert verdiene sine.
-  import { post, send } from "../../lib/api.js";
-  import { kr, parseKr } from "../../lib/format.js";
-  import { toast } from "../../lib/toast.svelte.js";
-  import { sporsmal } from "../../lib/dialog.svelte.js";
+  //
+  // Stacked rows rather than a seven-column table so it fits a phone;
+  // one row opens for editing at a time, in place.
+  import { tick } from "svelte";
+  import { kr } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
-  import VatSelect from "../../components/VatSelect.svelte";
+  import Produktskjema from "./Produktskjema.svelte";
+  import { mvaTekst, utvalg } from "./produkt.js";
 
-  let { companyId, products, onDone } = $props();
+  let { companyId, products, kanSkrive, kontoer, onChanged } = $props();
 
-  let nummer = $state("");
-  let navn = $state("");
-  let pris = $state("");
-  let vat = $state("3");
-  let konto = $state("3000");
-  let lager = $state(false);
+  let sok = $state("");
+  let visDeaktiverte = $state(false);
+  let apen = $state(null);
+  let del = $derived(utvalg(products, sok));
 
-  async function opprett() {
-    try {
-      await post("/companies/" + companyId + "/products", {
-        nummer: nummer.trim(),
-        navn: navn.trim(),
-        salgspris_ore: parseKr(pris),
-        vat_code: vat,
-        konto: konto.trim() || null,
-        lagerfort: lager,
-      });
-      toast("Produkt opprettet", true);
-      nummer = "";
-      navn = "";
-      pris = "";
-      vat = "3";
-      konto = "3000";
-      lager = false;
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
+  async function lukk(nummer) {
+    apen = null;
+    await tick();
+    // A product just deactivated has moved behind the toggle.
+    (document.getElementById("produkt-" + nummer) ?? document.getElementById("deaktiverte"))?.focus();
   }
 
-  async function nyPris(p) {
-    const svar = await sporsmal("Ny salgspris (kr):", { ok: "Lagre" });
-    if (!svar) return;
-    try {
-      await send("PUT", "/companies/" + companyId + "/products/" + encodeURIComponent(p.nummer), {
-        salgspris_ore: parseKr(svar),
-      });
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
-
-  async function toggle(p) {
-    try {
-      await send("PUT", "/companies/" + companyId + "/products/" + encodeURIComponent(p.nummer), {
-        aktiv: !p.aktiv,
-      });
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
+  const detaljer = (p) =>
+    [kr(p.salgspris_ore) + " kr", mvaTekst(p.vat_code), "konto " + p.konto, p.lagerfort && "lagerført"]
+      .filter(Boolean)
+      .join(", ");
 </script>
+
+{#snippet rader(liste)}
+  <ul class="divide-y divide-base-200">
+    {#each liste as p (p.nummer)}
+      <li class="py-2">
+        <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="truncate">
+              <span class="font-medium">{p.nummer}</span>
+              {p.navn}
+              {#if !p.aktiv}<span class="badge badge-xs badge-ghost ml-1">deaktivert</span>{/if}
+            </div>
+            <div class="text-xs opacity-60">{detaljer(p)}</div>
+          </div>
+          {#if kanSkrive}
+            <button
+              id={"produkt-" + p.nummer}
+              class="btn btn-xs btn-ghost shrink-0"
+              aria-expanded={apen === p.nummer}
+              aria-label={(apen === p.nummer ? "Lukk " : "Endre ") + p.nummer + " " + p.navn}
+              onclick={() => (apen === p.nummer ? lukk(p.nummer) : (apen = p.nummer))}
+            >
+              {apen === p.nummer ? "Lukk" : "Endre"}
+            </button>
+          {/if}
+        </div>
+        {#if apen === p.nummer}
+          <Produktskjema
+            {companyId}
+            produkt={p}
+            {kontoer}
+            onSaved={onChanged}
+            onClose={() => lukk(p.nummer)}
+          />
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <Card title="Produktregister">
   <p class="text-sm opacity-70 mb-2">
-    Linjer på faktura og tilbud kopierer produktverdiene ved utstedelse — endringer her rører aldri
-    utstedte dokumenter. Nummer er permanent; produkter deaktiveres, slettes aldri.
+    Velg et produkt på fakturaen, så fylles navn, pris, mva og konto ut. Fakturaen tar en kopi, så
+    endringer her rører aldri det som alt er utstedt. Nummeret kan ikke endres, og produkter
+    deaktiveres i stedet for å slettes.
   </p>
-  <div class="flex flex-wrap gap-2 items-end">
-    <input class="input input-sm w-24" placeholder="Nummer" bind:value={nummer} />
-    <input class="input input-sm" placeholder="Navn" bind:value={navn} />
-    <input class="input input-sm w-28" placeholder="Pris (kr)" bind:value={pris} />
-    <VatSelect cls="select select-sm" bind:value={vat} />
-    <input
-      class="input input-sm w-20"
-      title="Inntektskonto"
-      bind:value={konto}
-    />
-    <label class="label cursor-pointer gap-1">
-      <span class="text-sm">Lager</span>
-      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={lager} />
+  {#if products.length > 8}
+    <label class="input input-sm mb-2 w-full sm:w-72">
+      <span class="sr-only">Søk i produkter</span>
+      <input type="search" placeholder="Søk på nummer eller navn" bind:value={sok} />
     </label>
-    <button class="btn btn-sm" onclick={opprett}>Nytt produkt</button>
-  </div>
-  {#if products.length}
-    <table class="table table-sm mt-3">
-      <thead>
-        <tr>
-          <th>Nr</th><th>Navn</th><th class="text-right">Pris</th>
-          <th>Mva</th><th>Konto</th><th>Lager</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each products as p (p.nummer)}
-          <tr class={p.aktiv ? "" : "opacity-50"}>
-            <td class="font-mono">{p.nummer}</td>
-            <td>{p.navn}</td>
-            <td class="text-right">{kr(p.salgspris_ore)}</td>
-            <td>{p.vat_code || "–"}</td>
-            <td>{p.konto}</td>
-            <td>{p.lagerfort ? "✓" : ""}</td>
-            <td>
-              <button class="btn btn-xs btn-ghost" onclick={() => nyPris(p)}>Pris</button>
-              <button class="btn btn-xs btn-ghost" onclick={() => toggle(p)}>
-                {p.aktiv ? "Deaktiver" : "Aktiver"}
-              </button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  {/if}
+  {#if del.aktive.length}
+    {@render rader(del.aktive)}
+  {:else}
+    <p class="text-sm opacity-70">
+      {sok.trim() ? "Ingen aktive produkter passer søket." : "Ingen aktive produkter ennå."}
+    </p>
+  {/if}
+  {#if del.deaktiverte.length}
+    <button
+      id="deaktiverte"
+      class="btn btn-xs btn-ghost mt-1"
+      aria-expanded={visDeaktiverte}
+      onclick={() => (visDeaktiverte = !visDeaktiverte)}
+    >
+      {visDeaktiverte ? "Skjul" : "Vis"} deaktiverte ({del.deaktiverte.length})
+    </button>
+    {#if visDeaktiverte}
+      {@render rader(del.deaktiverte)}
+    {/if}
+  {/if}
+  {#if kanSkrive}
+    <h3 class="font-semibold mt-4">Nytt produkt</h3>
+    <Produktskjema {companyId} {kontoer} onSaved={onChanged} />
   {/if}
 </Card>

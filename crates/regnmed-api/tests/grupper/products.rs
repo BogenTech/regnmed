@@ -123,6 +123,71 @@ async fn products_stock_and_count() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "duplicate nummer");
 
+    // Every rejection says what to fix, in Norwegian — not a constraint
+    // name and not the old catch-all "(duplicate nummer?)".
+    for (body, error) in [
+        (
+            serde_json::json!({ "nummer": "V1", "navn": "Dublett", "salgspris_ore": 1 }),
+            "Nummeret V1 er allerede i bruk",
+        ),
+        (
+            serde_json::json!({ "nummer": " ", "navn": "X", "salgspris_ore": 1 }),
+            "Nummeret må fylles ut",
+        ),
+        (
+            serde_json::json!({ "nummer": "X1", "navn": "", "salgspris_ore": 1 }),
+            "Navnet må fylles ut",
+        ),
+        (
+            serde_json::json!({ "nummer": "X1", "navn": "X", "salgspris_ore": -1 }),
+            "Salgsprisen kan ikke være negativ",
+        ),
+        (
+            serde_json::json!({ "nummer": "X1", "navn": "X", "salgspris_ore": 1, "vat_code": "99" }),
+            "Ukjent mva-kode 99",
+        ),
+        (
+            serde_json::json!({ "nummer": "X1", "navn": "X", "salgspris_ore": 1, "konto": "9999" }),
+            "Inntektskontoen må være et firesifret nummer i klasse 3",
+        ),
+    ] {
+        let (status, response) = request(
+            &state,
+            "POST",
+            &format!("{base}/products"),
+            &token,
+            Some(body.to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            response["error"].as_str().unwrap_or("").contains(error),
+            "{body}: {response}"
+        );
+    }
+    for (body, error) in [
+        (serde_json::json!({ "konto": "1500" }), "Inntektskontoen"),
+        (
+            serde_json::json!({ "vat_code": "99" }),
+            "Ukjent mva-kode 99",
+        ),
+        (serde_json::json!({ "navn": " " }), "Navnet må fylles ut"),
+    ] {
+        let (status, response) = request(
+            &state,
+            "PUT",
+            &format!("{base}/products/V1"),
+            &token,
+            Some(body.to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            response["error"].as_str().unwrap_or("").contains(error),
+            "{body}: {response}"
+        );
+    }
+
     // Varekjøp: 10 stk à 200 kr anskaffelseskost.
     let (status, _) = request(
         &state,
@@ -159,6 +224,42 @@ async fn products_stock_and_count() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "justering without note");
+    for (body, error) in [
+        (
+            serde_json::json!({ "produkt": "V1", "dato": "2026-07-01", "kind": "justering",
+                                "antall_milli": -1_000, "note": " " }),
+            "En justering må ha et notat",
+        ),
+        (
+            serde_json::json!({ "produkt": "V1", "dato": "2026-07-01", "kind": "kjop",
+                                "antall_milli": -1_000 }),
+            "Et varekjøp må ha positivt antall",
+        ),
+        (
+            serde_json::json!({ "produkt": "V1", "dato": "2026-07-01", "kind": "kjop",
+                                "antall_milli": 0 }),
+            "Antallet kan ikke være null",
+        ),
+        (
+            serde_json::json!({ "produkt": "NOPE", "dato": "2026-07-01", "kind": "kjop",
+                                "antall_milli": 1_000 }),
+            "Fant ikke produktet NOPE",
+        ),
+    ] {
+        let (status, response) = request(
+            &state,
+            "POST",
+            &format!("{base}/inventory/movements"),
+            &token,
+            Some(body.to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            response["error"].as_str().unwrap_or("").contains(error),
+            "{body}: {response}"
+        );
+    }
 
     // Free-text line without price is rejected; product line needs
     // neither description nor price.
@@ -348,6 +449,34 @@ async fn products_stock_and_count() {
     let (_, inv) = request(&state, "GET", &format!("{base}/inventory"), &token, None).await;
     assert_eq!(inventory_row(&inv, "V1")["antall_milli"], 7_000);
     assert_eq!(inventory_row(&inv, "V1")["verdi_ore"], 1_400_00);
+
+    // A preview computes the same numbers and commits NOTHING: no
+    // justering, no voucher — the portal shows it before asking.
+    let (status, preview) = request(
+        &state,
+        "POST",
+        &format!("{base}/inventory/count?preview=true"),
+        &token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-07-20",
+                "linjer": [{ "produkt": "V1", "talt_milli": 6_500 }],
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {preview}");
+    assert_eq!(preview["verdi_ore"], 1_300_00);
+    assert_eq!(preview["endring_ore"], 1_300_00, "against an empty 1460");
+    assert_eq!(preview["justeringer"][0]["bokfort_milli"], 7_000);
+    assert!(preview["voucher"].is_null());
+    let (_, inv) = request(&state, "GET", &format!("{base}/inventory"), &token, None).await;
+    assert_eq!(
+        inventory_row(&inv, "V1")["antall_milli"],
+        7_000,
+        "preview left the stock alone"
+    );
 
     // Varetelling: counted 6,5 → justering −0,5; the value difference
     // against the (empty) 1460 saldo is posted as an ordinary voucher.

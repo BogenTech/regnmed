@@ -18,6 +18,16 @@ data** — with two deliberate restrictions enforced in the database
   movements reference them forever; a deactivated product is refused on
   new documents but keeps its history.
 
+Registeret kontrollerer feltene før databasen ser dem, og svarer på
+norsk med hva som må rettes: nummer og navn må fylles ut, salgsprisen
+kan ikke være negativ, en ukjent mva-kode navngis, og et nummer som alt
+er i bruk sies fra om som det (unik-bruddet gjenkjennes på SQLSTATE
+23505, ikke på en gjetning). **Inntektskontoen må være et firesifret
+nummer i klasse 3** (3000–3999): en produktlinje er et salg, og en konto
+utenfor inntektsklassen ble før godtatt i registeret og feilet først på
+fakturaen, langt fra der feilen ble gjort. Regelen gjelder bare verdier
+som skrives — eksisterende produkter røres ikke.
+
 ## Kopiering ved utstedelse
 
 Document lines (faktura, tilbud/ordre, repeterende maler) may reference
@@ -89,6 +99,18 @@ quantities and, in ONE transaction:
    the telling trues up the balance.
 
 Counting the same numbers twice is a no-op — no movements, no voucher.
+
+**Forhåndsvisning.** Med `?preview=true` kjører tellingen nøyaktig samme
+beregning i samme transaksjon og ruller den tilbake: svaret bærer
+justeringene (bokført mot talt antall), verdien etter tellingen,
+bokført saldo på lagerkontoen og `endring_ore` — beløpet bilaget vil
+føre. Portalen viser dette og ber om bekreftelse før noe bokføres, så
+det personen godkjenner er det som blir bokført. Talt antall kan være
+null, men ikke negativt.
+
+Bevegelsene har samme regler som migrasjon 0024s sjekker, men sjekket
+først og forklart: et varekjøp må ha positivt antall, en justering må ha
+et notat, antallet kan ikke være null og kostprisen ikke negativ.
 `GET …/inventory` is both the lagerstatus and the telleliste (nummer,
 navn, beholdning, snittkost, verdi per product).
 
@@ -101,10 +123,18 @@ navn, beholdning, snittkost, verdi per product).
   POST accepts kjop/justering only)
 - `POST /companies/{id}/inventory/count` — varetelling
 
-Portal: **Produkter** section (register, varelager with movement form,
-varetelling with inline "talt" inputs, movement history per product);
-produkt pickers on the faktura and tilbud forms (choosing a product
-supplies price and mva unless overridden).
+Portal: **Produkter**-seksjonen. Registeret er en stablet liste som
+passer en telefon, med søk når listen blir lang og deaktiverte produkter
+bak «Vis deaktiverte». «Endre» åpner et skjema under raden for navn,
+pris, mva, inntektskonto (kontovelgeren fra Hovedbok, begrenset til
+klasse 3) og lagerføring, og sender bare det som er endret. En tom pris
+blir aldri 0 kr. Varelageret viser beholdning, snittkost og verdi per
+produkt; «Bevegelser» åpnes under raden. Varetellingen er to steg:
+fyll inn talt antall, se over forskjellene og beløpet, og bokfør.
+Skriveknappene vises bare med `PRODUKT_SKRIV`/`LAGER_SKRIV`, og
+varelageret hentes bare med `LAGER_LES` — uten den får man fortsatt
+registeret. Produktvelgere på faktura og tilbud fyller pris og mva
+med mindre de overstyres.
 
 ## Where it is tested
 
@@ -114,5 +144,8 @@ supplies price and mva unless overridden).
   (register edits and deactivation vs issued documents), automatic
   salg/retur movements through faktura, kreditnota and
   tilbud→ordre→faktura, DB-layer immutability of movements and nummer,
-  varetelling posting against the booked 1460 saldo, chain
-  verification over the lot.
+  varetelling posting against the booked 1460 saldo, en forhåndsvisning
+  som ikke etterlater noe, de norske feilmeldingene for register og
+  bevegelser, chain verification over the lot.
+- `ui/portal/src/sections/produkter/produkt.test.js` — prisen (tom er
+  ikke 0), inntektskontoen, antall, søk og tellingslinjene.

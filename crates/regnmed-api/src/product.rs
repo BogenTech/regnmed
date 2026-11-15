@@ -5,7 +5,8 @@
 //! - GET  /companies/{id}/inventory                lagerstatus/telleliste
 //! - GET  /companies/{id}/inventory/movements?produkt=NN
 //! - POST /companies/{id}/inventory/movements      kjøp/justering
-//! - POST /companies/{id}/inventory/count          varetelling (+ bilag)
+//! - POST /companies/{id}/inventory/count          varetelling (+ bilag);
+//!   `?preview=true` computes it all and commits nothing
 //!
 //! Also home of the shared document-line request: faktura, tilbud/ordre
 //! and repeterende maler all take the same line shape, where `produkt`
@@ -287,10 +288,17 @@ pub struct CountRequest {
     change_account: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct CountQuery {
+    #[serde(default)]
+    preview: bool,
+}
+
 pub async fn count(
     State(state): State<AppState>,
     person: AuthPerson,
     Path(company_id): Path<Uuid>,
+    Query(query): Query<CountQuery>,
     Json(request): Json<CountRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InventoryWrite).await?;
@@ -315,6 +323,7 @@ pub async fn count(
         request.date,
         &linjer,
         post.then_some(&accounts),
+        query.preview,
         created_by,
     )
     .await
@@ -327,6 +336,7 @@ pub async fn count(
         })).collect::<Vec<_>>(),
         "verdi_ore": result.value_ore,
         "bokfort_ore": result.posted_ore,
+        "endring_ore": result.change_ore,
         "voucher": result.voucher.map(|(year, no)| format!("{year}-{no}")),
     })))
 }
