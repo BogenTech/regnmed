@@ -474,6 +474,9 @@ pub struct TellingKonti {
     pub journal_code: String,
     pub inventory_account: String,
     pub change_account: String,
+    /// The change a preview showed. When given, the count is refused if
+    /// the stock moved since, so what was confirmed is what is posted.
+    pub expected_change_ore: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -591,7 +594,16 @@ pub async fn varetelling(
         posted_ore = Some(posted);
         let change = value_ore - posted;
         change_ore = Some(change);
-        if change != 0 && !preview {
+        if let Some(expected) = accounts.expected_change_ore {
+            ensure!(
+                expected == change,
+                "Varelageret har endret seg siden du så over tellingen. Se over den på nytt."
+            );
+        }
+        // A preview posts too, inside the transaction it rolls back: a
+        // locked period or a closed account fails NOW, not after the
+        // person has confirmed. The rollback returns the voucher number.
+        if change != 0 {
             let draft = VoucherDraft {
                 journal_code: accounts.journal_code.clone(),
                 voucher_date: date,
@@ -622,7 +634,9 @@ pub async fn varetelling(
             };
             draft.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
             let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
-            voucher = Some((posted.fiscal_year, posted.voucher_number));
+            if !preview {
+                voucher = Some((posted.fiscal_year, posted.voucher_number));
+            }
         }
     }
     if preview {

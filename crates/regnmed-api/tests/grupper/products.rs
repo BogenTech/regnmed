@@ -478,6 +478,32 @@ async fn products_stock_and_count() {
         "preview left the stock alone"
     );
 
+    // Confirming with an amount the stock no longer matches is refused:
+    // what the person saw is what gets posted, or nothing.
+    let (status, stale) = request(
+        &state,
+        "POST",
+        &format!("{base}/inventory/count"),
+        &token,
+        Some(
+            serde_json::json!({
+                "dato": "2026-07-20",
+                "linjer": [{ "produkt": "V1", "talt_milli": 6_500 }],
+                "forventet_endring_ore": 1_000_00,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {stale}");
+    assert!(
+        stale["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("har endret seg"),
+        "{stale}"
+    );
+
     // Varetelling: counted 6,5 → justering −0,5; the value difference
     // against the (empty) 1460 saldo is posted as an ordinary voucher.
     let (status, telling) = request(
@@ -489,6 +515,7 @@ async fn products_stock_and_count() {
             serde_json::json!({
                 "dato": "2026-07-20",
                 "linjer": [{ "produkt": "V1", "talt_milli": 6_500 }],
+                "forventet_endring_ore": 1_300_00,
             })
             .to_string(),
         ),
@@ -498,6 +525,18 @@ async fn products_stock_and_count() {
     assert_eq!(telling["verdi_ore"], 1_300_00, "6,5 à 200 kr");
     assert_eq!(telling["bokfort_ore"], 0);
     assert!(telling["voucher"].is_string());
+    // The preview posted and rolled back: the counter rolled back with
+    // it, so the real voucher leaves no hole in the GL series.
+    let (count, max): (i64, Option<i64>) = sqlx::query_as(
+        "select count(*), max(v.voucher_number) from voucher v
+         join journal j on j.id = v.journal_id
+         where v.company_id = $1 and j.code = 'GL'",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(Some(count), max, "no gap in the GL voucher numbers");
     let inventory_balance: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
          from entry e join account a on a.id = e.account_id

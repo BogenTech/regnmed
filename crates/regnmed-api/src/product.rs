@@ -286,6 +286,9 @@ pub struct CountRequest {
     inventory_account: Option<String>,
     #[serde(rename = "endring_konto")]
     change_account: Option<String>,
+    /// `endring_ore` from the preview; refused if the stock moved since.
+    #[serde(rename = "forventet_endring_ore")]
+    expected_change_ore: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -307,6 +310,7 @@ pub async fn count(
         journal_code: request.journal.unwrap_or_else(|| "GL".into()),
         inventory_account: request.inventory_account.unwrap_or_else(|| "1460".into()),
         change_account: request.change_account.unwrap_or_else(|| "4390".into()),
+        expected_change_ore: request.expected_change_ore,
     };
     let post = request.post.unwrap_or(true);
     let linjer: Vec<regnmed_db::TellingLinje> = request

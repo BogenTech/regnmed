@@ -104,9 +104,14 @@ Counting the same numbers twice is a no-op — no movements, no voucher.
 beregning i samme transaksjon og ruller den tilbake: svaret bærer
 justeringene (bokført mot talt antall), verdien etter tellingen,
 bokført saldo på lagerkontoen og `endring_ore` — beløpet bilaget vil
-føre. Portalen viser dette og ber om bekreftelse før noe bokføres, så
-det personen godkjenner er det som blir bokført. Talt antall kan være
-null, men ikke negativt.
+føre. Forhåndsvisningen bokfører også bilaget, inne i transaksjonen den
+ruller tilbake: en låst periode eller en stengt konto feiler da før
+personen har bekreftet, og telleren rulles tilbake med resten, så
+bilagsnummerserien får ikke hull. Portalen viser tallene og ber om
+bekreftelse, og sender beløpet den viste som `forventet_endring_ore`.
+Har varelageret endret seg i mellomtiden, nektes tellingen med beskjed
+om å se over på nytt — det personen godkjente er det som blir bokført,
+eller ingenting. Talt antall kan være null, men ikke negativt.
 
 Bevegelsene har samme regler som migrasjon 0024s sjekker, men sjekket
 først og forklart: et varekjøp må ha positivt antall, en justering må ha

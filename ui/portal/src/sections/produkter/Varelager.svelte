@@ -106,7 +106,10 @@
     if (bokforer || !forhandsvisning) return;
     bokforer = true;
     try {
-      const svar = await post("/companies/" + companyId + "/inventory/count", forhandsvisning.body);
+      const svar = await post("/companies/" + companyId + "/inventory/count", {
+        ...forhandsvisning.body,
+        forventet_endring_ore: forhandsvisning.svar.endring_ore,
+      });
       toast(
         "Tellingen er registrert" + (svar.voucher ? " og bokført som bilag " + svar.voucher : ", uten verdiendring"),
         true,
