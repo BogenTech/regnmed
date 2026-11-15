@@ -408,10 +408,11 @@ async fn main() -> Result<()> {
             println!("prislisten (nyeste rad per plan gjelder fra sin dato):");
             for p in regnmed_db::subscription::list_prices(&pool).await? {
                 println!(
-                    "  {:10} {:>8},{:02} kr/mnd  fra {}  — {}",
+                    "  {:10} {:>8},{:02} kr/{}  fra {}  — {}",
                     p.plan,
                     p.price_ore_per_month / 100,
                     p.price_ore_per_month % 100,
+                    if p.interval == "year" { "år " } else { "mnd" },
                     p.valid_from,
                     p.source
                 );

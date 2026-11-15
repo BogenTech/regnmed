@@ -93,8 +93,8 @@ pub async fn require_vat_registered(
 }
 
 /// Records a registration observation. Insert-only: a correction is a
-/// NEW row, and re-recording the same day replaces that day's row
-/// (the observation is about the day, not about the moment we asked).
+/// NEW row with a later date. Re-recording the same status for a date is a
+/// no-op; a different status for a date that already has one is refused.
 pub async fn record_registrering(
     pool: &PgPool,
     company_id: Uuid,
@@ -108,7 +108,7 @@ pub async fn record_registrering(
         matches!(source, "brreg" | "manuell" | "migrert"),
         "ukjent kilde «{source}»"
     );
-    sqlx::query(
+    let inserted = sqlx::query(
         "insert into company_registrering
              (id, company_id, valid_from, mva_registrert, foretaksregistrert,
               kilde, notat, recorded_by)
@@ -125,6 +125,25 @@ pub async fn record_registrering(
     .bind(recorded_by)
     .execute(pool)
     .await?;
+    // The table is insert-only with one row per date. Recording the same
+    // status again is harmless; a DIFFERENT status for a date that already
+    // has one would be silently dropped, so it is refused instead.
+    if inserted.rows_affected() == 0 {
+        let (vat, business): (bool, bool) = sqlx::query_as(
+            "select mva_registrert, foretaksregistrert from company_registrering
+             where company_id = $1 and valid_from = $2",
+        )
+        .bind(company_id)
+        .bind(valid_from)
+        .fetch_one(pool)
+        .await?;
+        ensure!(
+            vat == reg.vat_registered && business == reg.business_registered,
+            "Det finnes alt en registrering som gjelder fra {}, og den kan ikke endres. \
+             Velg en senere fra-dato for den nye statusen.",
+            valid_from.format("%d.%m.%Y")
+        );
+    }
     Ok(())
 }
 
@@ -205,7 +224,15 @@ pub async fn update_company_settings(
         let email = email.trim();
         ensure!(
             email.is_empty() || email.contains('@'),
-            "ugyldig e-postadresse"
+            "Ugyldig e-postadresse."
+        );
+    }
+    // Printed on every invoice and reminder as where to pay, so a typo
+    // here sends customers' money nowhere. Kept as typed when valid.
+    if let Some(account) = bank_account.map(str::trim).filter(|s| !s.is_empty()) {
+        ensure!(
+            regnmed_core::pain001::is_valid_account_number(account),
+            "Kontonummeret er ugyldig. Det skal ha 11 siffer med riktig kontrollsiffer."
         );
     }
     fn clear(v: Option<&str>) -> Option<&str> {

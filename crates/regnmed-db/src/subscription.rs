@@ -731,6 +731,9 @@ pub async fn set_price(
 #[derive(Debug)]
 pub struct PriceRow {
     pub plan: String,
+    /// `month` or `year`. A `year` row's amount is for the whole year,
+    /// in the column that is still named per month (migration 0045).
+    pub interval: String,
     pub price_ore_per_month: i64,
     pub valid_from: NaiveDate,
     pub source: String,
@@ -739,8 +742,8 @@ pub struct PriceRow {
 /// The whole price list, newest first per plan.
 pub async fn list_prices(pool: &PgPool) -> Result<Vec<PriceRow>> {
     let rows = sqlx::query(
-        "select plan, pris_ore_per_mnd, valid_from, kilde
-         from abonnement_pris order by plan, valid_from desc",
+        "select plan, interval, pris_ore_per_mnd, valid_from, kilde
+         from abonnement_pris order by plan, interval, valid_from desc",
     )
     .fetch_all(pool)
     .await?;
@@ -748,6 +751,7 @@ pub async fn list_prices(pool: &PgPool) -> Result<Vec<PriceRow>> {
         .iter()
         .map(|r| PriceRow {
             plan: r.get("plan"),
+            interval: r.get("interval"),
             price_ore_per_month: r.get("pris_ore_per_mnd"),
             valid_from: r.get("valid_from"),
             source: r.get("kilde"),

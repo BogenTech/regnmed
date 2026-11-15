@@ -51,21 +51,25 @@ pub async fn subscription_status(
     };
     let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;
     let prices = regnmed_db::subscription::list_prices(&state.pool).await?;
-    // Newest price in force per plan.
+    // Newest price in force per plan, monthly and yearly. A plan without
+    // its own yearly row is billed 12 × the monthly price (the same rule
+    // as `price_with_vat`), so the yearly figure shown is what is charged.
     let today = chrono::Utc::now().date_naive();
-    let mut sett: Vec<&str> = Vec::new();
-    let planer: Vec<serde_json::Value> = prices
-        .iter()
-        .filter(|p| p.valid_from <= today)
-        .filter(|p| {
-            if sett.contains(&p.plan.as_str()) {
-                false
-            } else {
-                sett.push(&p.plan);
-                true
-            }
+    let newest = |plan: &str, interval: &str| {
+        prices
+            .iter()
+            .find(|p| p.plan == plan && p.interval == interval && p.valid_from <= today)
+            .map(|p| p.price_ore_per_month)
+    };
+    let mut plans: Vec<&str> = prices.iter().map(|p| p.plan.as_str()).collect();
+    plans.dedup();
+    let planer: Vec<serde_json::Value> = plans
+        .into_iter()
+        .filter_map(|plan| {
+            let month = newest(plan, "month")?;
+            let year = newest(plan, "year").unwrap_or(month * 12);
+            Some(json!({ "plan": plan, "pris_ore_per_mnd": month, "pris_ore_per_ar": year }))
         })
-        .map(|p| json!({ "plan": p.plan, "pris_ore_per_mnd": p.price_ore_per_month }))
         .collect();
     // The Stripe subscription, when the company is on that rail. Its
     // presence is what tells the portal to offer "si opp" rather than

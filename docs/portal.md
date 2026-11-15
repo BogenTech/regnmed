@@ -373,6 +373,30 @@ flis hvis endepunkt nektet sier «krever mer tilgang» i stedet for å
 late som null. De gamle adressene `#/c/{id}/brukere|oppdrag|periode`
 består og rutes til riktig fane (`FLYTTET_TIL_ADMIN` i `lib/meny.js`).
 
+Revidert 2026-11-15 (gjennomgang mot grunnreglene):
+
+- **«Å gjøre»** øverst på dashbordet lister det som mangler før
+  selskapet kan fakturere og sende til myndighetene — adresse,
+  kontonummer, e-post, en registreringsstatus som bare er utledet,
+  kundevilkår som ikke er godtatt, et ubetalt eller sperret abonnement —
+  hver med lenke til fanen som retter det (`gjoremal` i
+  `sections/admin/admin.js`, testet). Bare fakta som faktisk ble hentet
+  teller: manglende tilgang gir ingen falsk alarm.
+- **Nektet er ikke nede**: om en flis «krever mer tilgang» avgjøres av
+  rettighetene i `/me` FØR kallet; et kall som feiler sier «kunne ikke
+  hentes» med Prøv igjen. Før så et nettverksbrudd ut som manglende
+  tilgang på alle flisene.
+- **Hver fane henter sitt**: dashbordets kall går bare på Oversikt;
+  Firmaopplysninger og Abonnement henter bare det de viser.
+- Fanelinjen er en `nav` med `aria-current="page"`, ikke en tablist uten
+  paneler. Firmaopplysninger har ekte etiketter og stables på telefon,
+  Lagre viser fremdrift og resultatet ved knappen, og historikken viser
+  kilden i ord. Kundevilkår og abonnementshandlinger vises bare for
+  administrator; innsendingene til myndighetene er rader, ikke en
+  femkolonners tabell. Abonnementet viser årspris når «Årlig» er valgt
+  (`pris_ore_per_ar` fra `/subscription`; uten egen årsrad er den 12 ×
+  månedsprisen, samme regel som faktureringen).
+
 **Menyikonene** er håndrullede 24×24 outline-SVG-er i
 `src/lib/ikoner.js` — vendored som themes.css: intet ikonbibliotek,
 ingen CDN, ingenting hentes i kjøretid. Hvert ikon lagres ÉN gang som
