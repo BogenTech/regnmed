@@ -6,6 +6,7 @@
   // one menu entry, with a dashboard that shows the state of each area.
   // The portal SHOWS, the server decides (docs/auth.md) — a tile whose
   // endpoint refused simply reports that instead of a number.
+  import { formatDate } from "../../lib/format.js";
   import { api } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Ikon from "../../components/Ikon.svelte";
@@ -104,7 +105,7 @@
           [
             "periode",
             "Periode låst t.o.m.",
-            data.lock ? data.lock.locked_through || "åpen" : null,
+            data.lock ? formatDate(data.lock.locked_through) || "åpen" : null,
             "",
           ],
           [

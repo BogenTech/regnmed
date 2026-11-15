@@ -20,7 +20,25 @@ reversing vouchers (which the ledger already mandates).
   lock; moving it backwards is an admin-only act — and it is recorded,
   not hidden.
 
+- **A period that has not ended cannot be locked**: a date after today
+  is refused, because it would reject today's own postings.
+- **One change at a time per company**: the read of the current lock and
+  the insert of the next run in one transaction under a per-company
+  advisory lock (`lock_period_changes`), which the year-end closing takes
+  too — two changes at the same moment cannot both pass their checks.
+- **Reopenings are named**: the history marks each row that moved the
+  lock back (`gjenapnet`, computed from the row before it — nothing new
+  is stored), and the portal shows it.
+- Refusals are in Norwegian, with dates as dd.mm.yyyy: they are shown to
+  the person who tried.
+
 API: `GET`/`PUT /companies/{id}/period-lock`.
+
+Portal: Administrasjon → Periode. The next step is one button — lock
+through the end of last month — with any other date in a labelled field
+limited to today. Both are confirmed first; a date before the current
+lock is called a reopening and is offered to admins only. The form is
+hidden without `PERIODE_LAAS`.
 
 ## Bilagsvedlegg
 
@@ -51,7 +69,9 @@ API: `POST/GET /companies/{id}/vouchers/{vid}/attachments`,
 
 `regnmed-api/tests/grupper/period_attachments.rs` (real Postgres, also CI): both
 lock layers reject a back-dated posting (app error and raw-SQL trigger),
-accountant-vs-admin reopening rules with the audit trail, upload/download
+accountant-vs-admin reopening rules with the audit trail (the
+reopening named in the history, the refusals in Norwegian, a date after
+today refused), upload/download
 round-trip with hash equality, UPDATE rejected, DBA-level content
 tampering caught by `verify_attachments` — and clean verification after
 restore.
