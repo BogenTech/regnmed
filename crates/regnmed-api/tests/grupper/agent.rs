@@ -158,6 +158,10 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("oppgave", json!({"oppgave": task.to_string()})),
         ("utlegg_mottakere", json!({})),
         ("utlegg_liste", json!({"status": "apne"})),
+        ("prosjekter", json!({})),
+        ("timer_liste", year.clone()),
+        ("timer_sammendrag", year.clone()),
+        ("timer_ufakturert", json!({})),
     ]);
 
     for (name, args) in &argumenter {
@@ -195,10 +199,141 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         .unwrap();
     assert_eq!(posted, 1, "bilaget havnet ikke i hovedboken");
 
+    // ---- Projects and hours, end to end through the tools ----
+    //
+    // «før 8 timer på utvikling man–fre» is the request that found this
+    // gap: the employee prompt promised hours and the table had no way
+    // to log them. Every write here is real, because a drifted field
+    // name (`minutter` vs `minutes`) would be a 422 the agent cannot read.
+    let ok = |name: &'static str, reply: &(bool, String)| {
+        assert!(!reply.0, "{name} nådde ikke fram: {}", reply.1);
+        serde_json::from_str::<Value>(&reply.1).unwrap_or(Value::Null)
+    };
+    ok(
+        "prosjekt_opprett",
+        &calls(
+            &server,
+            "prosjekt_opprett",
+            json!({"kind": "prosjekt", "code": "UTV", "name": "Utvikling"}),
+        )
+        .await,
+    );
+    ok(
+        "prosjekt_endre",
+        &calls(
+            &server,
+            "prosjekt_endre",
+            json!({"kind": "prosjekt", "kode": "UTV", "fakturerbar_default": true}),
+        )
+        .await,
+    );
+    ok(
+        "prosjekt_sats_sett",
+        &calls(
+            &server,
+            "prosjekt_sats_sett",
+            json!({"prosjekt": "UTV", "timesats_ore": 120000, "valid_from": "2026-01-01"}),
+        )
+        .await,
+    );
+    let satser = ok(
+        "prosjekt_satser",
+        &calls(&server, "prosjekt_satser", json!({"prosjekt": "UTV"})).await,
+    );
+    assert_eq!(satser["satser"][0]["timesats_ore"], 120000, "{satser}");
+    for day in 2..=6 {
+        ok(
+            "timer_registrer",
+            &calls(
+                &server,
+                "timer_registrer",
+                json!({"dato": format!("2026-03-0{day}"), "minutter": 480,
+                       "prosjekt": "UTV", "beskrivelse": "Utvikling"}),
+            )
+            .await,
+        );
+    }
+    let week = json!({"from": "2026-03-02", "to": "2026-03-08"});
+    let listed = ok(
+        "timer_liste",
+        &calls(&server, "timer_liste", week.clone()).await,
+    );
+    let entries = listed["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 5, "{listed}");
+    // Whose hours: the agent's own. An agent is its own person (#101),
+    // and the API writes for the person the token proves.
+    let (owners, kind): (i64, String) = sqlx::query_as(
+        "select count(distinct t.person_id), min(p.kind)
+         from time_entry t join person p on p.id = t.person_id
+         where t.company_id = $1",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!((owners, kind.as_str()), (1, "integrasjon"));
+    assert!(
+        entries
+            .iter()
+            .all(|e| e["own"] == true && e["fakturerbar"] == true)
+    );
+    let first = entries[0]["entry_id"].as_str().unwrap().to_string();
+    let last = entries[4]["entry_id"].as_str().unwrap().to_string();
+    ok(
+        "timer_endre",
+        &calls(
+            &server,
+            "timer_endre",
+            json!({"timeforing": first, "dato": entries[0]["dato"], "minutter": 450,
+                   "prosjekt": "UTV", "beskrivelse": "Utvikling"}),
+        )
+        .await,
+    );
+    ok(
+        "timer_slett",
+        &calls(&server, "timer_slett", json!({"timeforing": last})).await,
+    );
+    let summary = ok(
+        "timer_sammendrag",
+        &calls(&server, "timer_sammendrag", week.clone()).await,
+    );
+    assert_eq!(
+        summary["prosjekter"][0]["minutter"],
+        450 + 3 * 480,
+        "{summary}"
+    );
+    // The lock is real too: once set, the agent cannot log into it.
+    ok(
+        "timer_las",
+        &calls(
+            &server,
+            "timer_las",
+            json!({"locked_through": "2026-03-31", "note": "Lønn mars"}),
+        )
+        .await,
+    );
+    let (failed, reply) = calls(
+        &server,
+        "timer_registrer",
+        json!({"dato": "2026-03-09", "minutter": 60, "prosjekt": "UTV"}),
+    )
+    .await;
+    assert!(failed, "en låst dag tar ikke imot timer: {reply}");
+
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.
     let mut covered: Vec<&str> = argumenter.keys().copied().collect();
-    covered.push("bilag_for");
+    covered.extend([
+        "bilag_for",
+        "prosjekt_opprett",
+        "prosjekt_endre",
+        "prosjekt_sats_sett",
+        "prosjekt_satser",
+        "timer_registrer",
+        "timer_endre",
+        "timer_slett",
+        "timer_las",
+    ]);
     // Exercised further down instead, where there is a real document,
     // a real file or a real task to act on.
     let senere = [
@@ -211,6 +346,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "saft_importer",
         "kontakter_importer",
         "apne_poster_importer",
+        "timer_fakturer",
         "oppgave_svar",
         // In an_agent_files_a_claim_and_a_human_decides_it.
         "utlegg_fra_innboks",
@@ -337,6 +473,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
             "apne_poster_importer",
             json!({"fil": tomcsv, "kind": "kunde", "preview": true}),
         ),
+        ("timer_fakturer", json!({"party_no": "finnes-ikke"})),
     ] {
         let (failed, reply) = calls(&server, name, args).await;
         assert!(failed, "{name} skulle feilet på innholdet: {reply}");

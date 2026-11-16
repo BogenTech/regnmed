@@ -84,7 +84,7 @@ innenfor containergrensen på 64 MB, og dette gjør ikke det.
 
 ## 3. Verktøyene
 
-`crates/regnmed-mcp/src/verktoy.rs` er en **kuratert** liste på ~30
+`crates/regnmed-mcp/src/tool.rs` er en **kuratert** liste på ~55
 verktøy, ikke en generert en.
 
 #102 foreslo å generere verktøylisten fra samme rutetabell som
@@ -103,9 +103,52 @@ gang: `/settings/registrering` er POST-only, og registreringsstatus
 leses fra `/settings`.)
 
 Grupper: orientering, lesing av hovedboken, bilagsflyten
-(innboks → forslag → bokfør), salg, utlegg, migrering, og oppgaver.
+(innboks → forslag → bokfør), salg, utlegg, prosjekter og timer,
+migrering, og oppgaver.
 Utleggsverktøyene og hva en agent får gjøre med et utleggskrav står i
 [utlegg.md «Agenten»](utlegg.md).
+
+### Timer og prosjekter (2026-11-16)
+
+Ansatt-prompten lovet «fører timer på prosjekt», og tabellen hadde
+ingen vei til det — en agent bedt om «før 8 timer på utvikling man–fre»
+spurte to ganger etter en prosjektkode den ikke kunne bruke. Nå dekker
+tabellen hele [timer.md](timer.md) og prosjektdelen av
+[dimensjoner.md](dimensjoner.md):
+
+| Verktøy | Endepunkt | Rettighet |
+| --- | --- | --- |
+| `prosjekter` | `GET …/dimensions` | `DIMENSJON_LES` |
+| `prosjekt_opprett`, `prosjekt_endre` | `POST …/dimensions`, `PUT …/dimensions/{kind}/{code}` | `DIMENSJON_SKRIV` |
+| `prosjekt_satser`, `prosjekt_sats_sett` | `GET/POST …/dimensions/prosjekt/{code}/satser` | `TIMER_SATS_SKRIV` |
+| `timer_liste` | `GET …/timesheet` (bærer også `locked_through`) | `TIMER_LES_EGNE` |
+| `timer_registrer` | `POST …/timesheet` | `TIMER_SKRIV_EGNE` |
+| `timer_endre`, `timer_slett` | `PUT/DELETE …/timesheet/{eid}` | `TIMER_SKRIV_EGNE` (andres: `_ALLE`) |
+| `timer_sammendrag`, `timer_ufakturert` | `GET …/timesheet/summary`, `…/unbilled` | `TIMER_RAPPORT_LES` |
+| `timer_fakturer` | `POST …/timesheet/invoice` | `TIMER_FAKTURER` |
+| `timer_las` | `PUT …/timesheet/lock` | `TIMER_LAAS` |
+
+`GET …/timesheet/lock` har ikke eget verktøy: `timer_liste` svarer med
+samme dato, og et verktøy som bare gjentar et annet er et valg en liten
+modell kan ta feil.
+
+**Hvem timene tilhører — avgjort: agenten selv.** En agent er sin egen
+`person` (§1), og `POST …/timesheet` fører for den personen tokenet
+beviser. Timer en agent registrerer står derfor med AGENTENS navn i
+timelisten, ikke med navnet til mennesket som ba om dem — og
+integrasjonstesten fester det (`person.kind = 'integrasjon'`). Det
+finnes ingen vei for å føre timer for en annen person, verken for
+mennesker eller maskiner, og tabellen finner ingen opp: en slik vei
+ville vært en ny autorisasjonsbeslutning (hvem får føre for hvem, og
+hvordan ser den ansatte det?), ikke et verktøy. Å *rette* andres
+føringer med `TIMER_SKRIV_ALLE` finnes allerede og gjelder agenten
+akkurat som et menneske. Skal en agent føre timer for en navngitt
+ansatt, er det en egen sak — modellen å låne er utleggets «på vegne av
+andre» ([utlegg.md](utlegg.md)).
+
+`timer_registrer` er **ikke idempotent** (en føring har ingen naturlig
+nøkkel — to like føringer samme dag kan være riktig). Beskrivelsen og
+ansatt-prompten sier derfor: kall `timer_liste` før et nytt forsøk.
 
 To konvensjoner er gjentatt i hvert skjema der de gjelder, fordi en
 liten modell ikke skal måtte utlede dem: **beløp er heltall øre**
@@ -259,6 +302,7 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Et menneske må attestere det en maskin bokfører | `tests/grupper/attestering.rs` |
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
+| Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
 | En avsluttet oppgave kan ikke gjenåpnes | `tests/grupper/agent.rs` |
 | Hvert skjema er gyldig JSON, hver sti-plassholder er deklarert | `regnmed-mcp` (enhetstester) |
 | Hver rolle bærer grunnreglene og navngir verktøyene sine | `regnmed-mcp` (enhetstester) |

@@ -602,6 +602,229 @@ pub const TOOLS: &[Tool] = &[
         schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
             "utlegg":{"type":"string","description":"expense_id"}},"additionalProperties":false}"#,
     },
+    // ---------- Prosjekter og timer ----------
+    //
+    // Whose hours: the caller's. `POST …/timesheet` writes for the
+    // person the token proves, and an agent is its own person (#101), so
+    // hours an agent registers stand under the AGENT's name. There is no
+    // create-for-someone-else on the API, and the table invents none
+    // (docs/agent.md §3 «Timer»).
+    Tool {
+        name: "prosjekter",
+        description: "Selskapets prosjekter og avdelinger: `kind` (prosjekt eller avdeling), \
+                      `code`, navn, om det er åpent (`active`), kunden prosjektet er knyttet til, \
+                      om timer på det er fakturerbare som standard, og DIN timesats på det i dag \
+                      (`min_timesats_ore`, heltall øre). Timer føres på et prosjekt med `kind` \
+                      prosjekt og `active` true — bruk `code` derfra, gjett aldri en prosjektkode.",
+        method: "GET",
+        path: "/companies/{selskap}/dimensions",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_opprett",
+        description: "Oppretter et prosjekt eller en avdeling. Koden er PERMANENT — den står i \
+                      hashkjeden på hvert bilag som bruker den — så velg den med omhu; navnet kan \
+                      endres senere. Opprett bare når oppgaven ber om det: finnes prosjektet \
+                      allerede i `prosjekter`, bruk det.",
+        method: "POST",
+        path: "/companies/{selskap}/dimensions",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["kind","code","name"],"properties":{COMPANY,
+            "kind":{"type":"string","enum":["prosjekt","avdeling"]},
+            "code":{"type":"string","description":"Kort, permanent kode, f.eks. P100"},
+            "name":{"type":"string","description":"Prosjektets navn"},
+            "kunde":{"type":"string","description":"Kundenummer (party_no fra «kunder») prosjektet gjelder. Bare for prosjekt."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_endre",
+        description: "Endrer et prosjekt eller en avdeling: navn, åpne/stenge (`active`), kunde \
+                      og om timer er fakturerbare som standard. Bare feltene du sender endres. \
+                      Koden kan ikke endres. Et stengt prosjekt tar ikke imot nye timer eller \
+                      posteringer.",
+        method: "PUT",
+        path: "/companies/{selskap}/dimensions/{kind}/{kode}",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["kind","kode"],"properties":{COMPANY,
+            "kind":{"type":"string","enum":["prosjekt","avdeling"]},
+            "kode":{"type":"string","description":"Koden fra «prosjekter»"},
+            "name":{"type":"string","description":"Nytt navn"},
+            "active":{"type":"boolean","description":"false stenger, true åpner igjen"},
+            "kunde":{"type":"string","description":"Kundenummer; tom tekst fjerner koblingen"},
+            "fakturerbar_default":{"type":"boolean"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_satser",
+        description: "Timesatsene på ett prosjekt med historikk: prosjektets standardsats og \
+                      personlige satser, hver med gyldig-fra-dato, i heltall øre per time. \
+                      Krever retten TIMER_SATS_SKRIV.",
+        method: "GET",
+        path: "/companies/{selskap}/dimensions/prosjekt/{prosjekt}/satser",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["prosjekt"],"properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_sats_sett",
+        description: "Setter en ny timesats på et prosjekt fra en dato. Satsen er heltall ØRE per \
+                      time: 1 200 kr/t = 120000. Uten `person_id` er det prosjektets standardsats; \
+                      med er det den personens egen. Timer som allerede er ført beholder satsen de \
+                      ble ført med. Krever retten TIMER_SATS_SKRIV. Sett aldri en sats oppgaven \
+                      ikke har gitt deg.",
+        method: "POST",
+        path: "/companies/{selskap}/dimensions/prosjekt/{prosjekt}/satser",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["prosjekt","timesats_ore"],"properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"},
+            "timesats_ore":{"type":"integer","description":"Heltall øre per time"},
+            "person_id":{"type":"string","description":"Utelates = prosjektets standardsats"},
+            "valid_from":{"type":"string","description":"Gyldig fra, YYYY-MM-DD. Utelates = i dag."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_liste",
+        description: "Timeføringene i en periode: dine egne, eller alle personers hvis rollen \
+                      har TIMER_LES_ALLE (`own` sier hvilke som er dine). Hver føring har \
+                      `entry_id`, dato, minutter, prosjekt og om den er fakturert. \
+                      `locked_through` er datoen timelisten er låst til og med — føringer på eller \
+                      før den kan ikke registreres, endres eller slettes.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
+            "from":{"type":"string","description":"Fra dato, YYYY-MM-DD"},
+            "to":{"type":"string","description":"Til og med dato, YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_registrer",
+        description: "Fører timer for ÉN dag på ett prosjekt. Timene føres på DEG — personen du \
+                      er logget inn som — og står med ditt navn i timelisten; du kan ikke føre \
+                      timer for en annen person. Tiden er heltall MINUTTER: 8 timer = 480, \
+                      7,5 timer = 450, høyst 1440. Flere dager er ett kall per dag \
+                      (mandag–fredag = fem kall). Kallet er IKKE idempotent: får du ikke svar, \
+                      kall `timer_liste` for dagen før du prøver igjen, ellers føres timene to ganger.",
+        method: "POST",
+        path: "/companies/{selskap}/timesheet",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["dato","minutter","prosjekt"],"properties":{COMPANY,
+            "dato":{"type":"string","description":"Dagen timene gjelder, YYYY-MM-DD"},
+            "minutter":{"type":"integer","minimum":1,"maximum":1440,"description":"Heltall minutter: 8 timer = 480"},
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"},
+            "beskrivelse":{"type":"string","description":"Hva arbeidet gjaldt, kort. Valgfri."},
+            "fakturerbar":{"type":"boolean","description":"Utelates = prosjektets standard"},
+            "timesats_ore":{"type":"integer","description":"Utelat. Prosjektets sats gjelder; en egen sats virker bare med retten TIMER_SATS_SKRIV og bare når oppgaven gir deg den."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_endre",
+        description: "Retter en timeføring. ALLE feltene skrives slik du sender dem — send dato, \
+                      minutter og prosjekt sammen, også de som ikke endres. Du kan rette dine \
+                      egne føringer; andres bare med retten TIMER_SKRIV_ALLE. En føring som er \
+                      fakturert eller ligger i en låst periode kan ikke endres.",
+        method: "PUT",
+        path: "/companies/{selskap}/timesheet/{timeforing}",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["timeforing","dato","minutter","prosjekt"],"properties":{COMPANY,
+            "timeforing":{"type":"string","description":"entry_id fra timer_liste"},
+            "dato":{"type":"string","description":"YYYY-MM-DD"},
+            "minutter":{"type":"integer","minimum":1,"maximum":1440,"description":"Heltall minutter"},
+            "prosjekt":{"type":"string","description":"Prosjektkoden"},
+            "beskrivelse":{"type":"string"},
+            "fakturerbar":{"type":"boolean","description":"Utelates = prosjektets standard"},
+            "timesats_ore":{"type":"integer","description":"Utelat, som i timer_registrer"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_slett",
+        description: "Sletter en timeføring som ble ført feil. Samme grenser som timer_endre: \
+                      dine egne, andres bare med TIMER_SKRIV_ALLE, aldri fakturert eller i en \
+                      låst periode.",
+        method: "DELETE",
+        path: "/companies/{selskap}/timesheet/{timeforing}",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["timeforing"],"properties":{COMPANY,
+            "timeforing":{"type":"string","description":"entry_id fra timer_liste"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_sammendrag",
+        description: "Timer per prosjekt i en periode, for alle personer: minutter i alt, \
+                      fakturerbare minutter, og ufakturert og fakturert beløp i heltall øre. \
+                      Bruk denne når noen spør hvor mye som er ført på et prosjekt.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet/summary",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
+            "from":{"type":"string","description":"YYYY-MM-DD"},
+            "to":{"type":"string","description":"YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_ufakturert",
+        description: "Fakturagrunnlaget: fakturerbare timer som ikke er fakturert ennå, gruppert \
+                      per prosjekt og sats, med prosjektets kunde som FORSLAG og hvem som førte \
+                      hva (`entry_ids` per person). Les denne før du kaller timer_fakturer.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet/unbilled",
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Bare dette prosjektet"},
+            "through":{"type":"string","description":"Bare timer til og med denne datoen, YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_fakturer",
+        description: "Utsteder en faktura for ufakturerte timer og merker dem fakturert i samme \
+                      transaksjon. Fakturaen er UFORANDERLIG straks den er utstedt — en feil rettes \
+                      med kreditnota. Kunden (`party_no`) velger DU; prosjektets kunde i \
+                      timer_ufakturert er bare et forslag. `entry_ids` fakturerer akkurat de \
+                      føringene; er én av dem allerede fakturert, feiler hele kallet. \
+                      Er selskapet ikke mva-registrert, utelat `vat_code` helt.",
+        method: "POST",
+        path: "/companies/{selskap}/timesheet/invoice",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["party_no"],"properties":{COMPANY,
+            "party_no":{"type":"string","description":"Kundenummer fra «kunder»"},
+            "prosjekt":{"type":"string","description":"Bare timer på dette prosjektet"},
+            "through":{"type":"string","description":"Bare timer til og med denne datoen, YYYY-MM-DD"},
+            "entry_ids":{"type":"array","items":{"type":"string"},"description":"Akkurat disse føringene, fra timer_ufakturert"},
+            "vat_code":{"type":"string"},
+            "invoice_date":{"type":"string","description":"YYYY-MM-DD. Utelates = i dag."},
+            "due_date":{"type":"string","description":"YYYY-MM-DD. Utelates = fakturadato + 14 dager."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_las",
+        description: "Låser timelisten til og med en dato (månedslås, før lønn eller \
+                      fakturering): ingen kan registrere, endre eller slette føringer på eller før \
+                      den. En TIDLIGERE dato enn dagens lås gjenåpner — det gjør du ALDRI, be et \
+                      menneske. Lås aldri uten at oppgaven ber om det. \
+                      Krever retten TIMER_LAAS. Nåværende lås står i timer_liste.",
+        method: "PUT",
+        path: "/companies/{selskap}/timesheet/lock",
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["locked_through"],"properties":{COMPANY,
+            "locked_through":{"type":"string","description":"Siste låste dag, YYYY-MM-DD — vanligvis månedens siste dag"},
+            "note":{"type":"string","description":"Hvorfor, f.eks. «Lønn oktober kjørt»"}},
+            "additionalProperties":false}"#,
+    },
     // ---------- Oppgaver ----------
     Tool {
         name: "oppgaver",

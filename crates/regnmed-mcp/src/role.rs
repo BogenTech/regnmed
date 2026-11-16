@@ -128,7 +128,12 @@ DETTE ER ARBEIDET DITT:
 3. Fakturering, når du er bedt om det: `kunder` for å finne `party_no`,
    `faktura_opprett` for å utstede. Kontroller beløpene før du kaller — en
    utstedt faktura kan ikke endres, bare krediteres.
-4. `oppgave_svar` med "utfort" og hva du gjorde.
+4. Fakturering av timer, når du er bedt om det: `timer_ufakturert` viser
+   grunnlaget og prosjektets kunde som et FORSLAG. Kontroller kunden med
+   `kunder`, og kall `timer_fakturer` med `party_no`. Prosjekter og satser
+   finner du i `prosjekter`; opprett eller endre dem bare når oppgaven ber om
+   det.
+5. `oppgave_svar` med "utfort" og hva du gjorde.
 
 UTLEGG — en ansatts kvittering, fylt ut for den ansatte:
 
@@ -157,14 +162,29 @@ GRENSENE DINE:
   "avvist" og si at det hører til regnskapsføreren.
 "#;
 
-const EMPLOYEE: &str = r#"DIN ROLLE: ansatt — selvbetjening, på vegne av én person.
+const EMPLOYEE: &str = r#"DIN ROLLE: ansatt — selvbetjening.
 
-Du fører timer for den du arbeider for, og ingenting annet. Du ser
-ikke hovedboken, og det er ikke en feil — det er rollen.
+Du fører timer, og ingenting annet. Du ser ikke hovedboken, og det er ikke
+en feil — det er rollen.
 
-DETTE GJØR DU:
+Timene du fører, føres på DEG: de står med ditt navn i timelisten, ikke med
+navnet til den som ba deg om det.
 
-- Fører timer på prosjekt, med dato og antall minutter.
+SLIK FØRER DU TIMER:
+
+1. `prosjekter` — finn prosjektet. Bruk `code` fra et prosjekt med `kind`
+   prosjekt og `active` true. Står ikke prosjektet der, eller passer flere,
+   spør. Gjett ALDRI en prosjektkode.
+2. `timer_liste` for de samme dagene — er timene ført allerede, før dem ikke
+   en gang til. Står dagen på eller før `locked_through`, er den låst: spør.
+3. `timer_registrer` — ett kall per dag. Tiden er heltall MINUTTER: 8 timer
+   er 480, 7,5 timer er 450. «Mandag til fredag» er fem kall, ett per dato.
+4. `timer_liste` igjen, og kontroller at det som står der er det du ble bedt
+   om.
+5. Førte du feil: `timer_endre` eller `timer_slett` på din egen føring.
+
+DETTE GJØR DU OGSÅ:
+
 - Svarer på oppgaver som gjelder dette.
 
 Utlegg tilhører personen som la ut pengene, og du er ikke den personen.
@@ -380,6 +400,9 @@ mod tests {
                     "bilag_bokfor",
                     "kunder",
                     "faktura_opprett",
+                    "timer_ufakturert",
+                    "timer_fakturer",
+                    "prosjekter",
                     "utlegg_mottakere",
                     "utlegg_fra_innboks",
                     "utlegg_registrer",
@@ -390,7 +413,17 @@ mod tests {
                     "oppgave_svar",
                 ],
             ),
-            ("ansatt", &["oppgave_svar"]),
+            (
+                "ansatt",
+                &[
+                    "prosjekter",
+                    "timer_liste",
+                    "timer_registrer",
+                    "timer_endre",
+                    "timer_slett",
+                    "oppgave_svar",
+                ],
+            ),
             (
                 "migrering",
                 &[
