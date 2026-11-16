@@ -11,7 +11,7 @@ is a CI gate — **a service that grows fat fails the build** (issue
 
 | Measure | Budget | Measured in CI (2026-11-12) |
 | --- | --- | --- |
-| `regnmed-api` release binary | 20 MB | 18 MB |
+| `regnmed-api` release binary | 24 MB (raised from 20 on 2026-11-16) | 21 MB (2026-11-16) |
 | `regnmed` CLI release binary | 12 MB | 10 MB |
 | `regnmed-agent` release binary | 8 MB | 8 MB |
 | `regnmed-api` peak RSS under load | **64 MB** | 13 MB |

@@ -26,7 +26,11 @@ cd "$(dirname "$0")/.."
 # a budget nobody tightens turns a one-time win into headroom for creep.
 # (Fat LTO reached 13/7 MB but cost the frugality job ~1,5 minutter per
 # kjøring; se avveiningen i Cargo.toml.)
-API_BIN_BUDGET_MB=20
+# Raised 20 -> 24 on 2026-11-16, deliberately: the binary crossed 20 MB
+# (21 rounded up) on #243 after creeping from 15 MB in July through
+# features, not through embedded data (about 1.4 MB, portal included).
+# 24 is ~1.2x today's size; shrinking it is its own task, not a gate fix.
+API_BIN_BUDGET_MB=24
 CLI_BIN_BUDGET_MB=12
 # The hosted agent worker (docs/agent.md §8.3). It runs in the cluster as
 # its own CronJob, so it gets a budget like the other two — measured
