@@ -148,6 +148,7 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
     // The phone sends the image with its own hash.
     let (status, body) = last_opp("kvittering.jpg", Some(&sha256), bilde.clone()).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let first = body["document_id"].clone();
 
     // The queue retried because the response never arrived. Same content,
     // new file name — and there must still be only one bilag.
@@ -161,6 +162,18 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
                 .contains("venter på behandling"),
         "{body}"
     );
+
+    // A message attachment only needs the receipt to BE in the inbox: the
+    // copy still waiting there is linked, not refused and not doubled.
+    let (status, body) = last_opp(
+        "melding.jpg",
+        Some(&format!("{sha256}&reuse_pending=true")),
+        bilde.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["document_id"], first, "{body}");
+    assert_eq!(body["existing"], true, "{body}");
 
     // A hash that does not match means the bytes were damaged in transit.
     let (status, body) =

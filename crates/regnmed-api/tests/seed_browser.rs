@@ -197,6 +197,7 @@ async fn seed_browser_demo() {
             body.as_bytes(),
             "Demo Bruker",
             None,
+            false,
         )
         .await
         .unwrap();

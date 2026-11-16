@@ -92,9 +92,17 @@ det gjelder, står i samtalens `attach_to`: agentens selskap, eller
 selskapene to mennesker deler. To byråkolleger deler ingen innboks, så
 der finnes ikke vedleggsknappen.
 
-Konsekvens: samme fil kan ikke legges ved to ganger (innboksen avviser
-identiske bytes), og den som ikke har `BILAG_LES` i selskapet, ser
-filnavnet men kan ikke åpne filen. Generell fildeling er en egen sak.
+Et bilag som **allerede venter** i innboksen (`ny`), kan legges ved:
+portalen laster opp med `?reuse_pending=true`, og innboksen svarer med
+dokumentet som ligger der (`existing: true`) i stedet for å avvise
+duplikatet — samme bilag, ett dokument, nå med en melding om hva som
+skal gjøres med det. Et bokført bilag, eller et som er gjort om til et
+utlegg, avvises fortsatt: det er behandlet, og en agent som fikk det
+igjen kunne bare bokført det to ganger. En avvist kopi sperrer ikke
+([bilagsinnboks.md](bilagsinnboks.md)).
+
+Den som ikke har `BILAG_LES` i selskapet, ser filnavnet men kan ikke
+åpne filen. Generell fildeling er en egen sak.
 
 ## 5. Levering: Postgres er sporet, NATS ringer på døren
 
