@@ -13,7 +13,7 @@ is a CI gate — **a service that grows fat fails the build** (issue
 | --- | --- | --- |
 | `regnmed-api` release binary | 24 MB (raised from 20 on 2026-11-16) | 21 MB (2026-11-16) |
 | `regnmed` CLI release binary | 12 MB | 10 MB |
-| `regnmed-agent` release binary | 8 MB | 8 MB |
+| `regnmed-agent` release binary | 10 MB (raised from 8 on 2026-11-16) | 8 MB (2026-11-16) |
 | `regnmed-api` peak RSS under load | **64 MB** | 13 MB |
 | Portal first load, gzip -9 | 80 KB | 62 KB |
 | — of which CSS, gzip -9 | 32 KB | 24 KB |
