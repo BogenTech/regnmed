@@ -555,7 +555,8 @@ async fn an_agent_that_cannot_run_says_so_in_the_conversation() {
         .clone();
     assert_eq!(last["author"], "Agent Test", "{thread}");
     assert!(
-        last["text"].as_str().unwrap().contains("Gi modell"),
+        last["text"].as_str().unwrap().contains("Brukere og roller")
+            && last["text"].as_str().unwrap().contains("Gi modell"),
         "{thread}"
     );
 }

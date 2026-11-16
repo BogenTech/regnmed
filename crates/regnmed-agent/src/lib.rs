@@ -438,14 +438,17 @@ impl std::fmt::Display for NotRunHere {
 
 impl std::error::Error for NotRunHere {}
 
+// Where an admin fixes each: the agents live with the people, under
+// Administrasjon -> Brukere og roller, card «Agenter og integrasjoner».
 const NO_MODEL: &str = "Jeg kan ikke ta oppgaven ennå: det er ikke valgt noen aktiv språkmodell \
-     for meg. En administrator gir meg en under Administrasjon → Oppdrag og integrasjoner \
-     («Gi modell»). Svar her når det er gjort, så prøver jeg igjen.";
+     for meg. En administrator gir meg en under Administrasjon → Brukere og roller, kortet \
+     «Agenter og integrasjoner» («Gi modell»). Svar her når det er gjort, så prøver jeg igjen.";
 const NO_SECRET: &str = "Jeg kan ikke ta oppgaven ennå: klienthemmeligheten min er ikke lagret i \
      regnmed, så jeg kan ikke logge inn. En administrator legger den inn under Administrasjon → \
-     Oppdrag og integrasjoner («Bytt modell»). Svar her når det er gjort, så prøver jeg igjen.";
+     Brukere og roller, kortet «Agenter og integrasjoner» («Bytt modell»). Svar her når det er \
+     gjort, så prøver jeg igjen.";
 const NO_ACCESS: &str = "Jeg kan ikke ta oppgaven: jeg har ikke lenger tilgang til selskapet. En \
-     administrator kan gi meg tilgang igjen under Administrasjon → Oppdrag og integrasjoner.";
+     administrator kan gi meg tilgang igjen under Administrasjon → Brukere og roller.";
 
 /// Writes the outcome into the task's trail and, when the order came
 /// from a conversation, rings it so the answer shows now rather than at
