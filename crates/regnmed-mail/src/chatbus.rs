@@ -105,37 +105,13 @@ mod tests {
     /// against a real nats-server on PATH (skips without).
     #[tokio::test]
     async fn a_follower_hears_an_announcement() {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        // Its own store: nats-servers started by parallel tests would
-        // otherwise share the default JetStream directory and fight over it.
-        let dir = std::env::temp_dir().join(format!("regnmed-chatbus-{}", Uuid::new_v4().simple()));
-        let Ok(mut server) = std::process::Command::new("nats-server")
-            .args(["-js", "-p", &port.to_string(), "-sd"])
-            .arg(&dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        else {
-            eprintln!("skipping: nats-server not found on PATH");
+        let Some(nats) = crate::testnats::start().await else {
             return;
         };
-        let url = format!("nats://127.0.0.1:{port}");
-        let mut js = None;
-        for _ in 0..50 {
-            if let Ok(c) = crate::connect(&url, None, None).await {
-                js = Some(c);
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-        let js = js.expect("nats-server did not come up");
-        ensure_stream(&js).await.unwrap();
+        let js = &nats.js;
+        ensure_stream(js).await.unwrap();
 
-        let events = follow(&js).await.unwrap();
+        let events = follow(js).await.unwrap();
         let mut events = std::pin::pin!(events);
         let event = |message| ChatEvent {
             conversation_id: Uuid::nil(),
@@ -143,10 +119,10 @@ mod tests {
             person_ids: vec![Uuid::nil()],
         };
         let (message, other) = (Uuid::now_v7(), Uuid::now_v7());
-        announce(&js, &event(message)).await.unwrap();
+        announce(js, &event(message)).await.unwrap();
         // The same id again is one event (Nats-Msg-Id dedup).
-        announce(&js, &event(message)).await.unwrap();
-        announce(&js, &event(other)).await.unwrap();
+        announce(js, &event(message)).await.unwrap();
+        announce(js, &event(other)).await.unwrap();
 
         let wait = std::time::Duration::from_secs(5);
         let first = tokio::time::timeout(wait, events.next())
@@ -165,8 +141,5 @@ mod tests {
             second.message_id, other,
             "the duplicate was delivered twice"
         );
-        let _ = server.kill();
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = server.wait();
     }
 }

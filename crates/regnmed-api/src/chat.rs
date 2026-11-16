@@ -283,7 +283,7 @@ pub async fn post(
     let message_id = posted.message_id;
     announce(&state, posted).await;
     if let (Some(task_id), Some(company_id)) = (task, company) {
-        crate::agent_task::nudge(&state, company_id, task_id).await;
+        crate::agent_task::nudge(&state, company_id, task_id, message_id).await;
     }
     Ok(Json(json!({ "message_id": message_id, "task_id": task })))
 }

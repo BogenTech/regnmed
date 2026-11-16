@@ -847,6 +847,16 @@ minutter». To konsekvenser, begge med vilje:
    i databasen før den gjør noe. At-least-once er greit når det som
    leveres er et puff.
 
+**Hva som teller som duplikat** (endret 2026-11-16): meldings-id-en er
+`{oppgave}:{årsak}`, der årsaken er oppgaven selv når den opprettes og
+meldingen eller svaret som fortsetter den. Samme årsak sendt to ganger
+innenfor strømmens duplikatvindu (120 s) blir ett puff; et NYTT svar blir
+det aldri. Før var id-en oppgaven alene, og et andre «Prøv igjen» 110
+sekunder etter det første ble kastet som duplikat av et puff som alt var
+arbeidet av — oppgaven sto som «jobber med det» uten at noen gjorde det,
+til feiebrettet kom. Testen (`taskqueue::a_new_reply_is_never_a_duplicate`)
+er sett feile med den gamle id-en.
+
 Meldingen bærer bare id-er. Hva agenten leser og skriver blir mellom
 workeren og API-et; å legge regnskapsdata på en delt strøm ville utvidet
 hvor de dataene ligger lagret uten å gi noe — workeren må slå opp i

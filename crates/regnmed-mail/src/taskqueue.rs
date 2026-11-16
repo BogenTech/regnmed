@@ -53,9 +53,8 @@ pub async fn ensure_stream(js: &jetstream::Context) -> Result<()> {
         // WorkQueue: a message is removed once a worker acks it, so two
         // workers never see the same nudge in the normal case.
         retention: jetstream::stream::RetentionPolicy::WorkQueue,
-        // Re-publishing the same task inside the window is a no-op, so
-        // the API may nudge freely -- on create, on an answer, on a
-        // retry -- without piling up work.
+        // Re-publishing the same CAUSE inside the window is a no-op (see
+        // `nudge`); a new reply on the same task is a new cause.
         duplicate_window: std::time::Duration::from_secs(120),
         ..Default::default()
     })
@@ -66,21 +65,30 @@ pub async fn ensure_stream(js: &jetstream::Context) -> Result<()> {
 
 /// Rings the doorbell for one task.
 ///
-/// The task id is the Nats-Msg-Id, so two nudges for the same task
-/// inside the duplicate window collapse into one — the same trick the
-/// utsendelse log uses, where the log row id IS the message id.
+/// `cause` is what put the task in play -- the task itself when it is
+/// created, the message or answer that continues it -- and
+/// `{task}:{cause}` is the Nats-Msg-Id. Resending the same cause inside
+/// the duplicate window collapses into one; a NEW reply never does. The
+/// task id alone was the id until a person's second «Prøv igjen», 110 s
+/// after the first, was dropped as a duplicate of a nudge already worked
+/// off, and the task sat «in progress» with nobody on it.
 ///
 /// Failure is the CALLER's to shrug off: the task is already safely in
 /// the database, and the backstop sweep will pick it up. Never let a
 /// queue that is down fail the request that created the work.
-pub async fn nudge(js: &jetstream::Context, company_id: Uuid, task_id: Uuid) -> Result<()> {
+pub async fn nudge(
+    js: &jetstream::Context,
+    company_id: Uuid,
+    task_id: Uuid,
+    cause: Uuid,
+) -> Result<()> {
     let payload = serde_json::to_vec(&TaskNudge {
         company_id,
         task_id,
     })?;
     let message = async_nats::HeaderMap::from_iter([(
         async_nats::header::NATS_MESSAGE_ID,
-        async_nats::HeaderValue::from(task_id.to_string().as_str()),
+        async_nats::HeaderValue::from(format!("{task_id}:{cause}").as_str()),
     )]);
     js.publish_with_headers(SUBJECT, message, payload.into())
         .await
@@ -88,4 +96,39 @@ pub async fn nudge(js: &jetstream::Context, company_id: Uuid, task_id: Uuid) -> 
         .await
         .context("the agent stream did not acknowledge the nudge")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A second reply on the same task is a second wake-up; the same
+    /// reply sent twice is one. Runs against a real nats-server on PATH
+    /// (skips without).
+    #[tokio::test]
+    async fn a_new_reply_is_never_a_duplicate() {
+        let Some(nats) = crate::testnats::start().await else {
+            return;
+        };
+        let js = &nats.js;
+        ensure_stream(js).await.unwrap();
+
+        let (company, task) = (Uuid::now_v7(), Uuid::now_v7());
+        let (first, second) = (Uuid::now_v7(), Uuid::now_v7());
+        nudge(js, company, task, task).await.unwrap();
+        nudge(js, company, task, first).await.unwrap();
+        nudge(js, company, task, first).await.unwrap(); // a resend
+        nudge(js, company, task, second).await.unwrap();
+
+        let waiting = js
+            .get_stream(STREAM)
+            .await
+            .unwrap()
+            .info()
+            .await
+            .unwrap()
+            .state
+            .messages;
+        assert_eq!(waiting, 3, "create + two replies; the resend collapses");
+    }
 }
