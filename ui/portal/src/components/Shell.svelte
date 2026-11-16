@@ -76,7 +76,7 @@
       {#each items as [slug, label]}
         <li>
           <a
-            href={slug === "meldinger" ? "#/meldinger" : "#/c/" + companyId + "/" + slug}
+            href={"#/c/" + companyId + "/" + slug}
             class="flex items-center gap-2 {aktiv === slug
               ? 'bg-base-200 text-primary font-semibold shadow-[inset_3px_0_0_0_currentColor]'
               : ''}"

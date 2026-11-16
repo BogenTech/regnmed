@@ -172,6 +172,12 @@
       {:else}
         {@render laster(SECTIONS.admin)}
       {/if}
+    {:else if route.section === "meldinger"}
+      {#if Meldinger.component}
+        <Meldinger.component companyId={route.companyId} conversationId={route.extra} />
+      {:else}
+        {@render laster(Meldinger)}
+      {/if}
     {:else if SECTIONS[route.section]}
       {@const Section = SECTIONS[route.section].component}
       {#if Section}

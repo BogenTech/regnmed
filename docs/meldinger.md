@@ -149,8 +149,11 @@ tidsstempel. Klienten fjerner duplikater på id.
   uleste — fra selskapene, byråvisningen, plattformen og selskapslisten.
   Meldinger står også i selskapsmenyen.
 - `#/meldinger` er listen, `#/meldinger/ny` velger mottaker,
-  `#/meldinger/{id}` er en samtale. På bred skjerm står liste og samtale
-  side om side; **på telefon er det én av dem om gangen**, og adressen
+  `#/meldinger/{id}` er en samtale. Inne i et selskap åpner den samme
+  meldingsappen i selskapets ramme (`#/c/{id}/meldinger/…`), så menyen
+  blir stående; knappen i navbaren og menypunktet leder dit. Samtalene
+  er de samme — de tilhører personen, ikke selskapet. På bred skjerm
+  står liste og samtale side om side; **på telefon er det én av dem om gangen**, og adressen
   avgjør hvilken, så telefonens tilbake-knapp virker som ventet.
 - Enter sender, Shift+Enter er ny linje; et bilde kan limes rett inn.
   Søkefeltet får fokus når man velger mottaker, og meldingsfeltet når en

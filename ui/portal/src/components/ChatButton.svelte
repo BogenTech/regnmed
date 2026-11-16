@@ -3,11 +3,17 @@
   // the accountant are one click away from wherever you are.
   import { chat } from "../lib/chat.svelte.js";
   import { prefs } from "../lib/prefs.svelte.js";
+  import { route } from "../lib/router.svelte.js";
   import Ikon from "./Ikon.svelte";
+
+  // Inside a company, stay inside it: the messenger opens in its shell.
+  const href = $derived(
+    route.view === "company" ? "#/c/" + route.companyId + "/meldinger" : "#/meldinger",
+  );
 </script>
 
 <a
-  href="#/meldinger"
+  {href}
   class="btn btn-ghost btn-circle indicator"
   aria-label={chat.unread > 0 ? "Meldinger, " + chat.unread + " uleste" : "Meldinger"}
   title="Meldinger"
