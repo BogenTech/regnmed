@@ -298,7 +298,9 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
         "POST",
         &format!("/chat/conversations/{with_agent}/messages"),
         &eva.token,
-        Some(json!({"text": "Kan du bokføre denne for meg?", "documents": [document]})),
+        // The same file twice (the inbox links a copy already there) is
+        // one attachment and one mention in the order.
+        Some(json!({"text": "Kan du bokføre denne for meg?", "documents": [document, document]})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{posted}");
@@ -317,7 +319,11 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     assert_eq!(task["oppgave"]["opprettet_av"], n("Eva"), "{task}");
     let order = task["oppgave"]["melding"].as_str().unwrap();
     assert!(order.contains("Kan du bokføre denne for meg?"), "{order}");
-    assert!(order.contains(document.as_str().unwrap()), "{order}");
+    assert_eq!(
+        order.matches(document.as_str().unwrap()).count(),
+        1,
+        "{order}"
+    );
 
     // The agent's question comes back into the same conversation.
     let (status, answered) = call(
@@ -347,6 +353,11 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     assert_eq!(
         thread["messages"][0]["documents"][0]["filename"],
         "kvittering.jpg"
+    );
+    assert_eq!(
+        thread["messages"][0]["documents"].as_array().unwrap().len(),
+        1,
+        "{thread}"
     );
     assert_eq!(thread["attach_to"], json!([company]));
     let (_, unread) = call(&state, "GET", "/chat/unread", &eva.token, None).await;
