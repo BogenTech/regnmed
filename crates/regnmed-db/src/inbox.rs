@@ -63,6 +63,15 @@ pub async fn upload_inbox_document(
             "dokumentet ble skadet underveis — last opp på nytt"
         );
     }
+    // Check and insert under one lock per (company, content), as the
+    // expense register does: a queue retry racing the original request
+    // would otherwise pass the check twice.
+    let mut tx = pool.begin().await?;
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text || encode($2, 'hex'), 0))")
+        .bind(company_id)
+        .bind(digest.as_slice())
+        .execute(&mut *tx)
+        .await?;
     // A rejected copy does not count: rejection says "not like this",
     // and sending the same receipt in again is then a deliberate redo.
     let duplicate: Option<(String, String)> = sqlx::query_as(
@@ -72,7 +81,7 @@ pub async fn upload_inbox_document(
     )
     .bind(company_id)
     .bind(digest.as_slice())
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
     if let Some((filename, status)) = duplicate {
         let state = match status.as_str() {
@@ -97,8 +106,9 @@ pub async fn upload_inbox_document(
     .bind(digest.as_slice())
     .bind(in_row)
     .bind(uploaded_by)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(id)
 }
 
