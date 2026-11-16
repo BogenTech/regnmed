@@ -3,10 +3,12 @@
   // så tilgangsoppslag og revisjonsspor er de samme som for mennesker.
   // Tilbakekalling virker straks (valid_to er eksklusiv).
   import { post, send } from "../../lib/api.js";
+  import { formatDate, formatTime } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
   import Agentansikt from "../../components/Agentansikt.svelte";
+  import { rolleNavn } from "../brukere/brukere.js";
 
   let {
     companyId,
@@ -69,7 +71,7 @@
     etikett: "Rolle",
     type: "select",
     standard,
-    valg: valg.map((r) => [r.navn, r.navn]),
+    valg: valg.map((r) => [r.navn, rolleNavn(r.navn)]),
   });
 
   const INSTRUKSHJELP =
@@ -78,6 +80,7 @@
   let clientId = $state("");
   let navn = $state("");
   let access = $state("les");
+  let opptatt = $state(false);
 
   // Ny agent i ETT skjema (docs/agent.md §8.6). Identiteten lager
   // serveren — brukeren skal ikke trenge å vite at agenten har en
@@ -107,7 +110,10 @@
   );
   const valgtBeskrivelse = $derived(valg.find((r) => r.navn === access)?.beskrivelse || "");
 
-  async function giTilgang() {
+  async function giTilgang(event) {
+    event.preventDefault();
+    if (opptatt) return;
+    opptatt = true;
     try {
       await post("/companies/" + companyId + "/integrations", {
         client_id: clientId.trim(),
@@ -120,6 +126,8 @@
       onDone();
     } catch (error) {
       toast(error.message, false);
+    } finally {
+      opptatt = false;
     }
   }
 
@@ -293,7 +301,7 @@
 
   async function trekkTilbake(i) {
     if (
-      !(await bekreft("Trekke tilbake tilgangen? Den slutter å virke med én gang.", {
+      !(await bekreft("Trekke tilbake tilgangen for " + i.navn + "? Den slutter å virke med én gang.", {
         tittel: "Trekk tilbake",
         ok: "Trekk tilbake",
         farlig: true,
@@ -313,131 +321,117 @@
 
 <Card title="Agenter og integrasjoner">
   <p class="text-sm opacity-70 mb-2">
-    En agent er en bruker som ikke er et menneske. Den får et navn, et ansikt og en rolle,
-    akkurat som en ansatt eller en regnskapsfører, og du kan trekke tilgangen tilbake når som
-    helst — den slutter å virke i samme øyeblikk. Alt den bokfører bærer navnet dens. Det samme
-    kortet styrer et kassasystem eller en nettbutikk som kaller API-et.
+    En agent er en bruker som ikke er et menneske. Den får et navn, et ansikt og en rolle, akkurat
+    som en ansatt, og alt den bokfører bærer navnet dens. Du kan trekke tilgangen tilbake når som
+    helst, og da slutter den å virke med én gang. Det samme gjelder et kassasystem eller en
+    nettbutikk som bruker API-et.
   </p>
-  <p class="text-sm opacity-70 mb-2">
-    Én grense gjelder uansett rolle: en maskin kan aldri endre hvem som har tilgang — verken
-    medlemmer, oppdrag, integrasjoner eller firmaopplysninger. Den gjør jobben, men utvider ikke
-    tilgang.
+  <p class="text-sm opacity-70 mb-3">
+    Uansett rolle kan en maskin aldri endre hvem som har tilgang: verken medlemmer, oppdrag,
+    integrasjoner eller firmaopplysninger.
   </p>
   {#if integrasjoner.length}
-    <table class="table table-sm mb-3">
-      <thead>
-        <tr>
-          <th>Integrasjon</th><th>Rolle</th><th>Modell</th><th>Status</th>
-          <th class="text-right">Kall i dag</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Nøkkelen er GRANTET, ikke agenten: etter et rollebytte står
-             samme agent med én avsluttet og én aktiv rad, og to like
-             nøkler fryser komponentens reaktivitet (CLAUDE.md punkt 68). -->
-        {#each integrasjoner as i (i.grant_id)}
-          <tr class={i.aktiv ? "" : "opacity-50"}>
-            <td>
-              <div class="flex items-center gap-2">
-                <Agentansikt
-                  navn={i.navn}
-                  farge={i.avatar_farge}
-                  ikon={i.avatar_ikon}
-                  storrelse="w-8"
-                />
-                <span>
-                  {i.navn}<br /><span class="text-xs opacity-60 font-mono">{i.client_id}</span>
-                </span>
-              </div>
-            </td>
-            <td>
-              {i.access}
-              {#if i.system_prompt}
-                <br /><span class="text-xs opacity-60" title={i.system_prompt}>
-                  + egne instrukser
+    <!-- Nøkkelen er GRANTET, ikke agenten: etter et rollebytte står
+         samme agent med én avsluttet og én aktiv rad, og to like
+         nøkler fryser komponentens reaktivitet (CLAUDE.md punkt 68).
+         Rows, not a table, so every action is reachable on a phone. -->
+    <ul class="divide-y divide-base-200 mb-3" aria-label="Agenter og integrasjoner">
+      {#each integrasjoner as i (i.grant_id)}
+        <li class="py-2 flex flex-wrap items-center gap-x-3 gap-y-2 {i.aktiv ? '' : 'opacity-60'}">
+          <Agentansikt navn={i.navn} farge={i.avatar_farge} ikon={i.avatar_ikon} storrelse="w-8" />
+          <div class="min-w-0 flex-1 basis-48">
+            <div class="font-medium">
+              {i.navn}
+              {#if i.aktiv}
+                <span class="badge badge-success badge-sm ml-1">aktiv</span>
+              {:else}
+                <span class="badge badge-ghost badge-sm ml-1">
+                  trukket tilbake{i.valid_to ? " " + formatDate(i.valid_to) : ""}
                 </span>
               {/if}
-            </td>
-            <td>
-              {#if i.llm}
-                <span class="text-xs">{i.llm.leverandor}<br />{i.llm.modell}</span>
-              {:else}
-                <span class="text-xs opacity-50">egen agent</span>
-              {/if}
-            </td>
-            <td>
-              {#if i.aktiv}
-                <span class="badge badge-success badge-sm">aktiv</span>
-              {:else}
-                <span class="badge badge-ghost badge-sm">trukket {i.valid_to || ""}</span>
-              {/if}
-            </td>
-            <td class="text-right">{i.kall_i_dag} / {i.rate_limit_min}/min</td>
-            <td>
-              {#if i.aktiv}
-                <button class="btn btn-xs btn-ghost" onclick={() => byttRolle(i)}>
-                  Bytt rolle
-                </button>
-                <button class="btn btn-xs btn-ghost" onclick={() => endre(i)}>Endre</button>
-                {#if llmTilgjengelig}
-                  <button class="btn btn-xs btn-ghost" onclick={() => settModell(i)}>
-                    {i.llm ? "Bytt modell" : "Gi modell"}
-                  </button>
-                  {#if i.llm}
-                    <button class="btn btn-xs btn-ghost" onclick={() => fjernModell(i)}>
-                      Slå av
-                    </button>
+            </div>
+            <div class="text-xs opacity-70">
+              {rolleNavn(i.access)}{i.system_prompt ? ", med egne instrukser" : ""}.
+              {#if i.llm}Modell: {i.llm.leverandor} {i.llm.modell}.{:else}Kjører hos dere selv.{/if}
+              {#if i.aktiv}{i.kall_i_dag} kall i dag, høyst {i.rate_limit_min} i minuttet.{/if}
+              {#if !i.aktiv && i.revoked_by}Trukket av {i.revoked_by}.{/if}
+            </div>
+            <div class="text-xs opacity-50 font-mono break-all">{i.client_id}</div>
+          </div>
+          {#if i.aktiv}
+            <div class="flex gap-2 items-center ml-auto">
+              <button class="btn btn-sm btn-outline" onclick={() => endre(i)}>Endre</button>
+              <details class="dropdown dropdown-end">
+                <summary class="btn btn-sm btn-ghost" aria-label={"Flere valg for " + i.navn}>Mer</summary>
+                <ul
+                  class="dropdown-content menu menu-sm bg-base-200 rounded-box z-10 mt-1 w-48 p-2 shadow"
+                  onclick={(e) => (e.currentTarget.closest("details").open = false)}
+                  role="presentation"
+                >
+                  <li><button onclick={() => byttRolle(i)}>Bytt rolle</button></li>
+                  {#if llmTilgjengelig}
+                    <li>
+                      <button onclick={() => settModell(i)}>{i.llm ? "Bytt modell" : "Gi modell"}</button>
+                    </li>
+                    {#if i.llm}<li><button onclick={() => fjernModell(i)}>Slå av modellen</button></li>{/if}
                   {/if}
-                {/if}
-                <button class="btn btn-xs btn-ghost" onclick={() => trekkTilbake(i)}>
-                  Trekk tilbake
-                </button>
-              {:else}
-                {i.revoked_by || ""}
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+                  <li><button class="text-error" onclick={() => trekkTilbake(i)}>Trekk tilbake</button></li>
+                </ul>
+              </details>
+            </div>
+          {/if}
+        </li>
+      {/each}
+    </ul>
   {:else}
-    <p class="text-sm opacity-70 mb-3">Ingen integrasjoner ennå.</p>
+    <p class="text-sm opacity-70 mb-3">Ingen agenter eller integrasjoner ennå.</p>
   {/if}
   {#if kanOpprette}
     <button class="btn btn-sm btn-primary" onclick={nyAgent}>Ny agent</button>
     <p class="text-xs opacity-60 mt-1">
       Agenten får sin egen identitet automatisk. Har du alt en agent som kjører på din egen
       maskin, kan du
-      <button class="link" onclick={() => (viserEgen = !viserEgen)}>
+      <button class="link" aria-expanded={viserEgen} onclick={() => (viserEgen = !viserEgen)}>
         gi den tilgang i stedet
       </button>.
     </p>
   {/if}
   {#if !kanOpprette || viserEgen}
-    <div class="flex gap-2 items-center flex-wrap {kanOpprette ? 'mt-2' : ''}">
-      <input
-        class="input input-sm w-56"
-        placeholder="client_id fra regnid"
-        bind:value={clientId}
-      />
-      <input class="input input-sm w-40" placeholder="Navn" bind:value={navn} />
-      <select class="select select-sm" bind:value={access}>
-        {#each valg as r (r.navn)}
-          <option value={r.navn}>{r.navn}</option>
-        {/each}
-      </select>
-      <button class="btn btn-sm" onclick={giTilgang}>Gi tilgang</button>
-    </div>
+    <form class="flex gap-2 items-end flex-wrap {kanOpprette ? 'mt-2' : ''}" onsubmit={giTilgang}>
+      <label class="fieldset py-0 grow basis-48">
+        <span class="fieldset-legend">Klient-id fra regnid</span>
+        <input class="input input-sm w-full font-mono" required autocomplete="off" bind:value={clientId} />
+      </label>
+      <label class="fieldset py-0 grow basis-40">
+        <span class="fieldset-legend">Navn</span>
+        <input class="input input-sm w-full" required bind:value={navn} />
+      </label>
+      <label class="fieldset py-0">
+        <span class="fieldset-legend">Rolle</span>
+        <select class="select select-sm w-40" bind:value={access}>
+          {#each valg as r (r.navn)}
+            <option value={r.navn}>{rolleNavn(r.navn)}</option>
+          {/each}
+        </select>
+      </label>
+      <button class="btn btn-sm" disabled={opptatt}>
+        {#if opptatt}<span class="loading loading-spinner loading-xs"></span>{/if}
+        Gi tilgang
+      </button>
+    </form>
     {#if valgtBeskrivelse}
       <p class="text-xs opacity-60 mt-1">{valgtBeskrivelse}</p>
     {/if}
   {/if}
   {#if kall.length}
-    <h3 class="font-semibold text-sm mt-3 mb-1">Siste endringer</h3>
-    {#each kall.slice(0, 10) as k, i (i)}
-      <div class="text-xs opacity-70 py-0.5">
-        {k.tidspunkt.slice(0, 16).replace("T", " ")} · {k.navn} · {k.method} {k.path}
-      </div>
-    {/each}
+    <h3 class="font-semibold text-sm mt-4 mb-1">Siste endringer</h3>
+    <ul class="text-xs opacity-70" aria-label="Siste endringer fra agenter og integrasjoner">
+      {#each kall.slice(0, 10) as k, n (n)}
+        <li class="py-0.5 break-all">
+          <span class="tabular-nums">{formatTime(k.tidspunkt)}</span>, {k.navn}:
+          <span class="font-mono">{k.method} {k.path}</span>
+        </li>
+      {/each}
+    </ul>
   {/if}
 </Card>

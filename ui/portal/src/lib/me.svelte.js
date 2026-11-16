@@ -6,6 +6,7 @@ import { api } from "./api.js";
 
 export const me = $state({
   loaded: false,
+  personId: null,
   name: "",
   email: "",
   companies: [],
@@ -18,6 +19,7 @@ export const me = $state({
 export async function loadMe(force = false) {
   if (me.loaded && !force) return;
   const svar = await api("/me");
+  me.personId = svar.person_id || null;
   me.name = svar.name || "";
   me.email = svar.email || "";
   me.companies = svar.companies || [];
