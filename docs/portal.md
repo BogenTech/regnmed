@@ -288,8 +288,10 @@ Det som omgir hver side, og som derfor må virke likt overalt:
 - **Meny.** Seksjonene står i en `<nav aria-label="Seksjoner">`. På
   telefon er de en liste bak en knapp som viser hvor du er («Lønn ·
   Meny») — tidligere var de en vannrett stripe på 18 punkter der den
-  aktive kunne ligge 1 400 px utenfor skjermen. Listen lukker seg når
-  du har valgt.
+  aktive kunne ligge 1 400 px utenfor skjermen. Listen legger seg
+  OVER siden, ikke inn i den — ellers ville en seksjon som fyller
+  skjermen (Meldinger) blitt klemt hver gang den åpnes — og lukker seg
+  når du har valgt, trykker utenfor eller trykker Escape.
 - **Hopp til innhold.** Første tabulatorstopp er en knapp (ikke en
   `#`-lenke — hashen tilhører ruteren) som setter fokus i innholdet; uten
   den var det 20 tabulatorstopp før siden begynte.

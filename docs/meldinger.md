@@ -153,6 +153,7 @@ tidsstempel. Klienten fjerner duplikater på id.
   meldingsappen i selskapets ramme (`#/c/{id}/meldinger/…`), så menyen
   blir stående; knappen i navbaren og menypunktet leder dit. Samtalene
   er de samme — de tilhører personen, ikke selskapet. På bred skjerm
+  (fra `lg` inne i selskapet, der menyen tar plass; fra `sm` ellers)
   står liste og samtale side om side; **på telefon er det én av dem om gangen**, og adressen
   avgjør hvilken, så telefonens tilbake-knapp virker som ventet.
 - Enter sender, Shift+Enter er ny linje; et bilde kan limes rett inn.
