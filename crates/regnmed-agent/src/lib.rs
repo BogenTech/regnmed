@@ -445,8 +445,9 @@ const NO_MODEL: &str = "Jeg kan ikke ta oppgaven ennå: det er ikke valgt noen a
      «Agenter og integrasjoner» («Gi modell»). Svar her når det er gjort, så prøver jeg igjen.";
 const NO_SECRET: &str = "Jeg kan ikke ta oppgaven ennå: klienthemmeligheten min er ikke lagret i \
      regnmed, så jeg kan ikke logge inn. En administrator legger den inn under Administrasjon → \
-     Brukere og roller, kortet «Agenter og integrasjoner» («Bytt modell»). Svar her når det er \
-     gjort, så prøver jeg igjen.";
+     Brukere og roller, kortet «Agenter og integrasjoner» («Bytt modell»). Finnes det ingen \
+     hemmelighet for meg, er det enklest å lage en ny agent med «Ny agent» i samme kort — den får \
+     hemmeligheten automatisk. Svar her når det er gjort, så prøver jeg igjen.";
 const NO_ACCESS: &str = "Jeg kan ikke ta oppgaven: jeg har ikke lenger tilgang til selskapet. En \
      administrator kan gi meg tilgang igjen under Administrasjon → Brukere og roller.";
 

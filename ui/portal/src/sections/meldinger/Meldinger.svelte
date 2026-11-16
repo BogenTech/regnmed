@@ -509,10 +509,10 @@
           <p role="note" class="alert alert-info alert-soft rounded-none text-sm py-2">
             <span>
               {thread.with.name} kjøres ikke av regnmed, og svarer bare når den kjøres et annet sted, for
-              eksempel på deres egen maskin. Skal regnmed kjøre den, gir en administrator den en språkmodell
-              under <a class="link" href={"#/c/" + thread.with.company_id + "/admin/brukere"}
+              eksempel på deres egen maskin. Skal regnmed kjøre en agent, lager en administrator den med «Ny
+              agent» under <a class="link" href={"#/c/" + thread.with.company_id + "/admin/brukere"}
                 >Brukere og roller</a
-              >.
+              > — den får språkmodell og innlogging i samme steg.
             </span>
           </p>
         {/if}
