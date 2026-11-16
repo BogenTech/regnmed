@@ -294,7 +294,7 @@ pub async fn run_task(
     // An agent on the customer's own machine fetches its own queue; the
     // nudge reaches us too, and it is not ours to answer.
     if !regnmed_db::agentllm::runs_here(pool, company_id, integration_id).await? {
-        bail!("not run here (no model, no stored secret): the agent fetches its own tasks");
+        return Err(NotRunHere.into());
     }
     let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
 
@@ -423,6 +423,20 @@ pub async fn run_task(
     .await?;
     Ok(outcome)
 }
+
+/// The task belongs to an agent regnmed does not run (no model, no
+/// stored secret): the customer's own agent fetches it. Expected, not a
+/// failure -- the worker logs it as such.
+#[derive(Debug)]
+pub struct NotRunHere;
+
+impl std::fmt::Display for NotRunHere {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("not run here (no model, no stored secret): the agent fetches its own tasks")
+    }
+}
+
+impl std::error::Error for NotRunHere {}
 
 const NO_MODEL: &str = "Jeg kan ikke ta oppgaven ennå: det er ikke valgt noen aktiv språkmodell \
      for meg. En administrator gir meg en under Administrasjon → Oppdrag og integrasjoner \

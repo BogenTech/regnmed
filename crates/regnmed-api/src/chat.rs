@@ -205,8 +205,9 @@ pub async fn messages(
     // An agent regnmed does not run answers only if it runs somewhere
     // else; the thread says so up front rather than leaving the message
     // to wait in silence (docs/meldinger.md §3).
-    let runs_here = match (other.agent, company) {
-        (true, Some(c)) => Some(db::agent_runs_here(&state.pool, c, other.person_id).await?),
+    // Only on the full load: incremental polls keep the first answer.
+    let runs_here = match (other.agent, company, query.since) {
+        (true, Some(c), None) => Some(db::agent_runs_here(&state.pool, c, other.person_id).await?),
         _ => None,
     };
     Ok(Json(json!({

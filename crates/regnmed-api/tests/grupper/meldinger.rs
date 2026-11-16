@@ -520,7 +520,13 @@ async fn an_agent_that_cannot_run_says_so_in_the_conversation() {
                 .await
         }
     };
-    assert!(run(task).await.is_err(), "not ours to answer");
+    assert!(
+        run(task)
+            .await
+            .unwrap_err()
+            .is::<regnmed_agent::NotRunHere>(),
+        "not ours to answer"
+    );
     assert!(
         regnmed_db::agent_task::history(&state.pool, company, task)
             .await
