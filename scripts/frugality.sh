@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Budgets sit ~1.5x above measured reality: tight enough to catch creep,
+# Budgets were set ~1.3-1.5x above measured reality: tight enough to catch creep,
 # loose enough for normal feature growth. RSS matches the container limit.
 #
 # Measured in CI 2026-07-29, after the release profile got thin LTO +
@@ -24,12 +24,14 @@ cd "$(dirname "$0")/.."
 # RSS 10 MB. The binaries were 22/11 MB earlier that day on the default
 # profile — the budgets were lowered to lock that reduction in, because
 # a budget nobody tightens turns a one-time win into headroom for creep.
-# (Fat LTO reached 13/7 MB but cost the frugality job ~1,5 minutter per
-# kjøring; se avveiningen i Cargo.toml.)
+# (Fat LTO reached 13/7 MB but cost the frugality job ~1.5 minutes per
+# run; see the trade-off in Cargo.toml.)
 # Raised 20 -> 24 on 2026-11-16, deliberately: the binary crossed 20 MB
 # (21 rounded up) on #243 after creeping from 15 MB in July through
 # features, not through embedded data (about 1.4 MB, portal included).
-# 24 is ~1.2x today's size; shrinking it is its own task, not a gate fix.
+# 24 is ~1.2x today's size. Stripping symbols would take ~3.4 MB off and
+# was measured and declined the same day: Cargo.toml keeps function names
+# for backtraces, and 24 MB is not worth reversing that.
 API_BIN_BUDGET_MB=24
 CLI_BIN_BUDGET_MB=12
 # The hosted agent worker (docs/agent.md §8.3). It runs in the cluster as
