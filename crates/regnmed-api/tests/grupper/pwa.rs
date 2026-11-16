@@ -154,7 +154,11 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
     let (status, body) = last_opp("kvittering-2.jpg", Some(&sha256), bilde.clone()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
-        body["error"].as_str().unwrap().contains("ligger allerede"),
+        body["error"].as_str().unwrap().contains("ligger allerede")
+            && body["error"]
+                .as_str()
+                .unwrap()
+                .contains("venter på behandling"),
         "{body}"
     );
 
@@ -168,4 +172,25 @@ async fn the_same_receipt_twice_becomes_one_bilag() {
         .await
         .unwrap();
     assert_eq!(documents.len(), 1, "ett bilde, ett bilag");
+
+    // Rejected, the receipt may be sent in again: rejection answered the
+    // first upload, it does not bar the content forever.
+    regnmed_db::avvis_inbox_document(
+        &state.pool,
+        company,
+        documents[0].id,
+        "feil selskap",
+        "Kari",
+    )
+    .await
+    .unwrap();
+    let (status, body) = last_opp("kvittering.jpg", Some(&sha256), bilde.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // ...and the new copy blocks a third, as the first one did.
+    let (status, _) = last_opp("kvittering-3.jpg", Some(&sha256), bilde.clone()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let documents = regnmed_db::list_inbox(&state.pool, company, None, None)
+        .await
+        .unwrap();
+    assert_eq!(documents.len(), 2, "den avviste og den nye");
 }

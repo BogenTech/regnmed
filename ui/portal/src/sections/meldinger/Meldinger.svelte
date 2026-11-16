@@ -287,19 +287,28 @@
     }
   }
 
+  // A file already in the inbox from a send that failed later on: a
+  // second try must reuse it, or the inbox refuses it as a duplicate.
+  const uploaded = new WeakMap();
+
   async function send() {
     if (sending || (!text.trim() && !files.length)) return;
     sending = true;
     try {
       const documents = [];
       for (const file of files) {
-        const name = file.name || "bilde-" + Date.now() + ".png";
-        const up = await api("/companies/" + attachTo + "/inbox?filename=" + encodeURIComponent(name), {
-          method: "POST",
-          headers: { "content-type": file.type || "application/octet-stream" },
-          body: file,
-        });
-        documents.push(up.document_id);
+        let id = uploaded.get(file)?.[attachTo];
+        if (!id) {
+          const name = file.name || "bilde-" + Date.now() + ".png";
+          const up = await api("/companies/" + attachTo + "/inbox?filename=" + encodeURIComponent(name), {
+            method: "POST",
+            headers: { "content-type": file.type || "application/octet-stream" },
+            body: file,
+          });
+          id = up.document_id;
+          uploaded.set(file, { ...uploaded.get(file), [attachTo]: id });
+        }
+        documents.push(id);
       }
       await post("/chat/conversations/" + openId + "/messages", { text, documents });
       text = "";
