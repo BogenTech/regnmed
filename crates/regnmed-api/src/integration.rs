@@ -54,6 +54,7 @@ pub async fn list(
             "llm": g.llm.as_ref().map(|(lev, model)| json!({
                 "leverandor": lev, "modell": model
             })),
+            "klient_lagret": g.client_secret_stored,
         })).collect::<Vec<_>>(),
         // The face's colours are served from the code that validates
         // them, so the picker cannot offer one the server rejects.
