@@ -17,7 +17,24 @@
   import Agentansikt from "../../components/Agentansikt.svelte";
   import UserMenu from "../../components/UserMenu.svelte";
 
-  let { conversationId = null } = $props();
+  // Inside a company the messenger keeps the company's menu around it
+  // (#/c/{id}/meldinger); from the byrå, the platform or the company list
+  // it stands on its own (#/meldinger). Same conversations either way --
+  // they belong to the person, not to the company.
+  let { conversationId = null, companyId = null } = $props();
+  const base = $derived(companyId ? "#/c/" + companyId + "/meldinger" : "#/meldinger");
+
+  // Where the frame starts on the page, for its height inside the shell.
+  let frame = $state(null);
+  let top = $state(0);
+  $effect(() => {
+    if (!companyId || !frame) return;
+    const measure = () => (top = frame.getBoundingClientRect().top + window.scrollY);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  });
 
   const NEW = "ny";
   const isNew = $derived(conversationId === NEW);
@@ -111,7 +128,7 @@
         person_id: c.person_id,
         company_id: c.agent ? c.company_id : null,
       });
-      location.hash = "#/meldinger/" + opened.conversation_id;
+      location.hash = base + "/" + opened.conversation_id;
     } catch (e) {
       toast(e.message, false);
     }
@@ -296,17 +313,28 @@
 
 <svelte:document onvisibilitychange={visible} />
 
-<div class="navbar bg-base-100 shadow-sm">
-  <div class="flex-1 gap-2 items-baseline min-w-0">
-    <a href="#/" class="btn btn-ghost text-xl">regnmed</a>
-    <span class="text-sm opacity-70 truncate">Meldinger</span>
+{#if !companyId}
+  <div class="navbar bg-base-100 shadow-sm">
+    <div class="flex-1 gap-2 items-baseline min-w-0">
+      <a href="#/" class="btn btn-ghost text-xl">regnmed</a>
+      <span class="text-sm opacity-70 truncate">Meldinger</span>
+    </div>
+    <div class="flex-none gap-2">
+      <UserMenu />
+    </div>
   </div>
-  <div class="flex-none gap-2">
-    <UserMenu />
-  </div>
-</div>
+{/if}
 
-<div class="flex h-[calc(100dvh-4rem)] bg-base-100">
+<!-- In the shell the messenger fills what is left of the screen below
+     wherever it starts: the navbar, the phone's menu button, the
+     breadcrumb and any banner are all above it, and vary. -->
+<div
+  bind:this={frame}
+  style={companyId ? `height: calc(100dvh - ${top}px - 1.5rem)` : undefined}
+  class="flex bg-base-100 {companyId
+    ? 'min-h-96 rounded-box border border-base-200 overflow-hidden'
+    : 'h-[calc(100dvh-4rem)]'}"
+>
   <!-- The conversation list. On a phone it is the whole screen until a
        conversation is opened. -->
   <aside
@@ -316,7 +344,7 @@
   >
     <div class="flex items-center gap-2 p-3">
       <h1 class="text-lg font-semibold flex-1">Meldinger</h1>
-      <a class="btn btn-sm btn-primary" href="#/meldinger/ny">Ny melding</a>
+      <a class="btn btn-sm btn-primary" href={base + "/ny"}>Ny melding</a>
     </div>
     <div class="px-3 pb-2">
       <input
@@ -339,14 +367,14 @@
             Skriv til en kollega, regnskapsføreren eller en av selskapets agenter. Legg ved et
             bilde og be agenten bokføre det.
           </p>
-          <a class="btn btn-sm mt-3" href="#/meldinger/ny">Start en samtale</a>
+          <a class="btn btn-sm mt-3" href={base + "/ny"}>Start en samtale</a>
         </div>
       {:else}
         <ul>
           {#each shown as c (c.conversation_id)}
             <li>
               <a
-                href={"#/meldinger/" + c.conversation_id}
+                href={base + "/" + c.conversation_id}
                 class="flex gap-3 items-center px-3 py-2 hover:bg-base-200 focus-visible:bg-base-200
                        {c.conversation_id === openId ? 'bg-base-200' : ''}"
                 aria-current={c.conversation_id === openId ? "page" : undefined}
@@ -383,7 +411,7 @@
     {#if isNew}
       <!-- Choosing who to write to. -->
       <div class="flex items-center gap-2 p-3 border-b border-base-200">
-        <a class="btn btn-sm btn-ghost sm:hidden" href="#/meldinger" aria-label="Tilbake til samtalene">←</a>
+        <a class="btn btn-sm btn-ghost sm:hidden" href={base} aria-label="Tilbake til samtalene">←</a>
         <h2 class="font-semibold flex-1">Ny melding</h2>
       </div>
       <div class="p-3">
@@ -396,7 +424,7 @@
           bind:value={contactFilter}
           onkeydown={(e) => {
             if (e.key === "Enter" && contactsShown.length) start(contactsShown[0]);
-            if (e.key === "Escape") location.hash = "#/meldinger";
+            if (e.key === "Escape") location.hash = base;
           }}
         />
       </div>
@@ -433,7 +461,7 @@
     {:else if openId}
       {#if threadError && !thread}
         <div class="p-3">
-          <a class="btn btn-sm btn-ghost sm:hidden mb-2" href="#/meldinger">← Samtalene</a>
+          <a class="btn btn-sm btn-ghost sm:hidden mb-2" href={base}>← Samtalene</a>
           <div role="alert" class="alert alert-warning">
             <span>
               Fant ikke samtalen. Den kan være avsluttet fordi tilgangen eller oppdraget er avsluttet.
@@ -444,7 +472,7 @@
         <span class="loading loading-spinner loading-md m-4"></span>
       {:else}
         <div class="flex items-center gap-3 p-3 border-b border-base-200">
-          <a class="btn btn-sm btn-ghost sm:hidden" href="#/meldinger" aria-label="Tilbake til samtalene">←</a>
+          <a class="btn btn-sm btn-ghost sm:hidden" href={base} aria-label="Tilbake til samtalene">←</a>
           <Agentansikt
             navn={thread.with.name}
             farge={thread.with.avatar_color}
@@ -568,7 +596,7 @@
     {:else}
       <div class="m-auto text-center opacity-80 p-6">
         <p>Velg en samtale, eller start en ny.</p>
-        <a class="btn btn-sm mt-3" href="#/meldinger/ny">Ny melding</a>
+        <a class="btn btn-sm mt-3" href={base + "/ny"}>Ny melding</a>
       </div>
     {/if}
   </section>
