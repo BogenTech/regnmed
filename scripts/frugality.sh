@@ -38,7 +38,10 @@ CLI_BIN_BUDGET_MB=12
 # drift. It links regnmed-db and reqwest and little else; if it starts
 # approaching the API's size, something has been pulled in that belongs
 # behind the API rather than beside it.
-AGENT_BIN_BUDGET_MB=8
+# Raised 8 -> 10 on 2026-11-16: it measured exactly 8 MB, so with
+# frugality now a required check the next dependency would have blocked
+# every PR. Still ~2.5x below the API.
+AGENT_BIN_BUDGET_MB=10
 # The text-recognition sidecar (docs/bilagstolkning.md): the OCR engine
 # and an image decoder, no database. Measured 7,4 MB on 2026-11-13. Its
 # 12 MB of model weights are data loaded at start, not linked in -- a
