@@ -15,6 +15,12 @@ voucher — or rejects it with a note that goes back to the client.
   even an application bug cannot flip a decided document.
 - **Nothing is deleted.** A rejected document and its note remain part
   of the story, like everything else in regnmed.
+- **The same content is refused while a copy is live.** Upload refuses
+  bytes whose SHA-256 is already in the inbox as `ny`, `bokfort` or
+  `utlegg` (so a retry cannot turn one bilag into two), and says which.
+  A copy that was `avvist` does not block: the rejection answered that
+  upload, and sending the same receipt in again — from the inbox or as
+  a message attachment — is a new document with its own decision.
 
 ## Bokføring is atomic
 

@@ -552,7 +552,10 @@ serveren:
 
 - avviser innhold den **allerede har** («nøyaktig dette dokumentet
   ligger allerede i innboksen som …»), så en kø som prøver igjen fordi
-  svaret aldri kom fram ikke gjør ett bilag til to, og
+  svaret aldri kom fram ikke gjør ett bilag til to — med ett unntak:
+  en **avvist** kopi sperrer ikke. Avvisningen var svaret på den
+  opplastingen, og å sende samme kvittering inn igjen er et nytt
+  spørsmål (`regnmed-db::upload_inbox_document`), og
 - avviser en hash som ikke stemmer med bytene den mottok, som betyr at
   bildet ble skadet underveis.
 

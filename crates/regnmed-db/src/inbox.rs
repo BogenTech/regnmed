@@ -44,6 +44,8 @@ pub struct InboxRow {
 /// The same content twice is refused BY CONTENT. Retries on a flaky
 /// mobile connection are normal, and a bilag must not become two
 /// because the phone was unsure whether the first attempt arrived.
+/// A copy that was REJECTED does not block: rejection is the answer to
+/// that upload, and sending the same receipt in again is a new question.
 pub async fn upload_inbox_document(
     pool: &PgPool,
     company_id: Uuid,
@@ -61,15 +63,24 @@ pub async fn upload_inbox_document(
             "dokumentet ble skadet underveis — last opp på nytt"
         );
     }
-    let duplicate: Option<String> = sqlx::query_scalar(
-        "select filename from inbox_document where company_id = $1 and sha256 = $2 limit 1",
+    // A rejected copy does not count: rejection says "not like this",
+    // and sending the same receipt in again is then a deliberate redo.
+    let duplicate: Option<(String, String)> = sqlx::query_as(
+        "select filename, status from inbox_document
+         where company_id = $1 and sha256 = $2 and status <> 'avvist'
+         order by created_at desc limit 1",
     )
     .bind(company_id)
     .bind(digest.as_slice())
     .fetch_optional(pool)
     .await?;
-    if let Some(filename) = duplicate {
-        bail!("nøyaktig dette dokumentet ligger allerede i innboksen som «{filename}»");
+    if let Some((filename, status)) = duplicate {
+        let state = match status.as_str() {
+            "bokfort" => "og er allerede bokført",
+            "utlegg" => "og er allerede gjort om til et utlegg",
+            _ => "og venter på behandling",
+        };
+        bail!("nøyaktig dette dokumentet ligger allerede i innboksen som «{filename}» {state}");
     }
     let in_row = crate::blob::blobs().store(content).await?;
     let id = Uuid::now_v7();
