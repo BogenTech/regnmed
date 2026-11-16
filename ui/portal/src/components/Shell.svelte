@@ -25,6 +25,14 @@
   // Phone: the menu is a list behind a button that names where you are,
   // instead of a strip of 18 sections that hides the current one.
   let menyApen = $state(false);
+  let nav = $state(null);
+  // An overlay closes the way overlays do: a tap outside it, or Escape.
+  function lukkUtenfor(e) {
+    if (menyApen && !nav?.contains(e.target)) menyApen = false;
+  }
+  function lukkEscape(e) {
+    if (menyApen && e.key === "Escape") menyApen = false;
+  }
 
   // A new page starts at the top, and the keyboard and screen reader
   // land in the content rather than staying on the menu link. Only for a
@@ -45,6 +53,8 @@
   });
 </script>
 
+<svelte:document onclick={lukkUtenfor} onkeydown={lukkEscape} />
+
 <!-- A button, not a #link: the hash is the router's. -->
 <button
   class="btn btn-sm btn-primary fixed left-2 top-2 z-50 -translate-y-20 focus:translate-y-0"
@@ -62,7 +72,9 @@
   </div>
 </div>
 <div class="flex flex-col sm:flex-row">
-  <nav aria-label="Seksjoner" class="bg-base-100 sm:w-48 sm:min-h-full">
+  <!-- On a phone the list opens OVER the page, not in it: pushing the
+       content down would resize every full-height section under it. -->
+  <nav bind:this={nav} aria-label="Seksjoner" class="relative bg-base-100 sm:w-48 sm:min-h-full">
     <button
       class="btn btn-ghost w-full justify-between sm:hidden rounded-none border-b border-base-200"
       aria-expanded={menyApen}
@@ -72,7 +84,12 @@
       <span class="flex items-center gap-2"><Ikon navn={aktiv} /> {aktivLabel}</span>
       <span>Meny <span aria-hidden="true">{menyApen ? "▴" : "▾"}</span></span>
     </button>
-    <ul id="seksjonsmeny" class="menu w-full {menyApen ? '' : 'hidden'} sm:flex">
+    <ul
+      id="seksjonsmeny"
+      class="menu w-full {menyApen ? '' : 'hidden'} sm:flex absolute top-full inset-x-0 z-40
+             bg-base-100 shadow-lg max-h-[70dvh] overflow-y-auto flex-nowrap
+             sm:static sm:shadow-none sm:max-h-none sm:overflow-visible"
+    >
       {#each items as [slug, label]}
         <li>
           <a

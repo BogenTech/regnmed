@@ -24,6 +24,16 @@
   let { conversationId = null, companyId = null } = $props();
   const base = $derived(companyId ? "#/c/" + companyId + "/meldinger" : "#/meldinger");
 
+  // When list and conversation stand side by side. In the shell the
+  // company menu already takes 12rem, so two panes wait for a wider
+  // screen; until then it is one at a time, as on a phone. Literal class
+  // names, because Tailwind only builds the ones it can read here.
+  const pane = $derived(
+    companyId
+      ? { wide: "lg:flex", narrow: "lg:hidden", list: "lg:w-80" }
+      : { wide: "sm:flex", narrow: "sm:hidden", list: "sm:w-80" },
+  );
+
   // Where the frame starts on the page, for its height inside the shell.
   let frame = $state(null);
   let top = $state(0);
@@ -338,7 +348,7 @@
   <!-- The conversation list. On a phone it is the whole screen until a
        conversation is opened. -->
   <aside
-    class="{openId || isNew ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 shrink-0 flex-col
+    class="{openId || isNew ? 'hidden ' + pane.wide : 'flex'} w-full {pane.list} shrink-0 flex-col
            border-r border-base-200 min-h-0"
     aria-label="Samtaler"
   >
@@ -407,11 +417,11 @@
     </div>
   </aside>
 
-  <section class="{openId || isNew ? 'flex' : 'hidden sm:flex'} flex-1 flex-col min-w-0 min-h-0">
+  <section class="{openId || isNew ? 'flex' : 'hidden ' + pane.wide} flex-1 flex-col min-w-0 min-h-0">
     {#if isNew}
       <!-- Choosing who to write to. -->
       <div class="flex items-center gap-2 p-3 border-b border-base-200">
-        <a class="btn btn-sm btn-ghost sm:hidden" href={base} aria-label="Tilbake til samtalene">←</a>
+        <a class="btn btn-sm btn-ghost {pane.narrow}" href={base} aria-label="Tilbake til samtalene">←</a>
         <h2 class="font-semibold flex-1">Ny melding</h2>
       </div>
       <div class="p-3">
@@ -461,7 +471,7 @@
     {:else if openId}
       {#if threadError && !thread}
         <div class="p-3">
-          <a class="btn btn-sm btn-ghost sm:hidden mb-2" href={base}>← Samtalene</a>
+          <a class="btn btn-sm btn-ghost {pane.narrow} mb-2" href={base}>← Samtalene</a>
           <div role="alert" class="alert alert-warning">
             <span>
               Fant ikke samtalen. Den kan være avsluttet fordi tilgangen eller oppdraget er avsluttet.
@@ -472,7 +482,7 @@
         <span class="loading loading-spinner loading-md m-4"></span>
       {:else}
         <div class="flex items-center gap-3 p-3 border-b border-base-200">
-          <a class="btn btn-sm btn-ghost sm:hidden" href={base} aria-label="Tilbake til samtalene">←</a>
+          <a class="btn btn-sm btn-ghost {pane.narrow}" href={base} aria-label="Tilbake til samtalene">←</a>
           <Agentansikt
             navn={thread.with.name}
             farge={thread.with.avatar_color}
