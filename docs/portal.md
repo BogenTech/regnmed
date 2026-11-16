@@ -397,6 +397,27 @@ Revidert 2026-11-15 (gjennomgang mot grunnreglene):
   (`pris_ore_per_ar` fra `/subscription`; uten egen årsrad er den 12 ×
   månedsprisen, samme regel som faktureringen).
 
+Brukere og roller revidert 2026-11-16 (samme gjennomgang):
+
+- **Nektet er ikke nede her heller**: fanen henter bare det `/me` sier
+  at brukeren får lese (`MEDLEM_ADMIN` for medlemmer, invitasjoner,
+  roller og leverandørtilgang; `INTEGRASJON_LES` for agentene). Et kall
+  som feiler gir «Prøv igjen», ikke «krever administrator».
+- **Medlemmer og agenter er rader, ikke tabeller**, så rolle, Fjern og
+  agentenes handlinger kan nås på telefon. De sjeldne agenthandlingene
+  (bytt rolle, modell, trekk tilbake) ligger under «Mer».
+- **Rollebytte bekreftes når det kan stenge noen ute**: når en
+  administrator mister administratorrollen, eller når du endrer din egen
+  rolle (`rolleendringAdvarsel` i `sections/brukere/brukere.js`,
+  testet). Et vanlig bytte skjer straks, som før. Avbryter man, settes
+  velgeren tilbake. Siste-admin-vakten står fortsatt på serveren.
+- Rollene vises med navn («Bokføring», «Lesetilgang»), ikke lagringsnøkkel,
+  og med rollens forklaring fra `/roles`. Invitasjon, ny rolle og
+  «gi tilgang» er skjemaer med etiketter, Enter sender, knappen viser
+  fremdrift og feltet tømmes etterpå. Tilbakekalling av en invitasjon
+  bekreftes. En lukket rettighetsgruppe viser hvor mange som er valgt
+  («2 av 8»), og Lagre på en egen rolle er bare aktiv når noe er endret.
+
 **Menyikonene** er håndrullede 24×24 outline-SVG-er i
 `src/lib/ikoner.js` — vendored som themes.css: intet ikonbibliotek,
 ingen CDN, ingenting hentes i kjøretid. Hvert ikon lagres ÉN gang som

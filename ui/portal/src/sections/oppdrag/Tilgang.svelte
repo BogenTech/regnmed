@@ -3,26 +3,53 @@
   // E-POSTADRESSE — personen finnes ikke hos oss før første innlogging.
   // Endringer her virker straks, og kan gjelde meg selv, så /me hentes
   // på nytt etterpå.
+  //
+  // Members are rows, not a table: the actions have to be reachable on a
+  // phone. One request at a time — `opptatt` disables every action.
   import { post, send } from "../../lib/api.js";
+  import { formatTime } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
-  import { loadMe } from "../../lib/me.svelte.js";
+  import { loadMe, me } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
+  import { rolleNavn, rolleendringAdvarsel } from "../brukere/brukere.js";
 
   let { companyId, tilgang, invitasjoner, roller, onDone } = $props();
 
   // Rollene som kan tildeles: de innebygde (unntatt 'revisor', som
   // følger av et oppdrag) pluss selskapets egne, aktive.
-  let rollevalg = $derived(
-    ["ansatt", "les", "bokforing", "admin"].concat(
-      roller ? roller.egne.filter((e) => e.aktiv).map((e) => e.navn) : [],
-    ),
-  );
+  let rollevalg = $derived([
+    ...(roller?.innebygde || [])
+      .filter((r) => r.navn !== "revisor")
+      .map((r) => ({ navn: r.navn, beskrivelse: r.beskrivelse })),
+    ...(roller?.egne || [])
+      .filter((r) => r.aktiv)
+      .map((r) => ({ navn: r.navn, beskrivelse: "Egendefinert rolle." })),
+  ]);
+  const beskrivelse = (navn) => rollevalg.find((r) => r.navn === navn)?.beskrivelse || "";
 
   let epost = $state("");
   let rolle = $state("ansatt");
+  let opptatt = $state(false);
 
-  async function inviter() {
+  async function utfor(arbeid, melding, egen = false) {
+    opptatt = true;
+    try {
+      await arbeid();
+      if (melding) toast(melding, true);
+      if (egen) await loadMe(true);
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      opptatt = false;
+      onDone();
+    }
+  }
+
+  async function inviter(event) {
+    event.preventDefault();
+    if (opptatt) return;
+    opptatt = true;
     try {
       const svar = await post("/companies/" + companyId + "/invitations", {
         epost: epost.trim(),
@@ -33,163 +60,180 @@
       // kunne si fra i en annen kanal (#66).
       toast(
         svar.epost_sendt
-          ? "Invitasjonen er sendt"
-          : "Invitasjonen er registrert, men e-posten gikk ikke ut — si fra til vedkommende selv",
+          ? "Invitasjonen er sendt til " + epost.trim()
+          : "Invitasjonen er registrert, men e-posten gikk ikke ut. Si fra til vedkommende selv.",
         svar.epost_sendt,
       );
+      epost = "";
       onDone();
     } catch (error) {
       toast(error.message, false);
+    } finally {
+      opptatt = false;
     }
   }
 
-  async function endreRolle(m, ny) {
-    try {
-      await send("PUT", "/companies/" + companyId + "/access/" + m.person_id, { rolle: ny });
-      toast("Rollen er endret", true);
-      await loadMe(true);
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-      onDone(); // sett listen tilbake til det serveren faktisk mener
+  async function endreRolle(m, select) {
+    const ny = select.value;
+    const egen = m.person_id === me.personId;
+    const advarsel = rolleendringAdvarsel(m, ny, egen);
+    if (advarsel && !(await bekreft(advarsel, { tittel: "Endre rolle", ok: "Endre", farlig: true }))) {
+      select.value = m.rolle;
+      return;
     }
+    await utfor(
+      () => send("PUT", "/companies/" + companyId + "/access/" + m.person_id, { rolle: ny }),
+      "Rollen er endret",
+      egen,
+    );
   }
 
   async function fjern(m) {
-    if (
-      !(await bekreft("Fjerne tilgangen? Den slutter å virke med én gang.", {
-        tittel: "Fjern tilgang",
-        ok: "Fjern",
-        farlig: true,
-      }))
-    ) {
-      return;
-    }
-    try {
-      await send("DELETE", "/companies/" + companyId + "/access/" + m.person_id);
-      toast("Tilgangen er fjernet", true);
-      await loadMe(true);
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
+    const egen = m.person_id === me.personId;
+    const melding = egen
+      ? "Fjerne din egen tilgang? Du kommer ikke inn i selskapet igjen før en administrator gir deg tilgang."
+      : "Fjerne tilgangen for " + m.navn + "? Den slutter å virke med én gang.";
+    if (!(await bekreft(melding, { tittel: "Fjern tilgang", ok: "Fjern", farlig: true }))) return;
+    await utfor(
+      () => send("DELETE", "/companies/" + companyId + "/access/" + m.person_id),
+      "Tilgangen er fjernet",
+      egen,
+    );
   }
 
-  async function gjenopprett(m) {
-    try {
-      await post("/companies/" + companyId + "/access/" + m.person_id + "/restore", {});
-      toast("Tilgangen er gjenopprettet", true);
-      await loadMe(true);
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
+  const gjenopprett = (m) =>
+    utfor(
+      () => post("/companies/" + companyId + "/access/" + m.person_id + "/restore", {}),
+      "Tilgangen er gitt igjen",
+    );
 
-  async function sendPaaNytt(i) {
-    try {
-      await post("/companies/" + companyId + "/invitations/" + i.id + "/resend", {});
-      toast("Invitasjonen er sendt på nytt", true);
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
-  }
+  const sendPaaNytt = (i) =>
+    utfor(
+      () => post("/companies/" + companyId + "/invitations/" + i.id + "/resend", {}),
+      "Invitasjonen er sendt på nytt",
+    );
 
   async function tilbakekall(i) {
-    try {
-      await send("DELETE", "/companies/" + companyId + "/invitations/" + i.id);
-      toast("Invitasjonen er tilbakekalt", true);
-      onDone();
-    } catch (error) {
-      toast(error.message, false);
-    }
+    if (
+      !(await bekreft("Tilbakekalle invitasjonen til " + i.epost + "? Den kan ikke lenger brukes.", {
+        tittel: "Tilbakekall invitasjon",
+        ok: "Tilbakekall",
+        farlig: true,
+      }))
+    )
+      return;
+    await utfor(
+      () => send("DELETE", "/companies/" + companyId + "/invitations/" + i.id),
+      "Invitasjonen er tilbakekalt",
+    );
   }
 </script>
 
 <Card title="Tilgang">
-  <p class="text-sm opacity-70 mb-2">
-    Hvem som kommer til i dette selskapet. Inviter med e-postadressen personen bruker for å logge
-    inn — det går en e-post til adressen, og tilgangen blir til når hun logger inn neste gang.
-    E-posten inneholder ingen hemmelig lenke: den kan ikke videresendes til noen som helst nytte.
-    Den som har fått tilgang gjennom et oppdrag styres av oppdraget, ikke herfra.
+  <p class="text-sm opacity-70 mb-3">
+    Inviter med e-postadressen personen bruker for å logge inn. Tilgangen blir til når
+    vedkommende logger inn neste gang. E-posten er bare et varsel og har ingen lenke som kan
+    misbrukes om den videresendes. Den som har tilgang gjennom et oppdrag, styres av oppdraget.
   </p>
-  <table class="table table-sm mb-3">
-    <thead>
-      <tr><th>Navn</th><th>E-post</th><th>Rolle</th><th>Via</th><th></th></tr>
-    </thead>
-    <tbody>
-      {#each tilgang.medlemmer as m (m.person_id)}
-        <tr class={m.aktiv ? "" : "opacity-50"}>
-          <td>{m.navn}</td>
-          <td>{m.epost || ""}</td>
-          <td><span class="badge badge-ghost badge-sm">{m.rolle}</span></td>
-          <td><span class="badge badge-ghost badge-sm">{m.via}</span></td>
-          <td>
-            {#if !m.kan_endres}
-              <!-- Tilgang gjennom et oppdrag styres av engasjementet. Si det,
-                   ikke tilby en knapp som ikke virker. -->
-              <span class="opacity-60 text-xs">via oppdrag</span>
-            {:else if !m.aktiv}
-              <button class="btn btn-xs btn-outline" onclick={() => gjenopprett(m)}>
+  <ul class="divide-y divide-base-200 mb-4" aria-label="Medlemmer">
+    {#each tilgang.medlemmer as m (m.person_id + m.via)}
+      <li class="py-2 flex flex-wrap items-center gap-x-3 gap-y-1 {m.aktiv ? '' : 'opacity-60'}">
+        <div class="min-w-0 flex-1 basis-48">
+          <div class="font-medium">
+            {m.navn}
+            {#if m.person_id === me.personId}<span class="badge badge-ghost badge-sm ml-1">deg</span>{/if}
+            {#if !m.aktiv}<span class="badge badge-ghost badge-sm ml-1">uten tilgang</span>{/if}
+          </div>
+          {#if m.epost}<div class="text-sm opacity-70 break-all">{m.epost}</div>{/if}
+          <div class="text-xs opacity-60">
+            {#if m.kan_endres}
+              {rolleNavn(m.rolle)}{beskrivelse(m.rolle) ? ": " + beskrivelse(m.rolle) : ""}
+            {:else}
+              {rolleNavn(m.rolle)} gjennom oppdrag for {m.via}. Endres ved å endre oppdraget.
+            {/if}
+          </div>
+        </div>
+        {#if m.kan_endres}
+          <div class="flex flex-wrap gap-2 items-center ml-auto">
+            {#if !m.aktiv}
+              <button class="btn btn-sm btn-outline" disabled={opptatt} onclick={() => gjenopprett(m)}>
                 Gi tilgang igjen
               </button>
             {:else}
               <select
-                class="select select-xs w-28 mr-1"
+                class="select select-sm w-40"
+                aria-label={"Rolle for " + m.navn}
                 value={m.rolle}
-                onchange={(e) => endreRolle(m, e.currentTarget.value)}
+                disabled={opptatt}
+                onchange={(e) => endreRolle(m, e.currentTarget)}
               >
-                {#each rollevalg as r}
-                  <option value={r}>{r}</option>
+                {#if !rollevalg.some((r) => r.navn === m.rolle)}
+                  <!-- A deactivated custom role is still this member's role. -->
+                  <option value={m.rolle} disabled>{rolleNavn(m.rolle)} (deaktivert)</option>
+                {/if}
+                {#each rollevalg as r (r.navn)}
+                  <option value={r.navn}>{rolleNavn(r.navn)}</option>
                 {/each}
               </select>
-              <button class="btn btn-xs btn-outline" onclick={() => fjern(m)}>Fjern</button>
+              <button class="btn btn-sm btn-outline" disabled={opptatt} onclick={() => fjern(m)}>
+                Fjern
+              </button>
             {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-  <div class="flex gap-2 items-center flex-wrap mb-3">
-    <input
-      class="input input-sm w-64"
-      placeholder="e-postadresse"
-      bind:value={epost}
-    />
-    <select class="select select-sm" bind:value={rolle}>
-      {#each rollevalg as r}
-        <option value={r}>{r}</option>
-      {/each}
-    </select>
-    <button class="btn btn-sm" onclick={inviter}>Inviter</button>
-  </div>
-  {#if invitasjoner.length}
-    <h3 class="font-semibold text-sm mb-1">Venter på innlogging</h3>
-    <table class="table table-sm">
-      <thead>
-        <tr><th>E-post</th><th>Rolle</th><th>Invitert av</th><th>Sendt</th><th></th></tr>
-      </thead>
-      <tbody>
-        {#each invitasjoner as i (i.id)}
-          <tr>
-            <td>{i.epost}</td>
-            <td>{i.rolle}</td>
-            <td>{i.invitert_av}</td>
-            <td class="text-xs opacity-70">
-              {i.sist_sendt ? new Date(i.sist_sendt).toLocaleString("no") : "ikke sendt"}
-            </td>
-            <td class="whitespace-nowrap">
-              <button class="btn btn-xs btn-outline" onclick={() => sendPaaNytt(i)}>
-                Send på nytt
-              </button>
-              <button class="btn btn-xs btn-outline" onclick={() => tilbakekall(i)}>
-                Tilbakekall
-              </button>
-            </td>
-          </tr>
+          </div>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+
+  <form class="flex flex-wrap gap-2 items-end mb-1" onsubmit={inviter}>
+    <label class="fieldset py-0 grow basis-56">
+      <span class="fieldset-legend">E-postadresse</span>
+      <input
+        class="input input-sm w-full"
+        type="email"
+        autocomplete="off"
+        required
+        placeholder="navn@firma.no"
+        bind:value={epost}
+      />
+    </label>
+    <label class="fieldset py-0">
+      <span class="fieldset-legend">Rolle</span>
+      <select class="select select-sm w-40" bind:value={rolle}>
+        {#each rollevalg as r (r.navn)}
+          <option value={r.navn}>{rolleNavn(r.navn)}</option>
         {/each}
-      </tbody>
-    </table>
+      </select>
+    </label>
+    <button class="btn btn-sm btn-primary" disabled={opptatt}>
+      {#if opptatt}<span class="loading loading-spinner loading-xs"></span>{/if}
+      Inviter
+    </button>
+  </form>
+  {#if beskrivelse(rolle)}<p class="text-xs opacity-60 mb-3">{beskrivelse(rolle)}</p>{/if}
+
+  {#if invitasjoner.length}
+    <h3 class="font-semibold text-sm mt-3 mb-1">Venter på innlogging</h3>
+    <ul class="divide-y divide-base-200" aria-label="Åpne invitasjoner">
+      {#each invitasjoner as i (i.id)}
+        <li class="py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div class="min-w-0 flex-1 basis-48">
+            <div class="break-all">{i.epost}</div>
+            <div class="text-xs opacity-60">
+              {rolleNavn(i.rolle)}, invitert av {i.invitert_av}.
+              {i.sist_sendt ? "Sendt " + formatTime(i.sist_sendt) + "." : "E-posten er ikke sendt."}
+            </div>
+          </div>
+          <div class="flex gap-2 ml-auto">
+            <button class="btn btn-sm btn-outline" disabled={opptatt} onclick={() => sendPaaNytt(i)}>
+              Send på nytt
+            </button>
+            <button class="btn btn-sm btn-outline" disabled={opptatt} onclick={() => tilbakekall(i)}>
+              Tilbakekall
+            </button>
+          </div>
+        </li>
+      {/each}
+    </ul>
   {/if}
 </Card>

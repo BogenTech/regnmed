@@ -7,79 +7,87 @@
   import Card from "../../components/Card.svelte";
   import EgenRolle from "./EgenRolle.svelte";
   import Rettighetsvelger from "./Rettighetsvelger.svelte";
+  import { rolleNavn } from "../brukere/brukere.js";
 
   let { companyId, roller, onDone } = $props();
 
   let nyNavn = $state("");
   let nyValgte = $state([]);
+  let opptatt = $state(false);
 
   function beskrivelser(r) {
-    return r.rettigheter
-      .map((x) => {
-        const v = roller.vokabular.find((o) => o.rett === x);
-        return v ? v.beskrivelse : x;
-      })
-      .join(" · ");
+    return r.rettigheter.map((x) => roller.vokabular.find((o) => o.rett === x)?.beskrivelse || x);
   }
 
-  async function opprett() {
+  async function opprett(event) {
+    event.preventDefault();
+    if (opptatt) return;
+    if (!nyValgte.length) {
+      toast("Velg minst én rettighet for rollen.", false);
+      return;
+    }
+    opptatt = true;
     try {
       await post("/companies/" + companyId + "/roles", {
         navn: nyNavn.trim(),
         rettigheter: nyValgte,
       });
-      toast("Rollen er opprettet", true);
+      toast("Rollen «" + nyNavn.trim() + "» er opprettet", true);
       nyNavn = "";
       nyValgte = [];
       onDone();
     } catch (error) {
       toast(error.message, false);
+    } finally {
+      opptatt = false;
     }
   }
 </script>
 
 <Card title="Roller">
   <p class="text-sm opacity-70 mb-3">
-    De innebygde rollene dekker de vanlige tilfellene. Trenger dere noe annet — «en som bare
-    fakturerer», «en controller uten lønn» — kan dere sette det sammen selv av rettighetene under.
+    De innebygde rollene dekker de vanlige tilfellene. Trenger dere noe annet, som «en som bare
+    fakturerer» eller «en controller uten lønn», kan dere sette det sammen selv av rettighetene.
   </p>
   <h3 class="font-semibold text-sm mb-1">Innebygde</h3>
   <div class="mb-3">
     {#each roller.innebygde as r (r.navn)}
       <details class="collapse collapse-arrow border border-base-300 mb-1">
         <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm">
-          {r.navn}
-          <span class="opacity-70">— {r.rettigheter.length} rettigheter</span>
+          {rolleNavn(r.navn)}
+          <span class="opacity-70">({r.rettigheter.length} rettigheter)</span>
         </summary>
         <div class="collapse-content pl-3">
           {#if r.beskrivelse}
             <p class="text-sm mb-1">{r.beskrivelse}</p>
           {/if}
-          <p class="text-xs opacity-70">{beskrivelser(r)}</p>
+          <ul class="text-xs opacity-70 list-disc ml-4">
+            {#each beskrivelser(r) as b (b)}<li>{b}</li>{/each}
+          </ul>
         </div>
       </details>
     {/each}
   </div>
   <h3 class="font-semibold text-sm mb-1">Egne roller</h3>
   {#if roller.egne.length}
-    {#each roller.egne as r (r.id)}
+    {#each roller.egne as r (r.id + r.rettigheter.join())}
       <EgenRolle {companyId} rolle={r} vokabular={roller.vokabular} {onDone} />
     {/each}
   {:else}
     <p class="text-sm opacity-70 mb-2">Ingen egne roller ennå.</p>
   {/if}
   <details class="collapse collapse-arrow border border-base-300 mt-2">
-    <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm font-semibold">
-      Ny rolle
-    </summary>
-    <div class="collapse-content pl-3">
-      <input
-        class="input input-sm w-64 my-2"
-        placeholder="Navn på rollen"
-        bind:value={nyNavn}
-      />
+    <summary class="collapse-title min-h-0 py-2 pl-3 pr-8 text-sm font-semibold">Ny rolle</summary>
+    <form class="collapse-content pl-3" onsubmit={opprett}>
+      <label class="fieldset py-0 mb-2">
+        <span class="fieldset-legend">Navn på rollen</span>
+        <input class="input input-sm w-full max-w-64" required bind:value={nyNavn} />
+      </label>
       <Rettighetsvelger vokabular={roller.vokabular} bind:valgte={nyValgte} />
-      <button class="btn btn-sm mt-2" onclick={opprett}>Opprett</button>
-    </div>
+      <button class="btn btn-sm btn-primary mt-2" disabled={opptatt}>
+        {#if opptatt}<span class="loading loading-spinner loading-xs"></span>{/if}
+        Opprett rollen
+      </button>
+    </form>
   </details>
 </Card>
