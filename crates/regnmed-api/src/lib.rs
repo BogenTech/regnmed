@@ -14,6 +14,7 @@ pub mod budget;
 pub mod cards;
 pub mod cash_register;
 pub mod chart_of_accounts;
+pub mod chat;
 pub mod currency;
 pub mod dimension;
 pub mod dispatch;
@@ -245,6 +246,30 @@ pub fn router(state: AppState) -> Router {
         // Oppgaver til en agent (#103): the owner says what to do, the
         // agent reports back, and the trail outlives the chat it was
         // asked in.
+        // Meldinger (docs/meldinger.md): one-to-one conversations between
+        // people who work together; who reaches whom is computed from
+        // membership, engagement and grants on every call.
+        .route("/chat/contacts", get(chat::contacts))
+        .route(
+            "/chat/conversations",
+            get(chat::conversations).post(chat::open),
+        )
+        .route("/chat/conversations/{conversation_id}", get(chat::messages))
+        .route(
+            "/chat/conversations/{conversation_id}/messages",
+            axum::routing::post(chat::post),
+        )
+        .route(
+            "/chat/conversations/{conversation_id}/read",
+            axum::routing::post(chat::read),
+        )
+        .route("/chat/unread", get(chat::unread))
+        .route("/chat/stream", get(chat::stream))
+        .route("/firms/{firm_id}/contacts", get(chat::firm_contacts))
+        .route(
+            "/firms/{firm_id}/engagements/{engagement_id}/contacts",
+            axum::routing::put(chat::set_firm_contacts),
+        )
         .route(
             "/companies/{company_id}/agent/oppgaver",
             get(agent_task::list).post(agent_task::create),
@@ -1140,7 +1165,9 @@ fn compression_layer()
 
 fn is_compressible(content_type: &str) -> bool {
     let mime = content_type.split(';').next().unwrap_or("").trim();
-    mime.starts_with("text/")
+    // An event stream must reach the browser event by event; gzip would
+    // hold it back until a block filled (the chat, docs/meldinger.md).
+    (mime.starts_with("text/") && mime != "text/event-stream")
         || matches!(
             mime,
             "application/json"
@@ -1372,4 +1399,11 @@ mod timing_tests {
         assert_eq!(encoding("/a.pdf").await, None);
         assert_eq!(encoding("/small").await, None);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn an_event_stream_is_never_compressed() {
+    assert!(!is_compressible("text/event-stream"));
+    assert!(is_compressible("text/html; charset=utf-8"));
 }

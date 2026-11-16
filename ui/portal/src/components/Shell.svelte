@@ -7,6 +7,7 @@
 
   import { SEKSJONER, ANSATT_MENY, FLYTTET_TIL_ADMIN } from "../lib/meny.js";
   import Ikon from "./Ikon.svelte";
+  import { chat } from "../lib/chat.svelte.js";
 
   let { companyId, section, children } = $props();
 
@@ -75,7 +76,7 @@
       {#each items as [slug, label]}
         <li>
           <a
-            href={"#/c/" + companyId + "/" + slug}
+            href={slug === "meldinger" ? "#/meldinger" : "#/c/" + companyId + "/" + slug}
             class="flex items-center gap-2 {aktiv === slug
               ? 'bg-base-200 text-primary font-semibold shadow-[inset_3px_0_0_0_currentColor]'
               : ''}"
@@ -83,6 +84,14 @@
           >
             <Ikon navn={slug} />
             {label}
+            {#if slug === "meldinger" && chat.unread > 0}
+              <span
+                class="badge badge-sm badge-primary ml-auto"
+                aria-label="{chat.unread} uleste"
+              >
+                {chat.unread}
+              </span>
+            {/if}
           </a>
         </li>
       {/each}

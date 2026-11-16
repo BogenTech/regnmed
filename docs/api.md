@@ -46,6 +46,15 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/integrations/{integration_id}/llm` | GET PUT DELETE |
 | `/companies/{company_id}/integrations/{integration_id}/rolle` | PUT |
 | `/companies/{company_id}/integrations/{integration_id}/revoke` | POST |
+| `/chat/contacts` | GET |
+| `/chat/conversations` | GET POST |
+| `/chat/conversations/{conversation_id}` | GET |
+| `/chat/conversations/{conversation_id}/messages` | POST |
+| `/chat/conversations/{conversation_id}/read` | POST |
+| `/chat/unread` | GET |
+| `/chat/stream` | GET (server-sent events) |
+| `/firms/{firm_id}/contacts` | GET |
+| `/firms/{firm_id}/engagements/{engagement_id}/contacts` | PUT |
 | `/companies/{company_id}/agent/oppgaver` | GET POST |
 | `/companies/{company_id}/agent/oppgaver/{oppgave_id}` | GET |
 | `/companies/{company_id}/agent/oppgaver/{oppgave_id}/svar` | POST |

@@ -22,6 +22,8 @@ mod marketplace;
 mod matrix;
 #[path = "grupper/me_endpoint.rs"]
 mod me_endpoint;
+#[path = "grupper/meldinger.rs"]
+mod meldinger;
 #[path = "grupper/medlemmer.rs"]
 mod members;
 #[path = "grupper/plattform.rs"]

@@ -7,6 +7,9 @@
 // aksjonærer) — og Administrasjon sist, som konvensjonen er.
 export const SEKSJONER = [
   ["oversikt", "Oversikt"],
+  // Meldinger rett under Oversikt: det er der man spør en kollega,
+  // regnskapsføreren eller en agent, og det skal ikke måtte letes etter.
+  ["meldinger", "Meldinger"],
   ["faktura", "Faktura"], ["kunder", "Kunder"], ["produkter", "Produkter"],
   ["prosjekter", "Prosjekter"], ["timer", "Timer"],
   ["leverandorer", "Leverandører"], ["bilag", "Bilag"], ["utlegg", "Utlegg"],
@@ -27,7 +30,7 @@ export const FLYTTET_TIL_ADMIN = { brukere: "brukere", oppdrag: "oppdrag", perio
 // med: registeret er lesbart for ansatte (DIMENSJON_LES i
 // ansattbunten — det må finnes noe å føre timene på), skriveknappene
 // styres av DIMENSJON_SKRIV inne i seksjonen.
-export const ANSATT_MENY = ["prosjekter", "timer", "utlegg", "bilag"];
+export const ANSATT_MENY = ["meldinger", "prosjekter", "timer", "utlegg", "bilag"];
 
 export function seksjonNavn(slug) {
   const hit = SEKSJONER.find(([s]) => s === slug);

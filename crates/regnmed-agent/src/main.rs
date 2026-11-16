@@ -61,6 +61,14 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
             let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-agent".into());
+            // Only to announce chat answers; the sweep runs without it.
+            let chat = match regnmed_mail::connect_from_env().await {
+                Ok(js) => js,
+                Err(error) => {
+                    eprintln!("no NATS, chat answers show at the next poll: {error:#}");
+                    None
+                }
+            };
             for (company_id, task_id) in tasks {
                 // The sweep takes the same lease the queue workers take.
                 // Without it this would be the one place two processes
@@ -79,8 +87,16 @@ async fn main() -> Result<()> {
                 }
                 // One task's failure must not stop the rest: the outcome
                 // is written into that task's own trail either way.
-                let outcome =
-                    regnmed_agent::run_task(&pool, &key, company_id, task_id, &issuer, &api).await;
+                let outcome = regnmed_agent::run_task(
+                    &pool,
+                    &key,
+                    company_id,
+                    task_id,
+                    &issuer,
+                    &api,
+                    chat.as_ref(),
+                )
+                .await;
                 if let Err(error) = regnmed_db::agent_task::release_task(&pool, task_id).await {
                     eprintln!("could not release {task_id}: {error:#}");
                 }
@@ -100,6 +116,7 @@ async fn main() -> Result<()> {
             )
             .await?;
             regnmed_mail::taskqueue::ensure_stream(&js).await?;
+            regnmed_mail::chatbus::ensure_stream(&js).await?;
             listen(&pool, &key, &js, &issuer, &api).await?;
         }
     }
@@ -187,8 +204,16 @@ async fn listen(
             }
         }
 
-        let outcome =
-            regnmed_agent::run_task(pool, key, nudge.company_id, nudge.task_id, issuer, api).await;
+        let outcome = regnmed_agent::run_task(
+            pool,
+            key,
+            nudge.company_id,
+            nudge.task_id,
+            issuer,
+            api,
+            Some(js),
+        )
+        .await;
         // Released whatever happened: the lease is not evidence, and a
         // failed run must not lock the task out of a later retry.
         if let Err(error) = regnmed_db::agent_task::release_task(pool, nudge.task_id).await {

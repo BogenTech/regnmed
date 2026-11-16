@@ -14,6 +14,11 @@ function parse() {
   if (parts[0] === "byra" && parts[1]) {
     return { view: "byra", firmId: parts[1], query };
   }
+  // Meldinger lives outside any company: a conversation is between
+  // people, and a byrå's people talk across all their clients.
+  if (parts[0] === "meldinger") {
+    return { view: "meldinger", conversationId: parts[1] || null, query };
+  }
   if (parts[0] === "plattform") {
     return { view: "plattform", query };
   }
@@ -44,7 +49,7 @@ window.addEventListener("hashchange", async (e) => {
   }
   Object.assign(
     route,
-    { firmId: null, companyId: null, section: null, extra: null, query: "" },
+    { firmId: null, companyId: null, conversationId: null, section: null, extra: null, query: "" },
     parse(),
   );
 });

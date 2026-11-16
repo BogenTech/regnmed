@@ -183,6 +183,12 @@ pub async fn history(pool: &PgPool, company_id: Uuid, id: Uuid) -> Result<Vec<He
 /// Appends an event. Terminality and "a note is required unless the
 /// status is pagar/utfort" are both enforced in the database (0064); the
 /// error that comes back says what to do.
+///
+/// A task that came from a conversation gets its answer posted back into
+/// it (`chat::mirror_task_answer`); the returned announcement is that
+/// message, for the caller to ring. `speaker` is the integration giving
+/// the answer, `None` for a human: only the agent itself speaks in the
+/// conversation.
 pub async fn answer(
     pool: &PgPool,
     company_id: Uuid,
@@ -190,7 +196,8 @@ pub async fn answer(
     status: &str,
     note: Option<&str>,
     by: &str,
-) -> Result<()> {
+    speaker: Option<Uuid>,
+) -> Result<Option<crate::chat::Announcement>> {
     ensure!(
         matches!(status, "pagar" | "sporsmal" | "utfort" | "avvist"),
         "ukjent status «{status}» — bruk pagar, sporsmal, utfort eller avvist"
@@ -219,7 +226,18 @@ pub async fn answer(
     .bind(by)
     .execute(pool)
     .await?;
-    Ok(())
+    // The answer is recorded; failing to echo it into the room must not
+    // turn a recorded answer into an error the agent then retries.
+    let Some(speaker) = speaker else {
+        return Ok(None);
+    };
+    match crate::chat::mirror_task_answer(pool, task_id, status, note, speaker).await {
+        Ok(posted) => Ok(posted),
+        Err(error) => {
+            eprintln!("could not post the answer to {task_id} into the chat: {error:#}");
+            Ok(None)
+        }
+    }
 }
 
 /// How long a claim is honoured before another worker may take over.

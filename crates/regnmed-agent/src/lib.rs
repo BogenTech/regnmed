@@ -280,6 +280,7 @@ pub async fn run_task(
     task_id: Uuid,
     issuer: &str,
     api_base: &str,
+    chat: Option<&regnmed_mail::jetstream::Context>,
 ) -> Result<Outcome> {
     let task = regnmed_db::agent_task::fetch_task(pool, company_id, task_id)
         .await?
@@ -323,7 +324,16 @@ pub async fn run_task(
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.
     let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
-    regnmed_db::agent_task::answer(pool, company_id, task_id, "pagar", None, &name).await?;
+    regnmed_db::agent_task::answer(
+        pool,
+        company_id,
+        task_id,
+        "pagar",
+        None,
+        &name,
+        Some(integration_id),
+    )
+    .await?;
 
     let history: Vec<HistoryLine> = regnmed_db::agent_task::history(pool, company_id, task_id)
         .await?
@@ -355,15 +365,31 @@ pub async fn run_task(
         // everything else about the task.
         Err(error) => Outcome::Refused(llm::truncate(&format!("{error:#}"), 1000)),
     };
-    regnmed_db::agent_task::answer(
+    let mirrored = regnmed_db::agent_task::answer(
         pool,
         company_id,
         task_id,
         outcome.status(),
         Some(outcome.note()),
         &name,
+        Some(integration_id),
     )
     .await?;
+    // An order from a conversation is answered in it; ring it so the answer
+    // shows now rather than at the reader's next backstop poll.
+    if let (Some(js), Some(posted)) = (chat, mirrored)
+        && let Err(error) = regnmed_mail::chatbus::announce(
+            js,
+            &regnmed_mail::chatbus::ChatEvent {
+                conversation_id: posted.conversation_id,
+                message_id: posted.message_id,
+                person_ids: posted.person_ids,
+            },
+        )
+        .await
+    {
+        eprintln!("could not announce the answer to {task_id}: {error:#}");
+    }
     Ok(outcome)
 }
 
