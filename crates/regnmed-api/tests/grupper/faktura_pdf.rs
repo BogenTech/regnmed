@@ -669,3 +669,79 @@ async fn kid_is_printed_only_when_the_bank_agreement_exists() {
         "med avtale er KID-en nettopp det betaleren skal bruke"
     );
 }
+
+/// Two things the Firmaopplysninger form could get wrong without anyone
+/// noticing: a company kontonummer that fails MOD11 was stored and then
+/// printed on every invoice as where to pay, and a second registration
+/// status for a date that already had one returned OK and changed nothing.
+#[tokio::test]
+async fn bad_company_account_and_same_day_registration_change_are_refused() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Astrid Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Konto AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let token = idp.token(&sub, "Astrid Admin");
+    let settings = format!("/companies/{company}/settings");
+
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &settings,
+        &token,
+        Some(serde_json::json!({ "bank_account": "1234.56.78901" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "MOD11 fails: {body}");
+    assert!(
+        body.to_string().contains("Kontonummeret er ugyldig"),
+        "{body}"
+    );
+    let (status, _) = request(
+        &state,
+        "PUT",
+        &settings,
+        &token,
+        Some(serde_json::json!({ "bank_account": "1234.56.78903" }).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = request(&state, "GET", &settings, &token, None).await;
+    let read = body;
+    assert_eq!(read["bank_account"], "1234.56.78903", "kept as typed");
+
+    let registrering = format!("/companies/{company}/settings/registrering");
+    let reg = |vat: bool| {
+        serde_json::json!({
+            "mva_registrert": vat,
+            "foretaksregistrert": true,
+            "valid_from": "2026-03-01",
+        })
+        .to_string()
+    };
+    let (status, _) = request(&state, "POST", &registrering, &token, Some(reg(true))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = request(&state, "POST", &registrering, &token, Some(reg(true))).await;
+    assert_eq!(status, StatusCode::OK, "the same status again is harmless");
+    let (status, body) = request(&state, "POST", &registrering, &token, Some(reg(false))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("01.03.2026"), "{body}");
+    let (_, body) = request(&state, "GET", &settings, &token, None).await;
+    let read = body;
+    let history = read["registrering_historikk"].as_array().unwrap();
+    let march: Vec<_> = history
+        .iter()
+        .filter(|h| h["valid_from"] == "2026-03-01")
+        .collect();
+    assert_eq!(march.len(), 1);
+    assert_eq!(march[0]["mva_registrert"], true, "the first status stands");
+}

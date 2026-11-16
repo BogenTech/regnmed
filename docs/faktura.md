@@ -66,7 +66,11 @@ lastet det ned.
 - **Onboarding** henter begge flaggene og forretningsadressen fra
   Enhetsregisteret (`kilde='brreg'`).
 - **Korrigering**: `POST …/settings/registrering` (admin) skriver en ny
-  datert rad; den forrige blir stående som det som gjaldt da.
+  datert rad; den forrige blir stående som det som gjaldt da. Én rad
+  per dato: samme status på nytt er en no-op, men en ANNEN status for en
+  dato som alt har en rad nektes med datoen i meldingen. Før svarte den
+  OK og forkastet endringen i stillhet (`on conflict do nothing`), så en
+  rettelse samme dag ble aldri lagret.
 - **Eksisterende selskaper** ble backfillet med den gamle utledningen
   løftet fra per-dokument til per-selskap, merket `kilde='migrert'` —
   en ANTAKELSE, og portalen ber om at den bekreftes.
@@ -166,9 +170,12 @@ issued before #221 carry no reference and keep that content.
 
 - **Kontaktinfo** (migration 0019, editable master data, never hashed):
   company address/kontonummer/selskapsform via
-  `GET/PUT /companies/{id}/settings` (PUT is admin-only); party
+  `GET/PUT /companies/{id}/settings` (PUT is admin-only). The company
+  kontonummer is MOD11-checked before it is stored, like a party's: it
+  is printed on every invoice and reminder as where to pay, and a typo
+  there used to be accepted. It is kept as typed (`1234.56.78903`); party
   address/e-mail via `PUT …/parties/{pid}/contact`. Portal:
-  Firmaopplysninger card on Oversikt, Kontaktinfo on the party page.
+  Firmaopplysninger under Administrasjon, Kontaktinfo on the party page.
 - Purringer/inkassovarsler render their stored text deterministically
   to PDF on demand (`?format=pdf`, docs/purring.md).
 
