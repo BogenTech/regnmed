@@ -372,6 +372,10 @@ pub struct GrantRow {
     /// (docs/agent.md §8). Joined here rather than fetched per row:
     /// the card lists agents, and one query is one query.
     pub llm: Option<(String, String)>,
+    /// Whether regnmed holds this agent's client secret -- true for one
+    /// made with «Ny agent», false for one registered with its own
+    /// client_id, which only needs it to be run here.
+    pub client_secret_stored: bool,
 }
 
 pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<GrantRow>> {
@@ -383,7 +387,8 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
                 coalesce((select u.kall from integration_usage u
                           where u.integration_id = i.id and u.company_id = g.company_id
                             and u.dag = current_date), 0) as kall_i_dag,
-                llm.leverandor as llm_leverandor, llm.modell as llm_modell
+                llm.leverandor as llm_leverandor, llm.modell as llm_modell,
+                i.klient_hemmelighet is not null as client_secret_stored
          from integration_grant g
          join integration i on i.id = g.integration_id
          join person p on p.id = i.person_id
@@ -419,6 +424,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
             llm: r
                 .get::<Option<String>, _>("llm_leverandor")
                 .zip(r.get::<Option<String>, _>("llm_modell")),
+            client_secret_stored: r.get("client_secret_stored"),
         })
         .collect())
 }

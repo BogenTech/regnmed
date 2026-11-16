@@ -753,6 +753,30 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
         "Strøm bokføres på 6340. Spør Aud ved tvil."
     );
     assert_eq!(entry["llm"]["modell"], "google/gemini-2.5-flash-lite");
+    // Registered with its own client_id, so regnmed holds no secret for
+    // it: the listing says so, and the portal asks for one only then.
+    assert_eq!(entry["klient_lagret"], false, "{entry}");
+    regnmed_db::agentllm::sett_klienthemmelighet(
+        &state.pool,
+        state.sealing_key.as_ref().unwrap(),
+        company,
+        integration_id.parse().unwrap(),
+        "s3cret",
+    )
+    .await
+    .unwrap();
+    let (_, listing) = request(
+        &state,
+        "GET",
+        &format!("{base}/integrations"),
+        &admin_token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        listing["integrasjoner"][0]["klient_lagret"], true,
+        "{listing}"
+    );
 
     // The key went in sealed and has no route back out: the listing
     // says there is a model, never what pays for it.
