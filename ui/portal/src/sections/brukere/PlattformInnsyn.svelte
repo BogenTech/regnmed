@@ -6,16 +6,18 @@
   import { formatTime } from "../../lib/format.js";
   import Card from "../../components/Card.svelte";
 
-  let { innsyn } = $props();
+  // `hvor`: "selskapet" or "byrået" — the same log exists for both.
+  let { innsyn, hvor = "selskapet" } = $props();
+  let hvorsin = $derived(hvor === "byrået" ? "byråets" : "selskapets");
 </script>
 
 <Card title="Leverandørtilgang">
   <p class="text-sm opacity-70 mb-2">
-    Alt regnmeds støttepersonale gjør som angår selskapet, blir logget og vist her. Ingen hos
-    regnmed kan lese selskapets regnskap.
+    Alt regnmeds støttepersonale gjør som angår {hvor}, blir logget og vist her. Ingen hos
+    regnmed kan lese regnskapet til {hvor === "byrået" ? "byråets klienter" : "selskapet"}.
   </p>
   {#if innsyn.length === 0}
-    <p class="text-sm opacity-70">Ingen fra regnmed har vært inne i selskapets oppsett.</p>
+    <p class="text-sm opacity-70">Ingen fra regnmed har vært inne i {hvorsin} oppsett.</p>
   {:else}
     <ul class="divide-y divide-base-200 text-sm" aria-label="Leverandørtilgang">
       {#each innsyn as rad, i (i)}

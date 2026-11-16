@@ -157,14 +157,37 @@ pub async fn company_access(
         // cannot. Use [`company_roles`] when the answer decides access;
         // this exists for display and for callers that genuinely want a
         // single name.
-        .max_by_key(|a| match a.access.as_str() {
-            "admin" => 4,
-            "bokforing" => 3,
-            "revisor" => 2,
-            "les" => 1,
-            _ => 0,
-        });
+        .max_by_key(|a| access_rank(&a.access));
     Ok(access.map(|a| a.access))
+}
+
+/// Display rank of a role name: 'admin' > 'bokforing' > 'revisor' >
+/// 'les' > anything else. A heuristic for showing ONE name — see the
+/// note in [`company_access`]; access itself is decided by the union.
+pub fn access_rank(access: &str) -> u8 {
+    match access {
+        "admin" => 4,
+        "bokforing" => 3,
+        "revisor" => 2,
+        "les" => 1,
+        _ => 0,
+    }
+}
+
+/// [`company_access_for_person`] collapsed to one row per company, in the
+/// same order, keeping the strongest route by [`access_rank`]. Someone who
+/// is both a direct member and in the firm with the oppdrag would
+/// otherwise see the company twice (`/me`).
+pub fn one_per_company(rows: Vec<CompanyAccess>) -> Vec<CompanyAccess> {
+    let mut out: Vec<CompanyAccess> = Vec::with_capacity(rows.len());
+    for row in rows {
+        match out.iter_mut().find(|a| a.company_id == row.company_id) {
+            Some(a) if access_rank(&row.access) > access_rank(&a.access) => *a = row,
+            Some(_) => {}
+            None => out.push(row),
+        }
+    }
+    out
 }
 
 /// **Every** role a person has in one company, one per route in.
@@ -259,4 +282,34 @@ pub async fn company_access_for_person(
             via: r.get("via"),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(company: u128, access: &str, via: &str) -> CompanyAccess {
+        CompanyAccess {
+            company_id: Uuid::from_u128(company),
+            orgnumber: String::new(),
+            name: String::new(),
+            access: access.into(),
+            via: via.into(),
+        }
+    }
+
+    #[test]
+    fn one_per_company_keeps_the_strongest_route_in_order() {
+        let out = one_per_company(vec![
+            row(1, "bokforing", "Demo Regnskap AS"),
+            row(1, "admin", "direkte"),
+            row(2, "les", "direkte"),
+            row(1, "revisor", "Revisor AS"),
+        ]);
+        let got: Vec<_> = out
+            .iter()
+            .map(|a| (a.company_id.as_u128(), a.access.as_str(), a.via.as_str()))
+            .collect();
+        assert_eq!(got, vec![(1, "admin", "direkte"), (2, "les", "direkte")]);
+    }
 }

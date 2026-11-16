@@ -348,3 +348,53 @@ async fn the_company_sees_and_withdraws_its_request() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// A firm that keeps its own books in regnmed and takes itself on as a
+/// client: its admin reaches the company both directly and through the
+/// oppdrag. `/me` must list the company ONCE — the portal keys its
+/// company list on the id, and a duplicate blanked the start page.
+#[tokio::test]
+async fn me_lists_a_company_once_when_reached_two_ways() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Kari Eier"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Eget byrå AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let firm_id = regnmed_db::create_verified_firm(
+        &state.pool,
+        &unique_orgnumber(),
+        "Eget byrå Regnskap AS",
+        "regnskap",
+        "test-verifisering",
+        person,
+    )
+    .await
+    .unwrap();
+    regnmed_db::ensure_engagement(&state.pool, firm_id, company, "regnskap")
+        .await
+        .unwrap();
+
+    let (status, me) = request(&state, "GET", "/me", &idp.token(&sub, "Kari Eier"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let rows: Vec<_> = me["companies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["company_id"] == company.to_string())
+        .collect();
+    assert_eq!(rows.len(), 1, "one entry per company: {rows:?}");
+    // The strongest route is the one shown; the rights are the union.
+    assert_eq!(rows[0]["access"], "admin");
+    assert_eq!(rows[0]["via"], "direkte");
+    let rights = rows[0]["rettigheter"].as_array().unwrap();
+    assert!(rights.iter().any(|r| r == "MEDLEM_ADMIN"));
+}

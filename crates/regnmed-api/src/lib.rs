@@ -1237,7 +1237,13 @@ async fn me(
     let nye = regnmed_db::members::redeem_invitations(&state.pool, person.person_id).await?
         + regnmed_db::firm_members::redeem_invitations(&state.pool, person.person_id).await?;
 
-    let access = regnmed_db::company_access_for_person(&state.pool, person.person_id).await?;
+    // One entry per company: a person can reach the same company by
+    // several routes (direct membership and a firm's oppdrag), and the
+    // portal lists companies keyed by id. The rights below are the union
+    // of every route regardless.
+    let access = regnmed_db::one_per_company(
+        regnmed_db::company_access_for_person(&state.pool, person.person_id).await?,
+    );
 
     // Platform role (docs/auth.md §8), so the portal can show the
     // Plattform view. Deliberately separate from `companies`: a platform
