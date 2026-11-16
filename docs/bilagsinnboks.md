@@ -21,6 +21,9 @@ voucher — or rejects it with a note that goes back to the client.
   A copy that was `avvist` does not block: the rejection answered that
   upload, and sending the same receipt in again — from the inbox or as
   a message attachment — is a new document with its own decision.
+  A message attachment uploads with `reuse_pending=true`: a copy still
+  `ny` is then linked (`existing: true`), not refused and not doubled
+  ([meldinger.md](meldinger.md) §4).
 
 ## Bokføring is atomic
 

@@ -300,7 +300,7 @@
         let id = uploaded.get(file)?.[attachTo];
         if (!id) {
           const name = file.name || "bilde-" + Date.now() + ".png";
-          const up = await api("/companies/" + attachTo + "/inbox?filename=" + encodeURIComponent(name), {
+          const up = await api("/companies/" + attachTo + "/inbox?reuse_pending=true&filename=" + encodeURIComponent(name), {
             method: "POST",
             headers: { "content-type": file.type || "application/octet-stream" },
             body: file,

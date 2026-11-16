@@ -393,6 +393,16 @@ pub async fn post(
         "meldingen er for lang (maks 8000 tegn)"
     );
 
+    // The same file attached twice is one document (the inbox links a
+    // copy already there), and the agent's order must name it once.
+    let mut unique: Vec<Uuid> = Vec::new();
+    for doc in documents {
+        if !unique.contains(doc) {
+            unique.push(*doc);
+        }
+    }
+    let documents = unique.as_slice();
+
     let mut tx = pool.begin().await?;
     let mut files: Vec<String> = Vec::new();
     for doc in documents {

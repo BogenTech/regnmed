@@ -29,6 +29,10 @@ pub struct UploadQuery {
     /// What the client hashed before sending (the mobile offline queue
     /// does — docs/portal.md, #48).
     sha256: Option<String>,
+    /// `true` from a message attachment: a copy still waiting in the
+    /// inbox is linked instead of refused (`existing: true` in the answer).
+    #[serde(default)]
+    reuse_pending: bool,
 }
 
 pub async fn upload(
@@ -46,7 +50,7 @@ pub async fn upload(
         .unwrap_or("application/octet-stream")
         .to_string();
     let uploaded_by = person.name.as_deref().unwrap_or(&person.sub);
-    let id = regnmed_db::upload_inbox_document(
+    let (id, existing) = regnmed_db::upload_inbox_document(
         &state.pool,
         company_id,
         &query.filename,
@@ -54,10 +58,11 @@ pub async fn upload(
         &body,
         uploaded_by,
         query.sha256.as_deref(),
+        query.reuse_pending,
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    Ok(Json(json!({ "document_id": id })))
+    Ok(Json(json!({ "document_id": id, "existing": existing })))
 }
 
 #[derive(Deserialize)]

@@ -46,6 +46,11 @@ pub struct InboxRow {
 /// because the phone was unsure whether the first attempt arrived.
 /// A copy that was REJECTED does not block: rejection is the answer to
 /// that upload, and sending the same receipt in again is a new question.
+///
+/// `reuse_pending` is for a caller that only needs the document to BE in
+/// the inbox -- a message attachment: a copy still waiting (`ny`) is then
+/// the answer rather than an error. Returns the id and whether it was
+/// already there.
 pub async fn upload_inbox_document(
     pool: &PgPool,
     company_id: Uuid,
@@ -54,7 +59,8 @@ pub async fn upload_inbox_document(
     content: &[u8],
     uploaded_by: &str,
     expected_sha256: Option<&str>,
-) -> Result<Uuid> {
+    reuse_pending: bool,
+) -> Result<(Uuid, bool)> {
     ensure!(!content.is_empty(), "document is empty");
     let digest = sha256(content);
     if let Some(expected) = expected_sha256 {
@@ -74,8 +80,8 @@ pub async fn upload_inbox_document(
         .await?;
     // A rejected copy does not count: rejection says "not like this",
     // and sending the same receipt in again is then a deliberate redo.
-    let duplicate: Option<(String, String)> = sqlx::query_as(
-        "select filename, status from inbox_document
+    let duplicate: Option<(Uuid, String, String)> = sqlx::query_as(
+        "select id, filename, status from inbox_document
          where company_id = $1 and sha256 = $2 and status <> 'avvist'
          order by created_at desc limit 1",
     )
@@ -83,7 +89,10 @@ pub async fn upload_inbox_document(
     .bind(digest.as_slice())
     .fetch_optional(&mut *tx)
     .await?;
-    if let Some((filename, status)) = duplicate {
+    if let Some((existing, filename, status)) = duplicate {
+        if reuse_pending && status == "ny" {
+            return Ok((existing, true));
+        }
         let state = match status.as_str() {
             "bokfort" => "og er allerede bokført",
             "utlegg" => "og er allerede gjort om til et utlegg",
@@ -109,7 +118,7 @@ pub async fn upload_inbox_document(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(id)
+    Ok((id, false))
 }
 
 /// Inbox documents, newest first. `status` is a stored status (`ny`,
