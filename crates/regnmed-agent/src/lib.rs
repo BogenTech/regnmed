@@ -154,9 +154,25 @@ fn interpret(text: &str) -> Outcome {
 /// writes here, the role on the grant is what `access::krev` enforces
 /// on every call the agent makes, so the worst a bad instruction can do
 /// is make the agent attempt things it will be refused.
+/// The prompt that matches a grant's ROLE. The two vocabularies differ
+/// -- a grant says `bokforing`, the prompt is `bokforer` -- and looking
+/// the role name up as a prompt name found nothing, so every hosted
+/// agent with the Bokføring or Administrator role was told it was an
+/// employee and refused its work («Min rolle er avgrenset til å føre
+/// timer»). A role without a matching prompt (`les`, a company's own
+/// role) gets the narrowest one: the prompt never grants authority --
+/// the access guard does -- so too narrow a prompt only makes the agent
+/// cautious.
+pub fn prompt_for_role(role_name: &str) -> &'static str {
+    match role_name {
+        "admin" => "regnskapsforer",
+        "bokforing" => "bokforer",
+        _ => "ansatt",
+    }
+}
+
 fn system_prompt(role_name: &str, ekstra: Option<&str>) -> String {
-    let role_prompt = role::prompt(role_name)
-        .unwrap_or_else(|| role::prompt("ansatt").expect("ansatt-prompten finnes"));
+    let role_prompt = role::prompt(prompt_for_role(role_name)).expect("every mapped prompt exists");
     let mut ut = role_prompt.to_string();
     if let Some(ekstra) = ekstra.map(str::trim).filter(|t| !t.is_empty()) {
         ut.push_str("\n\nSÆRSKILTE INSTRUKSER FOR DEG:\n");
@@ -493,6 +509,21 @@ async fn report(
 mod tests {
     use super::*;
 
+    /// The roles an agent can be given must each reach a real prompt,
+    /// and the working roles must reach their own -- not the employee's.
+    #[test]
+    fn every_role_gets_the_prompt_for_its_job() {
+        for role_name in ["admin", "bokforing", "ansatt", "les", "egen-rolle"] {
+            assert!(
+                role::prompt(prompt_for_role(role_name)).is_some(),
+                "{role_name} har ingen prompt"
+            );
+        }
+        assert!(system_prompt("bokforing", None).contains("DIN ROLLE: bokfører"));
+        assert!(system_prompt("admin", None).contains("DIN ROLLE: ekstern regnskapsfører"));
+        assert!(system_prompt("ansatt", None).contains("DIN ROLLE: ansatt"));
+    }
+
     #[test]
     fn the_catalogue_matches_the_tools_the_other_rail_serves() {
         let katalog = tool_catalogue();
@@ -517,8 +548,10 @@ mod tests {
 
     #[test]
     fn the_extra_instructions_sit_between_the_role_and_the_protocol() {
-        let without = system_prompt("bokforer", None);
-        let med = system_prompt("bokforer", Some("Strøm bokføres på 6340."));
+        // The grant's ROLE name, as the worker passes it -- the prompt
+        // name here is what hid the role/prompt mix-up for weeks.
+        let without = system_prompt("bokforing", None);
+        let med = system_prompt("bokforing", Some("Strøm bokføres på 6340."));
         // The role still opens the message, so nothing an owner writes
         // displaces the rules the role carries.
         let role_prompt = role::prompt("bokforer").unwrap();
@@ -530,7 +563,7 @@ mod tests {
         assert!(med.trim_end().ends_with(protokoll.trim_end()));
         assert!(without.trim_end().ends_with(protokoll.trim_end()));
         // Empty instructions add nothing at all -- no stray heading.
-        assert_eq!(system_prompt("bokforer", Some("   ")), without);
+        assert_eq!(system_prompt("bokforing", Some("   ")), without);
     }
 
     #[test]

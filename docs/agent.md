@@ -538,11 +538,25 @@ leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
 en forpliktelse.
 
 **Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
-systemprompten av `rolle::prompt`, og kallet går gjennom
+systemprompten av `role::prompt` (via `prompt_for_role`), og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
 oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
 nøyaktig like mange verktøy som tabellen.
+
+**Rollen velger prompten — gjennom en tabell, ikke gjennom navnet**
+(rettet 2026-11-16). Tilgangen sier `bokforing`, prompten heter `bokforer`:
+to vokabularer. Workeren slo opp rollenavnet som promptnavn, fant ingenting
+og falt stille tilbake til `ansatt`, så HVER vertsagent med rollen Bokføring
+eller Administrator fikk beskjed om at den var ansatt og avviste arbeidet sitt
+(«Min rolle er avgrenset til å føre timer»). `prompt_for_role` i
+`regnmed-agent` er nå tabellen: `admin` → `regnskapsforer`, `bokforing` →
+`bokforer`, alt annet (`ansatt`, `les`, selskapets egne roller) → `ansatt`,
+den smaleste — prompten gir aldri myndighet, det gjør tilgangsvakten, så en
+for smal prompt gjør bare agenten forsiktig. Testen
+`every_role_gets_the_prompt_for_its_job` fester at hver rolle når en ekte
+prompt; den gamle testen sendte PROMPTnavnet der rollenavnet hører hjemme,
+og det var nettopp det som skjulte feilen.
 
 **Kan den ikke starte, sier den det i oppgaven.** Mangler en agent
 regnmed kjører aktiv modell, klienthemmelighet eller tilgang, skriver
