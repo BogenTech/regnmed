@@ -47,6 +47,20 @@ pub struct Contact {
     pub links: Vec<Link>,
 }
 
+/// Whether regnmed runs this agent in this company
+/// ([`crate::agentllm::runs_here`]), from the agent's person id.
+pub async fn agent_runs_here(pool: &PgPool, company_id: Uuid, agent: Uuid) -> Result<bool> {
+    let integration: Option<Uuid> =
+        sqlx::query_scalar("select id from integration where person_id = $1")
+            .bind(agent)
+            .fetch_optional(pool)
+            .await?;
+    match integration {
+        Some(id) => crate::agentllm::runs_here(pool, company_id, id).await,
+        None => Ok(false),
+    }
+}
+
 impl Contact {
     /// The companies an attachment to this person can go to: one both
     /// sides work in. A byrå colleague shares none.

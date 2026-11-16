@@ -270,6 +270,22 @@ pub async fn hent_klientlegitimasjon(
     )))
 }
 
+/// Whether regnmed runs this agent: someone set up a model for it here,
+/// or stored its client secret. Neither means it runs somewhere else --
+/// the customer's own machine, over MCP -- or nowhere yet; from here the
+/// two look the same, so neither may be told it is broken.
+pub async fn runs_here(pool: &PgPool, company_id: Uuid, integration_id: Uuid) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "select exists (select 1 from agent_llm where integration_id = $1 and company_id = $2)
+             or coalesce((select klient_hemmelighet is not null from integration where id = $1),
+                         false)",
+    )
+    .bind(integration_id)
+    .bind(company_id)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Whether a secret is stored, for display. Never the value.
 pub async fn har_klienthemmelighet(pool: &PgPool, integration_id: Uuid) -> Result<bool> {
     Ok(

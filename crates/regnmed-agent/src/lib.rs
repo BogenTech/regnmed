@@ -291,15 +291,49 @@ pub async fn run_task(
     if matches!(task.status.as_str(), "utfort" | "avvist") {
         bail!("the task is closed ({})", task.status);
     }
+    // An agent on the customer's own machine fetches its own queue; the
+    // nudge reaches us too, and it is not ours to answer.
+    if !regnmed_db::agentllm::runs_here(pool, company_id, integration_id).await? {
+        bail!("not run here (no model, no stored secret): the agent fetches its own tasks");
+    }
+    let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
 
-    let (settings, model_key) =
-        regnmed_db::agentllm::fetch_llm_key(pool, key, company_id, integration_id)
-            .await?
-            .context("the agent has no active model")?;
-    let (client_id, secret) =
-        regnmed_db::agentllm::hent_klientlegitimasjon(pool, key, integration_id)
-            .await?
-            .context("the agent has no stored client secret")?;
+    // Set up but not runnable: say so in the task, where the person who
+    // asked is reading, instead of only in this process's log. A
+    // question, not a refusal -- once an admin fixes it, a reply runs
+    // the task again.
+    let Some((settings, model_key)) =
+        regnmed_db::agentllm::fetch_llm_key(pool, key, company_id, integration_id).await?
+    else {
+        let outcome = Outcome::Question(NO_MODEL.into());
+        report(
+            pool,
+            chat,
+            company_id,
+            task_id,
+            &name,
+            integration_id,
+            &outcome,
+        )
+        .await?;
+        return Ok(outcome);
+    };
+    let Some((client_id, secret)) =
+        regnmed_db::agentllm::hent_klientlegitimasjon(pool, key, integration_id).await?
+    else {
+        let outcome = Outcome::Question(NO_SECRET.into());
+        report(
+            pool,
+            chat,
+            company_id,
+            task_id,
+            &name,
+            integration_id,
+            &outcome,
+        )
+        .await?;
+        return Ok(outcome);
+    };
 
     // The role on the grant is the agent's authority, and the prompt it
     // is given must match it: telling a `les` agent it is a bokfører
@@ -307,8 +341,21 @@ pub async fn run_task(
     let grant = regnmed_db::list_integrations(pool, company_id)
         .await?
         .into_iter()
-        .find(|g| g.integration_id == integration_id && g.valid_to.is_none())
-        .context("the agent has no active access to the company")?;
+        .find(|g| g.integration_id == integration_id && g.valid_to.is_none());
+    let Some(grant) = grant else {
+        let outcome = Outcome::Question(NO_ACCESS.into());
+        report(
+            pool,
+            chat,
+            company_id,
+            task_id,
+            &name,
+            integration_id,
+            &outcome,
+        )
+        .await?;
+        return Ok(outcome);
+    };
 
     let client = Client::with_client_credentials(
         api_base,
@@ -323,7 +370,6 @@ pub async fn run_task(
 
     // Say out loud that work started, before it can fail: a task that
     // died mid-run should not look like one nobody ever picked up.
-    let name = task.agent.clone().unwrap_or_else(|| "agenten".into());
     regnmed_db::agent_task::answer(
         pool,
         company_id,
@@ -365,18 +411,50 @@ pub async fn run_task(
         // everything else about the task.
         Err(error) => Outcome::Refused(llm::truncate(&format!("{error:#}"), 1000)),
     };
+    report(
+        pool,
+        chat,
+        company_id,
+        task_id,
+        &name,
+        integration_id,
+        &outcome,
+    )
+    .await?;
+    Ok(outcome)
+}
+
+const NO_MODEL: &str = "Jeg kan ikke ta oppgaven ennå: det er ikke valgt noen aktiv språkmodell \
+     for meg. En administrator gir meg en under Administrasjon → Oppdrag og integrasjoner \
+     («Gi modell»). Svar her når det er gjort, så prøver jeg igjen.";
+const NO_SECRET: &str = "Jeg kan ikke ta oppgaven ennå: klienthemmeligheten min er ikke lagret i \
+     regnmed, så jeg kan ikke logge inn. En administrator legger den inn under Administrasjon → \
+     Oppdrag og integrasjoner («Bytt modell»). Svar her når det er gjort, så prøver jeg igjen.";
+const NO_ACCESS: &str = "Jeg kan ikke ta oppgaven: jeg har ikke lenger tilgang til selskapet. En \
+     administrator kan gi meg tilgang igjen under Administrasjon → Oppdrag og integrasjoner.";
+
+/// Writes the outcome into the task's trail and, when the order came
+/// from a conversation, rings it so the answer shows now rather than at
+/// the reader's next backstop poll.
+async fn report(
+    pool: &PgPool,
+    chat: Option<&regnmed_mail::jetstream::Context>,
+    company_id: Uuid,
+    task_id: Uuid,
+    name: &str,
+    integration_id: Uuid,
+    outcome: &Outcome,
+) -> Result<()> {
     let mirrored = regnmed_db::agent_task::answer(
         pool,
         company_id,
         task_id,
         outcome.status(),
         Some(outcome.note()),
-        &name,
+        name,
         Some(integration_id),
     )
     .await?;
-    // An order from a conversation is answered in it; ring it so the answer
-    // shows now rather than at the reader's next backstop poll.
     if let (Some(js), Some(posted)) = (chat, mirrored)
         && let Err(error) = regnmed_mail::chatbus::announce(
             js,
@@ -390,7 +468,7 @@ pub async fn run_task(
     {
         eprintln!("could not announce the answer to {task_id}: {error:#}");
     }
-    Ok(outcome)
+    Ok(())
 }
 
 #[cfg(test)]
