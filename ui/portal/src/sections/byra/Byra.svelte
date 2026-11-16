@@ -30,12 +30,13 @@
       }
       const admin = firm.role === "admin";
       const hent = (ok, sti) => (ok ? api("/firms/" + id + sti) : Promise.resolve(null));
-      const [requests, clients, access, invitations, innsyn] = await Promise.all([
+      const [requests, clients, access, invitations, innsyn, contacts] = await Promise.all([
         hent(true, "/requests"),
         hent(true, "/clients"),
         hent(admin, "/access"),
         hent(admin, "/invitations"),
         hent(admin, "/platform-access"),
+        hent(true, "/contacts"),
       ]);
       if (id !== firmId) return;
       feil = null;
@@ -47,6 +48,7 @@
         medlemmer: access?.medlemmer || [],
         invitasjoner: invitations?.invitasjoner || [],
         innsyn: innsyn?.innsyn || null,
+        contacts: contacts.contacts,
       };
     } catch (error) {
       if (id === firmId) feil = error.message;
@@ -90,7 +92,14 @@
     </div>
   {:else}
     <Foresporsler {firmId} pending={data.pending} admin={data.admin} onDone={load} />
-    <Klienter clients={data.clients} />
+    <Klienter
+      {firmId}
+      clients={data.clients}
+      contacts={data.contacts}
+      admin={data.admin}
+      medlemmer={data.medlemmer}
+      onDone={load}
+    />
     {#if data.admin}
       <Medlemmer
         {firmId}

@@ -177,16 +177,20 @@ pub async fn answer(
             }
         }
     }
-    regnmed_db::agent_task::answer(
+    let mirrored = regnmed_db::agent_task::answer(
         &state.pool,
         company_id,
         task_id,
         &request.status,
         request.note.as_deref(),
         person.display(),
+        person.integration.as_ref().map(|i| i.id),
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    if let Some(posted) = mirrored {
+        crate::chat::announce(&state, posted).await;
+    }
     // A human answering a question puts the task back in play, so it
     // deserves the same nudge as a new one -- otherwise the reply waits
     // for the backstop sweep, which is the slow path we are leaving.
@@ -203,7 +207,7 @@ pub async fn answer(
 /// to ignore: the backstop sweep finds it regardless. A queue outage
 /// must never fail the request that created the work -- that would turn
 /// a slow agent into a broken portal.
-async fn nudge(state: &AppState, company_id: Uuid, task_id: Uuid) {
+pub(crate) async fn nudge(state: &AppState, company_id: Uuid, task_id: Uuid) {
     let Some(js) = state.mailq.as_ref() else {
         return;
     };

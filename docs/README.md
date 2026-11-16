@@ -10,6 +10,7 @@ CLAUDE.md).
 | --- | --- |
 | [api.md](api.md) | Den offentlige API-referansen: alle endepunkter, felles regler, stabilitet |
 | [integrations.md](integrations.md) | Maskin-tilgang: client_credentials-identitet, rolle per selskap, attribusjon, ratebegrensning |
+| [meldinger.md](meldinger.md) | Meldinger: samtaler én-til-én mellom ansatte, byråets kontaktperson og selskapets agenter; hvem når hvem, melding til agent = oppgave, vedlegg i innboksen, NATS leverer |
 | [agent.md](agent.md) | Ta med din egen agent: MCP-serveren, verktøytabellen, rollepromptene, oppgaver til en agent |
 | [ledger.md](ledger.md) | The append-only, hash-chained ledger: the three immutability layers, verification, and the trust model |
 | [blob-store.md](blob-store.md) | Dokumenter i objektlagring: innholdsadressert etter SHA-256, hash sjekket ved hver lesing, flytting av eksisterende dokumenter |

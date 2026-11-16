@@ -32,6 +32,10 @@ async fn main() -> Result<()> {
     if let Some(js) = mailq.as_ref() {
         regnmed_mail::taskqueue::ensure_stream(js).await?;
         println!("agent queue ready ({})", regnmed_mail::taskqueue::SUBJECT);
+        // The chat's live delivery (docs/meldinger.md): one consumer per
+        // process, fanned out to the open streams in memory.
+        regnmed_mail::chatbus::ensure_stream(js).await?;
+        tokio::spawn(regnmed_api::chat::follow(js.clone()));
     }
     if let Some(js) = mailq.clone() {
         let pool = pool.clone();

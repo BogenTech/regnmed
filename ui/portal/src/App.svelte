@@ -6,6 +6,7 @@
   import { toast } from "./lib/toast.svelte.js";
   import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
+  import { connect, disconnect } from "./lib/chat.svelte.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
@@ -41,6 +42,7 @@
   };
   const Byra = lazy(() => import("./sections/byra/Byra.svelte"));
   const Plattform = lazy(() => import("./components/Plattform.svelte"));
+  const Meldinger = lazy(() => import("./sections/meldinger/Meldinger.svelte"));
 
   let boot = $state({ done: false, error: null });
 
@@ -94,12 +96,22 @@
           ? ["Byrå"]
           : route.view === "plattform"
             ? ["Plattform"]
+            : route.view === "meldinger"
+              ? ["Meldinger"]
             : ["Mine selskaper"];
     document.title = [...deler.filter(Boolean), "regnmed"].join(" · ");
   });
 
   $effect(() => {
-    if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform]);
+    if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform, Meldinger]);
+  });
+
+  // One live connection per signed-in person: the unread badge in every
+  // navbar and the open conversation both ride it.
+  $effect(() => {
+    if (!me.loaded || !session.authed) return;
+    connect();
+    return disconnect;
   });
 
   $effect(() => {
@@ -179,6 +191,12 @@
     <Byra.component firmId={route.firmId} />
   {:else}
     {@render laster(Byra)}
+  {/if}
+{:else if route.view === "meldinger"}
+  {#if Meldinger.component}
+    <Meldinger.component conversationId={route.conversationId} />
+  {:else}
+    {@render laster(Meldinger)}
   {/if}
 {:else if route.view === "plattform"}
   {#if Plattform.component}

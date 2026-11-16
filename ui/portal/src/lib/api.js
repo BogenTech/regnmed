@@ -40,7 +40,10 @@ export async function api(path, options = {}) {
     }
   }
   // A job's status is polled until it changes, so it is never cached.
-  if (path === "/me" || path.includes("/jobs/")) return request(path, options);
+  // Nor is the chat, which is fetched again whenever the room says so.
+  if (path === "/me" || path.includes("/jobs/") || path.includes("/chat")) {
+    return request(path, options);
+  }
   const hit = cache.get(path);
   if (hit && Date.now() - hit.at < FRESH_MS) return JSON.parse(hit.text);
   // Two identical reads at once (two cards needing the same list) share a call.
@@ -58,7 +61,9 @@ export async function api(path, options = {}) {
 }
 
 // store: given on the GET path, which wants JSON as text for the cache.
-async function request(path, options, store = null) {
+// Exported for the chat's event stream, which must read the body as it
+// arrives instead of as JSON.
+export async function request(path, options, store = null) {
   const t = tokens();
   if (!t) {
     clearTokens();

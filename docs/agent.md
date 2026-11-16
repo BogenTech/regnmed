@@ -228,6 +228,13 @@ derfor skrevet ut framfor å finne opp en ny rettighet:
   for en annen agent, og ser ikke en annen agents ordrer — den ville
   handlet på dem.
 
+**Den andre døren inn i køen er Meldinger** (docs/meldinger.md, 2026-11-16):
+en melding til en agent oppretter en oppgave stilt til den, og agentens
+svar legges tilbake i samme samtale. Der kan alle som når agenten gi
+ordren — selskapets folk og byråets — ikke bare `INTEGRASJON_ADMIN`,
+fordi agenten fortsatt bare gjør det rollen dens tillater, og den som
+spurte står i `opprettet_av`. En agent starter ikke samtaler selv.
+
 ### Endepunkter
 
 - `GET  /companies/{id}/agent/oppgaver?apne=` — køen

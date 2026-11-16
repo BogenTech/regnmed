@@ -19,6 +19,7 @@ pub mod blob;
 pub mod budget;
 pub mod cash_register;
 pub mod chart_of_accounts;
+pub mod chat;
 pub mod company_card;
 pub mod currency;
 pub mod dimension;

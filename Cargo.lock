@@ -2068,10 +2068,12 @@ dependencies = [
  "anyhow",
  "async-nats",
  "base64",
+ "futures-util",
  "regnmed-db",
  "serde",
  "serde_json",
  "sqlx",
+ "tokio",
  "uuid",
 ]
 

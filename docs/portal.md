@@ -327,6 +327,16 @@ Det som omgir hver side, og som derfor må virke likt overalt:
 Én komponentmappe per seksjon under `ui/portal/src/sections/`, registrert
 i `App.svelte` og navngitt i `lib/meny.js`:
 
+Meldinger (2026-11-16, docs/meldinger.md §7) er en egen visning,
+`#/meldinger`, utenfor selskapene — en samtale er mellom personer, og
+byråets folk snakker med alle klientene. Knappen med uleste står i hver
+navbar (`ChatButton` i brukermenyen) og i selskapsmenyen. Liste og
+samtale side om side på bred skjerm, én av dem om gangen på telefon.
+`lib/chat.svelte.js` holder ÉN SSE-forbindelse per innlogget person (lest
+med `fetch`, fordi `EventSource` ikke kan sende `Authorization`).
+`/chat`-adressene bufres aldri i API-klienten, og Vite-proxyen sender dem
+videre.
+
 Oversikt (snarveier, «Til oppfølging» — forfalte fakturaer, neste
 mva-frist etter terminordningen, innboks, uavstemt bank — tre nøkkeltall,
 resultat per måned, siste bilag, migrering av tomt selskap, inviter-kort
