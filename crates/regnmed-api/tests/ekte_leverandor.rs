@@ -1,6 +1,9 @@
 //! Hand-run proving ground for the hosted agent against a REAL model
 //! provider (docs/agent.md §8.3). NOT a CI test: it costs money and
-//! needs a key, so it is a no-op unless OPEN_ROUTER_KEY is set.
+//! needs a key. Both tests are `#[ignore]`d, so an ordinary run never
+//! reaches the provider even when OPEN_ROUTER_KEY is in `.env` -- the key
+//! being present is not a decision to spend money; asking for the tests
+//! by name is. Without the key they still do nothing.
 //!
 //! It exists because the end-to-end test in `grupper/agent.rs` uses a
 //! fake provider whose payloads were written from the providers'
@@ -9,9 +12,11 @@
 //! own assumption. This is the other half: a real provider, reading our
 //! real tool schemas, calling our real router.
 //!
-//!   OPEN_ROUTER_KEY=… cargo test -p regnmed-api --test ekte_leverandor -- --nocapture
+//!   cargo test -p regnmed-api --test ekte_leverandor -- --ignored --nocapture
+//!   cargo nextest run -p regnmed-api --test ekte_leverandor --run-ignored only
 //!
-//! Override the model with REGNMED_TESTMODELL.
+//! The model is a FREE one by default (`test_model`); override it with
+//! REGNMED_TESTMODELL, and a paid one also needs REGNMED_TESTMODELL_PAID=1.
 //!
 //! Its own binary rather than a module in a group, for the same reason
 //! `seed_browser.rs` is: the grouping exists to stop 33 one-test
@@ -23,14 +28,31 @@ mod common;
 use common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
 use uuid::Uuid;
 
+/// The model to drive: a FREE one unless a paid one is asked for in so
+/// many words. OpenRouter's free models end in `:free`. The default
+/// passed both tests on 2026-11-16; `google/gemma-4-31b-it:free` was
+/// rate-limited upstream, `inkling-2-small:free` and
+/// `nemotron-3.5-super-vl:free` did not finish the job. The free lineup
+/// changes -- if this one is gone, try others from
+/// https://openrouter.ai/models?q=free with REGNMED_TESTMODELL.
+fn test_model() -> String {
+    let model = std::env::var("REGNMED_TESTMODELL")
+        .unwrap_or_else(|_| "nvidia/nemotron-3.5-lightning:free".to_string());
+    assert!(
+        model.ends_with(":free") || std::env::var("REGNMED_TESTMODELL_PAID").as_deref() == Ok("1"),
+        "«{model}» is not a free model; set REGNMED_TESTMODELL_PAID=1 to spend money on it"
+    );
+    model
+}
+
 #[tokio::test]
+#[ignore = "calls a real model provider; run with --ignored"]
 async fn a_real_model_can_use_our_tools_against_our_router() {
     let Ok(key) = std::env::var("OPEN_ROUTER_KEY") else {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
-    let model_name =
-        std::env::var("REGNMED_TESTMODELL").unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
+    let model_name = test_model();
 
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {
@@ -116,13 +138,13 @@ async fn a_real_model_can_use_our_tools_against_our_router() {
 /// the ledger is read afterwards -- the only honest place to check,
 /// since the model's own report is a claim.
 #[tokio::test]
+#[ignore = "calls a real model provider; run with --ignored"]
 async fn a_real_model_can_post_a_voucher_through_the_guards() {
     let Ok(key) = std::env::var("OPEN_ROUTER_KEY") else {
         eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
         return;
     };
-    let model_name =
-        std::env::var("REGNMED_TESTMODELL").unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
+    let model_name = test_model();
 
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {

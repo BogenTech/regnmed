@@ -614,7 +614,13 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
 ### 8.4 Hva den ekte leverandøren fant
 
 `crates/regnmed-api/tests/ekte_leverandor.rs` er en håndkjørt prøvebenk mot
-OpenRouter — no-op uten `OPEN_ROUTER_KEY`, siden den koster penger. Den fant
+OpenRouter. Den koster penger, så testene er `#[ignore]` og kjører bare når
+de bes om ved navn (`-- --ignored`), aldri bare fordi `OPEN_ROUTER_KEY` står i
+`.env` — det gjorde de en tid, og hver fulle testkjøring på en utviklermaskin
+sendte da en runde kall til leverandøren (endret 2026-11-16). Uten nøkkelen
+gjør de fortsatt ingenting. Modellen er en GRATISMODELL som standard
+(`nvidia/nemotron-3.5-lightning:free`); en modell uten `:free` nektes med mindre
+`REGNMED_TESTMODELL_PAID=1` er satt. Den fant
 to feil som den falske leverandøren ikke kunne finne, og det er grunnen til
 at den finnes.
 
