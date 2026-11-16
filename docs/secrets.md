@@ -50,7 +50,8 @@ The production key does not exist yet; it is blocked on the scope grant
 En `client_credentials`-klient i PROD-regnid, registrert 2026-10-28 for
 å prøve ut agent-tilgang (#101–#103). Den er en integrasjon som alle
 andre: tilgangen ligger i regnmeds base, ikke i tokenet, og trekkes
-tilbake i portalen under Administrasjon → Oppdrag og integrasjoner.
+tilbake i portalen under Administrasjon → Brukere og roller (kortet
+«Agenter og integrasjoner»).
 
 ```
 ~/.config/regnmed/regnmed-agent.env   client id + secret, mode 600
