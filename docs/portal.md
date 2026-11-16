@@ -418,6 +418,35 @@ Brukere og roller revidert 2026-11-16 (samme gjennomgang):
   bekreftes. En lukket rettighetsgruppe viser hvor mange som er valgt
   («2 av 8»), og Lagre på en egen rolle er bare aktiv når noe er endret.
 
+Byråvisningen (`#/byra/{id}`) revidert 2026-11-16 (samme gjennomgang):
+
+- **`/me` lister hvert selskap ÉN gang.** En person kan nå samme
+  selskap på flere veier — direkte medlemskap og et byrås oppdrag, eller
+  to byråer — og `/me` sendte én rad per vei. Selskapslisten er nøklet på
+  id, så duplikatet blanket ut startsiden for et byrå som fører sitt eget
+  regnskap og har tatt seg selv som klient. Nå slås radene sammen
+  (`regnmed-db::one_per_company`): den sterkeste veien vises
+  (`access_rank`, samme rangering som `company_access`), og rettighetene
+  er som før unionen av alle veiene. Testet i
+  `me_lists_a_company_once_when_reached_two_ways`, sett feile uten
+  rettingen.
+- **Klientene er lenker** til selskapets Oversikt — grunnen til at en
+  regnskapsfører åpner siden. Avsluttede oppdrag står for seg under
+  «Avsluttede oppdrag», uten lenke (`delKlienter` i
+  `sections/byra/byra.js`, testet; `valid_to` er eksklusiv som overalt).
+- **Godta og Avslå bekreftes**, og forespørselen viser dato og
+  oppdragstype i ord. Forespørsler, klienter og medlemmer er rader som
+  passer en telefon. Medlemmer-kortet følger Tilgang-kortet: rollebytte
+  som kan stenge noen ute bekreftes, invitasjonen er et skjema med
+  etiketter, tilbakekalling bekreftes.
+- **Et ukjent byrå sier fra** i stedet for å spinne for alltid, og et
+  kall som feiler gir «Prøv igjen». Brødsmulesti tilbake til Mine
+  selskaper.
+- **Leverandørtilgang vises også for byrået** (administrator):
+  `/firms/{id}/platform-access` fantes, men byråvisningen brukte den
+  aldri, så «varslet»-kravet fra #57 var oppfylt for selskaper og ikke
+  for byråer.
+
 **Menyikonene** er håndrullede 24×24 outline-SVG-er i
 `src/lib/ikoner.js` — vendored som themes.css: intet ikonbibliotek,
 ingen CDN, ingenting hentes i kjøretid. Hvert ikon lagres ÉN gang som
