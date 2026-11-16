@@ -202,9 +202,18 @@ pub async fn messages(
 ) -> Result<Json<Value>, ApiError> {
     let (company, other) = guard(&state, person.person_id, conversation).await?;
     let messages = db::messages(&state.pool, conversation, query.since).await?;
+    // An agent regnmed does not run answers only if it runs somewhere
+    // else; the thread says so up front rather than leaving the message
+    // to wait in silence (docs/meldinger.md §3).
+    // Only on the full load: incremental polls keep the first answer.
+    let runs_here = match (other.agent, company, query.since) {
+        (true, Some(c), None) => Some(db::agent_runs_here(&state.pool, c, other.person_id).await?),
+        _ => None,
+    };
     Ok(Json(json!({
         "me": person.person_id,
         "with": contact_json(&other),
+        "runs_here": runs_here,
         // Where an attachment can go: the agent's company, or a company
         // both sides work in.
         "attach_to": match company {

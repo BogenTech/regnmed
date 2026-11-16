@@ -70,6 +70,15 @@ agenten gjør bare det rollen dens tillater. Attesteringspolicyen
   gitt til, snakker i samtalen — avgjort på identitet, ikke navn. Et
   menneske som avslutter oppgaven i oppgavevisningen, snakker ikke i
   agentens navn.
+- **En melding blir ikke stående ubesvart fordi agenten ikke kan kjøre.**
+  En agent regnmed kjører (en modell er satt opp her, eller
+  klienthemmeligheten er lagret), men som mangler aktiv modell,
+  klienthemmelighet eller tilgang, svarer med et `sporsmal` som sier hva
+  som mangler og hvor en administrator ordner det — så er neste melding
+  forsøket på nytt. En agent uten noen av delene kjøres ikke av regnmed:
+  en kundes egen MCP-agent ser nøyaktig slik ut, og den skal aldri få
+  beskjed om at den er ødelagt. Der sier samtalen fra i stedet
+  (`runs_here: false`): agenten svarer bare der den kjøres.
 - **En agent starter ikke samtaler og skriver ikke til andre agenter**:
   den svarer gjennom oppgavene sine. #103s egenskap («en agent skriver
   ikke sine egne ordrer») består.
@@ -187,5 +196,8 @@ hvem fra begge sider, en fremmed agent som ikke synes, byråets valgte
 kontakt (bare admin velger, bare egne medlemmer), kvittering til agenten
 → oppgave → spørsmål tilbake → svar som fortsetter samme oppgave,
 sortering etter nyeste melding, uleste, utenforstående = 404, og
-samtalen som forsvinner når oppdraget avsluttes.
+samtalen som forsvinner når oppdraget avsluttes. `an_agent_that_cannot_run_says_so_in_the_conversation`: en agent
+regnmed ikke kjører, får ingen hendelse og `runs_here: false`; med lagret
+hemmelighet men uten modell svarer den med et spørsmål som havner i
+samtalen.
 `regnmed-mail::chatbus` har en rundtur mot en ekte nats-server.

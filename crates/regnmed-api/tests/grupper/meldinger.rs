@@ -448,3 +448,114 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     let (_, list) = call(&state, "GET", "/chat/conversations", &eva.token, None).await;
     assert_eq!(list["conversations"].as_array().unwrap().len(), 1, "{list}");
 }
+
+/// A message to an agent that cannot run is ANSWERED, not left waiting:
+/// an agent regnmed hosts but cannot start writes why into its task, and
+/// that note reaches the conversation. One that regnmed does not host at
+/// all (no model, no secret -- the customer's own MCP agent looks the
+/// same) is never told it is broken; the thread says up front that it
+/// answers only where it runs.
+#[tokio::test]
+async fn an_agent_that_cannot_run_says_so_in_the_conversation() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let key = state.sealing_key.clone().expect("the test state seals");
+    let owner = person(&state, &idp, "Ola Eier").await;
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Stille AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, owner.id, "admin")
+        .await
+        .unwrap();
+    let integration = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &format!("agent-{}", Uuid::new_v4()),
+        "Agent Test",
+        None,
+        "bokforing",
+        "Ola Eier",
+    )
+    .await
+    .unwrap();
+
+    let (_, found) = call(&state, "GET", "/chat/contacts", &owner.token, None).await;
+    let agent = found["contacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["agent"] == true)
+        .unwrap()
+        .clone();
+    let (_, opened) = call(
+        &state,
+        "POST",
+        "/chat/conversations",
+        &owner.token,
+        Some(json!({"person_id": agent["person_id"], "company_id": company})),
+    )
+    .await;
+    let conversation = opened["conversation_id"].as_str().unwrap().to_string();
+    let thread_uri = format!("/chat/conversations/{conversation}");
+
+    // Not hosted here: the thread says so, and the worker stays out.
+    let (_, thread) = call(&state, "GET", &thread_uri, &owner.token, None).await;
+    assert_eq!(thread["runs_here"], false, "{thread}");
+    let (_, posted) = call(
+        &state,
+        "POST",
+        &format!("{thread_uri}/messages"),
+        &owner.token,
+        Some(json!({"text": "Kan du lage et utlegg?"})),
+    )
+    .await;
+    let task: Uuid = posted["task_id"].as_str().unwrap().parse().unwrap();
+    let run = |task| {
+        let state = state.clone();
+        let key = key.clone();
+        async move {
+            regnmed_agent::run_task(&state.pool, &key, company, task, "unused", "unused", None)
+                .await
+        }
+    };
+    assert!(
+        run(task)
+            .await
+            .unwrap_err()
+            .is::<regnmed_agent::NotRunHere>(),
+        "not ours to answer"
+    );
+    assert!(
+        regnmed_db::agent_task::history(&state.pool, company, task)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an agent run elsewhere must not be told it is broken"
+    );
+
+    // Hosted (its secret is stored) but no model: it answers in the task,
+    // and the answer is a message in the same conversation.
+    regnmed_db::agentllm::sett_klienthemmelighet(&state.pool, &key, company, integration, "s3cret")
+        .await
+        .unwrap();
+    let (_, thread) = call(&state, "GET", &thread_uri, &owner.token, None).await;
+    assert_eq!(thread["runs_here"], true, "{thread}");
+    let outcome = run(task).await.unwrap();
+    assert_eq!(outcome.status(), "sporsmal", "a question: a reply retries");
+    assert!(outcome.note().contains("språkmodell"), "{}", outcome.note());
+
+    let (_, thread) = call(&state, "GET", &thread_uri, &owner.token, None).await;
+    let last = thread["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert_eq!(last["author"], "Agent Test", "{thread}");
+    assert!(
+        last["text"].as_str().unwrap().contains("Gi modell"),
+        "{thread}"
+    );
+}

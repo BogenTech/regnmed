@@ -544,6 +544,16 @@ skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
 oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
 nøyaktig like mange verktøy som tabellen.
 
+**Kan den ikke starte, sier den det i oppgaven.** Mangler en agent
+regnmed kjører aktiv modell, klienthemmelighet eller tilgang, skriver
+workeren et `sporsmal` med hva som mangler og hvor det ordnes — i
+oppgavens spor, der den som spurte leser, og ikke bare i prosessens logg.
+Spørsmål, ikke avvisning: når en administrator har ordnet det, kjører et
+svar oppgaven på nytt. «Regnmed kjører den» betyr at en modell er satt opp
+her eller hemmeligheten er lagret (`agentllm::runs_here`); uten noen av
+delene er agenten kundens egen (eller ingens ennå), køen ringer likevel på,
+og workeren lar oppgaven ligge for agenten som henter sin egen kø.
+
 Sløyfen stopper etter `MAX_TURNS` (12) og SIER at den stoppet. En sløyfe
 som ikke stopper bruker kundens penger; en agent som stille gir opp er verre
 enn en som melder fra om en vegg.

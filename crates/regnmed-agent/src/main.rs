@@ -102,6 +102,9 @@ async fn main() -> Result<()> {
                 }
                 match outcome {
                     Ok(outcome) => println!("{task_id} {} {}", outcome.status(), outcome.note()),
+                    Err(error) if error.is::<regnmed_agent::NotRunHere>() => {
+                        println!("{task_id} {error}")
+                    }
                     Err(error) => eprintln!("{task_id} failed: {error:#}"),
                 }
             }
@@ -221,6 +224,9 @@ async fn listen(
         }
         match outcome {
             Ok(u) => println!("{} {} {}", nudge.task_id, u.status(), u.note()),
+            Err(error) if error.is::<regnmed_agent::NotRunHere>() => {
+                println!("{} {error}", nudge.task_id)
+            }
             Err(error) => eprintln!("{} failed: {error:#}", nudge.task_id),
         }
         // Acked either way: the outcome is written into the task's own

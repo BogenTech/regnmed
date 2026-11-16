@@ -503,6 +503,19 @@
             <p class="text-xs opacity-60 truncate">{via(thread.with)}</p>
           </div>
         </div>
+        {#if thread.runs_here === false}
+          <!-- Not ours to run: it answers only if it runs elsewhere (MCP).
+               Said up front, so a message does not wait in silence. -->
+          <p role="note" class="alert alert-info alert-soft rounded-none text-sm py-2">
+            <span>
+              {thread.with.name} kjøres ikke av regnmed, og svarer bare når den kjøres et annet sted, for
+              eksempel på deres egen maskin. Skal regnmed kjøre den, gir en administrator den en språkmodell
+              under <a class="link" href={"#/c/" + thread.with.company_id + "/admin/oppdrag"}
+                >Oppdrag og integrasjoner</a
+              >.
+            </span>
+          </p>
+        {/if}
 
         <div
           bind:this={scroller}
