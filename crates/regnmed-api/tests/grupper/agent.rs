@@ -18,7 +18,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -319,6 +321,45 @@ async fn every_tool_in_the_table_still_matches_the_api() {
     )
     .await;
     assert!(failed, "en låst dag tar ikke imot timer: {reply}");
+
+    // Billing is the one hours tool that writes to the ledger, so it is
+    // exercised for real: locked hours may still be billed (docs/timer.md).
+    let (_, customer) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
+            .await
+            .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    give_parties_address(&state.pool, company).await;
+    let unbilled = ok(
+        "timer_ufakturert",
+        &calls(&server, "timer_ufakturert", json!({"prosjekt": "UTV"})).await,
+    );
+    let ids = &unbilled["groups"][0]["personer"][0]["entry_ids"];
+    assert_eq!(ids.as_array().map(Vec::len), Some(4), "{unbilled}");
+    let billed = ok(
+        "timer_fakturer",
+        &calls(
+            &server,
+            "timer_fakturer",
+            json!({"party_no": customer, "prosjekt": "UTV", "entry_ids": ids,
+                   "invoice_date": "2026-03-31"}),
+        )
+        .await,
+    );
+    // 31,5 t × 1 200 kr at the register's rate (the agent sent none),
+    // plus 25 % mva: 37 800 + 9 450 kr.
+    assert_eq!(billed["gross_ore"], 4_725_000, "{billed}");
 
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.

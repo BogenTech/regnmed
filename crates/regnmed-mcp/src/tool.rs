@@ -729,7 +729,8 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "timer_endre",
         description: "Retter en timeføring. ALLE feltene skrives slik du sender dem — send dato, \
-                      minutter og prosjekt sammen, også de som ikke endres. Du kan rette dine \
+                      minutter, prosjekt og `fakturerbar` sammen slik de står i timer_liste, også de \
+                      som ikke endres — et utelatt `fakturerbar` blir prosjektets standard. Du kan rette dine \
                       egne føringer; andres bare med retten TIMER_SKRIV_ALLE. En føring som er \
                       fakturert eller ligger i en låst periode kan ikke endres.",
         method: "PUT",
