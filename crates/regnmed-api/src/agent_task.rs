@@ -107,7 +107,7 @@ pub async fn create(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    nudge(&state, company_id, id).await;
+    nudge(&state, company_id, id, id).await;
     Ok(Json(json!({ "oppgave_id": id })))
 }
 
@@ -196,7 +196,9 @@ pub async fn answer(
     // for the backstop sweep, which is the slow path we are leaving.
     // An agent's own answer never does: it is reporting, not asking.
     if person.integration.is_none() && !matches!(request.status.as_str(), "utfort" | "avvist") {
-        nudge(&state, company_id, task_id).await;
+        // Each answer is its own cause: a second reply right after the
+        // first must wake the worker again.
+        nudge(&state, company_id, task_id, Uuid::now_v7()).await;
     }
     Ok(Json(json!({ "status": request.status })))
 }
@@ -207,11 +209,11 @@ pub async fn answer(
 /// to ignore: the backstop sweep finds it regardless. A queue outage
 /// must never fail the request that created the work -- that would turn
 /// a slow agent into a broken portal.
-pub(crate) async fn nudge(state: &AppState, company_id: Uuid, task_id: Uuid) {
+pub(crate) async fn nudge(state: &AppState, company_id: Uuid, task_id: Uuid, cause: Uuid) {
     let Some(js) = state.mailq.as_ref() else {
         return;
     };
-    if let Err(e) = regnmed_mail::taskqueue::nudge(js, company_id, task_id).await {
+    if let Err(e) = regnmed_mail::taskqueue::nudge(js, company_id, task_id, cause).await {
         eprintln!("the agent queue rejected the nudge for {task_id}: {e:#}");
     }
 }

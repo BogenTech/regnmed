@@ -22,6 +22,8 @@ pub mod chatbus;
 pub mod follow_up;
 pub mod jobqueue;
 pub mod taskqueue;
+#[cfg(test)]
+mod testnats;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use uuid::Uuid;
