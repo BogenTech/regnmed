@@ -58,7 +58,7 @@ resources:
 images:
   - name: regnmed
     newName: ghcr.io/bogentech/regnmed
-    newTag: sha-a09e605
+    newTag: sha-c692019
   - name: regnid
     newName: ghcr.io/bogentech/regnid
     # A RELEASE tag, not a sha: regnid started cutting releases with
