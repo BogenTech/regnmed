@@ -18,7 +18,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::common::{TestIdp, make_invoiceable, test_state, unique_orgnumber};
+use crate::common::{
+    TestIdp, give_parties_address, make_invoiceable, test_state, unique_orgnumber,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -158,6 +160,10 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("oppgave", json!({"oppgave": task.to_string()})),
         ("utlegg_mottakere", json!({})),
         ("utlegg_liste", json!({"status": "apne"})),
+        ("prosjekter", json!({})),
+        ("timer_liste", year.clone()),
+        ("timer_sammendrag", year.clone()),
+        ("timer_ufakturert", json!({})),
     ]);
 
     for (name, args) in &argumenter {
@@ -195,10 +201,180 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         .unwrap();
     assert_eq!(posted, 1, "bilaget havnet ikke i hovedboken");
 
+    // ---- Projects and hours, end to end through the tools ----
+    //
+    // «før 8 timer på utvikling man–fre» is the request that found this
+    // gap: the employee prompt promised hours and the table had no way
+    // to log them. Every write here is real, because a drifted field
+    // name (`minutter` vs `minutes`) would be a 422 the agent cannot read.
+    let ok = |name: &'static str, reply: &(bool, String)| {
+        assert!(!reply.0, "{name} nådde ikke fram: {}", reply.1);
+        serde_json::from_str::<Value>(&reply.1).unwrap_or(Value::Null)
+    };
+    ok(
+        "prosjekt_opprett",
+        &calls(
+            &server,
+            "prosjekt_opprett",
+            json!({"kind": "prosjekt", "code": "UTV", "name": "Utvikling"}),
+        )
+        .await,
+    );
+    ok(
+        "prosjekt_endre",
+        &calls(
+            &server,
+            "prosjekt_endre",
+            json!({"kind": "prosjekt", "kode": "UTV", "fakturerbar_default": true}),
+        )
+        .await,
+    );
+    ok(
+        "prosjekt_sats_sett",
+        &calls(
+            &server,
+            "prosjekt_sats_sett",
+            json!({"prosjekt": "UTV", "timesats_ore": 120000, "valid_from": "2026-01-01"}),
+        )
+        .await,
+    );
+    let satser = ok(
+        "prosjekt_satser",
+        &calls(&server, "prosjekt_satser", json!({"prosjekt": "UTV"})).await,
+    );
+    assert_eq!(satser["satser"][0]["timesats_ore"], 120000, "{satser}");
+    for day in 2..=6 {
+        ok(
+            "timer_registrer",
+            &calls(
+                &server,
+                "timer_registrer",
+                json!({"dato": format!("2026-03-0{day}"), "minutter": 480,
+                       "prosjekt": "UTV", "beskrivelse": "Utvikling"}),
+            )
+            .await,
+        );
+    }
+    let week = json!({"from": "2026-03-02", "to": "2026-03-08"});
+    let listed = ok(
+        "timer_liste",
+        &calls(&server, "timer_liste", week.clone()).await,
+    );
+    let entries = listed["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 5, "{listed}");
+    // Whose hours: the agent's own. An agent is its own person (#101),
+    // and the API writes for the person the token proves.
+    let (owners, kind): (i64, String) = sqlx::query_as(
+        "select count(distinct t.person_id), min(p.kind)
+         from time_entry t join person p on p.id = t.person_id
+         where t.company_id = $1",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!((owners, kind.as_str()), (1, "integrasjon"));
+    assert!(
+        entries
+            .iter()
+            .all(|e| e["own"] == true && e["fakturerbar"] == true)
+    );
+    let first = entries[0]["entry_id"].as_str().unwrap().to_string();
+    let last = entries[4]["entry_id"].as_str().unwrap().to_string();
+    ok(
+        "timer_endre",
+        &calls(
+            &server,
+            "timer_endre",
+            json!({"timeforing": first, "dato": entries[0]["dato"], "minutter": 450,
+                   "prosjekt": "UTV", "beskrivelse": "Utvikling"}),
+        )
+        .await,
+    );
+    ok(
+        "timer_slett",
+        &calls(&server, "timer_slett", json!({"timeforing": last})).await,
+    );
+    let summary = ok(
+        "timer_sammendrag",
+        &calls(&server, "timer_sammendrag", week.clone()).await,
+    );
+    assert_eq!(
+        summary["prosjekter"][0]["minutter"],
+        450 + 3 * 480,
+        "{summary}"
+    );
+    // The lock is real too: once set, the agent cannot log into it.
+    ok(
+        "timer_las",
+        &calls(
+            &server,
+            "timer_las",
+            json!({"locked_through": "2026-03-31", "note": "Lønn mars"}),
+        )
+        .await,
+    );
+    let (failed, reply) = calls(
+        &server,
+        "timer_registrer",
+        json!({"dato": "2026-03-09", "minutter": 60, "prosjekt": "UTV"}),
+    )
+    .await;
+    assert!(failed, "en låst dag tar ikke imot timer: {reply}");
+
+    // Billing is the one hours tool that writes to the ledger, so it is
+    // exercised for real: locked hours may still be billed (docs/timer.md).
+    let (_, customer) =
+        regnmed_db::create_party(&state.pool, company, "kunde", "Kunde AS", None, None)
+            .await
+            .unwrap();
+    for (number, name) in [
+        ("1500", "Kundefordringer"),
+        ("3000", "Salgsinntekt"),
+        ("2700", "Utgående mva"),
+    ] {
+        regnmed_db::ensure_account(&state.pool, company, number, name)
+            .await
+            .unwrap();
+    }
+    regnmed_db::set_account_subledger(&state.pool, company, "1500", Some("kunde"))
+        .await
+        .unwrap();
+    give_parties_address(&state.pool, company).await;
+    let unbilled = ok(
+        "timer_ufakturert",
+        &calls(&server, "timer_ufakturert", json!({"prosjekt": "UTV"})).await,
+    );
+    let ids = &unbilled["groups"][0]["personer"][0]["entry_ids"];
+    assert_eq!(ids.as_array().map(Vec::len), Some(4), "{unbilled}");
+    let billed = ok(
+        "timer_fakturer",
+        &calls(
+            &server,
+            "timer_fakturer",
+            json!({"party_no": customer, "prosjekt": "UTV", "entry_ids": ids,
+                   "invoice_date": "2026-03-31"}),
+        )
+        .await,
+    );
+    // 31,5 t × 1 200 kr at the register's rate (the agent sent none),
+    // plus 25 % mva: 37 800 + 9 450 kr.
+    assert_eq!(billed["gross_ore"], 4_725_000, "{billed}");
+
     // Every READ tool in the table must be covered above. A tool added
     // without a line here is a tool nothing checks.
     let mut covered: Vec<&str> = argumenter.keys().copied().collect();
-    covered.push("bilag_for");
+    covered.extend([
+        "bilag_for",
+        "prosjekt_opprett",
+        "prosjekt_endre",
+        "prosjekt_sats_sett",
+        "prosjekt_satser",
+        "timer_registrer",
+        "timer_endre",
+        "timer_slett",
+        "timer_las",
+    ]);
     // Exercised further down instead, where there is a real document,
     // a real file or a real task to act on.
     let senere = [
@@ -211,6 +387,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "saft_importer",
         "kontakter_importer",
         "apne_poster_importer",
+        "timer_fakturer",
         "oppgave_svar",
         // In an_agent_files_a_claim_and_a_human_decides_it.
         "utlegg_fra_innboks",
@@ -337,6 +514,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
             "apne_poster_importer",
             json!({"fil": tomcsv, "kind": "kunde", "preview": true}),
         ),
+        ("timer_fakturer", json!({"party_no": "finnes-ikke"})),
     ] {
         let (failed, reply) = calls(&server, name, args).await;
         assert!(failed, "{name} skulle feilet på innholdet: {reply}");
@@ -496,13 +674,24 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     let sett = mock.sett.lock().unwrap().clone();
     assert_eq!(sett.len(), 2, "to turer: ett verktøykall, så svaret");
 
-    // The catalogue the model was offered is the real one.
-    let tools = sett[0]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), regnmed_mcp::tool::TOOLS.len());
+    // The catalogue the model was offered is the ROLE's menu: the real
+    // table, less what `bokforing` does not cover (migration, the lock).
+    let tools: Vec<&str> = sett[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["function"]["name"].as_str().unwrap())
+        .collect();
+    assert!(tools.contains(&"bilag_bokfor") && tools.contains(&"saldobalanse"));
+    assert!(!tools.contains(&"saft_importer") && !tools.contains(&"timer_las"));
 
     // The role prompt went with it — a `bokforing` agent must not be
     // told it is something else, or it spends its turns being refused.
     let system = sett[0]["messages"][0]["content"].as_str().unwrap();
+    assert!(
+        system.starts_with(&regnmed_mcp::role::prompt("bokforer").unwrap()),
+        "en bokforing-agent fikk ikke bokfører-prompten"
+    );
     assert!(
         system.contains("FERDIG:") && system.contains("SPØRSMÅL:"),
         "avslutningsreglene mangler i systemprompten"
@@ -960,4 +1149,284 @@ async fn an_agent_files_a_claim_and_a_human_decides_it() {
         .filter(|m| m["content"].is_array())
         .count();
     assert_eq!(pictures, 1, "{}", sett[2]);
+}
+
+/// Each tool declares the right its endpoint checks, and an agent is
+/// only offered the tools whose right it holds (`Server::offered_tools`).
+/// A wrong declaration either hides a tool the role could use or offers
+/// one it will be refused -- and nothing else notices, because the API
+/// still decides every call.
+///
+/// So the declaration is checked against the real guard, per built-in
+/// role a machine can hold: EVERY tool that declares a right is called,
+/// writes included, straight past the menu (`execute_tool`), and a hidden
+/// tool must be refused with a 403 naming exactly the declared right,
+/// while an offered one must not be. The arguments are only
+/// well-formed -- random ids, an unknown project -- because axum runs the
+/// body and query extractors BEFORE the guard (docs/auth.md): a body that
+/// does not parse would be a 400 for everyone and measure nothing. What
+/// an offered write then does (a 404 on the random id, a 400 on the
+/// unknown project, or real work in this throwaway company) is beside
+/// the point.
+#[tokio::test]
+async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
+    for t in regnmed_mcp::tool::TOOLS {
+        if let Some(r) = t.right {
+            assert!(
+                regnmed_api::access::Right::from_slug(r).is_some(),
+                "{}: «{r}» er ingen rettighet",
+                t.name
+            );
+        }
+    }
+
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Verktoymeny AS")
+        .await
+        .unwrap();
+    let base = serve(state.clone()).await;
+    let any_id = Uuid::new_v4().to_string();
+    let csv = skriv_midlertidig("menu.csv", b"Navn;Orgnr\nKunde AS;\n");
+    let well_formed = json!({
+        // reads
+        "from": "2026-01-01", "to": "2026-12-31", "date": "2026-12-31", "year": 2026, "termin": 1,
+        // ids in paths
+        "dokument": any_id, "utlegg": any_id, "timeforing": any_id, "oppgave": any_id,
+        "prosjekt": "MENY", "kind": "prosjekt", "kode": "MENY",
+        // files
+        "fil": csv,
+        // bodies
+        "journal_code": "GL", "description": "x", "beskrivelse": "x", "note": "x",
+        "lines": [], "code": "MENY", "name": "Meny",
+        "party_no": "10000", "invoice_date": "2026-03-02", "due_date": "2026-03-16",
+        "person_id": any_id, "dato": "2026-03-02", "belop_ore": 100, "minutter": 60,
+        "timesats_ore": 100, "locked_through": "2025-12-31",
+    });
+
+    for role in ["ansatt", "les", "bokforing", "admin"] {
+        let client_id = format!("agent-{role}-{}", Uuid::new_v4());
+        let integration_id = regnmed_db::grant_integration(
+            &state.pool,
+            company,
+            &client_id,
+            &format!("Agent {role}"),
+            None,
+            role,
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        sqlx::query("update integration set rate_limit_min = 10000 where id = $1")
+            .bind(integration_id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let server = Server::new(Client::new(
+            &base,
+            Some(company.to_string()),
+            &idp.token(&client_id, ""),
+        ));
+        let offered: Vec<&str> = server
+            .offered_tools()
+            .await
+            .iter()
+            .map(|t| t.name)
+            .collect();
+        // The fallback (whole table when `/me` fails) must not be what
+        // this test is measuring.
+        assert!(
+            offered.len() < regnmed_mcp::tool::TOOLS.len() || role == "admin",
+            "{role}: fikk hele tabellen -- leste offered_tools /me?"
+        );
+        // MCP lists the same menu the worker builds its catalogue from.
+        let listed = server
+            .handle(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}))
+            .await
+            .unwrap();
+        assert_eq!(
+            listed["result"]["tools"].as_array().unwrap().len(),
+            offered.len(),
+            "{role}"
+        );
+        // And a tool outside the menu is refused by the menu, in words,
+        // without a round trip to be told the same by the API.
+        if !offered.contains(&"saft_importer") {
+            let (failed, text) =
+                calls(&server, "saft_importer", json!({"fil": "/finnes/ikke"})).await;
+            assert!(
+                failed && text.contains("hører ikke til rollen din"),
+                "{role}: {text}"
+            );
+        }
+
+        for t in regnmed_mcp::tool::TOOLS {
+            let Some(right) = t.right else { continue };
+            let mut args = well_formed.as_object().unwrap().clone();
+            // Leftover arguments become the QUERY of a body-less call, and
+            // a query struct reads a stray field (`lines`) as its own.
+            if t.method == "GET" || t.method == "DELETE" {
+                args.retain(|k, _| {
+                    ["from", "to", "date", "year", "termin"].contains(&k.as_str())
+                        || t.path.contains(&format!("{{{k}}}"))
+                });
+            }
+            // The imports' `kind` is the party kind, not a dimension's.
+            if t.path.contains("/import/") {
+                args.insert("kind".into(), json!("kunde"));
+            }
+            let text = server.execute_tool(t, args).await.text;
+            let guard_said = |slug: &str| {
+                text.contains("svarte 403") && text.contains(&format!(r#""error":"{slug}""#))
+            };
+            if offered.contains(&t.name) {
+                // Only the declared right: a SECOND, argument-dependent
+                // check (a claim for another person needs UTLEGG_GODKJENN)
+                // is the endpoint's own, and the random ids trip it.
+                assert!(
+                    !guard_said(right),
+                    "{role}: {} tilbys (krever {right}) men vakten nektet: {text}",
+                    t.name
+                );
+            } else {
+                assert!(
+                    guard_said(right),
+                    "{role}: {} skjules (krever {right}), men vakten sa noe annet: {text}",
+                    t.name
+                );
+            }
+        }
+    }
+}
+
+/// An agent reaches its OWN queue on company access alone. Until
+/// 2026-11-17 reading and answering took `INTEGRASJON_LES`, which the
+/// `ansatt` bundle lacks, so an employee agent over MCP could not see
+/// what it had been asked to do. Pinned both ways: the narrow agent now
+/// gets its own task, still never another agent's, and a HUMAN with the
+/// same narrow role is still refused the queue.
+#[tokio::test]
+async fn an_agent_reaches_its_own_tasks_whatever_its_role() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Egen ko AS")
+        .await
+        .unwrap();
+    let base = serve(state.clone()).await;
+
+    let mut agents = Vec::new();
+    for name in ["Timeagent", "Annen agent"] {
+        let client_id = format!("agent-{}", Uuid::new_v4());
+        let id = regnmed_db::grant_integration(
+            &state.pool,
+            company,
+            &client_id,
+            name,
+            None,
+            "ansatt",
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        let task = regnmed_db::agent_task::create_task(
+            &state.pool,
+            company,
+            Some(id),
+            &format!("Oppgave til {name}"),
+            None,
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        let server = Server::new(Client::new(
+            &base,
+            Some(company.to_string()),
+            &idp.token(&client_id, ""),
+        ));
+        agents.push((server, task));
+    }
+    let (me, mine) = &agents[0];
+    let (_, theirs) = &agents[1];
+
+    let offered: Vec<&str> = me.offered_tools().await.iter().map(|t| t.name).collect();
+    assert!(offered.contains(&"oppgaver") && offered.contains(&"oppgave_svar"));
+
+    let (failed, text) = calls(me, "oppgaver", json!({})).await;
+    assert!(!failed, "{text}");
+    assert!(text.contains(&mine.to_string()), "{text}");
+    assert!(
+        !text.contains(&theirs.to_string()),
+        "så en annen agents oppgave: {text}"
+    );
+
+    let (failed, text) = calls(me, "oppgave", json!({"oppgave": theirs.to_string()})).await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
+    let (failed, text) = calls(
+        me,
+        "oppgave_svar",
+        json!({"oppgave": theirs.to_string(), "status": "utfort", "notat": "ikke min"}),
+    )
+    .await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
+
+    let (failed, text) = calls(
+        me,
+        "oppgave_svar",
+        json!({"oppgave": mine.to_string(), "status": "utfort", "notat": "Timene er ført."}),
+    )
+    .await;
+    assert!(!failed, "{text}");
+
+    // A person with the same narrow role is not an agent answering its
+    // own orders, and still needs INTEGRASJON_LES.
+    let sub = format!("test|{}", Uuid::new_v4());
+    let ola = regnmed_db::ensure_person(&state.pool, &sub, Some("Ola Ansatt"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, ola, "ansatt")
+        .await
+        .unwrap();
+    let human = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&sub, ""),
+    ));
+    let (failed, text) = calls(&human, "oppgaver", json!({})).await;
+    assert!(failed && text.contains("svarte 403"), "{text}");
+
+    // An agent whose role grants nothing -- how an owner cuts one off by
+    // deactivating its custom role -- does not keep its queue.
+    let client_id = format!("agent-{}", Uuid::new_v4());
+    let off = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Avskrudd agent",
+        None,
+        "avskrudd",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(off),
+        "Les denne",
+        None,
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let off = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    let (failed, text) = calls(&off, "oppgaver", json!({})).await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
 }

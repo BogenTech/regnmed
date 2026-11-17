@@ -41,11 +41,12 @@ pub const CONCURRENT_TOOLS: usize = 4;
 pub const MAX_TURNS: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
-/// `TOOLS` table the MCP server serves, so an agent can never be
-/// offered a tool over one rail that does not exist on the other.
-pub fn tool_catalogue() -> Value {
+/// `TOOLS` table the MCP server serves, filtered the same way
+/// ([`Server::offered_tools`]), so an agent is offered the same tools
+/// over both rails.
+pub fn tool_catalogue(tools: &[&tool::Tool]) -> Value {
     Value::Array(
-        tool::TOOLS
+        tools
             .iter()
             .map(|v| {
                 json!({
@@ -194,7 +195,7 @@ pub async fn run_loop(
     task: &str,
     history: &[HistoryLine],
 ) -> Result<Outcome> {
-    let katalog = tool_catalogue();
+    let katalog = tool_catalogue(&server.offered_tools().await);
     let mut messages = vec![
         Message::system(system_prompt(role_name, ekstra)),
         Message::bruker(task.to_string()),
@@ -236,12 +237,16 @@ pub async fn run_loop(
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
-            let out = match tool::find(&calls.name) {
-                Some(v) => server.execute_tool(v, calls.arguments).await,
-                // An invented tool is the model's mistake, and it is told
-                // so in the same channel as a real result.
-                None => regnmed_mcp::ToolOutput {
-                    text: format!("ukjent verktøy «{}»", calls.name),
+            let out = match server.offered_tool(&calls.name).await {
+                Some(Ok(v)) => server.execute_tool(v, calls.arguments).await,
+                // An invented tool, or one outside the role, is the
+                // model's mistake, and it is told so in the same channel
+                // as a real result.
+                refused => regnmed_mcp::ToolOutput {
+                    text: match refused {
+                        Some(Err(why)) => why,
+                        _ => format!("ukjent verktøy «{}»", calls.name),
+                    },
                     failed: true,
                     image: None,
                 },
@@ -526,7 +531,7 @@ mod tests {
 
     #[test]
     fn the_catalogue_matches_the_tools_the_other_rail_serves() {
-        let katalog = tool_catalogue();
+        let katalog = tool_catalogue(&tool::TOOLS.iter().collect::<Vec<_>>());
         let name: Vec<&str> = katalog
             .as_array()
             .unwrap()

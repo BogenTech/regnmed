@@ -84,7 +84,7 @@ innenfor containergrensen på 64 MB, og dette gjør ikke det.
 
 ## 3. Verktøyene
 
-`crates/regnmed-mcp/src/verktoy.rs` er en **kuratert** liste på ~30
+`crates/regnmed-mcp/src/tool.rs` er en **kuratert** liste på ~55
 verktøy, ikke en generert en.
 
 #102 foreslo å generere verktøylisten fra samme rutetabell som
@@ -103,9 +103,110 @@ gang: `/settings/registrering` er POST-only, og registreringsstatus
 leses fra `/settings`.)
 
 Grupper: orientering, lesing av hovedboken, bilagsflyten
-(innboks → forslag → bokfør), salg, utlegg, migrering, og oppgaver.
+(innboks → forslag → bokfør), salg, utlegg, prosjekter og timer,
+migrering, og oppgaver.
 Utleggsverktøyene og hva en agent får gjøre med et utleggskrav står i
 [utlegg.md «Agenten»](utlegg.md).
+
+### Verktøymenyen per rolle (2026-11-17)
+
+En agent **tilbys** bare verktøyene rollen dens dekker. Hvert verktøy i
+tabellen navngir rettigheten endepunktet sjekker (`Tool::right`, sluggen
+slik `/me` lister den; `None` = alle får det), og
+`Server::offered_tools` slår opp agentens rettigheter i `/me` og filtrerer.
+Begge skinnene går gjennom samme funksjon: MCP-ens `tools/list` og
+workerens katalog viser samme meny for samme rolle.
+
+| Rolle på grantet | Verktøy tilbudt |
+| --- | --- |
+| `ansatt` | 16 — egne timer og utlegg, prosjektlisten, bilagsopplasting, egne oppgaver |
+| `les` | 31 — all lesing, ingen skriving utover `oppgave_svar` |
+| `bokforing` | 49 — alt unntatt migrering og timelås |
+| `admin` | 54 — hele tabellen |
+
+Grunnen er den samme som for at tabellen er kuratert: **en verktøyliste
+er en prompt**. En ansatt-agent som får 54 verktøy der 41 blir nektet,
+bruker turer og kundens penger på å oppdage det, og en liten modell
+slutter ikke nødvendigvis å prøve.
+
+Et verktøy utenfor menyen som likevel kalles ved navn, nektes **av
+menyen** (`Server::offered_tool`) med en setning modellen kan handle på
+— «hører ikke til rollen din» — framfor å koste en tur og en plass i
+ratebegrensningen for å få samme svar fra API-et. Begge skinnene.
+
+Menyen er likevel **ikke** en vakt. API-et avgjør fortsatt hvert kall
+(`access::require`). Det er derfor filteret faller tilbake til hele
+tabellen når `/me` ikke kan leses: et ødelagt token feiler på første kall
+uansett, og en tom meny ville gjemt hvorfor. Menyen leses **én gang per
+server** (én `/me` per oppgave i workeren, én per MCP-økt) og huskes ikke
+når lesingen feilet. En agent som får ny rolle midt i en MCP-økt ser den
+nye menyen etter omstart; API-et bruker den nye rollen med én gang.
+
+Rettigheten er den endepunktet sjekker **først**. Noen endepunkter krever
+mer for deler av jobben (`faktura_opprett` med timer krever også
+`TIMER_FAKTURER`); de tilbys på den første og nektes høylytt på resten.
+Egendefinerte roller (#60) får sin meny av sine egne rettigheter uten noe
+ekstra, siden filteret leser rettighetene og ikke rollenavnet.
+
+Vakten er `each_role_is_offered_exactly_the_tools_its_guard_lets_through`:
+for hver innebygde rolle kaller den **hvert** verktøy som deklarerer en
+rettighet, skriveverktøyene med, rett forbi menyen (`execute_tool`). Et
+skjult verktøy skal nektes med en 403 som navngir nøyaktig den
+deklarerte rettigheten; et tilbudt skal ikke nektes på den. Argumentene
+er bare velformede — tilfeldige id-er, et ukjent prosjekt — fordi axum
+kjører kropp- og query-uttrekk FØR vakten (docs/auth.md): en kropp som
+ikke lar seg lese gir 400 for alle og måler ingenting. Hva et tilbudt
+skriveverktøy så gjør (404 på id-en, 400 på prosjektet, eller ekte
+arbeid i et kasteselskap) er ved siden av. En ANDRE, argumentavhengig
+sjekk (et utlegg for en annen person krever `UTLEGG_GODKJENN`) er
+endepunktets egen og måles ikke her. Testen er sett feile på feil
+deklarasjon både for lesing (`prosjekter` med `TIMER_LAAS`) og skriving
+(`timer_registrer` med `TIMER_SKRIV_ALLE`).
+
+Oppgaveverktøyene (`oppgaver`, `oppgave`, `oppgave_svar`) tilbys **alle**
+agenter: en agent når sin egen kø på tilgang til selskapet alene (§5).
+
+### Timer og prosjekter (2026-11-16)
+
+Ansatt-prompten lovet «fører timer på prosjekt», og tabellen hadde
+ingen vei til det — en agent bedt om «før 8 timer på utvikling man–fre»
+spurte to ganger etter en prosjektkode den ikke kunne bruke. Nå dekker
+tabellen hele [timer.md](timer.md) og prosjektdelen av
+[dimensjoner.md](dimensjoner.md):
+
+| Verktøy | Endepunkt | Rettighet |
+| --- | --- | --- |
+| `prosjekter` | `GET …/dimensions` | `DIMENSJON_LES` |
+| `prosjekt_opprett`, `prosjekt_endre` | `POST …/dimensions`, `PUT …/dimensions/{kind}/{code}` | `DIMENSJON_SKRIV` |
+| `prosjekt_satser`, `prosjekt_sats_sett` | `GET/POST …/dimensions/prosjekt/{code}/satser` | `TIMER_SATS_SKRIV` |
+| `timer_liste` | `GET …/timesheet` (bærer også `locked_through`) | `TIMER_LES_EGNE` |
+| `timer_registrer` | `POST …/timesheet` | `TIMER_SKRIV_EGNE` |
+| `timer_endre`, `timer_slett` | `PUT/DELETE …/timesheet/{eid}` | `TIMER_SKRIV_EGNE` (andres: `_ALLE`) |
+| `timer_sammendrag`, `timer_ufakturert` | `GET …/timesheet/summary`, `…/unbilled` | `TIMER_RAPPORT_LES` |
+| `timer_fakturer` | `POST …/timesheet/invoice` | `TIMER_FAKTURER` |
+| `timer_las` | `PUT …/timesheet/lock` | `TIMER_LAAS` |
+
+`GET …/timesheet/lock` har ikke eget verktøy: `timer_liste` svarer med
+samme dato, og et verktøy som bare gjentar et annet er et valg en liten
+modell kan ta feil.
+
+**Hvem timene tilhører — avgjort: agenten selv.** En agent er sin egen
+`person` (§1), og `POST …/timesheet` fører for den personen tokenet
+beviser. Timer en agent registrerer står derfor med AGENTENS navn i
+timelisten, ikke med navnet til mennesket som ba om dem — og
+integrasjonstesten fester det (`person.kind = 'integrasjon'`). Det
+finnes ingen vei for å føre timer for en annen person, verken for
+mennesker eller maskiner, og tabellen finner ingen opp: en slik vei
+ville vært en ny autorisasjonsbeslutning (hvem får føre for hvem, og
+hvordan ser den ansatte det?), ikke et verktøy. Å *rette* andres
+føringer med `TIMER_SKRIV_ALLE` finnes allerede og gjelder agenten
+akkurat som et menneske. Skal en agent føre timer for en navngitt
+ansatt, er det en egen sak — modellen å låne er utleggets «på vegne av
+andre» ([utlegg.md](utlegg.md)).
+
+`timer_registrer` er **ikke idempotent** (en føring har ingen naturlig
+nøkkel — to like føringer samme dag kan være riktig). Beskrivelsen og
+ansatt-prompten sier derfor: kall `timer_liste` før et nytt forsøk.
 
 To konvensjoner er gjentatt i hvert skjema der de gjelder, fordi en
 liten modell ikke skal måtte utlede dem: **beløp er heltall øre**
@@ -222,11 +323,18 @@ derfor skrevet ut framfor å finne opp en ny rettighet:
 - **Å GI** en oppgave krever `INTEGRASJON_ADMIN`, som
   `kan_delegeres` nekter en maskin. En agent kan altså ikke skrive sine
   egne ordrer — den ene egenskapen som gjør sporet verdt å lese.
-- **Å SVARE** krever `INTEGRASJON_LES` **og** å være den agenten
-  oppgaven er stilt til (eller et menneske som kan administrere
-  integrasjoner, så en ordre kan trekkes tilbake). En agent svarer ikke
-  for en annen agent, og ser ikke en annen agents ordrer — den ville
+- **En agent når sin EGEN kø** — leser den og svarer på den — på
+  tilgang til selskapet alene, uansett rolle. Oppgaven er stilt til
+  den; å kreve en rettighet til for å lese egne ordrer strandet bare de
+  smale rollene. Fram til 2026-11-17 krevde det `INTEGRASJON_LES`, som
+  `ansatt`-bunten ikke har, så en ansatt-agent over MCP kunne ikke se
+  hva den var bedt om. Den ser og svarer fortsatt bare på oppgaver stilt
+  til den eller til ingen; en annen agents ordrer gir 404 — den ville
   handlet på dem.
+- **Et menneske** leser køen med `INTEGRASJON_LES` og svarer (lukker,
+  trekker tilbake) med `INTEGRASJON_ADMIN`. Et menneske med samme smale
+  rolle som agenten får fortsatt 403: det er ikke agenten ordren er
+  stilt til.
 
 **Den andre døren inn i køen er Meldinger** (docs/meldinger.md, 2026-11-16):
 en melding til en agent oppretter en oppgave stilt til den, og agentens
@@ -258,7 +366,10 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Agent med `admin` kan migrere, men aldri utvide tilgang | `tests/grupper/integrasjon.rs` |
 | Et menneske må attestere det en maskin bokfører | `tests/grupper/attestering.rs` |
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
+| Hver rolle tilbys nøyaktig verktøyene vakten slipper gjennom | `tests/grupper/agent.rs` |
+| En agent når egen kø uansett rolle, aldri en annen agents | `tests/grupper/agent.rs` |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
+| Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
 | En avsluttet oppgave kan ikke gjenåpnes | `tests/grupper/agent.rs` |
 | Hvert skjema er gyldig JSON, hver sti-plassholder er deklarert | `regnmed-mcp` (enhetstester) |
 | Hver rolle bærer grunnreglene og navngir verktøyene sine | `regnmed-mcp` (enhetstester) |
@@ -541,8 +652,8 @@ en forpliktelse.
 systemprompten av `role::prompt` (via `prompt_for_role`), og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
-oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
-nøyaktig like mange verktøy som tabellen.
+oppføre seg likt er å gi dem samme kode. Begge filtrerer tabellen med
+`Server::offered_tools`, så samme rolle får samme meny (§3).
 
 **Rollen velger prompten — gjennom en tabell, ikke gjennom navnet**
 (rettet 2026-11-16). Tilgangen sier `bokforing`, prompten heter `bokforer`:
