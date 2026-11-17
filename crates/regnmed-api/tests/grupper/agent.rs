@@ -1158,11 +1158,16 @@ async fn an_agent_files_a_claim_and_a_human_decides_it() {
 /// still decides every call.
 ///
 /// So the declaration is checked against the real guard, per built-in
-/// role a machine can hold: every READ tool that needs no id is called,
-/// and an offered tool must get past the guard while a hidden one must
-/// be refused by it. Write tools are not called (they would need real
-/// documents and leave real postings); their declarations are checked to
-/// be real slugs, and the same handler reading backs every pair.
+/// role a machine can hold: EVERY tool that declares a right is called,
+/// writes included, straight past the menu (`execute_tool`), and a hidden
+/// tool must be refused with a 403 naming exactly the declared right,
+/// while an offered one must not be. The arguments are only
+/// well-formed -- random ids, an unknown project -- because axum runs the
+/// body and query extractors BEFORE the guard (docs/auth.md): a body that
+/// does not parse would be a 400 for everyone and measure nothing. What
+/// an offered write then does (a 404 on the random id, a 400 on the
+/// unknown project, or real work in this throwaway company) is beside
+/// the point.
 #[tokio::test]
 async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
     for t in regnmed_mcp::tool::TOOLS {
@@ -1183,7 +1188,23 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
         .await
         .unwrap();
     let base = serve(state.clone()).await;
-    let year = json!({"from": "2026-01-01", "to": "2026-12-31", "date": "2026-12-31", "year": 2026, "termin": 1});
+    let any_id = Uuid::new_v4().to_string();
+    let csv = skriv_midlertidig("menu.csv", b"Navn;Orgnr\nKunde AS;\n");
+    let well_formed = json!({
+        // reads
+        "from": "2026-01-01", "to": "2026-12-31", "date": "2026-12-31", "year": 2026, "termin": 1,
+        // ids in paths
+        "dokument": any_id, "utlegg": any_id, "timeforing": any_id, "oppgave": any_id,
+        "prosjekt": "MENY", "kind": "prosjekt", "kode": "MENY",
+        // files
+        "fil": csv,
+        // bodies
+        "journal_code": "GL", "description": "x", "beskrivelse": "x", "note": "x",
+        "lines": [], "code": "MENY", "name": "Meny",
+        "party_no": "10000", "invoice_date": "2026-03-02", "due_date": "2026-03-16",
+        "person_id": any_id, "dato": "2026-03-02", "belop_ore": 100, "minutter": 60,
+        "timesats_ore": 100, "locked_through": "2025-12-31",
+    });
 
     for role in ["ansatt", "les", "bokforing", "admin"] {
         let client_id = format!("agent-{role}-{}", Uuid::new_v4());
@@ -1230,22 +1251,52 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
             offered.len(),
             "{role}"
         );
+        // And a tool outside the menu is refused by the menu, in words,
+        // without a round trip to be told the same by the API.
+        if !offered.contains(&"saft_importer") {
+            let (failed, text) =
+                calls(&server, "saft_importer", json!({"fil": "/finnes/ikke"})).await;
+            assert!(
+                failed && text.contains("hører ikke til rollen din"),
+                "{role}: {text}"
+            );
+        }
 
         for t in regnmed_mcp::tool::TOOLS {
-            if t.method != "GET" || t.path.matches('{').count() > 1 {
-                continue;
+            let Some(right) = t.right else { continue };
+            let mut args = well_formed.as_object().unwrap().clone();
+            // Leftover arguments become the QUERY of a body-less call, and
+            // a query struct reads a stray field (`lines`) as its own.
+            if t.method == "GET" || t.method == "DELETE" {
+                args.retain(|k, _| {
+                    ["from", "to", "date", "year", "termin"].contains(&k.as_str())
+                        || t.path.contains(&format!("{{{k}}}"))
+                });
             }
-            let (failed, text) = calls(&server, t.name, year.clone()).await;
-            // 403 = a member without the right; 404 = no way in at all.
-            let refused = failed && (text.contains("svarte 403") || text.contains("svarte 404"));
-            assert_eq!(
-                refused,
-                !offered.contains(&t.name),
-                "{role}: {} (krever {:?}) -- tilbudt={}, svar: {text}",
-                t.name,
-                t.right,
-                offered.contains(&t.name)
-            );
+            // The imports' `kind` is the party kind, not a dimension's.
+            if t.path.contains("/import/") {
+                args.insert("kind".into(), json!("kunde"));
+            }
+            let text = server.execute_tool(t, args).await.text;
+            let guard_said = |slug: &str| {
+                text.contains("svarte 403") && text.contains(&format!(r#""error":"{slug}""#))
+            };
+            if offered.contains(&t.name) {
+                // Only the declared right: a SECOND, argument-dependent
+                // check (a claim for another person needs UTLEGG_GODKJENN)
+                // is the endpoint's own, and the random ids trip it.
+                assert!(
+                    !guard_said(right),
+                    "{role}: {} tilbys (krever {right}) men vakten nektet: {text}",
+                    t.name
+                );
+            } else {
+                assert!(
+                    guard_said(right),
+                    "{role}: {} skjules (krever {right}), men vakten sa noe annet: {text}",
+                    t.name
+                );
+            }
         }
     }
 }

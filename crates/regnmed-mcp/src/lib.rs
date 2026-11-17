@@ -50,11 +50,16 @@ const PROTOCOL: &str = "2025-06-18";
 
 pub struct Server {
     client: Client,
+    /// The menu, read from `/me` once per server.
+    menu: tokio::sync::OnceCell<Vec<&'static Tool>>,
 }
 
 impl Server {
     pub fn new(client: Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            menu: tokio::sync::OnceCell::new(),
+        }
     }
 
     /// Handles one JSON-RPC message. `None` means "no reply" — a
@@ -109,7 +114,11 @@ impl Server {
             .get("name")
             .and_then(Value::as_str)
             .ok_or_else(|| ProtocolError::UgyldigParam("mangler «name»".into()))?;
-        let tool = tool::find(name).ok_or_else(|| ProtocolError::UnknownTool(name.to_string()))?;
+        let tool = match self.offered_tool(name).await {
+            None => return Err(ProtocolError::UnknownTool(name.to_string())),
+            Some(Err(why)) => return Ok(text_response(&why, true)),
+            Some(Ok(tool)) => tool,
+        };
         let args = params
             .get("arguments")
             .and_then(Value::as_object)
@@ -134,10 +143,18 @@ impl Server {
     /// server is not tied to one. Both rails list tools through this, so
     /// a role sees the same menu over MCP and in the hosted worker.
     ///
-    /// shortcut: if `/me` cannot be read the whole table is offered —
-    /// the API still refuses what the role does not cover, and a broken
-    /// token fails on the first call anyway.
+    /// shortcut: if `/me` cannot be read the whole table is offered, and
+    /// not remembered — the API still refuses what the role does not
+    /// cover, and a broken token fails on the first call anyway.
+    ///
+    /// shortcut: read once per server, so an agent re-roled mid-session
+    /// sees its new menu on its next task (worker) or after a restart
+    /// (MCP). The API applies the new role at once either way; re-read
+    /// on `notifications/tools/list_changed` if that ever matters.
     pub async fn offered_tools(&self) -> Vec<&'static Tool> {
+        if let Some(menu) = self.menu.get() {
+            return menu.clone();
+        }
         let me = match self.client.call("GET", "/me", &[], None).await {
             Ok((200, text)) => serde_json::from_str::<Value>(&text).ok(),
             _ => None,
@@ -158,7 +175,27 @@ impl Server {
             .flatten()
             .filter_map(|r| r.as_str().map(str::to_string))
             .collect();
-        tool::offered(&rights)
+        let menu = tool::offered(&rights);
+        let _ = self.menu.set(menu.clone());
+        menu
+    }
+
+    /// A tool from this agent's menu. A tool the role was not offered is
+    /// refused here, in words the model can act on, instead of costing
+    /// it a turn and a rate-limit slot to learn the same from the API.
+    /// `Err` is that text; an unknown name is `None` inside it.
+    pub async fn offered_tool(&self, name: &str) -> Option<Result<&'static Tool, String>> {
+        let tool = tool::find(name)?;
+        Some(
+            if self.offered_tools().await.iter().any(|t| t.name == name) {
+                Ok(tool)
+            } else {
+                Err(format!(
+                    "verktøyet «{name}» hører ikke til rollen din. Kall `selskaper` for å se \
+                     hva rollen dekker, eller spør med `oppgave_svar`."
+                ))
+            },
+        )
     }
 
     /// Runs a tool and returns its text plus whether it failed. Public

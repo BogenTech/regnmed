@@ -129,11 +129,18 @@ er en prompt**. En ansatt-agent som får 54 verktøy der 41 blir nektet,
 bruker turer og kundens penger på å oppdage det, og en liten modell
 slutter ikke nødvendigvis å prøve.
 
-Menyen er **ikke** en vakt. API-et avgjør fortsatt hvert kall
-(`access::require`), og et verktøy som ikke ble tilbudt men likevel
-kalles, nektes der som før. Det er derfor filteret faller tilbake til
-hele tabellen når `/me` ikke kan leses: et ødelagt token feiler på
-første kall uansett, og en tom meny ville gjemt hvorfor.
+Et verktøy utenfor menyen som likevel kalles ved navn, nektes **av
+menyen** (`Server::offered_tool`) med en setning modellen kan handle på
+— «hører ikke til rollen din» — framfor å koste en tur og en plass i
+ratebegrensningen for å få samme svar fra API-et. Begge skinnene.
+
+Menyen er likevel **ikke** en vakt. API-et avgjør fortsatt hvert kall
+(`access::require`). Det er derfor filteret faller tilbake til hele
+tabellen når `/me` ikke kan leses: et ødelagt token feiler på første kall
+uansett, og en tom meny ville gjemt hvorfor. Menyen leses **én gang per
+server** (én `/me` per oppgave i workeren, én per MCP-økt) og huskes ikke
+når lesingen feilet. En agent som får ny rolle midt i en MCP-økt ser den
+nye menyen etter omstart; API-et bruker den nye rollen med én gang.
 
 Rettigheten er den endepunktet sjekker **først**. Noen endepunkter krever
 mer for deler av jobben (`faktura_opprett` med timer krever også
@@ -142,12 +149,19 @@ Egendefinerte roller (#60) får sin meny av sine egne rettigheter uten noe
 ekstra, siden filteret leser rettighetene og ikke rollenavnet.
 
 Vakten er `each_role_is_offered_exactly_the_tools_its_guard_lets_through`:
-for hver innebygde rolle kaller den hvert leseverktøy som ikke trenger en
-id, og krever at et tilbudt verktøy kommer forbi vakten og at et skjult
-nektes av den (403/404). Skriveverktøyene kalles ikke (de ville trengt
-ekte bilag og latt ekte posteringer stå igjen); for dem sjekkes at
-rettigheten finnes i vokabularet. Testen er sett feile på en feil
-deklarasjon (`prosjekter` med `TIMER_LAAS`).
+for hver innebygde rolle kaller den **hvert** verktøy som deklarerer en
+rettighet, skriveverktøyene med, rett forbi menyen (`execute_tool`). Et
+skjult verktøy skal nektes med en 403 som navngir nøyaktig den
+deklarerte rettigheten; et tilbudt skal ikke nektes på den. Argumentene
+er bare velformede — tilfeldige id-er, et ukjent prosjekt — fordi axum
+kjører kropp- og query-uttrekk FØR vakten (docs/auth.md): en kropp som
+ikke lar seg lese gir 400 for alle og måler ingenting. Hva et tilbudt
+skriveverktøy så gjør (404 på id-en, 400 på prosjektet, eller ekte
+arbeid i et kasteselskap) er ved siden av. En ANDRE, argumentavhengig
+sjekk (et utlegg for en annen person krever `UTLEGG_GODKJENN`) er
+endepunktets egen og måles ikke her. Testen er sett feile på feil
+deklarasjon både for lesing (`prosjekter` med `TIMER_LAAS`) og skriving
+(`timer_registrer` med `TIMER_SKRIV_ALLE`).
 
 Oppgaveverktøyene (`oppgaver`, `oppgave`, `oppgave_svar`) tilbys **alle**
 agenter: en agent når sin egen kø på tilgang til selskapet alene (§5).

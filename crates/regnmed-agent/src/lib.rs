@@ -237,12 +237,16 @@ pub async fn run_loop(
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
-            let out = match tool::find(&calls.name) {
-                Some(v) => server.execute_tool(v, calls.arguments).await,
-                // An invented tool is the model's mistake, and it is told
-                // so in the same channel as a real result.
-                None => regnmed_mcp::ToolOutput {
-                    text: format!("ukjent verktøy «{}»", calls.name),
+            let out = match server.offered_tool(&calls.name).await {
+                Some(Ok(v)) => server.execute_tool(v, calls.arguments).await,
+                // An invented tool, or one outside the role, is the
+                // model's mistake, and it is told so in the same channel
+                // as a real result.
+                refused => regnmed_mcp::ToolOutput {
+                    text: match refused {
+                        Some(Err(why)) => why,
+                        _ => format!("ukjent verktøy «{}»", calls.name),
+                    },
                     failed: true,
                     image: None,
                 },
