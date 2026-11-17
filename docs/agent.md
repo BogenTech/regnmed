@@ -273,15 +273,6 @@ få skrivetilgang når eieren vil det — #101 gjør det mulig — men
 `krev_for_maskin` finnes for at eieren skal kunne si «alt roboten fører
 skal jeg ha sett» uten å måtte velge mellom hjelp og kontroll.
 
-**Grantet navngir en rolle, prompten en jobb.** Workeren får grantets
-rollenavn (`admin`, `bokforing`, `ansatt`, `les` eller et egendefinert) og
-velger prompt etter det: `admin` → `regnskapsforer`, `bokforing` →
-`bokforer`, `ansatt` → `ansatt`, alt annet → `ansatt` (den smaleste). Fram
-til 2026-11-17 ble prompten slått opp på rollenavnet direkte, og fordi
-`bokforing` ≠ `bokforer` fikk **hver bokføringsagent ansatt-prompten**.
-Testen som skulle fange det brukte promptnavnet, ikke grantets;
-`a_grant_role_gets_its_own_prompt` bruker grantets.
-
 En vakt i kode: `each_role_names_the_tools_its_procedure_depends_on`
 krever at hvert verktøy en rolleprosedyre bygger på både **finnes** i
 tabellen og er **navngitt** i promptteksten. Å døpe om et verktøy uten
@@ -362,7 +353,6 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Et menneske må attestere det en maskin bokfører | `tests/grupper/attestering.rs` |
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
 | Hver rolle tilbys nøyaktig verktøyene vakten slipper gjennom | `tests/grupper/agent.rs` |
-| Grantets rolle gir riktig prompt (`bokforing` → `bokforer`) | `regnmed-agent` (enhetstest) |
 | En agent når egen kø uansett rolle, aldri en annen agents | `tests/grupper/agent.rs` |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
 | Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
@@ -645,11 +635,25 @@ leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
 en forpliktelse.
 
 **Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
-systemprompten av `rolle::prompt`, og kallet går gjennom
+systemprompten av `role::prompt` (via `prompt_for_role`), og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
 oppføre seg likt er å gi dem samme kode. Begge filtrerer tabellen med
 `Server::offered_tools`, så samme rolle får samme meny (§3).
+
+**Rollen velger prompten — gjennom en tabell, ikke gjennom navnet**
+(rettet 2026-11-16). Tilgangen sier `bokforing`, prompten heter `bokforer`:
+to vokabularer. Workeren slo opp rollenavnet som promptnavn, fant ingenting
+og falt stille tilbake til `ansatt`, så HVER vertsagent med rollen Bokføring
+eller Administrator fikk beskjed om at den var ansatt og avviste arbeidet sitt
+(«Min rolle er avgrenset til å føre timer»). `prompt_for_role` i
+`regnmed-agent` er nå tabellen: `admin` → `regnskapsforer`, `bokforing` →
+`bokforer`, alt annet (`ansatt`, `les`, selskapets egne roller) → `ansatt`,
+den smaleste — prompten gir aldri myndighet, det gjør tilgangsvakten, så en
+for smal prompt gjør bare agenten forsiktig. Testen
+`every_role_gets_the_prompt_for_its_job` fester at hver rolle når en ekte
+prompt; den gamle testen sendte PROMPTnavnet der rollenavnet hører hjemme,
+og det var nettopp det som skjulte feilen.
 
 **Kan den ikke starte, sier den det i oppgaven.** Mangler en agent
 regnmed kjører aktiv modell, klienthemmelighet eller tilgang, skriver
