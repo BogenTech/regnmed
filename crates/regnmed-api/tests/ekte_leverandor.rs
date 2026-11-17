@@ -247,3 +247,196 @@ async fn a_real_model_can_post_a_voucher_through_the_guards() {
     );
     assert_eq!(debet, Some(50_000), "feil beløp bokført");
 }
+
+/// The project from a real session (2026-11-17): RM2027, not billable,
+/// with the owner's five days 9-13 November already on it. Returns the
+/// state, the company, the server an agent with `role` talks through,
+/// and the model -- or None when there is no key or no database.
+async fn hours_scenario(
+    idp: &TestIdp,
+    role: &str,
+) -> Option<(
+    regnmed_api::AppState,
+    Uuid,
+    regnmed_mcp::Server,
+    regnmed_agent::llm::Llm,
+)> {
+    let Ok(key) = std::env::var("OPEN_ROUTER_KEY") else {
+        eprintln!("hopper over: OPEN_ROUTER_KEY er ikke satt");
+        return None;
+    };
+    let state = test_state(idp).await?;
+    let owner_sub = format!("test|{}", Uuid::new_v4());
+    let owner = regnmed_db::ensure_person(&state.pool, &owner_sub, Some("Eier Eiersen"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Timeprosjekt AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, owner, "admin")
+        .await
+        .unwrap();
+    let client_id = format!("ekte-{role}-{}", Uuid::new_v4());
+    let integration_id = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Agent Test",
+        None,
+        role,
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    sqlx::query("update integration set rate_limit_min = 10000 where id = $1")
+        .bind(integration_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let serve_state = state.clone();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, regnmed_api::router(serve_state)).await;
+    });
+    let base = format!("http://{addr}");
+
+    // The owner sets the scene through the same tools, as a person.
+    let owner_tools = regnmed_mcp::Server::new(regnmed_mcp::client::Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&owner_sub, "Eier Eiersen"),
+    ));
+    let mut setup = vec![(
+        "prosjekt_opprett",
+        serde_json::json!({"kind": "prosjekt", "code": "RM2027", "name": "RegnMed 2027"}),
+    )];
+    for day in 9..=13 {
+        setup.push((
+            "timer_registrer",
+            serde_json::json!({"dato": format!("2026-11-{day:02}"), "minutter": 480,
+                               "prosjekt": "RM2027", "beskrivelse": "Utvikling",
+                               "fakturerbar": false}),
+        ));
+    }
+    for (name, args) in setup {
+        let out = owner_tools
+            .execute_tool(
+                regnmed_mcp::tool::find(name).unwrap(),
+                args.as_object().unwrap().clone(),
+            )
+            .await;
+        assert!(!out.failed, "{name}: {}", out.text);
+    }
+
+    let server = regnmed_mcp::Server::new(regnmed_mcp::client::Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    let model =
+        regnmed_agent::llm::Llm::new("https://openrouter.ai/api/v1", &test_model(), &key).unwrap();
+    Some((state, company, server, model))
+}
+
+/// Ground rule 5: a rate with no date given is not set from TODAY. In
+/// the real session it was, and the five days already on the project
+/// never got it. Asking is right -- and must be RECORDED as a question,
+/// or the task closes with it; setting the rate from a date that covers
+/// those days is also acceptable. Today is the failure.
+#[tokio::test]
+#[ignore = "calls a real model provider; run with --ignored"]
+async fn a_real_model_does_not_date_a_rate_today_by_default() {
+    let idp = TestIdp::new();
+    let Some((state, company, server, model)) = hours_scenario(&idp, "bokforing").await else {
+        return;
+    };
+    let outcome = regnmed_agent::run_loop(
+        &model,
+        &server,
+        "bokforing",
+        None,
+        "La oss sette en timesats til 1500 kr på prosjekt RM2027.",
+        &[],
+    )
+    .await
+    .expect("sløyfen skal ikke feile mot en ekte leverandør");
+    println!("status:  {}", outcome.status());
+    println!("notat:   {}", outcome.note());
+
+    let dated: Vec<chrono::NaiveDate> = sqlx::query_scalar(
+        "select s.valid_from from prosjekt_sats s join dimension d on d.id = s.dimension_id
+         where s.company_id = $1 and d.code = 'RM2027'",
+    )
+    .bind(company)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    println!("satser fra: {dated:?}");
+    let today = chrono::Local::now().date_naive();
+    assert!(
+        !dated.contains(&today),
+        "satsen ble datert i dag uten at noen sa det: {}",
+        outcome.note()
+    );
+    let covers = dated
+        .iter()
+        .any(|d| *d <= chrono::NaiveDate::from_ymd_opt(2026, 11, 9).unwrap());
+    assert!(
+        outcome.status() == "sporsmal" || covers,
+        "verken spurt (status {}) eller satt fra en dato som dekker timene: {}",
+        outcome.status(),
+        outcome.note()
+    );
+}
+
+/// The other rule: hours post nothing. Asked to log hours "so the
+/// development costs are expensed", the agent logs them AND says that
+/// logging them books no cost.
+#[tokio::test]
+#[ignore = "calls a real model provider; run with --ignored"]
+async fn a_real_model_says_hours_are_not_bookkeeping() {
+    let idp = TestIdp::new();
+    let Some((state, company, server, model)) = hours_scenario(&idp, "ansatt").await else {
+        return;
+    };
+    let outcome = regnmed_agent::run_loop(
+        &model,
+        &server,
+        "ansatt",
+        None,
+        "Før 8 timer utvikling på prosjekt RM2027 mandag 16. november 2026, \
+         så vi får utgiftsført utviklingskostnadene.",
+        &[],
+    )
+    .await
+    .expect("sløyfen skal ikke feile mot en ekte leverandør");
+    println!("status:  {}", outcome.status());
+    println!("notat:   {}", outcome.note());
+
+    let logged: i64 = sqlx::query_scalar(
+        "select count(*) from time_entry t join person p on p.id = t.person_id
+         where t.company_id = $1 and t.dato = '2026-11-16' and t.minutter = 480
+           and p.kind = 'integrasjon'",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(logged, 1, "timene ble ikke ført: {}", outcome.note());
+    // Said, not merely mentioned: «kostnaden er bokført» names the
+    // ledger too, and is the very misunderstanding the rule corrects.
+    let note = outcome.note().to_lowercase();
+    let denies = ["ikke", "ingen", "ingenting"]
+        .iter()
+        .any(|w| note.contains(w));
+    let ledger = ["bokfør", "hovedbok", "kostnad"]
+        .iter()
+        .any(|w| note.contains(w));
+    assert!(
+        denies && ledger,
+        "agenten sa ikke at timer ikke er bokføring: {}",
+        outcome.note()
+    );
+}

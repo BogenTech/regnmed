@@ -49,6 +49,11 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 4. BELØP ER HELTALL ØRE. 1 234,50 kr er 123450. Positivt tall er debet,
    negativt er kredit. Summen av linjene i et bilag skal være NØYAKTIG 0.
 5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS dato, aldri dagens.
+   Det samme gjelder noe som gjelder FRA en dato, som en timesats eller en
+   timelås: er ingen dato oppgitt, velg ikke dagens. Spør. Finnes det
+   timeføringer før datoen du ville foreslått, si hva valget betyr for dem:
+   en timeføring beholder satsen den ble ført med, så timer før satsens dato
+   får den ikke av seg selv.
 6. ER DU USIKKER, SPØR. Kall `oppgave_svar` med status "sporsmal" og skriv
    presist hva du trenger svar på. Det er et riktig svar, ikke en innrømmelse.
    Å gjette er alltid galt, også når gjetningen er god.
@@ -62,6 +67,13 @@ SLIK ARBEIDER DU:
   begynner, og `utfort` med hva du gjorde når du er ferdig.
 - Les før du skriver. `kontoplan`, `kunder`, `bilag_liste` og
   `kontospesifikasjon` finnes nettopp for at du skal slippe å anta.
+- TIMER ER IKKE BOKFØRING. En timeføring posterer ingenting i hovedboken.
+  Lønnskostnaden bokføres av lønnskjøringen, og fakturerbare timer blir
+  inntekt først når de faktureres. Ber noen deg «utgiftsføre»,
+  «kostnadsføre» eller «aktivere» noe ved å føre timer, si det med en gang,
+  og si hvor kostnaden faktisk bokføres. Om utviklingskostnader skal
+  aktiveres eller kostnadsføres, er en regnskapsfaglig vurdering som aldri
+  tas i en timeføring: si fra, og spør.
 - Får du en feilmelding: les den. Regnmeds feilmeldinger sier hva som er galt
   og hva du skal gjøre. Prøv ikke det samme kallet om igjen uendret.
 "#;
@@ -182,6 +194,10 @@ SLIK FØRER DU TIMER:
 4. `timer_liste` igjen, og kontroller at det som står der er det du ble bedt
    om.
 5. Førte du feil: `timer_endre` eller `timer_slett` på din egen føring.
+6. Svar med hva du førte. Ba oppgaven om å «utgiftsføre», «kostnadsføre» eller
+   «aktivere» noe, skriv også i svaret: «Timene er ført, men timer bokfører
+   ingen kostnad i hovedboken. En kostnad kommer bare inn gjennom lønn eller
+   et bilag.»
 
 DETTE GJØR DU OGSÅ:
 
@@ -299,6 +315,42 @@ mod tests {
             assert!(full.contains(r.text), "{}", r.name);
         }
         assert!(prompt("ukjent").is_none());
+    }
+
+    /// Two rules a real agent missed (2026-11-17, a project for internal
+    /// development hours). Asked to set a rate with no date given, it
+    /// picked today -- so the five days it had just moved onto the
+    /// project, dated the week before, would never carry it, and it did
+    /// not say so. And asked to "utgiftsføre" development hours, it never
+    /// said that logging hours posts nothing. Both are now ground rules,
+    /// and this pins that every role still carries them.
+    #[test]
+    fn every_role_knows_dated_values_and_that_hours_post_nothing() {
+        for r in ROLES {
+            let full = prompt(r.name).unwrap();
+            assert!(full.contains("velg ikke dagens"), "{}", r.name);
+            assert!(full.contains("TIMER ER IKKE BOKFØRING"), "{}", r.name);
+        }
+        // A general rule lost to the procedure with a real model: the
+        // ansatt agent logged the hours and said nothing. So the rule also
+        // stands where the model ACTS -- the procedure's last step and the
+        // tool it calls. The same happened to the date: the rate tool said
+        // `valid_from` "Utelates = i dag", and the tool won over rule 5.
+        let ansatt = prompt("ansatt").unwrap();
+        let ansatt = ansatt.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(ansatt.contains("timer bokfører ingen kostnad"));
+        let rate = crate::tool::find("prosjekt_sats_sett").unwrap();
+        assert!(rate.description.contains("velg ikke dagens"));
+        assert!(
+            crate::tool::schema(rate)
+                .contains(r#""required":["prosjekt","timesats_ore","valid_from"]"#)
+        );
+        assert!(
+            crate::tool::find("timer_registrer")
+                .unwrap()
+                .description
+                .contains("INGENTING i hovedboken")
+        );
     }
 
     /// The prompts and tool descriptions are Norwegian BY POLICY
