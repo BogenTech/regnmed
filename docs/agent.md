@@ -119,7 +119,7 @@ workerens katalog viser samme meny for samme rolle.
 
 | Rolle på grantet | Verktøy tilbudt |
 | --- | --- |
-| `ansatt` | 13 — egne timer og utlegg, prosjektlisten, bilagsopplasting |
+| `ansatt` | 16 — egne timer og utlegg, prosjektlisten, bilagsopplasting, egne oppgaver |
 | `les` | 31 — all lesing, ingen skriving utover `oppgave_svar` |
 | `bokforing` | 49 — alt unntatt migrering og timelås |
 | `admin` | 54 — hele tabellen |
@@ -149,13 +149,8 @@ ekte bilag og latt ekte posteringer stå igjen); for dem sjekkes at
 rettigheten finnes i vokabularet. Testen er sett feile på en feil
 deklarasjon (`prosjekter` med `TIMER_LAAS`).
 
-**Kjent hull:** `oppgaver`, `oppgave` og `oppgave_svar` krever
-`INTEGRASJON_LES`, som `ansatt`-bunten ikke har. En ansatt-agent tilbys
-dem derfor ikke — og kunne heller ikke bruke dem før, API-et nektet. I
-regnmed-workeren merkes det ikke (avslutningen går via
-`FERDIG:`/`SPØRSMÅL:`), men en ansatt-agent over MCP kan ikke lese eller
-svare på sine egne oppgaver. Om «å være agenten oppgaven er stilt til»
-skal holde alene, er en tilgangsavgjørelse og ikke gjort her.
+Oppgaveverktøyene (`oppgaver`, `oppgave`, `oppgave_svar`) tilbys **alle**
+agenter: en agent når sin egen kø på tilgang til selskapet alene (§5).
 
 ### Timer og prosjekter (2026-11-16)
 
@@ -323,11 +318,18 @@ derfor skrevet ut framfor å finne opp en ny rettighet:
 - **Å GI** en oppgave krever `INTEGRASJON_ADMIN`, som
   `kan_delegeres` nekter en maskin. En agent kan altså ikke skrive sine
   egne ordrer — den ene egenskapen som gjør sporet verdt å lese.
-- **Å SVARE** krever `INTEGRASJON_LES` **og** å være den agenten
-  oppgaven er stilt til (eller et menneske som kan administrere
-  integrasjoner, så en ordre kan trekkes tilbake). En agent svarer ikke
-  for en annen agent, og ser ikke en annen agents ordrer — den ville
+- **En agent når sin EGEN kø** — leser den og svarer på den — på
+  tilgang til selskapet alene, uansett rolle. Oppgaven er stilt til
+  den; å kreve en rettighet til for å lese egne ordrer strandet bare de
+  smale rollene. Fram til 2026-11-17 krevde det `INTEGRASJON_LES`, som
+  `ansatt`-bunten ikke har, så en ansatt-agent over MCP kunne ikke se
+  hva den var bedt om. Den ser og svarer fortsatt bare på oppgaver stilt
+  til den eller til ingen; en annen agents ordrer gir 404 — den ville
   handlet på dem.
+- **Et menneske** leser køen med `INTEGRASJON_LES` og svarer (lukker,
+  trekker tilbake) med `INTEGRASJON_ADMIN`. Et menneske med samme smale
+  rolle som agenten får fortsatt 403: det er ikke agenten ordren er
+  stilt til.
 
 **Den andre døren inn i køen er Meldinger** (docs/meldinger.md, 2026-11-16):
 en melding til en agent oppretter en oppgave stilt til den, og agentens
@@ -361,6 +363,7 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
 | Hver rolle tilbys nøyaktig verktøyene vakten slipper gjennom | `tests/grupper/agent.rs` |
 | Grantets rolle gir riktig prompt (`bokforing` → `bokforer`) | `regnmed-agent` (enhetstest) |
+| En agent når egen kø uansett rolle, aldri en annen agents | `tests/grupper/agent.rs` |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
 | Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
 | En avsluttet oppgave kan ikke gjenåpnes | `tests/grupper/agent.rs` |

@@ -1249,3 +1249,101 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
         }
     }
 }
+
+/// An agent reaches its OWN queue on company access alone. Until
+/// 2026-11-17 reading and answering took `INTEGRASJON_LES`, which the
+/// `ansatt` bundle lacks, so an employee agent over MCP could not see
+/// what it had been asked to do. Pinned both ways: the narrow agent now
+/// gets its own task, still never another agent's, and a HUMAN with the
+/// same narrow role is still refused the queue.
+#[tokio::test]
+async fn an_agent_reaches_its_own_tasks_whatever_its_role() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Egen ko AS")
+        .await
+        .unwrap();
+    let base = serve(state.clone()).await;
+
+    let mut agents = Vec::new();
+    for name in ["Timeagent", "Annen agent"] {
+        let client_id = format!("agent-{}", Uuid::new_v4());
+        let id = regnmed_db::grant_integration(
+            &state.pool,
+            company,
+            &client_id,
+            name,
+            None,
+            "ansatt",
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        let task = regnmed_db::agent_task::create_task(
+            &state.pool,
+            company,
+            Some(id),
+            &format!("Oppgave til {name}"),
+            None,
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        let server = Server::new(Client::new(
+            &base,
+            Some(company.to_string()),
+            &idp.token(&client_id, ""),
+        ));
+        agents.push((server, task));
+    }
+    let (me, mine) = &agents[0];
+    let (_, theirs) = &agents[1];
+
+    let offered: Vec<&str> = me.offered_tools().await.iter().map(|t| t.name).collect();
+    assert!(offered.contains(&"oppgaver") && offered.contains(&"oppgave_svar"));
+
+    let (failed, text) = calls(me, "oppgaver", json!({})).await;
+    assert!(!failed, "{text}");
+    assert!(text.contains(&mine.to_string()), "{text}");
+    assert!(
+        !text.contains(&theirs.to_string()),
+        "så en annen agents oppgave: {text}"
+    );
+
+    let (failed, text) = calls(me, "oppgave", json!({"oppgave": theirs.to_string()})).await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
+    let (failed, text) = calls(
+        me,
+        "oppgave_svar",
+        json!({"oppgave": theirs.to_string(), "status": "utfort", "notat": "ikke min"}),
+    )
+    .await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
+
+    let (failed, text) = calls(
+        me,
+        "oppgave_svar",
+        json!({"oppgave": mine.to_string(), "status": "utfort", "notat": "Timene er ført."}),
+    )
+    .await;
+    assert!(!failed, "{text}");
+
+    // A person with the same narrow role is not an agent answering its
+    // own orders, and still needs INTEGRASJON_LES.
+    let sub = format!("test|{}", Uuid::new_v4());
+    let ola = regnmed_db::ensure_person(&state.pool, &sub, Some("Ola Ansatt"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, ola, "ansatt")
+        .await
+        .unwrap();
+    let human = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&sub, ""),
+    ));
+    let (failed, text) = calls(&human, "oppgaver", json!({})).await;
+    assert!(failed && text.contains("svarte 403"), "{text}");
+}
