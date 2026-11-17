@@ -112,38 +112,47 @@ fn closing_rules() -> String {
         .to_string()
 }
 
-/// Reads the marker off the model's closing text.
+/// Reads the marker off the model's closing text, or `None` when it
+/// carries none.
 ///
-/// Unmarked text that ASKS SOMETHING -- holds a question mark anywhere --
-/// is a question, whatever prefix the model forgot. (Until 2026-11-17
-/// only a TRAILING mark counted; a free model asked «**Hvilken dato skal
-/// timesatsen gjelde fra?** (YYYY-MM-DD-format …).» and the task closed.) Found with a real provider
-/// (gemini-2.5-flash-lite, 2026-10-29): it asked which date in 2026 was
-/// meant, and without this it was recorded `utfort` -- which is
-/// TERMINAL in the 0064 guard, so the task closed and the question was
-/// lost with it. The asymmetry decides the rule: being wrongly
-/// non-terminal is recoverable, because a human reads the note and
-/// closes it; being wrongly terminal is not.
-///
-/// Other unmarked text is still treated as done. A small model that did
-/// the work and forgot the prefix should not have its work recorded as
-/// a refusal, and the note carries the raw text either way.
-fn interpret(text: &str) -> Outcome {
+/// The worker does not GUESS a status from unmarked text any more. Until
+/// 2026-11-17 it did: unmarked meant done, later "done unless it holds a
+/// question mark" -- and each version lost a question a real model asked
+/// without the prefix (gemini-2.5-flash-lite 2026-10-29, then
+/// nemotron 2026-11-17 with the «?» inside bold text). `utfort` is TERMINAL in the
+/// 0064 guard, so a wrong guess closed the task and took the question
+/// with it. [`run_loop`] asks the model to mark the reply instead, and
+/// [`unmarked`] decides what is left.
+fn interpret(text: &str) -> Option<Outcome> {
     let t = text.trim();
     let after = |p: &str| t[p.len()..].trim().to_string();
     let u = t.to_uppercase();
     if u.starts_with("SPØRSMÅL:") || u.starts_with("SPORSMAL:") {
-        Outcome::Question(after("SPØRSMÅL:"))
+        Some(Outcome::Question(after("SPØRSMÅL:")))
     } else if u.starts_with("AVVIST:") {
-        Outcome::Refused(after("AVVIST:"))
+        Some(Outcome::Refused(after("AVVIST:")))
     } else if u.starts_with("FERDIG:") {
-        Outcome::Done(after("FERDIG:"))
-    } else if t.contains('?') {
-        Outcome::Question(t.to_string())
+        Some(Outcome::Done(after("FERDIG:")))
     } else {
-        Outcome::Done(t.to_string())
+        None
     }
 }
+
+/// A reply that stayed unmarked after being asked to mark it is a
+/// QUESTION: the one status that is not terminal. The asymmetry decides
+/// it -- wrongly open is recoverable (a human reads the note and closes
+/// the task), wrongly closed is not -- and a question is not a refusal,
+/// so work the model did is never recorded as one.
+fn unmarked(text: &str) -> Outcome {
+    Outcome::Question(text.trim().to_string())
+}
+
+/// What the model is told when it ends without a marker. It sees its own
+/// reply right above, so it only has to classify it, not redo it.
+const MARK_YOUR_REPLY: &str = "Svaret ditt over mangler merke, så oppgaven kan ikke avsluttes. \
+     Gjenta svaret med riktig merke først: SPØRSMÅL: hvis du spør om noe eller \
+     trenger en avgjørelse, FERDIG: hvis jobben er gjort, AVVIST: hvis den ikke \
+     kan gjøres. Ikke kall flere verktøy.";
 
 /// The agent's whole system message: the role prompt, then this
 /// agent's own instructions, then the protocol.
@@ -212,6 +221,7 @@ pub async fn run_loop(
         });
     }
 
+    let mut asked_to_mark = false;
     for _ in 0..MAX_TURNS {
         let reply = model.tur(&messages, &katalog).await?;
 
@@ -220,7 +230,18 @@ pub async fn run_loop(
             if text.trim().is_empty() {
                 bail!("modellen svarte uten innhold og uten verktøykall");
             }
-            return Ok(interpret(&text));
+            if let Some(outcome) = interpret(&text) {
+                return Ok(outcome);
+            }
+            // Once: a model that ignores the reminder too is not helped
+            // by a third turn, and every turn is the customer's money.
+            if asked_to_mark {
+                return Ok(unmarked(&text));
+            }
+            asked_to_mark = true;
+            messages.push(Message::assistant(text));
+            messages.push(Message::bruker(MARK_YOUR_REPLY.to_string()));
+            continue;
         }
 
         // Echo the assistant turn back exactly as it came: providers
@@ -577,43 +598,37 @@ mod tests {
     fn the_closing_marker_decides_the_status() {
         assert_eq!(
             interpret("FERDIG: bokførte 3 bilag"),
-            Outcome::Done("bokførte 3 bilag".into())
+            Some(Outcome::Done("bokførte 3 bilag".into()))
         );
         assert_eq!(
             interpret("SPØRSMÅL: hvilken konto?"),
-            Outcome::Question("hvilken konto?".into())
+            Some(Outcome::Question("hvilken konto?".into()))
         );
         assert_eq!(
             interpret("AVVIST: mangler bilag"),
-            Outcome::Refused("mangler bilag".into())
+            Some(Outcome::Refused("mangler bilag".into()))
         );
-        // A small model that forgot the prefix still gets its work
-        // recorded as work, with its own words kept.
-        assert_eq!(
-            interpret("jeg bokførte alt sammen"),
-            Outcome::Done("jeg bokførte alt sammen".into())
-        );
+        // No marker, no guess: the loop asks the model to mark it.
+        assert_eq!(interpret("jeg bokførte alt sammen"), None);
     }
 
     #[test]
-    fn an_unmarked_question_does_not_close_the_task() {
-        // Verbatim from gemini-2.5-flash-lite through OpenRouter,
-        // 2026-10-29. Recorded as `utfort` it would have CLOSED the
-        // task — terminal in the 0064 guard — and taken the question
-        // with it.
-        let ekte = "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
-                    du er interessert i. Kan du vennligst oppgi en spesifikk dato?";
-        assert_eq!(interpret(ekte).status(), "sporsmal");
-        // Verbatim from nemotron-3.5-lightning:free, 2026-11-17: the
-        // question is bold and a parenthesis follows it.
-        let ekte = "For å sette en timesats må jeg ha en `valid_from`-dato.\n\n\
-                    **Hvilken dato skal timesatsen gjelde fra?** (YYYY-MM-DD-format, ikke dagens dato).";
-        assert_eq!(interpret(ekte).status(), "sporsmal");
-        // A statement that merely mentions a question is still done.
-        assert_eq!(
-            interpret("Jeg svarte på spørsmålet ditt og bokførte bilaget.").status(),
-            "utfort"
-        );
+    fn an_unmarked_reply_never_closes_the_task() {
+        for text in [
+            // Verbatim, each once recorded `utfort` -- terminal in the
+            // 0064 guard -- and lost: gemini-2.5-flash-lite (2026-10-29)
+            // and nemotron-3.5-lightning:free (2026-11-17).
+            "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
+             du er interessert i. Kan du vennligst oppgi en spesifikk dato?",
+            "For å sette en timesats må jeg ha en `valid_from`-dato.\n\n\
+             **Hvilken dato skal timesatsen gjelde fra?** (YYYY-MM-DD-format, ikke dagens dato).",
+            // Constructed: a question with no «?», and finished work.
+            "Oppgi datoen satsen skal gjelde fra",
+            "Jeg bokførte alt sammen.",
+        ] {
+            assert_eq!(interpret(text), None);
+            assert_eq!(unmarked(text).status(), "sporsmal", "{text}");
+        }
     }
 
     #[test]
