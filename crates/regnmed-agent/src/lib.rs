@@ -41,11 +41,12 @@ pub const CONCURRENT_TOOLS: usize = 4;
 pub const MAX_TURNS: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
-/// `TOOLS` table the MCP server serves, so an agent can never be
-/// offered a tool over one rail that does not exist on the other.
-pub fn tool_catalogue() -> Value {
+/// `TOOLS` table the MCP server serves, filtered the same way
+/// ([`Server::offered_tools`]), so an agent is offered the same tools
+/// over both rails.
+pub fn tool_catalogue(tools: &[&tool::Tool]) -> Value {
     Value::Array(
-        tool::TOOLS
+        tools
             .iter()
             .map(|v| {
                 json!({
@@ -155,7 +156,15 @@ fn interpret(text: &str) -> Outcome {
 /// on every call the agent makes, so the worst a bad instruction can do
 /// is make the agent attempt things it will be refused.
 fn system_prompt(role_name: &str, ekstra: Option<&str>) -> String {
-    let role_prompt = role::prompt(role_name)
+    // The grant names a ROLE (`bokforing`); the prompts are named for the
+    // JOB (`bokforer`). Looked up by the grant's name alone, every
+    // bokføring agent got the ansatt prompt.
+    let prompt_name = match role_name {
+        "admin" => "regnskapsforer",
+        "bokforing" => "bokforer",
+        other => other,
+    };
+    let role_prompt = role::prompt(prompt_name)
         .unwrap_or_else(|| role::prompt("ansatt").expect("ansatt-prompten finnes"));
     let mut ut = role_prompt.to_string();
     if let Some(ekstra) = ekstra.map(str::trim).filter(|t| !t.is_empty()) {
@@ -178,7 +187,7 @@ pub async fn run_loop(
     task: &str,
     history: &[HistoryLine],
 ) -> Result<Outcome> {
-    let katalog = tool_catalogue();
+    let katalog = tool_catalogue(&server.offered_tools().await);
     let mut messages = vec![
         Message::system(system_prompt(role_name, ekstra)),
         Message::bruker(task.to_string()),
@@ -495,7 +504,7 @@ mod tests {
 
     #[test]
     fn the_catalogue_matches_the_tools_the_other_rail_serves() {
-        let katalog = tool_catalogue();
+        let katalog = tool_catalogue(&tool::TOOLS.iter().collect::<Vec<_>>());
         let name: Vec<&str> = katalog
             .as_array()
             .unwrap()
@@ -531,6 +540,26 @@ mod tests {
         assert!(without.trim_end().ends_with(protokoll.trim_end()));
         // Empty instructions add nothing at all -- no stray heading.
         assert_eq!(system_prompt("bokforer", Some("   ")), without);
+    }
+
+    /// The worker is handed the GRANT's role name, never a prompt name.
+    /// The test above passed `bokforer` and so never saw that `bokforing`
+    /// fell through to the ansatt prompt.
+    #[test]
+    fn a_grant_role_gets_its_own_prompt() {
+        let starts = |grant: &str, prompt: &str| {
+            assert!(
+                system_prompt(grant, None).starts_with(&role::prompt(prompt).unwrap()),
+                "«{grant}» fikk ikke {prompt}-prompten"
+            )
+        };
+        starts("admin", "regnskapsforer");
+        starts("bokforing", "bokforer");
+        starts("ansatt", "ansatt");
+        // A role with no prompt of its own (`les`, a custom one) gets the
+        // narrowest.
+        starts("les", "ansatt");
+        starts("vaktmester", "ansatt");
     }
 
     #[test]

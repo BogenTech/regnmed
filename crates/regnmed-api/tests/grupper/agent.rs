@@ -674,13 +674,24 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
     let sett = mock.sett.lock().unwrap().clone();
     assert_eq!(sett.len(), 2, "to turer: ett verktøykall, så svaret");
 
-    // The catalogue the model was offered is the real one.
-    let tools = sett[0]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), regnmed_mcp::tool::TOOLS.len());
+    // The catalogue the model was offered is the ROLE's menu: the real
+    // table, less what `bokforing` does not cover (migration, the lock).
+    let tools: Vec<&str> = sett[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["function"]["name"].as_str().unwrap())
+        .collect();
+    assert!(tools.contains(&"bilag_bokfor") && tools.contains(&"saldobalanse"));
+    assert!(!tools.contains(&"saft_importer") && !tools.contains(&"timer_las"));
 
     // The role prompt went with it — a `bokforing` agent must not be
     // told it is something else, or it spends its turns being refused.
     let system = sett[0]["messages"][0]["content"].as_str().unwrap();
+    assert!(
+        system.starts_with(&regnmed_mcp::role::prompt("bokforer").unwrap()),
+        "en bokforing-agent fikk ikke bokfører-prompten"
+    );
     assert!(
         system.contains("FERDIG:") && system.contains("SPØRSMÅL:"),
         "avslutningsreglene mangler i systemprompten"
@@ -1138,4 +1149,103 @@ async fn an_agent_files_a_claim_and_a_human_decides_it() {
         .filter(|m| m["content"].is_array())
         .count();
     assert_eq!(pictures, 1, "{}", sett[2]);
+}
+
+/// Each tool declares the right its endpoint checks, and an agent is
+/// only offered the tools whose right it holds (`Server::offered_tools`).
+/// A wrong declaration either hides a tool the role could use or offers
+/// one it will be refused -- and nothing else notices, because the API
+/// still decides every call.
+///
+/// So the declaration is checked against the real guard, per built-in
+/// role a machine can hold: every READ tool that needs no id is called,
+/// and an offered tool must get past the guard while a hidden one must
+/// be refused by it. Write tools are not called (they would need real
+/// documents and leave real postings); their declarations are checked to
+/// be real slugs, and the same handler reading backs every pair.
+#[tokio::test]
+async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
+    for t in regnmed_mcp::tool::TOOLS {
+        if let Some(r) = t.right {
+            assert!(
+                regnmed_api::access::Right::from_slug(r).is_some(),
+                "{}: «{r}» er ingen rettighet",
+                t.name
+            );
+        }
+    }
+
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Verktoymeny AS")
+        .await
+        .unwrap();
+    let base = serve(state.clone()).await;
+    let year = json!({"from": "2026-01-01", "to": "2026-12-31", "date": "2026-12-31", "year": 2026, "termin": 1});
+
+    for role in ["ansatt", "les", "bokforing", "admin"] {
+        let client_id = format!("agent-{role}-{}", Uuid::new_v4());
+        let integration_id = regnmed_db::grant_integration(
+            &state.pool,
+            company,
+            &client_id,
+            &format!("Agent {role}"),
+            None,
+            role,
+            "Eier Eiersen",
+        )
+        .await
+        .unwrap();
+        sqlx::query("update integration set rate_limit_min = 10000 where id = $1")
+            .bind(integration_id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let server = Server::new(Client::new(
+            &base,
+            Some(company.to_string()),
+            &idp.token(&client_id, ""),
+        ));
+        let offered: Vec<&str> = server
+            .offered_tools()
+            .await
+            .iter()
+            .map(|t| t.name)
+            .collect();
+        // The fallback (whole table when `/me` fails) must not be what
+        // this test is measuring.
+        assert!(
+            offered.len() < regnmed_mcp::tool::TOOLS.len() || role == "admin",
+            "{role}: fikk hele tabellen -- leste offered_tools /me?"
+        );
+        // MCP lists the same menu the worker builds its catalogue from.
+        let listed = server
+            .handle(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}))
+            .await
+            .unwrap();
+        assert_eq!(
+            listed["result"]["tools"].as_array().unwrap().len(),
+            offered.len(),
+            "{role}"
+        );
+
+        for t in regnmed_mcp::tool::TOOLS {
+            if t.method != "GET" || t.path.matches('{').count() > 1 {
+                continue;
+            }
+            let (failed, text) = calls(&server, t.name, year.clone()).await;
+            // 403 = a member without the right; 404 = no way in at all.
+            let refused = failed && (text.contains("svarte 403") || text.contains("svarte 404"));
+            assert_eq!(
+                refused,
+                !offered.contains(&t.name),
+                "{role}: {} (krever {:?}) -- tilbudt={}, svar: {text}",
+                t.name,
+                t.right,
+                offered.contains(&t.name)
+            );
+        }
+    }
 }

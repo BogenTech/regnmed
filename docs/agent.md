@@ -108,6 +108,55 @@ migrering, og oppgaver.
 Utleggsverktøyene og hva en agent får gjøre med et utleggskrav står i
 [utlegg.md «Agenten»](utlegg.md).
 
+### Verktøymenyen per rolle (2026-11-17)
+
+En agent **tilbys** bare verktøyene rollen dens dekker. Hvert verktøy i
+tabellen navngir rettigheten endepunktet sjekker (`Tool::right`, sluggen
+slik `/me` lister den; `None` = alle får det), og
+`Server::offered_tools` slår opp agentens rettigheter i `/me` og filtrerer.
+Begge skinnene går gjennom samme funksjon: MCP-ens `tools/list` og
+workerens katalog viser samme meny for samme rolle.
+
+| Rolle på grantet | Verktøy tilbudt |
+| --- | --- |
+| `ansatt` | 13 — egne timer og utlegg, prosjektlisten, bilagsopplasting |
+| `les` | 31 — all lesing, ingen skriving utover `oppgave_svar` |
+| `bokforing` | 49 — alt unntatt migrering og timelås |
+| `admin` | 54 — hele tabellen |
+
+Grunnen er den samme som for at tabellen er kuratert: **en verktøyliste
+er en prompt**. En ansatt-agent som får 54 verktøy der 41 blir nektet,
+bruker turer og kundens penger på å oppdage det, og en liten modell
+slutter ikke nødvendigvis å prøve.
+
+Menyen er **ikke** en vakt. API-et avgjør fortsatt hvert kall
+(`access::require`), og et verktøy som ikke ble tilbudt men likevel
+kalles, nektes der som før. Det er derfor filteret faller tilbake til
+hele tabellen når `/me` ikke kan leses: et ødelagt token feiler på
+første kall uansett, og en tom meny ville gjemt hvorfor.
+
+Rettigheten er den endepunktet sjekker **først**. Noen endepunkter krever
+mer for deler av jobben (`faktura_opprett` med timer krever også
+`TIMER_FAKTURER`); de tilbys på den første og nektes høylytt på resten.
+Egendefinerte roller (#60) får sin meny av sine egne rettigheter uten noe
+ekstra, siden filteret leser rettighetene og ikke rollenavnet.
+
+Vakten er `each_role_is_offered_exactly_the_tools_its_guard_lets_through`:
+for hver innebygde rolle kaller den hvert leseverktøy som ikke trenger en
+id, og krever at et tilbudt verktøy kommer forbi vakten og at et skjult
+nektes av den (403/404). Skriveverktøyene kalles ikke (de ville trengt
+ekte bilag og latt ekte posteringer stå igjen); for dem sjekkes at
+rettigheten finnes i vokabularet. Testen er sett feile på en feil
+deklarasjon (`prosjekter` med `TIMER_LAAS`).
+
+**Kjent hull:** `oppgaver`, `oppgave` og `oppgave_svar` krever
+`INTEGRASJON_LES`, som `ansatt`-bunten ikke har. En ansatt-agent tilbys
+dem derfor ikke — og kunne heller ikke bruke dem før, API-et nektet. I
+regnmed-workeren merkes det ikke (avslutningen går via
+`FERDIG:`/`SPØRSMÅL:`), men en ansatt-agent over MCP kan ikke lese eller
+svare på sine egne oppgaver. Om «å være agenten oppgaven er stilt til»
+skal holde alene, er en tilgangsavgjørelse og ikke gjort her.
+
 ### Timer og prosjekter (2026-11-16)
 
 Ansatt-prompten lovet «fører timer på prosjekt», og tabellen hadde
@@ -229,6 +278,15 @@ få skrivetilgang når eieren vil det — #101 gjør det mulig — men
 `krev_for_maskin` finnes for at eieren skal kunne si «alt roboten fører
 skal jeg ha sett» uten å måtte velge mellom hjelp og kontroll.
 
+**Grantet navngir en rolle, prompten en jobb.** Workeren får grantets
+rollenavn (`admin`, `bokforing`, `ansatt`, `les` eller et egendefinert) og
+velger prompt etter det: `admin` → `regnskapsforer`, `bokforing` →
+`bokforer`, `ansatt` → `ansatt`, alt annet → `ansatt` (den smaleste). Fram
+til 2026-11-17 ble prompten slått opp på rollenavnet direkte, og fordi
+`bokforing` ≠ `bokforer` fikk **hver bokføringsagent ansatt-prompten**.
+Testen som skulle fange det brukte promptnavnet, ikke grantets;
+`a_grant_role_gets_its_own_prompt` bruker grantets.
+
 En vakt i kode: `each_role_names_the_tools_its_procedure_depends_on`
 krever at hvert verktøy en rolleprosedyre bygger på både **finnes** i
 tabellen og er **navngitt** i promptteksten. Å døpe om et verktøy uten
@@ -301,6 +359,8 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Agent med `admin` kan migrere, men aldri utvide tilgang | `tests/grupper/integrasjon.rs` |
 | Et menneske må attestere det en maskin bokfører | `tests/grupper/attestering.rs` |
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
+| Hver rolle tilbys nøyaktig verktøyene vakten slipper gjennom | `tests/grupper/agent.rs` |
+| Grantets rolle gir riktig prompt (`bokforing` → `bokforer`) | `regnmed-agent` (enhetstest) |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
 | Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
 | En avsluttet oppgave kan ikke gjenåpnes | `tests/grupper/agent.rs` |
@@ -585,8 +645,8 @@ en forpliktelse.
 systemprompten av `rolle::prompt`, og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
-oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
-nøyaktig like mange verktøy som tabellen.
+oppføre seg likt er å gi dem samme kode. Begge filtrerer tabellen med
+`Server::offered_tools`, så samme rolle får samme meny (§3).
 
 **Kan den ikke starte, sier den det i oppgaven.** Mangler en agent
 regnmed kjører aktiv modell, klienthemmelighet eller tilgang, skriver

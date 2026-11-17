@@ -79,7 +79,7 @@ impl Server {
                 "instructions": INSTRUCTIONS,
             })),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({ "tools": tool_list() })),
+            "tools/list" => Ok(json!({ "tools": tool_list(&self.offered_tools().await) })),
             "prompts/list" => Ok(json!({ "prompts": prompt_list() })),
             "prompts/get" => get_prompt(&params),
             "tools/call" => self.call(&params).await,
@@ -127,6 +127,38 @@ impl Server {
                 }));
         }
         Ok(response)
+    }
+
+    /// The tools this agent is offered: those whose right `/me` says it
+    /// holds — in the server's company, or in any of them when the
+    /// server is not tied to one. Both rails list tools through this, so
+    /// a role sees the same menu over MCP and in the hosted worker.
+    ///
+    /// shortcut: if `/me` cannot be read the whole table is offered —
+    /// the API still refuses what the role does not cover, and a broken
+    /// token fails on the first call anyway.
+    pub async fn offered_tools(&self) -> Vec<&'static Tool> {
+        let me = match self.client.call("GET", "/me", &[], None).await {
+            Ok((200, text)) => serde_json::from_str::<Value>(&text).ok(),
+            _ => None,
+        };
+        let Some(companies) = me.as_ref().and_then(|m| m["companies"].as_array()) else {
+            return tool::TOOLS.iter().collect();
+        };
+        let rights: Vec<String> = companies
+            .iter()
+            .filter(|c| {
+                self.client.company.as_deref().is_none_or(|id| {
+                    c["company_id"]
+                        .as_str()
+                        .is_some_and(|c| c.eq_ignore_ascii_case(id))
+                })
+            })
+            .filter_map(|c| c["rettigheter"].as_array())
+            .flatten()
+            .filter_map(|r| r.as_str().map(str::to_string))
+            .collect();
+        tool::offered(&rights)
     }
 
     /// Runs a tool and returns its text plus whether it failed. Public
@@ -248,8 +280,8 @@ fn text_response(text: &str, error: bool) -> Value {
     })
 }
 
-fn tool_list() -> Vec<Value> {
-    tool::TOOLS
+fn tool_list(tools: &[&Tool]) -> Vec<Value> {
+    tools
         .iter()
         .map(|v| {
             json!({
