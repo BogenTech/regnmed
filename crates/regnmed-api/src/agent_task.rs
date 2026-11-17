@@ -40,9 +40,13 @@ async fn require_queue(
     human: Right,
 ) -> Result<Access, ApiError> {
     if person.integration.is_some() {
-        lookup(state, person.person_id, company_id)
-            .await?
-            .ok_or(ApiError::NotFound)
+        // A grant whose role grants NOTHING (a deactivated or unknown
+        // custom role) is how an owner cuts an agent off; it must not
+        // keep the queue open. Fail-closed, as in docs/auth.md §7.
+        match lookup(state, person.person_id, company_id).await? {
+            Some(access) if !access.right_slugs().is_empty() => Ok(access),
+            _ => Err(ApiError::NotFound),
+        }
     } else {
         require(state, person.person_id, company_id, human).await
     }

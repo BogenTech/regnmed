@@ -1346,4 +1346,36 @@ async fn an_agent_reaches_its_own_tasks_whatever_its_role() {
     ));
     let (failed, text) = calls(&human, "oppgaver", json!({})).await;
     assert!(failed && text.contains("svarte 403"), "{text}");
+
+    // An agent whose role grants nothing -- how an owner cuts one off by
+    // deactivating its custom role -- does not keep its queue.
+    let client_id = format!("agent-{}", Uuid::new_v4());
+    let off = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Avskrudd agent",
+        None,
+        "avskrudd",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(off),
+        "Les denne",
+        None,
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let off = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    let (failed, text) = calls(&off, "oppgaver", json!({})).await;
+    assert!(failed && text.contains("svarte 404"), "{text}");
 }
