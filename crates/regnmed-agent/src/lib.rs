@@ -114,8 +114,10 @@ fn closing_rules() -> String {
 
 /// Reads the marker off the model's closing text.
 ///
-/// Unmarked text that ENDS IN A QUESTION MARK is a question, whatever
-/// prefix the model forgot. Found with a real provider
+/// Unmarked text that ASKS SOMETHING -- holds a question mark anywhere --
+/// is a question, whatever prefix the model forgot. (Until 2026-11-17
+/// only a TRAILING mark counted; a free model asked «**Hvilken dato skal
+/// timesatsen gjelde fra?** (YYYY-MM-DD-format …).» and the task closed.) Found with a real provider
 /// (gemini-2.5-flash-lite, 2026-10-29): it asked which date in 2026 was
 /// meant, and without this it was recorded `utfort` -- which is
 /// TERMINAL in the 0064 guard, so the task closed and the question was
@@ -136,7 +138,7 @@ fn interpret(text: &str) -> Outcome {
         Outcome::Refused(after("AVVIST:"))
     } else if u.starts_with("FERDIG:") {
         Outcome::Done(after("FERDIG:"))
-    } else if t.ends_with('?') {
+    } else if t.contains('?') {
         Outcome::Question(t.to_string())
     } else {
         Outcome::Done(t.to_string())
@@ -601,6 +603,11 @@ mod tests {
         // with it.
         let ekte = "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
                     du er interessert i. Kan du vennligst oppgi en spesifikk dato?";
+        assert_eq!(interpret(ekte).status(), "sporsmal");
+        // Verbatim from nemotron-3.5-lightning:free, 2026-11-17: the
+        // question is bold and a parenthesis follows it.
+        let ekte = "For å sette en timesats må jeg ha en `valid_from`-dato.\n\n\
+                    **Hvilken dato skal timesatsen gjelde fra?** (YYYY-MM-DD-format, ikke dagens dato).";
         assert_eq!(interpret(ekte).status(), "sporsmal");
         // A statement that merely mentions a question is still done.
         assert_eq!(

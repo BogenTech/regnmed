@@ -724,18 +724,19 @@ pub const TOOLS: &[Tool] = &[
         description: "Setter en ny timesats på et prosjekt fra en dato. Satsen er heltall ØRE per \
                       time: 1 200 kr/t = 120000. Uten `person_id` er det prosjektets standardsats; \
                       med er det den personens egen. Timer som allerede er ført beholder satsen de \
-                      ble ført med. Krever retten TIMER_SATS_SKRIV. Sett aldri en sats oppgaven \
-                      ikke har gitt deg.",
+                      ble ført med, så timer før `valid_from` får ikke denne satsen. Er ingen dato \
+                      oppgitt, spør — velg ikke dagens. Krever retten TIMER_SATS_SKRIV. Sett aldri \
+                      en sats oppgaven ikke har gitt deg.",
         method: "POST",
         path: "/companies/{selskap}/dimensions/prosjekt/{prosjekt}/satser",
         right: Some("TIMER_SATS_SKRIV"),
         body: Body::Json,
         reply: Reply::Text,
-        schema: r#"{"type":"object","required":["prosjekt","timesats_ore"],"properties":{COMPANY,
+        schema: r#"{"type":"object","required":["prosjekt","timesats_ore","valid_from"],"properties":{COMPANY,
             "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"},
             "timesats_ore":{"type":"integer","description":"Heltall øre per time"},
             "person_id":{"type":"string","description":"Utelates = prosjektets standardsats"},
-            "valid_from":{"type":"string","description":"Gyldig fra, YYYY-MM-DD. Utelates = i dag."}},
+            "valid_from":{"type":"string","description":"Gyldig fra, YYYY-MM-DD. Datoen oppgaven gir; er ingen gitt, spør i stedet for å kalle."}},
             "additionalProperties":false}"#,
     },
     Tool {
@@ -762,7 +763,10 @@ pub const TOOLS: &[Tool] = &[
                       timer for en annen person. Tiden er heltall MINUTTER: 8 timer = 480, \
                       7,5 timer = 450, høyst 1440. Flere dager er ett kall per dag \
                       (mandag–fredag = fem kall). Kallet er IKKE idempotent: får du ikke svar, \
-                      kall `timer_liste` for dagen før du prøver igjen, ellers føres timene to ganger.",
+                      kall `timer_liste` for dagen før du prøver igjen, ellers føres timene to ganger. \
+                      Timer bokfører INGENTING i hovedboken: ber oppgaven om å utgiftsføre eller \
+                      kostnadsføre noe ved å føre timer, si i svaret at timene ikke er bokført som \
+                      kostnad.",
         method: "POST",
         path: "/companies/{selskap}/timesheet",
         right: Some("TIMER_SKRIV_EGNE"),

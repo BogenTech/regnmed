@@ -287,6 +287,24 @@ få skrivetilgang når eieren vil det — #101 gjør det mulig — men
 `krev_for_maskin` finnes for at eieren skal kunne si «alt roboten fører
 skal jeg ha sett» uten å måtte velge mellom hjelp og kontroll.
 
+**En regel må stå der modellen handler** (2026-11-17). To grunnregler kom
+fra en ekte økt: en sats uten oppgitt dato skal ikke dateres i dag (timene
+som alt lå på prosjektet fikk den aldri), og timer bokfører ingenting (en
+bestilling om å «utgiftsføre» utviklingstimer ble ført uten et ord om
+det). Som grunnregler alene endret de **ingenting** hos en liten modell —
+`ekte_leverandor.rs` viste det. Satsverktøyet sa selv at `valid_from`
+«utelates = i dag», og verktøyet vant over regelen; ansatt-prosedyren
+sluttet før svaret, så regelen om timer kom aldri i spill. Først da
+regelen sto i verktøybeskrivelsen og i prosedyrens siste steg (og
+`valid_from` ble påkrevd i skjemaet), fulgte modellen den, tre kjøringer
+av tre. Lærdommen: en verktøybeskrivelse som motsier en grunnregel
+vinner, og en regel som ikke står i et steg, blir ikke fulgt.
+`every_role_knows_dated_values_and_that_hours_post_nothing` fester
+alle tre stedene; de to `ekte_leverandor`-scenariene
+(`a_real_model_does_not_date_a_rate_today_by_default`,
+`a_real_model_says_hours_are_not_bookkeeping`) prøver dem mot en ekte
+modell, for hånd.
+
 En vakt i kode: `each_role_names_the_tools_its_procedure_depends_on`
 krever at hvert verktøy en rolleprosedyre bygger på både **finnes** i
 tabellen og er **navngitt** i promptteksten. Å døpe om et verktøy uten
